@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Queenstown rooftop solar potential — pilot preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
+  #map { position: absolute; inset: 0; }
+  .legend {
+    position: absolute; bottom: 24px; left: 12px; background: rgba(20,20,20,0.85);
+    color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1;
+  }
+  .legend-bar { width: 180px; height: 10px; margin: 6px 0;
+    background: linear-gradient(to right, #2c3e8c, #3aa8c1, #6fd07c, #f4d35e, #f2994a, #e63946); }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.85; }
+  .legend-facet {
+    position: absolute; bottom: 24px; right: 12px; background: rgba(20,20,20,0.85);
+    color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1; max-width: 220px;
+  }
+  .legend-facet-bar { width: 180px; height: 10px; margin: 6px 0;
+    background: linear-gradient(to right, #2166ac, #67a9cf, #ffffbf, #fdae61, #d73027); }
+  .legend-obstruction { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; opacity: 0.85; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: #a855f7; flex: none; }
+  .toggle-row { display: flex; gap: 8px; margin: 8px 0; }
+  .toggle-btn {
+    flex: 1; padding: 6px 10px; font-size: 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid #999; background: #f0f0f0; color: #333; transition: all 0.15s;
+  }
+  .toggle-btn.active { background: #0a1f44; color: #fff; border-color: #0a1f44; }
+  .tuning { border-top: 1px solid #ddd; margin-top: 8px; padding-top: 8px; }
+  .tuning summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #333; }
+  .slider-row { margin: 8px 0 0; }
+  .slider-row label { display: flex; justify-content: space-between; font-size: 11px; color: #555; }
+  .slider-row input[type=range] { width: 100%; }
+  .tuning-summary { font-size: 12px; margin-top: 8px; padding: 6px 8px; background: #f5f5f5; border-radius: 6px; }
+  .tuning-summary.stale { opacity: 0.5; }
+  .tuning-reset { font-size: 11px; margin-top: 6px; padding: 4px 8px; border-radius: 5px; border: 1px solid #999; background: #fff; cursor: pointer; }
+  .popup h4 { margin: 0 0 6px; font-size: 14px; }
+  .popup table { border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+  .popup td { padding: 2px 8px 2px 0; }
+  .popup td.val { font-weight: 600; text-align: right; padding-right: 0; }
+  .popup .assumptions { font-size: 11px; color: #555; border-top: 1px solid #ddd; padding-top: 6px; max-width: 260px; }
+  .maplibregl-popup-content { padding: 12px 14px; }
+  .loading {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(20,20,20,0.85); color: #fff; padding: 6px 14px; border-radius: 6px;
+    font-size: 12px; z-index: 2; transition: opacity 0.3s;
+  }
+  .dashboard {
+    position: absolute; top: 12px; left: 12px; background: rgba(20,20,20,0.9);
+    color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 13px; z-index: 3; width: 230px;
+  }
+  .dashboard-title { font-weight: 600; margin-bottom: 8px; }
+  .dashboard .slider-row label { color: #ccc; }
+  .dashboard .slider-row { margin-top: 10px; }
+  .kwp-label {
+    font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
+    background: rgba(0,0,0,0.45); padding: 1px 5px; border-radius: 4px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="dashboard">
+  <div class="dashboard-title">Map mode</div>
+  <div class="toggle-row">
+    <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
+    <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
+  </div>
+  <div class="slider-row" id="coverage-control" style="display:none;">
+    <label style="display:flex; justify-content:space-between;">
+      <span>Heat Map estimate: roof coverage</span><span id="val-coverage">80%</span>
+    </label>
+    <input type="range" id="slider-coverage" min="20" max="95" step="5" value="80" style="width:100%;">
+    <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
+      Labels show kWp if this % of each roof's usable area were panelled,
+      ignoring the actual fitted layout -- a quick "ceiling" estimate, not
+      the real Panel Layout numbers.
+    </div>
+  </div>
+</div>
+<div class="legend">
+  <div>Estimated solar potential (kWp)</div>
+  <div class="legend-bar"></div>
+  <div class="legend-labels"><span>low</span><span>high</span></div>
+  <div style="margin-top:6px; opacity:0.7;">Click a rooftop for details and its proposed panel layout. Click empty space to clear. Pilot area only — Queenstown town basin.</div>
+</div>
+<div class="legend-facet">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+    <span>Generation potential heat map (kWh/m²/yr)</span>
+    <button class="toggle-btn" id="toggle-heatmap-global" style="flex:none; width:auto;">On</button>
+  </div>
+  <div class="legend-facet-bar"></div>
+  <div class="legend-labels"><span>south / low</span><span>north / high</span></div>
+  <div class="legend-obstruction"><div class="legend-swatch"></div><span>avoided obstruction</span></div>
+</div>
+<div class="loading" id="loading">Loading panel layouts…</div>
+
+<script>
+const map = new maplibregl.Map({
+  container: "map",
+  style: {
+    version: 8,
+    sources: {
+      satellite: {
+        type: "raster",
+        tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+        tileSize: 256,
+        attribution: "Esri World Imagery"
+      },
+      // Esri's free World Imagery has a hard zoom cutoff in this area ("Map
+      // data not yet available" once you zoom past it). We already own 0.1m
+      // LINZ imagery for the whole pilot bbox -- finer than Esri ever had
+      // here -- tiled locally and layered on top; maxzoom 19 means MapLibre
+      // auto-upsamples our own sharpest tiles beyond that rather than
+      // falling through to Esri's blank tiles.
+      "local-tiles": {
+        type: "raster",
+        tiles: ["tiles/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        minzoom: 14,
+        maxzoom: 19,
+        attribution: "LINZ"
+      }
+    },
+    layers: [
+      { id: "satellite", type: "raster", source: "satellite" },
+      { id: "local-tiles", type: "raster", source: "local-tiles" }
+    ]
+  },
+  center: [168.665, -45.035],
+  zoom: 14
+});
+
+map.addControl(new maplibregl.NavigationControl());
+
+let selectedBuildingId = -1;
+let layoutReady = false;
+// One mode, not two independent toggles -- Heat Map and Panel Layout are
+// mutually exclusive views, not layers meant to be combined. Showing both
+// at once was exactly the "why is there blue behind the panels" confusion:
+// that blue was the heatmap, still on underneath. 'none' | 'heatmap' | 'layout'.
+let mode = "heatmap";
+const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "panels-fill", "panels-outline"];
+// Base filter per layout layer -- always shows every building's facets/
+// panels/obstructions at once. Previously selectBuilding() replaced this
+// with a single building_id filter on click, which meant Panel Layout mode
+// never showed more than one roof's panels at a time -- every other
+// building (however well segmented) looked completely blank until clicked.
+// That is almost certainly the dominant cause of "large areas of the roof
+// have no panels" reports made against wide, multi-building screenshots.
+const LAYOUT_KIND_FILTER = {
+  "facets-outline": ["==", ["get", "kind"], "facet"],
+  "obstructions-fill": ["==", ["get", "kind"], "obstruction"],
+  "panels-fill": ["==", ["get", "kind"], "panel"],
+  "panels-outline": ["==", ["get", "kind"], "panel"],
+};
+
+function setMode(newMode) {
+  mode = (mode === newMode) ? "none" : newMode;  // clicking the active one turns it off
+  applyToggles();
+}
+
+function syncToggleButtons() {
+  const globalBtn = document.getElementById("toggle-heatmap-global");
+  if (globalBtn) {
+    globalBtn.classList.toggle("active", mode === "heatmap");
+    globalBtn.textContent = mode === "heatmap" ? "On" : "Off";
+  }
+  const dashHeat = document.getElementById("toggle-heatmap-dash");
+  const dashLayout = document.getElementById("toggle-layout-dash");
+  if (dashHeat) dashHeat.classList.toggle("active", mode === "heatmap");
+  if (dashLayout) dashLayout.classList.toggle("active", mode === "layout");
+  const coverageControl = document.getElementById("coverage-control");
+  if (coverageControl) coverageControl.style.display = mode === "heatmap" ? "block" : "none";
+  document.querySelectorAll(".maplibregl-popup #toggle-heatmap").forEach(b => b.classList.toggle("active", mode === "heatmap"));
+  document.querySelectorAll(".maplibregl-popup #toggle-layout").forEach(b => b.classList.toggle("active", mode === "layout"));
+}
+
+function applyToggles() {
+  if (map.getLayer("heatmap-raster")) {
+    map.setLayoutProperty("heatmap-raster", "visibility", mode === "heatmap" ? "visible" : "none");
+  }
+  if (map.getLayer("kwp-labels")) {
+    map.setLayoutProperty("kwp-labels", "visibility", mode === "heatmap" ? "visible" : "none");
+  }
+  if (layoutReady) {
+    LAYOUT_LAYERS.forEach(id => map.setLayoutProperty(id, "visibility", mode === "layout" ? "visible" : "none"));
+  }
+  // Always exclude the selected building from the overview fill once
+  // something is selected, regardless of mode -- otherwise its own
+  // choropleth colour would sit on top of the heatmap/satellite detail
+  // we're trying to show for that specific roof.
+  const buildingsFilter = selectedBuildingId === -1 ? null : ["!=", ["get", "building_id"], selectedBuildingId];
+  map.setFilter("buildings-fill", buildingsFilter);
+  syncToggleButtons();
+}
+
+function selectBuilding(id) {
+  selectedBuildingId = id;
+  clearLiveTuning();  // also restores every layout layer's filter back to "show all buildings"
+  applyToggles();
+}
+
+function clearSelection() {
+  selectedBuildingId = -1;
+  clearLiveTuning();
+  applyToggles();
+}
+
+// --- Live parameter tuning (talks to src/live_server.py's /api/refit) ---
+let liveTuningTimer = null;
+
+function clearLiveTuning() {
+  if (map.getSource && map.getSource("live-layout")) {
+    map.getSource("live-layout").setData({ type: "FeatureCollection", features: [] });
+  }
+  if (layoutReady) {
+    LAYOUT_LAYERS.forEach(id => map.setFilter(id, LAYOUT_KIND_FILTER[id]));
+  }
+}
+
+async function refitLive(buildingId, setback, ransacThreshold, zThreshold) {
+  // Hide the static (default-parameter) layout for just this one building
+  // while its live-tuned version is shown instead -- otherwise both would
+  // render on top of each other and every slider move would look like
+  // nothing changed. Every other building's static layout stays visible.
+  LAYOUT_LAYERS.forEach(id => map.setFilter(id, ["all", LAYOUT_KIND_FILTER[id], ["!=", ["get", "building_id"], buildingId]]));
+  const url = `/api/refit?building_id=${buildingId}&setback=${setback}&ransac_threshold=${ransacThreshold}&z_threshold=${zThreshold}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`refit failed: ${resp.status}`);
+  const data = await resp.json();
+  map.getSource("live-layout").setData(data);
+  return data.summary;
+}
+
+function wireTuningControls(popupEl, buildingId) {
+  const setbackSlider = popupEl.querySelector("#slider-setback");
+  const ransacSlider = popupEl.querySelector("#slider-ransac");
+  const zSlider = popupEl.querySelector("#slider-zthresh");
+  const setbackVal = popupEl.querySelector("#val-setback");
+  const ransacVal = popupEl.querySelector("#val-ransac");
+  const zVal = popupEl.querySelector("#val-zthresh");
+  const summaryEl = popupEl.querySelector("#tuning-summary");
+  const resetBtn = popupEl.querySelector("#tuning-reset");
+
+  const triggerRefit = () => {
+    const setback = parseFloat(setbackSlider.value);
+    const ransacThreshold = parseFloat(ransacSlider.value);
+    const zThreshold = parseFloat(zSlider.value);
+    setbackVal.textContent = setback.toFixed(2) + "m";
+    ransacVal.textContent = ransacThreshold.toFixed(2) + "m";
+    zVal.textContent = zThreshold.toFixed(2) + "σ";
+    summaryEl.classList.add("stale");
+    summaryEl.textContent = "Refitting…";
+    clearTimeout(liveTuningTimer);
+    liveTuningTimer = setTimeout(async () => {
+      try {
+        const summary = await refitLive(buildingId, setback, ransacThreshold, zThreshold);
+        summaryEl.classList.remove("stale");
+        summaryEl.innerHTML = `<strong>${summary.panel_count}</strong> panels, ` +
+          `<strong>${summary.kwp.toFixed(2)}</strong> kWp, ` +
+          `<strong>${Number(summary.ac_kwh_year).toLocaleString()}</strong> kWh/yr`;
+      } catch (err) {
+        summaryEl.classList.remove("stale");
+        summaryEl.textContent = "Refit failed -- is live_server.py running (not the plain static server)?";
+      }
+    }, 250);  // debounce so dragging a slider doesn't fire a request per pixel
+  };
+
+  [setbackSlider, ransacSlider, zSlider].forEach(s => s.addEventListener("input", triggerRefit));
+
+  resetBtn.addEventListener("click", () => {
+    setbackSlider.value = 0.3;
+    ransacSlider.value = 0.15;
+    zSlider.value = 2.75;
+    setbackVal.textContent = "0.30m";
+    ransacVal.textContent = "0.15m";
+    zVal.textContent = "2.75σ";
+    summaryEl.classList.remove("stale");
+    summaryEl.textContent = "Adjust a slider to try live values for this roof.";
+    clearLiveTuning();
+    selectBuilding(buildingId);  // restore the default-parameter static layout view
+  });
+}
+
+// Bumped whenever the data/*.geojson or heatmap_raster.* files get
+// regenerated -- without this, browsers happily keep serving a cached
+// response after a reload even though the file on disk changed (bit us
+// during development: a fix looked like it hadn't taken effect at all).
+const DATA_VERSION = "5";
+let coveragePct = 80;
+
+map.on("load", async () => {
+  const resp = await fetch(`data/solar_potential.geojson?v=${DATA_VERSION}`);
+  const data = await resp.json();
+  const assumptions = data.assumptions;
+
+  map.addSource("buildings", { type: "geojson", data });
+
+  map.addLayer({
+    id: "buildings-fill",
+    type: "fill",
+    source: "buildings",
+    paint: {
+      // Low end was #2c3e8c, a blue-indigo close enough to the obstruction
+      // colour (#a855f7, purple) that on a row of small low-kWp buildings
+      // it read as "this roof is covered in obstructions" -- it's just
+      // this layer's own low-value colour showing through on neighbouring
+      // (unselected) buildings. Swapped for an unambiguous pure blue.
+      "fill-color": [
+        "interpolate", ["linear"], ["get", "kwp"],
+        0, "#1565c0",
+        2, "#3aa8c1",
+        5, "#6fd07c",
+        10, "#f4d35e",
+        20, "#f2994a",
+        40, "#e63946"
+      ],
+      "fill-opacity": 0.75
+    }
+  });
+
+  map.addLayer({
+    id: "buildings-outline",
+    type: "line",
+    source: "buildings",
+    paint: { "line-color": "#ffffff", "line-width": 0.5, "line-opacity": 0.4 }
+  });
+
+  // Heat Map mode's "ceiling" estimate: ignores the actual fitted panel
+  // layout entirely, just (resolved facet area) x (coverage %) x (panel
+  // power density) -- a quick "what's the rough upper bound" number,
+  // recomputed client-side so the coverage slider is instant (no server
+  // round-trip). panel_area_m2/panel_rated_power_w come from the same
+  // assumptions block the popup shows, so this can't silently drift from
+  // what the rest of the page claims a panel is.
+  const panelDensityKw = assumptions.panel_rated_power_w / assumptions.panel_area_m2 / 1000;
+
+  function recomputeHeatmapEstimates() {
+    const fraction = coveragePct / 100;
+    data.features.forEach(f => {
+      const p = f.properties;
+      const kwpEst = (p.facet_area_m2 || 0) * fraction * panelDensityKw;
+      p.heatmap_kwp_estimate = Math.round(kwpEst * 10) / 10;
+      p.heatmap_kwh_year_estimate = Math.round(kwpEst * (p.avg_poa_kwh_m2 || 0)
+        * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100));
+    });
+    map.getSource("buildings").setData(data);
+  }
+  recomputeHeatmapEstimates();
+
+  map.addLayer({
+    id: "kwp-labels",
+    type: "symbol",
+    source: "buildings",
+    minzoom: 16,
+    filter: [">", ["get", "heatmap_kwp_estimate"], 0.5],
+    layout: {
+      "text-field": ["concat", ["to-string", ["get", "heatmap_kwp_estimate"]], " kWp"],
+      "text-size": 11,
+      "text-allow-overlap": false,
+      visibility: mode === "heatmap" ? "visible" : "none"
+    },
+    paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.2 }
+  });
+
+  document.getElementById("slider-coverage").addEventListener("input", (e) => {
+    coveragePct = parseFloat(e.target.value);
+    document.getElementById("val-coverage").textContent = coveragePct + "%";
+    recomputeHeatmapEstimates();
+  });
+  document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
+  document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
+
+  // Per-DSM-pixel generation-potential heatmap, before any panel layout --
+  // one image over the whole pilot bbox (see src/build_heatmap_raster.py),
+  // same diverging blue/south -> red/north scale as the facet colours.
+  const heatmapMeta = await (await fetch(`data/heatmap_raster.json?v=${DATA_VERSION}`)).json();
+  map.addSource("heatmap-raster-src", { type: "image", url: `data/heatmap_raster.png?v=${DATA_VERSION}`, coordinates: heatmapMeta.coordinates });
+  map.addLayer({
+    id: "heatmap-raster",
+    type: "raster",
+    source: "heatmap-raster-src",
+    layout: { visibility: mode === "heatmap" ? "visible" : "none" },
+    paint: { "raster-opacity": 0.8 }
+  });
+
+  const layoutResp = await fetch(`data/panel_layouts.geojson?v=${DATA_VERSION}`);
+  const layoutData = await layoutResp.json();
+  map.addSource("layout", { type: "geojson", data: layoutData });
+  document.getElementById("loading").style.opacity = "0";
+
+  // No solid facet fill anymore -- it used the same colour scale as the
+  // heatmap, so a low-yield (south-facing) facet rendered nearly the same
+  // dark blue as the navy panels sitting on top of it, and the two were
+  // hard to tell apart. Generation-potential colour now lives only in the
+  // Heat Map layer (a smooth per-pixel raster, no flat-fill clash
+  // possible); Panel Layout shows just a dotted outline of the facet
+  // boundary underneath the actual panels.
+  map.addLayer({
+    id: "facets-outline",
+    type: "line",
+    source: "layout",
+    filter: LAYOUT_KIND_FILTER["facets-outline"],
+    paint: { "line-color": "#ffffff", "line-width": 1.5, "line-dasharray": [2, 2] }
+  });
+  map.addLayer({
+    id: "obstructions-fill",
+    type: "fill",
+    source: "layout",
+    filter: LAYOUT_KIND_FILTER["obstructions-fill"],
+    paint: { "fill-color": "#a855f7", "fill-opacity": 0.85 }
+  });
+  map.addLayer({
+    id: "panels-fill",
+    type: "fill",
+    source: "layout",
+    filter: LAYOUT_KIND_FILTER["panels-fill"],
+    paint: { "fill-color": "#000000", "fill-opacity": 0.45 }
+  });
+  map.addLayer({
+    id: "panels-outline",
+    type: "line",
+    source: "layout",
+    filter: LAYOUT_KIND_FILTER["panels-outline"],
+    paint: { "line-color": "#7fd4ff", "line-width": 1 }
+  });
+
+  // Live-tuning preview: a separate source/layers that only ever hold the
+  // /api/refit result for whichever single building is currently being
+  // slider-tuned, so experimenting never touches the shared bulk dataset
+  // used for every other building. Empty until a slider is first moved.
+  map.addSource("live-layout", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "live-facets-outline", type: "line", source: "live-layout",
+    filter: ["==", ["get", "kind"], "facet"],
+    paint: { "line-color": "#ffffff", "line-width": 1.5, "line-dasharray": [2, 2] }
+  });
+  map.addLayer({
+    id: "live-obstructions-fill", type: "fill", source: "live-layout",
+    filter: ["==", ["get", "kind"], "obstruction"],
+    paint: { "fill-color": "#a855f7", "fill-opacity": 0.85 }
+  });
+  map.addLayer({
+    id: "live-panels-fill", type: "fill", source: "live-layout",
+    filter: ["==", ["get", "kind"], "panel"],
+    paint: { "fill-color": "#000000", "fill-opacity": 0.45 }
+  });
+  map.addLayer({
+    id: "live-panels-outline", type: "line", source: "live-layout",
+    filter: ["==", ["get", "kind"], "panel"],
+    paint: { "line-color": "#7fd4ff", "line-width": 1 }
+  });
+
+  layoutReady = true;
+  if (selectedBuildingId !== -1) selectBuilding(selectedBuildingId);  // catch up if clicked before this loaded
+  else applyToggles();
+
+  const bounds = new maplibregl.LngLatBounds();
+  data.features.forEach(f => {
+    const coords = f.geometry.type === "Polygon" ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
+    coords.forEach(c => bounds.extend(c));
+  });
+  map.fitBounds(bounds, { padding: 30 });
+
+  map.on("click", "buildings-fill", (e) => {
+    const p = e.features[0].properties;
+    selectBuilding(p.building_id);
+
+    const bounds = new maplibregl.LngLatBounds();
+    const geom = e.features[0].geometry;
+    const coords = geom.type === "Polygon" ? geom.coordinates[0] : geom.coordinates[0][0];
+    coords.forEach(c => bounds.extend(c));
+    map.fitBounds(bounds, { padding: 80, maxZoom: 20, duration: 600 });
+
+    const html = `
+      <div class="popup">
+        <h4>Building #${p.building_id}</h4>
+        <div class="toggle-row">
+          <button class="toggle-btn" id="toggle-heatmap">Heat Map</button>
+          <button class="toggle-btn" id="toggle-layout">Panel Layout</button>
+        </div>
+        <table>
+          <tr><td>Panels fitted</td><td class="val">${p.panel_count}</td></tr>
+          <tr><td>Obstructions avoided</td><td class="val">${p.obstruction_count}</td></tr>
+          <tr><td>kW peak (kWp)</td><td class="val">${p.kwp.toFixed(2)}</td></tr>
+          <tr><td>kWh / day (avg)</td><td class="val">${p.ac_kwh_day_avg.toFixed(1)}</td></tr>
+          <tr><td>kWh / year</td><td class="val">${Number(p.ac_kwh_year).toLocaleString()}</td></tr>
+        </table>
+        <div class="assumptions">
+          Heat Map = raw per-pixel generation potential before panels (blue = south-facing/low,
+          red = north-facing/high). Panel Layout = proposed facets/panels/obstructions for this roof.
+          Toggle both off to see the bare rooftop.
+        </div>
+        <div class="assumptions">
+          <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels
+          (${assumptions.panel_efficiency_pct}% efficient, ${assumptions.panel_area_m2}m² each),
+          ${assumptions.inverter_efficiency_pct}% inverter efficiency,
+          ${assumptions.system_derate_pct}% combined system losses (soiling/wiring/temperature/mismatch).
+          ${assumptions.notes}
+        </div>
+        <details class="tuning">
+          <summary>Tune panel-fitting parameters</summary>
+          <div class="slider-row">
+            <label><span>Edge setback</span><span id="val-setback">0.30m</span></label>
+            <input type="range" id="slider-setback" min="0.0" max="0.6" step="0.05" value="0.3">
+          </div>
+          <div class="slider-row">
+            <label><span>Roof flatness tolerance</span><span id="val-ransac">0.15m</span></label>
+            <input type="range" id="slider-ransac" min="0.05" max="0.35" step="0.01" value="0.15">
+          </div>
+          <div class="slider-row">
+            <label><span>Obstruction sensitivity</span><span id="val-zthresh">2.75&sigma;</span></label>
+            <input type="range" id="slider-zthresh" min="1.5" max="4.0" step="0.05" value="2.75">
+          </div>
+          <div class="tuning-summary" id="tuning-summary">Adjust a slider to try live values for this roof.</div>
+          <button class="tuning-reset" id="tuning-reset">Reset to defaults</button>
+        </details>
+      </div>`;
+    const popup = new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+    const popupEl = popup.getElement();
+    popupEl.querySelector("#toggle-heatmap").addEventListener("click", () => setMode("heatmap"));
+    popupEl.querySelector("#toggle-layout").addEventListener("click", () => setMode("layout"));
+    syncToggleButtons();
+    wireTuningControls(popupEl, p.building_id);
+  });
+
+  document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
+
+  map.on("click", (e) => {
+    const hits = map.queryRenderedFeatures(e.point, { layers: ["buildings-fill"] });
+    if (hits.length === 0) {
+      clearSelection();
+      const popups = document.getElementsByClassName("maplibregl-popup");
+      Array.from(popups).forEach(p => p.remove());
+    }
+  });
+
+  map.on("mouseenter", "buildings-fill", () => map.getCanvas().style.cursor = "pointer");
+  map.on("mouseleave", "buildings-fill", () => map.getCanvas().style.cursor = "");
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+.venv/
+data/
+tiles/
+.env
+*.laz
+*.las
+*.tif
+*.tiff
+*.zip
+__pycache__/
+*.pyc
+.DS_Store
