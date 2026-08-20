@@ -446,6 +446,60 @@ approach used in the published LiDAR-solar-potential literature (GRASS
      clicking a building still drives the popup and (via `refitLive`)
      excludes just that one building's static layout while its live-tuned
      preview is shown, but no longer hides anyone else's.
+- **Fixed facet shapes not matching the roof, and severe over-fragmentation
+  on simple/flat roof sections.** Reported directly, with screenshots:
+  small, oddly-shaped facet outlines scattered across roofs that visually
+  looked like one simple flat/gently-pitched surface, each holding at most
+  a couple of panels, badly misaligned to the real roof edges. Two
+  compounding causes, both found and fixed by direct measurement rather
+  than guesswork:
+  1. **Facet shape was the raw claimed-pixel mask, traced as-is.**
+     `roof_segmentation.py` vectorized each plane's inlier-pixel mask
+     directly -- exactly as noisy as the 1m DSM grid and whatever pixels
+     RANSAC's distance check happened to exclude near an edge, so shapes
+     came out blobby and undersized, and panel packing (which aligns to a
+     facet's own minimum-rotated-rectangle) inherited that same
+     misalignment. Replaced with `component_shape()`: fit the convex hull
+     of each connected component's actual inlier points, snap to the
+     minimum-rotated-rectangle when the hull already fills >=70% of it
+     (the common case -- gaps are edge noise, not a real notch), then
+     bound the result to the traced pixel footprint buffered by 1m
+     (`SHAPE_FIT_TOLERANCE_M`) so a few stray far-flung inlier points can't
+     balloon the fitted shape past the real plane -- caught this exact
+     failure in testing: an early unbounded version let one dominant
+     plane's rectangle bleed across and eat several other, physically
+     separate roof wings on a real building. Because a geometric fit (unlike
+     pixel tracing) can let two different planes' facets overlap, added
+     `_dedupe_overlaps()`: process facets largest-first and subtract
+     already-claimed area from each smaller one, so no roof area or panel
+     is ever double-counted.
+  2. **`RANSAC_DISTANCE_THRESHOLD_M` (the flatness tolerance) was too
+     tight**, per the user's own hypothesis, confirmed by direct testing
+     rather than taken on faith: real roofing has enough small-scale
+     texture (seams, ribs, snow, minor sensor noise) that a single true
+     flat plane routinely failed to pass a 0.15m-tolerance fit as one
+     piece, fragmenting into many small, spurious "planes" instead --
+     exactly the reported pattern. Swept 0.15 through 0.45 on a 120-
+     building sample plus the two specifically-reported buildings:
+     coverage rises 57%->71% and facets/building *drops* (3.1->2.7, i.e.
+     less fragmentation, not less precision) between 0.15 and 0.35, with
+     no increase in a proxy for "wrongly merged two real roof planes into
+     one" (11/120 flagged at both 0.30 and 0.35) -- that failure mode only
+     shows up past ~0.40 (13-14/120), and was directly visible on one
+     building at 0.45+ collapsing its entire multi-wing roof into one
+     nonsensical near-flat facet. Raised to 0.35.
+  3. Also directly tested the user's hypothesis that obstruction detection
+     (`Z_THRESHOLD = 2.75` std devs) was too sensitive -- with facets
+     properly sized by the fixes above, obstruction area came out to only
+     0-1% of facet area on the reported buildings, so left it unchanged;
+     the "too precise" impression was very likely a downstream symptom of
+     tiny fragmented facets (obstruction area reads as a much larger
+     fraction of a tiny facet) rather than a real problem in that
+     threshold itself.
+  Verified pilot-wide: 49,305 -> 74,310 panels (+50.7%), 21,694 -> 32,696
+  kWp (+50.7%), heatmap high-confidence coverage 71% -> 77%, facet count
+  4,960 -> 3,009 (fewer, larger, more coherent facets). On the two
+  specifically-reported buildings: 23 -> 65 panels and 4 -> 18 panels.
 
 ## Local setup
 

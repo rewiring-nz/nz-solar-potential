@@ -22,7 +22,7 @@ import rasterio
 from rasterio.features import shapes as rasterio_shapes
 from rasterio.mask import mask as rasterio_mask
 from scipy import ndimage
-from shapely.geometry import shape as shapely_shape
+from shapely.geometry import MultiPoint, shape as shapely_shape
 from shapely.ops import unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -35,7 +35,20 @@ import config
 # building gets its own RNG seeded from its own id instead, so results are independent of run order.
 
 MIN_FACET_AREA_M2 = 3.0  # below this, can't usefully fit even one setback-shrunk panel
-RANSAC_DISTANCE_THRESHOLD_M = 0.15  # vertical residual to count as an inlier; ~DSM noise floor
+# Vertical residual to count as an inlier. Was 0.15 (~the DSM's raw noise
+# floor), which sounds like the "correct" physical value but was far too
+# tight in practice: real roofing has enough small-scale texture (seams,
+# ribs, snow, minor sensor noise) that a single true flat plane routinely
+# failed to pass a 0.15m-tolerance fit as one piece, fragmenting into many
+# small, spurious "planes" instead -- exactly the "dozens of tiny facet
+# outlines on an obviously simple roof" pattern reported against the live
+# map. Raised to 0.35 after directly measuring the tradeoff on a 120-
+# building sample: coverage rises 57%->71% and facets/building *drops*
+# (3.1->2.7, i.e. less fragmentation, not less precision) between 0.15 and
+# 0.35, with no increase in a same-building proxy for "wrongly merged two
+# real roof planes into one" (11/120 flagged at both 0.30 and 0.35) --
+# that failure mode only shows up past ~0.40, where it climbs to 13-14/120.
+RANSAC_DISTANCE_THRESHOLD_M = 0.35
 RANSAC_ITERATIONS = 300
 RANSAC_MIN_INLIERS = 6  # pixels; below this a "plane" is just noise, not a real facet
 # Silently capped large/complex buildings: a big multi-wing institutional
@@ -136,36 +149,93 @@ def slope_aspect_from_plane(a, b):
     return slope_deg, aspect_deg
 
 
-def label_raster_to_polygons(mask_2d, window_transform, crs):
-    """Vectorize a boolean facet mask into one Polygon per spatially
-    connected component, each paired with its pixel count.
+RECT_FIT_MIN_FILL_FRACTION = 0.7  # hull area / its minimum-rotated-rectangle area
+SHAPE_FIT_TOLERANCE_M = 1.0  # how far past the traced pixel footprint a fitted
+# rectangle/hull may reach when snapping to clean edges -- enough to smooth
+# 1m-grid staircase noise and small dropout notches, not enough for a
+# handful of stray far-flung inlier points (RANSAC noise, or a coincidental
+# planar match on a separate, physically unconnected roof wing) to balloon
+# the fitted shape across the whole building. Found by direct testing: an
+# earlier, unbounded version of this fit let one dominant plane's rectangle
+# bleed across and eat several other, physically separate roof wings on a
+# real building, leaving them as thin useless slivers.
 
-    RANSAC has no spatial-contiguity constraint -- a single plane fit
-    routinely claims pixels from more than one physically separate part
-    of a complex roof (both ends of a hip, a chunk beyond a dormer, a
-    separate wing at the same pitch/orientation). An earlier version of
-    this function vectorized the whole mask and kept only the single
-    largest connected piece (`max(polygons, key=area)`), silently
-    discarding every other real, correctly plane-fit chunk -- on one
-    building this alone dropped ~52% of already-claimed roof area before
-    the building-outline clip even ran, and produced exactly the "large
-    obviously-usable roof sections with zero facets" pattern reported
-    against the live map. Each component is now returned as its own
-    facet candidate instead."""
-    labeled, n = ndimage.label(mask_2d)
-    results = []
-    for label_id in range(1, n + 1):
-        component_mask = labeled == label_id
-        pixel_count = int(component_mask.sum())
-        polygons = [
-            shapely_shape(geom)
-            for geom, val in rasterio_shapes(component_mask.astype(np.uint8), mask=component_mask, transform=window_transform)
-            if val == 1
-        ]
-        if not polygons:
-            continue
-        results.append((max(polygons, key=lambda p: p.area), pixel_count))
-    return results
+
+def component_shape(points_xy, component_mask, window_transform):
+    """Reconstruct one connected component's facet boundary geometrically
+    from its actual inlier point locations, instead of tracing the raw
+    per-pixel mask -- but bounded to stay near where pixels were actually
+    claimed.
+
+    Tracing the pixel mask (the original approach) makes the facet boundary
+    exactly as noisy as the 1m DSM grid and whatever RANSAC noise excluded
+    individual pixels near the edges -- it produces blobby, undersized
+    shapes that don't look like the roof plane they represent, and panel
+    packing (which aligns to the facet's own minimum-rotated-rectangle)
+    inherits that same misalignment. A real roof plane's footprint is
+    almost always a simple, mostly-rectangular polygon, so: take the convex
+    hull of the inlier points; if it already fills most (>=70%) of its own
+    minimum-rotated-rectangle, the "gaps" are just edge noise/small
+    dropouts, not a genuine non-rectangular notch, so snap to the clean
+    rectangle. Otherwise (a genuinely L-shaped/hipped point cloud) keep the
+    hull. Either way, clip the result to the traced pixel footprint buffered
+    by SHAPE_FIT_TOLERANCE_M -- the hull/rectangle is fit from point
+    *locations* alone, with no idea how sparse or outlier-driven those
+    points are, so left unbounded it can reach far past the real plane."""
+    if len(points_xy) < 3:
+        return None
+    hull = MultiPoint(points_xy).convex_hull
+    if hull.geom_type != "Polygon" or hull.area <= 0:
+        return None  # collinear/degenerate -- not a usable facet shape
+    min_rect = hull.minimum_rotated_rectangle
+    if min_rect.geom_type == "Polygon" and min_rect.area > 0 and hull.area / min_rect.area >= RECT_FIT_MIN_FILL_FRACTION:
+        candidate = min_rect
+    else:
+        candidate = hull
+
+    traced = [
+        shapely_shape(geom)
+        for geom, val in rasterio_shapes(component_mask.astype(np.uint8), mask=component_mask, transform=window_transform)
+        if val == 1
+    ]
+    if not traced:
+        return None
+    bound = unary_union(traced).buffer(SHAPE_FIT_TOLERANCE_M, join_style="mitre", mitre_limit=5)
+    bounded = candidate.intersection(bound)
+    if bounded.is_empty:
+        return None
+    if bounded.geom_type == "MultiPolygon":
+        bounded = max(bounded.geoms, key=lambda p: p.area)
+    elif bounded.geom_type != "Polygon":
+        return None
+    return bounded
+
+
+def _dedupe_overlaps(facets, min_area):
+    """Facet shapes now come from a fitted rectangle/hull over each plane's
+    points (see component_shape) rather than the raw claimed-pixel mask, so
+    two facets from different planes can end up overlapping where one
+    plane's fitted rectangle bleeds past its actual pixels into a
+    neighbour's territory -- pixel-mask tracing couldn't do that (each
+    pixel could only belong to one plane), but a geometric fit can.
+    Processes largest-first and subtracts already-claimed area from each
+    smaller facet, so no roof area (and no panel) is ever double-counted
+    across two overlapping facets."""
+    ordered = sorted(facets, key=lambda f: -f["area_m2"])
+    claimed = None
+    result = []
+    for f in ordered:
+        geom = f["geometry"] if claimed is None else f["geometry"].difference(claimed)
+        if not geom.is_empty:
+            pieces = list(geom.geoms) if geom.geom_type in ("MultiPolygon", "GeometryCollection") else [geom]
+            for piece in pieces:
+                if piece.geom_type == "Polygon" and piece.area >= min_area:
+                    new_f = dict(f)
+                    new_f["geometry"] = piece
+                    new_f["area_m2"] = piece.area
+                    result.append(new_f)
+        claimed = f["geometry"] if claimed is None else claimed.union(f["geometry"])
+    return result
 
 
 MERGE_SLOPE_DIFF_DEG = 5.0
@@ -280,14 +350,20 @@ def segment_building(dsm_ds, building_geom, building_id, ransac_distance_thresho
 
         facet_mask = np.zeros(window_array.shape, dtype=bool)
         facet_mask[rows[inlier_idx], cols[inlier_idx]] = True
-        components = label_raster_to_polygons(facet_mask, window_transform, dsm_ds.crs)
+        labeled, n_components = ndimage.label(facet_mask)
+        point_labels = labeled[rows[inlier_idx], cols[inlier_idx]]
 
-        for polygon, pixel_count in components:
-            # The DSM is 1m grid -- vectorizing it gives a blocky, staircase
-            # edge that can overhang the true roofline by up to ~0.7m diagonal.
-            # The building outline is imagery-derived (0.1m) and traces the
-            # real edge, so clip back to it: snaps facet boundaries to the
-            # accurate roofline instead of the DSM pixel grid.
+        for label_id in range(1, n_components + 1):
+            component_idx = inlier_idx[point_labels == label_id]
+            component_mask = labeled == label_id
+            polygon = component_shape(points[component_idx, :2], component_mask, window_transform)
+            if polygon is None:
+                continue
+
+            # The fitted rectangle/hull is built from DSM point locations,
+            # which can reach slightly past the true roofline; the building
+            # outline is imagery-derived (0.1m) and traces the real edge,
+            # so clip back to it.
             polygon = polygon.intersection(building_geom)
             if polygon.is_empty:
                 continue
@@ -298,34 +374,15 @@ def segment_building(dsm_ds, building_geom, building_id, ransac_distance_thresho
             if polygon.area < min_facet_area_m2:
                 continue
 
-            # Real roof ridges/valleys/hips are straight lines; the boundary
-            # here still staircases wherever it came from the raw DSM pixels
-            # (i.e. everywhere except where it got clipped to the building
-            # outline above). That jaggedness both under-fills panels right up
-            # against a straight real edge and confuses obstruction detection
-            # (blended/mixed colour right on the staircase reads as anomalous).
-            # Smooth it: morphological closing bridges the single-pixel-deep
-            # notches, then simplify collapses the remaining staircase into a
-            # small number of straight segments approximating the true line.
-            smoothed = polygon.buffer(0.6, join_style="mitre", mitre_limit=5).buffer(
-                -0.6, join_style="mitre", mitre_limit=5
-            ).simplify(0.3, preserve_topology=True)
-            # Re-clip to the building outline -- the closing buffer can push
-            # the smoothed edge slightly outside it again.
-            smoothed = smoothed.intersection(building_geom)
-            if not smoothed.is_empty and smoothed.geom_type == "MultiPolygon":
-                smoothed = max(smoothed.geoms, key=lambda p: p.area)
-            if not smoothed.is_empty and smoothed.geom_type == "Polygon" and smoothed.area >= MIN_FACET_AREA_M2:
-                polygon = smoothed
-
             facets.append({
                 "building_id": building_id,
                 "plane_a": a, "plane_b": b, "plane_c": c,
                 "slope_deg": slope_deg,
                 "aspect_deg": aspect_deg,
                 "area_m2": polygon.area,
-                "point_count": pixel_count,
+                "point_count": len(component_idx),
                 "geometry": polygon,
             })
 
+    facets = _dedupe_overlaps(facets, min_facet_area_m2)
     return merge_similar_facets(facets)
