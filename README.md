@@ -560,6 +560,35 @@ approach used in the published LiDAR-solar-potential literature (GRASS
   gradients to match -- one consistent, sequential, already-vetted
   palette across every "heat"-style visualisation on the page instead of
   two different ones.
+- **Investigated a shallow-hip-roof RANSAC failure and reverted the fix.**
+  Reported directly: panels laid out as one uniform flat grid across an
+  obviously 4-sided pyramid roof. Root cause confirmed from the raw DSM
+  (~1.9m elevation change, individual faces ~10-11 deg): at that shallow a
+  pitch, 0.35m of vertical RANSAC tolerance corresponds to a wide lateral
+  bleed zone across a ridge (~1.8m), letting a plane correctly fit to one
+  face also swallow points from an adjacent, differently-facing one. Tried
+  two fixes -- a flat tighter acceptance threshold, and a slope-proportional
+  one -- both measurably fixed the reported building but caused real,
+  measured regressions on already-working ones (one dropped 978 -> 719
+  panels). Reverted rather than ship a net-negative trade; left as a known
+  limitation, same category as the sawtooth-roof resolution ceiling.
+- **New dashboards.** Left side: a second, minimisable panel below Map Mode
+  showing MW peak and MWh/yr for every building currently in the map
+  viewport, at Maximum/75%/50%/25% roof-coverage ceiling estimates (same
+  math as the per-building heat-map labels), recomputed on every pan/zoom.
+  Queries the `buildings-outline` layer rather than `buildings-fill` since
+  the latter's filter excludes whichever building is currently selected,
+  which would otherwise silently drop it from the total. Right side: the
+  per-building click details (stats, assumptions, tuning sliders) moved
+  from a MapLibre Popup anchored to the click point -- which routinely
+  covered the very roof it was describing, especially on small/dense
+  buildings -- to a persistent panel that never overlaps the map, survives
+  panning, and swaps content instead of spawning overlapping popups when a
+  different building is clicked. Has its own close button; `fitBounds`'s
+  padding on building-click was widened on the right to keep the clicked
+  roof out from behind the new panel. Heat-map labels themselves are now
+  two lines (`N kW Peak` / `N,NNN kWh/yr`) at a larger size instead of a
+  single small `N kWp` line.
 
 ## Local setup
 

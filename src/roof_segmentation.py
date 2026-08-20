@@ -50,6 +50,21 @@ MIN_FACET_AREA_M2 = 3.0  # below this, can't usefully fit even one setback-shrun
 # real roof planes into one" (11/120 flagged at both 0.30 and 0.35) --
 # that failure mode only shows up past ~0.40, where it climbs to 13-14/120.
 RANSAC_DISTANCE_THRESHOLD_M = 0.35
+# On a *shallow*-pitched multi-face roof (a gentle hip/pyramid, ~10-11 deg
+# per face -- confirmed directly from the DSM on a reported building:
+# ~1.9m of true elevation change peak-to-eave), 0.35m of *vertical*
+# tolerance corresponds to a wide *lateral* bleed zone across a ridge
+# (0.35 / tan(11 deg) ~= 1.8m) -- enough for a plane fit to one face to
+# also swallow points from an adjacent, differently-facing one near the
+# hip line, producing one wrong "flat" facet across the whole roof.
+# Tried fixing this with a second, tighter inlier-acceptance threshold
+# (flat, and separately slope-proportional) -- both measurably fixed the
+# reported building, but both also caused real, measured regressions on
+# already-working buildings (e.g. one dropped from 978 to 719 panels).
+# Reverted rather than ship a net-negative trade -- this specific pattern
+# (shallow multi-face roofs, face-to-face slope differences small relative
+# to 1m-DSM noise) is left as a known limitation for now, same category as
+# the sawtooth-roof resolution ceiling documented above.
 RANSAC_ITERATIONS = 300
 RANSAC_MIN_INLIERS = 6  # pixels; below this a "plane" is just noise, not a real facet
 RANSAC_SAMPLE_RADIUS_M = 3.0  # max plan-view spread of a 3-point candidate sample -- see ransac_planes

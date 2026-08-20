@@ -43,44 +43,106 @@
   .popup td { padding: 2px 8px 2px 0; }
   .popup td.val { font-weight: 600; text-align: right; padding-right: 0; }
   .popup .assumptions { font-size: 11px; color: #555; border-top: 1px solid #ddd; padding-top: 6px; max-width: 260px; }
-  .maplibregl-popup-content { padding: 12px 14px; }
   .loading {
     position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
     background: rgba(20,20,20,0.85); color: #fff; padding: 6px 14px; border-radius: 6px;
     font-size: 12px; z-index: 2; transition: opacity 0.3s;
   }
   .dashboard {
-    position: absolute; top: 12px; left: 12px; background: rgba(20,20,20,0.9);
-    color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 13px; z-index: 3; width: 230px;
+    background: rgba(20,20,20,0.9);
+    color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 13px; width: 230px;
   }
-  .dashboard-title { font-weight: 600; margin-bottom: 8px; }
+  .dashboard-stack {
+    position: absolute; top: 12px; left: 12px; z-index: 3;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .dashboard-title {
+    font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+  }
   .dashboard .slider-row label { color: #ccc; }
   .dashboard .slider-row { margin-top: 10px; }
+  .collapse-btn {
+    background: none; border: none; color: #ccc; cursor: pointer; font-size: 13px; line-height: 1;
+    padding: 2px 4px; flex: none;
+  }
+  .collapse-btn:hover { color: #fff; }
+  .dashboard-body { overflow: hidden; }
+  .dashboard-inview.collapsed .dashboard-body { display: none; }
+  .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
+  .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .inview-table th { text-align: right; font-weight: 600; color: #ccc; font-size: 11px; padding: 0 0 4px 8px; }
+  .inview-table th:first-child { text-align: left; padding-left: 0; }
+  .inview-table td { padding: 3px 0 3px 8px; text-align: right; border-top: 1px solid rgba(255,255,255,0.12); }
+  .inview-table td:first-child { text-align: left; color: #ddd; }
+  .inview-table td.hi { font-weight: 700; color: #fff; }
   .kwp-label {
     font-size: 11px; font-weight: 700; color: #fff; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
     background: rgba(0,0,0,0.45); padding: 1px 5px; border-radius: 4px; pointer-events: none;
   }
+  .side-panel {
+    position: absolute; top: 12px; right: 12px; bottom: 12px; width: 320px;
+    background: rgba(20,20,20,0.95); color: #fff; border-radius: 8px; z-index: 5;
+    overflow-y: auto; padding: 16px 18px; display: none; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  .side-panel.visible { display: block; }
+  .side-panel-close {
+    position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.1); border: none;
+    color: #fff; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1;
+  }
+  .side-panel-close:hover { background: rgba(255,255,255,0.2); }
+  .side-panel .popup h4 { color: #fff; padding-right: 30px; }
+  .side-panel .popup .assumptions { color: #bbb; border-top-color: rgba(255,255,255,0.15); max-width: none; }
+  .side-panel .popup td { color: #ddd; }
+  .side-panel .popup td.val { color: #fff; }
+  .side-panel .tuning { border-top-color: rgba(255,255,255,0.15); }
+  .side-panel .tuning summary { color: #ddd; }
+  .side-panel .tuning-summary { background: rgba(255,255,255,0.08); color: #eee; }
+  .side-panel .tuning-reset { background: rgba(255,255,255,0.08); color: #fff; border-color: #666; }
+  .side-panel .slider-row label { color: #ccc; }
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="dashboard">
-  <div class="dashboard-title">Map mode</div>
-  <div class="toggle-row">
-    <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
-    <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
-  </div>
-  <div class="slider-row" id="coverage-control" style="display:none;">
-    <label style="display:flex; justify-content:space-between;">
-      <span>Heat Map estimate: roof coverage</span><span id="val-coverage">80%</span>
-    </label>
-    <input type="range" id="slider-coverage" min="20" max="95" step="5" value="80" style="width:100%;">
-    <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
-      Labels show kWp if this % of each roof's usable area were panelled,
-      ignoring the actual fitted layout -- a quick "ceiling" estimate, not
-      the real Panel Layout numbers.
+<div class="dashboard-stack">
+  <div class="dashboard">
+    <div class="dashboard-title">Map mode</div>
+    <div class="toggle-row">
+      <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
+      <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
+    </div>
+    <div class="slider-row" id="coverage-control" style="display:none;">
+      <label style="display:flex; justify-content:space-between;">
+        <span>Heat Map estimate: roof coverage</span><span id="val-coverage">80%</span>
+      </label>
+      <input type="range" id="slider-coverage" min="20" max="95" step="5" value="80" style="width:100%;">
+      <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
+        Labels show kWp/kWh-yr if this % of each roof's usable area were
+        panelled, ignoring the actual fitted layout -- a quick "ceiling"
+        estimate, not the real Panel Layout numbers.
+      </div>
     </div>
   </div>
+  <div class="dashboard dashboard-inview" id="dashboard-inview">
+    <div class="dashboard-title">
+      <span>Buildings in view (<span id="inview-count">0</span>)</span>
+      <button class="collapse-btn" id="inview-collapse-btn" title="Collapse">&#9650;</button>
+    </div>
+    <div class="dashboard-body">
+      <div class="inview-subtitle">
+        Ceiling estimates: (resolved roof area) &times; coverage % &times;
+        panel density -- same method as the map labels, not the real
+        Panel Layout numbers. Updates as you pan/zoom.
+      </div>
+      <table class="inview-table">
+        <thead><tr><th>Coverage</th><th>MW peak</th><th>MWh/yr</th></tr></thead>
+        <tbody id="inview-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="side-panel" id="side-panel">
+  <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
+  <div id="side-panel-content"></div>
 </div>
 <div class="legend">
   <div>Estimated solar potential (kWp)</div>
@@ -176,8 +238,8 @@ function syncToggleButtons() {
   if (dashLayout) dashLayout.classList.toggle("active", mode === "layout");
   const coverageControl = document.getElementById("coverage-control");
   if (coverageControl) coverageControl.style.display = mode === "heatmap" ? "block" : "none";
-  document.querySelectorAll(".maplibregl-popup #toggle-heatmap").forEach(b => b.classList.toggle("active", mode === "heatmap"));
-  document.querySelectorAll(".maplibregl-popup #toggle-layout").forEach(b => b.classList.toggle("active", mode === "layout"));
+  document.querySelectorAll("#side-panel #toggle-heatmap").forEach(b => b.classList.toggle("active", mode === "heatmap"));
+  document.querySelectorAll("#side-panel #toggle-layout").forEach(b => b.classList.toggle("active", mode === "layout"));
 }
 
 function applyToggles() {
@@ -209,6 +271,7 @@ function clearSelection() {
   selectedBuildingId = -1;
   clearLiveTuning();
   applyToggles();
+  document.getElementById("side-panel").classList.remove("visible");
 }
 
 // --- Live parameter tuning (talks to src/live_server.py's /api/refit) ---
@@ -353,6 +416,44 @@ map.on("load", async () => {
   }
   recomputeHeatmapEstimates();
 
+  // Left-dashboard "buildings in view" summary: same ceiling-estimate math
+  // as the map labels (resolved area x coverage % x panel density), summed
+  // across whatever's currently on screen, at four fixed coverage levels
+  // rather than just the slider's current one -- queries against
+  // buildings-outline (never filtered) rather than buildings-fill (which
+  // excludes the selected building once one is clicked) so a selection
+  // doesn't silently drop a building out of the total.
+  const INVIEW_SCENARIOS = [100, 75, 50, 25];
+
+  function recomputeInViewSummary() {
+    const rendered = map.queryRenderedFeatures({ layers: ["buildings-outline"] });
+    const seen = new Set();
+    const totals = {};
+    INVIEW_SCENARIOS.forEach(pct => totals[pct] = { kwp: 0, mwh: 0 });
+    let count = 0;
+    rendered.forEach(f => {
+      const id = f.properties.building_id;
+      if (seen.has(id)) return;
+      seen.add(id);
+      count++;
+      const area = f.properties.facet_area_m2 || 0;
+      const poa = f.properties.avg_poa_kwh_m2 || 0;
+      INVIEW_SCENARIOS.forEach(pct => {
+        const kwp = area * (pct / 100) * panelDensityKw;
+        const kwhYear = kwp * poa * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100);
+        totals[pct].kwp += kwp;
+        totals[pct].mwh += kwhYear / 1000;
+      });
+    });
+    document.getElementById("inview-count").textContent = count;
+    document.getElementById("inview-tbody").innerHTML = INVIEW_SCENARIOS.map((pct, i) => `
+      <tr>
+        <td>${pct === 100 ? "Maximum" : pct + "% coverage"}</td>
+        <td class="${i === 0 ? "hi" : ""}">${(totals[pct].kwp / 1000).toFixed(2)}</td>
+        <td class="${i === 0 ? "hi" : ""}">${totals[pct].mwh.toFixed(1)}</td>
+      </tr>`).join("");
+  }
+
   map.addLayer({
     id: "kwp-labels",
     type: "symbol",
@@ -360,12 +461,23 @@ map.on("load", async () => {
     minzoom: 16,
     filter: [">", ["get", "heatmap_kwp_estimate"], 0.5],
     layout: {
-      "text-field": ["concat", ["to-string", ["get", "heatmap_kwp_estimate"]], " kWp"],
-      "text-size": 11,
+      // Two lines, bigger/bolder than before (was a single "N kWp" line at
+      // size 11, easy to miss against the heatmap) -- kW peak prominent on
+      // its own line, kWh/yr as a smaller second line underneath.
+      "text-field": [
+        "format",
+        ["to-string", ["get", "heatmap_kwp_estimate"]], { "font-scale": 1.5 },
+        " kW Peak\n", { "font-scale": 1.0 },
+        ["number-format", ["get", "heatmap_kwh_year_estimate"], { "min-fraction-digits": 0, "max-fraction-digits": 0 }],
+        { "font-scale": 1.15 },
+        " kWh/yr", { "font-scale": 0.9 }
+      ],
+      "text-size": 13,
+      "text-line-height": 1.3,
       "text-allow-overlap": false,
       visibility: mode === "heatmap" ? "visible" : "none"
     },
-    paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.2 }
+    paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.4 }
   });
 
   document.getElementById("slider-coverage").addEventListener("input", (e) => {
@@ -373,6 +485,13 @@ map.on("load", async () => {
     document.getElementById("val-coverage").textContent = coveragePct + "%";
     recomputeHeatmapEstimates();
   });
+  document.getElementById("inview-collapse-btn").addEventListener("click", (e) => {
+    const panel = document.getElementById("dashboard-inview");
+    const collapsed = panel.classList.toggle("collapsed");
+    e.target.innerHTML = collapsed ? "&#9660;" : "&#9650;";
+    e.target.title = collapsed ? "Expand" : "Collapse";
+  });
+  map.on("moveend", recomputeInViewSummary);
   document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
   document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
 
@@ -466,18 +585,16 @@ map.on("load", async () => {
     coords.forEach(c => bounds.extend(c));
   });
   map.fitBounds(bounds, { padding: 30 });
+  recomputeInViewSummary();
 
-  map.on("click", "buildings-fill", (e) => {
-    const p = e.features[0].properties;
-    selectBuilding(p.building_id);
-
-    const bounds = new maplibregl.LngLatBounds();
-    const geom = e.features[0].geometry;
-    const coords = geom.type === "Polygon" ? geom.coordinates[0] : geom.coordinates[0][0];
-    coords.forEach(c => bounds.extend(c));
-    map.fitBounds(bounds, { padding: 80, maxZoom: 20, duration: 600 });
-
-    const html = `
+  // Building details used to be a MapLibre Popup anchored to the click
+  // point -- on a small/dense roof it routinely covered the very roof it
+  // was describing. Now a persistent right-side panel instead: same
+  // content, but it never overlaps the map, survives panning, and clicking
+  // a different building just replaces its content rather than spawning a
+  // second overlapping popup.
+  function buildingPanelHtml(p) {
+    return `
       <div class="popup">
         <h4>Building #${p.building_id}</h4>
         <div class="toggle-row">
@@ -521,23 +638,39 @@ map.on("load", async () => {
           <button class="tuning-reset" id="tuning-reset">Reset to defaults</button>
         </details>
       </div>`;
-    const popup = new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
-    const popupEl = popup.getElement();
-    popupEl.querySelector("#toggle-heatmap").addEventListener("click", () => setMode("heatmap"));
-    popupEl.querySelector("#toggle-layout").addEventListener("click", () => setMode("layout"));
+  }
+
+  function showBuildingPanel(p) {
+    const panel = document.getElementById("side-panel");
+    document.getElementById("side-panel-content").innerHTML = buildingPanelHtml(p);
+    panel.classList.add("visible");
+    panel.querySelector("#toggle-heatmap").addEventListener("click", () => setMode("heatmap"));
+    panel.querySelector("#toggle-layout").addEventListener("click", () => setMode("layout"));
     syncToggleButtons();
-    wireTuningControls(popupEl, p.building_id);
+    wireTuningControls(panel, p.building_id);
+  }
+
+  map.on("click", "buildings-fill", (e) => {
+    const p = e.features[0].properties;
+    selectBuilding(p.building_id);
+
+    const bounds = new maplibregl.LngLatBounds();
+    const geom = e.features[0].geometry;
+    const coords = geom.type === "Polygon" ? geom.coordinates[0] : geom.coordinates[0][0];
+    coords.forEach(c => bounds.extend(c));
+    // Right padding accounts for the side panel (320px + margins) so the
+    // clicked building lands in the visible map area, not behind it.
+    map.fitBounds(bounds, { padding: { top: 80, bottom: 80, left: 80, right: 360 }, maxZoom: 20, duration: 600 });
+
+    showBuildingPanel(p);
   });
 
+  document.getElementById("side-panel-close").addEventListener("click", clearSelection);
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
 
   map.on("click", (e) => {
     const hits = map.queryRenderedFeatures(e.point, { layers: ["buildings-fill"] });
-    if (hits.length === 0) {
-      clearSelection();
-      const popups = document.getElementsByClassName("maplibregl-popup");
-      Array.from(popups).forEach(p => p.remove());
-    }
+    if (hits.length === 0) clearSelection();
   });
 
   map.on("mouseenter", "buildings-fill", () => map.getCanvas().style.cursor = "pointer");
