@@ -16,7 +16,11 @@ LINZ_IMAGERY_LAYER = 114745  # "Queenstown 0.1m Urban Aerial Photos (2021)" -- s
 
 PANEL_WIDTH_M = 1.0
 PANEL_HEIGHT_M = 2.0
-PANEL_EDGE_SETBACK_M = 0.3  # clearance from roof edges/ridges, fire code convention
+PANEL_EDGE_SETBACK_M = 0.1  # clearance from roof edges/ridges. Was 0.3 (a common fire-code
+# convention), but that uniform buffer was strangling narrow facets -- e.g. a real ~1.4m-wide
+# roof strip loses 0.6m total (0.3 each side), leaving under 1m usable, below the panel's own
+# 1m minimum dimension in any orientation, so it fits zero panels despite having real usable
+# area. Lowered per explicit request after that was found on a real building (#5371143).
 MAX_ROOF_SLOPE_DEG = 45
 
 # --- PV system assumptions ---

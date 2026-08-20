@@ -22,6 +22,7 @@ import rasterio
 from rasterio.features import shapes as rasterio_shapes
 from rasterio.mask import mask as rasterio_mask
 from scipy import ndimage
+from scipy.spatial import cKDTree
 from shapely.geometry import MultiPoint, shape as shapely_shape
 from shapely.ops import unary_union
 
@@ -51,6 +52,7 @@ MIN_FACET_AREA_M2 = 3.0  # below this, can't usefully fit even one setback-shrun
 RANSAC_DISTANCE_THRESHOLD_M = 0.35
 RANSAC_ITERATIONS = 300
 RANSAC_MIN_INLIERS = 6  # pixels; below this a "plane" is just noise, not a real facet
+RANSAC_SAMPLE_RADIUS_M = 3.0  # max plan-view spread of a 3-point candidate sample -- see ransac_planes
 # Silently capped large/complex buildings: a big multi-wing institutional
 # roof genuinely needs 15-20+ distinct planes, and this hard cap stopped
 # RANSAC after 6, leaving ~40% of one real building's roof area (including
@@ -102,8 +104,26 @@ def ransac_planes(points, rng, distance_threshold=RANSAC_DISTANCE_THRESHOLD_M,
         if len(pts) < 3:
             break
 
+        # 3-point samples are drawn from a small spatial neighbourhood (see
+        # RANSAC_SAMPLE_RADIUS_M below), not from anywhere in the whole
+        # point cloud -- found directly on a real hip/pyramid roof (~4m of
+        # true elevation change, individual faces around 20-30 deg): fully
+        # random sampling let a 3-point sample straddle multiple true faces
+        # and construct a spurious near-flat "compromise" plane that, on a
+        # roughly symmetric multi-face roof, can rack up MORE inliers within
+        # tolerance than any single true face does (many points sit near the
+        # roof's average elevation even though they're on four different
+        # slopes) -- exactly the "thinks it's all one flat plane" failure
+        # reported against a real building. A spatially-local sample can't
+        # span two faces of a normal-sized roof, so it can't construct that
+        # cross-face compromise plane in the first place.
+        tree = cKDTree(pts[:, :2])
         for _ in range(iterations):
-            sample_idx = rng.choice(len(pts), size=3, replace=False)
+            anchor = rng.integers(len(pts))
+            neighbor_idx = tree.query_ball_point(pts[anchor, :2], RANSAC_SAMPLE_RADIUS_M)
+            if len(neighbor_idx) < 3:
+                continue
+            sample_idx = rng.choice(neighbor_idx, size=3, replace=False)
             sample = pts[sample_idx]
             # Skip near-degenerate (collinear) samples -- cross product of
             # two edge vectors near zero means no well-defined plane normal.

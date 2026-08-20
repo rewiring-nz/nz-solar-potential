@@ -500,6 +500,66 @@ approach used in the published LiDAR-solar-potential literature (GRASS
   kWp (+50.7%), heatmap high-confidence coverage 71% -> 77%, facet count
   4,960 -> 3,009 (fewer, larger, more coherent facets). On the two
   specifically-reported buildings: 23 -> 65 panels and 4 -> 18 panels.
+- **Fixed RANSAC constructing spurious "compromise" flat planes across
+  genuinely multi-faced roofs** (hip/pyramid roofs especially), and
+  **narrow facets fitting zero panels despite real usable area.** Two
+  more reports, both root-caused by direct inspection of the raw DSM
+  grid rather than guesswork:
+  1. On a real hip-roofed building, the raw DSM showed a clear peak
+     (~360.3m) sloping down to eaves (~356m) on all sides -- a genuine
+     20-30 deg pitch on each face. But `ransac_planes` found a *~0.3-0.4
+     deg near-flat* plane covering 139-174m² (several components merging
+     to the same near-identical shallow slope/aspect), because with 3-
+     point samples drawn from *anywhere* in the point cloud, a sample
+     spanning multiple true faces can define a spurious near-horizontal
+     "compromise" plane that, on a roughly symmetric multi-face roof,
+     racks up more within-tolerance inliers than any single true face
+     (many points across four different slopes sit near the roof's
+     *average* elevation even though none of them are actually flat).
+     Panels were then packed across that phantom flat plane, visibly
+     spilling past the real ridge line onto neighbouring, differently-
+     pitched sections. Fixed by constraining every 3-point RANSAC sample
+     to a small spatial neighbourhood (`RANSAC_SAMPLE_RADIUS_M = 3.0`,
+     via a per-iteration `scipy.spatial.cKDTree` query) instead of
+     sampling from the whole point cloud -- a local sample can't span two
+     faces of a normal-sized roof, so it can't construct the cross-face
+     compromise plane in the first place. Verified on the reported
+     building: the phantom flat facet is gone, replaced by a facet
+     correctly bounded to the real hip section's ridge lines (30 -> 50
+     panels, and the panels now stay inside the section instead of
+     crossing it). Spot-checked against a same-metric false-positive risk
+     (a facet with a much shallower slope than its building's overall
+     elevation range would suggest) across a 150-building sample and two
+     of the most suspicious hits by hand: both were genuine large flat
+     commercial roofs, correctly identified -- not new merge bugs.
+  2. `PANEL_EDGE_SETBACK_M` (0.3m, a fire-code convention) was a uniform
+     buffer applied to every facet regardless of size. On a real ~1.4m-
+     wide roof strip that leaves under 1m of usable width after 0.3m off
+     each side -- below the panel's own 1m minimum dimension in *any*
+     orientation, so it fits zero panels despite ~10m² of real facet
+     area. Lowered to 0.1m per explicit request (also verified this isn't
+     just a units/scale bug -- `panel_fitting.py`'s surface-unrolling
+     already correctly foreshortens panel dimensions by `1/cos(slope)`
+     for tilted facets, confirmed by reading that code directly).
+  Verified pilot-wide (both changes together): 74,310 -> 85,792 panels
+  (+15.5%), 32,696 -> 37,748 kWp (+15.5%), heatmap high-confidence
+  coverage 77% -> 78%.
+- **Unified the heat map colour scale.** The per-pixel Heat Map raster
+  used matplotlib's stock `RdYlBu_r` -- a *diverging* colormap (implies a
+  meaningful zero/centre point) applied to what's actually sequential
+  low-to-high data, with a washed-out pale-yellow midpoint, and visually
+  inconsistent with the buildings-fill choropleth's own already-clean
+  6-stop palette elsewhere on the same page. Also found the `.legend-bar`
+  CSS gradient was stale -- still showing `#2c3e8c`, the low-end colour
+  from *before* an earlier fix in this same session that changed the
+  actual map paint to `#1565c0` to resolve a real collision with the
+  obstruction-purple swatch; the legend had silently drifted out of sync
+  with the map. Replaced `RdYlBu_r` with a custom `LinearSegmentedColormap`
+  built from the buildings-fill's exact 6 hex stops (`#1565c0, #3aa8c1,
+  #6fd07c, #f4d35e, #f2994a, #e63946`), and updated both CSS legend
+  gradients to match -- one consistent, sequential, already-vetted
+  palette across every "heat"-style visualisation on the page instead of
+  two different ones.
 
 ## Local setup
 

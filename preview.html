@@ -13,15 +13,15 @@
     position: absolute; bottom: 24px; left: 12px; background: rgba(20,20,20,0.85);
     color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1;
   }
-  .legend-bar { width: 180px; height: 10px; margin: 6px 0;
-    background: linear-gradient(to right, #2c3e8c, #3aa8c1, #6fd07c, #f4d35e, #f2994a, #e63946); }
+  .legend-bar { width: 180px; height: 10px; margin: 6px 0; border-radius: 5px;
+    background: linear-gradient(to right, #1565c0, #3aa8c1, #6fd07c, #f4d35e, #f2994a, #e63946); }
   .legend-labels { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.85; }
   .legend-facet {
     position: absolute; bottom: 24px; right: 12px; background: rgba(20,20,20,0.85);
     color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1; max-width: 220px;
   }
-  .legend-facet-bar { width: 180px; height: 10px; margin: 6px 0;
-    background: linear-gradient(to right, #2166ac, #67a9cf, #ffffbf, #fdae61, #d73027); }
+  .legend-facet-bar { width: 180px; height: 10px; margin: 6px 0; border-radius: 5px;
+    background: linear-gradient(to right, #1565c0, #3aa8c1, #6fd07c, #f4d35e, #f2994a, #e63946); }
   .legend-obstruction { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; opacity: 0.85; }
   .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: #a855f7; flex: none; }
   .toggle-row { display: flex; gap: 8px; margin: 8px 0; }
@@ -291,7 +291,7 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "6";
+const DATA_VERSION = "7";
 let coveragePct = 80;
 
 map.on("load", async () => {

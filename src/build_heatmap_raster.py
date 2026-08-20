@@ -29,8 +29,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import rasterio
-from matplotlib import cm
-from matplotlib.colors import Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 from PIL import Image
 from rasterio.features import rasterize
 from rasterio.warp import transform as warp_transform
@@ -43,6 +42,18 @@ from src.solar_model import SolarModel
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 VMIN, VMAX = 700, 1650  # kWh/m2/yr -- same fixed scale as preview.html's legend and demo_figure.py
+
+# Same 6-stop palette as the buildings-fill choropleth in preview.html (and
+# its matching .legend-bar/.legend-facet-bar CSS gradients -- all four must
+# stay in sync if this changes) -- was matplotlib's stock RdYlBu_r here,
+# a *diverging* colormap (implies a meaningful zero/center point) applied
+# to what's actually sequential low-to-high data, with a washed-out pale
+# midpoint. This is a custom sequential ramp instead, reusing colours
+# already chosen (and already fixed once for a real collision with the
+# obstruction-purple swatch) rather than inventing a second, inconsistent
+# "heat" scale for the same app.
+HEAT_COLORS = ["#1565c0", "#3aa8c1", "#6fd07c", "#f4d35e", "#f2994a", "#e63946"]
+HEAT_CMAP = LinearSegmentedColormap.from_list("solar_heat", HEAT_COLORS, N=256)
 FALLBACK_ALPHA = 140  # out of 255 -- visibly less solid than the confident 255, not a hatch/texture but reads clearly at a glance
 SLOPE_BIN_DEG, ASPECT_BIN_DEG, MAX_SLOPE_DEG = 5, 10, 45
 
@@ -111,8 +122,7 @@ def main():
     combined_poa = np.where(has_facet, facet_poa, fallback_poa)
 
     norm = Normalize(vmin=VMIN, vmax=VMAX)
-    cmap = cm.RdYlBu_r
-    rgba = (cmap(norm(np.nan_to_num(combined_poa, nan=VMIN))) * 255).astype(np.uint8)
+    rgba = (HEAT_CMAP(norm(np.nan_to_num(combined_poa, nan=VMIN))) * 255).astype(np.uint8)
     rgba[..., 3] = 0
     rgba[has_facet, 3] = 255
     rgba[has_fallback, 3] = FALLBACK_ALPHA
