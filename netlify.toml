@@ -1,0 +1,8 @@
+[build]
+  publish = "."
+
+# Static hosting only -- the live parameter-tuning sliders call /api/refit,
+# which only exists when running src/live_server.py locally. On Netlify
+# they'll show "Refit failed" instead, by design; everything else (Heat
+# Map, Panel Layout, click-to-inspect) works from the committed data/*
+# files alone.

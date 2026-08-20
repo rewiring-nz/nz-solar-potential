@@ -1,5 +1,12 @@
 .venv/
-data/
+# All of data/ is gitignored (raw LiDAR/imagery source, 3GB+) except the
+# small set of pre-built outputs the static frontend actually fetches --
+# committed so a static host (no Python backend) has something to serve.
+data/*
+!data/solar_potential.geojson
+!data/panel_layouts.geojson
+!data/heatmap_raster.png
+!data/heatmap_raster.json
 tiles/
 .env
 *.laz
