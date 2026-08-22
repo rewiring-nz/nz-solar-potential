@@ -22,7 +22,7 @@
     background: linear-gradient(to right, #00000a, #91009c, #e64616, #feb400, #fffff6); }
   .legend-obstruction { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; opacity: 0.85; }
   .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: #a855f7; flex: none; }
-  .toggle-row { display: flex; gap: 8px; margin: 8px 0; }
+  .toggle-row { display: flex; gap: 8px; margin: 8px 0 20px; }
   .toggle-btn {
     flex: 1; padding: 6px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; cursor: pointer;
     border: 1px solid #555; background: #6f6f6f; color: #000; transition: all 0.15s;
@@ -88,7 +88,7 @@
   }
   .rsp-statbox .rsp-power { font-size: 24px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
   .rsp-statbox .rsp-energy { font-size: 12.5px; font-weight: 700; margin-top: 3px; opacity: 0.85; white-space: nowrap; color: #fff; }
-  .bldg-thumb { position: relative; width: 100%; aspect-ratio: 1 / 1; overflow: hidden;
+  .bldg-thumb { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden;
     border-radius: 8px; margin: 8px 0 10px; background: #222; }
   .bldg-thumb img { position: absolute; width: 256px; height: 256px; max-width: none; }
   .est-section { border-top: 1px solid rgba(255,255,255,0.15); margin-top: 12px; padding-top: 10px; }
@@ -118,7 +118,7 @@
     background: rgba(0,0,0,0.45); padding: 1px 5px; border-radius: 4px; pointer-events: none;
   }
   .side-panel {
-    position: absolute; top: 12px; right: 12px; bottom: 12px; width: 320px;
+    position: absolute; top: 12px; right: 12px; bottom: 12px; width: 384px;
     background: rgba(20,20,20,0.95); color: #fff; border-radius: 8px; z-index: 5;
     overflow-y: auto; padding: 16px 18px; display: none; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   }
@@ -570,6 +570,7 @@ map.on("load", async () => {
     }
     recomputeHeatmapEstimates();
     recomputeInViewSummary();
+    if (mode !== "layout" && selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
     const bp = document.getElementById("bldg-power");
     if (bp && bp.dataset.area) {
       const est = buildingEstimate({ facet_area_m2: +bp.dataset.area, avg_poa_kwh_m2: +bp.dataset.poa }, pct);
@@ -654,13 +655,19 @@ map.on("load", async () => {
     const s = document.getElementById("vslider");
     if (isLayout) {
       document.getElementById("vslider-label").innerHTML = "Panel<br>density";
-      s.min = 0; s.value = panelDensityPct;
+      s.min = 0; s.step = 1; s.value = panelDensityPct;
       document.getElementById("vslider-value").textContent = panelDensityPct + "%";
     } else {
       document.getElementById("vslider-label").innerHTML = "Roof<br>coverage";
-      s.min = 5; s.value = coveragePct;
+      s.min = 5; s.step = 5; s.value = coveragePct;
       document.getElementById("vslider-value").textContent = coveragePct + "%";
     }
+    const eh = document.getElementById("est-heatmap"), ep = document.getElementById("est-panels"),
+          ld = document.getElementById("layout-details");
+    if (eh) eh.style.display = isLayout ? "none" : "";
+    if (ep) ep.style.display = isLayout ? "" : "none";
+    if (ld) ld.style.display = isLayout ? "" : "none";
+    if (selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
     recomputeInViewSummary();
   }
   window.__refreshModeUI = syncModeUI;
@@ -816,7 +823,7 @@ map.on("load", async () => {
         <h4 style="font-size:17px;">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
         <div class="bldg-thumb" id="bldg-thumb"></div>
-        <div class="est-section" style="border-top:none; margin-top:0; padding-top:0;">
+        <div class="est-section" id="est-heatmap" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">
             <div class="rsp-assumption">
@@ -830,7 +837,7 @@ map.on("load", async () => {
             </div>
           </div>
         </div>
-        <div class="est-section">
+        <div class="est-section" id="est-panels" style="border-top:none;">
           <div class="est-title"><span>Panel placement estimate</span>
             <span class="legend-panels"><span></span><span></span><span></span></span></div>
           <div class="rsp-row">
@@ -840,8 +847,9 @@ map.on("load", async () => {
               <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
             </div>
           </div>
-          <div id="season-curves" style="margin-top:10px;"></div>
         </div>
+        <div id="season-curves" style="margin-top:10px;"></div>
+        <div id="layout-details">
         <div style="border-top:1px solid rgba(255,255,255,0.15); margin-top:12px; padding-top:10px;
                     font-size:12px; font-weight:700; color:#ccc;">Proposed panel layout for this roof</div>
         <table>
@@ -850,6 +858,7 @@ map.on("load", async () => {
           <tr><td>kWh / year</td><td class="val" id="fitted-kwh">&ndash;</td></tr>
           <tr><td>Obstructions avoided</td><td class="val">${p.obstruction_count}</td></tr>
         </table>
+        </div>
         <details class="tuning">
           <summary>How this works &amp; assumptions</summary>
           <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
@@ -899,7 +908,9 @@ map.on("load", async () => {
               (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n];
     };
     let cLng = lngLat.lng, cLat = lngLat.lat, z = 20;
-    const size = container.clientWidth || 296;
+    const sizeW = container.clientWidth || 348;
+    const sizeH = container.clientHeight || Math.round(sizeW * 3 / 4);
+    const size = Math.min(sizeW, sizeH);  // building must fit the SHORT side
     if (geom) {
       const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flat();
       const pts = rings.flat();
@@ -915,14 +926,14 @@ map.on("load", async () => {
     }
     const n = Math.pow(2, z);
     const [xf, yf] = merc(cLng, cLat, z);
-    const cx = size / 2, cy = size / 2;
+    const cx = sizeW / 2, cy = sizeH / 2;
     const xt = Math.floor(xf), yt = Math.floor(yf);
     const baseLeft = cx - (xf - xt) * 256, baseTop = cy - (yf - yt) * 256;
-    const r = Math.ceil(size / 256) + 1;
+    const r = Math.ceil(Math.max(sizeW, sizeH) / 256) + 1;
     for (let dx = -r; dx <= r; dx++) {
       for (let dy = -r; dy <= r; dy++) {
         const left = baseLeft + dx * 256, top = baseTop + dy * 256;
-        if (left > size || top > size || left + 256 < 0 || top + 256 < 0) continue;
+        if (left > sizeW || top > sizeH || left + 256 < 0 || top + 256 < 0) continue;
         const img = document.createElement("img");
         img.src = `https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/${z}/${xt + dx}/${yt + dy}.webp?api=c01m0keqqjx0anrxjrt7grvtqxh`;
         img.style.left = left + "px";
@@ -941,7 +952,7 @@ map.on("load", async () => {
       const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flat();
       const polys = rings.map(ring => `<polygon points="${ring.map(toPx).join(" ")}" fill="none" stroke="#ffe600" stroke-width="2.5" stroke-dasharray="6 4"/>`).join("");
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("width", size); svg.setAttribute("height", size);
+      svg.setAttribute("width", sizeW); svg.setAttribute("height", sizeH);
       svg.style.cssText = "position:absolute; left:0; top:0; pointer-events:none;";
       svg.innerHTML = polys;
       container.appendChild(svg);
@@ -1002,19 +1013,40 @@ map.on("load", async () => {
       if (q.kind === "facet") facets.push(f);
       else if (q.kind === "panel" && (q.fill_rank === undefined || q.fill_rank <= panelDensityPct)) panels.push(f);
     });
-    if (!panels.length || !facets.length) { box.innerHTML = ""; return; }
+    const isLayout = mode === "layout";
+    if (!facets.length || (isLayout && !panels.length)) { box.innerHTML = ""; return; }
 
-    const kwpEach = assumptions.panel_rated_power_w / 1000;
-    const binKwp = {};
-    panels.forEach(pf => {
-      const c = pf.geometry.coordinates[0][0];
-      const fx = facets.find(f => pointInRing(c, f.geometry.coordinates[0])) || facets[0];
+    const binOf = fx => {
       const ss = seasonCurves.slope_step, as = seasonCurves.aspect_step;
       const sb = Math.min(Math.round(fx.properties.slope_deg / ss) * ss, seasonCurves.max_slope);
       const ab = ((Math.round(fx.properties.aspect_deg / as) * as) % 360 + 360) % 360;
-      const key = sb + "_" + ab;
-      binKwp[key] = (binKwp[key] || 0) + kwpEach;
-    });
+      return sb + "_" + ab;
+    };
+    const binKwp = {};
+    if (isLayout) {
+      const kwpEach = assumptions.panel_rated_power_w / 1000;
+      panels.forEach(pf => {
+        const c = pf.geometry.coordinates[0][0];
+        const fx = facets.find(f => pointInRing(c, f.geometry.coordinates[0])) || facets[0];
+        binKwp[binOf(fx)] = (binKwp[binOf(fx)] || 0) + kwpEach;
+      });
+    } else {
+      // Heat-map mode: same assumption as the yellow box -- coveragePct of
+      // each roof face's area as panels, so the curve and the box agree.
+      const ringAreaM2 = ring => {
+        const lat0 = ring[0][1] * Math.PI / 180;
+        const sx = Math.cos(lat0) * 111320.0, sy = 111132.0;
+        let a = 0;
+        for (let i = 0; i < ring.length - 1; i++) {
+          a += ring[i][0] * sx * ring[i + 1][1] * sy - ring[i + 1][0] * sx * ring[i][1] * sy;
+        }
+        return Math.abs(a) / 2;
+      };
+      facets.forEach(fx => {
+        const kwp = ringAreaM2(fx.geometry.coordinates[0]) * (coveragePct / 100) * panelDensityKw;
+        binKwp[binOf(fx)] = (binKwp[binOf(fx)] || 0) + kwp;
+      });
+    }
 
     const S = seasonCurves.seasons.length;
     const avg = Array.from({ length: S }, () => new Array(24).fill(0));
@@ -1050,8 +1082,10 @@ map.on("load", async () => {
       paths += `<path d="${line(avg[s])}" fill="none" stroke="${col}" stroke-width="2"/>`;
       const fmt = v => v >= 20 ? Math.round(v) : v.toFixed(1);
       const pk = apexOf(peak[s]), av = apexOf(avg[s]);
-      if (pk.v > 0) apexLabels.push({ x: x(pk.h), y: y(pk.v) - 4, text: fmt(pk.v), col, op: 0.75 });
-      if (av.v > 0) apexLabels.push({ x: x(av.h), y: y(av.v) - 4, text: fmt(av.v) + " kW", col, op: 1 });
+      if (name !== "summer") {  // summer's values live on the reference lines
+        if (pk.v > 0) apexLabels.push({ x: x(pk.h), y: y(pk.v) - 4, text: fmt(pk.v), col, op: 0.75 });
+        if (av.v > 0) apexLabels.push({ x: x(av.h), y: y(av.v) - 4, text: fmt(av.v) + " kW", col, op: 1 });
+      }
     });
     // De-overlap: topmost first, push later labels down just enough that
     // values stay readable where seasons run close together.
@@ -1065,19 +1099,30 @@ map.on("load", async () => {
       l.x = Math.min(Math.max(l.x, L + 12), W - R - 16);
       paths += `<text x="${l.x}" y="${l.y}" fill="${l.col}" opacity="${l.op}" font-size="8" font-weight="700" text-anchor="middle" paint-order="stroke" stroke="#000" stroke-width="2">${l.text}</text>`;
     }
-    const gridY = [0.25, 0.5, 0.75].map(f => `<line x1="${L}" y1="${y(maxY * f)}" x2="${W - R}" y2="${y(maxY * f)}" stroke="#333" stroke-width="0.5"/>`).join("");
+    // Light vertical guides at 6am / noon / 6pm, plus horizontal reference
+    // lines at the summer peaks (dotted-day and typical-day) labelled in kW.
+    const gridY = [6, 12, 18].map(h => `<line x1="${x(h)}" y1="${T}" x2="${x(h)}" y2="${H - B}" stroke="rgba(255,255,255,0.22)" stroke-width="1"/>`).join("");
+    const si = seasonCurves.seasons.indexOf("summer");
+    let summerLines = "";
+    if (si >= 0) {
+      const fmtv = v => (v >= 20 ? Math.round(v) : v.toFixed(1)) + " kW";
+      [Math.max(...peak[si]), Math.max(...avg[si])].forEach(v => {
+        if (v <= 0) return;
+        summerLines += `<line x1="${L}" y1="${y(v)}" x2="${W - R}" y2="${y(v)}" stroke="rgba(255,255,255,0.35)" stroke-width="1"/>` +
+          `<text x="${L + 2}" y="${y(v) - 2.5}" fill="#fff" font-size="8">${fmtv(v)}</text>`;
+      });
+    }
     const hourTicks = [6, 9, 12, 15, 18, 21].map(h =>
       `<text x="${x(h)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${h}</text>`).join("");
-    const yLabels = `<text x="${L - 4}" y="${y(maxY) + 3}" fill="#888" font-size="8" text-anchor="end">${maxY.toFixed(1)}</text>` +
-      `<text x="${L - 4}" y="${y(0) + 3}" fill="#888" font-size="8" text-anchor="end">0</text>` +
+    const yLabels = `<text x="${L - 4}" y="${y(0) + 3}" fill="#888" font-size="8" text-anchor="end">0</text>` +
       `<text x="9" y="${(T + H - B) / 2}" fill="#888" font-size="8" text-anchor="middle" transform="rotate(-90 9 ${(T + H - B) / 2})">kW</text>`;
     const legend = seasonCurves.seasons.map(n =>
       `<span style="color:${SEASON_COLORS[n]}; font-weight:700;">${n}</span>`).join(" · ");
     box.innerHTML =
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
-      `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${paths}${hourTicks}${yLabels}</svg></div>` +
+      `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${paths}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
-      `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">solid = typical day &nbsp;·&nbsp; dotted = sunny day &nbsp;·&nbsp; at current panel density</div>`;
+      `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">solid = typical day &nbsp;·&nbsp; dotted = sunny day &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}</div>`;
   }
 
   function showBuildingPanel(p, lngLat, geom) {
@@ -1094,6 +1139,7 @@ map.on("load", async () => {
     const tuning = panel.querySelector("#tuning-reset");
     if (tuning && !refitAvailable) tuning.closest("details").style.display = "none";
     wireTuningControls(panel, p.building_id);
+    if (window.__refreshModeUI) window.__refreshModeUI();
   }
 
   map.on("click", "buildings-fill", (e) => {
