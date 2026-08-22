@@ -289,9 +289,11 @@ function syncToggleButtons() {
 }
 
 function applyToggles() {
-  if (map.getLayer("heatmap-raster")) {
-    map.setLayoutProperty("heatmap-raster", "visibility", mode === "heatmap" ? "visible" : "none");
-  }
+  (window.__heatmapLayers || ["heatmap-raster"]).forEach(id => {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, "visibility", mode === "heatmap" ? "visible" : "none");
+    }
+  });
   if (map.getLayer("kwp-labels")) {
     map.setLayoutProperty("kwp-labels", "visibility", mode === "heatmap" ? "visible" : "none");
   }
@@ -571,19 +573,33 @@ map.on("load", async () => {
   document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
 
   // Per-DSM-pixel generation-potential heatmap, before any panel layout --
-  // one image over the whole pilot bbox (see src/build_heatmap_raster.py),
-  // same diverging blue/south -> red/north scale as the facet colours.
-  const heatmapMeta = await (await fetch(`data/heatmap_raster.json?v=${DATA_VERSION}`)).json();
-  map.addSource("heatmap-raster-src", { type: "image", url: `data/heatmap_raster.png?v=${DATA_VERSION}`, coordinates: heatmapMeta.coordinates });
-  map.addLayer({
-    id: "heatmap-raster",
-    type: "raster",
-    source: "heatmap-raster-src",
-    layout: { visibility: mode === "heatmap" ? "visible" : "none" },
-    paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }  // semi-transparent per-pixel
-    // flux layer -- at 0.4m source resolution the linear upsampling reads as the intended soft
-    // gradient, not the old 1m blur
+  // one image per built area (see src/build_heatmap_raster.py), same
+  // diverging blue/south -> red/north scale as the facet colours.
+  // Region builds publish data/heatmaps/manifest.json with one raster per
+  // region; the single-image pilot form stays as the fallback so the site
+  // works identically before the first full-region deploy.
+  let heatmapImages;
+  try {
+    const manifest = await (await fetch(`data/heatmaps/manifest.json?v=${DATA_VERSION}`)).json();
+    heatmapImages = manifest.map(m => ({ id: `heatmap-raster-${m.name}`, url: `${m.png}?v=${DATA_VERSION}`, coordinates: m.coordinates }));
+  } catch (e) {
+    const heatmapMeta = await (await fetch(`data/heatmap_raster.json?v=${DATA_VERSION}`)).json();
+    heatmapImages = [{ id: "heatmap-raster", url: `data/heatmap_raster.png?v=${DATA_VERSION}`, coordinates: heatmapMeta.coordinates }];
+  }
+  const HEATMAP_LAYERS = heatmapImages.map(m => m.id);
+  heatmapImages.forEach(m => {
+    map.addSource(`${m.id}-src`, { type: "image", url: m.url, coordinates: m.coordinates });
+    map.addLayer({
+      id: m.id,
+      type: "raster",
+      source: `${m.id}-src`,
+      layout: { visibility: mode === "heatmap" ? "visible" : "none" },
+      paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }  // semi-transparent per-pixel
+      // flux layer -- at 0.4m source resolution the linear upsampling reads as the intended soft
+      // gradient, not the old 1m blur
+    });
   });
+  window.__heatmapLayers = HEATMAP_LAYERS;  // applyToggles (defined earlier, top-level) reads this
 
   const layoutResp = await fetch(`data/panel_layouts.geojson?v=${DATA_VERSION}`);
   const layoutData = await layoutResp.json();
