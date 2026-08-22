@@ -254,9 +254,9 @@ const LAYOUT_KIND_FILTER = {
 // and the density slider just filters the layers -- no server round-trip, so
 // it works identically on the deployed static site (the old implementation
 // called the local-only /api/refit and silently did nothing when deployed).
-// Default deliberately NOT 100%: a typical practical install, with full
-// coverage still one slider-drag away.
-let panelDensityPct = 60;
+// Default deliberately NOT 100%: just the best-defined solar areas (sunniest
+// first, via fill_rank), with full coverage still one slider-drag away.
+let panelDensityPct = 40;
 
 function panelLayerFilter(id, excludeBuildingId) {
   const parts = [LAYOUT_KIND_FILTER[id]];
@@ -564,6 +564,9 @@ map.on("load", async () => {
     e.target.title = collapsed ? "Expand" : "Collapse";
   });
   map.on("moveend", recomputeInViewSummary);
+  // moveend fires before the new view finishes rendering, so a fast pan/zoom
+  // counts 0 buildings; idle fires once rendering settles and corrects it.
+  map.on("idle", recomputeInViewSummary);
   document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
   document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
 
@@ -708,19 +711,22 @@ map.on("load", async () => {
         <div class="slider-row" style="margin-top: 6px;">
           <label><span><strong>Panel density</strong></span><span id="val-density">${panelDensityPct}%</span></label>
           <input type="range" id="slider-density" min="0" max="100" step="5" value="${panelDensityPct}">
-          <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
+        </div>
+        <details class="tuning">
+          <summary>How this works &amp; assumptions</summary>
+          <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
             Sunniest roof faces fill first, row by row -- never over an obstruction,
-            edge, or roof join. 100% = every feasible panel; the default shows a
-            typical practical install.
+            edge, or roof join. 100% = every feasible panel; the default shows the
+            best-defined solar areas only.
           </div>
-        </div>
-        <div class="assumptions">
-          <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels
-          (${assumptions.panel_efficiency_pct}% efficient, ${assumptions.panel_area_m2}m² each),
-          ${assumptions.inverter_efficiency_pct}% inverter efficiency,
-          ${assumptions.system_derate_pct}% combined system losses (soiling/wiring/temperature/mismatch).
-          ${assumptions.notes}
-        </div>
+          <div class="assumptions">
+            <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels
+            (${assumptions.panel_efficiency_pct}% efficient, ${assumptions.panel_area_m2}m² each),
+            ${assumptions.inverter_efficiency_pct}% inverter efficiency,
+            ${assumptions.system_derate_pct}% combined system losses (soiling/wiring/temperature/mismatch).
+            ${assumptions.notes}
+          </div>
+        </details>
         <details class="tuning">
           <summary>Tune panel-fitting parameters</summary>
           <div class="slider-row">
