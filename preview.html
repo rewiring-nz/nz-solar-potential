@@ -202,6 +202,16 @@
         </div>
       </div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
+      <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
+          <span>Building outlines</span>
+          <button class="toggle-btn" id="toggle-outlines" style="flex:none; width:auto; padding:2px 10px; font-size:11px;">Off</button>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
+          <span>Avoided obstructions</span>
+          <button class="toggle-btn" id="toggle-obstructions" style="flex:none; width:auto; padding:2px 10px; font-size:11px;">Off</button>
+        </div>
+      </div>
     </div>
   </div>
   <button class="dashboard" id="bug-report-btn" style="width:auto; cursor:pointer; border:1px solid #666;
@@ -251,10 +261,7 @@
   </div>
   <div class="legend-facet-bar"></div>
   <div class="legend-labels"><span>south / low</span><span>north / high</span></div>
-  <div class="legend-obstruction" style="justify-content: space-between; width: 100%;">
-    <span style="display:flex; align-items:center; gap:6px;"><span class="legend-swatch"></span>avoided obstructions</span>
-    <button class="toggle-btn" id="toggle-obstructions" style="flex:none; width:auto; padding:2px 10px; font-size:11px;">Off</button>
-  </div>
+  <div class="legend-obstruction"><span class="legend-swatch"></span><span>avoided obstructions (toggle on left)</span></div>
 </div>
 <div class="loading" id="loading">Loading panel layouts…</div>
 
@@ -309,7 +316,8 @@ let layoutReady = false;
 // that blue was the heatmap, still on underneath. 'none' | 'heatmap' | 'layout'.
 let mode = "heatmap";
 const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
-let obstructionsOn = false;  // default hidden (Josh) -- toggle in the bottom-right legend
+let obstructionsOn = false;  // default hidden (Josh)
+let outlinesOn = false;      // building outlines, default hidden (Josh)
 // Base filter per layout layer -- always shows every building's facets/
 // panels/obstructions at once. Previously selectBuilding() replaced this
 // with a single building_id filter on click, which meant Panel Layout mode
@@ -382,6 +390,9 @@ function applyToggles() {
     if (map.getLayer("live-obstructions-fill")) {
       map.setLayoutProperty("live-obstructions-fill", "visibility", obstructionsOn ? "visible" : "none");
     }
+  }
+  if (map.getLayer("buildings-outline")) {
+    map.setLayoutProperty("buildings-outline", "visibility", outlinesOn ? "visible" : "none");
   }
   // Always exclude the selected building from the overview fill once
   // something is selected, regardless of mode -- otherwise its own
@@ -537,6 +548,7 @@ map.on("load", async () => {
 
   map.addLayer({
     id: "buildings-outline",
+    layout: { visibility: "none" },  // off by default (Josh) -- toggle on the left dashboard
     type: "line",
     source: "buildings",
     paint: { "line-color": "#ffffff", "line-width": 0.5, "line-opacity": 0.4 }
@@ -578,7 +590,7 @@ map.on("load", async () => {
   }
 
   function recomputeInViewSummary() {
-    const rendered = map.queryRenderedFeatures({ layers: ["buildings-outline"] });
+    const rendered = map.queryRenderedFeatures({ layers: ["buildings-fill"] });
     const seen = new Set();
     let count = 0, kwp = 0, kwhYear = 0;
     rendered.forEach(f => {
@@ -745,8 +757,10 @@ map.on("load", async () => {
     const isLayout = mode === "layout";
     document.getElementById("inview-assumption").style.display = isLayout ? "none" : "";
     document.getElementById("inview-mode-title").innerHTML = isLayout
-      ? '<span>Panel placement estimate</span><span class="legend-panels"><span></span><span></span><span></span></span>'
+      ? '<span style="color:#fff; font-size:15px; font-weight:800;">Panel placement estimate</span><span class="legend-panels"><span></span><span></span><span></span></span>' +
+        '<div style="flex-basis:100%; font-size:10.5px; color:#ff6b60; font-weight:600; margin-top:2px;">(draft &mdash; will make mistakes)</div>'
       : '<span>Heat map estimate</span><span class="legend-grad"></span>';
+    document.getElementById("inview-mode-title").style.flexWrap = "wrap";
     const s = document.getElementById("vslider");
     if (isLayout) {
       document.getElementById("vslider-label").innerHTML = "Panel<br>density";
@@ -1366,6 +1380,13 @@ map.on("load", async () => {
     document.getElementById("side-panel").classList.add("expanded");
   });
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
+  document.getElementById("toggle-outlines").addEventListener("click", () => {
+    outlinesOn = !outlinesOn;
+    const btn = document.getElementById("toggle-outlines");
+    btn.textContent = outlinesOn ? "On" : "Off";
+    btn.classList.toggle("active", outlinesOn);
+    applyToggles();
+  });
   document.getElementById("toggle-obstructions").addEventListener("click", () => {
     obstructionsOn = !obstructionsOn;
     const btn = document.getElementById("toggle-obstructions");
