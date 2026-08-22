@@ -753,6 +753,18 @@ map.on("load", async () => {
       setCoverage(v);
     }
   });
+  // Curves read the selected building's facets/panels from loaded vector
+  // tiles; after a search fly-to (or any fast pan) the destination tiles
+  // land AFTER the panel opens. Whenever the map goes idle with a building
+  // selected but no chart drawn, try again -- self-heals regardless of how
+  // many render cycles the tiles took.
+  map.on("idle", () => {
+    if (selectedPanelBuildingId !== -1 && document.getElementById("season-curves")
+        && !document.querySelector("#season-curves svg")) {
+      renderSeasonCurves(selectedPanelBuildingId);
+    }
+  });
+
   // Advanced tuning only works against the local live server; probe once.
   fetch("/api/refit").then(r => { refitAvailable = r.ok || r.status === 400; }).catch(() => {});
   syncModeUI();
@@ -810,6 +822,19 @@ map.on("load", async () => {
   // Heat Map layer (a smooth per-pixel raster, no flat-fill clash
   // possible); Panel Layout shows just a dotted outline of the facet
   // boundary underneath the actual panels.
+  // Invisible probe bound to the layout source: MapLibre only fetches tiles
+  // for sources with a visible layer, and in Heat Map mode all four layout
+  // layers are hidden -- without this, the seasonal curves (which read the
+  // clicked building's facets/panels from loaded tiles) had no data in
+  // heat-map mode.
+  map.addLayer({
+    id: "layout-probe",
+    minzoom: 13,
+    "source-layer": "layout",
+    type: "fill",
+    source: "layout",
+    paint: { "fill-opacity": 0 }
+  });
   map.addLayer({
     id: "facets-outline",
     minzoom: 15,
@@ -1143,6 +1168,23 @@ map.on("load", async () => {
       for (let s = 0; s < S; s++) for (let h = 0; h < 24; h++) {
         avg[s][h] += cur.avg[s][h] * kwp;
         peak[s][h] += cur.peak[s][h] * kwp;
+      }
+    }
+
+    // Terrain sun-visibility mask (per building, baked from the DEM):
+    // "tshade" = 4 seasons x 24 hourly digits, 9 = sun always clears the
+    // terrain that hour, 0 = never. Blocked hours keep a diffuse-skylight
+    // floor rather than dropping to zero. This is what makes an Arrowtown
+    // valley roof's winter curve cut off ~2h earlier than downtown's.
+    const DIFFUSE_FLOOR = 0.18;
+    const tshade = selectedBuildingProps && selectedBuildingProps.tshade;
+    if (tshade && tshade.length === S * 24) {
+      for (let s2 = 0; s2 < S; s2++) for (let h = 0; h < 24; h++) {
+        const frac = (+tshade[s2 * 24 + h]) / 9;
+        avg[s2][h] *= Math.max(frac, DIFFUSE_FLOOR);
+        // the "sunny day" line is one real day: terrain either blocks that
+        // hour or it doesn't -- threshold for a sharp, honest cutoff
+        peak[s2][h] *= (frac >= 0.5 ? 1 : DIFFUSE_FLOOR);
       }
     }
 
