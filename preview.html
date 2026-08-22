@@ -677,9 +677,12 @@ map.on("load", async () => {
     document.getElementById("vslider-value").textContent = v + "%";
     if (mode === "layout") {
       panelDensityPct = v;
-      LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
-      if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
-      recomputeInViewSummary();
+      clearTimeout(window.__densityTimer);
+      window.__densityTimer = setTimeout(() => {
+        LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
+        if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+        recomputeInViewSummary();
+      }, 120);  // collapse filter churn while the slider is dragged
     } else {
       setCoverage(v);
     }
@@ -742,6 +745,7 @@ map.on("load", async () => {
   // boundary underneath the actual panels.
   map.addLayer({
     id: "facets-outline",
+    minzoom: 15,
     type: "line",
     source: "layout",
     filter: LAYOUT_KIND_FILTER["facets-outline"],
@@ -749,6 +753,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "obstructions-fill",
+    minzoom: 15,
     type: "fill",
     source: "layout",
     filter: LAYOUT_KIND_FILTER["obstructions-fill"],
@@ -756,6 +761,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "panels-fill",
+    minzoom: 15,
     type: "fill",
     source: "layout",
     filter: panelLayerFilter("panels-fill"),
@@ -763,6 +769,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "panels-outline",
+    minzoom: 15,
     type: "line",
     source: "layout",
     filter: panelLayerFilter("panels-outline"),
