@@ -907,7 +907,7 @@ map.on("load", async () => {
     type: "fill",
     source: "layout",
     filter: panelLayerFilter("panels-fill"),
-    paint: { "fill-color": "#000000", "fill-opacity": 0.45 }
+    paint: { "fill-color": "#081e3f", "fill-opacity": 0.72 }  // semi-transparent very dark blue (Josh)
   });
   map.addLayer({
     id: "panels-outline",
@@ -916,7 +916,7 @@ map.on("load", async () => {
     type: "line",
     source: "layout",
     filter: panelLayerFilter("panels-outline"),
-    paint: { "line-color": "#7fd4ff", "line-width": 1 }
+    paint: { "line-color": "#9fc8e8", "line-width": 0.6, "line-opacity": 0.5 }  // faint edge; real gaps come from shrunk geometry at tile time
   });
 
   // Live-tuning preview: a separate source/layers that only ever hold the
@@ -937,7 +937,7 @@ map.on("load", async () => {
   map.addLayer({
     id: "live-panels-fill", type: "fill", source: "live-layout",
     filter: ["==", ["get", "kind"], "panel"],
-    paint: { "fill-color": "#000000", "fill-opacity": 0.45 }
+    paint: { "fill-color": "#081e3f", "fill-opacity": 0.72 }
   });
   map.addLayer({
     id: "live-panels-outline", type: "line", source: "live-layout",
