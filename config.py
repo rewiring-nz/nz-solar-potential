@@ -33,6 +33,10 @@ REGIONS = {
     # arrowtown_millbrook plus the whole Lake Hayes east side fell between
     # the original bboxes -- Speargrass Flat properties reported missing.
     "speargrass_hayes":    [168.7780, -45.0100, 168.8480, -44.9550],
+    # Old Arthurs Point (Josh, 23 Aug): lower Arthurs Point Rd / Shotover
+    # bridge side fell east of the original arthurs_point bbox. 318 outlines,
+    # full 2021 LiDAR coverage confirmed.
+    "arthurs_point_east":  [168.7114, -45.0050, 168.7420, -44.9700],
 }
 LINZ_LIDAR_TILE_INDEX_LAYER = 105905  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
 # bbox to the CL2_*.copc.laz point-cloud tile names, which are then fetched from OpenTopography's
