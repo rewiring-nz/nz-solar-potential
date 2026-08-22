@@ -792,9 +792,20 @@ map.on("load", async () => {
   // along invisibly; a PNG of the map downloads on open for optional use.
   const bugCtx = () => {
     const c = map.getCenter();
+    const b = map.getBounds();
+    // Selected building can be stale from an earlier click elsewhere -- say
+    // so explicitly, and always include the full visible rectangle so the
+    // report pins down what the person was actually LOOKING at.
+    let sel = "no building selected";
+    if (selectedBuildingProps) {
+      sel = `building ${selectedBuildingProps.building_id} (${selectedBuildingProps.address || "no address"})`;
+      const sx = selectedBuildingProps._sx, sy = selectedBuildingProps._sy;
+      if (sx !== undefined && !b.contains([sx, sy])) sel += " [SELECTED BUILDING IS OFF-SCREEN -- report likely refers to the visible view, not this building]";
+    }
     return [
-      selectedBuildingProps ? `building ${selectedBuildingProps.building_id} (${selectedBuildingProps.address || "no address"})` : "no building selected",
+      sel,
       `view ${c.lat.toFixed(5)},${c.lng.toFixed(5)} z${map.getZoom().toFixed(1)}`,
+      `bounds ${b.getSouth().toFixed(5)},${b.getWest().toFixed(5)} to ${b.getNorth().toFixed(5)},${b.getEast().toFixed(5)}`,
       `mode ${mode}`, `density ${panelDensityPct}%`, `coverage ${coveragePct}%`,
       `v${DATA_VERSION}`, navigator.userAgent.split(") ")[0] + ")"
     ].join(" | ");
@@ -1314,6 +1325,7 @@ map.on("load", async () => {
     if (lngLat) buildThumbnail(panel.querySelector("#bldg-thumb"), lngLat, geom);
     selectedPanelBuildingId = p.building_id;
     selectedBuildingProps = p;
+    if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
     updateFittedStats(p.building_id);
     // Advanced per-roof tuning needs the local live server's /api/refit --
     // hide it entirely on the static deployed site rather than showing
