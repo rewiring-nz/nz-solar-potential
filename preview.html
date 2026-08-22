@@ -24,10 +24,14 @@
   .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: #a855f7; flex: none; }
   .toggle-row { display: flex; gap: 8px; margin: 8px 0; }
   .toggle-btn {
-    flex: 1; padding: 6px 10px; font-size: 12px; border-radius: 6px; cursor: pointer;
-    border: 1px solid #999; background: #f0f0f0; color: #333; transition: all 0.15s;
+    flex: 1; padding: 6px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; cursor: pointer;
+    border: 1px solid #777; background: #9e9e9e; color: #000; transition: all 0.15s;
   }
   .toggle-btn.active { background: #0a1f44; color: #fff; border-color: #0a1f44; }
+  #toggle-heatmap-dash.active {
+    background: linear-gradient(90deg, #ffd500, #ff8c00); color: #000; border-color: #ffb300;
+  }
+  #toggle-layout-dash.active { background: #0a1f44; color: #fff; border-color: #0a1f44; }
   .tuning { border-top: 1px solid #ddd; margin-top: 8px; padding-top: 8px; }
   .tuning summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #333; }
   .slider-row { margin: 8px 0 0; }
@@ -51,7 +55,7 @@
     color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 13px; width: 230px;
   }
   .dashboard-stack {
-    position: absolute; top: 12px; left: 84px; z-index: 3;  /* clears the vertical slider column */
+    position: absolute; top: 12px; left: 12px; z-index: 3;
     display: flex; flex-direction: column; gap: 10px;
   }
   .dashboard-title {
@@ -66,7 +70,10 @@
   .collapse-btn:hover { color: #fff; }
   .dashboard-body { overflow: hidden; }
   .dashboard-inview.collapsed .dashboard-body { display: none; }
-  .rsp-heading { font-size: 19px; font-weight: 800; letter-spacing: 0.2px; }
+  .rsp-heading { font-size: 19px; font-weight: 800; letter-spacing: 0.2px;
+    background: linear-gradient(90deg, #ffe600, #ff8c00);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent; }
   .rsp-subtitle { font-size: 12px; color: #bbb; margin: 2px 0 12px; }
   .rsp-assumption { font-size: 13px; color: #eee; line-height: 1.45; flex: 1 1 100%; }
   .rsp-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: flex-end; }
@@ -75,12 +82,12 @@
     font-size: 13px; font-weight: 700; padding: 2px 4px; cursor: pointer;
   }
   .rsp-statbox {
-    background: #ffd100; color: #14212e; border-radius: 10px;
-    padding: 10px 14px; text-align: right; flex: 0 0 auto; min-width: 118px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    background: rgba(0,0,0,0.55); color: #ffe600; border-radius: 10px;
+    border: 2px solid #ffe600; padding: 10px 14px; text-align: center;
+    flex: 1 1 100%; width: 100%; box-sizing: border-box;
   }
   .rsp-statbox .rsp-power { font-size: 24px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
-  .rsp-statbox .rsp-energy { font-size: 12.5px; font-weight: 700; margin-top: 3px; opacity: 0.85; white-space: nowrap; }
+  .rsp-statbox .rsp-energy { font-size: 12.5px; font-weight: 700; margin-top: 3px; opacity: 0.85; white-space: nowrap; color: #fff; }
   .bldg-thumb { position: relative; width: 100%; aspect-ratio: 1 / 1; overflow: hidden;
     border-radius: 8px; margin: 8px 0 10px; background: #222; }
   .bldg-thumb img { position: absolute; width: 256px; height: 256px; max-width: none; }
@@ -91,13 +98,13 @@
   .legend-panels { display: flex; gap: 2px; }
   .legend-panels span { width: 11px; height: 18px; background: rgba(38,109,182,0.75);
     border: 1.5px solid #0e2c4e; border-radius: 2px; display: inline-block; }
-  .vslider-wrap { position: absolute; left: 12px; top: 12px;
-    z-index: 5; background: rgba(20,20,20,0.92); border-radius: 10px; padding: 10px 8px;
-    display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; width: 60px; }
+  .vslider-wrap { align-self: stretch;
+    background: rgba(20,20,20,0.92); border-radius: 8px; padding: 10px 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; }
   .vslider-wrap .vlabel { font-size: 10px; font-weight: 700; color: #ccc; text-align: center; line-height: 1.25; }
   .vslider-wrap .vvalue { font-size: 13px; font-weight: 800; }
   #vslider { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical;
-    width: 22px; height: 32vh; min-height: 170px; max-height: 340px; }
+    width: 22px; height: 22vh; min-height: 130px; max-height: 280px; }
 
   .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
   .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -152,19 +159,16 @@
 <body>
 <div id="map"></div>
 <div class="dashboard-stack">
-  <div class="dashboard">
-    <div class="dashboard-title">Map mode</div>
-    <div class="toggle-row">
-      <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
-      <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
-    </div>
-  </div>
   <div class="dashboard dashboard-inview" id="dashboard-inview">
     <div class="dashboard-title">
       <span class="rsp-heading">Rooftop Solar Potential</span>
       <button class="collapse-btn" id="inview-collapse-btn" title="Collapse">&#9650;</button>
     </div>
     <div class="dashboard-body">
+      <div class="toggle-row">
+        <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
+        <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
+      </div>
       <div class="rsp-subtitle">For buildings in map view (<span id="inview-count">0</span>)</div>
       <div class="rsp-row">
         <div class="rsp-assumption" id="inview-assumption">
@@ -182,11 +186,11 @@
       </div>
     </div>
   </div>
-</div>
-<div class="vslider-wrap" id="vslider-wrap">
+  <div class="vslider-wrap" id="vslider-wrap">
   <div class="vlabel" id="vslider-label">Roof<br>coverage</div>
   <div class="vvalue" id="vslider-value">25%</div>
   <input type="range" id="vslider" min="5" max="100" step="5" value="25">
+</div>
 </div>
 <div class="side-panel" id="side-panel">
   <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
@@ -546,7 +550,20 @@ map.on("load", async () => {
   // including the on-map kWp labels.
   function setCoverage(pct) {
     coveragePct = pct;
-    document.querySelectorAll(".coverage-select").forEach(sel => { sel.value = String(pct); });
+    document.querySelectorAll(".coverage-select").forEach(sel => {
+      // The slider can land on values the dropdown doesn't list (e.g. 55%);
+      // keep a single synthetic option so the dropdown always shows the
+      // real current value instead of going blank.
+      let custom = sel.querySelector("option.custom-opt");
+      const listed = [...sel.options].some(o => !o.classList.contains("custom-opt") && +o.value === pct);
+      if (listed) {
+        if (custom) custom.remove();
+      } else {
+        if (!custom) { custom = document.createElement("option"); custom.className = "custom-opt"; sel.appendChild(custom); }
+        custom.value = String(pct); custom.textContent = pct + "%";
+      }
+      sel.value = String(pct);
+    });
     if (mode !== "layout") {
       const s = document.getElementById("vslider");
       if (s) { s.value = pct; document.getElementById("vslider-value").textContent = pct + "%"; }
