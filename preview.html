@@ -188,8 +188,8 @@
   </div>
   <div class="vslider-wrap" id="vslider-wrap">
   <div class="vlabel" id="vslider-label">Roof<br>coverage</div>
-  <div class="vvalue" id="vslider-value">25%</div>
-  <input type="range" id="vslider" min="5" max="100" step="5" value="25">
+  <div class="vvalue" id="vslider-value">100%</div>
+  <input type="range" id="vslider" min="5" max="100" step="5" value="100">
 </div>
 </div>
 <div class="side-panel" id="side-panel">
@@ -281,9 +281,10 @@ const LAYOUT_KIND_FILTER = {
 // and the density slider just filters the layers -- no server round-trip, so
 // it works identically on the deployed static site (the old implementation
 // called the local-only /api/refit and silently did nothing when deployed).
-// Default deliberately NOT 100%: just the best-defined solar areas (sunniest
-// first, via fill_rank), with full coverage still one slider-drag away.
-let panelDensityPct = 40;
+// 80 = the fill_rank band boundary: ranks 1-80 are the main arrays an
+// installer would quote; 81-100 are straggler blocks (only banded when a
+// big main array exists). Default shows arrays only; 100% shows everything.
+let panelDensityPct = 80;
 let refitAvailable = false;      // live server's /api/refit present? (never on the static site)
 let selectedPanelBuildingId = -1;
 
@@ -433,7 +434,7 @@ function wireTuningControls(popupEl, buildingId) {
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
 const DATA_VERSION = "19";
-let coveragePct = 25;
+let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 
 function fmtPower(kwp) {
@@ -863,8 +864,8 @@ map.on("load", async () => {
           <summary>How this works &amp; assumptions</summary>
           <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
             Sunniest roof faces fill first, row by row -- never over an obstruction,
-            edge, or roof join. 100% = every feasible panel; the default shows the
-            best-defined solar areas only.
+            edge, or roof join. The default (80%) shows the main arrays an installer
+            would quote; sliding to 100% adds every remaining feasible panel.
           </div>
           <div class="assumptions">
             <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels

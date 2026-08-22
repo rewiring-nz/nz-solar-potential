@@ -299,6 +299,11 @@ def _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolut
     return panels
 
 
+MAIN_ARRAY_MIN_PANELS = 10  # straggler banding only applies when the building's largest
+# array is at least this big: a "big commercial main array" exists. Below it (residential),
+# a couple of 2-panel blocks IS the install -- never banded (direct user feedback).
+STRAGGLER_RANK_FLOOR = 80  # stragglers rank 81..100: the 80% default density shows exactly
+# the arrays an installer would quote; sliding past 80 progressively adds the extras.
 MINOR_ARRAY_MIN_PANELS = 4  # a straggler group smaller than this is dropped (see below) --
 # roughly the smallest string a real installer bothers mounting and wiring separately
 MINOR_ARRAY_MIN_FRACTION = 0.25  # ...unless it's still a meaningful share of the building's
@@ -319,19 +324,22 @@ def drop_minor_arrays(facet_panels):
     group (< MINOR_ARRAY_MIN_FRACTION of it) -- the relative test is what
     protects a genuinely small roof whose "largest array" is itself 2-3
     panels: there, 2 panels IS the install, not a straggler."""
+    # Softened (user feedback, bug-doc cycle 22 Aug): stragglers are no longer
+    # DELETED -- they're tagged, and assign_fill_ranks banishes them to fill
+    # ranks above STRAGGLER_RANK_FLOOR. The 80% default density therefore
+    # shows main arrays only, while 100% still shows every feasible panel.
+    # Banding only happens when a big main array exists (>= MAIN_ARRAY_MIN_PANELS):
+    # on a small residential roof, scattered 2-panel blocks ARE the install.
     if not facet_panels:
         return facet_panels
     largest = max(len(panels) for panels in facet_panels)
-    if largest == 0:
-        return facet_panels
-    kept = []
-    for panels in facet_panels:
-        n = len(panels)
-        if 0 < n < MINOR_ARRAY_MIN_PANELS and n < MINOR_ARRAY_MIN_FRACTION * largest:
-            kept.append([])
-        else:
-            kept.append(panels)
-    return kept
+    if largest >= MAIN_ARRAY_MIN_PANELS:
+        for panels in facet_panels:
+            n = len(panels)
+            if 0 < n < max(MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION * largest):
+                for panel in panels:
+                    panel["straggler"] = True
+    return facet_panels
 
 
 def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
@@ -342,10 +350,17 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     the density slider work on the static deployed site with no server."""
     if not panels:
         return panels
-    ranked = sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
-    n = len(ranked)
-    for i, p in enumerate(ranked):
-        p["fill_rank"] = int(np.ceil((i + 1) / n * 100))
+    main = sorted((p for p in panels if not p.get("straggler")),
+                  key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    extras = sorted((p for p in panels if p.get("straggler")),
+                    key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    # Main arrays occupy ranks 1..STRAGGLER_RANK_FLOOR, stragglers the band
+    # above -- guaranteeing the default density cut excludes exactly the
+    # stragglers regardless of their share of the building's panels.
+    for i, p in enumerate(main):
+        p["fill_rank"] = int(np.ceil((i + 1) / len(main) * STRAGGLER_RANK_FLOOR))
+    for j, p in enumerate(extras):
+        p["fill_rank"] = STRAGGLER_RANK_FLOOR + int(np.ceil((j + 1) / len(extras) * (100 - STRAGGLER_RANK_FLOOR)))
     return panels
 
 
