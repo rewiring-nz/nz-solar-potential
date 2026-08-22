@@ -91,7 +91,10 @@ def fetch_raster_chunked(bbox_wgs84, api_key, layer_id, name, out_dir, format_ke
     srcs = [rasterio.open(p) for p in part_paths]
     mosaic, transform = merge(srcs)
     profile = srcs[0].profile
-    profile.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform)
+    # BIGTIFF: a merged 0.1m imagery mosaic for a large region exceeds classic
+    # TIFF's 4GB ceiling (arrowtown_millbrook was the first to hit it).
+    profile.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform,
+                   BIGTIFF="IF_SAFER")
     with rasterio.open(mosaic_path, "w", **profile) as dst:
         dst.write(mosaic)
     for s in srcs:

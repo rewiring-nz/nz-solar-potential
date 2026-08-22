@@ -38,9 +38,12 @@ class PointCloudSource:
     in memory after that."""
 
     def __init__(self, directory=POINTCLOUD_DIR):
-        self.tile_paths = sorted(Path(directory).glob("*.copc.laz"))
+        # *.laz matches both the pilot's original *.copc.laz tiles and the
+        # plain .laz tiles fetch_pointcloud_regions.py pulls from
+        # OpenTopography's bulk store -- laspy reads either identically.
+        self.tile_paths = sorted(Path(directory).glob("*.laz"))
         if not self.tile_paths:
-            raise FileNotFoundError(f"No .copc.laz tiles found in {directory}")
+            raise FileNotFoundError(f"No .laz tiles found in {directory}")
         self._bounds = {}
         for path in self.tile_paths:
             with laspy.open(path) as f:
