@@ -208,6 +208,27 @@
     font-size:12px; font-weight:700; color:#ffb3b3; padding:8px 12px; text-align:left;">
     &#128030; Report an issue
   </button>
+  <div class="dashboard" id="bug-report-panel" style="display:none; width:262px;">
+    <div style="font-weight:700; font-size:12px; margin-bottom:6px;">What's wrong here?</div>
+    <textarea id="bug-note" rows="3" style="width:100%; box-sizing:border-box; background:#2e3440; color:#fff;
+      border:1px solid #666; border-radius:6px; font-size:12.5px; padding:6px;"
+      placeholder="e.g. panels on the shady side of this roof"></textarea>
+    <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+      <button id="bug-send" style="background:#266db6; color:#fff; border:none; border-radius:6px;
+        font-size:12px; font-weight:700; padding:6px 14px; cursor:pointer;">Send</button>
+      <button id="bug-close" style="background:none; color:#aaa; border:none; font-size:12px; cursor:pointer;">Close</button>
+      <span id="bug-status" style="font-size:11px; color:#7dff5e;"></span>
+    </div>
+    <div style="font-size:10px; color:#888; margin-top:5px;">Includes the building & view you're looking at automatically.</div>
+  </div>
+  <iframe name="bug-sink" style="display:none;"></iframe>
+  <form id="bug-form" action="https://submit.jotform.com/submit/262336538869068" method="POST"
+        target="bug-sink" style="display:none;">
+    <input type="hidden" name="formID" value="262336538869068">
+    <input type="hidden" name="simple_spc" value="262336538869068-262336538869068">
+    <input type="hidden" name="q5_context" id="bug-f-context">
+    <input type="hidden" name="q7_whatWent" id="bug-f-note">
+  </form>
   <div class="vslider-wrap" id="vslider-wrap">
   <div class="vlabel" id="vslider-label">Roof<br>coverage</div>
   <div class="vvalue" id="vslider-value">100%</div>
@@ -765,25 +786,36 @@ map.on("load", async () => {
   // Bug reports: capture the current map view as a PNG download (so the
   // tester can attach it) and open the Jotform pre-filled with machine
   // context -- building, view, settings -- which is what diagnosis needs.
-  document.getElementById("bug-report-btn").addEventListener("click", () => {
+  // In-map quick-fire reports (Josh): note -> Send -> keep browsing -> send
+  // another. Posts straight to the Jotform submit endpoint through a hidden
+  // iframe -- no tab, no page leave. Context (building/view/settings) rides
+  // along invisibly; a PNG of the map downloads on open for optional use.
+  const bugCtx = () => {
     const c = map.getCenter();
-    const ctx = [
+    return [
       selectedBuildingProps ? `building ${selectedBuildingProps.building_id} (${selectedBuildingProps.address || "no address"})` : "no building selected",
       `view ${c.lat.toFixed(5)},${c.lng.toFixed(5)} z${map.getZoom().toFixed(1)}`,
       `mode ${mode}`, `density ${panelDensityPct}%`, `coverage ${coveragePct}%`,
       `v${DATA_VERSION}`, navigator.userAgent.split(") ")[0] + ")"
     ].join(" | ");
-    try {
-      map.getCanvas().toBlob(blob => {
-        if (!blob) return;
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `solar-map-report-${Date.now()}.png`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      });
-    } catch (e) { /* capture is best-effort; the context string is the essential part */ }
-    window.open("https://form.jotform.com/262336538869068?context=" + encodeURIComponent(ctx), "_blank");
+  };
+  document.getElementById("bug-report-btn").addEventListener("click", () => {
+    const panel = document.getElementById("bug-report-panel");
+    panel.style.display = panel.style.display === "none" ? "block" : "none";
+    document.getElementById("bug-status").textContent = "";
+    if (panel.style.display === "block") document.getElementById("bug-note").focus();
+  });
+  document.getElementById("bug-close").addEventListener("click", () => {
+    document.getElementById("bug-report-panel").style.display = "none";
+  });
+  document.getElementById("bug-send").addEventListener("click", () => {
+    const note = document.getElementById("bug-note").value.trim();
+    if (!note) { document.getElementById("bug-status").textContent = "write a note first"; return; }
+    document.getElementById("bug-f-note").value = note;
+    document.getElementById("bug-f-context").value = bugCtx();
+    document.getElementById("bug-form").submit();
+    document.getElementById("bug-note").value = "";
+    document.getElementById("bug-status").textContent = "\u2713 sent \u2014 file another any time";
   });
 
   // Advanced tuning only works against the local live server; probe once.
