@@ -26,7 +26,7 @@ import geopandas as gpd
 
 from src.roof_segmentation import segment_building_best
 from src.pointcloud_source import PointCloudSource
-from src.panel_fitting import fit_panels_on_facet
+from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks
 from src.obstruction_detection import detect_obstructions_combined
 from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor
@@ -50,6 +50,10 @@ def main():
     for i, row in enumerate(gdf.itertuples()):
         facets = segment_building_best(dsm_ds, pc_source, row.geometry, row.building_id)
 
+        # Two passes per building: fit everything first, then building-level
+        # post-processing (straggler-array removal + fill ranks) needs every
+        # facet's panels in hand before anything is emitted.
+        per_facet = []
         for f in facets:
             facet_centroid = f["geometry"].centroid
             shading_factor = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
@@ -60,7 +64,17 @@ def main():
             siblings = [other for other in facets if other is not f]
             panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
             poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"]) * shading_factor
+            for p in panels:
+                p["poa_kwh_m2_yr"] = poa
+            per_facet.append({"facet": f, "panels": panels, "obstructions": obstructions,
+                               "poa": poa, "shading_factor": shading_factor})
 
+        kept_panel_lists = drop_minor_arrays([pf["panels"] for pf in per_facet])
+        all_kept = [p for panels in kept_panel_lists for p in panels]
+        assign_fill_ranks(all_kept)
+
+        for pf, panels in zip(per_facet, kept_panel_lists):
+            f = pf["facet"]
             features.append({
                 "type": "Feature",
                 "geometry": shapely_transform(to_wgs84, f["geometry"]).__geo_interface__,
@@ -69,12 +83,12 @@ def main():
                     "building_id": int(row.building_id),
                     "slope_deg": round(f["slope_deg"], 1),
                     "aspect_deg": round(f["aspect_deg"], 1),
-                    "poa_kwh_m2_yr": round(poa, 0),
+                    "poa_kwh_m2_yr": round(pf["poa"], 0),
                     "panel_count": len(panels),
                 },
             })
 
-            for o in obstructions:
+            for o in pf["obstructions"]:
                 features.append({
                     "type": "Feature",
                     "geometry": shapely_transform(to_wgs84, o).__geo_interface__,
@@ -82,7 +96,7 @@ def main():
                 })
 
             for p in panels:
-                y = model.facet_yield(f, 1, shading_factor=shading_factor)
+                y = model.facet_yield(f, 1, shading_factor=pf["shading_factor"])
                 features.append({
                     "type": "Feature",
                     "geometry": shapely_transform(to_wgs84, p["geometry"]).__geo_interface__,
@@ -90,6 +104,7 @@ def main():
                         "kind": "panel",
                         "building_id": int(row.building_id),
                         "ac_kwh_year": round(y["ac_kwh_year"], 0),
+                        "fill_rank": p["fill_rank"],
                     },
                 })
 

@@ -299,6 +299,56 @@ def _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolut
     return panels
 
 
+MINOR_ARRAY_MIN_PANELS = 4  # a straggler group smaller than this is dropped (see below) --
+# roughly the smallest string a real installer bothers mounting and wiring separately
+MINOR_ARRAY_MIN_FRACTION = 0.25  # ...unless it's still a meaningful share of the building's
+# largest array, which keeps legitimately tiny roofs (a 2-3 panel cottage) fully intact
+
+
+def drop_minor_arrays(facet_panels):
+    """facet_panels: list of per-facet panel lists for ONE building. Returns
+    the same structure with straggler groups emptied out.
+
+    Real installers concentrate on the good contiguous areas; a couple of
+    lone panels on a far corner of the roof, while the main array sits
+    elsewhere, is visual noise and not how systems get quoted or built
+    (direct user feedback, matching what the Brisbane real-installation
+    survey showed: installs are one or two compact arrays, not confetti).
+    A facet's group is dropped when it's both small in absolute terms
+    (< MINOR_ARRAY_MIN_PANELS) and small relative to the building's largest
+    group (< MINOR_ARRAY_MIN_FRACTION of it) -- the relative test is what
+    protects a genuinely small roof whose "largest array" is itself 2-3
+    panels: there, 2 panels IS the install, not a straggler."""
+    if not facet_panels:
+        return facet_panels
+    largest = max(len(panels) for panels in facet_panels)
+    if largest == 0:
+        return facet_panels
+    kept = []
+    for panels in facet_panels:
+        n = len(panels)
+        if 0 < n < MINOR_ARRAY_MIN_PANELS and n < MINOR_ARRAY_MIN_FRACTION * largest:
+            kept.append([])
+        else:
+            kept.append(panels)
+    return kept
+
+
+def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
+    """Writes p["fill_rank"] (1..100, integer percentile) onto every panel of
+    ONE building, following exactly apply_panel_density's fill order
+    (sunniest facet first, then row-major within the facet). The frontend
+    filters panels to fill_rank <= density% client-side, which is what makes
+    the density slider work on the static deployed site with no server."""
+    if not panels:
+        return panels
+    ranked = sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    n = len(ranked)
+    for i, p in enumerate(ranked):
+        p["fill_rank"] = int(np.ceil((i + 1) / n * 100))
+    return panels
+
+
 def apply_panel_density(panels, density_pct, poa_key="poa_kwh_m2_yr"):
     """Keeps only the top density_pct% of panels across a building's *whole*
     panel list (spanning every facet), ranked sunniest-facet-first and,
