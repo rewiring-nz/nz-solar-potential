@@ -5,6 +5,7 @@
 <title>Queenstown rooftop solar potential — pilot preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@4/dist/pmtiles.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
@@ -213,6 +214,7 @@
 <div class="loading" id="loading">Loading panel layouts…</div>
 
 <script>
+maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
 const map = new maplibregl.Map({
   container: "map",
   style: {
@@ -287,6 +289,7 @@ const LAYOUT_KIND_FILTER = {
 let panelDensityPct = 80;
 let refitAvailable = false;      // live server's /api/refit present? (never on the static site)
 let selectedPanelBuildingId = -1;
+let selectedBuildingProps = null;  // buildings-source props of the open panel (deciles included)
 
 function panelLayerFilter(id, excludeBuildingId) {
   const parts = [LAYOUT_KIND_FILTER[id]];
@@ -433,7 +436,7 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "19";
+const DATA_VERSION = "20";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 
@@ -538,8 +541,12 @@ map.on("load", async () => {
       kwhYear += est.kwhYear;
     });
     document.getElementById("inview-count").textContent = count;
-    if (mode === "layout" && panelIndex) {
-      const sums = panelSumsInView();
+    if (mode === "layout") {
+      const uniq = [], seen2 = new Set();
+      rendered.forEach(f => {
+        if (!seen2.has(f.properties.building_id)) { seen2.add(f.properties.building_id); uniq.push(f); }
+      });
+      const sums = panelSumsFor(uniq);
       kwp = sums.kwp; kwhYear = sums.kwhYear;
     }
     document.getElementById("inview-power").textContent = fmtPower(kwp);
@@ -626,26 +633,25 @@ map.on("load", async () => {
   // --- Mode-aware left dashboard + the tall vertical slider ---------------
   // Heat-map mode: yellow box = coverage-based estimate, slider = coverage %.
   // Layout mode:   yellow box = placed-panel sums in view, slider = density %.
-  let panelIndex = null;  // flat [{lng, lat, rank, kwh}] built once from layoutData
-  function buildPanelIndex(data) {
-    panelIndex = [];
-    data.features.forEach(f => {
-      const q = f.properties;
-      if (q.kind !== "panel") return;
-      const c = f.geometry.coordinates[0][0];
-      panelIndex.push({ lng: c[0], lat: c[1], rank: q.fill_rank ?? 0, kwh: q.ac_kwh_year || 0 });
-    });
+  // Per-building cumulative panel/kWh at each density decile is baked into
+  // the buildings source (fill_panels_10..100 / fill_kwh_10..100), so the
+  // in-view estimate works at ANY zoom -- panel tiles loaded or not --
+  // by interpolating between deciles for the current density.
+  function decileInterp(props, prefix, pct) {
+    if (pct <= 0) return 0;
+    const hi = Math.min(100, Math.ceil(pct / 10) * 10);
+    const lo = hi - 10;
+    const vHi = props[`${prefix}_${hi}`] || 0;
+    const vLo = lo === 0 ? 0 : (props[`${prefix}_${lo}`] || 0);
+    return vLo + (vHi - vLo) * (pct - lo) / 10;
   }
-  function panelSumsInView() {
-    const b = map.getBounds();
-    const w = b.getWest(), e = b.getEast(), s = b.getSouth(), n = b.getNorth();
-    let count = 0, kwh = 0;
-    for (const p of panelIndex) {
-      if (p.rank <= panelDensityPct && p.lng >= w && p.lng <= e && p.lat >= s && p.lat <= n) {
-        count++; kwh += p.kwh;
-      }
-    }
-    return { kwp: count * assumptions.panel_rated_power_w / 1000, kwhYear: kwh };
+  function panelSumsFor(features) {
+    let panels = 0, kwh = 0;
+    features.forEach(f => {
+      panels += decileInterp(f.properties, "fill_panels", panelDensityPct);
+      kwh += decileInterp(f.properties, "fill_kwh", panelDensityPct);
+    });
+    return { kwp: panels * assumptions.panel_rated_power_w / 1000, kwhYear: kwh };
   }
   function syncModeUI() {
     const isLayout = mode === "layout";
@@ -722,10 +728,11 @@ map.on("load", async () => {
   });
   window.__heatmapLayers = HEATMAP_LAYERS;  // applyToggles (defined earlier, top-level) reads this
 
-  const layoutResp = await fetch(`data/panel_layouts.geojson?v=${DATA_VERSION}`);
-  const layoutData = await layoutResp.json();
-  map.addSource("layout", { type: "geojson", data: layoutData });
-  buildPanelIndex(layoutData);
+  // Panel layouts come as vector tiles (PMTiles, ~24MB for all of
+  // Queenstown vs ~364MB as GeoJSON): tiles stream on demand, so density
+  // filtering only ever touches what's on screen. The pmtiles protocol is
+  // registered before map construction (top of file).
+  map.addSource("layout", { type: "vector", url: `pmtiles://data/panel_layouts.pmtiles?v=${DATA_VERSION}` });
   document.getElementById("loading").style.opacity = "0";
 
   // (A flat per-facet vector heat layer briefly lived here -- razor-sharp
@@ -746,6 +753,7 @@ map.on("load", async () => {
   map.addLayer({
     id: "facets-outline",
     minzoom: 15,
+    "source-layer": "layout",
     type: "line",
     source: "layout",
     filter: LAYOUT_KIND_FILTER["facets-outline"],
@@ -754,6 +762,7 @@ map.on("load", async () => {
   map.addLayer({
     id: "obstructions-fill",
     minzoom: 15,
+    "source-layer": "layout",
     type: "fill",
     source: "layout",
     filter: LAYOUT_KIND_FILTER["obstructions-fill"],
@@ -762,6 +771,7 @@ map.on("load", async () => {
   map.addLayer({
     id: "panels-fill",
     minzoom: 15,
+    "source-layer": "layout",
     type: "fill",
     source: "layout",
     filter: panelLayerFilter("panels-fill"),
@@ -770,6 +780,7 @@ map.on("load", async () => {
   map.addLayer({
     id: "panels-outline",
     minzoom: 15,
+    "source-layer": "layout",
     type: "line",
     source: "layout",
     filter: panelLayerFilter("panels-outline"),
@@ -971,20 +982,17 @@ map.on("load", async () => {
   // the current density -- the same filter the map layers use, so the numbers
   // always match what's drawn.
   function updateFittedStats(buildingId) {
-    let count = 0, kwhYear = 0;
-    layoutData.features.forEach(f => {
-      const q = f.properties;
-      if (q.kind !== "panel" || q.building_id !== buildingId) return;
-      if (q.fill_rank !== undefined && q.fill_rank > panelDensityPct) return;
-      count++;
-      kwhYear += q.ac_kwh_year || 0;
-    });
     const el = id => document.getElementById(id);
-    if (!el("fitted-count")) return;
-    el("fitted-count").textContent = count;
-    el("fitted-kwp").textContent = (count * assumptions.panel_rated_power_w / 1000).toFixed(2);
-    el("fitted-kwh").textContent = Math.round(kwhYear).toLocaleString();
+    const props = selectedBuildingProps;
+    if (!props || props.building_id !== buildingId) return;
+    const count = Math.round(decileInterp(props, "fill_panels", panelDensityPct));
+    const kwhYear = decileInterp(props, "fill_kwh", panelDensityPct);
     const kwp = count * assumptions.panel_rated_power_w / 1000;
+    if (el("fitted-count")) {
+      el("fitted-count").textContent = count;
+      el("fitted-kwp").textContent = kwp.toFixed(2);
+      el("fitted-kwh").textContent = Math.round(kwhYear).toLocaleString();
+    }
     if (el("bldg-fitted-power")) {
       el("bldg-fitted-power").textContent = fmtPower(kwp);
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
@@ -1014,12 +1022,22 @@ map.on("load", async () => {
   function renderSeasonCurves(buildingId) {
     const box = document.getElementById("season-curves");
     if (!box || !seasonCurves || buildingId === undefined) return;
-    const facets = [], panels = [];
-    layoutData.features.forEach(f => {
+    // Vector tiles return one copy of a feature per tile it intersects --
+    // dedupe by rounded first-vertex position.
+    const raw = map.querySourceFeatures("layout", {
+      sourceLayer: "layout", filter: ["==", ["get", "building_id"], buildingId] });
+    const facets = [], panels = [], seenKeys = new Set();
+    raw.forEach(f => {
+      const geom = f.geometry;  // MapGeoJSONFeature exposes GeoJSON geometry directly
+      if (!geom || geom.type !== "Polygon") return;
+      const c = geom.coordinates[0][0];
+      const key = f.properties.kind + ":" + c[0].toFixed(7) + "," + c[1].toFixed(7);
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
       const q = f.properties;
-      if (q.building_id !== buildingId) return;
-      if (q.kind === "facet") facets.push(f);
-      else if (q.kind === "panel" && (q.fill_rank === undefined || q.fill_rank <= panelDensityPct)) panels.push(f);
+      const gj = { geometry: geom, properties: q };
+      if (q.kind === "facet") facets.push(gj);
+      else if (q.kind === "panel" && (q.fill_rank === undefined || q.fill_rank <= panelDensityPct)) panels.push(gj);
     });
     const isLayout = mode === "layout";
     if (!facets.length || (isLayout && !panels.length)) { box.innerHTML = ""; return; }
@@ -1139,8 +1157,9 @@ map.on("load", async () => {
     panel.classList.add("visible");
     wireCoverageSelect(panel.querySelector("#coverage-select-bldg"));
     if (lngLat) buildThumbnail(panel.querySelector("#bldg-thumb"), lngLat, geom);
-    updateFittedStats(p.building_id);
     selectedPanelBuildingId = p.building_id;
+    selectedBuildingProps = p;
+    updateFittedStats(p.building_id);
     // Advanced per-roof tuning needs the local live server's /api/refit --
     // hide it entirely on the static deployed site rather than showing
     // sliders that silently do nothing.

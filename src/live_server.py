@@ -138,8 +138,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/refit"):
             self.handle_refit()
+        elif "Range" in self.headers:
+            self.handle_range()  # PMTiles fetches tile byte-ranges; stdlib handler lacks 206 support
         else:
             super().do_GET()
+
+    def handle_range(self):
+        import os
+        path = self.translate_path(self.path.split("?")[0])
+        if not os.path.isfile(path):
+            self.send_error(404)
+            return
+        size = os.path.getsize(path)
+        m = self.headers["Range"].replace("bytes=", "").split("-")
+        start = int(m[0]) if m[0] else 0
+        end = int(m[1]) if len(m) > 1 and m[1] else size - 1
+        end = min(end, size - 1)
+        if start > end or start >= size:
+            self.send_error(416)
+            return
+        self.send_response(206)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        with open(path, "rb") as f:
+            f.seek(start)
+            self.wfile.write(f.read(end - start + 1))
 
     def handle_refit(self):
         params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)

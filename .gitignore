@@ -4,7 +4,7 @@
 # committed so a static host (no Python backend) has something to serve.
 data/*
 !data/solar_potential.geojson
-!data/panel_layouts.geojson
+!data/panel_layouts.pmtiles
 !data/heatmap_raster.png
 !data/heatmap_raster.json
 !data/seasonal_curves.json
