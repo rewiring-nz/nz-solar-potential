@@ -7,6 +7,9 @@ data/*
 !data/panel_layouts.geojson
 !data/heatmap_raster.png
 !data/heatmap_raster.json
+!data/seasonal_curves.json
+!data/heatmaps/
+!data/heatmaps/*
 tiles/
 .env
 *.laz

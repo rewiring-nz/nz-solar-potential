@@ -51,7 +51,7 @@
     color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 13px; width: 230px;
   }
   .dashboard-stack {
-    position: absolute; top: 12px; left: 88px; z-index: 3;  /* clears the vertical slider column */
+    position: absolute; top: 12px; left: 84px; z-index: 3;  /* clears the vertical slider column */
     display: flex; flex-direction: column; gap: 10px;
   }
   .dashboard-title {
@@ -91,13 +91,13 @@
   .legend-panels { display: flex; gap: 2px; }
   .legend-panels span { width: 11px; height: 18px; background: rgba(38,109,182,0.75);
     border: 1.5px solid #0e2c4e; border-radius: 2px; display: inline-block; }
-  .vslider-wrap { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-    z-index: 5; background: rgba(20,20,20,0.92); border-radius: 10px; padding: 12px 10px;
-    display: flex; flex-direction: column; align-items: center; gap: 8px; color: #fff; width: 64px; }
+  .vslider-wrap { position: absolute; left: 12px; top: 12px;
+    z-index: 5; background: rgba(20,20,20,0.92); border-radius: 10px; padding: 10px 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; width: 60px; }
   .vslider-wrap .vlabel { font-size: 10px; font-weight: 700; color: #ccc; text-align: center; line-height: 1.25; }
   .vslider-wrap .vvalue { font-size: 13px; font-weight: 800; }
   #vslider { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical;
-    width: 22px; height: 38vh; min-height: 190px; }
+    width: 22px; height: 32vh; min-height: 170px; max-height: 340px; }
 
   .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
   .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -799,6 +799,7 @@ map.on("load", async () => {
         <h4 style="font-size:17px;">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
         <div class="bldg-thumb" id="bldg-thumb"></div>
+        <div id="season-curves"></div>
         <div class="est-section" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">
@@ -938,6 +939,91 @@ map.on("load", async () => {
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
+    renderSeasonCurves(buildingId);
+  }
+
+  // --- Seasonal generation curves (black chart, fluoro season lines) ------
+  // Solid = average day for the season (cloud-calibrated); dotted = the
+  // season's best clear-sky day. Scaled by the panels actually placed at the
+  // current density, each panel weighted by its own roof face's orientation.
+  const SEASON_COLORS = { summer: "#ff7a00", autumn: "#7dff5e", winter: "#00c8ff", spring: "#ffe600" };
+  let seasonCurves = null;
+  fetch(`data/seasonal_curves.json?v=${DATA_VERSION}`).then(r => r.json())
+    .then(d => { seasonCurves = d; }).catch(() => {});
+
+  function pointInRing(pt, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function renderSeasonCurves(buildingId) {
+    const box = document.getElementById("season-curves");
+    if (!box || !seasonCurves || buildingId === undefined) return;
+    const facets = [], panels = [];
+    layoutData.features.forEach(f => {
+      const q = f.properties;
+      if (q.building_id !== buildingId) return;
+      if (q.kind === "facet") facets.push(f);
+      else if (q.kind === "panel" && (q.fill_rank === undefined || q.fill_rank <= panelDensityPct)) panels.push(f);
+    });
+    if (!panels.length || !facets.length) { box.innerHTML = ""; return; }
+
+    const kwpEach = assumptions.panel_rated_power_w / 1000;
+    const binKwp = {};
+    panels.forEach(pf => {
+      const c = pf.geometry.coordinates[0][0];
+      const fx = facets.find(f => pointInRing(c, f.geometry.coordinates[0])) || facets[0];
+      const ss = seasonCurves.slope_step, as = seasonCurves.aspect_step;
+      const sb = Math.min(Math.round(fx.properties.slope_deg / ss) * ss, seasonCurves.max_slope);
+      const ab = ((Math.round(fx.properties.aspect_deg / as) * as) % 360 + 360) % 360;
+      const key = sb + "_" + ab;
+      binKwp[key] = (binKwp[key] || 0) + kwpEach;
+    });
+
+    const S = seasonCurves.seasons.length;
+    const avg = Array.from({ length: S }, () => new Array(24).fill(0));
+    const peak = Array.from({ length: S }, () => new Array(24).fill(0));
+    for (const [key, kwp] of Object.entries(binKwp)) {
+      const cur = seasonCurves.curves[key];
+      if (!cur) continue;
+      for (let s = 0; s < S; s++) for (let h = 0; h < 24; h++) {
+        avg[s][h] += cur.avg[s][h] * kwp;
+        peak[s][h] += cur.peak[s][h] * kwp;
+      }
+    }
+
+    const W = 288, H = 170, L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
+    const maxY = Math.max(0.1, ...peak.flat());
+    const x = h => L + (h - h0) / (h1 - h0) * (W - L - R);
+    const y = v => T + (1 - v / maxY) * (H - T - B);
+    const line = (arr, dash) => {
+      let d = "";
+      for (let h = h0; h <= h1; h++) d += (h === h0 ? "M" : "L") + x(h).toFixed(1) + " " + y(arr[h]).toFixed(1);
+      return d;
+    };
+    let paths = "";
+    seasonCurves.seasons.forEach((name, s) => {
+      const col = SEASON_COLORS[name] || "#fff";
+      paths += `<path d="${line(peak[s])}" fill="none" stroke="${col}" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.85"/>`;
+      paths += `<path d="${line(avg[s])}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    });
+    const gridY = [0.25, 0.5, 0.75].map(f => `<line x1="${L}" y1="${y(maxY * f)}" x2="${W - R}" y2="${y(maxY * f)}" stroke="#333" stroke-width="0.5"/>`).join("");
+    const hourTicks = [6, 9, 12, 15, 18, 21].map(h =>
+      `<text x="${x(h)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${h}</text>`).join("");
+    const yLabels = `<text x="${L - 4}" y="${y(maxY) + 3}" fill="#888" font-size="8" text-anchor="end">${maxY.toFixed(1)}</text>` +
+      `<text x="${L - 4}" y="${y(0) + 3}" fill="#888" font-size="8" text-anchor="end">0</text>` +
+      `<text x="9" y="${(T + H - B) / 2}" fill="#888" font-size="8" text-anchor="middle" transform="rotate(-90 9 ${(T + H - B) / 2})">kW</text>`;
+    const legend = seasonCurves.seasons.map(n =>
+      `<span style="color:${SEASON_COLORS[n]}; font-weight:700;">${n}</span>`).join(" · ");
+    box.innerHTML =
+      `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
+      `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${paths}${hourTicks}${yLabels}</svg></div>` +
+      `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
+      `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">solid = typical day &nbsp;·&nbsp; dotted = sunny day &nbsp;·&nbsp; at current panel density</div>`;
   }
 
   function showBuildingPanel(p, lngLat, geom) {
