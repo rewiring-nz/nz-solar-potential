@@ -22,7 +22,7 @@
   .legend-facet-bar { width: 180px; height: 10px; margin: 6px 0; border-radius: 5px;
     background: linear-gradient(to right, #00000a, #91009c, #e64616, #feb400, #fffff6); }
   .legend-obstruction { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; opacity: 0.85; }
-  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: #a855f7; flex: none; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: rgba(255,59,48,0.35); border: 1px dashed #ff3b30; flex: none; }
   .toggle-row { display: flex; gap: 8px; margin: 8px 0 20px; }
   .toggle-btn {
     flex: 1; padding: 6px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; cursor: pointer;
@@ -251,7 +251,10 @@
   </div>
   <div class="legend-facet-bar"></div>
   <div class="legend-labels"><span>south / low</span><span>north / high</span></div>
-  <div class="legend-obstruction"><div class="legend-swatch"></div><span>avoided obstruction</span></div>
+  <div class="legend-obstruction" style="justify-content: space-between; width: 100%;">
+    <span style="display:flex; align-items:center; gap:6px;"><span class="legend-swatch"></span>avoided obstructions</span>
+    <button class="toggle-btn" id="toggle-obstructions" style="flex:none; width:auto; padding:2px 10px; font-size:11px;">Off</button>
+  </div>
 </div>
 <div class="loading" id="loading">Loading panel layouts…</div>
 
@@ -305,7 +308,8 @@ let layoutReady = false;
 // at once was exactly the "why is there blue behind the panels" confusion:
 // that blue was the heatmap, still on underneath. 'none' | 'heatmap' | 'layout'.
 let mode = "heatmap";
-const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "panels-fill", "panels-outline"];
+const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
+let obstructionsOn = false;  // default hidden (Josh) -- toggle in the bottom-right legend
 // Base filter per layout layer -- always shows every building's facets/
 // panels/obstructions at once. Previously selectBuilding() replaced this
 // with a single building_id filter on click, which meant Panel Layout mode
@@ -371,7 +375,13 @@ function applyToggles() {
     }
   });
   if (layoutReady) {
-    LAYOUT_LAYERS.forEach(id => map.setLayoutProperty(id, "visibility", mode === "layout" ? "visible" : "none"));
+    LAYOUT_LAYERS.forEach(id => {
+      const vis = mode === "layout" && (id.startsWith("obstructions") ? obstructionsOn : true);
+      map.setLayoutProperty(id, "visibility", vis ? "visible" : "none");
+    });
+    if (map.getLayer("live-obstructions-fill")) {
+      map.setLayoutProperty("live-obstructions-fill", "visibility", obstructionsOn ? "visible" : "none");
+    }
   }
   // Always exclude the selected building from the overview fill once
   // something is selected, regardless of mode -- otherwise its own
@@ -915,7 +925,16 @@ map.on("load", async () => {
     type: "fill",
     source: "layout",
     filter: LAYOUT_KIND_FILTER["obstructions-fill"],
-    paint: { "fill-color": "#a855f7", "fill-opacity": 0.85 }
+    paint: { "fill-color": "#ff3b30", "fill-opacity": 0.28 }  // red, light -- roof stays readable under it
+  });
+  map.addLayer({
+    id: "obstructions-outline",
+    minzoom: 15,
+    "source-layer": "layout",
+    type: "line",
+    source: "layout",
+    filter: LAYOUT_KIND_FILTER["obstructions-fill"],
+    paint: { "line-color": "#ff3b30", "line-width": 1, "line-dasharray": [2, 2], "line-opacity": 0.9 }
   });
   map.addLayer({
     id: "panels-fill",
@@ -949,7 +968,7 @@ map.on("load", async () => {
   map.addLayer({
     id: "live-obstructions-fill", type: "fill", source: "live-layout",
     filter: ["==", ["get", "kind"], "obstruction"],
-    paint: { "fill-color": "#a855f7", "fill-opacity": 0.85 }
+    paint: { "fill-color": "#ff3b30", "fill-opacity": 0.28 }
   });
   map.addLayer({
     id: "live-panels-fill", type: "fill", source: "live-layout",
@@ -1347,6 +1366,13 @@ map.on("load", async () => {
     document.getElementById("side-panel").classList.add("expanded");
   });
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
+  document.getElementById("toggle-obstructions").addEventListener("click", () => {
+    obstructionsOn = !obstructionsOn;
+    const btn = document.getElementById("toggle-obstructions");
+    btn.textContent = obstructionsOn ? "On" : "Off";
+    btn.classList.toggle("active", obstructionsOn);
+    applyToggles();
+  });
 
   map.on("click", (e) => {
     const hits = map.queryRenderedFeatures(e.point, { layers: ["buildings-fill"] });
