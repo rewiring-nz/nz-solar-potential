@@ -117,8 +117,9 @@ def dedupe_outlines(region_names=None):
                 owner[bid] = (margin, name)
 
     total = 0
+    demolished = getattr(config, "DEMOLISHED_BUILDING_IDS", set())
     for name, gdf in frames.items():
-        keep = gdf[gdf["building_id"].map(lambda b: owner[b][1] == name)]
+        keep = gdf[gdf["building_id"].map(lambda b: owner[b][1] == name and b not in demolished)]
         out = REGIONS_DIR / name / "building_outlines_dedup.geojson"
         keep.to_file(out, driver="GeoJSON")
         print(f"{name}: {len(keep)}/{len(gdf)} buildings owned")

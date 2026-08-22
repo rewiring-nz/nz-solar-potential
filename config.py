@@ -38,6 +38,12 @@ REGIONS = {
     # full 2021 LiDAR coverage confirmed.
     "arthurs_point_east":  [168.7114, -45.0050, 168.7420, -44.9700],
 }
+
+# Buildings confirmed demolished/replaced since the 2021 capture (field
+# reports) -- excluded from every build until LINZ data catches up.
+DEMOLISHED_BUILDING_IDS = {
+    4735131,  # 61 Ballarat St -- now under the new road corridor (Josh, 23 Aug)
+}
 LINZ_LIDAR_TILE_INDEX_LAYER = 105905  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
 # bbox to the CL2_*.copc.laz point-cloud tile names, which are then fetched from OpenTopography's
 # public bulk store (LINZ hosts the derived DSM/DEM rasters but not the raw point cloud)
