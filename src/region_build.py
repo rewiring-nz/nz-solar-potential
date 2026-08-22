@@ -31,11 +31,17 @@ TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
 
 
 def all_areas():
-    return list(config.REGIONS)
+    # "pilot" is the original town-centre build area -- the 10 REGIONS bboxes
+    # do NOT cover the centre (confirmed: central-town buildings exist only in
+    # the pilot outlines), so every full-town dedupe/build/merge must include it.
+    return ["pilot"] + list(config.REGIONS)
 
 
 def area_paths(name):
-    d = DATA_DIR if name == "pilot" else REGIONS_DIR / name
+    # pilot builds into data/regions/pilot/ like any region (inputs symlinked
+    # to the data-root mosaics); data-root output files are the MERGE TARGETS
+    # and must never double as an area's own outputs.
+    d = REGIONS_DIR / name
     outlines = d / "building_outlines_dedup.geojson"
     if not outlines.exists():
         outlines = d / "building_outlines.geojson"
