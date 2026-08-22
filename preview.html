@@ -98,7 +98,7 @@
   .legend-panels { display: flex; gap: 2px; }
   .legend-panels span { width: 11px; height: 18px; background: rgba(38,109,182,0.75);
     border: 1.5px solid #0e2c4e; border-radius: 2px; display: inline-block; }
-  .vslider-wrap { align-self: center; width: 60px;
+  .vslider-wrap { align-self: flex-start; width: 60px;
     background: rgba(20,20,20,0.92); border-radius: 8px; padding: 10px 8px;
     display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; }
   .vslider-wrap .vlabel { font-size: 10px; font-weight: 700; color: #ccc; text-align: center; line-height: 1.25; }
@@ -816,7 +816,6 @@ map.on("load", async () => {
         <h4 style="font-size:17px;">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
         <div class="bldg-thumb" id="bldg-thumb"></div>
-        <div id="season-curves"></div>
         <div class="est-section" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">
@@ -841,6 +840,7 @@ map.on("load", async () => {
               <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
             </div>
           </div>
+          <div id="season-curves" style="margin-top:10px;"></div>
         </div>
         <div style="border-top:1px solid rgba(255,255,255,0.15); margin-top:12px; padding-top:10px;
                     font-size:12px; font-weight:700; color:#ccc;">Proposed panel layout for this roof</div>
@@ -930,6 +930,21 @@ map.on("load", async () => {
         img.alt = "";
         container.appendChild(img);
       }
+    }
+    if (geom) {
+      // Dotted outline of the selected footprint so it's obvious which
+      // building the photo is about.
+      const toPx = c => {
+        const [px, py] = merc(c[0], c[1], z);
+        return `${(cx + (px - xf) * 256).toFixed(1)},${(cy + (py - yf) * 256).toFixed(1)}`;
+      };
+      const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flat();
+      const polys = rings.map(ring => `<polygon points="${ring.map(toPx).join(" ")}" fill="none" stroke="#ffe600" stroke-width="2.5" stroke-dasharray="6 4"/>`).join("");
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", size); svg.setAttribute("height", size);
+      svg.style.cssText = "position:absolute; left:0; top:0; pointer-events:none;";
+      svg.innerHTML = polys;
+      container.appendChild(svg);
     }
   }
 

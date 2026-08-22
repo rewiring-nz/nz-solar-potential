@@ -269,6 +269,13 @@ HEIGHT_STRONG_PLANAR_RMS_M = 0.12  # a large strong-footprint part whose own poi
 # or pitched roof level always does. Rejected parts are left unflagged rather than turned into
 # facets here -- resolving them properly is segmentation's job, not this module's.
 HEIGHT_STRONG_PLANAR_MIN_AREA_M2 = 10.0
+HEIGHT_STRONG_MAX_FACET_FRACTION = 0.35  # a single strong-evidence part covering more of the
+# facet than this is a mis-modelled roof SURFACE, not rooftop equipment -- no real duct/plant
+# cluster blankets most of a roof. Catches curved/barrel roofs that region-growing collapses
+# into one "flat" facet: every point sits far off the plane (median residual + spread both
+# trip), and the planarity rescue above can't save it because a curved surface fails a plane
+# fit exactly the way real equipment does. Confirmed real case: 29 Park St hall (#4726041),
+# one 2386m2 facet at 0.2 deg whose "obstruction" was 1837m2 = 77% of the roof.
 
 
 def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_threshold_m=None,
@@ -335,6 +342,8 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             for part in parts:
                 if part.geom_type != "Polygon" or part.area < HEIGHT_STRONG_MIN_PART_AREA_M2:
                     continue
+                if part.area > HEIGHT_STRONG_MAX_FACET_FRACTION * facet_geom.area:
+                    continue  # covers most of the roof -> mis-modelled surface, not equipment
                 if part.area >= HEIGHT_STRONG_PLANAR_MIN_AREA_M2:
                     in_part = shapely.vectorized.contains(part, member_pts3d[:, 0], member_pts3d[:, 1])
                     part_pts = member_pts3d[in_part]
