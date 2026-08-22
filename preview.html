@@ -204,6 +204,10 @@
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
     </div>
   </div>
+  <button class="dashboard" id="bug-report-btn" style="width:auto; cursor:pointer; border:1px solid #666;
+    font-size:12px; font-weight:700; color:#ffb3b3; padding:8px 12px; text-align:left;">
+    &#128030; Report an issue
+  </button>
   <div class="vslider-wrap" id="vslider-wrap">
   <div class="vlabel" id="vslider-label">Roof<br>coverage</div>
   <div class="vvalue" id="vslider-value">100%</div>
@@ -233,6 +237,7 @@
 <script>
 maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
 const map = new maplibregl.Map({
+  preserveDrawingBuffer: true,  // lets the bug-report button export the canvas
   container: "map",
   style: {
     version: 8,
@@ -763,6 +768,30 @@ map.on("load", async () => {
         && !document.querySelector("#season-curves svg")) {
       renderSeasonCurves(selectedPanelBuildingId);
     }
+  });
+
+  // Bug reports: capture the current map view as a PNG download (so the
+  // tester can attach it) and open the Jotform pre-filled with machine
+  // context -- building, view, settings -- which is what diagnosis needs.
+  document.getElementById("bug-report-btn").addEventListener("click", () => {
+    const c = map.getCenter();
+    const ctx = [
+      selectedBuildingProps ? `building ${selectedBuildingProps.building_id} (${selectedBuildingProps.address || "no address"})` : "no building selected",
+      `view ${c.lat.toFixed(5)},${c.lng.toFixed(5)} z${map.getZoom().toFixed(1)}`,
+      `mode ${mode}`, `density ${panelDensityPct}%`, `coverage ${coveragePct}%`,
+      `v${DATA_VERSION}`, navigator.userAgent.split(") ")[0] + ")"
+    ].join(" | ");
+    try {
+      map.getCanvas().toBlob(blob => {
+        if (!blob) return;
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `solar-map-report-${Date.now()}.png`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+    } catch (e) { /* capture is best-effort; the context string is the essential part */ }
+    window.open("https://form.jotform.com/262336538869068?context=" + encodeURIComponent(ctx), "_blank");
   });
 
   // Advanced tuning only works against the local live server; probe once.
