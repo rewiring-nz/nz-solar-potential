@@ -651,12 +651,30 @@ map.on("load", async () => {
   // actually knows (no external geocoder). Picking a result flies to the
   // building and opens its panel, exactly like clicking it.
   {
-    const searchable = data.features
+    // Towns/areas rank above street addresses: searching "Arrowtown" should
+    // fly there, not to "1 Arrowtown Lane".
+    const TOWNS = [
+      ["Queenstown", 168.6626, -45.0312, 14.5], ["Frankton", 168.7380, -45.0230, 14.5],
+      ["Fernhill", 168.6350, -45.0400, 15], ["Sunshine Bay", 168.6210, -45.0430, 15],
+      ["Arthurs Point", 168.6960, -44.9820, 14.5], ["Arrowtown", 168.8110, -44.9430, 14.5],
+      ["Millbrook", 168.7950, -44.9500, 15], ["Lake Hayes", 168.8100, -44.9800, 13.8],
+      ["Speargrass Flat", 168.7800, -44.9700, 14], ["Kelvin Heights", 168.7000, -45.0380, 14.5],
+      ["Jacks Point", 168.7420, -45.0870, 14.5], ["Hanley's Farm", 168.7510, -45.0680, 14.8],
+      ["Quail Rise", 168.7470, -45.0000, 15], ["Shotover Country", 168.7560, -44.9950, 14.8],
+      ["Lake Hayes Estate", 168.7610, -44.9880, 14.8], ["Queenstown Airport", 168.7390, -45.0210, 15]
+    ].map(([name, lng, lat, z]) => ({ addr: name + " (area)", lower: name.toLowerCase(), town: { lng, lat, z } }));
+    const searchable = TOWNS.concat(data.features
       .filter(f => f.properties.address)
-      .map(f => ({ addr: f.properties.address, lower: f.properties.address.toLowerCase(), f }));
+      .map(f => ({ addr: f.properties.address, lower: f.properties.address.toLowerCase(), f })));
     const input = document.getElementById("addr-input");
     const results = document.getElementById("addr-results");
     const openResult = (item) => {
+      if (item.town) {
+        results.style.display = "none";
+        input.value = item.addr;
+        map.flyTo({ center: [item.town.lng, item.town.lat], zoom: item.town.z, duration: 1400 });
+        return;
+      }
       const ring = item.f.geometry.type === "Polygon" ? item.f.geometry.coordinates[0] : item.f.geometry.coordinates[0][0];
       const lng = ring.reduce((a, c) => a + c[0], 0) / ring.length;
       const lat = ring.reduce((a, c) => a + c[1], 0) / ring.length;
