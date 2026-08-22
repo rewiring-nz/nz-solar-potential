@@ -1,0 +1,127 @@
+"""
+Placement quality gate, applied as a post-filter over built panel layouts.
+
+Drops any placed panel whose underlying LiDAR contradicts "flat roof
+surface here" -- the failure classes from the 23-building field-report set
+(docs/bugdoc-2026-08-22.md):
+
+- too few building-class returns beneath it  -> carpark / air / demolished
+  (19 Industrial Pl, 10/16 Kent St, 61 Ballarat St)
+- surface not meaningfully above bare earth  -> ground-level slab/yard
+- points disagree with the local panel plane -> covers vents/plant/level
+  changes the obstruction pass missed (17 Marine Pde; audit's 3,459 lumpy)
+
+Runs per region on panel_layouts.geojson IN PLACE (before rerank/deciles/
+shrink/tile). The same checks move into fit time with the Wave-1 rebuild;
+this post-filter exists so the worst placements leave the live map a
+rebuild-cycle earlier.
+
+Usage: python src/gate_panels.py [region ...]   (default: all areas)
+"""
+
+import json
+import math
+import sys
+from pathlib import Path
+
+import numpy as np
+import pyproj
+import rasterio
+import shapely.vectorized
+from shapely.geometry import shape
+from shapely.ops import transform as shp_transform
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.pointcloud_source import PointCloudSource
+from src.region_build import all_areas, area_paths
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
+
+MIN_PTS_PER_M2 = 1.5       # building-class density under a panel below this = not a roof
+MIN_HEIGHT_ABOVE_DEM = 1.8  # roof surface must clear bare earth by this (m)
+MAX_LOCAL_RMS = 0.28        # points under one 2m panel should fit their own plane this well
+
+
+def panel_ok(poly, pc, dem, dem_transform_inv):
+    minx, miny, maxx, maxy = poly.bounds
+    area = poly.area
+    # A veto requires EVIDENCE AGAINST a roof, never mere absence of data:
+    # a LiDAR coverage gap (zero returns of ANY class) means "unknown" and
+    # the panel stays. Cost of this lesson: a cropped-tile coverage hole
+    # made the first gate run execute 96 healthy houses.
+    pts_all = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=False)
+    if len(pts_all) == 0:
+        return True, "no_coverage_kept"
+    pts = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=True)
+    inside_all = shapely.vectorized.contains(poly, pts_all[:, 0], pts_all[:, 1])
+    if inside_all.sum() < 3:
+        return True, "no_coverage_kept"  # survey shadow over this exact spot
+    inside = shapely.vectorized.contains(poly, pts[:, 0], pts[:, 1]) if len(pts) else np.zeros(0, bool)
+    pp = pts[inside] if len(pts) else np.empty((0, 3))
+    if len(pp) / max(area, 0.1) < MIN_PTS_PER_M2 or len(pp) < 4:
+        # ground/vegetation returns present but no building-class surface:
+        # carpark, yard, demolished, or air between wings
+        return False, "sparse"
+    # height above bare earth at the panel centre
+    c = poly.centroid
+    try:
+        col, row = dem_transform_inv * (c.x, c.y)  # rasterio inverse gives (col, row)
+        ground = dem[int(row), int(col)]
+        if np.isfinite(ground) and (np.median(pp[:, 2]) - ground) < MIN_HEIGHT_ABOVE_DEM:
+            return False, "ground_level"
+    except Exception:
+        pass
+    # local planarity: the points under one panel must fit their own plane
+    if len(pp) >= 6:
+        x0, y0 = pp[:, 0].mean(), pp[:, 1].mean()
+        A = np.column_stack([pp[:, 0] - x0, pp[:, 1] - y0, np.ones(len(pp))])
+        try:
+            coeffs, *_ = np.linalg.lstsq(A, pp[:, 2], rcond=None)
+            rms = float(np.sqrt(np.mean((A @ coeffs - pp[:, 2]) ** 2)))
+            if rms > MAX_LOCAL_RMS:
+                return False, "lumpy"
+        except np.linalg.LinAlgError:
+            pass
+    return True, "ok"
+
+
+def gate_area(name, pc, dem, dem_inv):
+    path = area_paths(name)["panel_layouts"]
+    if not path.exists():
+        print(f"{name}: no layouts, skipping")
+        return
+    d = json.loads(path.read_text())
+    kept, dropped = [], {"no_points": 0, "sparse": 0, "ground_level": 0, "lumpy": 0}
+    for f in d["features"]:
+        if f["properties"].get("kind") != "panel" or f["geometry"]["type"] != "Polygon":
+            kept.append(f)
+            continue
+        try:
+            poly = shp_transform(TO_NZTM, shape(f["geometry"]))
+            ok, why = panel_ok(poly, pc, dem, dem_inv)
+        except Exception:
+            ok, why = True, "error-kept"  # never drop a panel on a gate crash
+        if ok:
+            kept.append(f)
+        else:
+            dropped[why] += 1
+    n_dropped = sum(dropped.values())
+    d["features"] = kept
+    path.write_text(json.dumps(d))
+    print(f"{name}: dropped {n_dropped} panels "
+          f"(air/no-points {dropped['no_points']}, sparse {dropped['sparse']}, "
+          f"ground-level {dropped['ground_level']}, lumpy {dropped['lumpy']})")
+
+
+def main():
+    pc = PointCloudSource()
+    with rasterio.open(DATA_DIR / "dem_wide_mosaic.tif") as ds:
+        dem = ds.read(1)
+        dem_inv = ~ds.transform
+    for name in (sys.argv[1:] or all_areas()):
+        gate_area(name, pc, dem, dem_inv)
+
+
+if __name__ == "__main__":
+    main()
