@@ -99,6 +99,19 @@
   .legend-panels { display: flex; gap: 2px; }
   .legend-panels span { width: 11px; height: 18px; background: rgba(38,109,182,0.75);
     border: 1.5px solid #0e2c4e; border-radius: 2px; display: inline-block; }
+  .addr-search { position: relative; }
+  .addr-search input {
+    width: 100%; box-sizing: border-box; background: #2e3440; color: #fff;
+    border: 1px solid #666; border-radius: 6px; font-size: 13px; padding: 7px 10px;
+  }
+  .addr-search input::placeholder { color: #999; }
+  .addr-results {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 10; margin-top: 4px;
+    background: #1c1f26; border: 1px solid #555; border-radius: 6px; overflow: hidden;
+    max-height: 240px; overflow-y: auto; display: none;
+  }
+  .addr-results div { padding: 7px 10px; font-size: 12.5px; cursor: pointer; color: #eee; }
+  .addr-results div:hover, .addr-results div.active { background: #266db6; color: #fff; }
   .vslider-wrap { align-self: flex-start; width: 60px;
     background: rgba(20,20,20,0.92); border-radius: 8px; padding: 10px 8px;
     display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; }
@@ -160,6 +173,10 @@
 <body>
 <div id="map"></div>
 <div class="dashboard-stack">
+  <div class="dashboard addr-search" style="padding: 10px 12px;">
+    <input type="text" id="addr-input" placeholder="Search address&hellip;" autocomplete="off">
+    <div class="addr-results" id="addr-results"></div>
+  </div>
   <div class="dashboard dashboard-inview" id="dashboard-inview">
     <div class="dashboard-title">
       <span class="rsp-heading">Rooftop Solar Potential</span>
@@ -625,6 +642,49 @@ map.on("load", async () => {
     e.target.innerHTML = collapsed ? "&#9660;" : "&#9650;";
     e.target.title = collapsed ? "Expand" : "Collapse";
   });
+  // --- Address search: client-side autocomplete over the buildings the map
+  // actually knows (no external geocoder). Picking a result flies to the
+  // building and opens its panel, exactly like clicking it.
+  {
+    const searchable = data.features
+      .filter(f => f.properties.address)
+      .map(f => ({ addr: f.properties.address, lower: f.properties.address.toLowerCase(), f }));
+    const input = document.getElementById("addr-input");
+    const results = document.getElementById("addr-results");
+    const openResult = (item) => {
+      const ring = item.f.geometry.type === "Polygon" ? item.f.geometry.coordinates[0] : item.f.geometry.coordinates[0][0];
+      const lng = ring.reduce((a, c) => a + c[0], 0) / ring.length;
+      const lat = ring.reduce((a, c) => a + c[1], 0) / ring.length;
+      results.style.display = "none";
+      input.value = item.addr;
+      map.flyTo({ center: [lng, lat], zoom: 18, duration: 1200 });
+      selectBuilding(item.f.properties.building_id);
+      showBuildingPanel(item.f.properties, { lng, lat }, item.f.geometry);
+    };
+    let matches = [];
+    input.addEventListener("input", () => {
+      const q = input.value.trim().toLowerCase();
+      if (q.length < 2) { results.style.display = "none"; return; }
+      const starts = searchable.filter(x => x.lower.startsWith(q));
+      const contains = searchable.filter(x => !x.lower.startsWith(q) && x.lower.includes(q));
+      matches = starts.concat(contains).slice(0, 8);
+      if (!matches.length) { results.style.display = "none"; return; }
+      results.innerHTML = matches.map((x, i) => `<div data-i="${i}">${x.addr}</div>`).join("");
+      results.style.display = "block";
+    });
+    results.addEventListener("click", e => {
+      const d = e.target.closest("div[data-i]");
+      if (d) openResult(matches[+d.dataset.i]);
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && matches.length) openResult(matches[0]);
+      if (e.key === "Escape") results.style.display = "none";
+    });
+    document.addEventListener("click", e => {
+      if (!e.target.closest(".addr-search")) results.style.display = "none";
+    });
+  }
+
   map.on("moveend", recomputeInViewSummary);
   // moveend fires before the new view finishes rendering, so a fast pan/zoom
   // counts 0 buildings; idle fires once rendering settles and corrects it.
