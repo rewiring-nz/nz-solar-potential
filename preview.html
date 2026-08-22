@@ -349,9 +349,6 @@ function applyToggles() {
       map.setLayoutProperty(id, "visibility", mode === "heatmap" ? "visible" : "none");
     }
   });
-  if (map.getLayer("kwp-labels")) {
-    map.setLayoutProperty("kwp-labels", "visibility", mode === "heatmap" ? "visible" : "none");
-  }
   if (layoutReady) {
     LAYOUT_LAYERS.forEach(id => map.setLayoutProperty(id, "visibility", mode === "layout" ? "visible" : "none"));
   }
@@ -615,31 +612,8 @@ map.on("load", async () => {
   mainSel.outerHTML = coverageSelectHtml("coverage-select-main");
   wireCoverageSelect(document.getElementById("coverage-select-main"));
 
-  map.addLayer({
-    id: "kwp-labels",
-    type: "symbol",
-    source: "buildings",
-    minzoom: 16,
-    filter: [">", ["get", "heatmap_kwp_estimate"], 0.5],
-    layout: {
-      // Two lines, bigger/bolder than before (was a single "N kWp" line at
-      // size 11, easy to miss against the heatmap) -- kW peak prominent on
-      // its own line, kWh/yr as a smaller second line underneath.
-      "text-field": [
-        "format",
-        ["to-string", ["get", "heatmap_kwp_estimate"]], { "font-scale": 1.5 },
-        " kW Peak\n", { "font-scale": 1.0 },
-        ["number-format", ["get", "heatmap_kwh_year_estimate"], { "min-fraction-digits": 0, "max-fraction-digits": 0 }],
-        { "font-scale": 1.15 },
-        " kWh/yr", { "font-scale": 0.9 }
-      ],
-      "text-size": 13,
-      "text-line-height": 1.3,
-      "text-allow-overlap": false,
-      visibility: mode === "heatmap" ? "visible" : "none"
-    },
-    paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.4 }
-  });
+  // (Per-building kW/kWh map labels removed at Josh's request 23 Aug --
+  // the info lives in the click panel; on-map text cluttered the heat map.)
 
   document.getElementById("inview-collapse-btn").addEventListener("click", (e) => {
     const panel = document.getElementById("dashboard-inview");
