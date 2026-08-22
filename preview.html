@@ -188,23 +188,26 @@ const map = new maplibregl.Map({
         attribution: "Esri World Imagery"
       },
       // Esri's free World Imagery has a hard zoom cutoff in this area ("Map
-      // data not yet available" once you zoom past it). We already own 0.1m
-      // LINZ imagery for the whole pilot bbox -- finer than Esri ever had
-      // here -- tiled locally and layered on top; maxzoom 19 means MapLibre
-      // auto-upsamples our own sharpest tiles beyond that rather than
-      // falling through to Esri's blank tiles.
-      "local-tiles": {
+      // data not yet available" once you zoom past it). LINZ Basemaps -- the
+      // hosted tile service for the same 0.1m aerial capture we process from
+      // -- takes over from zoom 14, serving everywhere (the local tile
+      // pyramid this replaced was 233MB and gitignored, so the deployed site
+      // 404'd on it and lost all high-zoom imagery). The api key is the
+      // self-service one from basemaps.linz.govt.nz and rotates ~90 days;
+      // for a long-lived key LINZ asks projects to email basemaps@linz.govt.nz
+      // -- worth doing before wide sharing.
+      "linz-aerial": {
         type: "raster",
-        tiles: ["tiles/{z}/{x}/{y}.png"],
+        tiles: ["https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01m0keqqjx0anrxjrt7grvtqxh"],
         tileSize: 256,
         minzoom: 14,
-        maxzoom: 19,
-        attribution: "LINZ"
+        maxzoom: 21,
+        attribution: "LINZ Basemaps"
       }
     },
     layers: [
       { id: "satellite", type: "raster", source: "satellite" },
-      { id: "local-tiles", type: "raster", source: "local-tiles" }
+      { id: "linz-aerial", type: "raster", source: "linz-aerial" }
     ]
   },
   center: [168.665, -45.035],
