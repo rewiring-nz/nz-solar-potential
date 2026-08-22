@@ -29,6 +29,10 @@ for r in $REGIONS; do
     # offline-safe compute around it. Re-run later: python src/add_addresses.py <region>
     { $PY src/add_addresses.py "$r" || echo "WARN: addresses failed for $r -- patch later"; } &&
     $PY src/build_layout_geojson.py "$r" &&
+    # placement gate: evidence-based per-panel veto (carparks/air/missed
+    # structure), then re-band fill ranks on the gated set
+    $PY src/gate_panels.py "$r" &&
+    $PY src/rerank_layouts.py "$r" &&
     $PY src/build_heatmap_raster.py "$r"
   } >"$log" 2>&1
   if [ $? -ne 0 ]; then
