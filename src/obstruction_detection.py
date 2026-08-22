@@ -269,6 +269,13 @@ HEIGHT_STRONG_PLANAR_RMS_M = 0.12  # a large strong-footprint part whose own poi
 # or pitched roof level always does. Rejected parts are left unflagged rather than turned into
 # facets here -- resolving them properly is segmentation's job, not this module's.
 HEIGHT_STRONG_PLANAR_MIN_AREA_M2 = 10.0
+HEIGHT_STRONG_ABOVE_FRACTION = 0.75  # a strong part only counts as equipment if its flagged
+# points sit predominantly ABOVE the roof plane. Real ducts/plant/chimneys protrude upward
+# (fraction ~1.0); a curved/ribbed/sawtooth surface mis-modelled as one flat facet deviates in
+# BOTH directions (fraction ~0.5) -- the fingerprint separating every blanket-exclusion field
+# report (airport #4722059, canopy #4721762, hangar #4721734, membrane #4679079, 29 Park St)
+# from genuine rooftop equipment.
+HEIGHT_STRONG_ABOVE_MARGIN_M = 0.25
 HEIGHT_STRONG_MAX_FACET_FRACTION = 0.35  # a single strong-evidence part covering more of the
 # facet than this is a mis-modelled roof SURFACE, not rooftop equipment -- no real duct/plant
 # cluster blankets most of a roof. Catches curved/barrel roofs that region-growing collapses
@@ -339,11 +346,19 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             member_pts3d = pts[flagged][member_idx]
             footprint = unary_union([Point(p).buffer(HEIGHT_STRONG_POINT_RADIUS_M) for p in fpts[member_idx]])
             parts = list(footprint.geoms) if footprint.geom_type == "MultiPolygon" else [footprint]
+            plane_a, plane_b, plane_c = plane
             for part in parts:
                 if part.geom_type != "Polygon" or part.area < HEIGHT_STRONG_MIN_PART_AREA_M2:
                     continue
                 if part.area > HEIGHT_STRONG_MAX_FACET_FRACTION * facet_geom.area:
                     continue  # covers most of the roof -> mis-modelled surface, not equipment
+                in_part = shapely.vectorized.contains(part, member_pts3d[:, 0], member_pts3d[:, 1])
+                part_pts3d = member_pts3d[in_part]
+                if len(part_pts3d) >= 5:
+                    plane_z = (plane_a * part_pts3d[:, 0] + plane_b * part_pts3d[:, 1] + plane_c)
+                    frac_above = float(np.mean(part_pts3d[:, 2] > plane_z + HEIGHT_STRONG_ABOVE_MARGIN_M))
+                    if frac_above < HEIGHT_STRONG_ABOVE_FRACTION:
+                        continue  # deviates both ways -> curved/ribbed roof shape, not equipment
                 if part.area >= HEIGHT_STRONG_PLANAR_MIN_AREA_M2:
                     in_part = shapely.vectorized.contains(part, member_pts3d[:, 0], member_pts3d[:, 1])
                     part_pts = member_pts3d[in_part]
@@ -361,6 +376,14 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
                 obstructions.append((part.simplify(0.1), True))
             continue
 
+        # Same above-plane physics as the strong branch: a cluster whose
+        # points straddle the plane is roof shape (vault/rib/valley), not a
+        # protruding object -- the sawtooth-canopy stripes came through here.
+        member3d = pts[flagged][member_idx]
+        if len(member3d) >= 5:
+            pz = plane[0] * member3d[:, 0] + plane[1] * member3d[:, 1] + plane[2]
+            if float(np.mean(member3d[:, 2] > pz + HEIGHT_STRONG_ABOVE_MARGIN_M)) < HEIGHT_STRONG_ABOVE_FRACTION:
+                continue
         hull = MultiPoint(fpts[member_idx]).convex_hull.buffer(HEIGHT_BLOB_BUFFER_M, join_style="round")
         if hull.geom_type != "Polygon":
             continue
@@ -434,6 +457,29 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     color_obs = detect_obstructions(imagery_ds, facet_geom, z_threshold, boundary_erode_m)
     if pc_source is None:
         return color_obs
+
+    # Colour-blob valley veto: a colour anomaly whose underlying LiDAR sits
+    # clearly BELOW the facet plane is the shadowed valley of a vault/rib/
+    # sawtooth (roof geometry photographing dark), not an object. Flush
+    # objects -- the colour path's real quarry (skylights, existing panels)
+    # -- sit ON the plane and pass untouched. Field case: white sawtooth
+    # canopy #4721762, every vault valley striped as an obstruction.
+    if color_obs:
+        va, vb, vc = plane
+        kept_color = []
+        for blob in color_obs:
+            minx, miny, maxx, maxy = blob.bounds
+            bpts = pc_source.points_in_bbox(minx, miny, maxx, maxy, building_only=True)
+            if len(bpts) >= 5:
+                import shapely.vectorized as _sv
+                inside = _sv.contains(blob, bpts[:, 0], bpts[:, 1])
+                bp = bpts[inside]
+                if len(bp) >= 5:
+                    res = bp[:, 2] - (va * bp[:, 0] + vb * bp[:, 1] + vc)
+                    if np.median(res) < -HEIGHT_STRONG_ABOVE_MARGIN_M:
+                        continue  # below-plane valley shadow, not an object
+            kept_color.append(blob)
+        color_obs = kept_color
 
     height_obs = detect_obstructions_from_height(pc_source, facet_geom, plane, residual_threshold_m,
                                                   return_strength=True)
