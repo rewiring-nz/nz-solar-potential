@@ -29,6 +29,10 @@ REGIONS = {
     "shotover_lakehayes":  [168.7335, -45.0008, 168.7814, -44.9606],  # 814
     "arthurs_point":       [168.6733, -44.9934, 168.7114, -44.9691],  # 413
     "arrowtown_millbrook": [168.7904, -44.9599, 168.8476, -44.9376],  # 2712
+    # Gap-filler (Josh, 23 Aug): the strip between shotover_lakehayes and
+    # arrowtown_millbrook plus the whole Lake Hayes east side fell between
+    # the original bboxes -- Speargrass Flat properties reported missing.
+    "speargrass_hayes":    [168.7780, -45.0100, 168.8480, -44.9550],
 }
 LINZ_LIDAR_TILE_INDEX_LAYER = 105905  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
 # bbox to the CL2_*.copc.laz point-cloud tile names, which are then fetched from OpenTopography's
