@@ -17,3 +17,5 @@ tiles/
 __pycache__/
 *.pyc
 .DS_Store
+au_pilot/
+validation/

@@ -17,14 +17,18 @@ upgrade to `points_from_window` without touching the RANSAC/vectorize code.
 import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 import rasterio
-from rasterio.features import shapes as rasterio_shapes
+import shapely.vectorized
+from rasterio.features import rasterize, shapes as rasterio_shapes
 from rasterio.mask import mask as rasterio_mask
 from scipy import ndimage
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components as sparse_connected_components
 from scipy.spatial import cKDTree
-from shapely.geometry import MultiPoint, shape as shapely_shape
-from shapely.ops import unary_union
+from shapely.geometry import LineString, MultiPoint, Point, shape as shapely_shape
+from shapely.ops import polygonize, unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
@@ -97,6 +101,24 @@ def fit_plane_lstsq(points):
     A = np.column_stack([points[:, 0], points[:, 1], np.ones(len(points))])
     coeffs, *_ = np.linalg.lstsq(A, points[:, 2], rcond=None)
     return coeffs  # a, b, c
+
+
+def fit_plane_lstsq_centered(points):
+    """fit_plane_lstsq solved in locally-centered coordinates: NZTM
+    eastings/northings are ~1e6 while a roof spans ~10m, so the raw design
+    matrix's condition number is ~1e5 (and anything normal-equation-based
+    downstream squares that); centering makes conditioning depend only on the
+    roof's own ~10m spread. Kept as a separate function rather than replacing
+    fit_plane_lstsq outright: the un-centered version's exact numerics are
+    baked into the validated behaviour of every pre-existing segmentation
+    path (measurably different results on real buildings when swapped), so
+    only the region-growing path -- built and validated against this version
+    -- uses it. The returned c is shifted back, so the plane is exact in the
+    original coordinates."""
+    x0, y0 = points[:, 0].mean(), points[:, 1].mean()
+    A = np.column_stack([points[:, 0] - x0, points[:, 1] - y0, np.ones(len(points))])
+    (a, b, c0), *_ = np.linalg.lstsq(A, points[:, 2], rcond=None)
+    return np.array([a, b, c0 - a * x0 - b * y0])
 
 
 def plane_residuals(points, plane):
@@ -365,10 +387,29 @@ def segment_building(dsm_ds, building_geom, building_id, ransac_distance_thresho
         )
     except ValueError:
         return []  # geometry doesn't overlap the raster at all
+    return _segment_from_window(window_array[0], window_transform, dsm_ds.nodata, building_geom, building_id,
+                                 ransac_distance_threshold, min_facet_area_m2)
 
+
+def segment_building_from_pointcloud(pc_source, building_geom, building_id, resolution=0.3,
+                                      ransac_distance_threshold=None, min_facet_area_m2=None):
+    """Same segmentation, sourced from the raw LiDAR point cloud (rasterized
+    onto a fine grid, see pointcloud_source.rasterize_pointcloud_window)
+    instead of the 1m DSM -- everything past that point is identical,
+    exactly the "drop-in upgrade to points_from_window" this module's own
+    docstring anticipated from the start."""
+    from src.pointcloud_source import rasterize_pointcloud_window
+    window_array, window_transform, nodata = rasterize_pointcloud_window(pc_source, building_geom, resolution)
+    if window_array is None:
+        return []
+    return _segment_from_window(window_array[0], window_transform, nodata, building_geom, building_id,
+                                 ransac_distance_threshold, min_facet_area_m2)
+
+
+def _segment_from_window(window_array, window_transform, nodata, building_geom, building_id,
+                          ransac_distance_threshold=None, min_facet_area_m2=None):
     min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
-    window_array = window_array[0]
-    points, rows, cols = points_from_window(window_array, window_transform, dsm_ds.nodata)
+    points, rows, cols = points_from_window(window_array, window_transform, nodata)
     if len(points) < RANSAC_MIN_INLIERS:
         return []
 
@@ -421,3 +462,1383 @@ def segment_building(dsm_ds, building_geom, building_id, ransac_distance_thresho
 
     facets = _dedupe_overlaps(facets, min_facet_area_m2)
     return merge_similar_facets(facets)
+
+
+# --- Image-guided segmentation ---------------------------------------------
+#
+# The RANSAC approach above asks the 1m DSM to do two things at once: find
+# where a roof divides into separate faces (the boundary) and find each
+# face's slope/aspect (the fit) -- and it's the *boundary* discovery that
+# breaks down on shallow multi-face roofs (see RANSAC_DISTANCE_THRESHOLD_M's
+# comment): a compromise plane spanning several true faces can out-compete
+# any single real face for inlier count. But roof *edges* are usually
+# clearly visible in the 0.1m RGB imagery even when the DSM can't resolve
+# the slope difference across them -- confirmed directly: on a real ~10-11
+# deg hip/pyramid roof RANSAC kept merging into one flat facet, Canny edge
+# detection + a Hough transform on the same building's imagery found all
+# four ridge lines cleanly.
+#
+# So: detect candidate interior ridge/hip lines from the imagery, partition
+# the building polygon along them, then fit each resulting wedge's
+# slope/aspect from just the DSM points inside it -- a much easier problem
+# than discovering the wedge boundary and its slope simultaneously. Falls
+# back to the pure-DSM segment_building() at several points whenever the
+# image doesn't yield a confident partition, rather than trusting a
+# possibly-wrong line: no interior lines found, a wedge's own points don't
+# fit a plane well (the "ridge line" was probably noise -- a shadow edge,
+# a roofing seam, not a real slope change), or the result doesn't cover
+# enough of the footprint to be worth preferring over the fallback.
+
+ROOFLINE_CANNY_LOW, ROOFLINE_CANNY_HIGH = 40, 120
+ROOFLINE_HOUGH_THRESHOLD = 25
+ROOFLINE_HOUGH_MIN_LINE_LENGTH_PX = 15  # ~1.5m at 0.1m/px
+ROOFLINE_HOUGH_MAX_LINE_GAP_PX = 8
+# A detected segment whose whole length sits this close to the building's
+# own outline is just re-finding the eave/edge, which we already have
+# precisely from the (0.1m, imagery-derived) building outline polygon --
+# only *interior* divisions add anything.
+ROOFLINE_BOUNDARY_EXCLUSION_M = 1.0
+ROOFLINE_MIN_INTERIOR_LENGTH_M = 2.0  # shorter than this, after clipping to the footprint, isn't a real dividing line
+ROOFLINE_CLUSTER_ANGLE_DEG = 8.0  # candidate segments this close in angle and...
+ROOFLINE_CLUSTER_DIST_M = 1.5  # ...this close in perpendicular offset are treated as the same real line, not two
+ROOFLINE_WEDGE_MIN_POINTS = 6
+ROOFLINE_WEDGE_MAX_RMS_RESIDUAL_M = 0.35  # if a wedge's best-fit plane doesn't explain its own points this well,
+# the line that created it probably wasn't a real ridge -- distrust the whole partition rather than one wedge,
+# since a wrong line usually means neighbouring wedges are wrong too (they share that boundary)
+ROOFLINE_MIN_COVERAGE_FRACTION = 0.5  # image-guided facets must explain at least this much of the footprint
+# NOT SAFE TO RAISE AS A FIX: found in testing that any threshold high enough to catch the real
+# failure mode this is meant to guard against (a bad partition silently dropping a whole legitimate
+# wing of a multi-section building, while still clearing 50%) also rejects the one repeatedly-
+# verified genuine improvement this whole feature produced (a shallow hip roof whose real facets
+# only explain ~51% of its footprint, because the rest is a separate lower structure the wedge
+# partition was never meant to cover). A single scalar coverage threshold can't tell "genuinely
+# incomplete but correct" apart from "wrongly dropped real area" -- that needs the partition to
+# reconcile against what it *didn't* explain, not just total up what it did. Left low and this
+# function is NOT wired into the live pipeline (see README) rather than shipping on an
+# unconvincing safety net.
+# to be preferred over falling back to the RANSAC result
+
+
+def _segment_angle_deg(seg):
+    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
+    return np.degrees(np.arctan2(y2 - y1, x2 - x1)) % 180
+
+
+def _perp_distance_to_line(point_xy, seg):
+    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
+    dx, dy = x2 - x1, y2 - y1
+    norm = np.hypot(dx, dy)
+    if norm < 1e-9:
+        return seg.distance(Point(point_xy))
+    px, py = point_xy
+    return abs(dx * (y1 - py) - dy * (x1 - px)) / norm
+
+
+def _detect_interior_roof_lines(imagery_ds, building_geom):
+    """Returns candidate interior ridge/hip LineStrings (world CRS) from
+    Canny + Hough on the 0.1m RGB imagery, excluding anything that's just
+    tracing the building's own outline."""
+    pad = 2
+    minx, miny, maxx, maxy = building_geom.bounds
+    try:
+        window = rasterio.windows.from_bounds(minx - pad, miny - pad, maxx + pad, maxy + pad, imagery_ds.transform)
+        arr = imagery_ds.read([1, 2, 3], window=window)
+    except Exception:
+        return []
+    if arr.size == 0 or arr.shape[1] < 5 or arr.shape[2] < 5:
+        return []
+    rgb = np.moveaxis(arr, 0, -1).astype(np.uint8)
+    wt = imagery_ds.window_transform(window)
+
+    building_mask = rasterize([(building_geom, 1)], out_shape=rgb.shape[:2], transform=wt).astype(np.uint8)
+    building_mask = cv2.dilate(building_mask, np.ones((5, 5), np.uint8))
+
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(gray, ROOFLINE_CANNY_LOW, ROOFLINE_CANNY_HIGH)
+    edges[building_mask == 0] = 0
+
+    lines = cv2.HoughLinesP(
+        edges, rho=1, theta=np.pi / 180, threshold=ROOFLINE_HOUGH_THRESHOLD,
+        minLineLength=ROOFLINE_HOUGH_MIN_LINE_LENGTH_PX, maxLineGap=ROOFLINE_HOUGH_MAX_LINE_GAP_PX,
+    )
+    if lines is None:
+        return []
+
+    boundary = building_geom.exterior
+    candidates = []
+    for x1, y1, x2, y2 in lines.reshape(-1, 4):
+        wx1, wy1 = wt * (x1, y1)
+        wx2, wy2 = wt * (x2, y2)
+        seg = LineString([(wx1, wy1), (wx2, wy2)])
+        if seg.length < 1.0:
+            continue
+        if (boundary.distance(Point(wx1, wy1)) < ROOFLINE_BOUNDARY_EXCLUSION_M
+                and boundary.distance(Point(wx2, wy2)) < ROOFLINE_BOUNDARY_EXCLUSION_M):
+            continue
+        candidates.append(seg)
+    return candidates
+
+
+def _cluster_lines(candidates):
+    """Dedupe near-duplicate detections of the same real ridge (Hough
+    often returns several overlapping segments along one true line) --
+    keep the longest in each angle+offset cluster."""
+    accepted = []
+    for seg in sorted(candidates, key=lambda s: -s.length):
+        ang = _segment_angle_deg(seg)
+        mid = seg.interpolate(0.5, normalized=True)
+        if any(
+            min(abs(ang - a_ang), 180 - abs(ang - a_ang)) < ROOFLINE_CLUSTER_ANGLE_DEG
+            and _perp_distance_to_line((mid.x, mid.y), a_seg) < ROOFLINE_CLUSTER_DIST_M
+            for a_seg, a_ang in accepted
+        ):
+            continue
+        accepted.append((seg, ang))
+    return [s for s, _ in accepted]
+
+
+def _extend_and_clip(seg, building_geom):
+    """Hough segments usually stop short of the true ridge's full extent
+    (wherever contrast happened to drop) -- extend along the detected
+    direction far past the building, then clip back to its true span."""
+    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
+    dx, dy = x2 - x1, y2 - y1
+    norm = np.hypot(dx, dy)
+    if norm < 1e-9:
+        return None
+    ux, uy = dx / norm, dy / norm
+    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    bminx, bminy, bmaxx, bmaxy = building_geom.bounds
+    diag = np.hypot(bmaxx - bminx, bmaxy - bminy) + 1
+    extended = LineString([(cx - ux * diag, cy - uy * diag), (cx + ux * diag, cy + uy * diag)])
+    clipped = extended.intersection(building_geom.buffer(0.01))
+    if clipped.is_empty:
+        return None
+    if clipped.geom_type == "MultiLineString":
+        clipped = max(clipped.geoms, key=lambda l: l.length)
+    if clipped.geom_type != "LineString" or clipped.length < ROOFLINE_MIN_INTERIOR_LENGTH_M:
+        return None
+    return clipped
+
+
+def _partition_by_lines(building_geom, lines):
+    merged = unary_union([building_geom.exterior, *lines])
+    polys = [p for p in polygonize(merged) if building_geom.buffer(0.05).contains(p.representative_point())]
+    return polys
+
+
+def _fit_wedge_facet(wedge_poly, points, rows, cols, window_shape, window_transform,
+                      building_id, building_geom, min_facet_area_m2):
+    wedge_mask = rasterize([(wedge_poly, 1)], out_shape=window_shape, transform=window_transform).astype(bool)
+    in_wedge = wedge_mask[rows, cols]
+    wedge_points = points[in_wedge]
+    if len(wedge_points) < ROOFLINE_WEDGE_MIN_POINTS:
+        return None
+    plane = fit_plane_lstsq(wedge_points)
+    rms = np.sqrt(np.mean(plane_residuals(wedge_points, plane) ** 2))
+    if rms > ROOFLINE_WEDGE_MAX_RMS_RESIDUAL_M:
+        return None
+    a, b, c = plane
+    slope_deg, aspect_deg = slope_aspect_from_plane(a, b)
+    if slope_deg > config.MAX_ROOF_SLOPE_DEG:
+        return None
+    clipped = wedge_poly.intersection(building_geom)
+    if clipped.is_empty:
+        return None
+    if clipped.geom_type == "MultiPolygon":
+        clipped = max(clipped.geoms, key=lambda p: p.area)
+    elif clipped.geom_type != "Polygon":
+        return None
+    if clipped.area < min_facet_area_m2:
+        return None
+    return {
+        "building_id": building_id,
+        "plane_a": a, "plane_b": b, "plane_c": c,
+        "slope_deg": slope_deg,
+        "aspect_deg": aspect_deg,
+        "area_m2": clipped.area,
+        "point_count": int(in_wedge.sum()),
+        "geometry": clipped,
+    }
+
+
+ROOFLINE_WEDGE_MIN_AREA_M2 = 30.0  # a kept wedge must be at least this big -- the plain
+# MIN_FACET_AREA_M2 floor (3.0m2, sized only for "can a panel fit") is far too permissive here: a
+# small dormer/gable-end detail can legitimately pass every other check (a real slope difference,
+# a clean per-side fit) and still not be worth its own facet. Tried this as a *fraction* of the
+# building's footprint first (0.08) -- wrong shape for the problem: on a large multi-wing building,
+# 8% of the total footprint is bigger than most of that building's own legitimately-small real
+# facets (55 facets averaging ~52m2 each on one real building), rejecting genuine wings, not just
+# dormer noise. Dormer/gable-end artifacts are small in *absolute* terms regardless of the
+# building's overall size, so an absolute floor is the right shape of gate; this filters those out
+# without needing to solve the harder problem of classifying "real major ridge" vs "real minor
+# architectural detail" directly. Value chosen empirically: swept 15/20/30/40/60 against two
+# buildings with confirmed false-ridge regressions (a plain gable and a zigzag-edged roof, both
+# repeatedly fragmented by earlier, looser validation attempts) and four with confirmed real
+# improvements -- 30 is the largest floor that still stabilises both bad cases while keeping the
+# one real improvement (a shallow hip roof) that survives at every floor tested; the other three
+# "improvements" turned out to only exist below this floor too, meaning they very likely shared the
+# same over-fragmentation problem rather than being genuine wins -- losing them here is the correct
+# outcome, not a regression.
+
+ROOFLINE_VALIDATION_MIN_SLOPE_DIFF_DEG = 4.0
+ROOFLINE_VALIDATION_MIN_ASPECT_DIFF_DEG = 15.0
+ROOFLINE_VALIDATION_MIN_SIDE_POINTS = 10
+# How far from the candidate line a point can be and still count towards
+# testing it. First version of this check split the *whole* building by
+# each line and compared the two halves -- too coarse: on a building with
+# other real 3D features (dormers, a chimney, a neighbouring wing at a
+# different pitch), each "half" bundles all of that together, so the
+# comparison can show a large difference that has nothing to do with
+# whether *this specific line* sits on a real ridge. Restricting to a
+# narrow corridor tests only what actually changes right at the line.
+ROOFLINE_VALIDATION_CORRIDOR_M = 3.0
+
+
+def _line_side_mask(points_xy, seg):
+    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
+    dx, dy = x2 - x1, y2 - y1
+    cross = dx * (points_xy[:, 1] - y1) - dy * (points_xy[:, 0] - x1)
+    return cross > 0
+
+
+def _perp_distances_to_line(points_xy, seg):
+    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
+    dx, dy = x2 - x1, y2 - y1
+    norm = np.hypot(dx, dy)
+    if norm < 1e-9:
+        return np.full(len(points_xy), np.inf)
+    return np.abs(dx * (y1 - points_xy[:, 1]) - dy * (x1 - points_xy[:, 0])) / norm
+
+
+def _line_is_real_ridge(seg, points):
+    """Reject a candidate line unless the DSM itself shows a real slope or
+    aspect difference between its two sides, tested using only points in a
+    narrow corridor either side of the line -- found in testing that a
+    plausible-looking image edge is often a shadow line or a fine roofing
+    seam, not an actual change in pitch, and letting those through
+    fragmented genuinely-uniform roofs into disconnected slivers (a plain
+    gable house dropped from 73 correctly-packed panels to 30 scattered
+    ones; `merge_similar_facets` was supposed to catch this after the fact
+    by re-merging near-identical adjacent wedges, but small malformed
+    wedges from a bad split have too few points for a stable fit, so their
+    slope/aspect estimates scatter enough to dodge that check). An earlier
+    version of this function compared the *whole* building split in two by
+    each line, which was too coarse -- see ROOFLINE_VALIDATION_CORRIDOR_M."""
+    perp = _perp_distances_to_line(points[:, :2], seg)
+    near = perp <= ROOFLINE_VALIDATION_CORRIDOR_M
+    side = _line_side_mask(points[:, :2], seg)
+    pts_a, pts_b = points[near & side], points[near & ~side]
+    if len(pts_a) < ROOFLINE_VALIDATION_MIN_SIDE_POINTS or len(pts_b) < ROOFLINE_VALIDATION_MIN_SIDE_POINTS:
+        return False  # can't confidently test this line -- don't trust what can't be verified
+    slope_a, aspect_a = slope_aspect_from_plane(*fit_plane_lstsq(pts_a)[:2])
+    slope_b, aspect_b = slope_aspect_from_plane(*fit_plane_lstsq(pts_b)[:2])
+    # A "line" whose corridor produces an implausibly steep side (found in
+    # testing: 60+ deg, well past any real roof pitch) isn't dividing two
+    # roof planes at all -- it's the base of a small dormer/gable-end
+    # feature, where the corridor sample on that side is mostly the
+    # feature's own near-vertical wall, not a second roof surface. That's
+    # a real slope difference (the check below would happily pass it) but
+    # not a useful *facet* division. MAX_ROOF_SLOPE_DEG is the pipeline's
+    # own existing definition of "not roof" elsewhere in this file.
+    if slope_a > config.MAX_ROOF_SLOPE_DEG or slope_b > config.MAX_ROOF_SLOPE_DEG:
+        return False
+    if slope_a < MERGE_LOW_SLOPE_DEG and slope_b < MERGE_LOW_SLOPE_DEG:
+        return False  # both sides near-flat -- aspect is noise here, and there's no slope difference either
+    return (abs(slope_a - slope_b) >= ROOFLINE_VALIDATION_MIN_SLOPE_DIFF_DEG
+            or _circular_diff(aspect_a, aspect_b) >= ROOFLINE_VALIDATION_MIN_ASPECT_DIFF_DEG)
+
+
+def segment_building_image_guided(dsm_ds, imagery_ds, building_geom, building_id,
+                                   ransac_distance_threshold=None, min_facet_area_m2=None):
+    """Image-guided segmentation with a safe fallback to the pure-DSM
+    segment_building() -- see the module comment above `_segment_angle_deg`
+    for the rationale. imagery_ds=None always uses the fallback (so
+    existing callers that don't have imagery open keep working unchanged)."""
+    min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
+
+    def fallback():
+        return segment_building(dsm_ds, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
+
+    if imagery_ds is None:
+        return fallback()
+
+    try:
+        window_array, window_transform = rasterio_mask(
+            dsm_ds, [building_geom], crop=True, nodata=dsm_ds.nodata, filled=True
+        )
+    except ValueError:
+        return fallback()
+    window_array = window_array[0]
+    points, rows, cols = points_from_window(window_array, window_transform, dsm_ds.nodata)
+    if len(points) < RANSAC_MIN_INLIERS:
+        return fallback()
+
+    raw_lines = _detect_interior_roof_lines(imagery_ds, building_geom)
+    clustered = _cluster_lines(raw_lines)
+    clipped_lines = [l for l in (_extend_and_clip(s, building_geom) for s in clustered) if l is not None]
+    validated_lines = [l for l in clipped_lines if _line_is_real_ridge(l, points)]
+    if not validated_lines:
+        return fallback()
+
+    wedges = _partition_by_lines(building_geom, validated_lines)
+    if len(wedges) < 2:
+        return fallback()
+
+    # Keep wedges whose own points fit a clean plane; drop the rest rather
+    # than distrusting the whole partition on one bad wedge -- found in
+    # testing that when the image detects only some of a roof's true ridge
+    # lines (e.g. 3 of 4 on a hip roof, one lost to noise/low contrast),
+    # the resulting partition has a mix of clean single-face wedges (which
+    # fit beautifully) and a few malformed slivers straddling the missing
+    # ridge (which correctly fail the fit check) -- rejecting everything
+    # over those slivers would throw away the good wedges too.
+    facets = [
+        f for f in (
+            _fit_wedge_facet(wedge, points, rows, cols, window_array.shape, window_transform,
+                              building_id, building_geom,
+                              max(min_facet_area_m2, ROOFLINE_WEDGE_MIN_AREA_M2))
+            for wedge in wedges
+        ) if f is not None
+    ]
+
+    if sum(f["area_m2"] for f in facets) < ROOFLINE_MIN_COVERAGE_FRACTION * building_geom.area:
+        return fallback()
+
+    return merge_similar_facets(facets)
+
+
+# --- Point-native segmentation -----------------------------------------
+#
+# segment_building/_segment_from_window rasterize onto a regular grid --
+# originally the DSM's own 1m grid, and ndimage.label (connected
+# components) plus a rasterized pixel trace (bounding each facet's fitted
+# shape) both assume that grid exists. That grid dependency is exactly
+# what broke when denser point-cloud data was fed into it: re-rasterizing
+# point-cloud points onto either a fine or a matching-resolution grid,
+# confirmed directly, produced results that swung between over-merged and
+# over-fragmented depending on threshold -- because the pipeline's
+# thresholds were tuned against the DSM raster's specific noise/gridding
+# characteristics, which a rasterized-then-regridded point cloud doesn't
+# share, no matter how the regridding is tuned.
+#
+# This works directly on an irregular (x, y, z) point set instead, no
+# grid anywhere. Same interface for points sourced from a rasterized DSM
+# window (points_from_window) or a raw point-cloud query -- important for
+# scaling beyond one pilot region: LiDAR point-cloud coverage isn't
+# universal across NZ yet, so a national pipeline needs regions with only
+# a DSM available to degrade to that without a separate code path.
+
+POINTCLOUD_CLUSTER_RADIUS_M = 1.5  # two points this close (or connected via a chain of such
+# gaps) count as the same physical patch of roof -- replaces the raster-grid adjacency
+# ndimage.label used to provide, needed here since there's no grid at all to be adjacent on.
+
+
+# --- Compromise-facet splitting via local surface normals ------------------
+#
+# RANSAC_DISTANCE_THRESHOLD_M's own comment documents the residual failure
+# mode this targets: on a shallow multi-face roof, a plane correctly seeded
+# from one real face can still have its *inlier acceptance* (a global
+# residual test against every remaining point, with no idea which face a
+# point is actually on) reach across a real ridge and absorb points from an
+# adjacent, differently-facing plane -- because near the ridge, both faces'
+# true heights sit within the necessarily-loose vertical tolerance of a
+# single "compromise" plane. Two earlier fixes for this were tried and
+# reverted: a globally tighter/slope-proportional threshold measurably
+# fixed the reported case but caused real regressions elsewhere (one
+# building dropped from 978 to 719 panels) -- reverted rather than ship a
+# net-negative trade. Image-based ridge detection (segment_building_image_
+# guided, above) found real ridges from RGB Canny/Hough edges, but shadows
+# and roofing seams produce visually identical false edges, and repeated
+# validation attempts couldn't separate the two reliably enough to ship.
+#
+# This instead asks the *point cloud itself*, not one global fit or an
+# image, whether a facet's own points actually support a single plane:
+# fit each point its own small local plane from just its nearest few
+# neighbours, and look for a spatially coherent boundary between two
+# neighbourhoods of differing local slope/aspect -- a real ridge is exactly
+# that kind of boundary; a shadow or seam has no reason to line up with one
+# in the 3D geometry, since it's a lighting/material artifact, not a slope
+# change. This can still blur right at the ridge itself (a point's local
+# neighbourhood there straddles both faces), but confirming a split needs a
+# spatially *significant* cluster on each side, not a clean classification
+# of every single point, so a thin blurred seam along the ridge doesn't
+# defeat it as long as each face's bulk is far enough from the ridge to
+# read cleanly (checked directly: true on every reported failing case).
+
+LOCAL_NORMAL_K = 10  # neighbours for one point's local plane fit
+LOCAL_NORMAL_RADIUS_M = 2.0  # cap on how far a "local" neighbour can be -- kept close to
+# POINTCLOUD_CLUSTER_RADIUS_M/RANSAC_SAMPLE_RADIUS_M's own precedent for "still the same patch of
+# roof"; wider would blur the very ridge this is trying to detect, narrower risks too few points
+# per estimate on sparser parts of the point cloud
+LOCAL_NORMAL_MIN_NEIGHBOURS = 5  # fewer than this and a local plane fit is just noise
+SPLIT_MIN_POINTS = 20  # a facet needs enough points to support two independently-confident
+# sub-planes, not just one -- below this, not worth the analysis
+SPLIT_MIN_AREA_M2 = 15.0  # below this a facet can't plausibly hide a second real face of any
+# useful size (each side would need to individually clear MIN_FACET_AREA_M2 downstream anyway)
+SPLIT_CONNECT_RADIUS_M = LOCAL_NORMAL_RADIUS_M  # two points can only join the same sub-cluster
+# if they were also close enough to plausibly share a local normal estimate in the first place
+SPLIT_LOCAL_SLOPE_DIFF_DEG = 6.0
+SPLIT_LOCAL_ASPECT_DIFF_DEG = 25.0
+SPLIT_MIN_SUBCLUSTER_POINTS = RANSAC_MIN_INLIERS
+SPLIT_MIN_SUBCLUSTER_AREA_M2 = 20.0  # a point-count floor alone lets a real but spatially-tiny
+# texture artifact (a corrugated/ribbed roofing material's own alternating micro-facets, confirmed
+# directly: a densely-sampled patch can pack dozens of points into under a square metre) through as
+# "significant" -- an area floor this size is well above any single corrugation rib's own footprint
+# but still well under a real minor roof wing, so it screens out texture noise without needing to
+# tell texture and structure apart by any other means
+
+
+def _local_normals(points):
+    """Per-point local (slope_deg, aspect_deg) from a small least-squares
+    plane fit over each point's own nearest neighbours. Physically grounded
+    alternative to image-based ridge detection: local surface normals come
+    straight from the 3D geometry, so they can't be fooled by a shadow edge
+    or roofing seam the way Canny-on-RGB was (see the module comment
+    above). Returns (slope_deg[N], aspect_deg[N]); a point with too few
+    nearby neighbours gets NaN in both -- not enough local support to trust
+    a normal there, rather than guessing from a diluted/distant sample."""
+    n = len(points)
+    slopes = np.full(n, np.nan)
+    aspects = np.full(n, np.nan)
+    if n < LOCAL_NORMAL_MIN_NEIGHBOURS + 1:
+        return slopes, aspects
+    tree = cKDTree(points[:, :2])
+    k = min(LOCAL_NORMAL_K + 1, n)  # +1: a point's own nearest neighbour is itself, at distance 0
+    dists, idxs = tree.query(points[:, :2], k=k)
+    for i in range(n):
+        row_dists, row_idx = np.atleast_1d(dists[i]), np.atleast_1d(idxs[i])
+        mask = (row_dists <= LOCAL_NORMAL_RADIUS_M) & (row_idx != i)
+        neighbor_idx = row_idx[mask]
+        if len(neighbor_idx) < LOCAL_NORMAL_MIN_NEIGHBOURS:
+            continue
+        try:
+            a, b, _ = fit_plane_lstsq(points[neighbor_idx])
+        except np.linalg.LinAlgError:
+            continue
+        slopes[i], aspects[i] = slope_aspect_from_plane(a, b)
+    return slopes, aspects
+
+
+def _maybe_split_compromise_facet(comp_points, parent_plane):
+    """Given one spatially-connected component of a RANSAC plane's inlier
+    points (plus that plane's own (a,b,c)), check whether it's actually two
+    or more real roof faces wrongly merged into one compromise plane (see
+    the module comment above). Returns a list of (points_subset, plane)
+    pairs: the single input unchanged if no confident split is found, or
+    2+ freshly-refit groups otherwise.
+
+    Splits are only kept if the resulting groups' *global* refit slope/
+    aspect differ by more than merge_similar_facets' own thresholds would
+    still merge back together later in the same pipeline run -- using the
+    identical thresholds both directions on purpose, so a split can never
+    produce two facets the very next step would just undo, which would
+    otherwise waste the work and make the final boundary depend on
+    incidental split/merge ordering instead of a real, confirmed
+    difference."""
+    if len(comp_points) < SPLIT_MIN_POINTS:
+        return [(comp_points, parent_plane)]
+    if MultiPoint(comp_points[:, :2]).convex_hull.area < SPLIT_MIN_AREA_M2:
+        return [(comp_points, parent_plane)]
+
+    local_slope, local_aspect = _local_normals(comp_points)
+    valid_idx = np.where(~np.isnan(local_slope))[0]
+    if len(valid_idx) < SPLIT_MIN_POINTS:
+        return [(comp_points, parent_plane)]
+
+    vpts = comp_points[valid_idx]
+    vslope = local_slope[valid_idx]
+    vaspect = local_aspect[valid_idx]
+
+    tree = cKDTree(vpts[:, :2])
+    pairs = tree.query_pairs(SPLIT_CONNECT_RADIUS_M, output_type="ndarray")
+    if len(pairs) == 0:
+        return [(comp_points, parent_plane)]
+
+    both_flat = (vslope[pairs[:, 0]] < MERGE_LOW_SLOPE_DEG) & (vslope[pairs[:, 1]] < MERGE_LOW_SLOPE_DEG)
+    slope_close = np.abs(vslope[pairs[:, 0]] - vslope[pairs[:, 1]]) <= SPLIT_LOCAL_SLOPE_DIFF_DEG
+    araw = np.abs(vaspect[pairs[:, 0]] - vaspect[pairs[:, 1]]) % 360
+    aspect_diff = np.minimum(araw, 360 - araw)
+    aspect_close = both_flat | (aspect_diff <= SPLIT_LOCAL_ASPECT_DIFF_DEG)
+    pairs = pairs[slope_close & aspect_close]
+
+    n = len(vpts)
+    if len(pairs) == 0:
+        sub_components = [np.array([i]) for i in range(n)]
+    else:
+        row = np.concatenate([pairs[:, 0], pairs[:, 1]])
+        col = np.concatenate([pairs[:, 1], pairs[:, 0]])
+        graph = coo_matrix((np.ones(len(row)), (row, col)), shape=(n, n))
+        n_comp, labels = sparse_connected_components(graph, directed=False)
+        sub_components = [np.where(labels == i)[0] for i in range(n_comp)]
+
+    def _sub_area(c):
+        if len(c) < 3:
+            return 0.0
+        hull = MultiPoint(vpts[c, :2]).convex_hull
+        return hull.area if hull.geom_type == "Polygon" else 0.0
+
+    significant = [c for c in sub_components
+                   if len(c) >= SPLIT_MIN_SUBCLUSTER_POINTS and _sub_area(c) >= SPLIT_MIN_SUBCLUSTER_AREA_M2]
+    if len(significant) < 2:
+        return [(comp_points, parent_plane)]
+
+    # Map back to indices into comp_points, then fold any leftover points
+    # (too-small a cluster, or normal estimation failed) into whichever
+    # kept cluster is spatially nearest -- dropping them instead would
+    # silently shrink the split facets' own claimed area versus the
+    # original unsplit one.
+    sub_groups_local = [valid_idx[c] for c in significant]
+    assigned = np.full(len(comp_points), -1)
+    for gi, idxs in enumerate(sub_groups_local):
+        assigned[idxs] = gi
+    unassigned = np.where(assigned == -1)[0]
+    if len(unassigned):
+        centroids = np.array([comp_points[idxs, :2].mean(axis=0) for idxs in sub_groups_local])
+        for i in unassigned:
+            d = np.linalg.norm(centroids - comp_points[i, :2], axis=1)
+            assigned[i] = int(np.argmin(d))
+
+    candidate_groups = [comp_points[assigned == gi] for gi in range(len(sub_groups_local))]
+
+    refit_planes = []
+    for g in candidate_groups:
+        try:
+            refit_planes.append(fit_plane_lstsq(g))
+        except np.linalg.LinAlgError:
+            return [(comp_points, parent_plane)]
+
+    def _distinct(pi, pj):
+        si, ai = slope_aspect_from_plane(pi[0], pi[1])
+        sj, aj = slope_aspect_from_plane(pj[0], pj[1])
+        slope_close = abs(si - sj) <= MERGE_SLOPE_DIFF_DEG
+        both_flat = si < MERGE_LOW_SLOPE_DEG and sj < MERGE_LOW_SLOPE_DEG
+        aspect_close = both_flat or _circular_diff(ai, aj) <= MERGE_ASPECT_DIFF_DEG
+        return not (slope_close and aspect_close)
+
+    if not any(_distinct(refit_planes[i], refit_planes[j])
+               for i in range(len(refit_planes)) for j in range(i + 1, len(refit_planes))):
+        return [(comp_points, parent_plane)]
+
+    return list(zip(candidate_groups, refit_planes))
+
+
+def _cluster_points_spatially(points_xy, radius):
+    """Connected-components over a point set via a spatial graph (edge
+    between any two points within `radius`) instead of raster adjacency.
+    Returns a list of index arrays (into points_xy), one per component."""
+    n = len(points_xy)
+    if n == 0:
+        return []
+    if n == 1:
+        return [np.array([0])]
+    tree = cKDTree(points_xy)
+    pairs = tree.query_pairs(radius, output_type="ndarray")
+    if len(pairs) == 0:
+        return [np.array([i]) for i in range(n)]
+    row = np.concatenate([pairs[:, 0], pairs[:, 1]])
+    col = np.concatenate([pairs[:, 1], pairs[:, 0]])
+    graph = coo_matrix((np.ones(len(row)), (row, col)), shape=(n, n))
+    n_components, labels = sparse_connected_components(graph, directed=False)
+    return [np.where(labels == i)[0] for i in range(n_components)]
+
+
+def component_shape_from_points(points_xy):
+    """Like component_shape, but for a properly spatially-clustered point
+    set with no raster trace to bound against. That bound existed to stop
+    a rectangle/hull fit from reaching past stray, far-flung inlier points
+    that shouldn't have counted as part of the same facet -- clustering
+    itself already prevents that here, since a stray point wouldn't be in
+    the same spatially-connected component to begin with."""
+    if len(points_xy) < 3:
+        return None
+    hull = MultiPoint(points_xy).convex_hull
+    if hull.geom_type != "Polygon" or hull.area <= 0:
+        return None
+    min_rect = hull.minimum_rotated_rectangle
+    if min_rect.geom_type == "Polygon" and min_rect.area > 0 and hull.area / min_rect.area >= RECT_FIT_MIN_FILL_FRACTION:
+        return min_rect
+    return hull
+
+
+def segment_points(points, building_geom, building_id, ransac_distance_threshold=None, min_facet_area_m2=None):
+    """Point-native equivalent of segment_building -- see the module
+    comment above for why this exists. `points` is an Nx3 (x, y, z) array
+    in the building's world CRS, from any source."""
+    min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
+    if len(points) < RANSAC_MIN_INLIERS:
+        return []
+
+    rng = np.random.default_rng(building_id)
+    ransac_kwargs = {} if ransac_distance_threshold is None else {"distance_threshold": ransac_distance_threshold}
+    planes = ransac_planes(points, rng, **ransac_kwargs)
+
+    facets = []
+    for plane, inlier_idx in planes:
+        a, b, c = plane
+        slope_deg, aspect_deg = slope_aspect_from_plane(a, b)
+        if slope_deg > config.MAX_ROOF_SLOPE_DEG:
+            continue
+
+        # Tried inserting _maybe_split_compromise_facet here (per-component,
+        # before shaping) to catch RANSAC's remaining compromise-plane
+        # blind spot -- see that function's module comment. Direct
+        # diagnostic testing on the reported failing buildings (#5371200,
+        # #4734944, #4735310) found the local-normal signal is dominated by
+        # roofing material micro-texture (corrugated/ribbed metal, tile
+        # overlap) at the point densities available here, not real
+        # macro-scale ridges: 90%+ of points read as "locally steep" in a
+        # diffuse, non-clustered pattern, and the only sub-clusters that
+        # passed a point-count-only significance filter were sub-10m2
+        # noise. Adding an area floor big enough to reject that texture
+        # noise made the split fire on none of the reported cases at all --
+        # confirmed those "improvements" were the same noise, not real
+        # splits (same self-correcting pattern documented for the
+        # abandoned image-guided approach above). Left defined and unwired
+        # rather than shipped: a third dead end on this specific problem,
+        # not a threshold this needs tuned further.
+        inlier_points = points[inlier_idx]
+        for comp_local_idx in _cluster_points_spatially(inlier_points[:, :2], POINTCLOUD_CLUSTER_RADIUS_M):
+            comp_points = inlier_points[comp_local_idx]
+            if len(comp_points) < 3:
+                continue
+            polygon = component_shape_from_points(comp_points[:, :2])
+            if polygon is None:
+                continue
+
+            polygon = polygon.intersection(building_geom)
+            if polygon.is_empty:
+                continue
+            if polygon.geom_type == "MultiPolygon":
+                polygon = max(polygon.geoms, key=lambda p: p.area)
+            elif polygon.geom_type not in ("Polygon",):
+                continue
+            if polygon.area < min_facet_area_m2:
+                continue
+
+            facets.append({
+                "building_id": building_id,
+                "plane_a": a, "plane_b": b, "plane_c": c,
+                "slope_deg": slope_deg,
+                "aspect_deg": aspect_deg,
+                "area_m2": polygon.area,
+                "point_count": len(comp_points),
+                "geometry": polygon,
+            })
+
+    facets = _dedupe_overlaps(facets, min_facet_area_m2)
+    return merge_similar_facets(facets)
+
+
+def segment_building_points_native(dsm_ds, building_geom, building_id,
+                                    ransac_distance_threshold=None, min_facet_area_m2=None):
+    """segment_points, sourced from the DSM (same points_from_window
+    extraction segment_building uses) -- lets the point-native path be
+    validated against the existing DSM-based pipeline on equal terms
+    before pointing it at denser point-cloud data."""
+    try:
+        window_array, window_transform = rasterio_mask(
+            dsm_ds, [building_geom], crop=True, nodata=dsm_ds.nodata, filled=True
+        )
+    except ValueError:
+        return []
+    points, _, _ = points_from_window(window_array[0], window_transform, dsm_ds.nodata)
+    return segment_points(points, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
+
+
+def segment_building_from_pointcloud_native(pc_source, building_geom, building_id, pad_m=2.0,
+                                             ransac_distance_threshold=None, min_facet_area_m2=None):
+    """segment_points, sourced directly from the raw point cloud -- no
+    rasterization step at all, unlike segment_building_from_pointcloud."""
+    minx, miny, maxx, maxy = building_geom.bounds
+    points = pc_source.points_in_bbox(minx - pad_m, miny - pad_m, maxx + pad_m, maxy + pad_m, building_only=True)
+    return segment_points(points, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
+
+
+def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
+                           ransac_distance_threshold=None, min_facet_area_m2=None):
+    """Runs the point-cloud global solver, the (greedy) point-cloud-native
+    segmentation, and the DSM-raster fallback, and keeps whichever explains
+    more real roof area. Verified directly on a 400-building sample: the
+    point-cloud path alone gives a large net improvement over DSM-only
+    (coverage 77%->91%, less fragmented: 1064->897 total facets) but has a
+    small residual failure rate (~4% notably worse, ~2.5% finding nothing
+    at all -- some buildings just don't have clean point-cloud coverage,
+    e.g. sitting on a source-tile edge, or a roof material/colour the
+    point cloud's classifier doesn't tag as "building" reliably). Falling
+    back to the DSM result per-building whenever it does better removes
+    that entire residual category while keeping every genuine improvement.
+    This is also the natural place a national rollout degrades gracefully
+    -- LiDAR point-cloud coverage isn't universal across NZ yet, so any
+    building outside point-cloud coverage (pc_source finds no points at
+    all) automatically and silently uses the DSM path instead.
+
+    The global solver (see its own module comment above) is a genuine
+    algorithmic upgrade over the greedy point-cloud path specifically for
+    real multi-plane roofs it under-segments -- confirmed directly on six
+    reported buildings, each recovering substantially more real pitched
+    roof area (e.g. one building: 0 resolved facets under greedy RANSAC
+    beyond one dominant flat plane -> 14-16 facets covering most of the
+    roof at real, varied slopes under the global solver). Both point-cloud
+    paths are still computed and compared by area rather than trusting the
+    global solver outright -- it's a heuristic global-*approximate* solver
+    (ICM, not an exact optimum), not guaranteed to never do worse on any
+    given roof, and this keeps the same never-worse-than-before guarantee
+    the DSM fallback already provides."""
+    facets_rg = segment_building_from_pointcloud_regiongrow(
+        pc_source, building_geom, building_id, min_facet_area_m2=min_facet_area_m2,
+    )
+    facets_global = segment_building_from_pointcloud_global(
+        pc_source, building_geom, building_id, min_facet_area_m2=min_facet_area_m2,
+    )
+    facets_pc = segment_building_from_pointcloud_native(
+        pc_source, building_geom, building_id, ransac_distance_threshold=ransac_distance_threshold,
+        min_facet_area_m2=min_facet_area_m2,
+    )
+    facets_dsm = segment_building(dsm_ds, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
+    area_rg = sum(f["area_m2"] for f in facets_rg)
+    area_global = sum(f["area_m2"] for f in facets_global)
+    area_pc = sum(f["area_m2"] for f in facets_pc)
+    area_dsm = sum(f["area_m2"] for f in facets_dsm)
+
+    # A correctly-split multi-plane roof almost always explains *slightly*
+    # less total area than a wrongly-merged single flat compromise plane --
+    # confirmed directly: real facets exclude a few scattered points that
+    # don't confidently join any one clean plane, while one loose greedy
+    # plane just claims everything within its tolerance. A strict "keep
+    # whichever has more area" comparison would silently prefer the *wrong*,
+    # under-segmented result almost every time the better methods' whole
+    # reason for existing actually fires. So, in order of trust:
+    #
+    # 1. Region growing (segment_points_regiongrow) -- structurally immune
+    #    to the cross-face compromise-plane failure every plane-competition
+    #    method here shares (see its section comment; confirmed on a real
+    #    hip roof no competition-based tuning could fix). Preferred whenever
+    #    it found multi-plane structure and explains a comparable share of
+    #    the roof.
+    # 2. The ICM global solver, same rule -- still better than greedy on
+    #    multi-plane roofs region growing declines (e.g. too few clean
+    #    seeds on very sparse point coverage).
+    # 3. Strict area-max across everything -- catches both methods' real
+    #    failure modes (no usable point coverage at all, area near zero)
+    #    and keeps the never-worse-than-DSM guarantee.
+    best_alternative_area = max(area_global, area_pc, area_dsm)
+    # Shatter guard: on curved or noisy roofs region growing can fragment into
+    # dozens of tiny patches at roughly the same total area (measured: one real
+    # building at 100 facets vs the global solver's 12, same 890m2) -- many
+    # tiny facets with ridge setbacks between them is worse panel-layout output
+    # than the alternative's coarser split, so fall back when RG's facet count
+    # balloons (>3x the global solver's) AND its facets are much smaller on
+    # average (<0.3x) -- both conditions, so a genuine fine-grained split of a
+    # wrongly-merged roof (few facets -> several real ones) is never rejected.
+    rg_shattered = (
+        len(facets_rg) > 3 * max(1, len(facets_global))
+        and len(facets_global) > 0
+        and (area_rg / len(facets_rg)) < 0.3 * (area_global / len(facets_global))
+    )
+    if (not rg_shattered) and len(facets_rg) > 1 and area_rg >= GLOBAL_AREA_TOLERANCE * best_alternative_area:
+        return facets_rg
+    if len(facets_global) > 1 and area_global >= GLOBAL_AREA_TOLERANCE * max(area_pc, area_dsm):
+        return facets_global
+
+    candidates = [facets_rg, facets_global, facets_pc, facets_dsm]
+    areas = [area_rg, area_global, area_pc, area_dsm]
+    return candidates[int(np.argmax(areas))]
+
+
+# --- Global multi-plane solver (candidate pool + joint label assignment) ----
+#
+# Every plane-fitting approach above -- this file's own RANSAC, and the two
+# abandoned attempts documented near segment_building_image_guided and
+# _maybe_split_compromise_facet -- shares one structural weakness: each is
+# *greedy*. RANSAC extracts one dominant plane, locks it in by removing its
+# inliers, and never reconsiders; the (abandoned) image and local-normal
+# approaches only ever look for a *split* of an already-greedily-formed
+# facet, one boundary at a time. None of them jointly consider "what's the
+# best explanation for ALL these points at once, across ALL candidate
+# planes at once" -- confirmed directly to matter on a real building
+# (#5371112, a clean L-shaped roof with an obvious ridge direction change):
+# one dominant plane wins early during greedy extraction and nothing in a
+# greedy method ever forces it to reconsider once the second wing's
+# evidence is sitting right there.
+#
+# This instead: (1) generates an over-complete pool of candidate planes
+# from many spatially-local samples (same anti-compromise-plane sampling
+# as ransac_planes above, just not stopping at one winner), then (2) jointly
+# assigns every point a plane label via Iterated Conditional Modes (ICM,
+# Besag 1986) -- minimising a cost that combines "how well does this point
+# fit its assigned plane" against "do this point's spatial neighbours
+# mostly share its label" (a Potts smoothness prior), iterating until
+# stable. A real ridge is exactly where the data term overrides the
+# smoothness prior (two genuinely different planes fit their own sides far
+# better than either fits the other side); noise/texture isn't, because it
+# has no consistent spatial pattern for the smoothness prior to reinforce.
+#
+# Deliberately NOT full alpha-expansion graph-cut (the textbook globally-
+# near-optimal MRF solver for exactly this kind of problem): its pairwise
+# term construction needs auxiliary nodes handled exactly right, and a
+# subtly wrong implementation fails silently -- it still produces a
+# plausible-looking segmentation, just a wrong one, which is a worse
+# outcome than not attempting it. ICM is weaker (can settle into a local
+# optimum a global solver would escape) but every step is a direct,
+# checkable "does this single point's label improve its own cost" -- much
+# lower risk of an undetected correctness bug while still being a genuine
+# joint/global method rather than a fourth variation on greedy extraction.
+
+GLOBAL_CANDIDATE_SAMPLES = 600  # random local 3-point samples tried when building the candidate pool
+GLOBAL_MAX_CANDIDATES = 8  # cap on distinct candidate planes kept after dedup. Was 14 -- found
+# directly to be the dominant cause of "way too many facets, clearly wrong" reports on ordinary
+# buildings: with a large enough candidate pool, DSM/point-cloud noise reliably produces several
+# extra candidates that are each individually well-supported (many inlier points, so no other
+# filter catches them) but represent the same real plane as another candidate already kept, just
+# outside the dedup thresholds (MERGE_SLOPE_DIFF_DEG/MERGE_ASPECT_DIFF_DEG) -- ICM then correctly,
+# faithfully assigns different noisy sub-patches of one real roof section to whichever of these
+# near-duplicates fits each patch's own local noise best, fragmenting one real facet into several.
+# Swept 4-14 directly against both known-over-segmented buildings (#5372567: 50->1 facets across
+# that range) and the reference buildings the global solver exists to correctly split
+# (#5371112's "roof that changes direction" case): 8 was the largest reduction in over-segmentation
+# (150-building random sample: mean facets/building 5.01->4.30, buildings with >8 facets 29->18,
+# total segmented area *unchanged* at +1.7%) that still left every reference multi-plane building's
+# facet count exactly as before. Below 8 (tested 6, 4), reference buildings start losing real
+# splits too, including collapsing #5372567 itself to a single facet -- too blunt a cut.
+GLOBAL_NEIGHBOR_RADIUS_M = POINTCLOUD_CLUSTER_RADIUS_M  # smoothness-prior graph edges
+GLOBAL_MAX_RESIDUAL_M = 1.0  # data-cost truncation -- caps how much a single point can "pull"
+# the optimisation towards a plane that fits it badly, same spirit as a robust loss function
+GLOBAL_SMOOTHNESS_WEIGHT = 0.08  # relative weight of "do my neighbours agree with me" against
+# "how well do I personally fit my assigned plane" -- found by direct testing (swept 0.02-0.3
+# against the reported failing buildings): too low and ICM barely differs from independently
+# nearest-fitting each point (noisy, salt-and-pepper labels); too high and it over-smooths real
+# ridges away, pulling the whole roof back towards one dominant label exactly like the greedy
+# methods this is meant to fix
+GLOBAL_ICM_MAX_ITERS = 12
+GLOBAL_AREA_TOLERANCE = 0.75  # see segment_building_best -- how much of the best alternative's
+# total area the global solver must still explain to be preferred over it outright whenever it
+# also found genuine multi-plane structure (more than one facet)
+GLOBAL_MIN_LABEL_POINTS = RANSAC_MIN_INLIERS
+
+
+def _generate_candidate_planes(points, rng, n_samples=GLOBAL_CANDIDATE_SAMPLES,
+                                distance_threshold=RANSAC_DISTANCE_THRESHOLD_M,
+                                max_candidates=GLOBAL_MAX_CANDIDATES):
+    """Over-complete pool of candidate (a, b, c) planes from many spatially-
+    local 3-point samples (see ransac_planes' own comment for why local,
+    not fully random, samples) -- scored by inlier count like RANSAC, but
+    every sample tried is kept as a candidate rather than only the single
+    best, then deduplicated. Returns a list of (a, b, c) tuples."""
+    n = len(points)
+    if n < 3:
+        return []
+    tree = cKDTree(points[:, :2])
+    raw_candidates = []
+    for _ in range(n_samples):
+        anchor = rng.integers(n)
+        neighbor_idx = tree.query_ball_point(points[anchor, :2], RANSAC_SAMPLE_RADIUS_M)
+        if len(neighbor_idx) < 3:
+            continue
+        sample_idx = rng.choice(neighbor_idx, size=3, replace=False)
+        sample = points[sample_idx]
+        v1, v2 = sample[1] - sample[0], sample[2] - sample[0]
+        normal = np.cross(v1, v2)
+        if np.linalg.norm(normal[:2]) > 1e6 or abs(normal[2]) < 1e-9:
+            continue
+        try:
+            plane = fit_plane_lstsq(sample)
+        except np.linalg.LinAlgError:
+            continue
+        inliers = plane_residuals(points, plane) < distance_threshold
+        if inliers.sum() < RANSAC_MIN_INLIERS:
+            continue
+        refit = fit_plane_lstsq(points[inliers])
+        raw_candidates.append((refit, int(inliers.sum())))
+
+    raw_candidates.sort(key=lambda c: -c[1])
+    kept = []
+    for plane, inlier_count in raw_candidates:
+        a, b, c = plane
+        slope_deg, aspect_deg = slope_aspect_from_plane(a, b)
+        if slope_deg > config.MAX_ROOF_SLOPE_DEG:
+            continue
+        is_dup = False
+        for kplane, _, _ in kept:
+            ka, kb, kc = kplane
+            kslope, kaspect = slope_aspect_from_plane(ka, kb)
+            slope_close = abs(slope_deg - kslope) <= MERGE_SLOPE_DIFF_DEG
+            both_flat = slope_deg < MERGE_LOW_SLOPE_DEG and kslope < MERGE_LOW_SLOPE_DEG
+            aspect_close = both_flat or _circular_diff(aspect_deg, kaspect) <= MERGE_ASPECT_DIFF_DEG
+            if slope_close and aspect_close:
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append((plane, slope_deg, aspect_deg))
+        if len(kept) >= max_candidates:
+            break
+
+    return [p for p, _, _ in kept]
+
+
+def _icm_assign_labels(points, candidate_planes, neighbor_radius=GLOBAL_NEIGHBOR_RADIUS_M,
+                        max_residual=GLOBAL_MAX_RESIDUAL_M, smoothness_weight=GLOBAL_SMOOTHNESS_WEIGHT,
+                        max_iters=GLOBAL_ICM_MAX_ITERS):
+    """Jointly assigns every point a candidate-plane label via ICM (see
+    module comment). Returns an int array of label indices into
+    candidate_planes, one per point."""
+    n = len(points)
+    n_labels = len(candidate_planes)
+
+    # data_cost[i, k] = how badly point i fits candidate plane k, truncated so one
+    # badly-fit point can't dominate the optimisation for its whole neighbourhood
+    data_cost = np.empty((n, n_labels))
+    for k, plane in enumerate(candidate_planes):
+        data_cost[:, k] = np.minimum(plane_residuals(points, plane), max_residual) ** 2
+
+    labels = np.argmin(data_cost, axis=1)  # independent nearest-fit initialisation
+
+    tree = cKDTree(points[:, :2])
+    pairs = tree.query_pairs(neighbor_radius, output_type="ndarray")
+    if len(pairs) == 0:
+        return labels  # no spatial structure to smooth over -- nearest-fit is already the ICM answer
+
+    # adjacency as a per-point neighbour list -- ICM updates one point at a time against
+    # its neighbours' *current* labels, so a flat pair list is resolved into lists once
+    neighbors = [[] for _ in range(n)]
+    for i, j in pairs:
+        neighbors[i].append(j)
+        neighbors[j].append(i)
+
+    order = np.arange(n)
+    for _ in range(max_iters):
+        changed = 0
+        np.random.default_rng(0).shuffle(order)  # fixed shuffle seed -- deterministic given the
+        # same candidate pool/points, so a building's result doesn't depend on unrelated RNG state
+        for i in order:
+            nbr = neighbors[i]
+            if not nbr:
+                new_label = np.argmin(data_cost[i])
+            else:
+                nbr_labels = labels[nbr]
+                smooth_cost = np.array([
+                    np.count_nonzero(nbr_labels != k) for k in range(n_labels)
+                ]) * smoothness_weight
+                new_label = np.argmin(data_cost[i] + smooth_cost)
+            if new_label != labels[i]:
+                labels[i] = new_label
+                changed += 1
+        if changed == 0:
+            break
+
+    return labels
+
+
+GLOBAL_BUILDING_MARGIN_M = 0.5  # points are clipped to within this margin of the building's own
+# footprint before candidate generation/ICM even run -- found directly on a real attached
+# row-house unit (#5371112): the padded bbox query points_in_bbox callers use for point-cloud
+# access (pad_m=2.0, generous on purpose so a facet's shape isn't starved of context right at its
+# own edge) can pull in a *neighbouring* building's roof points on a row house, and unlike the old
+# greedy RANSAC (whose spatially-local seed sampling rarely happens to land a whole hypothesis on
+# next door's roof before running out of iterations), this global solver actively searches the
+# entire input for good candidate planes and will happily find and assign points to a
+# neighbour's plane if it fits acceptably -- confirmed directly: components built from those
+# labels clip to fully empty against this building's own footprint, wasting real point evidence
+# instead of ever contributing to this building's own segmentation
+GLOBAL_REFIT_MAX_SLOPE_DRIFT_DEG = 15.0  # if refitting a component on just its own points swings
+# the slope more than this from the candidate plane's, the refit isn't trustworthy -- confirmed
+# directly: small or spatially elongated components (a thin sliver along a hip/valley) give
+# fit_plane_lstsq an ill-conditioned, noise-dominated problem, producing wildly steep nonsense
+# (45-58 degrees from candidates around 17-28) rather than a genuinely different, valid plane
+
+GLOBAL_SATELLITE_MAX_AREA_M2 = 6.0  # a same-label spatial component smaller than this (or than
+# GLOBAL_SATELLITE_MAX_AREA_FRACTION of its label's largest component) is folded into that largest
+# component instead of becoming its own separate facet. Confirmed directly as the dominant real
+# cause of the "clearly wrong, way too many facets" reports: ICM assigns per POINT, and a few
+# points near the middle of one real plane flipping to a neighbouring label's better-fitting
+# candidate (label noise, not a real physical break) splits what is genuinely one connected roof
+# region into several disconnected same-label islands -- e.g. building #5372567 carried five
+# separate facets all at aspect=325.4, slope~9.6 before this fix, none of them touching each other
+# closely enough for merge_similar_facets (which only merges facets that are already spatially
+# adjacent) to combine them, because they're the *same* label fragmented, not two different labels
+# that independently converged to a similar plane. Absorbing them here (same label = same plane
+# hypothesis by construction, so unioning is not a stretch) instead of gating merge_similar_facets
+# more loosely keeps that function's own adjacency requirement meaningful for its real job:
+# catching two genuinely different RANSAC passes that happened to land on the same plane.
+GLOBAL_SATELLITE_MAX_AREA_FRACTION = 0.2
+
+
+def segment_points_global(points, building_geom, building_id, min_facet_area_m2=None):
+    """Global-solver equivalent of segment_points -- see the module comment
+    above for why this exists and how it differs from the greedy RANSAC
+    approach. Same interface and same downstream shape-fitting/filtering
+    as segment_points, only the plane-assignment step itself differs."""
+    min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
+
+    if len(points) > 0:
+        footprint = building_geom.buffer(GLOBAL_BUILDING_MARGIN_M)
+        inside = shapely.vectorized.contains(footprint, points[:, 0], points[:, 1])
+        points = points[inside]
+    if len(points) < RANSAC_MIN_INLIERS:
+        return []
+
+    rng = np.random.default_rng(building_id)
+    candidates = _generate_candidate_planes(points, rng)
+    if not candidates:
+        return []
+
+    labels = _icm_assign_labels(points, candidates)
+
+    facets = []
+    for label_id, plane in enumerate(candidates):
+        member_idx = np.where(labels == label_id)[0]
+        if len(member_idx) < GLOBAL_MIN_LABEL_POINTS:
+            continue
+        label_points = points[member_idx]
+
+        label_facets = []
+        for comp_local_idx in _cluster_points_spatially(label_points[:, :2], POINTCLOUD_CLUSTER_RADIUS_M):
+            comp_points = label_points[comp_local_idx]
+            if len(comp_points) < 3:
+                continue
+            # Refit on this component's own points -- the candidate plane was fit from its
+            # original 3-point sample's local neighbourhood, but ICM may have grown or shrunk
+            # its membership since, so a fresh fit is usually more accurate than the seed plane.
+            # Not trusted blindly though: a small or spatially elongated component (a thin
+            # sliver along a hip/valley) gives least-squares an ill-conditioned, noise-dominated
+            # problem -- confirmed directly producing wildly steep nonsense (45-58 degrees from
+            # candidates around 17-28) that the *candidate* plane never had. Refit slope drifting
+            # far from the candidate's own is the tell; fall back to the candidate plane itself
+            # rather than trust an unstable fit.
+            candidate_slope_deg, _ = slope_aspect_from_plane(plane[0], plane[1])
+            try:
+                a, b, c = fit_plane_lstsq(comp_points)
+                refit_slope_deg, _ = slope_aspect_from_plane(a, b)
+                if abs(refit_slope_deg - candidate_slope_deg) > GLOBAL_REFIT_MAX_SLOPE_DRIFT_DEG:
+                    a, b, c = plane
+            except np.linalg.LinAlgError:
+                a, b, c = plane
+            slope_deg, aspect_deg = slope_aspect_from_plane(a, b)
+            if slope_deg > config.MAX_ROOF_SLOPE_DEG:
+                continue
+
+            polygon = component_shape_from_points(comp_points[:, :2])
+            if polygon is None:
+                continue
+            polygon = polygon.intersection(building_geom)
+            if polygon.is_empty:
+                continue
+            if polygon.geom_type == "MultiPolygon":
+                polygon = max(polygon.geoms, key=lambda p: p.area)
+            elif polygon.geom_type not in ("Polygon",):
+                continue
+            if polygon.area < min_facet_area_m2:
+                continue
+
+            label_facets.append({
+                "building_id": building_id,
+                "plane_a": a, "plane_b": b, "plane_c": c,
+                "slope_deg": slope_deg,
+                "aspect_deg": aspect_deg,
+                "area_m2": polygon.area,
+                "point_count": len(comp_points),
+                "geometry": polygon,
+            })
+
+        # ICM labels per point, not per region -- a few points near the middle of one real,
+        # spatially-continuous plane flipping to a neighbouring label (noise, not a real physical
+        # break) fragments that one label's own points into several disconnected spatial
+        # components, each of which would otherwise become its own tiny separate facet. Since
+        # they share this same label -- the same plane hypothesis, by construction -- absorb any
+        # small fragment into this label's own largest component instead of keeping it as a
+        # separate facet; merge_similar_facets (below, spatial-adjacency-gated) is a different,
+        # narrower check for two independently-converged labels landing on the same plane.
+        if len(label_facets) > 1:
+            primary = max(label_facets, key=lambda f: f["area_m2"])
+            absorb_threshold = max(GLOBAL_SATELLITE_MAX_AREA_M2,
+                                    GLOBAL_SATELLITE_MAX_AREA_FRACTION * primary["area_m2"])
+            keep, absorbed = [], []
+            for f in label_facets:
+                (keep if f is primary or f["area_m2"] >= absorb_threshold else absorbed).append(f)
+            if absorbed:
+                primary["geometry"] = unary_union([primary["geometry"]] + [f["geometry"] for f in absorbed])
+                primary["area_m2"] = primary["geometry"].area
+                primary["point_count"] += sum(f["point_count"] for f in absorbed)
+            label_facets = keep
+
+        facets.extend(label_facets)
+
+    facets = _dedupe_overlaps(facets, min_facet_area_m2)
+    return merge_similar_facets(facets)
+
+
+def segment_building_from_pointcloud_global(pc_source, building_geom, building_id, pad_m=2.0,
+                                             min_facet_area_m2=None):
+    """segment_points_global, sourced directly from the raw point cloud --
+    the global-solver counterpart to segment_building_from_pointcloud_native."""
+    minx, miny, maxx, maxy = building_geom.bounds
+    points = pc_source.points_in_bbox(minx - pad_m, miny - pad_m, maxx + pad_m, maxy + pad_m, building_only=True)
+    return segment_points_global(points, building_geom, building_id, min_facet_area_m2)
+
+
+# --- Region-growing segmentation (normal-field + contiguity) ------------------
+#
+# The global solver above fixed greedy RANSAC's under-segmentation, but it (and
+# every plane-competition method in this file) shares one deeper structural
+# flaw, confirmed directly on a real pyramid/hip roof (#4735241): candidate
+# planes are INFINITE, and points are assigned by residual competition. On a
+# roof whose faces converge at a central peak, a near-flat "compromise" plane
+# at roughly mean roof height grazes a band across ALL four real faces at once
+# and collects MORE within-tolerance points than any single true face --
+# measured directly: 737 inliers at a tight 0.1m threshold vs 471-697 for each
+# real face. No threshold, smoothness weight, or seeding scheme fixes that
+# (each was tried and measured), because the flat plane genuinely does fit
+# more points -- the failure is the competition model itself, not its tuning.
+#
+# Region growing eliminates that failure class by construction rather than by
+# tuning: a facet is grown outward from a locally-planar seed through spatial
+# adjacency, admitting a point only if BOTH its own local surface normal
+# agrees with the region's plane AND it lies on that plane. A region
+# physically cannot jump across a ridge to graze another face -- the ridge
+# points' own local normals disagree with both sides and halt growth -- and
+# there is no global residual competition anywhere. Each point ends up owned
+# by exactly one region, so facet polygons come from disjoint point sets and
+# the fitted-polygon-overlap problems downstream mostly vanish at the source.
+
+RG_NORMAL_K = 12  # neighbours per local PCA normal -- enough averaging to be noise-robust on
+# ~5-10 pts/m^2 LiDAR (neighbourhood radius ~0.6-0.9m), small enough not to straddle a whole
+# narrow facet
+RG_ADJ_K = 10  # growth adjacency: each point's k nearest plan-view neighbours
+RG_SEED_MAX_RMS_M = 0.06  # only genuinely planar neighbourhoods may found a region (sqrt of the
+# PCA smallest eigenvalue ~ RMS distance of the neighbourhood to its own best plane)
+RG_ANGLE_TOL_DEG = 10.0  # max angle between a point's local normal and the region plane's normal.
+# Was 20 -- confirmed directly on the reference shallow (~9.5 deg) pyramid roof that 20 admits
+# EVERYTHING: two faces of a pyramid at slope theta and aspects 90 deg apart have normals only
+# ~13.5 deg apart (19 deg for opposite faces) at theta=9.5, so a 20-degree tolerance never rejects
+# a cross-face point and the incrementally-refitting region plane "creeps" across the apex to
+# swallow the whole roof (final refit: 0.2 deg flat over 2798 points spanning all four faces).
+# Same-face normal noise in angle terms is only ~2-4 deg at shallow slopes (aspect noise barely
+# moves the normal when slope is small) and ~8-9 deg at steep slopes (where cross-face separation
+# is huge, 45+ deg) -- so 10 separates the two populations across the whole slope range, with the
+# one known soft spot being near-flat roofs (2-5 deg) where faces are indistinguishable anyway and
+# merging them is harmless for POA.
+RG_DIST_TOL_M = 0.20  # max point-to-region-plane distance during growth
+RG_LEFTOVER_DIST_TOL_M = 0.35  # looser bound for the post-pass that folds ridge/edge points
+# (whose own local normals were too noisy to pass growth) into an adjacent region
+RG_REFIT_EVERY = 20  # incremental plane refit cadence during growth
+RG_MIN_REGION_POINTS = 10  # below this a region is dissolved back into the leftover pool
+
+
+def _pca_normals(points, k=RG_NORMAL_K):
+    """Batched local surface normals: for every point, PCA over its k nearest
+    plan-view neighbours. Returns (normals[n,3] unit, upward; rms[n] ~ RMS
+    plane-fit residual of each neighbourhood, i.e. local planarity)."""
+    n = len(points)
+    k = min(k, n)
+    tree = cKDTree(points[:, :2])
+    _, nbr_idx = tree.query(points[:, :2], k=k)
+    if k == 1:
+        nbr_idx = nbr_idx[:, None]
+    nbh = points[nbr_idx]  # (n, k, 3)
+    centered = nbh - nbh.mean(axis=1, keepdims=True)
+    cov = np.einsum("nki,nkj->nij", centered, centered) / k
+    evals, evecs = np.linalg.eigh(cov)  # ascending eigenvalues
+    normals = evecs[:, :, 0]  # smallest-eigenvalue eigenvector = surface normal
+    flip = normals[:, 2] < 0
+    normals[flip] *= -1.0
+    rms = np.sqrt(np.maximum(evals[:, 0], 0.0))
+    return normals, rms
+
+
+def _plane_from_accumulators(S):
+    """Solve the normal equations for z = a*x + b*y + c from running sums.
+    S = [Sxx, Sxy, Syy, Sx, Sy, Sxz, Syz, Sz, count]."""
+    Sxx, Sxy, Syy, Sx, Sy, Sxz, Syz, Sz, cnt = S
+    A = np.array([[Sxx, Sxy, Sx], [Sxy, Syy, Sy], [Sx, Sy, cnt]])
+    b = np.array([Sxz, Syz, Sz])
+    return np.linalg.solve(A, b)
+
+
+def _grow_regions(points, normals, rms, angle_tol_deg=RG_ANGLE_TOL_DEG,
+                   dist_tol=RG_DIST_TOL_M, seed_max_rms=RG_SEED_MAX_RMS_M,
+                   min_region_points=RG_MIN_REGION_POINTS):
+    """Core region growing. Returns (labels[n] int, planes list) -- label >= 0
+    indexes into planes; -1/-2 = unclaimed (never grown / grown but region
+    dissolved as too small)."""
+    n = len(points)
+    tree = cKDTree(points[:, :2])
+    _, adj = tree.query(points[:, :2], k=min(RG_ADJ_K + 1, n))
+    adj = adj[:, 1:]  # drop self
+
+    cos_tol = np.cos(np.radians(angle_tol_deg))
+    labels = np.full(n, -1, dtype=int)
+    planes = []
+    order = np.argsort(rms)  # most-planar seeds first
+
+    from collections import deque
+    for seed in order:
+        if labels[seed] != -1 or rms[seed] > seed_max_rms:
+            continue
+        rid = len(planes)
+        # All plane math for this region runs in seed-centered coordinates --
+        # accumulating raw normal equations on ~1e6-magnitude NZTM coordinates
+        # squares an already-large condition number (~2.5e11 measured on a real
+        # building) and was confirmed to corrupt the incremental refit planes
+        # badly enough that growth admitted cross-face points under a
+        # numerically-drifted plane, silently re-creating the exact cross-face
+        # creep this whole method exists to prevent.
+        x0, y0 = points[seed, 0], points[seed, 1]
+        # Bootstrap the region plane from the seed's own local normal:
+        # normal (nx,ny,nz) with nz>0  =>  z = a*dx + b*dy + cc (dx,dy seed-relative)
+        nx, ny, nz = normals[seed]
+        if nz < 1e-6:
+            continue  # near-vertical local surface -- not a roof plane seed
+        a, b = -nx / nz, -ny / nz
+        cc = points[seed, 2]  # at the seed, dx = dy = 0
+        plane = np.array([a, b, cc])
+
+        S = np.zeros(9)
+        members = []
+        frontier = deque([seed])
+        labels[seed] = rid
+        while frontier:
+            p = frontier.popleft()
+            members.append(p)
+            dx, dy, z = points[p, 0] - x0, points[p, 1] - y0, points[p, 2]
+            S += (dx * dx, dx * dy, dy * dy, dx, dy, dx * z, dy * z, z, 1.0)
+            if len(members) >= 3 and len(members) % RG_REFIT_EVERY == 0:
+                try:
+                    plane = _plane_from_accumulators(S)
+                except np.linalg.LinAlgError:
+                    pass
+            pa, pb, pcc = plane
+            denom = np.sqrt(pa * pa + pb * pb + 1.0)
+            plane_normal = np.array([-pa, -pb, 1.0]) / denom
+            for q in adj[p]:
+                if labels[q] != -1:
+                    continue
+                if normals[q] @ plane_normal < cos_tol:
+                    continue
+                if abs(pa * (points[q, 0] - x0) + pb * (points[q, 1] - y0) + pcc - points[q, 2]) > dist_tol:
+                    continue
+                labels[q] = rid
+                frontier.append(q)
+
+        if len(members) < min_region_points:
+            labels[np.array(members)] = -2  # dissolved -- reclaimable by the leftover pass only
+            continue
+        try:
+            plane = _plane_from_accumulators(S)
+        except np.linalg.LinAlgError:
+            pass
+        # Convert back to global coordinates for downstream use:
+        # z = a*dx + b*dy + cc  =>  c_global = cc - a*x0 - b*y0
+        planes.append(np.array([plane[0], plane[1], plane[2] - plane[0] * x0 - plane[1] * y0]))
+
+    # Compact label ids (dissolved regions left gaps in numbering only if a
+    # dissolved region ever got an id -- it didn't: ids are assigned by
+    # len(planes) and planes only appended for kept regions. But growth wrote
+    # rid into labels before the size check, so remap those: any label >=
+    # len(planes) means its region was dissolved after a later region already
+    # appended -- impossible by construction (rid == len(planes) at claim
+    # time, and a dissolved region appends nothing, so the NEXT region reuses
+    # the same rid). Guard against that reuse: dissolved members were reset
+    # to -2 above, so no stale rid survives.
+    #
+    # Leftover pass: ridge/edge/noisy points (labels < 0) join an ADJACENT
+    # region whose plane fits them -- local, contiguity-bounded assignment
+    # only, never a global competition. Two hops max.
+    for _ in range(2):
+        unclaimed = np.where(labels < 0)[0]
+        if len(unclaimed) == 0:
+            break
+        changed = False
+        new_labels = labels.copy()
+        for p in unclaimed:
+            best_rid, best_err = -1, RG_LEFTOVER_DIST_TOL_M
+            for q in adj[p]:
+                rid = labels[q]
+                if rid < 0:
+                    continue
+                pa, pb, pc = planes[rid]
+                err = abs(pa * points[p, 0] + pb * points[p, 1] + pc - points[p, 2])
+                if err < best_err:
+                    best_err, best_rid = err, rid
+            if best_rid >= 0:
+                new_labels[p] = best_rid
+                changed = True
+        labels = new_labels
+        if not changed:
+            break
+
+    return labels, planes
+
+
+def segment_points_regiongrow(points, building_geom, building_id, min_facet_area_m2=None):
+    """Region-growing counterpart to segment_points_global -- same interface,
+    same downstream shape fitting/merging, different (contiguity-based)
+    plane-assignment core. See the section comment above for why."""
+    min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
+
+    if len(points) > 0:
+        footprint = building_geom.buffer(GLOBAL_BUILDING_MARGIN_M)
+        inside = shapely.vectorized.contains(footprint, points[:, 0], points[:, 1])
+        points = points[inside]
+    if len(points) < RG_MIN_REGION_POINTS:
+        return []
+
+    normals, rms = _pca_normals(points)
+    labels, planes = _grow_regions(points, normals, rms)
+
+    facets = []
+    for rid, plane in enumerate(planes):
+        member_idx = np.where(labels == rid)[0]
+        if len(member_idx) < RG_MIN_REGION_POINTS:
+            continue
+        member_points = points[member_idx]
+        # Final refit on the region's full membership (leftover pass may have
+        # added ridge/edge points since the last incremental refit).
+        try:
+            a, b, c = fit_plane_lstsq_centered(member_points)
+        except np.linalg.LinAlgError:
+            a, b, c = plane
+        slope_deg, aspect_deg = slope_aspect_from_plane(a, b)
+        if slope_deg > config.MAX_ROOF_SLOPE_DEG:
+            continue
+
+        # A region is spatially contiguous by construction, but the polygon
+        # step still clusters defensively: the leftover pass can very rarely
+        # attach a satellite clump via a chain of mutual-kNN links thinner
+        # than the clustering radius.
+        for comp_local_idx in _cluster_points_spatially(member_points[:, :2], POINTCLOUD_CLUSTER_RADIUS_M):
+            comp_points = member_points[comp_local_idx]
+            if len(comp_points) < RG_MIN_REGION_POINTS:
+                continue
+            polygon = component_shape_from_points(comp_points[:, :2])
+            if polygon is None:
+                continue
+            polygon = polygon.intersection(building_geom)
+            if polygon.is_empty:
+                continue
+            if polygon.geom_type == "MultiPolygon":
+                polygon = max(polygon.geoms, key=lambda p: p.area)
+            elif polygon.geom_type not in ("Polygon",):
+                continue
+            if polygon.area < min_facet_area_m2:
+                continue
+            facets.append({
+                "building_id": building_id,
+                "plane_a": a, "plane_b": b, "plane_c": c,
+                "slope_deg": slope_deg,
+                "aspect_deg": aspect_deg,
+                "area_m2": polygon.area,
+                "point_count": len(comp_points),
+                "geometry": polygon,
+            })
+
+    facets = _dedupe_overlaps(facets, min_facet_area_m2)
+    return merge_similar_facets(facets)
+
+
+def segment_building_from_pointcloud_regiongrow(pc_source, building_geom, building_id, pad_m=2.0,
+                                                 min_facet_area_m2=None):
+    """segment_points_regiongrow, sourced directly from the raw point cloud."""
+    minx, miny, maxx, maxy = building_geom.bounds
+    points = pc_source.points_in_bbox(minx - pad_m, miny - pad_m, maxx + pad_m, maxy + pad_m, building_only=True)
+    return segment_points_regiongrow(points, building_geom, building_id, min_facet_area_m2)

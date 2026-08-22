@@ -31,6 +31,7 @@ import warnings
 import numpy as np
 from affine import Affine
 from rasterio.features import rasterize
+from scipy import ndimage
 from shapely.geometry import Polygon
 from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
@@ -116,14 +117,27 @@ def _surface_transform(u_hat, v_hat, slope_deg, origin):
     return to_surface, to_world
 
 
+ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fits more than
+# max(1, this fraction) fewer panels than the free per-row scan -- real installers rack rows
+# with columns lined up, so a small capacity cost buys a much more realistic layout, but a
+# jagged/angled facet edge where rigid columns strand serious usable area still falls back
+
+
 def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
     """occupancy: boolean grid, True = usable. w, h in metres (grid cells).
-    Within each row-band, scans every column position (not just multiples
-    of w_cells from a fixed offset) so irregular/angled facet edges -- hip
-    valleys, jagged DSM-derived boundaries -- don't strand usable space
-    between rigidly-gridded candidate slots. A handful of vertical
-    (row) start offsets are still tried, since where the first row-band
-    starts can itself gain or lose a whole extra row lower down."""
+
+    Two packing strategies, best-of:
+    1. Column-aligned grid (preferred): panels sit at a shared column pitch
+       across every row -- every column phase is tried, so the grid snaps to
+       whichever registration fits the facet best. This is how real arrays
+       are racked: rows with their vertical edges lined up, a blocked slot
+       skipped rather than the whole row sliding sideways.
+    2. Free per-row scan (fallback): each row-band independently scans every
+       column start, packing maximum panels at the cost of staggered,
+       unrealistic column seams -- kept only for facets where rigid columns
+       genuinely strand usable area (see ALIGN_LOSS_TOLERANCE).
+    A handful of vertical (row) start offsets are tried for both, since where
+    the first row-band starts can gain or lose a whole extra row lower down."""
     rows, cols = occupancy.shape
     w_cells, h_cells = max(1, round(w / res)), max(1, round(h / res))
     if w_cells > cols or h_cells > rows:
@@ -139,9 +153,24 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
         total = sat[r1, c1] - sat[r0, c1] - sat[r1, c0] + sat[r0, c0]
         return total == (r1 - r0) * (c1 - c0)
 
-    best = []
     row_offsets = np.linspace(0, h_cells, offset_steps, endpoint=False, dtype=int)
 
+    best_aligned = []
+    for r_off in row_offsets:
+        for c_off in range(w_cells):
+            placed = []
+            r0 = r_off
+            while r0 + h_cells <= rows:
+                c0 = c_off
+                while c0 + w_cells <= cols:
+                    if rect_fully_occupied(r0, r0 + h_cells, c0, c0 + w_cells):
+                        placed.append((r0, c0, r0 + h_cells, c0 + w_cells))
+                    c0 += w_cells  # always step by the grid pitch -- columns stay aligned
+                r0 += h_cells
+            if len(placed) > len(best_aligned):
+                best_aligned = placed
+
+    best_free = []
     for r_off in row_offsets:
         placed = []
         r0 = r_off
@@ -154,20 +183,34 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
                 else:
                     c0 += 1  # fine-grained search for the next valid start in this row
             r0 += h_cells
-        if len(placed) > len(best):
-            best = placed
+        if len(placed) > len(best_free):
+            best_free = placed
 
+    allowed_loss = max(1, int(np.ceil(ALIGN_LOSS_TOLERANCE * len(best_free))))
+    best = best_aligned if len(best_aligned) >= len(best_free) - allowed_loss else best_free
     return best, w_cells, h_cells
 
 
 def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=config.PANEL_HEIGHT_M,
                          setback=config.PANEL_EDGE_SETBACK_M, resolution=RASTER_RESOLUTION_M,
-                         obstructions=None):
+                         obstructions=None, sibling_facets=None, ridge_setback=config.RIDGE_SETBACK_M,
+                         fallback_setback=config.PANEL_EDGE_SETBACK_FALLBACK_M):
     """Returns list of panel dicts: {geometry (world XY Polygon), facet_id fields}.
     obstructions: optional list of world-XY Polygons (e.g. from
     obstruction_detection.detect_obstructions) to exclude from the usable
     area -- subtracted before the setback buffer, in plan-view world
-    coordinates, before anything gets unrolled into surface space."""
+    coordinates, before anything gets unrolled into surface space.
+    sibling_facets: optional list of this same building's *other* facet
+    dicts -- wherever this facet's boundary is shared with one of them (a
+    real ridge/hip/valley, not the roof's own outer edge), an extra
+    ridge_setback clearance is eroded on top of the ordinary edge setback,
+    so panels visibly stop short of a real plane change instead of
+    butting flush against the next facet's grid with no gap.
+    fallback_setback: if the primary `setback` leaves a facet fitting zero
+    panels, retried once with this smaller value -- keeps the default
+    generous edge clearance for ordinary-width facets without starving a
+    genuinely narrow one down to zero, without needing one uniform setback
+    to serve both cases."""
     geom = facet["geometry"]
     aspect_deg, slope_deg = facet["aspect_deg"], facet["slope_deg"]
 
@@ -176,11 +219,26 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
         if geom.is_empty:
             return []
 
+    if sibling_facets:
+        neighbour_buffer = unary_union([f["geometry"].buffer(ridge_setback) for f in sibling_facets])
+        geom = geom.difference(neighbour_buffer)
+        if geom.is_empty:
+            return []
+
     origin = (facet["geometry"].centroid.x, facet["geometry"].centroid.y)
     u_hat, v_hat = _edge_aligned_axes(facet["geometry"], aspect_deg)
     to_surface, to_world = _surface_transform(u_hat, v_hat, slope_deg, origin)
 
     surface_poly = shapely_transform(lambda x, y, z=None: to_surface(x, y), geom)
+
+    panels = _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolution, to_world, facet)
+    if not panels and fallback_setback < setback:
+        panels = _pack_surface_poly(surface_poly, fallback_setback, panel_width, panel_height,
+                                     resolution, to_world, facet)
+    return panels
+
+
+def _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolution, to_world, facet):
     usable = surface_poly.buffer(-setback)
     if usable.is_empty:
         return []
@@ -197,6 +255,11 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
         transform = Affine(resolution, 0, u_min, 0, resolution, v_min)
         occupancy = rasterize([(part, 1)], out_shape=(rows, cols), transform=transform,
                                fill=0, dtype=np.uint8).astype(bool)
+        # Distance (metres) from each usable cell to the nearest excluded one (an obstruction,
+        # a ridge/edge setback, the facet boundary) -- used below as a per-panel "confidence"
+        # score for the density slider: a panel comfortably in the middle of a big clean area
+        # scores higher than one hugging right up against an exclusion zone.
+        clearance = ndimage.distance_transform_edt(occupancy) * resolution
 
         candidates = []
         for w, h in [(panel_width, panel_height), (panel_height, panel_width)]:
@@ -218,10 +281,45 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
             panel_poly = Polygon(zip(wx, wy))
             panels.append({
                 "building_id": facet["building_id"],
-                "facet_aspect_deg": aspect_deg,
-                "facet_slope_deg": slope_deg,
+                "facet_aspect_deg": facet["aspect_deg"],
+                "facet_slope_deg": facet["slope_deg"],
                 "geometry": panel_poly,
                 "area_m2": panel_width * panel_height,  # true panel area, not plan-view (foreshortened) area
+                "clearance_m": float(clearance[r0:r1, c0:c1].min()),
+                # Placement sequence within this facet (row-major across parts) -- the density
+                # filter fills in this order so a partial layout is contiguous rows, like a real
+                # staged install, not a scatter of individually-scored panels. facet_key groups
+                # a facet's panels through the flat cross-facet sort even when two facets share
+                # an identical binned POA (common: two parallel strips of the same roof plane),
+                # which would otherwise interleave their per-facet order sequences.
+                "order": len(panels),
+                "facet_key": id(facet),
             })
 
     return panels
+
+
+def apply_panel_density(panels, density_pct, poa_key="poa_kwh_m2_yr"):
+    """Keeps only the top density_pct% of panels across a building's *whole*
+    panel list (spanning every facet), ranked sunniest-facet-first and,
+    within a facet, in row-major placement order -- so a partial layout is
+    the sunniest facet filling up contiguously, row by row, the way a real
+    staged install grows, rather than a scatter of individually-scored
+    panels (the original clearance-ranked version looked exactly like that
+    scatter). density_pct=100 returns every panel unchanged --
+    fit_panels_on_facet's own output is already "every feasible panel", so
+    this only ever removes panels, never adds ones that placement itself
+    ruled out (an obstruction, an edge, a roof join) -- density controls
+    *how much* of the feasible area is used, not a relaxation of what
+    counts as feasible in the first place. Each panel dict must carry
+    poa_key (annual POA irradiance for its own facet's slope/aspect, e.g.
+    from SolarModel.annual_poa_kwh_per_m2) plus the order and facet_key
+    fields fit_panels_on_facet already attaches; facet_key keeps a facet's
+    panels grouped through the sort when two facets share an identical
+    binned POA."""
+    if density_pct >= 100 or not panels:
+        return panels
+    density_pct = max(0.0, density_pct)
+    ranked = sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    keep_n = int(round(len(ranked) * density_pct / 100))
+    return ranked[:keep_n]

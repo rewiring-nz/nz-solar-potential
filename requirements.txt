@@ -9,3 +9,4 @@ scipy>=1.11
 requests>=2.31
 python-dotenv>=1.0
 pillow
+opencv-python-headless>=4.9

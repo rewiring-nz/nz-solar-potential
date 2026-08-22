@@ -13,15 +13,13 @@
     position: absolute; bottom: 24px; left: 12px; background: rgba(20,20,20,0.85);
     color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1;
   }
-  .legend-bar { width: 180px; height: 10px; margin: 6px 0; border-radius: 5px;
-    background: linear-gradient(to right, #1565c0, #3aa8c1, #6fd07c, #f4d35e, #f2994a, #e63946); }
   .legend-labels { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.85; }
   .legend-facet {
     position: absolute; bottom: 24px; right: 12px; background: rgba(20,20,20,0.85);
     color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1; max-width: 220px;
   }
   .legend-facet-bar { width: 180px; height: 10px; margin: 6px 0; border-radius: 5px;
-    background: linear-gradient(to right, #1565c0, #3aa8c1, #6fd07c, #f4d35e, #f2994a, #e63946); }
+    background: linear-gradient(to right, #00000a, #91009c, #e64616, #feb400, #fffff6); }
   .legend-obstruction { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; opacity: 0.85; }
   .legend-swatch { width: 12px; height: 12px; border-radius: 2px; background: #a855f7; flex: none; }
   .toggle-row { display: flex; gap: 8px; margin: 8px 0; }
@@ -99,6 +97,23 @@
   .side-panel .tuning-summary { background: rgba(255,255,255,0.08); color: #eee; }
   .side-panel .tuning-reset { background: rgba(255,255,255,0.08); color: #fff; border-color: #666; }
   .side-panel .slider-row label { color: #ccc; }
+  .mobile-details-tab { display: none; }
+  @media (max-width: 700px) {
+    .side-panel {
+      top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
+      height: 75vh; border-radius: 14px 14px 0 0;
+      transform: translateY(100%); transition: transform 0.25s ease;
+    }
+    .side-panel.visible.expanded { transform: translateY(0); }
+    #side-panel.visible + .mobile-details-tab { display: block; }
+    #side-panel.visible.expanded + .mobile-details-tab { display: none; }
+    .mobile-details-tab {
+      position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+      z-index: 6; background: #0a1f44; color: #fff; border: none; padding: 10px 22px;
+      border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    }
+  }
 </style>
 </head>
 <body>
@@ -144,11 +159,10 @@
   <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
   <div id="side-panel-content"></div>
 </div>
+<button class="mobile-details-tab" id="mobile-details-tab">Building details &#9650;</button>
 <div class="legend">
-  <div>Estimated solar potential (kWp)</div>
-  <div class="legend-bar"></div>
-  <div class="legend-labels"><span>low</span><span>high</span></div>
-  <div style="margin-top:6px; opacity:0.7;">Click a rooftop for details and its proposed panel layout. Click empty space to clear. Pilot area only — Queenstown town basin.</div>
+  <div>Click a rooftop for details and its proposed panel layout.</div>
+  <div style="margin-top:4px; opacity:0.7;">Click empty space to clear. Pilot area only — Queenstown town basin.</div>
 </div>
 <div class="legend-facet">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
@@ -271,7 +285,7 @@ function clearSelection() {
   selectedBuildingId = -1;
   clearLiveTuning();
   applyToggles();
-  document.getElementById("side-panel").classList.remove("visible");
+  document.getElementById("side-panel").classList.remove("visible", "expanded");
 }
 
 // --- Live parameter tuning (talks to src/live_server.py's /api/refit) ---
@@ -286,13 +300,13 @@ function clearLiveTuning() {
   }
 }
 
-async function refitLive(buildingId, setback, ransacThreshold, zThreshold) {
+async function refitLive(buildingId, setback, ransacThreshold, zThreshold, densityPct) {
   // Hide the static (default-parameter) layout for just this one building
   // while its live-tuned version is shown instead -- otherwise both would
   // render on top of each other and every slider move would look like
   // nothing changed. Every other building's static layout stays visible.
   LAYOUT_LAYERS.forEach(id => map.setFilter(id, ["all", LAYOUT_KIND_FILTER[id], ["!=", ["get", "building_id"], buildingId]]));
-  const url = `/api/refit?building_id=${buildingId}&setback=${setback}&ransac_threshold=${ransacThreshold}&z_threshold=${zThreshold}`;
+  const url = `/api/refit?building_id=${buildingId}&setback=${setback}&ransac_threshold=${ransacThreshold}&z_threshold=${zThreshold}&density_pct=${densityPct}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`refit failed: ${resp.status}`);
   const data = await resp.json();
@@ -304,9 +318,11 @@ function wireTuningControls(popupEl, buildingId) {
   const setbackSlider = popupEl.querySelector("#slider-setback");
   const ransacSlider = popupEl.querySelector("#slider-ransac");
   const zSlider = popupEl.querySelector("#slider-zthresh");
+  const densitySlider = popupEl.querySelector("#slider-density");
   const setbackVal = popupEl.querySelector("#val-setback");
   const ransacVal = popupEl.querySelector("#val-ransac");
   const zVal = popupEl.querySelector("#val-zthresh");
+  const densityVal = popupEl.querySelector("#val-density");
   const summaryEl = popupEl.querySelector("#tuning-summary");
   const resetBtn = popupEl.querySelector("#tuning-reset");
 
@@ -314,15 +330,17 @@ function wireTuningControls(popupEl, buildingId) {
     const setback = parseFloat(setbackSlider.value);
     const ransacThreshold = parseFloat(ransacSlider.value);
     const zThreshold = parseFloat(zSlider.value);
+    const densityPct = parseFloat(densitySlider.value);
     setbackVal.textContent = setback.toFixed(2) + "m";
     ransacVal.textContent = ransacThreshold.toFixed(2) + "m";
     zVal.textContent = zThreshold.toFixed(2) + "σ";
+    densityVal.textContent = densityPct.toFixed(0) + "%";
     summaryEl.classList.add("stale");
     summaryEl.textContent = "Refitting…";
     clearTimeout(liveTuningTimer);
     liveTuningTimer = setTimeout(async () => {
       try {
-        const summary = await refitLive(buildingId, setback, ransacThreshold, zThreshold);
+        const summary = await refitLive(buildingId, setback, ransacThreshold, zThreshold, densityPct);
         summaryEl.classList.remove("stale");
         summaryEl.innerHTML = `<strong>${summary.panel_count}</strong> panels, ` +
           `<strong>${summary.kwp.toFixed(2)}</strong> kWp, ` +
@@ -334,15 +352,17 @@ function wireTuningControls(popupEl, buildingId) {
     }, 250);  // debounce so dragging a slider doesn't fire a request per pixel
   };
 
-  [setbackSlider, ransacSlider, zSlider].forEach(s => s.addEventListener("input", triggerRefit));
+  [setbackSlider, ransacSlider, zSlider, densitySlider].forEach(s => s.addEventListener("input", triggerRefit));
 
   resetBtn.addEventListener("click", () => {
     setbackSlider.value = 0.3;
     ransacSlider.value = 0.15;
     zSlider.value = 2.75;
+    densitySlider.value = 100;
     setbackVal.textContent = "0.30m";
     ransacVal.textContent = "0.15m";
     zVal.textContent = "2.75σ";
+    densityVal.textContent = "100%";
     summaryEl.classList.remove("stale");
     summaryEl.textContent = "Adjust a slider to try live values for this roof.";
     clearLiveTuning();
@@ -354,7 +374,7 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "7";
+const DATA_VERSION = "18";
 let coveragePct = 80;
 
 map.on("load", async () => {
@@ -369,21 +389,23 @@ map.on("load", async () => {
     type: "fill",
     source: "buildings",
     paint: {
-      // Low end was #2c3e8c, a blue-indigo close enough to the obstruction
-      // colour (#a855f7, purple) that on a row of small low-kWp buildings
-      // it read as "this roof is covered in obstructions" -- it's just
-      // this layer's own low-value colour showing through on neighbouring
-      // (unselected) buildings. Swapped for an unambiguous pure blue.
+      // Per-building kWp choropleth colour, kept defined but invisible
+      // (opacity 0 below) -- the per-pixel heatmap-raster layer is the
+      // default view on every roof now, not a single flat colour per
+      // building. This layer still exists and stays fully hit-testable at
+      // opacity 0 (MapLibre queries invisible-but-opacity-0 layers same as
+      // opaque ones; only visibility:"none" would drop it from queries) --
+      // it's what map.on("click"/"mouseenter", "buildings-fill", ...) and
+      // the "Buildings in view" dashboard's queryRenderedFeatures rely on.
       "fill-color": [
         "interpolate", ["linear"], ["get", "kwp"],
-        0, "#1565c0",
-        2, "#3aa8c1",
-        5, "#6fd07c",
-        10, "#f4d35e",
-        20, "#f2994a",
-        40, "#e63946"
+        0, "#00000a",
+        3, "#91009c",
+        8, "#e64616",
+        18, "#feb400",
+        40, "#fffff6"
       ],
-      "fill-opacity": 0.75
+      "fill-opacity": 0
     }
   });
 
@@ -505,13 +527,23 @@ map.on("load", async () => {
     type: "raster",
     source: "heatmap-raster-src",
     layout: { visibility: mode === "heatmap" ? "visible" : "none" },
-    paint: { "raster-opacity": 0.8 }
+    paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }  // semi-transparent per-pixel
+    // flux layer -- at 0.4m source resolution the linear upsampling reads as the intended soft
+    // gradient, not the old 1m blur
   });
 
   const layoutResp = await fetch(`data/panel_layouts.geojson?v=${DATA_VERSION}`);
   const layoutData = await layoutResp.json();
   map.addSource("layout", { type: "geojson", data: layoutData });
   document.getElementById("loading").style.opacity = "0";
+
+  // (A flat per-facet vector heat layer briefly lived here -- razor-sharp
+  // edges, but it inherited every segmentation coarseness verbatim: a real
+  // multi-pitch roof whose facets collapsed rendered one uniform colour,
+  // confirmed by direct user comparison. Replaced by the 0.4m per-pixel
+  // raster from build_heatmap_raster.py, computed straight from the point
+  // cloud independent of facets -- Google-flux-style granularity with soft
+  // ridge gradients.)
 
   // No solid facet fill anymore -- it used the same colour scale as the
   // heatmap, so a low-yield (south-facing) facet rendered nearly the same
@@ -608,6 +640,14 @@ map.on("load", async () => {
           <tr><td>kWh / day (avg)</td><td class="val">${p.ac_kwh_day_avg.toFixed(1)}</td></tr>
           <tr><td>kWh / year</td><td class="val">${Number(p.ac_kwh_year).toLocaleString()}</td></tr>
         </table>
+        <div class="slider-row" style="border-top: 1px solid rgba(255,255,255,0.15); margin-top: 8px; padding-top: 8px;">
+          <label><span><strong>Panel density</strong></span><span id="val-density">100%</span></label>
+          <input type="range" id="slider-density" min="0" max="100" step="5" value="100">
+          <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
+            Sunniest roof faces fill first, row by row, before the rest of the roof --
+            still never over an obstruction, edge, or roof join. 100% = every feasible panel.
+          </div>
+        </div>
         <div class="assumptions">
           Heat Map = raw per-pixel generation potential before panels (blue = south-facing/low,
           red = north-facing/high). Panel Layout = proposed facets/panels/obstructions for this roof.
@@ -653,19 +693,13 @@ map.on("load", async () => {
   map.on("click", "buildings-fill", (e) => {
     const p = e.features[0].properties;
     selectBuilding(p.building_id);
-
-    const bounds = new maplibregl.LngLatBounds();
-    const geom = e.features[0].geometry;
-    const coords = geom.type === "Polygon" ? geom.coordinates[0] : geom.coordinates[0][0];
-    coords.forEach(c => bounds.extend(c));
-    // Right padding accounts for the side panel (320px + margins) so the
-    // clicked building lands in the visible map area, not behind it.
-    map.fitBounds(bounds, { padding: { top: 80, bottom: 80, left: 80, right: 360 }, maxZoom: 20, duration: 600 });
-
     showBuildingPanel(p);
   });
 
   document.getElementById("side-panel-close").addEventListener("click", clearSelection);
+  document.getElementById("mobile-details-tab").addEventListener("click", () => {
+    document.getElementById("side-panel").classList.add("expanded");
+  });
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
 
   map.on("click", (e) => {

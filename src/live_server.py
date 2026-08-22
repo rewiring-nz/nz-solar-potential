@@ -31,10 +31,12 @@ from shapely.ops import transform as shapely_transform
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
-from src.roof_segmentation import segment_building
-from src.obstruction_detection import detect_obstructions
-from src.panel_fitting import fit_panels_on_facet
+from src.roof_segmentation import segment_building_best
+from src.pointcloud_source import PointCloudSource
+from src.obstruction_detection import detect_obstructions_combined
+from src.panel_fitting import fit_panels_on_facet, apply_panel_density
 from src.solar_model import SolarModel
+from src.building_shading import building_shading_factor
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_DIR / "data"
@@ -47,22 +49,36 @@ print("Loading shared data (buildings, DSM, imagery, solar model)...")
 GDF = gpd.read_file(DATA_DIR / "building_outlines.geojson").set_index("building_id", drop=False)
 DSM_DS = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
 IMAGERY_DS = rasterio.open(DATA_DIR / "imagery_mosaic.tif")
+PC_SOURCE = PointCloudSource()
 MODEL = SolarModel()
+DSM_BAND = DSM_DS.read(1)  # loaded once, reused for every building's own near-field shading scan
 TO_WGS84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
 print("Ready.")
 
 
-def refit_building(building_id, setback, ransac_threshold, z_threshold):
+def refit_building(building_id, setback, ransac_threshold, z_threshold, density_pct=100):
     row = GDF.loc[building_id]
-    facets = segment_building(DSM_DS, row.geometry, building_id, ransac_distance_threshold=ransac_threshold)
+    facets = segment_building_best(DSM_DS, PC_SOURCE, row.geometry, building_id,
+                                    ransac_distance_threshold=ransac_threshold)
 
     features = []
-    total_panels = total_kwp = total_ac_kwh_year = 0
+    facet_panels = []  # one list per facet, same order as `facets` -- filled in below, filtered after
+    facet_shading = []  # same order as `facets` -- facet_yield below needs each facet's own factor
     for f in facets:
-        obstructions = detect_obstructions(IMAGERY_DS, f["geometry"], z_threshold=z_threshold,
-                                            boundary_erode_m=setback)
-        panels = fit_panels_on_facet(f, setback=setback, obstructions=obstructions)
-        poa = MODEL.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
+        facet_centroid = f["geometry"].centroid
+        shading_factor = building_shading_factor(DSM_BAND, DSM_DS.transform, DSM_DS.nodata,
+                                                   facet_centroid.x, facet_centroid.y, MODEL.hourly,
+                                                   own_geom=f["geometry"], terrain_horizon_profile=MODEL.horizon_profile)
+        facet_shading.append(shading_factor)
+        plane = (f["plane_a"], f["plane_b"], f["plane_c"])
+        obstructions = detect_obstructions_combined(IMAGERY_DS, PC_SOURCE, f["geometry"], plane,
+                                                     z_threshold=z_threshold, boundary_erode_m=setback)
+        siblings = [other for other in facets if other is not f]
+        panels = fit_panels_on_facet(f, setback=setback, obstructions=obstructions, sibling_facets=siblings)
+        poa = MODEL.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"]) * shading_factor
+        for p in panels:
+            p["poa_kwh_m2_yr"] = poa
+        facet_panels.append(panels)
 
         features.append({
             "type": "Feature",
@@ -76,17 +92,28 @@ def refit_building(building_id, setback, ransac_threshold, z_threshold):
                 "geometry": shapely_transform(TO_WGS84, o).__geo_interface__,
                 "properties": {"kind": "obstruction"},
             })
-        if panels:
-            y = MODEL.facet_yield(f, len(panels))
-            total_panels += len(panels)
-            total_kwp += y["kwp"]
-            total_ac_kwh_year += y["ac_kwh_year"]
-            for p in panels:
-                features.append({
-                    "type": "Feature",
-                    "geometry": shapely_transform(TO_WGS84, p["geometry"]).__geo_interface__,
-                    "properties": {"kind": "panel"},
-                })
+
+    # Density applies across the *whole building*, sunniest-facet-first, not independently per
+    # facet -- so filtering has to happen after every facet's own feasible panels are known, not
+    # inside the per-facet loop above.
+    all_panels = [p for panels in facet_panels for p in panels]
+    kept_panels = set(id(p) for p in apply_panel_density(all_panels, density_pct))
+
+    total_panels = total_kwp = total_ac_kwh_year = 0
+    for f, panels, shading_factor in zip(facets, facet_panels, facet_shading):
+        kept = [p for p in panels if id(p) in kept_panels]
+        if not kept:
+            continue
+        y = MODEL.facet_yield(f, len(kept), shading_factor=shading_factor)
+        total_panels += len(kept)
+        total_kwp += y["kwp"]
+        total_ac_kwh_year += y["ac_kwh_year"]
+        for p in kept:
+            features.append({
+                "type": "Feature",
+                "geometry": shapely_transform(TO_WGS84, p["geometry"]).__geo_interface__,
+                "properties": {"kind": "panel"},
+            })
 
     return {
         "type": "FeatureCollection",
@@ -118,7 +145,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             setback = float(params.get("setback", [config.PANEL_EDGE_SETBACK_M])[0])
             ransac_threshold = float(params.get("ransac_threshold", [0.15])[0])
             z_threshold = float(params.get("z_threshold", [2.75])[0])
-            result = refit_building(building_id, setback, ransac_threshold, z_threshold)
+            density_pct = float(params.get("density_pct", [100])[0])
+            result = refit_building(building_id, setback, ransac_threshold, z_threshold, density_pct)
             body = json.dumps(result).encode()
             status = 200
         except Exception as e:

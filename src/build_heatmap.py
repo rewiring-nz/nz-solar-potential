@@ -20,10 +20,12 @@ import rasterio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
-from src.roof_segmentation import segment_building
+from src.roof_segmentation import segment_building_best
+from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet
-from src.obstruction_detection import detect_obstructions
+from src.obstruction_detection import detect_obstructions_combined
 from src.solar_model import SolarModel
+from src.building_shading import building_shading_factor
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -33,28 +35,36 @@ def main():
     gdf_wgs84 = gdf.to_crs("EPSG:4326")  # for the map frontend
     dsm_ds = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
     imagery_ds = rasterio.open(DATA_DIR / "imagery_mosaic.tif")
+    pc_source = PointCloudSource()
 
     print("Building solar yield lookup table (pvlib + NASA POWER)...")
     model = SolarModel()
+    dsm_band = dsm_ds.read(1)  # loaded once, reused for every building's own near-field shading scan
 
     features = []
     t0 = time.time()
     for i, (row, row_wgs84) in enumerate(zip(gdf.itertuples(), gdf_wgs84.itertuples())):
-        facets = segment_building(dsm_ds, row.geometry, row.building_id)
+        facets = segment_building_best(dsm_ds, pc_source, row.geometry, row.building_id)
 
         kwp = dc_kwh_year = ac_kwh_year = ac_kwh_day = panel_count = obstruction_count = 0
         facet_area_m2 = poa_weighted_sum = 0
         for f in facets:
-            poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
+            facet_centroid = f["geometry"].centroid
+            shading_factor = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                                                       facet_centroid.x, facet_centroid.y, model.hourly,
+                                                       own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
+            poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"]) * shading_factor
             facet_area_m2 += f["area_m2"]
             poa_weighted_sum += f["area_m2"] * poa
 
-            obstructions = detect_obstructions(imagery_ds, f["geometry"])
+            plane = (f["plane_a"], f["plane_b"], f["plane_c"])
+            obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane)
             obstruction_count += len(obstructions)
-            panels = fit_panels_on_facet(f, obstructions=obstructions)
+            siblings = [other for other in facets if other is not f]
+            panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
             if not panels:
                 continue
-            y = model.facet_yield(f, len(panels))
+            y = model.facet_yield(f, len(panels), shading_factor=shading_factor)
             panel_count += len(panels)
             kwp += y["kwp"]
             dc_kwh_year += y["dc_kwh_year"]

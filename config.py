@@ -11,16 +11,30 @@ PILOT_BBOX_NZTM2000 = [1257815.95, 5002860.10, 1259272.13, 5005166.35]  # EPSG:2
 LINZ_BUILDING_OUTLINES_LAYER = 101290
 LINZ_DSM_LAYER = 105855  # "Otago - Queenstown LiDAR 1m DSM (2021)"
 LINZ_DEM_LAYER = 105898  # "Otago - Queenstown LiDAR 1m DEM (2021)" -- bare earth, for shading horizon
-LINZ_IMAGERY_LAYER = 114745  # "Queenstown 0.1m Urban Aerial Photos (2021)" -- same year as the DSM and
-# the source the building outlines themselves were extracted from, so all three line up temporally
+LINZ_IMAGERY_LAYER = 124754  # "Queenstown 0.1m Urban Aerial Photos (2026)" -- captured 12 Feb-3 Mar
+# 2026, replacing the 2021 capture this pilot originally used. More current (new/changed rooftop
+# equipment, growth) at the cost of no longer matching the DSM/building-outline capture year exactly
+# (both still 2021) -- worth revisiting if that skew ever shows up as a real building-outline/roof
+# misalignment, but the two are already independently-sourced datasets with their own tolerances.
 
 PANEL_WIDTH_M = 1.0
 PANEL_HEIGHT_M = 2.0
-PANEL_EDGE_SETBACK_M = 0.1  # clearance from roof edges/ridges. Was 0.3 (a common fire-code
-# convention), but that uniform buffer was strangling narrow facets -- e.g. a real ~1.4m-wide
-# roof strip loses 0.6m total (0.3 each side), leaving under 1m usable, below the panel's own
-# 1m minimum dimension in any orientation, so it fits zero panels despite having real usable
-# area. Lowered per explicit request after that was found on a real building (#5371143).
+PANEL_EDGE_SETBACK_M = 0.3  # clearance from the roof's own outer edge (eave/verge) -- common
+# fire-code convention. Lowered to 0.1 earlier per explicit request after it was found strangling
+# narrow facets (a real ~1.4m-wide strip loses 0.6m total, under the panel's own 1m minimum
+# dimension, so it fit zero panels despite real usable area, on #5371143) -- but that traded away
+# realistic edge clearance on every *normal-width* facet just to rescue the rare narrow one, and
+# was reported back as making edges "clearly wrong" on ordinary roofs. Restored to 0.3;
+# PANEL_EDGE_SETBACK_FALLBACK_M below handles the narrow-facet case instead, per-facet.
+PANEL_EDGE_SETBACK_FALLBACK_M = 0.1  # retried only for a facet that fits zero panels at the
+# primary setback above -- keeps narrow facets panelable without loosening the default for
+# everything else.
+RIDGE_SETBACK_M = 0.25  # extra clearance specifically along a boundary shared with another real
+# roof plane on the same building (a real ridge, hip, or valley) -- separate from, and on top of,
+# PANEL_EDGE_SETBACK_M's outer-edge clearance. Two adjacent facets each erode this far back from
+# their shared boundary, so the real join between two differently-angled roof sections reads as
+# an actual visible gap (like real ridge cap flashing) instead of two panel grids butting flush
+# against each other with no visual break between them.
 MAX_ROOF_SLOPE_DEG = 45
 
 # --- PV system assumptions ---

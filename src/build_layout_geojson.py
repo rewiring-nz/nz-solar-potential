@@ -24,10 +24,12 @@ from shapely.ops import transform as shapely_transform
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import geopandas as gpd
 
-from src.roof_segmentation import segment_building
+from src.roof_segmentation import segment_building_best
+from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet
-from src.obstruction_detection import detect_obstructions
+from src.obstruction_detection import detect_obstructions_combined
 from src.solar_model import SolarModel
+from src.building_shading import building_shading_factor
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -36,20 +38,28 @@ def main():
     gdf = gpd.read_file(DATA_DIR / "building_outlines.geojson")
     dsm_ds = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
     imagery_ds = rasterio.open(DATA_DIR / "imagery_mosaic.tif")
+    pc_source = PointCloudSource()
     to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
 
     print("Building solar yield lookup table (pvlib + NASA POWER)...")
     model = SolarModel()
+    dsm_band = dsm_ds.read(1)  # loaded once, reused for every building's own near-field shading scan
 
     features = []
     t0 = time.time()
     for i, row in enumerate(gdf.itertuples()):
-        facets = segment_building(dsm_ds, row.geometry, row.building_id)
+        facets = segment_building_best(dsm_ds, pc_source, row.geometry, row.building_id)
 
         for f in facets:
-            obstructions = detect_obstructions(imagery_ds, f["geometry"])
-            panels = fit_panels_on_facet(f, obstructions=obstructions)
-            poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
+            facet_centroid = f["geometry"].centroid
+            shading_factor = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                                                       facet_centroid.x, facet_centroid.y, model.hourly,
+                                                       own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
+            plane = (f["plane_a"], f["plane_b"], f["plane_c"])
+            obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane)
+            siblings = [other for other in facets if other is not f]
+            panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
+            poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"]) * shading_factor
 
             features.append({
                 "type": "Feature",
@@ -72,7 +82,7 @@ def main():
                 })
 
             for p in panels:
-                y = model.facet_yield(f, 1)
+                y = model.facet_yield(f, 1, shading_factor=shading_factor)
                 features.append({
                     "type": "Feature",
                     "geometry": shapely_transform(to_wgs84, p["geometry"]).__geo_interface__,

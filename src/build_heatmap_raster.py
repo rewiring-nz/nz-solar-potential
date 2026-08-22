@@ -1,21 +1,26 @@
 """
-Per-roof-facet generation-potential heatmap across the whole pilot area,
-before any panel layout is applied -- a north-facing roof plane red/orange,
-south-facing blue, per the same diverging scale used everywhere else.
+Per-pixel generation-potential heatmap across the whole pilot area, at 0.4m
+resolution, computed directly from the LiDAR point cloud.
 
-Two-tier confidence, both rendered:
-1. High confidence: rasterizes the *actual* RANSAC facet segmentation
-   (the same one panel_fitting works from) -- uniform colour within a
-   facet, a hard cut exactly at its boundary (a real angle change).
-2. Fallback (lower alpha, visibly less solid): for roof pixels that
-   never resolved into any facet -- genuinely common on complex roofs
-   (curved/vaulted sections, ridges finer than the 1m DSM can resolve;
-   one real building in the pilot only resolved 31% of its footprint
-   into facets) -- a heavily Gaussian-smoothed per-pixel DSM gradient
-   fills the gap instead of leaving it blank. This alone was tried as
-   the *primary* method earlier and rejected (it blurs straight across
-   real ridge lines), which is exactly why it's demoted to "better than
-   nothing" fallback rather than the main signal.
+This replaced a facet-based version (uniform colour per segmented facet at 1m,
+plus a heavily-smoothed 1m-DSM gradient fallback for unresolved area) after
+direct user comparison against the vector-rendered facets exposed both of that
+approach's structural weaknesses at once: wherever segmentation was coarse or
+collapsed on a building, the heat map inherited the error verbatim (one real
+multi-pitch roof rendering a single uniform colour), and the 1m raster itself
+reads blurry at building zoom because the browser bilinear-upscales it ~10x.
+The requested reference look -- Google's Solar API flux layer -- is per-pixel
+at fine resolution: real gradients within a roof face, soft (not razor) edges,
+granularity that shows dormers and curvature.
+
+The point cloud carries ~5-10 pts/m2 here, comfortably supporting a 0.4m
+surface: per building, grid the points (inverse-distance-weighted z from the
+nearest neighbours), lightly smooth, take per-pixel slope/aspect from the
+gradient, look up POA, scale by the building's near-field shading factor, and
+composite into one pilot-wide RGBA at 0.4m with a 1px feather. Independent of
+roof segmentation entirely -- a building whose facets collapsed still renders
+its true per-pixel structure, because the pixels come straight from the
+measured surface.
 
 Usage: python src/build_heatmap_raster.py
 """
@@ -29,116 +34,166 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import rasterio
+import shapely.vectorized
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 from PIL import Image
-from rasterio.features import rasterize
 from rasterio.warp import transform as warp_transform
 from scipy.ndimage import gaussian_filter
+from scipy.spatial import cKDTree
 
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.roof_segmentation import segment_building
+import config
+from src.pointcloud_source import PointCloudSource
 from src.solar_model import SolarModel
+from src.building_shading import building_shading_factor
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 VMIN, VMAX = 700, 1650  # kWh/m2/yr -- same fixed scale as preview.html's legend and demo_figure.py
 
-# Same 6-stop palette as the buildings-fill choropleth in preview.html (and
-# its matching .legend-bar/.legend-facet-bar CSS gradients -- all four must
-# stay in sync if this changes) -- was matplotlib's stock RdYlBu_r here,
-# a *diverging* colormap (implies a meaningful zero/center point) applied
-# to what's actually sequential low-to-high data, with a washed-out pale
-# midpoint. This is a custom sequential ramp instead, reusing colours
-# already chosen (and already fixed once for a real collision with the
-# obstruction-purple swatch) rather than inventing a second, inconsistent
-# "heat" scale for the same app.
-HEAT_COLORS = ["#1565c0", "#3aa8c1", "#6fd07c", "#f4d35e", "#f2994a", "#e63946"]
+# "Iron" palette -- same one Google's own Solar API reference implementation
+# uses for its annual flux layer (googlemaps-samples/js-solar-potential,
+# colors.ts: ironPalette = ['00000A','91009C','E64616','FEB400','FFFFF6']),
+# the recognisable Project Sunroof look. Must stay in sync with preview.html's
+# legend gradient.
+HEAT_COLORS = ["#00000a", "#91009c", "#e64616", "#feb400", "#fffff6"]
 HEAT_CMAP = LinearSegmentedColormap.from_list("solar_heat", HEAT_COLORS, N=256)
-FALLBACK_ALPHA = 140  # out of 255 -- visibly less solid than the confident 255, not a hatch/texture but reads clearly at a glance
+
+HR_RES_M = 0.4  # output resolution -- fine enough for real within-roof structure (dormers, hips,
+# curvature) from ~5-10 pts/m2 LiDAR without inventing detail the points can't support
+IDW_K = 6  # neighbours per grid-node z estimate
+IDW_MAX_DIST_M = 1.2  # a node farther than this from any point has no real surface evidence
+Z_SMOOTH_SIGMA_PX = 1.0  # light smoothing before the gradient -- suppresses per-point noise at
+# 0.4m without smearing a ridge line more than ~one pixel either side (the "thin gradient
+# between changing angles" look explicitly asked for, vs the old 3.5px smear at 1m resolution)
+EDGE_FEATHER_SIGMA_PX = 0.8  # soft alpha edge at the footprint boundary -- deliberately not
+# razor-sharp, per the same request
 SLOPE_BIN_DEG, ASPECT_BIN_DEG, MAX_SLOPE_DEG = 5, 10, 45
+ALPHA = 235  # slight base transparency; the frontend's raster-opacity does the rest
 
 
-def build_fallback_poa(dsm_ds, model, building_mask):
-    """Same method as the very first version of this file: Gaussian-smooth
-    the DSM (sigma=3.5px -- enough to suppress 1m-grid quantization noise,
-    per the same finding as before), compute per-pixel slope/aspect, look
-    up POA. Kept only as the low-confidence fill for facet gaps now."""
-    dsm = dsm_ds.read(1)
-    nodata = dsm_ds.nodata
-    valid = dsm != nodata
-
+def build_lookup_array(model):
     lookup = np.full((MAX_SLOPE_DEG // SLOPE_BIN_DEG + 1, 360 // ASPECT_BIN_DEG), np.nan)
     for (slope_bin, aspect_bin), poa in model.lookup.items():
         lookup[slope_bin // SLOPE_BIN_DEG, aspect_bin // ASPECT_BIN_DEG] = poa
+    return lookup
 
-    fill_value = np.where(valid, dsm, np.nanmean(dsm[valid]))
-    smoothed = gaussian_filter(fill_value, sigma=3.5)
-    gy, gx = np.gradient(np.where(valid, smoothed, np.nan), dsm_ds.res[0])
-    slope_deg = np.degrees(np.arctan(np.hypot(gx, gy)))
-    aspect_deg = np.degrees(np.arctan2(-gx, gy)) % 360
 
-    slope_bin_idx = np.clip(np.round(slope_deg / SLOPE_BIN_DEG).astype(int), 0, MAX_SLOPE_DEG // SLOPE_BIN_DEG)
-    aspect_bin_idx = np.round(aspect_deg / ASPECT_BIN_DEG).astype(int) % (360 // ASPECT_BIN_DEG)
-    poa = lookup[slope_bin_idx, aspect_bin_idx]
-    poa[~(valid & building_mask)] = np.nan
-    return poa
+def render_building(points, geom, lookup, x_origin, y_origin, shading_factor):
+    """Returns (poa_grid, row0, col0) for this building's bbox in the pilot-wide
+    grid, or None when there's no usable point coverage. poa_grid is NaN
+    outside the footprint / away from real points."""
+    if len(points) < 12:
+        return None
+    minx, miny, maxx, maxy = geom.bounds
+    col0 = int(np.floor((minx - x_origin) / HR_RES_M))
+    row0 = int(np.floor((y_origin - maxy) / HR_RES_M))
+    cols = int(np.ceil((maxx - minx) / HR_RES_M)) + 1
+    rows = int(np.ceil((maxy - miny) / HR_RES_M)) + 1
+    if cols <= 0 or rows <= 0:
+        return None
+
+    xs = x_origin + (col0 + np.arange(cols) + 0.5) * HR_RES_M
+    ys = y_origin - (row0 + np.arange(rows) + 0.5) * HR_RES_M
+    gx, gy = np.meshgrid(xs, ys)
+
+    tree = cKDTree(points[:, :2])
+    k = min(IDW_K, len(points))
+    dist, idx = tree.query(np.column_stack([gx.ravel(), gy.ravel()]), k=k)
+    if k == 1:
+        dist, idx = dist[:, None], idx[:, None]
+    w = 1.0 / np.maximum(dist, 0.05)
+    z = (points[idx, 2] * w).sum(axis=1) / w.sum(axis=1)
+    z = z.reshape(rows, cols)
+    no_evidence = dist[:, 0].reshape(rows, cols) > IDW_MAX_DIST_M
+
+    z_s = gaussian_filter(z, sigma=Z_SMOOTH_SIGMA_PX)
+    dz_dy, dz_dx = np.gradient(z_s, HR_RES_M)
+    dz_dy = -dz_dy  # rows increase southward; gradient wants northward-positive
+    slope_deg = np.degrees(np.arctan(np.hypot(dz_dx, dz_dy)))
+    aspect_deg = np.degrees(np.arctan2(-dz_dx, -dz_dy)) % 360
+
+    slope_idx = np.clip(np.round(slope_deg / SLOPE_BIN_DEG).astype(int), 0, MAX_SLOPE_DEG // SLOPE_BIN_DEG)
+    aspect_idx = np.round(aspect_deg / ASPECT_BIN_DEG).astype(int) % (360 // ASPECT_BIN_DEG)
+    poa = lookup[slope_idx, aspect_idx] * shading_factor
+
+    inside = shapely.vectorized.contains(geom, gx, gy)
+    poa[~inside | no_evidence] = np.nan
+    return poa.astype(np.float32), row0, col0
 
 
 def main():
-    with rasterio.open(DATA_DIR / "dsm_mosaic.tif") as dsm_ds:
-        transform = dsm_ds.transform
-        crs = dsm_ds.crs
-        shape = dsm_ds.shape
+    gdf = gpd.read_file(DATA_DIR / "building_outlines.geojson")
+    pc_source = PointCloudSource()
+    dsm_ds = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
+    dsm_band = dsm_ds.read(1)
 
-        print("Building solar yield lookup table (pvlib + NASA POWER)...")
-        model = SolarModel()
+    print("Building solar yield lookup table...")
+    model = SolarModel()
+    lookup = build_lookup_array(model)
 
-        gdf = gpd.read_file(DATA_DIR / "building_outlines.geojson")
-        print(f"Segmenting {len(gdf)} buildings into facets...")
-        shapes = []
-        t0 = time.time()
-        for i, row in enumerate(gdf.itertuples()):
-            facets = segment_building(dsm_ds, row.geometry, row.building_id)
-            for f in facets:
-                poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
-                shapes.append((f["geometry"], poa))
-            if i % 300 == 0:
-                print(f"  {i}/{len(gdf)} elapsed={time.time() - t0:.0f}s")
+    minx, miny, maxx, maxy = config.PILOT_BBOX_NZTM2000
+    x_origin, y_origin = minx, maxy  # top-left
+    width = int(np.ceil((maxx - minx) / HR_RES_M))
+    height = int(np.ceil((maxy - miny) / HR_RES_M))
+    print(f"Pilot grid {width}x{height} at {HR_RES_M}m")
+    poa_full = np.full((height, width), np.nan, dtype=np.float32)
 
-        print("Rasterizing facets (high confidence)...")
-        facet_poa = rasterize(shapes, out_shape=shape, transform=transform, fill=np.nan, dtype=np.float32)
+    t0 = time.time()
+    rendered = 0
+    for i, row in enumerate(gdf.itertuples()):
+        bminx, bminy, bmaxx, bmaxy = row.geometry.bounds
+        points = pc_source.points_in_bbox(bminx - 1, bminy - 1, bmaxx + 1, bmaxy + 1, building_only=True)
+        centroid = row.geometry.centroid
+        shading = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                                           centroid.x, centroid.y, model.hourly,
+                                           own_geom=row.geometry, terrain_horizon_profile=model.horizon_profile)
+        result = render_building(points, row.geometry, lookup, x_origin, y_origin, shading)
+        if result is None:
+            continue
+        poa, r0, c0 = result
+        rr0, cc0 = max(r0, 0), max(c0, 0)
+        rr1 = min(r0 + poa.shape[0], height)
+        cc1 = min(c0 + poa.shape[1], width)
+        if rr1 <= rr0 or cc1 <= cc0:
+            continue
+        sub = poa[rr0 - r0:rr1 - r0, cc0 - c0:cc1 - c0]
+        target = poa_full[rr0:rr1, cc0:cc1]
+        take = ~np.isnan(sub)
+        target[take] = sub[take]
+        rendered += 1
+        if i % 200 == 0:
+            print(f"  {i}/{len(gdf)} elapsed={time.time() - t0:.0f}s")
 
-        print("Building smoothed fallback for unresolved gaps...")
-        building_mask = rasterize(
-            [(geom, 1) for geom in gdf.geometry], out_shape=shape, transform=transform, fill=0, dtype=np.uint8
-        ).astype(bool)
-        fallback_poa = build_fallback_poa(dsm_ds, model, building_mask)
-
-    has_facet = ~np.isnan(facet_poa)
-    has_fallback = ~np.isnan(fallback_poa) & ~has_facet
-    print(f"{has_facet.sum()} pixels from resolved facets, {has_fallback.sum()} filled from the fallback "
-          f"({has_facet.sum() / (has_facet.sum() + has_fallback.sum()) * 100:.0f}% high-confidence)")
-
-    combined_poa = np.where(has_facet, facet_poa, fallback_poa)
+    covered = ~np.isnan(poa_full)
+    print(f"{rendered}/{len(gdf)} buildings rendered, {covered.sum()} covered pixels "
+          f"({covered.sum() * HR_RES_M ** 2:.0f} m2 of roof)")
 
     norm = Normalize(vmin=VMIN, vmax=VMAX)
-    rgba = (HEAT_CMAP(norm(np.nan_to_num(combined_poa, nan=VMIN))) * 255).astype(np.uint8)
-    rgba[..., 3] = 0
-    rgba[has_facet, 3] = 255
-    rgba[has_fallback, 3] = FALLBACK_ALPHA
+    rgba = (HEAT_CMAP(norm(np.nan_to_num(poa_full, nan=VMIN))) * 255).astype(np.uint8)
+    alpha = np.where(covered, float(ALPHA), 0.0)
+    # Feather: soften the alpha edge AND the colour a touch so facet-scale
+    # transitions read as thin gradients, not aliased staircases.
+    alpha = gaussian_filter(alpha, sigma=EDGE_FEATHER_SIGMA_PX)
+    alpha = np.minimum(alpha, np.where(gaussian_filter(covered.astype(float), 1.5) > 0.05, 255, 0))
+    for ch in range(3):
+        band = rgba[..., ch].astype(float)
+        band_s = gaussian_filter(np.where(covered, band, 0.0), sigma=EDGE_FEATHER_SIGMA_PX)
+        weight = gaussian_filter(covered.astype(float), sigma=EDGE_FEATHER_SIGMA_PX)
+        rgba[..., ch] = np.where(weight > 0.02, band_s / np.maximum(weight, 0.02), band).astype(np.uint8)
+    rgba[..., 3] = alpha.astype(np.uint8)
 
     out_png = DATA_DIR / "heatmap_raster.png"
-    Image.fromarray(rgba, mode="RGBA").save(out_png)
+    Image.fromarray(rgba, mode="RGBA").save(out_png, optimize=True)
 
-    left, bottom, right, top = transform.c, transform.f + shape[0] * transform.e, transform.c + shape[1] * transform.a, transform.f
-    xs, ys = [left, right, right, left], [top, top, bottom, bottom]
-    lons, lats = warp_transform(crs, "EPSG:4326", xs, ys)
+    lons, lats = warp_transform("EPSG:2193", "EPSG:4326",
+                                 [minx, maxx, maxx, minx], [maxy, maxy, miny, miny])
     coordinates = list(zip(lons, lats))
-
     meta_path = DATA_DIR / "heatmap_raster.json"
     meta_path.write_text(json.dumps({"coordinates": coordinates}))
-
     print(f"\nSaved {out_png} ({out_png.stat().st_size / 1e6:.1f}MB) and {meta_path}")
+
+    dsm_ds.close()
 
 
 if __name__ == "__main__":
