@@ -48,21 +48,31 @@ def tiles_for_bbox_wgs84(bbox, api_key):
     return sorted({f["properties"]["tilename"] for f in data["features"]})
 
 
-def download_tile(filename):
+def download_tile(filename, retries=4):
     dest = POINTCLOUD_DIR / filename
     copc_variant = POINTCLOUD_DIR / filename.replace(".laz", ".copc.laz")
     if dest.exists() or copc_variant.exists():
         return "exists"
     part = dest.with_suffix(".part")
-    resp = requests.get(f"{BULK_URL}/{filename}", stream=True, timeout=120)
-    if resp.status_code == 404:
-        return "missing-upstream"
-    resp.raise_for_status()
-    with open(part, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
-            f.write(chunk)
-    part.rename(dest)
-    return f"{dest.stat().st_size / 1e6:.0f}MB"
+    for attempt in range(retries):
+        try:
+            resp = requests.get(f"{BULK_URL}/{filename}", stream=True, timeout=120)
+            if resp.status_code == 404:
+                return "missing-upstream"
+            resp.raise_for_status()
+            with open(part, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
+                    f.write(chunk)
+            part.rename(dest)
+            return f"{dest.stat().st_size / 1e6:.0f}MB"
+        except (requests.exceptions.RequestException, OSError) as e:
+            # transient S3 timeouts/read errors are routine over a multi-GB run;
+            # back off and retry rather than killing the whole batch
+            if attempt == retries - 1:
+                raise
+            import time
+            print(f"    retry {attempt + 1} after {type(e).__name__}")
+            time.sleep(10 * (attempt + 1))
 
 
 def main():

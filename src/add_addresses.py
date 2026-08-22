@@ -42,14 +42,16 @@ def fetch_addresses(bbox_nztm, api_key):
     return fetch_building_outlines(bbox_nztm, api_key, layer_id=NZ_ADDRESSES_LAYER)
 
 
-def main():
+def main(area="pilot"):
+    from src.region_build import area_paths
     load_dotenv()
     api_key = os.environ["LINZ_API_KEY"]
 
-    print("Fetching NZ Addresses for pilot bbox...")
+    print(f"Fetching NZ Addresses for {area} bbox...")
     # WGS84 bbox, not NZTM: unlike the outlines layer, this layer's WFS default
     # SRS is lon/lat -- an NZTM bbox silently matches zero features.
-    addr = fetch_addresses(config.PILOT_BBOX, api_key)
+    bbox = config.PILOT_BBOX if area == "pilot" else config.REGIONS[area]
+    addr = fetch_addresses(bbox, api_key)
     pts, labels = [], []
     for f in addr["features"]:
         g = f.get("geometry")
@@ -66,7 +68,7 @@ def main():
     pts = np.array(pts)
     print(f"{len(pts)} address points")
 
-    sp_path = DATA_DIR / "solar_potential.geojson"
+    sp_path = area_paths(area)["solar_potential"]
     sp = json.loads(sp_path.read_text())
 
     # Address coordinates come back in the WFS layer's CRS -- this layer serves
@@ -104,4 +106,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from src.region_build import areas_from_argv
+    import sys
+    for _area in areas_from_argv(sys.argv):
+        main(_area)

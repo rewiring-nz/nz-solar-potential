@@ -122,17 +122,20 @@ def render_building(points, geom, lookup, x_origin, y_origin, shading_factor):
     return poa.astype(np.float32), row0, col0
 
 
-def main():
-    gdf = gpd.read_file(DATA_DIR / "building_outlines.geojson")
+def main(area="pilot"):
+    from src.region_build import area_paths, area_bbox_nztm, area_centroid_wgs84
+    paths = area_paths(area)
+    gdf = gpd.read_file(paths["outlines"])
     pc_source = PointCloudSource()
-    dsm_ds = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
+    dsm_ds = rasterio.open(paths["dsm"])
     dsm_band = dsm_ds.read(1)
 
-    print("Building solar yield lookup table...")
-    model = SolarModel()
+    print(f"[{area}] Building solar yield lookup table...")
+    centroid = area_centroid_wgs84(area)
+    model = SolarModel() if centroid is None else SolarModel(*centroid)
     lookup = build_lookup_array(model)
 
-    minx, miny, maxx, maxy = config.PILOT_BBOX_NZTM2000
+    minx, miny, maxx, maxy = area_bbox_nztm(area)
     x_origin, y_origin = minx, maxy  # top-left
     width = int(np.ceil((maxx - minx) / HR_RES_M))
     height = int(np.ceil((maxy - miny) / HR_RES_M))
@@ -183,13 +186,13 @@ def main():
         rgba[..., ch] = np.where(weight > 0.02, band_s / np.maximum(weight, 0.02), band).astype(np.uint8)
     rgba[..., 3] = alpha.astype(np.uint8)
 
-    out_png = DATA_DIR / "heatmap_raster.png"
+    out_png = paths["heatmap_png"]
     Image.fromarray(rgba, mode="RGBA").save(out_png, optimize=True)
 
     lons, lats = warp_transform("EPSG:2193", "EPSG:4326",
                                  [minx, maxx, maxx, minx], [maxy, maxy, miny, miny])
     coordinates = list(zip(lons, lats))
-    meta_path = DATA_DIR / "heatmap_raster.json"
+    meta_path = paths["heatmap_json"]
     meta_path.write_text(json.dumps({"coordinates": coordinates}))
     print(f"\nSaved {out_png} ({out_png.stat().st_size / 1e6:.1f}MB) and {meta_path}")
 
@@ -197,4 +200,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from src.region_build import areas_from_argv
+    for _area in areas_from_argv(sys.argv):
+        main(_area)

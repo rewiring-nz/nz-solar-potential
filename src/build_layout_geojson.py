@@ -30,19 +30,22 @@ from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fil
 from src.obstruction_detection import detect_obstructions_combined
 from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor
+from src.region_build import area_paths, area_centroid_wgs84, areas_from_argv
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-def main():
-    gdf = gpd.read_file(DATA_DIR / "building_outlines.geojson")
-    dsm_ds = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
-    imagery_ds = rasterio.open(DATA_DIR / "imagery_mosaic.tif")
+def main(area="pilot"):
+    paths = area_paths(area)
+    gdf = gpd.read_file(paths["outlines"])
+    dsm_ds = rasterio.open(paths["dsm"])
+    imagery_ds = rasterio.open(paths["imagery"])
     pc_source = PointCloudSource()
     to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
 
-    print("Building solar yield lookup table (pvlib + NASA POWER)...")
-    model = SolarModel()
+    print(f"[{area}] Building solar yield lookup table (pvlib + NASA POWER)...")
+    centroid = area_centroid_wgs84(area)
+    model = SolarModel() if centroid is None else SolarModel(*centroid)
     dsm_band = dsm_ds.read(1)  # loaded once, reused for every building's own near-field shading scan
 
     features = []
@@ -112,7 +115,7 @@ def main():
             print(f"  {i}/{len(gdf)} elapsed={time.time() - t0:.1f}s")
 
     geojson = {"type": "FeatureCollection", "features": features}
-    out_path = DATA_DIR / "panel_layouts.geojson"
+    out_path = paths["panel_layouts"]
     out_path.write_text(json.dumps(geojson))
 
     n_facets = sum(1 for f in features if f["properties"]["kind"] == "facet")
@@ -126,4 +129,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    for _area in areas_from_argv(sys.argv):
+        main(_area)
