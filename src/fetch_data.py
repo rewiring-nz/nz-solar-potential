@@ -101,9 +101,12 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
         raise RuntimeError(f"Export job did not complete: {job}")
 
     zip_path = out_dir / f"{name}_export.zip"
-    dl = requests.get(job["download_url"], headers=headers, timeout=120)
-    dl.raise_for_status()
-    zip_path.write_bytes(dl.content)
+    with requests.get(job["download_url"], headers=headers, timeout=300, stream=True) as dl:
+        dl.raise_for_status()
+        with open(zip_path, "wb") as f:
+            for chunk in dl.iter_content(chunk_size=8 * 1024 * 1024):
+                f.write(chunk)  # streamed -- region-scale imagery zips run to GBs, far past
+                # what buffering the whole response in memory (the original approach) should carry
 
     extract_dir = out_dir / name
     with zipfile.ZipFile(zip_path) as zf:

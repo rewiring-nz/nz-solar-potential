@@ -34,7 +34,7 @@ import config
 from src.roof_segmentation import segment_building_best
 from src.pointcloud_source import PointCloudSource
 from src.obstruction_detection import detect_obstructions_combined
-from src.panel_fitting import fit_panels_on_facet, apply_panel_density
+from src.panel_fitting import fit_panels_on_facet, apply_panel_density, drop_minor_arrays, assign_fill_ranks
 from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor
 
@@ -93,10 +93,13 @@ def refit_building(building_id, setback, ransac_threshold, z_threshold, density_
                 "properties": {"kind": "obstruction"},
             })
 
-    # Density applies across the *whole building*, sunniest-facet-first, not independently per
-    # facet -- so filtering has to happen after every facet's own feasible panels are known, not
-    # inside the per-facet loop above.
+    # Same building-level post-processing as build_layout_geojson, so live-tuned
+    # results can't drift from the static data's rules: straggler groups
+    # dropped, then fill ranks assigned across the whole building
+    # (sunniest-facet-first), then the density cut.
+    facet_panels = drop_minor_arrays(facet_panels)
     all_panels = [p for panels in facet_panels for p in panels]
+    assign_fill_ranks(all_panels)
     kept_panels = set(id(p) for p in apply_panel_density(all_panels, density_pct))
 
     total_panels = total_kwp = total_ac_kwh_year = 0
@@ -112,7 +115,7 @@ def refit_building(building_id, setback, ransac_threshold, z_threshold, density_
             features.append({
                 "type": "Feature",
                 "geometry": shapely_transform(TO_WGS84, p["geometry"]).__geo_interface__,
-                "properties": {"kind": "panel"},
+                "properties": {"kind": "panel", "fill_rank": p["fill_rank"]},
             })
 
     return {

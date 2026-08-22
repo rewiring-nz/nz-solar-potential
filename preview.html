@@ -66,6 +66,24 @@
   .collapse-btn:hover { color: #fff; }
   .dashboard-body { overflow: hidden; }
   .dashboard-inview.collapsed .dashboard-body { display: none; }
+  .rsp-heading { font-size: 19px; font-weight: 800; letter-spacing: 0.2px; }
+  .rsp-subtitle { font-size: 12px; color: #bbb; margin: 2px 0 12px; }
+  .rsp-assumption { font-size: 13px; color: #eee; line-height: 1.45; flex: 1 1 100%; }
+  .rsp-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: flex-end; }
+  .coverage-select {
+    background: #2e3440; color: #fff; border: 1px solid #777; border-radius: 6px;
+    font-size: 13px; font-weight: 700; padding: 2px 4px; cursor: pointer;
+  }
+  .rsp-statbox {
+    background: #ffd100; color: #14212e; border-radius: 10px;
+    padding: 10px 14px; text-align: right; flex: 0 0 auto; min-width: 118px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
+  .rsp-statbox .rsp-power { font-size: 24px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
+  .rsp-statbox .rsp-energy { font-size: 12.5px; font-weight: 700; margin-top: 3px; opacity: 0.85; white-space: nowrap; }
+  .bldg-thumb { position: relative; width: 100%; height: 140px; overflow: hidden;
+    border-radius: 8px; margin: 8px 0 10px; background: #222; }
+  .bldg-thumb img { position: absolute; width: 256px; height: 256px; max-width: none; }
   .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
   .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .inview-table th { text-align: right; font-weight: 600; color: #ccc; font-size: 11px; padding: 0 0 4px 8px; }
@@ -125,33 +143,25 @@
       <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
       <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
     </div>
-    <div class="slider-row" id="coverage-control" style="display:none;">
-      <label style="display:flex; justify-content:space-between;">
-        <span>Heat Map estimate: roof coverage</span><span id="val-coverage">80%</span>
-      </label>
-      <input type="range" id="slider-coverage" min="20" max="95" step="5" value="80" style="width:100%;">
-      <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
-        Labels show kWp/kWh-yr if this % of each roof's usable area were
-        panelled, ignoring the actual fitted layout -- a quick "ceiling"
-        estimate, not the real Panel Layout numbers.
-      </div>
-    </div>
   </div>
   <div class="dashboard dashboard-inview" id="dashboard-inview">
     <div class="dashboard-title">
-      <span>Buildings in view (<span id="inview-count">0</span>)</span>
+      <span class="rsp-heading">Rooftop Solar Potential</span>
       <button class="collapse-btn" id="inview-collapse-btn" title="Collapse">&#9650;</button>
     </div>
     <div class="dashboard-body">
-      <div class="inview-subtitle">
-        Ceiling estimates: (resolved roof area) &times; coverage % &times;
-        panel density -- same method as the map labels, not the real
-        Panel Layout numbers. Updates as you pan/zoom.
+      <div class="rsp-subtitle">For buildings in map view (<span id="inview-count">0</span>)</div>
+      <div class="rsp-row">
+        <div class="rsp-assumption">
+          Assuming
+          <select class="coverage-select" id="coverage-select-main"></select>
+          roof coverage from solar panels:
+        </div>
+        <div class="rsp-statbox">
+          <div class="rsp-power" id="inview-power">&ndash;</div>
+          <div class="rsp-energy" id="inview-energy">&ndash;</div>
+        </div>
       </div>
-      <table class="inview-table">
-        <thead><tr><th>Coverage</th><th>MW peak</th><th>MWh/yr</th></tr></thead>
-        <tbody id="inview-tbody"></tbody>
-      </table>
     </div>
   </div>
 </div>
@@ -238,6 +248,27 @@ const LAYOUT_KIND_FILTER = {
   "panels-outline": ["==", ["get", "kind"], "panel"],
 };
 
+// Panel-layout density is fully client-side: every feasible panel ships in
+// the static data tagged with fill_rank (its percentile position in the
+// building's sunniest-first, row-by-row fill order, computed at build time),
+// and the density slider just filters the layers -- no server round-trip, so
+// it works identically on the deployed static site (the old implementation
+// called the local-only /api/refit and silently did nothing when deployed).
+// Default deliberately NOT 100%: just the best-defined solar areas (sunniest
+// first, via fill_rank), with full coverage still one slider-drag away.
+let panelDensityPct = 40;
+
+function panelLayerFilter(id, excludeBuildingId) {
+  const parts = [LAYOUT_KIND_FILTER[id]];
+  if (id === "panels-fill" || id === "panels-outline") {
+    parts.push(["any", ["!", ["has", "fill_rank"]], ["<=", ["get", "fill_rank"], panelDensityPct]]);
+  }
+  if (excludeBuildingId !== undefined) {
+    parts.push(["!=", ["get", "building_id"], excludeBuildingId]);
+  }
+  return parts.length === 1 ? parts[0] : ["all", ...parts];
+}
+
 function setMode(newMode) {
   mode = (mode === newMode) ? "none" : newMode;  // clicking the active one turns it off
   applyToggles();
@@ -255,8 +286,6 @@ function syncToggleButtons() {
   if (dashLayout) dashLayout.classList.toggle("active", mode === "layout");
   const coverageControl = document.getElementById("coverage-control");
   if (coverageControl) coverageControl.style.display = mode === "heatmap" ? "block" : "none";
-  document.querySelectorAll("#side-panel #toggle-heatmap").forEach(b => b.classList.toggle("active", mode === "heatmap"));
-  document.querySelectorAll("#side-panel #toggle-layout").forEach(b => b.classList.toggle("active", mode === "layout"));
 }
 
 function applyToggles() {
@@ -299,7 +328,7 @@ function clearLiveTuning() {
     map.getSource("live-layout").setData({ type: "FeatureCollection", features: [] });
   }
   if (layoutReady) {
-    LAYOUT_LAYERS.forEach(id => map.setFilter(id, LAYOUT_KIND_FILTER[id]));
+    LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
   }
 }
 
@@ -308,7 +337,7 @@ async function refitLive(buildingId, setback, ransacThreshold, zThreshold, densi
   // while its live-tuned version is shown instead -- otherwise both would
   // render on top of each other and every slider move would look like
   // nothing changed. Every other building's static layout stays visible.
-  LAYOUT_LAYERS.forEach(id => map.setFilter(id, ["all", LAYOUT_KIND_FILTER[id], ["!=", ["get", "building_id"], buildingId]]));
+  LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id, buildingId)));
   const url = `/api/refit?building_id=${buildingId}&setback=${setback}&ransac_threshold=${ransacThreshold}&z_threshold=${zThreshold}&density_pct=${densityPct}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`refit failed: ${resp.status}`);
@@ -321,11 +350,9 @@ function wireTuningControls(popupEl, buildingId) {
   const setbackSlider = popupEl.querySelector("#slider-setback");
   const ransacSlider = popupEl.querySelector("#slider-ransac");
   const zSlider = popupEl.querySelector("#slider-zthresh");
-  const densitySlider = popupEl.querySelector("#slider-density");
   const setbackVal = popupEl.querySelector("#val-setback");
   const ransacVal = popupEl.querySelector("#val-ransac");
   const zVal = popupEl.querySelector("#val-zthresh");
-  const densityVal = popupEl.querySelector("#val-density");
   const summaryEl = popupEl.querySelector("#tuning-summary");
   const resetBtn = popupEl.querySelector("#tuning-reset");
 
@@ -333,17 +360,15 @@ function wireTuningControls(popupEl, buildingId) {
     const setback = parseFloat(setbackSlider.value);
     const ransacThreshold = parseFloat(ransacSlider.value);
     const zThreshold = parseFloat(zSlider.value);
-    const densityPct = parseFloat(densitySlider.value);
     setbackVal.textContent = setback.toFixed(2) + "m";
     ransacVal.textContent = ransacThreshold.toFixed(2) + "m";
     zVal.textContent = zThreshold.toFixed(2) + "σ";
-    densityVal.textContent = densityPct.toFixed(0) + "%";
     summaryEl.classList.add("stale");
     summaryEl.textContent = "Refitting…";
     clearTimeout(liveTuningTimer);
     liveTuningTimer = setTimeout(async () => {
       try {
-        const summary = await refitLive(buildingId, setback, ransacThreshold, zThreshold, densityPct);
+        const summary = await refitLive(buildingId, setback, ransacThreshold, zThreshold, panelDensityPct);
         summaryEl.classList.remove("stale");
         summaryEl.innerHTML = `<strong>${summary.panel_count}</strong> panels, ` +
           `<strong>${summary.kwp.toFixed(2)}</strong> kWp, ` +
@@ -355,17 +380,15 @@ function wireTuningControls(popupEl, buildingId) {
     }, 250);  // debounce so dragging a slider doesn't fire a request per pixel
   };
 
-  [setbackSlider, ransacSlider, zSlider, densitySlider].forEach(s => s.addEventListener("input", triggerRefit));
+  [setbackSlider, ransacSlider, zSlider].forEach(s => s.addEventListener("input", triggerRefit));
 
   resetBtn.addEventListener("click", () => {
     setbackSlider.value = 0.3;
     ransacSlider.value = 0.15;
     zSlider.value = 2.75;
-    densitySlider.value = 100;
     setbackVal.textContent = "0.30m";
     ransacVal.textContent = "0.15m";
     zVal.textContent = "2.75σ";
-    densityVal.textContent = "100%";
     summaryEl.classList.remove("stale");
     summaryEl.textContent = "Adjust a slider to try live values for this roof.";
     clearLiveTuning();
@@ -377,8 +400,22 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "18";
-let coveragePct = 80;
+const DATA_VERSION = "19";
+let coveragePct = 25;
+const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
+
+function fmtPower(kwp) {
+  return kwp >= 1000 ? (kwp / 1000).toFixed(1) + " MW" : Math.round(kwp).toLocaleString() + " kW";
+}
+function fmtEnergy(kwhYear) {
+  if (kwhYear >= 1e6) return (kwhYear / 1e6).toFixed(1) + " GWh/yr";
+  if (kwhYear >= 1000) return Math.round(kwhYear / 1000).toLocaleString() + " MWh/yr";
+  return Math.round(kwhYear).toLocaleString() + " kWh/yr";
+}
+function coverageSelectHtml(id) {
+  return `<select class="coverage-select" id="${id}">` + COVERAGE_OPTIONS.map(p =>
+    `<option value="${p}" ${p === coveragePct ? "selected" : ""}>${p}%</option>`).join("") + `</select>`;
+}
 
 map.on("load", async () => {
   const resp = await fetch(`data/solar_potential.geojson?v=${DATA_VERSION}`);
@@ -441,43 +478,58 @@ map.on("load", async () => {
   }
   recomputeHeatmapEstimates();
 
-  // Left-dashboard "buildings in view" summary: same ceiling-estimate math
-  // as the map labels (resolved area x coverage % x panel density), summed
-  // across whatever's currently on screen, at four fixed coverage levels
-  // rather than just the slider's current one -- queries against
-  // buildings-outline (never filtered) rather than buildings-fill (which
-  // excludes the selected building once one is clicked) so a selection
-  // doesn't silently drop a building out of the total.
-  const INVIEW_SCENARIOS = [100, 75, 50, 25];
+  // Left-dashboard summary: same ceiling-estimate math as the map labels
+  // (resolved area x coverage % x panel density), summed across whatever's
+  // currently on screen at the single selected coverage level -- queries
+  // against buildings-outline (never filtered) rather than buildings-fill
+  // (which excludes the selected building once one is clicked) so a
+  // selection doesn't silently drop a building out of the total.
+  function buildingEstimate(props, pct) {
+    const kwp = (props.facet_area_m2 || 0) * (pct / 100) * panelDensityKw;
+    const kwhYear = kwp * (props.avg_poa_kwh_m2 || 0)
+      * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100);
+    return { kwp, kwhYear };
+  }
 
   function recomputeInViewSummary() {
     const rendered = map.queryRenderedFeatures({ layers: ["buildings-outline"] });
     const seen = new Set();
-    const totals = {};
-    INVIEW_SCENARIOS.forEach(pct => totals[pct] = { kwp: 0, mwh: 0 });
-    let count = 0;
+    let count = 0, kwp = 0, kwhYear = 0;
     rendered.forEach(f => {
       const id = f.properties.building_id;
       if (seen.has(id)) return;
       seen.add(id);
       count++;
-      const area = f.properties.facet_area_m2 || 0;
-      const poa = f.properties.avg_poa_kwh_m2 || 0;
-      INVIEW_SCENARIOS.forEach(pct => {
-        const kwp = area * (pct / 100) * panelDensityKw;
-        const kwhYear = kwp * poa * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100);
-        totals[pct].kwp += kwp;
-        totals[pct].mwh += kwhYear / 1000;
-      });
+      const est = buildingEstimate(f.properties, coveragePct);
+      kwp += est.kwp;
+      kwhYear += est.kwhYear;
     });
     document.getElementById("inview-count").textContent = count;
-    document.getElementById("inview-tbody").innerHTML = INVIEW_SCENARIOS.map((pct, i) => `
-      <tr>
-        <td>${pct === 100 ? "Maximum" : pct + "% coverage"}</td>
-        <td class="${i === 0 ? "hi" : ""}">${(totals[pct].kwp / 1000).toFixed(2)}</td>
-        <td class="${i === 0 ? "hi" : ""}">${totals[pct].mwh.toFixed(1)}</td>
-      </tr>`).join("");
+    document.getElementById("inview-power").textContent = fmtPower(kwp);
+    document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
   }
+
+  // The two coverage dropdowns (map-view dashboard + per-building panel)
+  // share one global coveragePct: changing either updates every display,
+  // including the on-map kWp labels.
+  function setCoverage(pct) {
+    coveragePct = pct;
+    document.querySelectorAll(".coverage-select").forEach(sel => { sel.value = String(pct); });
+    recomputeHeatmapEstimates();
+    recomputeInViewSummary();
+    const bp = document.getElementById("bldg-power");
+    if (bp && bp.dataset.area) {
+      const est = buildingEstimate({ facet_area_m2: +bp.dataset.area, avg_poa_kwh_m2: +bp.dataset.poa }, pct);
+      bp.textContent = fmtPower(est.kwp);
+      document.getElementById("bldg-energy").textContent = fmtEnergy(est.kwhYear);
+    }
+  }
+  function wireCoverageSelect(sel) {
+    sel.addEventListener("change", () => setCoverage(parseInt(sel.value, 10)));
+  }
+  const mainSel = document.getElementById("coverage-select-main");
+  mainSel.outerHTML = coverageSelectHtml("coverage-select-main");
+  wireCoverageSelect(document.getElementById("coverage-select-main"));
 
   map.addLayer({
     id: "kwp-labels",
@@ -505,11 +557,6 @@ map.on("load", async () => {
     paint: { "text-color": "#ffffff", "text-halo-color": "#000000", "text-halo-width": 1.4 }
   });
 
-  document.getElementById("slider-coverage").addEventListener("input", (e) => {
-    coveragePct = parseFloat(e.target.value);
-    document.getElementById("val-coverage").textContent = coveragePct + "%";
-    recomputeHeatmapEstimates();
-  });
   document.getElementById("inview-collapse-btn").addEventListener("click", (e) => {
     const panel = document.getElementById("dashboard-inview");
     const collapsed = panel.classList.toggle("collapsed");
@@ -517,6 +564,9 @@ map.on("load", async () => {
     e.target.title = collapsed ? "Expand" : "Collapse";
   });
   map.on("moveend", recomputeInViewSummary);
+  // moveend fires before the new view finishes rendering, so a fast pan/zoom
+  // counts 0 buildings; idle fires once rendering settles and corrects it.
+  map.on("idle", recomputeInViewSummary);
   document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
   document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
 
@@ -573,14 +623,14 @@ map.on("load", async () => {
     id: "panels-fill",
     type: "fill",
     source: "layout",
-    filter: LAYOUT_KIND_FILTER["panels-fill"],
+    filter: panelLayerFilter("panels-fill"),
     paint: { "fill-color": "#000000", "fill-opacity": 0.45 }
   });
   map.addLayer({
     id: "panels-outline",
     type: "line",
     source: "layout",
-    filter: LAYOUT_KIND_FILTER["panels-outline"],
+    filter: panelLayerFilter("panels-outline"),
     paint: { "line-color": "#7fd4ff", "line-width": 1 }
   });
 
@@ -629,40 +679,54 @@ map.on("load", async () => {
   // a different building just replaces its content rather than spawning a
   // second overlapping popup.
   function buildingPanelHtml(p) {
+    const title = p.address || `Building #${p.building_id}`;
+    const sub = p.address
+      ? (p.address_count > 1 ? `${p.address_count} addresses · outline #${p.building_id}` : `Building outline #${p.building_id}`)
+      : "No street address on record for this outline";
+    const est = buildingEstimate(p, coveragePct);
     return `
       <div class="popup">
-        <h4>Building #${p.building_id}</h4>
-        <div class="toggle-row">
-          <button class="toggle-btn" id="toggle-heatmap">Heat Map</button>
-          <button class="toggle-btn" id="toggle-layout">Panel Layout</button>
-        </div>
-        <table>
-          <tr><td>Panels fitted</td><td class="val">${p.panel_count}</td></tr>
-          <tr><td>Obstructions avoided</td><td class="val">${p.obstruction_count}</td></tr>
-          <tr><td>kW peak (kWp)</td><td class="val">${p.kwp.toFixed(2)}</td></tr>
-          <tr><td>kWh / day (avg)</td><td class="val">${p.ac_kwh_day_avg.toFixed(1)}</td></tr>
-          <tr><td>kWh / year</td><td class="val">${Number(p.ac_kwh_year).toLocaleString()}</td></tr>
-        </table>
-        <div class="slider-row" style="border-top: 1px solid rgba(255,255,255,0.15); margin-top: 8px; padding-top: 8px;">
-          <label><span><strong>Panel density</strong></span><span id="val-density">100%</span></label>
-          <input type="range" id="slider-density" min="0" max="100" step="5" value="100">
-          <div style="font-size:10.5px; color:#aaa; margin-top:4px;">
-            Sunniest roof faces fill first, row by row, before the rest of the roof --
-            still never over an obstruction, edge, or roof join. 100% = every feasible panel.
+        <h4 style="font-size:17px;">${title}</h4>
+        <div class="rsp-subtitle">${sub}</div>
+        <div class="bldg-thumb" id="bldg-thumb"></div>
+        <div class="rsp-row">
+          <div class="rsp-assumption">
+            Assuming
+            ${coverageSelectHtml("coverage-select-bldg")}
+            roof coverage from solar panels:
+          </div>
+          <div class="rsp-statbox">
+            <div class="rsp-power" id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</div>
+            <div class="rsp-energy" id="bldg-energy">${fmtEnergy(est.kwhYear)}</div>
           </div>
         </div>
-        <div class="assumptions">
-          Heat Map = raw per-pixel generation potential before panels (blue = south-facing/low,
-          red = north-facing/high). Panel Layout = proposed facets/panels/obstructions for this roof.
-          Toggle both off to see the bare rooftop.
+        <div style="border-top:1px solid rgba(255,255,255,0.15); margin-top:12px; padding-top:10px;
+                    font-size:12px; font-weight:700; color:#ccc;">Proposed panel layout for this roof</div>
+        <table>
+          <tr><td>Panels placed</td><td class="val" id="fitted-count">&ndash;</td></tr>
+          <tr><td>kW peak (kWp)</td><td class="val" id="fitted-kwp">&ndash;</td></tr>
+          <tr><td>kWh / year</td><td class="val" id="fitted-kwh">&ndash;</td></tr>
+          <tr><td>Obstructions avoided</td><td class="val">${p.obstruction_count}</td></tr>
+        </table>
+        <div class="slider-row" style="margin-top: 6px;">
+          <label><span><strong>Panel density</strong></span><span id="val-density">${panelDensityPct}%</span></label>
+          <input type="range" id="slider-density" min="0" max="100" step="5" value="${panelDensityPct}">
         </div>
-        <div class="assumptions">
-          <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels
-          (${assumptions.panel_efficiency_pct}% efficient, ${assumptions.panel_area_m2}m² each),
-          ${assumptions.inverter_efficiency_pct}% inverter efficiency,
-          ${assumptions.system_derate_pct}% combined system losses (soiling/wiring/temperature/mismatch).
-          ${assumptions.notes}
-        </div>
+        <details class="tuning">
+          <summary>How this works &amp; assumptions</summary>
+          <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
+            Sunniest roof faces fill first, row by row -- never over an obstruction,
+            edge, or roof join. 100% = every feasible panel; the default shows the
+            best-defined solar areas only.
+          </div>
+          <div class="assumptions">
+            <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels
+            (${assumptions.panel_efficiency_pct}% efficient, ${assumptions.panel_area_m2}m² each),
+            ${assumptions.inverter_efficiency_pct}% inverter efficiency,
+            ${assumptions.system_derate_pct}% combined system losses (soiling/wiring/temperature/mismatch).
+            ${assumptions.notes}
+          </div>
+        </details>
         <details class="tuning">
           <summary>Tune panel-fitting parameters</summary>
           <div class="slider-row">
@@ -683,20 +747,69 @@ map.on("load", async () => {
       </div>`;
   }
 
-  function showBuildingPanel(p) {
+  // Static thumbnail of the clicked roof: LINZ Basemaps tiles composed with
+  // plain absolutely-positioned <img>s (no canvas, so no CORS constraints),
+  // shifted so the click point sits at the container's center.
+  function buildThumbnail(container, lngLat) {
+    const z = 20, n = Math.pow(2, z);
+    const xf = (lngLat.lng + 180) / 360 * n;
+    const latRad = lngLat.lat * Math.PI / 180;
+    const yf = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+    const cx = container.clientWidth / 2, cy = container.clientHeight / 2;
+    const xt = Math.floor(xf), yt = Math.floor(yf);
+    const baseLeft = cx - (xf - xt) * 256, baseTop = cy - (yf - yt) * 256;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const img = document.createElement("img");
+        img.src = `https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/${z}/${xt + dx}/${yt + dy}.webp?api=c01m0keqqjx0anrxjrt7grvtqxh`;
+        img.style.left = (baseLeft + dx * 256) + "px";
+        img.style.top = (baseTop + dy * 256) + "px";
+        img.alt = "";
+        container.appendChild(img);
+      }
+    }
+  }
+
+  // "Proposed panel layout" stats, client-computed from the panel features at
+  // the current density -- the same filter the map layers use, so the numbers
+  // always match what's drawn.
+  function updateFittedStats(buildingId) {
+    let count = 0, kwhYear = 0;
+    layoutData.features.forEach(f => {
+      const q = f.properties;
+      if (q.kind !== "panel" || q.building_id !== buildingId) return;
+      if (q.fill_rank !== undefined && q.fill_rank > panelDensityPct) return;
+      count++;
+      kwhYear += q.ac_kwh_year || 0;
+    });
+    const el = id => document.getElementById(id);
+    if (!el("fitted-count")) return;
+    el("fitted-count").textContent = count;
+    el("fitted-kwp").textContent = (count * assumptions.panel_rated_power_w / 1000).toFixed(2);
+    el("fitted-kwh").textContent = Math.round(kwhYear).toLocaleString();
+  }
+
+  function showBuildingPanel(p, lngLat) {
     const panel = document.getElementById("side-panel");
     document.getElementById("side-panel-content").innerHTML = buildingPanelHtml(p);
     panel.classList.add("visible");
-    panel.querySelector("#toggle-heatmap").addEventListener("click", () => setMode("heatmap"));
-    panel.querySelector("#toggle-layout").addEventListener("click", () => setMode("layout"));
-    syncToggleButtons();
+    wireCoverageSelect(panel.querySelector("#coverage-select-bldg"));
+    if (lngLat) buildThumbnail(panel.querySelector("#bldg-thumb"), lngLat);
+    updateFittedStats(p.building_id);
+    const densitySlider = panel.querySelector("#slider-density");
+    densitySlider.addEventListener("input", () => {
+      panelDensityPct = parseInt(densitySlider.value, 10);
+      panel.querySelector("#val-density").textContent = panelDensityPct + "%";
+      LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
+      updateFittedStats(p.building_id);
+    });
     wireTuningControls(panel, p.building_id);
   }
 
   map.on("click", "buildings-fill", (e) => {
     const p = e.features[0].properties;
     selectBuilding(p.building_id);
-    showBuildingPanel(p);
+    showBuildingPanel(p, e.lngLat);
   });
 
   document.getElementById("side-panel-close").addEventListener("click", clearSelection);

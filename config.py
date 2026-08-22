@@ -7,6 +7,33 @@
 PILOT_BBOX = [168.655, -45.045, 168.675, -45.025]
 PILOT_BBOX_NZTM2000 = [1257815.95, 5002860.10, 1259272.13, 5005166.35]  # EPSG:2193, same area
 
+# --- Queenstown-wide expansion regions --------------------------------------
+# WGS84 [min_lon, min_lat, max_lon, max_lat] per urban sub-region. Boxes are
+# data-driven, not hand-drawn: candidate rectangles were validated against
+# real LINZ building-outline counts (WFS), then tightened to the 2nd-98th
+# percentile of actual building centroids +150m pad (with k-means splits for
+# regions whose buildings cluster into separate settlements) -- fetching
+# imagery for one giant rectangle spanning town-to-Arrowtown would be ~60GB
+# of mostly lake and mountainside. ~9,650 buildings across these boxes
+# (verified counts per box, Aug 2026) + 1,270 in the existing pilot bbox.
+# The pilot itself stays on its original top-level paths; each region here
+# gets its own data/regions/<name>/ tree.
+REGIONS = {
+    "town_west_fernhill":  [168.6211, -45.0463, 168.6578, -45.0295],  # 1245 buildings
+    "town_gorge_north":    [168.6573, -45.0233, 168.6717, -45.0098],  # 189
+    "frankton_flats":      [168.7001, -45.0309, 168.7499, -45.0147],  # 1625
+    "frankton_quail_rise": [168.7337, -45.0160, 168.7600, -44.9939],  # 569
+    "kelvin_heights":      [168.6791, -45.0485, 168.7196, -45.0271],  # 946
+    "jacks_point":         [168.7255, -45.1017, 168.7589, -45.0724],  # 481
+    "hanleys_farm":        [168.7428, -45.0742, 168.7599, -45.0609],  # 639
+    "shotover_lakehayes":  [168.7335, -45.0008, 168.7814, -44.9606],  # 814
+    "arthurs_point":       [168.6733, -44.9934, 168.7114, -44.9691],  # 413
+    "arrowtown_millbrook": [168.7904, -44.9599, 168.8476, -44.9376],  # 2712
+}
+LINZ_LIDAR_TILE_INDEX_LAYER = 105905  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
+# bbox to the CL2_*.copc.laz point-cloud tile names, which are then fetched from OpenTopography's
+# public bulk store (LINZ hosts the derived DSM/DEM rasters but not the raw point cloud)
+
 # LINZ layer IDs (confirmed to exist and cover the pilot bbox)
 LINZ_BUILDING_OUTLINES_LAYER = 101290
 LINZ_DSM_LAYER = 105855  # "Otago - Queenstown LiDAR 1m DSM (2021)"
