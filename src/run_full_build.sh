@@ -23,7 +23,11 @@ for r in $REGIONS; do
   echo "=== $r ($(date +%H:%M:%S)) ==="
   {
     $PY src/build_heatmap.py "$r" &&
-    $PY src/add_addresses.py "$r" &&
+    # Addresses are a patch-in-place post-process on solar_potential.geojson,
+    # and the only per-region step that needs the network (Josh's connection
+    # is intermittent) -- a failure here must not throw away the ~15min of
+    # offline-safe compute around it. Re-run later: python src/add_addresses.py <region>
+    { $PY src/add_addresses.py "$r" || echo "WARN: addresses failed for $r -- patch later"; } &&
     $PY src/build_layout_geojson.py "$r" &&
     $PY src/build_heatmap_raster.py "$r"
   } >"$log" 2>&1
