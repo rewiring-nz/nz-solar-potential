@@ -38,7 +38,13 @@ from src.region_build import all_areas, area_paths
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
 
-MIN_PTS_PER_M2 = 1.5       # building-class density under a panel below this = not a roof
+MIN_EVIDENCE_PTS = 8        # fewer total returns than this under a panel = survey too thin
+# to judge here at all -> keep. (7 Cedar Dr: a real roof at 2.0 pts/m2 total
+# had 63 of 69 fitted panels executed by absolute-count thresholds.)
+MIN_BUILDING_FRACTION = 0.4  # of the returns that DO exist under a panel, at least this share
+# must be building-class for it to count as roof -- a carpark/yard/demolition
+# site is well-sampled but its returns are ground/vegetation, a thin-but-real
+# roof has few returns that are ALL building. Ratio, not absolute density.
 MIN_HEIGHT_ABOVE_DEM = 1.8  # roof surface must clear bare earth by this (m)
 MAX_LOCAL_RMS = 0.28        # points under one 2m panel should fit their own plane this well
 
@@ -55,13 +61,14 @@ def panel_ok(poly, pc, dem, dem_transform_inv):
         return True, "no_coverage_kept"
     pts = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=True)
     inside_all = shapely.vectorized.contains(poly, pts_all[:, 0], pts_all[:, 1])
-    if inside_all.sum() < 3:
-        return True, "no_coverage_kept"  # survey shadow over this exact spot
+    n_all = int(inside_all.sum())
+    if n_all < MIN_EVIDENCE_PTS:
+        return True, "thin_coverage_kept"  # not enough returns of ANY class to judge
     inside = shapely.vectorized.contains(poly, pts[:, 0], pts[:, 1]) if len(pts) else np.zeros(0, bool)
     pp = pts[inside] if len(pts) else np.empty((0, 3))
-    if len(pp) / max(area, 0.1) < MIN_PTS_PER_M2 or len(pp) < 4:
-        # ground/vegetation returns present but no building-class surface:
-        # carpark, yard, demolished, or air between wings
+    if len(pp) < MIN_BUILDING_FRACTION * n_all:
+        # spot is well-sampled but its returns are ground/vegetation, not a
+        # building surface: carpark, yard, demolished, or air between wings
         return False, "sparse"
     # height above bare earth at the panel centre
     c = poly.centroid
