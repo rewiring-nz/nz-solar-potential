@@ -28,6 +28,19 @@ from src.region_build import DATA_DIR, all_areas, area_paths
 HEATMAPS_DIR = DATA_DIR / "heatmaps"
 
 
+def _owned_ids(name):
+    """Current ownership per the area's dedup file -- regions rebuilt before
+    a later dedupe generation can still CONTAIN buildings that now belong to
+    a newer neighbour (frankton_arm, 23 Aug: 1,072 duplicates); the merge is
+    where stale extras get dropped, so ownership always wins without forcing
+    neighbour rebuilds."""
+    import geopandas as gpd
+    f = area_paths(name)["dir"] / "building_outlines_dedup.geojson"
+    if not f.exists():
+        return None
+    return set(gpd.read_file(f)["building_id"].astype(int))
+
+
 def merge_geojson(regions, key, out_path):
     merged = None
     for name in regions:
@@ -36,6 +49,10 @@ def merge_geojson(regions, key, out_path):
             print(f"  WARNING: {name} has no {path.name}, skipping")
             continue
         data = json.loads(path.read_text())
+        owned = _owned_ids(name)
+        if owned is not None:
+            data["features"] = [f for f in data["features"]
+                                if int(f["properties"].get("building_id", -1)) in owned]
         if merged is None:
             merged = data
         else:
