@@ -454,7 +454,12 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     on-grey-roof (confirmed on a real commercial roof where nearly all its
     extensive ducting was silently dropped by that check). Falls back to
     colour-only if pc_source is None or has no coverage here."""
-    color_obs = detect_obstructions(imagery_ds, facet_geom, z_threshold, boundary_erode_m)
+    # Rural gap regions have no 0.1m urban imagery (LINZ layer is urban-only),
+    # so colour detection is unavailable there -- fall back to LiDAR height
+    # evidence alone rather than skipping the area entirely. Documented
+    # degradation: flush objects (skylights, existing panels) go undetected.
+    color_obs = [] if imagery_ds is None else detect_obstructions(
+        imagery_ds, facet_geom, z_threshold, boundary_erode_m)
     if pc_source is None:
         return color_obs
 
@@ -492,7 +497,9 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                  if not strong and _elongation_ratio(h) > ELONGATION_RATIO_THRESHOLD]
 
     confirmed_elongated = []
-    if elongated:
+    if elongated and imagery_ds is None:
+        confirmed_elongated = elongated  # no photo to cross-check against
+    elif elongated:
         boundary_erode_m = BOUNDARY_ERODE_M if boundary_erode_m is None else boundary_erode_m
         sample_geom = facet_geom.buffer(-boundary_erode_m)
         if sample_geom.geom_type == "MultiPolygon":

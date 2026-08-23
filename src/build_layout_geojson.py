@@ -39,7 +39,7 @@ def main(area="pilot"):
     paths = area_paths(area)
     gdf = gpd.read_file(paths["outlines"])
     dsm_ds = rasterio.open(paths["dsm"])
-    imagery_ds = rasterio.open(paths["imagery"])
+    imagery_ds = rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None
     pc_source = PointCloudSource()
     to_wgs84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
 
@@ -125,7 +125,8 @@ def main(area="pilot"):
     print(f"{n_facets} facets, {n_panels} panels, {n_obs} obstructions across {len(gdf)} buildings")
 
     dsm_ds.close()
-    imagery_ds.close()
+    if imagery_ds is not None:
+        imagery_ds.close()
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ def main(area="pilot"):
     gdf = gpd.read_file(paths["outlines"])
     gdf_wgs84 = gdf.to_crs("EPSG:4326")  # for the map frontend
     dsm_ds = rasterio.open(paths["dsm"])
-    imagery_ds = rasterio.open(paths["imagery"])
+    imagery_ds = rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None
     pc_source = PointCloudSource()
 
     print(f"[{area}] Building solar yield lookup table (pvlib + NASA POWER)...")
@@ -116,7 +116,8 @@ def main(area="pilot"):
           f"{total_kwp:.0f} kWp total, {total_kwh_year:,.0f} kWh/year total for the pilot bbox")
 
     dsm_ds.close()
-    imagery_ds.close()
+    if imagery_ds is not None:
+        imagery_ds.close()
 
 
 if __name__ == "__main__":
