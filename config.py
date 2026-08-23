@@ -41,6 +41,21 @@ REGIONS = {
     # Panorama Tce, Goldfield Hts, mid-arm -- sat between the (CBD-only)
     # pilot box and frankton_flats. Never fetched, never built.
     "frankton_arm":        [168.6740, -45.0330, 168.7360, -45.0080],
+    # 11 audit-derived gap regions (23 Aug): a district-wide sweep of every
+    # LINZ outline vs every bbox found 1,528 uncovered buildings clustered in
+    # these slivers. Bboxes computed from the uncovered clusters themselves
+    # (400m clustering, 250m pad) -- no more hand-drawn coverage.
+    "lake_hayes_est_west": [168.7577, -45.0144, 168.7840, -44.9983],  # 350
+    "arrowtown_east":      [168.8455, -45.0066, 168.8810, -44.9612],  # 199
+    "gorge_road_corridor": [168.6599, -45.0018, 168.6822, -44.9757],  # 180
+    "tucker_beach":        [168.7096, -44.9725, 168.7485, -44.9478],  # 134
+    "sunshine_bay_west":   [168.5822, -45.0644, 168.6006, -45.0368],  # 126
+    "dalefield":           [168.7491, -44.9630, 168.7924, -44.9377],  # 119
+    "arrowtown_hills":     [168.8595, -44.9877, 168.8910, -44.9624],  # 79
+    "frankton_arm_lake":   [168.6725, -45.0379, 168.6815, -45.0305],  # 79 (Josh's strip)
+    "town_south_lake":     [168.6541, -45.0275, 168.6651, -45.0209],  # 56
+    "frankton_east_lake":  [168.7478, -45.0307, 168.7564, -45.0215],  # 24
+    "kelvin_south":        [168.7528, -45.0519, 168.7718, -45.0405],  # 15
 }
 
 # Buildings confirmed demolished/replaced since the 2021 capture (field
