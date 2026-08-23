@@ -153,6 +153,13 @@
   .side-panel .slider-row label { color: #ccc; }
   .mobile-details-tab { display: none; }
   #m-top, #m-bottom, .m-sheet { display: none; }
+  #zoom-hint {
+    display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 5; background: rgba(20,20,20,0.9); color: #fff; padding: 10px 18px;
+    border-radius: 20px; font-size: 13px; font-weight: 700; pointer-events: none;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  }
+  #zoom-hint.show { display: block; }
   @media (max-width: 700px) {
     /* Desktop chrome off; mobile chrome on. */
     .dashboard-stack, .legend, .legend-facet, .mobile-details-tab { display: none !important; }
@@ -314,6 +321,7 @@
     </div>
   </div>
 </div>
+<div id="zoom-hint">Zoom in to see panel layouts</div>
 <div id="m-bottom">
   <div class="m-pillrow">
     <button class="m-pill" id="m-details-btn" style="display:none;">Building details</button>
@@ -443,6 +451,18 @@ function panelLayerFilter(id, excludeBuildingId) {
 function setMode(newMode) {
   mode = (mode === newMode) ? "none" : newMode;  // clicking the active one turns it off
   applyToggles();
+}
+
+// The two mode buttons SELECT a mode; they never toggle it off. Toggling was
+// a desktop convenience, but with only two buttons it traps users in an
+// empty map -- tap "Panel Layout" while already in layout (easy to do on a
+// phone, where a tap can register twice) and both layers switch off with
+// nothing on screen to explain why. Only the legend's On/Off control toggles.
+function selectMode(newMode) {
+  if (mode !== newMode) {
+    mode = newMode;
+    applyToggles();
+  }
 }
 
 function syncToggleButtons() {
@@ -817,6 +837,14 @@ map.on("load", async () => {
     });
   }
 
+  const zoomHint = document.getElementById("zoom-hint");
+  const updateZoomHint = () => {
+    // Panel geometry is only drawn from z14 (sub-pixel below that, and far
+    // too many features to filter). Say so instead of showing an empty map.
+    zoomHint.classList.toggle("show", mode === "layout" && map.getZoom() < 14);
+  };
+  window.__updateZoomHint = updateZoomHint;
+  map.on("zoomend", updateZoomHint);
   map.on("moveend", recomputeInViewSummary);
   // moveend fires before the new view finishes rendering, so a fast pan/zoom
   // counts 0 buildings; idle fires once rendering settles and corrects it.
@@ -876,6 +904,7 @@ map.on("load", async () => {
       document.getElementById("m-layout-btn").classList.toggle("active", isLayout);
       if (window.__syncMobileSheet) window.__syncMobileSheet();
     }
+    if (window.__updateZoomHint) window.__updateZoomHint();
   }
   window.__refreshModeUI = syncModeUI;
   document.getElementById("vslider").addEventListener("input", (e) => {
@@ -958,8 +987,8 @@ map.on("load", async () => {
   const mHeat = document.getElementById("m-heatmap-btn");
   const mLayout = document.getElementById("m-layout-btn");
   if (mHeat) {
-    mHeat.addEventListener("click", () => setMode("heatmap"));
-    mLayout.addEventListener("click", () => setMode("layout"));
+    mHeat.addEventListener("click", () => selectMode("heatmap"));
+    mLayout.addEventListener("click", () => selectMode("layout"));
     document.getElementById("m-details-btn").addEventListener("click", () => {
       document.getElementById("side-panel").classList.add("expanded");
     });
@@ -1002,8 +1031,8 @@ map.on("load", async () => {
   // Advanced tuning only works against the local live server; probe once.
   fetch("/api/refit").then(r => { refitAvailable = r.ok || r.status === 400; }).catch(() => {});
   syncModeUI();
-  document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
-  document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
+  document.getElementById("toggle-heatmap-dash").addEventListener("click", () => selectMode("heatmap"));
+  document.getElementById("toggle-layout-dash").addEventListener("click", () => selectMode("layout"));
 
   // Per-DSM-pixel generation-potential heatmap, before any panel layout --
   // one image per built area (see src/build_heatmap_raster.py), same
@@ -1071,7 +1100,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "facets-outline",
-    minzoom: 15,
+    minzoom: 14,
     "source-layer": "layout",
     type: "line",
     source: "layout",
@@ -1080,7 +1109,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "obstructions-fill",
-    minzoom: 15,
+    minzoom: 14,
     "source-layer": "layout",
     type: "fill",
     source: "layout",
@@ -1089,7 +1118,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "obstructions-outline",
-    minzoom: 15,
+    minzoom: 14,
     "source-layer": "layout",
     type: "line",
     source: "layout",
@@ -1098,7 +1127,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "panels-fill",
-    minzoom: 15,
+    minzoom: 14,
     "source-layer": "layout",
     type: "fill",
     source: "layout",
@@ -1107,7 +1136,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "panels-outline",
-    minzoom: 15,
+    minzoom: 14,
     "source-layer": "layout",
     type: "line",
     source: "layout",
