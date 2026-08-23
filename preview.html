@@ -152,7 +152,51 @@
   .side-panel .tuning-reset { background: rgba(255,255,255,0.08); color: #fff; border-color: #666; }
   .side-panel .slider-row label { color: #ccc; }
   .mobile-details-tab { display: none; }
+  #m-top, #m-bottom, .m-sheet { display: none; }
   @media (max-width: 700px) {
+    /* Desktop chrome off; mobile chrome on. */
+    .dashboard-stack, .legend, .legend-facet, .mobile-details-tab { display: none !important; }
+    #m-top {
+      display: flex; flex-direction: column; gap: 6px;
+      position: absolute; top: 8px; left: 8px; right: 8px; z-index: 6;
+    }
+    .m-box {
+      background: rgba(0,0,0,0.62); border: 2px solid #ffe600; border-radius: 10px;
+      padding: 6px 10px; text-align: center; color: #ffe600;
+      backdrop-filter: blur(2px);
+    }
+    .m-label { font-size: 9.5px; font-weight: 700; color: #bbb; letter-spacing: 0.3px; text-transform: uppercase; }
+    .m-power { font-size: 18px; font-weight: 800; line-height: 1.15; }
+    .m-energy { font-size: 10.5px; font-weight: 700; color: #fff; opacity: 0.85; }
+    .m-addr { font-size: 11px; font-weight: 700; color: #fff; margin-bottom: 1px; }
+    .m-empty { font-size: 12px; color: #777; font-style: italic; padding: 3px 0; }
+    #m-bottom {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      position: absolute; left: 8px; right: 8px; bottom: 10px; z-index: 6;
+    }
+    .m-pillrow { display: flex; gap: 8px; align-items: center; }
+    .m-pill {
+      background: rgba(20,20,20,0.92); color: #fff; border: 1px solid #666;
+      border-radius: 999px; padding: 6px 16px; font-size: 12px; font-weight: 700;
+      cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+    }
+    .m-pill.m-icon { padding: 6px 12px; font-size: 15px; line-height: 1; }
+    .m-modes { display: flex; gap: 8px; width: 100%; }
+    .m-modes .toggle-btn { flex: 1; padding: 10px 8px; font-size: 13px; }
+    .m-sheet {
+      position: absolute; left: 8px; right: 8px; bottom: 10px; z-index: 8;
+      background: rgba(20,20,20,0.97); border: 1px solid #555; border-radius: 12px;
+      padding: 10px 12px; color: #fff; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    }
+    .m-sheet.open { display: block; }
+    .m-sheet-head { display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .m-close { background: none; border: none; color: #aaa; font-size: 20px; line-height: 1; cursor: pointer; }
+    /* Building detail sheet: no thumbnail on mobile (user request). */
+    .side-panel .bldg-thumb, .side-panel .tuning, .side-panel #layout-details { display: none; }
+    /* Keep MapLibre's own chrome clear of the mobile bars. */
+    .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: 104px; }
+    .maplibregl-ctrl-top-right { top: 150px; }
     .side-panel {
       top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
       height: 75vh; border-radius: 14px 14px 0 0;
@@ -250,6 +294,45 @@
   <div id="side-panel-content"></div>
 </div>
 <button class="mobile-details-tab" id="mobile-details-tab">Building details &#9650;</button>
+
+<!-- Mobile chrome. Hidden entirely on desktop; the desktop dashboard is
+     hidden on mobile. Values are mirrored into these from the same
+     update paths so there is one source of truth per number. -->
+<div id="m-top">
+  <div class="m-box" id="m-box-all">
+    <div class="m-label">All buildings in view</div>
+    <div class="m-power" id="m-all-power">&ndash;</div>
+    <div class="m-energy" id="m-all-energy">&ndash;</div>
+  </div>
+  <div class="m-box" id="m-box-sel">
+    <div class="m-label">Selected building</div>
+    <div class="m-empty" id="m-sel-empty">No building selected</div>
+    <div id="m-sel-vals" style="display:none;">
+      <div class="m-addr" id="m-sel-addr"></div>
+      <div class="m-power" id="m-sel-power">&ndash;</div>
+      <div class="m-energy" id="m-sel-energy">&ndash;</div>
+    </div>
+  </div>
+</div>
+<div id="m-bottom">
+  <div class="m-pillrow">
+    <button class="m-pill" id="m-details-btn" style="display:none;">Building details</button>
+    <button class="m-pill m-icon" id="m-settings-btn" aria-label="Settings">&#9881;</button>
+  </div>
+  <div class="m-modes">
+    <button class="toggle-btn" id="m-heatmap-btn">Heat Map</button>
+    <button class="toggle-btn" id="m-layout-btn">Panel Layout</button>
+  </div>
+</div>
+<div id="m-settings" class="m-sheet">
+  <div class="m-sheet-head"><span id="m-settings-title">Settings</span>
+    <button class="m-close" id="m-settings-close">&times;</button></div>
+  <div style="padding: 4px 2px 10px;">
+    <div style="font-size:12px; color:#ccc; margin-bottom:6px;" id="m-slider-label">Roof coverage</div>
+    <input type="range" id="m-slider" min="5" max="100" step="5" value="100" style="width:100%;">
+    <div style="text-align:center; font-weight:800; margin-top:6px;" id="m-slider-value">100%</div>
+  </div>
+</div>
 <div class="legend">
   <div>Click a rooftop for details and its proposed panel layout.</div>
   <div style="margin-top:4px; opacity:0.7;">Click empty space to clear. Pilot area only — Queenstown town basin.</div>
@@ -411,6 +494,13 @@ function selectBuilding(id) {
 }
 
 function clearSelection() {
+  const mse = document.getElementById("m-sel-empty");
+  if (mse) {
+    mse.style.display = "";
+    document.getElementById("m-sel-vals").style.display = "none";
+    document.getElementById("m-details-btn").style.display = "none";
+    document.getElementById("m-settings").classList.remove("open");
+  }
   selectedBuildingId = -1;
   clearLiveTuning();
   applyToggles();
@@ -613,6 +703,8 @@ map.on("load", async () => {
     }
     document.getElementById("inview-power").textContent = fmtPower(kwp);
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
+    const mp = document.getElementById("m-all-power");
+    if (mp) { mp.textContent = fmtPower(kwp); document.getElementById("m-all-energy").textContent = fmtEnergy(kwhYear); }
   }
 
   // The two coverage dropdowns (map-view dashboard + per-building panel)
@@ -778,6 +870,12 @@ map.on("load", async () => {
     if (ld) ld.style.display = isLayout ? "" : "none";
     if (selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
     recomputeInViewSummary();
+    const mh = document.getElementById("m-heatmap-btn");
+    if (mh) {
+      mh.classList.toggle("active", !isLayout);
+      document.getElementById("m-layout-btn").classList.toggle("active", isLayout);
+      if (window.__syncMobileSheet) window.__syncMobileSheet();
+    }
   }
   window.__refreshModeUI = syncModeUI;
   document.getElementById("vslider").addEventListener("input", (e) => {
@@ -852,6 +950,54 @@ map.on("load", async () => {
     document.getElementById("bug-note").value = "";
     document.getElementById("bug-status").textContent = "\u2713 sent \u2014 file another any time";
   });
+
+  // --- Mobile controls -------------------------------------------------
+  // Mode buttons and the settings slider drive the SAME state as desktop
+  // (setMode / setCoverage / panelDensityPct), so the two chromes can never
+  // disagree; syncModeUI mirrors button styling back onto them.
+  const mHeat = document.getElementById("m-heatmap-btn");
+  const mLayout = document.getElementById("m-layout-btn");
+  if (mHeat) {
+    mHeat.addEventListener("click", () => setMode("heatmap"));
+    mLayout.addEventListener("click", () => setMode("layout"));
+    document.getElementById("m-details-btn").addEventListener("click", () => {
+      document.getElementById("side-panel").classList.add("expanded");
+    });
+    const sheet = document.getElementById("m-settings");
+    const mSlider = document.getElementById("m-slider");
+    const syncMobileSheet = () => {
+      const isLayout = mode === "layout";
+      document.getElementById("m-settings-title").textContent =
+        isLayout ? "Panel density" : "Heat map coverage";
+      document.getElementById("m-slider-label").textContent =
+        isLayout ? "Share of the fitted array shown" : "Share of roof covered by panels";
+      mSlider.min = isLayout ? 0 : 5;
+      mSlider.step = isLayout ? 1 : 5;
+      mSlider.value = isLayout ? panelDensityPct : coveragePct;
+      document.getElementById("m-slider-value").textContent = mSlider.value + "%";
+    };
+    document.getElementById("m-settings-btn").addEventListener("click", () => {
+      syncMobileSheet();
+      sheet.classList.toggle("open");
+    });
+    document.getElementById("m-settings-close").addEventListener("click", () => sheet.classList.remove("open"));
+    mSlider.addEventListener("input", () => {
+      const v = parseInt(mSlider.value, 10);
+      document.getElementById("m-slider-value").textContent = v + "%";
+      if (mode === "layout") {
+        panelDensityPct = v;
+        clearTimeout(window.__densityTimer);
+        window.__densityTimer = setTimeout(() => {
+          LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
+          if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+          recomputeInViewSummary();
+        }, 120);
+      } else {
+        setCoverage(v);
+      }
+    });
+    window.__syncMobileSheet = syncMobileSheet;
+  }
 
   // Advanced tuning only works against the local live server; probe once.
   fetch("/api/refit").then(r => { refitAvailable = r.ok || r.status === 400; }).catch(() => {});
@@ -1178,6 +1324,20 @@ map.on("load", async () => {
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
+    // Mirror into the mobile "Selected building" box: show whichever estimate
+    // matches the active map mode, same as the desktop panel does.
+    const msv = el("m-sel-vals");
+    if (msv && props) {
+      const isLayout = mode === "layout";
+      const cov = buildingEstimate(props, coveragePct);
+      el("m-sel-empty").style.display = "none";
+      msv.style.display = "";
+      el("m-sel-addr").textContent = props.address || `Building #${buildingId}`;
+      el("m-sel-power").textContent = isLayout ? fmtPower(kwp) : fmtPower(cov.kwp);
+      el("m-sel-energy").textContent = isLayout ? fmtEnergy(kwhYear) : fmtEnergy(cov.kwhYear);
+      const db = el("m-details-btn");
+      if (db) db.style.display = "";
+    }
     renderSeasonCurves(buildingId);
   }
 
