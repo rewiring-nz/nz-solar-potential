@@ -4,7 +4,7 @@ can't fake a gap). Run on the merged panel_layouts.geojson AFTER merge,
 BEFORE tippecanoe. Facets/obstructions untouched."""
 import json, sys, math
 from pathlib import Path
-GAP_M = 0.07
+GAP_M = 0.04  # was 0.07 -- Josh: gaps a touch smaller
 DATA = Path(__file__).resolve().parent.parent / "data"
 def main():
     path = DATA / "panel_layouts.geojson"
