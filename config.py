@@ -37,6 +37,10 @@ REGIONS = {
     # bridge side fell east of the original arthurs_point bbox. 318 outlines,
     # full 2021 LiDAR coverage confirmed.
     "arthurs_point_east":  [168.7114, -45.0050, 168.7420, -44.9700],
+    # Third gap region (Josh, 23 Aug): the whole Frankton Rd arm hillside --
+    # Panorama Tce, Goldfield Hts, mid-arm -- sat between the (CBD-only)
+    # pilot box and frankton_flats. Never fetched, never built.
+    "frankton_arm":        [168.6740, -45.0330, 168.7360, -45.0080],
 }
 
 # Buildings confirmed demolished/replaced since the 2021 capture (field
