@@ -40,6 +40,12 @@ def tilename_to_filename(tilename):
     return f"CL2_{sheet}_2021_{tile}.laz"
 
 
+def area_bbox_wgs84(name):
+    if name == "pilot":
+        return config.PILOT_BBOX
+    return config.REGIONS[name]
+
+
 def tiles_for_bbox_wgs84(bbox, api_key):
     minx, miny = TO_NZTM.transform(bbox[0], bbox[1])
     maxx, maxy = TO_NZTM.transform(bbox[2], bbox[3])
@@ -79,11 +85,14 @@ def main():
     load_dotenv()
     api_key = os.environ["LINZ_API_KEY"]
     POINTCLOUD_DIR.mkdir(parents=True, exist_ok=True)
-    region_names = sys.argv[1:] or list(config.REGIONS)
+    # "pilot" is a first-class area with its own bbox -- its exclusive CBD
+    # tiles were silently never fetched by the regions-only default, which
+    # left holes over the town centre (Turner St, 23 Aug).
+    region_names = sys.argv[1:] or (["pilot"] + list(config.REGIONS))
 
     all_tiles = {}  # filename -> first region needing it (tiles can span regions)
     for name in region_names:
-        tiles = tiles_for_bbox_wgs84(config.REGIONS[name], api_key)
+        tiles = tiles_for_bbox_wgs84(area_bbox_wgs84(name), api_key)
         print(f"{name}: {len(tiles)} tiles")
         for t in tiles:
             all_tiles.setdefault(tilename_to_filename(t), name)
