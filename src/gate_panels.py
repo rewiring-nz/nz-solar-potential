@@ -38,6 +38,13 @@ from src.region_build import all_areas, area_paths
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
 
+MIN_HEIGHT_ABOVE_GROUND_M = 2.0  # a panel's surface must stand this far above the LOCAL ground,
+# measured from LiDAR ground-class returns nearby (not the 8m DEM, and not the
+# building-class flag). Ground classification is the most reliable product in a
+# LAS file; building classification is not -- 6 Shotover St is a real commercial
+# roof where only 24% of returns under each panel carried the building flag, and
+# a classification-fraction rule deleted 155 of its 163 panels. Geometry decides.
+GROUND_SEARCH_RADIUS_M = 20.0
 MIN_EVIDENCE_PTS = 8        # fewer total returns than this under a panel = survey too thin
 # to judge here at all -> keep. (7 Cedar Dr: a real roof at 2.0 pts/m2 total
 # had 63 of 69 fitted panels executed by absolute-count thresholds.)
@@ -64,22 +71,29 @@ def panel_ok(poly, pc, dem, dem_transform_inv):
     n_all = int(inside_all.sum())
     if n_all < MIN_EVIDENCE_PTS:
         return True, "thin_coverage_kept"  # not enough returns of ANY class to judge
+    all_in = pts_all[inside_all]
+    # Surface height under the panel: the upper cluster of returns, so a few
+    # ground returns seen through a gap can't drag it down.
+    roof_z = float(np.percentile(all_in[:, 2], 75))
+
+    # Local ground from ground-class returns in a neighbourhood; if the tile
+    # has none nearby, fall back to the lowest returns around the panel.
+    c = poly.centroid
+    r = GROUND_SEARCH_RADIUS_M
+    around = pc.points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r, building_only=False)
+    ground_cls = pc.ground_points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r)
+    if len(ground_cls) >= 20:
+        local_ground = float(np.percentile(ground_cls[:, 2], 50))
+    elif len(around) >= 20:
+        local_ground = float(np.percentile(around[:, 2], 5))
+    else:
+        return True, "no_ground_reference_kept"
+    if (roof_z - local_ground) < MIN_HEIGHT_ABOVE_GROUND_M:
+        # sits at ground level: carpark, yard, slab, or air over a gap where
+        # the only returns are the ground below
+        return False, "sparse"
     inside = shapely.vectorized.contains(poly, pts[:, 0], pts[:, 1]) if len(pts) else np.zeros(0, bool)
-    pp = pts[inside] if len(pts) else np.empty((0, 3))
-    if len(pp) == 0:
-        # adequately sampled, zero building returns: carpark, air, demolition
-        return False, "sparse"
-    # Height-windowed evidence: only returns AT ROOF LEVEL argue about the
-    # roof. Canopy metres above a real roof floods the raw all-class count
-    # and vetoed 6,759 pilot panels (v1 ratio rule) -- so the denominator is
-    # returns within a window of the building surface, not everything in
-    # the column.
-    roof_z = float(np.median(pp[:, 2]))
-    all_in = pts_all[shapely.vectorized.contains(poly, pts_all[:, 0], pts_all[:, 1])]
-    near = all_in[np.abs(all_in[:, 2] - roof_z) < 1.2]
-    if len(pp) < MIN_BUILDING_FRACTION * max(len(near), 1):
-        # what exists at this height is mostly NOT building surface
-        return False, "sparse"
+    pp = pts[inside] if len(pts) and inside.any() else all_in
     # NO height-above-DEM test. The wide DEM is 8m-resolution smoothed bare
     # earth: on sloping ground its cell averages uphill terrain, so a real
     # single-storey roof can sit <1m above it (4 Abbottswood Ln: roof 392.9,

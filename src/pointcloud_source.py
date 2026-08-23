@@ -66,6 +66,26 @@ class PointCloudSource:
             )
         return self._cache[path]
 
+    GROUND_CLASSIFICATION = 2  # LAS standard: bare earth
+
+    def ground_points_in_bbox(self, minx, miny, maxx, maxy):
+        """Ground-class returns only. Ground classification is the most
+        reliable field in a LAS file (it is what the whole survey is graded
+        on), which is why the placement gate measures roof height against
+        these rather than against building-class flags or a smoothed DEM."""
+        xs, ys, zs = [], [], []
+        for path in self._tiles_overlapping(minx, miny, maxx, maxy):
+            tx, ty, tz, tc = self._load_tile(path)
+            m = ((tx >= minx) & (tx <= maxx) & (ty >= miny) & (ty <= maxy)
+                 & (tc == self.GROUND_CLASSIFICATION))
+            if not m.any():
+                continue
+            xs.append(tx[m]); ys.append(ty[m]); zs.append(tz[m])
+        if not xs:
+            return np.empty((0, 3))
+        import numpy as _np
+        return _np.column_stack([_np.concatenate(xs), _np.concatenate(ys), _np.concatenate(zs)])
+
     def points_in_bbox(self, minx, miny, maxx, maxy, building_only=True):
         """Returns Nx3 (x, y, z) array."""
         xs, ys, zs, classes = [], [], [], []
