@@ -999,12 +999,10 @@ map.on("load", async () => {
   if (selectedBuildingId !== -1) selectBuilding(selectedBuildingId);  // catch up if clicked before this loaded
   else applyToggles();
 
-  const bounds = new maplibregl.LngLatBounds();
-  data.features.forEach(f => {
-    const coords = f.geometry.type === "Polygon" ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
-    coords.forEach(c => bounds.extend(c));
-  });
-  map.fitBounds(bounds, { padding: 30 });
+  // NO fitBounds here. It dates from the single-suburb pilot, where framing
+  // the whole dataset was the right opening shot; with 24 areas it zooms
+  // out to the entire district the moment data lands, undoing the CBD start
+  // view. The map opens where the constructor puts it and stays there.
   recomputeInViewSummary();
 
   // Building details used to be a MapLibre Popup anchored to the click
