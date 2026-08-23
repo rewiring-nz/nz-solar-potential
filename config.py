@@ -60,6 +60,12 @@ REGIONS = {
 
 # Buildings confirmed demolished/replaced since the 2021 capture (field
 # reports) -- excluded from every build until LINZ data catches up.
+# Real buildings whose top surface is not a usable roof (rooftop car decks,
+# etc.) -- kept on the map, but no panels placed.
+NON_ROOF_BUILDING_IDS = {
+    4744271,  # 19 Industrial Pl -- rooftop parking deck (Josh, 23 Aug)
+}
+
 DEMOLISHED_BUILDING_IDS = {
     4735131,  # 61 Ballarat St -- now under the new road corridor (Josh, 23 Aug)
 }

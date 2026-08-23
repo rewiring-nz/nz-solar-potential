@@ -66,19 +66,28 @@ def panel_ok(poly, pc, dem, dem_transform_inv):
         return True, "thin_coverage_kept"  # not enough returns of ANY class to judge
     inside = shapely.vectorized.contains(poly, pts[:, 0], pts[:, 1]) if len(pts) else np.zeros(0, bool)
     pp = pts[inside] if len(pts) else np.empty((0, 3))
-    if len(pp) < MIN_BUILDING_FRACTION * n_all:
-        # spot is well-sampled but its returns are ground/vegetation, not a
-        # building surface: carpark, yard, demolished, or air between wings
+    if len(pp) == 0:
+        # adequately sampled, zero building returns: carpark, air, demolition
         return False, "sparse"
-    # height above bare earth at the panel centre
-    c = poly.centroid
-    try:
-        col, row = dem_transform_inv * (c.x, c.y)  # rasterio inverse gives (col, row)
-        ground = dem[int(row), int(col)]
-        if np.isfinite(ground) and (np.median(pp[:, 2]) - ground) < MIN_HEIGHT_ABOVE_DEM:
-            return False, "ground_level"
-    except Exception:
-        pass
+    # Height-windowed evidence: only returns AT ROOF LEVEL argue about the
+    # roof. Canopy metres above a real roof floods the raw all-class count
+    # and vetoed 6,759 pilot panels (v1 ratio rule) -- so the denominator is
+    # returns within a window of the building surface, not everything in
+    # the column.
+    roof_z = float(np.median(pp[:, 2]))
+    all_in = pts_all[shapely.vectorized.contains(poly, pts_all[:, 0], pts_all[:, 1])]
+    near = all_in[np.abs(all_in[:, 2] - roof_z) < 1.2]
+    if len(pp) < MIN_BUILDING_FRACTION * max(len(near), 1):
+        # what exists at this height is mostly NOT building surface
+        return False, "sparse"
+    # NO height-above-DEM test. The wide DEM is 8m-resolution smoothed bare
+    # earth: on sloping ground its cell averages uphill terrain, so a real
+    # single-storey roof can sit <1m above it (4 Abbottswood Ln: roof 392.9,
+    # DEM 391.4 -> every panel wrongly read as ground-level, including the
+    # north face that carries REAL installed panels in the photo). Height is
+    # already implied by LAS building classification, which is per-return and
+    # far more reliable here; a rooftop parking deck is an exclusion-list case,
+    # not a height-rule case.
     # local planarity: the points under one panel must fit their own plane
     if len(pp) >= 6:
         x0, y0 = pp[:, 0].mean(), pp[:, 1].mean()
@@ -94,6 +103,8 @@ def panel_ok(poly, pc, dem, dem_transform_inv):
 
 
 def gate_area(name, pc, dem, dem_inv):
+    import config
+    non_roof = getattr(config, "NON_ROOF_BUILDING_IDS", set())
     path = area_paths(name)["panel_layouts"]
     if not path.exists():
         print(f"{name}: no layouts, skipping")
@@ -103,6 +114,9 @@ def gate_area(name, pc, dem, dem_inv):
     for f in d["features"]:
         if f["properties"].get("kind") != "panel" or f["geometry"]["type"] != "Polygon":
             kept.append(f)
+            continue
+        if f["properties"].get("building_id") in non_roof:
+            dropped["sparse"] += 1
             continue
         try:
             poly = shp_transform(TO_NZTM, shape(f["geometry"]))
