@@ -138,7 +138,13 @@ def main():
         bbox = config.REGIONS[name]
         out_dir = REGIONS_DIR / name
         print(f"[{name}] imagery ({bbox_area_km2(bbox):.1f} km2)...")
-        fetch_raster_chunked(bbox, api_key, config.LINZ_IMAGERY_LAYER, "imagery", out_dir, "raster")
+        try:
+            fetch_raster_chunked(bbox, api_key, config.LINZ_IMAGERY_LAYER, "imagery", out_dir, "raster")
+        except Exception as e:
+            # LINZ's 0.1m aerial layer is URBAN-only: rural regions 400 here.
+            # Never let that abort the run -- DSM+outlines are what the build
+            # actually requires, and builds degrade gracefully without imagery.
+            print(f"  WARNING: imagery unavailable for {name} ({type(e).__name__}) -- LiDAR-only build")
 
     print("\nAll requested regions fetched.")
 
