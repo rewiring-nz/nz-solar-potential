@@ -458,6 +458,16 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # so colour detection is unavailable there -- fall back to LiDAR height
     # evidence alone rather than skipping the area entirely. Documented
     # degradation: flush objects (skylights, existing panels) go undetected.
+    # Colour-only blobs must look like a real object. The colour detector
+    # exists for FLUSH objects height can't see (skylights, existing panel
+    # arrays) -- those are >=~1.2m2 and compact. Everything it flags that is
+    # tiny or streaky is stains, shadow edges and parapet lines: 9 of 10
+    # blobs on 17/60 Hallenstein St were 1-2m2 scatter, and 6 Shotover St
+    # lost most of a good flat roof to edge streaks. Height-corroborated
+    # blobs bypass both tests, so genuine equipment is never dropped.
+    COLOUR_ONLY_MIN_AREA_M2 = 1.2
+    COLOUR_ONLY_MAX_ELONGATION = 3.5
+
     color_obs = [] if imagery_ds is None else detect_obstructions(
         imagery_ds, facet_geom, z_threshold, boundary_erode_m)
     if pc_source is None:
@@ -488,6 +498,16 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
 
     height_obs = detect_obstructions_from_height(pc_source, facet_geom, plane, residual_threshold_m,
                                                   return_strength=True)
+
+    height_union = unary_union([h for h, _ in height_obs]) if height_obs else None
+    filtered_color = []
+    for blob in color_obs:
+        corroborated = height_union is not None and blob.intersects(height_union)
+        if corroborated or (blob.area >= COLOUR_ONLY_MIN_AREA_M2
+                            and _elongation_ratio(blob) <= COLOUR_ONLY_MAX_ELONGATION):
+            filtered_color.append(blob)
+    color_obs = filtered_color
+
     if not height_obs:
         return color_obs
 
