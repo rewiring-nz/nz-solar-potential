@@ -49,7 +49,9 @@ REGIONS = {
     "arrowtown_east":      [168.8455, -45.0066, 168.8810, -44.9612],  # 199
     "gorge_road_corridor": [168.6599, -45.0018, 168.6822, -44.9757],  # 180
     "tucker_beach":        [168.7096, -44.9725, 168.7485, -44.9478],  # 134
-    "sunshine_bay_west":   [168.5822, -45.0644, 168.6006, -45.0368],  # 126
+    # sunshine_bay_west REMOVED: 138 buildings but ZERO LiDAR tiles -- outside
+    # the 2021 survey extent entirely (LINZ export: "outside-extent"), same
+    # category as Glenorchy/Kinloch. Cannot be modelled until a new capture.
     "dalefield":           [168.7491, -44.9630, 168.7924, -44.9377],  # 119
     "arrowtown_hills":     [168.8595, -44.9877, 168.8910, -44.9624],  # 79
     "frankton_arm_lake":   [168.6725, -45.0379, 168.6815, -45.0305],  # 79 (Josh's strip)

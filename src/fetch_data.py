@@ -87,7 +87,12 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
             "(Account -> API keys -> edit -> enable Search and Download), "
             "not just the default OGC web-services scope."
         )
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        # LINZ returns a JSON body naming the exact problem (bad extent, wrong
+        # format for the layer type, area outside coverage) -- surface it
+        # instead of a bare 400.
+        raise RuntimeError(f"Exports API {resp.status_code} for layer {layer_id} "
+                            f"({name}): {resp.text[:300]}")
     job = resp.json()
     job_url = job["url"]
     print(f"Export job {job['id']} created, polling...")
