@@ -1156,6 +1156,136 @@ def segment_building_from_pointcloud_native(pc_source, building_geom, building_i
     return segment_points(points, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
 
 
+# --- Orientation-clustered segmentation (repetitive roof forms) ------------
+#
+# Region growing walks a neighbourhood graph, so it needs a contiguous
+# surface; on a sawtooth it dies at the first fold and returns almost
+# nothing (Turner St: 1 facet, 18m2 of 339m2). The global solver survives
+# but fits planes ACROSS the teeth, producing shallow averaged facets.
+#
+# Yet the raw per-point normals resolve those teeth perfectly -- Turner St's
+# are cleanly bimodal at ~135/315 deg with a 52 deg median slope, which is
+# exactly what the heat map renders correctly while the facets do not. So
+# for repetitive forms, cluster points BY ORIENTATION first, then split each
+# orientation into spatially connected pieces: one facet per tooth face,
+# with the tooth's true slope instead of an average across the fold.
+ORIENT_BIN_DEG = 20.0           # aspect histogram resolution
+ORIENT_MIN_MODE_SHARE = 0.12    # a mode must hold this share of steep points
+ORIENT_ASSIGN_TOL_DEG = 30.0    # point-to-mode assignment half-width
+ORIENT_LINK_DIST_M = 1.0        # plan-view spacing that keeps a face connected
+ORIENT_MIN_FACET_PTS = 25
+
+
+def segment_building_orientation_clustered(pc_source, building_geom, building_id,
+                                            min_facet_area_m2=None):
+    # callers may pass None to mean "use the module default"
+    if min_facet_area_m2 is None:
+        min_facet_area_m2 = MIN_FACET_AREA_M2
+    import shapely.vectorized as _sv
+    from scipy.sparse import coo_matrix as _coo
+    from scipy.sparse.csgraph import connected_components as _cc
+
+    pts = pc_source.points_in_bbox(*building_geom.bounds, building_only=True)
+    if len(pts) < 60:
+        return []
+    inside = _sv.contains(building_geom, pts[:, 0], pts[:, 1])
+    p = pts[inside]
+    if len(p) < 60:
+        return []
+    normals, _rms = _pca_normals(p, k=RG_NORMAL_K)
+    sgn = np.sign(normals[:, 2]); sgn[sgn == 0] = 1
+    slope = np.degrees(np.arccos(np.clip(np.abs(normals[:, 2]), 0, 1)))
+    aspect = (np.degrees(np.arctan2(normals[:, 0] * sgn, normals[:, 1] * sgn)) + 360) % 360
+    steep = slope >= STRUCTURED_MIN_SLOPE_DEG
+    if steep.sum() < 60:
+        return []
+
+    nbins = int(round(360 / ORIENT_BIN_DEG))
+    hist, edges = np.histogram(aspect[steep], bins=nbins, range=(0, 360))
+    modes = []
+    for i in np.argsort(hist)[::-1]:
+        if hist[i] < ORIENT_MIN_MODE_SHARE * steep.sum():
+            break
+        centre = (edges[i] + edges[i + 1]) / 2
+        if any(abs(((centre - m + 180) % 360) - 180) <= ORIENT_ASSIGN_TOL_DEG for m in modes):
+            continue
+        modes.append(centre)
+    if len(modes) < 2:
+        return []  # not a repetitive form; leave it to the other methods
+
+    facets = []
+    for m in modes:
+        sel = steep & (np.abs(((aspect - m + 180) % 360) - 180) <= ORIENT_ASSIGN_TOL_DEG)
+        if sel.sum() < ORIENT_MIN_FACET_PTS:
+            continue
+        q = p[sel]
+        tree = cKDTree(q[:, :2])
+        pairs = tree.query_pairs(r=ORIENT_LINK_DIST_M, output_type="ndarray")
+        if len(pairs) == 0:
+            continue
+        n_q = len(q)
+        graph = _coo((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(n_q, n_q))
+        ncomp, labels = _cc(graph, directed=False)
+        for c in range(ncomp):
+            comp = q[labels == c]
+            if len(comp) < ORIENT_MIN_FACET_PTS:
+                continue
+            facet = _facet_from_points(comp, building_id, min_facet_area_m2)
+            if facet is not None:
+                facets.append(facet)
+    return facets
+
+
+def _facet_from_points(comp, building_id, min_facet_area_m2):
+    """Concave-ish footprint + least-squares plane for one cluster."""
+    from shapely.geometry import MultiPoint as _MP
+    a, b, c0 = fit_plane_lstsq(comp)
+    poly = _MP([(x, y) for x, y in comp[:, :2]]).buffer(0.6).buffer(-0.45)
+    if poly.geom_type == "MultiPolygon":
+        poly = max(poly.geoms, key=lambda g: g.area)
+    if poly.is_empty or poly.geom_type != "Polygon" or poly.area < min_facet_area_m2:
+        return None
+    slope_deg = np.degrees(np.arctan(np.hypot(a, b)))
+    aspect_deg = (np.degrees(np.arctan2(-a, -b)) + 360) % 360
+    return {
+        "geometry": poly, "building_id": building_id,
+        "plane_a": a, "plane_b": b, "plane_c": c0,
+        "slope_deg": float(slope_deg), "aspect_deg": float(aspect_deg),
+        "point_count": int(len(comp)),
+    }
+
+
+STRUCTURED_ASPECT_TOL_DEG = 25.0   # half-width of an aspect mode
+STRUCTURED_MAX_MODES = 3           # sawtooth = 2; allow a little slack
+STRUCTURED_MIN_AREA_SHARE = 0.7    # of total facet area inside those modes
+STRUCTURED_MIN_SLOPE_DEG = 8.0     # near-flat facets have meaningless aspects
+
+
+def _facets_are_structured(facets):
+    """True when facet orientations collapse into a few tight modes, i.e.
+    the segmentation found a repeating roof form (sawtooth, ribs, a run of
+    identical dormers) rather than fragmenting on noise. Area-weighted so a
+    dusting of slivers can't fake structure."""
+    pitched = [f for f in facets if f.get("slope_deg", 0) >= STRUCTURED_MIN_SLOPE_DEG]
+    total = sum(f["geometry"].area for f in pitched)
+    if len(pitched) < 4 or total <= 0:
+        return False
+    # greedy area-weighted clustering of aspects on the circle
+    remaining = sorted(pitched, key=lambda f: -f["geometry"].area)
+    modes, covered = [], 0.0
+    for f in remaining:
+        a = f["aspect_deg"]
+        if any(abs(((a - m + 180) % 360) - 180) <= STRUCTURED_ASPECT_TOL_DEG for m in modes):
+            continue
+        if len(modes) >= STRUCTURED_MAX_MODES:
+            break
+        modes.append(a)
+    for f in pitched:
+        if any(abs(((f["aspect_deg"] - m + 180) % 360) - 180) <= STRUCTURED_ASPECT_TOL_DEG for m in modes):
+            covered += f["geometry"].area
+    return (covered / total) >= STRUCTURED_MIN_AREA_SHARE
+
+
 def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
                            ransac_distance_threshold=None, min_facet_area_m2=None):
     """Runs the point-cloud global solver, the (greedy) point-cloud-native
@@ -1197,6 +1327,8 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
         min_facet_area_m2=min_facet_area_m2,
     )
     facets_dsm = segment_building(dsm_ds, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
+    facets_orient = segment_building_orientation_clustered(pc_source, building_geom, building_id,
+                                                           min_facet_area_m2)
     area_rg = sum(f["area_m2"] for f in facets_rg)
     area_global = sum(f["area_m2"] for f in facets_global)
     area_pc = sum(f["area_m2"] for f in facets_pc)
@@ -1236,7 +1368,32 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
         len(facets_rg) > 3 * max(1, len(facets_global))
         and len(facets_global) > 0
         and (area_rg / len(facets_rg)) < 0.3 * (area_global / len(facets_global))
+        # ...unless the many facets are STRUCTURED rather than scattered. A
+        # sawtooth/ribbed roof legitimately segments into dozens of small
+        # facets whose aspects collapse into two tight modes; noise
+        # fragmentation points every which way. Rejecting the structured case
+        # cost us every sawtooth roof in town -- Turner St's teeth (point
+        # normals cleanly bimodal at ~135/315 deg, median slope 52 deg) were
+        # discarded in favour of 18 fragments with planes fitted ACROSS the
+        # teeth at 7-25 deg. See _facets_are_structured.
+        and not _facets_are_structured(facets_rg)
     )
+    # Repetitive-form override: when a roof's orientations collapse into a
+    # couple of tight modes AND the best alternative reports much shallower
+    # facets, the alternative is averaging planes across folds (a sawtooth
+    # read as a flat-ish sheet). Trust the orientation clustering there even
+    # though it covers a little less area -- correct geometry beats coverage,
+    # because everything downstream (aspect, yield, row direction) inherits it.
+    if facets_orient and _facets_are_structured(facets_orient):
+        area_orient = sum(f["geometry"].area for f in facets_orient)
+        alt_best = max([(area_global, facets_global), (area_rg, facets_rg),
+                        (area_pc, facets_pc), (area_dsm, facets_dsm)], key=lambda t: t[0])
+        if alt_best[1]:
+            med_alt = float(np.median([f["slope_deg"] for f in alt_best[1]]))
+            med_or = float(np.median([f["slope_deg"] for f in facets_orient]))
+            if med_or - med_alt >= 15.0 and area_orient >= 0.6 * alt_best[0]:
+                return facets_orient
+
     if (not rg_shattered) and len(facets_rg) > 1 and area_rg >= GLOBAL_AREA_TOLERANCE * best_alternative_area:
         return facets_rg
     if len(facets_global) > 1 and area_global >= GLOBAL_AREA_TOLERANCE * max(area_pc, area_dsm):
