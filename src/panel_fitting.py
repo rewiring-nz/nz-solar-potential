@@ -368,6 +368,64 @@ def drop_minor_arrays(facet_panels):
     return facet_panels
 
 
+def _erosion_order(panels, poa_key):
+    """Fill order for the density slider, built by reverse erosion: strip the
+    WORST panel from the full layout repeatedly, then reverse that sequence.
+    Worst = least sunny, then closest to the array's edge, then furthest from
+    the surviving cluster's centre.
+
+    Why: filling row-major peels row-by-row, so a reduced system can end up a
+    thin strip hugging a parapet. A real small install on a big roof is a
+    compact block in the sunniest deep part of the roof (Josh's spec). The
+    edge term is normalised by the building's own array extent, so on a small
+    house -- where every panel is near an edge -- it vanishes and placement
+    stays realistic rather than being pushed artificially inward.
+    """
+    if len(panels) <= 2:
+        return sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+
+    pts = np.array([[p["geometry"].centroid.x, p["geometry"].centroid.y] for p in panels])
+    span = max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]))
+    if span < 1e-6:
+        return sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+
+    poa = np.array([p[poa_key] for p in panels], dtype=float)
+    poa_norm = (poa - poa.min()) / (np.ptp(poa) or 1.0)
+
+    # Iterative erosion is O(n^2); on the biggest roofs (the airport fits
+    # ~6,000 panels) that is minutes per building across 15k buildings. Above
+    # this size, score once against the whole array's centre and sort -- same
+    # compact-core behaviour, O(n log n).
+    if len(panels) > 600:
+        centre = pts.mean(axis=0)
+        d = np.linalg.norm(pts - centre, axis=1)
+        edginess = d / (d.max() or 1.0)
+        score = poa_norm - 0.55 * edginess
+        order = np.argsort(-score)
+        return [panels[i] for i in order]
+
+    alive = np.ones(len(panels), dtype=bool)
+    removal = []
+    tree_pts = pts
+    for _ in range(len(panels) - 1):
+        idx = np.flatnonzero(alive)
+        live = tree_pts[idx]
+        centre = live.mean(axis=0)
+        # distance to the live cluster's edge, approximated by how far each
+        # panel sits from the centre relative to the cluster's own reach
+        d = np.linalg.norm(live - centre, axis=1)
+        reach = d.max() or 1.0
+        edginess = d / reach                     # 0 centre .. 1 rim
+        score = poa_norm[idx] - 0.55 * edginess  # higher = keep longer
+        worst_local = int(np.argmin(score))
+        worst = int(idx[worst_local])
+        removal.append(worst)
+        alive[worst] = False
+    removal.append(int(np.flatnonzero(alive)[0]))
+    # reversed removal = fill order (last removed is filled first)
+    return [panels[i] for i in reversed(removal)]
+
+
 def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     """Writes p["fill_rank"] (1..100, integer percentile) onto every panel of
     ONE building, following exactly apply_panel_density's fill order
@@ -376,8 +434,7 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     the density slider work on the static deployed site with no server."""
     if not panels:
         return panels
-    main = sorted((p for p in panels if not p.get("straggler")),
-                  key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    main = _erosion_order([p for p in panels if not p.get("straggler")], poa_key)
     extras = sorted((p for p in panels if p.get("straggler")),
                     key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
     # Main arrays occupy ranks 1..STRAGGLER_RANK_FLOOR, stragglers the band
