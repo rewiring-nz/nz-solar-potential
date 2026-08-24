@@ -55,6 +55,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import rasterio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.terrain_horizon import compute_horizon_profile_from_array, horizon_angle_at
@@ -66,6 +67,8 @@ BUILDING_SAMPLE_STEP_M = 2.0  # matches the 1m DSM's own resolution closely enou
 BUILDING_AZIMUTH_STEP_DEG = 4.0  # coarser than terrain_horizon's 2 degrees -- nearby buildings
 # present much larger angular width than a distant mountain ridge, so this loses little real
 # detail while roughly halving the per-building ray count (1270 of these add up)
+OVERHANG_CLEARANCE_M = 2.5  # inside the own-footprint mask, anything standing more than this
+# above the observer is treated as a real blocker (overhanging canopy), not as the roof itself.
 OWN_ROOF_MARGIN_M = 1.0  # buffer added around the building's own footprint before the near-field
 # scan starts counting anything as an "obstruction" -- covers eaves overhang and the fact the
 # observer (x, y) is the footprint centroid, not necessarily the roof's own highest point
@@ -84,6 +87,21 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
     by OWN_ROOF_MARGIN_M) are excluded per-ray so the facet's own roof
     isn't mistaken for a neighbour; omitting it disables that exclusion."""
     exclude_geom = own_geom.buffer(OWN_ROOF_MARGIN_M) if own_geom is not None else None
+    # Mask the observer's own roof, but NOT anything towering over it: tree
+    # canopy overhanging a roof used to be skipped as "own building" and so
+    # cast no shade at all, which is precisely the case where you should not
+    # be putting panels. Anything inside the footprint more than
+    # OVERHANG_CLEARANCE_M above the observer keeps blocking.
+    exclude_max_z = None
+    if exclude_geom is not None:
+        try:
+            r, c = rasterio.transform.rowcol(dsm_transform, x, y)
+            if 0 <= r < dsm_band.shape[0] and 0 <= c < dsm_band.shape[1]:
+                z0 = float(dsm_band[r, c])
+                if dsm_nodata is None or z0 != dsm_nodata:
+                    exclude_max_z = z0 + OVERHANG_CLEARANCE_M
+        except Exception:
+            exclude_max_z = None
 
     try:
         profile = compute_horizon_profile_from_array(
@@ -92,6 +110,7 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
             max_distance_km=BUILDING_MAX_DISTANCE_KM,
             sample_step_m=BUILDING_SAMPLE_STEP_M,
             exclude_geom=exclude_geom,
+            exclude_max_z=exclude_max_z,
         )
     except ValueError:
         return 1.0  # observer point outside the DSM extent -- degrade to unshaded rather than crash

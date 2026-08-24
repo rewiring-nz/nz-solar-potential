@@ -53,7 +53,8 @@ SAMPLE_STEP_M = 100.0  # coarser than the 8m DEM grid -- horizon angle changes s
 
 def compute_horizon_profile_from_array(band, transform, nodata, observer_x, observer_y,
                                         azimuth_step_deg=AZIMUTH_STEP_DEG, max_distance_km=MAX_DISTANCE_KM,
-                                        sample_step_m=SAMPLE_STEP_M, exclude_geom=None):
+                                        sample_step_m=SAMPLE_STEP_M, exclude_geom=None,
+                                        exclude_max_z=None):
     """Same ray-marching as compute_horizon_profile, but against an
     already-loaded (band, transform, nodata) instead of opening a file --
     the shared entry point both the wide-area terrain profile and
@@ -99,7 +100,14 @@ def compute_horizon_profile_from_array(band, transform, nodata, observer_x, obse
         zs = np.where(zs == nodata, np.nan, zs)
     valid = in_bounds & ~np.isnan(zs)
     if exclude_geom is not None:
-        valid = valid & ~shapely.vectorized.contains(exclude_geom, xs, ys).reshape(xs.shape)
+        in_excl = shapely.vectorized.contains(exclude_geom, xs, ys).reshape(xs.shape)
+        if exclude_max_z is not None:
+            # Only mask what is plausibly the observer's OWN ROOF. Anything
+            # inside the footprint standing well above it -- overhanging tree
+            # canopy, a neighbour's crown reaching over -- is a real blocker
+            # and must keep shading the panel beneath it.
+            in_excl = in_excl & (zs <= exclude_max_z)
+        valid = valid & ~in_excl
 
     rise = zs - observer_z
     run = np.broadcast_to(distances, xs.shape)

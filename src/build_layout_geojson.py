@@ -33,6 +33,8 @@ from src.building_shading import building_shading_factor
 from src.region_build import area_paths, area_centroid_wgs84, areas_from_argv
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DEEP_SHADE_FACTOR = 0.45  # a panel keeping less than this share of the year's direct beam is
+# under a tree/neighbour and should not be proposed at all
 
 
 def main(area="pilot"):
@@ -66,9 +68,26 @@ def main(area="pilot"):
             obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane)
             siblings = [other for other in facets if other is not f]
             panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
-            poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"]) * shading_factor
+            facet_poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
+            # PER-PANEL shading. A facet-wide scalar averages a tree that
+            # shades one end of a roof across the whole face, so panels get
+            # placed in deep shade and merely dim the facet's yield a little.
+            # Measured spread across a single treed roof: 0.63-0.90. Panels
+            # below DEEP_SHADE_FACTOR are dropped outright -- no installer
+            # puts a panel under a canopy. ~1.2ms per panel, so affordable.
+            kept_panels = []
             for p in panels:
-                p["poa_kwh_m2_yr"] = poa
+                c = p["geometry"].centroid
+                psf = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                                               c.x, c.y, model.hourly, own_geom=f["geometry"],
+                                               terrain_horizon_profile=model.horizon_profile)
+                if psf < DEEP_SHADE_FACTOR:
+                    continue
+                p["poa_kwh_m2_yr"] = facet_poa * psf
+                p["shading_factor"] = psf
+                kept_panels.append(p)
+            panels = kept_panels
+            poa = facet_poa * shading_factor
             per_facet.append({"facet": f, "panels": panels, "obstructions": obstructions,
                                "poa": poa, "shading_factor": shading_factor})
 
@@ -99,7 +118,9 @@ def main(area="pilot"):
                 })
 
             for p in panels:
-                y = model.facet_yield(f, 1, shading_factor=pf["shading_factor"])
+                # each panel's kWh uses ITS OWN shading factor (set above), so a
+                # partly-shaded roof reports a realistic mix rather than one average
+                y = model.facet_yield(f, 1, shading_factor=p.get("shading_factor", pf["shading_factor"]))
                 features.append({
                     "type": "Feature",
                     "geometry": shapely_transform(to_wgs84, p["geometry"]).__geo_interface__,
