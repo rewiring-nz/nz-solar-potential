@@ -1286,6 +1286,15 @@ def _facets_are_structured(facets):
     return (covered / total) >= STRUCTURED_MIN_AREA_SHARE
 
 
+def _attach_building_geometry(facets, building_geom):
+    """Panel packing needs the building outline to align rows on flat roofs
+    (a facet's own hull has no reliable orientation there). Attached once
+    here so every caller inherits it without changing call sites."""
+    for f in facets:
+        f["building_geometry"] = building_geom
+    return facets
+
+
 def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
                            ransac_distance_threshold=None, min_facet_area_m2=None):
     """Runs the point-cloud global solver, the (greedy) point-cloud-native
@@ -1392,16 +1401,16 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
             med_alt = float(np.median([f["slope_deg"] for f in alt_best[1]]))
             med_or = float(np.median([f["slope_deg"] for f in facets_orient]))
             if med_or - med_alt >= 15.0 and area_orient >= 0.6 * alt_best[0]:
-                return facets_orient
+                return _attach_building_geometry(facets_orient, building_geom)
 
     if (not rg_shattered) and len(facets_rg) > 1 and area_rg >= GLOBAL_AREA_TOLERANCE * best_alternative_area:
-        return facets_rg
+        return _attach_building_geometry(facets_rg, building_geom)
     if len(facets_global) > 1 and area_global >= GLOBAL_AREA_TOLERANCE * max(area_pc, area_dsm):
-        return facets_global
+        return _attach_building_geometry(facets_global, building_geom)
 
     candidates = [facets_rg, facets_global, facets_pc, facets_dsm]
     areas = [area_rg, area_global, area_pc, area_dsm]
-    return candidates[int(np.argmax(areas))]
+    return _attach_building_geometry(candidates[int(np.argmax(areas))], building_geom)
 
 
 # --- Global multi-plane solver (candidate pool + joint label assignment) ----

@@ -43,7 +43,11 @@ RASTER_RESOLUTION_M = 0.1  # occupancy grid cell size in surface space; 10 cells
 OFFSET_STEPS = 10  # vertical row-start offsets tried per orientation (columns are scanned exhaustively, see _pack_orientation)
 
 
-def _edge_aligned_axes(facet_polygon, aspect_deg):
+FLAT_SLOPE_DEG = 10.0        # below this, slope direction barely constrains racking
+FACET_RECTANGULARITY_MIN = 0.7  # facet area / its own bounding rectangle's area
+
+
+def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polygon=None):
     """Real installers rack panels parallel to the roof edge, not to
     whatever direction the RANSAC-fit plane's aspect happens to point --
     and the fitted aspect can be off by a few degrees from the facet's
@@ -58,10 +62,31 @@ def _edge_aligned_axes(facet_polygon, aspect_deg):
     fallback_v = np.array([np.sin(theta), np.cos(theta)])
     fallback_u = np.array([np.cos(theta), -np.sin(theta)])
 
+    # On a near-flat roof there is no slope direction to rack against, and
+    # the FACET polygon is a hull-derived blob whose minimum rectangle can
+    # sit at any angle -- which is why flat-roof rows came out skew to the
+    # parapets. The building outline is crisp and rectilinear, so use it as
+    # the reference there. Pitched roofs keep using their own facet edges
+    # (eave/ridge lines), which is the correct reference for them.
+    # Only override when the facet's own shape is an unreliable guide: a
+    # low-slope facet whose outline is blobby rather than rectangular (the
+    # hull of a segmented flat roof). A clean rectangular facet already
+    # agrees with the building and keeps its own edges; a pitched roof always
+    # does, since its eave/ridge lines are the correct reference.
+    reference = facet_polygon
+    if building_polygon is not None and slope_deg is not None and slope_deg < FLAT_SLOPE_DEG:
+        try:
+            rect = facet_polygon.minimum_rotated_rectangle.area
+            blobby = rect > 0 and (facet_polygon.area / rect) < FACET_RECTANGULARITY_MIN
+        except Exception:
+            blobby = False
+        if blobby:
+            reference = building_polygon
+
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            mrr = facet_polygon.minimum_rotated_rectangle
+            mrr = reference.minimum_rotated_rectangle
         coords = list(mrr.exterior.coords)
         if len(coords) < 4:
             return fallback_u, fallback_v
@@ -226,7 +251,8 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
             return []
 
     origin = (facet["geometry"].centroid.x, facet["geometry"].centroid.y)
-    u_hat, v_hat = _edge_aligned_axes(facet["geometry"], aspect_deg)
+    u_hat, v_hat = _edge_aligned_axes(facet["geometry"], aspect_deg, slope_deg,
+                                       facet.get("building_geometry"))
     to_surface, to_world = _surface_transform(u_hat, v_hat, slope_deg, origin)
 
     surface_poly = shapely_transform(lambda x, y, z=None: to_surface(x, y), geom)
