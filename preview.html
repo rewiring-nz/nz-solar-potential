@@ -936,13 +936,35 @@ map.on("load", async () => {
     const vLo = lo === 0 ? 0 : (props[`${prefix}_${lo}`] || 0);
     return vLo + (vHi - vLo) * (pct - lo) / 10;
   }
+  // fill_kwh_* is baked at build time with the DEFAULT assumptions, so it does
+  // not move when the advanced editor does -- and src/solar_model.py computes
+  // it as (kWh/kWp for this facet) x kWp x inverter x (1 - losses), i.e. it is
+  // exactly linear in panel wattage, inverter efficiency and system losses.
+  // Rescale by the ratio to the defaults rather than leaving Panel Layout's
+  // energy figure frozen while its power figure moves. (Panel efficiency /
+  // area do not appear: they change panel COUNT, which is baked geometry, not
+  // the yield per installed kW.)
+  // Just the two derates, for baked values that are already per-live-kWp
+  // (the seasonal curves: kW per kWp, with default inverter/losses folded in
+  // by src/build_seasonal_curves.py).
+  function bakedDerateScale() {
+    const d = ASSUMPTION_DEFAULTS;
+    return (assumptions.inverter_efficiency_pct / d.inverter_efficiency_pct)
+      * ((1 - assumptions.system_derate_pct / 100) / (1 - d.system_derate_pct / 100));
+  }
+  function bakedKwhScale() {
+    const d = ASSUMPTION_DEFAULTS;
+    return (assumptions.panel_rated_power_w / d.panel_rated_power_w) * bakedDerateScale();
+  }
+
   function panelSumsFor(propsList) {
     let panels = 0, kwh = 0;
     propsList.forEach(pr => {
       panels += decileInterp(pr, "fill_panels", panelDensityPct);
       kwh += decileInterp(pr, "fill_kwh", panelDensityPct);
     });
-    return { kwp: panels * assumptions.panel_rated_power_w / 1000, kwhYear: kwh };
+    return { kwp: panels * assumptions.panel_rated_power_w / 1000,
+             kwhYear: kwh * bakedKwhScale() };
   }
   function syncModeUI() {
     const isLayout = mode === "layout";
@@ -1120,7 +1142,10 @@ map.on("load", async () => {
       el("a-loss-val").textContent = assumptions.system_derate_pct + "%";
       recomputeHeatmapEstimates();
       recomputeInViewSummary();
-      if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+      if (selectedPanelBuildingId !== -1) {
+        updateFittedStats(selectedPanelBuildingId);
+        renderSeasonCurves(selectedPanelBuildingId);   // curves carry the derates too
+      }
     };
     const loadInto = src => {
       el("a-w").value = src.panel_rated_power_w;
@@ -1530,7 +1555,7 @@ map.on("load", async () => {
     const props = selectedBuildingProps;
     if (!props || props.building_id !== buildingId) return;
     const count = Math.round(decileInterp(props, "fill_panels", panelDensityPct));
-    const kwhYear = decileInterp(props, "fill_kwh", panelDensityPct);
+    const kwhYear = decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
     const kwp = count * assumptions.panel_rated_power_w / 1000;
     if (el("fitted-count")) {
       el("fitted-count").textContent = count;
@@ -1635,12 +1660,17 @@ map.on("load", async () => {
     const S = seasonCurves.seasons.length;
     const avg = Array.from({ length: S }, () => new Array(24).fill(0));
     const peak = Array.from({ length: S }, () => new Array(24).fill(0));
+    // seasonCurves values are kW per kWp with the DEFAULT inverter efficiency
+    // and system losses already folded in; kwp above is live. Rescale by the
+    // derate ratio so the curves move with the assumptions editor too --
+    // without this the chart stayed put while the numbers above it changed.
+    const derateScale = bakedDerateScale();
     for (const [key, kwp] of Object.entries(binKwp)) {
       const cur = seasonCurves.curves[key];
       if (!cur) continue;
       for (let s = 0; s < S; s++) for (let h = 0; h < 24; h++) {
-        avg[s][h] += cur.avg[s][h] * kwp;
-        peak[s][h] += cur.peak[s][h] * kwp;
+        avg[s][h] += cur.avg[s][h] * kwp * derateScale;
+        peak[s][h] += cur.peak[s][h] * kwp * derateScale;
       }
     }
 
