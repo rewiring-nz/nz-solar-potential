@@ -43,7 +43,6 @@ from scipy.spatial import cKDTree
 
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import config
 from src.pointcloud_source import PointCloudSource
 from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor

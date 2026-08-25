@@ -20,7 +20,6 @@ Usage: python src/gate_panels.py [region ...]   (default: all areas)
 """
 
 import json
-import math
 import sys
 from collections import Counter
 from pathlib import Path
@@ -54,7 +53,6 @@ MAX_LOCAL_RMS = 0.28        # points under one 2m panel should fit their own pla
 
 def panel_ok(poly, pc, dem, dem_transform_inv):
     minx, miny, maxx, maxy = poly.bounds
-    area = poly.area
     # A veto requires EVIDENCE AGAINST a roof, never mere absence of data:
     # a LiDAR coverage gap (zero returns of ANY class) means "unknown" and
     # the panel stays. Cost of this lesson: a cropped-tile coverage hole

@@ -21,7 +21,6 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 import pyproj
 import rasterio
 from dotenv import load_dotenv

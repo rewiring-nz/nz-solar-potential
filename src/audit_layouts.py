@@ -35,7 +35,7 @@ from shapely.strtree import STRtree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.pointcloud_source import PointCloudSource
-from src.region_build import area_paths, all_areas
+from src.region_build import area_paths
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform

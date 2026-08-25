@@ -54,7 +54,6 @@ this project's obstruction/shading logic already leans.
 import sys
 from pathlib import Path
 
-import numpy as np
 import rasterio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
