@@ -51,6 +51,17 @@ OVER_CARVE = {
     5372585: "45 Camp St -- 'unnecessary obstructions disrupting a clean array'",
     4734932: "found by audit -- 61% of roof carved",
     5370372: "found by audit -- 52% of roof carved",
+    # HEIGHT-derived over-carve. The colour cap does not touch these: their
+    # obstruction is 139-279 m2 of height evidence, and the cause is upstream
+    # -- segmentation fitting ONE plane across a multi-gabled roof, so most of
+    # the surface legitimately reads as "above the plane". Fixing it by
+    # thresholding obstruction area is the trap: the validated reference roof
+    # is 45% of its own facet and 17 Cardigan St is 63%, so any cap that
+    # separates them is sitting between two real numbers with nothing in
+    # between. The fix belongs in segmentation.
+    4719759: "17 Cardigan St -- 140 m2 of a 222 m2 roof, multi-gabled house",
+    4730591: "2 Hawthorne Dr -- 279 m2 height obstruction",
+    4729642: "55 Arrowtown-Lake Hayes Rd -- 175 m2 height obstruction",
 }
 UNDER_DETECT = {
     5371121: "1 Earl St -- 11 panels on structure up to 0.95m proud",
