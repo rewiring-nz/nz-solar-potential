@@ -1196,7 +1196,12 @@ map.on("load", async () => {
   // Above this zoom a roof is a few pixels across and the 0.4m/px original
   // earns its keep; below it, the overview copy (src/build_heatmap_lod.py,
   // max 4096px) is indistinguishable and up to 15x cheaper.
-  const HEATMAP_DETAIL_ZOOM = 16.5;
+  // Hysteresis, not one threshold: swapping resolution means detaching and
+  // re-uploading the texture, and a user nudging the zoom around 16.5 (which
+  // is exactly where people sit) would do that on every nudge. Go to detail
+  // at 16.5, fall back only below 16.0.
+  const HEATMAP_DETAIL_ZOOM_IN = 16.5, HEATMAP_DETAIL_ZOOM_OUT = 16.0;
+  let heatmapDetail = false;
   // Hard ceiling on attached texture, in megapixels (x4 bytes for RGBA). The
   // uncapped version attached 20 of 24 rasters at district zoom -- measured
   // 4.1GB of texture for a view where a whole building is two pixels. When
@@ -1222,7 +1227,10 @@ map.on("load", async () => {
     const padX = (b.getEast() - b.getWest()) * 0.2, padY = (b.getNorth() - b.getSouth()) * 0.2;
     const w = b.getWest() - padX, e = b.getEast() + padX,
           so = b.getSouth() - padY, n = b.getNorth() + padY;
-    const detail = map.getZoom() >= HEATMAP_DETAIL_ZOOM;
+    const z = map.getZoom();
+    if (z >= HEATMAP_DETAIL_ZOOM_IN) heatmapDetail = true;
+    else if (z < HEATMAP_DETAIL_ZOOM_OUT) heatmapDetail = false;
+    const detail = heatmapDetail;
     const cx = (b.getWest() + b.getEast()) / 2, cy = (b.getSouth() + b.getNorth()) / 2;
 
     const wanted = new Map();
