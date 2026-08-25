@@ -1689,6 +1689,11 @@ map.on("load", async () => {
     const S = seasonCurves.seasons.length;
     const avg = Array.from({ length: S }, () => new Array(24).fill(0));
     const peak = Array.from({ length: S }, () => new Array(24).fill(0));
+    // Diffuse-only twin of the clear-day curve: what these roof faces still
+    // receive when terrain blocks the direct beam on a sunny day. Summed in
+    // parallel so the mask below can use real numbers instead of a multiplier.
+    const peakDif = Array.from({ length: S }, () => new Array(24).fill(0));
+    let haveDif = true;
     // seasonCurves values are kW per kWp with the DEFAULT inverter efficiency
     // and system losses already folded in; kwp above is live. Rescale by the
     // derate ratio so the curves move with the assumptions editor too --
@@ -1697,9 +1702,11 @@ map.on("load", async () => {
     for (const [key, kwp] of Object.entries(binKwp)) {
       const cur = seasonCurves.curves[key];
       if (!cur) continue;
+      if (!cur.peak_dif) haveDif = false;
       for (let s = 0; s < S; s++) for (let h = 0; h < 24; h++) {
         avg[s][h] += cur.avg[s][h] * kwp * derateScale;
         peak[s][h] += cur.peak[s][h] * kwp * derateScale;
+        if (cur.peak_dif) peakDif[s][h] += cur.peak_dif[s][h] * kwp * derateScale;
       }
     }
 
@@ -1708,15 +1715,37 @@ map.on("load", async () => {
     // terrain that hour, 0 = never. Blocked hours keep a diffuse-skylight
     // floor rather than dropping to zero. This is what makes an Arrowtown
     // valley roof's winter curve cut off ~2h earlier than downtown's.
+    // Terrain blocks the DIRECT beam; sky diffuse and ground reflection remain.
+    // The two lines need different treatment, and the reason is worth writing
+    // down because it is counter-intuitive.
+    //
+    // Dotted "sunny day" line: an actual clear day, so the clear-sky diffuse
+    // twin (peak_dif) is exactly right. Measured here: Queenstown's winter
+    // 16:00 clear sky is DNI 699 W/m2 against DHI 14, so a north-facing 20
+    // degree roof keeps only 4.3% when the beam goes behind a ridge -- much
+    // less than the flat 18% this used to assume. On a genuinely sunny winter
+    // afternoon behind a mountain, that really is nearly nothing.
+    //
+    // Solid "typical day" line: a season MEAN, cloudy days included. Its curve
+    // is clear-sky scaled by a monthly cloud factor, which preserves the
+    // clear-sky beam:diffuse ratio -- and that ratio is wrong for a cloudy
+    // day, where diffuse is most of the light and losing the beam to terrain
+    // costs little. Using the clear-sky twin here would understate typical
+    // winter afternoons, which is the same error, in the same direction, as
+    // the double-counting bug this replaced. The model cannot decompose the
+    // cloudy fraction into beam and diffuse (monthly scalars, see
+    // src/solar_model.py), so a flat floor stays the honest approximation
+    // until it can. 0.18 is between the clear-sky fraction and the ~1.0 of a
+    // fully overcast hour.
     const DIFFUSE_FLOOR = 0.18;
     const tshade = selectedBuildingProps && selectedBuildingProps.tshade;
     if (tshade && tshade.length === S * 24) {
       for (let s2 = 0; s2 < S; s2++) for (let h = 0; h < 24; h++) {
         const frac = (+tshade[s2 * 24 + h]) / 9;
         avg[s2][h] *= Math.max(frac, DIFFUSE_FLOOR);
-        // the "sunny day" line is one real day: terrain either blocks that
-        // hour or it doesn't -- threshold for a sharp, honest cutoff
-        peak[s2][h] *= (frac >= 0.5 ? 1 : DIFFUSE_FLOOR);
+        // one real day: terrain either blocks that hour or it doesn't
+        peak[s2][h] = frac >= 0.5 ? peak[s2][h]
+                    : (haveDif ? peakDif[s2][h] : peak[s2][h] * DIFFUSE_FLOOR);
       }
     }
 
