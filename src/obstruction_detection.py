@@ -227,6 +227,15 @@ HEIGHT_RESIDUAL_THRESHOLD_M = 0.4  # a real inlier for THIS plane already sits w
 HEIGHT_CLUSTER_RADIUS_M = 1.0  # matches roof_segmentation.POINTCLOUD_CLUSTER_RADIUS_M's own
 # precedent for "still one physical object", not one point cloud noise floor
 HEIGHT_MIN_CLUSTER_POINTS = 4
+# DO NOT lower this, or HEIGHT_RESIDUAL_THRESHOLD_M, without re-running
+# src/validate_obstructions.py. Tried 0.30m / 3 points to catch the plant that
+# panels are still being placed on: the validated equipment reference
+# (#5370338, 223 m2 of real ducting) collapsed from 42% of its roof to 1%.
+# The mechanism is perverse and worth remembering -- flagging MORE points grows
+# each cluster, the grown cluster then exceeds HEIGHT_STRONG_MAX_FACET_FRACTION
+# and is rejected whole, so raising sensitivity LOWERS detection. Under-detect
+# barely moved either (1 Earl St 12 -> 12 panels on raised structure). The real
+# fix is reworking that cap, not turning up the gain in front of it.
 HEIGHT_MIN_BLOB_AREA_M2 = MIN_BLOB_AREA_M2
 HEIGHT_MAX_BLOB_AREA_M2 = 20.0  # absolute cap, not just MAX_BLOB_AREA_FRACTION -- confirmed
 # directly on a real building: a whole *separate, lower roof section* wrongly merged into this
@@ -498,6 +507,26 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # blobs bypass both tests, so genuine equipment is never dropped.
     COLOUR_ONLY_MIN_AREA_M2 = 1.2
     COLOUR_ONLY_MAX_ELONGATION = 3.5
+    # ...and a MAXIMUM. There was only a floor here, so a large compact colour
+    # region passed as a "flush object". On a bright flat membrane roof that is
+    # what shadow, staining and seam discolouration look like, and it is the
+    # whole of the over-carve problem. Split by detector on the labelled set in
+    # src/validate_obstructions.py:
+    #     #4734932  height  52.7 m2   colour 258.3 m2   -> 55% of roof carved
+    #     #5370372  height   6.3 m2   colour 249.0 m2   -> 41%
+    #     #4735250  height  15.1 m2   colour  53.7 m2   -> 46%
+    #     #5370338  height 225.3 m2   colour   8.6 m2   -> the VALIDATED
+    #                                                      equipment reference
+    # Every over-carve is colour; the real plant is height. That is the
+    # discriminator the two earlier attempts at this went looking for and
+    # missed -- they tried area caps and planarity tests that cannot separate
+    # these, because the reference roof is legitimately 42% obstruction while
+    # the worst over-carve is 55%.
+    # The cap applies ONLY to blobs with no height corroboration: real
+    # equipment that also shows up in the photo still bypasses it entirely.
+    COLOUR_ONLY_MAX_AREA_M2 = 15.0
+    COLOUR_CORROBORATION_MIN_AREA_M2 = 1.0
+    COLOUR_CORROBORATION_MIN_FRACTION = 0.15
 
     color_obs = [] if imagery_ds is None else detect_obstructions(
         imagery_ds, facet_geom, z_threshold, boundary_erode_m)
@@ -533,8 +562,16 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     height_union = unary_union([h for h, _ in height_obs]) if height_obs else None
     filtered_color = []
     for blob in color_obs:
-        corroborated = height_union is not None and blob.intersects(height_union)
-        if corroborated or (blob.area >= COLOUR_ONLY_MIN_AREA_M2
+        # Corroboration must be REAL overlap, not a touch. This was
+        # blob.intersects(height_union), so a 100 m2 shadow region that
+        # happened to graze a 0.4 m2 vent was fully exempt from every colour
+        # test -- which is why #4734932 kept carving 55% of its roof away even
+        # after the size cap: its shadow blobs each clipped one of the small
+        # height parts scattered across the roof.
+        inter = blob.intersection(height_union).area if height_union is not None else 0.0
+        corroborated = inter >= max(COLOUR_CORROBORATION_MIN_AREA_M2,
+                                    COLOUR_CORROBORATION_MIN_FRACTION * blob.area)
+        if corroborated or (COLOUR_ONLY_MIN_AREA_M2 <= blob.area <= COLOUR_ONLY_MAX_AREA_M2
                             and _elongation_ratio(blob) <= COLOUR_ONLY_MAX_ELONGATION):
             filtered_color.append(blob)
     color_obs = filtered_color
