@@ -1631,9 +1631,26 @@ map.on("load", async () => {
     return inside;
   }
 
+  let curveRedrawPending = false;
+
   function renderSeasonCurves(buildingId) {
     const box = document.getElementById("season-curves");
     if (!box || !seasonCurves || buildingId === undefined) return;
+
+    // querySourceFeatures only sees tiles that are LOADED. Click a building
+    // while its tiles are still arriving -- after a pan, a zoom, or an address
+    // search that flew here -- and the curve is built from whichever of its
+    // roof faces happen to have landed, so it renders short (observed: one of
+    // this roof's faces present, chart at half height) or empty. Draw with
+    // what is available now, then redraw once the source settles.
+    if (!map.isSourceLoaded("layout") && !curveRedrawPending) {
+      curveRedrawPending = true;
+      map.once("idle", () => {
+        curveRedrawPending = false;
+        if (selectedPanelBuildingId === buildingId) renderSeasonCurves(buildingId);
+      });
+    }
+
     // Vector tiles return one copy of a feature per tile it intersects --
     // dedupe by rounded first-vertex position.
     const raw = map.querySourceFeatures("layout", {
