@@ -45,6 +45,8 @@ OFFSET_STEPS = 10  # vertical row-start offsets tried per orientation (columns a
 
 FLAT_SLOPE_DEG = 10.0        # below this, slope direction barely constrains racking
 FACET_RECTANGULARITY_MIN = 0.7  # facet area / its own bounding rectangle's area
+SETBACK_LADDER_MIN_GAIN = 0.10  # a tighter edge setback has to win at least this fraction more
+# panels to be worth taking -- see fit_panels_on_facet()
 
 
 def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polygon=None):
@@ -92,7 +94,17 @@ def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polyg
             blobby = rect > 0 and (facet_polygon.area / rect) < FACET_RECTANGULARITY_MIN
         except Exception:
             blobby = False
-        if blobby:
+        # NEAR-FLAT facets always defer to the building, blobby or not. A flat
+        # roof has no real slope direction, so its "aspect" is noise, and two
+        # facets of the SAME flat roof can end up racked at different angles --
+        # Josh on 26 Isle St: "this roof filled with two different angles of
+        # panels when it should just fill consistently in the same direction".
+        # Deferring to the building outline is what makes every array on one
+        # building share an angle, which is the thing that reads as a real
+        # install. A pitched facet still uses its own eave/ridge lines, because
+        # there the slope direction IS real -- unless the facet is blobby, in
+        # which case its own rectangle is not to be trusted at any pitch.
+        if blobby or (slope_deg is not None and slope_deg < FLAT_SLOPE_DEG):
             reference = building_polygon
 
     try:
@@ -269,11 +281,32 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
 
     surface_poly = shapely_transform(lambda x, y, z=None: to_surface(x, y), geom)
 
-    panels = _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolution, to_world, facet)
-    if not panels and fallback_setback < setback:
-        panels = _pack_surface_poly(surface_poly, fallback_setback, panel_width, panel_height,
-                                     resolution, to_world, facet)
-    return panels
+    # Try the whole setback ladder and keep whichever fits the most panels,
+    # rather than only dropping to the fallback when the generous setback fits
+    # ZERO. Measured on #4733121: that facet is a 3.4m-wide strip, so a 0.3m
+    # setback each side leaves 2.8m -- exactly two 1m panel rows with 0.8m
+    # stranded. At 0.2m it leaves 3.0m and takes three. The packing strategy
+    # was never the problem there (a global lattice, a per-row column phase and
+    # an exhaustive row phase all placed the same 12 panels, against a
+    # geometric ceiling of 14 for two rows); the usable SHAPE was.
+    #
+    # This is Josh's call, and it is the right one under "place them everywhere
+    # that is technically feasible": "maybe there is too tight of a tolerance on
+    # panels going next to each other that could be relaxed a bit". The generous
+    # setback stays the default because it wins whenever it can; it just no
+    # longer strands a whole row to keep a margin nobody asked for.
+    best = []
+    for sb in sorted({setback, fallback_setback}, reverse=True):
+        candidate = _pack_surface_poly(surface_poly, sb, panel_width, panel_height,
+                                        resolution, to_world, facet)
+        # The generous setback is tried first and kept unless a tighter one is a
+        # REAL gain -- a whole extra row, not one squeezed panel. Josh: "it's
+        # less about maximising every inch of roof space, and more about
+        # building a clean install". One extra panel hard against an edge is
+        # exactly the scrappiness he is asking us not to produce.
+        if len(candidate) > max(len(best) * (1 + SETBACK_LADDER_MIN_GAIN), len(best) + 1):
+            best = candidate
+    return best
 
 
 def _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolution, to_world, facet):
