@@ -450,11 +450,37 @@ let refitAvailable = false;      // live server's /api/refit present? (never on 
 let selectedPanelBuildingId = -1;
 let selectedBuildingProps = null;  // buildings-source props of the open panel (deciles included)
 
+// Density is applied as a PAINT expression, never a filter. setFilter forces
+// MapLibre to re-evaluate and re-upload the geometry of every loaded tile --
+// with the whole town tiled that made the density slider crawl. A paint
+// change only rebinds shader properties, so dragging is smooth at any zoom.
+function densityOpacityExpr(baseOpacity) {
+  return ["case",
+    ["any", ["!", ["has", "fill_rank"]], ["<=", ["get", "fill_rank"], panelDensityPct]],
+    baseOpacity, 0];
+}
+const PANEL_FILL_OPACITY = 0.72, PANEL_LINE_OPACITY = 0.5;
+
+function applyPanelDensityPaint() {
+  if (!map.getLayer("panels-fill")) return;
+  map.setPaintProperty("panels-fill", "fill-opacity", densityOpacityExpr(PANEL_FILL_OPACITY));
+  map.setPaintProperty("panels-outline", "line-opacity", densityOpacityExpr(PANEL_LINE_OPACITY));
+}
+
+// setFilter re-evaluates and re-uploads the geometry of every loaded tile, so
+// it must only ever run when the filter genuinely changes. The only thing that
+// varies at runtime now is which single building is hidden behind its
+// live-tuned preview -- track it, and no-op when it is already correct.
+let layoutExcludedBuildingId;   // undefined = nothing excluded
+
+function setLayoutExclusion(excludeBuildingId) {
+  if (!layoutReady || excludeBuildingId === layoutExcludedBuildingId) return;
+  layoutExcludedBuildingId = excludeBuildingId;
+  LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id, excludeBuildingId)));
+}
+
 function panelLayerFilter(id, excludeBuildingId) {
   const parts = [LAYOUT_KIND_FILTER[id]];
-  if (id === "panels-fill" || id === "panels-outline") {
-    parts.push(["any", ["!", ["has", "fill_rank"]], ["<=", ["get", "fill_rank"], panelDensityPct]]);
-  }
   if (excludeBuildingId !== undefined) {
     parts.push(["!=", ["get", "building_id"], excludeBuildingId]);
   }
@@ -511,12 +537,13 @@ function applyToggles() {
   if (map.getLayer("buildings-outline")) {
     map.setLayoutProperty("buildings-outline", "visibility", outlinesOn ? "visible" : "none");
   }
-  // Always exclude the selected building from the overview fill once
-  // something is selected, regardless of mode -- otherwise its own
-  // choropleth colour would sit on top of the heatmap/satellite detail
-  // we're trying to show for that specific roof.
-  const buildingsFilter = selectedBuildingId === -1 ? null : ["!=", ["get", "building_id"], selectedBuildingId];
-  map.setFilter("buildings-fill", buildingsFilter);
+  // buildings-fill used to be filtered to hide the selected building, from
+  // when it drew a visible choropleth. It has been fill-opacity 0 for a long
+  // time now (the per-pixel heatmap raster replaced it), so that filter hid
+  // nothing -- while costing a setFilter over a 15k-feature GeoJSON source on
+  // every click, dropping the selected roof out of the "buildings in view"
+  // total, and making the selected building un-clickable (it is the hit-test
+  // layer). Removed: nothing visual depended on it.
   syncToggleButtons();
   if (window.__refreshModeUI) window.__refreshModeUI();
 }
@@ -548,9 +575,7 @@ function clearLiveTuning() {
   if (map.getSource && map.getSource("live-layout")) {
     map.getSource("live-layout").setData({ type: "FeatureCollection", features: [] });
   }
-  if (layoutReady) {
-    LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
-  }
+  setLayoutExclusion(undefined);
 }
 
 async function refitLive(buildingId, setback, ransacThreshold, zThreshold, densityPct) {
@@ -558,7 +583,7 @@ async function refitLive(buildingId, setback, ransacThreshold, zThreshold, densi
   // while its live-tuned version is shown instead -- otherwise both would
   // render on top of each other and every slider move would look like
   // nothing changed. Every other building's static layout stays visible.
-  LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id, buildingId)));
+  setLayoutExclusion(buildingId);
   const url = `/api/refit?building_id=${buildingId}&setback=${setback}&ransac_threshold=${ransacThreshold}&z_threshold=${zThreshold}&density_pct=${densityPct}`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`refit failed: ${resp.status}`);
@@ -658,6 +683,7 @@ map.on("load", async () => {
       // opaque ones; only visibility:"none" would drop it from queries) --
       // it's what map.on("click"/"mouseenter", "buildings-fill", ...) and
       // the "Buildings in view" dashboard's queryRenderedFeatures rely on.
+      // It is never filtered -- see applyToggles().
       "fill-color": [
         "interpolate", ["linear"], ["get", "kwp"],
         0, "#00000a",
@@ -705,10 +731,9 @@ map.on("load", async () => {
 
   // Left-dashboard summary: same ceiling-estimate math as the map labels
   // (resolved area x coverage % x panel density), summed across whatever's
-  // currently on screen at the single selected coverage level -- queries
-  // against buildings-outline (never filtered) rather than buildings-fill
-  // (which excludes the selected building once one is clicked) so a
-  // selection doesn't silently drop a building out of the total.
+  // currently on screen at the single selected coverage level, queried
+  // against buildings-fill (invisible but always rendered, so it is the
+  // hit-test/query layer for everything on the map).
   function buildingEstimate(props, pct) {
     const kwp = (props.facet_area_m2 || 0) * (pct / 100) * panelDensityKw;
     const kwhYear = kwp * (props.avg_poa_kwh_m2 || 0)
@@ -716,27 +741,44 @@ map.on("load", async () => {
     return { kwp, kwhYear };
   }
 
-  function recomputeInViewSummary() {
-    const rendered = map.queryRenderedFeatures({ layers: ["buildings-fill"] });
+  // queryRenderedFeatures over buildings-fill is the expensive half of this --
+  // it hands back every in-view building with full geometry, thousands of them
+  // at town-wide zooms. But the SET of buildings in view only changes when the
+  // VIEW changes; dragging the density slider just re-interpolates the same
+  // buildings' baked deciles. So cache the deduped property bags and let the
+  // slider reuse them, and re-query only when the view (or the buildings-fill
+  // filter) actually moves.
+  let inViewProps = null;   // null = stale, must re-query
+  function invalidateInView() { inViewProps = null; }
+  window.__invalidateInView = invalidateInView;
+
+  function inViewBuildingProps() {
+    if (inViewProps) return inViewProps;
     const seen = new Set();
-    let count = 0, kwp = 0, kwhYear = 0;
-    rendered.forEach(f => {
+    const out = [];
+    map.queryRenderedFeatures({ layers: ["buildings-fill"] }).forEach(f => {
       const id = f.properties.building_id;
       if (seen.has(id)) return;
       seen.add(id);
-      count++;
-      const est = buildingEstimate(f.properties, coveragePct);
-      kwp += est.kwp;
-      kwhYear += est.kwhYear;
+      out.push(f.properties);
     });
-    document.getElementById("inview-count").textContent = count;
+    inViewProps = out;
+    return out;
+  }
+
+  function recomputeInViewSummary() {
+    const props = inViewBuildingProps();
+    let kwp = 0, kwhYear = 0;
+    document.getElementById("inview-count").textContent = props.length;
     if (mode === "layout") {
-      const uniq = [], seen2 = new Set();
-      rendered.forEach(f => {
-        if (!seen2.has(f.properties.building_id)) { seen2.add(f.properties.building_id); uniq.push(f); }
-      });
-      const sums = panelSumsFor(uniq);
+      const sums = panelSumsFor(props);
       kwp = sums.kwp; kwhYear = sums.kwhYear;
+    } else {
+      props.forEach(pr => {
+        const est = buildingEstimate(pr, coveragePct);
+        kwp += est.kwp;
+        kwhYear += est.kwhYear;
+      });
     }
     document.getElementById("inview-power").textContent = fmtPower(kwp);
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
@@ -870,6 +912,7 @@ map.on("load", async () => {
     clearTimeout(viewTimer);
     viewTimer = setTimeout(() => {
       if (window.__syncHeatmapRasters) window.__syncHeatmapRasters();
+      invalidateInView();
       recomputeInViewSummary();
     }, 140);
   };
@@ -893,11 +936,11 @@ map.on("load", async () => {
     const vLo = lo === 0 ? 0 : (props[`${prefix}_${lo}`] || 0);
     return vLo + (vHi - vLo) * (pct - lo) / 10;
   }
-  function panelSumsFor(features) {
+  function panelSumsFor(propsList) {
     let panels = 0, kwh = 0;
-    features.forEach(f => {
-      panels += decileInterp(f.properties, "fill_panels", panelDensityPct);
-      kwh += decileInterp(f.properties, "fill_kwh", panelDensityPct);
+    propsList.forEach(pr => {
+      panels += decileInterp(pr, "fill_panels", panelDensityPct);
+      kwh += decileInterp(pr, "fill_kwh", panelDensityPct);
     });
     return { kwp: panels * assumptions.panel_rated_power_w / 1000, kwhYear: kwh };
   }
@@ -940,12 +983,12 @@ map.on("load", async () => {
     document.getElementById("vslider-value").textContent = v + "%";
     if (mode === "layout") {
       panelDensityPct = v;
+      applyPanelDensityPaint();          // immediate, cheap: no tile re-upload
       clearTimeout(window.__densityTimer);
       window.__densityTimer = setTimeout(() => {
-        LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
         if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
         recomputeInViewSummary();
-      }, 120);  // collapse filter churn while the slider is dragged
+      }, 160);  // visuals update instantly above; only the stats are debounced
     } else {
       setCoverage(v);
     }
@@ -1043,12 +1086,12 @@ map.on("load", async () => {
       document.getElementById("m-slider-value").textContent = v + "%";
       if (mode === "layout") {
         panelDensityPct = v;
+        applyPanelDensityPaint();      // immediate, cheap: no tile re-upload
         clearTimeout(window.__densityTimer);
         window.__densityTimer = setTimeout(() => {
-          LAYOUT_LAYERS.forEach(id => map.setFilter(id, panelLayerFilter(id)));
           if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
           recomputeInViewSummary();
-        }, 120);
+        }, 160);  // visuals update instantly above; only the stats are debounced
       } else {
         setCoverage(v);
       }
@@ -1219,16 +1262,20 @@ map.on("load", async () => {
     type: "fill",
     source: "layout",
     filter: panelLayerFilter("panels-fill"),
-    paint: { "fill-color": "#081e3f", "fill-opacity": 0.72 }  // semi-transparent very dark blue (Josh)
+    paint: { "fill-color": "#081e3f", "fill-opacity": densityOpacityExpr(PANEL_FILL_OPACITY) }
   });
   map.addLayer({
     id: "panels-outline",
-    minzoom: 14,
+    // Outlines only when they are actually legible. At z14-15 this 0.6px line
+    // is a SECOND full geometry pass over every panel (measured at z16: 7,841
+    // fills + 7,872 outlines vs just 110 buildings) for something you cannot
+    // see. Fills alone carry the layout at those zooms.
+    minzoom: 16,
     "source-layer": "layout",
     type: "line",
     source: "layout",
     filter: panelLayerFilter("panels-outline"),
-    paint: { "line-color": "#9fc8e8", "line-width": 0.6, "line-opacity": 0.5 }  // faint edge; real gaps come from shrunk geometry at tile time
+    paint: { "line-color": "#9fc8e8", "line-width": 0.6, "line-opacity": densityOpacityExpr(PANEL_LINE_OPACITY) }
   });
 
   // Live-tuning preview: a separate source/layers that only ever hold the

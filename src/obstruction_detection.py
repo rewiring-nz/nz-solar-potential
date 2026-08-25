@@ -285,53 +285,6 @@ HEIGHT_STRONG_MAX_FACET_FRACTION = 0.35  # a single strong-evidence part coverin
 # one 2386m2 facet at 0.2 deg whose "obstruction" was 1837m2 = 77% of the roof.
 
 
-DECK_BAND_PCT = (5, 55)     # residual percentiles used to find the deck: the roof deck is the
-# LOWER envelope and equipment stands ON it, so a symmetric trim locks onto the plant on a
-# densely-covered roof and makes it read as flush (measured: the equipment reference lost
-# 220m2 of genuine plant that way). Bias the search downward, then recentre on deck points.
-DECK_RECENTRE_TOL_M = 0.2
-
-
-def _dominant_plane(pts, plane0, iters=3, min_pts=20):
-    """Iteratively re-fit a plane to the roof DECK -- the lower envelope of
-    the surface -- so that equipment standing on the deck reads as raised.
-    Returns the input plane unchanged when there is too little to work with."""
-    a, b, c = plane0
-    if len(pts) < min_pts:
-        return a, b, c
-    lo_pct, hi_pct = DECK_BAND_PCT
-    for _ in range(iters):
-        res = pts[:, 2] - (a * pts[:, 0] + b * pts[:, 1] + c)
-        lo, hi = np.percentile(res, [lo_pct, hi_pct])
-        band = (res >= lo) & (res <= hi)
-        if band.sum() < min_pts:
-            break
-        q = pts[band]
-        x0, y0 = q[:, 0].mean(), q[:, 1].mean()
-        A = np.column_stack([q[:, 0] - x0, q[:, 1] - y0, np.ones(len(q))])
-        try:
-            coef, *_ = np.linalg.lstsq(A, q[:, 2], rcond=None)
-        except np.linalg.LinAlgError:
-            break
-        a, b = float(coef[0]), float(coef[1])
-        c = float(coef[2]) - a * x0 - b * y0
-    # Final symmetric refit over just the deck points, so the deck-biased
-    # search above doesn't leave the plane sitting low.
-    res = pts[:, 2] - (a * pts[:, 0] + b * pts[:, 1] + c)
-    deck = np.abs(res) <= DECK_RECENTRE_TOL_M
-    if deck.sum() >= min_pts:
-        q = pts[deck]
-        x0, y0 = q[:, 0].mean(), q[:, 1].mean()
-        A = np.column_stack([q[:, 0] - x0, q[:, 1] - y0, np.ones(len(q))])
-        try:
-            coef, *_ = np.linalg.lstsq(A, q[:, 2], rcond=None)
-            a, b = float(coef[0]), float(coef[1])
-            c = float(coef[2]) - a * x0 - b * y0
-        except np.linalg.LinAlgError:
-            pass
-    return a, b, c
-
-
 def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_threshold_m=None,
                                      return_strength=False):
     """Returns a list of shapely Polygons (in the point cloud's CRS -- same

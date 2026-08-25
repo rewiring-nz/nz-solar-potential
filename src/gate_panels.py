@@ -22,6 +22,7 @@ Usage: python src/gate_panels.py [region ...]   (default: all areas)
 import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -48,11 +49,6 @@ GROUND_SEARCH_RADIUS_M = 20.0
 MIN_EVIDENCE_PTS = 8        # fewer total returns than this under a panel = survey too thin
 # to judge here at all -> keep. (7 Cedar Dr: a real roof at 2.0 pts/m2 total
 # had 63 of 69 fitted panels executed by absolute-count thresholds.)
-MIN_BUILDING_FRACTION = 0.4  # of the returns that DO exist under a panel, at least this share
-# must be building-class for it to count as roof -- a carpark/yard/demolition
-# site is well-sampled but its returns are ground/vegetation, a thin-but-real
-# roof has few returns that are ALL building. Ratio, not absolute density.
-MIN_HEIGHT_ABOVE_DEM = 1.8  # roof surface must clear bare earth by this (m)
 MAX_LOCAL_RMS = 0.28        # points under one 2m panel should fit their own plane this well
 
 
@@ -124,7 +120,11 @@ def gate_area(name, pc, dem, dem_inv):
         print(f"{name}: no layouts, skipping")
         return
     d = json.loads(path.read_text())
-    kept, dropped = [], {"no_points": 0, "sparse": 0, "ground_level": 0, "lumpy": 0}
+    # Counter, not a fixed dict: adding a new veto reason to panel_ok() should
+    # show up in the summary, never KeyError halfway through an area.
+    kept, dropped = [], Counter()
+    errors = 0  # gate crashes keep the panel, but MUST be visible: a systematic
+    # failure here would otherwise look like a clean run that changed nothing.
     for f in d["features"]:
         if f["properties"].get("kind") != "panel" or f["geometry"]["type"] != "Polygon":
             kept.append(f)
@@ -137,6 +137,7 @@ def gate_area(name, pc, dem, dem_inv):
             ok, why = panel_ok(poly, pc, dem, dem_inv)
         except Exception:
             ok, why = True, "error-kept"  # never drop a panel on a gate crash
+            errors += 1
         if ok:
             kept.append(f)
         else:
@@ -144,9 +145,11 @@ def gate_area(name, pc, dem, dem_inv):
     n_dropped = sum(dropped.values())
     d["features"] = kept
     path.write_text(json.dumps(d))
-    print(f"{name}: dropped {n_dropped} panels "
-          f"(air/no-points {dropped['no_points']}, sparse {dropped['sparse']}, "
-          f"ground-level {dropped['ground_level']}, lumpy {dropped['lumpy']})")
+    reasons = ", ".join(f"{k} {v}" for k, v in sorted(dropped.items())) or "none"
+    msg = f"{name}: dropped {n_dropped} panels ({reasons})"
+    if errors:
+        msg += f"  [WARNING: {errors} panels kept because the gate errored]"
+    print(msg)
 
 
 def main():

@@ -177,6 +177,8 @@ def audit_area(name, sample=None, pc=None):
     out.write_text(json.dumps(results))
     tot = {k: sum(r[k] for r in results) for k in ("edge_overlap", "facet_escape", "lumpy", "z_split")}
     n_panels = sum(b["panels"] and len(b["panels"]) or 0 for b in buildings.values())
+    if skipped:
+        print(f"  NOTE: {skipped} buildings skipped (errored during audit)")
     print(f"{name}: {len(ids)} buildings audited, {n_panels} panels | "
           f"edge {tot['edge_overlap']} | facet {tot['facet_escape']} | "
           f"lumpy {tot['lumpy']} | z-split {tot['z_split']} | "
