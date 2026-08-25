@@ -253,6 +253,19 @@
         </div>
       </div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
+      <details class="tuning" id="assumption-editor" style="border-top:1px solid rgba(255,255,255,0.12); margin-top:10px;">
+        <summary style="color:#ccc;">Advanced: performance assumptions</summary>
+        <div class="slider-row"><label><span>Panel rated power</span><span id="a-w-val"></span></label>
+          <input type="range" id="a-w" min="250" max="700" step="5"></div>
+        <div class="slider-row"><label><span>Panel efficiency</span><span id="a-eff-val"></span></label>
+          <input type="range" id="a-eff" min="12" max="28" step="0.5"></div>
+        <div class="slider-row"><label><span>Inverter efficiency</span><span id="a-inv-val"></span></label>
+          <input type="range" id="a-inv" min="90" max="99" step="0.5"></div>
+        <div class="slider-row"><label><span>System losses</span><span id="a-loss-val"></span></label>
+          <input type="range" id="a-loss" min="5" max="30" step="0.5"></div>
+        <button class="tuning-reset" id="a-reset">Reset to defaults</button>
+        <div style="font-size:10px; color:#888; margin-top:6px;">Changes rescale every figure on screen instantly. Panel area follows from power and efficiency.</div>
+      </details>
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
           <span>Building outlines</span>
@@ -671,7 +684,10 @@ map.on("load", async () => {
   // round-trip). panel_area_m2/panel_rated_power_w come from the same
   // assumptions block the popup shows, so this can't silently drift from
   // what the rest of the page claims a panel is.
-  const panelDensityKw = assumptions.panel_rated_power_w / assumptions.panel_area_m2 / 1000;
+  // Recomputed rather than fixed, so the advanced assumptions editor can
+  // rescale every displayed number live without a rebuild.
+  let panelDensityKw = assumptions.panel_rated_power_w / assumptions.panel_area_m2 / 1000;
+  const ASSUMPTION_DEFAULTS = JSON.parse(JSON.stringify(assumptions));
 
   function recomputeHeatmapEstimates() {
     const fraction = coveragePct / 100;
@@ -1026,6 +1042,42 @@ map.on("load", async () => {
       }
     });
     window.__syncMobileSheet = syncMobileSheet;
+  }
+
+  // --- Advanced assumptions editor -------------------------------------
+  // Everything on screen derives from these four numbers, so editing them
+  // rescales the whole map live: panel area is back-solved from power and
+  // efficiency (area = W / (eff% * 1000 W/m2 STC)), which is what makes the
+  // heat-map estimate move too, not just the panel counts.
+  {
+    const el = id => document.getElementById(id);
+    const applyAssumptions = () => {
+      const w = +el("a-w").value, eff = +el("a-eff").value;
+      assumptions.panel_rated_power_w = w;
+      assumptions.panel_efficiency_pct = eff;
+      assumptions.panel_area_m2 = +(w / (eff / 100 * 1000)).toFixed(2);
+      assumptions.inverter_efficiency_pct = +el("a-inv").value;
+      assumptions.system_derate_pct = +el("a-loss").value;
+      panelDensityKw = assumptions.panel_rated_power_w / assumptions.panel_area_m2 / 1000;
+      el("a-w-val").textContent = w + "W";
+      el("a-eff-val").textContent = eff + "%";
+      el("a-inv-val").textContent = assumptions.inverter_efficiency_pct + "%";
+      el("a-loss-val").textContent = assumptions.system_derate_pct + "%";
+      recomputeHeatmapEstimates();
+      recomputeInViewSummary();
+      if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+    };
+    const loadInto = src => {
+      el("a-w").value = src.panel_rated_power_w;
+      el("a-eff").value = src.panel_efficiency_pct;
+      el("a-inv").value = src.inverter_efficiency_pct;
+      el("a-loss").value = src.system_derate_pct;
+      applyAssumptions();
+    };
+    ["a-w", "a-eff", "a-inv", "a-loss"].forEach(id =>
+      el(id).addEventListener("input", applyAssumptions));
+    el("a-reset").addEventListener("click", () => loadInto(ASSUMPTION_DEFAULTS));
+    loadInto(assumptions);
   }
 
   // Advanced tuning only works against the local live server; probe once.
