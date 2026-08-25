@@ -487,21 +487,15 @@ function panelLayerFilter(id, excludeBuildingId) {
   return parts.length === 1 ? parts[0] : ["all", ...parts];
 }
 
+// Clicking the ACTIVE mode turns it off, leaving neither overlay drawn, so the
+// roof itself can be seen (Josh). These buttons briefly did not toggle: with
+// only two of them, switching both off looked like a broken map, especially on
+// a phone where a tap can register twice. What makes it safe now is that both
+// buttons visibly go unlit in that state, on desktop and mobile, so "nothing
+// is selected" reads as a state rather than a failure.
 function setMode(newMode) {
-  mode = (mode === newMode) ? "none" : newMode;  // clicking the active one turns it off
+  mode = (mode === newMode) ? "none" : newMode;
   applyToggles();
-}
-
-// The two mode buttons SELECT a mode; they never toggle it off. Toggling was
-// a desktop convenience, but with only two buttons it traps users in an
-// empty map -- tap "Panel Layout" while already in layout (easy to do on a
-// phone, where a tap can register twice) and both layers switch off with
-// nothing on screen to explain why. Only the legend's On/Off control toggles.
-function selectMode(newMode) {
-  if (mode !== newMode) {
-    mode = newMode;
-    applyToggles();
-  }
 }
 
 function syncToggleButtons() {
@@ -991,10 +985,15 @@ map.on("load", async () => {
   function syncModeUI() {
     const isLayout = mode === "layout";
     document.getElementById("inview-assumption").style.display = isLayout ? "none" : "";
+    // With both overlays off the numbers are still the coverage-based estimate,
+    // but calling it the "heat map estimate" while no heat map is drawn reads
+    // as a bug. Name it for what it is instead.
     document.getElementById("inview-mode-title").innerHTML = isLayout
       ? '<span style="color:#fff; font-size:15px; font-weight:800;">Panel placement estimate</span><span class="legend-panels"><span></span><span></span><span></span></span>' +
         '<div style="flex-basis:100%; font-size:10.5px; color:#ff6b60; font-weight:600; margin-top:2px;">(draft &mdash; will make mistakes)</div>'
-      : '<span>Heat map estimate</span><span class="legend-grad"></span>';
+      : (mode === "heatmap"
+          ? '<span>Heat map estimate</span><span class="legend-grad"></span>'
+          : '<span>Generation potential estimate</span>');
     document.getElementById("inview-mode-title").style.flexWrap = "wrap";
     const s = document.getElementById("vslider");
     if (isLayout) {
@@ -1015,7 +1014,7 @@ map.on("load", async () => {
     recomputeInViewSummary();
     const mh = document.getElementById("m-heatmap-btn");
     if (mh) {
-      mh.classList.toggle("active", !isLayout);
+      mh.classList.toggle("active", mode === "heatmap");
       document.getElementById("m-layout-btn").classList.toggle("active", isLayout);
       if (window.__syncMobileSheet) window.__syncMobileSheet();
     }
@@ -1102,8 +1101,8 @@ map.on("load", async () => {
   const mHeat = document.getElementById("m-heatmap-btn");
   const mLayout = document.getElementById("m-layout-btn");
   if (mHeat) {
-    mHeat.addEventListener("click", () => selectMode("heatmap"));
-    mLayout.addEventListener("click", () => selectMode("layout"));
+    mHeat.addEventListener("click", () => setMode("heatmap"));
+    mLayout.addEventListener("click", () => setMode("layout"));
     document.getElementById("m-details-btn").addEventListener("click", () => {
       document.getElementById("side-panel").classList.add("expanded");
     });
@@ -1190,8 +1189,8 @@ map.on("load", async () => {
     fetch("/api/refit").then(r => { refitAvailable = r.ok || r.status === 400; }).catch(() => {});
   }
   syncModeUI();
-  document.getElementById("toggle-heatmap-dash").addEventListener("click", () => selectMode("heatmap"));
-  document.getElementById("toggle-layout-dash").addEventListener("click", () => selectMode("layout"));
+  document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
+  document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
 
   // Per-DSM-pixel generation-potential heatmap, before any panel layout --
   // one image per built area (see src/build_heatmap_raster.py), same
