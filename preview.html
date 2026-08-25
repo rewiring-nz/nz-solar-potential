@@ -664,6 +664,34 @@ function coverageSelectHtml(id) {
 }
 
 map.on("load", async () => {
+  // Kick off everything that does NOT depend on the buildings file before
+  // awaiting it. solar_potential.geojson is 19MB (4MB gzipped) and its parse
+  // is the gate on first paint; the panel tiles and the heat-map manifest
+  // have no relationship to it, and used to sit idle until it finished.
+  // Adding the vector source here starts the PMTiles range requests
+  // immediately -- its layers are still added further down, in the right
+  // stacking order, by which point the tiles are already in flight.
+  map.addSource("layout", { type: "vector", url: `pmtiles://data/panel_layouts.pmtiles?v=${DATA_VERSION}` });
+  // Adding the SOURCE alone downloads nothing -- MapLibre only requests tiles
+  // for a source some layer actually uses (verified in the network waterfall:
+  // with just the source, the PMTiles range requests still waited for the
+  // buildings file). This invisible probe layer is what starts them. It also
+  // has a second job further down the original stacking order: in Heat Map
+  // mode every visible layout layer is hidden, and the seasonal curves read
+  // the clicked building's facets and panels out of loaded tiles, so
+  // something must keep the source alive. fill-opacity 0, so being first in
+  // the stack rather than last makes no visual difference.
+  map.addLayer({
+    id: "layout-probe",
+    minzoom: 13,
+    "source-layer": "layout",
+    type: "fill",
+    source: "layout",
+    paint: { "fill-opacity": 0 }
+  });
+  const heatmapManifestPromise = fetch(`data/heatmaps/manifest.json?v=${DATA_VERSION}`)
+    .then(r => r.json()).catch(() => null);
+
   const resp = await fetch(`data/solar_potential.geojson?v=${DATA_VERSION}`);
   const data = await resp.json();
   const assumptions = data.assumptions;
@@ -1173,7 +1201,8 @@ map.on("load", async () => {
   // works identically before the first full-region deploy.
   let heatmapImages;
   try {
-    const manifest = await (await fetch(`data/heatmaps/manifest.json?v=${DATA_VERSION}`)).json();
+    const manifest = await heatmapManifestPromise;   // started before the big fetch
+    if (!manifest) throw new Error("no regional heat-map manifest");
     heatmapImages = manifest.map(m => ({
       id: `heatmap-raster-${m.name}`,
       url: `${m.png}?v=${DATA_VERSION}`,
@@ -1284,7 +1313,8 @@ map.on("load", async () => {
   // Queenstown vs ~364MB as GeoJSON): tiles stream on demand, so density
   // filtering only ever touches what's on screen. The pmtiles protocol is
   // registered before map construction (top of file).
-  map.addSource("layout", { type: "vector", url: `pmtiles://data/panel_layouts.pmtiles?v=${DATA_VERSION}` });
+  // (the "layout" source itself was added at the top of this handler, so its
+  // tiles download in parallel with the buildings file rather than after it)
   document.getElementById("loading").style.opacity = "0";
 
   // (A flat per-facet vector heat layer briefly lived here -- razor-sharp
@@ -1307,14 +1337,6 @@ map.on("load", async () => {
   // layers are hidden -- without this, the seasonal curves (which read the
   // clicked building's facets/panels from loaded tiles) had no data in
   // heat-map mode.
-  map.addLayer({
-    id: "layout-probe",
-    minzoom: 13,
-    "source-layer": "layout",
-    type: "fill",
-    source: "layout",
-    paint: { "fill-opacity": 0 }
-  });
   map.addLayer({
     id: "facets-outline",
     minzoom: 14,
