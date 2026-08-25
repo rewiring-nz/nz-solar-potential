@@ -493,6 +493,7 @@ function syncToggleButtons() {
 }
 
 function applyToggles() {
+  if (window.__syncHeatmapRasters) window.__syncHeatmapRasters();  // attach/detach for this mode
   (window.__heatmapLayers || ["heatmap-raster"]).forEach(id => {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, "visibility", mode === "heatmap" ? "visible" : "none");
@@ -861,10 +862,21 @@ map.on("load", async () => {
   };
   window.__updateZoomHint = updateZoomHint;
   map.on("zoomend", updateZoomHint);
-  map.on("moveend", recomputeInViewSummary);
+  // One debounced pass per interaction. This used to run on BOTH moveend and
+  // idle, and each pass queries every rendered building and re-interpolates
+  // its deciles -- at 15k buildings that is real work to do twice.
+  let viewTimer = null;
+  const onViewChanged = () => {
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(() => {
+      if (window.__syncHeatmapRasters) window.__syncHeatmapRasters();
+      recomputeInViewSummary();
+    }, 140);
+  };
+  map.on("moveend", onViewChanged);
   // moveend fires before the new view finishes rendering, so a fast pan/zoom
   // counts 0 buildings; idle fires once rendering settles and corrects it.
-  map.on("idle", recomputeInViewSummary);
+  map.on("idle", onViewChanged);
 
   // --- Mode-aware left dashboard + the tall vertical slider ---------------
   // Heat-map mode: yellow box = coverage-based estimate, slider = coverage %.
@@ -1100,20 +1112,43 @@ map.on("load", async () => {
     const heatmapMeta = await (await fetch(`data/heatmap_raster.json?v=${DATA_VERSION}`)).json();
     heatmapImages = [{ id: "heatmap-raster", url: `data/heatmap_raster.png?v=${DATA_VERSION}`, coordinates: heatmapMeta.coordinates }];
   }
+  // Heat rasters are attached ONLY while they intersect the viewport. A
+  // MapLibre image source is not tiled: adding one uploads the entire PNG as
+  // a GPU texture. With 24 regional rasters (64MB of PNG, several hundred MB
+  // once decoded to RGBA) attaching them all at startup made pan/zoom stutter
+  // badly at town scale. Attach/detach on movement instead -- you can only
+  // ever look at a few regions at once.
   const HEATMAP_LAYERS = heatmapImages.map(m => m.id);
+  const heatmapBounds = {};
   heatmapImages.forEach(m => {
-    map.addSource(`${m.id}-src`, { type: "image", url: m.url, coordinates: m.coordinates });
-    map.addLayer({
-      id: m.id,
-      type: "raster",
-      source: `${m.id}-src`,
-      layout: { visibility: mode === "heatmap" ? "visible" : "none" },
-      paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }  // semi-transparent per-pixel
-      // flux layer -- at 0.4m source resolution the linear upsampling reads as the intended soft
-      // gradient, not the old 1m blur
-    });
+    const lngs = m.coordinates.map(c => c[0]), lats = m.coordinates.map(c => c[1]);
+    heatmapBounds[m.id] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
   });
+  const attached = new Set();
+  function syncHeatmapRasters() {
+    const b = map.getBounds();
+    const pad = 0.01;  // keep neighbours warm so a short pan doesn't re-upload
+    const w = b.getWest() - pad, e = b.getEast() + pad, so = b.getSouth() - pad, n = b.getNorth() + pad;
+    heatmapImages.forEach(m => {
+      const [mw, ms, me, mn] = heatmapBounds[m.id];
+      const visible = mode === "heatmap" && !(me < w || mw > e || mn < so || ms > n);
+      if (visible && !attached.has(m.id)) {
+        map.addSource(`${m.id}-src`, { type: "image", url: m.url, coordinates: m.coordinates });
+        map.addLayer({
+          id: m.id, type: "raster", source: `${m.id}-src`,
+          paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }
+        }, "buildings-fill");
+        attached.add(m.id);
+      } else if (!visible && attached.has(m.id)) {
+        if (map.getLayer(m.id)) map.removeLayer(m.id);
+        if (map.getSource(`${m.id}-src`)) map.removeSource(`${m.id}-src`);
+        attached.delete(m.id);
+      }
+    });
+  }
+  window.__syncHeatmapRasters = syncHeatmapRasters;
   window.__heatmapLayers = HEATMAP_LAYERS;  // applyToggles (defined earlier, top-level) reads this
+  syncHeatmapRasters();
 
   // Panel layouts come as vector tiles (PMTiles, ~24MB for all of
   // Queenstown vs ~364MB as GeoJSON): tiles stream on demand, so density
