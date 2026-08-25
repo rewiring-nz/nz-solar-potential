@@ -1153,8 +1153,14 @@ map.on("load", async () => {
     loadInto(assumptions);
   }
 
-  // Advanced tuning only works against the local live server; probe once.
-  fetch("/api/refit").then(r => { refitAvailable = r.ok || r.status === 400; }).catch(() => {});
+  // Advanced tuning only works against the local live server (src/live_server.py),
+  // so only probe when we could plausibly be talking to it. On the deployed
+  // site this fetch resolved to the ORIGIN root -- github.io/api/refit, not
+  // even inside the project path -- and 404'd in every visitor's console on
+  // every page load.
+  if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
+    fetch("/api/refit").then(r => { refitAvailable = r.ok || r.status === 400; }).catch(() => {});
+  }
   syncModeUI();
   document.getElementById("toggle-heatmap-dash").addEventListener("click", () => selectMode("heatmap"));
   document.getElementById("toggle-layout-dash").addEventListener("click", () => selectMode("layout"));
