@@ -33,6 +33,7 @@ from affine import Affine
 from rasterio.features import rasterize
 from scipy import ndimage
 from shapely.geometry import Polygon
+from shapely.strtree import STRtree
 from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
 
@@ -528,6 +529,58 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
         p["fill_rank"] = int(np.ceil((i + 1) / len(main) * STRAGGLER_RANK_FLOOR))
     for j, p in enumerate(extras):
         p["fill_rank"] = STRAGGLER_RANK_FLOOR + int(np.ceil((j + 1) / len(extras) * (100 - STRAGGLER_RANK_FLOOR)))
+
+    # fill_order is the same sequence as an EXACT COUNT, 1..N, not a percentile.
+    # A percentile cannot express "the best 14 panels", and that is the question
+    # a real quote asks: an installer looks for an easy spot for a 6kW or 9kW
+    # system, finds the best place for an array that size, and quotes on it
+    # (Josh). Because the order comes from reverse erosion -- repeatedly strip
+    # the worst panel, then reverse -- the first N of it is already a compact
+    # block in the sunniest deep part of the roof, which is exactly the array
+    # such an installer would pick. So a target system size becomes
+    # "fill_order <= ceil(target_kW / panel_kW)", client-side, with no rebuild
+    # needed to change the targets.
+    for i, p in enumerate(main + extras):
+        p["fill_order"] = i + 1
+
+    _assign_array_membership(panels)
+    return panels
+
+
+ARRAY_TOUCH_TOL_M = 0.35   # panels this close are the same physical array (tile gaps are 4cm)
+
+
+def _assign_array_membership(panels):
+    """Writes array_id and array_size onto every panel: which contiguous block
+    of touching panels it belongs to, and how big that block is.
+
+    This is what lets the frontend express "clean arrays only, nothing under N
+    panels" as a filter, instead of it having to be a baked-in placement rule.
+    Both are per-building integers and cost one small field each in the tiles,
+    so the rules can be retuned without a three-hour rebuild."""
+    if not panels:
+        return panels
+    geoms = [p["geometry"] for p in panels]
+    tree = STRtree(geoms)
+    seen, gid = {}, 0
+    for i in range(len(geoms)):
+        if i in seen:
+            continue
+        gid += 1
+        stack, members = [i], []
+        seen[i] = gid
+        while stack:
+            k = stack.pop()
+            members.append(k)
+            probe = geoms[k].buffer(ARRAY_TOUCH_TOL_M)
+            for j in tree.query(probe):
+                j = int(j)
+                if j not in seen and probe.intersects(geoms[j]):
+                    seen[j] = gid
+                    stack.append(j)
+        for k in members:
+            panels[k]["array_id"] = gid
+            panels[k]["array_size"] = len(members)
     return panels
 
 

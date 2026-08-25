@@ -129,6 +129,16 @@ def main(area="pilot"):
                         "building_id": int(row.building_id),
                         "ac_kwh_year": round(y["ac_kwh_year"], 0),
                         "fill_rank": p["fill_rank"],
+                        # fill_order is the same sequence as an exact count, so
+                        # the frontend can ask for "the best 14 panels" (a 6kW
+                        # system) rather than a percentage, which is the way a
+                        # real quote is actually sized. array_size is how many
+                        # panels are in this panel's contiguous block, so
+                        # "clean arrays only, nothing under N" is a client-side
+                        # filter and can be retuned without a rebuild.
+                        "fill_order": p["fill_order"],
+                        "array_id": p["array_id"],
+                        "array_size": p["array_size"],
                     },
                 })
 

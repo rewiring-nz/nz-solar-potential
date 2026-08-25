@@ -49,6 +49,8 @@ MIN_EVIDENCE_PTS = 8        # fewer total returns than this under a panel = surv
 # to judge here at all -> keep. (7 Cedar Dr: a real roof at 2.0 pts/m2 total
 # had 63 of 69 fitted panels executed by absolute-count thresholds.)
 MAX_LOCAL_RMS = 0.28        # points under one 2m panel should fit their own plane this well
+BELOW_PLANE_TOLERANCE_M = 0.35  # returns further below the panel's own roof level than this are
+# not the roof -- see the lumpy test for the measurement that motivated it
 
 
 def panel_ok(poly, pc, dem, dem_transform_inv):
@@ -96,7 +98,29 @@ def panel_ok(poly, pc, dem, dem_transform_inv):
     # already implied by LAS building classification, which is per-return and
     # far more reliable here; a rooftop parking deck is an exclusion-list case,
     # not a height-rule case.
-    # local planarity: the points under one panel must fit their own plane
+    # Local planarity: the points under one panel must fit their own plane --
+    # but measured only against the ROOF SURFACE, not against everything the
+    # scanner saw through the gap at a roof edge.
+    #
+    # This test exists to catch a panel sitting on unmodelled structure: a
+    # chimney, a vent, plant. Structure is ABOVE the roof. Points BELOW it are
+    # the wall, the eave soffit, or the ground seen past the edge, and a panel
+    # near a roof edge picks them up routinely. Measured over three commercial
+    # roofs, of the panels this test rejected:
+    #     82% had their outliers mostly BELOW the roof plane  (edge artefact)
+    #     10% had them mostly ABOVE                            (real structure)
+    # and separately, 87% of all gate drops were edge panels. It was cutting
+    # 45 Camp St from 63 fitted panels to 31 -- a roof Josh reported as
+    # "sparsely populated even though plenty of extra space".
+    #
+    # Same physics guard obstruction_detection already applies to its own
+    # candidates: deviation on both sides is roof form, deviation above is an
+    # object. Drop the below-plane returns before fitting the local plane.
+    if len(pp) >= 6:
+        roof_ref = float(np.percentile(pp[:, 2], 75))
+        on_roof = pp[pp[:, 2] >= roof_ref - BELOW_PLANE_TOLERANCE_M]
+        if len(on_roof) >= 6:
+            pp = on_roof
     if len(pp) >= 6:
         x0, y0 = pp[:, 0].mean(), pp[:, 1].mean()
         A = np.column_stack([pp[:, 0] - x0, pp[:, 1] - y0, np.ones(len(pp))])

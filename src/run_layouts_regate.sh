@@ -19,6 +19,7 @@ $PY src/merge_regions.py && $PY src/bake_density_deciles.py &&
 $PY src/shrink_panels_for_tiles.py &&
 tippecanoe -o data/panel_layouts.pmtiles --force -l layout -Z13 -z16 \
   --drop-densest-as-needed --detect-shared-borders \
-  -y kind -y building_id -y fill_rank -y ac_kwh_year -y slope_deg -y aspect_deg \
+  -y kind -y building_id -y fill_rank -y fill_order -y array_id -y array_size \
+  -y ac_kwh_year -y slope_deg -y aspect_deg \
   -y poa_kwh_m2_yr -y panel_count data/panel_layouts.geojson &&
 echo REGATE_COMPLETE

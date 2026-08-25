@@ -20,6 +20,9 @@ import math
 import sys
 from pathlib import Path
 
+from shapely.geometry import shape
+from shapely.strtree import STRtree
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.panel_fitting import (MAIN_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION,
                                MINOR_ARRAY_MIN_PANELS, STRAGGLER_RANK_FLOOR)
@@ -89,8 +92,49 @@ def rerank_area(name):
                 math.ceil((j + 1) / len(extras) * (100 - STRAGGLER_RANK_FLOOR)))
         n_stragglers += len(extras)
 
+        # fill_order: the same sequence as an exact count, so the frontend can
+        # ask for "the best 14 panels" (a 6kW system) instead of a percentage.
+        for i, pf in enumerate(main + extras):
+            pf["properties"]["fill_order"] = i + 1
+
+        # array_id / array_size are recomputed HERE, not carried over from the
+        # fit, because gate_panels runs in between and deletes panels -- a block
+        # of 6 that loses 3 to the gate is a block of 3, and "clean arrays only"
+        # has to filter on what actually survived.
+        _assign_arrays(b["panels"])
+
     write_json_atomic(path, data)
     print(f"{name}: {len(buildings)} buildings re-ranked, {n_stragglers} straggler panels banded 81-100")
+
+
+ARRAY_TOUCH_TOL_M = 0.35
+
+
+def _assign_arrays(panel_features):
+    """Contiguous-block id and size over the SURVIVING panels of one building."""
+    if not panel_features:
+        return
+    geoms = [shape(pf["geometry"]) for pf in panel_features]
+    tree = STRtree(geoms)
+    seen, gid = {}, 0
+    for i in range(len(geoms)):
+        if i in seen:
+            continue
+        gid += 1
+        stack, members = [i], []
+        seen[i] = gid
+        while stack:
+            k = stack.pop()
+            members.append(k)
+            probe = geoms[k].buffer(ARRAY_TOUCH_TOL_M)
+            for j in tree.query(probe):
+                j = int(j)
+                if j not in seen and probe.intersects(geoms[j]):
+                    seen[j] = gid
+                    stack.append(j)
+        for k in members:
+            panel_features[k]["properties"]["array_id"] = gid
+            panel_features[k]["properties"]["array_size"] = len(members)
 
 
 def main():
