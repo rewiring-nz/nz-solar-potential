@@ -32,21 +32,31 @@ SOLAR = DATA_DIR / "solar_potential.geojson"
 SNAP = DATA_DIR / "build_snapshot_prev.json"
 
 
+# Which field actually reflects a rebuild matters, and getting it wrong makes
+# this tool worse than useless. fill_panels_100 / fill_kwh_100 are baked from
+# THIS run's panel_layouts by src/bake_density_deciles.py -- they are what the
+# map draws. panel_count / kwp come from the solar-model pass, which
+# run_layouts_regate.sh deliberately skips, so they can be many builds stale.
+# The first version of this script compared panel_count and cheerfully
+# reported "+0, no change" on a rebuild that had just removed 23,575 panels.
+PANELS, KWH, LEGACY_COUNT, ADDRESS = 0, 1, 2, 3
+
+
 def _read_current():
     d = json.loads(SOLAR.read_text())
     out = {}
     for f in d["features"]:
         p = f["properties"]
-        out[str(p["building_id"])] = [p.get("panel_count", 0), round(p.get("kwp", 0), 2),
-                                      p.get("fill_panels_100", 0), p.get("address", "")]
+        out[str(p["building_id"])] = [p.get("fill_panels_100", 0), p.get("fill_kwh_100", 0),
+                                      p.get("panel_count", 0), p.get("address", "")]
     return out
 
 
 def snapshot():
     cur = _read_current()
     SNAP.write_text(json.dumps(cur))
-    print(f"snapshot: {len(cur)} buildings, {sum(v[0] for v in cur.values()):,} panels, "
-          f"{sum(v[1] for v in cur.values()) / 1000:.1f} MWp -> {SNAP.name}")
+    print(f"snapshot: {len(cur)} buildings, {sum(v[PANELS] for v in cur.values()):,} placed panels, "
+          f"{sum(v[KWH] for v in cur.values()) / 1e6:.1f} GWh/yr -> {SNAP.name}")
 
 
 def compare(top=40, min_loss=5):
@@ -54,11 +64,26 @@ def compare(top=40, min_loss=5):
         raise SystemExit(f"no {SNAP.name} -- run with --snapshot before the rebuild")
     prev, cur = json.loads(SNAP.read_text()), _read_current()
 
-    p_tot, c_tot = sum(v[0] for v in prev.values()), sum(v[0] for v in cur.values())
-    p_kwp, c_kwp = sum(v[1] for v in prev.values()), sum(v[1] for v in cur.values())
-    print(f"buildings {len(prev):,} -> {len(cur):,}")
-    print(f"panels    {p_tot:,} -> {c_tot:,}  ({c_tot - p_tot:+,}, {100 * (c_tot - p_tot) / max(p_tot, 1):+.1f}%)")
-    print(f"capacity  {p_kwp / 1000:.1f} -> {c_kwp / 1000:.1f} MWp  ({(c_kwp - p_kwp) / 1000:+.1f})")
+    p_tot, c_tot = sum(v[PANELS] for v in prev.values()), sum(v[PANELS] for v in cur.values())
+    have_prev_kwh = all(v[KWH] is not None for v in prev.values())
+    p_kwh = sum(v[KWH] or 0 for v in prev.values())
+    c_kwh = sum(v[KWH] for v in cur.values())
+    print(f"buildings     {len(prev):,} -> {len(cur):,}")
+    print(f"placed panels {p_tot:,} -> {c_tot:,}  ({c_tot - p_tot:+,}, {100 * (c_tot - p_tot) / max(p_tot, 1):+.1f}%)")
+    if have_prev_kwh:
+        print(f"annual output {p_kwh / 1e6:.1f} -> {c_kwh / 1e6:.1f} GWh/yr  ({(c_kwh - p_kwh) / 1e6:+.1f})")
+    else:
+        print(f"annual output {c_kwh / 1e6:.1f} GWh/yr  (no comparable figure in this snapshot)")
+
+    # panel_count/kwp ride along from an older solar-model pass. When they
+    # drift far from the layouts, the choropleth and the building table are
+    # describing a build the map is no longer drawing.
+    legacy = sum(v[LEGACY_COUNT] for v in cur.values())
+    if legacy and abs(legacy - c_tot) > 0.02 * max(c_tot, 1):
+        print(f"\nNOTE: solar_potential's panel_count totals {legacy:,} against {c_tot:,} "
+              f"actually placed ({100 * (legacy - c_tot) / max(c_tot, 1):+.1f}%). Those fields "
+              f"(and kwp, which colours the choropleth) come from the solar-model pass and are "
+              f"stale until a full build re-runs it.")
 
     gone = [b for b in prev if b not in cur]
     new = [b for b in cur if b not in prev]
@@ -73,7 +98,7 @@ def compare(top=40, min_loss=5):
         p = prev.get(b)
         if p is None:
             continue
-        d = c[0] - p[0]
+        d = c[PANELS] - p[PANELS]
         if abs(d) >= min_loss:
             deltas.append((d, b, p, c))
     losses = sorted(d for d in deltas if d[0] < 0)
@@ -85,16 +110,16 @@ def compare(top=40, min_loss=5):
     for label, rows in (("LOST panels", losses), ("GAINED panels", gains)):
         print(f"\n{len(rows)} buildings {label} (>= {min_loss}); worst {min(top, len(rows))}:")
         for d, b, p, c in rows[:top]:
-            print(f"  {d:+5d}  {p[0]:4d} -> {c[0]:4d} panels, {p[1]:7.1f} -> {c[1]:7.1f} kWp  "
-                  f"#{b}  {c[3] or p[3]}")
+            print(f"  {d:+5d}  {p[PANELS]:4d} -> {c[PANELS]:4d} panels, "
+                  f"{c[KWH] / 1000:7.1f} MWh/yr now  #{b}  {c[ADDRESS] or p[ADDRESS]}")
 
-    wiped = [r for r in losses if r[3][0] == 0 and r[2][0] > 0]
+    wiped = [r for r in losses if r[3][PANELS] == 0 and r[2][PANELS] > 0]
     if wiped:
         print(f"\nWARNING: {len(wiped)} buildings went to ZERO panels having had some before. "
               f"That is the shape of every gate regression so far -- check these on the map "
               f"before deploying:")
         for d, b, p, c in wiped[:20]:
-            print(f"  #{b}  {p[0]} -> 0 panels  {p[3]}")
+            print(f"  #{b}  {p[PANELS]} -> 0 panels  {p[ADDRESS]}")
 
 
 # The 11 buildings from Josh's first bug doc (docs/bugdoc-2026-08-22.md).
@@ -125,8 +150,8 @@ def watchlist():
         if c is None:
             print(f"  #{bid}  MISSING from this build  -- {why}")
             continue
-        was = f"{p[0]:4d} panels / {p[1]:7.1f} kWp" if p else "  (no snapshot)   "
-        print(f"  #{bid}  {was}  ->  {c[0]:4d} panels / {c[1]:7.1f} kWp   {why}")
+        was = f"{p[PANELS]:4d} panels" if p else "(no snapshot)"
+        print(f"  #{bid}  {was}  ->  {c[PANELS]:4d} panels   {why}")
 
 
 def main():
