@@ -43,7 +43,7 @@ def fetch_addresses(bbox_nztm, api_key):
 
 
 def main(area="pilot"):
-    from src.region_build import area_paths
+    from src.region_build import area_paths, write_json_atomic
     load_dotenv()
     api_key = os.environ["LINZ_API_KEY"]
 
@@ -100,7 +100,7 @@ def main(area="pilot"):
         if len(idx) > 1:
             feat["properties"]["address_count"] = int(len(idx))
 
-    sp_path.write_text(json.dumps(sp))
+    write_json_atomic(sp_path, sp)
     print(f"contained={n_contained} nearest={n_nearest} unmatched={n_none}")
     print(f"Patched {sp_path}")
 

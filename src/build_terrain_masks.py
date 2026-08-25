@@ -31,9 +31,11 @@ import numpy as np
 import pandas as pd
 import pvlib
 import pyproj
+import rasterio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.terrain_horizon import compute_horizon_profile, horizon_angle_at
+from src.region_build import write_json_atomic
+from src.terrain_horizon import compute_horizon_profile_from_array, horizon_angle_at
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DEM = str(DATA_DIR / "dem_wide_mosaic.tif")
@@ -45,6 +47,12 @@ TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
 def main():
     sp_path = DATA_DIR / "solar_potential.geojson"
     sp = json.loads(sp_path.read_text())
+
+    # Fail loudly rather than quietly producing open-horizon masks for every
+    # building: without the DEM this script still "succeeds", writes a full
+    # tshade for each roof, and silently turns terrain shading into a no-op.
+    if not Path(DEM).exists():
+        raise SystemExit(f"missing {DEM} -- fetch the wide DEM mosaic first")
 
     # solar position series, one year, hourly (same convention as the model)
     loc = pvlib.location.Location(-45.03, 168.66, tz="Pacific/Auckland", altitude=310)
@@ -69,15 +77,24 @@ def main():
         feats.append(f)
     print(f"{len(feats)} buildings -> {len(cells)} horizon cells at {CELL_M}m")
 
+    # Read the 65MB mosaic ONCE. compute_horizon_profile() reopens and
+    # re-reads the whole raster per call, which across ~1.5k cells is the
+    # dominant cost of this script for no benefit -- terrain_horizon exposes
+    # the array-taking variant for exactly this reason.
+    with rasterio.open(DEM) as ds:
+        dem_band, dem_transform, dem_nodata = ds.read(1), ds.transform, ds.nodata
+
     done = 0
+    fallbacks = 0
     for cell, members in cells.items():
         cx, cy = cell[0] * CELL_M, cell[1] * CELL_M
         try:
-            prof = compute_horizon_profile(DEM, cx, cy)
+            prof = compute_horizon_profile_from_array(dem_band, dem_transform, dem_nodata, cx, cy)
             horiz = horizon_angle_at(prof, sun_az)
             visible = (sun_el > horiz) & (sun_el > 0)
         except Exception:
             visible = sun_el > 0  # outside DEM -- open horizon fallback
+            fallbacks += 1
         mask = ""
         for months in SEASONS.values():
             in_season = np.isin(month, months)
@@ -95,7 +112,12 @@ def main():
         if done % 250 == 0:
             print(f"  {done}/{len(cells)} cells")
 
-    sp_path.write_text(json.dumps(sp))
+    if fallbacks:
+        # A handful of edge cells is normal. Most/all of them means the DEM
+        # does not actually cover the build area and the masks are fiction.
+        print(f"  WARNING: {fallbacks}/{len(cells)} cells fell back to an open "
+              f"horizon (outside the DEM extent)")
+    write_json_atomic(sp_path, sp)
     print(f"Saved {sp_path} ({sp_path.stat().st_size / 1e6:.1f}MB) with tshade masks")
 
 

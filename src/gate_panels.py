@@ -34,7 +34,7 @@ from shapely.ops import transform as shp_transform
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.pointcloud_source import PointCloudSource
-from src.region_build import all_areas, area_paths
+from src.region_build import all_areas, area_paths, write_json_atomic
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
@@ -144,7 +144,7 @@ def gate_area(name, pc, dem, dem_inv):
             dropped[why] += 1
     n_dropped = sum(dropped.values())
     d["features"] = kept
-    path.write_text(json.dumps(d))
+    write_json_atomic(path, d)
     reasons = ", ".join(f"{k} {v}" for k, v in sorted(dropped.items())) or "none"
     msg = f"{name}: dropped {n_dropped} panels ({reasons})"
     if errors:

@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.panel_fitting import (MAIN_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION,
                                MINOR_ARRAY_MIN_PANELS, STRAGGLER_RANK_FLOOR)
-from src.region_build import all_areas, area_paths
+from src.region_build import all_areas, area_paths, write_json_atomic
 
 
 def point_in_ring(pt, ring):
@@ -89,7 +89,7 @@ def rerank_area(name):
                 math.ceil((j + 1) / len(extras) * (100 - STRAGGLER_RANK_FLOOR)))
         n_stragglers += len(extras)
 
-    path.write_text(json.dumps(data))
+    write_json_atomic(path, data)
     print(f"{name}: {len(buildings)} buildings re-ranked, {n_stragglers} straggler panels banded 81-100")
 
 

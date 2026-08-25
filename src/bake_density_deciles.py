@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.region_build import write_json_atomic
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DECILES = list(range(10, 101, 10))
@@ -47,9 +48,17 @@ def main():
             feat["properties"][f"fill_kwh_{d}"] = int(round(sum(k for _, k in kept)))
         if panels:
             matched += 1
-    sp_path.write_text(json.dumps(sp))
+    write_json_atomic(sp_path, sp)
     print(f"Baked deciles for {matched}/{len(sp['features'])} buildings "
           f"({sp_path.stat().st_size / 1e6:.1f}MB)")
+    # The join is by building_id across two independently written files. If it
+    # ever breaks (a type change, a stale merge), every decile bakes as 0 and
+    # the whole in-view estimate silently reads zero on a map that still looks
+    # correct. Say so here instead of shipping it.
+    if matched < 0.5 * len(sp["features"]):
+        print(f"  WARNING: only {matched} of {len(sp['features'])} buildings matched a "
+              f"layout by building_id -- expected most of them. Check that "
+              f"panel_layouts.geojson is the merged file for this build.")
 
 
 if __name__ == "__main__":

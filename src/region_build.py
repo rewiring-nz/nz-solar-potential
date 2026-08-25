@@ -17,6 +17,8 @@ raster outputs are disjoint across regions by construction and a final
 merge is a plain concatenation.
 """
 
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -28,6 +30,27 @@ import config
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 REGIONS_DIR = DATA_DIR / "regions"
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+
+
+def write_json_atomic(path, obj):
+    """Write JSON via a temp file + rename, never straight over the target.
+
+    Several pipeline stages REWRITE their own input in place (gate_panels,
+    rerank_layouts, shrink_panels_for_tiles, bake_density_deciles,
+    build_terrain_masks, add_addresses). A plain write_text truncates the
+    file first, so an interrupt -- a crash, a killed background run, a full
+    disk -- during a multi-hundred-MB dump leaves a truncated, unparseable
+    artifact and the stage's input is gone. os.replace is atomic on the same
+    filesystem, so the target is either the old file or the new one.
+    """
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(obj))
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def all_areas():

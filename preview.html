@@ -646,7 +646,7 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "24";
+const DATA_VERSION = "25";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 
@@ -1150,10 +1150,17 @@ map.on("load", async () => {
   let heatmapImages;
   try {
     const manifest = await (await fetch(`data/heatmaps/manifest.json?v=${DATA_VERSION}`)).json();
-    heatmapImages = manifest.map(m => ({ id: `heatmap-raster-${m.name}`, url: `${m.png}?v=${DATA_VERSION}`, coordinates: m.coordinates }));
+    heatmapImages = manifest.map(m => ({
+      id: `heatmap-raster-${m.name}`,
+      url: `${m.png}?v=${DATA_VERSION}`,
+      urlLod: m.png_lod ? `${m.png_lod}?v=${DATA_VERSION}` : null,
+      size: m.size, sizeLod: m.size_lod || m.size,
+      coordinates: m.coordinates
+    }));
   } catch (e) {
     const heatmapMeta = await (await fetch(`data/heatmap_raster.json?v=${DATA_VERSION}`)).json();
-    heatmapImages = [{ id: "heatmap-raster", url: `data/heatmap_raster.png?v=${DATA_VERSION}`, coordinates: heatmapMeta.coordinates }];
+    heatmapImages = [{ id: "heatmap-raster", url: `data/heatmap_raster.png?v=${DATA_VERSION}`,
+                       urlLod: null, size: null, sizeLod: null, coordinates: heatmapMeta.coordinates }];
   }
   // Heat rasters are attached ONLY while they intersect the viewport. A
   // MapLibre image source is not tiled: adding one uploads the entire PNG as
@@ -1162,31 +1169,79 @@ map.on("load", async () => {
   // badly at town scale. Attach/detach on movement instead -- you can only
   // ever look at a few regions at once.
   const HEATMAP_LAYERS = heatmapImages.map(m => m.id);
+  // Above this zoom a roof is a few pixels across and the 0.4m/px original
+  // earns its keep; below it, the overview copy (src/build_heatmap_lod.py,
+  // max 4096px) is indistinguishable and up to 15x cheaper.
+  const HEATMAP_DETAIL_ZOOM = 16.5;
+  // Hard ceiling on attached texture, in megapixels (x4 bytes for RGBA). The
+  // uncapped version attached 20 of 24 rasters at district zoom -- measured
+  // 4.1GB of texture for a view where a whole building is two pixels. When
+  // the budget binds, the rasters nearest the middle of the screen win.
+  const HEATMAP_BUDGET_MP = 220;
   const heatmapBounds = {};
   heatmapImages.forEach(m => {
     const lngs = m.coordinates.map(c => c[0]), lats = m.coordinates.map(c => c[1]);
     heatmapBounds[m.id] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
   });
-  const attached = new Set();
+  const attached = new Map();   // id -> the url currently uploaded for it
+  function detachHeatmap(id) {
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(`${id}-src`)) map.removeSource(`${id}-src`);
+    attached.delete(id);
+  }
   function syncHeatmapRasters() {
     const b = map.getBounds();
-    const pad = 0.01;  // keep neighbours warm so a short pan doesn't re-upload
-    const w = b.getWest() - pad, e = b.getEast() + pad, so = b.getSouth() - pad, n = b.getNorth() + pad;
-    heatmapImages.forEach(m => {
-      const [mw, ms, me, mn] = heatmapBounds[m.id];
-      const visible = mode === "heatmap" && !(me < w || mw > e || mn < so || ms > n);
-      if (visible && !attached.has(m.id)) {
-        map.addSource(`${m.id}-src`, { type: "image", url: m.url, coordinates: m.coordinates });
-        map.addLayer({
-          id: m.id, type: "raster", source: `${m.id}-src`,
-          paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }
-        }, "buildings-fill");
-        attached.add(m.id);
-      } else if (!visible && attached.has(m.id)) {
-        if (map.getLayer(m.id)) map.removeLayer(m.id);
-        if (map.getSource(`${m.id}-src`)) map.removeSource(`${m.id}-src`);
-        attached.delete(m.id);
+    // Keep neighbours warm so a short pan doesn't re-upload -- but PROPORTIONAL
+    // to the viewport, not a fixed 0.01 degrees. A fixed pad is ~1.1km, which
+    // at z17 is bigger than the whole viewport: it was pulling in six
+    // full-resolution regions to show one street.
+    const padX = (b.getEast() - b.getWest()) * 0.2, padY = (b.getNorth() - b.getSouth()) * 0.2;
+    const w = b.getWest() - padX, e = b.getEast() + padX,
+          so = b.getSouth() - padY, n = b.getNorth() + padY;
+    const detail = map.getZoom() >= HEATMAP_DETAIL_ZOOM;
+    const cx = (b.getWest() + b.getEast()) / 2, cy = (b.getSouth() + b.getNorth()) / 2;
+
+    const wanted = new Map();
+    if (mode === "heatmap") {
+      const candidates = heatmapImages
+        .filter(m => {
+          const [mw, ms, me, mn] = heatmapBounds[m.id];
+          return !(me < w || mw > e || mn < so || ms > n);
+        })
+        .map(m => {
+          const [mw, ms, me, mn] = heatmapBounds[m.id];
+          const dx = Math.max(mw - cx, 0, cx - me), dy = Math.max(ms - cy, 0, cy - mn);
+          return { m, dist: dx * dx + dy * dy };
+        })
+        .sort((a, b2) => a.dist - b2.dist);
+      let spent = 0;
+      for (const { m } of candidates) {
+        const size = detail ? m.size : m.sizeLod;
+        const mp = size ? size[0] * size[1] / 1e6 : 0;
+        // Always attach the nearest one even if it alone blows the budget --
+        // a blank heat map is worse than a heavy one.
+        if (wanted.size && spent + mp > HEATMAP_BUDGET_MP) continue;
+        spent += mp;
+        wanted.set(m.id, detail ? m.url : (m.urlLod || m.url));
       }
+    }
+
+    [...attached.keys()].forEach(id => {
+      // Re-upload only when the chosen resolution actually changed.
+      if (wanted.get(id) !== attached.get(id)) detachHeatmap(id);
+    });
+    heatmapImages.forEach(m => {
+      const url = wanted.get(m.id);
+      if (!url || attached.has(m.id)) return;
+      map.addSource(`${m.id}-src`, { type: "image", url, coordinates: m.coordinates });
+      map.addLayer({
+        id: m.id, type: "raster", source: `${m.id}-src`,
+        // Set at add time, not left to applyToggles: a layer added while in
+        // Panel Layout mode would otherwise flash over the panels.
+        layout: { visibility: mode === "heatmap" ? "visible" : "none" },
+        paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }
+      }, "buildings-fill");
+      attached.set(m.id, url);
     });
   }
   window.__syncHeatmapRasters = syncHeatmapRasters;
