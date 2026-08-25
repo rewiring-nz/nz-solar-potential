@@ -707,27 +707,22 @@ map.on("load", async () => {
   // Heat Map mode's "ceiling" estimate: ignores the actual fitted panel
   // layout entirely, just (resolved facet area) x (coverage %) x (panel
   // power density) -- a quick "what's the rough upper bound" number,
-  // recomputed client-side so the coverage slider is instant (no server
+  // computed client-side so the coverage slider is instant (no server
   // round-trip). panel_area_m2/panel_rated_power_w come from the same
   // assumptions block the popup shows, so this can't silently drift from
-  // what the rest of the page claims a panel is.
-  // Recomputed rather than fixed, so the advanced assumptions editor can
-  // rescale every displayed number live without a rebuild.
+  // what the rest of the page claims a panel is. See buildingEstimate().
   let panelDensityKw = assumptions.panel_rated_power_w / assumptions.panel_area_m2 / 1000;
   const ASSUMPTION_DEFAULTS = JSON.parse(JSON.stringify(assumptions));
 
-  function recomputeHeatmapEstimates() {
-    const fraction = coveragePct / 100;
-    data.features.forEach(f => {
-      const p = f.properties;
-      const kwpEst = (p.facet_area_m2 || 0) * fraction * panelDensityKw;
-      p.heatmap_kwp_estimate = Math.round(kwpEst * 10) / 10;
-      p.heatmap_kwh_year_estimate = Math.round(kwpEst * (p.avg_poa_kwh_m2 || 0)
-        * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100));
-    });
-    map.getSource("buildings").setData(data);
-  }
-  recomputeHeatmapEstimates();
+  // recomputeHeatmapEstimates() used to live here: it walked all 15,353
+  // features writing heatmap_kwp_estimate / heatmap_kwh_year_estimate onto
+  // them and then called setData(), which makes MapLibre re-parse and re-tile
+  // the WHOLE buildings source. It ran on every coverage-slider tick and every
+  // keystroke in the assumptions editor. Those two properties fed the
+  // per-building map labels, and those were removed at Josh's request -- so
+  // nothing had read either property for a while. Every number on screen is
+  // computed on demand from facet_area_m2 / avg_poa_kwh_m2 by
+  // buildingEstimate(), which is where the same arithmetic already lives.
 
   // Left-dashboard summary: same ceiling-estimate math as the map labels
   // (resolved area x coverage % x panel density), summed across whatever's
@@ -809,7 +804,6 @@ map.on("load", async () => {
       const s = document.getElementById("vslider");
       if (s) { s.value = pct; document.getElementById("vslider-value").textContent = pct + "%"; }
     }
-    recomputeHeatmapEstimates();
     recomputeInViewSummary();
     if (mode !== "layout" && selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
     const bp = document.getElementById("bldg-power");
@@ -1140,7 +1134,6 @@ map.on("load", async () => {
       el("a-eff-val").textContent = eff + "%";
       el("a-inv-val").textContent = assumptions.inverter_efficiency_pct + "%";
       el("a-loss-val").textContent = assumptions.system_derate_pct + "%";
-      recomputeHeatmapEstimates();
       recomputeInViewSummary();
       if (selectedPanelBuildingId !== -1) {
         updateFittedStats(selectedPanelBuildingId);
