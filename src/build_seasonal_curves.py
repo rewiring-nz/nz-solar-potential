@@ -9,9 +9,27 @@ of installed panels --
           with the same calibrated monthly factors the yield model uses.
 - "peak": the season's best clear-sky day (max daily clear-sky POA total),
           no cloud derate -- "a very sunny day in that season".
-Both share the pilot's terrain-horizon adjustment (direct beam zeroed when
-the sun sits behind mountains), reused straight off the SolarModel instance
-so these curves can never drift from the yield model's calibration.
+Terrain is deliberately NOT applied here. It used to be: the curves were
+built with the pilot's horizon profile, direct beam zeroed when the sun sat
+behind Queenstown's mountains. But the frontend then multiplies every curve
+by the building's own "tshade" mask (src/build_terrain_masks.py, one horizon
+per 150m cell), so terrain was being counted twice -- measured on 28 Rees St
+in winter, 16:00 read 0.010 kW/kWp where diffuse-only physics gives ~0.058:
+the curve had already collapsed 0.318 -> 0.058 from the horizon, then the
+mask's diffuse floor cut it another 82%. Roughly 5x too low in exactly the
+winter afternoon hours the chart exists to show.
+
+So the curve now carries only what varies with SLOPE AND ASPECT -- clear-sky
+POA, cloud-corrected -- and tshade carries everything that varies with
+LOCATION. One mechanism each, which is also what makes an Arrowtown valley
+roof differ from a downtown one rather than both inheriting the pilot's
+mountains.
+
+(The monthly cloud factors still come from the pilot's calibration, and that
+calibration used a horizon-adjusted denominator -- see
+solar_model.solarview_calibrated_monthly_factors. Applying them to an open
+clear sky is mildly inconsistent, worth far less than the 5x above, and is
+the same factor series the yield model uses.)
 
 kW per kWp = POA W/m2 / 1000 (STC ratio) x inverter efficiency x (1 - system
 losses) -- the same derates as facet_yield, so a building's curve scaled by
@@ -29,7 +47,7 @@ import pvlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
-from src.solar_model import SolarModel, horizon_angle_at, MONTH_NAMES
+from src.solar_model import SolarModel, MONTH_NAMES
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SLOPE_STEP = 10   # coarser than the yield lookup on purpose: curve SHAPE
@@ -44,12 +62,9 @@ def main():
     clearsky = location.get_clearsky(times, model="ineichen")
     solpos = location.get_solarposition(times)
 
+    # Open horizon on purpose -- see the module comment. Terrain belongs to
+    # tshade, per building, and applying it here as well double-counted it.
     dni_cs, ghi_cs, dhi_cs = clearsky["dni"], clearsky["ghi"], clearsky["dhi"]
-    if model.horizon_profile is not None:
-        horizon = horizon_angle_at(model.horizon_profile, solpos["azimuth"].to_numpy())
-        blocked = solpos["apparent_elevation"].to_numpy() < horizon
-        dni_cs = dni_cs.where(~blocked, 0.0)
-        ghi_cs = ghi_cs.where(~blocked, dhi_cs)
 
     month_abbr = dict(enumerate(MONTH_NAMES, start=1))
     factor = pd.Series(times.month.map(lambda m: model.monthly_factor[month_abbr[m]]), index=times)
