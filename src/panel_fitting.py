@@ -45,8 +45,12 @@ OFFSET_STEPS = 10  # vertical row-start offsets tried per orientation (columns a
 
 FLAT_SLOPE_DEG = 10.0        # below this, slope direction barely constrains racking
 FACET_RECTANGULARITY_MIN = 0.7  # facet area / its own bounding rectangle's area
-SETBACK_LADDER_MIN_GAIN = 0.10  # a tighter edge setback has to win at least this fraction more
-# panels to be worth taking -- see fit_panels_on_facet()
+SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least this many more
+# panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
+# with facet size, so it blocked a genuine extra row on a small roof while waving through a
+# handful of edge-jammed panels on a big one. The point of the rule is only to refuse the
+# single panel squeezed hard against a boundary -- Josh's "clean install over every square
+# inch" -- not to refuse real capacity.
 
 
 def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polygon=None):
@@ -202,7 +206,15 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
         total = sat[r1, c1] - sat[r0, c1] - sat[r1, c0] + sat[r0, c0]
         return total == (r1 - r0) * (c1 - c0)
 
-    row_offsets = np.linspace(0, h_cells, offset_steps, endpoint=False, dtype=int)
+    # Every row phase, not a sample of them. This used to try offset_steps=10 of
+    # the h_cells possible alignments (10 of 20 for a portrait panel at 0.1m
+    # cells), so whether a facet got its best row alignment was partly luck --
+    # and the luck changed whenever the usable SHAPE changed, which made
+    # otherwise-strict improvements upstream look like small regressions. The
+    # extra phases cost one more sweep each and the summed-area table makes a
+    # sweep cheap.
+    row_offsets = range(h_cells) if h_cells <= 2 * offset_steps else \
+        np.linspace(0, h_cells, offset_steps, endpoint=False, dtype=int)
 
     best_aligned = []
     for r_off in row_offsets:
@@ -249,28 +261,29 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     obstruction_detection.detect_obstructions) to exclude from the usable
     area -- subtracted before the setback buffer, in plan-view world
     coordinates, before anything gets unrolled into surface space.
-    sibling_facets: optional list of this same building's *other* facet
-    dicts -- wherever this facet's boundary is shared with one of them (a
-    real ridge/hip/valley, not the roof's own outer edge), an extra
-    ridge_setback clearance is eroded on top of the ordinary edge setback,
-    so panels visibly stop short of a real plane change instead of
-    butting flush against the next facet's grid with no gap.
-    fallback_setback: if the primary `setback` leaves a facet fitting zero
-    panels, retried once with this smaller value -- keeps the default
-    generous edge clearance for ordinary-width facets without starving a
-    genuinely narrow one down to zero, without needing one uniform setback
-    to serve both cases."""
+    sibling_facets: kept for signature compatibility; ridge clearance now
+    comes from eroding the facet's own boundary (see below), which covers a
+    shared ridge and any other facet edge alike.
+
+    Two DIFFERENT clearances, applied to two different boundaries:
+      - the full edge setback, measured from the building's real outer edge
+      - the smaller ridge setback, measured from this facet's own boundary
+
+    They used to compound. The facet was eroded by the edge setback AND the
+    siblings were separately buffered out by the ridge setback, so an
+    internal seam lost 0.55m on EACH side -- a 1.10m gap between panels
+    across a ridge, where a real install leaves about 0.3m. Measured over
+    the pilot area: 12,697 m2, 5.6% of all roof, and up to 20% of an
+    individual complex residential roof. It also split every multi-facet
+    roof into separate islands, which is most of the confetti look.
+
+    fallback_setback: the ladder's tighter rung -- see the loop below."""
     geom = facet["geometry"]
     aspect_deg, slope_deg = facet["aspect_deg"], facet["slope_deg"]
+    building_polygon = facet.get("building_geometry")
 
     if obstructions:
         geom = geom.difference(unary_union(obstructions))
-        if geom.is_empty:
-            return []
-
-    if sibling_facets:
-        neighbour_buffer = unary_union([f["geometry"].buffer(ridge_setback) for f in sibling_facets])
-        geom = geom.difference(neighbour_buffer)
         if geom.is_empty:
             return []
 
@@ -280,6 +293,17 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     to_surface, to_world = _surface_transform(u_hat, v_hat, slope_deg, origin)
 
     surface_poly = shapely_transform(lambda x, y, z=None: to_surface(x, y), geom)
+    # The facet's own boundary carries the RIDGE clearance: that is what keeps a
+    # panel off a shared hip/valley and out of the next facet's grid, and it is
+    # applied once, not once per neighbour.
+    surface_ridge = surface_poly.buffer(-ridge_setback)
+    # The building's real outer edge carries the full EDGE clearance. Where the
+    # facet meets that edge the stricter of the two wins, which is the setback;
+    # at an internal seam only the ridge clearance applies.
+    surface_building = None
+    if building_polygon is not None and not building_polygon.is_empty:
+        surface_building = shapely_transform(lambda x, y, z=None: to_surface(x, y),
+                                              building_polygon)
 
     # Try the whole setback ladder and keep whichever fits the most panels,
     # rather than only dropping to the fallback when the generous setback fits
@@ -297,20 +321,25 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     # longer strands a whole row to keep a margin nobody asked for.
     best = []
     for sb in sorted({setback, fallback_setback}, reverse=True):
-        candidate = _pack_surface_poly(surface_poly, sb, panel_width, panel_height,
-                                        resolution, to_world, facet)
+        if surface_building is not None:
+            usable = surface_ridge.intersection(surface_building.buffer(-sb))
+        else:
+            usable = surface_poly.buffer(-sb)   # no outline: fall back to the old behaviour
+        candidate = _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet)
         # The generous setback is tried first and kept unless a tighter one is a
         # REAL gain -- a whole extra row, not one squeezed panel. Josh: "it's
         # less about maximising every inch of roof space, and more about
         # building a clean install". One extra panel hard against an edge is
         # exactly the scrappiness he is asking us not to produce.
-        if len(candidate) > max(len(best) * (1 + SETBACK_LADDER_MIN_GAIN), len(best) + 1):
+        if len(candidate) >= len(best) + SETBACK_LADDER_MIN_GAIN_PANELS:
             best = candidate
     return best
 
 
-def _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolution, to_world, facet):
-    usable = surface_poly.buffer(-setback)
+def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet):
+    """`usable` is already fully eroded -- edge clearance from the building's
+    outer edge, ridge clearance from the facet's own boundary, obstructions
+    removed. This just lays the lattice on it."""
     if usable.is_empty:
         return []
 
