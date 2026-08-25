@@ -269,33 +269,43 @@ def _pack_surface_poly(surface_poly, setback, panel_width, panel_height, resolut
     if usable.is_empty:
         return []
 
-    parts = list(usable.geoms) if usable.geom_type == "MultiPolygon" else [usable]
+    min_part_area = min(panel_width, panel_height) * max(panel_width, panel_height) * 0.9
+    all_parts = list(usable.geoms) if usable.geom_type == "MultiPolygon" else [usable]
+    parts = [p for p in all_parts if p.area >= min_part_area]
+    if not parts:
+        return []
+
+    # ONE grid for the whole facet, never one grid per disconnected piece.
+    # Packing each piece separately gave every piece its own grid origin AND its
+    # own independent choice of portrait/landscape, so a roof split in two by a
+    # small vent came out as one tidy row and one broken, offset row at a
+    # different orientation. Josh reported exactly that ("why can't you have a
+    # consistent and clean two rows here, rather than one consistent row and
+    # then another one broken up"), and it is why a 3.3 m2 obstruction could
+    # wreck a 90 m2 layout. A single grid spans the exclusion: rows stay
+    # collinear across it and on both sides of it, which is how a real install
+    # is racked.
+    u_min, v_min, u_max, v_max = unary_union(parts).bounds
+    cols = max(1, int(np.ceil((u_max - u_min) / resolution)))
+    rows = max(1, int(np.ceil((v_max - v_min) / resolution)))
+    transform = Affine(resolution, 0, u_min, 0, resolution, v_min)
+    occupancy = rasterize([(p, 1) for p in parts], out_shape=(rows, cols), transform=transform,
+                           fill=0, dtype=np.uint8).astype(bool)
+    # Distance (metres) from each usable cell to the nearest excluded one (an obstruction,
+    # a ridge/edge setback, the facet boundary) -- used below as a per-panel "confidence"
+    # score for the density slider: a panel comfortably in the middle of a big clean area
+    # scores higher than one hugging right up against an exclusion zone.
+    clearance = ndimage.distance_transform_edt(occupancy) * resolution
+
+    candidates = []
+    for w, h in [(panel_width, panel_height), (panel_height, panel_width)]:
+        result = _pack_orientation(occupancy, resolution, w, h)
+        if result:
+            placed_o, wc, hc = result
+            candidates.append((placed_o, wc, hc))
+
     panels = []
-
-    for part in parts:
-        if part.area < min(panel_width, panel_height) * max(panel_width, panel_height) * 0.9:
-            continue
-        u_min, v_min, u_max, v_max = part.bounds
-        cols = max(1, int(np.ceil((u_max - u_min) / resolution)))
-        rows = max(1, int(np.ceil((v_max - v_min) / resolution)))
-        transform = Affine(resolution, 0, u_min, 0, resolution, v_min)
-        occupancy = rasterize([(part, 1)], out_shape=(rows, cols), transform=transform,
-                               fill=0, dtype=np.uint8).astype(bool)
-        # Distance (metres) from each usable cell to the nearest excluded one (an obstruction,
-        # a ridge/edge setback, the facet boundary) -- used below as a per-panel "confidence"
-        # score for the density slider: a panel comfortably in the middle of a big clean area
-        # scores higher than one hugging right up against an exclusion zone.
-        clearance = ndimage.distance_transform_edt(occupancy) * resolution
-
-        candidates = []
-        for w, h in [(panel_width, panel_height), (panel_height, panel_width)]:
-            result = _pack_orientation(occupancy, resolution, w, h)
-            if result:
-                placed, w_cells, h_cells = result
-                candidates.append((placed, w_cells, h_cells))
-
-        if not candidates:
-            continue
+    if candidates:
         placed, w_cells, h_cells = max(candidates, key=lambda c: len(c[0]))
 
         for r0, c0, r1, c1 in placed:

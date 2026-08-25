@@ -86,7 +86,7 @@ SATURATION_LOCAL_STD_MAX = 4.0  # confirmed directly on a real building (#473561
 SATURATION_WINDOW_PX = 7  # local texture window for the saturation check, ~0.7m at this imagery's
 # 0.1m/px resolution -- wide enough to distinguish real roofing texture from a flat glare patch,
 # narrow enough not to blur across a genuine small light-coloured feature's own edge
-BLOB_BUFFER_M = 0.4  # each detected blob is expanded by this much before being kept -- direct testing
+BLOB_BUFFER_M = 0.25  # each detected blob is expanded by this much before being kept -- direct testing
 # confirmed detection reliably finds an object's edge/transition ring but not its full uniform interior, so
 # a plain outline of *detected pixels* under-covers the real object; buffering outward trades some excess
 # margin (this module's own stated conservative direction) for reliably covering the whole real object
@@ -236,7 +236,7 @@ HEIGHT_MAX_BLOB_AREA_M2 = 20.0  # absolute cap, not just MAX_BLOB_AREA_FRACTION 
 # like a discrete rooftop object -- that's a segmentation-quality symptom, not an obstruction, and
 # flagging it would silently write off a fifth of a roof's real usable area. 20m2 comfortably
 # covers a large single real object (a big chiller/tank) while rejecting a mis-merged sub-facet.
-HEIGHT_BLOB_BUFFER_M = 0.3  # smaller than the colour detector's -- unlike a colour transition
+HEIGHT_BLOB_BUFFER_M = 0.15  # smaller than the colour detector's -- unlike a colour transition
 # ring, a height anomaly is detected across an object's whole footprint (every point on top of
 # it has a large residual, not just its edge), so there's much less real coverage to make up
 
@@ -258,6 +258,12 @@ HEIGHT_STRONG_SPREAD_M = 0.3
 HEIGHT_STRONG_POINT_RADIUS_M = 0.5  # per-point footprint radius for strong clusters (see below)
 # -- roughly the LiDAR point spacing on equipment, so one object's points merge into one shape
 # while gaps between separate objects survive as usable lanes
+OBSTRUCTION_TRIM_M = 0.2  # ...and then pull that merged shape back in by this much. The radius
+# above exists for CONNECTIVITY (one duct run = one shape, not a string of beads), but it also
+# leaves a 0.5m skirt around the real object: a single flagged point became a 0.79m2 exclusion,
+# roughly 9x a small vent. Josh, on 35 Gorge Rd: "some obstructions getting drawn larger than
+# they are which is interrupting what could otherwise be a clean array". Merge wide, then hug.
+# Fragmenting into several smaller obstructions here is fine and usually more accurate.
 HEIGHT_STRONG_MIN_PART_AREA_M2 = 0.4  # a strong-footprint fragment smaller than this is a lone
 # stray point, not equipment worth carving a panel exclusion around
 HEIGHT_STRONG_PLANAR_RMS_M = 0.12  # a large strong-footprint part whose own points fit their own
@@ -367,6 +373,9 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             # hug what the LiDAR actually saw and leave the lanes usable.
             member_pts3d = pts[flagged][member_idx]
             footprint = unary_union([Point(p).buffer(HEIGHT_STRONG_POINT_RADIUS_M) for p in fpts[member_idx]])
+            trimmed = footprint.buffer(-OBSTRUCTION_TRIM_M)
+            if not trimmed.is_empty:
+                footprint = trimmed   # keep the untrimmed shape only if trimming erased it entirely
             parts = list(footprint.geoms) if footprint.geom_type == "MultiPolygon" else [footprint]
             plane_a, plane_b, plane_c = plane
             for part in parts:
