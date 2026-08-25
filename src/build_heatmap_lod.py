@@ -42,8 +42,11 @@ LOD_DIR = HEATMAPS_DIR / "lod"
 MAX_DIM = 4096
 
 
-def main():
-    force = "--force" in sys.argv[1:]
+def main(force=None):
+    # Callable as a library (src/merge_regions.py runs it right after it
+    # rewrites the manifest), so don't read argv unless nobody said.
+    if force is None:
+        force = "--force" in sys.argv[1:]
     manifest_path = HEATMAPS_DIR / "manifest.json"
     if not manifest_path.exists():
         raise SystemExit(f"missing {manifest_path} -- run src/merge_regions.py first")
