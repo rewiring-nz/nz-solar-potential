@@ -17,6 +17,7 @@ Usage:
     # before the rebuild's merge overwrites data/solar_potential.geojson
     python src/compare_builds.py --snapshot
     # ...rebuild...
+    python src/compare_builds.py --watchlist   # the bug-doc buildings by name
     python src/compare_builds.py [--top 40] [--min-loss 5]
 
 --snapshot writes data/build_snapshot_prev.json (gitignored, ~0.7MB).
@@ -96,10 +97,44 @@ def compare(top=40, min_loss=5):
             print(f"  #{b}  {p[0]} -> 0 panels  {p[3]}")
 
 
+# The 11 buildings from Josh's first bug doc (docs/bugdoc-2026-08-22.md).
+# Every rebuild should be checked against these by name, not just in the
+# aggregate -- they are the cases that defined what "wrong" looks like here.
+WATCHLIST = {
+    5370339: "7 Duke St (curved/parapet commercial)",
+    4735316: "101/8 Duke St (whole roof was one obstruction)",
+    4735237: "24 Beach St (most of roof obstruction)",
+    4734769: "28 Rees St (whole roof obstruction, 0 panels)",
+    4726050: "22 Earl St (whole complex obstruction)",
+    5370360: "17 Marine Pde (panels OVER real obstructions)",
+    5370328: "9 Marine Pde (large flat section all obstruction)",
+    4725584: "32 Frankton Rd (most of complex obstruction)",
+    5372566: "19 Camp St (curved fan roof)",
+    4750979: "9 Leeds Ln (panels overlap ridges/hips)",
+    4750998: "10B Belfast Tce (roof levels not split)",
+}
+
+
+def watchlist():
+    prev = json.loads(SNAP.read_text()) if SNAP.exists() else {}
+    cur = _read_current()
+    print("bug-doc watchlist (docs/bugdoc-2026-08-22.md):")
+    for bid, why in WATCHLIST.items():
+        c = cur.get(str(bid))
+        p = prev.get(str(bid))
+        if c is None:
+            print(f"  #{bid}  MISSING from this build  -- {why}")
+            continue
+        was = f"{p[0]:4d} panels / {p[1]:7.1f} kWp" if p else "  (no snapshot)   "
+        print(f"  #{bid}  {was}  ->  {c[0]:4d} panels / {c[1]:7.1f} kWp   {why}")
+
+
 def main():
     argv = sys.argv[1:]
     if "--snapshot" in argv:
         return snapshot()
+    if "--watchlist" in argv:
+        return watchlist()
     top = int(argv[argv.index("--top") + 1]) if "--top" in argv else 40
     min_loss = int(argv[argv.index("--min-loss") + 1]) if "--min-loss" in argv else 5
     compare(top=top, min_loss=min_loss)
