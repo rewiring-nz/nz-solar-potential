@@ -73,8 +73,20 @@ def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polyg
     # hull of a segmented flat roof). A clean rectangular facet already
     # agrees with the building and keeps its own edges; a pitched roof always
     # does, since its eave/ridge lines are the correct reference.
+    # The slope test that used to gate this is gone. It only allowed the
+    # building-outline fallback below FLAT_SLOPE_DEG, on the theory that a
+    # pitched facet always has trustworthy eave/ridge lines. It does not: a
+    # BLOBBY facet's minimum rotated rectangle is an unreliable axis estimate
+    # at any pitch, and two examples from Josh show it plainly -- 26 Ballarat
+    # St's bad facet sits at 12.0 deg (rectangularity 0.63) and 18 Ballarat
+    # St's at 29.1 deg (rectangularity 0.44, its axis running 41.9 deg against
+    # the building's own 132.3 deg, a 90-degree cross-grain block). On 111
+    # Hallenstein St one plane of a roof is racked correctly and the other,
+    # same roof, is skewed. Blobbiness is the right test; slope was never part
+    # of it. A clean facet still keeps its own edges, which is what the
+    # rectangularity check protects.
     reference = facet_polygon
-    if building_polygon is not None and slope_deg is not None and slope_deg < FLAT_SLOPE_DEG:
+    if building_polygon is not None:
         try:
             rect = facet_polygon.minimum_rotated_rectangle.area
             blobby = rect > 0 and (facet_polygon.area / rect) < FACET_RECTANGULARITY_MIN

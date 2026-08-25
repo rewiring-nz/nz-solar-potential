@@ -19,18 +19,15 @@ import geopandas as gpd
 import numpy as np
 import pyproj
 import rasterio
-from shapely.geometry import shape
-from shapely.ops import transform as shp_transform, unary_union
+from shapely.ops import unary_union
 
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import config
 from src.region_build import all_areas, area_paths
 from src.roof_segmentation import segment_building_best
 from src.pointcloud_source import PointCloudSource
 from src.obstruction_detection import detect_obstructions_combined
 from src.panel_fitting import fit_panels_on_facet
-from src.building_shading import building_shading_factor
 from src.solar_model import SolarModel
 
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
@@ -78,10 +75,6 @@ def refit(building_id, shipped_text=None, area=None):
 
     total, per_facet = 0, []
     for f in facets:
-        c = f["geometry"].centroid
-        sf = building_shading_factor(ctx["dsm_band"], ctx["dsm"].transform, ctx["dsm"].nodata,
-                                      c.x, c.y, ctx["model"].hourly, own_geom=f["geometry"],
-                                      terrain_horizon_profile=ctx["model"].horizon_profile)
         plane = (f["plane_a"], f["plane_b"], f["plane_c"])
         obst = detect_obstructions_combined(ctx["img"], ctx["pc"], f["geometry"], plane)
         sibs = [o for o in facets if o is not f]
