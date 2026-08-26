@@ -1561,12 +1561,12 @@ map.on("load", async () => {
     // falls as the system grows. The old fixed-percentage model did the
     // opposite -- every extra panel earned the retail price -- which is why
     // big roofs on small houses looked implausibly good.
-    home_daytime_kw: 1.2,   // average daytime draw of a house (Josh's figure)
+    home_daytime_kw: 1.5,   // average daytime draw of a house (Josh's figure)
     biz_daytime_kw: 6.0,    // weekday-daytime business, ~49% of biz_use_kwh
     profile: "home_typ",
-    // Hours a day the daytime load actually meets useful sun. 1.2kW x 6.7h is
-    // ~8kWh/day, the figure the household default is anchored on. Not 12: the
-    // load only offsets generation while there is sun on the roof.
+    // Hours a day the daytime load actually meets useful sun. 1.5kW x 6.7h is
+    // ~10kWh/day. Not 12: the load only offsets generation while there is sun
+    // on the roof, so the hours are daylight hours minus the shoulders.
     daytime_hours: 6.7,
     // Annual electricity use on site. This is not decoration: self-consumption
     // is capped by it. A house cannot use 30% of a modelled 48kW system's
@@ -1584,7 +1584,7 @@ map.on("load", async () => {
   // so it is carried as a larger effective daytime load.
   const SELF_PROFILES = [
     { id: "home_out",   label: "Home — out on weekdays",       kw: 0.8 },
-    { id: "home_typ",   label: "Home — typical mix",           kw: 1.2 },
+    { id: "home_typ",   label: "Home — typical mix",           kw: 1.5 },
     { id: "home_in",    label: "Home — someone there daytime", kw: 2.0 },
     { id: "home_batt",  label: "Home — with a battery",        kw: 3.5 },
     { id: "business",   label: "Business — weekday daytime",   kw: 6.0 },
@@ -1882,7 +1882,8 @@ map.on("load", async () => {
   // once decoded to RGBA) attaching them all at startup made pan/zoom stutter
   // badly at town scale. Attach/detach on movement instead -- you can only
   // ever look at a few regions at once.
-  const HEATMAP_LAYERS = heatmapImages.map(m => m.id);
+  const HEATMAP_OPACITY = 0.78;
+  const heatmapById = Object.fromEntries(heatmapImages.map(m => [m.id, m]));
   // Above this zoom a roof is a few pixels across and the 0.4m/px original
   // earns its keep; below it, the overview copy (src/build_heatmap_lod.py,
   // max 4096px) is indistinguishable and up to 15x cheaper.
@@ -1902,11 +1903,76 @@ map.on("load", async () => {
     const lngs = m.coordinates.map(c => c[0]), lats = m.coordinates.map(c => c[1]);
     heatmapBounds[m.id] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
   });
-  const attached = new Map();   // id -> the url currently uploaded for it
+  // id -> { url, layer, src } for what is on screen, and separately for a
+  // replacement still decoding. Layer ids carry a slot number because during a
+  // resolution swap BOTH exist for a moment, and MapLibre ids must be unique.
+  const attached = new Map();
+  const pending = new Map();
+  let slotSeq = 0;
+  function removeSlot(rec) {
+    if (!rec) return;
+    if (map.getLayer(rec.layer)) map.removeLayer(rec.layer);
+    if (map.getSource(rec.src)) map.removeSource(rec.src);
+  }
+  function cancelPending(id) { removeSlot(pending.get(id)); pending.delete(id); }
   function detachHeatmap(id) {
-    if (map.getLayer(id)) map.removeLayer(id);
-    if (map.getSource(`${id}-src`)) map.removeSource(`${id}-src`);
+    cancelPending(id);
+    removeSlot(attached.get(id));
     attached.delete(id);
+  }
+  // MapLibre gives no promise for "this image source has an image now", and
+  // the whole point here is not to remove anything until it does.
+  function whenSourceReady(srcId, done) {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      map.off("sourcedata", onData);
+      clearTimeout(timer);
+      done();
+    };
+    const onData = e => {
+      if (e.sourceId === srcId && map.getSource(srcId) && map.isSourceLoaded(srcId)) finish();
+    };
+    map.on("sourcedata", onData);
+    // A raster whose PNG never arrives must not strand an invisible layer on
+    // top of the visible one forever -- give up and swap anyway.
+    const timer = setTimeout(finish, 6000);
+    if (map.getSource(srcId) && map.isSourceLoaded(srcId)) finish();
+  }
+  // Josh: "the heat map flashes off and on when zooming". Crossing the
+  // detail-zoom threshold used to removeLayer/removeSource and then addSource
+  // the other resolution -- and an image source fetches and decodes its PNG
+  // asynchronously, so for those frames there was simply nothing to draw.
+  // Now the replacement is uploaded UNDERNEATH the outgoing one at zero
+  // opacity (stacking two 0.78 rasters would pulse darker instead of blink)
+  // and the old one is dropped in the same frame the new one can draw.
+  function attachHeatmap(m, url) {
+    const cur = attached.get(m.id);
+    if (cur && cur.url === url) return;
+    if (pending.has(m.id)) return;   // a swap is already in flight for this one
+    const n = ++slotSeq;
+    const rec = { url, layer: `${m.id}#${n}`, src: `${m.id}#${n}-src` };
+    map.addSource(rec.src, { type: "image", url, coordinates: m.coordinates });
+    map.addLayer({
+      id: rec.layer, type: "raster", source: rec.src,
+      // Set at add time, not left to applyToggles: a layer added while in
+      // Panel Layout mode would otherwise flash over the panels.
+      layout: { visibility: mode === "heatmap" ? "visible" : "none" },
+      paint: { "raster-opacity": cur ? 0 : HEATMAP_OPACITY, "raster-resampling": "linear" }
+    }, cur ? cur.layer : "buildings-fill");
+    if (!cur) { attached.set(m.id, rec); return; }
+    pending.set(m.id, rec);
+    whenSourceReady(rec.src, () => {
+      if (pending.get(m.id) !== rec) return;   // superseded or cancelled
+      pending.delete(m.id);
+      if (!map.getLayer(rec.layer)) return;
+      map.setPaintProperty(rec.layer, "raster-opacity", HEATMAP_OPACITY);
+      removeSlot(attached.get(m.id));
+      attached.set(m.id, rec);
+      // The view may have moved on while that PNG was decoding.
+      syncHeatmapRasters();
+    });
   }
   function syncHeatmapRasters() {
     const b = map.getBounds();
@@ -1949,25 +2015,23 @@ map.on("load", async () => {
     }
 
     [...attached.keys()].forEach(id => {
-      // Re-upload only when the chosen resolution actually changed.
-      if (wanted.get(id) !== attached.get(id)) detachHeatmap(id);
+      const url = wanted.get(id);
+      // Out of view or priced out of the budget: this one really does go.
+      if (!url) { detachHeatmap(id); return; }
+      // Still wanted, different resolution -- swap it without a gap.
+      if (url !== attached.get(id).url) attachHeatmap(heatmapById[id], url);
     });
     heatmapImages.forEach(m => {
       const url = wanted.get(m.id);
-      if (!url || attached.has(m.id)) return;
-      map.addSource(`${m.id}-src`, { type: "image", url, coordinates: m.coordinates });
-      map.addLayer({
-        id: m.id, type: "raster", source: `${m.id}-src`,
-        // Set at add time, not left to applyToggles: a layer added while in
-        // Panel Layout mode would otherwise flash over the panels.
-        layout: { visibility: mode === "heatmap" ? "visible" : "none" },
-        paint: { "raster-opacity": 0.78, "raster-resampling": "linear" }
-      }, "buildings-fill");
-      attached.set(m.id, url);
+      if (url && !attached.has(m.id)) attachHeatmap(m, url);
     });
   }
   window.__syncHeatmapRasters = syncHeatmapRasters;
-  window.__heatmapLayers = HEATMAP_LAYERS;  // applyToggles (defined earlier, top-level) reads this
+  // Live, not a fixed list: slot ids change on every resolution swap, and
+  // applyToggles (defined earlier, top-level) needs whatever exists right now.
+  Object.defineProperty(window, "__heatmapLayers", {
+    get: () => [...attached.values(), ...pending.values()].map(r => r.layer)
+  });
   syncHeatmapRasters();
 
   // Panel layouts come as vector tiles (PMTiles, ~24MB for all of
