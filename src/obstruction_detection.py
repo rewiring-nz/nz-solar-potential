@@ -623,7 +623,15 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
         sample_geom = facet_geom.buffer(-boundary_erode_m)
         if sample_geom.geom_type == "MultiPolygon":
             sample_geom = max(sample_geom.geoms, key=lambda p: p.area)
-        contrast = _local_contrast_map(imagery_ds, sample_geom) if sample_geom.geom_type == "Polygon" else None
+        # is_empty as well as the type check: eroding a thin facet leaves an
+        # EMPTY Polygon, whose geom_type is still "Polygon", and rasterio then
+        # fails computing bounds of a geometry with no coordinates. The path
+        # above already guards this; this one did not, and reconstruction --
+        # which produces more slender facets -- crashed a whole area's build on
+        # the first roof that hit it.
+        contrast = (_local_contrast_map(imagery_ds, sample_geom)
+                    if sample_geom.geom_type == "Polygon" and not sample_geom.is_empty
+                    else None)
         color_union = unary_union(color_obs) if color_obs else None
         for h in elongated:
             if color_union is not None and h.intersects(color_union):

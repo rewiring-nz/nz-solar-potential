@@ -734,7 +734,7 @@ const SELECTED_NONE = ["==", ["get", "building_id"], -1];
 // with no per-frame work. The soft edge is a blurred line following the same
 // ring, offset outward, so the ramp lives OUTSIDE the building and the roof
 // itself stays completely clear.
-const FOCUS_DIM_OPACITY = 0.30;
+const FOCUS_DIM_OPACITY = 0.48;   // 0.30 first, too weak to separate the roof (Josh)
 const FOCUS_FADE_MS = 420;
 const FOCUS_GAP_M = 2.5;      // clear margin before the ramp starts
 const FOCUS_RAMP_PX = 26;     // width of the blurred edge band
