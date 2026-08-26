@@ -715,12 +715,90 @@ let selectedPanelBuildingId = -1;
 // avoids toggling layer visibility (which would fight applyToggles).
 const SELECTED_NONE = ["==", ["get", "building_id"], -1];
 
-function highlightSelectedBuilding(buildingId) {
+// --- Focus spotlight -------------------------------------------------------
+// Josh: darken everything except the clicked building, "a quick gradient at
+// the edge to go from completely visible building at the outline, to then a
+// quick gradient, to 30% opacity overlay for the rest of the map", fading in
+// rather than snapping.
+//
+// Built as ONE world-covering polygon with the building as an interior ring,
+// rather than a DOM/SVG overlay: a hole in a GeoJSON polygon is reprojected by
+// the map itself, so it stays glued to the roof through pan, zoom and rotate
+// with no per-frame work. The soft edge is a blurred line following the same
+// ring, offset outward, so the ramp lives OUTSIDE the building and the roof
+// itself stays completely clear.
+const FOCUS_DIM_OPACITY = 0.30;
+const FOCUS_FADE_MS = 420;
+const FOCUS_GAP_M = 2.5;      // clear margin before the ramp starts
+const FOCUS_RAMP_PX = 26;     // width of the blurred edge band
+
+function ringOutward(ring, metres) {
+  // Offset each vertex along the average of its two adjacent edge normals, in
+  // a locally metric space (longitude compressed by cos(lat)). Expanding from
+  // the centroid instead would misplace the edge badly on L-shaped footprints.
+  if (!ring || ring.length < 4) return ring;
+  const lat0 = ring[0][1], kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 111132;
+  const pts = ring.slice(0, -1).map(c => [c[0] * kx, c[1] * ky]);
+  const n = pts.length;
+  let area2 = 0;
+  for (let i = 0; i < n; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % n];
+    area2 += x1 * y2 - x2 * y1;
+  }
+  const sign = area2 >= 0 ? 1 : -1;   // outward normal flips with winding
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[(i - 1 + n) % n], v = pts[i], q = pts[(i + 1) % n];
+    const e1 = [v[0] - p[0], v[1] - p[1]], e2 = [q[0] - v[0], q[1] - v[1]];
+    const l1 = Math.hypot(...e1) || 1, l2 = Math.hypot(...e2) || 1;
+    let nx = (e1[1] / l1 + e2[1] / l2) * sign;
+    let ny = (-e1[0] / l1 - e2[0] / l2) * sign;
+    const nl = Math.hypot(nx, ny) || 1;
+    out.push([(v[0] + (nx / nl) * metres) / kx, (v[1] + (ny / nl) * metres) / ky]);
+  }
+  out.push(out[0]);
+  return out;
+}
+
+function focusRings(geom) {
+  if (!geom) return [];
+  const polys = geom.type === "MultiPolygon" ? geom.coordinates : [geom.coordinates];
+  return polys.map(poly => ringOutward(poly[0], FOCUS_GAP_M)).filter(Boolean);
+}
+
+function setFocusMask(geom) {
+  const src = map.getSource && map.getSource("focus-mask");
+  const edge = map.getSource && map.getSource("focus-edge");
+  if (!src || !edge) return;
+  const rings = focusRings(geom);
+  if (!rings.length) {
+    src.setData({ type: "FeatureCollection", features: [] });
+    edge.setData({ type: "FeatureCollection", features: [] });
+    if (map.getLayer("focus-dim")) map.setPaintProperty("focus-dim", "fill-opacity", 0);
+    if (map.getLayer("focus-ramp")) map.setPaintProperty("focus-ramp", "line-opacity", 0);
+    return;
+  }
+  // World ring wound the opposite way to the holes, so the holes read as holes.
+  const world = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+  src.setData({ type: "Feature", properties: {},
+                geometry: { type: "Polygon", coordinates: [world, ...rings] } });
+  edge.setData({ type: "FeatureCollection", features: rings.map(r => (
+    { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: r } })) });
+  // Set the target straight away, NOT inside requestAnimationFrame. The paint
+  // transition already animates up from the current 0, so the rAF bought
+  // nothing -- and it silently broke the whole effect whenever rAF is
+  // suspended, which is any background tab (and how this was caught).
+  if (map.getLayer("focus-dim")) map.setPaintProperty("focus-dim", "fill-opacity", FOCUS_DIM_OPACITY);
+  if (map.getLayer("focus-ramp")) map.setPaintProperty("focus-ramp", "line-opacity", FOCUS_DIM_OPACITY);
+}
+
+function highlightSelectedBuilding(buildingId, geom) {
   ["buildings-selected-halo", "buildings-selected"].forEach(id => {
     if (!map.getLayer(id)) return;
     map.setFilter(id, buildingId === undefined || buildingId === -1
       ? SELECTED_NONE : ["==", ["get", "building_id"], buildingId]);
   });
+  setFocusMask(buildingId === -1 ? null : geom);
 }
 let selectedBuildingProps = null;  // buildings-source props of the open panel (deciles included)
 
@@ -1060,6 +1138,27 @@ map.on("load", async () => {
     type: "line",
     source: "buildings",
     paint: { "line-color": "#ffffff", "line-width": 0.5, "line-opacity": 0.4 }
+  });
+
+  // The spotlight sits UNDER the yellow outline so that line stays crisp, and
+  // over everything else so panels and heat map dim together.
+  map.addSource("focus-mask", { type: "geojson",
+                                data: { type: "FeatureCollection", features: [] } });
+  map.addSource("focus-edge", { type: "geojson",
+                                data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "focus-dim", type: "fill", source: "focus-mask",
+    paint: { "fill-color": "#05070c", "fill-opacity": 0,
+             "fill-opacity-transition": { duration: FOCUS_FADE_MS, delay: 0 } }
+  });
+  map.addLayer({
+    id: "focus-ramp", type: "line", source: "focus-edge",
+    // Half the band sits inside the offset ring, which is already clear of the
+    // roof by FOCUS_GAP_M -- so the ramp darkens the ground around the
+    // building without touching the building itself.
+    paint: { "line-color": "#05070c", "line-width": FOCUS_RAMP_PX,
+             "line-blur": FOCUS_RAMP_PX * 0.8, "line-opacity": 0,
+             "line-opacity-transition": { duration: FOCUS_FADE_MS, delay: 0 } }
   });
 
   // Which building the figures on the right actually describe. Josh: "useful
@@ -2899,7 +2998,7 @@ map.on("load", async () => {
     panel.classList.add("visible");
     wireCoverageSelect(panel.querySelector("#coverage-select-bldg"));
     selectedPanelBuildingId = p.building_id;
-    highlightSelectedBuilding(p.building_id);
+    highlightSelectedBuilding(p.building_id, geom);
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
     updateFittedStats(p.building_id);
