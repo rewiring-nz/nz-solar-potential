@@ -30,11 +30,71 @@ MIN_CLEAN_ARRAY = 4       # matches panel_fitting.MINOR_ARRAY_MIN_PANELS
 SYSTEM_PANEL_STEPS = [7, 10, 14, 17, 20, 27, 34, 45, 68]
 
 
+
+COVERAGE_STEPS = [5, 10, 25, 50, 100]
+
+
+def _ring_area(geom):
+    """Plan area of a polygon in raw degrees-squared.
+
+    Only RELATIVE area within one building matters here -- these values are
+    used as weights and as a fraction of the building's own total -- and the
+    degree-to-metre scale is constant across a single roof, so it cancels.
+    Not a metre area, and deliberately not reprojected for ~90k facets.
+    """
+    rings = geom["coordinates"] if geom["type"] == "Polygon" else \
+        [r for poly in geom["coordinates"] for r in poly]
+    total = 0.0
+    for ring in rings[:1] if geom["type"] == "Polygon" else rings:
+        a = 0.0
+        for i in range(len(ring) - 1):
+            a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1]
+        total += abs(a) / 2
+    return total
+
+
+def _coverage_poa(facets, pct):
+    """Area-weighted mean POA over the SUNNIEST `pct` of a building's roof.
+
+    Roof coverage is not linear in output and treating it as such overstates a
+    partial system badly. Someone covering 10% of their roof puts the panels on
+    the best 10%, which yields well above the roof average; someone covering
+    100% is also taking the south face. Josh: "if just 10% is covered, it would
+    be the sunniest 10% ... 100% would not be 10 times higher than the 10%".
+
+    kWp stays linear in area -- half the roof is half the panels -- so only the
+    POA term changes, which keeps this a drop-in for the existing estimate.
+    """
+    if not facets:
+        return 0.0
+    ordered = sorted(facets, key=lambda t: -t[0])
+    total_area = sum(a for _, a in ordered)
+    if total_area <= 0:
+        return 0.0
+    target = total_area * pct / 100.0
+    acc_area = acc_weighted = 0.0
+    for poa, area in ordered:
+        take = min(area, target - acc_area)
+        if take <= 0:
+            break
+        acc_area += take
+        acc_weighted += take * poa
+    return acc_weighted / acc_area if acc_area > 0 else 0.0
+
+
 def main():
     layouts = json.loads((DATA_DIR / "panel_layouts.geojson").read_text())
     per_building = {}
+    # Facet (area, POA) pairs per building, for the coverage curve below.
+    facets_by_building = {}
     for f in layouts["features"]:
         p = f["properties"]
+        if p["kind"] == "facet":
+            poa = p.get("poa_kwh_m2_yr")
+            if poa:
+                facets_by_building.setdefault(p["building_id"], []).append(
+                    (float(poa), _ring_area(f["geometry"])))
+            continue
         if p["kind"] != "panel":
             continue
         per_building.setdefault(p["building_id"], []).append(
@@ -60,6 +120,13 @@ def main():
         clean = [t for t in panels if t[3] >= MIN_CLEAN_ARRAY]
         feat["properties"]["fill_panels_arrays"] = len(clean)
         feat["properties"]["fill_kwh_arrays"] = int(round(sum(t[1] for t in clean)))
+
+        # Coverage curve: the mean irradiance of the sunniest X% of THIS roof,
+        # so the "what if 10% of roofs were covered" figures reflect that the
+        # good roof gets used first. See _coverage_poa.
+        fac = facets_by_building.get(b, [])
+        for pct in COVERAGE_STEPS:
+            feat["properties"][f"cov_poa_{pct}"] = int(round(_coverage_poa(fac, pct)))
 
         # System-size targeting: cumulative kWh by fill_order, so the frontend
         # can ask "the best N panels" (a 6kW system) and get the right energy

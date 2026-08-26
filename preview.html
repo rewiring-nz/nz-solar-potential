@@ -67,6 +67,21 @@
   .kv strong { color: var(--ink); font-weight: 650; }
   .kv .kv-note { color: var(--ink-3); font-weight: 400; }
   .kv-group { margin-top: var(--s2); }
+  /* Coverage options replace the slider in Heat Map mode: a short ladder is
+     easier to read than a continuous control, and it shows the non-linearity
+     between steps that a slider hides. */
+  #coverage-options { margin-top: var(--s2); }
+  .cov-row { display: grid; grid-template-columns: 46px 1fr auto; align-items: baseline;
+    gap: var(--s2); width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+    background: none; border: none; border-radius: 6px; padding: 5px 7px;
+    color: var(--ink-2); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+  .cov-row:hover { background: var(--surface-2); }
+  .cov-row.active { background: rgba(255,210,74,0.13); color: var(--ink); }
+  .cov-row .cov-pct { color: var(--ink-3); font-weight: 600; }
+  .cov-row.active .cov-pct { color: var(--accent); }
+  .cov-row .cov-power { font-weight: 700; color: var(--ink); font-size: var(--fs-body); }
+  .cov-row .cov-energy { color: var(--ink-3); }
+
   .panel-caveat { font-size: var(--fs-meta); color: var(--warn); margin-top: var(--s2); line-height: 1.4; }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
@@ -154,7 +169,7 @@
   .addr-search input::placeholder { color: #999; }
   .addr-results { position: absolute; top: 40px; left: 40px; width: 260px; z-index: 10; }
   /* Secondary actions live out of the way, bottom-left. */
-  #corner-actions { position: absolute; bottom: 88px; left: 12px; z-index: 4;
+  #corner-actions { position: absolute; bottom: 24px; left: 12px; z-index: 4;
     display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
   .corner-btn { cursor: pointer; background: rgba(20,20,20,0.85); color: #ddd;
     border: 1px solid #555; border-radius: 6px; font-size: 11px; font-weight: 600;
@@ -333,6 +348,7 @@
           <div class="rsp-energy" id="inview-energy">&ndash;</div>
         </div>
       </div>
+      <div id="coverage-options" style="display:none;"></div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
@@ -498,10 +514,6 @@
     <input type="range" id="m-slider" min="5" max="100" step="5" value="100" style="width:100%;">
     <div style="text-align:center; font-weight:800; margin-top:6px;" id="m-slider-value">100%</div>
   </div>
-</div>
-<div class="legend">
-  <div>Click a rooftop for details and its proposed panel layout.</div>
-  <div style="margin-top:4px; opacity:0.7;">Click empty space to clear. Pilot area only — Queenstown town basin.</div>
 </div>
 <div class="legend-facet">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
@@ -952,6 +964,7 @@ map.on("load", async () => {
     }
     document.getElementById("inview-power").textContent = fmtPower(kwp);
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
+    renderCoverageOptions(props);
     const mp = document.getElementById("m-all-power");
     if (mp) { mp.textContent = fmtPower(kwp); document.getElementById("m-all-energy").textContent = fmtEnergy(kwhYear); }
 
@@ -961,6 +974,43 @@ map.on("load", async () => {
     // roof gets built. Per building it is a question someone can actually act
     // on. The whole per-building loop that summed it is gone with it rather
     // than being hidden, since it ran on every recompute.
+  }
+
+  // Heat Map mode shows a short ladder of coverage options instead of a slider.
+  // The point is the NON-LINEARITY, which a slider hides: covering 10% of a
+  // roof means covering the best 10%, so it yields well above the roof average,
+  // while covering all of it also takes the south face. cov_poa_N carries the
+  // mean irradiance of the sunniest N% of each roof (src/bake_density_deciles.py).
+  // kWp stays linear in area -- half the roof is half the panels.
+  const COVERAGE_OPTION_STEPS = [100, 50, 25, 10, 5];
+  function renderCoverageOptions(props) {
+    const box = document.getElementById("coverage-options");
+    if (!box) return;
+    if (mode !== "heatmap") { box.style.display = "none"; return; }
+    box.style.display = "";
+    const derate = (assumptions.inverter_efficiency_pct / 100)
+                 * (1 - assumptions.system_derate_pct / 100);
+    const rows = COVERAGE_OPTION_STEPS.map(pct => {
+      let kwp = 0, kwh = 0;
+      props.forEach(pr => {
+        const area = pr.facet_area_m2 || 0;
+        if (!area) return;
+        const k = area * (pct / 100) * panelDensityKw;
+        // Falls back to the flat roof average on data built before cov_poa_*
+        // existed, so the panel still reads sensibly mid-rebuild.
+        const poa = pr[`cov_poa_${pct}`] || pr.avg_poa_kwh_m2 || 0;
+        kwp += k;
+        kwh += k * poa * derate;
+      });
+      return { pct, kwp, kwh };
+    });
+    box.innerHTML = rows.map(r =>
+      `<button class="cov-row${r.pct === coveragePct ? " active" : ""}" data-pct="${r.pct}">` +
+      `<span class="cov-pct">${r.pct}%</span>` +
+      `<span class="cov-power">${fmtPower(r.kwp)}</span>` +
+      `<span class="cov-energy">${fmtEnergy(r.kwh)}</span></button>`).join("");
+    box.querySelectorAll(".cov-row").forEach(b =>
+      b.addEventListener("click", () => setCoverage(+b.dataset.pct)));
   }
 
   // The two coverage dropdowns (map-view dashboard + per-building panel)
@@ -1162,9 +1212,12 @@ map.on("load", async () => {
     // With both overlays off the numbers are still the coverage-based estimate,
     // but calling it the "heat map estimate" while no heat map is drawn reads
     // as a bug. Name it for what it is instead.
+    // No title or swatch in Panel Layout on the LEFT dashboard (Josh) -- the
+    // mode buttons directly above already say which mode this is, so the
+    // heading was repeating them. The draft caveat stays: that is the one
+    // thing here a reader genuinely needs.
     document.getElementById("inview-mode-title").innerHTML = isLayout
-      ? '<span style="color:#fff; font-size:15px; font-weight:800;">Panel placement estimate</span><span class="legend-panels"><span></span><span></span><span></span></span>' +
-        '<div class="panel-caveat" style="flex-basis:100%; margin-top:0;">draft &mdash; will make mistakes</div>'
+      ? '<div class="panel-caveat" style="flex-basis:100%; margin-top:0;">draft &mdash; will make mistakes</div>'
       : (mode === "heatmap"
           ? '<span>Heat map estimate</span><span class="legend-grad"></span>'
           : '<span>Generation potential estimate</span>');
@@ -1179,6 +1232,10 @@ map.on("load", async () => {
       s.min = 5; s.step = 5; s.value = coveragePct;
       document.getElementById("vslider-value").textContent = coveragePct + "%";
     }
+    // The slider only means something for panel density now; Heat Map mode uses
+    // the coverage ladder in the dashboard instead (Josh).
+    const vwrap = document.querySelector(".vslider-wrap");
+    if (vwrap) vwrap.style.display = isLayout ? "" : "none";
     const eh = document.getElementById("est-heatmap"), ep = document.getElementById("est-panels"),
           ld = document.getElementById("layout-details");
     if (eh) eh.style.display = isLayout ? "none" : "";
