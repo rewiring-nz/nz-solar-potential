@@ -1482,6 +1482,7 @@ map.on("load", async () => {
   // selection belongs in here, and mutations call this instead of a list.
   function refreshDerived() {
     applyPanelDensityPaint();     // map colours + which panels draw
+    recomputeInViewSummary();     // the district MW/GWh headline
     renderGlobalEconBands();      // left-hand band counts
     if (selectedPanelBuildingId === -1) return;
     updateFittedStats(selectedPanelBuildingId);   // kW, panels, cost, savings, ROI
@@ -1493,6 +1494,9 @@ map.on("load", async () => {
     const props = inViewBuildingProps();
     let kwp = 0, kwhYear = 0;
     document.getElementById("inview-count").textContent = props.length;
+    // Before the sums, not after: panelSumsFor asks breakEvenFor for each
+    // building's threshold, and that reads the match this builds.
+    rebuildEconMatch();
     if (mode === "layout") {
       const sums = panelSumsFor(props);
       kwp = sums.kwp; kwhYear = sums.kwhYear;
@@ -1503,7 +1507,6 @@ map.on("load", async () => {
         kwhYear += est.kwhYear;
       });
     }
-    rebuildEconMatch();
     renderGlobalEconBands();
     document.getElementById("inview-power").textContent = fmtPower(kwp);
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
@@ -1796,11 +1799,51 @@ map.on("load", async () => {
     return (assumptions.panel_rated_power_w / d.panel_rated_power_w) * bakedDerateScale();
   }
 
+  // Band split for ONE building without touching the panel tiles.
+  //
+  // Josh needs the district total to respond to the ROI bands "even when zoomed
+  // out very far", and per-panel ac_kwh_year only exists in the layout tiles,
+  // which are not loaded past a few hundred metres. But the baked deciles are
+  // cumulative BEST-PANELS-FIRST, so the difference between consecutive ones is
+  // the marginal yield of that slice of the roof -- a ten-point yield
+  // distribution per building, available at every zoom and already downloaded.
+  //
+  // Each slice is classified whole against this building's break-even. That is
+  // coarser than testing panels individually, so a slice straddling a threshold
+  // goes entirely one way; over thousands of buildings that averages out, and
+  // it is the difference between having this at district scale and not.
+  function bandSplitFor(pr, pct) {
+    const be = breakEvenFor(pr.building_id);
+    let panels = 0, kwh = 0;
+    let prevP = 0, prevK = 0;
+    for (let step = 10; step <= 100; step += 10) {
+      const upto = Math.min(step, pct);
+      if (upto <= step - 10) break;
+      const cp = decileInterp(pr, "fill_panels", upto);
+      const ck = decileInterp(pr, "fill_kwh", upto);
+      const dp = cp - prevP, dk = ck - prevK;
+      prevP = cp; prevK = ck;
+      if (dp <= 0) continue;
+      const perPanel = (dk / dp) * bakedKwhScale();   // marginal yield in this slice
+      const band = perPanel < be ? "low"
+                 : perPanel < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
+      if (!panelEconShow[band]) continue;
+      panels += dp; kwh += dk;
+    }
+    return { panels, kwh };
+  }
+
   function panelSumsFor(propsList) {
     let panels = 0, kwh = 0;
+    const banded = !!panelEcon && !(panelEconShow.low && panelEconShow.mid && panelEconShow.high);
     propsList.forEach(pr => {
-      panels += decileInterp(pr, "fill_panels", panelDensityPct);
-      kwh += decileInterp(pr, "fill_kwh", panelDensityPct);
+      if (banded) {
+        const b = bandSplitFor(pr, panelDensityPct);
+        panels += b.panels; kwh += b.kwh;
+      } else {
+        panels += decileInterp(pr, "fill_panels", panelDensityPct);
+        kwh += decileInterp(pr, "fill_kwh", panelDensityPct);
+      }
     });
     return { kwp: panels * assumptions.panel_rated_power_w / 1000,
              kwhYear: kwh * bakedKwhScale() };
@@ -3392,6 +3435,10 @@ map.on("load", async () => {
     if (mode !== "layout") return;
     panelEcon = panelEcon ? null : { buildingId: -1, breakEvenKwh: PANEL_ECON_FALLBACK_KWH };
     document.getElementById("toggle-panel-econ").classList.toggle("active", !!panelEcon);
+    // The in-view property cache is only invalidated by map movement, so
+    // switching the mode on while stationary would otherwise sum a stale (often
+    // empty) set and show 0 kW until the user happened to pan.
+    if (window.__invalidateInView) window.__invalidateInView();
     rebuildEconMatch();
     refreshDerived();
   });
