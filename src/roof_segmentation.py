@@ -1320,7 +1320,24 @@ FLAT_WINNER_MIN_AREA_SHARE = 0.45     # ...over a decent share of the same roof
 # Falls through to the best-of-five below whenever it returns nothing, which
 # keeps the never-worse-than-before guarantee that path already provides for
 # buildings with poor point-cloud coverage.
-USE_RECONSTRUCTION = True
+# OFF. Rolled out, measured on pilot, and reverted the same night.
+#
+# On the ten buildings it was developed against it resolved MORE roof than the
+# existing segmenter (96.9% vs 93.4% median coverage) with straight edges. Run
+# across all 1,066 pilot buildings it did the opposite: 71,852 panels -> 51,560
+# (-28%), 20 buildings lost every panel, and 25 Brecon St went from 352 panels
+# on a cleanly covered roof to 8, resolving 140 m2 of a 1,073 m2 outline.
+#
+# The facets it produces there carry 300+ vertices, so the arrangement is not
+# yielding straight-edged cells at all on large commercial roofs -- it is
+# unioning many tiny cells, most of which then fall under MIN_FACET_M2 and are
+# dropped. That is a different failure from anything the ten-building set
+# showed, which is the whole lesson: ten hand-picked roofs did not represent
+# 1,066.
+#
+# Do not switch this back on without running a full area and checking panel
+# COUNT, not just facet shape.
+USE_RECONSTRUCTION = False
 RECONSTRUCT_MIN_POINTS = 40
 
 
