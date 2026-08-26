@@ -15,34 +15,43 @@
   "confirmed": true
  },
  "4735260": {
-  "n": 1,
-  "label": "flat roof (with falls), one plane",
-  "confirmed": false
+  "n": null,
+  "label": "EXCLUDED -- roof rebuilt since the 2021 LiDAR",
+  "confirmed": true,
+  "exclude": true,
+  "source": "Josh, 26 Aug"
  },
  "4734907": {
-  "n": 2,
-  "label": "simple gable, two faces",
-  "confirmed": false
+  "n": 9,
+  "label": "nine planes",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4750866": {
   "n": 2,
-  "label": "simple gable, two faces",
-  "confirmed": false
+  "label": "two planes",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "5371149": {
-  "n": 4,
-  "label": "hip roof, four faces",
-  "confirmed": false
+  "n": null,
+  "kind": "preference",
+  "prefer": "reconstruction",
+  "label": "very complicated; reconstruction better than shipped",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4740950": {
-  "n": 3,
-  "label": "complex, 3 faces",
-  "confirmed": false
+  "n": 8,
+  "label": "eight separate roof faces",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4735357": {
-  "n": 4,
-  "label": "hip roof, four faces",
-  "confirmed": false
+  "n": 5,
+  "label": "five planes",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4751207": {
   "n": 4,

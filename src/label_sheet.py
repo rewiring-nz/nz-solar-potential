@@ -71,8 +71,16 @@ SEEDS = [
     (4735260, "barrel vault", None,
      "Curved, so no number of planes is strictly right. One plane for racking "
      "purposes, or strips following the curve?"),
-    (4734907, "shipped model over-segments this", None, None),
-    (4750866, "the wing is about 4m lower than the main roof", None, None),
+    # I proposed 2 here and called it evidence that both models shred houses.
+    # Josh says 9, which is what the reconstruction said. My propose() heuristic
+    # is the thing that under-counts, not the models.
+    (4734907, "nine planes (Josh)", (9, "nine planes"), None),
+    (4750866, "two planes (Josh); the wing sits about 4m lower",
+     (2, "two planes"), None),
+    # Not every roof yields an honest count. Where it does not, a pairwise
+    # preference between the two models is easier to give and still scores
+    # them -- see roof_labels_*.json, kind: "preference".
+    (5371149, "very complicated; Josh prefers the reconstruction here", None, None),
 ]
 
 
