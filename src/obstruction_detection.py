@@ -95,10 +95,23 @@ SATURATION_WINDOW_PX = 7  # local texture window for the saturation check, ~0.7m
 # intermediate height, so the flagged cluster is already dilated before we
 # buffer it further. BLOB_TRIM_FRACTION pulls back that share of the buffer
 # after the merge: a morphological close rather than a plain dilate.
-BLOB_TRIM_FRACTION = 1.0   # a full close: dilate to merge, erode the same amount back.
-# Swept against validate_obstructions.py over its 15 real reported cases:
-# 0.0 -> 5,114 panels, over-carve 169%;  1.0 -> 5,279 panels, over-carve 164%,
-# panels-on-raised 74 -> 76, and the equipment reference unchanged at 42%.
+# 0.4, not the full 1.0 -- and the reason is a mistake worth keeping written
+# down. A full close was chosen because it placed 165 more panels than 0.4,
+# which is optimising the one number Josh had already said is not a measure of
+# quality. He found the consequence immediately: "lots of examples of panels
+# overlapping obstructions now".
+#
+# Eroding by the whole buffer removes the LiDAR smear AND the safety margin,
+# and on a small obstruction it removes nearly everything -- measured across
+# eight reported buildings, the full close cut total obstruction area by 20%,
+# but by 78% on a 12 m2 one and 60% on another. A 2 m2 vent simply vanished,
+# so panels went straight over it.
+#
+# The floor below matters as much as the fraction: erosion is a fixed distance
+# and small blobs have far more perimeter per unit area, so a proportional
+# limit is what stops them being destroyed.
+BLOB_TRIM_FRACTION = 0.4
+BLOB_TRIM_MIN_AREA_KEPT = 0.7   # never erode a blob below this share of itself
 BLOB_BUFFER_M = 0.25  # each detected blob is expanded by this much before being kept -- direct testing
 # confirmed detection reliably finds an object's edge/transition ring but not its full uniform interior, so
 # a plain outline of *detected pixels* under-covers the real object; buffering outward trades some excess
@@ -171,6 +184,8 @@ def _trim_blob(geom, buffer_m):
     trimmed = geom.buffer(-BLOB_TRIM_FRACTION * buffer_m)
     if trimmed.is_empty or trimmed.geom_type not in ("Polygon", "MultiPolygon"):
         return geom
+    if trimmed.area < BLOB_TRIM_MIN_AREA_KEPT * geom.area:
+        return geom   # small blob: the erosion would take most of it, so skip it
     return trimmed
 
 
