@@ -884,6 +884,39 @@ let panelEconGlobal = true;
 let panelEconMatch = null;     // ["match", ["get","building_id"], id, be, ..., default]
 const PANEL_ECON_FALLBACK_KWH = 250;   // for a building not in the current view
 
+// THE definition of which panels are currently showing. Everything that counts,
+// sums, colours or charts panels goes through here.
+//
+// This exists because the band rule had been written out separately in the paint
+// expression, the chip tallies and the filtered totals, and the seasonal curves
+// did not know about it at all -- so switching a band off changed the map and the
+// economics but left the generation curve describing panels that were no longer
+// there (Josh). Three copies of a rule is three chances to forget the fourth
+// caller. Two of those copies were also still using the single-building
+// break-even after the mode went district-wide, so they disagreed with the map.
+function breakEvenFor(buildingId) {
+  if (!panelEcon) return Infinity;
+  if (!panelEconGlobal) return panelEcon.breakEvenKwh;
+  if (!panelEconMatch) return PANEL_ECON_FALLBACK_KWH;
+  for (let i = 2; i < panelEconMatch.length - 1; i += 2) {
+    if (panelEconMatch[i] === buildingId) return panelEconMatch[i + 1];
+  }
+  return PANEL_ECON_FALLBACK_KWH;
+}
+
+function panelBandOf(props) {
+  const be = breakEvenFor(props.building_id);
+  const k = props.ac_kwh_year || 0;
+  return k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
+}
+
+function panelVisible(props) {
+  if (props.fill_rank != null && props.fill_rank > panelDensityPct) return false;
+  if (!panelEcon) return true;
+  if (!panelEconGlobal && props.building_id !== panelEcon.buildingId) return true;
+  return panelEconShow[panelBandOf(props)];
+}
+
 function panelBreakEvenExpr() {
   if (panelEconGlobal) return panelEconMatch || PANEL_ECON_FALLBACK_KWH;
   return panelEcon ? panelEcon.breakEvenKwh : PANEL_ECON_FALLBACK_KWH;
@@ -1359,11 +1392,8 @@ map.on("load", async () => {
       if (pr.building_id !== buildingId) return;
       if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
       total++;
-      const k = pr.ac_kwh_year || 0;
-      const band = k < panelEcon.breakEvenKwh ? "low"
-                 : k < PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh ? "mid" : "high";
-      if (!panelEconShow[band]) return;
-      count++; kwh += k;
+      if (!panelEconShow[panelBandOf(pr)]) return;
+      count++; kwh += pr.ac_kwh_year || 0;
     });
     // Raw kWh: the caller applies bakedKwhScale, which is not in scope here.
     return total ? { count, kwhRaw: kwh, total } : null;
@@ -1383,21 +1413,10 @@ map.on("load", async () => {
     const tally = { low: 0, mid: 0, high: 0 };
     let feats = [];
     try { feats = map.queryRenderedFeatures({ layers: ["panels-fill"] }); } catch (e) { feats = []; }
-    const beFor = bid => {
-      if (!panelEconMatch) return PANEL_ECON_FALLBACK_KWH;
-      for (let i = 2; i < panelEconMatch.length - 1; i += 2) {
-        if (panelEconMatch[i] === bid) return panelEconMatch[i + 1];
-      }
-      return PANEL_ECON_FALLBACK_KWH;
-    };
-    const cache = new Map();
     feats.forEach(f => {
       const pr = f.properties;
       if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
-      let be = cache.get(pr.building_id);
-      if (be === undefined) { be = beFor(pr.building_id); cache.set(pr.building_id, be); }
-      const k = pr.ac_kwh_year || 0;
-      tally[k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high"]++;
+      tally[panelBandOf(pr)]++;
     });
     const bands = document.getElementById("econ-bands-all");
     bands.innerHTML = PANEL_ECON_BANDS.map(b =>
@@ -1408,13 +1427,31 @@ map.on("load", async () => {
       btn.addEventListener("click", () => {
         const k = btn.dataset.band;
         panelEconShow[k] = !panelEconShow[k];
-        applyPanelDensityPaint();
-        renderGlobalEconBands();
-        if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+        refreshDerived();
       }));
     document.getElementById("econ-bands-all-note").textContent =
       "Return on each panel's share of its own building's install. Tap a band to hide it.";
   }
+
+  // ONE refresh for everything derived from the current state.
+  //
+  // The bug this exists to prevent: each state change used to hand-pick which
+  // dependents to update, so density called four things, a band toggle called
+  // three, and the seasonal curve was in neither list -- it kept describing
+  // panels that had been filtered away. Every dependent added since has had to
+  // be retro-fitted into every mutation site, which is exactly the kind of
+  // omission nobody notices until a number on screen disagrees with the map.
+  //
+  // Anything derived from mode, density, bands, econ assumptions or the
+  // selection belongs in here, and mutations call this instead of a list.
+  function refreshDerived() {
+    applyPanelDensityPaint();     // map colours + which panels draw
+    renderGlobalEconBands();      // left-hand band counts
+    if (selectedPanelBuildingId === -1) return;
+    updateFittedStats(selectedPanelBuildingId);   // kW, panels, cost, savings, ROI
+    renderSeasonCurves(selectedPanelBuildingId);  // generation curve
+  }
+  window.__refreshDerived = refreshDerived;
 
   function recomputeInViewSummary() {
     const props = inViewBuildingProps();
@@ -2884,9 +2921,7 @@ map.on("load", async () => {
                 const pr = f.properties;
                 if (pr.building_id !== buildingId) return;
                 if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
-                const k = pr.ac_kwh_year || 0;
-                tally[k < panelEcon.breakEvenKwh ? "low"
-                      : k < PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh ? "mid" : "high"]++;
+                tally[panelBandOf(pr)]++;
               });
             } catch (err) { /* tiles not ready; the chips just read zero */ }
             bandsBox.style.display = "";
@@ -2899,10 +2934,9 @@ map.on("load", async () => {
                 const k = btn.dataset.band;
                 panelEconShow[k] = !panelEconShow[k];
                 btn.classList.toggle("off", !panelEconShow[k]);
-                applyPanelDensityPaint();
-                // Excluding panels changes the system, so re-run the whole
-                // panel: kW, count, output, cost, savings and ROI all move.
-                updateFittedStats(buildingId);
+                // Excluding panels changes the system: kW, count, output, cost,
+                // savings, ROI and the generation curve all move together.
+                refreshDerived();
               }));
             const be = Math.round(panelEcon.breakEvenKwh).toLocaleString();
             el("panel-econ-note").innerHTML =
@@ -2919,7 +2953,13 @@ map.on("load", async () => {
               setPanelEcon(true);
             });
           }
+          // The district-wide half has to move too. Switching the mode on from a
+          // building panel used to repaint only, leaving the per-building
+          // thresholds unbuilt and the left-hand counts blank -- the same
+          // disconnect as the curves, one layer up.
+          rebuildEconMatch();
           applyPanelDensityPaint();
+          renderGlobalEconBands();
         };
         // The corner toggle drives whichever building is currently open.
         window.__setPanelEcon = setPanelEcon;
@@ -3018,7 +3058,7 @@ map.on("load", async () => {
       const q = f.properties;
       const gj = { geometry: geom, properties: q };
       if (q.kind === "facet") facets.push(gj);
-      else if (q.kind === "panel" && (q.fill_rank === undefined || q.fill_rank <= panelDensityPct)) panels.push(gj);
+      else if (q.kind === "panel" && panelVisible(q)) panels.push(gj);
     });
     const isLayout = mode === "layout";
     if (!facets.length || (isLayout && !panels.length)) { box.innerHTML = ""; return; }
@@ -3256,8 +3296,7 @@ map.on("load", async () => {
     panelEcon = panelEcon ? null : { buildingId: -1, breakEvenKwh: PANEL_ECON_FALLBACK_KWH };
     document.getElementById("toggle-panel-econ").classList.toggle("active", !!panelEcon);
     rebuildEconMatch();
-    applyPanelDensityPaint();
-    renderGlobalEconBands();
+    refreshDerived();
   });
 
   document.getElementById("toggle-outlines").addEventListener("click", () => {

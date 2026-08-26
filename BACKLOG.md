@@ -63,3 +63,12 @@ Ordered by evidence, not by appeal. Every item names what it is based on.
 - Validate obstruction changes in BOTH directions (`validate_obstructions.py`);
   the equipment reference is the canary.
 - Read the warnings already in a file before using it.
+- Anything derived from state goes through `refreshDerived()`. Do not hand-pick
+  dependents at a mutation site -- that is how the generation curve ended up
+  describing panels that had been filtered away.
+- One rule, one definition. `panelVisible` / `panelBandOf` decide which panels
+  count, everywhere. The band rule had been written out four times and two
+  copies were stale.
+- A patch script that asserts and then writes at the end is all-or-nothing: a
+  failed assertion late in the script silently discards the edits before it.
+  Write after each edit, or verify the file actually changed.
