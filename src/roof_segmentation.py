@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import cv2
+import math
 import numpy as np
 import rasterio
 import shapely.vectorized
@@ -1286,10 +1287,24 @@ def _facets_are_structured(facets):
     return (covered / total) >= STRUCTURED_MIN_AREA_SHARE
 
 
+# Applied to every segmenter's output or none: see merge_uneconomic_splits at
+# the end of this file. Off by default until it is measured on a full area.
+APPLY_REALISM_MERGE = True
+
+
 def _attach_building_geometry(facets, building_geom):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
-    here so every caller inherits it without changing call sites."""
+    here so every caller inherits it without changing call sites.
+
+    Also the single choke point every segment_building_best return passes
+    through, which is where the realism merge belongs -- one place rather than
+    five, so no strategy can quietly skip it."""
+    if APPLY_REALISM_MERGE and facets:
+        try:
+            facets = merge_uneconomic_splits(facets)
+        except Exception:
+            pass   # a bad merge must never cost a building its whole segmentation
     for f in facets:
         f["building_geometry"] = building_geom
     return facets
@@ -2125,3 +2140,100 @@ def segment_building_from_pointcloud_regiongrow(pc_source, building_geom, buildi
     minx, miny, maxx, maxy = building_geom.bounds
     points = pc_source.points_in_bbox(minx - pad_m, miny - pad_m, maxx + pad_m, maxy + pad_m, building_only=True)
     return segment_points_regiongrow(points, building_geom, building_id, min_facet_area_m2)
+
+
+# --- Realism pass: roofs are few large faces, not many slivers -------------
+#
+# Josh, 26 Aug, after judging ten before/after layouts: "They need to be large
+# and blocky most of the time like real rooftops. It's a lot more common for
+# rooftops to be clear large flat surfaces on a few different angles and slopes,
+# than it is to have lots of small changes."
+#
+# This is not only about looking realistic. panel_fitting erodes every facet by
+# RIDGE_SETBACK_M and panels cannot span two facets, so every split costs usable
+# area, and the smaller the piece the worse the rate:
+#
+#      6 m2 face ->  57% of it usable      150 m2 face -> 90%
+#     25 m2 face ->  77%                   400 m2 face -> 94%
+#
+# Measured on the live pilot: 36% of facets are under 15 m2, and the way roofs
+# are currently split costs 11.0% of all roof area to erosion, against 6.0% if
+# each building were a single face. So there is about 5.6% of usable roof to be
+# recovered by splitting less.
+#
+# The criterion is therefore derived rather than tuned. Merging two adjacent
+# faces GAINS the erosion area their shared boundary was costing, and LOSES
+# yield on the smaller face because it is now modelled at the wrong angle. Merge
+# when the gain exceeds the loss. The only modelled assumption is that yield
+# falls with the cosine of the angle between the two plane normals, which is a
+# first-order approximation of the projected-irradiance loss.
+SLIVER_CONSIDER_MAX_M2 = 40.0   # above this a face is worth keeping on its own
+SLIVER_MIN_SHARED_M = 0.5       # must actually adjoin, not just touch at a corner
+
+
+def _usable_after_setback(area_m2, setback_m):
+    """Area left after eroding a face by the ridge setback, approximating the
+    face as a square. Exact for a square, close enough for the trade-off, and
+    it does not depend on the polygon being well behaved."""
+    side = math.sqrt(max(area_m2, 0.0))
+    return max(side - 2.0 * setback_m, 0.0) ** 2
+
+
+def _plane_angle_deg(f, g):
+    """Angle between two facets' plane normals."""
+    n1 = np.array([-f["plane_a"], -f["plane_b"], 1.0])
+    n2 = np.array([-g["plane_a"], -g["plane_b"], 1.0])
+    c = float(np.dot(n1, n2) / (np.linalg.norm(n1) * np.linalg.norm(n2)))
+    return math.degrees(math.acos(max(-1.0, min(1.0, c))))
+
+
+def merge_uneconomic_splits(facets, setback_m=None):
+    """Fuse adjacent faces whose split costs more usable area than the yield it
+    buys. Repeats until nothing else qualifies, smallest face first."""
+    if setback_m is None:
+        setback_m = getattr(config, "RIDGE_SETBACK_M", 0.25)
+    if len(facets) < 2:
+        return facets
+    facets = list(facets)
+    changed = True
+    while changed and len(facets) > 1:
+        changed = False
+        order = sorted(range(len(facets)), key=lambda i: facets[i]["geometry"].area)
+        for i in order:
+            f = facets[i]
+            if f["geometry"].area > SLIVER_CONSIDER_MAX_M2:
+                continue
+            best, best_shared = None, SLIVER_MIN_SHARED_M
+            for j in range(len(facets)):
+                if i == j:
+                    continue
+                shared = f["geometry"].buffer(0.05).intersection(
+                    facets[j]["geometry"].boundary).length
+                if shared > best_shared:
+                    best, best_shared = j, shared
+            if best is None:
+                continue
+            g = facets[best]
+            merged = unary_union([f["geometry"], g["geometry"]]).buffer(0.02).buffer(-0.02)
+            if merged.geom_type != "Polygon" or merged.is_empty:
+                continue
+            gain = (_usable_after_setback(merged.area, setback_m)
+                    - _usable_after_setback(f["geometry"].area, setback_m)
+                    - _usable_after_setback(g["geometry"].area, setback_m))
+            # The smaller face is the one that ends up mis-oriented.
+            small = min(f, g, key=lambda x: x["geometry"].area)
+            theta = _plane_angle_deg(f, g)
+            loss = small["geometry"].area * (1.0 - math.cos(math.radians(theta)))
+            if gain <= loss:
+                continue
+            # Keep the larger face's plane -- it carries more of the roof.
+            keep = g if g["geometry"].area >= f["geometry"].area else f
+            merged_facet = dict(keep)
+            merged_facet["geometry"] = merged
+            if "area_m2" in merged_facet:
+                merged_facet["area_m2"] = float(merged.area)
+            facets = [facets[k] for k in range(len(facets)) if k not in (i, best)]
+            facets.append(merged_facet)
+            changed = True
+            break
+    return facets
