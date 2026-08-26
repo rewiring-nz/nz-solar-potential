@@ -99,17 +99,32 @@
   .legend-panels { display: flex; gap: 2px; }
   .legend-panels span { width: 11px; height: 18px; background: rgba(38,109,182,0.75);
     border: 1.5px solid #0e2c4e; border-radius: 2px; display: inline-block; }
-  .addr-search { position: relative; }
-  .addr-search input {
-    width: 100%; box-sizing: border-box; background: #2e3440; color: #fff;
-    border: 1px solid #666; border-radius: 6px; font-size: 13px; padding: 7px 10px;
-  }
-  .addr-search input::placeholder { color: #999; }
   .addr-results {
-    position: absolute; top: 100%; left: 0; right: 0; z-index: 10; margin-top: 4px;
     background: #1c1f26; border: 1px solid #555; border-radius: 6px; overflow: hidden;
     max-height: 240px; overflow-y: auto; display: none;
   }
+  /* Collapsed search: an icon beside the dashboard that opens into a field. */
+  .addr-search { position: absolute; top: 12px; left: 336px; z-index: 4; display: flex;
+    align-items: flex-start; }
+  .addr-search #addr-toggle { width: 34px; height: 34px; flex: none; cursor: pointer;
+    background: rgba(20,20,20,0.9); color: #fff; border: 1px solid #666; border-radius: 8px;
+    font-size: 15px; line-height: 1; padding: 0; }
+  .addr-search input { width: 0; padding: 0; border: none; opacity: 0; pointer-events: none;
+    box-sizing: border-box; background: #2e3440; color: #fff; border-radius: 6px; font-size: 13px;
+    transition: width .16s ease, opacity .16s ease, padding .16s ease; margin-left: 6px; height: 34px; }
+  .addr-search.open input { width: 260px; opacity: 1; pointer-events: auto; padding: 7px 10px;
+    border: 1px solid #666; }
+  .addr-search input::placeholder { color: #999; }
+  .addr-results { position: absolute; top: 40px; left: 40px; width: 260px; z-index: 10; }
+  /* Secondary actions live out of the way, bottom-left. */
+  #corner-actions { position: absolute; bottom: 88px; left: 12px; z-index: 4;
+    display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .corner-btn { cursor: pointer; background: rgba(20,20,20,0.85); color: #ddd;
+    border: 1px solid #555; border-radius: 6px; font-size: 11px; font-weight: 600;
+    padding: 5px 9px; font-family: inherit; text-align: left; }
+  .corner-btn:hover { background: rgba(40,40,40,0.95); color: #fff; }
+  #bug-report-btn { color: #ffb3b3; }
+
   .addr-results div { padding: 7px 10px; font-size: 12.5px; cursor: pointer; color: #eee; }
   .addr-results div:hover, .addr-results div.active { background: #266db6; color: #fff; }
   .vslider-wrap { align-self: flex-start; width: 60px;
@@ -235,11 +250,18 @@
 </head>
 <body>
 <div id="map"></div>
+<!-- Search sits beside the dashboard rather than above it, so the dashboard
+     can start at the top of the page. Collapsed to an icon until used. -->
+<div class="addr-search" id="addr-search">
+  <button id="addr-toggle" title="Search address">&#128269;</button>
+  <input type="text" id="addr-input" placeholder="Search address or town&hellip;" autocomplete="off">
+  <div class="addr-results" id="addr-results"></div>
+</div>
+<div id="corner-actions">
+  <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
+  <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
+</div>
 <div class="dashboard-stack">
-  <div class="dashboard addr-search" style="padding: 10px 12px;">
-    <input type="text" id="addr-input" placeholder="Search address&hellip;" autocomplete="off">
-    <div class="addr-results" id="addr-results"></div>
-  </div>
   <div class="dashboard dashboard-inview" id="dashboard-inview">
     <div class="dashboard-title">
       <span class="rsp-heading">Rooftop Solar Potential</span>
@@ -265,8 +287,6 @@
         </div>
       </div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
-      <button class="toggle-btn" id="open-settings" style="width:100%; margin-top:10px; padding:6px 10px;
-        font-size:12px; text-align:left;">&#9881;&#65039; Assumptions &amp; pricing</button>
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
           <span>Building outlines</span>
@@ -358,10 +378,7 @@
     </div>
   </div>
 
-  <button class="dashboard" id="bug-report-btn" style="width:auto; cursor:pointer; border:1px solid #666;
-    font-size:12px; font-weight:700; color:#ffb3b3; padding:8px 12px; text-align:left;">
-    &#128030; Report an issue
-  </button>
+
   <div class="dashboard" id="bug-report-panel" style="display:none; width:262px;">
     <div style="font-weight:700; font-size:12px; margin-bottom:6px;">What's wrong here?</div>
     <textarea id="bug-note" rows="3" style="width:100%; box-sizing:border-box; background:#2e3440; color:#fff;
@@ -601,7 +618,15 @@ function applyToggles() {
   });
   if (layoutReady) {
     LAYOUT_LAYERS.forEach(id => {
-      const vis = mode === "layout" && (id.startsWith("obstructions") ? obstructionsOn : true);
+      // facets-outline is the dotted line drawn around each roof plane. It used
+      // to be on permanently in Panel Layout, so toggling "Building outlines"
+      // looked like it did nothing except add a SECOND dotted outline on top --
+      // Josh: "the dotted building outline stays on either way, just another
+      // one is turned on". It now rides the same toggle, so the default view is
+      // panels on the bare roof and the toggle brings back both outlines.
+      const vis = mode === "layout" && (
+        id.startsWith("obstructions") ? obstructionsOn :
+        id === "facets-outline" ? outlinesOn : true);
       map.setLayoutProperty(id, "visibility", vis ? "visible" : "none");
     });
     if (map.getLayer("live-obstructions-fill")) {
@@ -994,8 +1019,22 @@ map.on("load", async () => {
       if (e.key === "Enter" && matches.length) openResult(matches[0]);
       if (e.key === "Escape") results.style.display = "none";
     });
+    // The search is collapsed to an icon so the dashboard can sit at the top of
+    // the page. Opening focuses the field straight away, so it behaves like a
+    // search box that happens to be folded up rather than a two-step control.
+    const searchBox = document.getElementById("addr-search");
+    const toggle = document.getElementById("addr-toggle");
+    const openSearch = (open) => {
+      searchBox.classList.toggle("open", open);
+      if (open) input.focus();
+      else { input.value = ""; results.style.display = "none"; }
+    };
+    toggle.addEventListener("click", () => openSearch(!searchBox.classList.contains("open")));
+    input.addEventListener("keydown", e => { if (e.key === "Escape") openSearch(false); });
     document.addEventListener("click", e => {
-      if (!e.target.closest(".addr-search")) results.style.display = "none";
+      if (e.target.closest(".addr-search")) return;
+      results.style.display = "none";
+      if (!input.value) openSearch(false);   // leave it open if something was typed
     });
   }
 
