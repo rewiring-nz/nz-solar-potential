@@ -7,6 +7,26 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## IN PROGRESS (overnight, 26 Aug) -- resume here
+
+**Panel fitting is the maximum priority (Josh).**
+
+1. **Realism merge** -- DONE and committed (`0222213`). Stops splitting roofs
+   where the split costs more usable area than the yield it buys. Pilot
+   rebuilding now with it; baseline for comparison is
+   `scratchpad/pilot_old_layouts.geojson`.
+   **Next step:** when the build finishes, run
+   `python src/compare_layouts.py --old <that file> --area pilot --n 12`,
+   publish it, and have Josh judge. Layouts are the judge, not counts.
+2. **Imagery-first roof shapes** -- not started. Josh's proposal: derive roof
+   boundaries from the 0.1 m imagery, where ridgelines are usually a clear
+   tonal break, and use LiDAR only for the slope of each face and where the
+   image is unreadable (bright roofs, flat commercial with no internal edges).
+   Three separate failures today all wanted imagery: deck detection,
+   obstruction footprints, ridge placement.
+3. **"Lifetime ROI" reads like a rate** and is not -- 201% annualises to about
+   3.8%/yr. Label it or show an annualised figure.
+
 ## Next up
 
 | # | Item | Why | Blocked by |
