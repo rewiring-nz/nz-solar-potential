@@ -219,7 +219,19 @@
       box-shadow: 0 2px 12px rgba(0,0,0,0.5);
     }
   }
-</style>
+
+  .settings-tab { flex:1; background:none; border:none; border-bottom:2px solid transparent;
+    color:#aaa; padding:9px 6px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .settings-tab.active { color:#fff; border-bottom-color:#ffd24a; }
+  #settings-modal .slider-row { margin-bottom:9px; }
+  #settings-modal .slider-row label { display:flex; justify-content:space-between; font-size:11.5px;
+    color:#ccc; margin-bottom:2px; }
+  #settings-modal input[type=range] { width:100%; }
+  .cost-tier { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .cost-tier span { flex:1; color:#ccc; font-size:11.5px; }
+  .cost-tier input { width:82px; background:#2e3440; color:#fff; border:1px solid #555;
+    border-radius:4px; padding:3px 6px; font-size:11.5px; font-family:inherit; }
+  </style>
 </head>
 <body>
 <div id="map"></div>
@@ -253,19 +265,9 @@
         </div>
       </div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
-      <details class="tuning" id="assumption-editor" style="border-top:1px solid rgba(255,255,255,0.12); margin-top:10px;">
-        <summary style="color:#ccc;">Advanced: performance assumptions</summary>
-        <div class="slider-row"><label><span>Panel rated power</span><span id="a-w-val"></span></label>
-          <input type="range" id="a-w" min="250" max="700" step="5"></div>
-        <div class="slider-row"><label><span>Panel efficiency</span><span id="a-eff-val"></span></label>
-          <input type="range" id="a-eff" min="12" max="28" step="0.5"></div>
-        <div class="slider-row"><label><span>Inverter efficiency</span><span id="a-inv-val"></span></label>
-          <input type="range" id="a-inv" min="90" max="99" step="0.5"></div>
-        <div class="slider-row"><label><span>System losses</span><span id="a-loss-val"></span></label>
-          <input type="range" id="a-loss" min="5" max="30" step="0.5"></div>
-        <button class="tuning-reset" id="a-reset">Reset to defaults</button>
-        <div style="font-size:10px; color:#888; margin-top:6px;">Changes rescale every figure on screen instantly. Panel area follows from power and efficiency.</div>
-      </details>
+      <div id="inview-econ" style="display:none; font-size:11.5px; color:#ccc; margin-top:4px;"></div>
+      <button class="toggle-btn" id="open-settings" style="width:100%; margin-top:10px; padding:6px 10px;
+        font-size:12px; text-align:left;">&#9881;&#65039; Assumptions &amp; pricing</button>
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
           <span>Building outlines</span>
@@ -278,6 +280,68 @@
       </div>
     </div>
   </div>
+  <!-- Settings: assumptions and pricing, tabbed. Everything here is editable
+       and every figure on the map follows it live. Nothing in this dialog
+       needs a rebuild -- the economics are derived entirely from kWp and
+       kWh/yr, which are already on screen. -->
+  <div id="settings-overlay" style="display:none; position:fixed; inset:0; z-index:20;
+    background:rgba(0,0,0,0.55);"></div>
+  <div id="settings-modal" style="display:none; position:fixed; z-index:21; top:50%; left:50%;
+    transform:translate(-50%,-50%); width:min(420px, calc(100vw - 32px)); max-height:calc(100vh - 60px);
+    overflow:auto; background:#1b2029; border:1px solid rgba(255,255,255,0.18); border-radius:10px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.6); color:#eee; font-size:12px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
+      border-bottom:1px solid rgba(255,255,255,0.12);">
+      <strong style="font-size:14px;">Assumptions &amp; pricing</strong>
+      <button id="settings-close" style="background:none; border:none; color:#aaa; font-size:20px;
+        line-height:1; cursor:pointer;">&times;</button>
+    </div>
+    <div style="display:flex; gap:0; border-bottom:1px solid rgba(255,255,255,0.12);">
+      <button class="settings-tab active" data-tab="energy">Energy</button>
+      <button class="settings-tab" data-tab="economics">Economics</button>
+    </div>
+
+    <div class="settings-pane" id="pane-energy" style="padding:14px;">
+      <div class="slider-row"><label><span>Panel rated power</span><span id="a-w-val"></span></label>
+        <input type="range" id="a-w" min="250" max="700" step="5"></div>
+      <div class="slider-row"><label><span>Panel efficiency</span><span id="a-eff-val"></span></label>
+        <input type="range" id="a-eff" min="12" max="28" step="0.5"></div>
+      <div class="slider-row"><label><span>Inverter efficiency</span><span id="a-inv-val"></span></label>
+        <input type="range" id="a-inv" min="90" max="99" step="0.5"></div>
+      <div class="slider-row"><label><span>System losses</span><span id="a-loss-val"></span></label>
+        <input type="range" id="a-loss" min="5" max="30" step="0.5"></div>
+      <button class="tuning-reset" id="a-reset">Reset to defaults</button>
+      <div style="font-size:10px; color:#888; margin-top:8px;">Panel area follows from power and
+        efficiency, so a bigger panel covers more roof and fewer of them fit.</div>
+    </div>
+
+    <div class="settings-pane" id="pane-economics" style="display:none; padding:14px;">
+      <div style="font-weight:700; margin-bottom:6px;">Installed cost by system size</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:8px;">$ per kW installed. The rate for
+        a system is set by the band its own size falls in.</div>
+      <div id="cost-tiers"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Electricity pricing</div>
+      <div class="slider-row"><label><span>Retail price you pay</span><span id="e-buy-val"></span></label>
+        <input type="range" id="e-buy" min="10" max="60" step="1"></div>
+      <div class="slider-row"><label><span>Export / buyback rate</span><span id="e-sell-val"></span></label>
+        <input type="range" id="e-sell" min="0" max="30" step="0.5"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">How much of what the system makes
+        is used on site rather than exported. This is the biggest single lever on payback.</div>
+      <select id="e-profile" class="coverage-select" style="width:100%; margin-bottom:8px;"></select>
+      <div class="slider-row"><label><span>Self-consumed share</span><span id="e-self-val"></span></label>
+        <input type="range" id="e-self" min="5" max="100" step="1"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
+      <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
+        <input type="range" id="e-life" min="10" max="35" step="1"></div>
+      <div class="slider-row"><label><span>Panel degradation</span><span id="e-deg-val"></span></label>
+        <input type="range" id="e-deg" min="0" max="1.5" step="0.05"></div>
+      <button class="tuning-reset" id="e-reset">Reset to defaults</button>
+      <div style="font-size:10px; color:#ff9b90; margin-top:8px;">Indicative only &mdash; not a quote.
+        Real pricing depends on roof access, switchboard work and installer.</div>
+    </div>
+  </div>
+
   <button class="dashboard" id="bug-report-btn" style="width:auto; cursor:pointer; border:1px solid #666;
     font-size:12px; font-weight:700; color:#ffb3b3; padding:8px 12px; text-align:left;">
     &#128030; Report an issue
@@ -801,6 +865,26 @@ map.on("load", async () => {
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
     const mp = document.getElementById("m-all-power");
     if (mp) { mp.textContent = fmtPower(kwp); document.getElementById("m-all-energy").textContent = fmtEnergy(kwhYear); }
+
+    // Economics for everything in view. Cost is summed PER BUILDING, not by
+    // pricing the district as one giant system -- the $/kW band is set by each
+    // system's own size, and a town of 5kW homes does not get warehouse pricing.
+    const ec = document.getElementById("inview-econ");
+    if (ec) {
+      let cost = 0, annual = 0;
+      props.forEach(pr => {
+        const one = mode === "layout"
+          ? panelSumsFor([pr])
+          : buildingEstimate(pr, coveragePct);
+        const e = economicsFor(one.kwp, one.kwhYear);
+        if (e) { cost += e.cost; annual += e.annual; }
+      });
+      ec.style.display = annual > 0 ? "" : "none";
+      if (annual > 0) {
+        ec.innerHTML = `<span style="color:#9fe08f; font-weight:700;">${fmtMoney(annual)}/yr</span>` +
+          ` saved &nbsp;·&nbsp; ${fmtMoney(cost)} to install`;
+      }
+    }
   }
 
   // The two coverage dropdowns (map-view dashboard + per-building panel)
@@ -1142,6 +1226,79 @@ map.on("load", async () => {
     window.__syncMobileSheet = syncMobileSheet;
   }
 
+  // --- Economics ---------------------------------------------------------
+  // These live in the frontend, not config.py, because nothing in the build
+  // pipeline uses them: cost and savings are derived entirely from kWp and
+  // kWh/yr, both of which are already on screen. Keeping them here means the
+  // numbers can be retuned without a three-hour rebuild.
+  //
+  // Installed cost bands are Josh's, in $/kW. Note the spec had a gap between
+  // 8kW and 9kW; the $2000 band is closed at 8kW and $1800 picks up from
+  // there, so there is no size with an undefined price.
+  const ECON_DEFAULTS = {
+    cost_tiers: [
+      { max_kw: 3,     rate: 3000, label: "under 3 kW" },
+      { max_kw: 8,     rate: 2000, label: "3 – 8 kW" },
+      { max_kw: 25,    rate: 1800, label: "8 – 25 kW" },
+      { max_kw: 50,    rate: 1500, label: "25 – 50 kW" },
+      { max_kw: Infinity, rate: 1200, label: "over 50 kW" },
+    ],
+    buy_c_kwh: 30,        // retail c/kWh paid for grid electricity
+    sell_c_kwh: 12.5,     // export / buyback c/kWh
+    // Kept in step with the default profile below -- a dropdown saying 30% next
+    // to a slider saying 45% is the kind of thing that makes a whole panel
+    // look untrustworthy.
+    self_pct: 30,
+    profile: "home_out",
+    life_years: 25,
+    degradation_pct: 0.5, // per year
+  };
+  // Named self-consumption profiles. The share is what actually drives the
+  // maths; the names exist so the choice is a recognisable situation rather
+  // than a number pulled out of the air.
+  const SELF_PROFILES = [
+    { id: "home_out",   label: "Home — out on weekdays",      pct: 30 },
+    { id: "home_in",    label: "Home — someone there daytime", pct: 50 },
+    { id: "home_batt",  label: "Home — with a battery",        pct: 80 },
+    { id: "business",   label: "Business — weekday daytime",   pct: 75 },
+    { id: "custom",     label: "Custom",                       pct: null },
+  ];
+  let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
+  econ.cost_tiers[4].max_kw = Infinity;   // JSON round-trip turns Infinity into null
+
+  function costPerKw(kwp) {
+    for (const t of econ.cost_tiers) if (kwp < t.max_kw) return t.rate;
+    return econ.cost_tiers[econ.cost_tiers.length - 1].rate;
+  }
+  function systemCost(kwp) { return kwp * costPerKw(kwp); }
+
+  // First-year value of the energy: what is used on site displaces electricity
+  // at the retail price, what is exported earns the buyback rate. Lifetime
+  // applies linear panel degradation over the system life. Deliberately no
+  // discount rate or price inflation -- two assumptions that mostly cancel and
+  // that nobody can check, and their absence is easier to explain than a
+  // number picked to make payback look good.
+  function economicsFor(kwp, kwhYear) {
+    if (!(kwp > 0) || !(kwhYear > 0)) return null;
+    const self = econ.self_pct / 100;
+    const annual = kwhYear * (self * econ.buy_c_kwh + (1 - self) * econ.sell_c_kwh) / 100;
+    const cost = systemCost(kwp);
+    const d = econ.degradation_pct / 100;
+    let lifetime = 0;
+    for (let y = 0; y < econ.life_years; y++) lifetime += annual * Math.pow(1 - d, y);
+    // Payback against a declining output stream, not a flat one.
+    let cum = 0, payback = null;
+    for (let y = 0; y < 60; y++) {
+      cum += annual * Math.pow(1 - d, y);
+      if (cum >= cost) { payback = y + 1 - (cum - cost) / (annual * Math.pow(1 - d, y)); break; }
+    }
+    return { cost, annual, lifetime, payback, rate: costPerKw(kwp) };
+  }
+  const fmtMoney = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M"
+                    : v >= 1e3 ? "$" + Math.round(v / 1e3) + "k"
+                    : "$" + Math.round(v);
+  window.__economicsFor = economicsFor;
+
   // --- Advanced assumptions editor -------------------------------------
   // Everything on screen derives from these four numbers, so editing them
   // rescales the whole map live: panel area is back-solved from power and
@@ -1178,6 +1335,77 @@ map.on("load", async () => {
       el(id).addEventListener("input", applyAssumptions));
     el("a-reset").addEventListener("click", () => loadInto(ASSUMPTION_DEFAULTS));
     loadInto(assumptions);
+
+    // --- Settings dialog: tabs, economics controls -----------------------
+    const overlay = el("settings-overlay"), modal = el("settings-modal");
+    const openSettings = (open) => {
+      overlay.style.display = modal.style.display = open ? "block" : "none";
+    };
+    el("open-settings").addEventListener("click", () => openSettings(true));
+    el("settings-close").addEventListener("click", () => openSettings(false));
+    overlay.addEventListener("click", () => openSettings(false));
+    document.addEventListener("keydown", e => { if (e.key === "Escape") openSettings(false); });
+    document.querySelectorAll(".settings-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".settings-tab").forEach(t => t.classList.toggle("active", t === tab));
+        el("pane-energy").style.display = tab.dataset.tab === "energy" ? "" : "none";
+        el("pane-economics").style.display = tab.dataset.tab === "economics" ? "" : "none";
+      });
+    });
+
+    const tiersBox = el("cost-tiers");
+    function renderTiers() {
+      tiersBox.innerHTML = econ.cost_tiers.map((t, i) =>
+        `<div class="cost-tier"><span>${t.label}</span>` +
+        `<input type="number" data-i="${i}" step="50" min="0" value="${t.rate}"> <span ` +
+        `style="flex:none; color:#888;">$/kW</span></div>`).join("");
+      tiersBox.querySelectorAll("input").forEach(inp =>
+        inp.addEventListener("input", () => {
+          const v = parseFloat(inp.value);
+          if (isFinite(v) && v >= 0) { econ.cost_tiers[+inp.dataset.i].rate = v; applyEcon(); }
+        }));
+    }
+    const profSel = el("e-profile");
+    profSel.innerHTML = SELF_PROFILES.map(p =>
+      `<option value="${p.id}">${p.label}${p.pct !== null ? ` (${p.pct}%)` : ""}</option>`).join("");
+
+    function applyEcon() {
+      el("e-buy-val").textContent = econ.buy_c_kwh.toFixed(0) + "c/kWh";
+      el("e-sell-val").textContent = econ.sell_c_kwh.toFixed(1) + "c/kWh";
+      el("e-self-val").textContent = econ.self_pct + "%";
+      el("e-life-val").textContent = econ.life_years + " years";
+      el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
+      recomputeInViewSummary();
+      if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+    }
+    const bindEcon = (id, key, parse) => el(id).addEventListener("input", e => {
+      econ[key] = parse(e.target.value);
+      if (id === "e-self") { econ.profile = "custom"; profSel.value = "custom"; }
+      applyEcon();
+    });
+    bindEcon("e-buy", "buy_c_kwh", parseFloat);
+    bindEcon("e-sell", "sell_c_kwh", parseFloat);
+    bindEcon("e-self", "self_pct", v => parseInt(v, 10));
+    bindEcon("e-life", "life_years", v => parseInt(v, 10));
+    bindEcon("e-deg", "degradation_pct", parseFloat);
+    profSel.addEventListener("change", () => {
+      const p = SELF_PROFILES.find(x => x.id === profSel.value);
+      econ.profile = profSel.value;
+      if (p && p.pct !== null) { econ.self_pct = p.pct; el("e-self").value = p.pct; }
+      applyEcon();
+    });
+    function loadEcon(src) {
+      econ = JSON.parse(JSON.stringify(src));
+      econ.cost_tiers[econ.cost_tiers.length - 1].max_kw = Infinity;
+      el("e-buy").value = econ.buy_c_kwh; el("e-sell").value = econ.sell_c_kwh;
+      el("e-self").value = econ.self_pct;  el("e-life").value = econ.life_years;
+      el("e-deg").value = econ.degradation_pct; profSel.value = econ.profile;
+      const pr = SELF_PROFILES.find(x => x.id === econ.profile);
+      if (pr && pr.pct !== null) { econ.self_pct = pr.pct; el("e-self").value = pr.pct; }
+      renderTiers(); applyEcon();
+    }
+    el("e-reset").addEventListener("click", () => loadEcon(ECON_DEFAULTS));
+    loadEcon(ECON_DEFAULTS);
   }
 
   // Advanced tuning only works against the local live server (src/live_server.py),
@@ -1464,6 +1692,8 @@ map.on("load", async () => {
             </div>
           </div>
         </div>
+        <div id="bldg-econ" style="display:none; margin-top:10px; padding-top:9px; font-size:11.5px;
+          color:#ccc; border-top:1px solid rgba(255,255,255,0.15);"></div>
         <div id="season-curves" style="margin-top:10px;"></div>
         <div id="layout-details">
         <div style="border-top:1px solid rgba(255,255,255,0.15); margin-top:12px; padding-top:10px;
@@ -1593,6 +1823,26 @@ map.on("load", async () => {
     if (el("bldg-fitted-power")) {
       el("bldg-fitted-power").textContent = fmtPower(kwp);
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
+    }
+    const be = el("bldg-econ");
+    if (be) {
+      const e = economicsFor(kwp, kwhYear);
+      be.style.display = e ? "" : "none";
+      if (e) {
+        be.innerHTML =
+          `<div style="display:flex; justify-content:space-between;"><span>Installed cost</span>` +
+          `<strong>${fmtMoney(e.cost)}</strong></div>` +
+          `<div style="display:flex; justify-content:space-between; color:#888;">` +
+          `<span>$${e.rate.toLocaleString()}/kW at this system size</span></div>` +
+          `<div style="display:flex; justify-content:space-between; margin-top:3px;"><span>Value of ` +
+          `energy, year 1</span><strong style="color:#9fe08f;">${fmtMoney(e.annual)}/yr</strong></div>` +
+          `<div style="display:flex; justify-content:space-between;"><span>Simple payback</span>` +
+          `<strong>${e.payback ? e.payback.toFixed(1) + " years" : "beyond system life"}</strong></div>` +
+          `<div style="display:flex; justify-content:space-between;"><span>Over ${econ.life_years} ` +
+          `years</span><strong>${fmtMoney(e.lifetime)}</strong></div>` +
+          `<div style="font-size:10px; color:#ff9b90; margin-top:4px;">Indicative only &mdash; not a ` +
+          `quote. Assumes ${econ.self_pct}% used on site.</div>`;
+      }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
     // Mirror into the mobile "Selected building" box: show whichever estimate
