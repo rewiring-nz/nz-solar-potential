@@ -964,6 +964,20 @@ function syncToggleButtons() {
   if (tb) tb.classList.toggle("active", obstructionsOn);
   // Obstructions only mean anything in Panel Layout.
   if (tb) tb.style.display = mode === "layout" ? "" : "none";
+  // Nor does panel economics (Josh): the heat map places no panels, so there is
+  // nothing to price. Switch the mode off with it rather than just hiding the
+  // button, or it would come back on invisibly when Panel Layout returns.
+  const tp = document.getElementById("toggle-panel-econ");
+  if (tp) {
+    tp.style.display = mode === "layout" ? "" : "none";
+    if (mode !== "layout" && panelEcon) {
+      panelEcon = null;
+      tp.classList.remove("active");
+      applyPanelDensityPaint();
+      const gb = document.getElementById("econ-bands-global");
+      if (gb) gb.style.display = "none";
+    }
+  }
 }
 
 function applyToggles() {
