@@ -91,6 +91,15 @@
   /* Economics reads as four plain statements rather than a table of rows: the
      label carries the weight and the figure sits under it light, so the eye
      lands on what the number IS before what it says. */
+  /* One series at a time: eight lines at once was a lot to read, and the
+     comparison people want is between seasons, not between a typical and a
+     sunny day of the same season (Josh). */
+  .curve-toggle { display: flex; gap: var(--s1); margin-top: var(--s4); }
+  .curve-btn { flex: none; padding: 4px 11px; font-size: var(--fs-label); font-weight: 650;
+    font-family: inherit; cursor: pointer; border-radius: 6px;
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
+  .curve-btn.active { background: rgba(255,210,74,0.15); border-color: rgba(255,210,74,0.5);
+    color: var(--accent); }
   .econ-item { margin-bottom: var(--s3); }
   .econ-label { font-size: 15px; font-weight: 800; color: var(--accent); letter-spacing: -0.2px; }
   .econ-value { font-size: 21px; font-weight: 250; color: var(--ink); line-height: 1.15;
@@ -2037,8 +2046,6 @@ map.on("load", async () => {
           <div id="bldg-coverage-options" style="display:none;"></div>
         </div>
         <div class="est-section" id="est-panels" style="border-top:none;">
-          <div class="est-title"><span>Panel placement estimate</span>
-            <span class="legend-panels"><span></span><span></span><span></span></span></div>
           <div class="rsp-row">
             <div class="rsp-assumption">At the current panel density (<span id="bldg-density-note">${panelDensityPct}%</span>, set with the left-hand slider):</div>
             <div class="rsp-statbox">
@@ -2047,7 +2054,11 @@ map.on("load", async () => {
             </div>
           </div>
         </div>
-        <div id="season-curves" style="margin-top:var(--s4);"></div>
+        <div class="curve-toggle" id="curve-toggle">
+          <button class="curve-btn active" data-curve="avg">Average</button>
+          <button class="curve-btn" data-curve="peak">Sunny day</button>
+        </div>
+        <div id="season-curves"></div>
         <div class="panel-cols">
         <div id="bldg-econ" class="est-section" style="display:none;"></div>
         <div id="layout-details">
@@ -2254,6 +2265,10 @@ map.on("load", async () => {
   let curveRedrawPending = false;
 
   // The steepest slope bin the curve data actually contains.
+  // Which series the generation chart shows. Average by default: it is the one
+  // that answers "what will this actually make", where the clear-day line
+  // answers "what is the best it will ever do".
+  let curveMode = "avg";
   let maxSlopeBin = null;
   function seasonMaxSlopeBin() {
     if (maxSlopeBin === null) {
@@ -2407,7 +2422,11 @@ map.on("load", async () => {
     const avail = Math.max(240, (box.clientWidth || 288));
     const W = Math.min(avail, 900), H = Math.round(Math.min(320, Math.max(170, W * 0.5)));
     const L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
-    const maxY = Math.max(0.1, ...peak.flat());
+    // Scale to whichever series is shown, so the chosen one fills the chart
+    // instead of sitting squashed under the other one's peak.
+    const showPeak = curveMode === "peak";
+    const shown = showPeak ? peak : avg;
+    const maxY = Math.max(0.1, ...shown.flat());
     const x = h => L + (h - h0) / (h1 - h0) * (W - L - R);
     const y = v => T + (1 - v / maxY) * (H - T - B);
     const line = (arr, dash) => {
@@ -2424,13 +2443,12 @@ map.on("load", async () => {
     };
     seasonCurves.seasons.forEach((name, s) => {
       const col = SEASON_COLORS[name] || "#fff";
-      paths += `<path d="${line(peak[s])}" fill="none" stroke="${col}" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.85"/>`;
-      paths += `<path d="${line(avg[s])}" fill="none" stroke="${col}" stroke-width="2"/>`;
+      paths += `<path d="${line(shown[s])}" fill="none" stroke="${col}" stroke-width="2"` +
+              (showPeak ? ` stroke-dasharray="4 3"` : ``) + `/>`;
       const fmt = v => v >= 20 ? Math.round(v) : v.toFixed(1);
-      const pk = apexOf(peak[s]), av = apexOf(avg[s]);
+      const ap = apexOf(shown[s]);
       if (name !== "summer") {  // summer's values live on the reference lines
-        if (pk.v > 0) apexLabels.push({ x: x(pk.h), y: y(pk.v) - 4, text: fmt(pk.v), col, op: 0.75 });
-        if (av.v > 0) apexLabels.push({ x: x(av.h), y: y(av.v) - 4, text: fmt(av.v) + " kW", col, op: 1 });
+        if (ap.v > 0) apexLabels.push({ x: x(ap.h), y: y(ap.v) - 4, text: fmt(ap.v) + " kW", col, op: 1 });
       }
     });
     // De-overlap: topmost first, push later labels down just enough that
@@ -2468,7 +2486,9 @@ map.on("load", async () => {
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
       `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${paths}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
-      `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">solid = typical day &nbsp;·&nbsp; dotted = sunny day &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}</div>`;
+      `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
+      `${showPeak ? "a clear day in each season" : "an average day in each season"}` +
+      ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}</div>`;
   }
 
   function showBuildingPanel(p, lngLat, geom) {
@@ -2481,6 +2501,15 @@ map.on("load", async () => {
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
     updateFittedStats(p.building_id);
     renderCoverageOptions([p], "bldg-coverage-options");
+    panel.querySelectorAll(".curve-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.curve === curveMode);
+      btn.addEventListener("click", () => {
+        curveMode = btn.dataset.curve;
+        panel.querySelectorAll(".curve-btn").forEach(b =>
+          b.classList.toggle("active", b.dataset.curve === curveMode));
+        renderSeasonCurves(p.building_id);
+      });
+    });
     // Advanced per-roof tuning needs the local live server's /api/refit --
     // hide it entirely on the static deployed site rather than showing
     // sliders that silently do nothing.
