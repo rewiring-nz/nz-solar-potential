@@ -841,6 +841,11 @@ const PANEL_ECON_BANDS = [
   { key: "high", colour: "#1e8e5a", label: "over 2&times;" },
 ];
 let panelEconShow = { low: true, mid: true, high: true };
+// "blended" spreads the building's average value over every panel, which is
+// what Josh first specified. "marginal" asks the harder question -- is it worth
+// adding THIS panel -- and answers it at the export rate, because the
+// self-consumption a blended rate credits it with is already spoken for.
+let panelEconBasis = "blended";
 
 function panelBandExpr(lowVal, midVal, highVal, otherVal) {
   const kwh = ["coalesce", ["get", "ac_kwh_year"], 0];
@@ -1869,7 +1874,16 @@ map.on("load", async () => {
       cum += v;
       if (cum >= cost) { payback = y + 1 - (cum - cost) / v; break; }
     }
+    // Lifetime cents earned by ONE kWh/yr of extra generation, if all of it is
+    // exported. This is the marginal panel's world: self-consumption is capped
+    // by the daytime load and already met by the panels that came before it,
+    // so an added panel earns the buyback rate, not the retail one.
+    let exportLifetimePerKwhYr = 0;
+    for (let y = 0; y < econ.life_years; y++) {
+      exportLifetimePerKwhYr += Math.pow(1 - d, y) * sellRate(THIS_YEAR + y) * scale / 100;
+    }
     return { cost, annual, lifetime, payback, rate: costPerKw(kwp), biz, buy, sellNow,
+             exportLifetimePerKwhYr,
              sellLater: sellRate(THIS_YEAR + econ.life_years) * scale,
              daytimeKw, ceiling, useKwh, selfKwh: selfKwhFor(kwhYear),
              // Share is now an OUTPUT of the model, not an input to it.
@@ -2673,7 +2687,8 @@ map.on("load", async () => {
           if (!on || !isLayout || !(count > 0) || !(kwhYear > 0)) {
             panelEcon = null;
           } else {
-            const perKwh = e.lifetime / kwhYear;
+            const perKwh = panelEconBasis === "marginal"
+              ? e.exportLifetimePerKwhYr : e.lifetime / kwhYear;
             panelEcon = { buildingId,
                           breakEvenKwh: (e.cost / count) / Math.max(perKwh, 1e-9) };
           }
@@ -2715,7 +2730,16 @@ map.on("load", async () => {
             el("panel-econ-note").innerHTML =
               `Return over ${econ.life_years} years against each panel's ` +
               `\u2248${fmtMoneyFull(e.cost / count)} share of the install. ` +
-              `1\u00d7 is ${be} kWh/yr. Tap a band to hide it.`;
+              `1\u00d7 is ${be} kWh/yr. Tap a band to hide it.<br>` +
+              `Valued at <a href="#" id="econ-basis-swap" style="color:var(--accent)">` +
+              `${panelEconBasis === "marginal" ? "the export rate (marginal panel)"
+                                               : "this roof's blended rate"}</a>.`;
+            const swap = el("econ-basis-swap");
+            if (swap) swap.addEventListener("click", ev => {
+              ev.preventDefault();
+              panelEconBasis = panelEconBasis === "marginal" ? "blended" : "marginal";
+              setPanelEcon(true);
+            });
           }
           applyPanelDensityPaint();
         };
