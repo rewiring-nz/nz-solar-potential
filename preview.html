@@ -125,6 +125,15 @@
     font-size: var(--fs-label); color: var(--ink-2); margin-top: 2px; }
   .econ-roi b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
   .econ-roi .sep { width: 1px; align-self: stretch; background: #fff; opacity: 0.55; }
+  .panel-econ-btn { display: flex; align-items: center; gap: var(--s2); width: 100%;
+    margin-top: var(--s3); padding: 7px 9px; background: #2a3140; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; font: inherit;
+    font-size: var(--fs-label); cursor: pointer; text-align: left; }
+  .panel-econ-btn:hover { background: #333c4d; }
+  .panel-econ-btn.on { border-color: var(--accent); }
+  .panel-econ-btn .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .panel-econ-note { font-size: var(--fs-meta); color: var(--ink-3); margin-top: 4px;
+    line-height: 1.45; }
   .econ-basis { font-size: var(--fs-meta); color: var(--ink-3); line-height: 1.45; margin-top: var(--s2); }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
@@ -704,11 +713,34 @@ function densityOpacityExpr(baseOpacity) {
     baseOpacity, 0];
 }
 const PANEL_FILL_OPACITY = 0.72, PANEL_LINE_OPACITY = 0.5;
+const PANEL_BASE_COLOUR = "#081e3f";
+// Which panels earn back their own share of the install. Josh: "it would be
+// good to know if south facing panels are not economic ... account for how much
+// electricity a specific panel would generate itself, and applying the
+// assumptions on cost, self consumption etc, to see if the individual panel
+// pays back its proportion of the cost (the total cost divided by number of
+// panels)".
+//
+// Every panel carries its own ac_kwh_year -- 135 to 590 across the pilot, which
+// is the whole point: a south face makes a third of what a north face does off
+// the same roof. So this reduces to ONE number per building, the generation at
+// which a panel exactly repays cost/count over the system life, and the map
+// paints each panel against it. No per-feature computation, no extra data.
+let panelEcon = null;   // null = off, else { buildingId, breakEvenKwh }
+
+function panelColourExpr() {
+  if (!panelEcon) return PANEL_BASE_COLOUR;
+  return ["case",
+    ["!=", ["get", "building_id"], panelEcon.buildingId], PANEL_BASE_COLOUR,
+    ["<", ["coalesce", ["get", "ac_kwh_year"], 0], panelEcon.breakEvenKwh], "#c0392b",
+    "#1e8e5a"];
+}
 
 function applyPanelDensityPaint() {
   if (!map.getLayer("panels-fill")) return;
   map.setPaintProperty("panels-fill", "fill-opacity", densityOpacityExpr(PANEL_FILL_OPACITY));
   map.setPaintProperty("panels-outline", "line-opacity", densityOpacityExpr(PANEL_LINE_OPACITY));
+  map.setPaintProperty("panels-fill", "fill-color", panelColourExpr());
 }
 
 // setFilter re-evaluates and re-uploads the geometry of every loaded tile, so
@@ -2396,6 +2428,11 @@ map.on("load", async () => {
             `<span class="sep"></span>` +
             `<span>Yearly ROI: <b id="econ-roi-year"></b></span></div>` +
           `<div class="econ-basis" id="econ-basis"></div>` +
+          `<button class="panel-econ-btn" id="panel-econ-toggle">` +
+            `<span class="sw" style="background:#1e8e5a"></span>` +
+            `<span class="sw" style="background:#c0392b"></span>` +
+            `<span id="panel-econ-label">Show which panels pay for themselves</span></button>` +
+          `<div class="panel-econ-note" id="panel-econ-note"></div>` +
           `<div class="econ-inputs">` +
             `<div class="econ-assump-head">Assumptions &mdash; ${kind}</div>` +
             `<label>Electricity price` +
@@ -2462,6 +2499,52 @@ map.on("load", async () => {
         bindField("econ-sell", p + "sell_c", parseFloat, 0);
         bindField("econ-use", p + "use_kwh", parseFloat, 0);
         bindField("econ-self", p + "daytime_kw", parseFloat, 0.1);
+
+        // Break-even generation for ONE panel on THIS building. Derived from
+        // the building's own lifetime figure rather than re-deriving the
+        // tariff maths, so it inherits degradation and the declining export
+        // schedule for free: lifetime value per kWh generated is
+        // e.lifetime / kwhYear, and a panel must clear its share of the cost.
+        const econBtn = el("panel-econ-toggle");
+        const setPanelEcon = on => {
+          if (!on || !isLayout || !(count > 0) || !(kwhYear > 0)) {
+            panelEcon = null;
+          } else {
+            const perKwh = e.lifetime / kwhYear;
+            panelEcon = { buildingId,
+                          breakEvenKwh: (e.cost / count) / Math.max(perKwh, 1e-9) };
+          }
+          if (econBtn) econBtn.classList.toggle("on", !!panelEcon);
+          el("panel-econ-label").textContent = panelEcon
+            ? "Hide panel economics" : "Show which panels pay for themselves";
+          if (!panelEcon) {
+            el("panel-econ-note").innerHTML = isLayout ? ""
+              : "Only in Panel Layout \u2014 no panels are placed on the heat map.";
+          } else {
+            // Count what the map is showing, so "none are red" is stated rather
+            // than left to be inferred from an absence of colour.
+            let red = 0, green = 0;
+            try {
+              map.queryRenderedFeatures({ layers: ["panels-fill"] }).forEach(f => {
+                const pr = f.properties;
+                if (pr.building_id !== buildingId) return;
+                if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+                ((pr.ac_kwh_year || 0) < panelEcon.breakEvenKwh ? red++ : green++);
+              });
+            } catch (err) { /* tiles not ready; the note just omits the counts */ }
+            const be = Math.round(panelEcon.breakEvenKwh).toLocaleString();
+            el("panel-econ-note").innerHTML =
+              `A panel must make ${be} kWh/yr to earn back its ` +
+              `\u2248${fmtMoneyFull(e.cost / count)} share of the install over ` +
+              `${econ.life_years} years.` +
+              (red + green ? ` On this roof <b>${green} of ${red + green}</b> clear it` +
+                             (red ? `, ${red} do not.` : ` \u2014 none fall short.`) : "");
+          }
+          applyPanelDensityPaint();
+        };
+        if (econBtn) econBtn.addEventListener("click", () => setPanelEcon(!panelEcon));
+        // A different building means the previous highlight no longer applies.
+        setPanelEcon(panelEcon && panelEcon.buildingId === buildingId);
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
