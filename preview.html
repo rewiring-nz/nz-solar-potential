@@ -134,6 +134,16 @@
   .panel-econ-btn .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
   .panel-econ-note { font-size: var(--fs-meta); color: var(--ink-3); margin-top: 4px;
     line-height: 1.45; }
+  .econ-bands { display: flex; gap: 6px; margin-top: var(--s2); }
+  .econ-band { flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center;
+    padding: 6px 4px; background: #262d3a; border: 1px solid var(--line); border-radius: 5px;
+    font: inherit; font-size: var(--fs-meta); color: var(--ink-2); cursor: pointer; }
+  .econ-band:hover { background: #2f3745; }
+  .econ-band .bar { width: 100%; height: 3px; border-radius: 2px; }
+  .econ-band .cnt { color: var(--ink); font-weight: 700; font-size: var(--fs-label);
+    font-variant-numeric: tabular-nums; }
+  .econ-band.off { opacity: 0.4; }
+  .econ-band.off .cnt { text-decoration: line-through; }
   .econ-basis { font-size: var(--fs-meta); color: var(--ink-3); line-height: 1.45; margin-top: var(--s2); }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
@@ -708,9 +718,15 @@ let selectedBuildingProps = null;  // buildings-source props of the open panel (
 // with the whole town tiled that made the density slider crawl. A paint
 // change only rebinds shader properties, so dragging is smooth at any zoom.
 function densityOpacityExpr(baseOpacity) {
-  return ["case",
-    ["any", ["!", ["has", "fill_rank"]], ["<=", ["get", "fill_rank"], panelDensityPct]],
-    baseOpacity, 0];
+  const dense = ["any", ["!", ["has", "fill_rank"]],
+                 ["<=", ["get", "fill_rank"], panelDensityPct]];
+  if (!panelEcon) return ["case", dense, baseOpacity, 0];
+  // Filtering by band rides on OPACITY, not setFilter: setFilter re-evaluates
+  // and re-uploads the geometry of every loaded tile, which is far too heavy
+  // for a control meant to be flicked on and off (see setLayoutExclusion).
+  const shown = panelBandExpr(panelEconShow.low, panelEconShow.mid,
+                              panelEconShow.high, true);
+  return ["case", ["all", dense, shown], baseOpacity, 0];
 }
 const PANEL_FILL_OPACITY = 0.72, PANEL_LINE_OPACITY = 0.5;
 const PANEL_BASE_COLOUR = "#081e3f";
@@ -727,13 +743,28 @@ const PANEL_BASE_COLOUR = "#081e3f";
 // which a panel exactly repays cost/count over the system life, and the map
 // paints each panel against it. No per-feature computation, no extra data.
 let panelEcon = null;   // null = off, else { buildingId, breakEvenKwh }
+// Three bands rather than pass/fail (Josh): a panel that merely repays its
+// share is a different proposition from one that returns twice it, and the
+// middle band is where most panels actually land.
+const PANEL_ECON_BANDS = [
+  { key: "low",  colour: "#c0392b", label: "under 1&times;" },
+  { key: "mid",  colour: "#3b82c4", label: "1\u20132&times;" },
+  { key: "high", colour: "#1e8e5a", label: "over 2&times;" },
+];
+let panelEconShow = { low: true, mid: true, high: true };
+
+function panelBandExpr(lowVal, midVal, highVal, otherVal) {
+  const kwh = ["coalesce", ["get", "ac_kwh_year"], 0];
+  return ["case",
+    ["!=", ["get", "building_id"], panelEcon.buildingId], otherVal,
+    ["<", kwh, panelEcon.breakEvenKwh], lowVal,
+    ["<", kwh, 2 * panelEcon.breakEvenKwh], midVal,
+    highVal];
+}
 
 function panelColourExpr() {
   if (!panelEcon) return PANEL_BASE_COLOUR;
-  return ["case",
-    ["!=", ["get", "building_id"], panelEcon.buildingId], PANEL_BASE_COLOUR,
-    ["<", ["coalesce", ["get", "ac_kwh_year"], 0], panelEcon.breakEvenKwh], "#c0392b",
-    "#1e8e5a"];
+  return panelBandExpr("#c0392b", "#3b82c4", "#1e8e5a", PANEL_BASE_COLOUR);
 }
 
 function applyPanelDensityPaint() {
@@ -2432,6 +2463,7 @@ map.on("load", async () => {
             `<span class="sw" style="background:#1e8e5a"></span>` +
             `<span class="sw" style="background:#c0392b"></span>` +
             `<span id="panel-econ-label">Show which panels pay for themselves</span></button>` +
+          `<div class="econ-bands" id="econ-bands" style="display:none"></div>` +
           `<div class="panel-econ-note" id="panel-econ-note"></div>` +
           `<div class="econ-inputs">` +
             `<div class="econ-assump-head">Assumptions &mdash; ${kind}</div>` +
@@ -2517,28 +2549,42 @@ map.on("load", async () => {
           if (econBtn) econBtn.classList.toggle("on", !!panelEcon);
           el("panel-econ-label").textContent = panelEcon
             ? "Hide panel economics" : "Show which panels pay for themselves";
+          const bandsBox = el("econ-bands");
           if (!panelEcon) {
+            bandsBox.style.display = "none";
             el("panel-econ-note").innerHTML = isLayout ? ""
               : "Only in Panel Layout \u2014 no panels are placed on the heat map.";
           } else {
-            // Count what the map is showing, so "none are red" is stated rather
-            // than left to be inferred from an absence of colour.
-            let red = 0, green = 0;
+            // Counted from what is on the map, so a band reading zero says so
+            // rather than being an absence of colour the reader has to notice.
+            const tally = { low: 0, mid: 0, high: 0 };
             try {
               map.queryRenderedFeatures({ layers: ["panels-fill"] }).forEach(f => {
                 const pr = f.properties;
                 if (pr.building_id !== buildingId) return;
                 if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
-                ((pr.ac_kwh_year || 0) < panelEcon.breakEvenKwh ? red++ : green++);
+                const k = pr.ac_kwh_year || 0;
+                tally[k < panelEcon.breakEvenKwh ? "low"
+                      : k < 2 * panelEcon.breakEvenKwh ? "mid" : "high"]++;
               });
-            } catch (err) { /* tiles not ready; the note just omits the counts */ }
+            } catch (err) { /* tiles not ready; the chips just read zero */ }
+            bandsBox.style.display = "";
+            bandsBox.innerHTML = PANEL_ECON_BANDS.map(b =>
+              `<button class="econ-band${panelEconShow[b.key] ? "" : " off"}" data-band="${b.key}">` +
+              `<span class="bar" style="background:${b.colour}"></span>` +
+              `<span class="cnt">${tally[b.key]}</span><span>${b.label}</span></button>`).join("");
+            bandsBox.querySelectorAll(".econ-band").forEach(btn =>
+              btn.addEventListener("click", () => {
+                const k = btn.dataset.band;
+                panelEconShow[k] = !panelEconShow[k];
+                btn.classList.toggle("off", !panelEconShow[k]);
+                applyPanelDensityPaint();
+              }));
             const be = Math.round(panelEcon.breakEvenKwh).toLocaleString();
             el("panel-econ-note").innerHTML =
-              `A panel must make ${be} kWh/yr to earn back its ` +
-              `\u2248${fmtMoneyFull(e.cost / count)} share of the install over ` +
-              `${econ.life_years} years.` +
-              (red + green ? ` On this roof <b>${green} of ${red + green}</b> clear it` +
-                             (red ? `, ${red} do not.` : ` \u2014 none fall short.`) : "");
+              `Return over ${econ.life_years} years against each panel's ` +
+              `\u2248${fmtMoneyFull(e.cost / count)} share of the install. ` +
+              `1\u00d7 is ${be} kWh/yr. Tap a band to hide it.`;
           }
           applyPanelDensityPaint();
         };
