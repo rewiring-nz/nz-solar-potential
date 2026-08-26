@@ -131,15 +131,20 @@
   /* The hero figure. A 2px ring on a saturated yellow was shouting; the number
      is already the biggest thing on the panel and does not need the frame to
      compete with it. Hairline border, calmer ground, more air. */
+  /* The headline figure carries the same yellow-to-orange as the page heading,
+     as a filled ground rather than as text -- so the panel has one accent idea
+     used two ways instead of two competing ones. Black type on it because at
+     this saturation nothing else holds contrast. */
   .rsp-statbox {
-    background: rgba(0,0,0,0.45); color: var(--accent); border-radius: 10px;
-    border: 1px solid rgba(255,210,74,0.45); padding: var(--s3) var(--s4);
-    text-align: center; flex: 1 1 100%; width: 100%; box-sizing: border-box;
+    background: linear-gradient(100deg, #ffe600, #ff8c00);
+    color: #16181d; border-radius: 10px; border: none;
+    padding: var(--s3) var(--s4); text-align: center;
+    flex: 1 1 100%; width: 100%; box-sizing: border-box;
   }
-  .rsp-statbox .rsp-power { font-size: var(--fs-hero); font-weight: 750; line-height: 1.05;
-    letter-spacing: -0.5px; white-space: nowrap; }
-  .rsp-statbox .rsp-energy { font-size: var(--fs-label); font-weight: 600; margin-top: var(--s1);
-    white-space: nowrap; color: var(--ink-2); }
+  .rsp-statbox .rsp-power { font-size: var(--fs-hero); font-weight: 800; line-height: 1.05;
+    letter-spacing: -0.5px; white-space: nowrap; color: #16181d; }
+  .rsp-statbox .rsp-energy { font-size: var(--fs-label); font-weight: 700; margin-top: var(--s1);
+    white-space: nowrap; color: rgba(22,24,29,0.72); }
   /* Sections are separated by space first, a hairline only where the change of
      subject is real. */
   .est-section { border-top: 1px solid var(--line); margin-top: var(--s5); padding-top: var(--s3); }
@@ -176,16 +181,33 @@
     padding: 5px 9px; font-family: inherit; text-align: left; }
   .corner-btn:hover { background: rgba(40,40,40,0.95); color: #fff; }
   #bug-report-btn { color: #ffb3b3; }
+  /* Layer toggles read their state from a dot rather than the word "Off",
+     so the row is the same length whichever way it is set. */
+  .corner-btn .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    margin-right: 7px; background: rgba(255,255,255,0.22); vertical-align: middle;
+    border: 1px solid rgba(255,255,255,0.28); }
+  .corner-btn.active { color: var(--ink); border-color: rgba(255,210,74,0.55); }
+  .corner-btn.active .dot { background: var(--accent); border-color: var(--accent); }
 
   .addr-results div { padding: 7px 10px; font-size: 12.5px; cursor: pointer; color: #eee; }
   .addr-results div:hover, .addr-results div.active { background: #266db6; color: #fff; }
-  .vslider-wrap { align-self: flex-start; width: 60px;
-    background: rgba(20,20,20,0.92); border-radius: 8px; padding: 10px 8px;
-    display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; }
-  .vslider-wrap .vlabel { font-size: 10px; font-weight: 700; color: #ccc; text-align: center; line-height: 1.25; }
-  .vslider-wrap .vvalue { font-size: 13px; font-weight: 800; }
-  #vslider { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical;
-    width: 22px; height: 22vh; min-height: 130px; max-height: 280px; }
+  /* Horizontal, directly under the headline figure it controls, so the number
+     and the control that moves it read as one thing. */
+  .hslider-wrap { width: 100%; margin-top: var(--s3); }
+  .hslider-head { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: var(--fs-label); color: var(--ink-2); margin-bottom: var(--s1); }
+  .hslider-head #vslider-value { font-weight: 700; color: var(--ink);
+    font-variant-numeric: tabular-nums; }
+  /* Track uses the heat-map ramp, so the slider and the legend are visibly the
+     same scale rather than two unrelated pieces of colour. */
+  #vslider { -webkit-appearance: none; appearance: none; width: 100%; height: 10px;
+    border-radius: 5px; background: linear-gradient(to right, #20009a, #b4009e, #ff3800, #ffd500, #fffbe0);
+    outline: none; cursor: pointer; }
+  #vslider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%; background: #fff;
+    border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
+  #vslider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
 
   .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
   .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -320,6 +342,8 @@
   <div class="addr-results" id="addr-results"></div>
 </div>
 <div id="corner-actions">
+  <button class="corner-btn" id="toggle-outlines"><span class="dot"></span>Building outlines</button>
+  <button class="corner-btn" id="toggle-obstructions"><span class="dot"></span>Avoided obstructions</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
 </div>
@@ -347,19 +371,16 @@
           <div class="rsp-power" id="inview-power">&ndash;</div>
           <div class="rsp-energy" id="inview-energy">&ndash;</div>
         </div>
+        <div class="hslider-wrap" id="vslider-wrap">
+          <div class="hslider-head">
+            <span id="vslider-label">Panel density</span>
+            <span id="vslider-value">80%</span>
+          </div>
+          <input type="range" id="vslider" min="0" max="100" step="1" value="80">
+        </div>
       </div>
       <div id="coverage-options" style="display:none;"></div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
-      <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.12);">
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
-          <span>Building outlines</span>
-          <button class="toggle-btn" id="toggle-outlines" style="flex:none; width:auto; padding:2px 10px; font-size:11px;">Off</button>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#ccc;">
-          <span>Avoided obstructions</span>
-          <button class="toggle-btn" id="toggle-obstructions" style="flex:none; width:auto; padding:2px 10px; font-size:11px;">Off</button>
-        </div>
-      </div>
     </div>
   </div>
   <!-- Settings: assumptions and pricing, tabbed. Everything here is editable
@@ -463,11 +484,6 @@
     <input type="hidden" name="q5_context" id="bug-f-context">
     <input type="hidden" name="q7_whatWent" id="bug-f-note">
   </form>
-  <div class="vslider-wrap" id="vslider-wrap">
-  <div class="vlabel" id="vslider-label">Roof<br>coverage</div>
-  <div class="vvalue" id="vslider-value">100%</div>
-  <input type="range" id="vslider" min="5" max="100" step="5" value="100">
-</div>
 </div>
 <div class="side-panel" id="side-panel">
   <button class="side-panel-close" id="side-panel-expand" style="right:42px;" title="Expand">&#11036;</button>
@@ -667,6 +683,15 @@ function syncToggleButtons() {
   if (dashLayout) dashLayout.classList.toggle("active", mode === "layout");
   const coverageControl = document.getElementById("coverage-control");
   if (coverageControl) coverageControl.style.display = mode === "heatmap" ? "block" : "none";
+  // The layer toggles moved to the corner cluster; keep their state in step
+  // here rather than only in their own click handlers, so anything else that
+  // changes a layer is reflected too.
+  const to = document.getElementById("toggle-outlines");
+  if (to) to.classList.toggle("active", outlinesOn);
+  const tb = document.getElementById("toggle-obstructions");
+  if (tb) tb.classList.toggle("active", obstructionsOn);
+  // Obstructions only mean anything in Panel Layout.
+  if (tb) tb.style.display = mode === "layout" ? "" : "none";
 }
 
 function applyToggles() {
@@ -1224,17 +1249,17 @@ map.on("load", async () => {
     document.getElementById("inview-mode-title").style.flexWrap = "wrap";
     const s = document.getElementById("vslider");
     if (isLayout) {
-      document.getElementById("vslider-label").innerHTML = "Panel<br>density";
+      document.getElementById("vslider-label").textContent = "Panel density";
       s.min = 0; s.step = 1; s.value = panelDensityPct;
       document.getElementById("vslider-value").textContent = panelDensityPct + "%";
     } else {
-      document.getElementById("vslider-label").innerHTML = "Roof<br>coverage";
+      document.getElementById("vslider-label").textContent = "Roof coverage";
       s.min = 5; s.step = 5; s.value = coveragePct;
       document.getElementById("vslider-value").textContent = coveragePct + "%";
     }
     // The slider only means something for panel density now; Heat Map mode uses
     // the coverage ladder in the dashboard instead (Josh).
-    const vwrap = document.querySelector(".vslider-wrap");
+    const vwrap = document.getElementById("vslider-wrap");
     if (vwrap) vwrap.style.display = isLayout ? "" : "none";
     const eh = document.getElementById("est-heatmap"), ep = document.getElementById("est-panels"),
           ld = document.getElementById("layout-details");
@@ -2366,16 +2391,12 @@ map.on("load", async () => {
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
   document.getElementById("toggle-outlines").addEventListener("click", () => {
     outlinesOn = !outlinesOn;
-    const btn = document.getElementById("toggle-outlines");
-    btn.textContent = outlinesOn ? "On" : "Off";
-    btn.classList.toggle("active", outlinesOn);
+    document.getElementById("toggle-outlines").classList.toggle("active", outlinesOn);
     applyToggles();
   });
   document.getElementById("toggle-obstructions").addEventListener("click", () => {
     obstructionsOn = !obstructionsOn;
-    const btn = document.getElementById("toggle-obstructions");
-    btn.textContent = obstructionsOn ? "On" : "Off";
-    btn.classList.toggle("active", obstructionsOn);
+    document.getElementById("toggle-obstructions").classList.toggle("active", obstructionsOn);
     applyToggles();
   });
 
