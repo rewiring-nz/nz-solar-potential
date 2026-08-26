@@ -910,6 +910,23 @@ function panelBandOf(props) {
   return k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
 }
 
+// Switching the LAST band off leaves a building with no panels, which made
+// economicsFor return null, which hid the whole economics block -- and the
+// in-panel band toggles live inside it, so the controls needed to undo it
+// disappeared with it (Josh). The state also survived reselecting a building,
+// so every roof then read 0 kW with nothing on screen explaining why.
+//
+// Simplest honest fix: a band can always be turned ON, and the last one ON
+// cannot be turned off. There is no useful "show nothing" state here.
+function toggleBand(key) {
+  if (panelEconShow[key]) {
+    const others = Object.keys(panelEconShow).filter(k => k !== key);
+    if (!others.some(k => panelEconShow[k])) return false;   // would leave none
+  }
+  panelEconShow[key] = !panelEconShow[key];
+  return true;
+}
+
 function panelVisible(props) {
   if (props.fill_rank != null && props.fill_rank > panelDensityPct) return false;
   if (!panelEcon) return true;
@@ -1425,8 +1442,7 @@ map.on("load", async () => {
       `<span class="cnt">${tally[b.key].toLocaleString()}</span><span>${b.label}</span></button>`).join("");
     bands.querySelectorAll(".econ-band").forEach(btn =>
       btn.addEventListener("click", () => {
-        const k = btn.dataset.band;
-        panelEconShow[k] = !panelEconShow[k];
+        if (!toggleBand(btn.dataset.band)) return;   // last band stays on
         refreshDerived();
       }));
     document.getElementById("econ-bands-all-note").textContent =
@@ -2791,7 +2807,10 @@ map.on("load", async () => {
     const be = el("bldg-econ");
     if (be) {
       let e = economicsFor(kwp, kwhYear, props.facet_area_m2);
-      be.style.display = e ? "" : "none";
+      // A selection can legitimately come to zero panels -- keeping only "under
+      // 1x" on a roof where none are. Hiding the block in that case would take
+      // the band controls with it, so it stays and says so.
+      be.style.display = (e || (panelEcon && isLayout)) ? "" : "none";
       if (e) {
         // Four figures, each as a bold yellow label with a light-weight value
         // under it (Josh). Net savings is what is left after the system has
@@ -2932,7 +2951,7 @@ map.on("load", async () => {
             bandsBox.querySelectorAll(".econ-band").forEach(btn =>
               btn.addEventListener("click", () => {
                 const k = btn.dataset.band;
-                panelEconShow[k] = !panelEconShow[k];
+                if (!toggleBand(k)) return;   // last band stays on
                 btn.classList.toggle("off", !panelEconShow[k]);
                 // Excluding panels changes the system: kW, count, output, cost,
                 // savings, ROI and the generation curve all move together.
