@@ -711,6 +711,17 @@ const LAYOUT_KIND_FILTER = {
 let panelDensityPct = 80;
 let refitAvailable = false;      // live server's /api/refit present? (never on the static site)
 let selectedPanelBuildingId = -1;
+// A filter that matches nothing. Building ids are positive, so -1 is safe and
+// avoids toggling layer visibility (which would fight applyToggles).
+const SELECTED_NONE = ["==", ["get", "building_id"], -1];
+
+function highlightSelectedBuilding(buildingId) {
+  ["buildings-selected-halo", "buildings-selected"].forEach(id => {
+    if (!map.getLayer(id)) return;
+    map.setFilter(id, buildingId === undefined || buildingId === -1
+      ? SELECTED_NONE : ["==", ["get", "building_id"], buildingId]);
+  });
+}
 let selectedBuildingProps = null;  // buildings-source props of the open panel (deciles included)
 
 // Density is applied as a PAINT expression, never a filter. setFilter forces
@@ -881,6 +892,7 @@ function clearSelection() {
     document.getElementById("m-settings").classList.remove("open");
   }
   selectedBuildingId = -1;
+  highlightSelectedBuilding(-1);
   clearLiveTuning();
   applyToggles();
   document.getElementById("side-panel").classList.remove("visible", "expanded");
@@ -1048,6 +1060,26 @@ map.on("load", async () => {
     type: "line",
     source: "buildings",
     paint: { "line-color": "#ffffff", "line-width": 0.5, "line-opacity": 0.4 }
+  });
+
+  // Which building the figures on the right actually describe. Josh: "useful
+  // especially in dense areas where it's hard to tell where the building you
+  // are measuring stops and starts and where the neighbouring building is."
+  // Always on when something is selected, independent of the white outlines
+  // toggle -- that toggle answers "show me every footprint", this answers
+  // "which one am I reading". Drawn wide-and-faint under narrow-and-solid so
+  // it reads against both a dark roof and a pale one.
+  map.addLayer({
+    id: "buildings-selected-halo",
+    type: "line", source: "buildings",
+    filter: SELECTED_NONE,
+    paint: { "line-color": "#ffd166", "line-width": 5, "line-opacity": 0.28, "line-blur": 2 }
+  });
+  map.addLayer({
+    id: "buildings-selected",
+    type: "line", source: "buildings",
+    filter: SELECTED_NONE,
+    paint: { "line-color": "#ffd166", "line-width": 1.8, "line-opacity": 0.95 }
   });
 
   // Heat Map mode's "ceiling" estimate: ignores the actual fitted panel
@@ -2867,6 +2899,7 @@ map.on("load", async () => {
     panel.classList.add("visible");
     wireCoverageSelect(panel.querySelector("#coverage-select-bldg"));
     selectedPanelBuildingId = p.building_id;
+    highlightSelectedBuilding(p.building_id);
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
     updateFittedStats(p.building_id);
