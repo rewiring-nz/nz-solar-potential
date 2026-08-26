@@ -119,6 +119,12 @@
     font-variant-numeric: tabular-nums; }
   .econ-value.econ-pos { color: var(--good); }
   .econ-value.econ-neg { color: #ff6b60; }
+  /* Net sits alongside lifetime rather than under it (Josh): it is a reading OF
+     that figure -- what is left after the install -- not a separate result. */
+  .econ-net-inline { font-size: 14px; font-weight: 500; margin-left: 8px;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .econ-net-inline.econ-pos { color: var(--good); }
+  .econ-net-inline.econ-neg { color: #ff6b60; }
   /* Return on the money, under the figure it derives from. Two readings of
      the same system: what it gives back each year, and over its whole life. */
   .econ-roi { display: flex; align-items: center; gap: var(--s2);
@@ -855,6 +861,11 @@ let panelEconShow = { low: true, mid: true, high: true };
 // a different one, crediting every panel with self-consumption the daytime load
 // has already used up.
 let panelEconBasis = "marginal";
+// The break-even is computed at the END of updateFittedStats, from figures the
+// START of it already used. So the first pass after switching the mode on has
+// no break-even yet and falls back to the baked deciles. One guarded re-run
+// settles it; the guard stops that becoming a loop.
+let panelEconSettling = false;
 
 function panelBandExpr(lowVal, midVal, highVal, otherVal) {
   const kwh = ["coalesce", ["get", "ac_kwh_year"], 0];
@@ -863,6 +874,45 @@ function panelBandExpr(lowVal, midVal, highVal, otherVal) {
     ["<", kwh, panelEcon.breakEvenKwh], lowVal,
     ["<", kwh, PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh], midVal,
     highVal];
+}
+
+// What the roof looks like once bands are switched off. Josh: hiding the red
+// panels "does not adjust the size, cost, and general economics like it
+// should" -- and it should, because excluding a panel is a decision to not
+// install it, so the system genuinely gets smaller and cheaper.
+//
+// Read from the rendered tiles rather than the baked deciles, because the
+// deciles know nothing about per-panel yield and the bands are defined by it.
+// Both the kept and the total are counted the same way so the ratio is honest
+// even if some tiles are not loaded.
+function bandFilteredTotals(buildingId) {
+  if (!panelEcon || panelEcon.buildingId !== buildingId) return null;
+  // Deliberately returns totals even with every band shown. The baked deciles
+  // and the rendered tiles disagree about how many panels a roof has at a given
+  // density (5 Beach St: 135 vs 203), so switching source when the first band
+  // is hidden made the count go UP. Once this mode is on, every figure comes
+  // from the tiles, and hiding a band can only ever subtract.
+  let feats;
+  try {
+    // Only the query is guarded -- a missing layer is expected during startup.
+    // Wrapping the whole body swallowed a ReferenceError below and turned a
+    // real bug into "the filter silently does nothing".
+    feats = map.queryRenderedFeatures({ layers: ["panels-fill"] });
+  } catch (err) { return null; }
+  let count = 0, kwh = 0, total = 0;
+  feats.forEach(f => {
+    const pr = f.properties;
+    if (pr.building_id !== buildingId) return;
+    if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+    total++;
+    const k = pr.ac_kwh_year || 0;
+    const band = k < panelEcon.breakEvenKwh ? "low"
+               : k < PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh ? "mid" : "high";
+    if (!panelEconShow[band]) return;
+    count++; kwh += k;
+  });
+  // Raw kWh: the caller applies bakedKwhScale, which is not in scope here.
+  return total ? { count, kwhRaw: kwh, total } : null;
 }
 
 function panelColourExpr() {
@@ -2571,6 +2621,8 @@ map.on("load", async () => {
     if (isLayout) {
       count = Math.round(decileInterp(props, "fill_panels", panelDensityPct));
       kwhYear = decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      const kept = bandFilteredTotals(buildingId);
+      if (kept) { count = kept.count; kwhYear = kept.kwhRaw * bakedKwhScale(); }
       kwp = count * assumptions.panel_rated_power_w / 1000;
     } else {
       ({ kwp, kwhYear } = buildingEstimate(props, coveragePct));
@@ -2610,10 +2662,6 @@ map.on("load", async () => {
           item("Cost", "econ-v-cost") +
           item("Yearly savings", "econ-v-annual") +
           item("Lifetime savings", "econ-v-life") +
-          // Net savings is the one figure here that can go the wrong way, so it
-          // is the one that carries colour -- green if the system is ahead over
-          // its life, red if it never gets there (Josh).
-          item("Net savings", "econ-v-net") +
           `<div class="econ-roi"><span>Lifetime ROI: <b id="econ-roi-life"></b></span>` +
             `<span class="sep"></span>` +
             `<span>Yearly ROI: <b id="econ-roi-year"></b></span></div>` +
@@ -2647,10 +2695,13 @@ map.on("load", async () => {
           const net = e.lifetime - e.cost;
           el("econ-v-cost").textContent = fmtMoneyFull(e.cost);
           el("econ-v-annual").textContent = fmtMoneyFull(e.annual);
-          el("econ-v-life").textContent = fmtMoneyFull(e.lifetime);
-          const netEl = el("econ-v-net");
-          netEl.textContent = (net < 0 ? "-" : "") + fmtMoneyFull(Math.abs(net));
-          netEl.className = "econ-value " + (net >= 0 ? "econ-pos" : "econ-neg");
+          // Net carries the colour, because it is the one figure here that can
+          // go the wrong way -- green if the system is ahead over its life, red
+          // if it never gets there (Josh).
+          el("econ-v-life").innerHTML = fmtMoneyFull(e.lifetime) +
+            `<span class="econ-net-inline ${net >= 0 ? "econ-pos" : "econ-neg"}">` +
+            `(${net < 0 ? "-" : ""}${fmtMoneyFull(Math.abs(net))} ` +
+            `net ${net >= 0 ? "profit" : "loss"})</span>`;
           // Lifetime ROI is the return on the money over the system's life --
           // net of the install, so a system that only just pays for itself
           // reads 0%, not 100%. Yearly is the simple annual rate.
@@ -2703,6 +2754,11 @@ map.on("load", async () => {
           }
           const corner = document.getElementById("toggle-panel-econ");
           if (corner) corner.classList.toggle("active", !!panelEcon);
+          if (panelEcon && !panelEconSettling) {
+            panelEconSettling = true;
+            try { updateFittedStats(buildingId); } finally { panelEconSettling = false; }
+            return;
+          }
           const bandsBox = el("econ-bands");
           if (!panelEcon) {
             bandsBox.style.display = "none";
@@ -2733,6 +2789,9 @@ map.on("load", async () => {
                 panelEconShow[k] = !panelEconShow[k];
                 btn.classList.toggle("off", !panelEconShow[k]);
                 applyPanelDensityPaint();
+                // Excluding panels changes the system, so re-run the whole
+                // panel: kW, count, output, cost, savings and ROI all move.
+                updateFittedStats(buildingId);
               }));
             const be = Math.round(panelEcon.breakEvenKwh).toLocaleString();
             el("panel-econ-note").innerHTML =
