@@ -1151,6 +1151,12 @@ map.on("load", async () => {
         renderCoverageOptions([selectedBuildingProps], "bldg-coverage-options");
       }
     }
+    // Cost, savings and ROI are all derived from the system size, so they have
+    // to follow the coverage choice too. This was the missing half of the bug:
+    // even once the estimate was mode-aware, nothing recomputed it here.
+    if (mode !== "layout" && selectedPanelBuildingId !== -1) {
+      updateFittedStats(selectedPanelBuildingId);
+    }
   }
   function wireCoverageSelect(sel) {
     sel.addEventListener("change", () => setCoverage(parseInt(sel.value, 10)));
@@ -2331,10 +2337,23 @@ map.on("load", async () => {
     const el = id => document.getElementById(id);
     const props = selectedBuildingProps;
     if (!props || props.building_id !== buildingId) return;
-    const count = Math.round(decileInterp(props, "fill_panels", panelDensityPct));
-    const kwhYear = decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
-    const kwp = count * assumptions.panel_rated_power_w / 1000;
-    if (el("fitted-count")) {
+    // Where the system size comes from depends on which map you are looking at
+    // (Josh: the economics did not move when the coverage option changed). In
+    // Panel Layout it is the fitted panels at the current density. In Heat Map
+    // there are no panels at all -- the number on screen is coveragePct of the
+    // roof -- so the economics have to be built from the same estimate the
+    // yellow box and the coverage ladder are showing, or the panel contradicts
+    // itself.
+    const isLayout = mode === "layout";
+    let count = null, kwp, kwhYear;
+    if (isLayout) {
+      count = Math.round(decileInterp(props, "fill_panels", panelDensityPct));
+      kwhYear = decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      kwp = count * assumptions.panel_rated_power_w / 1000;
+    } else {
+      ({ kwp, kwhYear } = buildingEstimate(props, coveragePct));
+    }
+    if (isLayout && el("fitted-count")) {
       el("fitted-count").textContent = count;
       el("fitted-kwp").textContent = kwp.toFixed(2);
       el("fitted-kwh").textContent = Math.round(kwhYear).toLocaleString();
@@ -2342,7 +2361,8 @@ map.on("load", async () => {
     if (el("bldg-fitted-power")) {
       el("bldg-fitted-power").textContent = fmtPower(kwp);
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
-      if (el("bldg-fitted-panels")) {
+      // No panel count in Heat Map mode -- nothing has been laid out (Josh).
+      if (el("bldg-fitted-panels") && count !== null) {
         el("bldg-fitted-panels").textContent = count.toLocaleString() + " panels";
       }
     }
