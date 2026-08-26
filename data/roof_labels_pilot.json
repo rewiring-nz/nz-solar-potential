@@ -88,14 +88,18 @@
   "source": "Josh, 26 Aug"
  },
  "4735408": {
-  "n": 2,
-  "label": "simple gable, two faces",
-  "confirmed": false
+  "n": 5,
+  "label": "two main large faces plus three smaller ones",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4735634": {
-  "n": 5,
-  "label": "complex, 5 faces",
-  "confirmed": false
+  "n": 13,
+  "n_alt": 14,
+  "label": "two main planes plus many small raised planes",
+  "note": "Josh: 'very complicated. Two main planes with other planes popping up like obstructions. In total there are 13 maybe 14 faces total.'",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "5371194": {
   "n": 3,
