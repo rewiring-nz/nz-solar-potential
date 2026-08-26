@@ -321,6 +321,11 @@ HEIGHT_STRONG_ABOVE_FRACTION = 0.75  # a strong part only counts as equipment if
 # report (airport #4722059, canopy #4721762, hangar #4721734, membrane #4679079, 29 Park St)
 # from genuine rooftop equipment.
 HEIGHT_STRONG_ABOVE_MARGIN_M = 0.25
+# How certain the above-plane fingerprint must be before a part is allowed past
+# the facet-fraction cap. Deliberately far stricter than HEIGHT_STRONG_ABOVE_
+# FRACTION: passing the cap means claiming a large share of a roof, so it should
+# take near-unanimous evidence, not merely enough to call something equipment.
+HEIGHT_STRONG_UNCAPPED_ABOVE_FRACTION = 0.95
 HEIGHT_STRONG_MAX_FACET_FRACTION = 0.35  # a single strong-evidence part covering more of the
 # facet than this is a mis-modelled roof SURFACE, not rooftop equipment -- no real duct/plant
 # cluster blankets most of a roof. Catches curved/barrel roofs that region-growing collapses
@@ -420,15 +425,30 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             for part in parts:
                 if part.geom_type != "Polygon" or part.area < HEIGHT_STRONG_MIN_PART_AREA_M2:
                     continue
-                if part.area > HEIGHT_STRONG_MAX_FACET_FRACTION * facet_geom.area:
-                    continue  # covers most of the roof -> mis-modelled surface, not equipment
+                # Order matters here, and it used to be wrong. The size cap ran
+                # FIRST and rejected any large part outright -- but the cap is
+                # only a proxy for "this is a mis-modelled roof surface, not
+                # equipment", and the very next test answers that question
+                # directly: equipment protrudes upward (frac_above ~1.0) while a
+                # curved/ribbed surface deviates both ways (~0.5). Asking the
+                # proxy before the evidence is what made raising sensitivity
+                # LOWER detection: more flagged points grow a cluster, the grown
+                # cluster trips the cap, and the whole thing is thrown away.
                 in_part = shapely.vectorized.contains(part, member_pts3d[:, 0], member_pts3d[:, 1])
                 part_pts3d = member_pts3d[in_part]
+                frac_above = None
                 if len(part_pts3d) >= 5:
                     plane_z = (plane_a * part_pts3d[:, 0] + plane_b * part_pts3d[:, 1] + plane_c)
                     frac_above = float(np.mean(part_pts3d[:, 2] > plane_z + HEIGHT_STRONG_ABOVE_MARGIN_M))
                     if frac_above < HEIGHT_STRONG_ABOVE_FRACTION:
                         continue  # deviates both ways -> curved/ribbed roof shape, not equipment
+                if part.area > HEIGHT_STRONG_MAX_FACET_FRACTION * facet_geom.area:
+                    # Big. Keep it only where the fingerprint is unambiguous --
+                    # essentially every point standing clear above the plane. A
+                    # part with too few points to fingerprint keeps the old
+                    # conservative behaviour and is dropped.
+                    if frac_above is None or frac_above < HEIGHT_STRONG_UNCAPPED_ABOVE_FRACTION:
+                        continue
                 if part.area >= HEIGHT_STRONG_PLANAR_MIN_AREA_M2:
                     in_part = shapely.vectorized.contains(part, member_pts3d[:, 0], member_pts3d[:, 1])
                     part_pts = member_pts3d[in_part]
