@@ -2090,8 +2090,8 @@ map.on("load", async () => {
     // Homes and businesses buy electricity at very different prices, so a
     // single retail rate would flatter one and penalise the other. Export is
     // the same for both today.
-    home_buy_c: 30, home_sell_c: 15,
-    biz_buy_c: 17,  biz_sell_c: 15,
+    home_buy_c: 30, home_sell_c: 14,
+    biz_buy_c: 17,  biz_sell_c: 14,
     // Which rate set a building gets.
     //
     // ROOF AREA is the real signal and does the work. System size is not an
@@ -2138,7 +2138,7 @@ map.on("load", async () => {
     // Retail electricity rises; the export rate does NOT (Josh). Buyback is
     // already on a declining schedule, and inflating it as well would have the
     // two assumptions fighting each other.
-    elec_inflation_pct: 5.0,
+    elec_inflation_pct: 4.0,   // Josh
     // An inverter does not last the life of the panels. Standard practice
     // includes replacing it; leaving it out flatters every system equally.
     inverter_replace_year: 15,
@@ -2147,7 +2147,10 @@ map.on("load", async () => {
     // years of nominal dollars and calls it savings, which overstates the
     // result badly -- and adding 5% inflation without it would overstate it
     // further still. Editable; set to 0 for an undiscounted view.
-    discount_rate_pct: 5.0,
+    // 3% (Josh). Lower than the ~5% a private householder would use, which is a
+    // defensible public-good framing -- and it is on screen and adjustable, so
+    // the choice is visible rather than buried.
+    discount_rate_pct: 3.0,
   };
   // Named daytime-load profiles. The kW figure drives the maths; the names
   // exist so the choice is a recognisable situation rather than a number
