@@ -543,7 +543,9 @@
       <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
       <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback is expected to fall.
         Payback and lifetime value follow this year by year, they are not a flat figure.</div>
-      <div id="sell-schedule"></div>
+      <div class="slider-row"><label><span>Export falls by</span><span id="e-edec-val"></span></label>
+        <input type="range" id="e-edec" min="0" max="8" step="0.1"></div>
+      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;" id="e-edec-preview"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
       <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Set by the site's daytime load,
         not by a share of output: a bigger array does not make the building use more. Whatever the
@@ -1280,7 +1282,17 @@ map.on("load", async () => {
   const data = await resp.json();
   const assumptions = data.assumptions;
 
-  map.addSource("buildings", { type: "geojson", data });
+  // tolerance:0 matters more than it looks. MapLibre tiles a GeoJSON source
+  // internally with geojson-vt, which simplifies at low zoom and DROPS polygons
+  // whose area falls under a tolerance-derived threshold -- and a house is a
+  // very small polygon once you are a few zoom levels out. Measured: 11,968
+  // buildings in the source at z12, 819 at z10.5, which is what Josh saw as
+  // "10000 buildings in view to just 800, a sudden drop".
+  //
+  // That silently truncated the district totals too, not just the count: the
+  // dashboard sums whatever the source hands back, so the whole-town figure was
+  // quietly a sample once you zoomed out far enough to want it.
+  map.addSource("buildings", { type: "geojson", data, tolerance: 0 });
 
   map.addLayer({
     id: "buildings-fill",
@@ -2137,7 +2149,15 @@ map.on("load", async () => {
     biz_min_kw: 100,
     // Export earns less over time. Anchors are Josh's; this interpolates
     // between them and holds flat past the last.
-    sell_schedule: [[2026, 15], [2035, 10], [2040, 8]],
+    // Export falls at a steady rate rather than via dated anchors (Josh:
+    // "just starting at 14 cents and dropping by some percentage each year").
+    //
+    // 2%/yr from 14c: 12.9c in 2030, 11.7c in 2035, 10.5c in 2040, 8.6c in
+    // 2050. Above the 12c/9c Josh first sketched, and deliberately so -- at 3%
+    // a compound decline reaches 5.6c by the end of a 30-year system, and
+    // unlike the old anchored schedule it never levels off. 2% keeps the tail
+    // from doing more work than a buyback forecast can honestly carry.
+    export_decline_pct: 2.0,
     // Self-consumption is a LOAD, not a share of output (Josh, 26 Aug). A
     // house drawing 1.2kW through the day soaks up the same ~8kWh whether the
     // array is 5kW or 40kW, so the kWh self-consumed is flat and the SHARE
@@ -2209,18 +2229,13 @@ map.on("load", async () => {
   function isBusiness(kwp, roofM2) {
     return (roofM2 || 0) >= econ.biz_min_roof_m2 || (kwp || 0) >= econ.biz_min_kw;
   }
-  // Export rate in a calendar year: piecewise-linear between the anchors,
-  // flat before the first and after the last.
-  function sellRate(year) {
-    const sch = econ.sell_schedule;
-    if (year <= sch[0][0]) return sch[0][1];
-    for (let i = 1; i < sch.length; i++) {
-      if (year <= sch[i][0]) {
-        const [y0, r0] = sch[i - 1], [y1, r1] = sch[i];
-        return r0 + (r1 - r0) * (year - y0) / (y1 - y0);
-      }
-    }
-    return sch[sch.length - 1][1];
+  // Export rate in a calendar year: today's rate declining at a steady
+  // percentage. Takes the starting rate as an argument rather than reading a
+  // schedule, so the home and business figures each decline from their own
+  // starting point without needing the rescaling the anchored version did.
+  function sellRate(year, startCents) {
+    const yrs = Math.max(0, year - THIS_YEAR);
+    return startCents * Math.pow(1 - econ.export_decline_pct / 100, yrs);
   }
 
   function economicsFor(kwp, kwhYear, roofM2, override) {
@@ -2231,7 +2246,8 @@ map.on("load", async () => {
     // The decline schedule is anchored on today's rate, so editing the
     // home/business export price moves the whole curve with it instead of
     // snapping back to the schedule's own first value.
-    const scale = sellNow / sellRate(THIS_YEAR);
+    // The old anchored schedule needed rescaling to today's edited rate; a
+    // decline from the rate itself does not.
     const daytimeKw = (override && override.daytimeKw != null)
       ? override.daytimeKw : (biz ? econ.biz_daytime_kw : econ.home_daytime_kw);
     const useKwh = (override && override.useKwh != null)
@@ -2249,7 +2265,7 @@ map.on("load", async () => {
     const valueInYear = y => {
       const gen = kwhYear * Math.pow(1 - d, y);
       const selfKwh = selfKwhFor(gen);
-      return (selfKwh * buy + (gen - selfKwh) * sellRate(THIS_YEAR + y) * scale) / 100;
+      return (selfKwh * buy + (gen - selfKwh) * sellRate(THIS_YEAR + y, sellNow)) / 100;
     };
     // Retail inflates, export does not, and everything is discounted back to
     // today. Applied in valueInYear's caller rather than inside it so payback
@@ -2260,7 +2276,7 @@ map.on("load", async () => {
       const gen = kwhYear * Math.pow(1 - d, y);
       const selfKwh = selfKwhFor(gen);
       const retail = selfKwh * buy * Math.pow(infl, y);
-      const exported = (gen - selfKwh) * sellRate(THIS_YEAR + y) * scale;
+      const exported = (gen - selfKwh) * sellRate(THIS_YEAR + y, sellNow);
       return (retail + exported) / 100 / Math.pow(disc, y);
     };
     const annual = realValueInYear(0);
@@ -2285,12 +2301,12 @@ map.on("load", async () => {
     let exportLifetimePerKwhYr = 0, retailLifetimePerKwhYr = 0;
     for (let y = 0; y < econ.life_years; y++) {
       const deg = Math.pow(1 - d, y), dsc = Math.pow(disc, y);
-      exportLifetimePerKwhYr += deg * sellRate(THIS_YEAR + y) * scale / 100 / dsc;
+      exportLifetimePerKwhYr += deg * sellRate(THIS_YEAR + y, sellNow) / 100 / dsc;
       retailLifetimePerKwhYr += deg * buy * Math.pow(infl, y) / 100 / dsc;
     }
     return { cost, annual, lifetime, payback, rate: costPerKw(kwp), biz, buy, sellNow,
              exportLifetimePerKwhYr, retailLifetimePerKwhYr,
-             sellLater: sellRate(THIS_YEAR + econ.life_years) * scale,
+             sellLater: sellRate(THIS_YEAR + econ.life_years, sellNow),
              inverterCost,
              daytimeKw, ceiling, useKwh, selfKwh: selfKwhFor(kwhYear),
              // Share is now an OUTPUT of the model, not an input to it.
@@ -2392,22 +2408,6 @@ map.on("load", async () => {
     profSel.innerHTML = SELF_PROFILES.map(p =>
       `<option value="${p.id}">${p.label}${p.kw !== null ? ` (${p.kw} kW)` : ""}</option>`).join("");
 
-    const schedBox = el("sell-schedule");
-    function renderSchedule() {
-      schedBox.innerHTML = econ.sell_schedule.map(([y, r], i) =>
-        `<div class="cost-tier"><span>${y}</span>` +
-        `<input type="number" data-i="${i}" step="0.5" min="0" value="${r}">` +
-        `<span style="flex:none; color:#888;">c/kWh</span></div>`).join("");
-      schedBox.querySelectorAll("input").forEach(inp =>
-        inp.addEventListener("input", () => {
-          const v = parseFloat(inp.value);
-          if (isFinite(v) && v >= 0) { econ.sell_schedule[+inp.dataset.i][1] = v; applyEcon(); }
-        }));
-    }
-
-    // silent: called from the building panel, which owns the field the user is
-    // typing in. Refresh this modal's own controls, but do NOT rebuild the
-    // panel -- that would destroy the input mid-keystroke.
     function applyEcon(opts) {
       el("e-hbuy-val").textContent = econ.home_buy_c.toFixed(0) + "c/kWh";
       el("e-hsell-val").textContent = econ.home_sell_c.toFixed(1) + "c/kWh";
@@ -2421,6 +2421,12 @@ map.on("load", async () => {
         Math.round(econ.home_daytime_kw * econ.daytime_hours) + " kWh/day for a home";
       el("e-life-val").textContent = econ.life_years + " years";
       el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
+      el("e-edec-val").textContent = econ.export_decline_pct.toFixed(1) + "%/yr";
+      // Shown as prices, not just a rate: nobody can judge "-3.1%/yr" but
+      // everybody can judge what a kWh sells for in 2040.
+      el("e-edec-preview").textContent =
+        [2030, 2035, 2040].map(y =>
+          `${y}: ${sellRate(y, econ.home_sell_c).toFixed(1)}c`).join("   ");
       el("e-infl-val").textContent = econ.elec_inflation_pct.toFixed(1) + "%/yr";
       el("e-disc-val").textContent = econ.discount_rate_pct === 0
         ? "none" : econ.discount_rate_pct.toFixed(1) + "%/yr";
@@ -2458,6 +2464,7 @@ map.on("load", async () => {
     bindEcon("e-dayh", "daytime_hours", parseFloat);
     bindEcon("e-life", "life_years", v => parseInt(v, 10));
     bindEcon("e-deg", "degradation_pct", parseFloat);
+    bindEcon("e-edec", "export_decline_pct", parseFloat);
     bindEcon("e-infl", "elec_inflation_pct", parseFloat);
     bindEcon("e-disc", "discount_rate_pct", parseFloat);
     bindEcon("e-invy", "inverter_replace_year", v => parseInt(v, 10));
@@ -2483,13 +2490,14 @@ map.on("load", async () => {
       el("e-dayh").value = econ.daytime_hours;
       el("e-life").value = econ.life_years;
       el("e-deg").value = econ.degradation_pct; profSel.value = econ.profile;
+      el("e-edec").value = econ.export_decline_pct;
       el("e-infl").value = econ.elec_inflation_pct;
       el("e-disc").value = econ.discount_rate_pct;
       el("e-invy").value = econ.inverter_replace_year;
       el("e-invc").value = econ.inverter_cost_pct;
       const pr = SELF_PROFILES.find(x => x.id === econ.profile);
       if (pr && pr.kw !== null) { econ.home_daytime_kw = pr.kw; el("e-self").value = pr.kw; }
-      renderTiers(); renderSchedule(); applyEcon();
+      renderTiers(); applyEcon();
     }
     el("e-reset").addEventListener("click", () => loadEcon(ECON_DEFAULTS));
     loadEcon(ECON_DEFAULTS);
@@ -3085,7 +3093,7 @@ map.on("load", async () => {
           el("econ-basis").innerHTML =
             `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
             ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
-            `${e.sellLater < e.sellNow - 0.05 ? `, export falling to ${e.sellLater.toFixed(1)}c by ${THIS_YEAR + econ.life_years}` : ""}`;
+            `${e.sellLater < e.sellNow - 0.05 ? `, export falling ${econ.export_decline_pct}%/yr to ${e.sellLater.toFixed(1)}c by ${THIS_YEAR + econ.life_years}` : ""}`;
         };
         refresh();
 
