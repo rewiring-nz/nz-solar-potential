@@ -1040,8 +1040,8 @@ map.on("load", async () => {
   // mean irradiance of the sunniest N% of each roof (src/bake_density_deciles.py).
   // kWp stays linear in area -- half the roof is half the panels.
   const COVERAGE_OPTION_STEPS = [100, 50, 25, 10, 5];
-  function renderCoverageOptions(props) {
-    const box = document.getElementById("coverage-options");
+  function renderCoverageOptions(props, boxId) {
+    const box = document.getElementById(boxId || "coverage-options");
     if (!box) return;
     if (mode !== "heatmap") { box.style.display = "none"; return; }
     box.style.display = "";
@@ -1111,6 +1111,13 @@ map.on("load", async () => {
       if (bpn) {
         const n = Math.round(est.kwp * 1000 / assumptions.panel_rated_power_w);
         bpn.textContent = n.toLocaleString() + " panels";
+      }
+      // Same coverage ladder as the map-view dashboard, but for this one roof
+      // (Josh). Its shape differs building to building: a roof that is all one
+      // good pitch barely bends between 10% and 100%, while one with a big
+      // south face bends hard, and that difference is the whole point.
+      if (selectedBuildingProps) {
+        renderCoverageOptions([selectedBuildingProps], "bldg-coverage-options");
       }
     }
   }
@@ -1971,6 +1978,7 @@ map.on("load", async () => {
               <div class="rsp-energy" id="bldg-energy">${fmtEnergy(est.kwhYear)}</div>
             </div>
           </div>
+          <div id="bldg-coverage-options" style="display:none;"></div>
         </div>
         <div class="est-section" id="est-panels" style="border-top:none;">
           <div class="est-title"><span>Panel placement estimate</span>
@@ -2412,6 +2420,7 @@ map.on("load", async () => {
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
     updateFittedStats(p.building_id);
+    renderCoverageOptions([p], "bldg-coverage-options");
     // Advanced per-roof tuning needs the local live server's /api/refit --
     // hide it entirely on the static deployed site rather than showing
     // sliders that silently do nothing.
