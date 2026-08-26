@@ -1424,9 +1424,27 @@ map.on("load", async () => {
       const count = Math.round(decileInterp(pr, "fill_panels", panelDensityPct));
       if (!(count > 0)) return;
       const kwhYear = decileInterp(pr, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      // A panel's own economics must not move when the density slider does
+      // (Josh): "other than the self consumption portion of panels, the number
+      // of panels should not change other panels ROIs, the ROI should be on a
+      // per panel basis".
+      //
+      // The cost tiers were doing exactly that. cost/count is
+      // costPerKw(kwp) x panel watts, and kwp follows the slider, so crossing a
+      // tier boundary -- 1,800 to 1,500 $/kW is a 17% step -- reprices every
+      // panel on the roof and recolours the lot. So the per-panel cost and the
+      // lifetime rates are taken from the FULL system: the tier you would
+      // actually be quoted for this roof, not for whatever fraction is on
+      // screen.
+      const fullCount = Math.round(decileInterp(pr, "fill_panels", 100));
+      const fullKwh = decileInterp(pr, "fill_kwh", 100) * bakedKwhScale();
+      const fullKwp = fullCount * assumptions.panel_rated_power_w / 1000;
+      const eFull = (fullCount > 0) ? economicsFor(fullKwp, fullKwh, pr.facet_area_m2) : null;
       const kwp = count * assumptions.panel_rated_power_w / 1000;
       const e = economicsFor(kwp, kwhYear, pr.facet_area_m2);
       if (!e) return;
+      const basis = eFull || e;
+      const basisCount = eFull ? fullCount : count;
       // Merit order (Josh): panels are laid sunniest-first, and the site's
       // daytime load is met by the ones that come first. So the earliest panels
       // sell into RETAIL and everything after them exports -- two panels of
@@ -1436,18 +1454,24 @@ map.on("load", async () => {
       // fill_order is already on every panel in the tiles, so the cutoff is one
       // number per building: how many panels it takes to cover the self-consumed
       // kWh. Below it, retail; above it, export.
+      // The cutoff DOES still follow the slider, and should: how many panels the
+      // site's daytime load can absorb genuinely depends on how many are there.
+      // That is the one dependence Josh called out as legitimate.
       const perPanelKwh = kwhYear / count;
       const cutoff = perPanelKwh > 0 ? Math.min(count, e.selfKwh / perPanelKwh) : 0;
-      const costPerPanel = e.cost / count;
+      const costPerPanel = basis.cost / basisCount;
       merit.set(pr.building_id, {
         cutoff,
         // kWh/yr a panel must make to repay its own share, on each side.
-        retailBE: costPerPanel / Math.max(e.retailLifetimePerKwhYr, 1e-9),
-        exportBE: costPerPanel / Math.max(e.exportLifetimePerKwhYr, 1e-9),
+        // Fixed for this roof; only which side of the cutoff a panel sits on
+        // changes as the slider moves.
+        retailBE: costPerPanel / Math.max(basis.retailLifetimePerKwhYr, 1e-9),
+        exportBE: costPerPanel / Math.max(basis.exportLifetimePerKwhYr, 1e-9),
       });
       const perKwh = panelEconBasis === "marginal"
-        ? e.exportLifetimePerKwhYr : e.lifetime / Math.max(kwhYear, 1e-9);
-      pairs.push(pr.building_id, (e.cost / count) / Math.max(perKwh, 1e-9));
+        ? basis.exportLifetimePerKwhYr
+        : basis.lifetime / Math.max(eFull ? fullKwh : kwhYear, 1e-9);
+      pairs.push(pr.building_id, costPerPanel / Math.max(perKwh, 1e-9));
     });
     panelEconMerit = merit;
     panelEconMatch = pairs.length
