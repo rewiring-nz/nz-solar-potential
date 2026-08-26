@@ -133,7 +133,7 @@ def main():
         pts = pc.points_in_bbox(minx - 1, miny - 1, maxx + 1, maxy + 1, building_only=True)
         import shapely.vectorized
         pts = pts[shapely.vectorized.contains(outline.buffer(0.3), pts[:, 0], pts[:, 1])]
-        new = reconstruct(bid, outline, pts)
+        new, new_obs = reconstruct(bid, outline, pts)
 
         def offplane(facets):
             """Share of roof points more than 0.35m off the plane they'd sit on
@@ -165,8 +165,12 @@ def main():
              (f", {o_old:.0%} of points off-plane" if o_old is not None else ""),
              colour_by_plane=True)
         draw(axes[1], imagery, [outline], new,
-             f"reconstructed -- {len(new)} facets" +
+             f"reconstructed -- {len(new)} facets, {len(new_obs)} obstructions" +
              (f", {o_new:.0%} of points off-plane" if o_new is not None else ""))
+        for ob in new_obs:
+            axes[1].add_patch(MplPolygon(list(zip(*ob["geometry"].exterior.xy)), closed=True,
+                                         facecolor="#a855f7", edgecolor="#e9d5ff",
+                                         lw=0.8, alpha=0.75))
         fig.tight_layout(pad=0.4)
         buf = io.BytesIO()
         fig.savefig(buf, format="jpg", dpi=105, bbox_inches="tight",
@@ -176,7 +180,7 @@ def main():
                       "old": len(old), "new": len(new), "o_old": o_old, "o_new": o_new,
                       "pts": len(pts)})
         stats.append((bid, len(old), len(new), o_old, o_new))
-        print(f"  {bid}: {len(old)} -> {len(new)} facets   off-plane "
+        print(f"  {bid}: {len(old)} -> {len(new)} facets, {len(new_obs)} obs   off-plane "
               f"{'--' if o_old is None else f'{o_old:.0%}'} -> "
               f"{'--' if o_new is None else f'{o_new:.0%}'}   ({len(pts)} pts)")
     imagery.close()
@@ -191,11 +195,23 @@ def build_html(cards):
         return "&mdash;" if v is None else f"{v:.0%}"
 
     def card(c):
-        better = (c["o_old"] is not None and c["o_new"] is not None
-                  and c["o_new"] < c["o_old"] - 0.02)
-        worse = (c["o_old"] is not None and c["o_new"] is not None
-                 and c["o_new"] > c["o_old"] + 0.02)
-        verdict = "better" if better else ("worse" if worse else "level")
+        # Off-plane alone cannot decide this. Cutting a roof into more pieces
+        # ALWAYS lowers the residual, so a meaningless diagonal across a flat
+        # roof scores as an improvement (Josh, on 5 Isle St). A reconstruction
+        # only counts as better if it also did not fragment the roof.
+        o_old, o_new = c["o_old"], c["o_new"]
+        if o_old is None or o_new is None:
+            verdict = "level"
+        else:
+            fragmented = c["new"] > max(6, 2 * c["old"])
+            if o_new < o_old - 0.02 and not fragmented:
+                verdict = "better"
+            elif o_new > o_old + 0.02:
+                verdict = "worse"
+            elif fragmented:
+                verdict = "fragmented"
+            else:
+                verdict = "level"
         return f"""<figure class="card">
   <figcaption class="head">
     <span class="bid">#{c['bid']}</span>
@@ -228,7 +244,8 @@ def build_html(cards):
   .head {{ display:flex; justify-content:space-between; align-items:baseline; }}
   .bid {{ font-weight:700; font-variant-numeric:tabular-nums; }}
   .verdict {{ font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }}
-  .v-better {{ color:var(--good); }} .v-worse {{ color:var(--bad); }} .v-level {{ color:var(--level); }}
+  .v-better {{ color:var(--good); }} .v-worse {{ color:var(--bad); }}
+  .v-level {{ color:var(--level); }} .v-fragmented {{ color:var(--bad); }}
   .why {{ color:var(--ink-2); font-size:12.5px; margin:2px 0 10px; }}
   .card img {{ display:block; width:100%; height:auto; border-radius:5px; }}
   table {{ width:100%; margin-top:10px; border-collapse:collapse; font-size:12.5px;

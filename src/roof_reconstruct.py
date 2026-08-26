@@ -44,6 +44,8 @@ from pathlib import Path
 
 import numpy as np
 import shapely.vectorized
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 from shapely.geometry import LineString, Polygon
 from shapely.ops import polygonize, split, unary_union
@@ -56,14 +58,24 @@ MIN_PLANE_PTS = 25         # ~4.5 m2 at pilot density (5.7 pts/m2)
 MAX_PLANES = 40
 WALL_SLOPE_DEG = 72        # steeper than this is a wall, not a roof face
 GRID_M = 0.30              # label raster step, for adjacency and step edges
-PARALLEL_GRAD_TOL = 0.06   # gradient difference below this = a step, not a joint
+PARALLEL_GRAD_TOL = 0.06   # gradient difference below this can only be a step
+# Two planes always intersect somewhere unless they are parallel -- but that
+# line is only the ROOF's edge if the two faces actually fold together there.
+# 4750866 is a house with a wing 4m lower: opposite aspects, so the gradients
+# differ and the analytic line was trusted, but it falls 1.7m OUTSIDE the
+# building. Nothing got cut and the whole roof came back as one facet fitting
+# 13% of its own points. So the analytic line is only used when it lands on the
+# boundary the points actually show; otherwise that boundary is fitted.
+FOLD_MAX_OFFSET_M = 1.0
 MIN_FACET_M2 = 6.0         # smaller than ~3 panels is not a face worth racking
 MIN_CELL_PTS = 4           # a cell with fewer points has no say in its own label
 # Coplanar merge. Splitting a roof into more planes ALWAYS lowers residual, so
 # without this the reconstruction scores well by shattering: 93 Beach St came
 # out as 82 speckled fragments at "5% off-plane". Two neighbouring cells that
 # describe the same physical surface have to end up as one facet.
-MERGE_SLOPE_DEG = 6.0
+# 4 degrees, not 6: the barrel vault's adjacent strips are ~6 apart and must
+# stay separate, while a flat deck's sag shows up as 1-3 and must not.
+MERGE_SLOPE_DEG = 4.0
 MERGE_ASPECT_DEG = 14.0
 MERGE_FLAT_DEG = 6.0       # below this slope, aspect is meaningless
 MERGE_STEP_M = 0.25        # ...and they must not be parallel faces at different heights
@@ -72,7 +84,11 @@ MERGE_STEP_M = 0.25        # ...and they must not be parallel faces at different
 # vault, adjacent strips differ by ~5 degrees and merging on angle alone put
 # the curve back under a single wrong plane (49% -> 33% off-plane, still bad).
 # A merge has to keep this share of the combined points on the plane.
-MERGE_MIN_INLIER_FRAC = 0.90
+# Was 0.90 and was the PRIMARY gate, which is why 5 Isle St stayed split: a
+# real roof deck sags 0.2m across its span, so one honest plane over it never
+# reaches 90% of points within 0.15m. The evidence test above decides now --
+# pitch, bearing, or a step -- and this only catches gross mistakes.
+MERGE_MIN_INLIER_FRAC = 0.35
 SMOOTH_ROUNDS = 3
 # A cell is only allowed to belong to one plane if its own points mostly agree.
 # 111 Hallenstein came out of the arrangement with a 109 m2 cell straddling the
@@ -81,7 +97,31 @@ SMOOTH_ROUNDS = 3
 # a roof the shipped model got to 15%). Where the line set is incomplete, the
 # cell gets cut by the two planes competing for it.
 MIXED_MAX_SHARE = 0.75
+# Cutting a roof up always lowers the residual, so residual alone cannot decide
+# whether to cut. Josh, on 5 Isle St: "this one is better as one plane, not two
+# with one diagonal". That roof is one large flat surface with drainage falls;
+# two near-identical planes were separated by a line corresponding to nothing.
+# A split has to be justified by a real difference -- a change of pitch, of
+# bearing, or a step in height -- not by the arithmetic improving.
+SPLIT_MIN_SLOPE_DEG = 5.0
+SPLIT_MIN_ASPECT_DEG = 20.0
+SPLIT_MIN_STEP_M = 0.40
 REFINE_ROUNDS = 4
+# Things ON the roof, as distinct from faces OF it. Without this a big AC unit
+# or a lift overrun becomes a "facet" -- which is most of why 93 Beach St still
+# came out as 28 pieces after the merge. A plant deck is small, sits above the
+# face it is embedded in, and is surrounded by it.
+OBST_MAX_AREA_M2 = 30.0      # larger than this is another roof level, not plant
+OBST_MIN_HEIGHT_M = 0.25     # above the parent plane
+OBST_ENCLOSURE = 0.55        # share of its border shared with one parent face
+OBST_CLUSTER_EPS_M = 0.60    # ~1.4x the 0.42m point spacing at pilot density
+OBST_MIN_PTS = 5
+OBST_MIN_AREA_M2 = 0.35      # smaller than this is noise, not equipment
+# Two bounds on how much of a roof may be declared "things on the roof".
+# Without them a 161 m2 house with 10 small faces had 9 of them reclassified as
+# plant and came back covering 4% of its own outline.
+OBST_PARENT_RATIO = 2.5      # the face beneath must be this much bigger
+OBST_MAX_ROOF_SHARE = 0.25   # obstructions may not claim more roof than this
 
 
 def fit_plane(pts):
@@ -194,39 +234,49 @@ def _fit_line_tls(P):
     return A, B, -(A * c[0] + B * c[1])
 
 
+def _boundary_points(lab, gx, gy, i, j):
+    """Grid midpoints where label i meets label j."""
+    bnd = []
+    for Aa, Bb, axis in ((lab[:, :-1], lab[:, 1:], 0), (lab[:-1, :], lab[1:, :], 1)):
+        d = ((Aa == i) & (Bb == j)) | ((Aa == j) & (Bb == i))
+        if not d.any():
+            continue
+        yy, xx = np.nonzero(d)
+        if axis == 0:
+            bnd.append(np.column_stack([gx[yy, xx] + GRID_M / 2, gy[yy, xx]]))
+        else:
+            bnd.append(np.column_stack([gx[yy, xx], gy[yy, xx] + GRID_M / 2]))
+    return np.vstack(bnd) if bnd else np.empty((0, 2))
+
+
 def edge_lines(planes, pairs, lab, gx, gy, bounds):
-    """A joint between two planes is their intersection line -- exact. A step
-    between two parallel planes has no intersection, so that one edge is fitted
-    to the grid cells where the label actually changes."""
+    """The edge between two faces. Where they fold together -- a ridge, hip or
+    valley -- that is their intersection line, exact and straight. Where one
+    simply stands above the other, they never meet, so the edge is fitted to
+    where the point support actually changes."""
     lines = []
     for i, j in pairs:
         ai, bi, ci = planes[i]
         aj, bj, cj = planes[j]
         A, B, C = ai - aj, bi - bj, ci - cj
-        if math.hypot(A, B) >= PARALLEL_GRAD_TOL:
-            ln = _line_from_coeffs(A, B, C, bounds)
+        P = _boundary_points(lab, gx, gy, i, j)
+        if len(P) and not genuinely_different(planes[i], planes[j],
+                                              type("p", (), {"x": P[:, 0].mean(),
+                                                             "y": P[:, 1].mean()})()):
+            continue     # no real edge between them; merge_coplanar will fuse them
+        analytic = _line_from_coeffs(A, B, C, bounds) if math.hypot(A, B) >= PARALLEL_GRAD_TOL else None
+        if analytic is not None and len(P) >= 3:
+            # Distance from each observed boundary point to the analytic line.
+            dist = np.abs(A * P[:, 0] + B * P[:, 1] + C) / math.hypot(A, B)
+            if float(np.median(dist)) <= FOLD_MAX_OFFSET_M:
+                lines.append(analytic)      # a real fold: prefer the exact line
+                continue
+        if len(P) >= 3:
+            ln = _line_from_coeffs(*_fit_line_tls(P), bounds)
             if ln is not None:
                 lines.append(ln)
-            continue
-        # Parallel: find the boundary cells between the two labels and fit.
-        bnd = []
-        for (Aa, Bb, ia, ja) in ((lab[:, :-1], lab[:, 1:], 0, 1), (lab[:-1, :], lab[1:, :], 1, 0)):
-            d = ((Aa == i) & (Bb == j)) | ((Aa == j) & (Bb == i))
-            if d.any():
-                if ia == 0:
-                    yy, xx = np.nonzero(d)
-                    bnd.append(np.column_stack([gx[yy, xx] + GRID_M / 2, gy[yy, xx]]))
-                else:
-                    yy, xx = np.nonzero(d)
-                    bnd.append(np.column_stack([gx[yy, xx], gy[yy, xx] + GRID_M / 2]))
-        if not bnd:
-            continue
-        P = np.vstack(bnd)
-        if len(P) < 3:
-            continue
-        ln = _line_from_coeffs(*_fit_line_tls(P), bounds)
-        if ln is not None:
-            lines.append(ln)
+        elif analytic is not None:
+            lines.append(analytic)
     return lines
 
 
@@ -289,6 +339,22 @@ def merge_coplanar(facets, pts):
     return facets
 
 
+def genuinely_different(p1, p2, where):
+    """Are these two planes different SURFACES, or one surface twice? Judged at
+    `where` (a point or geometry), because two planes that fold together are
+    identical at the fold and only diverge away from it."""
+    s1, a1 = plane_slope_aspect(p1)
+    s2, a2 = plane_slope_aspect(p2)
+    if abs(s1 - s2) > SPLIT_MIN_SLOPE_DEG:
+        return True
+    both_flat = s1 < MERGE_FLAT_DEG and s2 < MERGE_FLAT_DEG
+    if not both_flat and _circ_diff(a1, a2) > SPLIT_MIN_ASPECT_DEG:
+        return True
+    c = where.centroid if hasattr(where, "centroid") else where
+    dz = abs((p1[0] * c.x + p1[1] * c.y + p1[2]) - (p2[0] * c.x + p2[1] * c.y + p2[2]))
+    return dz > SPLIT_MIN_STEP_M
+
+
 def _cell_votes(cell, planes, pts):
     inside = pts[shapely.vectorized.contains(cell, pts[:, 0], pts[:, 1])]
     if len(inside) < MIN_CELL_PTS:
@@ -313,9 +379,28 @@ def refine_mixed_cells(cells, planes, pts, bounds):
                     or votes[top] / max(sum(votes), 1) >= MIXED_MAX_SHARE:
                 out.append(cell)
                 continue
+            if not genuinely_different(planes[top], planes[second], cell):
+                out.append(cell)     # one surface fitted twice -- leave it whole
+                continue
             a1, b1, c1 = planes[top]
             a2, b2, c2 = planes[second]
             ln = _line_from_coeffs(a1 - a2, b1 - b2, c1 - c2, bounds)
+            if ln is None or not ln.intersects(cell):
+                # They do not fold together inside this cell, so split on where
+                # their points part company: the perpendicular bisector of the
+                # two groups' centroids.
+                g1 = inside[np.abs(residuals(planes[top], inside)) < RANSAC_TOL_M][:, :2]
+                g2 = inside[np.abs(residuals(planes[second], inside)) < RANSAC_TOL_M][:, :2]
+                if len(g1) < 3 or len(g2) < 3:
+                    out.append(cell)
+                    continue
+                m1, m2 = g1.mean(axis=0), g2.mean(axis=0)
+                d = m2 - m1
+                if float(np.hypot(*d)) < 1e-6:
+                    out.append(cell)
+                    continue
+                mid = (m1 + m2) / 2
+                ln = _line_from_coeffs(d[0], d[1], -(d[0] * mid[0] + d[1] * mid[1]), bounds)
             if ln is None:
                 out.append(cell)
                 continue
@@ -334,7 +419,118 @@ def refine_mixed_cells(cells, planes, pts, bounds):
     return cells
 
 
-def reconstruct(building_id, outline, pts, seed=0):
+def _cluster_xy(P, eps, min_pts):
+    """Connected components of a radius graph. Stands in for DBSCAN, which
+    would mean adding scikit-learn for one call."""
+    if len(P) == 0:
+        return np.empty(0, int)
+    tree = cKDTree(P)
+    pairs = np.array(list(tree.query_pairs(eps)), dtype=int)
+    if len(pairs) == 0:
+        return np.full(len(P), -1)
+    g = coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(len(P), len(P)))
+    n, lab = connected_components(g, directed=False)
+    counts = np.bincount(lab, minlength=n)
+    return np.where(counts[lab] >= min_pts, lab, -1)
+
+
+def _box_from_points(P, base_plane, pts3):
+    """Oriented footprint + how far it stands off the face beneath it."""
+    from shapely.geometry import MultiPoint
+    hull = MultiPoint([tuple(q) for q in P]).convex_hull
+    if hull.geom_type != "Polygon":
+        hull = hull.buffer(0.15)
+    if hull.is_empty or hull.area < OBST_MIN_AREA_M2:
+        return None
+    # A rotated rectangle, not the ragged hull: equipment is boxes, and a clean
+    # rectangle is also what panel fitting can set back from cleanly.
+    rect = hull.minimum_rotated_rectangle
+    height = float(np.max(-residuals(base_plane, pts3))) if len(pts3) else 0.0
+    return {"geometry": rect, "height_m": round(height, 2),
+            "area_m2": float(rect.area), "point_count": int(len(P))}
+
+
+def extract_obstructions(facets, pts):
+    """Separate faces OF the roof from things standing ON it. Two sources:
+    whole facets that turn out to be elevated islands, and points sitting above
+    the face they belong to."""
+    obstructions = []
+    keep = []
+    budget = OBST_MAX_ROOF_SHARE * sum(f["area_m2"] for f in facets)
+    spent = 0.0
+    # Smallest first, so if the budget binds it is spent on the things most
+    # likely to actually be equipment.
+    for i, f in sorted(enumerate(facets), key=lambda kv: kv[1]["area_m2"]):
+        if f["area_m2"] > OBST_MAX_AREA_M2 or spent + f["area_m2"] > budget:
+            keep.append(f)
+            continue
+        per = f["geometry"].exterior.length
+        best, best_share = None, 0.0
+        for j, g in enumerate(facets):
+            if i == j:
+                continue
+            shared = f["geometry"].buffer(0.05).intersection(g["geometry"].exterior).length
+            if shared > best_share:
+                best, best_share = j, shared
+        if best is None or per <= 0 or best_share / per < OBST_ENCLOSURE:
+            keep.append(f)
+            continue
+        parent = facets[best]
+        if parent["area_m2"] < OBST_PARENT_RATIO * f["area_m2"]:
+            keep.append(f)      # comparable size: two faces, not a face and a box
+            continue
+        pplane = np.array([parent["plane_a"], parent["plane_b"], parent["plane_c"]])
+        pp = pts[shapely.vectorized.contains(f["geometry"], pts[:, 0], pts[:, 1])]
+        if len(pp) < OBST_MIN_PTS:
+            keep.append(f)
+            continue
+        # Height measured AT THE SHARED EDGE, not over the footprint. Two faces
+        # of a gable each sit "above" the other's extended plane further away,
+        # which would make every second face of every house into plant.
+        edge = f["geometry"].buffer(0.05).intersection(parent["geometry"].exterior)
+        if edge.is_empty:
+            keep.append(f)
+            continue
+        ec = edge.centroid
+        step = abs(float(f["plane_a"] * ec.x + f["plane_b"] * ec.y + f["plane_c"])
+                   - float(pplane[0] * ec.x + pplane[1] * ec.y + pplane[2]))
+        if step < OBST_MIN_HEIGHT_M:
+            keep.append(f)
+            continue
+        box = _box_from_points(pp[:, :2], pplane, pp)
+        if box is None:
+            keep.append(f)
+            continue
+        box["source"] = "island"
+        obstructions.append(box)
+        spent += f["area_m2"]
+        # The face underneath does not stop existing because something sits on
+        # it: the parent absorbs the footprint and the obstruction is carved
+        # out later, the same way detected obstructions already are.
+        parent["geometry"] = unary_union([parent["geometry"], f["geometry"]]).buffer(0.02).buffer(-0.02)
+        parent["area_m2"] = float(parent["geometry"].area)
+    facets = keep
+
+    for f in facets:
+        plane = np.array([f["plane_a"], f["plane_b"], f["plane_c"]])
+        inside = pts[shapely.vectorized.contains(f["geometry"], pts[:, 0], pts[:, 1])]
+        if len(inside) < OBST_MIN_PTS:
+            continue
+        sel = inside[-residuals(plane, inside) > OBST_MIN_HEIGHT_M]
+        if len(sel) < OBST_MIN_PTS:
+            continue
+        lab = _cluster_xy(sel[:, :2], OBST_CLUSTER_EPS_M, OBST_MIN_PTS)
+        for c in set(lab.tolist()) - {-1}:
+            grp = sel[lab == c]
+            box = _box_from_points(grp[:, :2], plane, grp)
+            if box is None or box["area_m2"] > OBST_MAX_AREA_M2:
+                continue
+            box["source"] = "points"
+            obstructions.append(box)
+    return facets, obstructions
+
+
+def reconstruct(building_id, outline, pts, seed=0, with_obstructions=True):
     """Point cloud + surveyed outline -> straight-edged, plane-backed facets."""
     if len(pts) < MIN_PLANE_PTS:
         return []
@@ -439,4 +635,7 @@ def reconstruct(building_id, outline, pts, seed=0):
                 "area_m2": float(poly.area), "point_count": int(len(inside)),
                 "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
             })
-    return merge_coplanar(facets, pts)
+    facets = merge_coplanar(facets, pts)
+    if not with_obstructions:
+        return facets, []
+    return extract_obstructions(facets, pts)
