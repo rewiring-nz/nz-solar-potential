@@ -560,6 +560,16 @@
         <input type="range" id="e-life" min="10" max="35" step="1"></div>
       <div class="slider-row"><label><span>Panel degradation</span><span id="e-deg-val"></span></label>
         <input type="range" id="e-deg" min="0" max="1.5" step="0.05"></div>
+      <div class="slider-row"><label><span>Retail electricity inflation</span><span id="e-infl-val"></span></label>
+        <input type="range" id="e-infl" min="0" max="10" step="0.5"></div>
+      <div class="slider-row"><label><span>Discount rate</span><span id="e-disc-val"></span></label>
+        <input type="range" id="e-disc" min="0" max="10" step="0.5"></div>
+      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Export is deliberately not
+        inflated &mdash; the buyback schedule above already sets it year by year.</div>
+      <div class="slider-row"><label><span>Inverter replaced in year</span><span id="e-invy-val"></span></label>
+        <input type="range" id="e-invy" min="0" max="30" step="1"></div>
+      <div class="slider-row"><label><span>Inverter cost</span><span id="e-invc-val"></span></label>
+        <input type="range" id="e-invc" min="0" max="40" step="1"></div>
       <button class="tuning-reset" id="e-reset">Reset to defaults</button>
       <div style="font-size:10px; color:#ff9b90; margin-top:8px;">Indicative only &mdash; not a quote.
         Real pricing depends on roof access, switchboard work and installer.</div>
@@ -2027,6 +2037,19 @@ map.on("load", async () => {
     biz_use_kwh: 30000,     // placeholder, varies enormously -- editable
     life_years: 30,
     degradation_pct: 0.5, // per year
+    // Retail electricity rises; the export rate does NOT (Josh). Buyback is
+    // already on a declining schedule, and inflating it as well would have the
+    // two assumptions fighting each other.
+    elec_inflation_pct: 5.0,
+    // An inverter does not last the life of the panels. Standard practice
+    // includes replacing it; leaving it out flatters every system equally.
+    inverter_replace_year: 15,
+    inverter_cost_pct: 18,
+    // Money later is worth less than money now. Without this the model sums 30
+    // years of nominal dollars and calls it savings, which overstates the
+    // result badly -- and adding 5% inflation without it would overstate it
+    // further still. Editable; set to 0 for an undiscounted view.
+    discount_rate_pct: 5.0,
   };
   // Named daytime-load profiles. The kW figure drives the maths; the names
   // exist so the choice is a recognisable situation rather than a number
@@ -2103,12 +2126,30 @@ map.on("load", async () => {
       const selfKwh = selfKwhFor(gen);
       return (selfKwh * buy + (gen - selfKwh) * sellRate(THIS_YEAR + y) * scale) / 100;
     };
-    const annual = valueInYear(0);
+    // Retail inflates, export does not, and everything is discounted back to
+    // today. Applied in valueInYear's caller rather than inside it so payback
+    // below uses the same figures.
+    const infl = 1 + econ.elec_inflation_pct / 100;
+    const disc = 1 + econ.discount_rate_pct / 100;
+    const realValueInYear = y => {
+      const gen = kwhYear * Math.pow(1 - d, y);
+      const selfKwh = selfKwhFor(gen);
+      const retail = selfKwh * buy * Math.pow(infl, y);
+      const exported = (gen - selfKwh) * sellRate(THIS_YEAR + y) * scale;
+      return (retail + exported) / 100 / Math.pow(disc, y);
+    };
+    const annual = realValueInYear(0);
     let lifetime = 0;
-    for (let y = 0; y < econ.life_years; y++) lifetime += valueInYear(y);
+    for (let y = 0; y < econ.life_years; y++) lifetime += realValueInYear(y);
+    // The inverter replacement is a cost in a future year, so it is discounted
+    // the same way and subtracted from the lifetime figure.
+    const inverterCost = econ.inverter_replace_year < econ.life_years
+      ? cost * (econ.inverter_cost_pct / 100) / Math.pow(disc, econ.inverter_replace_year)
+      : 0;
+    lifetime -= inverterCost;
     let cum = 0, payback = null;
     for (let y = 0; y < 60; y++) {
-      const v = valueInYear(y);
+      const v = realValueInYear(y);
       cum += v;
       if (cum >= cost) { payback = y + 1 - (cum - cost) / v; break; }
     }
@@ -2118,11 +2159,13 @@ map.on("load", async () => {
     // so an added panel earns the buyback rate, not the retail one.
     let exportLifetimePerKwhYr = 0;
     for (let y = 0; y < econ.life_years; y++) {
-      exportLifetimePerKwhYr += Math.pow(1 - d, y) * sellRate(THIS_YEAR + y) * scale / 100;
+      exportLifetimePerKwhYr += Math.pow(1 - d, y) * sellRate(THIS_YEAR + y) * scale
+                               / 100 / Math.pow(disc, y);
     }
     return { cost, annual, lifetime, payback, rate: costPerKw(kwp), biz, buy, sellNow,
              exportLifetimePerKwhYr,
              sellLater: sellRate(THIS_YEAR + econ.life_years) * scale,
+             inverterCost,
              daytimeKw, ceiling, useKwh, selfKwh: selfKwhFor(kwhYear),
              // Share is now an OUTPUT of the model, not an input to it.
              selfPct: 100 * selfKwhFor(kwhYear) / kwhYear,
@@ -2252,6 +2295,12 @@ map.on("load", async () => {
         Math.round(econ.home_daytime_kw * econ.daytime_hours) + " kWh/day for a home";
       el("e-life-val").textContent = econ.life_years + " years";
       el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
+      el("e-infl-val").textContent = econ.elec_inflation_pct.toFixed(1) + "%/yr";
+      el("e-disc-val").textContent = econ.discount_rate_pct === 0
+        ? "none" : econ.discount_rate_pct.toFixed(1) + "%/yr";
+      el("e-invy-val").textContent = econ.inverter_replace_year >= econ.life_years
+        ? "never" : "year " + econ.inverter_replace_year;
+      el("e-invc-val").textContent = econ.inverter_cost_pct + "% of install";
       // Keep the modal's own inputs on the values, not just its labels, so a
       // change made on the building panel is already there when it is opened.
       el("e-hbuy").value = econ.home_buy_c; el("e-hsell").value = econ.home_sell_c;
@@ -2283,6 +2332,10 @@ map.on("load", async () => {
     bindEcon("e-dayh", "daytime_hours", parseFloat);
     bindEcon("e-life", "life_years", v => parseInt(v, 10));
     bindEcon("e-deg", "degradation_pct", parseFloat);
+    bindEcon("e-infl", "elec_inflation_pct", parseFloat);
+    bindEcon("e-disc", "discount_rate_pct", parseFloat);
+    bindEcon("e-invy", "inverter_replace_year", v => parseInt(v, 10));
+    bindEcon("e-invc", "inverter_cost_pct", v => parseInt(v, 10));
     profSel.addEventListener("change", () => {
       const p = SELF_PROFILES.find(x => x.id === profSel.value);
       econ.profile = profSel.value;
@@ -2304,6 +2357,10 @@ map.on("load", async () => {
       el("e-dayh").value = econ.daytime_hours;
       el("e-life").value = econ.life_years;
       el("e-deg").value = econ.degradation_pct; profSel.value = econ.profile;
+      el("e-infl").value = econ.elec_inflation_pct;
+      el("e-disc").value = econ.discount_rate_pct;
+      el("e-invy").value = econ.inverter_replace_year;
+      el("e-invc").value = econ.inverter_cost_pct;
       const pr = SELF_PROFILES.find(x => x.id === econ.profile);
       if (pr && pr.kw !== null) { econ.home_daytime_kw = pr.kw; el("e-self").value = pr.kw; }
       renderTiers(); renderSchedule(); applyEcon();
@@ -2842,6 +2899,7 @@ map.on("load", async () => {
           `<div class="econ-roi"><span>Lifetime ROI: <b id="econ-roi-life"></b></span>` +
             `<span class="sep"></span>` +
             `<span>Yearly ROI: <b id="econ-roi-year"></b></span></div>` +
+          `<div class="econ-basis" id="econ-method"></div>` +
           `<div class="econ-basis" id="econ-basis"></div>` +
           `<div class="econ-bands" id="econ-bands" style="display:none"></div>` +
           `<div class="panel-econ-note" id="panel-econ-note"></div>` +
@@ -2888,6 +2946,16 @@ map.on("load", async () => {
             ? Math.round(100 * e.annual / e.cost) + "%" : "\u2014";
           el("econ-self-val").textContent = e.daytimeKw.toFixed(1) + " kW";
           el("econ-self-note").innerHTML = selfNote(e);
+          // Stated in full under the figure it produced (Josh), because every
+          // one of these moves the answer materially and a reader cannot check
+          // a number whose basis is invisible.
+          el("econ-method").innerHTML =
+            `Retail electricity rising ${econ.elec_inflation_pct}%/yr; export held at the ` +
+            `buyback schedule, not inflated. Future money discounted at ` +
+            `${econ.discount_rate_pct}%/yr. Panels degrading ` +
+            `${econ.degradation_pct}%/yr. Inverter replaced in year ` +
+            `${econ.inverter_replace_year} at ${econ.inverter_cost_pct}% of install ` +
+            `(${fmtMoneyFull(e.inverterCost)} discounted).`;
           el("econ-basis").innerHTML =
             `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
             ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
