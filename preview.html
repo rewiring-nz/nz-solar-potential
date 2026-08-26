@@ -1083,14 +1083,24 @@ function clearSelection() {
     document.getElementById("m-settings").classList.remove("open");
   }
   selectedBuildingId = -1;
+  // These were never cleared, so after deselecting, anything that refreshed on
+  // the "selected" building kept working on the old one.
+  selectedPanelBuildingId = -1;
+  selectedBuildingProps = null;
+  // Clear the spotlight FIRST. Anything below can fail; a stranded full-screen
+  // overlay with no way to dismiss it is the worst outcome available here, so
+  // it must not depend on the rest of this function completing.
+  highlightSelectedBuilding(-1);
   window.__setPanelEcon = null;
   // The mode survives deselection now that it is global -- only the
   // building-specific hook goes. Closing a panel should not silently turn off a
   // district-wide view the user switched on.
   if (panelEcon) { panelEcon = { buildingId: -1, breakEvenKwh: panelEcon.breakEvenKwh }; }
-  applyPanelDensityPaint();
-  renderGlobalEconBands();
-  highlightSelectedBuilding(-1);
+  // Via the window hook, not directly: clearSelection is top-level while
+  // renderGlobalEconBands is inside a closure, so calling it by name threw a
+  // ReferenceError and aborted this function -- which is exactly how the
+  // overlay got stuck on (Josh).
+  if (window.__refreshDerived) window.__refreshDerived();
   clearLiveTuning();
   applyToggles();
   document.getElementById("side-panel").classList.remove("visible", "expanded");
