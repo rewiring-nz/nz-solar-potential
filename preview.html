@@ -119,6 +119,12 @@
     font-variant-numeric: tabular-nums; }
   .econ-value.econ-pos { color: var(--good); }
   .econ-value.econ-neg { color: #ff6b60; }
+  /* Return on the money, under the figure it derives from. Two readings of
+     the same system: what it gives back each year, and over its whole life. */
+  .econ-roi { display: flex; align-items: center; gap: var(--s2);
+    font-size: var(--fs-label); color: var(--ink-2); margin-top: 2px; }
+  .econ-roi b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .econ-roi .sep { width: 1px; align-self: stretch; background: #fff; opacity: 0.55; }
   .econ-basis { font-size: var(--fs-meta); color: var(--ink-3); line-height: 1.45; margin-top: var(--s2); }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
@@ -2366,6 +2372,9 @@ map.on("load", async () => {
           // is the one that carries colour -- green if the system is ahead over
           // its life, red if it never gets there (Josh).
           item("Net savings", "econ-v-net") +
+          `<div class="econ-roi"><span>Lifetime ROI: <b id="econ-roi-life"></b></span>` +
+            `<span class="sep"></span>` +
+            `<span>Yearly ROI: <b id="econ-roi-year"></b></span></div>` +
           `<div class="econ-basis" id="econ-basis"></div>` +
           `<div class="econ-inputs">` +
             `<div class="econ-assump-head">Assumptions &mdash; ${kind}</div>` +
@@ -2398,6 +2407,13 @@ map.on("load", async () => {
           const netEl = el("econ-v-net");
           netEl.textContent = (net < 0 ? "-" : "") + fmtMoneyFull(Math.abs(net));
           netEl.className = "econ-value " + (net >= 0 ? "econ-pos" : "econ-neg");
+          // Lifetime ROI is the return on the money over the system's life --
+          // net of the install, so a system that only just pays for itself
+          // reads 0%, not 100%. Yearly is the simple annual rate.
+          el("econ-roi-life").textContent = e.cost > 0
+            ? Math.round(100 * net / e.cost) + "%" : "\u2014";
+          el("econ-roi-year").textContent = e.cost > 0
+            ? Math.round(100 * e.annual / e.cost) + "%" : "\u2014";
           el("econ-self-val").textContent = e.daytimeKw.toFixed(1) + " kW";
           el("econ-self-note").innerHTML = selfNote(e);
           el("econ-basis").innerHTML =

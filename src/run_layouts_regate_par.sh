@@ -45,4 +45,9 @@ tippecanoe -o data/panel_layouts.pmtiles --force -l layout -Z13 -z16 \
   -y kind -y building_id -y fill_rank -y fill_order -y array_id -y array_size \
   -y ac_kwh_year -y slope_deg -y aspect_deg \
   -y poa_kwh_m2_yr -y panel_count data/panel_layouts.geojson &&
+# merge_regions rewrites solar_potential.geojson, which DROPS the per-building
+# terrain masks -- without this the seasonal curves silently lose valley
+# shading, a bug that was already found and fixed once. Caught on the 26 Aug
+# rebuild: 0 of 15,353 buildings had tshade afterwards.
+$PY src/build_terrain_masks.py &&
 echo REGATE_COMPLETE
