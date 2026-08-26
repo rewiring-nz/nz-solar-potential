@@ -71,13 +71,15 @@
      easier to read than a continuous control, and it shows the non-linearity
      between steps that a slider hides. */
   #coverage-options { margin-top: var(--s2); }
-  .cov-row { display: grid; grid-template-columns: 46px 1fr auto; align-items: baseline;
+  .cov-row { display: grid; grid-template-columns: 88px 1fr auto; align-items: baseline;
     gap: var(--s2); width: 100%; text-align: left; cursor: pointer; font-family: inherit;
     background: none; border: none; border-radius: 6px; padding: 5px 7px;
     color: var(--ink-2); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
   .cov-row:hover { background: var(--surface-2); }
   .cov-row.active { background: rgba(255,210,74,0.13); color: var(--ink); }
   .cov-row .cov-pct { color: var(--ink-3); font-weight: 600; }
+  .cov-row .cov-pct small { display: block; font-size: var(--fs-meta); font-weight: 400;
+    color: var(--ink-3); line-height: 1.2; margin-top: 1px; }
   .cov-row.active .cov-pct { color: var(--accent); }
   .cov-row .cov-power { font-weight: 700; color: var(--ink); font-size: var(--fs-body); }
   .cov-row .cov-energy { color: var(--ink-3); }
@@ -1029,9 +1031,13 @@ map.on("load", async () => {
       });
       return { pct, kwp, kwh };
     });
-    box.innerHTML = rows.map(r =>
+    // Only the first row is captioned. A bare "100%" says nothing on its own,
+    // but repeating "of rooftop coverage" five times would turn a scannable
+    // ladder into a wall of the same three words (Josh).
+    box.innerHTML = rows.map((r, i) =>
       `<button class="cov-row${r.pct === coveragePct ? " active" : ""}" data-pct="${r.pct}">` +
-      `<span class="cov-pct">${r.pct}%</span>` +
+      `<span class="cov-pct">${r.pct}%` +
+      (i === 0 ? `<small>of rooftop coverage</small>` : ``) + `</span>` +
       `<span class="cov-power">${fmtPower(r.kwp)}</span>` +
       `<span class="cov-energy">${fmtEnergy(r.kwh)}</span></button>`).join("");
     box.querySelectorAll(".cov-row").forEach(b =>
