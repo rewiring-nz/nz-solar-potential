@@ -99,12 +99,22 @@ def main():
               f"{r['rec']:>8}   {r['ship']-r['truth']:+d} / {r['rec']-r['truth']:+d}")
     n = len(counted)
     if n:
+        # Polygons scored alongside planes on purpose. assign_plane_ids fuses
+        # pieces of one surface, which is right on 1 Memorial (10 polygons ->
+        # 7 planes, exactly the truth) and wrong on 32 Park (8 -> 7, when 8 was
+        # already correct). Neither count dominates, so hiding one would hide
+        # where the remaining error actually lives.
+        ep = sum(abs(r["polys"] - r["truth"]) for r in counted)
         exact_s = sum(1 for r in counted if r["ship"] == r["truth"])
         exact_r = sum(1 for r in counted if r["rec"] == r["truth"])
+        exact_p = sum(1 for r in counted if r["polys"] == r["truth"])
         print(f"\n{n} counted roofs")
-        print(f"  total absolute error   shipped {es:>3}    reconstruction {er:>3}")
-        print(f"  mean absolute error    shipped {es/n:>5.2f}  reconstruction {er/n:>5.2f}")
-        print(f"  exact matches          shipped {exact_s}/{n}      reconstruction {exact_r}/{n}")
+        print(f"  total absolute error   shipped {es:>3}    planes {er:>3}    polygons {ep:>3}")
+        print(f"  mean absolute error    shipped {es/n:>5.2f}  planes {er/n:>5.2f}  polygons {ep/n:>5.2f}")
+        print(f"  exact matches          shipped {exact_s}/{n}    planes {exact_r}/{n}    polygons {exact_p}/{n}")
+        under = sum(1 for r in counted if r["rec"] < r["truth"])
+        over = sum(1 for r in counted if r["rec"] > r["truth"])
+        print(f"  reconstruction bias    {under} under, {over} over, {n-under-over} exact")
     if prefs:
         wr = sum(1 for r in prefs if r["prefer"] == "reconstruction")
         print(f"\n{len(prefs)} preference roofs: reconstruction preferred on {wr}, "

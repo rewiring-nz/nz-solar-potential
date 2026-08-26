@@ -54,19 +54,22 @@
   "source": "Josh, 26 Aug"
  },
  "4751207": {
-  "n": 4,
-  "label": "hip roof, four faces",
-  "confirmed": false
+  "n": 6,
+  "label": "six roof faces; LiDAR noisy here (Josh)",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4725527": {
-  "n": 2,
-  "label": "two faces",
-  "confirmed": false
+  "n": 8,
+  "label": "eight faces",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4740940": {
   "n": 2,
-  "label": "simple gable, two faces",
-  "confirmed": false
+  "label": "two clear faces",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4735003": {
   "n": 3,
