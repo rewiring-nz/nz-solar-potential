@@ -2909,8 +2909,12 @@ map.on("load", async () => {
         };
         // The corner toggle drives whichever building is currently open.
         window.__setPanelEcon = setPanelEcon;
-        // A different building means the previous highlight no longer applies.
-        setPanelEcon(panelEcon && panelEcon.buildingId === buildingId);
+        // Stays on across buildings (Josh: "at the moment it turns off and then
+        // you need to go click it on each time"). It used to require the mode's
+        // building to match, which a newly clicked one never does. Now that the
+        // bands colour every roof, the id only decides which building the
+        // right-hand readout describes, so switching buildings just retargets.
+        setPanelEcon(!!panelEcon);
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
