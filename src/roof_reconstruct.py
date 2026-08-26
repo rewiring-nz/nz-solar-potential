@@ -35,7 +35,39 @@ Emits the same facet dicts as roof_segmentation (building_id, plane_a/b/c,
 slope_deg, aspect_deg, area_m2, point_count, geometry) so it can be dropped
 in behind a flag once it is proven.
 
-Prototype: not wired into the pipeline. See src/compare_reconstruct.py.
+Prototype: NOT wired into the pipeline, and it should not be re-enabled in its
+current form. Josh reviewed ten before/after layouts on 26 Aug and called the
+reconstruction worse on all ten. See src/compare_reconstruct.py and
+src/compare_layouts.py.
+
+WHY IT FAILED, and the design rule any next attempt has to obey:
+
+Josh: "They need to be large and blocky most of the time like real rooftops.
+It's a lot more common for rooftops to be clear large flat surfaces on a few
+different angles and slopes, than it is to have lots of small changes." And:
+"you've massively overcomplicated panel placement, I think it's because you are
+drawing lots of tiny facet outlines and you might have a rule a panel can't
+overlap a facet outline."
+
+Both correct. panel_fitting does exactly that -- surface_ridge =
+surface_poly.buffer(-RIDGE_SETBACK_M) -- so every facet is eroded by the ridge
+setback and panels must fit inside the result. Fragmenting a roof therefore
+costs area N times over, and no panel can span two facets:
+
+     6 m2 facet ->  57% of it usable
+    25 m2 facet ->  77%
+   150 m2 facet ->  90%
+   400 m2 facet ->  94%
+
+So this module optimising for "planes that fit the points" is optimising the
+wrong thing. A roof is better modelled as FEW LARGE faces even where the points
+would support splitting one -- the split has to earn back the setback area it
+costs, and small ones never do. The merge thresholds here (MERGE_SLOPE_DEG,
+SPLIT_MIN_*) are far too eager to divide.
+
+The plane counts also said this was fine: it scored level with the shipped
+segmenter on Josh's 20 labelled roofs. Neither plane count nor off-plane
+residual can see the cost of a split. Judge any future version on layouts.
 """
 
 import math

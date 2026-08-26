@@ -29,6 +29,18 @@ Ordered by evidence, not by appeal. Every item names what it is based on.
 - **Under-detection.** Panels still on real structure at 1 Earl St, 17 Marine
   Pde, 35 Shotover St. Item 1 is the first attempt at this.
 
+## Reconstruction: rejected in this form (26 Aug)
+
+Josh reviewed ten before/after layouts and called it worse on all ten. The
+cause is a design error, not tuning: `panel_fitting` erodes every facet by
+`RIDGE_SETBACK_M` and panels cannot span facets, so splitting a roof costs
+usable area every time (a 6 m² facet keeps 57% of itself, a 400 m² one keeps
+94%).
+
+**Rule for any next attempt: few large blocky faces.** A split must earn back
+the setback area it costs. Judge on layouts, never on plane count or
+off-plane residual -- both scored this version as fine.
+
 ## Bigger bets
 
 - **Imagery-guided boundaries.** Imagery is 0.1 m, LiDAR ~0.42 m — a 4×
