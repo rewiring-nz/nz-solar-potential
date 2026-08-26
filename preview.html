@@ -100,8 +100,10 @@
     background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
   .curve-btn.active { background: rgba(255,210,74,0.15); border-color: rgba(255,210,74,0.5);
     color: var(--accent); }
-  .econ-inputs { margin-bottom: var(--s4); padding-bottom: var(--s3);
-    border-bottom: 1px solid var(--line); }
+  .econ-inputs { margin-top: var(--s3); padding-top: var(--s3);
+    border-top: 1px solid var(--line); }
+  .econ-assump-head { font-size: var(--fs-label); font-weight: 700; color: var(--ink-2);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--s2); }
   .econ-inputs label { display: flex; justify-content: space-between; align-items: baseline;
     font-size: var(--fs-label); color: var(--ink-2); margin-bottom: var(--s1); }
   .econ-inputs label span { color: var(--ink); font-weight: 650;
@@ -1776,7 +1778,10 @@ map.on("load", async () => {
         }));
     }
 
-    function applyEcon() {
+    // silent: called from the building panel, which owns the field the user is
+    // typing in. Refresh this modal's own controls, but do NOT rebuild the
+    // panel -- that would destroy the input mid-keystroke.
+    function applyEcon(opts) {
       el("e-hbuy-val").textContent = econ.home_buy_c.toFixed(0) + "c/kWh";
       el("e-hsell-val").textContent = econ.home_sell_c.toFixed(1) + "c/kWh";
       el("e-bbuy-val").textContent = econ.biz_buy_c.toFixed(0) + "c/kWh";
@@ -1789,9 +1794,16 @@ map.on("load", async () => {
         Math.round(econ.home_daytime_kw * econ.daytime_hours) + " kWh/day for a home";
       el("e-life-val").textContent = econ.life_years + " years";
       el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
+      // Keep the modal's own inputs on the values, not just its labels, so a
+      // change made on the building panel is already there when it is opened.
+      el("e-hbuy").value = econ.home_buy_c; el("e-hsell").value = econ.home_sell_c;
+      el("e-bbuy").value = econ.biz_buy_c;  el("e-bsell").value = econ.biz_sell_c;
+      el("e-self").value = econ.home_daytime_kw; el("e-bself").value = econ.biz_daytime_kw;
+      if (opts && opts.silent) return;
       recomputeInViewSummary();
       if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
     }
+    window.__applyEcon = applyEcon;
     const bindEcon = (id, key, parse) => el(id).addEventListener("input", e => {
       econ[key] = parse(e.target.value);
       // Any hand-edit of the load numbers means the named profile no longer
@@ -2330,7 +2342,7 @@ map.on("load", async () => {
     }
     const be = el("bldg-econ");
     if (be) {
-      const e = economicsFor(kwp, kwhYear, props.facet_area_m2, bldgEcon);
+      let e = economicsFor(kwp, kwhYear, props.facet_area_m2);
       be.style.display = e ? "" : "none";
       if (e) {
         // Four figures, each as a bold yellow label with a light-weight value
@@ -2338,46 +2350,82 @@ map.on("load", async () => {
         // paid for itself, which is the number people actually mean when they
         // ask what solar is worth -- lifetime savings on its own reads as
         // profit and is not.
-        const net = e.lifetime - e.cost;
-        const item = (label, value, cls) =>
+        const item = (label, id, cls) =>
           `<div class="econ-item"><div class="econ-label">${label}</div>` +
-          `<div class="econ-value${cls ? " " + cls : ""}">${value}</div></div>`;
+          `<div class="econ-value${cls ? " " + cls : ""}" id="${id}"></div></div>`;
+        // Assumptions sit UNDER the figures and show only the side that
+        // applies to this building (Josh): a house has no business tariff, and
+        // showing both invites the reader to wonder which one they got.
+        const p = e.biz ? "biz_" : "home_";
+        const kind = e.biz ? "business" : "home";
         be.innerHTML =
-          `<div class="econ-inputs">` +
-            `<label>Electricity use per year` +
-              `<span><input type="number" id="econ-use" min="0" step="500" ` +
-              `value="${Math.round(e.useKwh)}"> kWh</span></label>` +
-            `<label>Daytime load<span id="econ-self-val">${e.daytimeKw.toFixed(1)} kW</span></label>` +
-            `<input type="range" id="econ-self" min="0.2" max="${e.biz ? 30 : 6}" ` +
-              `step="${e.biz ? 0.5 : 0.1}" value="${e.daytimeKw}">` +
-            `<div class="econ-cap" id="econ-self-note">${selfNote(e)}</div>` +
-          `</div>` +
-          item("Cost", fmtMoneyFull(e.cost)) +
-          item("Yearly savings", fmtMoneyFull(e.annual)) +
-          item("Lifetime savings", fmtMoneyFull(e.lifetime)) +
+          item("Cost", "econ-v-cost") +
+          item("Yearly savings", "econ-v-annual") +
+          item("Lifetime savings", "econ-v-life") +
           // Net savings is the one figure here that can go the wrong way, so it
           // is the one that carries colour -- green if the system is ahead over
           // its life, red if it never gets there (Josh).
-          item("Net savings", (net < 0 ? "-" : "") + fmtMoneyFull(Math.abs(net)),
-               net >= 0 ? "econ-pos" : "econ-neg") +
-          `<div class="econ-basis">` +
-          `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
-          ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
-          ` at ${e.buy}c/kWh used on site and ${e.sellNow}c exported` +
-          `${e.sellLater < e.sellNow - 0.05 ? `, falling to ${e.sellLater.toFixed(1)}c` : ""}</div>` +
+          item("Net savings", "econ-v-net") +
+          `<div class="econ-basis" id="econ-basis"></div>` +
+          `<div class="econ-inputs">` +
+            `<div class="econ-assump-head">Assumptions &mdash; ${kind}</div>` +
+            `<label>Electricity price` +
+              `<span><input type="number" id="econ-buy" min="0" step="1" ` +
+              `value="${econ[p + "buy_c"]}"> c/kWh</span></label>` +
+            `<label>Export price` +
+              `<span><input type="number" id="econ-sell" min="0" step="0.5" ` +
+              `value="${econ[p + "sell_c"]}"> c/kWh</span></label>` +
+            `<label>Electricity use per year` +
+              `<span><input type="number" id="econ-use" min="0" step="500" ` +
+              `value="${Math.round(econ[p + "use_kwh"])}"> kWh</span></label>` +
+            `<label>Self consumption<span id="econ-self-val"></span></label>` +
+            `<input type="range" id="econ-self" min="0.2" max="${e.biz ? 30 : 6}" ` +
+              `step="${e.biz ? 0.5 : 0.1}" value="${econ[p + "daytime_kw"]}">` +
+            `<div class="econ-cap" id="econ-self-note"></div>` +
+          `</div>` +
           `<div class="panel-caveat">Indicative only &mdash; not a quote.</div>`;
-        const useEl = document.getElementById("econ-use");
-        const selfEl = document.getElementById("econ-self");
-        if (useEl) useEl.addEventListener("input", () => {
-          const v = parseFloat(useEl.value);
-          if (isFinite(v) && v >= 0) { bldgEcon.useKwh = v; updateFittedStats(buildingId); }
-        });
-        if (selfEl) selfEl.addEventListener("input", () => {
-          bldgEcon.daytimeKw = parseFloat(selfEl.value);
-          document.getElementById("econ-self-val").textContent =
-            bldgEcon.daytimeKw.toFixed(1) + " kW";
-          updateFittedStats(buildingId);
-        });
+
+        // Redraw the NUMBERS in place, never the block. Rebuilding innerHTML on
+        // every keystroke destroyed the field being typed into -- the old code
+        // called updateFittedStats from its own input handler.
+        const refresh = () => {
+          e = economicsFor(kwp, kwhYear, props.facet_area_m2);
+          if (!e) return;
+          const net = e.lifetime - e.cost;
+          el("econ-v-cost").textContent = fmtMoneyFull(e.cost);
+          el("econ-v-annual").textContent = fmtMoneyFull(e.annual);
+          el("econ-v-life").textContent = fmtMoneyFull(e.lifetime);
+          const netEl = el("econ-v-net");
+          netEl.textContent = (net < 0 ? "-" : "") + fmtMoneyFull(Math.abs(net));
+          netEl.className = "econ-value " + (net >= 0 ? "econ-pos" : "econ-neg");
+          el("econ-self-val").textContent = e.daytimeKw.toFixed(1) + " kW";
+          el("econ-self-note").innerHTML = selfNote(e);
+          el("econ-basis").innerHTML =
+            `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
+            ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
+            `${e.sellLater < e.sellNow - 0.05 ? `, export falling to ${e.sellLater.toFixed(1)}c by ${THIS_YEAR + econ.life_years}` : ""}`;
+        };
+        refresh();
+
+        // These are the same assumptions the settings modal holds, so they
+        // write to it rather than to a per-building copy: two places showing
+        // different export prices would be worse than not showing them here.
+        const bindField = (id, key, parse, min) => {
+          const node = el(id);
+          if (!node) return;
+          node.addEventListener("input", () => {
+            const v = parse(node.value);
+            if (!isFinite(v) || v < min) return;
+            econ[key] = v;
+            refresh();
+            recomputeInViewSummary();
+            if (window.__applyEcon) window.__applyEcon({ silent: true });
+          });
+        };
+        bindField("econ-buy", p + "buy_c", parseFloat, 0);
+        bindField("econ-sell", p + "sell_c", parseFloat, 0);
+        bindField("econ-use", p + "use_kwh", parseFloat, 0);
+        bindField("econ-self", p + "daytime_kw", parseFloat, 0.1);
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
@@ -2426,7 +2474,6 @@ map.on("load", async () => {
   // Per-building overrides for the two economics inputs a reader is most
   // likely to know better than we do. Reset from the defaults each time a
   // building is opened, so one house's numbers never leak into the next.
-  let bldgEcon = { daytimeKw: null, useKwh: null };
   let maxSlopeBin = null;
   function seasonMaxSlopeBin() {
     if (maxSlopeBin === null) {
@@ -2657,7 +2704,6 @@ map.on("load", async () => {
     selectedPanelBuildingId = p.building_id;
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
-    bldgEcon = { daytimeKw: null, useKwh: null };   // fresh building, fresh inputs
     updateFittedStats(p.building_id);
     renderCoverageOptions([p], "bldg-coverage-options");
     panel.querySelectorAll(".curve-btn").forEach(btn => {
