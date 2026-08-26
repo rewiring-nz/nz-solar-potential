@@ -140,6 +140,8 @@
   .panel-econ-btn .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
   .panel-econ-note { font-size: var(--fs-meta); color: var(--ink-3); margin-top: 4px;
     line-height: 1.45; }
+  .econ-bands-title { font-size: var(--fs-label); font-weight: 700; color: var(--ink-2);
+    text-transform: uppercase; letter-spacing: 0.06em; margin: var(--s3) 0 0; }
   .econ-bands { display: flex; gap: 6px; margin-top: var(--s2); }
   .econ-band { flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center;
     padding: 6px 4px; background: #262d3a; border: 1px solid var(--line); border-radius: 5px;
@@ -458,6 +460,11 @@
         <div class="rsp-statbox">
           <div class="rsp-power" id="inview-power">&ndash;</div>
           <div class="rsp-energy" id="inview-energy">&ndash;</div>
+        </div>
+        <div id="econ-bands-global" style="display:none">
+          <div class="econ-bands-title">Panel economics &mdash; all buildings in view</div>
+          <div class="econ-bands" id="econ-bands-all"></div>
+          <div class="panel-econ-note" id="econ-bands-all-note"></div>
         </div>
         <div class="hslider-wrap" id="vslider-wrap">
           <div class="hslider-head">
@@ -866,53 +873,31 @@ let panelEconBasis = "marginal";
 // no break-even yet and falls back to the baked deciles. One guarded re-run
 // settles it; the guard stops that becoming a loop.
 let panelEconSettling = false;
+// Josh: the bands should apply to EVERY building, not only the clicked one,
+// with the controls on the left dashboard. Break-even is per building -- it is
+// that roof's cost-per-panel over the lifetime value of a kWh -- so going
+// global means one threshold per building, carried as a MapLibre match on
+// building_id. Cheap enough because cost per panel is costPerKw(kwp) x panel
+// watts, so it comes straight from the deciles already cached for the in-view
+// summary, and only the buildings actually on screen need an entry.
+let panelEconGlobal = true;
+let panelEconMatch = null;     // ["match", ["get","building_id"], id, be, ..., default]
+const PANEL_ECON_FALLBACK_KWH = 250;   // for a building not in the current view
+
+function panelBreakEvenExpr() {
+  if (panelEconGlobal) return panelEconMatch || PANEL_ECON_FALLBACK_KWH;
+  return panelEcon ? panelEcon.breakEvenKwh : PANEL_ECON_FALLBACK_KWH;
+}
 
 function panelBandExpr(lowVal, midVal, highVal, otherVal) {
   const kwh = ["coalesce", ["get", "ac_kwh_year"], 0];
-  return ["case",
-    ["!=", ["get", "building_id"], panelEcon.buildingId], otherVal,
-    ["<", kwh, panelEcon.breakEvenKwh], lowVal,
-    ["<", kwh, PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh], midVal,
+  const be = panelBreakEvenExpr();
+  const bands = [
+    ["<", kwh, be], lowVal,
+    ["<", kwh, ["*", PANEL_ECON_HIGH_MULT, be]], midVal,
     highVal];
-}
-
-// What the roof looks like once bands are switched off. Josh: hiding the red
-// panels "does not adjust the size, cost, and general economics like it
-// should" -- and it should, because excluding a panel is a decision to not
-// install it, so the system genuinely gets smaller and cheaper.
-//
-// Read from the rendered tiles rather than the baked deciles, because the
-// deciles know nothing about per-panel yield and the bands are defined by it.
-// Both the kept and the total are counted the same way so the ratio is honest
-// even if some tiles are not loaded.
-function bandFilteredTotals(buildingId) {
-  if (!panelEcon || panelEcon.buildingId !== buildingId) return null;
-  // Deliberately returns totals even with every band shown. The baked deciles
-  // and the rendered tiles disagree about how many panels a roof has at a given
-  // density (5 Beach St: 135 vs 203), so switching source when the first band
-  // is hidden made the count go UP. Once this mode is on, every figure comes
-  // from the tiles, and hiding a band can only ever subtract.
-  let feats;
-  try {
-    // Only the query is guarded -- a missing layer is expected during startup.
-    // Wrapping the whole body swallowed a ReferenceError below and turned a
-    // real bug into "the filter silently does nothing".
-    feats = map.queryRenderedFeatures({ layers: ["panels-fill"] });
-  } catch (err) { return null; }
-  let count = 0, kwh = 0, total = 0;
-  feats.forEach(f => {
-    const pr = f.properties;
-    if (pr.building_id !== buildingId) return;
-    if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
-    total++;
-    const k = pr.ac_kwh_year || 0;
-    const band = k < panelEcon.breakEvenKwh ? "low"
-               : k < PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh ? "mid" : "high";
-    if (!panelEconShow[band]) return;
-    count++; kwh += k;
-  });
-  // Raw kWh: the caller applies bakedKwhScale, which is not in scope here.
-  return total ? { count, kwhRaw: kwh, total } : null;
+  if (panelEconGlobal) return ["case", ...bands];
+  return ["case", ["!=", ["get", "building_id"], panelEcon.buildingId], otherVal, ...bands];
 }
 
 function panelColourExpr() {
@@ -1035,10 +1020,12 @@ function clearSelection() {
   }
   selectedBuildingId = -1;
   window.__setPanelEcon = null;
-  panelEcon = null;
+  // The mode survives deselection now that it is global -- only the
+  // building-specific hook goes. Closing a panel should not silently turn off a
+  // district-wide view the user switched on.
+  if (panelEcon) { panelEcon = { buildingId: -1, breakEvenKwh: panelEcon.breakEvenKwh }; }
   applyPanelDensityPaint();
-  const pe = document.getElementById("toggle-panel-econ");
-  if (pe) pe.classList.remove("active");
+  renderGlobalEconBands();
   highlightSelectedBuilding(-1);
   clearLiveTuning();
   applyToggles();
@@ -1307,6 +1294,114 @@ map.on("load", async () => {
     return out;
   }
 
+  // One break-even per building on screen. Uses economicsFor so it inherits the
+  // cost tiers, the home/business split and the declining export schedule rather
+  // than re-deriving any of it.
+  function rebuildEconMatch() {
+    if (!panelEcon || !panelEconGlobal) { panelEconMatch = null; return; }
+    const pairs = [];
+    inViewBuildingProps().forEach(pr => {
+      const count = Math.round(decileInterp(pr, "fill_panels", panelDensityPct));
+      if (!(count > 0)) return;
+      const kwhYear = decileInterp(pr, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      const kwp = count * assumptions.panel_rated_power_w / 1000;
+      const e = economicsFor(kwp, kwhYear, pr.facet_area_m2);
+      if (!e) return;
+      const perKwh = panelEconBasis === "marginal"
+        ? e.exportLifetimePerKwhYr : e.lifetime / Math.max(kwhYear, 1e-9);
+      pairs.push(pr.building_id, (e.cost / count) / Math.max(perKwh, 1e-9));
+    });
+    panelEconMatch = pairs.length
+      ? ["match", ["get", "building_id"], ...pairs, PANEL_ECON_FALLBACK_KWH]
+      : null;
+  }
+
+  // What the roof looks like once bands are switched off. Josh: hiding the red
+  // panels "does not adjust the size, cost, and general economics like it
+  // should" -- and it should, because excluding a panel is a decision to not
+  // install it, so the system genuinely gets smaller and cheaper.
+  //
+  // Read from the rendered tiles rather than the baked deciles, because the
+  // deciles know nothing about per-panel yield and the bands are defined by it.
+  // Both the kept and the total are counted the same way so the ratio is honest
+  // even if some tiles are not loaded.
+  function bandFilteredTotals(buildingId) {
+    if (!panelEcon || panelEcon.buildingId !== buildingId) return null;
+    // Deliberately returns totals even with every band shown. The baked deciles
+    // and the rendered tiles disagree about how many panels a roof has at a given
+    // density (5 Beach St: 135 vs 203), so switching source when the first band
+    // is hidden made the count go UP. Once this mode is on, every figure comes
+    // from the tiles, and hiding a band can only ever subtract.
+    let feats;
+    try {
+      // Only the query is guarded -- a missing layer is expected during startup.
+      // Wrapping the whole body swallowed a ReferenceError below and turned a
+      // real bug into "the filter silently does nothing".
+      feats = map.queryRenderedFeatures({ layers: ["panels-fill"] });
+    } catch (err) { return null; }
+    let count = 0, kwh = 0, total = 0;
+    feats.forEach(f => {
+      const pr = f.properties;
+      if (pr.building_id !== buildingId) return;
+      if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+      total++;
+      const k = pr.ac_kwh_year || 0;
+      const band = k < panelEcon.breakEvenKwh ? "low"
+                 : k < PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh ? "mid" : "high";
+      if (!panelEconShow[band]) return;
+      count++; kwh += k;
+    });
+    // Raw kWh: the caller applies bakedKwhScale, which is not in scope here.
+    return total ? { count, kwhRaw: kwh, total } : null;
+  }
+
+  // Counts across every building on screen, not just a selected one. Read from
+  // the rendered tiles because the bands are defined by per-panel yield, which
+  // the baked deciles know nothing about.
+  function renderGlobalEconBands() {
+    const box = document.getElementById("econ-bands-global");
+    if (!box) return;
+    if (!panelEcon || !panelEconGlobal || mode !== "layout") {
+      box.style.display = "none";
+      return;
+    }
+    box.style.display = "";
+    const tally = { low: 0, mid: 0, high: 0 };
+    let feats = [];
+    try { feats = map.queryRenderedFeatures({ layers: ["panels-fill"] }); } catch (e) { feats = []; }
+    const beFor = bid => {
+      if (!panelEconMatch) return PANEL_ECON_FALLBACK_KWH;
+      for (let i = 2; i < panelEconMatch.length - 1; i += 2) {
+        if (panelEconMatch[i] === bid) return panelEconMatch[i + 1];
+      }
+      return PANEL_ECON_FALLBACK_KWH;
+    };
+    const cache = new Map();
+    feats.forEach(f => {
+      const pr = f.properties;
+      if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+      let be = cache.get(pr.building_id);
+      if (be === undefined) { be = beFor(pr.building_id); cache.set(pr.building_id, be); }
+      const k = pr.ac_kwh_year || 0;
+      tally[k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high"]++;
+    });
+    const bands = document.getElementById("econ-bands-all");
+    bands.innerHTML = PANEL_ECON_BANDS.map(b =>
+      `<button class="econ-band${panelEconShow[b.key] ? "" : " off"}" data-band="${b.key}">` +
+      `<span class="bar" style="background:${b.colour}"></span>` +
+      `<span class="cnt">${tally[b.key].toLocaleString()}</span><span>${b.label}</span></button>`).join("");
+    bands.querySelectorAll(".econ-band").forEach(btn =>
+      btn.addEventListener("click", () => {
+        const k = btn.dataset.band;
+        panelEconShow[k] = !panelEconShow[k];
+        applyPanelDensityPaint();
+        renderGlobalEconBands();
+        if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+      }));
+    document.getElementById("econ-bands-all-note").textContent =
+      "Return on each panel's share of its own building's install. Tap a band to hide it.";
+  }
+
   function recomputeInViewSummary() {
     const props = inViewBuildingProps();
     let kwp = 0, kwhYear = 0;
@@ -1321,6 +1416,8 @@ map.on("load", async () => {
         kwhYear += est.kwhYear;
       });
     }
+    rebuildEconMatch();
+    renderGlobalEconBands();
     document.getElementById("inview-power").textContent = fmtPower(kwp);
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
     renderCoverageOptions(props);
@@ -3133,15 +3230,16 @@ map.on("load", async () => {
   });
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
   document.getElementById("toggle-panel-econ").addEventListener("click", () => {
-    // Needs a building: the break-even is that roof's cost divided by its own
-    // panel count, so there is nothing to colour until one is selected.
-    if (!window.__setPanelEcon) {
-      const b = document.getElementById("toggle-panel-econ");
-      b.textContent = "Select a building first";
-      setTimeout(() => { b.innerHTML = '<span class="dot"></span>Panel economics'; }, 1600);
-      return;
-    }
-    window.__setPanelEcon(!panelEcon);
+    // No longer needs a selection (Josh): the bands apply to every building on
+    // screen, each against its own break-even. A selected building still gets
+    // its own readout on the right, but it is no longer a precondition.
+    if (window.__setPanelEcon) { window.__setPanelEcon(!panelEcon); return; }
+    if (mode !== "layout") return;
+    panelEcon = panelEcon ? null : { buildingId: -1, breakEvenKwh: PANEL_ECON_FALLBACK_KWH };
+    document.getElementById("toggle-panel-econ").classList.toggle("active", !!panelEcon);
+    rebuildEconMatch();
+    applyPanelDensityPaint();
+    renderGlobalEconBands();
   });
 
   document.getElementById("toggle-outlines").addEventListener("click", () => {
