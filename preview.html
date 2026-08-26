@@ -425,6 +425,7 @@
 <div id="corner-actions">
   <button class="corner-btn" id="toggle-outlines"><span class="dot"></span>Building outlines</button>
   <button class="corner-btn" id="toggle-obstructions"><span class="dot"></span>Avoided obstructions</button>
+  <button class="corner-btn" id="toggle-panel-econ"><span class="dot"></span>Panel economics</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
 </div>
@@ -979,6 +980,11 @@ function clearSelection() {
     document.getElementById("m-settings").classList.remove("open");
   }
   selectedBuildingId = -1;
+  window.__setPanelEcon = null;
+  panelEcon = null;
+  applyPanelDensityPaint();
+  const pe = document.getElementById("toggle-panel-econ");
+  if (pe) pe.classList.remove("active");
   highlightSelectedBuilding(-1);
   clearLiveTuning();
   applyToggles();
@@ -2608,10 +2614,6 @@ map.on("load", async () => {
             `<span class="sep"></span>` +
             `<span>Yearly ROI: <b id="econ-roi-year"></b></span></div>` +
           `<div class="econ-basis" id="econ-basis"></div>` +
-          `<button class="panel-econ-btn" id="panel-econ-toggle">` +
-            `<span class="sw" style="background:#1e8e5a"></span>` +
-            `<span class="sw" style="background:#c0392b"></span>` +
-            `<span id="panel-econ-label">Show which panels pay for themselves</span></button>` +
           `<div class="econ-bands" id="econ-bands" style="display:none"></div>` +
           `<div class="panel-econ-note" id="panel-econ-note"></div>` +
           `<div class="econ-inputs">` +
@@ -2686,7 +2688,6 @@ map.on("load", async () => {
         // tariff maths, so it inherits degradation and the declining export
         // schedule for free: lifetime value per kWh generated is
         // e.lifetime / kwhYear, and a panel must clear its share of the cost.
-        const econBtn = el("panel-econ-toggle");
         const setPanelEcon = on => {
           if (!on || !isLayout || !(count > 0) || !(kwhYear > 0)) {
             panelEcon = null;
@@ -2696,9 +2697,8 @@ map.on("load", async () => {
             panelEcon = { buildingId,
                           breakEvenKwh: (e.cost / count) / Math.max(perKwh, 1e-9) };
           }
-          if (econBtn) econBtn.classList.toggle("on", !!panelEcon);
-          el("panel-econ-label").textContent = panelEcon
-            ? "Hide panel economics" : "Show which panels pay for themselves";
+          const corner = document.getElementById("toggle-panel-econ");
+          if (corner) corner.classList.toggle("active", !!panelEcon);
           const bandsBox = el("econ-bands");
           if (!panelEcon) {
             bandsBox.style.display = "none";
@@ -2747,7 +2747,8 @@ map.on("load", async () => {
           }
           applyPanelDensityPaint();
         };
-        if (econBtn) econBtn.addEventListener("click", () => setPanelEcon(!panelEcon));
+        // The corner toggle drives whichever building is currently open.
+        window.__setPanelEcon = setPanelEcon;
         // A different building means the previous highlight no longer applies.
         setPanelEcon(panelEcon && panelEcon.buildingId === buildingId);
       }
@@ -3068,6 +3069,18 @@ map.on("load", async () => {
     document.getElementById("side-panel").classList.add("expanded");
   });
   document.getElementById("toggle-heatmap-global").addEventListener("click", () => setMode("heatmap"));
+  document.getElementById("toggle-panel-econ").addEventListener("click", () => {
+    // Needs a building: the break-even is that roof's cost divided by its own
+    // panel count, so there is nothing to colour until one is selected.
+    if (!window.__setPanelEcon) {
+      const b = document.getElementById("toggle-panel-econ");
+      b.textContent = "Select a building first";
+      setTimeout(() => { b.innerHTML = '<span class="dot"></span>Panel economics'; }, 1600);
+      return;
+    }
+    window.__setPanelEcon(!panelEcon);
+  });
+
   document.getElementById("toggle-outlines").addEventListener("click", () => {
     outlinesOn = !outlinesOn;
     document.getElementById("toggle-outlines").classList.toggle("active", outlinesOn);
