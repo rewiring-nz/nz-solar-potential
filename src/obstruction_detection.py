@@ -86,6 +86,19 @@ SATURATION_LOCAL_STD_MAX = 4.0  # confirmed directly on a real building (#473561
 SATURATION_WINDOW_PX = 7  # local texture window for the saturation check, ~0.7m at this imagery's
 # 0.1m/px resolution -- wide enough to distinguish real roofing texture from a flat glare patch,
 # narrow enough not to blur across a genuine small light-coloured feature's own edge
+# Buffering out merges scattered flagged points into one coherent object. It
+# also leaves the object BIGGER than the thing it represents, and nothing on
+# these two paths ever pulled it back (only the strong-cluster path trims).
+# Josh, on 28 Rees St: obstructions "show up wider in the lidar than they
+# really are, because they often have vertical edges but don't necessarily show
+# as vertical edges in the lidar" -- a return near a vertical face lands at an
+# intermediate height, so the flagged cluster is already dilated before we
+# buffer it further. BLOB_TRIM_FRACTION pulls back that share of the buffer
+# after the merge: a morphological close rather than a plain dilate.
+BLOB_TRIM_FRACTION = 1.0   # a full close: dilate to merge, erode the same amount back.
+# Swept against validate_obstructions.py over its 15 real reported cases:
+# 0.0 -> 5,114 panels, over-carve 169%;  1.0 -> 5,279 panels, over-carve 164%,
+# panels-on-raised 74 -> 76, and the equipment reference unchanged at 42%.
 BLOB_BUFFER_M = 0.25  # each detected blob is expanded by this much before being kept -- direct testing
 # confirmed detection reliably finds an object's edge/transition ring but not its full uniform interior, so
 # a plain outline of *detected pixels* under-covers the real object; buffering outward trades some excess
@@ -145,6 +158,22 @@ def _local_contrast_map(imagery_ds, sample_geom):
     return dist, transform, mean_dist, std_dist, valid, rgb
 
 
+def _trim_blob(geom, buffer_m):
+    """Pull a merged blob back in, without letting it vanish.
+
+    The outward buffer exists to join scattered points into one object; keeping
+    that full expansion also inflates the object. Trimming restores the size
+    while keeping the merge. A blob that trimming would erase is kept whole --
+    a real 0.4 m vent modelled slightly large beats one not modelled at all.
+    """
+    if BLOB_TRIM_FRACTION <= 0 or geom.is_empty:
+        return geom
+    trimmed = geom.buffer(-BLOB_TRIM_FRACTION * buffer_m)
+    if trimmed.is_empty or trimmed.geom_type not in ("Polygon", "MultiPolygon"):
+        return geom
+    return trimmed
+
+
 def detect_obstructions(imagery_ds, facet_geom, z_threshold=None, boundary_erode_m=None):
     """Returns a list of shapely Polygons (in imagery_ds's CRS -- same as
     facet_geom) flagged as likely roof obstructions/anomalies within this
@@ -191,6 +220,7 @@ def detect_obstructions(imagery_ds, facet_geom, z_threshold=None, boundary_erode
         rows, cols = np.where(blob_mask)
         xs, ys = rasterio.transform.xy(transform, rows, cols)
         hull = MultiPoint(np.column_stack([xs, ys])).convex_hull.buffer(BLOB_BUFFER_M, join_style="round")
+        hull = _trim_blob(hull, BLOB_BUFFER_M)
         if hull.geom_type != "Polygon" or hull.area > MAX_BLOB_AREA_FRACTION * facet_area_m2:
             continue
         obstructions.append(hull)
@@ -425,6 +455,7 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             if float(np.mean(member3d[:, 2] > pz + HEIGHT_STRONG_ABOVE_MARGIN_M)) < HEIGHT_STRONG_ABOVE_FRACTION:
                 continue
         hull = MultiPoint(fpts[member_idx]).convex_hull.buffer(HEIGHT_BLOB_BUFFER_M, join_style="round")
+        hull = _trim_blob(hull, HEIGHT_BLOB_BUFFER_M)
         if hull.geom_type != "Polygon":
             continue
         max_area = min(HEIGHT_MAX_BLOB_AREA_M2, MAX_BLOB_AREA_FRACTION * facet_area_m2)
