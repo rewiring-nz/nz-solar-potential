@@ -61,8 +61,13 @@ SEEDS = [
     # diagonal. Shipped says 1, reconstruction says 4.
     (4735015, "three decks at three heights (Josh, from a 3D view)",
      (3, "three decks at three heights, one at a different pitch"), None),
-    (5372565, "reconstruction fragmented this", None, None),
-    (4734815, "clear improvement, but the ridges sit off the imagery", None, None),
+    # My propose() heuristic called this "hip roof, four faces", which is
+    # nonsense on a stepped commercial roof -- it fires on any building with
+    # four dominant aspects. Josh counted seven from a 3D view.
+    (5372565, "seven clear planes (Josh, from a 3D view)",
+     (7, "stepped commercial roof, seven clear planes"), None),
+    (4734815, "four faces, confirmed; ridges still sit off the imagery",
+     (4, "hip roof, four faces"), None),
     (4735260, "barrel vault", None,
      "Curved, so no number of planes is strictly right. One plane for racking "
      "purposes, or strips following the curve?"),

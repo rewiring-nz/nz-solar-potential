@@ -89,6 +89,16 @@ MERGE_STEP_M = 0.25        # ...and they must not be parallel faces at different
 # reaches 90% of points within 0.15m. The evidence test above decides now --
 # pitch, bearing, or a step -- and this only catches gross mistakes.
 MERGE_MIN_INLIER_FRAC = 0.35
+# A plane and a polygon are not the same thing. One flat deck interrupted by a
+# lift overrun comes back as three polygons, and merge_coplanar cannot fuse
+# them because it only considers facets that TOUCH. 1 Memorial St returned ten
+# facets against Josh's count of seven, and three of those ten were the same
+# deck at 329.25/329.25/329.26 m. So facets carry a plane_id: same surface,
+# possibly several pieces. Layout still works per polygon; counting works per
+# plane.
+SAME_PLANE_SLOPE_DEG = 3.0
+SAME_PLANE_ASPECT_DEG = 12.0
+SAME_PLANE_STEP_M = 0.20
 SMOOTH_ROUNDS = 3
 # A cell is only allowed to belong to one plane if its own points mostly agree.
 # 111 Hallenstein came out of the arrangement with a 109 m2 cell straddling the
@@ -450,6 +460,44 @@ def _box_from_points(P, base_plane, pts3):
             "area_m2": float(rect.area), "point_count": int(len(P))}
 
 
+def assign_plane_ids(facets):
+    """Group facets that describe ONE physical surface, whether or not their
+    polygons touch. Compared where they actually are -- midway between the two
+    centroids -- because two planes that differ slightly in tilt diverge with
+    distance and would otherwise never look equal."""
+    ids = [None] * len(facets)
+    nxt = 0
+    for i, f in enumerate(facets):
+        if ids[i] is not None:
+            continue
+        ids[i] = nxt
+        for j in range(i + 1, len(facets)):
+            if ids[j] is not None:
+                continue
+            g = facets[j]
+            if abs(f["slope_deg"] - g["slope_deg"]) > SAME_PLANE_SLOPE_DEG:
+                continue
+            both_flat = (f["slope_deg"] < MERGE_FLAT_DEG
+                         and g["slope_deg"] < MERGE_FLAT_DEG)
+            if not both_flat and _circ_diff(f["aspect_deg"], g["aspect_deg"]) > SAME_PLANE_ASPECT_DEG:
+                continue
+            c1, c2 = f["geometry"].centroid, g["geometry"].centroid
+            mx, my = (c1.x + c2.x) / 2, (c1.y + c2.y) / 2
+            z1 = f["plane_a"] * mx + f["plane_b"] * my + f["plane_c"]
+            z2 = g["plane_a"] * mx + g["plane_b"] * my + g["plane_c"]
+            if abs(z1 - z2) <= SAME_PLANE_STEP_M:
+                ids[j] = nxt
+        nxt += 1
+    for f, pid in zip(facets, ids):
+        f["plane_id"] = int(pid)
+    return facets
+
+
+def n_planes(facets):
+    """How many distinct surfaces the roof has -- the thing a label counts."""
+    return len({f.get("plane_id", i) for i, f in enumerate(facets)})
+
+
 def extract_obstructions(facets, pts):
     """Separate faces OF the roof from things standing ON it. Two sources:
     whole facets that turn out to be elevated islands, and points sitting above
@@ -637,5 +685,6 @@ def reconstruct(building_id, outline, pts, seed=0, with_obstructions=True):
             })
     facets = merge_coplanar(facets, pts)
     if not with_obstructions:
-        return facets, []
-    return extract_obstructions(facets, pts)
+        return assign_plane_ids(facets), []
+    facets, obstructions = extract_obstructions(facets, pts)
+    return assign_plane_ids(facets), obstructions
