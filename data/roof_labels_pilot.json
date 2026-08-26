@@ -72,14 +72,20 @@
   "source": "Josh, 26 Aug"
  },
  "4735003": {
-  "n": 3,
-  "label": "complex, 3 faces",
-  "confirmed": false
+  "n": 2,
+  "label": "gable, two major faces; the small rectangles are raised objects",
+  "confirmed": true,
+  "uncertain": true,
+  "note": "Josh: 'definitely 2 major faces, then 3 smaller rectangle ones, and one in the middle'. The reconstruction finds 2 faces plus 3 objects standing 0.57-0.72m proud, so the rectangles read as obstructions rather than faces. Counted as 2 pending confirmation.",
+  "source": "Josh, 26 Aug"
  },
  "4751218": {
-  "n": 4,
-  "label": "hip roof, four faces",
-  "confirmed": false
+  "n": 5,
+  "n_alt": 4,
+  "label": "five faces, two of them nearly coplanar",
+  "note": "Josh: 'one very close to another so 4 might not be incorrect'.",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4735408": {
   "n": 2,

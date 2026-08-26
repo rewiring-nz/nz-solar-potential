@@ -88,15 +88,28 @@ def main():
             prefs.append(row)
         elif lab.get("n") is not None:
             row["truth"] = lab["n"]
+            # Some roofs have a genuine near-tie -- 34 Belfast Terrace has two
+            # faces so nearly coplanar that Josh said 4 would not be wrong
+            # either. Scoring that as a full miss would punish the right answer.
+            row["alt"] = lab.get("n_alt")
+            row["uncertain"] = bool(lab.get("uncertain"))
             counted.append(row)
+
+    def miss(v, r):
+        """Absolute error, forgiving an explicitly acceptable alternative."""
+        e = abs(v - r["truth"])
+        return min(e, abs(v - r["alt"])) if r.get("alt") is not None else e
 
     print(f"{'roof':<24}{'truth':>6}{'shipped':>9}{'polys':>7}{'planes':>8}   err ship/rec")
     es = er = 0
     for r in sorted(counted, key=lambda r: r["addr"]):
-        es += abs(r["ship"] - r["truth"])
-        er += abs(r["rec"] - r["truth"])
+        es += miss(r["ship"], r)
+        er += miss(r["rec"], r)
+        mark = " ?" if r.get("uncertain") else ""
+        if r.get("alt") is not None:
+            mark += f" (or {r['alt']})"
         print(f"{(r['addr'] or r['bid']):<24}{r['truth']:>6}{r['ship']:>9}{r['polys']:>7}"
-              f"{r['rec']:>8}   {r['ship']-r['truth']:+d} / {r['rec']-r['truth']:+d}")
+              f"{r['rec']:>8}   {r['ship']-r['truth']:+d} / {r['rec']-r['truth']:+d}{mark}")
     n = len(counted)
     if n:
         # Polygons scored alongside planes on purpose. assign_plane_ids fuses
@@ -104,16 +117,16 @@ def main():
         # 7 planes, exactly the truth) and wrong on 32 Park (8 -> 7, when 8 was
         # already correct). Neither count dominates, so hiding one would hide
         # where the remaining error actually lives.
-        ep = sum(abs(r["polys"] - r["truth"]) for r in counted)
-        exact_s = sum(1 for r in counted if r["ship"] == r["truth"])
-        exact_r = sum(1 for r in counted if r["rec"] == r["truth"])
-        exact_p = sum(1 for r in counted if r["polys"] == r["truth"])
+        ep = sum(miss(r["polys"], r) for r in counted)
+        exact_s = sum(1 for r in counted if miss(r["ship"], r) == 0)
+        exact_r = sum(1 for r in counted if miss(r["rec"], r) == 0)
+        exact_p = sum(1 for r in counted if miss(r["polys"], r) == 0)
         print(f"\n{n} counted roofs")
         print(f"  total absolute error   shipped {es:>3}    planes {er:>3}    polygons {ep:>3}")
         print(f"  mean absolute error    shipped {es/n:>5.2f}  planes {er/n:>5.2f}  polygons {ep/n:>5.2f}")
         print(f"  exact matches          shipped {exact_s}/{n}    planes {exact_r}/{n}    polygons {exact_p}/{n}")
-        under = sum(1 for r in counted if r["rec"] < r["truth"])
-        over = sum(1 for r in counted if r["rec"] > r["truth"])
+        under = sum(1 for r in counted if r["rec"] < r["truth"] and miss(r["rec"], r) > 0)
+        over = sum(1 for r in counted if r["rec"] > r["truth"] and miss(r["rec"], r) > 0)
         print(f"  reconstruction bias    {under} under, {over} over, {n-under-over} exact")
     if prefs:
         wr = sum(1 for r in prefs if r["prefer"] == "reconstruction")
@@ -122,6 +135,9 @@ def main():
         for r in prefs:
             print(f"    {(r['addr'] or r['bid'])}: prefers {r['prefer']} "
                   f"(shipped {r['ship']}, reconstruction {r['rec']})")
+    unc = sum(1 for r in counted if r.get("uncertain"))
+    if unc:
+        print(f"  ({unc} marked ? -- label given with reservations, treat as provisional)")
     print(f"\n{pending} still awaiting a label, {excluded} excluded")
     if n < 10:
         print("NOTE: too few labels to draw a conclusion from -- this is a running tally, "
