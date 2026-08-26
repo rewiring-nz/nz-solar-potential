@@ -845,7 +845,11 @@ let panelEconShow = { low: true, mid: true, high: true };
 // what Josh first specified. "marginal" asks the harder question -- is it worth
 // adding THIS panel -- and answers it at the export rate, because the
 // self-consumption a blended rate credits it with is already spoken for.
-let panelEconBasis = "blended";
+// Defaults to marginal (Josh). It is the question actually being asked of an
+// individual panel -- is this one worth adding -- and the blended rate answers
+// a different one, crediting every panel with self-consumption the daytime load
+// has already used up.
+let panelEconBasis = "marginal";
 
 function panelBandExpr(lowVal, midVal, highVal, otherVal) {
   const kwh = ["coalesce", ["get", "ac_kwh_year"], 0];
