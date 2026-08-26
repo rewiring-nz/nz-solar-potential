@@ -71,6 +71,9 @@
      easier to read than a continuous control, and it shows the non-linearity
      between steps that a slider hides. */
   #coverage-options { margin-top: var(--s2); }
+  /* The building panel's ladder needs more air under the headline box than the
+     dashboard's does -- that box is larger there, so the same gap reads tighter. */
+  #bldg-coverage-options { margin-top: var(--s4); }
   .cov-row { display: grid; grid-template-columns: 88px 1fr auto; align-items: baseline;
     gap: var(--s2); width: 100%; text-align: left; cursor: pointer; font-family: inherit;
     background: none; border: none; border-radius: 6px; padding: 5px 7px;
@@ -90,8 +93,10 @@
      lands on what the number IS before what it says. */
   .econ-item { margin-bottom: var(--s3); }
   .econ-label { font-size: 15px; font-weight: 800; color: var(--accent); letter-spacing: -0.2px; }
-  .econ-value { font-size: 21px; font-weight: 250; color: var(--accent); line-height: 1.15;
+  .econ-value { font-size: 21px; font-weight: 250; color: var(--ink); line-height: 1.15;
     font-variant-numeric: tabular-nums; }
+  .econ-value.econ-pos { color: var(--good); }
+  .econ-value.econ-neg { color: #ff6b60; }
   .econ-basis { font-size: var(--fs-meta); color: var(--ink-3); line-height: 1.45; margin-top: var(--s2); }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
@@ -154,11 +159,12 @@
   .rsp-statbox .rsp-power { font-size: var(--fs-hero); font-weight: 800; line-height: 1.05;
     letter-spacing: -0.5px; white-space: nowrap; color: #16181d;
     display: flex; align-items: baseline; justify-content: center; gap: var(--s3); }
-  /* Panel count sits beside the capacity, separated by a rule rather than
-     punctuation, and at body size -- it is context for the headline figure,
-     not a second headline. */
-  .rsp-statbox .rsp-count { font-size: var(--fs-body); font-weight: 700; letter-spacing: 0;
-    color: rgba(22,24,29,0.66); padding-left: var(--s3);
+  /* Panel count sits beside the capacity at the SAME size, carrying the
+     difference in weight rather than in scale -- they are two readings of one
+     system, so neither should look subordinate (Josh). Only where panels are
+     actually placed; Heat Map mode places none, so it has no count. */
+  .rsp-statbox .rsp-count { font-size: var(--fs-hero); font-weight: 250; letter-spacing: -0.5px;
+    color: rgba(22,24,29,0.72); padding-left: var(--s3);
     border-left: 1px solid rgba(22,24,29,0.28); }
   .rsp-statbox .rsp-energy { font-size: var(--fs-label); font-weight: 700; margin-top: var(--s1);
     white-space: nowrap; color: rgba(22,24,29,0.72); }
@@ -406,7 +412,7 @@
           </div>
           <input type="range" id="vslider" min="0" max="100" step="1" value="80">
           <div class="hslider-notes">
-            <div class="hnote hnote-l" style="left:10%"><i></i><span>Just a few panels mate</span></div>
+            <div class="hnote hnote-l" style="left:10%"><i></i><span>Just a few panels</span></div>
             <div class="hnote hnote-r" style="right:6%"><i></i><span>Blanket the roof</span></div>
           </div>
         </div>
@@ -1104,14 +1110,6 @@ map.on("load", async () => {
       const est = buildingEstimate({ facet_area_m2: +bp.dataset.area, avg_poa_kwh_m2: +bp.dataset.poa }, pct);
       bp.textContent = fmtPower(est.kwp);
       document.getElementById("bldg-energy").textContent = fmtEnergy(est.kwhYear);
-      // Heat Map mode has no placed panels, so the count is what that capacity
-      // implies at the current panel wattage -- same basis as the kW figure
-      // beside it, which is the only way the two can agree.
-      const bpn = document.getElementById("bldg-panels");
-      if (bpn) {
-        const n = Math.round(est.kwp * 1000 / assumptions.panel_rated_power_w);
-        bpn.textContent = n.toLocaleString() + " panels";
-      }
       // Same coverage ladder as the map-view dashboard, but for this one roof
       // (Josh). Its shape differs building to building: a roof that is all one
       // good pitch barely bends between 10% and 100%, while one with a big
@@ -1232,6 +1230,45 @@ map.on("load", async () => {
       recomputeInViewSummary();
     }, 140);
   };
+  // Panel layouts sometimes vanish and only a page refresh brings them back --
+  // reported by Josh, and he suspected tab switching, which fits. The basemap
+  // survives because it is a plain raster source; the panels come from a
+  // PMTiles vector source over HTTP range requests, and if those are aborted
+  // while the tab is hidden, MapLibre can be left holding tiles marked as
+  // failed and will not retry them on its own. Reloading the page rebuilds the
+  // source, which is exactly the workaround he found.
+  //
+  // Detect it rather than assume it: the buildings layer comes from a GeoJSON
+  // source that is parsed once and never goes stale, so buildings present with
+  // zero panels, in Panel Layout, above the zoom where panels exist, means the
+  // vector source is the thing that is broken and not the view.
+  let healArmed = false, lastHealAt = 0;
+  function layoutTilesLookBroken() {
+    if (!layoutReady || mode !== "layout" || map.getZoom() < 14) return false;
+    if (map.queryRenderedFeatures({ layers: ["buildings-fill"] }).length === 0) return false;
+    return map.queryRenderedFeatures({ layers: ["panels-fill"] }).length === 0;
+  }
+  function healLayoutTiles() {
+    // Require two consecutive blank checks before acting: a single one can just
+    // be a view over roofs that genuinely have no panels.
+    if (!layoutTilesLookBroken()) { healArmed = false; return; }
+    if (!healArmed) { healArmed = true; setTimeout(healLayoutTiles, 1500); return; }
+    healArmed = false;
+    if (Date.now() - lastHealAt < 10000) return;   // never hammer it
+    lastHealAt = Date.now();
+    const sc = map.style && map.style.sourceCaches && map.style.sourceCaches.layout;
+    if (sc && typeof sc.clearTiles === "function") {
+      sc.clearTiles();          // drop the failed tiles so they are re-requested
+      sc.update(map.transform);
+      map.triggerRepaint();
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") setTimeout(healLayoutTiles, 800);
+  });
+  // Also covers the case where it fails while the tab is in the foreground.
+  map.on("idle", () => { if (layoutTilesLookBroken()) healLayoutTiles(); });
+
   map.on("moveend", onViewChanged);
   // moveend fires before the new view finishes rendering, so a fast pan/zoom
   // counts 0 buildings; idle fires once rendering settles and corrects it.
@@ -1570,6 +1607,11 @@ map.on("load", async () => {
   const fmtMoney = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M"
                     : v >= 1e3 ? "$" + Math.round(v / 1e3) + "k"
                     : "$" + Math.round(v);
+  // Economics figures are written out in full (Josh). "$30k" is fine for a
+  // district total nobody will act on, but these four are about one building
+  // and someone reading them is deciding whether to spend that money -- a
+  // rounded abbreviation quietly hides up to $500 of it.
+  const fmtMoneyFull = v => "$" + Math.round(v).toLocaleString();
   window.__economicsFor = economicsFor;
 
   // --- Advanced assumptions editor -------------------------------------
@@ -1974,7 +2016,7 @@ map.on("load", async () => {
               roof coverage from solar panels:
             </div>
             <div class="rsp-statbox">
-              <div class="rsp-power"><span id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</span><span class="rsp-count" id="bldg-panels">${Math.round(est.kwp * 1000 / assumptions.panel_rated_power_w).toLocaleString()} panels</span></div>
+              <div class="rsp-power"><span id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</span></div>
               <div class="rsp-energy" id="bldg-energy">${fmtEnergy(est.kwhYear)}</div>
             </div>
           </div>
@@ -2138,14 +2180,18 @@ map.on("load", async () => {
         // ask what solar is worth -- lifetime savings on its own reads as
         // profit and is not.
         const net = e.lifetime - e.cost;
-        const item = (label, value) =>
+        const item = (label, value, cls) =>
           `<div class="econ-item"><div class="econ-label">${label}</div>` +
-          `<div class="econ-value">${value}</div></div>`;
+          `<div class="econ-value${cls ? " " + cls : ""}">${value}</div></div>`;
         be.innerHTML =
-          item("Cost", fmtMoney(e.cost)) +
-          item("Yearly savings", fmtMoney(e.annual)) +
-          item("Lifetime savings", fmtMoney(e.lifetime)) +
-          item("Net savings", (net < 0 ? "-" : "") + fmtMoney(Math.abs(net))) +
+          item("Cost", fmtMoneyFull(e.cost)) +
+          item("Yearly savings", fmtMoneyFull(e.annual)) +
+          item("Lifetime savings", fmtMoneyFull(e.lifetime)) +
+          // Net savings is the one figure here that can go the wrong way, so it
+          // is the one that carries colour -- green if the system is ahead over
+          // its life, red if it never gets there (Josh).
+          item("Net savings", (net < 0 ? "-" : "") + fmtMoneyFull(Math.abs(net)),
+               net >= 0 ? "econ-pos" : "econ-neg") +
           `<div class="econ-basis">` +
           `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
           ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
