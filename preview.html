@@ -472,11 +472,13 @@
       <div class="slider-row"><label><span>Export / buyback</span><span id="e-bsell-val"></span></label>
         <input type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
       <div style="font-size:10.5px; color:#999; margin:6px 0 0;">A building counts as a business if
-        its roof or its system is commercial-scale &mdash; either one is enough.</div>
+        its roof or its system is commercial-scale &mdash; either one is enough. Roof area is the
+        real test; the system-size backstop sits high on purpose, because system size follows
+        the coverage setting and a home should not become a business when you slide it up.</div>
       <div class="slider-row"><label><span>Business if roof over</span><span id="e-broof-val"></span></label>
         <input type="range" id="e-broof" min="100" max="1500" step="25"></div>
       <div class="slider-row"><label><span>...or system over</span><span id="e-bkw-val"></span></label>
-        <input type="range" id="e-bkw" min="5" max="60" step="1"></div>
+        <input type="range" id="e-bkw" min="10" max="250" step="5"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
       <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback is expected to fall.
         Payback and lifetime value follow this year by year, they are not a flat figure.</div>
@@ -1508,13 +1510,25 @@ map.on("load", async () => {
     // the same for both today.
     home_buy_c: 30, home_sell_c: 15,
     biz_buy_c: 17,  biz_sell_c: 15,
-    // Which one a building gets. Josh: decided by building size AND array
-    // size. Taken as EITHER signal indicating commercial scale, not both at
-    // once -- a warehouse with a token 5kW array is still a business, and a
-    // big house with a big array is still a home at 12kW. NZ household systems
-    // are 3-12kW and rarely more, so 15kW sits well clear of them.
+    // Which rate set a building gets.
+    //
+    // ROOF AREA is the real signal and does the work. System size is not an
+    // independent second signal at all -- it is roof area times the coverage
+    // setting -- so using it as a threshold meant a house FLIPPED to business
+    // pricing when the coverage slider went up, which is nonsense: a building
+    // does not change what it is because we modelled more panels on it. That
+    // is the bug Josh hit, "a home that is being treated as a business".
+    //
+    // The kW test is kept only as a backstop for the case roof area would miss
+    // (a genuinely industrial system on a modest footprint), at Josh's 100kW.
+    // NZ households are 3-12kW, and even a 300 m2 house fully covered lands
+    // near 48kW, so nothing residential reaches it.
+    //
+    // Better signals exist if this proves too blunt: address_count is already
+    // on every building, and a footprint carrying many addresses is a complex
+    // rather than a house. LINZ outlines carry no building-use attribute.
     biz_min_roof_m2: 400,
-    biz_min_kw: 15,
+    biz_min_kw: 100,
     // Export earns less over time. Anchors are Josh's; this interpolates
     // between them and holds flat past the last.
     sell_schedule: [[2026, 15], [2035, 10], [2040, 8]],
