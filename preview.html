@@ -85,6 +85,14 @@
   .cov-row .cov-energy { color: var(--ink-3); }
 
   .panel-caveat { font-size: var(--fs-meta); color: var(--warn); margin-top: var(--s2); line-height: 1.4; }
+  /* Economics reads as four plain statements rather than a table of rows: the
+     label carries the weight and the figure sits under it light, so the eye
+     lands on what the number IS before what it says. */
+  .econ-item { margin-bottom: var(--s3); }
+  .econ-label { font-size: 15px; font-weight: 800; color: var(--accent); letter-spacing: -0.2px; }
+  .econ-value { font-size: 21px; font-weight: 250; color: var(--accent); line-height: 1.15;
+    font-variant-numeric: tabular-nums; }
+  .econ-basis { font-size: var(--fs-meta); color: var(--ink-3); line-height: 1.45; margin-top: var(--s2); }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
   .popup #layout-details td { padding: 2px 0; color: var(--ink-2); }
@@ -144,7 +152,14 @@
     flex: 1 1 100%; width: 100%; box-sizing: border-box;
   }
   .rsp-statbox .rsp-power { font-size: var(--fs-hero); font-weight: 800; line-height: 1.05;
-    letter-spacing: -0.5px; white-space: nowrap; color: #16181d; }
+    letter-spacing: -0.5px; white-space: nowrap; color: #16181d;
+    display: flex; align-items: baseline; justify-content: center; gap: var(--s3); }
+  /* Panel count sits beside the capacity, separated by a rule rather than
+     punctuation, and at body size -- it is context for the headline figure,
+     not a second headline. */
+  .rsp-statbox .rsp-count { font-size: var(--fs-body); font-weight: 700; letter-spacing: 0;
+    color: rgba(22,24,29,0.66); padding-left: var(--s3);
+    border-left: 1px solid rgba(22,24,29,0.28); }
   .rsp-statbox .rsp-energy { font-size: var(--fs-label); font-weight: 700; margin-top: var(--s1);
     white-space: nowrap; color: rgba(22,24,29,0.72); }
   /* Sections are separated by space first, a hairline only where the change of
@@ -210,6 +225,17 @@
     border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
   #vslider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff;
     border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
+  /* Leader lines from just inside each end of the track, so the two extremes
+     of the slider say what they actually mean rather than leaving "0-100%" to
+     be interpreted. Set in a tiny bit from the true ends so the line does not
+     collide with the thumb when it is parked there. */
+  .hslider-notes { position: relative; height: 36px; margin-top: 2px; }
+  .hnote { position: absolute; top: 0; width: 84px; }
+  .hnote i { display: block; width: 1px; height: 10px; background: rgba(255,255,255,0.45); }
+  .hnote span { display: block; margin-top: 3px; font-size: 9.5px; line-height: 1.25;
+    color: var(--ink-3); }
+  .hnote-r { text-align: right; }
+  .hnote-r i { margin-left: auto; }
 
   .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
   .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -379,6 +405,10 @@
             <span id="vslider-value">80%</span>
           </div>
           <input type="range" id="vslider" min="0" max="100" step="1" value="80">
+          <div class="hslider-notes">
+            <div class="hnote hnote-l" style="left:10%"><i></i><span>Just a few panels mate</span></div>
+            <div class="hnote hnote-r" style="right:6%"><i></i><span>Blanket the roof</span></div>
+          </div>
         </div>
       </div>
       <div id="coverage-options" style="display:none;"></div>
@@ -1074,6 +1104,14 @@ map.on("load", async () => {
       const est = buildingEstimate({ facet_area_m2: +bp.dataset.area, avg_poa_kwh_m2: +bp.dataset.poa }, pct);
       bp.textContent = fmtPower(est.kwp);
       document.getElementById("bldg-energy").textContent = fmtEnergy(est.kwhYear);
+      // Heat Map mode has no placed panels, so the count is what that capacity
+      // implies at the current panel wattage -- same basis as the kW figure
+      // beside it, which is the only way the two can agree.
+      const bpn = document.getElementById("bldg-panels");
+      if (bpn) {
+        const n = Math.round(est.kwp * 1000 / assumptions.panel_rated_power_w);
+        bpn.textContent = n.toLocaleString() + " panels";
+      }
     }
   }
   function wireCoverageSelect(sel) {
@@ -1929,7 +1967,7 @@ map.on("load", async () => {
               roof coverage from solar panels:
             </div>
             <div class="rsp-statbox">
-              <div class="rsp-power" id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</div>
+              <div class="rsp-power"><span id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</span><span class="rsp-count" id="bldg-panels">${Math.round(est.kwp * 1000 / assumptions.panel_rated_power_w).toLocaleString()} panels</span></div>
               <div class="rsp-energy" id="bldg-energy">${fmtEnergy(est.kwhYear)}</div>
             </div>
           </div>
@@ -1940,7 +1978,7 @@ map.on("load", async () => {
           <div class="rsp-row">
             <div class="rsp-assumption">At the current panel density (<span id="bldg-density-note">${panelDensityPct}%</span>, set with the left-hand slider):</div>
             <div class="rsp-statbox">
-              <div class="rsp-power" id="bldg-fitted-power">&ndash;</div>
+              <div class="rsp-power"><span id="bldg-fitted-power">&ndash;</span><span class="rsp-count" id="bldg-fitted-panels">&ndash;</span></div>
               <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
             </div>
           </div>
@@ -2077,27 +2115,34 @@ map.on("load", async () => {
     if (el("bldg-fitted-power")) {
       el("bldg-fitted-power").textContent = fmtPower(kwp);
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
+      if (el("bldg-fitted-panels")) {
+        el("bldg-fitted-panels").textContent = count.toLocaleString() + " panels";
+      }
     }
     const be = el("bldg-econ");
     if (be) {
       const e = economicsFor(kwp, kwhYear, props.facet_area_m2);
       be.style.display = e ? "" : "none";
       if (e) {
+        // Four figures, each as a bold yellow label with a light-weight value
+        // under it (Josh). Net savings is what is left after the system has
+        // paid for itself, which is the number people actually mean when they
+        // ask what solar is worth -- lifetime savings on its own reads as
+        // profit and is not.
+        const net = e.lifetime - e.cost;
+        const item = (label, value) =>
+          `<div class="econ-item"><div class="econ-label">${label}</div>` +
+          `<div class="econ-value">${value}</div></div>`;
         be.innerHTML =
-          `<div class="est-title">Economics</div>` +
-          `<div class="kv"><span>Installed cost</span><strong>${fmtMoney(e.cost)}</strong></div>` +
-          `<div class="kv"><span class="kv-note">$${e.rate.toLocaleString()}/kW at this size</span>` +
-          `<span class="kv-note">${e.biz ? "priced as a business" : "priced as a home"}</span></div>` +
-          `<div class="kv kv-group"><span>Value of energy, year 1</span>` +
-          `<strong style="color:var(--good);">${fmtMoney(e.annual)}/yr</strong></div>` +
-          `<div class="kv"><span>Simple payback</span><strong>` +
-          `${e.payback ? e.payback.toFixed(1) + " years" : "beyond system life"}</strong></div>` +
-          `<div class="kv"><span>Over ${econ.life_years} years</span>` +
-          `<strong>${fmtMoney(e.lifetime)}</strong></div>` +
-          `<div class="kv"><span class="kv-note">${e.buy}c/kWh used on site &middot; ` +
-          `${e.sellNow}c exported` +
-          `${e.sellLater < e.sellNow - 0.05 ? `, falling to ${e.sellLater.toFixed(1)}c` : ""}` +
-          `</span></div>` +
+          item("Cost", fmtMoney(e.cost)) +
+          item("Yearly savings", fmtMoney(e.annual)) +
+          item("Lifetime savings", fmtMoney(e.lifetime)) +
+          item("Net savings", (net < 0 ? "-" : "") + fmtMoney(Math.abs(net))) +
+          `<div class="econ-basis">` +
+          `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
+          ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
+          ` at ${e.buy}c/kWh used on site and ${e.sellNow}c exported` +
+          `${e.sellLater < e.sellNow - 0.05 ? `, falling to ${e.sellLater.toFixed(1)}c` : ""}</div>` +
           `<div class="panel-caveat">Indicative only &mdash; not a quote. ` +
           `Assumes ${Math.round(e.selfPct)}% used on site.</div>`;
       }
