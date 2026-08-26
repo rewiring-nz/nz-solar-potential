@@ -873,11 +873,21 @@ let panelEconShow = { low: true, mid: true, high: true };
 // what Josh first specified. "marginal" asks the harder question -- is it worth
 // adding THIS panel -- and answers it at the export rate, because the
 // self-consumption a blended rate credits it with is already spoken for.
-// Defaults to marginal (Josh). It is the question actually being asked of an
-// individual panel -- is this one worth adding -- and the blended rate answers
-// a different one, crediting every panel with self-consumption the daytime load
-// has already used up.
-let panelEconBasis = "marginal";
+// Back to blended by default. Marginal is still the sharper question for "is
+// one more panel worth it", but defaulting to it made the panel and the map
+// contradict each other, which Josh caught: 17/60 Hallenstein showed every
+// panel red while the building itself reported $20,900 net profit.
+//
+// Both were right and that is the problem. The headline prices the
+// self-consumed slice at retail; the marginal test prices every panel at export
+// because the daytime load is already met by the panels before it. On that roof
+// break-even is 300 kWh/yr blended and 488 marginal, and the panels make ~460 --
+// so the same roof is entirely green or entirely red depending on which
+// question is being asked, with no way for a reader to tell.
+//
+// Blended reconciles with the figures beside it. Marginal stays one click away
+// and now says plainly what it is measuring.
+let panelEconBasis = "blended";
 // The break-even is computed at the END of updateFittedStats, from figures the
 // START of it already used. So the first pass after switching the mode on has
 // no break-even yet and falls back to the baked deciles. One guarded re-run
@@ -3084,8 +3094,15 @@ map.on("load", async () => {
               `\u2248${fmtMoneyFull(e.cost / count)} share of the install. ` +
               `1\u00d7 is ${be} kWh/yr. Tap a band to hide it.<br>` +
               `Valued at <a href="#" id="econ-basis-swap" style="color:var(--accent)">` +
-              `${panelEconBasis === "marginal" ? "the export rate (marginal panel)"
-                                               : "this roof's blended rate"}</a>.`;
+              `${panelEconBasis === "marginal" ? "the export rate (one more panel)"
+                                               : "this roof's blended rate"}</a>.` +
+              (panelEconBasis === "marginal"
+                ? ` Asks whether ADDING a panel pays, so it prices every panel at ` +
+                  `export: the daytime load is already met by the ones before it. ` +
+                  `Stricter than the figures above, which price the self-consumed ` +
+                  `share at retail \u2014 a roof can show net profit while no extra ` +
+                  `panel pays for itself.`
+                : "");
             const swap = el("econ-basis-swap");
             if (swap) swap.addEventListener("click", ev => {
               ev.preventDefault();
