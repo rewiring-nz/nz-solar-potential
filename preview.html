@@ -320,17 +320,34 @@
       <div style="font-size:10.5px; color:#999; margin-bottom:8px;">$ per kW installed. The rate for
         a system is set by the band its own size falls in.</div>
       <div id="cost-tiers"></div>
-      <div style="font-weight:700; margin:14px 0 6px;">Electricity pricing</div>
-      <div class="slider-row"><label><span>Retail price you pay</span><span id="e-buy-val"></span></label>
-        <input type="range" id="e-buy" min="10" max="60" step="1"></div>
-      <div class="slider-row"><label><span>Export / buyback rate</span><span id="e-sell-val"></span></label>
-        <input type="range" id="e-sell" min="0" max="30" step="0.5"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Electricity pricing &mdash; homes</div>
+      <div class="slider-row"><label><span>Retail price paid</span><span id="e-hbuy-val"></span></label>
+        <input type="range" id="e-hbuy" min="10" max="60" step="1"></div>
+      <div class="slider-row"><label><span>Export / buyback</span><span id="e-hsell-val"></span></label>
+        <input type="range" id="e-hsell" min="0" max="30" step="0.5"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Electricity pricing &mdash; businesses</div>
+      <div class="slider-row"><label><span>Retail price paid</span><span id="e-bbuy-val"></span></label>
+        <input type="range" id="e-bbuy" min="5" max="60" step="1"></div>
+      <div class="slider-row"><label><span>Export / buyback</span><span id="e-bsell-val"></span></label>
+        <input type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
+      <div style="font-size:10.5px; color:#999; margin:6px 0 0;">A building counts as a business if
+        its roof or its system is commercial-scale &mdash; either one is enough.</div>
+      <div class="slider-row"><label><span>Business if roof over</span><span id="e-broof-val"></span></label>
+        <input type="range" id="e-broof" min="100" max="1500" step="25"></div>
+      <div class="slider-row"><label><span>...or system over</span><span id="e-bkw-val"></span></label>
+        <input type="range" id="e-bkw" min="5" max="60" step="1"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback is expected to fall.
+        Payback and lifetime value follow this year by year, they are not a flat figure.</div>
+      <div id="sell-schedule"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
       <div style="font-size:10.5px; color:#999; margin-bottom:6px;">How much of what the system makes
         is used on site rather than exported. This is the biggest single lever on payback.</div>
       <select id="e-profile" class="coverage-select" style="width:100%; margin-bottom:8px;"></select>
-      <div class="slider-row"><label><span>Self-consumed share</span><span id="e-self-val"></span></label>
+      <div class="slider-row"><label><span>Self-consumed share &mdash; homes</span><span id="e-self-val"></span></label>
         <input type="range" id="e-self" min="5" max="100" step="1"></div>
+      <div class="slider-row"><label><span>Self-consumed share &mdash; businesses</span><span id="e-bself-val"></span></label>
+        <input type="range" id="e-bself" min="5" max="100" step="1"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
       <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
         <input type="range" id="e-life" min="10" max="35" step="1"></div>
@@ -876,7 +893,7 @@ map.on("load", async () => {
         const one = mode === "layout"
           ? panelSumsFor([pr])
           : buildingEstimate(pr, coveragePct);
-        const e = economicsFor(one.kwp, one.kwhYear);
+        const e = economicsFor(one.kwp, one.kwhYear, pr.facet_area_m2);
         if (e) { cost += e.cost; annual += e.annual; }
       });
       ec.style.display = annual > 0 ? "" : "none";
@@ -1243,13 +1260,32 @@ map.on("load", async () => {
       { max_kw: 50,    rate: 1500, label: "25 – 50 kW" },
       { max_kw: Infinity, rate: 1200, label: "over 50 kW" },
     ],
-    buy_c_kwh: 30,        // retail c/kWh paid for grid electricity
-    sell_c_kwh: 12.5,     // export / buyback c/kWh
+    // Homes and businesses buy electricity at very different prices, so a
+    // single retail rate would flatter one and penalise the other. Export is
+    // the same for both today.
+    home_buy_c: 30, home_sell_c: 15,
+    biz_buy_c: 17,  biz_sell_c: 15,
+    // Which one a building gets. Josh: decided by building size AND array
+    // size. Taken as EITHER signal indicating commercial scale, not both at
+    // once -- a warehouse with a token 5kW array is still a business, and a
+    // big house with a big array is still a home at 12kW. NZ household systems
+    // are 3-12kW and rarely more, so 15kW sits well clear of them.
+    biz_min_roof_m2: 400,
+    biz_min_kw: 15,
+    // Export earns less over time. Anchors are Josh's; this interpolates
+    // between them and holds flat past the last.
+    sell_schedule: [[2026, 15], [2035, 10], [2040, 8]],
     // Kept in step with the default profile below -- a dropdown saying 30% next
     // to a slider saying 45% is the kind of thing that makes a whole panel
     // look untrustworthy.
     self_pct: 30,
     profile: "home_out",
+    // Businesses get their own share rather than inheriting the household
+    // profile. Without this a warehouse was being modelled as if it exported
+    // 70% of its output, which made commercial payback look WORSE than
+    // residential -- the opposite of reality, and only because the profile
+    // selector is written for homes.
+    biz_self_pct: 75,
     life_years: 25,
     degradation_pct: 0.5, // per year
   };
@@ -1263,6 +1299,7 @@ map.on("load", async () => {
     { id: "business",   label: "Business — weekday daytime",   pct: 75 },
     { id: "custom",     label: "Custom",                       pct: null },
   ];
+  const THIS_YEAR = new Date().getFullYear();
   let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
   econ.cost_tiers[4].max_kw = Infinity;   // JSON round-trip turns Infinity into null
 
@@ -1278,21 +1315,51 @@ map.on("load", async () => {
   // discount rate or price inflation -- two assumptions that mostly cancel and
   // that nobody can check, and their absence is easier to explain than a
   // number picked to make payback look good.
-  function economicsFor(kwp, kwhYear) {
+  // Business or home? Either signal is enough -- see biz_min_* above.
+  function isBusiness(kwp, roofM2) {
+    return (roofM2 || 0) >= econ.biz_min_roof_m2 || (kwp || 0) >= econ.biz_min_kw;
+  }
+  // Export rate in a calendar year: piecewise-linear between the anchors,
+  // flat before the first and after the last.
+  function sellRate(year) {
+    const sch = econ.sell_schedule;
+    if (year <= sch[0][0]) return sch[0][1];
+    for (let i = 1; i < sch.length; i++) {
+      if (year <= sch[i][0]) {
+        const [y0, r0] = sch[i - 1], [y1, r1] = sch[i];
+        return r0 + (r1 - r0) * (year - y0) / (y1 - y0);
+      }
+    }
+    return sch[sch.length - 1][1];
+  }
+
+  function economicsFor(kwp, kwhYear, roofM2) {
     if (!(kwp > 0) || !(kwhYear > 0)) return null;
-    const self = econ.self_pct / 100;
-    const annual = kwhYear * (self * econ.buy_c_kwh + (1 - self) * econ.sell_c_kwh) / 100;
+    const biz = isBusiness(kwp, roofM2);
+    const buy = biz ? econ.biz_buy_c : econ.home_buy_c;
+    const sellNow = biz ? econ.biz_sell_c : econ.home_sell_c;
+    // The decline schedule is anchored on today's rate, so editing the
+    // home/business export price moves the whole curve with it instead of
+    // snapping back to the schedule's own first value.
+    const scale = sellNow / sellRate(THIS_YEAR);
+    const self = (biz ? econ.biz_self_pct : econ.self_pct) / 100;
     const cost = systemCost(kwp);
     const d = econ.degradation_pct / 100;
+    // Year by year, because export earns less over time AND the panels make
+    // less. One flat annual figure would overstate both payback and lifetime.
+    const valueInYear = y => kwhYear * Math.pow(1 - d, y) *
+      (self * buy + (1 - self) * sellRate(THIS_YEAR + y) * scale) / 100;
+    const annual = valueInYear(0);
     let lifetime = 0;
-    for (let y = 0; y < econ.life_years; y++) lifetime += annual * Math.pow(1 - d, y);
-    // Payback against a declining output stream, not a flat one.
+    for (let y = 0; y < econ.life_years; y++) lifetime += valueInYear(y);
     let cum = 0, payback = null;
     for (let y = 0; y < 60; y++) {
-      cum += annual * Math.pow(1 - d, y);
-      if (cum >= cost) { payback = y + 1 - (cum - cost) / (annual * Math.pow(1 - d, y)); break; }
+      const v = valueInYear(y);
+      cum += v;
+      if (cum >= cost) { payback = y + 1 - (cum - cost) / v; break; }
     }
-    return { cost, annual, lifetime, payback, rate: costPerKw(kwp) };
+    return { cost, annual, lifetime, payback, rate: costPerKw(kwp), biz, buy, sellNow,
+             sellLater: sellRate(THIS_YEAR + econ.life_years) * scale, selfPct: self * 100 };
   }
   const fmtMoney = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M"
                     : v >= 1e3 ? "$" + Math.round(v / 1e3) + "k"
@@ -1369,10 +1436,28 @@ map.on("load", async () => {
     profSel.innerHTML = SELF_PROFILES.map(p =>
       `<option value="${p.id}">${p.label}${p.pct !== null ? ` (${p.pct}%)` : ""}</option>`).join("");
 
+    const schedBox = el("sell-schedule");
+    function renderSchedule() {
+      schedBox.innerHTML = econ.sell_schedule.map(([y, r], i) =>
+        `<div class="cost-tier"><span>${y}</span>` +
+        `<input type="number" data-i="${i}" step="0.5" min="0" value="${r}">` +
+        `<span style="flex:none; color:#888;">c/kWh</span></div>`).join("");
+      schedBox.querySelectorAll("input").forEach(inp =>
+        inp.addEventListener("input", () => {
+          const v = parseFloat(inp.value);
+          if (isFinite(v) && v >= 0) { econ.sell_schedule[+inp.dataset.i][1] = v; applyEcon(); }
+        }));
+    }
+
     function applyEcon() {
-      el("e-buy-val").textContent = econ.buy_c_kwh.toFixed(0) + "c/kWh";
-      el("e-sell-val").textContent = econ.sell_c_kwh.toFixed(1) + "c/kWh";
+      el("e-hbuy-val").textContent = econ.home_buy_c.toFixed(0) + "c/kWh";
+      el("e-hsell-val").textContent = econ.home_sell_c.toFixed(1) + "c/kWh";
+      el("e-bbuy-val").textContent = econ.biz_buy_c.toFixed(0) + "c/kWh";
+      el("e-bsell-val").textContent = econ.biz_sell_c.toFixed(1) + "c/kWh";
+      el("e-broof-val").textContent = econ.biz_min_roof_m2 + " m\u00b2";
+      el("e-bkw-val").textContent = econ.biz_min_kw + " kW";
       el("e-self-val").textContent = econ.self_pct + "%";
+      el("e-bself-val").textContent = econ.biz_self_pct + "%";
       el("e-life-val").textContent = econ.life_years + " years";
       el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
       recomputeInViewSummary();
@@ -1383,9 +1468,14 @@ map.on("load", async () => {
       if (id === "e-self") { econ.profile = "custom"; profSel.value = "custom"; }
       applyEcon();
     });
-    bindEcon("e-buy", "buy_c_kwh", parseFloat);
-    bindEcon("e-sell", "sell_c_kwh", parseFloat);
+    bindEcon("e-hbuy", "home_buy_c", parseFloat);
+    bindEcon("e-hsell", "home_sell_c", parseFloat);
+    bindEcon("e-bbuy", "biz_buy_c", parseFloat);
+    bindEcon("e-bsell", "biz_sell_c", parseFloat);
+    bindEcon("e-broof", "biz_min_roof_m2", v => parseInt(v, 10));
+    bindEcon("e-bkw", "biz_min_kw", v => parseInt(v, 10));
     bindEcon("e-self", "self_pct", v => parseInt(v, 10));
+    bindEcon("e-bself", "biz_self_pct", v => parseInt(v, 10));
     bindEcon("e-life", "life_years", v => parseInt(v, 10));
     bindEcon("e-deg", "degradation_pct", parseFloat);
     profSel.addEventListener("change", () => {
@@ -1397,12 +1487,15 @@ map.on("load", async () => {
     function loadEcon(src) {
       econ = JSON.parse(JSON.stringify(src));
       econ.cost_tiers[econ.cost_tiers.length - 1].max_kw = Infinity;
-      el("e-buy").value = econ.buy_c_kwh; el("e-sell").value = econ.sell_c_kwh;
-      el("e-self").value = econ.self_pct;  el("e-life").value = econ.life_years;
+      el("e-hbuy").value = econ.home_buy_c; el("e-hsell").value = econ.home_sell_c;
+      el("e-bbuy").value = econ.biz_buy_c;  el("e-bsell").value = econ.biz_sell_c;
+      el("e-broof").value = econ.biz_min_roof_m2; el("e-bkw").value = econ.biz_min_kw;
+      el("e-self").value = econ.self_pct;  el("e-bself").value = econ.biz_self_pct;
+      el("e-life").value = econ.life_years;
       el("e-deg").value = econ.degradation_pct; profSel.value = econ.profile;
       const pr = SELF_PROFILES.find(x => x.id === econ.profile);
       if (pr && pr.pct !== null) { econ.self_pct = pr.pct; el("e-self").value = pr.pct; }
-      renderTiers(); applyEcon();
+      renderTiers(); renderSchedule(); applyEcon();
     }
     el("e-reset").addEventListener("click", () => loadEcon(ECON_DEFAULTS));
     loadEcon(ECON_DEFAULTS);
@@ -1826,7 +1919,7 @@ map.on("load", async () => {
     }
     const be = el("bldg-econ");
     if (be) {
-      const e = economicsFor(kwp, kwhYear);
+      const e = economicsFor(kwp, kwhYear, props.facet_area_m2);
       be.style.display = e ? "" : "none";
       if (e) {
         be.innerHTML =
@@ -1834,14 +1927,20 @@ map.on("load", async () => {
           `<strong>${fmtMoney(e.cost)}</strong></div>` +
           `<div style="display:flex; justify-content:space-between; color:#888;">` +
           `<span>$${e.rate.toLocaleString()}/kW at this system size</span></div>` +
-          `<div style="display:flex; justify-content:space-between; margin-top:3px;"><span>Value of ` +
+          `<div style="display:flex; justify-content:space-between; margin-top:5px;"><span>Priced as` +
+          `</span><strong>${e.biz ? "a business" : "a home"}</strong></div>` +
+          `<div style="display:flex; justify-content:space-between; color:#888;"><span>` +
+          `${e.buy}c/kWh used on site, ${e.sellNow}c exported` +
+          `${e.sellLater < e.sellNow - 0.05 ? ` falling to ${e.sellLater.toFixed(1)}c` : ""}` +
+          `</span></div>` +
+          `<div style="display:flex; justify-content:space-between; margin-top:5px;"><span>Value of ` +
           `energy, year 1</span><strong style="color:#9fe08f;">${fmtMoney(e.annual)}/yr</strong></div>` +
           `<div style="display:flex; justify-content:space-between;"><span>Simple payback</span>` +
           `<strong>${e.payback ? e.payback.toFixed(1) + " years" : "beyond system life"}</strong></div>` +
           `<div style="display:flex; justify-content:space-between;"><span>Over ${econ.life_years} ` +
           `years</span><strong>${fmtMoney(e.lifetime)}</strong></div>` +
           `<div style="font-size:10px; color:#ff9b90; margin-top:4px;">Indicative only &mdash; not a ` +
-          `quote. Assumes ${econ.self_pct}% used on site.</div>`;
+          `quote. Assumes ${Math.round(e.selfPct)}% used on site.</div>`;
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
