@@ -7,7 +7,22 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
-## IN PROGRESS (overnight, 26 Aug) -- resume here
+## Realism merge: correct but nearly inert (27 Aug)
+
+Constrained to a 4 deg cap -- the steepest join a rigid panel can lie across --
+it changes almost nothing: pilot panels 71,852 -> 71,868, facets 4,443 -> 4,437.
+
+The large gain it showed before the cap (+1,596 panels, -33% facets) came from
+merging across REAL ridges, median accepted angle 19.6 deg, which Josh caught
+on the map as panels crossing roof sections.
+
+**Conclusion: slivers cannot be merged away after the fact.** They are not
+spurious subdivisions of one plane; they are genuinely different planes the
+segmenter found. Getting "few large blocky faces" requires the segmenter to
+produce them, which makes imagery-first boundaries the route, not an optional
+extra. The merge stays in (it is correct and costs nothing) but is not the fix.
+
+## IN PROGRESS -- resume here
 
 **Panel fitting is the maximum priority (Josh).**
 

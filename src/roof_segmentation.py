@@ -2169,6 +2169,19 @@ def segment_building_from_pointcloud_regiongrow(pc_source, building_geom, buildi
 # first-order approximation of the projected-irradiance loss.
 SLIVER_CONSIDER_MAX_M2 = 40.0   # above this a face is worth keeping on its own
 SLIVER_MIN_SHARED_M = 0.5       # must actually adjoin, not just touch at a corner
+# A HARD cap, checked before the area trade-off and not tradeable against it.
+#
+# The first version had only the cosine yield term, and it merged across real
+# ridges: measured over 120 buildings, the median accepted merge was 19.6 deg
+# and half were 20 deg or more. Josh saw the result immediately -- panels
+# "going over ridge or roof edges ... edge of a roof section".
+#
+# The error was modelling a ridge crossing as lost YIELD. It is not. A panel is
+# rigid: across a join of angle t it lifts about (panel_length / 2) * tan(t) off
+# the roof -- 30 cm at 20 deg on a 1.7 m panel. That panel cannot be installed
+# at all, so no amount of recovered setback area buys it. Only joins shallow
+# enough for a panel to actually lie across may be merged.
+SLIVER_MAX_MERGE_ANGLE_DEG = 4.0   # ~6 cm lift on a 1.7 m panel
 
 
 def _usable_after_setback(area_m2, setback_m):
@@ -2220,9 +2233,11 @@ def merge_uneconomic_splits(facets, setback_m=None):
             gain = (_usable_after_setback(merged.area, setback_m)
                     - _usable_after_setback(f["geometry"].area, setback_m)
                     - _usable_after_setback(g["geometry"].area, setback_m))
+            theta = _plane_angle_deg(f, g)
+            if theta > SLIVER_MAX_MERGE_ANGLE_DEG:
+                continue   # a real ridge: a panel cannot lie across it at any price
             # The smaller face is the one that ends up mis-oriented.
             small = min(f, g, key=lambda x: x["geometry"].area)
-            theta = _plane_angle_deg(f, g)
             loss = small["geometry"].area * (1.0 - math.cos(math.radians(theta)))
             if gain <= loss:
                 continue
