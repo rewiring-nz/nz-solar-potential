@@ -41,6 +41,37 @@
   .tuning-summary { font-size: 12px; margin-top: 8px; padding: 6px 8px; background: #f5f5f5; border-radius: 6px; }
   .tuning-summary.stale { opacity: 0.5; }
   .tuning-reset { font-size: 11px; margin-top: 6px; padding: 4px 8px; border-radius: 5px; border: 1px solid #999; background: #fff; cursor: pointer; }
+  :root {
+    /* One palette. Every panel colour below comes from here, so "slightly
+       different grey" cannot creep back in -- there were eight of them. */
+    --ink:      #f2f4f7;   /* primary text            */
+    --ink-2:    #b6bdc9;   /* labels, secondary       */
+    --ink-3:    #7e8794;   /* meta, captions          */
+    --line:     rgba(255,255,255,0.09);
+    --surface:  rgba(18,20,25,0.94);
+    --surface-2:rgba(255,255,255,0.05);
+    --accent:   #ffd24a;   /* the yellow, one value   */
+    --good:     #7fd18e;
+    --warn:     #ff9b90;
+    /* Type scale, five steps. Sizes between these are what made the panel
+       look unresolved -- 10, 10.5, 11, 11.5, 12, 12.5, 13, 14, 15 all appeared. */
+    --fs-hero: 27px; --fs-title: 16px; --fs-body: 13px; --fs-label: 11.5px; --fs-meta: 10.5px;
+    /* Spacing rhythm, multiples of 4. */
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 22px;
+  }
+  /* Figures line up in columns wherever they are compared. */
+  .rsp-statbox, .kv, .popup td.val, #bldg-econ { font-variant-numeric: tabular-nums; }
+  /* One row pattern for every label/value pair. */
+  .kv { display: flex; justify-content: space-between; align-items: baseline;
+        gap: var(--s3); padding: 2px 0; font-size: var(--fs-label); color: var(--ink-2); }
+  .kv strong { color: var(--ink); font-weight: 650; }
+  .kv .kv-note { color: var(--ink-3); font-weight: 400; }
+  .kv-group { margin-top: var(--s2); }
+  .panel-caveat { font-size: var(--fs-meta); color: var(--warn); margin-top: var(--s2); line-height: 1.4; }
+  /* Layout details table: same rhythm and alignment as .kv rows. */
+  .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
+  .popup #layout-details td { padding: 2px 0; color: var(--ink-2); }
+  .popup #layout-details td.val { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
   .popup h4 { margin: 0 0 6px; font-size: 14px; }
   .popup table { border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
   .popup td { padding: 2px 8px 2px 0; }
@@ -75,25 +106,31 @@
     background: linear-gradient(90deg, #ffe600, #ff8c00);
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent; }
-  .rsp-subtitle { font-size: 12px; color: #bbb; margin: 2px 0 12px; }
-  .rsp-assumption { font-size: 13px; color: #eee; line-height: 1.45; flex: 1 1 100%; }
+  .rsp-subtitle { font-size: var(--fs-label); color: var(--ink-3); margin: 2px 0 var(--s4); }
+  .rsp-assumption { font-size: var(--fs-label); color: var(--ink-2); line-height: 1.5; flex: 1 1 100%; }
   .rsp-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: flex-end; }
   .coverage-select {
     background: #2e3440; color: #fff; border: 1px solid #777; border-radius: 6px;
     font-size: 13px; font-weight: 700; padding: 2px 4px; cursor: pointer;
   }
+  /* The hero figure. A 2px ring on a saturated yellow was shouting; the number
+     is already the biggest thing on the panel and does not need the frame to
+     compete with it. Hairline border, calmer ground, more air. */
   .rsp-statbox {
-    background: rgba(0,0,0,0.55); color: #ffe600; border-radius: 10px;
-    border: 2px solid #ffe600; padding: 10px 14px; text-align: center;
-    flex: 1 1 100%; width: 100%; box-sizing: border-box;
+    background: rgba(0,0,0,0.45); color: var(--accent); border-radius: 10px;
+    border: 1px solid rgba(255,210,74,0.45); padding: var(--s3) var(--s4);
+    text-align: center; flex: 1 1 100%; width: 100%; box-sizing: border-box;
   }
-  .rsp-statbox .rsp-power { font-size: 24px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
-  .rsp-statbox .rsp-energy { font-size: 12.5px; font-weight: 700; margin-top: 3px; opacity: 0.85; white-space: nowrap; color: #fff; }
-  .bldg-thumb { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden;
-    border-radius: 8px; margin: 8px 0 10px; background: #222; }
-  .bldg-thumb img { position: absolute; width: 256px; height: 256px; max-width: none; }
-  .est-section { border-top: 1px solid rgba(255,255,255,0.15); margin-top: 12px; padding-top: 10px; }
-  .est-title { font-size: 12px; font-weight: 700; color: #ccc; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .rsp-statbox .rsp-power { font-size: var(--fs-hero); font-weight: 750; line-height: 1.05;
+    letter-spacing: -0.5px; white-space: nowrap; }
+  .rsp-statbox .rsp-energy { font-size: var(--fs-label); font-weight: 600; margin-top: var(--s1);
+    white-space: nowrap; color: var(--ink-2); }
+  /* Sections are separated by space first, a hairline only where the change of
+     subject is real. */
+  .est-section { border-top: 1px solid var(--line); margin-top: var(--s5); padding-top: var(--s3); }
+  .est-title { font-size: var(--fs-meta); font-weight: 700; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.7px;
+    display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
   .legend-grad { flex: 1; height: 10px; border-radius: 5px; max-width: 110px;
     background: linear-gradient(to right, #20009a, #b4009e, #ff3800, #ffd500, #fffbe0); }
   .legend-panels { display: flex; gap: 2px; }
@@ -148,16 +185,26 @@
   }
   .side-panel {
     position: absolute; top: 12px; right: 12px; bottom: 12px; width: 384px;
-    background: rgba(20,20,20,0.95); color: #fff; border-radius: 8px; z-index: 5;
-    overflow-y: auto; padding: 16px 18px; display: none; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    background: var(--surface); color: var(--ink); border-radius: 12px; z-index: 5;
+    overflow-y: auto; padding: var(--s5) var(--s5) var(--s4); display: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5); border: 1px solid var(--line);
   }
   .side-panel.visible { display: block; }
+  /* Expanded: wide enough for the chart to breathe and for the two stat blocks
+     to sit side by side instead of stacking down a narrow column. */
+  .side-panel.wide { width: 45vw; min-width: 384px; max-width: 900px; }
+  .side-panel.wide .panel-cols { display: grid; grid-template-columns: 1fr 1fr;
+    gap: 0 var(--s5); align-items: start; }
+  .side-panel.wide .panel-cols > * { min-width: 0; }
+  .side-panel.wide #bldg-econ.est-section,
+  .side-panel.wide #layout-details > .est-title { border-top: none; margin-top: 0; padding-top: 0; }
   .side-panel-close {
     position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.1); border: none;
     color: #fff; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1;
   }
   .side-panel-close:hover { background: rgba(255,255,255,0.2); }
-  .side-panel .popup h4 { color: #fff; padding-right: 30px; }
+  .side-panel .popup h4 { color: var(--ink); padding-right: 34px; font-size: var(--fs-title);
+    font-weight: 700; letter-spacing: -0.2px; margin: 0 0 2px; }
   .side-panel .popup .assumptions { color: #bbb; border-top-color: rgba(255,255,255,0.15); max-width: none; }
   .side-panel .popup td { color: #ddd; }
   .side-panel .popup td.val { color: #fff; }
@@ -215,7 +262,7 @@
       font-size: 13px; font-weight: 700; margin-bottom: 4px; }
     .m-close { background: none; border: none; color: #aaa; font-size: 20px; line-height: 1; cursor: pointer; }
     /* Building detail sheet: no thumbnail on mobile (user request). */
-    .side-panel .bldg-thumb, .side-panel .tuning, .side-panel #layout-details { display: none; }
+    .side-panel .tuning, .side-panel #layout-details { display: none; }
     /* Keep MapLibre's own chrome clear of the mobile bars. */
     .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: 104px; }
     .maplibregl-ctrl-top-right { top: 150px; }
@@ -407,6 +454,7 @@
 </div>
 </div>
 <div class="side-panel" id="side-panel">
+  <button class="side-panel-close" id="side-panel-expand" style="right:42px;" title="Expand">&#11036;</button>
   <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
   <div id="side-panel-content"></div>
 </div>
@@ -1116,7 +1164,7 @@ map.on("load", async () => {
     // as a bug. Name it for what it is instead.
     document.getElementById("inview-mode-title").innerHTML = isLayout
       ? '<span style="color:#fff; font-size:15px; font-weight:800;">Panel placement estimate</span><span class="legend-panels"><span></span><span></span><span></span></span>' +
-        '<div style="flex-basis:100%; font-size:10.5px; color:#ff6b60; font-weight:600; margin-top:2px;">(draft &mdash; will make mistakes)</div>'
+        '<div class="panel-caveat" style="flex-basis:100%; margin-top:0;">draft &mdash; will make mistakes</div>'
       : (mode === "heatmap"
           ? '<span>Heat map estimate</span><span class="legend-grad"></span>'
           : '<span>Generation potential estimate</span>');
@@ -1784,7 +1832,6 @@ map.on("load", async () => {
       <div class="popup">
         <h4 style="font-size:17px;">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
-        <div class="bldg-thumb" id="bldg-thumb"></div>
         <div class="est-section" id="est-heatmap" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">
@@ -1810,18 +1857,19 @@ map.on("load", async () => {
             </div>
           </div>
         </div>
-        <div id="bldg-econ" style="display:none; margin-top:10px; padding-top:9px; font-size:11.5px;
-          color:#ccc; border-top:1px solid rgba(255,255,255,0.15);"></div>
-        <div id="season-curves" style="margin-top:10px;"></div>
+        <div id="season-curves" style="margin-top:var(--s4);"></div>
+        <div class="panel-cols">
+        <div id="bldg-econ" class="est-section" style="display:none;"></div>
         <div id="layout-details">
-        <div style="border-top:1px solid rgba(255,255,255,0.15); margin-top:12px; padding-top:10px;
-                    font-size:12px; font-weight:700; color:#ccc;">Proposed panel layout for this roof</div>
+        <div class="est-title" style="margin-top:var(--s5); padding-top:var(--s3);
+             border-top:1px solid var(--line);">Proposed panel layout</div>
         <table>
           <tr><td>Panels placed</td><td class="val" id="fitted-count">&ndash;</td></tr>
           <tr><td>kW peak (kWp)</td><td class="val" id="fitted-kwp">&ndash;</td></tr>
           <tr><td>kWh / year</td><td class="val" id="fitted-kwh">&ndash;</td></tr>
           <tr><td>Obstructions avoided</td><td class="val">${p.obstruction_count}</td></tr>
         </table>
+        </div>
         </div>
         <details class="tuning">
           <summary>How this works &amp; assumptions</summary>
@@ -1948,24 +1996,22 @@ map.on("load", async () => {
       be.style.display = e ? "" : "none";
       if (e) {
         be.innerHTML =
-          `<div style="display:flex; justify-content:space-between;"><span>Installed cost</span>` +
-          `<strong>${fmtMoney(e.cost)}</strong></div>` +
-          `<div style="display:flex; justify-content:space-between; color:#888;">` +
-          `<span>$${e.rate.toLocaleString()}/kW at this system size</span></div>` +
-          `<div style="display:flex; justify-content:space-between; margin-top:5px;"><span>Priced as` +
-          `</span><strong>${e.biz ? "a business" : "a home"}</strong></div>` +
-          `<div style="display:flex; justify-content:space-between; color:#888;"><span>` +
-          `${e.buy}c/kWh used on site, ${e.sellNow}c exported` +
-          `${e.sellLater < e.sellNow - 0.05 ? ` falling to ${e.sellLater.toFixed(1)}c` : ""}` +
+          `<div class="est-title">Economics</div>` +
+          `<div class="kv"><span>Installed cost</span><strong>${fmtMoney(e.cost)}</strong></div>` +
+          `<div class="kv"><span class="kv-note">$${e.rate.toLocaleString()}/kW at this size</span>` +
+          `<span class="kv-note">${e.biz ? "priced as a business" : "priced as a home"}</span></div>` +
+          `<div class="kv kv-group"><span>Value of energy, year 1</span>` +
+          `<strong style="color:var(--good);">${fmtMoney(e.annual)}/yr</strong></div>` +
+          `<div class="kv"><span>Simple payback</span><strong>` +
+          `${e.payback ? e.payback.toFixed(1) + " years" : "beyond system life"}</strong></div>` +
+          `<div class="kv"><span>Over ${econ.life_years} years</span>` +
+          `<strong>${fmtMoney(e.lifetime)}</strong></div>` +
+          `<div class="kv"><span class="kv-note">${e.buy}c/kWh used on site &middot; ` +
+          `${e.sellNow}c exported` +
+          `${e.sellLater < e.sellNow - 0.05 ? `, falling to ${e.sellLater.toFixed(1)}c` : ""}` +
           `</span></div>` +
-          `<div style="display:flex; justify-content:space-between; margin-top:5px;"><span>Value of ` +
-          `energy, year 1</span><strong style="color:#9fe08f;">${fmtMoney(e.annual)}/yr</strong></div>` +
-          `<div style="display:flex; justify-content:space-between;"><span>Simple payback</span>` +
-          `<strong>${e.payback ? e.payback.toFixed(1) + " years" : "beyond system life"}</strong></div>` +
-          `<div style="display:flex; justify-content:space-between;"><span>Over ${econ.life_years} ` +
-          `years</span><strong>${fmtMoney(e.lifetime)}</strong></div>` +
-          `<div style="font-size:10px; color:#ff9b90; margin-top:4px;">Indicative only &mdash; not a ` +
-          `quote. Assumes ${Math.round(e.selfPct)}% used on site.</div>`;
+          `<div class="panel-caveat">Indicative only &mdash; not a quote. ` +
+          `Assumes ${Math.round(e.selfPct)}% used on site.</div>`;
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
@@ -2155,7 +2201,11 @@ map.on("load", async () => {
       }
     }
 
-    const W = 288, H = 170, L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
+    // Width follows the panel, so expanding it actually makes the chart bigger
+    // rather than leaving a 288px graphic marooned in a wide column.
+    const avail = Math.max(240, (box.clientWidth || 288));
+    const W = Math.min(avail, 900), H = Math.round(Math.min(320, Math.max(170, W * 0.5)));
+    const L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
     const maxY = Math.max(0.1, ...peak.flat());
     const x = h => L + (h - h0) / (h1 - h0) * (W - L - R);
     const y = v => T + (1 - v / maxY) * (H - T - B);
@@ -2225,7 +2275,6 @@ map.on("load", async () => {
     document.getElementById("side-panel-content").innerHTML = buildingPanelHtml(p);
     panel.classList.add("visible");
     wireCoverageSelect(panel.querySelector("#coverage-select-bldg"));
-    if (lngLat) buildThumbnail(panel.querySelector("#bldg-thumb"), lngLat, geom);
     selectedPanelBuildingId = p.building_id;
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
@@ -2245,6 +2294,14 @@ map.on("load", async () => {
     showBuildingPanel(p, e.lngLat, e.features[0].geometry);
   });
 
+  document.getElementById("side-panel-expand").addEventListener("click", () => {
+    const panel = document.getElementById("side-panel");
+    const wide = panel.classList.toggle("wide");
+    document.getElementById("side-panel-expand").title = wide ? "Shrink" : "Expand";
+    // The chart is sized from its container, so it has to be redrawn once the
+    // panel has its new width.
+    if (selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
+  });
   document.getElementById("side-panel-close").addEventListener("click", clearSelection);
   document.getElementById("mobile-details-tab").addEventListener("click", () => {
     document.getElementById("side-panel").classList.add("expanded");
