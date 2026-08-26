@@ -102,23 +102,30 @@
   "source": "Josh, 26 Aug"
  },
  "5371194": {
-  "n": 3,
-  "label": "complex, 3 faces",
-  "confirmed": false
+  "n": 2,
+  "label": "two roof faces; the outline includes a balcony that is not roof",
+  "note": "Josh: 'really the roof is only taking up half the building outline'. The LINZ outline includes deck/balcony area, so outline area over-states roof area.",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4740910": {
   "n": 3,
-  "label": "complex, 3 faces",
-  "confirmed": false
+  "label": "three clear planes",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "5370318": {
-  "n": 5,
-  "label": "complex, 5 faces",
-  "confirmed": false
+  "n": 6,
+  "label": "six planes plus many skylights",
+  "note": "Josh: 'a lot of obstructions on the roof which look like skylights'.",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  },
  "4734769": {
-  "n": 1,
-  "label": "flat roof (with falls), one plane",
-  "confirmed": false
+  "n": 2,
+  "label": "two main roof planes, lots of equipment to avoid",
+  "note": "Josh: 'lots of obstructions and equipment on the roof that needs to be avoided'.",
+  "confirmed": true,
+  "source": "Josh, 26 Aug"
  }
 }

@@ -123,10 +123,28 @@ REFINE_ROUNDS = 4
 # face it is embedded in, and is surrounded by it.
 OBST_MAX_AREA_M2 = 30.0      # larger than this is another roof level, not plant
 OBST_MIN_HEIGHT_M = 0.25     # above the parent plane
-OBST_ENCLOSURE = 0.55        # share of its border shared with one parent face
+# 0.35, from a clean sweep against the 18 labelled roofs: total plane error 24,
+# against 26 at 0.55 and 27 at 0.20. Equipment sitting at the junction of two
+# faces shares its border with both, so demanding most of it touch ONE parent
+# refused the cases that matter -- but dropping the bar to 0.20 over-fires and
+# is worse again.
+#
+# An earlier sweep reported 0.20 as best at 23. That sweep was WRONG: its
+# except/continue skipped buildings that crashed on the MultiPolygon bug fixed
+# below, and a skipped building contributed zero error, so whichever settings
+# crashed most looked best. Sweeps here now charge a crash as a failure.
+OBST_ENCLOSURE = 0.35        # share of its border shared with one parent face
 OBST_CLUSTER_EPS_M = 0.60    # ~1.4x the 0.42m point spacing at pilot density
 OBST_MIN_PTS = 5
 OBST_MIN_AREA_M2 = 0.35      # smaller than this is noise, not equipment
+# LiDAR draws a box bigger than it is. Josh, on 28 Rees St: obstructions "show
+# up wider in the lidar than they really are, because they often have vertical
+# edges but don't necessarily show as vertical edges in the lidar". A return
+# near a vertical face lands at an intermediate height, so the above-plane
+# cluster is dilated by roughly half the point spacing in every direction --
+# 0.21 m at the pilot's 5.7 pts/m2. Un-dilating it is the difference between a
+# clean array around a duct and a hole punched through one.
+OBST_EDGE_SMEAR_M = 0.21
 # Two bounds on how much of a roof may be declared "things on the roof".
 # Without them a 161 m2 house with 10 small faces had 9 of them reclassified as
 # plant and came back covering 4% of its own outline.
@@ -455,6 +473,13 @@ def _box_from_points(P, base_plane, pts3):
     # A rotated rectangle, not the ragged hull: equipment is boxes, and a clean
     # rectangle is also what panel fitting can set back from cleanly.
     rect = hull.minimum_rotated_rectangle
+    # Shrink back the edge smear. Keep the dilated box only if eroding would
+    # erase it entirely -- a real 0.5 m vent is better modelled slightly too
+    # large than not at all.
+    shrunk = rect.buffer(-OBST_EDGE_SMEAR_M)
+    if shrunk.geom_type == "Polygon" and not shrunk.is_empty \
+            and shrunk.area >= OBST_MIN_AREA_M2:
+        rect = shrunk.minimum_rotated_rectangle
     height = float(np.max(-residuals(base_plane, pts3))) if len(pts3) else 0.0
     return {"geometry": rect, "height_m": round(height, 2),
             "area_m2": float(rect.area), "point_count": int(len(P))}
@@ -512,12 +537,15 @@ def extract_obstructions(facets, pts):
         if f["area_m2"] > OBST_MAX_AREA_M2 or spent + f["area_m2"] > budget:
             keep.append(f)
             continue
-        per = f["geometry"].exterior.length
+        # .boundary, not .exterior: absorbing an island can leave the parent a
+        # MultiPolygon, and only Polygon has .exterior. Latent until the
+        # enclosure threshold dropped and absorption started firing often.
+        per = f["geometry"].boundary.length
         best, best_share = None, 0.0
         for j, g in enumerate(facets):
             if i == j:
                 continue
-            shared = f["geometry"].buffer(0.05).intersection(g["geometry"].exterior).length
+            shared = f["geometry"].buffer(0.05).intersection(g["geometry"].boundary).length
             if shared > best_share:
                 best, best_share = j, shared
         if best is None or per <= 0 or best_share / per < OBST_ENCLOSURE:
@@ -535,7 +563,7 @@ def extract_obstructions(facets, pts):
         # Height measured AT THE SHARED EDGE, not over the footprint. Two faces
         # of a gable each sit "above" the other's extended plane further away,
         # which would make every second face of every house into plant.
-        edge = f["geometry"].buffer(0.05).intersection(parent["geometry"].exterior)
+        edge = f["geometry"].buffer(0.05).intersection(parent["geometry"].boundary)
         if edge.is_empty:
             keep.append(f)
             continue
