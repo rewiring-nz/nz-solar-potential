@@ -1981,6 +1981,15 @@ map.on("load", async () => {
 
   let curveRedrawPending = false;
 
+  // The steepest slope bin the curve data actually contains.
+  let maxSlopeBin = null;
+  function seasonMaxSlopeBin() {
+    if (maxSlopeBin === null) {
+      maxSlopeBin = Math.max(...Object.keys(seasonCurves.curves).map(k => +k.split("_")[0]));
+    }
+    return maxSlopeBin;
+  }
+
   function renderSeasonCurves(buildingId) {
     const box = document.getElementById("season-curves");
     if (!box || !seasonCurves || buildingId === undefined) return;
@@ -2019,9 +2028,16 @@ map.on("load", async () => {
     const isLayout = mode === "layout";
     if (!facets.length || (isLayout && !panels.length)) { box.innerHTML = ""; return; }
 
+    // Clamp to the steepest bin that ACTUALLY EXISTS, not to max_slope.
+    // max_slope is 45 while the bins are 0/10/20/30/40/50, so every facet at
+    // 45 degrees or steeper was looking up key "45_..." -- which is not a bin,
+    // so no curve was found and the chart came up empty. That is every
+    // sawtooth roof (Turner St's teeth are ~52 degrees) and every steep gable.
+    // Josh: "the load profile is not working on this".
     const binOf = fx => {
       const ss = seasonCurves.slope_step, as = seasonCurves.aspect_step;
-      const sb = Math.min(Math.round(fx.properties.slope_deg / ss) * ss, seasonCurves.max_slope);
+      seasonMaxSlopeBin();
+      const sb = Math.min(Math.round(fx.properties.slope_deg / ss) * ss, maxSlopeBin);
       const ab = ((Math.round(fx.properties.aspect_deg / as) * as) % 360 + 360) % 360;
       return sb + "_" + ab;
     };
