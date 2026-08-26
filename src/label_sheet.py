@@ -55,7 +55,12 @@ GRID = 0.25
 
 # (id, note, answer-already-given, question-I-cannot-settle-myself)
 SEEDS = [
-    (4735015, "you already answered this one", (1, "flat deck with falls, one plane"), None),
+    # Corrected by Josh from a 3D view. My first reading turned his "not that
+    # diagonal" into "one plane", which was over-reading him: the roof is three
+    # decks at three heights, separated by STEPS rather than by one arbitrary
+    # diagonal. Shipped says 1, reconstruction says 4.
+    (4735015, "three decks at three heights (Josh, from a 3D view)",
+     (3, "three decks at three heights, one at a different pitch"), None),
     (5372565, "reconstruction fragmented this", None, None),
     (4734815, "clear improvement, but the ridges sit off the imagery", None, None),
     (4735260, "barrel vault", None,
