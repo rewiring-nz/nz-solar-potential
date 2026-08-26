@@ -902,6 +902,8 @@ let panelEconSettling = false;
 // summary, and only the buildings actually on screen need an entry.
 let panelEconGlobal = true;
 let panelEconMatch = null;     // ["match", ["get","building_id"], id, be, ..., default]
+// building_id -> { cutoff, retailBE, exportBE } for the merit-order valuation
+let panelEconMerit = null;
 const PANEL_ECON_FALLBACK_KWH = 250;   // for a building not in the current view
 
 // THE definition of which panels are currently showing. Everything that counts,
@@ -925,8 +927,17 @@ function breakEvenFor(buildingId) {
 }
 
 function panelBandOf(props) {
-  const be = breakEvenFor(props.building_id);
   const k = props.ac_kwh_year || 0;
+  // Merit order where we have it: a panel within the self-consumption cutoff is
+  // repaying itself at the retail rate, one beyond it at the export rate. Same
+  // sunlight, different economics, entirely because of where it sits in the
+  // order the roof is filled.
+  const m = panelEconMerit && panelEconMerit.get(props.building_id);
+  if (m && props.fill_order != null) {
+    const be = props.fill_order <= m.cutoff ? m.retailBE : m.exportBE;
+    return k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
+  }
+  const be = breakEvenFor(props.building_id);
   return k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
 }
 
@@ -955,6 +966,21 @@ function panelVisible(props) {
 }
 
 function panelBreakEvenExpr() {
+  // Merit order in the paint too, or the map would colour panels by one rule
+  // while the chips counted them by another -- the exact class of split-brain
+  // bug that put the generation curve out of step earlier.
+  if (panelEconMerit && panelEconMerit.size) {
+    const cut = ["match", ["get", "building_id"]];
+    const ret = ["match", ["get", "building_id"]];
+    const exp = ["match", ["get", "building_id"]];
+    panelEconMerit.forEach((m, id) => {
+      cut.push(id, m.cutoff); ret.push(id, m.retailBE); exp.push(id, m.exportBE);
+    });
+    cut.push(0); ret.push(PANEL_ECON_FALLBACK_KWH); exp.push(PANEL_ECON_FALLBACK_KWH);
+    return ["case",
+      ["<=", ["coalesce", ["get", "fill_order"], 1e9], cut], ret,
+      exp];
+  }
   if (panelEconGlobal) return panelEconMatch || PANEL_ECON_FALLBACK_KWH;
   return panelEcon ? panelEcon.breakEvenKwh : PANEL_ECON_FALLBACK_KWH;
 }
@@ -1392,8 +1418,8 @@ map.on("load", async () => {
   // cost tiers, the home/business split and the declining export schedule rather
   // than re-deriving any of it.
   function rebuildEconMatch() {
-    if (!panelEcon || !panelEconGlobal) { panelEconMatch = null; return; }
-    const pairs = [];
+    if (!panelEcon || !panelEconGlobal) { panelEconMatch = null; panelEconMerit = null; return; }
+    const pairs = [], merit = new Map();
     inViewBuildingProps().forEach(pr => {
       const count = Math.round(decileInterp(pr, "fill_panels", panelDensityPct));
       if (!(count > 0)) return;
@@ -1401,10 +1427,29 @@ map.on("load", async () => {
       const kwp = count * assumptions.panel_rated_power_w / 1000;
       const e = economicsFor(kwp, kwhYear, pr.facet_area_m2);
       if (!e) return;
+      // Merit order (Josh): panels are laid sunniest-first, and the site's
+      // daytime load is met by the ones that come first. So the earliest panels
+      // sell into RETAIL and everything after them exports -- two panels of
+      // identical output on the same face are worth different amounts purely by
+      // position, and only a certain number stack up economically.
+      //
+      // fill_order is already on every panel in the tiles, so the cutoff is one
+      // number per building: how many panels it takes to cover the self-consumed
+      // kWh. Below it, retail; above it, export.
+      const perPanelKwh = kwhYear / count;
+      const cutoff = perPanelKwh > 0 ? Math.min(count, e.selfKwh / perPanelKwh) : 0;
+      const costPerPanel = e.cost / count;
+      merit.set(pr.building_id, {
+        cutoff,
+        // kWh/yr a panel must make to repay its own share, on each side.
+        retailBE: costPerPanel / Math.max(e.retailLifetimePerKwhYr, 1e-9),
+        exportBE: costPerPanel / Math.max(e.exportLifetimePerKwhYr, 1e-9),
+      });
       const perKwh = panelEconBasis === "marginal"
         ? e.exportLifetimePerKwhYr : e.lifetime / Math.max(kwhYear, 1e-9);
       pairs.push(pr.building_id, (e.cost / count) / Math.max(perKwh, 1e-9));
     });
+    panelEconMerit = merit;
     panelEconMatch = pairs.length
       ? ["match", ["get", "building_id"], ...pairs, PANEL_ECON_FALLBACK_KWH]
       : null;
@@ -2210,13 +2255,14 @@ map.on("load", async () => {
     // exported. This is the marginal panel's world: self-consumption is capped
     // by the daytime load and already met by the panels that came before it,
     // so an added panel earns the buyback rate, not the retail one.
-    let exportLifetimePerKwhYr = 0;
+    let exportLifetimePerKwhYr = 0, retailLifetimePerKwhYr = 0;
     for (let y = 0; y < econ.life_years; y++) {
-      exportLifetimePerKwhYr += Math.pow(1 - d, y) * sellRate(THIS_YEAR + y) * scale
-                               / 100 / Math.pow(disc, y);
+      const deg = Math.pow(1 - d, y), dsc = Math.pow(disc, y);
+      exportLifetimePerKwhYr += deg * sellRate(THIS_YEAR + y) * scale / 100 / dsc;
+      retailLifetimePerKwhYr += deg * buy * Math.pow(infl, y) / 100 / dsc;
     }
     return { cost, annual, lifetime, payback, rate: costPerKw(kwp), biz, buy, sellNow,
-             exportLifetimePerKwhYr,
+             exportLifetimePerKwhYr, retailLifetimePerKwhYr,
              sellLater: sellRate(THIS_YEAR + econ.life_years) * scale,
              inverterCost,
              daytimeKw, ceiling, useKwh, selfKwh: selfKwhFor(kwhYear),
