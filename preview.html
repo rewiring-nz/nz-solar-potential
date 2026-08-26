@@ -100,6 +100,17 @@
     background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
   .curve-btn.active { background: rgba(255,210,74,0.15); border-color: rgba(255,210,74,0.5);
     color: var(--accent); }
+  .econ-inputs { margin-bottom: var(--s4); padding-bottom: var(--s3);
+    border-bottom: 1px solid var(--line); }
+  .econ-inputs label { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: var(--fs-label); color: var(--ink-2); margin-bottom: var(--s1); }
+  .econ-inputs label span { color: var(--ink); font-weight: 650;
+    font-variant-numeric: tabular-nums; }
+  .econ-inputs input[type=number] { width: 72px; background: #2e3440; color: var(--ink);
+    border: 1px solid #555; border-radius: 4px; padding: 2px 6px; font-size: var(--fs-label);
+    font-family: inherit; text-align: right; }
+  .econ-inputs input[type=range] { width: 100%; margin-bottom: var(--s1); }
+  .econ-cap { font-size: var(--fs-meta); color: var(--ink-3); }
   .econ-item { margin-bottom: var(--s3); }
   .econ-label { font-size: 15px; font-weight: 800; color: var(--accent); letter-spacing: -0.2px; }
   .econ-value { font-size: 21px; font-weight: 250; color: var(--ink); line-height: 1.15;
@@ -493,13 +504,16 @@
         Payback and lifetime value follow this year by year, they are not a flat figure.</div>
       <div id="sell-schedule"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">How much of what the system makes
-        is used on site rather than exported. This is the biggest single lever on payback.</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Set by the site's daytime load,
+        not by a share of output: a bigger array does not make the building use more. Whatever the
+        load cannot absorb is exported, so the self-consumed share falls as systems grow.</div>
       <select id="e-profile" class="coverage-select" style="width:100%; margin-bottom:8px;"></select>
-      <div class="slider-row"><label><span>Self-consumed share &mdash; homes</span><span id="e-self-val"></span></label>
-        <input type="range" id="e-self" min="5" max="100" step="1"></div>
-      <div class="slider-row"><label><span>Self-consumed share &mdash; businesses</span><span id="e-bself-val"></span></label>
-        <input type="range" id="e-bself" min="5" max="100" step="1"></div>
+      <div class="slider-row"><label><span>Daytime load &mdash; homes</span><span id="e-self-val"></span></label>
+        <input type="range" id="e-self" min="0.2" max="6" step="0.1"></div>
+      <div class="slider-row"><label><span>Daytime load &mdash; businesses</span><span id="e-bself-val"></span></label>
+        <input type="range" id="e-bself" min="0.5" max="30" step="0.5"></div>
+      <div class="slider-row"><label><span>Daylight hours it runs for</span><span id="e-dayh-val"></span></label>
+        <input type="range" id="e-dayh" min="3" max="12" step="0.1"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
       <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
         <input type="range" id="e-life" min="10" max="35" step="1"></div>
@@ -1541,29 +1555,40 @@ map.on("load", async () => {
     // Export earns less over time. Anchors are Josh's; this interpolates
     // between them and holds flat past the last.
     sell_schedule: [[2026, 15], [2035, 10], [2040, 8]],
-    // Kept in step with the default profile below -- a dropdown saying 30% next
-    // to a slider saying 45% is the kind of thing that makes a whole panel
-    // look untrustworthy.
-    self_pct: 30,
-    profile: "home_out",
-    // Businesses get their own share rather than inheriting the household
-    // profile. Without this a warehouse was being modelled as if it exported
-    // 70% of its output, which made commercial payback look WORSE than
-    // residential -- the opposite of reality, and only because the profile
-    // selector is written for homes.
-    biz_self_pct: 75,
+    // Self-consumption is a LOAD, not a share of output (Josh, 26 Aug). A
+    // house drawing 1.2kW through the day soaks up the same ~8kWh whether the
+    // array is 5kW or 40kW, so the kWh self-consumed is flat and the SHARE
+    // falls as the system grows. The old fixed-percentage model did the
+    // opposite -- every extra panel earned the retail price -- which is why
+    // big roofs on small houses looked implausibly good.
+    home_daytime_kw: 1.2,   // average daytime draw of a house (Josh's figure)
+    biz_daytime_kw: 6.0,    // weekday-daytime business, ~49% of biz_use_kwh
+    profile: "home_typ",
+    // Hours a day the daytime load actually meets useful sun. 1.2kW x 6.7h is
+    // ~8kWh/day, the figure the household default is anchored on. Not 12: the
+    // load only offsets generation while there is sun on the roof.
+    daytime_hours: 6.7,
+    // Annual electricity use on site. This is not decoration: self-consumption
+    // is capped by it. A house cannot use 30% of a modelled 48kW system's
+    // output if that exceeds everything it burns in a year -- without the cap,
+    // oversized systems on small buildings show savings nobody could realise.
+    home_use_kwh: 7000,     // typical NZ household
+    biz_use_kwh: 30000,     // placeholder, varies enormously -- editable
     life_years: 30,
     degradation_pct: 0.5, // per year
   };
-  // Named self-consumption profiles. The share is what actually drives the
-  // maths; the names exist so the choice is a recognisable situation rather
-  // than a number pulled out of the air.
+  // Named daytime-load profiles. The kW figure drives the maths; the names
+  // exist so the choice is a recognisable situation rather than a number
+  // pulled out of the air. A battery does not raise daytime demand, it moves
+  // evening demand into the daylight -- which is the same thing to this model,
+  // so it is carried as a larger effective daytime load.
   const SELF_PROFILES = [
-    { id: "home_out",   label: "Home — out on weekdays",      pct: 30 },
-    { id: "home_in",    label: "Home — someone there daytime", pct: 50 },
-    { id: "home_batt",  label: "Home — with a battery",        pct: 80 },
-    { id: "business",   label: "Business — weekday daytime",   pct: 75 },
-    { id: "custom",     label: "Custom",                       pct: null },
+    { id: "home_out",   label: "Home — out on weekdays",       kw: 0.8 },
+    { id: "home_typ",   label: "Home — typical mix",           kw: 1.2 },
+    { id: "home_in",    label: "Home — someone there daytime", kw: 2.0 },
+    { id: "home_batt",  label: "Home — with a battery",        kw: 3.5 },
+    { id: "business",   label: "Business — weekday daytime",   kw: 6.0 },
+    { id: "custom",     label: "Custom",                       kw: null },
   ];
   const THIS_YEAR = new Date().getFullYear();
   let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
@@ -1599,7 +1624,7 @@ map.on("load", async () => {
     return sch[sch.length - 1][1];
   }
 
-  function economicsFor(kwp, kwhYear, roofM2) {
+  function economicsFor(kwp, kwhYear, roofM2, override) {
     if (!(kwp > 0) || !(kwhYear > 0)) return null;
     const biz = isBusiness(kwp, roofM2);
     const buy = biz ? econ.biz_buy_c : econ.home_buy_c;
@@ -1608,13 +1633,25 @@ map.on("load", async () => {
     // home/business export price moves the whole curve with it instead of
     // snapping back to the schedule's own first value.
     const scale = sellNow / sellRate(THIS_YEAR);
-    const self = (biz ? econ.biz_self_pct : econ.self_pct) / 100;
+    const daytimeKw = (override && override.daytimeKw != null)
+      ? override.daytimeKw : (biz ? econ.biz_daytime_kw : econ.home_daytime_kw);
+    const useKwh = (override && override.useKwh != null)
+      ? override.useKwh : (biz ? econ.biz_use_kwh : econ.home_use_kwh);
     const cost = systemCost(kwp);
     const d = econ.degradation_pct / 100;
-    // Year by year, because export earns less over time AND the panels make
-    // less. One flat annual figure would overstate both payback and lifetime.
-    const valueInYear = y => kwhYear * Math.pow(1 - d, y) *
-      (self * buy + (1 - self) * sellRate(THIS_YEAR + y) * scale) / 100;
+    // The site can absorb at most daytime_kw for daytime_hours a day, so that
+    // is the self-consumption ceiling however large the array gets. Annual use
+    // is a second ceiling, for the case where someone enters a very low yearly
+    // figure -- a site cannot self-consume more than it uses. Whichever binds
+    // first, binds; generation past it is exported.
+    const loadCeiling = daytimeKw * econ.daytime_hours * 365;
+    const ceiling = Math.min(loadCeiling, useKwh);
+    const selfKwhFor = gen => Math.min(gen, ceiling);
+    const valueInYear = y => {
+      const gen = kwhYear * Math.pow(1 - d, y);
+      const selfKwh = selfKwhFor(gen);
+      return (selfKwh * buy + (gen - selfKwh) * sellRate(THIS_YEAR + y) * scale) / 100;
+    };
     const annual = valueInYear(0);
     let lifetime = 0;
     for (let y = 0; y < econ.life_years; y++) lifetime += valueInYear(y);
@@ -1625,7 +1662,11 @@ map.on("load", async () => {
       if (cum >= cost) { payback = y + 1 - (cum - cost) / v; break; }
     }
     return { cost, annual, lifetime, payback, rate: costPerKw(kwp), biz, buy, sellNow,
-             sellLater: sellRate(THIS_YEAR + econ.life_years) * scale, selfPct: self * 100 };
+             sellLater: sellRate(THIS_YEAR + econ.life_years) * scale,
+             daytimeKw, ceiling, useKwh, selfKwh: selfKwhFor(kwhYear),
+             // Share is now an OUTPUT of the model, not an input to it.
+             selfPct: 100 * selfKwhFor(kwhYear) / kwhYear,
+             capped: kwhYear > ceiling, capByUse: loadCeiling > useKwh };
   }
   const fmtMoney = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M"
                     : v >= 1e3 ? "$" + Math.round(v / 1e3) + "k"
@@ -1634,7 +1675,22 @@ map.on("load", async () => {
   // district total nobody will act on, but these four are about one building
   // and someone reading them is deciding whether to spend that money -- a
   // rounded abbreviation quietly hides up to $500 of it.
-  const fmtMoneyFull = v => "$" + Math.round(v).toLocaleString();
+  // Rounded to the nearest $100 (Josh). The model is not accurate to the
+  // dollar and printing "$45,540" claims a precision it does not have.
+  const fmtMoneyFull = v => {
+    const r = Math.round(v / 100) * 100;
+    return (r < 0 ? "-$" : "$") + Math.abs(r).toLocaleString();
+  };
+  // The share is derived now, so it has to be shown rather than set -- and it
+  // is the number that carries the point: a bigger array does not raise the
+  // kWh used on site, it only raises the share exported.
+  function selfNote(e) {
+    const pct = Math.round(e.selfPct);
+    const kwh = Math.round(e.selfKwh).toLocaleString();
+    if (!e.capped) return `All ${kwh} kWh/yr is used on site &mdash; nothing exported.`;
+    return `${pct}% used on site (${kwh} kWh/yr), the rest exported` +
+           (e.capByUse ? ` &mdash; limited by yearly use, not the load.` : `.`);
+  }
   window.__economicsFor = economicsFor;
 
   // --- Advanced assumptions editor -------------------------------------
@@ -1705,7 +1761,7 @@ map.on("load", async () => {
     }
     const profSel = el("e-profile");
     profSel.innerHTML = SELF_PROFILES.map(p =>
-      `<option value="${p.id}">${p.label}${p.pct !== null ? ` (${p.pct}%)` : ""}</option>`).join("");
+      `<option value="${p.id}">${p.label}${p.kw !== null ? ` (${p.kw} kW)` : ""}</option>`).join("");
 
     const schedBox = el("sell-schedule");
     function renderSchedule() {
@@ -1727,8 +1783,10 @@ map.on("load", async () => {
       el("e-bsell-val").textContent = econ.biz_sell_c.toFixed(1) + "c/kWh";
       el("e-broof-val").textContent = econ.biz_min_roof_m2 + " m\u00b2";
       el("e-bkw-val").textContent = econ.biz_min_kw + " kW";
-      el("e-self-val").textContent = econ.self_pct + "%";
-      el("e-bself-val").textContent = econ.biz_self_pct + "%";
+      el("e-self-val").textContent = econ.home_daytime_kw.toFixed(1) + " kW";
+      el("e-bself-val").textContent = econ.biz_daytime_kw.toFixed(1) + " kW";
+      el("e-dayh-val").textContent = econ.daytime_hours.toFixed(1) + " h/day \u00b7 " +
+        Math.round(econ.home_daytime_kw * econ.daytime_hours) + " kWh/day for a home";
       el("e-life-val").textContent = econ.life_years + " years";
       el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
       recomputeInViewSummary();
@@ -1736,7 +1794,12 @@ map.on("load", async () => {
     }
     const bindEcon = (id, key, parse) => el(id).addEventListener("input", e => {
       econ[key] = parse(e.target.value);
-      if (id === "e-self") { econ.profile = "custom"; profSel.value = "custom"; }
+      // Any hand-edit of the load numbers means the named profile no longer
+      // describes what is set -- including the business slider and the hours,
+      // which the dropdown also speaks for.
+      if (id === "e-self" || id === "e-bself" || id === "e-dayh") {
+        econ.profile = "custom"; profSel.value = "custom";
+      }
       applyEcon();
     });
     bindEcon("e-hbuy", "home_buy_c", parseFloat);
@@ -1745,14 +1808,20 @@ map.on("load", async () => {
     bindEcon("e-bsell", "biz_sell_c", parseFloat);
     bindEcon("e-broof", "biz_min_roof_m2", v => parseInt(v, 10));
     bindEcon("e-bkw", "biz_min_kw", v => parseInt(v, 10));
-    bindEcon("e-self", "self_pct", v => parseInt(v, 10));
-    bindEcon("e-bself", "biz_self_pct", v => parseInt(v, 10));
+    bindEcon("e-self", "home_daytime_kw", parseFloat);
+    bindEcon("e-bself", "biz_daytime_kw", parseFloat);
+    bindEcon("e-dayh", "daytime_hours", parseFloat);
     bindEcon("e-life", "life_years", v => parseInt(v, 10));
     bindEcon("e-deg", "degradation_pct", parseFloat);
     profSel.addEventListener("change", () => {
       const p = SELF_PROFILES.find(x => x.id === profSel.value);
       econ.profile = profSel.value;
-      if (p && p.pct !== null) { econ.self_pct = p.pct; el("e-self").value = p.pct; }
+      if (p && p.kw !== null) {
+        // A business preset should move the business slider, not the home one.
+        const key = p.id === "business" ? "biz_daytime_kw" : "home_daytime_kw";
+        econ[key] = p.kw;
+        el(p.id === "business" ? "e-bself" : "e-self").value = p.kw;
+      }
       applyEcon();
     });
     function loadEcon(src) {
@@ -1761,11 +1830,12 @@ map.on("load", async () => {
       el("e-hbuy").value = econ.home_buy_c; el("e-hsell").value = econ.home_sell_c;
       el("e-bbuy").value = econ.biz_buy_c;  el("e-bsell").value = econ.biz_sell_c;
       el("e-broof").value = econ.biz_min_roof_m2; el("e-bkw").value = econ.biz_min_kw;
-      el("e-self").value = econ.self_pct;  el("e-bself").value = econ.biz_self_pct;
+      el("e-self").value = econ.home_daytime_kw; el("e-bself").value = econ.biz_daytime_kw;
+      el("e-dayh").value = econ.daytime_hours;
       el("e-life").value = econ.life_years;
       el("e-deg").value = econ.degradation_pct; profSel.value = econ.profile;
       const pr = SELF_PROFILES.find(x => x.id === econ.profile);
-      if (pr && pr.pct !== null) { econ.self_pct = pr.pct; el("e-self").value = pr.pct; }
+      if (pr && pr.kw !== null) { econ.home_daytime_kw = pr.kw; el("e-self").value = pr.kw; }
       renderTiers(); renderSchedule(); applyEcon();
     }
     el("e-reset").addEventListener("click", () => loadEcon(ECON_DEFAULTS));
@@ -2196,7 +2266,7 @@ map.on("load", async () => {
     }
     const be = el("bldg-econ");
     if (be) {
-      const e = economicsFor(kwp, kwhYear, props.facet_area_m2);
+      const e = economicsFor(kwp, kwhYear, props.facet_area_m2, bldgEcon);
       be.style.display = e ? "" : "none";
       if (e) {
         // Four figures, each as a bold yellow label with a light-weight value
@@ -2209,6 +2279,15 @@ map.on("load", async () => {
           `<div class="econ-item"><div class="econ-label">${label}</div>` +
           `<div class="econ-value${cls ? " " + cls : ""}">${value}</div></div>`;
         be.innerHTML =
+          `<div class="econ-inputs">` +
+            `<label>Electricity use per year` +
+              `<span><input type="number" id="econ-use" min="0" step="500" ` +
+              `value="${Math.round(e.useKwh)}"> kWh</span></label>` +
+            `<label>Daytime load<span id="econ-self-val">${e.daytimeKw.toFixed(1)} kW</span></label>` +
+            `<input type="range" id="econ-self" min="0.2" max="${e.biz ? 30 : 6}" ` +
+              `step="${e.biz ? 0.5 : 0.1}" value="${e.daytimeKw}">` +
+            `<div class="econ-cap" id="econ-self-note">${selfNote(e)}</div>` +
+          `</div>` +
           item("Cost", fmtMoneyFull(e.cost)) +
           item("Yearly savings", fmtMoneyFull(e.annual)) +
           item("Lifetime savings", fmtMoneyFull(e.lifetime)) +
@@ -2222,8 +2301,19 @@ map.on("load", async () => {
           ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
           ` at ${e.buy}c/kWh used on site and ${e.sellNow}c exported` +
           `${e.sellLater < e.sellNow - 0.05 ? `, falling to ${e.sellLater.toFixed(1)}c` : ""}</div>` +
-          `<div class="panel-caveat">Indicative only &mdash; not a quote. ` +
-          `Assumes ${Math.round(e.selfPct)}% used on site.</div>`;
+          `<div class="panel-caveat">Indicative only &mdash; not a quote.</div>`;
+        const useEl = document.getElementById("econ-use");
+        const selfEl = document.getElementById("econ-self");
+        if (useEl) useEl.addEventListener("input", () => {
+          const v = parseFloat(useEl.value);
+          if (isFinite(v) && v >= 0) { bldgEcon.useKwh = v; updateFittedStats(buildingId); }
+        });
+        if (selfEl) selfEl.addEventListener("input", () => {
+          bldgEcon.daytimeKw = parseFloat(selfEl.value);
+          document.getElementById("econ-self-val").textContent =
+            bldgEcon.daytimeKw.toFixed(1) + " kW";
+          updateFittedStats(buildingId);
+        });
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
@@ -2269,6 +2359,10 @@ map.on("load", async () => {
   // that answers "what will this actually make", where the clear-day line
   // answers "what is the best it will ever do".
   let curveMode = "avg";
+  // Per-building overrides for the two economics inputs a reader is most
+  // likely to know better than we do. Reset from the defaults each time a
+  // building is opened, so one house's numbers never leak into the next.
+  let bldgEcon = { daytimeKw: null, useKwh: null };
   let maxSlopeBin = null;
   function seasonMaxSlopeBin() {
     if (maxSlopeBin === null) {
@@ -2499,6 +2593,7 @@ map.on("load", async () => {
     selectedPanelBuildingId = p.building_id;
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
+    bldgEcon = { daytimeKw: null, useKwh: null };   // fresh building, fresh inputs
     updateFittedStats(p.building_id);
     renderCoverageOptions([p], "bldg-coverage-options");
     panel.querySelectorAll(".curve-btn").forEach(btn => {
