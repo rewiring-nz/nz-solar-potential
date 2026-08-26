@@ -836,10 +836,14 @@ let panelEcon = null;   // null = off, else { buildingId, breakEvenKwh }
 // Three bands rather than pass/fail (Josh): a panel that merely repays its
 // share is a different proposition from one that returns twice it, and the
 // middle band is where most panels actually land.
+// Where the top band starts, as a multiple of break-even (Josh). One constant,
+// because the paint expression and the chip tally must not be able to disagree
+// about where the line is.
+const PANEL_ECON_HIGH_MULT = 1.5;
 const PANEL_ECON_BANDS = [
   { key: "low",  colour: "#c0392b", label: "under 1&times;" },
-  { key: "mid",  colour: "#3b82c4", label: "1\u20132&times;" },
-  { key: "high", colour: "#1e8e5a", label: "over 2&times;" },
+  { key: "mid",  colour: "#86d98d", label: "1\u20131.5&times;" },
+  { key: "high", colour: "#12703f", label: "over 1.5&times;" },
 ];
 let panelEconShow = { low: true, mid: true, high: true };
 // "blended" spreads the building's average value over every panel, which is
@@ -857,13 +861,13 @@ function panelBandExpr(lowVal, midVal, highVal, otherVal) {
   return ["case",
     ["!=", ["get", "building_id"], panelEcon.buildingId], otherVal,
     ["<", kwh, panelEcon.breakEvenKwh], lowVal,
-    ["<", kwh, 2 * panelEcon.breakEvenKwh], midVal,
+    ["<", kwh, PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh], midVal,
     highVal];
 }
 
 function panelColourExpr() {
   if (!panelEcon) return PANEL_BASE_COLOUR;
-  return panelBandExpr("#c0392b", "#3b82c4", "#1e8e5a", PANEL_BASE_COLOUR);
+  return panelBandExpr("#c0392b", "#86d98d", "#12703f", PANEL_BASE_COLOUR);
 }
 
 function applyPanelDensityPaint() {
@@ -2715,7 +2719,7 @@ map.on("load", async () => {
                 if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
                 const k = pr.ac_kwh_year || 0;
                 tally[k < panelEcon.breakEvenKwh ? "low"
-                      : k < 2 * panelEcon.breakEvenKwh ? "mid" : "high"]++;
+                      : k < PANEL_ECON_HIGH_MULT * panelEcon.breakEvenKwh ? "mid" : "high"]++;
               });
             } catch (err) { /* tiles not ready; the chips just read zero */ }
             bandsBox.style.display = "";
