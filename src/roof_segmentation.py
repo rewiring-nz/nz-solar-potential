@@ -1295,6 +1295,15 @@ def _attach_building_geometry(facets, building_geom):
     return facets
 
 
+FLAT_WINNER_MAX_SLOPE_DEG = 3.0      # "the area winner is a flat sheet" -- see the guard at
+# the end of segment_building_best()
+FLAT_WINNER_MIN_SLOPE_GAIN_DEG = 6.0  # 3.0 was tried: it fixed 55 Arrowtown-Lake
+# Hayes Rd on paper (35%% obstruction -> 0%%) but by switching to a candidate covering
+# 187 m2 LESS roof, and it put 45 panels onto raised structure -- trading a visible
+# over-carve for an invisible under-detect. Keep the stricter bar.  # ...and the alternative has to find real pitch, not noise
+FLAT_WINNER_MIN_AREA_SHARE = 0.45     # ...over a decent share of the same roof
+
+
 def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
                            ransac_distance_threshold=None, min_facet_area_m2=None):
     """Runs the point-cloud global solver, the (greedy) point-cloud-native
@@ -1410,7 +1419,43 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
 
     candidates = [facets_rg, facets_global, facets_pc, facets_dsm]
     areas = [area_rg, area_global, area_pc, area_dsm]
-    return _attach_building_geometry(candidates[int(np.argmax(areas))], building_geom)
+    winner = int(np.argmax(areas))
+
+    # Last guard before area decides: a SINGLE near-flat facet covering the
+    # whole footprint always wins on area, because one loose plane claims
+    # everything within its tolerance while a correct split declines the points
+    # that do not confidently belong. On a genuinely pitched or gabled roof
+    # that winner is a horizontal sheet laid over the top of it, and everything
+    # downstream inherits the error: the real gables then read as standing
+    # ABOVE the plane, so obstruction detection carves them out.
+    #
+    # 17 Cardigan St, a multi-gabled house, is the case that found this --
+    # 140 m2 of its 222 m2 roof was being carved away as "obstruction", and
+    # every alternative had it right:
+    #     region growing        13 facets  147 m2  slope median 14.2
+    #     global multi-plane     3 facets  112 m2  slope median  9.2
+    #     DSM ransac             3 facets  169 m2  slope median  1.4
+    #     chosen (greedy pc)     1 facet   222 m2  slope median  0.5
+    # Same on 2 Hawthorne Dr and 55 Arrowtown-Lake Hayes Rd.
+    #
+    # Deliberately narrow: it only fires when the winner is ONE facet and
+    # essentially flat, and only for an alternative that finds real slope over
+    # a decent share of the same roof. A genuinely flat commercial roof has no
+    # such alternative, so it keeps its single facet.
+    if len(candidates[winner]) == 1 and candidates[winner][0]["slope_deg"] < FLAT_WINNER_MAX_SLOPE_DEG:
+        best_alt, best_alt_score = None, 0.0
+        for fs, ar in zip(candidates, areas):
+            if len(fs) < 2 or ar < FLAT_WINNER_MIN_AREA_SHARE * areas[winner]:
+                continue
+            med = float(np.median([f["slope_deg"] for f in fs]))
+            if med - candidates[winner][0]["slope_deg"] < FLAT_WINNER_MIN_SLOPE_GAIN_DEG:
+                continue
+            if ar > best_alt_score:
+                best_alt, best_alt_score = fs, ar
+        if best_alt is not None:
+            return _attach_building_geometry(best_alt, building_geom)
+
+    return _attach_building_geometry(candidates[winner], building_geom)
 
 
 # --- Global multi-plane solver (candidate pool + joint label assignment) ----
