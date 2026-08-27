@@ -142,9 +142,13 @@
     line-height: 1.45; }
   /* The whole block carries the band's colour (Josh), so the legend IS the
      control -- no separate swatch to map back to the map. */
-  .inview-heading { font-size: var(--fs-body); font-weight: 300; color: #fff;
-    margin: var(--s2) 0 var(--s1); letter-spacing: 0.01em; }
-  .econ-bands { display: flex; gap: 6px; margin-top: var(--s2); }
+  /* width:100% because the row is a flex container justified to flex-end --
+     without it both of these get pushed to the right-hand edge (Josh). The
+     same reason .est-title already carries it. */
+  .inview-heading { width: 100%; font-size: var(--fs-body); font-weight: 300; color: #fff;
+    margin: var(--s2) 0 var(--s1); letter-spacing: 0.01em; text-align: left; }
+  #econ-bands-global { width: 100%; }
+  .econ-bands { display: flex; gap: 6px; margin-top: var(--s2); width: 100%; }
   .econ-band { flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: center;
     padding: 8px 4px 6px; border: 1px solid transparent; border-radius: 5px;
     font: inherit; cursor: pointer; }
