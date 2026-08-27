@@ -341,6 +341,21 @@ HEIGHT_STRONG_ABOVE_MARGIN_M = 0.25
 # FRACTION: passing the cap means claiming a large share of a roof, so it should
 # take near-unanimous evidence, not merely enough to call something equipment.
 HEIGHT_STRONG_UNCAPPED_ABOVE_FRACTION = 0.95
+# A ceiling the bypass above CANNOT cross, whatever the fingerprint says.
+#
+# The bypass was justified on the argument that frac_above answers "equipment or
+# mis-modelled surface" directly, so the crude size cap was redundant. That
+# argument is wrong, and this file already said why: when a fitted plane sits
+# BELOW the true roof, essentially every point reads as above it, so a
+# mis-modelled surface scores frac_above near 1.0 and sails through a 95% bar.
+#
+# Measured on 22 Willow Place: the bypass carved 167.5 m2 of a 205 m2 roof --
+# 82% -- against 1% before, taking the building from 86 panels to zero. Ten
+# others went the same way.
+#
+# No plausible roof is more than half equipment. Past that the fingerprint has
+# demonstrably failed, whatever it reports, so the oversized parts are refused.
+HEIGHT_STRONG_TOTAL_CEILING = 0.5
 HEIGHT_STRONG_MAX_FACET_FRACTION = 0.35  # a single strong-evidence part covering more of the
 # facet than this is a mis-modelled roof SURFACE, not rooftop equipment -- no real duct/plant
 # cluster blankets most of a roof. Catches curved/barrel roofs that region-growing collapses
@@ -436,6 +451,10 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             if not trimmed.is_empty:
                 footprint = trimmed   # keep the untrimmed shape only if trimming erased it entirely
             parts = list(footprint.geoms) if footprint.geom_type == "MultiPolygon" else [footprint]
+            # Largest first, so if the ceiling binds it is the most convincing
+            # equipment that survives rather than whichever part came first.
+            parts.sort(key=lambda g: -g.area)
+            strong_area_used = 0.0
             plane_a, plane_b, plane_c = plane
             for part in parts:
                 if part.geom_type != "Polygon" or part.area < HEIGHT_STRONG_MIN_PART_AREA_M2:
@@ -464,6 +483,11 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
                     # conservative behaviour and is dropped.
                     if frac_above is None or frac_above < HEIGHT_STRONG_UNCAPPED_ABOVE_FRACTION:
                         continue
+                    # ...and never past the ceiling, however confident it looks.
+                    if (strong_area_used + part.area
+                            > HEIGHT_STRONG_TOTAL_CEILING * facet_geom.area):
+                        continue
+                strong_area_used += part.area
                 if part.area >= HEIGHT_STRONG_PLANAR_MIN_AREA_M2:
                     in_part = shapely.vectorized.contains(part, member_pts3d[:, 0], member_pts3d[:, 1])
                     part_pts = member_pts3d[in_part]
