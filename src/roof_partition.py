@@ -86,6 +86,16 @@ OFFSET_STEP_M = 0.25        # how finely each candidate direction is swept. A ri
 # deep -- and over-splitting is handled afterwards by _merge_bridgeable, which
 # undoes any cut a panel could lie across anyway.
 MIN_SPLIT_GAIN = 0.005
+# How much usable area a cut may cost, PER POINT of fit it buys. An absolute cap
+# was tried first and is wrong: one legitimate ridge cut across a 15 m roof
+# already costs about 7 m2 of setback, so any flat cap tight enough to stop
+# over-fragmentation also stops the first honest cut, and every roof collapsed
+# to a single facet at 38% on-plane.
+#
+# Scaling it by the fit gain is the honest trade. A cut that takes a roof from
+# 30% to 90% on-plane has fixed the building and has earned a lot of setback; a
+# cut that buys two points has not earned any.
+SETBACK_COST_PER_FIT = 0.5
 
 
 def _fit_plane(pts):
@@ -112,6 +122,17 @@ def _fit_plane_robust(pts, iterations=6):
 def _inlier_fraction(pts, plane):
     r = pts[:, 2] - (plane[0] * pts[:, 0] + plane[1] * pts[:, 1] + plane[2])
     return float((np.abs(r - np.median(r)) < INLIER_BAND_M).mean())
+
+
+def _usable(poly, setback=None):
+    """Area left after the ridge setback -- what panel packing actually gets."""
+    setback = config.RIDGE_SETBACK_M if setback is None else setback
+    if poly.is_empty:
+        return 0.0
+    try:
+        return float(poly.buffer(-setback).area)
+    except Exception:
+        return 0.0
 
 
 def _points_in(poly, pts):
@@ -290,6 +311,21 @@ def _partition(poly, pts, depth=0, budget=None):
     if best is None:
         return [(poly, plane)]      # no straight cut explains it better -- keep it whole
     parts = _refine_cut(poly, pts, best[1])
+
+    # A cut has to earn the panel area it costs. Every facet is eroded by the
+    # ridge setback before packing, so cutting one face into two loses a strip
+    # down the middle permanently -- and a fit improvement that cannot be used,
+    # because the pieces are too narrow to rack panels on, is worth nothing.
+    #
+    # Without this the recursion buys fit indefinitely: measured on random pilot
+    # roofs it produced 20 facets on a 255 m2 house and 25 on 333 m2, about
+    # 13 m2 each. Real houses have two to eight planes. Josh, twice: "they need
+    # to be large and blocky most of the time like real rooftops", and "it's
+    # highly unlikely there would ever be very many vertices on a house".
+    gain = max(0.0, best[0] - score)
+    cost = _usable(poly) - sum(_usable(q) for q in parts)
+    if cost > SETBACK_COST_PER_FIT * gain * max(_usable(poly), 1e-9):
+        return [(poly, plane)]
     out = []
     budget[0] -= 1          # this cut spends one face from the building's budget
     for part in parts:
