@@ -8,9 +8,12 @@ Exists so the banding change doesn't force a third multi-hour refit of
 every region: ranks are pure post-processing over geometry the files
 already carry. Idempotent -- built areas re-ranked twice band the same.
 
-Panels in the geojson don't record their facet, so each panel is joined
-to its building's facet by first-vertex point-in-ring (same join the
-frontend curves use). Group = facet, matching the build-time rule.
+Group = contiguous ARRAY, matching the build-time rule in
+panel_fitting.assign_fill_ranks. It used to be the facet -- panels do not
+record their facet, so each was joined to one by point-in-ring -- but a facet
+is not an array: a curved roof split into three sections has every section
+large enough to escape straggler banding while each holds a clean block plus a
+scatter of lone panels.
 
 Usage: python src/rerank_layouts.py [region ...]   (default: all areas)
 """
@@ -20,26 +23,16 @@ import math
 import sys
 from pathlib import Path
 
+import pyproj
 from shapely.geometry import shape
+from shapely.ops import transform as shapely_transform
 from shapely.strtree import STRtree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.panel_fitting import (MAIN_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION,
-                               MINOR_ARRAY_MIN_PANELS, STRAGGLER_RANK_FLOOR)
+                               MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_ALWAYS_KEEP_PANELS,
+                               STRAGGLER_RANK_FLOOR)
 from src.region_build import all_areas, area_paths, write_json_atomic
-
-
-def point_in_ring(pt, ring):
-    x, y = pt
-    inside = False
-    j = len(ring) - 1
-    for i in range(len(ring)):
-        xi, yi = ring[i][0], ring[i][1]
-        xj, yj = ring[j][0], ring[j][1]
-        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
-            inside = not inside
-        j = i
-    return inside
 
 
 def rerank_area(name):
@@ -62,26 +55,37 @@ def rerank_area(name):
     for b in buildings.values():
         if not b["panels"]:
             continue
-        groups = {}  # facet index -> [panel feature]
+        # Arrays FIRST -- the ordering below depends on them. This used to run
+        # at the end of the loop, so ranking never knew what an array was, and
+        # grouped by facet instead. See panel_fitting.assign_fill_ranks for the
+        # same fix and the reasoning: on a curved roof split into three
+        # sections, every section is big enough to escape straggler banding
+        # while holding a clean block plus a scatter of lone panels.
+        _assign_arrays(b["panels"])
+
+        groups = {}  # array id -> [panel feature]
         for pf in b["panels"]:
-            c = pf["geometry"]["coordinates"][0][0]
-            fi = next((i for i, ff in enumerate(b["facets"])
-                       if point_in_ring(c, ff["geometry"]["coordinates"][0])), -1)
-            groups.setdefault(fi, []).append(pf)
+            groups.setdefault(pf["properties"].get("array_id", 0), []).append(pf)
 
         largest = max(len(g) for g in groups.values())
         straggler_ids = set()
         if largest >= MAIN_ARRAY_MIN_PANELS:
+            cutoff = min(MINOR_ARRAY_ALWAYS_KEEP_PANELS,
+                         max(MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION * largest))
             for g in groups.values():
-                if 0 < len(g) < max(MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION * largest):
+                if 0 < len(g) < cutoff:
                     straggler_ids.update(id(pf) for pf in g)
 
-        # Order within each band: sunniest facet first (facet poa), then the
-        # existing rank to preserve the original row-major fill order.
-        facet_poa = {i: (ff["properties"].get("poa_kwh_m2_yr") or 0)
-                     for i, ff in enumerate(b["facets"])}
-        panel_facet = {id(pf): fi for fi, g in groups.items() for pf in g}
-        key = lambda pf: (-facet_poa.get(panel_facet[id(pf)], 0), panel_facet[id(pf)],
+        # Whole arrays in order of total yield, and within an array the
+        # existing rank, which preserves the compact reverse-erosion order the
+        # original fit produced. Ordering by facet sunniness -- what this did
+        # before -- is what made the density slider strip a whole dim SIDE
+        # before it touched the lone panels on the sunny side.
+        yield_of = {}
+        for aid, g in groups.items():
+            yield_of[aid] = sum(pf["properties"].get("ac_kwh_year") or 0 for pf in g)
+        key = lambda pf: (-yield_of.get(pf["properties"].get("array_id", 0), 0),
+                          pf["properties"].get("array_id", 0),
                           pf["properties"].get("fill_rank", 100))
         main = sorted((pf for pf in b["panels"] if id(pf) not in straggler_ids), key=key)
         extras = sorted((pf for pf in b["panels"] if id(pf) in straggler_ids), key=key)
@@ -97,24 +101,26 @@ def rerank_area(name):
         for i, pf in enumerate(main + extras):
             pf["properties"]["fill_order"] = i + 1
 
-        # array_id / array_size are recomputed HERE, not carried over from the
-        # fit, because gate_panels runs in between and deletes panels -- a block
-        # of 6 that loses 3 to the gate is a block of 3, and "clean arrays only"
-        # has to filter on what actually survived.
-        _assign_arrays(b["panels"])
-
     write_json_atomic(path, data)
     print(f"{name}: {len(buildings)} buildings re-ranked, {n_stragglers} straggler panels banded 81-100")
 
 
 ARRAY_TOUCH_TOL_M = 0.35
 
+# The layout geojson is EPSG:4326. Buffering by 0.35 in degrees is a ~39 km
+# probe, so every panel touched every other one and every building came out as
+# a single array: measured on the shipped pilot file, 0 of 1,033 buildings had
+# more than one. array_id and array_size have therefore been meaningless in the
+# tiles since they were added, and any frontend filter built on them could
+# never have worked. Cluster in metres.
+_TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
+
 
 def _assign_arrays(panel_features):
     """Contiguous-block id and size over the SURVIVING panels of one building."""
     if not panel_features:
         return
-    geoms = [shape(pf["geometry"]) for pf in panel_features]
+    geoms = [shapely_transform(_TO_NZTM, shape(pf["geometry"])) for pf in panel_features]
     tree = STRtree(geoms)
     seen, gid = {}, 0
     for i in range(len(geoms)):
