@@ -32,6 +32,26 @@ Landed today: planarity repair, a robust trigger to replace the sd one that was
 measuring outliers, the defect scanner itself, and a deck-seeking plane fit for
 obstruction height residuals.
 
+### Array ranking — landed 27 Aug (6eb9c16, 53ba189)
+
+29 Park St: "lonely panels and small arrays surrounding a large array", and the
+density slider stripping a whole dim side before touching them.
+
+Root cause: the pipeline computed contiguous array membership but ran it *after*
+ranking, as frontend metadata only — so nothing in the ordering knew what an
+array was. Grouping was by facet, which on a curved roof split into three
+sections sees three big groups and no fragments.
+
+Found while fixing it: `_assign_arrays` buffered by 0.35 **degrees** on a 4326
+geojson — a ~39 km probe. **0 of 1,033 pilot buildings had more than one array**;
+`array_id`/`array_size` have been meaningless in the tiles since they were added.
+Now 833 of 1,033. Applies to shipped data with no re-fit.
+
+**Defect worth fixing properly:** `rerank_layouts.py` re-implements
+`panel_fitting.assign_fill_ranks` instead of calling it. The same facet-grouping
+bug existed in both, and fixing one would not have fixed the other. One of them
+should go.
+
 ### Open, in priority order
 
 1. **253 buildings whose worst facet is still not a plane.** The top of the
