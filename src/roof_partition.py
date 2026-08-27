@@ -654,6 +654,62 @@ def partition_by_planes(building_id, footprint, pts, seed=0):
     return out
 
 
+# The LINZ outline is the BUILDING, not the roof.
+#
+# Josh drew the true roof outline on 7 Anderson Heights and it does not follow
+# the footprint: the roof overhangs it on one side and sits inside it on
+# another. Measured across five buildings, 6.6% to 18.8% of roof-height points
+# fall outside the footprint, by up to 2 m. Those are eaves.
+#
+# This module cuts the footprint into faces, so every perimeter face was wrong
+# at its edge before any ridge logic ran, and roof area was understated
+# everywhere. The footprint is still the right SKELETON -- it is surveyed and
+# straight -- so the roof outline is built by pushing it out to where the roof
+# actually stops rather than by tracing points, which would reintroduce the
+# fuzz the whole approach exists to avoid.
+# Deliberately timid, because a uniform buffer grows toward the NEIGHBOURS too
+# and their roofs sit at similar heights, so a loose test walks straight onto
+# them: at 2.0 m and a 50% share this grew 7 Anderson Heights by 66% and 2/8
+# Wakatipu by 81%, when Josh's drawn roof outline is nearer 10% larger than the
+# footprint. Held to a typical eave, and needing the ring to be almost entirely
+# roof-height before it is accepted.
+# OFF pending better work -- see roof_outline. The FINDING is solid and matters:
+# 6.6% to 18.8% of roof-height points fall outside the LINZ footprint, by up to
+# 2 m, so roof area is understated everywhere and every perimeter face is wrong
+# at its edge. But a uniform buffer is the wrong instrument. Josh's drawn outline
+# on 7 Anderson Heights is not the footprint grown evenly -- the roof overhangs
+# on one side and sits INSIDE it on another -- and growing uniformly took that
+# roof to 16 faces against the 8 he counted. This needs per-edge treatment:
+# decide independently for each footprint edge how far the roof runs past it.
+EAVE_MAX_M = 0.0
+EAVE_STEP_M = 0.25
+EAVE_MIN_POINT_SHARE = 0.85
+
+
+def roof_outline(footprint, pts):
+    """Footprint grown out to the real roof edge, staying straight-sided."""
+    if len(pts) < MIN_POINTS:
+        return footprint
+    inside = _points_in(footprint, pts)
+    if len(inside) < MIN_POINTS:
+        return footprint
+    lo, hi = np.percentile(inside[:, 2], [5, 95])
+    lo -= 0.5
+    hi += 0.5
+
+    best = footprint
+    for grow in np.arange(EAVE_STEP_M, EAVE_MAX_M + 1e-9, EAVE_STEP_M):
+        ring = footprint.buffer(grow).difference(footprint.buffer(grow - EAVE_STEP_M))
+        got = _points_in(ring, pts)
+        if len(got) < 4:
+            break
+        at_roof = float(((got[:, 2] >= lo) & (got[:, 2] <= hi)).mean())
+        if at_roof < EAVE_MIN_POINT_SHARE:
+            break
+        best = footprint.buffer(grow, join_style=2)   # mitred: keeps corners sharp
+    return best if best.geom_type == "Polygon" else footprint
+
+
 def partition_roof(building_id, footprint, pts, imagery_ds=None):
     """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
 
@@ -671,6 +727,7 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
 
     Only lines carrying enough evidence to be a primary crease qualify; see
     roof_lines.strong_roof_lines."""
+    footprint = roof_outline(footprint, pts)
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         return []

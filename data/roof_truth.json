@@ -1,0 +1,13 @@
+{
+  "_note": "Ground truth for roof STRUCTURE, drawn by Josh on renders from src/mark_roofs.py. Every automated signal tried (plane fit, fold fraction, fold depth, fold location, acceptance threshold) failed to separate roofs he calls correct from ones he calls wrong, so this is the only reference that works. Score against it; do not tune against a metric alone.",
+  "roofs": [
+    {
+      "building_id": 5371108,
+      "address": "7 Anderson Heights",
+      "faces": 8,
+      "structure": "Long hip roof. A ridge runs the length of the building; both ends are hipped, giving a triangular face at the top-left corner and another at the bottom-right. A separate small hipped feature sits in the middle of the roof with its own ridge and diagonal.",
+      "marked": "red = ridges/hips, green = true roof outline, yellow = the plane surfaces",
+      "key_finding": "The drawn roof OUTLINE does not follow the LINZ building footprint -- the roof overhangs it on the upper-left and sits inside it on the lower-left. Measured: 11.8% of roof-height points on this building fall outside the footprint, up to 2.0 m out. The pipeline cuts the footprint, so its perimeter faces were wrong at the edge before any ridge logic ran."
+    }
+  ]
+}
