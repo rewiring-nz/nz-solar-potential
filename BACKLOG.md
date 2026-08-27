@@ -52,7 +52,44 @@ Now 833 of 1,033. Applies to shipped data with no re-fit.
 bug existed in both, and fixing one would not have fixed the other. One of them
 should go.
 
+### Josh's 20-pair verdict, 27 Aug — `data/roof_verdicts_20aug27.json`
+
+**10 better, 0 worse, 5 both-still-bad, 4 similar, 1 both-good.** First batch
+judgement rather than one screenshot at a time. Themes, by frequency:
+
+| n | theme |
+|---|---|
+| 10 | roof shape not understood |
+| 4 | scattered fragments / standalone panels |
+| 3 | asks directly for a clean 3D planar roof model |
+| 2 | obstructions missed · panels over ridges · fuzzy outlines |
+
+His exact plane counts are ground truth worth keeping: 5 Isle St is **3 planes**,
+2/8 Wakatipu Heights is **8** (4 sloping each way).
+
+### Reconstruction, now selected per building (commit above)
+
+Only considered where the segmenter measures under 70% on-plane, kept only on a
+≥10 point gain that costs less than 10% of usable area. Fragmentation is
+guarded by **area, not facet count** — 5 Isle comes back as one facet, so any
+ratio bound rejects the three planes it actually has.
+
+Landed: 5 Isle 1 → 3 facets · 47 Stanley 4 → 10 (mitre joints) · 53 Hallenstein
+75% → 98% on-plane.
+
 ### Open, in priority order
+
+0. **55 Arrowtown (#4729642) needs Josh's eye.** Reconstruction fires (46%
+   inlier) and it moves a lot: obstructions 35% → 0%, panels 87 → 186,
+   on-raised 0 → 12. Filed under over-carve, which would make turning that
+   175 m² into roof correct — but 12 panels on raised structure disagrees.
+   Not resolvable from the validation set as annotated.
+
+0b. **Curved roofs are still wrong.** 29 Park St comes back as 17 reconstructed
+   facets; Josh says the light curve should be one face. The bridge angle is
+   held at 5° on purpose — raising it re-creates the ridge-spanning defect he
+   reported on #14 and #18. Needs a curve-vs-fold discriminator (a crease shows
+   in the residuals at a real fold; a curve does not), not a looser threshold.
 
 1. **253 buildings whose worst facet is still not a plane.** The top of the
    list is severe — #4734915 has **1%** of its points within 30 cm of its own
