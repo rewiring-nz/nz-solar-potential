@@ -347,7 +347,22 @@ def _merge_bridgeable(faces, pts):
                 if gain <= 0.5:
                     continue
                 sub = _points_in(u, pts)
-                pl = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS else li
+                if len(sub) < MIN_POINTS:
+                    continue
+                pl = _fit_plane_robust(sub)
+                # The merged face has to still be a plane. Angle, step and area
+                # gain all pass on faces that individually fit well but whose
+                # UNION does not -- a gentle curve is exactly that, every
+                # adjacent pair within the bridge angle while the whole sweep is
+                # not one plane. Unchecked, this built a 138 m2 face on 1/5
+                # Sydney St sitting at 15% on-plane out of pieces that were
+                # each fine, and nothing downstream could recover from it
+                # because the recursion had already finished.
+                merged_fit = _inlier_fraction(sub, pl)
+                worst_before = min(_inlier_fraction(_points_in(pi, pts), li),
+                                   _inlier_fraction(_points_in(pj, pts), lj))
+                if merged_fit < min(ACCEPT_INLIER, worst_before - 0.02):
+                    continue
                 faces = [f for k, f in enumerate(faces) if k not in (i, j)] + [(u, pl)]
                 changed = True
                 break
