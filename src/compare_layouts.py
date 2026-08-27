@@ -10,6 +10,14 @@ straight edge. A person looking at two layouts can see all of it at once.
 Usage:
   python src/compare_layouts.py --old <saved.geojson> --area pilot --n 12
   python src/compare_layouts.py --old <saved.geojson> --area pilot --ids 4734907 ...
+  python src/compare_layouts.py --refit --area pilot --ids 4734907 ...
+
+--refit is the one that answers "is the code better than what shipped?". Both
+sides came from saved files before, so comparing the shipped file against
+itself produced eighteen identical pairs -- the fixes under test only change
+what gets FITTED, and nothing had been re-fitted. With --refit the AFTER side
+is re-run through the current pipeline, building by building, so a change can
+be judged before spending a rebuild on it.
 """
 
 import argparse
@@ -83,23 +91,74 @@ def draw(ax, imagery, g, bounds, title):
     ax.set_title(title, fontsize=8.5, color="#ddd")
 
 
+def _refit_ids(area, ids):
+    """Run the real pipeline for these buildings and return the same structure
+    load() produces, so the AFTER side reflects the code as it stands now."""
+    import geopandas as gpd
+    from src.roof_segmentation import segment_building_best
+    from src.obstruction_detection import detect_obstructions_combined
+    from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks
+    from src.pointcloud_source import PointCloudSource
+
+    p = area_paths(area)
+    dedup = p["dir"] / "building_outlines_dedup.geojson"
+    gdf = gpd.read_file(dedup if dedup.exists() else p["outlines"]).set_index(
+        "building_id", drop=False)
+    dsm = rasterio.open(p["dsm"])
+    img = rasterio.open(p["imagery"]) if p["imagery"].exists() else None
+    pc = PointCloudSource()
+
+    out = defaultdict(lambda: {"panel": [], "facet": [], "obstruction": []})
+    for bid in ids:
+        if bid not in gdf.index:
+            continue
+        facets = segment_building_best(dsm, pc, gdf.loc[bid].geometry, bid)
+        per_facet = []
+        for f in facets:
+            plane = (f["plane_a"], f["plane_b"], f["plane_c"])
+            ob = detect_obstructions_combined(img, pc, f["geometry"], plane)
+            out[bid]["facet"].append(f["geometry"])
+            out[bid]["obstruction"].extend(ob)
+            per_facet.append(fit_panels_on_facet(
+                f, obstructions=ob,
+                sibling_facets=[o for o in facets if o is not f]))
+        panels = [q for lst in drop_minor_arrays(per_facet) for q in lst]
+        for i, q in enumerate(panels):
+            q.setdefault("poa_kwh_m2_yr", 1000.0)
+            q.setdefault("facet_key", 0)
+            q.setdefault("order", i)
+        if panels:
+            assign_fill_ranks(panels)
+        out[bid]["panel"] = [q["geometry"] for q in panels
+                             if (q.get("fill_rank") or 0) <= DENSITY]
+        print(f"    refit #{bid}: {len(facets)} facets, {len(out[bid]['panel'])} panels",
+              flush=True)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--old", required=True)
+    ap.add_argument("--old")
     ap.add_argument("--area", default="pilot")
     ap.add_argument("--n", type=int, default=12)
     ap.add_argument("--ids", nargs="*", type=int)
     ap.add_argument("--seed", type=int, default=3)
+    ap.add_argument("--refit", action="store_true",
+                    help="re-run the pipeline for the chosen ids as the AFTER side")
     a = ap.parse_args()
 
-    old = load(a.old)
-    new = load(area_paths(a.area)["panel_layouts"])
+    if not a.refit and not a.old:
+        ap.error("--old is required unless --refit is given")
+    old = load(a.old) if a.old else load(area_paths(a.area)["panel_layouts"])
+    new = None if a.refit else load(area_paths(a.area)["panel_layouts"])
     sp = json.loads(area_paths(a.area)["solar_potential"].read_text())
     addr = {int(f["properties"]["building_id"]): f["properties"].get("address", "")
             for f in sp["features"]}
 
     if a.ids:
-        ids = [i for i in a.ids if i in old or i in new]
+        ids = [i for i in a.ids if i in old or (new is not None and i in new)]
+    elif a.refit:
+        ap.error("--refit needs --ids")
     else:
         # Weighted to houses, and to buildings where the two actually differ --
         # a pair that looks identical teaches nothing.
@@ -111,6 +170,9 @@ def main():
         rng = np.random.default_rng(a.seed)
         top = cand[:max(a.n * 3, 30)]
         ids = list(rng.choice(top, size=min(a.n, len(top)), replace=False)) if top else []
+
+    if a.refit:
+        new = _refit_ids(a.area, [int(i) for i in ids])
 
     imagery = rasterio.open(area_paths(a.area)["dir"] / "imagery_mosaic.tif")
     cards = []
