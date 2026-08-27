@@ -22,18 +22,34 @@ sd: 18 → 10.
 **Not yet in any shipped data — needs a rebuild.** The wave-7 rebuild finished
 before this landed.
 
+### Where it stands after the 27 Aug session
+
+`python src/scan_defects.py pilot` — **750 clean, 316 flagged of 1,066**
+(nonplanar 253, sparse 104, carved 3). Re-run this after any pipeline change;
+it is the list, and it takes ~25 min on 7 workers rather than 20 hours.
+
+Landed today: planarity repair, a robust trigger to replace the sd one that was
+measuring outliers, the defect scanner itself, and a deck-seeking plane fit for
+obstruction height residuals.
+
 ### Open, in priority order
 
-1. **Regression on the equipment reference #5370338**: 1 → 10 panels on raised
-   structure. Its ducting no longer forms its own height band (it sits in a
-   facet whose plane now fits it), so catching it falls to obstruction
-   detection, which under-detects there. Pre-existing weakness now exposed.
-2. **10 pilot buildings still carry a facet over 1 m sd** after repair —
-   PLANARITY_MAX_PASSES is 2; check whether more passes or a lower valley bar
-   helps, measured the same way.
-3. **Obstruction under-detection** is now the binding constraint, not
-   over-carve: 1 Earl St 12 on-raised, 17 Marine Pde 13, 28 Rees St 18, all
-   unmoved by any recent change.
+1. **253 buildings whose worst facet is still not a plane.** The top of the
+   list is severe — #4734915 has **1%** of its points within 30 cm of its own
+   plane, #5371119 31%, #4725584 (3,499 m²) 36%. The planarity repair either
+   does not fire on these or fires and fails. This is the single biggest
+   remaining defect class and it is what Josh keeps finding by eye.
+2. **Regression on the equipment reference #5370338**: 6 panels on raised
+   structure against a baseline of 1 (was 10 before the deck fit). Its ducting
+   is now excluded by the planarity repair rather than flagged as an
+   obstruction, and a few panels still find raised ground.
+3. **The deck-trust gate at 0.50 is set on eight buildings** and the two
+   populations nearly touch (51%/48% want it, 49%/46% must not have it). Widen
+   the validation set before trusting it further.
+4. **104 buildings flagged sparse** — fill under 45% of usable roof. Nothing
+   has been done here yet; 10 Brecon St is the example Josh reported.
+5. **1 Earl St** is the one under-detect case unmoved by anything: 12 panels on
+   structure up to 0.95 m proud, through every change this session.
 
 ## Realism merge: correct but nearly inert (27 Aug)
 
