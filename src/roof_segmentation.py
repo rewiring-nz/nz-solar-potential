@@ -1287,12 +1287,185 @@ def _facets_are_structured(facets):
     return (covered / total) >= STRUCTURED_MIN_AREA_SHARE
 
 
+# ---------------------------------------------------------------------------
+# Planarity repair
+#
+# Nothing in this pipeline ever checked that a returned "plane" is planar. It
+# turns out that omission is the single largest source of bad layouts: a scan
+# of the pilot area found 9% of facets with a plane-residual standard deviation
+# over 1 m, and those facets carry 22% of all panels. A real roof plane sits
+# near 0.1-0.2 m, which is just DSM noise.
+#
+# The failure mode is a stepped building. A staircase of flat levels has an
+# overall downward trend, and a single tilted plane fits that trend with
+# residuals RANSAC is willing to accept. 93 Beach St came out as ONE 2249 m2
+# facet at 11.8 degrees spanning a 21 m height range with six distinct storeys
+# in its height histogram -- on a building whose roof is flat. Panels were then
+# packed across all of it, which is what Josh reported: "these are not part of
+# the main flat roof plane which is likely the only place the panels should be
+# on this roof".
+#
+# The trigger is the residual spread, but the SPLIT is on genuine height gaps.
+# That distinction is what makes this safe: a real facet that is merely rough
+# or noisy has no gap in its residual distribution and comes back untouched, so
+# only facets with actual discontinuities are ever cut. A facet that cannot be
+# repaired is returned as it was -- this pass may not cost a building its
+# segmentation.
+PLANARITY_TRIGGER_SD_M = 0.45   # above this the facet is suspect and gets examined
+PLANARITY_BAND_GAP_M = 0.60     # a real step between roof levels. Below this it is
+# noise or a genuine slope, and the facet is left alone. A panel is 1.7 m long, so a
+# 0.6 m step is far past anything a mounting frame spans.
+PLANARITY_BIN_M = 0.25          # residual histogram resolution
+PLANARITY_MIN_MODE_FRACTION = 0.15   # a bump below this share of the tallest is noise
+PLANARITY_VALLEY_FRACTION = 0.40     # the dip between two modes must be this much
+# lower than the smaller of them, or they are one level rather than two
+PLANARITY_MIN_PART_AREA_M2 = 8.0
+PLANARITY_MIN_PART_POINTS = 12
+# A raised roof LEVEL and a run of rooftop ducting both sit above the main
+# plane, and banding on height alone cannot tell them apart -- the first
+# version of this pass promoted 223 m2 of genuine ducting on #5370338 to a
+# facet and put 10 panels on top of it. What separates them is that you cannot
+# stand a row of panels on a duct: a storey is broad, ducting is narrow. So a
+# repaired part has to survive being eroded by half a panel width. Aggregate
+# area is no help here -- that ducting run totals 223 m2.
+PLANARITY_MIN_HALF_WIDTH_M = 0.9
+PLANARITY_MIN_CORE_FRACTION = 0.30
+PLANARITY_MIN_CORE_AREA_M2 = 4.0
+PLANARITY_MAX_PASSES = 2
+
+
+def _facet_points(pc_source, geom):
+    """Point-cloud points inside one facet footprint."""
+    minx, miny, maxx, maxy = geom.bounds
+    pts = pc_source.points_in_bbox(minx, miny, maxx, maxy)
+    if pts is None or len(pts) == 0:
+        return np.empty((0, 3))
+    pts = np.asarray(pts)
+    try:
+        from shapely import contains_xy
+        keep = contains_xy(geom, pts[:, 0], pts[:, 1])
+    except Exception:
+        from matplotlib.path import Path as _Path
+        ext = np.asarray(geom.exterior.coords)
+        keep = _Path(ext).contains_points(pts[:, :2])
+    return pts[keep]
+
+
+def _height_bands(resid, gap=PLANARITY_BAND_GAP_M):
+    """Cut a height distribution at genuine valleys between dense modes.
+
+    Two things had to be got right here, and both were found by measurement on
+    93 Beach St rather than by reasoning.
+
+    First, the axis is RAW HEIGHT, not distance from the facet's own plane. The
+    trigger for this repair is that the plane is untrustworthy, so residuals
+    measured against it are meaningless -- on 93 Beach the residual histogram
+    is nearly flat, with valleys only 3-7% below their surrounding peaks, and
+    no split is detectable. In raw height the same points show six storeys with
+    valleys 0-8% of their peaks. That is the physically right axis anyway: a
+    step between roof levels is a VERTICAL discontinuity.
+
+    Second, an empty-gap test is not enough. A tall building returns points off
+    its WALLS as well as its roofs, and those partly fill the space between
+    storeys. What separates roof levels is density, not emptiness -- roofs are
+    dense, walls are sparse.
+
+    Returns [] when the distribution is unimodal, which is the common case and
+    means the facet is left exactly as it was. A genuine pitched roof spreads
+    its heights broadly and evenly, so it has no deep valley to cut at."""
+    lo, hi = float(resid.min()), float(resid.max())
+    if hi - lo < gap:
+        return []
+    nbins = max(8, int(np.ceil((hi - lo) / PLANARITY_BIN_M)))
+    counts, edges = np.histogram(resid, bins=nbins, range=(lo, hi))
+    # box-smooth so single-bin noise is not mistaken for a mode or a valley
+    k = np.ones(3) / 3.0
+    dens = np.convolve(counts.astype(float), k, mode="same")
+
+    peaks = [i for i in range(1, len(dens) - 1)
+             if dens[i] >= dens[i - 1] and dens[i] > dens[i + 1]]
+    if dens[0] > dens[1]:
+        peaks.insert(0, 0)
+    if dens[-1] > dens[-2]:
+        peaks.append(len(dens) - 1)
+    peaks = [i for i in peaks if dens[i] >= PLANARITY_MIN_MODE_FRACTION * dens.max()]
+    if len(peaks) < 2:
+        return []
+
+    centres = (edges[:-1] + edges[1:]) / 2.0
+    cuts = []
+    for a, b in zip(peaks, peaks[1:]):
+        if centres[b] - centres[a] < gap:
+            continue          # two bumps on one roof level, not two levels
+        v = a + int(np.argmin(dens[a:b + 1]))
+        if dens[v] <= PLANARITY_VALLEY_FRACTION * min(dens[a], dens[b]):
+            cuts.append(centres[v])
+    if not cuts:
+        return []
+    bounds = [-np.inf] + cuts + [np.inf]
+    return [(resid > a) & (resid <= b) for a, b in zip(bounds, bounds[1:])]
+
+
+def _repair_one_facet(f, pc_source, depth=0):
+    """One facet in, one or more planar facets out. The original on failure."""
+    geom = f["geometry"]
+    if depth >= PLANARITY_MAX_PASSES or geom.is_empty:
+        return [f]
+    pts = _facet_points(pc_source, geom)
+    if len(pts) < PLANARITY_MIN_PART_POINTS * 2:
+        return [f]
+
+    resid = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+    if float(resid.std()) <= PLANARITY_TRIGGER_SD_M:
+        return [f]
+
+    # Suspect the plane, so band on raw height -- see _height_bands.
+    bands = _height_bands(pts[:, 2] - np.median(pts[:, 2]))
+    if not bands:
+        return [f]   # rough, but continuous -- not a stepped facet
+
+    out = []
+    for mask in bands:
+        if int(mask.sum()) < PLANARITY_MIN_PART_POINTS:
+            continue
+        part = _facet_from_points(pts[mask], f["building_id"], PLANARITY_MIN_PART_AREA_M2)
+        if part is None:
+            continue
+        # _facet_from_points dilates to close gaps between points; never let a
+        # repaired part claim ground the parent facet did not hold.
+        clipped = part["geometry"].intersection(geom)
+        if clipped.geom_type == "MultiPolygon":
+            clipped = max(clipped.geoms, key=lambda g: g.area)
+        if clipped.is_empty or clipped.geom_type != "Polygon" or clipped.area < PLANARITY_MIN_PART_AREA_M2:
+            continue
+        core = clipped.buffer(-PLANARITY_MIN_HALF_WIDTH_M)
+        if (core.is_empty or core.area < PLANARITY_MIN_CORE_AREA_M2
+                or core.area < PLANARITY_MIN_CORE_FRACTION * clipped.area):
+            continue   # too narrow to be a roof level -- ducting, parapet, plant
+        part["geometry"] = clipped
+        part["area_m2"] = float(clipped.area)
+        out.extend(_repair_one_facet(part, pc_source, depth + 1))
+
+    return out or [f]
+
+
+def repair_nonplanar_facets(facets, pc_source):
+    """Split any facet whose plane does not actually describe its points."""
+    repaired = []
+    for f in facets:
+        try:
+            repaired.extend(_repair_one_facet(f, pc_source))
+        except Exception:
+            repaired.append(f)   # never cost a building its segmentation
+    return repaired
+
+
 # Applied to every segmenter's output or none: see merge_uneconomic_splits at
 # the end of this file. Off by default until it is measured on a full area.
 APPLY_REALISM_MERGE = True
 
 
-def _attach_building_geometry(facets, building_geom):
+def _attach_building_geometry(facets, building_geom, pc_source=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
     here so every caller inherits it without changing call sites.
@@ -1300,6 +1473,8 @@ def _attach_building_geometry(facets, building_geom):
     Also the single choke point every segment_building_best return passes
     through, which is where the realism merge belongs -- one place rather than
     five, so no strategy can quietly skip it."""
+    if facets and pc_source is not None:
+        facets = repair_nonplanar_facets(facets, pc_source)
     if APPLY_REALISM_MERGE and facets:
         try:
             facets = merge_uneconomic_splits(facets)
@@ -1497,12 +1672,12 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
             med_alt = float(np.median([f["slope_deg"] for f in alt_best[1]]))
             med_or = float(np.median([f["slope_deg"] for f in facets_orient]))
             if med_or - med_alt >= 15.0 and area_orient >= 0.6 * alt_best[0]:
-                return _attach_building_geometry(facets_orient, building_geom)
+                return _attach_building_geometry(facets_orient, building_geom, pc_source)
 
     if (not rg_shattered) and len(facets_rg) > 1 and area_rg >= GLOBAL_AREA_TOLERANCE * best_alternative_area:
-        return _attach_building_geometry(facets_rg, building_geom)
+        return _attach_building_geometry(facets_rg, building_geom, pc_source)
     if len(facets_global) > 1 and area_global >= GLOBAL_AREA_TOLERANCE * max(area_pc, area_dsm):
-        return _attach_building_geometry(facets_global, building_geom)
+        return _attach_building_geometry(facets_global, building_geom, pc_source)
 
     candidates = [facets_rg, facets_global, facets_pc, facets_dsm]
     areas = [area_rg, area_global, area_pc, area_dsm]
@@ -1540,9 +1715,9 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
             if ar > best_alt_score:
                 best_alt, best_alt_score = fs, ar
         if best_alt is not None:
-            return _attach_building_geometry(best_alt, building_geom)
+            return _attach_building_geometry(best_alt, building_geom, pc_source)
 
-    return _attach_building_geometry(candidates[winner], building_geom)
+    return _attach_building_geometry(candidates[winner], building_geom, pc_source)
 
 
 # --- Global multi-plane solver (candidate pool + joint label assignment) ----
