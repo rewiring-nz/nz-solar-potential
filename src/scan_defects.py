@@ -43,8 +43,20 @@ carved      fraction of roof removed as obstruction. High means the opposite
             error -- "this one clearly could have more panels".
 sparse      panel plan area vs usable roof area. Catches 10 Brecon St, "more
             panels could easily fit here", which no other signal sees.
-spill       panels whose footprint escapes their own facet -- crossing a ridge
-            or a roof edge. Panels cannot span facets, so this is always wrong.
+spill       panels whose footprint escapes their own facet. Kept for safety,
+            but it is structurally always zero: fitting clips panels to the
+            facet, so a panel cannot leave it.
+
+bent        panels that do not sit on a PLANE: fit a plane to the LiDAR under
+            one panel and the residual RMS exceeds 12 cm. This is the signal
+            spill cannot provide. Josh: "panel arrays have been placed
+            overlapping roof ridges as if it's a flat plane that continues
+            when it is not". When segmentation merges two roof faces into one
+            facet, a panel bridging the real ridge is legitimately INSIDE its
+            facet -- nothing about the facet is violated, so every
+            facet-relative check passes while the panel is physically resting
+            on a fold. Measured on the shipped pilot layout, 7.7% of panels
+            fail this, with the worst buildings at 24-37%.
 
 Usage:
     python src/scan_defects.py pilot                 # rank the area
@@ -73,6 +85,9 @@ CARVED_FRACTION = 0.30
 SPARSE_FILL = 0.45
 SPARSE_MIN_ROOF_M2 = 60.0     # below this, low fill is just a small awkward roof
 SPILL_TOLERANCE_M2 = 0.15     # a panel corner this far out is rounding, not a real spill
+BENT_RMS_M = 0.12             # a panel's own points should lie on a plane to within DSM noise
+BENT_MIN_POINTS = 6
+BENT_FRACTION = 0.10          # flag the building once this share of its panels are bent
 
 _CTX = {}
 
@@ -116,7 +131,7 @@ def _scan_one(args):
             return {"building_id": bid, "area": area, "empty": True}
 
         worst_inlier, worst_area = 1.0, 0.0
-        panels, obst, spill = [], [], 0
+        panels, obst, spill, bent = [], [], 0, 0
         plan_area = 0.0
         for f in facets:
             plane = (f["plane_a"], f["plane_b"], f["plane_c"])
@@ -127,9 +142,26 @@ def _scan_one(args):
                 sibling_facets=[o for o in facets if o is not f])
             panels.extend(got)
             plan_area += sum(p["geometry"].area for p in got)
+            fminx, fminy, fmaxx, fmaxy = f["geometry"].bounds
+            fpts_all = c["pc"].points_in_bbox(fminx - 1, fminy - 1, fmaxx + 1, fmaxy + 1,
+                                              building_only=True)
             for p in got:
                 if p["geometry"].difference(f["geometry"]).area > SPILL_TOLERANCE_M2:
                     spill += 1
+                if len(fpts_all) == 0:
+                    continue
+                m = shapely.vectorized.contains(p["geometry"], fpts_all[:, 0], fpts_all[:, 1])
+                P = fpts_all[m]
+                if len(P) < BENT_MIN_POINTS:
+                    continue
+                A = np.column_stack([P[:, 0] - P[:, 0].mean(),
+                                     P[:, 1] - P[:, 1].mean(), np.ones(len(P))])
+                try:
+                    coef, *_ = np.linalg.lstsq(A, P[:, 2], rcond=None)
+                except np.linalg.LinAlgError:
+                    continue
+                if float(np.sqrt(np.mean((A @ coef - P[:, 2]) ** 2))) > BENT_RMS_M:
+                    bent += 1
 
             minx, miny, maxx, maxy = f["geometry"].bounds
             pts = c["pc"].points_in_bbox(minx, miny, maxx, maxy, building_only=True)
@@ -155,7 +187,9 @@ def _scan_one(args):
                 "inlier": worst_inlier,
                 "carved": float(ob_area / max(roof.area, 1e-9)),
                 "fill": float(plan_area / usable),
-                "spill": spill}
+                "spill": spill,
+                "bent": bent,
+                "bent_frac": float(bent / max(len(panels), 1))}
     except Exception as exc:
         return {"building_id": bid, "area": area, "error": repr(exc)[:200]}
 
@@ -169,6 +203,8 @@ def _flags(r):
         out.append(f"nonplanar {r['inlier']:.0%} on-plane")
     if r["spill"]:
         out.append(f"spill {r['spill']}")
+    if r.get("bent_frac", 0) > BENT_FRACTION:
+        out.append(f"bent {r['bent_frac']:.0%}")
     if r["carved"] > CARVED_FRACTION:
         out.append(f"carved {r['carved']:.0%}")
     if r["roof_m2"] >= SPARSE_MIN_ROOF_M2 and r["fill"] < SPARSE_FILL:
@@ -183,6 +219,7 @@ def _severity(r):
     s = 0.0
     s += 60.0 * max(0.0, NONPLANAR_INLIER - r["inlier"])
     s += 6.0 * r["spill"]
+    s += 45.0 * max(0.0, r.get("bent_frac", 0.0) - BENT_FRACTION)
     s += 60.0 * max(0.0, r["carved"] - CARVED_FRACTION)
     if r["roof_m2"] >= SPARSE_MIN_ROOF_M2:
         s += 40.0 * max(0.0, SPARSE_FILL - r["fill"])
