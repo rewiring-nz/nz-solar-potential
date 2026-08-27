@@ -22,6 +22,7 @@ from pathlib import Path
 
 import laspy
 import numpy as np
+from collections import OrderedDict
 from affine import Affine
 from scipy import ndimage
 
@@ -30,6 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 POINTCLOUD_DIR = Path(__file__).resolve().parent.parent / "data" / "pointcloud"
 BUILDING_CLASSIFICATION = 6  # LAS standard classification code
 MIN_BUILDING_POINTS = 10  # below this, the classification filter isn't trustworthy -- use all points instead
+
+
+MAX_CACHED_TILES = 8  # decoded LiDAR tiles held per process. See __init__.
 
 
 class PointCloudSource:
@@ -49,7 +53,16 @@ class PointCloudSource:
             with laspy.open(path) as f:
                 h = f.header
                 self._bounds[path] = (h.mins[0], h.mins[1], h.maxs[0], h.maxs[1])
-        self._cache = {}
+        # Bounded, and it has to be. The cache was unbounded, which is fine for
+        # one process working through an area but fatal in parallel: a single
+        # build worker is already at 1.6 GB partway through the pilot and keeps
+        # growing as it touches more tiles, so four of them late in a run
+        # exhausted a 19 GB machine and every worker was killed -- leaving the
+        # parent hung on a pool with nothing left in it, twice, before the
+        # cause was clear. An LRU of a few tiles keeps the working set flat
+        # while still holding whatever a run of nearby buildings needs, because
+        # buildings are processed in roughly spatial order.
+        self._cache = OrderedDict()
 
     def _tiles_overlapping(self, minx, miny, maxx, maxy):
         return [
@@ -58,13 +71,19 @@ class PointCloudSource:
         ]
 
     def _load_tile(self, path):
-        if path not in self._cache:
-            las = laspy.read(path)
-            self._cache[path] = (
-                np.asarray(las.x, dtype=np.float64), np.asarray(las.y, dtype=np.float64),
-                np.asarray(las.z, dtype=np.float64), np.asarray(las.classification),
-            )
-        return self._cache[path]
+        cached = self._cache.get(path)
+        if cached is not None:
+            self._cache.move_to_end(path)
+            return cached
+        las = laspy.read(path)
+        decoded = (
+            np.asarray(las.x, dtype=np.float64), np.asarray(las.y, dtype=np.float64),
+            np.asarray(las.z, dtype=np.float64), np.asarray(las.classification),
+        )
+        self._cache[path] = decoded
+        while len(self._cache) > MAX_CACHED_TILES:
+            self._cache.popitem(last=False)
+        return decoded
 
     GROUND_CLASSIFICATION = 2  # LAS standard: bare earth
 
