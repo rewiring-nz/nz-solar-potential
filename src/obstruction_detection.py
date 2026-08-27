@@ -617,6 +617,10 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     COLOUR_ONLY_MAX_AREA_M2 = 15.0
     COLOUR_CORROBORATION_MIN_AREA_M2 = 1.0
     COLOUR_CORROBORATION_MIN_FRACTION = 0.15
+    # How far past the raised core a corroborated colour blob is kept. The
+    # colour edge is real evidence of the object's extent, just not of the whole
+    # tonal region it sits in.
+    COLOUR_CORE_MARGIN_M = 0.4
 
     color_obs = [] if imagery_ds is None else detect_obstructions(
         imagery_ds, facet_geom, z_threshold, boundary_erode_m)
@@ -661,8 +665,27 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
         inter = blob.intersection(height_union).area if height_union is not None else 0.0
         corroborated = inter >= max(COLOUR_CORROBORATION_MIN_AREA_M2,
                                     COLOUR_CORROBORATION_MIN_FRACTION * blob.area)
-        if corroborated or (COLOUR_ONLY_MIN_AREA_M2 <= blob.area <= COLOUR_ONLY_MAX_AREA_M2
-                            and _elongation_ratio(blob) <= COLOUR_ONLY_MAX_ELONGATION):
+        if corroborated:
+            # Keep the corroborated PORTION, not the whole tonal region. Colour
+            # says where a tonal region is; height says what is actually raised.
+            # On a flat commercial roof the colour path flags membrane tone and
+            # shadow -- 7 Shotover St: 242.7 m2 of a 462 m2 roof -- so keeping a
+            # 73 m2 region whole because one small vent sits inside it carved a
+            # quarter of that roof away (Josh: "incorrect obstructions").
+            #
+            # A blob small enough to be one plausible object is still kept
+            # whole: trimming a 3 m2 vent housing back to its raised core would
+            # lose the part of it the LiDAR simply missed.
+            if blob.area <= COLOUR_ONLY_MAX_AREA_M2:
+                filtered_color.append(blob)
+            else:
+                core = blob.intersection(height_union).buffer(COLOUR_CORE_MARGIN_M)
+                core = core.intersection(blob)
+                for part in (core.geoms if core.geom_type == "MultiPolygon" else [core]):
+                    if part.geom_type == "Polygon" and part.area >= COLOUR_ONLY_MIN_AREA_M2:
+                        filtered_color.append(part)
+        elif (COLOUR_ONLY_MIN_AREA_M2 <= blob.area <= COLOUR_ONLY_MAX_AREA_M2
+              and _elongation_ratio(blob) <= COLOUR_ONLY_MAX_ELONGATION):
             filtered_color.append(blob)
     color_obs = filtered_color
 

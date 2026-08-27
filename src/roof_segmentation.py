@@ -2182,6 +2182,17 @@ SLIVER_MIN_SHARED_M = 0.5       # must actually adjoin, not just touch at a corn
 # at all, so no amount of recovered setback area buys it. Only joins shallow
 # enough for a panel to actually lie across may be merged.
 SLIVER_MAX_MERGE_ANGLE_DEG = 4.0   # ~6 cm lift on a 1.7 m panel
+# A STEP is invisible to the angle test and must be checked separately.
+#
+# _plane_angle_deg compares plane NORMALS, so two parallel roof sections at
+# different heights read as 0 degrees apart and sail through the cap above.
+# Merging them puts panels across a vertical step -- Josh, on 6 Shotover St:
+# "clearly overlapping roof ridges". The reconstruction module had this test
+# and this one did not; the omission is mine.
+#
+# Measured at the shared boundary, because two planes that genuinely fold
+# together are identical there and only diverge away from it.
+SLIVER_MAX_MERGE_STEP_M = 0.15
 
 
 def _usable_after_setback(area_m2, setback_m):
@@ -2236,6 +2247,14 @@ def merge_uneconomic_splits(facets, setback_m=None):
             theta = _plane_angle_deg(f, g)
             if theta > SLIVER_MAX_MERGE_ANGLE_DEG:
                 continue   # a real ridge: a panel cannot lie across it at any price
+            shared = f["geometry"].buffer(0.05).intersection(g["geometry"].boundary)
+            if shared.is_empty:
+                continue
+            c = shared.centroid
+            zf = f["plane_a"] * c.x + f["plane_b"] * c.y + f["plane_c"]
+            zg = g["plane_a"] * c.x + g["plane_b"] * c.y + g["plane_c"]
+            if abs(zf - zg) > SLIVER_MAX_MERGE_STEP_M:
+                continue   # parallel but stepped: a panel cannot bridge it either
             # The smaller face is the one that ends up mis-oriented.
             small = min(f, g, key=lambda x: x["geometry"].area)
             loss = small["geometry"].area * (1.0 - math.cos(math.radians(theta)))
