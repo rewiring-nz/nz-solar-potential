@@ -91,7 +91,7 @@ RANSAC_TOL_M = 0.15        # a point this close to a plane is on it
 RANSAC_ITERS = 400
 MIN_PLANE_PTS = 25         # ~4.5 m2 at pilot density (5.7 pts/m2)
 MAX_PLANES = 40
-WALL_SLOPE_DEG = 72        # steeper than this is a wall, not a roof face
+WALL_SLOPE_DEG = 72        # steeper than this is a wall, not a roof face (== config.MAX_ROOF_SLOPE_DEG)
 GRID_M = 0.30              # label raster step, for adjacency and step edges
 PARALLEL_GRAD_TOL = 0.06   # gradient difference below this can only be a step
 # Two planes always intersect somewhere unless they are parallel -- but that

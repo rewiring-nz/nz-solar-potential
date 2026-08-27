@@ -103,7 +103,23 @@ RIDGE_SETBACK_M = 0.25  # extra clearance specifically along a boundary shared w
 # their shared boundary, so the real join between two differently-angled roof sections reads as
 # an actual visible gap (like real ridge cap flashing) instead of two panel grids butting flush
 # against each other with no visual break between them.
-MAX_ROOF_SLOPE_DEG = 45
+# Was 45, which was cutting off real roofs rather than unusable ones. Josh, on
+# 1/5 Sydney St -- a twelve-unit terrace whose facets are ALL 44-50 degrees, so
+# the cap silently excluded the entire building and left it with 6 panels:
+# "I also don't know why there is a panel cut off at 45 degree, even 90 degree
+# panels can be economic if facing the right direction."
+#
+# He is right that steepness alone does not make a panel uneconomic -- the solar
+# model already prices slope and aspect, and the per-panel ROI bands already show
+# a badly-oriented panel as red. A hard slope cut is doing that job twice, and
+# worse.
+#
+# It is not raised to 90 because past about 72 degrees a surface is a WALL, not a
+# roof, and the facets here come from points inside the building footprint, so
+# wall returns would start collecting panels. 72 is the same threshold
+# roof_reconstruct already uses to tell roof from wall. That admits every real
+# roof including steep mansards, and leaves the economics to decide the rest.
+MAX_ROOF_SLOPE_DEG = 72
 
 # --- PV system assumptions ---
 # These are shown to the end user in the UI, not just baked into the model
