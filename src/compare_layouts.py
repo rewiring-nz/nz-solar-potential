@@ -91,7 +91,7 @@ def draw(ax, imagery, g, bounds, title):
     ax.set_title(title, fontsize=8.5, color="#ddd")
 
 
-def _refit_ids(area, ids):
+def _refit_ids(area, ids, partition=False):
     """Run the real pipeline for these buildings and return the same structure
     load() produces, so the AFTER side reflects the code as it stands now."""
     import geopandas as gpd
@@ -112,7 +112,18 @@ def _refit_ids(area, ids):
     for bid in ids:
         if bid not in gdf.index:
             continue
-        facets = segment_building_best(dsm, pc, gdf.loc[bid].geometry, bid)
+        geom = gdf.loc[bid].geometry
+        if partition:
+            import shapely.vectorized
+            from src.roof_partition import partition_roof
+            mn, mi, mx, ma = geom.bounds
+            allp = pc.points_in_bbox(mn - 2, mi - 2, mx + 2, ma + 2, building_only=True)
+            allp = allp[shapely.vectorized.contains(geom, allp[:, 0], allp[:, 1])]
+            facets = partition_roof(bid, geom, allp)
+            for f in facets:
+                f["building_geometry"] = geom   # panel_fitting aligns rows to it
+        else:
+            facets = segment_building_best(dsm, pc, geom, bid)
         per_facet = []
         for f in facets:
             plane = (f["plane_a"], f["plane_b"], f["plane_c"])
@@ -145,6 +156,8 @@ def main():
     ap.add_argument("--seed", type=int, default=3)
     ap.add_argument("--refit", action="store_true",
                     help="re-run the pipeline for the chosen ids as the AFTER side")
+    ap.add_argument("--partition", action="store_true",
+                    help="AFTER side uses roof_partition instead of the segmenter")
     a = ap.parse_args()
 
     if not a.refit and not a.old:
@@ -172,7 +185,7 @@ def main():
         ids = list(rng.choice(top, size=min(a.n, len(top)), replace=False)) if top else []
 
     if a.refit:
-        new = _refit_ids(a.area, [int(i) for i in ids])
+        new = _refit_ids(a.area, [int(i) for i in ids], partition=a.partition)
 
     imagery = rasterio.open(area_paths(a.area)["dir"] / "imagery_mosaic.tif")
     cards = []
