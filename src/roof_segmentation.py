@@ -1475,7 +1475,7 @@ def repair_nonplanar_facets(facets, pc_source):
 APPLY_REALISM_MERGE = True
 
 
-def _attach_building_geometry(facets, building_geom, pc_source=None):
+def _attach_building_geometry(facets, building_geom, pc_source=None, building_id=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
     here so every caller inherits it without changing call sites.
@@ -1483,6 +1483,8 @@ def _attach_building_geometry(facets, building_geom, pc_source=None):
     Also the single choke point every segment_building_best return passes
     through, which is where the realism merge belongs -- one place rather than
     five, so no strategy can quietly skip it."""
+    if facets and pc_source is not None and building_id is not None:
+        facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
     if facets and pc_source is not None:
         facets = repair_nonplanar_facets(facets, pc_source)
     if APPLY_REALISM_MERGE and facets:
@@ -1537,8 +1539,89 @@ FLAT_WINNER_MIN_AREA_SHARE = 0.45     # ...over a decent share of the same roof
 #
 # Do not switch this back on without running a full area and checking panel
 # COUNT, not just facet shape.
-USE_RECONSTRUCTION = False
+# Reconstruction is not better everywhere, so it is not chosen everywhere.
+# Measured on the six roofs Josh called out for bad roof shape on 27 Aug, the
+# area-weighted share of points lying within 30 cm of their own facet's plane:
+#
+#   5 Isle St        segmenter 24%  ->  reconstruct 82%   (he said "3 planes,
+#                                                          one is not detected")
+#   47 Stanley St    segmenter 59%  ->  reconstruct 97%   (mitre joints)
+#   53 Hallenstein   segmenter 75%  ->  reconstruct 98%   ("fuzzy outlines")
+#   2/8 Wakatipu     segmenter 58%  ->  reconstruct 49%
+#   4 Pinnacle Pl    segmenter 88%  ->  reconstruct 75%
+#   29 Park St       segmenter 80%  ->  reconstruct 91%   but 7 -> 17 facets
+#
+# Three large wins, two losses, and one that trades plane fidelity for
+# fragmentation. A global flag has to pick one of those outcomes for every roof
+# in the district; picking per building on the measured evidence does not.
+#
+# So: run the segmenter, measure it, and only reach for reconstruction when the
+# segmenter is doing badly -- then keep whichever result actually describes the
+# roof better. The facet-count guard is what stops it trading a bad plane for a
+# shattered one, which is the failure Josh rejected this module for in the
+# first place ("they need to be large and blocky most of the time").
+USE_RECONSTRUCTION = False        # unconditional use -- still off, and should stay off
 RECONSTRUCT_MIN_POINTS = 40
+RECONSTRUCT_WHEN_INLIER_BELOW = 0.70   # only consider it for roofs the segmenter fits badly
+RECONSTRUCT_MIN_INLIER_GAIN = 0.10     # ...and only switch on a clear win, not noise
+RECONSTRUCT_MIN_USABLE_SHARE = 0.90    # ...that does not shatter the roof to get there.
+# Counting facets was tried first and is the wrong guard: on 5 Isle St the
+# segmenter returns ONE facet, so any reconstruction at all exceeds a ratio
+# bound, including the 3 planes Josh says that roof actually has. What matters
+# is not how many faces there are but whether the extra edges cost panel area,
+# and that can be measured directly -- every facet is eroded by the ridge
+# setback before packing, so total usable area IS the fragmentation cost.
+
+
+def _area_weighted_inlier(facets, pc_source):
+    """Share of a roof's points lying within 30 cm of their own facet's plane,
+    weighted by facet area. The same measure the defect scanner ranks on."""
+    if not facets:
+        return 0.0
+    tot = num = 0.0
+    for f in facets:
+        pts = _facet_points(pc_source, f["geometry"])
+        if len(pts) < 12:
+            continue
+        r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+        inl = float((np.abs(r - np.median(r)) < PLANARITY_INLIER_BAND_M).mean())
+        a = f["geometry"].area
+        num += inl * a
+        tot += a
+    return num / tot if tot else 0.0
+
+
+def _usable_area(facets):
+    """Total area left after each facet is eroded by the ridge setback -- what
+    panel packing actually gets to use. Fragmenting a roof shows up here as
+    lost area, however many or few faces it ends up with."""
+    tot = 0.0
+    for f in facets:
+        try:
+            tot += max(0.0, f["geometry"].buffer(-config.RIDGE_SETBACK_M).area)
+        except Exception:
+            continue
+    return tot
+
+
+def _maybe_reconstruct(facets, pc_source, building_geom, building_id):
+    """Swap in reconstruction only where it demonstrably describes the roof
+    better. Returns the facets to use."""
+    try:
+        base = _area_weighted_inlier(facets, pc_source)
+        if base >= RECONSTRUCT_WHEN_INLIER_BELOW:
+            return facets
+        alt = _reconstruct_facets(pc_source, building_geom, building_id)
+        if not alt:
+            return facets
+        if _area_weighted_inlier(alt, pc_source) - base < RECONSTRUCT_MIN_INLIER_GAIN:
+            return facets
+        base_usable = _usable_area(facets)
+        if base_usable > 0 and _usable_area(alt) < RECONSTRUCT_MIN_USABLE_SHARE * base_usable:
+            return facets   # better planes, but paid for by shattering the roof
+        return alt
+    except Exception:
+        return facets
 
 
 def _reconstruct_facets(pc_source, building_geom, building_id):
@@ -1682,12 +1765,12 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
             med_alt = float(np.median([f["slope_deg"] for f in alt_best[1]]))
             med_or = float(np.median([f["slope_deg"] for f in facets_orient]))
             if med_or - med_alt >= 15.0 and area_orient >= 0.6 * alt_best[0]:
-                return _attach_building_geometry(facets_orient, building_geom, pc_source)
+                return _attach_building_geometry(facets_orient, building_geom, pc_source, building_id)
 
     if (not rg_shattered) and len(facets_rg) > 1 and area_rg >= GLOBAL_AREA_TOLERANCE * best_alternative_area:
-        return _attach_building_geometry(facets_rg, building_geom, pc_source)
+        return _attach_building_geometry(facets_rg, building_geom, pc_source, building_id)
     if len(facets_global) > 1 and area_global >= GLOBAL_AREA_TOLERANCE * max(area_pc, area_dsm):
-        return _attach_building_geometry(facets_global, building_geom, pc_source)
+        return _attach_building_geometry(facets_global, building_geom, pc_source, building_id)
 
     candidates = [facets_rg, facets_global, facets_pc, facets_dsm]
     areas = [area_rg, area_global, area_pc, area_dsm]
@@ -1725,9 +1808,9 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
             if ar > best_alt_score:
                 best_alt, best_alt_score = fs, ar
         if best_alt is not None:
-            return _attach_building_geometry(best_alt, building_geom, pc_source)
+            return _attach_building_geometry(best_alt, building_geom, pc_source, building_id)
 
-    return _attach_building_geometry(candidates[winner], building_geom, pc_source)
+    return _attach_building_geometry(candidates[winner], building_geom, pc_source, building_id)
 
 
 # --- Global multi-plane solver (candidate pool + joint label assignment) ----

@@ -83,6 +83,9 @@ from shapely.geometry import LineString, Polygon
 from shapely.ops import polygonize, split, unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import config
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 RANSAC_TOL_M = 0.15        # a point this close to a plane is on it
 RANSAC_ITERS = 400
@@ -638,6 +641,112 @@ def extract_obstructions(facets, pts):
     return facets, obstructions
 
 
+# A split has to earn back the setback area it costs. This is the rule the
+# module docstring says any next attempt must obey, and it was never
+# implemented -- the first version optimised "planes that fit the points",
+# which is not the same thing as "panels fit on the result".
+#
+# panel_fitting erodes every facet by RIDGE_SETBACK_M along shared boundaries,
+# so cutting one face into two loses a strip down the middle FOREVER:
+#
+#     6 m2 facet ->  57% of it usable
+#    25 m2 facet ->  77%
+#   150 m2 facet ->  90%
+#   400 m2 facet ->  94%
+#
+# So two faces are only worth keeping apart when a panel genuinely cannot lie
+# across the join. A panel is 1.7 m long; over that span a 5 degree fold rises
+# 15 cm, which no rigid frame bridges, while 2-3 degrees is within the slack a
+# real mounting rail takes up. Below the bridge angle the split is invisible on
+# the roof and merging is strictly better -- it recovers the setback strip and
+# removes an edge panels had to stop at.
+#
+# This also answers Josh on 29 Park St: "treating a gradually curving sloping
+# roof as two planes when really it is just a light curve across the whole
+# roof". A light curve is exactly a sequence of faces that differ by less than
+# a panel can bridge, so it now comes back as one face.
+BRIDGE_ANGLE_DEG = 5.0      # a fold shallower than this, a panel lies across
+BRIDGE_MAX_STEP_M = 0.10    # ...provided the faces are not offset in height too
+EARN_MIN_GAIN_M2 = 0.5      # ignore merges that win only rounding
+
+
+def _plane_angle(f, g):
+    """Angle between two facets' plane normals, in degrees."""
+    na = np.array([-f["plane_a"], -f["plane_b"], 1.0])
+    nb = np.array([-g["plane_a"], -g["plane_b"], 1.0])
+    na /= np.linalg.norm(na)
+    nb /= np.linalg.norm(nb)
+    return float(np.degrees(np.arccos(np.clip(abs(na @ nb), -1.0, 1.0))))
+
+
+def _step_at_join(f, g):
+    """Height difference between two planes where they actually adjoin.
+
+    Compared at the shared boundary, not at the origin: two parallel faces at
+    different levels have IDENTICAL normals, so an angle test alone reads 0
+    degrees and merges a step. That bug was found once already in
+    roof_segmentation.merge_uneconomic_splits."""
+    shared = f["geometry"].buffer(0.3).intersection(g["geometry"].buffer(0.3))
+    if shared.is_empty:
+        return float("inf")
+    c = shared.centroid
+    za = f["plane_a"] * c.x + f["plane_b"] * c.y + f["plane_c"]
+    zb = g["plane_a"] * c.x + g["plane_b"] * c.y + g["plane_c"]
+    return abs(float(za - zb))
+
+
+def _usable(poly, setback=None):
+    setback = config.RIDGE_SETBACK_M if setback is None else setback
+    if poly.is_empty:
+        return 0.0
+    return float(poly.buffer(-setback).area)
+
+
+def merge_to_earn_setback(facets, pts):
+    """Merge adjacent faces a panel could lie across, when merging wins area.
+
+    Greedy and repeated: each pass takes the merge with the largest gain, so a
+    fan of narrow strips across a gently curved roof collapses from the middle
+    outward rather than by whichever pair came first in the list."""
+    if len(facets) < 2:
+        return facets
+    facets = list(facets)
+    for _ in range(len(facets)):
+        best = None
+        for i in range(len(facets)):
+            for j in range(i + 1, len(facets)):
+                f, g = facets[i], facets[j]
+                if not f["geometry"].buffer(0.3).intersects(g["geometry"]):
+                    continue
+                if _plane_angle(f, g) > BRIDGE_ANGLE_DEG:
+                    continue
+                if _step_at_join(f, g) > BRIDGE_MAX_STEP_M:
+                    continue
+                union = unary_union([f["geometry"], g["geometry"]])
+                if union.geom_type != "Polygon":
+                    continue
+                gain = _usable(union) - _usable(f["geometry"]) - _usable(g["geometry"])
+                if gain > EARN_MIN_GAIN_M2 and (best is None or gain > best[0]):
+                    best = (gain, i, j, union)
+        if best is None:
+            break
+        _, i, j, union = best
+        f, g = facets[i], facets[j]
+        member = pts[np.abs(residuals((f["plane_a"], f["plane_b"], f["plane_c"]), pts)) < RANSAC_TOL_M]
+        inside = member[shapely.vectorized.contains(union, member[:, 0], member[:, 1])] \
+            if len(member) else member
+        plane = fit_plane(inside) if len(inside) >= 8 else (f["plane_a"], f["plane_b"], f["plane_c"])
+        slope, aspect = plane_slope_aspect(plane)
+        merged = dict(f)
+        merged.update({"geometry": Polygon(union.exterior, [r for r in union.interiors]),
+                       "plane_a": float(plane[0]), "plane_b": float(plane[1]),
+                       "plane_c": float(plane[2]), "slope_deg": float(slope),
+                       "aspect_deg": float(aspect), "area_m2": float(union.area),
+                       "point_count": int(len(inside))})
+        facets = [x for k, x in enumerate(facets) if k not in (i, j)] + [merged]
+    return facets
+
+
 def reconstruct(building_id, outline, pts, seed=0, with_obstructions=True):
     """Point cloud + surveyed outline -> straight-edged, plane-backed facets."""
     if len(pts) < MIN_PLANE_PTS:
@@ -744,6 +853,7 @@ def reconstruct(building_id, outline, pts, seed=0, with_obstructions=True):
                 "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
             })
     facets = merge_coplanar(facets, pts)
+    facets = merge_to_earn_setback(facets, pts)
     if not with_obstructions:
         return assign_plane_ids(facets), []
     facets, obstructions = extract_obstructions(facets, pts)
