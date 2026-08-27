@@ -98,10 +98,26 @@ def points_from_window(dsm_array, window_transform, nodata):
 
 
 def fit_plane_lstsq(points):
-    """points[N,3] -> (a, b, c) minimizing sum((a*x+b*y+c - z)^2)."""
-    A = np.column_stack([points[:, 0], points[:, 1], np.ones(len(points))])
+    """points[N,3] -> (a, b, c) minimizing sum((a*x+b*y+c - z)^2).
+
+    Solved about the points' own centroid and shifted back, so callers see the
+    same (a, b, c) convention. This used to solve on raw NZTM coordinates -- x
+    near 1.2 million, y near 5 million, against a column of ones, a condition
+    number around 1e6 -- and the failure mode is not a little lost precision but
+    planes that do not fit their own points. Found in the partition, where the
+    plane fitted to the union of two faces measured 0.1 degrees apart with a
+    0.00 m step at their join scored 16% on-plane against 99% for each face
+    alone; that blocked a merge that should plainly have happened, and left
+    5 Isle St at five faces where Josh counted three. Fixing it there took that
+    roof to exactly three, and 47 Stanley St from 18 faces at 93% to 11 at 97%.
+
+    This function has ten call sites and the centred variant below has two, so
+    the same fault was reachable through most of the segmenter."""
+    x0, y0 = points[:, 0].mean(), points[:, 1].mean()
+    A = np.column_stack([points[:, 0] - x0, points[:, 1] - y0, np.ones(len(points))])
     coeffs, *_ = np.linalg.lstsq(A, points[:, 2], rcond=None)
-    return coeffs  # a, b, c
+    a, b = float(coeffs[0]), float(coeffs[1])
+    return np.array([a, b, float(coeffs[2]) - a * x0 - b * y0])
 
 
 def fit_plane_lstsq_centered(points):

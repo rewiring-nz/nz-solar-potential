@@ -35,14 +35,33 @@ from shapely.geometry import LineString, Point
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-CANNY_LOW = 40
-CANNY_HIGH = 120
-HOUGH_THRESHOLD = 25
-HOUGH_MIN_LINE_PX = 15        # 1.5 m at 0.1 m/px -- shorter than this is texture
-HOUGH_MAX_GAP_PX = 8
+# Canny + Hough was the first attempt and Josh's verdict on it was exact:
+# "you are drawing lines that are not in the underlying image, and then even
+# when there are clearly defined straight line ridges on the roof in the image,
+# you are missing them." Both halves of that have a cause.
+#
+# FALSE LINES came from roof texture. Tiles, corrugations and shingle courses
+# are strong, regular, straight edges at 0.1 m -- exactly what an edge detector
+# is built to find. A bilateral filter removes them while keeping structural
+# edges, because it smooths within regions and not across them.
+#
+# MISSED RIDGES came from two things. A ridge between two roof faces is often a
+# gentle intensity STEP rather than a sharp edge -- the faces differ in
+# brightness because they differ in angle to the sun -- and Canny's fixed
+# thresholds drop those. LSD works from local gradient orientation instead and
+# keeps them. And Hough scored each fragment separately, so a real ridge broken
+# into six pieces by a chimney or texture scored six weak votes rather than one
+# strong one; fragments of one line are now summed.
 PAD_M = 2.0
+CLAHE_CLIP = 2.0              # local contrast, to lift soft ridges out of a flat roof
+CLAHE_GRID = 8
+BILATERAL_D = 7               # texture suppression that does not blur across a ridge
+BILATERAL_SIGMA_COLOR = 40
+BILATERAL_SIGMA_SPACE = 7
+LSD_SCALE = 0.8
+MIN_FRAGMENT_M = 0.8          # below this a segment is noise, not part of anything
 
-MIN_LENGTH_M = 2.0            # a real ridge or hip runs at least this far
+MIN_LENGTH_M = 2.0            # total evidence, summed over fragments of one line
 BOUNDARY_EXCLUSION_M = 0.8    # a segment hugging the footprint edge is the eave or a
 # gutter, and the footprint already provides that edge exactly -- re-cutting on a
 # blurry copy of it can only be worse than the surveyed line
@@ -67,21 +86,33 @@ def _angle_offset(seg, cx, cy):
     return float(ang), off
 
 
-def _dedupe(cands):
-    """Collapse Hough fragments of one physical line, longest first."""
-    kept = []
+def _merge_collinear(cands):
+    """Fragments of one physical line become one line carrying their TOTAL
+    length.
+
+    This is the fix for missed ridges. A ridge crossed by a chimney, a vent or
+    a patch of texture arrives as several short segments; scoring them
+    separately buries a real 12 m ridge under a 3 m gutter. Summed, it outranks
+    everything on the roof, which is what it should do."""
+    clusters = []   # [angle, offset, total_length, weight] -- angle/offset length-weighted
     for ang, off, length in sorted(cands, key=lambda c: -c[2]):
-        dup = False
-        for kang, koff, _ in kept:
-            da = min(abs(ang - kang), 180.0 - abs(ang - kang))
-            if da < CLUSTER_ANGLE_DEG and abs(off - koff) < CLUSTER_OFFSET_M:
-                dup = True
+        hit = None
+        for c in clusters:
+            da = min(abs(ang - c[0]), 180.0 - abs(ang - c[0]))
+            if da < CLUSTER_ANGLE_DEG and abs(off - c[1]) < CLUSTER_OFFSET_M:
+                hit = c
                 break
-        if not dup:
-            kept.append((ang, off, length))
-        if len(kept) >= MAX_CANDIDATES:
-            break
-    return [(a, o) for a, o, _ in kept]
+        if hit is None:
+            clusters.append([ang, off, length, length])
+        else:
+            w = hit[3] + length
+            hit[0] = (hit[0] * hit[3] + ang * length) / w
+            hit[1] = (hit[1] * hit[3] + off * length) / w
+            hit[2] += length
+            hit[3] = w
+    clusters = [c for c in clusters if c[2] >= MIN_LENGTH_M]
+    clusters.sort(key=lambda c: -c[2])
+    return [(c[0], c[1]) for c in clusters[:MAX_CANDIDATES]]
 
 
 def roof_line_candidates(imagery_ds, footprint):
@@ -103,35 +134,39 @@ def roof_line_candidates(imagery_ds, footprint):
     rgb = np.moveaxis(arr, 0, -1).astype(np.uint8)
     wt = imagery_ds.window_transform(window)
 
-    # Confine edges to the roof itself. Without this the strongest lines on the
-    # page are kerbs, paths and neighbouring rooflines.
+    # Confine to the roof itself. Without this the strongest lines on the page
+    # are kerbs, paths and neighbouring rooflines.
     mask = rasterize([(footprint, 1)], out_shape=rgb.shape[:2], transform=wt).astype(np.uint8)
     mask = cv2.erode(mask, np.ones((3, 3), np.uint8))
 
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    edges = cv2.Canny(gray, CANNY_LOW, CANNY_HIGH)
-    edges[mask == 0] = 0
+    gray = cv2.createCLAHE(clipLimit=CLAHE_CLIP,
+                           tileGridSize=(CLAHE_GRID, CLAHE_GRID)).apply(gray)
+    gray = cv2.bilateralFilter(gray, BILATERAL_D, BILATERAL_SIGMA_COLOR,
+                               BILATERAL_SIGMA_SPACE)
+    gray = np.where(mask > 0, gray, 0).astype(np.uint8)
 
-    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180,
-                            threshold=HOUGH_THRESHOLD,
-                            minLineLength=HOUGH_MIN_LINE_PX,
-                            maxLineGap=HOUGH_MAX_GAP_PX)
-    if lines is None:
+    try:
+        lsd = cv2.createLineSegmentDetector(scale=LSD_SCALE)
+        detected = lsd.detect(gray)[0]
+    except Exception:
         return []
+    if detected is None or len(detected) == 0:
+        return []
+    lines = detected.reshape(-1, 4)
 
     cx, cy = footprint.centroid.x, footprint.centroid.y
     boundary = footprint.exterior
     out = []
-    for x1, y1, x2, y2 in lines.reshape(-1, 4):
+    for x1, y1, x2, y2 in lines:
         wx1, wy1 = wt * (float(x1), float(y1))
         wx2, wy2 = wt * (float(x2), float(y2))
         seg = LineString([(wx1, wy1), (wx2, wy2)])
-        if seg.length < MIN_LENGTH_M:
+        if seg.length < MIN_FRAGMENT_M:
             continue
         if (boundary.distance(Point(wx1, wy1)) < BOUNDARY_EXCLUSION_M
                 and boundary.distance(Point(wx2, wy2)) < BOUNDARY_EXCLUSION_M):
             continue          # tracing the eave; the surveyed outline is better
         ang, off = _angle_offset(seg, cx, cy)
         out.append((ang, off, seg.length))
-    return _dedupe(out)
+    return _merge_collinear(out)

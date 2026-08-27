@@ -112,10 +112,21 @@ SETBACK_COST_PER_FIT = 2.0
 
 
 def _fit_plane(pts):
-    """Least-squares plane through points, as (a, b, c) with z = ax + by + c."""
-    A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
+    """Least-squares plane through points, as (a, b, c) with z = ax + by + c.
+
+    Solved about the points' own centroid, then shifted back. Solving on raw
+    NZTM coordinates -- x near 1.2 million, y near 5 million, against a column
+    of ones -- is a condition number around 1e6, and it does not merely lose a
+    little precision: it silently returns planes that do not fit their own
+    points. Two faces of 5 Isle St measured 0.1 degrees apart with a 0.00 m step
+    at their join, and the plane fitted to their union scored 16% on-plane
+    against 99% for each of them separately, which blocked a merge that should
+    obviously have happened and left that roof at 5 faces where Josh counted 3."""
+    x0, y0 = pts[:, 0].mean(), pts[:, 1].mean()
+    A = np.column_stack([pts[:, 0] - x0, pts[:, 1] - y0, np.ones(len(pts))])
     coef, *_ = np.linalg.lstsq(A, pts[:, 2], rcond=None)
-    return float(coef[0]), float(coef[1]), float(coef[2])
+    a, b = float(coef[0]), float(coef[1])
+    return a, b, float(coef[2]) - a * x0 - b * y0
 
 
 def _fit_plane_robust(pts, iterations=6):
@@ -311,6 +322,101 @@ def _refine_cut(poly, pts, parts):
     return refined if weighted(refined) > weighted(parts) else parts
 
 
+# Big planes first; their intersections ARE the roof lines.
+#
+# Josh, after seeing an edge detector draw a maze over a simple roof: "You need
+# a way to clearly detect and define big flat planes that make up roof shapes,
+# generally all these planes are large in size, and connect smoothly at angled
+# edges most of the time."
+#
+# That inverts the problem. Hunting edges in imagery and inferring planes from
+# them is backwards and fails in both directions -- texture produces lines that
+# are not roof features, and a real ridge that is a soft intensity step
+# produces no line at all. But two planes that meet do so along their exact
+# analytic intersection: no detection, no threshold, no false positives. Find
+# the planes and the ridges, hips and valleys come out for free, straight and
+# in the right place.
+#
+# The size prior is the whole point and is what previous attempts at this got
+# wrong -- roof_reconstruct fitted planes to whatever the points supported and
+# shattered roofs into strips. A plane has to be BIG to exist at all here.
+PLANE_MIN_AREA_M2 = 12.0        # a face smaller than ~6 panels is not a roof plane
+PLANE_MIN_FOOTPRINT_SHARE = 0.04
+PLANE_TOL_M = 0.20              # a point this close to a plane is on it
+PLANE_MAX = 10                  # real roofs are simple; past this it is not planes any more
+PLANE_RANSAC_ITERS = 250
+PLANE_SAMPLE_RADIUS_M = 6.0     # 3-point samples drawn locally, or a plane gets fitted
+# through three points on three different faces and describes nothing
+
+
+def _detect_large_planes(pts, footprint, rng, max_planes=None):
+    """Greedy RANSAC for the few LARGE planes a roof is actually made of.
+
+    Take the best-supported plane, remove its points, repeat -- stopping as soon
+    as the best remaining plane is too small to be a roof face rather than
+    grinding on until every leftover point has one."""
+    if len(pts) < MIN_POINTS:
+        return []
+    min_area = max(PLANE_MIN_AREA_M2, PLANE_MIN_FOOTPRINT_SHARE * footprint.area)
+    pt_area = footprint.area / max(len(pts), 1)      # plan area each point stands for
+    min_pts = max(MIN_POINTS, int(min_area / max(pt_area, 1e-9)))
+
+    remaining = pts
+    planes = []
+    tree = None
+    cap = PLANE_MAX if max_planes is None else max_planes
+    while len(planes) < cap and len(remaining) >= min_pts:
+        from scipy.spatial import cKDTree
+        tree = cKDTree(remaining[:, :2])
+        best, best_n = None, 0
+        for _ in range(PLANE_RANSAC_ITERS):
+            i = rng.integers(len(remaining))
+            near = tree.query_ball_point(remaining[i, :2], PLANE_SAMPLE_RADIUS_M)
+            if len(near) < 3:
+                continue
+            pick = rng.choice(near, size=3, replace=False)
+            trio = remaining[pick]
+            v1, v2 = trio[1] - trio[0], trio[2] - trio[0]
+            nrm = np.cross(v1, v2)
+            if abs(nrm[2]) < 1e-6:
+                continue
+            a, b = -nrm[0] / nrm[2], -nrm[1] / nrm[2]
+            c = trio[0, 2] - a * trio[0, 0] - b * trio[0, 1]
+            n = int((np.abs(remaining[:, 2] - (a * remaining[:, 0] + b * remaining[:, 1] + c))
+                     < PLANE_TOL_M).sum())
+            if n > best_n:
+                best, best_n = (a, b, c), n
+        if best is None or best_n < min_pts:
+            break
+        inl = np.abs(remaining[:, 2] - (best[0] * remaining[:, 0]
+                                        + best[1] * remaining[:, 1] + best[2])) < PLANE_TOL_M
+        planes.append(_fit_plane_robust(remaining[inl]))
+        remaining = remaining[~inl]
+    return planes
+
+
+def _plane_intersection_cuts(planes, poly):
+    """(angle, offset) for every pair of planes that meet, in _cut's convention.
+
+    This is the replacement for detecting roof lines. Two planes intersect along
+    one exact line; near-parallel pairs are skipped because their intersection is
+    meaningless or far away -- those are steps in height, not folds."""
+    cx, cy = poly.centroid.x, poly.centroid.y
+    out = []
+    for i in range(len(planes)):
+        for j in range(i + 1, len(planes)):
+            pa, pb = planes[i], planes[j]
+            A, B = pa[0] - pb[0], pa[1] - pb[1]
+            if np.hypot(A, B) < 1e-3:
+                continue
+            C = ((pa[0] * cx + pa[1] * cy + pa[2]) - (pb[0] * cx + pb[1] * cy + pb[2]))
+            n = np.hypot(A, B)
+            ang = float((np.degrees(np.arctan2(A, -B))) % 180.0)   # line dir _|_ to (A,B)
+            off = float(-C / n)
+            out.append((ang, off))
+    return out
+
+
 def _partition(poly, pts, depth=0, budget=None):
     if budget is None:
         budget = [MAX_FACES]
@@ -431,6 +537,97 @@ def _merge_bridgeable(faces, pts):
             if changed:
                 break
     return faces
+
+
+# How many planes a roof actually has, from Josh: "there are generally not going
+# to be many planes on a roof, most probably only have between 1 and 10 or so.
+# Unless a big hotel or business roof, but then still... Likely between 1 and 30
+# or so." That is the prior this whole module was missing, and it is why a
+# 93%-on-plane score could sit on a roof he called clearly wrong: fit says
+# nothing about whether a shape looks like a roof.
+PLANES_TYPICAL_MAX = 10          # a house
+PLANES_LARGE_MAX = 30            # a hotel or a large commercial roof
+PLANES_LARGE_ROOF_M2 = 600.0     # above this footprint, allow the higher count
+MAX_INTERSECTION_LINES = 24      # cutting by every pair explodes; keep the best
+
+
+def partition_by_planes(building_id, footprint, pts, seed=0):
+    """Big planes from the LiDAR, trimmed by each other and by the building edge.
+
+    Josh's description exactly: "make big planes based on detectable roof angles
+    with the lidar, and then trim those planes by either the edge of the building
+    or another plane."
+
+    Nothing is detected in imagery and no boundary is traced. A plane's extent is
+    decided by where it stops being the best explanation of the points -- which
+    is either where another plane takes over, along the exact line the two
+    intersect, or the surveyed footprint edge. Both are straight by construction,
+    so the result cannot be fuzzy and the faces meet cleanly at real angles."""
+    rng = np.random.default_rng(seed)
+    inside = _points_in(footprint, pts)
+    if len(inside) < MIN_POINTS:
+        return []
+    cap = PLANES_LARGE_MAX if footprint.area > PLANES_LARGE_ROOF_M2 else PLANES_TYPICAL_MAX
+    planes = _detect_large_planes(inside, footprint, rng, max_planes=cap)
+    if not planes:
+        return []
+
+    # Cut by where the planes meet. Ordered by how much roof each pair actually
+    # separates, so if the cap bites it is the least important joins that go.
+    cuts = _plane_intersection_cuts(planes, footprint)[:MAX_INTERSECTION_LINES]
+    cells = [footprint]
+    for ang, off in cuts:
+        nxt = []
+        for c in cells:
+            parts = _cut(c, ang, off)
+            nxt.extend(parts if len(parts) >= 2 else [c])
+        cells = nxt
+        if len(cells) > 200:      # runaway guard on a pathological roof
+            break
+
+    # Each cell goes to the plane its own points support best; cells too sparse
+    # to vote take the plane of the nearest cell that could.
+    labelled = []
+    for cell in cells:
+        if cell.area < MIN_PIECE_M2:
+            continue
+        sub = _points_in(cell, inside)
+        if len(sub) < 6:
+            labelled.append((cell, None))
+            continue
+        res = [np.median(np.abs(sub[:, 2] - (a * sub[:, 0] + b * sub[:, 1] + c)))
+               for a, b, c in planes]
+        labelled.append((cell, int(np.argmin(res))))
+    known = [(g, i) for g, i in labelled if i is not None]
+    if not known:
+        return []
+    for k, (g, i) in enumerate(labelled):
+        if i is None:
+            labelled[k] = (g, min(known, key=lambda t: t[0].distance(g))[1])
+
+    # Adjacent cells on the same plane are one face.
+    out = []
+    for pi in range(len(planes)):
+        mine = [g for g, i in labelled if i == pi]
+        if not mine:
+            continue
+        merged = unary_union(mine)
+        for poly in (merged.geoms if merged.geom_type == "MultiPolygon" else [merged]):
+            if poly.area < MIN_FACET_M2:
+                continue
+            sub = _points_in(poly, inside)
+            plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS else planes[pi]
+            slope, aspect = _slope_aspect(plane)
+            if slope > config.MAX_ROOF_SLOPE_DEG:
+                continue
+            out.append({
+                "building_id": building_id,
+                "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+                "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+                "slope_deg": slope, "aspect_deg": aspect,
+                "area_m2": float(poly.area), "point_count": int(len(sub)),
+            })
+    return out
 
 
 def partition_roof(building_id, footprint, pts):
