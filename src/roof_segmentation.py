@@ -1522,6 +1522,64 @@ BALCONY_MAX_INLIER = 0.75          # ...does not lie on a plane...
 BALCONY_MAX_AREA_SHARE = 0.25      # ...and is small next to the main roof
 
 
+# A rooftop plant deck is not a roof level either.
+#
+# The balcony filter below catches surfaces far BELOW the main roof. This is the
+# same error the other way up, and it appeared the moment the partition started
+# tiling the whole footprint: on the equipment reference building the LARGEST
+# face is 178.7 m2 sitting 0.65 m above the roof, at 79% on-plane -- a duct
+# platform modelled as roof, with panels laid on top of it. Obstruction
+# detection cannot save it, because the deck really is flat; it is a perfectly
+# good plane that happens not to be a roof.
+#
+# The discriminator is height, and it is not a close call. A real additional
+# storey is 2.5 m or more. Rooftop equipment -- ducting, plant, condensers,
+# lift overruns -- sits a few tens of centimetres to about a metre proud. There
+# is almost nothing in between, so a surface raised into that band, and smaller
+# than the roof it sits on, is equipment.
+PLANT_MIN_RISE_M = 0.25       # below this it is just the main roof, with noise
+PLANT_MAX_RISE_M = 1.60       # above this it is a genuine upper level, keep it
+PLANT_MAX_AREA_SHARE = 1.00   # ...but it can out-cover any SINGLE face beneath it
+
+
+def drop_plant_decks(facets, pc_source):
+    """Remove raised equipment platforms modelled as roof faces."""
+    if len(facets) < 2:
+        return facets
+    stats = []
+    for f in facets:
+        pts = _facet_points(pc_source, f["geometry"])
+        stats.append((f, float(np.median(pts[:, 2])) if len(pts) >= 12 else None))
+
+    known = [(f, h) for f, h in stats if h is not None]
+    if len(known) < 2:
+        return facets
+
+    # The main roof LEVEL, not the biggest single face. Taking the largest face
+    # picks the plant deck itself on exactly the roofs this is meant to fix: on
+    # the equipment reference the duct platform is 178 m2 and the largest piece
+    # of actual roof under it is 133 m2. Group faces into height bands and take
+    # the band holding the most roof.
+    bands = []   # [height, total_area, faces]
+    for f, h in sorted(known, key=lambda t: t[1]):
+        if bands and abs(h - bands[-1][0]) <= PLANT_MIN_RISE_M:
+            bands[-1][1] += f["geometry"].area
+            bands[-1][2].append(f)
+        else:
+            bands.append([h, f["geometry"].area, [f]])
+    main_h, main_area, main_faces = max(bands, key=lambda b: b[1])
+    main_ids = {id(f) for f in main_faces}
+
+    kept = []
+    for f, h in stats:
+        if (h is not None and id(f) not in main_ids
+                and PLANT_MIN_RISE_M < (h - main_h) <= PLANT_MAX_RISE_M
+                and f["geometry"].area < PLANT_MAX_AREA_SHARE * main_area):
+            continue
+        kept.append(f)
+    return kept or facets
+
+
 def drop_balcony_levels(facets, pc_source):
     """Remove stepped balcony surfaces from a building that has a clear main roof."""
     if len(facets) < 2:
@@ -1568,6 +1626,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     if facets and pc_source is not None:
         facets = repair_nonplanar_facets(facets, pc_source)
         facets = drop_balcony_levels(facets, pc_source)
+        facets = drop_plant_decks(facets, pc_source)
     if APPLY_REALISM_MERGE and facets:
         try:
             facets = merge_uneconomic_splits(facets)
