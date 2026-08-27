@@ -744,6 +744,10 @@ const LAYOUT_KIND_FILTER = {
 // installer would quote; 81-100 are straggler blocks (only banded when a
 // big main array exists). Default shows arrays only; 100% shows everything.
 let panelDensityPct = 80;
+// Mirrors MIN_ROOF_CONFIDENCE in src/build_layout_geojson.py. Kept as a literal
+// rather than read from the data because it has to be known even for buildings
+// whose tiles predate the field.
+const ROOF_CONFIDENCE_MIN = 0.45;
 let refitAvailable = false;      // live server's /api/refit present? (never on the static site)
 let selectedPanelBuildingId = -1;
 // A filter that matches nothing. Building ids are positive, so -1 is safe and
@@ -2856,6 +2860,7 @@ map.on("load", async () => {
               <div class="rsp-power"><span id="bldg-fitted-power">&ndash;</span><span class="rsp-count" id="bldg-fitted-panels">&ndash;</span></div>
               <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
             </div>
+            <div class="rsp-assumption" id="bldg-unmodelled" style="display:none;"></div>
           </div>
         </div>
         <div class="curve-toggle" id="curve-toggle">
@@ -3012,6 +3017,23 @@ map.on("load", async () => {
       // No panel count in Heat Map mode -- nothing has been laid out (Josh).
       if (el("bldg-fitted-panels") && count !== null) {
         el("bldg-fitted-panels").textContent = count.toLocaleString() + " panels";
+      }
+    }
+    // A roof the pipeline could not model reads 0 kW, and without this it reads
+    // 0 kW for no visible reason -- which looks like a broken page rather than
+    // an honest answer. See MIN_ROOF_CONFIDENCE in build_layout_geojson.py:
+    // below that share of the laser scan matching the roof planes we fitted, no
+    // layout is proposed at all. Josh, on 10 Stanley St: "very complicated roof,
+    // this one should probably just have no panels on it at all."
+    const unmod = el("bldg-unmodelled");
+    if (unmod) {
+      const conf = props.roof_confidence;
+      const withheld = isLayout && conf != null && conf < ROOF_CONFIDENCE_MIN && !count;
+      unmod.style.display = withheld ? "" : "none";
+      if (withheld) {
+        unmod.textContent = "No layout shown for this roof. Only "
+          + Math.round(conf * 100) + "% of the laser scan matches the roof shape we"
+          + " fitted, so a panel layout here would be guesswork.";
       }
     }
     const be = el("bldg-econ");
