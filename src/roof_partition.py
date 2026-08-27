@@ -204,6 +204,70 @@ def _best_cut(poly, pts, base_score):
     return best
 
 
+def _cut_on_line(poly, A, B, C, cx, cy):
+    """Split a polygon along A(x-cx) + B(y-cy) + C = 0.
+
+    Everything is in coordinates local to (cx, cy), and both reasons are
+    NZTM's fault. Anchoring the line at its closest point to the ORIGIN puts
+    that anchor about 5,000 km away, so a line segment a few tens of metres
+    long never reaches the building and the split silently does nothing. And
+    a plane's intercept is its height at x=0, y=0, which for NZTM is an
+    astronomical number, so differencing two of them loses all the precision
+    that matters. Both vanish once the origin is the polygon itself."""
+    n = np.hypot(A, B)
+    if n < 1e-9:
+        return []
+    d = np.array([-B, A]) / n              # direction along the line
+    origin = np.array([cx, cy])
+    pt0 = origin - np.array([A, B]) * (C / (n ** 2))   # nearest point ON the line
+    span = max(poly.bounds[2] - poly.bounds[0], poly.bounds[3] - poly.bounds[1]) * 2 + 10
+    line = LineString([pt0 - d * span, pt0 + d * span])
+    try:
+        parts = list(shapely_split(poly, line).geoms)
+    except Exception:
+        return []
+    return [q for q in parts if isinstance(q, Polygon) and q.area >= MIN_PIECE_M2]
+
+
+def _refine_cut(poly, pts, parts):
+    """Move a swept cut onto the two planes' own intersection line.
+
+    The sweep can only place a cut to within OFFSET_STEP_M, and a ridge that
+    lands even 25 cm off leaves a strip of the WRONG plane on both sides of it,
+    which is what kept fit lagging while structure was already correct. But two
+    planes that meet do so along an exact line -- that line IS the ridge or hip,
+    and it is available in closed form. Solve for it and re-cut there.
+
+    Only for planes that actually intersect: near-parallel faces at different
+    heights are a step, not a fold, and their intersection is meaningless or
+    infinitely far away, so the swept cut stands."""
+    if len(parts) != 2:
+        return parts
+    pa, _ = _score(parts[0], pts)
+    pb, _ = _score(parts[1], pts)
+    if pa is None or pb is None:
+        return parts
+    cx, cy = poly.centroid.x, poly.centroid.y
+    A, B = pa[0] - pb[0], pa[1] - pb[1]
+    # height gap between the two planes AT the centroid, not at x=0,y=0
+    C = ((pa[0] * cx + pa[1] * cy + pa[2]) - (pb[0] * cx + pb[1] * cy + pb[2]))
+    if np.hypot(A, B) < 1e-3:
+        return parts        # parallel: a step in height, keep the swept cut
+    refined = _cut_on_line(poly, A, B, C, cx, cy)
+    if len(refined) < 2:
+        return parts
+
+    def weighted(ps):
+        tot = num = 0.0
+        for q in ps:
+            _, sc = _score(q, pts)
+            num += sc * q.area
+            tot += q.area
+        return num / tot if tot else 0.0
+
+    return refined if weighted(refined) > weighted(parts) else parts
+
+
 def _partition(poly, pts, depth=0):
     plane, score = _score(poly, pts)
     if plane is None:
@@ -213,8 +277,9 @@ def _partition(poly, pts, depth=0):
     best = _best_cut(poly, pts, score)
     if best is None:
         return [(poly, plane)]      # no straight cut explains it better -- keep it whole
+    parts = _refine_cut(poly, pts, best[1])
     out = []
-    for part in best[1]:
+    for part in parts:
         out.extend(_partition(part, _points_in(part, pts), depth + 1))
     return out or [(poly, plane)]
 
@@ -230,6 +295,28 @@ def _plane_angle(p, q):
     na = np.array([-p[0], -p[1], 1.0]); na /= np.linalg.norm(na)
     nb = np.array([-q[0], -q[1], 1.0]); nb /= np.linalg.norm(nb)
     return float(np.degrees(np.arccos(np.clip(abs(na @ nb), -1.0, 1.0))))
+
+
+BRIDGE_MAX_STEP_M = 0.10
+
+
+def _step_at_join(pa, pb, poly_a, poly_b):
+    """Height gap between two planes WHERE THEY ADJOIN.
+
+    Without this the merge is wrong in a way an angle test cannot see: two
+    parallel faces at different levels have identical normals, so they read as
+    0 degrees apart and get merged straight across a step. That is exactly what
+    happened here -- the recursion built 5 correct faces on 5 Isle St at 87-99%
+    on-plane and the merge collapsed them to 2 at 45%. Third time this same bug
+    has appeared in this codebase; comparing planes at their shared boundary
+    rather than comparing normals is the only thing that catches it."""
+    shared = poly_a.buffer(0.3).intersection(poly_b.buffer(0.3))
+    if shared.is_empty:
+        return float("inf")
+    c = shared.centroid
+    za = pa[0] * c.x + pa[1] * c.y + pa[2]
+    zb = pb[0] * c.x + pb[1] * c.y + pb[2]
+    return abs(float(za - zb))
 
 
 def _merge_bridgeable(faces, pts):
@@ -248,6 +335,8 @@ def _merge_bridgeable(faces, pts):
                 if not pi.buffer(0.25).intersects(pj):
                     continue
                 if _plane_angle(li, lj) > 5.0:
+                    continue
+                if _step_at_join(li, lj, pi, pj) > BRIDGE_MAX_STEP_M:
                     continue
                 u = unary_union([pi, pj])
                 if u.geom_type != "Polygon":
