@@ -176,10 +176,12 @@ def _build_one_inner(building_id):
     return features
 
 
-def main(area="pilot", jobs=None):
+def main(area="pilot", jobs=None, limit=0, dry_run=False):
     paths = area_paths(area)
     gdf = gpd.read_file(paths["outlines"])
     ids = [int(b) for b in gdf["building_id"].tolist()]
+    if limit:
+        ids = ids[:limit]
 
     print(f"[{area}] Building solar yield lookup table (pvlib + NASA POWER)...")
     centroid = area_centroid_wgs84(area)
@@ -206,6 +208,10 @@ def main(area="pilot", jobs=None):
                 if done % 200 == 0:
                     print(f"  {done}/{len(ids)} elapsed={time.time() - t0:.1f}s", flush=True)
 
+    if dry_run:
+        print(f"[{area}] dry run: {len(features)} features in {time.time() - t0:.0f}s "
+              f"on {jobs} workers -- nothing written")
+        return
     geojson = {"type": "FeatureCollection", "features": features}
     out_path = paths["panel_layouts"]
     out_path.write_text(json.dumps(geojson))
@@ -222,11 +228,18 @@ def main(area="pilot", jobs=None):
 
 
 if __name__ == "__main__":
-    _jobs = None
+    _jobs, _limit = None, 0
     _argv = sys.argv[:]
-    if "--jobs" in _argv:
-        _i = _argv.index("--jobs")
-        _jobs = int(_argv[_i + 1])
-        _argv = _argv[:_i] + _argv[_i + 2:]
+    for _flag in ("--jobs", "--limit"):
+        if _flag in _argv:
+            _i = _argv.index(_flag)
+            _val = int(_argv[_i + 1])
+            _argv = _argv[:_i] + _argv[_i + 2:]
+            if _flag == "--jobs":
+                _jobs = _val
+            else:
+                _limit = _val
+    _dry = "--dry-run" in _argv
+    _argv = [a for a in _argv if a != "--dry-run"]
     for _area in areas_from_argv(_argv):
-        main(_area, jobs=_jobs)
+        main(_area, jobs=_jobs, limit=_limit, dry_run=_dry)
