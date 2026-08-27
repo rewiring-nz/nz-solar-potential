@@ -60,7 +60,16 @@ INLIER_BAND_M = 0.15
 
 MIN_FACET_M2 = 6.0          # below ~3 panels a face is not worth racking
 MIN_PIECE_M2 = 4.0          # a cut may not leave a sliver smaller than this
-MAX_DEPTH = 7               # 2^7 pieces; a hotel of many small roofs needs the depth
+# Depth alone is the WRONG stopping rule and it was quietly ruining the hardest
+# roofs. Cuts do not halve a region evenly -- a ridge shaves a strip off one
+# side -- so a large remainder can descend seven levels while barely shrinking,
+# exhaust its budget and be returned whole. On 1/5 Sydney St that surrendered a
+# 138 m2 face at 15% on-plane, 40% of the footprint, even though _best_cut had
+# a 25% cut available for it. Depth is now generous and the real brakes are
+# size and a per-building face cap, both of which track what is actually being
+# spent rather than how many times the function has recursed.
+MAX_DEPTH = 14
+MAX_FACES = 60              # a hotel needs many; nothing real needs more
 MIN_POINTS = 25
 
 ANGLE_TOL_DEG = 4.0         # footprint edge directions this close are one direction
@@ -268,19 +277,23 @@ def _refine_cut(poly, pts, parts):
     return refined if weighted(refined) > weighted(parts) else parts
 
 
-def _partition(poly, pts, depth=0):
+def _partition(poly, pts, depth=0, budget=None):
+    if budget is None:
+        budget = [MAX_FACES]
     plane, score = _score(poly, pts)
     if plane is None:
         return []
-    if score >= ACCEPT_INLIER or depth >= MAX_DEPTH or poly.area < 2 * MIN_FACET_M2:
+    if (score >= ACCEPT_INLIER or depth >= MAX_DEPTH
+            or poly.area < 2 * MIN_FACET_M2 or budget[0] <= 1):
         return [(poly, plane)]
     best = _best_cut(poly, pts, score)
     if best is None:
         return [(poly, plane)]      # no straight cut explains it better -- keep it whole
     parts = _refine_cut(poly, pts, best[1])
     out = []
+    budget[0] -= 1          # this cut spends one face from the building's budget
     for part in parts:
-        out.extend(_partition(part, _points_in(part, pts), depth + 1))
+        out.extend(_partition(part, _points_in(part, pts), depth + 1, budget))
     return out or [(poly, plane)]
 
 
