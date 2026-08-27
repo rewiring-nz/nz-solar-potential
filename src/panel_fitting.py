@@ -419,6 +419,11 @@ MINOR_ARRAY_MIN_PANELS = 4  # a straggler group smaller than this is dropped (se
 # roughly the smallest string a real installer bothers mounting and wiring separately
 MINOR_ARRAY_MIN_FRACTION = 0.25  # ...unless it's still a meaningful share of the building's
 # largest array, which keeps legitimately tiny roofs (a 2-3 panel cottage) fully intact
+MINOR_ARRAY_ALWAYS_KEEP_PANELS = 20  # ...and an array this size is a real install whatever
+# else is on the roof. The relative test alone does not scale to big commercial roofs: 25% of
+# 29 Park St's 399-panel main array is 100 panels, which called its 72-panel secondary array a
+# fragment. That is a ~32 kW array. Josh: "maybe filling in big secondary roofs if there is
+# ample space for big arrays".
 
 
 def drop_minor_arrays(facet_panels):
@@ -511,6 +516,64 @@ def _erosion_order(panels, poa_key):
     return [panels[i] for i in reversed(removal)]
 
 
+def _tag_fragment_arrays(panels):
+    """Re-tag stragglers using TRUE contiguous array size.
+
+    drop_minor_arrays makes this judgement per FACET -- it treats "every panel
+    on this facet" as one array. On 29 Park St that is wrong in the way that
+    matters: the roof is curved, segmentation splits it into three sections,
+    each section holds plenty of panels, so nothing is a straggler -- while
+    within each section the panels are a big clean block PLUS a scatter of
+    lone panels and 2-3 panel fragments. Josh: "lots of lonely panels and
+    small arrays of panels surrounding a large array". Facet size cannot see
+    those; contiguous array size can.
+
+    Same two thresholds as drop_minor_arrays, and the same relative test that
+    protects a genuinely small roof where a 2-panel block IS the install."""
+    if not panels:
+        return panels
+    largest = max(p.get("array_size", 1) for p in panels)
+    if largest < MAIN_ARRAY_MIN_PANELS:
+        return panels   # residential: scattered small blocks are the install
+    cutoff = min(MINOR_ARRAY_ALWAYS_KEEP_PANELS,
+                 max(MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION * largest))
+    for p in panels:
+        p["straggler"] = p.get("array_size", 1) < cutoff
+    return panels
+
+
+def _order_by_array(panels, poa_key):
+    """Fill order that finishes one array before starting the next.
+
+    The old order eroded the building's whole panel set at once, scored by
+    sunniness. So reducing the density slider stripped the least sunny SIDE
+    first -- a large clean array -- while lone panels on the sunny side
+    survived, because sunniness is a per-panel property and being a fragment
+    is not. Josh: "the panels from one side get removed before all the lonely
+    panels and small arrays from other areas get removed. That's unrealistic."
+
+    Arrays are taken in order of total yield, so the main array fills first
+    and a big secondary roof follows, while fragments -- already tagged
+    stragglers by _tag_fragment_arrays -- sit in the band above. Within an
+    array the existing reverse-erosion order still applies, so a partly-filled
+    array is a compact block in its sunniest deep part rather than a thin
+    strip. Reducing therefore cleans up the ragged edges of one array at a
+    time before it starts removing whole arrays."""
+    if not panels:
+        return []
+    groups = {}
+    for p in panels:
+        groups.setdefault(p.get("array_id", 0), []).append(p)
+    # Total yield, not panel count: a large array in shade should not outrank
+    # a large one in sun just for being one panel bigger.
+    ordered = sorted(groups.values(),
+                     key=lambda g: (-sum(q[poa_key] for q in g), len(g)))
+    out = []
+    for g in ordered:
+        out.extend(_erosion_order(g, poa_key))
+    return out
+
+
 def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     """Writes p["fill_rank"] (1..100, integer percentile) onto every panel of
     ONE building, following exactly apply_panel_density's fill order
@@ -519,7 +582,13 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     the density slider work on the static deployed site with no server."""
     if not panels:
         return panels
-    main = _erosion_order([p for p in panels if not p.get("straggler")], poa_key)
+    # Array membership is computed FIRST because the ordering below depends on
+    # it. It used to run at the end, purely as metadata for the frontend, which
+    # meant the pipeline had a correct notion of "one contiguous array" and
+    # then ranked panels without using it.
+    _assign_array_membership(panels)
+    _tag_fragment_arrays(panels)
+    main = _order_by_array(([p for p in panels if not p.get("straggler")]), poa_key)
     extras = sorted((p for p in panels if p.get("straggler")),
                     key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
     # Main arrays occupy ranks 1..STRAGGLER_RANK_FLOOR, stragglers the band
@@ -542,8 +611,6 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     # needed to change the targets.
     for i, p in enumerate(main + extras):
         p["fill_order"] = i + 1
-
-    _assign_array_membership(panels)
     return panels
 
 
