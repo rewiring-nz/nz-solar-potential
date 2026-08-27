@@ -11,7 +11,14 @@
 # Everything after the fan-in (merge, deciles, shrink, tippecanoe) is a single
 # pass over the combined file and stays serial.
 #
+# JOBS fans out across AREAS; BUILD_JOBS is the per-area worker count inside
+# build_layout_geojson. They multiply, so rebuilding ONE area wants JOBS=1 and a
+# high BUILD_JOBS, while rebuilding all 24 wants the reverse. Getting this wrong
+# is not slow, it is fatal: each build worker caches its own decoded LiDAR tiles,
+# and 11 of them was enough to have the run killed outright.
+#
 # Usage: JOBS=6 bash src/run_layouts_regate_par.sh area1 area2 ...
+#        JOBS=1 BUILD_JOBS=6 bash src/run_layouts_regate_par.sh pilot
 cd "$(dirname "$0")/.." || exit 1
 PY=.venv/bin/python
 JOBS="${JOBS:-$(( $(sysctl -n hw.ncpu 2>/dev/null || nproc) / 2 ))}"
@@ -23,7 +30,7 @@ run_area() {
   r="$1"
   log="data/build_logs/${r}_regate.log"
   {
-    .venv/bin/python src/build_layout_geojson.py "$r" &&
+    .venv/bin/python src/build_layout_geojson.py "$r" --jobs "${BUILD_JOBS:-6}" &&
     .venv/bin/python src/gate_panels.py "$r" &&
     .venv/bin/python src/rerank_layouts.py "$r"
   } >"$log" 2>&1

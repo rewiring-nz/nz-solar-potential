@@ -56,6 +56,8 @@ DEEP_SHADE_FACTOR = 0.45  # a panel keeping less than this share of the year's d
 # than trimming a continuum.
 MIN_ROOF_CONFIDENCE = 0.45
 
+DEFAULT_MAX_JOBS = 6
+
 _CTX = {}
 
 
@@ -187,7 +189,15 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
     centroid = area_centroid_wgs84(area)
     model = SolarModel() if centroid is None else SolarModel(*centroid)
 
-    jobs = jobs or max(1, (os.cpu_count() or 2) - 1)
+    # Bounded deliberately, and not by core count. PointCloudSource caches every
+    # decoded LiDAR tile for the life of its process -- the module docstring for
+    # run_full_build.sh warns the full set is ~10GB decoded -- so each worker
+    # carries its own copy of whatever tiles its buildings touch. Defaulting to
+    # cpu_count-1 gave 11 workers on this machine and the run was killed before
+    # it produced a single feature. Six is what has actually been measured
+    # working, and it already gives most of the speedup (280s -> 114s on 100
+    # buildings).
+    jobs = jobs or min(DEFAULT_MAX_JOBS, max(1, (os.cpu_count() or 2) - 1))
     print(f"[{area}] {len(ids)} buildings on {jobs} workers", flush=True)
 
     features, done, t0 = [], 0, time.time()
