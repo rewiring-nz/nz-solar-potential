@@ -95,7 +95,20 @@ MIN_SPLIT_GAIN = 0.005
 # Scaling it by the fit gain is the honest trade. A cut that takes a roof from
 # 30% to 90% on-plane has fixed the building and has earned a lot of setback; a
 # cut that buys two points has not earned any.
-SETBACK_COST_PER_FIT = 0.5
+# Swept, not guessed. 0.5 was shipped first and was badly wrong: it cost 20
+# points of fit on complex roofs (64% on-plane against 86% with the rule off)
+# to buy a facet count that was not needed -- 47 Stanley St fell from 22 facets
+# at 96% to 4 at 53%, which is under-modelling a roof, not making it blocky.
+#
+#   cost/fit    hard roofs              random roofs
+#   0.5         64% on-plane,  4 facets   83%,  4
+#   2.0         84%,          11          93%,  6
+#   unlimited   86%,          12          93%,  6
+#
+# 2.0 takes essentially all the available fit while houses still come back at
+# about six faces, which is the blockiness Josh asked for. Past 2.0 nothing
+# changes, so the rule is only ever binding on the roofs where it should be.
+SETBACK_COST_PER_FIT = 2.0
 
 
 def _fit_plane(pts):
