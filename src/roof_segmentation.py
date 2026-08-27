@@ -1832,7 +1832,7 @@ def _reconstruct_facets(pc_source, building_geom, building_id):
 USE_PARTITION = True
 
 
-def _partition_facets(pc_source, building_geom, building_id):
+def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
     """roof_partition in the shape segment_building_best returns. [] on
     anything unexpected, so the caller falls back rather than failing a whole
     area's build for one awkward roof."""
@@ -1847,13 +1847,14 @@ def _partition_facets(pc_source, building_geom, building_id):
         pts = pts[inside]
         if len(pts) < RECONSTRUCT_MIN_POINTS:
             return []
-        return partition_roof(building_id, building_geom.buffer(0), pts)
+        return partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds)
     except Exception:
         return []
 
 
 def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
-                           ransac_distance_threshold=None, min_facet_area_m2=None):
+                           ransac_distance_threshold=None, min_facet_area_m2=None,
+                           imagery_ds=None):
     """Runs the point-cloud global solver, the (greedy) point-cloud-native
     segmentation, and the DSM-raster fallback, and keeps whichever explains
     more real roof area. Verified directly on a 400-building sample: the
@@ -1883,7 +1884,7 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
     given roof, and this keeps the same never-worse-than-before guarantee
     the DSM fallback already provides."""
     if USE_PARTITION:
-        facets_pt = _partition_facets(pc_source, building_geom, building_id)
+        facets_pt = _partition_facets(pc_source, building_geom, building_id, imagery_ds)
         if facets_pt:
             return _attach_building_geometry(facets_pt, building_geom, pc_source, building_id)
         # nothing partitioned -- fall through to the old strategies below

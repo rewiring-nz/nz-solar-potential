@@ -22,6 +22,7 @@ from the polygon's centroid -- so a detected ridge and a swept candidate are
 interchangeable to the caller.
 """
 
+import math
 import sys
 import warnings
 from pathlib import Path
@@ -86,7 +87,7 @@ def _angle_offset(seg, cx, cy):
     return float(ang), off
 
 
-def _merge_collinear(cands):
+def _merge_collinear(cands, keep_length=False):
     """Fragments of one physical line become one line carrying their TOTAL
     length.
 
@@ -112,12 +113,44 @@ def _merge_collinear(cands):
             hit[3] = w
     clusters = [c for c in clusters if c[2] >= MIN_LENGTH_M]
     clusters.sort(key=lambda c: -c[2])
-    return [(c[0], c[1]) for c in clusters[:MAX_CANDIDATES]]
+    out = [(c[0], c[1], c[2]) for c in clusters[:MAX_CANDIDATES]]
+    return out if keep_length else [(a, o) for a, o, _ in out]
 
 
-def roof_line_candidates(imagery_ds, footprint):
-    """(angle_deg, offset) candidates for cutting this footprint. [] if the
-    imagery is missing or nothing survives -- the caller falls back to sweeping."""
+# How much evidence before a line is trusted WITHOUT the LiDAR agreeing. It has
+# to scale with the roof: a 4 m crease across a 211 m2 house is a primary
+# feature, the same line on a 743 m2 commercial roof is a detail. Measured, the
+# lines this admits are the ones a person points at -- 7 Anderson Heights' hip
+# creases (4.3-7.1 m on a 211 m2 roof), 5 Isle St's two main ridges (10.3 and
+# 9.9 m) and nothing else on that roof, 29 Edinburgh Dr's three (13.3, 12.9,
+# 10.5 m).
+STRONG_LINE_MIN_M = 4.0
+STRONG_LINE_AREA_COEF = 0.30      # of sqrt(roof area)
+MAX_STRONG_LINES = 8              # a roof does not have many primary creases
+
+
+def strong_roof_lines(imagery_ds, footprint):
+    """Only the lines long enough to act on WITHOUT the LiDAR agreeing.
+
+    Ordinary candidates are offered to the partition and kept only if they
+    improve the fit. That is the right test when both sensors can see the
+    feature, and useless when only one can. 7 Anderson Heights is the case: two
+    hipped sections whose creases are unmistakable in the imagery and almost
+    absent from the point cloud, which is near-flat across the whole roof. Every
+    LiDAR-scored candidate there is rejected because cutting does not improve a
+    fit that was never wrong about the height -- so the faces run straight over
+    both hips and the panels follow.
+
+    A line carrying this much total evidence is not noise, and on a roof the
+    LiDAR cannot resolve it is the only evidence there is."""
+    cands = _merge_collinear(_raw_fragments(imagery_ds, footprint), keep_length=True)
+    bar = max(STRONG_LINE_MIN_M, STRONG_LINE_AREA_COEF * math.sqrt(max(footprint.area, 1.0)))
+    strong = [(a, o) for a, o, ln in cands if ln >= bar]
+    return strong[:MAX_STRONG_LINES]
+
+
+def _raw_fragments(imagery_ds, footprint):
+    """Every straight fragment found on this roof, as (angle, offset, length)."""
     if imagery_ds is None or footprint.is_empty:
         return []
     minx, miny, maxx, maxy = footprint.bounds
@@ -169,4 +202,10 @@ def roof_line_candidates(imagery_ds, footprint):
             continue          # tracing the eave; the surveyed outline is better
         ang, off = _angle_offset(seg, cx, cy)
         out.append((ang, off, seg.length))
-    return _merge_collinear(out)
+    return out
+
+
+def roof_line_candidates(imagery_ds, footprint):
+    """(angle_deg, offset) candidates for cutting this footprint. [] if the
+    imagery is missing or nothing survives -- the caller falls back to sweeping."""
+    return _merge_collinear(_raw_fragments(imagery_ds, footprint))

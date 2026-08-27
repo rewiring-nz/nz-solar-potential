@@ -110,6 +110,16 @@ MIN_SPLIT_GAIN = 0.005
 # changes, so the rule is only ever binding on the roofs where it should be.
 SETBACK_COST_PER_FIT = 2.0
 
+# A "fold" test was tried here -- treat a face carrying points far off its own
+# plane as containing a physical drop, and cut it regardless of setback cost.
+# It does not work, and the reason is worth keeping: the signal does not
+# separate the cases. 5 Isle St, which Josh confirms is correctly three faces,
+# has a face with 10.6% of its points more than 0.5 m off plane; 7 Anderson
+# Heights, which he says is wrong, has 10.0% and 10.2%. Any threshold that cuts
+# one cuts the other. Nor does WHERE those points sit help -- on both roofs they
+# cluster within half a metre of a facet edge, which is just bleed from the
+# neighbouring plane.
+
 
 def _fit_plane(pts):
     """Least-squares plane through points, as (a, b, c) with z = ax + by + c.
@@ -423,6 +433,20 @@ def _partition(poly, pts, depth=0, budget=None):
     plane, score = _score(poly, pts)
     if plane is None:
         return []
+
+    # Acceptance needs BOTH: enough points near the plane, and no fold.
+    #
+    # The inlier fraction alone is blind to how far the outliers are, and that
+    # is not a small blind spot. 7 Anderson Heights had a 73 m2 face scoring
+    # exactly 85% -- the acceptance bar -- while 10% of its points sat more than
+    # half a metre off it and nearly 5% over a metre. That is a roof dropping
+    # through the middle of a face, and it was accepted as one plane, so the
+    # recursion never even asked whether a cut would help. Josh: "two panel
+    # planes placed and both overlapping a roof ridge where it drops in the
+    # middle."
+    #
+    # A tail that far out is structure, not noise. Roughness raises the count of
+    # points just outside the band; a fold puts them metres away.
     if (score >= ACCEPT_INLIER or depth >= MAX_DEPTH
             or poly.area < 2 * MIN_FACET_M2 or budget[0] <= 1):
         return [(poly, plane)]
@@ -630,12 +654,45 @@ def partition_by_planes(building_id, footprint, pts, seed=0):
     return out
 
 
-def partition_roof(building_id, footprint, pts):
-    """Surveyed footprint + point cloud -> straight-edged, plane-backed facets."""
+def partition_roof(building_id, footprint, pts, imagery_ds=None):
+    """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
+
+    Strong imagery lines, if imagery is supplied, are cut FIRST and without the
+    point cloud getting a vote. Everywhere else in this module a cut has to earn
+    itself against the LiDAR, which is right when both sensors can see the
+    feature and wrong when only one can. 7 Anderson Heights is the case that
+    forced it: two hipped sections whose creases are unmistakable in 0.1 m
+    imagery and almost absent from a point cloud that is near-flat across the
+    whole roof. Every LiDAR-scored candidate there was rejected -- correctly, by
+    its own logic, since cutting did not improve a fit that was never wrong
+    about height -- so the faces ran straight over both hips and the panels
+    followed. Josh: "two panel planes placed and both overlapping a roof ridge
+    where it drops in the middle."
+
+    Only lines carrying enough evidence to be a primary crease qualify; see
+    roof_lines.strong_roof_lines."""
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         return []
-    faces = _partition(footprint, inside)
+
+    cells = [footprint]
+    if imagery_ds is not None:
+        try:
+            from src.roof_lines import strong_roof_lines
+            for ang, off in strong_roof_lines(imagery_ds, footprint):
+                nxt = []
+                for c in cells:
+                    parts = _cut(c, ang, off)
+                    nxt.extend(parts if len(parts) >= 2 else [c])
+                cells = nxt
+        except Exception:
+            cells = [footprint]
+
+    faces = []
+    for cell in cells:
+        faces.extend(_partition(cell, _points_in(cell, inside)))
+    if not faces:
+        return []
     faces = _merge_bridgeable(faces, inside)
 
     out = []
