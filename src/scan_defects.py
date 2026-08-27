@@ -126,7 +126,8 @@ def _scan_one(args):
     try:
         c = _ctx(area)
         geom = c["gdf"].loc[bid].geometry
-        facets = segment_building_best(c["dsm"], c["pc"], geom, bid)
+        facets = segment_building_best(c["dsm"], c["pc"], geom, bid,
+                                       imagery_ds=c["img"])
         if not facets:
             return {"building_id": bid, "area": area, "empty": True}
 

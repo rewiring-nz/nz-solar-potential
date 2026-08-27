@@ -95,7 +95,11 @@ def _build_one_inner(building_id):
     row_geom = c["gdf"].loc[building_id].geometry
 
     features = []
-    facets = segment_building_best(dsm_ds, pc_source, row_geom, building_id)
+    # Imagery is passed in so the partition can cut on roof creases the LiDAR
+    # cannot resolve -- see roof_partition.partition_roof. Rural areas have no
+    # imagery and fall back to LiDAR-only cuts.
+    facets = segment_building_best(dsm_ds, pc_source, row_geom, building_id,
+                                   imagery_ds=imagery_ds)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the

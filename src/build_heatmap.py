@@ -47,7 +47,8 @@ def main(area="pilot"):
     features = []
     t0 = time.time()
     for i, (row, row_wgs84) in enumerate(zip(gdf.itertuples(), gdf_wgs84.itertuples())):
-        facets = segment_building_best(dsm_ds, pc_source, row.geometry, row.building_id)
+        facets = segment_building_best(dsm_ds, pc_source, row.geometry, row.building_id,
+                                       imagery_ds=imagery_ds)
 
         kwp = dc_kwh_year = ac_kwh_year = ac_kwh_day = panel_count = obstruction_count = 0
         facet_area_m2 = poa_weighted_sum = 0

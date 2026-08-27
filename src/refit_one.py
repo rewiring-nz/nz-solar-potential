@@ -71,7 +71,11 @@ def refit(building_id, shipped_text=None, area=None):
             return
     ctx = _load(area)
     row = ctx["gdf"].loc[building_id]
-    facets = segment_building_best(ctx["dsm"], ctx["pc"], row.geometry, building_id)
+    # imagery matters to segmentation now (roof_partition cuts on strong image
+    # lines), so pass it or this tool silently measures a different pipeline
+    # from the one that builds the map
+    facets = segment_building_best(ctx["dsm"], ctx["pc"], row.geometry, building_id,
+                                   imagery_ds=ctx["img"])
 
     total, per_facet = 0, []
     for f in facets:

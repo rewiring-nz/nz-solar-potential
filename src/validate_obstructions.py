@@ -110,7 +110,8 @@ def score(bid):
     if area is None:
         return None
     c = _ctx(area)
-    facets = segment_building_best(c["dsm"], c["pc"], c["gdf"].loc[bid].geometry, bid)
+    facets = segment_building_best(c["dsm"], c["pc"], c["gdf"].loc[bid].geometry, bid,
+                                   imagery_ds=c["img"])
     if not facets:
         return None
     roof = unary_union([f["geometry"] for f in facets])

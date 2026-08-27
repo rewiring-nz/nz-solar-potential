@@ -123,7 +123,7 @@ def _refit_ids(area, ids, partition=False):
             for f in facets:
                 f["building_geometry"] = geom   # panel_fitting aligns rows to it
         else:
-            facets = segment_building_best(dsm, pc, geom, bid)
+            facets = segment_building_best(dsm, pc, geom, bid, imagery_ds=img)
         per_facet = []
         for f in facets:
             plane = (f["plane_a"], f["plane_b"], f["plane_c"])
