@@ -365,6 +365,78 @@ HEIGHT_STRONG_MAX_FACET_FRACTION = 0.35  # a single strong-evidence part coverin
 # one 2386m2 facet at 0.2 deg whose "obstruction" was 1837m2 = 77% of the roof.
 
 
+# Deck-seeking plane fit. The segmentation plane is a plain least-squares fit
+# over ALL of a facet's points, so parapets and rooftop plant drag it off the
+# deck -- and because obstructions pull the plane toward themselves, they hide
+# themselves. Measured: on 17 Marine Pde the plane sits 0.82 m high, which is
+# twice the 0.4 m detection threshold, and the share of points reading as
+# raised goes 18.6% -> 40.1% once the fit is trimmed. On the equipment
+# reference it goes 8.0% -> 14.8%.
+DECK_FIT_ITERATIONS = 8
+DECK_FIT_BAND_M = 0.25          # points this close to the current fit define the deck
+DECK_FIT_MIN_POINTS = 25
+# A deck fit is only trusted when a clear dominant surface exists to lock onto.
+# Below this share the facet is not one surface -- typically roof levels that
+# segmentation failed to separate -- and re-fitting its plane only moves the
+# error around rather than removing it. 55 Arrowtown-Lake Hayes Rd is one
+# 507 m2 facet at 46% inlier: with the segmentation plane 83% of its flagged
+# points stand above (passing the equipment fingerprint), with a deck plane
+# only 59% do, so its real 175 m2 structure was rejected as "roof shape" and
+# 53 panels were placed on top of it.
+#
+# CAUTION: this bar is set on eight buildings and the two populations nearly
+# touch -- 51% and 48% for facets that want the deck fit against 49% and 46%
+# for facets that must not have it. It separates the current validation set
+# and no more than that. Widen the set before trusting it further; a building
+# that lands at 50% could go either way.
+DECK_TRUST_MIN_INLIER = 0.50
+
+
+def _fit_deck_plane(pts, band_m=DECK_FIT_BAND_M, iterations=DECK_FIT_ITERATIONS):
+    """Iteratively trimmed plane fit: fit, keep the points near the fit, refit.
+
+    Returns (plane, inlier_fraction). Converges onto the largest coherent
+    surface -- the roof deck -- instead of the average of deck and equipment."""
+    # Seed from the LOWER half, not from everything. The deck is the lowest
+    # major surface on the roof -- equipment sits on top of it, never under it
+    # -- and an unbiased trimmed fit converges onto whichever surface is
+    # largest, which on 55 Arrowtown-Lake Hayes Rd is a 175 m2 structure
+    # covering a third of the facet. The fit locked onto that instead, the real
+    # roof then read as "below", the both-ways fingerprint (correctly) called
+    # it roof shape rather than equipment, and the obstruction vanished
+    # entirely: 175 m2 -> 0, with 53 panels landing on top of it.
+    A0 = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
+    try:
+        (a0, b0, c0), *_ = np.linalg.lstsq(A0, pts[:, 2], rcond=None)
+    except np.linalg.LinAlgError:
+        return None, 0.0
+    r0 = pts[:, 2] - (a0 * pts[:, 0] + b0 * pts[:, 1] + c0)
+    keep = r0 <= np.median(r0)
+    if keep.sum() < DECK_FIT_MIN_POINTS:
+        keep = np.ones(len(pts), bool)
+    a = b = c = None
+    for _ in range(iterations):
+        P = pts[keep]
+        if len(P) < DECK_FIT_MIN_POINTS:
+            break
+        A = np.column_stack([P[:, 0], P[:, 1], np.ones(len(P))])
+        try:
+            (a, b, c), *_ = np.linalg.lstsq(A, P[:, 2], rcond=None)
+        except np.linalg.LinAlgError:
+            return None, 0.0
+        r = pts[:, 2] - (a * pts[:, 0] + b * pts[:, 1] + c)
+        nxt = np.abs(r - np.median(r[keep])) < band_m
+        if nxt.sum() < DECK_FIT_MIN_POINTS:
+            break
+        if (nxt == keep).all():
+            keep = nxt
+            break
+        keep = nxt
+    if a is None:
+        return None, 0.0
+    return (float(a), float(b), float(c)), float(keep.mean())
+
+
 def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_threshold_m=None,
                                      return_strength=False):
     """Returns a list of shapely Polygons (in the point cloud's CRS -- same
@@ -408,6 +480,12 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
     # changes what "most of the roof is raised" means -- doing that safely
     # needs the cap logic reworked with its own validation set, not a
     # threshold nudge here.
+    # See _fit_deck_plane: measuring residuals against a plane the obstructions
+    # themselves pulled upward is what made this detector miss them.
+    deck, deck_inlier = _fit_deck_plane(pts)
+    deck_trusted = deck is not None and deck_inlier >= DECK_TRUST_MIN_INLIER
+    if deck_trusted:
+        plane = deck
     a, b, c = plane
     residual = pts[:, 2] - (a * pts[:, 0] + b * pts[:, 1] + c)
     flagged = np.abs(residual) > residual_threshold_m
