@@ -41,6 +41,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 
 RASTER_RESOLUTION_M = 0.1  # occupancy grid cell size in surface space; 10 cells/m
+LANDSCAPE_WIN_MARGIN = 0.10  # landscape must fit >10% more panels than portrait to be
+# chosen. Below that the tidier, conventional orientation is worth more than the extra panel,
+# and -- more importantly -- two near-identical halves of one roof then agree with each other.
 OFFSET_STEPS = 10  # vertical row-start offsets tried per orientation (columns are scanned exhaustively, see _pack_orientation)
 
 
@@ -372,16 +375,37 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet)
     # scores higher than one hugging right up against an exclusion zone.
     clearance = ndimage.distance_transform_edt(occupancy) * resolution
 
+    # Portrait -- short edge to the ridge -- unless landscape wins by a real
+    # margin. Picking whichever orientation fits one more panel is what put
+    # different orientations on MIRRORED HALVES of the same roof face, because
+    # a centimetre of difference between two nearly identical halves flips the
+    # winner. Josh on 7 York St: "the change in angles of vertical or
+    # horizontal panels on mirrored sides of the same roof face. A normal
+    # install would have these oriented in the same way, likely usually
+    # portrait with the small edge facing the top roof ridge."
+    #
+    # u runs along the eave/ridge and v up-slope (see facet_axes), so the first
+    # candidate, 1 m across by 2 m up, IS portrait-with-short-edge-to-the-ridge.
+    # Landscape still wins where the geometry genuinely calls for it -- a wide
+    # shallow strip fits far more panels lying down -- but it has to earn it
+    # rather than win a tie.
     candidates = []
-    for w, h in [(panel_width, panel_height), (panel_height, panel_width)]:
+    for is_portrait, (w, h) in ((True, (panel_width, panel_height)),
+                                (False, (panel_height, panel_width))):
         result = _pack_orientation(occupancy, resolution, w, h)
         if result:
             placed_o, wc, hc = result
-            candidates.append((placed_o, wc, hc))
+            candidates.append((is_portrait, placed_o, wc, hc))
 
     panels = []
     if candidates:
-        placed, w_cells, h_cells = max(candidates, key=lambda c: len(c[0]))
+        by_orient = {c[0]: c for c in candidates}
+        port, land = by_orient.get(True), by_orient.get(False)
+        if port and land:
+            chosen = land if len(land[1]) > len(port[1]) * (1.0 + LANDSCAPE_WIN_MARGIN) else port
+        else:
+            chosen = port or land
+        _, placed, w_cells, h_cells = chosen
 
         for r0, c0, r1, c1 in placed:
             u0, v0 = u_min + c0 * resolution, v_min + r0 * resolution
