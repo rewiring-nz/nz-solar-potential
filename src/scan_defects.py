@@ -25,9 +25,17 @@ with refit_one in seconds, and spend a rebuild only once the list is clean.
 
 Signals
 -------
-nonplanar   worst plane-residual sd across the building's facets. A real roof
-            plane is 0.1-0.2 m (DSM noise). Over ~1 m the "plane" is a tilted
-            sheet through a stepped building -- see repair_nonplanar_facets.
+nonplanar   the worst facet's INLIER FRACTION: the share of its points lying
+            within 30 cm of its own plane, area-weighted by facet. A genuine
+            roof facet measures 85-99%; a tilted sheet through a stepped
+            building measures 22-36%.
+
+            This started as a standard deviation and that was wrong. sd is not
+            robust: a good flat facet holding a few wall or vegetation returns
+            15 m away reads sd 0.7-1.3 while 85% of its points sit inside 10 cm
+            of its plane. It flagged 406 of 1,066 pilot buildings, most of them
+            fine, and it made the ranking useless -- the top of the list was
+            dominated by facets with nothing wrong with them.
 raised      panels sitting on structure proud of their own facet's plane:
             ducting, plant, a higher roof section. Josh's "panels clearly
             overlapping all sorts of obstructions".
@@ -59,7 +67,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # A real roof plane is DSM noise. These are the bars above which a signal is
 # worth a human looking at, not pass/fail thresholds for the pipeline.
-NONPLANAR_SD_M = 0.60
+NONPLANAR_INLIER = 0.70       # below this share of points near its own plane
+PLANARITY_BAND_M = 0.30       # ...measured within this band
 CARVED_FRACTION = 0.30
 SPARSE_FILL = 0.45
 SPARSE_MIN_ROOF_M2 = 60.0     # below this, low fill is just a small awkward roof
@@ -106,7 +115,7 @@ def _scan_one(args):
         if not facets:
             return {"building_id": bid, "area": area, "empty": True}
 
-        worst_sd = 0.0
+        worst_inlier, worst_area = 1.0, 0.0
         panels, obst, spill = [], [], 0
         plan_area = 0.0
         for f in facets:
@@ -129,7 +138,13 @@ def _scan_one(args):
                 fp = pts[inside]
                 if len(fp) >= 12:
                     r = fp[:, 2] - (plane[0] * fp[:, 0] + plane[1] * fp[:, 1] + plane[2])
-                    worst_sd = max(worst_sd, float(r.std()))
+                    inl = float((np.abs(r - np.median(r)) < PLANARITY_BAND_M).mean())
+                    # weight by area: one bad 5 m2 sliver should not outrank a
+                    # bad 2,000 m2 roof, which is what an unweighted min did.
+                    if f["geometry"].area > worst_area * 0.25:
+                        if inl < worst_inlier or f["geometry"].area > worst_area:
+                            worst_inlier = min(worst_inlier, inl)
+                            worst_area = max(worst_area, f["geometry"].area)
 
         roof = unary_union([f["geometry"] for f in facets])
         ob_area = (unary_union([o.buffer(0) for o in obst]).intersection(roof).area
@@ -137,7 +152,7 @@ def _scan_one(args):
         usable = max(roof.area - ob_area, 1e-9)
         return {"building_id": bid, "area": area, "empty": False,
                 "roof_m2": float(roof.area), "panels": len(panels),
-                "nonplanar_sd": worst_sd,
+                "inlier": worst_inlier,
                 "carved": float(ob_area / max(roof.area, 1e-9)),
                 "fill": float(plan_area / usable),
                 "spill": spill}
@@ -150,8 +165,8 @@ def _flags(r):
     if r.get("error") or r.get("empty"):
         return ["FAILED"]
     out = []
-    if r["nonplanar_sd"] > NONPLANAR_SD_M:
-        out.append(f"nonplanar {r['nonplanar_sd']:.2f}m")
+    if r["inlier"] < NONPLANAR_INLIER:
+        out.append(f"nonplanar {r['inlier']:.0%} on-plane")
     if r["spill"]:
         out.append(f"spill {r['spill']}")
     if r["carved"] > CARVED_FRACTION:
@@ -166,7 +181,7 @@ def _severity(r):
     if r.get("error") or r.get("empty"):
         return 1e6
     s = 0.0
-    s += 40.0 * max(0.0, r["nonplanar_sd"] - NONPLANAR_SD_M)
+    s += 60.0 * max(0.0, NONPLANAR_INLIER - r["inlier"])
     s += 6.0 * r["spill"]
     s += 60.0 * max(0.0, r["carved"] - CARVED_FRACTION)
     if r["roof_m2"] >= SPARSE_MIN_ROOF_M2:

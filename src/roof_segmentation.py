@@ -1311,7 +1311,16 @@ def _facets_are_structured(facets):
 # only facets with actual discontinuities are ever cut. A facet that cannot be
 # repaired is returned as it was -- this pass may not cost a building its
 # segmentation.
-PLANARITY_TRIGGER_SD_M = 0.45   # above this the facet is suspect and gets examined
+# The trigger is an INLIER FRACTION, not a standard deviation. sd was the first
+# attempt and it is not robust: a perfectly good flat facet that happens to
+# contain a few wall or vegetation returns 15 m away reads sd 0.7-1.3 while
+# 85% of its points sit inside 10 cm of its plane. Measured on pilot, sd
+# flagged 406 of 1,066 buildings, most of them fine. The fraction of points
+# lying within a band of the plane cannot be moved by a handful of outliers:
+# genuine roof facets measure 85-99%, and the ones that are actually a tilted
+# sheet through a stepped building measure 22-36%.
+PLANARITY_INLIER_BAND_M = 0.30      # "on the plane", generously -- DSM noise is ~0.1 m
+PLANARITY_MIN_INLIER_FRACTION = 0.70
 PLANARITY_BAND_GAP_M = 0.60     # a real step between roof levels. Below this it is
 # noise or a genuine slope, and the facet is left alone. A panel is 1.7 m long, so a
 # 0.6 m step is far past anything a mounting frame spans.
@@ -1416,8 +1425,9 @@ def _repair_one_facet(f, pc_source, depth=0):
         return [f]
 
     resid = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
-    if float(resid.std()) <= PLANARITY_TRIGGER_SD_M:
-        return [f]
+    inlier = float((np.abs(resid - np.median(resid)) < PLANARITY_INLIER_BAND_M).mean())
+    if inlier >= PLANARITY_MIN_INLIER_FRACTION:
+        return [f]   # the plane describes its points -- nothing to repair
 
     # Suspect the plane, so band on raw height -- see _height_bands.
     bands = _height_bands(pts[:, 2] - np.median(pts[:, 2]))
