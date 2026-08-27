@@ -1540,6 +1540,15 @@ BALCONY_MAX_AREA_SHARE = 0.25      # ...and is small next to the main roof
 PLANT_MIN_RISE_M = 0.25       # below this it is just the main roof, with noise
 PLANT_MAX_RISE_M = 1.60       # above this it is a genuine upper level, keep it
 PLANT_MAX_AREA_SHARE = 1.00   # ...but it can out-cover any SINGLE face beneath it
+# Height and area alone CANNOT tell a duct platform from a stepped roof level --
+# the reference's plant deck is 178 m2 at +0.65 m and 5 Isle St's genuine upper
+# roof is 191 m2 at +1.15 m. Shipping without this test cost 5 Isle two of the
+# three faces Josh counted on it. What separates them is that a plant deck is
+# CLUTTERED: ducting, condensers, rails and walkways leave its points refusing
+# to lie flat (79% on-plane on the reference) while a real roof section is clean
+# (95-99% on 5 Isle). Same reasoning as the balcony filter, where occlusion and
+# railings do the same thing.
+PLANT_MAX_INLIER = 0.88
 
 
 def drop_plant_decks(facets, pc_source):
@@ -1549,9 +1558,14 @@ def drop_plant_decks(facets, pc_source):
     stats = []
     for f in facets:
         pts = _facet_points(pc_source, f["geometry"])
-        stats.append((f, float(np.median(pts[:, 2])) if len(pts) >= 12 else None))
+        if len(pts) < 12:
+            stats.append((f, None, None))
+            continue
+        r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+        inl = float((np.abs(r - np.median(r)) < PLANARITY_INLIER_BAND_M).mean())
+        stats.append((f, float(np.median(pts[:, 2])), inl))
 
-    known = [(f, h) for f, h in stats if h is not None]
+    known = [(f, h) for f, h, _ in stats if h is not None]
     if len(known) < 2:
         return facets
 
@@ -1571,10 +1585,11 @@ def drop_plant_decks(facets, pc_source):
     main_ids = {id(f) for f in main_faces}
 
     kept = []
-    for f, h in stats:
+    for f, h, inl in stats:
         if (h is not None and id(f) not in main_ids
                 and PLANT_MIN_RISE_M < (h - main_h) <= PLANT_MAX_RISE_M
-                and f["geometry"].area < PLANT_MAX_AREA_SHARE * main_area):
+                and f["geometry"].area < PLANT_MAX_AREA_SHARE * main_area
+                and inl is not None and inl < PLANT_MAX_INLIER):
             continue
         kept.append(f)
     return kept or facets
