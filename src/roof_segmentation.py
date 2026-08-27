@@ -1475,6 +1475,70 @@ def repair_nonplanar_facets(facets, pc_source):
 APPLY_REALISM_MERGE = True
 
 
+# Balconies on a stepped apartment building are not roof.
+#
+# Josh has given the same instruction twice, on two different buildings. On 93
+# Beach St: "these are not part of the main flat roof plane which is likely the
+# only place the panels should be on this roof". On 7 Panorama Tce: "it's a
+# roof with a clear flat plane, and then lots of stepped apartment balconies
+# and you are placing panels on balconies incorrectly".
+#
+# 7 Panorama shows the signature plainly. Two large clean roofs -- 469 m2 and
+# 263 m2, both 95% on-plane, at 363.3 m and 360.9 m -- and then ten small
+# surfaces at 352.95-357.13 m, up to TEN METRES below, with inliers of 14-69%.
+# Six of those ten sit within 7 cm of each other: one floor's balconies,
+# repeated along the building.
+#
+# All three parts of that signature are needed. Height alone would throw away
+# the genuinely stepped roof levels on 93 Beach that DO deserve panels. Poor
+# planarity alone is just a bad facet. Small alone is a dormer. A surface that
+# is far below a large clean roof AND does not fit a plane AND is small
+# compared to that roof is a balcony: railings, furniture and partial occlusion
+# are what make its points refuse to lie flat.
+#
+# Deliberately conservative -- it only engages when the building HAS an obvious
+# main roof to be measured against, so an ordinary house or a genuine
+# multi-level roof is never touched.
+BALCONY_MAIN_MIN_INLIER = 0.85     # the main roof has to be convincingly planar
+BALCONY_MAIN_MIN_AREA_M2 = 120.0   # ...and big enough to be the building's roof
+BALCONY_MIN_DROP_M = 2.5           # a balcony sits this far below it, at least
+BALCONY_MAX_INLIER = 0.75          # ...does not lie on a plane...
+BALCONY_MAX_AREA_SHARE = 0.25      # ...and is small next to the main roof
+
+
+def drop_balcony_levels(facets, pc_source):
+    """Remove stepped balcony surfaces from a building that has a clear main roof."""
+    if len(facets) < 2:
+        return facets
+    stats = []
+    for f in facets:
+        pts = _facet_points(pc_source, f["geometry"])
+        if len(pts) < 12:
+            stats.append((f, None, None))
+            continue
+        r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+        inl = float((np.abs(r - np.median(r)) < PLANARITY_INLIER_BAND_M).mean())
+        stats.append((f, inl, float(np.median(pts[:, 2]))))
+
+    mains = [(f, i, h) for f, i, h in stats
+             if i is not None and i >= BALCONY_MAIN_MIN_INLIER
+             and f["geometry"].area >= BALCONY_MAIN_MIN_AREA_M2]
+    if not mains:
+        return facets
+    main = max(mains, key=lambda t: t[0]["geometry"].area)
+    main_area, main_h = main[0]["geometry"].area, main[2]
+
+    kept = []
+    for f, inl, h in stats:
+        if (inl is not None and h is not None
+                and h < main_h - BALCONY_MIN_DROP_M
+                and inl < BALCONY_MAX_INLIER
+                and f["geometry"].area < BALCONY_MAX_AREA_SHARE * main_area):
+            continue
+        kept.append(f)
+    return kept or facets
+
+
 def _attach_building_geometry(facets, building_geom, pc_source=None, building_id=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
@@ -1487,6 +1551,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
     if facets and pc_source is not None:
         facets = repair_nonplanar_facets(facets, pc_source)
+        facets = drop_balcony_levels(facets, pc_source)
     if APPLY_REALISM_MERGE and facets:
         try:
             facets = merge_uneconomic_splits(facets)
