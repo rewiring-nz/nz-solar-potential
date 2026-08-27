@@ -22,6 +22,24 @@ segmenter found. Getting "few large blocky faces" requires the segmenter to
 produce them, which makes imagery-first boundaries the route, not an optional
 extra. The merge stays in (it is correct and costs nothing) but is not the fix.
 
+## APPLY AS SOON AS THE REBUILD CLEARS (27 Aug)
+
+**Colour corroboration keeps the whole blob.** In detect_obstructions_combined,
+a colour blob is kept entire when >=15% of it overlaps height evidence. On a
+flat commercial roof the colour path flags membrane tone and shadow -- 7
+Shotover St (#4734932): 242.7 m2 flagged on a 462 m2 roof -- so a 73 m2 tonal
+region containing one small real vent is carved whole. That is the big pink
+region Josh reported.
+
+Fix: keep the corroborated PORTION, not the blob. Colour says where a tonal
+region is; height says what is actually raised. Take the intersection with the
+height evidence plus a small margin, and keep the whole blob only when it is
+small enough to be a plausible single object anyway.
+
+Validate both directions afterwards -- the equipment reference (#5370338) is
+the canary, and the colour path is what finds pale plant the height path
+misses.
+
 ## IN PROGRESS -- resume here
 
 **Panel fitting is the maximum priority (Josh).**
