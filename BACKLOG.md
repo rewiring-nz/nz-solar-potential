@@ -77,6 +77,41 @@ ratio bound rejects the three planes it actually has.
 Landed: 5 Isle 1 → 3 facets · 47 Stanley 4 → 10 (mitre joints) · 53 Hallenstein
 75% → 98% on-plane.
 
+### Planar partition — the step-change prototype (`src/roof_partition.py`)
+
+Josh's design constraint, verbatim: roofs are "straight lines, generally a few
+different angles", complex ones are "the same principles… just more of them on
+the same building footprint", and "will almost never be some type of organic
+shape". So: partition the surveyed footprint with straight cuts, recursively,
+stopping when one plane explains a region.
+
+**Structure is solved.** Worst facet outline is 7–19 vertices against the
+shipped segmenter's 12–1035. Matches Josh's own plane counts on 2/8 Wakatipu (8)
+and 29 Edinburgh (4). Fuzzy outlines are now structurally impossible.
+
+**Fit is not.** Coverage-adjusted, it beats the segmenter on 1 of 5 test roofs.
+
+Three things learned the hard way, all worth not repeating:
+- **Diagonal cuts are mandatory** — a hip bisects a corner, so it runs at 45° to
+  both walls. Without diagonals a hip roof cannot be cut at all.
+- **A cut must not have to pay for itself immediately.** 1/5 Sydney fits one
+  plane at 13%; its best single cut reaches 16%. It needs ~10 cuts before fit
+  improves. One-step lookahead is blind to exactly the roofs this is for.
+- **The merge needs a height-step test** — third time this bug has appeared here.
+  Near-parallel faces at different levels read as 0° apart. Compare planes at
+  their *shared boundary*, never normals alone.
+
+**Failed hypothesis, do not retry as-is:** letting sparse parts score at the
+parent's fit instead of vetoing a cut. Sounds right, measured worse — coverage
+fell on 3 of 5 (2/8 Wakatipu 100→76%, 29 Edinburgh 96→79%). Reverted.
+
+**Not a partition bug:** 1/5 Sydney's "67% coverage" is `MAX_ROOF_SLOPE_DEG = 45`
+dropping six faces at 45–47° that fit *well* (78–100%). Whether 45° is the right
+cap is a product question, not a geometry one.
+
+Next: the one real defect there is a 138 m² face at 12° sitting at 15% on-plane
+that never gets split further. Find why `_best_cut` gives up on it.
+
 ### Open, in priority order
 
 0. **55 Arrowtown (#4729642) needs Josh's eye.** Reconstruction fires (46%
