@@ -112,6 +112,24 @@ cap is a product question, not a geometry one.
 Next: the one real defect there is a 138 m² face at 12° sitting at 15% on-plane
 that never gets split further. Find why `_best_cut` gives up on it.
 
+### Partition validated on random buildings — 27 Aug (99b25bd)
+
+Not just the five hand-picked roofs. On **21 random pilot buildings**, coverage-
+adjusted on-plane fit: **partition better on 19, segmenter on 2.** Worst facet
+outline: segmenter median 12 vertices / max **2,594**; partition median 9 / max
+**15**.
+
+The five roofs used during development were Josh's hardest cases, which
+understated it — there the partition won 3 of 5.
+
+**This is now a candidate to replace segmentation, not a prototype.** Before
+wiring in: judge it on *layouts* (panels placed), not geometry, and get Josh's
+verdict on a before/after sheet. Geometry metrics have misled twice.
+
+Known and not a geometry defect: 1/5 Sydney covers only 46% because
+`MAX_ROOF_SLOPE_DEG = 45` drops 45–47° faces the partition finds and fits *well*
+(78–100%). Whether 45° is the right cap is Josh's call.
+
 ### Open, in priority order
 
 0. **55 Arrowtown (#4729642) needs Josh's eye.** Reconstruction fires (46%
