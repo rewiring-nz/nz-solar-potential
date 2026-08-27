@@ -7,6 +7,34 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## Planarity repair — landed 27 Aug (29bafa0)
+
+Nothing ever checked that a returned "plane" was planar. Pilot scan: 9% of
+facets over 1 m residual sd carrying **22% of all panels**; 31% over 0.5 m
+carrying 50%. A real roof plane is 0.1–0.2 m.
+
+Now split at density valleys in **raw height** (a step is a vertical
+discontinuity; residuals against a plane you already distrust are meaningless).
+Parts must survive erosion by half a panel width, or they are ducting, not a
+storey. 59 of 70 random buildings untouched; buildings with a facet over 1 m
+sd: 18 → 10.
+
+**Not yet in any shipped data — needs a rebuild.** The wave-7 rebuild finished
+before this landed.
+
+### Open, in priority order
+
+1. **Regression on the equipment reference #5370338**: 1 → 10 panels on raised
+   structure. Its ducting no longer forms its own height band (it sits in a
+   facet whose plane now fits it), so catching it falls to obstruction
+   detection, which under-detects there. Pre-existing weakness now exposed.
+2. **10 pilot buildings still carry a facet over 1 m sd** after repair —
+   PLANARITY_MAX_PASSES is 2; check whether more passes or a lower valley bar
+   helps, measured the same way.
+3. **Obstruction under-detection** is now the binding constraint, not
+   over-carve: 1 Earl St 12 on-raised, 17 Marine Pde 13, 28 Rees St 18, all
+   unmoved by any recent change.
+
 ## Realism merge: correct but nearly inert (27 Aug)
 
 Constrained to a 4 deg cap -- the steepest join a rigid panel can lie across --
