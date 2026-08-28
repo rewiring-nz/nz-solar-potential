@@ -56,7 +56,11 @@ DEEP_SHADE_FACTOR = 0.45  # a panel keeping less than this share of the year's d
 # than trimming a continuum.
 MIN_ROOF_CONFIDENCE = 0.45
 
-DEFAULT_MAX_JOBS = 6
+# Raised from 6. The 6 was set while chasing OOM crashes, and the actual cause
+# turned out to be PointCloudSource caching all 441 LiDAR tiles unbounded --
+# fixed with an LRU there -- but the cap was never put back. Measured startup is
+# 0.4s per worker and steady RSS is well under a gigabyte each.
+DEFAULT_MAX_JOBS = 10
 
 _CTX = {}
 

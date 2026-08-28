@@ -19,6 +19,13 @@
 #
 # Usage: JOBS=6 bash src/run_layouts_regate_par.sh area1 area2 ...
 #        JOBS=1 BUILD_JOBS=6 bash src/run_layouts_regate_par.sh pilot
+#
+# Weight JOBS over BUILD_JOBS for a district run. Measured on 28 Aug: the build
+# stage is fast and parallel -- 182 buildings in 45s, 484 in 224s on 3 workers,
+# and the whole district is only 3.8 core-hours of per-building work -- while
+# gate_panels and rerank are SINGLE-THREADED per area and take 9-11 minutes
+# each. With JOBS=2 that put 2 cores of 12 on the slow stage and made a 40-minute
+# job take seven hours.
 cd "$(dirname "$0")/.." || exit 1
 PY=.venv/bin/python
 JOBS="${JOBS:-$(( $(sysctl -n hw.ncpu 2>/dev/null || nproc) / 2 ))}"
