@@ -121,7 +121,8 @@ def _build_one_inner(building_id):
                               "shading_factor": shading_factor})
             continue
         plane = (f["plane_a"], f["plane_b"], f["plane_c"])
-        obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane)
+        obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane,
+                                                    roof_geom=f.get("building_geometry"))
         siblings = [other for other in facets if other is not f]
         panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
         kept_panels = []

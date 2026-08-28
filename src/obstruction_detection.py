@@ -204,18 +204,31 @@ def _trim_blob(geom, buffer_m):
 #
 # Kept deliberately narrow. Only compact, skylight-sized blobs qualify -- a
 # large bright region is a membrane roof or sun on a slope, not an object.
-BRIGHT_PERCENTILE = 90
+# The threshold is taken over the WHOLE ROOF, never a single facet, and that is
+# the difference between this working and inventing objects. A percentile always
+# finds something: by construction a tenth of any facet is in its own top
+# decile, so run per facet the detector cannot return nothing, and on 17
+# Cardigan St -- a uniformly sunlit terracotta roof with, per Josh, seven small
+# obstructions -- it manufactured eight blobs totalling 21 m2, carving 17% of a
+# 149 m2 roof down to 9 panels. Against the whole roof that same roof yields two
+# small blobs, while 29 Edinburgh Dr keeps eight real skylights.
+BRIGHT_PERCENTILE = 95
 BRIGHT_MIN_AREA_M2 = 0.5
-BRIGHT_MAX_AREA_M2 = 12.0
+BRIGHT_MAX_AREA_M2 = 4.0        # a skylight or vent; larger bright regions are roof
 BRIGHT_MAX_ELONGATION = 4.0
 BRIGHT_MAX_TOTAL_SHARE = 0.15   # if this much of a facet is "bright" it is the roof
 
 
-def detect_bright_objects(imagery_ds, facet_geom):
-    """Compact bright blobs: skylights, vents, flashing, plant housings."""
+def detect_bright_objects(imagery_ds, facet_geom, roof_geom=None):
+    """Compact bright blobs: skylights, vents, flashing, plant housings.
+
+    roof_geom is the whole building's roof; the brightness threshold comes from
+    it, and only blobs inside facet_geom are returned. Without it the threshold
+    falls back to the facet, which is the failure described above."""
     if imagery_ds is None or facet_geom.is_empty:
         return []
-    minx, miny, maxx, maxy = facet_geom.bounds
+    scope = roof_geom if (roof_geom is not None and not roof_geom.is_empty) else facet_geom
+    minx, miny, maxx, maxy = scope.bounds
     try:
         window = rasterio.windows.from_bounds(minx, miny, maxx, maxy, imagery_ds.transform)
         arr = imagery_ds.read([1, 2, 3], window=window)
@@ -225,11 +238,12 @@ def detect_bright_objects(imagery_ds, facet_geom):
         return []
     wt = imagery_ds.window_transform(window)
     rgb = np.moveaxis(arr, 0, -1).astype(float)
+    scope_mask = rasterize([(scope, 1)], out_shape=rgb.shape[:2], transform=wt).astype(bool)
     mask = rasterize([(facet_geom, 1)], out_shape=rgb.shape[:2], transform=wt).astype(bool)
-    if mask.sum() < MIN_VALID_PIXELS:
+    if scope_mask.sum() < MIN_VALID_PIXELS or mask.sum() < MIN_VALID_PIXELS:
         return []
     lum = rgb.mean(axis=2)
-    thresh = np.percentile(lum[mask], BRIGHT_PERCENTILE)
+    thresh = np.percentile(lum[scope_mask], BRIGHT_PERCENTILE)
     bright = (lum > thresh) & mask
     if bright.sum() > BRIGHT_MAX_TOTAL_SHARE * mask.sum():
         return []
@@ -717,7 +731,8 @@ def _elongation_ratio(polygon):
 
 
 def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
-                                  z_threshold=None, boundary_erode_m=None, residual_threshold_m=None):
+                                  z_threshold=None, boundary_erode_m=None,
+                                  residual_threshold_m=None, roof_geom=None):
     """Runs both detectors and reconciles them per the module comment
     above: colour-based obstructions always kept; compact height-based
     obstructions always kept (colour structurally can't see a flush,
@@ -891,7 +906,7 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # roughly ten obstructions on 29 Edinburgh Dr and this pipeline found four;
     # the brightness tail finds nine.
     try:
-        bright = detect_bright_objects(imagery_ds, facet_geom)
+        bright = detect_bright_objects(imagery_ds, facet_geom, roof_geom)
     except Exception:
         bright = []
 

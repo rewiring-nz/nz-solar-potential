@@ -118,7 +118,8 @@ def score(bid):
     all_obst, all_panels, planes, geoms = [], [], [], []
     for f in facets:
         plane = (f["plane_a"], f["plane_b"], f["plane_c"])
-        ob = detect_obstructions_combined(c["img"], c["pc"], f["geometry"], plane)
+        ob = detect_obstructions_combined(c["img"], c["pc"], f["geometry"], plane,
+                                          roof_geom=f.get("building_geometry"))
         all_obst.extend(ob)
         all_panels.extend(fit_panels_on_facet(f, obstructions=ob,
                                               sibling_facets=[o for o in facets if o is not f]))

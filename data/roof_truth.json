@@ -25,6 +25,15 @@
       "structure": "Two roof sections side by side, each split by a ridge into an upper and a lower plane -- four large planes -- plus one small plane on the lower-left extension. Josh: '5 in total, with 4 large ones and 1 small one'.",
       "marked": "red = ridges, green = true roof outline, blue = obstructions, yellow = the plane surfaces",
       "key_finding": "First obstruction ground truth. Josh marked ~10, mostly 1-2 m skylights; the pipeline found 4 covering 8.5 m2. Skylights sit near flush so the height path cannot see them, and the colour path scores LOCAL contrast which a bright panel on a variably-lit roof does not always clear. The top decile of roof brightness gives 9 compact blobs -- see detect_bright_objects."
+    },
+    {
+      "building_id": 4719759,
+      "address": "17 Cardigan St",
+      "area": "arrowtown_millbrook",
+      "obstructions_marked": 7,
+      "structure": "Josh: 'a very complicated roof'. Two multi-gabled sections, terracotta on one side and grey on the other, with many ridges, hips, valleys and dormers. He marked the lines but not the plane surfaces. This is the exception to his 1-10 planes guidance.",
+      "marked": "red = ridges/hips/valleys, green = true roof outline, blue = obstructions (small dots)",
+      "key_finding": "Caught brightness-based skylight detection inventing objects. Its threshold was taken PER FACET, and a percentile always finds something -- a tenth of any facet is in its own top decile -- so on this uniformly sunlit terracotta roof it manufactured 8 blobs totalling 21 m2, carving 17% of a 149 m2 roof down to 9 panels against Josh's 7 small dots. Taking the threshold over the whole roof instead: 0 false blobs here, 8 real skylights still found on 29 Edinburgh."
     }
   ]
 }
