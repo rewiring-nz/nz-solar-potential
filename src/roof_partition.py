@@ -347,11 +347,114 @@ def _fold_evidence(poly, pts, plane):
     return False
 
 
+
+# Where the ridge drops, the roof changes section, and that is a cut whether or
+# not the plane fit asks for one.
+#
+# Josh, twice, on 7 Anderson Heights: "two panel planes placed and both
+# overlapping a roof ridge where it drops in the middle", and later "you are
+# also not accounting for the dip in the middle we have already spoken about."
+# Measured on that roof, taking the 97th percentile of height in 1 m slices
+# along the building's long axis: the ridge sits at 381.42 m from -8.5 to -3.5,
+# falls to 380.26 m at -0.5, and returns to 381.47 m from 1.5 to 6.5. A 1.16 m
+# dip in the middle of a 21 m roof, with the north slope running straight over
+# it as one 64.6 m2 face.
+#
+# The plane fit cannot see this on its own: both sections have the same pitch
+# and aspect, so a plane through both scores well. The signal is in the upper
+# envelope, not the residuals, which is why it is measured separately here and
+# offered to _best_cut as an extra candidate position rather than left to the
+# generic sweep to stumble on.
+RIDGE_SLICE_M = 1.0          # along-axis resolution of the ridge profile
+RIDGE_TOP_PCT = 97           # what counts as "the ridge" inside one slice
+RIDGE_DROP_M = 0.45          # a dip this far below both neighbouring peaks is a section change
+RIDGE_EDGE_MARGIN_M = 2.0    # ignore dips at the very ends, those are the hips
+
+
+def _ridge_drop_offsets(poly, pts):
+    """Positions along the region's long axis where the ridge line dips.
+
+    Returns (angle_deg, [offsets]) for a cut perpendicular to that axis, in the
+    same convention _cut uses, or None when the ridge is continuous."""
+    sub = _points_in(poly, pts)
+    if len(sub) < 4 * MIN_POINTS:
+        return None
+    try:
+        rect = np.asarray(poly.minimum_rotated_rectangle.exterior.coords)
+    except Exception:
+        return None
+    e = rect[1:] - rect[:-1]
+    L = np.hypot(e[:, 0], e[:, 1])
+    if len(L) == 0 or L.max() <= 0:
+        return None
+    i = int(np.argmax(L))
+    u = e[i] / L[i]
+    c = np.array(poly.centroid.coords[0])
+    s = (sub[:, :2] - c) @ u
+    lo, hi = s.min(), s.max()
+    if hi - lo < 4 * RIDGE_SLICE_M:
+        return None
+    edges = np.arange(lo, hi + 1e-9, RIDGE_SLICE_M)
+    mids, tops = [], []
+    for k in range(len(edges) - 1):
+        m = (s >= edges[k]) & (s < edges[k + 1])
+        if m.sum() < 5:
+            continue
+        mids.append(0.5 * (edges[k] + edges[k + 1]))
+        tops.append(np.percentile(sub[m, 2], RIDGE_TOP_PCT))
+    if len(tops) < 5:
+        return None
+    mids, tops = np.array(mids), np.array(tops)
+    offsets = []
+    for k in range(1, len(tops) - 1):
+        if mids[k] - lo < RIDGE_EDGE_MARGIN_M or hi - mids[k] < RIDGE_EDGE_MARGIN_M:
+            continue
+        if tops[k] > tops[k - 1] or tops[k] > tops[k + 1]:
+            continue                      # not a local minimum
+        drop = min(tops[:k].max() - tops[k], tops[k + 1:].max() - tops[k])
+        if drop >= RIDGE_DROP_M:
+            offsets.append(float(mids[k]))
+    if not offsets:
+        return None
+    # _cut takes the direction of the LINE; perpendicular to the long axis
+    angle = float((np.degrees(np.arctan2(u[1], u[0])) + 90.0) % 180.0)
+    n = np.array([-np.sin(np.radians(angle)), np.cos(np.radians(angle))])
+    # express each offset in the same projection _cut uses
+    return angle, [float(o * (u @ n)) for o in offsets]
+
+
 def _best_cut(poly, pts, base_score):
     """The straight line that best explains this region as two planes."""
     if _cut_deadline[0] is not None and time.monotonic() > _cut_deadline[0]:
         return None
     best = None
+
+    # A ridge drop is a section change and gets its own candidate positions,
+    # scored the same way as every other cut so it only wins if it explains the
+    # surface better.
+    rd = _ridge_drop_offsets(poly, pts)
+    if rd is not None:
+        angle, offs = rd
+        for off in offs:
+            parts = _cut(poly, angle, off)
+            if len(parts) < 2:
+                continue
+            tot = num = 0.0
+            worst = 1.0
+            ok = True
+            for part in parts:
+                pl, sc = _score(part, pts)
+                if pl is None:
+                    ok = False
+                    break
+                num += sc * part.area
+                tot += part.area
+                worst = min(worst, sc)
+            if ok and tot > 0:
+                combined = num / tot
+                if combined > base_score + MIN_SPLIT_GAIN and (best is None or combined > best[0]):
+                    best = (combined, parts, worst)
+
     for angle in _edge_directions(poly):
         theta = np.radians(angle)
         n = np.array([-np.sin(theta), np.cos(theta)])
@@ -566,8 +669,15 @@ def _partition(poly, pts, depth=0, budget=None):
     #
     # A tail that far out is structure, not noise. Roughness raises the count of
     # points just outside the band; a fold puts them metres away.
+    # A region is one face only if it fits a plane, does not fold, and its ridge
+    # does not drop. The ridge test has to sit in ACCEPTANCE and not merely in
+    # the cut search: two sections of the same pitch and aspect fit a common
+    # plane well, so 7 Anderson's north slope scored 86.8% -- above the bar --
+    # and was accepted whole before any cut was considered, running straight
+    # over a 1.16 m dip.
     folded = _fold_evidence(poly, pts, plane)
-    if ((score >= ACCEPT_INLIER and not folded) or depth >= MAX_DEPTH
+    drops = _ridge_drop_offsets(poly, pts) if not folded else None
+    if ((score >= ACCEPT_INLIER and not folded and drops is None) or depth >= MAX_DEPTH
             or poly.area < 2 * MIN_FACET_M2 or budget[0] <= 1):
         return [(poly, plane)]
     best = _best_cut(poly, pts, score)
@@ -595,7 +705,7 @@ def _partition(poly, pts, depth=0, budget=None):
     # correctly flagged its 75.4 m2 face, the recursion asked for a cut, and this
     # veto threw it away (cost 2.81 m2 against a 1.97 m2 threshold) -- so the
     # fold detection changed nothing until the veto learned to stand down.
-    if not folded and cost > SETBACK_COST_PER_FIT * gain * max(_usable(poly), 1e-9):
+    if not folded and drops is None and cost > SETBACK_COST_PER_FIT * gain * max(_usable(poly), 1e-9):
         return [(poly, plane)]
     out = []
     budget[0] -= 1          # this cut spends one face from the building's budget
@@ -635,6 +745,21 @@ BRIDGE_MAX_STEP_M = 0.10
 # Snapping one face's vertices onto the other's within a centimetre closes the
 # crack without moving any edge a distance anyone could see.
 MERGE_SNAP_M = 0.01
+
+# Two pieces of ONE plane, separated only because something was carved between
+# them, are one face. The bridge merge normally has to earn back racking area --
+# gain > 0.5 m2 of setback -- which is the right bar when the question is
+# whether a genuine seam is worth keeping. It is the wrong bar when there is no
+# seam at all.
+#
+# 7 Anderson Heights: the north slope is notched by the recessed feature in the
+# middle of the roof, so its two parts meet along a neck of just 0.77 m. Merging
+# them recovers 0.008 m2 of setback and the economics threw it away, leaving 9
+# faces where Josh drew 8. They are 0.78 degrees apart with a 0.001 m step at
+# the join, and merged they fit 93.7% -- better than the 86.8% a single
+# uncut face scored. That is one plane by every measure that matters.
+SAME_PLANE_ANGLE_DEG = 1.5   # tighter than the bridge angle: this is "identical", not "close"
+SAME_PLANE_STEP_M = 0.05
 
 
 def _step_at_join(pa, pb, poly_a, poly_b):
@@ -705,7 +830,9 @@ def _merge_bridgeable(faces, pts):
                 gain = (u.buffer(-config.RIDGE_SETBACK_M).area
                         - pi.buffer(-config.RIDGE_SETBACK_M).area
                         - pj.buffer(-config.RIDGE_SETBACK_M).area)
-                if gain <= 0.5:
+                same_plane = (_plane_angle(li, lj) <= SAME_PLANE_ANGLE_DEG
+                              and _step_at_join(li, lj, pi, pj) <= SAME_PLANE_STEP_M)
+                if gain <= 0.5 and not same_plane:
                     rejected.add(key)
                     continue
                 sub = _points_in(u, pts)
@@ -724,7 +851,11 @@ def _merge_bridgeable(faces, pts):
                 merged_fit = _inlier_fraction(sub, pl)
                 worst_before = min(_inlier_fraction(_points_in(pi, pts), li),
                                    _inlier_fraction(_points_in(pj, pts), lj))
-                if merged_fit < min(ACCEPT_INLIER, worst_before - 0.02):
+                # A merge made on "same plane" grounds rather than on recovered
+                # area has to clear the acceptance bar outright -- it is claiming
+                # the two pieces ARE one plane, so the union must look like one.
+                bar = ACCEPT_INLIER if (gain <= 0.5) else min(ACCEPT_INLIER, worst_before - 0.02)
+                if merged_fit < bar:
                     rejected.add(key)
                     continue
                 merged = (u, pl)
