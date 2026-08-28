@@ -7,7 +7,7 @@
       "faces": 8,
       "structure": "TRACED FROM JOSH'S MARKUP (see traced_lines_nztm). Two hipped sections end to end, separated by a FULL-WIDTH middle section that runs eave to eave, about 5.5 x 5.2 m, split by one diagonal into two faces. The 8 faces are: NW hip triangle, SE hip triangle, the NE and SW slopes of the NW section, the NE and SW slopes of the SE section, and the two halves of the middle section.",
       "marked": "red = ridges/hips, green = true roof outline, yellow = the plane surfaces",
-      "key_finding": "The face COUNT is not the test and matching it hid a wrong roof for a long time. The middle feature is not a patch sitting inside one slope, it spans the full width of the roof from eave to eave, so it divides BOTH main slopes into a NW half and a SE half. That means the two halves of each slope are separate faces in Josh's drawing, and a same-plane merge that rejoins them is wrong on this roof however coplanar they measure. Also: Josh's green roof outline is the LINZ footprint shifted about 1.3 m to the NE, not a different shape.",
+      "key_finding": "The face COUNT is not the test and matching it hid a wrong roof for a long time. The middle feature is not a patch inside one slope, it spans the full width of the roof from eave to eave, so it divides BOTH main slopes. The two halves of each slope are therefore separate faces in Josh's drawing, and a same-plane merge that rejoins them is wrong on this roof however coplanar they measure.",
       "face_topology": [
         "hip_triangle_NW",
         "hip_triangle_SE",
@@ -19,7 +19,7 @@
         "middle_section_lower"
       ],
       "traced_lines_nztm": {
-        "_note": "Traced from Josh's marked image against the metre grid mark_roofs.py draws (x 1258400/405/410/415, y 5004850/855/860/865). Accurate to roughly +/-0.3 m; the topology is exact, the coordinates are read off by eye.",
+        "_note": "Traced from Josh's marked image against the metre grid mark_roofs.py draws (x 1258400/405/410/415, y 5004850/855/860/865). Read off by eye, so coordinates are good to roughly +/-0.3 m; the TOPOLOGY is exact and is what should be scored against. An earlier version of this file claimed the green roof outline was the footprint shifted 1.3 m NE. That was wrong -- an artefact of tracing by eye. Measured over 23 pilot buildings, the best-fit translation of footprint onto roof has a median of 0.50 m in scattered directions and lifts roof-point coverage only 77.8% -> 79.6%, so there is no systematic offset. What this roof actually has is overhang on several sides at once, which no translation fixes.",
         "roof_outline_green": [
           [
             1258403.0,
@@ -74,7 +74,8 @@
             5004856.13
           ]
         ]
-      }
+      },
+      "middle_section_is": "RECESSED (confirmed by Josh). Measured: the ridge sits at 381.42 m, falls to 380.26 m across the middle, and returns to 381.47 m -- a 1.16 m drop. It is therefore findable as a 2-D REGION of points below the roof's own plane envelope, not as shoulders in a 1-D ridge profile, which is what earlier attempts looked for and why their band edges landed in the wrong place."
     },
     {
       "building_id": 4735015,
