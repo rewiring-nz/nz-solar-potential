@@ -48,7 +48,7 @@ import time
 import numpy as np
 import shapely.vectorized
 from shapely.geometry import LineString, Point, Polygon
-from shapely.ops import split as shapely_split, unary_union
+from shapely.ops import split as shapely_split, snap, unary_union
 
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -619,6 +619,23 @@ def _plane_angle(p, q):
 
 BRIDGE_MAX_STEP_M = 0.10
 
+# Two faces produced by the same cut can end up separated by a hairline crack --
+# coincident edges whose vertices differ in the last bits of floating point. GEOS
+# reports them as touching but unions them into a MultiPolygon, and the bridge
+# merge then refuses the pair because "the union is not a Polygon".
+#
+# That is not a corner case here, it is Josh's complaint about 7 Anderson
+# Heights: "the edge roof plane triangles are triangles, but you are cutting
+# them into two smaller triangles by continuing the main roof ridgeline through
+# them." Both hip ends were split by the ridge cut and both pairs were perfectly
+# coplanar -- aspects 315.2/315.2 and 138.4/136.5, angle well inside the bridge
+# limit, sharing an 8.4 m and a 6.7 m edge at zero distance -- and both merges
+# were thrown away over a sliver of about 0.02 m2.
+#
+# Snapping one face's vertices onto the other's within a centimetre closes the
+# crack without moving any edge a distance anyone could see.
+MERGE_SNAP_M = 0.01
+
 
 def _step_at_join(pa, pb, poly_a, poly_b):
     """Height gap between two planes WHERE THEY ADJOIN.
@@ -677,10 +694,14 @@ def _merge_bridgeable(faces, pts):
                 if _step_at_join(li, lj, pi, pj) > BRIDGE_MAX_STEP_M:
                     rejected.add(key)
                     continue
-                u = unary_union([pi, pj])
+                u = unary_union([pi, snap(pj, pi, MERGE_SNAP_M)])
                 if u.geom_type != "Polygon":
-                    rejected.add(key)
-                    continue
+                    closed = unary_union([pi.buffer(MERGE_SNAP_M),
+                                          pj.buffer(MERGE_SNAP_M)]).buffer(-MERGE_SNAP_M)
+                    if closed.geom_type != "Polygon":
+                        rejected.add(key)
+                        continue
+                    u = Polygon(closed.exterior, [r for r in closed.interiors])
                 gain = (u.buffer(-config.RIDGE_SETBACK_M).area
                         - pi.buffer(-config.RIDGE_SETBACK_M).area
                         - pj.buffer(-config.RIDGE_SETBACK_M).area)
@@ -1044,16 +1065,24 @@ def _extend_to_eave(faces, footprint, pts):
     for piece in pieces:
         if piece.is_empty or piece.area < 0.05:
             continue
-        # whichever face shares the most boundary with it; distance breaks ties
-        best, best_share = None, -1.0
-        for k, (g, _pl) in enumerate(out):
-            share = g.buffer(0.05).intersection(piece).area
-            if share > best_share:
-                best, best_share = k, share
-        if best is None:
-            continue
-        if best_share <= 0:
-            best = min(range(len(out)), key=lambda k: out[k][0].distance(piece))
+        # Which face this strip belongs to is decided by the strip's own points,
+        # not by which face happens to touch it most. Shared boundary alone
+        # attaches an overhang to whatever is beside it even when the roof there
+        # lies on a different plane: on 7 Anderson Heights that grew the upper
+        # slope from 64.6 m2 at 86.8% on-plane to 98 m2 at 78%, by gluing a strip
+        # of the hip onto it. Among the faces this strip actually touches, take
+        # the one whose plane the strip's own returns sit closest to.
+        touching = [k for k, (g, _pl) in enumerate(out)
+                    if g.buffer(0.05).intersection(piece).area > 0]
+        if not touching:
+            nearest = min(range(len(out)), key=lambda k: out[k][0].distance(piece))
+            touching = [nearest]
+        strip_pts = _points_in(piece, pts)
+        if len(strip_pts) >= 4:
+            best = max(touching, key=lambda k: _inlier_fraction(strip_pts, out[k][1]))
+        else:
+            best = max(touching,
+                       key=lambda k: out[k][0].buffer(0.05).intersection(piece).area)
         g, pl = out[best]
         merged = unary_union([g, piece])
         if merged.geom_type != "Polygon":
