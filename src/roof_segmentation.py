@@ -28,7 +28,7 @@ from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components as sparse_connected_components
 from scipy.spatial import cKDTree
-from shapely.geometry import LineString, MultiPoint, Point, shape as shapely_shape
+from shapely.geometry import LineString, MultiPoint, Point, Polygon, shape as shapely_shape
 from shapely.ops import polygonize, unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -1628,6 +1628,53 @@ def drop_balcony_levels(facets, pc_source):
     return kept or facets
 
 
+# Compact features -- recessed valleys, raised housings, lightwells -- are cut
+# OUT of the face they sit in. See src/roof_features.py for why this needs to be
+# a region rather than a line: a line through a face gives two half-planes, and
+# no sequence of them ever encloses a shape in the middle of one. That is why
+# four attempts at 7 Anderson Heights' central feature all failed, and why Josh
+# kept seeing panels laid straight across it.
+def drop_roof_features(facets, pc_source):
+    """Remove compact non-roof regions from the faces containing them."""
+    if not facets:
+        return facets
+    try:
+        from src.roof_features import extract_features
+    except Exception:
+        return facets
+    out = []
+    for f in facets:
+        pts = _facet_points(pc_source, f["geometry"])
+        if len(pts) < 40:
+            out.append(f)
+            continue
+        try:
+            feats = extract_features(f["geometry"], pts,
+                                     (f["plane_a"], f["plane_b"], f["plane_c"]))
+        except Exception:
+            feats = []
+        if not feats:
+            out.append(f)
+            continue
+        keep = f["geometry"].difference(unary_union([q for q, _ in feats]))
+        if keep.is_empty:
+            out.append(f)
+            continue
+        pieces = list(keep.geoms) if keep.geom_type == "MultiPolygon" else [keep]
+        added = False
+        for q in pieces:
+            if q.geom_type != "Polygon" or q.area < 4.0:
+                continue
+            g = dict(f)
+            g["geometry"] = Polygon(q.exterior, [r for r in q.interiors])
+            g["area_m2"] = float(q.area)
+            out.append(g)
+            added = True
+        if not added:
+            out.append(f)
+    return out
+
+
 def _attach_building_geometry(facets, building_geom, pc_source=None, building_id=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
@@ -1642,6 +1689,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         facets = repair_nonplanar_facets(facets, pc_source)
         facets = drop_balcony_levels(facets, pc_source)
         facets = drop_plant_decks(facets, pc_source)
+        facets = drop_roof_features(facets, pc_source)
     if APPLY_REALISM_MERGE and facets:
         try:
             facets = merge_uneconomic_splits(facets)
