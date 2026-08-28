@@ -168,8 +168,26 @@ def _local_contrast_map(imagery_ds, sample_geom):
         local_background[c] = blurred_channel / np.maximum(blurred_weight, 1e-6)
 
     dist = np.sqrt(((rgb - local_background) ** 2).sum(axis=0))
-    mean_dist, std_dist = dist[valid].mean(), dist[valid].std()
-    return dist, transform, mean_dist, std_dist, valid, rgb
+    # Median and MAD, not mean and standard deviation. The threshold downstream
+    # is `dist > centre + z * spread`, so the statistic that sets it must not be
+    # moved by the very objects it is meant to find: every skylight and duct
+    # inflates a standard deviation, which raises the bar against itself. That
+    # self-masking is a plausible part of the under-detection Josh marked on
+    # 29 Edinburgh Dr -- roughly ten obstructions marked, and the colour path
+    # was finding two.
+    #
+    # Measured, mean/std -> median/MAD, on the two roofs with obstruction ground
+    # truth: 29 Edinburgh 2 blobs / 2.6 m2 -> 5 blobs / 9.1 m2, toward the ~10
+    # marked; 17 Cardigan St unchanged at 10 blobs / 12.3 m2, which is the roof
+    # that previously caught this module inventing objects, so the extra
+    # sensitivity is not manufacturing detections on a uniform roof.
+    #
+    # 1.4826 makes MAD a consistent estimator of sigma for Gaussian data, so
+    # the existing z thresholds keep their meaning and did not need retuning.
+    d = dist[valid]
+    centre = float(np.median(d))
+    spread = float(np.median(np.abs(d - centre))) * 1.4826
+    return dist, transform, centre, spread, valid, rgb
 
 
 def _trim_blob(geom, buffer_m):
