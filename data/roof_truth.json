@@ -16,6 +16,15 @@
       "structure": "Three planes. One large plane on the right taking most of the roof, one large plane top-left, one small plane bottom-left. Josh: 'The largest plane on this roof has a significant angle/slope on it. I haven't marked that. It's also still all one plane though.'",
       "marked": "red = ridges/level changes, green = true roof outline, yellow = the plane surfaces",
       "key_finding": "A plane can carry significant slope and still be ONE plane. Imagery line detection sees a line across that sloped face -- a seam, stain or tonal band -- which is not a roof line. This is what motivated _line_is_real: cut a strong imagery line only where the plane ORIENTATION changes across it, or the two sides sit at different heights. The green roof outline again runs past the LINZ footprint, here mostly on the eastern side."
+    },
+    {
+      "building_id": 4751041,
+      "address": "29 Edinburgh Dr",
+      "faces": 5,
+      "obstructions_marked": 10,
+      "structure": "Two roof sections side by side, each split by a ridge into an upper and a lower plane -- four large planes -- plus one small plane on the lower-left extension. Josh: '5 in total, with 4 large ones and 1 small one'.",
+      "marked": "red = ridges, green = true roof outline, blue = obstructions, yellow = the plane surfaces",
+      "key_finding": "First obstruction ground truth. Josh marked ~10, mostly 1-2 m skylights; the pipeline found 4 covering 8.5 m2. Skylights sit near flush so the height path cannot see them, and the colour path scores LOCAL contrast which a bright panel on a variably-lit roof does not always clear. The top decile of roof brightness gives 9 compact blobs -- see detect_bright_objects."
     }
   ]
 }

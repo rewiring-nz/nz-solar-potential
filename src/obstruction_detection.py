@@ -53,12 +53,13 @@ from pathlib import Path
 import numpy as np
 import rasterio
 import shapely.vectorized
+from rasterio.features import rasterize, shapes as rasterio_shapes
 from rasterio.mask import mask as rasterio_mask
 from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components as sparse_connected_components
 from scipy.spatial import cKDTree
-from shapely.geometry import MultiPoint, Point
+from shapely.geometry import MultiPoint, Point, shape
 from shapely.ops import unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -187,6 +188,72 @@ def _trim_blob(geom, buffer_m):
     if trimmed.area < BLOB_TRIM_MIN_AREA_KEPT * geom.area:
         return geom   # small blob: the erosion would take most of it, so skip it
     return trimmed
+
+
+# Skylights are the clearest thing on a roof to a camera and among the hardest
+# for everything else here. Josh marked 29 Edinburgh Dr: roughly ten
+# obstructions, mostly 1-2 m skylights. The pipeline found four. They are near
+# flush, so the height path cannot see them, and the colour path scores LOCAL
+# contrast -- a z-score against a blurred neighbourhood -- which a bright panel
+# on a variably-lit roof does not always clear.
+#
+# Measured on that roof, the simplest possible test does better: the top decile
+# of brightness gives nine compact blobs over 0.5 m2 where the full detector
+# gives four. A roof is mostly one material, so its brightness distribution has
+# a long thin upper tail and that tail is glass and metal.
+#
+# Kept deliberately narrow. Only compact, skylight-sized blobs qualify -- a
+# large bright region is a membrane roof or sun on a slope, not an object.
+BRIGHT_PERCENTILE = 90
+BRIGHT_MIN_AREA_M2 = 0.5
+BRIGHT_MAX_AREA_M2 = 12.0
+BRIGHT_MAX_ELONGATION = 4.0
+BRIGHT_MAX_TOTAL_SHARE = 0.15   # if this much of a facet is "bright" it is the roof
+
+
+def detect_bright_objects(imagery_ds, facet_geom):
+    """Compact bright blobs: skylights, vents, flashing, plant housings."""
+    if imagery_ds is None or facet_geom.is_empty:
+        return []
+    minx, miny, maxx, maxy = facet_geom.bounds
+    try:
+        window = rasterio.windows.from_bounds(minx, miny, maxx, maxy, imagery_ds.transform)
+        arr = imagery_ds.read([1, 2, 3], window=window)
+    except Exception:
+        return []
+    if arr.size == 0 or arr.shape[1] < 6 or arr.shape[2] < 6:
+        return []
+    wt = imagery_ds.window_transform(window)
+    rgb = np.moveaxis(arr, 0, -1).astype(float)
+    mask = rasterize([(facet_geom, 1)], out_shape=rgb.shape[:2], transform=wt).astype(bool)
+    if mask.sum() < MIN_VALID_PIXELS:
+        return []
+    lum = rgb.mean(axis=2)
+    thresh = np.percentile(lum[mask], BRIGHT_PERCENTILE)
+    bright = (lum > thresh) & mask
+    if bright.sum() > BRIGHT_MAX_TOTAL_SHARE * mask.sum():
+        return []
+    labels, n = ndimage.label(bright)
+    if n == 0:
+        return []
+    px_area = abs(wt.a) * abs(wt.e)
+    out = []
+    for i in range(1, n + 1):
+        blob = labels == i
+        area = float(blob.sum()) * px_area
+        if not (BRIGHT_MIN_AREA_M2 <= area <= BRIGHT_MAX_AREA_M2):
+            continue
+        polys = [shape(gj) for gj, v in rasterio_shapes(blob.astype(np.uint8),
+                                                        mask=blob, transform=wt) if v == 1]
+        if not polys:
+            continue
+        poly = max(polys, key=lambda q: q.area).buffer(BLOB_BUFFER_M)
+        if poly.is_empty or poly.geom_type != "Polygon":
+            continue
+        if _elongation_ratio(poly) > BRIGHT_MAX_ELONGATION:
+            continue          # a long thin bright strip is flashing along a ridge
+        out.append(poly.intersection(facet_geom))
+    return [q for q in out if not q.is_empty and q.geom_type == "Polygon"]
 
 
 def detect_obstructions(imagery_ds, facet_geom, z_threshold=None, boundary_erode_m=None):
@@ -818,7 +885,17 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
             if np.median(shape_dist) > mean_dist + CROSS_CHECK_Z_THRESHOLD * std_dist:
                 confirmed_elongated.append(h)
 
-    all_obs = color_obs + compact + confirmed_elongated
+    # Bright compact objects join on their own terms -- see detect_bright_objects.
+    # They are the skylight case, which the height path cannot see (near flush)
+    # and the local-contrast colour path only sometimes clears. Josh marked
+    # roughly ten obstructions on 29 Edinburgh Dr and this pipeline found four;
+    # the brightness tail finds nine.
+    try:
+        bright = detect_bright_objects(imagery_ds, facet_geom)
+    except Exception:
+        bright = []
+
+    all_obs = color_obs + compact + confirmed_elongated + bright
     if not all_obs:
         return []
     merged = unary_union(all_obs)
