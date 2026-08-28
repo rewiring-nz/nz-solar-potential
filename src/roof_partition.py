@@ -710,6 +710,42 @@ def roof_outline(footprint, pts):
     return best if best.geom_type == "Polygon" else footprint
 
 
+# A strong imagery line is only cut if the roof actually CHANGES there.
+#
+# Cutting every strong line unconditionally fixed 7 Anderson Heights, whose hip
+# creases the LiDAR cannot resolve, and broke 5 Isle St, which went from the 3
+# faces Josh confirms to 4. His note on that roof is the clue: "The largest
+# plane on this roof has a significant angle/slope on it. I haven't marked that.
+# It's also still all one plane though." The imagery sees a line there -- a
+# seam, a stain, a shadow, a tonal band across a sloped surface -- and it is not
+# a roof line.
+#
+# The earlier mistake was asking the LiDAR the wrong question. "Does cutting
+# improve the fit" is answerable only where the LiDAR already resolves the
+# feature, so it rejected Anderson's hips. "Do the two sides have different
+# ORIENTATIONS" is answerable from the same coarse data, because it compares two
+# large samples rather than resolving a crease: a ridge or hip turns the roof,
+# a stain does not. A height step counts too -- parallel faces at different
+# levels are a real edge.
+LINE_MIN_TURN_DEG = 8.0       # plane orientation must change by this across the line
+LINE_MIN_STEP_M = 0.20        # ...or the two sides sit at different heights
+LINE_MIN_SIDE_POINTS = 30
+
+
+def _line_is_real(poly, pts, ang, off):
+    """Does the roof change across this line, or is it only visible in the image?"""
+    parts = _cut(poly, ang, off)
+    if len(parts) != 2:
+        return False
+    a, b = (_points_in(parts[0], pts), _points_in(parts[1], pts))
+    if len(a) < LINE_MIN_SIDE_POINTS or len(b) < LINE_MIN_SIDE_POINTS:
+        return False
+    pa, pb = _fit_plane_robust(a), _fit_plane_robust(b)
+    if _plane_angle(pa, pb) >= LINE_MIN_TURN_DEG:
+        return True
+    return _step_at_join(pa, pb, parts[0], parts[1]) >= LINE_MIN_STEP_M
+
+
 def partition_roof(building_id, footprint, pts, imagery_ds=None):
     """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
 
@@ -739,7 +775,8 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
             for ang, off in strong_roof_lines(imagery_ds, footprint):
                 nxt = []
                 for c in cells:
-                    parts = _cut(c, ang, off)
+                    parts = (_cut(c, ang, off)
+                             if _line_is_real(c, _points_in(c, inside), ang, off) else [])
                     nxt.extend(parts if len(parts) >= 2 else [c])
                 cells = nxt
         except Exception:
