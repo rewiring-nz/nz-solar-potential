@@ -256,6 +256,39 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
     return best, w_cells, h_cells
 
 
+SHALLOW_SEAM_DEG = 12.0        # a fold gentler than this needs no ridge cap
+SHALLOW_SEAM_SETBACK_M = 0.05  # token clearance so two grids do not collide
+SHALLOW_SEAM_REACH_M = 1.0     # how far in from such a seam the relief applies
+
+
+def _shallow_seams(facet, sibling_facets):
+    """Region near boundaries shared with near-coplanar neighbours, or None.
+
+    Panels still cannot SPAN the seam -- each facet keeps its own grid -- but
+    they do not need to stand half a metre back from a 6 degree change in a roof
+    that has no ridge along it."""
+    if not sibling_facets:
+        return None
+    from shapely.ops import unary_union as _uu
+    na = np.array([-facet["plane_a"], -facet["plane_b"], 1.0])
+    na /= np.linalg.norm(na)
+    near = []
+    for other in sibling_facets:
+        nb = np.array([-other["plane_a"], -other["plane_b"], 1.0])
+        nb /= np.linalg.norm(nb)
+        ang = float(np.degrees(np.arccos(np.clip(abs(na @ nb), -1.0, 1.0))))
+        if ang > SHALLOW_SEAM_DEG:
+            continue
+        shared = facet["geometry"].buffer(0.05).intersection(other["geometry"])
+        if shared.is_empty:
+            continue
+        near.append(other["geometry"].buffer(SHALLOW_SEAM_REACH_M))
+    if not near:
+        return None
+    region = _uu(near).intersection(facet["geometry"])
+    return None if region.is_empty else region
+
+
 def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=config.PANEL_HEIGHT_M,
                          setback=config.PANEL_EDGE_SETBACK_M, resolution=RASTER_RESOLUTION_M,
                          obstructions=None, sibling_facets=None, ridge_setback=config.RIDGE_SETBACK_M,
@@ -300,7 +333,26 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     # The facet's own boundary carries the RIDGE clearance: that is what keeps a
     # panel off a shared hip/valley and out of the next facet's grid, and it is
     # applied once, not once per neighbour.
+    # ...but scaled to the fold it actually is. The clearance exists because a
+    # rigid panel cannot lie across a fold and a ridge needs its cap; both are
+    # about how sharply the roof turns. Applied flat, a 45 degree gable ridge and
+    # a 6 degree seam get the same 0.25 m each side -- a 0.5 m gap between
+    # arrays. Measured on 7 Malaghan St, whose faces differ by 5.6-6.7 degrees
+    # with height steps of 0.06-0.09 m, the setback costs 71 m2 of a 474 m2 roof
+    # while packing inside the usable area is already 84-87% efficient. Josh on
+    # that building: "lots of empty space not used".
+    #
+    # So a boundary shared with a near-coplanar neighbour keeps only a token
+    # clearance, and a real ridge keeps the full amount.
     surface_ridge = surface_poly.buffer(-ridge_setback)
+    shallow = _shallow_seams(facet, sibling_facets)
+    if shallow is not None:
+        relief = shapely_transform(lambda x, y, z=None: to_surface(x, y), shallow)
+        surface_ridge = unary_union([surface_ridge,
+                                     surface_poly.buffer(-SHALLOW_SEAM_SETBACK_M)
+                                                 .intersection(relief)])
+        if surface_ridge.geom_type not in ("Polygon", "MultiPolygon"):
+            surface_ridge = surface_poly.buffer(-ridge_setback)
     # The building's real outer edge carries the full EDGE clearance. Where the
     # facet meets that edge the stricter of the two wins, which is the setback;
     # at an internal seam only the ridge clearance applies.
