@@ -930,8 +930,30 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     if len(inside) < MIN_POINTS:
         return []
 
+    # Imagery cuts are OFF. Measured against the four roofs Josh has drawn, they
+    # are actively harmful:
+    #
+    #                    Josh   cuts ON   cuts OFF
+    #   7 Anderson         8       12         8
+    #   5 Isle St          3        3         3
+    #   29 Edinburgh       5        3         5
+    #   2/8 Wakatipu       8        9         8
+    #
+    # Off matches all four exactly; on matches one. The idea is still right --
+    # 7 Anderson's hip creases are unmistakable in 0.1 m imagery and nearly
+    # absent from a point cloud that is flat across that roof -- but cutting a
+    # whole cell with a line detected over part of it fragments the roof faster
+    # than it fixes it, and the rendered result is a jumble of arbitrary
+    # polygons. Josh, looking at exactly that output: "the whole placement is
+    # wrong."
+    #
+    # What is missing is a way to cut only the stretch a crease actually covers.
+    # Clipping the cut to the detected segment's extent was tried and did not
+    # help, because on this roof the creases span most of the building anyway.
+    USE_IMAGERY_CUTS = False
+
     cells = [footprint]
-    if imagery_ds is not None:
+    if imagery_ds is not None and USE_IMAGERY_CUTS:
         # NOT a bare except. A rewrite of roof_outline above once deleted
         # _line_is_real while leaving this call site, and a broad except turned
         # that into "imagery cuts silently do nothing" -- the measurements looked
