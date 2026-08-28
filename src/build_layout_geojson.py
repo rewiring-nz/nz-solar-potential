@@ -23,7 +23,7 @@ import json
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, wait
 from pathlib import Path
 
 import pyproj
@@ -61,6 +61,13 @@ MIN_ROOF_CONFIDENCE = 0.45
 # fixed with an LRU there -- but the cap was never put back. Measured startup is
 # 0.4s per worker and steady RSS is well under a gigabyte each.
 DEFAULT_MAX_JOBS = 10
+
+# How long the whole pool may go without a single building completing before it
+# says so, and before it gives up. Normal per-building time is around a second
+# and the slowest roof measured on frankton_flats is 16s, so 120s of total
+# silence across every worker already means something is wrong.
+STALL_REPORT_S = 120
+STALL_ABORT_S = 1800
 
 _CTX = {}
 
@@ -218,14 +225,48 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
             if done % 200 == 0:
                 print(f"  {done}/{len(ids)} elapsed={time.time() - t0:.1f}s", flush=True)
     else:
+        # Submitted one building at a time rather than ex.map(chunksize=8), and
+        # watched. ex.map yields strictly in order, so a single roof that never
+        # finishes stops the counter dead while the other workers quietly drain
+        # and go idle -- the build then sits at one core pegged at 100% with no
+        # error, no log line, and no way to tell which building is responsible.
+        # That happened twice on frankton_flats on 28 Aug and cost the evening;
+        # the second time it burned an hour before anyone looked at ps. Per-task
+        # dispatch overhead is microseconds against ~1s of work per building, so
+        # the chunking was buying nothing worth this.
+        results = {}
         with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker,
                                  initargs=(area, model)) as ex:
-            # chunked so the per-building task dispatch does not dominate
-            for chunk in ex.map(_build_one, ids, chunksize=8):
-                features.extend(chunk)
-                done += 1
-                if done % 200 == 0:
-                    print(f"  {done}/{len(ids)} elapsed={time.time() - t0:.1f}s", flush=True)
+            futs = {ex.submit(_build_one, b): b for b in ids}
+            pending, last_progress = set(futs), time.time()
+            while pending:
+                finished, pending = wait(pending, timeout=STALL_REPORT_S)
+                for fut in finished:
+                    results[futs[fut]] = fut.result()
+                    done += 1
+                    if done % 200 == 0:
+                        print(f"  {done}/{len(ids)} elapsed={time.time() - t0:.1f}s",
+                              flush=True)
+                if finished:
+                    last_progress = time.time()
+                    continue
+                stalled = time.time() - last_progress
+                outstanding = sorted(futs[f] for f in pending)
+                print(f"  [STALL] no building has completed in {stalled:.0f}s. "
+                      f"{len(outstanding)} outstanding: {outstanding[:10]}"
+                      f"{' ...' if len(outstanding) > 10 else ''}",
+                      file=sys.stderr, flush=True)
+                if stalled > STALL_ABORT_S:
+                    # Abort loudly rather than pretend. A build that silently
+                    # drops buildings would publish a map with holes in it.
+                    for f in pending:
+                        f.cancel()
+                    raise RuntimeError(
+                        f"[{area}] build stalled {stalled:.0f}s with "
+                        f"{len(outstanding)} buildings outstanding: {outstanding[:20]}")
+        # emitted in the input order so two builds of the same area diff cleanly
+        for b in ids:
+            features.extend(results.get(b, []))
 
     if dry_run:
         print(f"[{area}] dry run: {len(features)} features in {time.time() - t0:.0f}s "

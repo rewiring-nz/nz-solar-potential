@@ -111,8 +111,8 @@ def fit_plane_lstsq(points):
     5 Isle St at five faces where Josh counted three. Fixing it there took that
     roof to exactly three, and 47 Stanley St from 18 faces at 93% to 11 at 97%.
 
-    This function has ten call sites and the centred variant below has two, so
-    the same fault was reachable through most of the segmenter."""
+    This function has eleven call sites and the centred variant below has one,
+    so the same fault was reachable through most of the segmenter."""
     x0, y0 = points[:, 0].mean(), points[:, 1].mean()
     A = np.column_stack([points[:, 0] - x0, points[:, 1] - y0, np.ones(len(points))])
     coeffs, *_ = np.linalg.lstsq(A, points[:, 2], rcond=None)
@@ -121,21 +121,17 @@ def fit_plane_lstsq(points):
 
 
 def fit_plane_lstsq_centered(points):
-    """fit_plane_lstsq solved in locally-centered coordinates: NZTM
-    eastings/northings are ~1e6 while a roof spans ~10m, so the raw design
-    matrix's condition number is ~1e5 (and anything normal-equation-based
-    downstream squares that); centering makes conditioning depend only on the
-    roof's own ~10m spread. Kept as a separate function rather than replacing
-    fit_plane_lstsq outright: the un-centered version's exact numerics are
-    baked into the validated behaviour of every pre-existing segmentation
-    path (measurably different results on real buildings when swapped), so
-    only the region-growing path -- built and validated against this version
-    -- uses it. The returned c is shifted back, so the plane is exact in the
-    original coordinates."""
-    x0, y0 = points[:, 0].mean(), points[:, 1].mean()
-    A = np.column_stack([points[:, 0] - x0, points[:, 1] - y0, np.ones(len(points))])
-    (a, b, c0), *_ = np.linalg.lstsq(A, points[:, 2], rcond=None)
-    return np.array([a, b, c0 - a * x0 - b * y0])
+    """Exact alias of fit_plane_lstsq, kept only so existing call sites and
+    saved references keep working.
+
+    This was once a genuinely different function: fit_plane_lstsq solved on raw
+    NZTM coordinates and this one centred first. That difference is gone --
+    fit_plane_lstsq now centres internally -- and the two are bit-for-bit
+    identical on random roof-scale inputs. The old docstring here still claimed
+    it existed *because* the other one was un-centred, which would send the next
+    reader looking for a numerical difference that no longer exists.
+    """
+    return fit_plane_lstsq(points)
 
 
 def plane_residuals(points, plane):
@@ -1693,8 +1689,11 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     if APPLY_REALISM_MERGE and facets:
         try:
             facets = merge_uneconomic_splits(facets)
-        except Exception:
-            pass   # a bad merge must never cost a building its whole segmentation
+        except Exception as exc:
+            # A bad merge must never cost a building its whole segmentation, but
+            # it must not be invisible either -- a merge that always throws would
+            # otherwise look exactly like a merge that never applies.
+            _note_fallback("merge_uneconomic_splits", building_id, exc)
     for f in facets:
         f["building_geometry"] = building_geom
     return facets
@@ -1823,8 +1822,39 @@ def _maybe_reconstruct(facets, pc_source, building_geom, building_id):
         if base_usable > 0 and _usable_area(alt) < RECONSTRUCT_MIN_USABLE_SHARE * base_usable:
             return facets   # better planes, but paid for by shattering the roof
         return alt
-    except Exception:
+    except Exception as exc:
+        _note_fallback("repair_nonplanar", None, exc)
         return facets
+
+
+# --- fallback visibility -------------------------------------------------
+# Every silent `except Exception: return []` here is a place where the primary
+# roof model can stop running while the build still produces plausible-looking
+# output. That has already cost this project twice: a deleted helper turned
+# imagery cuts into a no-op and two full comparison tables were run against the
+# broken state before anyone noticed. Geometry from awkward roofs is a real and
+# expected failure; a NameError is a bug. Distinguish them and never fall back
+# in silence.
+_BUG_EXCEPTIONS = (NameError, AttributeError, TypeError, ImportError,
+                   UnboundLocalError, IndexError, KeyError, ZeroDivisionError)
+FALLBACK_COUNTS = {}
+
+
+def _note_fallback(where, building_id, exc):
+    """Record a fallback and make it visible on stderr."""
+    key = f"{where}:{type(exc).__name__}"
+    FALLBACK_COUNTS[key] = FALLBACK_COUNTS.get(key, 0) + 1
+    if isinstance(exc, _BUG_EXCEPTIONS):
+        # A code defect, not a hard roof. Print the traceback the first few
+        # times so it cannot hide behind a fallback that looks like a result.
+        if FALLBACK_COUNTS[key] <= 3:
+            import traceback
+            print(f"[BUG] {where} building={building_id} {type(exc).__name__}: {exc}",
+                  file=sys.stderr, flush=True)
+            traceback.print_exc(file=sys.stderr)
+    elif FALLBACK_COUNTS[key] <= 3:
+        print(f"[fallback] {where} building={building_id} "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
 
 
 def _reconstruct_facets(pc_source, building_geom, building_id):
@@ -1853,7 +1883,8 @@ def _reconstruct_facets(pc_source, building_geom, building_id):
         # its own labelled validation set and its own both-directions test, and
         # swapping two things at once would make a regression unattributable.
         return facets
-    except Exception:
+    except Exception as exc:
+        _note_fallback("reconstruct", building_id, exc)
         return []
 
 
@@ -1896,13 +1927,17 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         if len(pts) < RECONSTRUCT_MIN_POINTS:
             return []
         return partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds)
-    except Exception:
+    except Exception as exc:
+        _note_fallback("partition", building_id, exc)
         return []
+
+
+_IMAGERY_UNSET = object()
 
 
 def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
                            ransac_distance_threshold=None, min_facet_area_m2=None,
-                           imagery_ds=None):
+                           imagery_ds=_IMAGERY_UNSET):
     """Runs the point-cloud global solver, the (greedy) point-cloud-native
     segmentation, and the DSM-raster fallback, and keeps whichever explains
     more real roof area. Verified directly on a 400-building sample: the
@@ -1931,6 +1966,17 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
     (ICM, not an exact optimum), not guaranteed to never do worse on any
     given roof, and this keeps the same never-worse-than-before guarantee
     the DSM fallback already provides."""
+    # imagery_ds has no default on purpose. It used to default to None, and the
+    # result was five separate tools -- anderson2, scan_defects,
+    # validate_obstructions, build_heatmap, compare_layouts -- plus live_server
+    # quietly analysing a weaker pipeline than the one being shipped, and
+    # rendering pictures Josh was asked to judge. Passing None is still fine and
+    # means "this area genuinely has no imagery"; forgetting to pass it is not.
+    if imagery_ds is _IMAGERY_UNSET:
+        raise TypeError(
+            "segment_building_best: pass imagery_ds explicitly (None if the area "
+            "has no imagery). Defaulting it silently changes which roof model runs.")
+
     if USE_PARTITION:
         facets_pt = _partition_facets(pc_source, building_geom, building_id, imagery_ds)
         if facets_pt:

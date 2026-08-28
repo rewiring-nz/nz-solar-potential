@@ -43,6 +43,8 @@ import sys
 import warnings
 from pathlib import Path
 
+import time
+
 import numpy as np
 import shapely.vectorized
 from shapely.geometry import LineString, Point, Polygon
@@ -72,7 +74,39 @@ MAX_DEPTH = 14
 MAX_FACES = 60              # a hotel needs many; nothing real needs more
 MIN_POINTS = 25
 
+# A wall-clock ceiling on the cut search for ONE building.
+#
+# Bounding the search by a count of candidate cuts was tried first and it is the
+# wrong meter: the cost of one evaluation is a polygon split plus two plane fits
+# over whatever points fall in the region, so it scales with point density. A
+# 219 m2 house spends 4,782 evaluations and finishes in under a second, while
+# 4722059 (16,010 m2, 226 m across, 73,226 points) spends ~3 ms on each one. Any
+# count low enough to bound the big roof also truncates ordinary buildings --
+# measured: a 12,000 cap left a 1,725 m2 building clipped mid-search while it
+# had been finishing comfortably in 14 s.
+#
+# Time bounds the actual pathology and nothing else. Every roof that completes
+# quickly is bit-for-bit unchanged, because the deadline is never reached; only
+# a roof that is genuinely running long gets stopped, and it keeps the faces it
+# has already found -- still watertight, still a valid partition, just coarser.
+# Anything that ends up badly fitted is withheld by the confidence gate in
+# build_layout_geojson rather than published wrong.
+CUT_TIME_BUDGET_S = 60.0
+_cut_deadline = [None]
+_cut_evals = [0]
+CUT_BUDGET_EXHAUSTED = [0]
+
 ANGLE_TOL_DEG = 4.0         # footprint edge directions this close are one direction
+MAX_OFFSETS_PER_DIRECTION = 120   # cap on how many cut positions one direction is
+# tried at. The sweep costs a polygon split and two plane fits PER POSITION, at
+# every node of the recursion, so its cost grows with the span of the roof --
+# fine at house scale, ruinous above it. Building 4722059 on Frankton Flats is
+# 16,010 m2: ~200 m across is ~800 positions per direction per node, and it ran
+# for over an hour at 100% CPU without finishing, stalling two full rebuilds.
+# The cap only binds above a ~30 m span (120 * 0.25 m), so every house and most
+# commercial roofs sweep at exactly the old 0.25 m and are bit-for-bit
+# unchanged; only genuinely large roofs are coarsened, and 0.25 m precision on a
+# 200 m warehouse was never meaningful anyway.
 OFFSET_STEP_M = 0.25        # how finely each candidate direction is swept. A ridge cut
 # landing half a metre off leaves a strip of the WRONG plane on both sides of it,
 # which drags the fit down on exactly the roofs whose structure was found correctly.
@@ -237,6 +271,8 @@ def _score(poly, pts):
 
 def _best_cut(poly, pts, base_score):
     """The straight line that best explains this region as two planes."""
+    if _cut_deadline[0] is not None and time.monotonic() > _cut_deadline[0]:
+        return None
     best = None
     for angle in _edge_directions(poly):
         theta = np.radians(angle)
@@ -247,7 +283,12 @@ def _best_cut(poly, pts, base_score):
         lo, hi = proj.min(), proj.max()
         if hi - lo < 2 * OFFSET_STEP_M:
             continue
-        for off in np.arange(lo + OFFSET_STEP_M, hi - OFFSET_STEP_M + 1e-9, OFFSET_STEP_M):
+        step = max(OFFSET_STEP_M, (hi - lo) / MAX_OFFSETS_PER_DIRECTION)
+        for off in np.arange(lo + step, hi - step + 1e-9, step):
+            _cut_evals[0] += 1
+            if _cut_deadline[0] is not None and time.monotonic() > _cut_deadline[0]:
+                CUT_BUDGET_EXHAUSTED[0] += 1
+                return best
             parts = _cut(poly, angle, float(off))
             if len(parts) < 2:
                 continue
@@ -517,29 +558,51 @@ def _merge_bridgeable(faces, pts):
     A cut that buys fit but not enough to stop a panel spanning it costs the
     ridge setback on both sides for nothing. 5 degrees over a 1.7 m panel is a
     15 cm rise, past what a rigid frame bridges."""
+    # Pair testing is memoised. The loop used to restart the whole O(N^2) sweep
+    # after every successful merge, re-running _points_in and _fit_plane_robust
+    # on pairs it had already rejected -- O(N^3) in the expensive geometry ops.
+    # It still terminated (a merge always drops the face count by one), so it
+    # never showed up as a hang in testing, just as a build that sat at 100% CPU
+    # on one worker. On a Frankton Flats roof at the 60-face cap that is ~100k
+    # plane fits and about an hour on one building, which is what stalled the
+    # 28 Aug rebuild twice. A rejected pair can only become viable again if one
+    # of its two faces is itself replaced by a merge, so remembering rejections
+    # by face identity is exact -- this is a speedup, not an approximation.
     faces = list(faces)
+    uid = {id(f): n for n, f in enumerate(faces)}
+    next_uid = len(faces)
+    rejected = set()
     changed = True
     while changed and len(faces) > 1:
         changed = False
         for i in range(len(faces)):
             for j in range(i + 1, len(faces)):
+                key = (uid[id(faces[i])], uid[id(faces[j])])
+                if key in rejected:
+                    continue
                 (pi, li), (pj, lj) = faces[i], faces[j]
                 if not pi.buffer(0.25).intersects(pj):
+                    rejected.add(key)
                     continue
                 if _plane_angle(li, lj) > 5.0:
+                    rejected.add(key)
                     continue
                 if _step_at_join(li, lj, pi, pj) > BRIDGE_MAX_STEP_M:
+                    rejected.add(key)
                     continue
                 u = unary_union([pi, pj])
                 if u.geom_type != "Polygon":
+                    rejected.add(key)
                     continue
                 gain = (u.buffer(-config.RIDGE_SETBACK_M).area
                         - pi.buffer(-config.RIDGE_SETBACK_M).area
                         - pj.buffer(-config.RIDGE_SETBACK_M).area)
                 if gain <= 0.5:
+                    rejected.add(key)
                     continue
                 sub = _points_in(u, pts)
                 if len(sub) < MIN_POINTS:
+                    rejected.add(key)
                     continue
                 pl = _fit_plane_robust(sub)
                 # The merged face has to still be a plane. Angle, step and area
@@ -554,8 +617,12 @@ def _merge_bridgeable(faces, pts):
                 worst_before = min(_inlier_fraction(_points_in(pi, pts), li),
                                    _inlier_fraction(_points_in(pj, pts), lj))
                 if merged_fit < min(ACCEPT_INLIER, worst_before - 0.02):
+                    rejected.add(key)
                     continue
-                faces = [f for k, f in enumerate(faces) if k not in (i, j)] + [(u, pl)]
+                merged = (u, pl)
+                faces = [f for k, f in enumerate(faces) if k not in (i, j)] + [merged]
+                uid[id(merged)] = next_uid
+                next_uid += 1
                 changed = True
                 break
             if changed:
@@ -925,6 +992,8 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
 
     Only lines carrying enough evidence to be a primary crease qualify; see
     roof_lines.strong_roof_lines."""
+    _cut_evals[0] = 0          # the budget is per building, not per process
+    _cut_deadline[0] = time.monotonic() + CUT_TIME_BUDGET_S
     footprint = trim_to_roof(footprint, pts)
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:

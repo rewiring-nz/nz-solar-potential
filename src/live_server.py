@@ -58,8 +58,15 @@ print("Ready.")
 
 def refit_building(building_id, setback, ransac_threshold, z_threshold, density_pct=100):
     row = GDF.loc[building_id]
+    # imagery_ds MUST be passed. This file opens IMAGERY_DS at startup and for a
+    # long time did not hand it to the segmenter, so the live server silently ran
+    # a different roof model from the build: no skylight detection and no
+    # imagery-informed facets. That is the same defect that made anderson2.py
+    # render pictures of a pipeline that was never shipped, and it is the sixth
+    # time a tool here has diverged from the build it was meant to inspect.
     facets = segment_building_best(DSM_DS, PC_SOURCE, row.geometry, building_id,
-                                    ransac_distance_threshold=ransac_threshold)
+                                    ransac_distance_threshold=ransac_threshold,
+                                    imagery_ds=IMAGERY_DS)
 
     features = []
     facet_panels = []  # one list per facet, same order as `facets` -- filled in below, filtered after
