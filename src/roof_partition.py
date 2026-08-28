@@ -801,6 +801,71 @@ def _line_is_real(poly, pts, ang, off):
     return _step_at_join(pa, pb, parts[0], parts[1]) >= LINE_MIN_STEP_M
 
 
+# The footprint can also be BIGGER than the roof, and that half was missed.
+#
+# Josh drew it on 7 Anderson Heights -- "the roof overhangs it on the upper-left
+# and sits INSIDE it on the lower-left" -- and it is what put a panel over the
+# edge of 62 Ballarat St. Measured there, three edges overshoot the real roof by
+# 0.5 to 1.25 m: about 29 m2 of dead ground inside the footprint, carrying
+# panels on roof that does not exist.
+#
+# Trimmed BEFORE partitioning, unlike the eave, because dead ground must never
+# become part of a face at all.
+TRIM_MAX_M = 2.0
+TRIM_STEP_M = 0.25
+TRIM_MIN_BAND_POINTS = 3
+
+
+def trim_to_roof(footprint, pts):
+    """Footprint pulled IN wherever it overshoots the roof, edge by edge."""
+    if len(pts) < MIN_POINTS or footprint.is_empty:
+        return footprint
+    inside = _points_in(footprint, pts)
+    if len(inside) < MIN_POINTS:
+        return footprint
+    lo, hi = np.percentile(inside[:, 2], [5, 95])
+    lo -= EAVE_HEIGHT_SLACK_M
+    hi += EAVE_HEIGHT_SLACK_M
+    at_roof = (pts[:, 2] >= lo) & (pts[:, 2] <= hi)
+    if at_roof.sum() < MIN_POINTS:
+        return footprint
+
+    coords = np.asarray(footprint.exterior.coords)
+    cuts = []
+    for i in range(len(coords) - 1):
+        a, b = coords[i], coords[i + 1]
+        seg = b - a
+        length = float(np.hypot(*seg))
+        if length < EAVE_MIN_EDGE_M:
+            continue
+        d = seg / length
+        n = np.array([d[1], -d[0]])
+        if footprint.contains(Point(*((a + b) / 2 + n * 0.3))):
+            n = -n                       # outward
+        gap = 0.0
+        for step in np.arange(0.0, TRIM_MAX_M + 1e-9, TRIM_STEP_M):
+            band = Polygon([a - n * step, b - n * step,
+                            b - n * (step + TRIM_STEP_M), a - n * (step + TRIM_STEP_M)])
+            if band.is_empty or not band.is_valid:
+                break
+            m = at_roof & shapely.vectorized.contains(band, pts[:, 0], pts[:, 1])
+            if int(m.sum()) >= TRIM_MIN_BAND_POINTS:
+                break                    # roof starts here
+            gap = float(step + TRIM_STEP_M)
+        if gap > 0:
+            cuts.append(Polygon([a, b, b - n * gap, a - n * gap]))
+
+    if not cuts:
+        return footprint
+    trimmed = footprint.difference(unary_union(cuts))
+    if trimmed.geom_type == "MultiPolygon":
+        trimmed = max(trimmed.geoms, key=lambda q: q.area)
+    if (trimmed.geom_type != "Polygon" or trimmed.is_empty
+            or trimmed.area < 0.5 * footprint.area):
+        return footprint                 # never lose half a building to this
+    return Polygon(trimmed.exterior).simplify(0.05)
+
+
 def _extend_to_eave(faces, footprint, pts):
     """Give each finished face the strip of roof that overhangs beside it.
 
@@ -860,6 +925,7 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
 
     Only lines carrying enough evidence to be a primary crease qualify; see
     roof_lines.strong_roof_lines."""
+    footprint = trim_to_roof(footprint, pts)
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         return []
