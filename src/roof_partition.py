@@ -269,6 +269,84 @@ def _score(poly, pts):
     return plane, _inlier_fraction(sub, plane)
 
 
+
+# A fold is not "many points off the plane" -- that test does not work, and the
+# numbers say so plainly. Measured on the two roofs Josh judged opposite ways:
+#
+#   7 Anderson (he calls WRONG)  faces at 11.0% and 8.0% of points beyond 0.5 m
+#   5 Isle     (he calls RIGHT)  faces at  2.3%, 6.6% and 10.6% beyond 0.5 m
+#
+# 5 Isle's correct 44 m2 face has a LONGER tail than Anderson's wrong 64.6 m2
+# face. Any threshold that cuts one shatters the other, which is why the earlier
+# fold-fraction and fold-location attempts were abandoned.
+#
+# What separates them is the SHAPE of the off-plane set. On 5 Isle the low
+# points are rooftop clutter: compact blobs scattered over a surface that really
+# is one plane. On 7 Anderson they are the valleys between three pyramid hips --
+# long connected bands running clean across the face. So the test is spatial: a
+# fold is a connected low region that is elongated AND spans most of the way
+# across the region it sits in. Clutter is neither.
+FOLD_DROP_M = 0.40           # how far below the plane counts as "low"
+FOLD_CELL_M = 0.6            # grid the low points onto this, then label components
+FOLD_MIN_CELLS = 8           # smaller connected sets are clutter, not structure
+FOLD_MIN_SPAN_SHARE = 0.55   # a fold runs most of the way across the face
+FOLD_MIN_ELONGATION = 2.2    # and it is long and thin, not a blob
+
+
+def _fold_evidence(poly, pts, plane):
+    """True when the points below `plane` form a band crossing `poly`.
+
+    Detects a roof that drops through the middle of a face -- the defect Josh
+    reported repeatedly on 7 Anderson Heights -- while ignoring the scattered
+    low clutter that sits on a face which really is one plane."""
+    sub = _points_in(poly, pts)
+    if len(sub) < MIN_POINTS:
+        return False
+    r = sub[:, 2] - (plane[0] * sub[:, 0] + plane[1] * sub[:, 1] + plane[2])
+    r = r - np.median(r)
+    low = sub[r < -FOLD_DROP_M]
+    if len(low) < FOLD_MIN_CELLS:
+        return False
+    try:
+        from scipy import ndimage
+    except Exception:
+        return False
+    minx, miny, maxx, maxy = poly.bounds
+    nx = max(2, int(np.ceil((maxx - minx) / FOLD_CELL_M)))
+    ny = max(2, int(np.ceil((maxy - miny) / FOLD_CELL_M)))
+    if nx * ny > 400000:
+        return False
+    grid = np.zeros((ny, nx), dtype=bool)
+    ix = np.clip(((low[:, 0] - minx) / FOLD_CELL_M).astype(int), 0, nx - 1)
+    iy = np.clip(((low[:, 1] - miny) / FOLD_CELL_M).astype(int), 0, ny - 1)
+    grid[iy, ix] = True
+    labels, n = ndimage.label(grid, structure=np.ones((3, 3), dtype=int))
+    if n == 0:
+        return False
+    face_span = max(maxx - minx, maxy - miny)
+    for lab in range(1, n + 1):
+        ys, xs = np.nonzero(labels == lab)
+        if len(xs) < FOLD_MIN_CELLS:
+            continue
+        px = xs * FOLD_CELL_M + minx
+        py = ys * FOLD_CELL_M + miny
+        c = np.column_stack([px - px.mean(), py - py.mean()])
+        # principal axes of the connected low region
+        try:
+            axes = np.linalg.svd(c, full_matrices=False)[2]
+        except Exception:
+            continue
+        proj = c @ axes.T
+        length = proj[:, 0].max() - proj[:, 0].min()
+        width = proj[:, 1].max() - proj[:, 1].min() if proj.shape[1] > 1 else 0.0
+        if length < FOLD_MIN_SPAN_SHARE * face_span:
+            continue
+        if width > 1e-6 and length / max(width, FOLD_CELL_M) < FOLD_MIN_ELONGATION:
+            continue
+        return True
+    return False
+
+
 def _best_cut(poly, pts, base_score):
     """The straight line that best explains this region as two planes."""
     if _cut_deadline[0] is not None and time.monotonic() > _cut_deadline[0]:
@@ -488,7 +566,8 @@ def _partition(poly, pts, depth=0, budget=None):
     #
     # A tail that far out is structure, not noise. Roughness raises the count of
     # points just outside the band; a fold puts them metres away.
-    if (score >= ACCEPT_INLIER or depth >= MAX_DEPTH
+    folded = _fold_evidence(poly, pts, plane)
+    if ((score >= ACCEPT_INLIER and not folded) or depth >= MAX_DEPTH
             or poly.area < 2 * MIN_FACET_M2 or budget[0] <= 1):
         return [(poly, plane)]
     best = _best_cut(poly, pts, score)
@@ -508,7 +587,15 @@ def _partition(poly, pts, depth=0, budget=None):
     # highly unlikely there would ever be very many vertices on a house".
     gain = max(0.0, best[0] - score)
     cost = _usable(poly) - sum(_usable(q) for q in parts)
-    if cost > SETBACK_COST_PER_FIT * gain * max(_usable(poly), 1e-9):
+    # The setback economics protect a face that is already a plane from being
+    # fragmented for a fit gain too small to be worth the racking area. They must
+    # not protect a FOLDED face: there the cut is not buying fit, it is putting
+    # the ridge where the roof actually bends, and paying a setback strip for
+    # that is the whole point. Measured on 7 Anderson Heights: the fold test
+    # correctly flagged its 75.4 m2 face, the recursion asked for a cut, and this
+    # veto threw it away (cost 2.81 m2 against a 1.97 m2 threshold) -- so the
+    # fold detection changed nothing until the veto learned to stand down.
+    if not folded and cost > SETBACK_COST_PER_FIT * gain * max(_usable(poly), 1e-9):
         return [(poly, plane)]
     out = []
     budget[0] -= 1          # this cut spends one face from the building's budget
