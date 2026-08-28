@@ -34,6 +34,15 @@
       "structure": "Josh: 'a very complicated roof'. Two multi-gabled sections, terracotta on one side and grey on the other, with many ridges, hips, valleys and dormers. He marked the lines but not the plane surfaces. This is the exception to his 1-10 planes guidance.",
       "marked": "red = ridges/hips/valleys, green = true roof outline, blue = obstructions (small dots)",
       "key_finding": "Caught brightness-based skylight detection inventing objects. Its threshold was taken PER FACET, and a percentile always finds something -- a tenth of any facet is in its own top decile -- so on this uniformly sunlit terracotta roof it manufactured 8 blobs totalling 21 m2, carving 17% of a 149 m2 roof down to 9 panels against Josh's 7 small dots. Taking the threshold over the whole roof instead: 0 false blobs here, 8 real skylights still found on 29 Edinburgh."
+    },
+    {
+      "building_id": 4735242,
+      "address": "5 Church St",
+      "obstruction_share_marked": "roughly a quarter to a third of the roof",
+      "structure": "Large commercial roof, 1054 m2 footprint, heavily covered in plant: ducting, walkways, condensers, a large central plant block. Some level changes marked in red.",
+      "marked": "red = level changes/ridges, green = true roof outline, blue = obstructions (merged where close together)",
+      "key_finding": "Under-detection on plant-covered commercial roofs, and neither obvious lever fixes it. The pipeline carves 16% where Josh marks roughly 25-30%. Lowering HEIGHT_RESIDUAL_THRESHOLD_M makes it WORSE (16% -> 11%), because more flagged points grow clusters that then trip the over-carve caps and are discarded whole -- a mechanism already documented in obstruction_detection.py. Relaxing those caps from 0.35/0.50 to 0.90/0.95 moves it only 16% -> 17%, so the caps are not binding either. The height path simply does not flag the plant: 2021 LiDAR at ~0.42 m spacing against ducting that is obvious in 0.1 m 2026 imagery. This is the case for an imagery-based obstruction detector."
     }
-  ]
+  ],
+  "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'"
 }
