@@ -1222,6 +1222,106 @@ def _extend_to_eave(faces, footprint, pts):
     return out
 
 
+
+# A recessed section -- a length of roof sitting BELOW the surface around it --
+# has to come out as its own region before anything is cut, because no line that
+# spans the whole roof can isolate it.
+#
+# Josh drew one on 7 Anderson Heights and confirmed it is recessed. Measured:
+# the ridge runs at 381.42 m, drops to 380.26 m across the middle, and returns
+# to 381.47 m. Earlier attempts hunted for its edges as shoulders in a 1-D ridge
+# profile and put the cuts in the wrong place every time. In 2-D it is simply
+# the set of points below the roof's own plane envelope.
+#
+# Two details matter. A pitched roof's surface is the LOWER envelope of its
+# planes, so the reference has to be min() over the main faces and not any one
+# plane -- against a single plane the hips read as recessed too, and 78 m2 of a
+# 211 m2 roof got flagged. And the depth has to be a BAND: where the surveyed
+# footprint overruns the roof, the points beyond the eave are wall or ground
+# sitting about 2 m down, and they connect to the real recess and swallow it.
+# Restricting to 0.45-1.8 m below separates them -- overlap with Josh's traced
+# section went from IoU 0.24 to 0.55.
+RECESS_MIN_DEPTH_M = 0.45
+RECESS_MAX_DEPTH_M = 1.80
+RECESS_CELL_M = 0.75
+RECESS_MIN_AREA_M2 = 6.0
+RECESS_MAX_AREA_SHARE = 0.45    # a full-width section is a bigger share than an island
+RECESS_MIN_POINTS = 40
+
+
+def _recessed_region(footprint, pts, faces):
+    """The recessed section of a roof, as a rectangle in the roof's own frame.
+
+    `faces` is a first-pass partition, used only for its planes. Returns None
+    when the roof has no such section."""
+    if len(faces) < 2 or len(pts) < RECESS_MIN_POINTS:
+        return None
+    try:
+        from scipy import ndimage
+    except Exception:
+        return None
+    planes = [pl for _poly, pl in sorted(faces, key=lambda t: -t[0].area)[:4]]
+    env = np.minimum.reduce([p[0] * pts[:, 0] + p[1] * pts[:, 1] + p[2] for p in planes])
+    resid = pts[:, 2] - env
+    core = pts[(resid < -RECESS_MIN_DEPTH_M) & (resid > -RECESS_MAX_DEPTH_M)]
+    if len(core) < RECESS_MIN_POINTS:
+        return None
+    minx, miny, maxx, maxy = footprint.bounds
+    nx = max(2, int(np.ceil((maxx - minx) / RECESS_CELL_M)))
+    ny = max(2, int(np.ceil((maxy - miny) / RECESS_CELL_M)))
+    if nx * ny > 200000:
+        return None
+    grid = np.zeros((ny, nx), dtype=bool)
+    ix = np.clip(((core[:, 0] - minx) / RECESS_CELL_M).astype(int), 0, nx - 1)
+    iy = np.clip(((core[:, 1] - miny) / RECESS_CELL_M).astype(int), 0, ny - 1)
+    grid[iy, ix] = True
+    grid = ndimage.binary_closing(grid, structure=np.ones((3, 3), dtype=bool))
+    lab, n = ndimage.label(grid, structure=np.ones((3, 3), dtype=int))
+    if n == 0:
+        return None
+    best = max(range(1, n + 1), key=lambda k: int(np.sum(lab == k)))
+    if int(np.sum(lab == best)) * RECESS_CELL_M ** 2 < RECESS_MIN_AREA_M2:
+        return None
+    ys, xs = np.nonzero(lab == best)
+    cx = minx + (xs + 0.5) * RECESS_CELL_M
+    cy = miny + (ys + 0.5) * RECESS_CELL_M
+    # a rectangle in the roof's own frame: roofs are straight lines, not blobs
+    try:
+        rect = np.asarray(footprint.minimum_rotated_rectangle.exterior.coords)
+    except Exception:
+        return None
+    e = rect[1:] - rect[:-1]
+    L = np.hypot(e[:, 0], e[:, 1])
+    if len(L) == 0 or L.max() <= 0:
+        return None
+    u = e[int(np.argmax(L))] / L.max()
+    v = np.array([-u[1], u[0]])
+    c = np.array(footprint.centroid.coords[0])
+    xy = np.column_stack([cx, cy]) - c
+    a, b = xy @ u, xy @ v
+    # Extended ACROSS the roof, from eave to eave. A recessed section is a
+    # length of roof, not an island in it: Josh drew this one running the full
+    # width, and it has to, or the roof stays connected around it and the main
+    # slopes are never divided. The LiDAR only ever sees the deepest middle of
+    # it -- the section's own edges rise back toward the surrounding roof and
+    # never reach the depth threshold -- so its extent ALONG the roof is
+    # measured and its extent ACROSS is taken from the roof itself.
+    across = (np.asarray(footprint.exterior.coords) - c) @ v
+    b_lo, b_hi = float(across.min()) - 1.0, float(across.max()) + 1.0
+    poly = Polygon([c + u * aa + v * bb for aa, bb in
+                    ((a.min(), b_lo), (a.max(), b_lo),
+                     (a.max(), b_hi), (a.min(), b_hi))])
+    try:
+        poly = poly.intersection(footprint)
+    except Exception:
+        return None
+    if (poly.is_empty or poly.geom_type != "Polygon"
+            or poly.area < RECESS_MIN_AREA_M2
+            or poly.area > RECESS_MAX_AREA_SHARE * footprint.area):
+        return None
+    return poly
+
+
 def partition_roof(building_id, footprint, pts, imagery_ds=None):
     """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
 
@@ -1293,6 +1393,25 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
         faces.extend(_partition(cell, _points_in(cell, inside)))
     if not faces:
         return []
+
+    # Second pass: if the first one reveals a recessed section, partition the
+    # section and the roof around it separately. A cut that spans the region can
+    # never isolate something in the middle of it, so this cannot be done by
+    # offering another candidate to _best_cut -- it has to change what is being
+    # cut. Only re-run when a section is actually found, so ordinary roofs pay
+    # one plane-envelope evaluation and nothing else.
+    recess = _recessed_region(footprint, inside, faces)
+    if recess is not None:
+        rest = footprint.difference(recess)
+        pieces = [recess] + [q for q in getattr(rest, "geoms", [rest])
+                             if isinstance(q, Polygon) and q.area >= MIN_PIECE_M2]
+        if len(pieces) >= 2:
+            regrown = []
+            for piece in pieces:
+                regrown.extend(_partition(piece, _points_in(piece, inside)))
+            if regrown:
+                faces = regrown
+
     faces = _merge_bridgeable(faces, inside)
     faces = _extend_to_eave(faces, footprint, pts)
 
