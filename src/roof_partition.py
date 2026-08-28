@@ -681,7 +681,8 @@ def partition_by_planes(building_id, footprint, pts, seed=0):
 # on one side and sits INSIDE it on another -- and growing uniformly took that
 # roof to 16 faces against the 8 he counted. This needs per-edge treatment:
 # decide independently for each footprint edge how far the roof runs past it.
-# OFF. The FINDING is real and matters -- 6.6% to 18.8% of roof-height points
+# The eave is added AFTER partitioning, never before -- see _extend_to_eave.
+# Partitioning a grown outline was tried and is wrong -- 6.6% to 18.8% of roof-height points
 # fall outside the LINZ footprint by up to 2 m, so roof area is understated
 # everywhere -- and per-edge measurement matches Josh's drawn outlines exactly
 # (7 Anderson Heights runs 1.25 m past one long edge, 0.0 past the opposite one,
@@ -689,9 +690,8 @@ def partition_by_planes(building_id, footprint, pts, seed=0):
 # the uniform and the per-edge form: with imagery cuts active, Anderson goes
 # 10 -> 17 faces against Josh's 8 and 29 Edinburgh 4 -> 7 against his 5, because
 # the eave strips are then sliced by the same lines into slivers. Fixing this
-# needs the eave to be added AFTER partitioning -- extend each finished face to
-# the roof edge, rather than partitioning a larger outline.
-EAVE_MAX_M = 0.0
+# which is why the ring is now merged into the faces that already exist instead.
+EAVE_MAX_M = 2.0
 EAVE_MIN_EDGE_M = 1.5            # shorter edges are corner chamfers, not roof sides
 EAVE_MIN_BAND_POINTS = 3         # roof points needed in a strip to keep walking out
 EAVE_HEIGHT_SLACK_M = 0.4        # how far outside the roof's own height range still counts
@@ -801,6 +801,48 @@ def _line_is_real(poly, pts, ang, off):
     return _step_at_join(pa, pb, parts[0], parts[1]) >= LINE_MIN_STEP_M
 
 
+def _extend_to_eave(faces, footprint, pts):
+    """Give each finished face the strip of roof that overhangs beside it.
+
+    The eave is real -- 6.6% to 18.8% of roof-height points fall outside the
+    LINZ footprint, by up to 2 m -- but partitioning a grown outline is the
+    wrong way to capture it. The imagery lines then slice the new strips into
+    slivers and the face count balloons: 7 Anderson Heights went 10 -> 17
+    against Josh's 8, 29 Edinburgh 4 -> 7 against his 5.
+
+    Adding it here instead cannot create a face. The ring between footprint and
+    roof edge is cut up and each piece joins whichever finished face it already
+    touches, so the count is exactly what the partition decided and the roof
+    simply reaches its true edge."""
+    if not faces:
+        return faces
+    outline = roof_outline(footprint, pts)
+    ring = outline.difference(footprint)
+    if ring.is_empty or ring.area < 0.5:
+        return faces
+    pieces = list(ring.geoms) if ring.geom_type == "MultiPolygon" else [ring]
+    out = [(g, pl) for g, pl in faces]
+    for piece in pieces:
+        if piece.is_empty or piece.area < 0.05:
+            continue
+        # whichever face shares the most boundary with it; distance breaks ties
+        best, best_share = None, -1.0
+        for k, (g, _pl) in enumerate(out):
+            share = g.buffer(0.05).intersection(piece).area
+            if share > best_share:
+                best, best_share = k, share
+        if best is None:
+            continue
+        if best_share <= 0:
+            best = min(range(len(out)), key=lambda k: out[k][0].distance(piece))
+        g, pl = out[best]
+        merged = unary_union([g, piece])
+        if merged.geom_type != "Polygon":
+            continue
+        out[best] = (Polygon(merged.exterior, [r for r in merged.interiors]), pl)
+    return out
+
+
 def partition_roof(building_id, footprint, pts, imagery_ds=None):
     """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
 
@@ -818,7 +860,6 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
 
     Only lines carrying enough evidence to be a primary crease qualify; see
     roof_lines.strong_roof_lines."""
-    footprint = roof_outline(footprint, pts)
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         return []
@@ -849,6 +890,7 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     if not faces:
         return []
     faces = _merge_bridgeable(faces, inside)
+    faces = _extend_to_eave(faces, footprint, pts)
 
     out = []
     for poly, plane in faces:
