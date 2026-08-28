@@ -21,6 +21,7 @@ Usage: python src/build_layout_geojson.py [area ...] [--jobs N]
 
 import json
 import os
+import signal
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, wait
@@ -69,6 +70,24 @@ DEFAULT_MAX_JOBS = 10
 STALL_REPORT_S = 120
 STALL_ABORT_S = 1800
 
+# No single building may cost the district. Building 4722059 on frankton_flats
+# (16,010 m2, 226 m across, 73,226 points) does not finish: partition_roof alone
+# handles it in 41s, but segment_building_best compares several strategies and
+# then post-processes 51 facets, and the whole call was still running after 14
+# minutes. It stalled two rebuilds before the watchdog above could even name it.
+# One airport-scale roof missing from the map is a far smaller loss than the
+# other 14,000 buildings not shipping, so a building over budget is dropped and
+# reported by id -- never silently.
+BUILDING_TIME_BUDGET_S = 300
+
+
+class _BuildingTimeout(Exception):
+    pass
+
+
+def _on_timeout(signum, frame):
+    raise _BuildingTimeout()
+
 _CTX = {}
 
 
@@ -92,11 +111,19 @@ def _init_worker(area, model):
 
 def _build_one(building_id):
     """Everything for one building. Returns its GeoJSON features."""
+    signal.signal(signal.SIGALRM, _on_timeout)
+    signal.alarm(BUILDING_TIME_BUDGET_S)
     try:
         return _build_one_inner(building_id)
+    except _BuildingTimeout:
+        print(f"  building {building_id} DROPPED: over {BUILDING_TIME_BUDGET_S}s budget",
+              file=sys.stderr, flush=True)
+        return []
     except Exception as exc:
         print(f"  building {building_id} FAILED: {exc!r}", flush=True)
         return []
+    finally:
+        signal.alarm(0)
 
 
 def _build_one_inner(building_id):
