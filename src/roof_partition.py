@@ -45,7 +45,7 @@ from pathlib import Path
 
 import numpy as np
 import shapely.vectorized
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import split as shapely_split, unary_union
 
 warnings.filterwarnings("ignore")
@@ -681,33 +681,88 @@ def partition_by_planes(building_id, footprint, pts, seed=0):
 # on one side and sits INSIDE it on another -- and growing uniformly took that
 # roof to 16 faces against the 8 he counted. This needs per-edge treatment:
 # decide independently for each footprint edge how far the roof runs past it.
+# OFF. The FINDING is real and matters -- 6.6% to 18.8% of roof-height points
+# fall outside the LINZ footprint by up to 2 m, so roof area is understated
+# everywhere -- and per-edge measurement matches Josh's drawn outlines exactly
+# (7 Anderson Heights runs 1.25 m past one long edge, 0.0 past the opposite one,
+# 2.0 m past one end). But growing the outline makes face counts WORSE, in both
+# the uniform and the per-edge form: with imagery cuts active, Anderson goes
+# 10 -> 17 faces against Josh's 8 and 29 Edinburgh 4 -> 7 against his 5, because
+# the eave strips are then sliced by the same lines into slivers. Fixing this
+# needs the eave to be added AFTER partitioning -- extend each finished face to
+# the roof edge, rather than partitioning a larger outline.
 EAVE_MAX_M = 0.0
+EAVE_MIN_EDGE_M = 1.5            # shorter edges are corner chamfers, not roof sides
+EAVE_MIN_BAND_POINTS = 3         # roof points needed in a strip to keep walking out
+EAVE_HEIGHT_SLACK_M = 0.4        # how far outside the roof's own height range still counts
+EAVE_CORNER_CLOSE_M = 0.3
 EAVE_STEP_M = 0.25
 EAVE_MIN_POINT_SHARE = 0.85
 
 
 def roof_outline(footprint, pts):
-    """Footprint grown out to the real roof edge, staying straight-sided."""
-    if len(pts) < MIN_POINTS:
+    """Footprint pushed out to the real roof edge, ONE EDGE AT A TIME.
+
+    A uniform buffer cannot represent this and was tried first: Josh's drawn
+    roof outlines run past the footprint on some sides and sit inside it on
+    others, and growing evenly took 7 Anderson Heights to 16 faces against the
+    8 he counted, and 2/8 Wakatipu Heights up 33% in area. Measured per edge,
+    Anderson runs 1.25 m past one long edge and 0.0 past the opposite one, and
+    2.0 m past one end -- there is no single number.
+
+    Each edge is walked outward in short steps for as long as roof-height points
+    keep appearing, then the strip it gained is unioned on. Every edge stays a
+    straight line, so this cannot reintroduce the traced-boundary fuzz the whole
+    module exists to avoid."""
+    if len(pts) < MIN_POINTS or footprint.is_empty:
         return footprint
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         return footprint
     lo, hi = np.percentile(inside[:, 2], [5, 95])
-    lo -= 0.5
-    hi += 0.5
+    lo -= EAVE_HEIGHT_SLACK_M
+    hi += EAVE_HEIGHT_SLACK_M
+    at_roof = (pts[:, 2] >= lo) & (pts[:, 2] <= hi)
+    if at_roof.sum() < MIN_POINTS:
+        return footprint
 
-    best = footprint
-    for grow in np.arange(EAVE_STEP_M, EAVE_MAX_M + 1e-9, EAVE_STEP_M):
-        ring = footprint.buffer(grow).difference(footprint.buffer(grow - EAVE_STEP_M))
-        got = _points_in(ring, pts)
-        if len(got) < 4:
-            break
-        at_roof = float(((got[:, 2] >= lo) & (got[:, 2] <= hi)).mean())
-        if at_roof < EAVE_MIN_POINT_SHARE:
-            break
-        best = footprint.buffer(grow, join_style=2)   # mitred: keeps corners sharp
-    return best if best.geom_type == "Polygon" else footprint
+    coords = np.asarray(footprint.exterior.coords)
+    strips = []
+    for i in range(len(coords) - 1):
+        a, b = coords[i], coords[i + 1]
+        seg = b - a
+        length = float(np.hypot(*seg))
+        if length < EAVE_MIN_EDGE_M:
+            continue
+        d = seg / length
+        n = np.array([d[1], -d[0]])
+        if footprint.contains(Point(*((a + b) / 2 + n * 0.3))):
+            n = -n                      # make sure it points outward
+        reach = 0.0
+        for step in np.arange(EAVE_STEP_M, EAVE_MAX_M + 1e-9, EAVE_STEP_M):
+            band = Polygon([a + n * (step - EAVE_STEP_M), b + n * (step - EAVE_STEP_M),
+                            b + n * step, a + n * step])
+            if band.is_empty or not band.is_valid:
+                break
+            m = at_roof & shapely.vectorized.contains(band, pts[:, 0], pts[:, 1])
+            if int(m.sum()) < EAVE_MIN_BAND_POINTS:
+                break
+            reach = float(step)
+        if reach > 0:
+            strips.append(Polygon([a, b, b + n * reach, a + n * reach]))
+
+    if not strips:
+        return footprint
+    grown = unary_union([footprint] + strips)
+    if grown.geom_type == "MultiPolygon":
+        grown = max(grown.geoms, key=lambda q: q.area)
+    if grown.geom_type != "Polygon":
+        return footprint
+    # close the small notches left at corners where two strips meet
+    grown = grown.buffer(EAVE_CORNER_CLOSE_M).buffer(-EAVE_CORNER_CLOSE_M)
+    if grown.geom_type != "Polygon" or grown.is_empty:
+        return footprint
+    return Polygon(grown.exterior).simplify(0.05)
 
 
 # A strong imagery line is only cut if the roof actually CHANGES there.
@@ -770,6 +825,11 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
 
     cells = [footprint]
     if imagery_ds is not None:
+        # NOT a bare except. A rewrite of roof_outline above once deleted
+        # _line_is_real while leaving this call site, and a broad except turned
+        # that into "imagery cuts silently do nothing" -- the measurements looked
+        # plausible and were meaningless. Import and geometry failures are the
+        # only ones worth tolerating here.
         try:
             from src.roof_lines import strong_roof_lines
             for ang, off in strong_roof_lines(imagery_ds, footprint):
@@ -779,7 +839,8 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
                              if _line_is_real(c, _points_in(c, inside), ang, off) else [])
                     nxt.extend(parts if len(parts) >= 2 else [c])
                 cells = nxt
-        except Exception:
+        except (ImportError, ValueError, AttributeError) as exc:
+            print(f"  roof_partition: imagery cuts unavailable ({exc!r})", flush=True)
             cells = [footprint]
 
     faces = []
