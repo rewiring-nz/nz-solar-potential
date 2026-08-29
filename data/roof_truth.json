@@ -138,11 +138,11 @@
     {
       "building_id": 4725474,
       "address": "23 Brisbane Street",
-      "faces_marked_lines": 3,
       "structure": "Three red lines. The two long ones run SW-NE and divide the roof into an upper band, a darker middle band and a lower band -- the pipeline reproduces those three exactly. The third line is short (2.9 m) in the upper-left, beside the notch in the outline.",
       "marked": "green = true roof outline, red = ridges/level changes. No obstructions marked.",
       "obstructions_marked": 0,
-      "key_finding": "Faces match on the two long lines: our three faces sit exactly in his three bands, at aspects 338.3, 157.8 and 159.9 and fitting 100%, 100% and 99.1%. OPEN QUESTION on his short line: splitting the upper face along it puts 15 points one side and 106 the other, at aspects 337.2 and 338.5, and BOTH sides fit 100% -- as does the undivided face. The LiDAR cannot confirm a plane break there; the region is about 3 m2. Needs Josh to say whether it is a separate plane or the edge of the notch.\nSECOND FALSE POSITIVE: he marked no obstructions and the pipeline carves 1.4 m2. With 47 Robins Road that is two invented obstructions on two consecutive simple roofs, both around 1.2-1.4 m2."
+      "key_finding": "FOUR faces. Josh, on the short 2.9 m line: \"The short line you mentioned upper right earlier is a small pitch change in roof that creates the different face.\" So it is real structure and the pipeline returns three.\nWhy it is invisible to the current test: splitting along that line gives slopes of 23.7 and 27.7 degrees at aspects 337.2 and 338.5 -- a 4 degree pitch change -- and BOTH halves fit 100%, as does the undivided face. Over the 2.9 m the line runs, 4 degrees is about 0.20 m of divergence, barely past the 0.15 m inlier band and only at the far edge, and the small side carries just 15 points, so the inlier fraction never falls near the 85% acceptance bar. Fit cannot see this. A PITCH difference between sub-regions can, and is the same class of signal as the fold test: structure that the residuals do not reveal.\nThe other two lines are reproduced exactly.\nObstructions: he marked none and the pipeline carves 1.4 m2.",
+      "faces": 4
     },
     {
       "building_id": 4725521,
