@@ -134,6 +134,15 @@
         ]
       },
       "key_finding": "GEOMETRY RIGHT, OBSTRUCTIONS WRONG -- on the simplest roof in the set. The partition returns exactly one face at 90.9% on-plane, matching Josh. The obstruction layer finds NEITHER of the two he marked and invents a third: a 1.2 m2 blob 7.5 m from the patio and 9.7 m from the small object, overlapping neither. The patio is 11.6 m2, 14% of an 81 m2 roof, and 79% of it falls inside the LINZ footprint, so panels are being proposed on a structure that cannot take them. The height path cannot separate it: LiDAR in the patio reads 324.3-325.7 m against a main roof of 325.0-325.7 m, so its top is level with the roof. This is the case for detecting a secondary roof structure from imagery rather than height."
+    },
+    {
+      "building_id": 4725474,
+      "address": "23 Brisbane Street",
+      "faces_marked_lines": 3,
+      "structure": "Three red lines. The two long ones run SW-NE and divide the roof into an upper band, a darker middle band and a lower band -- the pipeline reproduces those three exactly. The third line is short (2.9 m) in the upper-left, beside the notch in the outline.",
+      "marked": "green = true roof outline, red = ridges/level changes. No obstructions marked.",
+      "obstructions_marked": 0,
+      "key_finding": "Faces match on the two long lines: our three faces sit exactly in his three bands, at aspects 338.3, 157.8 and 159.9 and fitting 100%, 100% and 99.1%. OPEN QUESTION on his short line: splitting the upper face along it puts 15 points one side and 106 the other, at aspects 337.2 and 338.5, and BOTH sides fit 100% -- as does the undivided face. The LiDAR cannot confirm a plane break there; the region is about 3 m2. Needs Josh to say whether it is a separate plane or the edge of the notch.\nSECOND FALSE POSITIVE: he marked no obstructions and the pipeline carves 1.4 m2. With 47 Robins Road that is two invented obstructions on two consecutive simple roofs, both around 1.2-1.4 m2."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
