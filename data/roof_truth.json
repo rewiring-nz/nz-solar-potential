@@ -143,8 +143,22 @@
       "marked": "green = true roof outline, red = ridges/level changes. No obstructions marked.",
       "obstructions_marked": 0,
       "key_finding": "Faces match on the two long lines: our three faces sit exactly in his three bands, at aspects 338.3, 157.8 and 159.9 and fitting 100%, 100% and 99.1%. OPEN QUESTION on his short line: splitting the upper face along it puts 15 points one side and 106 the other, at aspects 337.2 and 338.5, and BOTH sides fit 100% -- as does the undivided face. The LiDAR cannot confirm a plane break there; the region is about 3 m2. Needs Josh to say whether it is a separate plane or the edge of the notch.\nSECOND FALSE POSITIVE: he marked no obstructions and the pipeline carves 1.4 m2. With 47 Robins Road that is two invented obstructions on two consecutive simple roofs, both around 1.2-1.4 m2."
+    },
+    {
+      "building_id": 4725521,
+      "address": "9 Brisbane Street",
+      "faces": 4,
+      "structure": "Josh: \"Clear 4 faces on Brisbane Street\". Two crossing lines divide the roof into four quadrants meeting at a point near (1258443.2, 5003984.4). Low pitch, about 10 degrees.",
+      "marked": "green = true roof outline, red = ridges/valleys, blue = one small obstruction",
+      "obstructions_marked": 1,
+      "traced_obstruction_nztm": [
+        1258440.9,
+        5003984.3
+      ],
+      "key_finding": "GEOMETRY EXACT: four faces, arranged around a centre at (443.0, 985.1) against his crossing point at (443.2, 984.4) -- within half a metre. Aspects 229.7/49.5/228.8/52.1, fits 95.1/98.7/88.6/98.5%.\nOBSTRUCTIONS 13x OVER: he marked one object of about 0.6 m2; the pipeline carves 8.0 m2 in two blobs, NEITHER overlapping his at all (1.7 m and 5.3 m away). So it misses the real object and invents two others."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
-  "_open_problem": "7 Anderson Heights matches Josh's face COUNT of 8 but not his structure: the central hipped feature he marked is paved over by one face. Diagnosed precisely -- that face is 75 m2 with 11% of its points more than 0.5 m off plane, _best_cut does find a cut, and the setback rule blocks it (cost 2.8 m2 against 2.0 allowed) because one line through a pyramid gains only 1.5%. A hip needs SEVERAL cuts forming a closed shape, and each is individually too small to pay for itself. Loosening the setback rule does not fix it: swept against all four drawn roofs, 2.0 gives 4/4 exact and every higher value gives 3/4 or worse, because the extra cuts are not the hip. This needs compact-feature detection, not line cutting."
+  "_open_problem": "7 Anderson Heights matches Josh's face COUNT of 8 but not his structure: the central hipped feature he marked is paved over by one face. Diagnosed precisely -- that face is 75 m2 with 11% of its points more than 0.5 m off plane, _best_cut does find a cut, and the setback rule blocks it (cost 2.8 m2 against 2.0 allowed) because one line through a pyramid gains only 1.5%. A hip needs SEVERAL cuts forming a closed shape, and each is individually too small to pay for itself. Loosening the setback rule does not fix it: swept against all four drawn roofs, 2.0 gives 4/4 exact and every higher value gives 3/4 or worse, because the extra cuts are not the hip. This needs compact-feature detection, not line cutting.",
+  "_obstruction_summary": "Across the three simple roofs Josh marked on 29 Aug -- 47 Robins Road, 23 Brisbane Street, 9 Brisbane Street -- he marked 13.1 m2 of obstruction in total and the pipeline detected NONE OF IT: zero overlap on every one. It carved 10.9 m2 elsewhere. Face counts on the same three roofs were exact (1, 3, 4). The obstruction layer is not mis-tuned on these roofs, it is uncorrelated with them, and that is a different kind of problem: it needs rebuilding against imagery rather than another threshold sweep."
 }
