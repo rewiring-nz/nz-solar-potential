@@ -133,7 +133,7 @@
           5004949.8
         ]
       },
-      "key_finding": "GEOMETRY RIGHT, OBSTRUCTIONS WRONG -- on the simplest roof in the set. The partition returns exactly one face at 90.9% on-plane, matching Josh. The obstruction layer finds NEITHER of the two he marked and invents a third: a 1.2 m2 blob 7.5 m from the patio and 9.7 m from the small object, overlapping neither. The patio is 11.6 m2, 14% of an 81 m2 roof, and 79% of it falls inside the LINZ footprint, so panels are being proposed on a structure that cannot take them. The height path cannot separate it: LiDAR in the patio reads 324.3-325.7 m against a main roof of 325.0-325.7 m, so its top is level with the roof. This is the case for detecting a secondary roof structure from imagery rather than height."
+      "key_finding": "Josh later ruled that patio and carport roofs should be INCLUDED as roof by default, so modelling this patio as roof was RIGHT and the earlier note here calling it a miss was wrong. What stands: the pipeline found neither object he marked and invented a 1.2 m2 blob 7.5 m from either. Geometry exact -- one face at 90.9% on-plane, matching his one flat plane."
     },
     {
       "building_id": 4725474,
@@ -202,11 +202,27 @@
       "faces": 7,
       "structure": "Josh: \"7 faces here\". Hip roof with a long ridge feature marked blue down the middle.",
       "key_finding": "10 faces against his 7, over-segmented. One face is indefensible on any reading: 10.2 m2 at 42.8 degrees fitting its own points at 29.6%. That is a wall. Also the largest overhang measured so far -- 26.3% of the roof outside the footprint, median 1.35 m out."
+    },
+    {
+      "building_id": 4725584,
+      "address": "32 Frankton Road",
+      "faces": null,
+      "structure": "Large commercial. Josh marked obstructions only, not ridges or outline.",
+      "key_finding": "WORST RESULT IN THE SET. 4,032 m2 modelled as THREE faces, two of them 2,429 m2 and 1,158 m2 fitting their own points at 15.3% and 16.3%. A face that fits at 15% is not a plane at all -- the roof is multi-level and is being covered by two near-flat sheets laid straight across it. It ships 1,138 panels at 50% roof confidence, just above the 45% gate. This is exactly the case Josh describes: stop trying to cover everything, find the few large clean flat areas."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
   "_open_problem": "7 Anderson Heights matches Josh's face COUNT of 8 but not his structure: the central hipped feature he marked is paved over by one face. Diagnosed precisely -- that face is 75 m2 with 11% of its points more than 0.5 m off plane, _best_cut does find a cut, and the setback rule blocks it (cost 2.8 m2 against 2.0 allowed) because one line through a pyramid gains only 1.5%. A hip needs SEVERAL cuts forming a closed shape, and each is individually too small to pay for itself. Loosening the setback rule does not fix it: swept against all four drawn roofs, 2.0 gives 4/4 exact and every higher value gives 3/4 or worse, because the extra cuts are not the hip. This needs compact-feature detection, not line cutting.",
   "_obstruction_summary": "Across the three simple roofs Josh marked on 29 Aug -- 47 Robins Road, 23 Brisbane Street, 9 Brisbane Street -- he marked 13.1 m2 of obstruction in total and the pipeline detected NONE OF IT: zero overlap on every one. It carved 10.9 m2 elsewhere. Face counts on the same three roofs were exact (1, 3, 4). The obstruction layer is not mis-tuned on these roofs, it is uncorrelated with them, and that is a different kind of problem: it needs rebuilding against imagery rather than another threshold sweep.",
   "_face_count_tally": "Against Josh's markups as of 29 Aug: exact on 47 Robins (1), 9 Brisbane (4), 5 Isle (3), 29 Edinburgh (5). Under by one on 23 Brisbane (3 vs 4) and 6B Limerick (7 vs 8). Over by one on 7 Anderson (9 vs 8) and 26 Panorama (6 vs 5). Over by two on 15B Frankton (10 vs 8). Four exact of nine, and the misses are within two either way -- but the count is not the test: 7 Anderson matched his count for days while three of its faces ran across the section he drew.",
-  "_commercial_strategy": "Josh, on 5372567 (3,870 m2): \"For large roofs like this, with many different faces, angles, roof ridges, that are clearly commercial rooftops, it might be best to try find clear areas of flat space that are very large, to place panels on. Rather than trying to squeeze in every possible face.\" So on large complex roofs the objective changes: find the few big clean areas, do not chase every facet. He marked obstructions only on this one, not ridges or outline."
+  "_commercial_strategy": "Josh, on 5372567 (3,870 m2): \"For large roofs like this, with many different faces, angles, roof ridges, that are clearly commercial rooftops, it might be best to try find clear areas of flat space that are very large, to place panels on. Rather than trying to squeeze in every possible face.\" So on large complex roofs the objective changes: find the few big clean areas, do not chase every facet. He marked obstructions only on this one, not ridges or outline.",
+  "_josh_decisions_29aug": {
+    "steep_faces": "Option (a): drop a face only when it is BOTH steep AND badly fitted. Slope alone must not disqualify.",
+    "overhang": "Option (a): leave roof outside the LINZ footprint out. Do not model the eave.",
+    "commercial_min_area": "Ignore any clean area that would take fewer than 8 panels -- on big roofs only.",
+    "patio_carport": "INCLUDE by default. Josh: \"normally include these by default. This was just an example where it was transparent on top... realistically it could have panels on it if there is enough space.\" So 47 Robins Road's patio is NOT a miss -- modelling it as roof was right.",
+    "obstruction_metric": "Do NOT score by counting obstructions. Josh: \"Counting obstructions is an inaccurate metric.\" Score by marked AREA vs detected area, or area within a plane.",
+    "min_face_area": "Keep MIN_FACET_M2 at 6.",
+    "panel_orientation": "Undecided: needs real layout examples at several settings for Josh to judge."
+  }
 }
