@@ -75,7 +75,8 @@
           ]
         ]
       },
-      "middle_section_is": "RECESSED (confirmed by Josh). Measured: the ridge sits at 381.42 m, falls to 380.26 m across the middle, and returns to 381.47 m -- a 1.16 m drop. It is therefore findable as a 2-D REGION of points below the roof's own plane envelope, not as shoulders in a 1-D ridge profile, which is what earlier attempts looked for and why their band edges landed in the wrong place."
+      "middle_section_is": "RECESSED (confirmed by Josh). Measured: the ridge sits at 381.42 m, falls to 380.26 m across the middle, and returns to 381.47 m -- a 1.16 m drop. It is therefore findable as a 2-D REGION of points below the roof's own plane envelope, not as shoulders in a 1-D ridge profile, which is what earlier attempts looked for and why their band edges landed in the wrong place.",
+      "live_test_29aug": "Josh on the live build: 'significantly better than we have had before, but the geometry is still wrong in the middle, it is making rectangles when the middle section is clearly triangles.' Also: the neighbouring building with the same roof shape is worse -- the recess handling must generalise, not just fix the exemplar."
     },
     {
       "building_id": 4735015,
@@ -209,6 +210,51 @@
       "faces": null,
       "structure": "Large commercial. Josh marked obstructions only, not ridges or outline.",
       "key_finding": "WORST RESULT IN THE SET. 4,032 m2 modelled as THREE faces, two of them 2,429 m2 and 1,158 m2 fitting their own points at 15.3% and 16.3%. A face that fits at 15% is not a plane at all -- the roof is multi-level and is being covered by two near-flat sheets laid straight across it. It ships 1,138 panels at 50% roof confidence, just above the 45% gate. This is exactly the case Josh describes: stop trying to cover everything, find the few large clean flat areas."
+    },
+    {
+      "building_id": 5372565,
+      "address": "1 Memorial Street",
+      "live_test_29aug": "Live shows 171 panels; fresh pipeline run produces 392 kept on the same facets (all fits 78-99%, no facet gated). The loss is downstream (gate_panels/terrain stage) plus contention-degraded segmentation at build time. Josh: empty usable space; panels in shady parts while sunny parts empty; obstructions oversized."
+    },
+    {
+      "building_id": 4735263,
+      "address": "89 Hallenstein Street",
+      "live_test_29aug": "Josh: 'One of the sunniest parts of this roof has no panels... no obstructions, just missing a big flat area.' The white flat section shows no panels at all."
+    },
+    {
+      "building_id": 4734816,
+      "address": "6 Weaver Street",
+      "live_test_29aug": "Josh: should be ONE obstruction; we show ~10, mostly paint discolouration on a flat roof. Source of the fusion principle."
+    },
+    {
+      "building_id": 4734678,
+      "address": "10 Memorial Street",
+      "live_test_29aug": "Josh: completely flat roof, should be one plane; real plant obstructions MISSED and panels placed over visible clutter."
+    },
+    {
+      "building_id": 5372585,
+      "address": "45 Camp Street",
+      "live_test_29aug": "Panels overlapping the roof edge, some floating in air with nothing underneath (eave extension pushing faces past the footprint). North array has room for more panels with no obstructions but they are not added. Several paint-style obstruction false positives."
+    },
+    {
+      "building_id": 4734915,
+      "address": "40 Camp Street",
+      "live_test_29aug": "Josh: 'Lots of incorrectly placed panels here, you are not recognising the roof shape/geometry well at all.' Complex multi-level CBD building -- the class the region-growing rework targets."
+    },
+    {
+      "building_id": 4735316,
+      "address": "101/8 Duke Street",
+      "live_test_29aug": "Josh: 'Unnecessary obstructions added, and strange roof geometry here, this should just be a flat roof.' Dozens of paint-speckle false obstructions across a flat membrane roof -- same class as 6 Weaver."
+    },
+    {
+      "building_id": 4726047,
+      "address": "7 Coronation Drive",
+      "live_test_29aug": "Josh: 'Clearly overlapping obstructions here that are not marked' -- panels placed over visible rooftop objects."
+    },
+    {
+      "building_id": 4740662,
+      "address": "(no address)",
+      "live_test_29aug": "Josh: density slider removes panels from SUNNIER areas first. 'You should remove from the shadiest, lowest producing panels first when lowering panel density.' fill_rank ordering bug."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
@@ -224,5 +270,8 @@
     "obstruction_metric": "Do NOT score by counting obstructions. Josh: \"Counting obstructions is an inaccurate metric.\" Score by marked AREA vs detected area, or area within a plane.",
     "min_face_area": "Keep MIN_FACET_M2 at 6.",
     "panel_orientation": "Undecided: needs real layout examples at several settings for Josh to judge."
-  }
+  },
+  "_obstruction_fusion_principle": "Josh, 29 Aug (6 Weaver St): 'obstructions need to be a careful balance of imagery and lidar. An obstruction should show some signature on both. For example you don't want to identify painting discolouration as an obstruction, which lidar can tell you is flat.' Design rule: a colour-path detection must be confirmed by height residuals inside it, else it is paint. The dedicated skylight path is the exception (flush by nature) but must be compact+regular.",
+  "_array_philosophy": "Josh, 29 Aug (45 Camp St): arrays should be 'most equal shapes. like two panel rows, 4 panel rows etc. Avoiding one panel rows. Arrays as in clean rectangular blocks of panels. Though I also appreciate sometimes they need to be a bit more creatively placed to maximise room, but most of the time not.'",
+  "_existing_panel_note": "7 Coronation Dr shows EXISTING solar panels on the roof being panelled over. Existing panels are flush, so the new LiDAR-signature rule cannot see them and the colour path reads them as dark tone. They need their own imagery signature (dark regular rectangular grid) -- a SAM-proposer class, exempt from the flatness veto. Open item."
 }

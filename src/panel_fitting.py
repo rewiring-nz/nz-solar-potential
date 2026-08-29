@@ -640,10 +640,17 @@ def _order_by_array(panels, poa_key):
     groups = {}
     for p in panels:
         groups.setdefault(p.get("array_id", 0), []).append(p)
-    # Total yield, not panel count: a large array in shade should not outrank
-    # a large one in sun just for being one panel bigger.
+    # MEAN yield per panel, not total. Total let a big shaded array outrank a
+    # small sunny one -- 40 panels x poor sun beats 12 x full sun on total --
+    # so lowering the density slider stripped the SUNNY panels first. Josh,
+    # live-testing (#4740662): "you are removing panels from sunnier areas
+    # first... You should remove from the shadiest, lowest producing panels
+    # first." Fragments are already fenced into the straggler band above, so
+    # mean cannot promote a two-panel scrap over a real array; among real
+    # arrays the sunniest fills first, which is also the order an installer
+    # would actually build them.
     ordered = sorted(groups.values(),
-                     key=lambda g: (-sum(q[poa_key] for q in g), len(g)))
+                     key=lambda g: (-sum(q[poa_key] for q in g) / len(g), -len(g)))
     out = []
     for g in ordered:
         out.extend(_erosion_order(g, poa_key))

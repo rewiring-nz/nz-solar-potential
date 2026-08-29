@@ -748,6 +748,31 @@ def _elongation_ratio(polygon):
     return long_side / short_side
 
 
+
+def _lidar_signature(blob, pc_source, plane):
+    """Do the raw returns under this colour blob show ANY relief off the plane?
+
+    The gate for uncorroborated colour detections. Requires enough points to
+    judge (a blob over a LiDAR gap is dropped -- we cannot confirm it), and a
+    quarter of them, or at least six, sitting more than 0.12 m off the facet
+    plane."""
+    if pc_source is None:
+        return True                     # no LiDAR at all: keep old behaviour
+    minx, miny, maxx, maxy = blob.bounds
+    pts = pc_source.points_in_bbox(minx, miny, maxx, maxy, building_only=True)
+    if len(pts) < 4:
+        return False
+    import shapely.vectorized as _sv
+    inside = _sv.contains(blob, pts[:, 0], pts[:, 1])
+    bp = pts[inside]
+    if len(bp) < 4:
+        return False
+    a, b, c = plane
+    res = np.abs(bp[:, 2] - (a * bp[:, 0] + b * bp[:, 1] + c))
+    off = int((res > 0.12).sum())
+    return off >= 6 or off / len(bp) >= 0.25
+
+
 def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                                   z_threshold=None, boundary_erode_m=None,
                                   residual_threshold_m=None, roof_geom=None):
@@ -863,7 +888,19 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                     if part.geom_type == "Polygon" and part.area >= COLOUR_ONLY_MIN_AREA_M2:
                         filtered_color.append(part)
         elif (COLOUR_ONLY_MIN_AREA_M2 <= blob.area <= COLOUR_ONLY_MAX_AREA_M2
-              and _elongation_ratio(blob) <= COLOUR_ONLY_MAX_ELONGATION):
+              and _elongation_ratio(blob) <= COLOUR_ONLY_MAX_ELONGATION
+              and _lidar_signature(blob, pc_source, plane)):
+            # Josh's fusion rule (29 Aug, 6 Weaver St): "an obstruction should
+            # show some signature on both. For example you don't want to
+            # identify painting discolouration as an obstruction, which lidar
+            # can tell you is flat." Live testing showed exactly that failure
+            # at scale: ~10 paint patches carved on 6 Weaver where he counts
+            # ONE object, and dozens speckled across 101/8 Duke St. A colour
+            # blob that overlaps a height detection is corroborated above;
+            # one that does not must at least sit over raw returns that are
+            # off the plane. Paint is flat; equipment is not. Skylights are
+            # unaffected -- they come from detect_bright_objects, which joins
+            # separately below.
             filtered_color.append(blob)
     color_obs = filtered_color
 

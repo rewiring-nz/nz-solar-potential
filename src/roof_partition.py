@@ -462,7 +462,7 @@ def _ridge_drop_offsets(poly, pts):
 
 def _best_cut(poly, pts, base_score):
     """The straight line that best explains this region as two planes."""
-    if _cut_deadline[0] is not None and time.monotonic() > _cut_deadline[0]:
+    if _cut_deadline[0] is not None and time.process_time() > _cut_deadline[0]:
         return None
     best = None
 
@@ -504,7 +504,7 @@ def _best_cut(poly, pts, base_score):
         step = max(OFFSET_STEP_M, (hi - lo) / MAX_OFFSETS_PER_DIRECTION)
         for off in np.arange(lo + step, hi - step + 1e-9, step):
             _cut_evals[0] += 1
-            if _cut_deadline[0] is not None and time.monotonic() > _cut_deadline[0]:
+            if _cut_deadline[0] is not None and time.process_time() > _cut_deadline[0]:
                 CUT_BUDGET_EXHAUSTED[0] += 1
                 return best
             parts = _cut(poly, angle, float(off))
@@ -1376,7 +1376,12 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     Only lines carrying enough evidence to be a primary crease qualify; see
     roof_lines.strong_roof_lines."""
     _cut_evals[0] = 0          # the budget is per building, not per process
-    _cut_deadline[0] = time.monotonic() + min(
+    # CPU time, not wall time. A wall-clock deadline is stolen by whatever else
+    # is running: during a district rebuild the harness measured 32 Frankton Rd
+    # at 16.5% weighted fit while the same code on an idle machine reached 33%,
+    # because the other workers ate its 240 seconds. Each partition runs on one
+    # thread, so process CPU time measures ITS work regardless of load.
+    _cut_deadline[0] = time.process_time() + min(
         CUT_TIME_BUDGET_MAX_S, max(CUT_TIME_BUDGET_S, footprint.area * CUT_TIME_PER_M2_S))
     footprint = trim_to_roof(footprint, pts)
     inside = _points_in(footprint, pts)
@@ -1474,7 +1479,11 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # geometrically a small steep roof. The remaining signal is imagery: a real
     # gable shows a sunlit/shaded pair, a step shows a shadow line.
 
-    faces = _extend_to_eave(faces, footprint, pts)
+    # NO eave extension. Josh's decision (29 Aug): roof beyond the LINZ
+    # footprint stays out of the model. It was also placing panels on air --
+    # 45 Camp St showed panels overlapping the edge 'floating with nothing
+    # underneath them', because a face grown past the footprint carries its
+    # panel grid with it. _extend_to_eave is kept for reference but not called.
 
     out = []
     for poly, plane in faces:
