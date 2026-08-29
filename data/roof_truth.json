@@ -187,6 +187,14 @@
       "structure": "Josh: \"8 faces here\". Several parallel ridges plus a V at the lower left.",
       "obstructions_marked": 0,
       "key_finding": "10 faces against his 8 -- OVER-segmented, the first roof in this batch that is. Four of the ten are under 10 m2 and three sit at 30-37.5 degrees, so the same steep-face question as Panorama Terrace applies here."
+    },
+    {
+      "building_id": 5373363,
+      "address": "no address on file; behind 10 Robins Road",
+      "faces": 11,
+      "structure": "Josh: \"11 faces here\". Two hipped sections end to end, each with a ridge and a hip at both ends, a flat band between them, and two small rectangular features drawn in RED -- so they are roof faces, not obstructions. About ten small obstructions marked in blue along the eastern edge.",
+      "obstructions_marked": 10,
+      "key_finding": "CLOSEST COMPLEX ROOF SO FAR: 12 faces against his 11, on 401 m2. Fits 77.8 to 98.9%, only one face below 89%. The aspects fall into four clusters of three -- about 201, 20, 111 and 293 degrees -- which is the two-hipped-section structure he drew. Obstructions: 6 found covering 16.2 m2 against his ~10, and several of ours do land in the eastern strip where his are, so this is the first roof where the obstruction layer is roughly in the right place rather than uncorrelated."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
