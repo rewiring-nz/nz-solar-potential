@@ -110,6 +110,30 @@
       "structure": "Large commercial roof, 1054 m2 footprint, heavily covered in plant: ducting, walkways, condensers, a large central plant block. Some level changes marked in red.",
       "marked": "red = level changes/ridges, green = true roof outline, blue = obstructions (merged where close together)",
       "key_finding": "Under-detection on plant-covered commercial roofs, and neither obvious lever fixes it. The pipeline carves 16% where Josh marks roughly 25-30%. Lowering HEIGHT_RESIDUAL_THRESHOLD_M makes it WORSE (16% -> 11%), because more flagged points grow clusters that then trip the over-carve caps and are discarded whole -- a mechanism already documented in obstruction_detection.py. Relaxing those caps from 0.35/0.50 to 0.90/0.95 moves it only 16% -> 17%, so the caps are not binding either. The height path simply does not flag the plant: 2021 LiDAR at ~0.42 m spacing against ducting that is obvious in 0.1 m 2026 imagery. This is the case for an imagery-based obstruction detector."
+    },
+    {
+      "building_id": 4734850,
+      "address": "47 Robins Road",
+      "faces": 1,
+      "structure": "Josh: \"No ridges on robins road, one clear flat face, then a secondary patio roof quite small at the top right. I have marked it as an obstruction as panels wouldn't go there. But the rest of the roof is one flat plane.\" One plane, 81 m2 footprint.",
+      "marked": "green = true roof outline, blue = obstructions (the patio roof and one small object)",
+      "obstructions_marked": 2,
+      "traced_obstructions_nztm": {
+        "_note": "Traced against the metre grid (x 1258155/160, y 5004940/945/950); good to about +/-0.3 m.",
+        "patio_roof": [
+          1258155.7,
+          5004946.5,
+          1258158.4,
+          5004950.8
+        ],
+        "small_object": [
+          1258160.8,
+          5004949.0,
+          1258161.9,
+          5004949.8
+        ]
+      },
+      "key_finding": "GEOMETRY RIGHT, OBSTRUCTIONS WRONG -- on the simplest roof in the set. The partition returns exactly one face at 90.9% on-plane, matching Josh. The obstruction layer finds NEITHER of the two he marked and invents a third: a 1.2 m2 blob 7.5 m from the patio and 9.7 m from the small object, overlapping neither. The patio is 11.6 m2, 14% of an 81 m2 roof, and 79% of it falls inside the LINZ footprint, so panels are being proposed on a structure that cannot take them. The height path cannot separate it: LiDAR in the patio reads 324.3-325.7 m against a main roof of 325.0-325.7 m, so its top is level with the roof. This is the case for detecting a secondary roof structure from imagery rather than height."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
