@@ -1245,8 +1245,9 @@ RECESS_MIN_DEPTH_M = 0.45
 RECESS_MAX_DEPTH_M = 1.80
 RECESS_CELL_M = 0.75
 RECESS_MIN_AREA_M2 = 6.0
-RECESS_MAX_AREA_SHARE = 0.45    # a full-width section is a bigger share than an island
+RECESS_MAX_AREA_SHARE = 0.35    # more than this is not a section, it is the roof
 RECESS_MIN_POINTS = 40
+RECESS_MAX_FACES = 2       # Josh: "only two faces in the middle recession"
 
 
 def _recessed_region(footprint, pts, faces):
@@ -1299,18 +1300,16 @@ def _recessed_region(footprint, pts, faces):
     c = np.array(footprint.centroid.coords[0])
     xy = np.column_stack([cx, cy]) - c
     a, b = xy @ u, xy @ v
-    # Extended ACROSS the roof, from eave to eave. A recessed section is a
-    # length of roof, not an island in it: Josh drew this one running the full
-    # width, and it has to, or the roof stays connected around it and the main
-    # slopes are never divided. The LiDAR only ever sees the deepest middle of
-    # it -- the section's own edges rise back toward the surrounding roof and
-    # never reach the depth threshold -- so its extent ALONG the roof is
-    # measured and its extent ACROSS is taken from the roof itself.
-    across = (np.asarray(footprint.exterior.coords) - c) @ v
-    b_lo, b_hi = float(across.min()) - 1.0, float(across.max()) + 1.0
+    # Measured on both axes, NOT stretched across the roof. Extending it eave to
+    # eave was tried, on my own reading of Josh's traced markup, and it is wrong
+    # twice over: his section is about 28 m2 where the full width of that roof
+    # would be nearer 55, and forcing the stretched region into the two faces he
+    # describes gave planes fitting 50% and 43% -- worse than not modelling it.
+    # The traced corners came out aligned to north rather than to the roof, so
+    # that reading was an artefact of tracing his line by eye.
     poly = Polygon([c + u * aa + v * bb for aa, bb in
-                    ((a.min(), b_lo), (a.max(), b_lo),
-                     (a.max(), b_hi), (a.min(), b_hi))])
+                    ((a.min(), b.min()), (a.max(), b.min()),
+                     (a.max(), b.max()), (a.min(), b.max()))])
     try:
         poly = poly.intersection(footprint)
     except Exception:
@@ -1408,7 +1407,15 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
         if len(pieces) >= 2:
             regrown = []
             for piece in pieces:
-                regrown.extend(_partition(piece, _points_in(piece, inside)))
+                if piece is recess:
+                    # Josh: "There are only two faces in the middle recession. It
+                    # is two four sided shapes connected in the middle." A budget
+                    # of two allows exactly one cut -- the line where they join.
+                    # Unbudgeted, the recursion split the section into four.
+                    regrown.extend(_partition(piece, _points_in(piece, inside),
+                                              budget=[RECESS_MAX_FACES]))
+                else:
+                    regrown.extend(_partition(piece, _points_in(piece, inside)))
             if regrown:
                 faces = regrown
 
