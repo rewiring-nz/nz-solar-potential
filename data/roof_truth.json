@@ -156,9 +156,41 @@
         5003984.3
       ],
       "key_finding": "GEOMETRY EXACT: four faces, arranged around a centre at (443.0, 985.1) against his crossing point at (443.2, 984.4) -- within half a metre. Aspects 229.7/49.5/228.8/52.1, fits 95.1/98.7/88.6/98.5%.\nOBSTRUCTIONS 13x OVER: he marked one object of about 0.6 m2; the pipeline carves 8.0 m2 in two blobs, NEITHER overlapping his at all (1.7 m and 5.3 m away). So it misses the real object and invents two others."
+    },
+    {
+      "building_id": 4740517,
+      "address": "26 Panorama Terrace",
+      "faces": 5,
+      "structure": "Josh: \"5 faces on panorama terrace\", labelled Face 1-5. Four parallel bands running NE-SW plus a fifth section on the right. A stepped house -- the same style he described at 7 Panorama Terrace as \"lots of stepped apartment balconies\".",
+      "marked": "green = roof outline, red = level changes between the steps, blue = obstructions including a large structure at the bottom",
+      "obstructions_marked": 5,
+      "traced_big_obstruction_nztm": [
+        1259177.6,
+        5004239.4,
+        1259183.7,
+        5004244.3
+      ],
+      "key_finding": "TWO SEPARATE FAILURES, both systemic.\n(1) 23.4 m2 of modelled roof sits ON the 29.9 m2 structure Josh marked as an obstruction -- we propose panels on 78% of something that cannot take them.\n(2) 36.8 m2, 31% of the modelled roof, is on faces of 42.3 and 44.5 degrees. On a stepped house those are the risers between levels -- walls, not roof planes. config.MAX_ROOF_SLOPE_DEG is 72, which lets a wall through as a facet. District-wide that is 10.3% of all panels (75,430) on faces steeper than 35 degrees, carrying 27.2 GWh/yr of the claimed 294.2 -- 9.2% of the headline number."
+    },
+    {
+      "building_id": 4735075,
+      "address": "6B Limerick Lane",
+      "faces": 8,
+      "structure": "Josh: \"8 faces on this one\". Multi-gabled, with three obstructions marked.",
+      "obstructions_marked": 3,
+      "key_finding": "7 faces against his 8, fits 86-94%. Closest of the complex roofs. Obstructions: 8 found covering 12.7 m2 against his 3."
+    },
+    {
+      "building_id": 4725546,
+      "address": "15B Frankton Road",
+      "faces": 8,
+      "structure": "Josh: \"8 faces here\". Several parallel ridges plus a V at the lower left.",
+      "obstructions_marked": 0,
+      "key_finding": "10 faces against his 8 -- OVER-segmented, the first roof in this batch that is. Four of the ten are under 10 m2 and three sit at 30-37.5 degrees, so the same steep-face question as Panorama Terrace applies here."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
   "_open_problem": "7 Anderson Heights matches Josh's face COUNT of 8 but not his structure: the central hipped feature he marked is paved over by one face. Diagnosed precisely -- that face is 75 m2 with 11% of its points more than 0.5 m off plane, _best_cut does find a cut, and the setback rule blocks it (cost 2.8 m2 against 2.0 allowed) because one line through a pyramid gains only 1.5%. A hip needs SEVERAL cuts forming a closed shape, and each is individually too small to pay for itself. Loosening the setback rule does not fix it: swept against all four drawn roofs, 2.0 gives 4/4 exact and every higher value gives 3/4 or worse, because the extra cuts are not the hip. This needs compact-feature detection, not line cutting.",
-  "_obstruction_summary": "Across the three simple roofs Josh marked on 29 Aug -- 47 Robins Road, 23 Brisbane Street, 9 Brisbane Street -- he marked 13.1 m2 of obstruction in total and the pipeline detected NONE OF IT: zero overlap on every one. It carved 10.9 m2 elsewhere. Face counts on the same three roofs were exact (1, 3, 4). The obstruction layer is not mis-tuned on these roofs, it is uncorrelated with them, and that is a different kind of problem: it needs rebuilding against imagery rather than another threshold sweep."
+  "_obstruction_summary": "Across the three simple roofs Josh marked on 29 Aug -- 47 Robins Road, 23 Brisbane Street, 9 Brisbane Street -- he marked 13.1 m2 of obstruction in total and the pipeline detected NONE OF IT: zero overlap on every one. It carved 10.9 m2 elsewhere. Face counts on the same three roofs were exact (1, 3, 4). The obstruction layer is not mis-tuned on these roofs, it is uncorrelated with them, and that is a different kind of problem: it needs rebuilding against imagery rather than another threshold sweep.",
+  "_face_count_tally": "Against Josh's markups as of 29 Aug: exact on 47 Robins (1), 9 Brisbane (4), 5 Isle (3), 29 Edinburgh (5). Under by one on 23 Brisbane (3 vs 4) and 6B Limerick (7 vs 8). Over by one on 7 Anderson (9 vs 8) and 26 Panorama (6 vs 5). Over by two on 15B Frankton (10 vs 8). Four exact of nine, and the misses are within two either way -- but the count is not the test: 7 Anderson matched his count for days while three of its faces ran across the section he drew."
 }
