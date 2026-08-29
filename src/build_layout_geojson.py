@@ -56,6 +56,30 @@ DEEP_SHADE_FACTOR = 0.45  # a panel keeping less than this share of the year's d
 # pilot set is 52%, so this separates the genuinely unmodelled roofs rather
 # than trimming a continuum.
 MIN_ROOF_CONFIDENCE = 0.45
+BIG_ROOF_M2 = 1000.0
+BIG_ROOF_FACET_MIN_FIT = 0.60
+BIG_ROOF_MIN_PANELS = 8
+
+
+def _facet_fit(f, pc_source):
+    """This one facet's own on-plane fraction -- how believable it is alone."""
+    try:
+        import shapely.vectorized
+        g = f["geometry"]
+        minx, miny, maxx, maxy = g.bounds
+        pts = pc_source.points_in_bbox(minx, miny, maxx, maxy, building_only=True)
+        if len(pts) < 12:
+            return 1.0            # too few points to judge: do not punish
+        inside = shapely.vectorized.contains(g, pts[:, 0], pts[:, 1])
+        pts = pts[inside]
+        if len(pts) < 12:
+            return 1.0
+        import numpy as np
+        r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+        r = r - np.median(r)
+        return float((np.abs(r) < 0.15).mean())
+    except Exception:
+        return 1.0
 
 # Raised from 6. The 6 was set while chasing OOM crashes, and the actual cause
 # turned out to be PointCloudSource caching all 441 LiDAR tiles unbounded --
@@ -78,7 +102,10 @@ STALL_ABORT_S = 1800
 # One airport-scale roof missing from the map is a far smaller loss than the
 # other 14,000 buildings not shipping, so a building over budget is dropped and
 # reported by id -- never silently.
-BUILDING_TIME_BUDGET_S = 300
+BUILDING_TIME_BUDGET_S = 600  # the partition alone may now spend 240s on a
+# big commercial roof (see roof_partition.CUT_TIME_BUDGET_MAX_S), so the
+# whole-building alarm has to leave room for obstructions and panel fitting
+# on top of that. Still bounded: a stall is cut off, just later.
 
 
 class _BuildingTimeout(Exception):
@@ -145,6 +172,15 @@ def _build_one_inner(building_id):
     confidence = _area_weighted_inlier(facets, pc_source) if facets else 0.0
     modelled = confidence >= MIN_ROOF_CONFIDENCE
 
+    # Josh, on large commercial roofs: "it might be best to try find clear areas
+    # of flat space that are very large, to place panels on. Rather than trying
+    # to squeeze in every possible face", and: ignore any clean area that would
+    # take fewer than 8 panels. 32 Frankton Road is the case: 4,032 m2 shipped
+    # as two sheets fitting 15.3% and 16.3% carrying 1,138 panels. On big roofs
+    # each facet must EARN panels: it has to be a believable plane on its own,
+    # and it has to take at least 8 panels.
+    big_roof = row_geom.area >= BIG_ROOF_M2
+
     per_facet = []
     for f in facets:
         facet_centroid = f["geometry"].centroid
@@ -162,7 +198,14 @@ def _build_one_inner(building_id):
         obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane,
                                                     roof_geom=f.get("building_geometry"))
         siblings = [other for other in facets if other is not f]
+        if big_roof and _facet_fit(f, pc_source) < BIG_ROOF_FACET_MIN_FIT:
+            per_facet.append({"facet": f, "panels": [], "obstructions": obstructions,
+                              "poa": facet_poa * shading_factor,
+                              "shading_factor": shading_factor})
+            continue
         panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
+        if big_roof and len(panels) < BIG_ROOF_MIN_PANELS:
+            panels = []
         kept_panels = []
         for pnl in panels:
             cpt = pnl["geometry"].centroid

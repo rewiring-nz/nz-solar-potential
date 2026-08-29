@@ -74,6 +74,35 @@ MAX_DEPTH = 14
 MAX_FACES = 60              # a hotel needs many; nothing real needs more
 MIN_POINTS = 25
 
+# A wall is not a roof. 26 Panorama Terrace is a stepped house and the pipeline
+# put 36.8 m2 of it -- 31% of the modelled roof -- on faces of 42.3 and 44.5
+# degrees, which on that building are the risers between levels. 1 Church St had
+# a 10.2 m2 face at 42.8 degrees fitting its own points at 29.6%. District-wide
+# 10.3% of every panel, carrying 9.2% of the claimed generation, sits above 35
+# degrees.
+#
+# But slope alone must not disqualify a face, and the measurement says why:
+# across 510 faces from 90 random pilot buildings, faces at 40 degrees or more
+# fit under 70% in 32% of cases against 11% for shallower ones -- so steep faces
+# are three times as likely to be wrong, and two thirds of them are still fine.
+# Queenstown has genuinely steep roofs. Josh, asked to choose: drop a face only
+# when it is BOTH steep and badly fitted.
+STEEP_FACE_DEG = 40.0
+STEEP_FACE_MIN_FIT = 0.70
+
+# A WELL-FITTED wall. The filter above cannot catch the real risers, and the
+# measurement on 26 Panorama Terrace shows why: its two step risers sit at 42.3
+# and 44.5 degrees and fit 89.0% and 89.8% -- a wall is a perfect plane, so the
+# better the wall, the higher the fit. What separates a riser from a steep roof
+# is its RUN: the horizontal extent along its own gradient. A riser is a strip
+# standing up -- its z-range divided by tan(slope) is the height of one storey
+# step over its pitch, 1.4-2.5 m on every riser measured -- while a genuine
+# steep roof face runs 3 m or more downhill. Measured runs: Panorama risers
+# 1.6 m and 2.5 m, 15B Frankton's 37.5-degree strip 1.4 m.
+STEEP_RUN_DEG = 35.0         # faces this steep are tested as possible risers
+STEEP_MIN_RUN_M = 3.0        # a riser has less downhill run than this
+RISER_SLOPE_GAP_DEG = 15.0   # ...and every face it touches is this much flatter
+
 # A wall-clock ceiling on the cut search for ONE building.
 #
 # Bounding the search by a count of candidate cuts was tried first and it is the
@@ -91,7 +120,15 @@ MIN_POINTS = 25
 # has already found -- still watertight, still a valid partition, just coarser.
 # Anything that ends up badly fitted is withheld by the confidence gate in
 # build_layout_geojson rather than published wrong.
-CUT_TIME_BUDGET_S = 60.0
+CUT_TIME_BUDGET_S = 60.0     # base; scaled up with roof area, see partition_roof.
+# 60s flat starved exactly the roofs Josh cares most about: 32 Frankton Road
+# (4,032 m2, 31,776 points) hit the deadline before the search made one good
+# cut and shipped as a 5,128 m2 sheet fitting 12.9% -- with 1,138 panels on it.
+# The budget exists to stop a stall, not to decide segmentation quality, so it
+# scales with the work: a house keeps 60s it never uses, a big commercial roof
+# gets up to 240s.
+CUT_TIME_BUDGET_MAX_S = 240.0
+CUT_TIME_PER_M2_S = 0.05
 _cut_deadline = [None]
 _cut_evals = [0]
 CUT_BUDGET_EXHAUSTED = [0]
@@ -1339,7 +1376,8 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     Only lines carrying enough evidence to be a primary crease qualify; see
     roof_lines.strong_roof_lines."""
     _cut_evals[0] = 0          # the budget is per building, not per process
-    _cut_deadline[0] = time.monotonic() + CUT_TIME_BUDGET_S
+    _cut_deadline[0] = time.monotonic() + min(
+        CUT_TIME_BUDGET_MAX_S, max(CUT_TIME_BUDGET_S, footprint.area * CUT_TIME_PER_M2_S))
     footprint = trim_to_roof(footprint, pts)
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
@@ -1420,6 +1458,22 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
                 faces = regrown
 
     faces = _merge_bridgeable(faces, inside)
+
+    # Step risers on stepped houses remain an OPEN problem, deliberately.
+    # 26 Panorama Terrace carries 36.8 m2 of 42-44 degree strips between its
+    # near-flat bands, and every local-geometry rule tried on 29 Aug also
+    # deleted a real roof somewhere else. The measurements, so this is not
+    # retried blind: (1) fit cannot reject a wall -- Panorama's risers fit 89%,
+    # a wall is a perfect plane. (2) slope + short downhill run also matches
+    # small real gables: 4725529 is a genuine 44-degree pair with a 2.9 m run
+    # and 4734699 an entire 39-degree house. (3) "every neighbour much flatter"
+    # fails because the risers touch a smeared 24-degree transition face.
+    # (4) requiring a candidate pair to share a ridge does not separate them:
+    # Panorama's two strips SHARE a 13.4 m edge at the top of both, exactly like
+    # a gable pair -- at 0.42 m point spacing a smeared step edge is
+    # geometrically a small steep roof. The remaining signal is imagery: a real
+    # gable shows a sunlit/shaded pair, a step shows a shadow line.
+
     faces = _extend_to_eave(faces, footprint, pts)
 
     out = []
@@ -1430,6 +1484,8 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
         slope, aspect = _slope_aspect(plane)
         if slope > config.MAX_ROOF_SLOPE_DEG:
             continue
+        if slope >= STEEP_FACE_DEG and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT:
+            continue        # steep AND not a plane: a wall, not a roof face
         out.append({
             "building_id": building_id,
             "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
