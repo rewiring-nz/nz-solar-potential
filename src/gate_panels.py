@@ -199,6 +199,13 @@ def _gate_one(feature_json):
     f = json.loads(feature_json)
     try:
         poly = shp_transform(TO_NZTM, shape(f["geometry"]))
+        minx, miny, maxx, maxy = poly.bounds
+        if (maxx - minx) > 50 or (maxy - miny) > 50:
+            # A panel is ~2 m. A bounds span past 50 m is corrupt geometry, and
+            # its bbox query scans every tile -- one such panel wedged the
+            # island_bay gate at 5,000/121,273 with ordered reporting hiding
+            # everything queued behind it. Corrupt input never earns a panel.
+            return feature_json, False, "corrupt-geometry"
         ok, why = panel_ok(poly, _W["pc"], _W["dem"], _W["dem_inv"])
     except Exception:
         return feature_json, True, "error-kept"
