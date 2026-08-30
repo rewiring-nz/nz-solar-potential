@@ -312,6 +312,7 @@ MERGE_SLOPE_DIFF_DEG = 5.0
 MERGE_ASPECT_DIFF_DEG = 20.0
 MERGE_LOW_SLOPE_DEG = 7.0  # below this, aspect is noise (near-flat roof) -- ignore it for merging
 MERGE_BUFFER_M = 0.5  # facets within this gap still count as "adjacent" (grid/RANSAC edge noise)
+MERGE_MAX_HEIGHT_STEP_M = 0.5    # planes farther apart than this at their midpoint are different surfaces
 
 
 def _circular_diff(a, b):
@@ -348,6 +349,19 @@ def merge_similar_facets(facets):
             both_flat = fi["slope_deg"] < MERGE_LOW_SLOPE_DEG and fj["slope_deg"] < MERGE_LOW_SLOPE_DEG
             aspect_close = both_flat or _circular_diff(fi["aspect_deg"], fj["aspect_deg"]) <= MERGE_ASPECT_DIFF_DEG
             if not (slope_close and aspect_close):
+                continue
+            # Same orientation is not same SURFACE: two parallel faces across
+            # a valley (or on different storeys) match on slope and aspect but
+            # sit at different heights, and gluing them buries the valley
+            # inside one facet (#5119630: two courtyard faces welded with the
+            # gap between them carved back out as a 10 m2 "obstruction").
+            # Evaluate both planes at the midpoint between the two facets --
+            # the same physical plane agrees there; a stepped pair does not.
+            ci, cj = fi["geometry"].centroid, fj["geometry"].centroid
+            mx, my = (ci.x + cj.x) / 2, (ci.y + cj.y) / 2
+            zi = fi["plane_a"] * mx + fi["plane_b"] * my + fi["plane_c"]
+            zj = fj["plane_a"] * mx + fj["plane_b"] * my + fj["plane_c"]
+            if abs(zi - zj) > MERGE_MAX_HEIGHT_STEP_M:
                 continue
             if fi["geometry"].buffer(MERGE_BUFFER_M).intersects(fj["geometry"].buffer(MERGE_BUFFER_M)):
                 union(i, j)
@@ -1679,13 +1693,35 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     Also the single choke point every segment_building_best return passes
     through, which is where the realism merge belongs -- one place rather than
     five, so no strategy can quietly skip it."""
-    if facets and pc_source is not None and building_id is not None:
+    # CONSTRUCTED facets (skeleton reconstruction) skip the repair stages:
+    # those exist to fix point-TRACED boundaries, and re-tracing a constructed
+    # hip network turns its straight construction lines back into the organic
+    # blobs the construction exists to avoid (watched happen on #5119630: a
+    # clean 9-facet skeleton came out the far end as point-hull mush). The
+    # whole-facet DROP tests still apply -- a constructed face can still be a
+    # deck or a balcony.
+    constructed = bool(facets) and all(f.get("constructed") for f in facets)
+    if facets and pc_source is not None and building_id is not None and not constructed:
         facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
     if facets and pc_source is not None:
-        facets = repair_nonplanar_facets(facets, pc_source)
+        if not constructed:
+            facets = repair_nonplanar_facets(facets, pc_source)
         facets = drop_balcony_levels(facets, pc_source)
         facets = drop_plant_decks(facets, pc_source)
-        facets = drop_roof_features(facets, pc_source)
+        if not constructed:
+            facets = drop_roof_features(facets, pc_source)
+    # Self-consistency refit at the one choke point every strategy passes
+    # through: a facet's plane must be the best explanation of the points its
+    # own polygon contains (see _refit_planes for the 45 Camp St case).
+    if facets and pc_source is not None:
+        try:
+            minx, miny, maxx, maxy = building_geom.bounds
+            _pts = pc_source.points_in_bbox(minx - 1, miny - 1, maxx + 1, maxy + 1,
+                                            building_only=True)
+            from src.roof_partition import top_surface as _ts
+            facets = _refit_planes(facets, _ts(_pts))
+        except Exception as exc:
+            _note_fallback("refit_planes", building_id, exc)
     if APPLY_REALISM_MERGE and facets:
         try:
             facets = merge_uneconomic_splits(facets)
@@ -1911,12 +1947,73 @@ def _reconstruct_facets(pc_source, building_geom, building_id):
 USE_PARTITION = True
 
 
+# Below this share of points explained, a partition result is treated as a
+# failed read of the roof and the plane-arrangement path gets to compete.
+# 0.85 mirrors roof_partition.ACCEPT_INLIER -- one face passes at 85%, so a
+# whole building comfortably under it means faces are spanning real folds.
+PARTITION_GOOD_ENOUGH = 0.85
+
+# How far behind the partition (points-explained) the skeleton reconstruction
+# may fall and still win on being constructible geometry. See _partition_facets.
+SKELETON_TIE_MARGIN = 0.05
+
+
+
+def _refit_planes(faces, pts, min_gain=0.15):
+    """Self-consistency: a facet's plane must be the best explanation of the
+    points its own polygon contains. The partition can hand back a polygon
+    paired with a plane fitted on a different stage's point subset -- measured
+    on 45 Camp St: a 62 m2 facet claiming 22 deg whose own points are FLAT,
+    own-plane fit 0.14 vs 0.89 refit. Adopt the refit only on a clear win so a
+    facet whose polygon contains obstruction clutter keeps its original read."""
+    from src.roof_partition import _points_in, _inlier_fraction, _fit_plane_robust
+    out = []
+    for f in faces:
+        sub = _points_in(f["geometry"], pts)
+        if len(sub) >= 20:
+            old_pl = (f["plane_a"], f["plane_b"], f["plane_c"])
+            old_fit = _inlier_fraction(sub, old_pl)
+            try:
+                new_pl = _fit_plane_robust(sub)
+            except Exception:
+                new_pl = None
+            if new_pl is not None and _inlier_fraction(sub, new_pl) >= old_fit + min_gain:
+                slope, aspect = slope_aspect_from_plane(new_pl[0], new_pl[1])
+                if slope <= config.MAX_ROOF_SLOPE_DEG:
+                    f = dict(f, plane_a=new_pl[0], plane_b=new_pl[1], plane_c=new_pl[2],
+                             slope_deg=slope, aspect_deg=aspect)
+        out.append(f)
+    return out
+
+
+def _arrangement_facets(pts, building_geom, building_id):
+    """Plane-arrangement rebuild for complex roofs: region growing supplies the
+    plane hypotheses (it reads hip networks correctly but draws organic blob
+    boundaries), partition_by_planes rebuilds the polygons cut along the exact
+    plane-intersection lines -- which ARE the ridges, hips and valleys. Josh's
+    #5119630 report is the type case: recursive wall-angle cutting smeared 12
+    wedges across a clean multi-hip roof that region growing had already read
+    correctly, 7 planes in 4 aspect families all near 25 degrees."""
+    from src.roof_partition import partition_with_labels
+    footprint = building_geom.buffer(GLOBAL_BUILDING_MARGIN_M)
+    m = shapely.vectorized.contains(footprint, pts[:, 0], pts[:, 1])
+    pin = pts[m]
+    if len(pin) < RG_MIN_REGION_POINTS:
+        return []
+    normals, rms = _pca_normals(pin)
+    labels, planes = _grow_regions(pin, normals, rms)
+    if len(planes) == 0:
+        return []
+    return partition_with_labels(building_id, building_geom.buffer(0), pin,
+                                 labels, planes)
+
+
 def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
     """roof_partition in the shape segment_building_best returns. [] on
     anything unexpected, so the caller falls back rather than failing a whole
     area's build for one awkward roof."""
     try:
-        from src.roof_partition import partition_roof
+        from src.roof_partition import partition_roof, explained_fraction, top_surface
         minx, miny, maxx, maxy = building_geom.bounds
         pts = pc_source.points_in_bbox(minx - 1, miny - 1, maxx + 1, maxy + 1,
                                        building_only=True)
@@ -1926,7 +2023,49 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         pts = pts[inside]
         if len(pts) < RECONSTRUCT_MIN_POINTS:
             return []
-        return partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds)
+        # Multi-level buildings: model only the top surface (see top_surface).
+        pts = top_surface(pts)
+        if len(pts) < RECONSTRUCT_MIN_POINTS:
+            return []
+        faces = partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds)
+        score = explained_fraction(faces, pts) if faces else 0.0
+        if score >= PARTITION_GOOD_ENOUGH:
+            return faces
+        # The cut partition failed to read this roof. Two competitors get a
+        # shot, judged on the same points-explained metric.
+        #
+        # 1. The skeleton reconstruction (roof_skeleton): builds the roof UP
+        #    from the footprint at a fitted common pitch, handling multi-level
+        #    buildings as nested skeletons. Its boundaries are construction
+        #    lines -- actual hips/ridges/valleys -- so it wins TIES: a wedge
+        #    partition can hug the points of a hip network it has misread
+        #    (planes averaged across shallow hips stay inside the band), so
+        #    when the skeleton explains the roof within SKELETON_TIE_MARGIN of
+        #    the partition, the constructible geometry is the better read.
+        #    Josh, on exactly this failure: "the ridges on it are quite clear
+        #    in imagery, yet the outlines are way off... should be modellable
+        #    into a clean 3D geometry" (#5119630).
+        # 2. The label-based plane arrangement, strictly-better only.
+        try:
+            from src.roof_skeleton import skeleton_roof
+            skel = skeleton_roof(building_id, building_geom.buffer(0), pts)
+        except Exception as exc:
+            _note_fallback("skeleton", building_id, exc)
+            skel = []
+        if skel:
+            s_score = explained_fraction(skel, pts)
+            if s_score >= score - SKELETON_TIE_MARGIN:
+                for f in skel:
+                    f["constructed"] = True
+                return skel
+        try:
+            arr = _arrangement_facets(pts, building_geom, building_id)
+        except Exception as exc:
+            _note_fallback("arrangement", building_id, exc)
+            arr = []
+        if arr and explained_fraction(arr, pts) > score:
+            return arr
+        return faces
     except Exception as exc:
         _note_fallback("partition", building_id, exc)
         return []
