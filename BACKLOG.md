@@ -369,6 +369,17 @@ Sample regression (15 Island Bay buildings): 622 -> 540 panels (-13%), the
 big movers verified by render as geometry corrections (panels were on wedges
 crossing ridges). District rebuild will carry this; watch the diff report.
 
+## Build-order rule learned 31 Aug (cost a rebuild)
+
+Stages that write ONLY the merged data/solar_potential.geojson must run AFTER
+merge_regions, because the merge regenerates that file from the per-region
+files and silently discards anything the regions do not carry:
+  - build_terrain_masks (tshade)   <- lost this on the Island Bay rebuild
+  - bake_density_deciles (fill_*)
+Stages that write the REGION file survive the merge (add_addresses,
+patch_roof_confidence, bake_building_horizons -- the last writes both).
+There is no error when this goes wrong; the curves just come out unshaded.
+
 ## Also queued from the 29-30 Aug live-testing sessions
 
 - District rebuild carrying: fill-order/mean-yield, confetti demotion,
