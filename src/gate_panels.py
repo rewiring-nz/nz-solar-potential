@@ -183,7 +183,11 @@ _W = {}
 def _init_gate_worker():
     """Per-process context: the point-cloud reader and the wide DEM. Loaded once
     per worker, not per panel."""
-    _W["pc"] = PointCloudSource()
+    # Workers x cached tiles x decoded-tile size is the real memory bill. Eight
+    # workers each caching eight tiles crashed a 64 GB machine on Wellington's
+    # dense survey; two tiles per worker is plenty here because a panel query
+    # touches exactly the tile(s) under one building.
+    _W["pc"] = PointCloudSource(max_cached_tiles=2)
     with rasterio.open(DATA_DIR / "dem_wide_mosaic.tif") as ds:
         _W["dem"] = ds.read(1)
         _W["dem_inv"] = ~ds.transform
@@ -222,7 +226,7 @@ def gate_area_parallel(name, jobs=None):
             dropped["sparse"] += 1
         else:
             todo.append(json.dumps(f))
-    jobs = jobs or max(1, min(8, (os.cpu_count() or 2) - 1))
+    jobs = jobs or max(1, min(4, (os.cpu_count() or 2) - 1))
     with ProcessPoolExecutor(max_workers=jobs, initializer=_init_gate_worker) as ex:
         for fj, ok, why in ex.map(_gate_one, todo, chunksize=256):
             if why == "error-kept":

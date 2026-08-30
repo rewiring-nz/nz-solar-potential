@@ -34,6 +34,11 @@ MIN_BUILDING_POINTS = 10  # below this, the classification filter isn't trustwor
 
 
 MAX_CACHED_TILES = 8  # decoded LiDAR tiles held per process. See __init__.
+# Callers that FAN OUT must pass something smaller: 8 workers x 8 cached tiles
+# was survivable on Queenstown's ~2026 survey but Wellington's 2019 tiles
+# decode several times larger, and the parallel panel gate reached >50 GB and
+# took Josh's machine down with it. Total memory is workers x tiles x decoded
+# size -- budget it explicitly wherever both multipliers are in play.
 
 
 class PointCloudSource:
@@ -41,7 +46,7 @@ class PointCloudSource:
     a tile's actual points are decoded from disk on first use and cached
     in memory after that."""
 
-    def __init__(self, directory=POINTCLOUD_DIR):
+    def __init__(self, directory=POINTCLOUD_DIR, max_cached_tiles=None):
         # *.laz matches both the pilot's original *.copc.laz tiles and the
         # plain .laz tiles fetch_pointcloud_regions.py pulls from
         # OpenTopography's bulk store -- laspy reads either identically.
@@ -63,6 +68,7 @@ class PointCloudSource:
         # while still holding whatever a run of nearby buildings needs, because
         # buildings are processed in roughly spatial order.
         self._cache = OrderedDict()
+        self._max_cached = max_cached_tiles or MAX_CACHED_TILES
 
     def _tiles_overlapping(self, minx, miny, maxx, maxy):
         return [
@@ -81,7 +87,7 @@ class PointCloudSource:
             np.asarray(las.z, dtype=np.float64), np.asarray(las.classification),
         )
         self._cache[path] = decoded
-        while len(self._cache) > MAX_CACHED_TILES:
+        while len(self._cache) >= self._max_cached:
             self._cache.popitem(last=False)
         return decoded
 
