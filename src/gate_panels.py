@@ -212,6 +212,11 @@ def _gate_one(feature_json):
     return feature_json, ok, why
 
 
+
+def _gate_batch(feature_jsons):
+    return [_gate_one(fj) for fj in feature_jsons]
+
+
 def gate_area_parallel(name, jobs=None):
     """gate_area, fanned across processes. This stage was the wall-clock floor
     of every build: single-threaded at 9-11 minutes per area while everything
@@ -244,17 +249,34 @@ def gate_area_parallel(name, jobs=None):
     ctx = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=jobs, initializer=_init_gate_worker,
                              mp_context=ctx) as ex:
+        # Explicit futures, completion order, hard timeout. ex.map wedged
+        # deterministically on island_bay at result 5,000 with every worker
+        # asleep and the data proven clean single-process -- whatever the
+        # stdlib queue pathology was, ordered iteration hid all progress
+        # behind it. as_completed reports truth in real time, and a future
+        # that never finishes gets NAMED and counted, never waited on forever.
+        from concurrent.futures import as_completed
+        BATCH = 64
         done_n = 0
-        for fj, ok, why in ex.map(_gate_one, todo, chunksize=256):
-            done_n += 1
-            if done_n % 5000 == 0:
-                print(f"  {name}: {done_n}/{len(todo)} panels gated", flush=True)
-            if why == "error-kept":
-                errors += 1
-            if ok:
-                kept.append(json.loads(fj))
-            else:
-                dropped[why] += 1
+        batches = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)]
+        futs = {ex.submit(_gate_batch, b): i for i, b in enumerate(batches)}
+        for fut in as_completed(futs, timeout=None):
+            try:
+                results = fut.result(timeout=600)
+            except Exception as exc:
+                print(f"  {name}: batch {futs[fut]} failed ({exc!r}); "
+                      f"{BATCH} panels kept ungated", flush=True)
+                results = [(fj, True, "error-kept") for fj in batches[futs[fut]]]
+            for fj, ok, why in results:
+                done_n += 1
+                if done_n % 5000 == 0:
+                    print(f"  {name}: {done_n}/{len(todo)} panels gated", flush=True)
+                if why == "error-kept":
+                    errors += 1
+                if ok:
+                    kept.append(json.loads(fj))
+                else:
+                    dropped[why] += 1
     n_dropped = sum(dropped.values())
     d["features"] = kept
     write_json_atomic(path, d)
