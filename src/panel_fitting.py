@@ -492,6 +492,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             candidates.append((is_portrait, placed_o, wc, hc))
 
     panels = []
+    extra_placed, gap_set = [], set()
     if candidates:
         by_orient = {c[0]: c for c in candidates}
         port, land = by_orient.get(True), by_orient.get(False)
@@ -505,6 +506,23 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             chosen = port or land
         _, placed, w_cells, h_cells = chosen
 
+        # Gap-fill pass (Josh: "100% should place every possible panel... you
+        # are placing a few extras at 100% but not all the extras that could
+        # possibly fit"). One grid in one orientation leaves usable pockets --
+        # odd corners, strips beside obstructions -- that the other orientation
+        # or a shifted origin would take. Mask out what was placed and pack the
+        # residue with BOTH orientations, keeping the better; the extras are
+        # tagged gap_fill and surface only at 100% density.
+        occ2 = occupancy.copy()
+        for r0, c0, r1, c1 in list(placed) + list(extra_placed):
+            occ2[max(0, r0 - 1):r1 + 1, max(0, c0 - 1):c1 + 1] = False
+        extra_placed = []
+        for w2, h2 in ((panel_width, panel_height), (panel_height, panel_width)):
+            got = _pack_orientation(occ2, resolution, w2, h2)
+            if got and len(got[0]) > len(extra_placed):
+                extra_placed = got[0]
+        gap_set = set(map(tuple, extra_placed))
+
         for r0, c0, r1, c1 in placed:
             u0, v0 = u_min + c0 * resolution, v_min + r0 * resolution
             u1, v1 = u_min + c1 * resolution, v_min + r1 * resolution
@@ -513,6 +531,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             wx, wy = to_world(corners_u, corners_v)
             panel_poly = Polygon(zip(wx, wy))
             panels.append({
+                "gap_fill": (r0, c0, r1, c1) in gap_set,
                 "building_id": facet["building_id"],
                 "facet_aspect_deg": facet["aspect_deg"],
                 "facet_slope_deg": facet["slope_deg"],
@@ -744,12 +763,13 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     for q in panels:
         sizes[q.get("array_id", 0)] = sizes.get(q.get("array_id", 0), 0) + 1
     if sizes and max(sizes.values()) >= MIN_CLUSTER_PANELS:
-        # MARK rather than remove: the caller iterates its own per-facet lists
-        # when emitting, so removal here would leave rank-less ghosts there.
+        # Josh's refinement: "100% panel density should place every possible
+        # panel." So confetti is not deleted -- it is DEMOTED to the very top
+        # of the slider. Below 100% the map shows clean arrays; at 100% every
+        # panel that physically fits appears.
         for q in panels:
             if sizes[q.get("array_id", 0)] < MIN_CLUSTER_PANELS:
-                q["pruned"] = True
-    panels = [q for q in panels if not q.get("pruned")]
+                q["confetti"] = True
     _tag_fragment_arrays(panels)
     main = _order_by_array(([p for p in panels if not p.get("straggler")]), poa_key)
     extras = sorted((p for p in panels if p.get("straggler")),
@@ -772,7 +792,14 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     # such an installer would pick. So a target system size becomes
     # "fill_order <= ceil(target_kW / panel_kW)", client-side, with no rebuild
     # needed to change the targets.
-    for i, p in enumerate(main + extras):
+    ordered = main + extras
+    # The 100%-only band: confetti clusters and gap-fill singles appear when
+    # the slider says "everything", and only then.
+    tail = [p for p in ordered if p.get("confetti") or p.get("gap_fill")]
+    for p in tail:
+        p["fill_rank"] = 100
+    ordered = [p for p in ordered if p not in tail] + tail
+    for i, p in enumerate(ordered):
         p["fill_order"] = i + 1
     return panels
 

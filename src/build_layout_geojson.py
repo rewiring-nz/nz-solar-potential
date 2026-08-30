@@ -225,9 +225,6 @@ def _build_one_inner(building_id):
     if all_kept:
         assign_fill_ranks(all_kept)
 
-    # Panels pruned as sub-cluster confetti (see panel_fitting.MIN_CLUSTER_PANELS)
-    # are marked, not removed, so they must be skipped at emit time.
-    kept_panel_lists = [[q for q in lst if not q.get("pruned")] for lst in kept_panel_lists]
     for pf, panels in zip(per_facet, kept_panel_lists):
         f = pf["facet"]
         features.append({
