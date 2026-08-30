@@ -5,11 +5,13 @@ environment active. `config.py` is the authoritative definition of pilot and
 regional bounding boxes, data-layer identifiers, exclusions, and PV
 assumptions.
 
+## Prerequisites
+
+Ensure you have setup your environment, per the [Local Setup](local-setup.md).
+
 ## Start the Python environment
 
-Run this at the start of each new Terminal session. The `.venv` folder remains on the computer, but it must be
-activated again in each new Terminal window.
-
+Activate your python environment if not done so already. The python environment must be activated at the start of each new Terminal session. The `.venv` folder remains on the computer between sessions.
 ```sh
 cd ~/nz-solar-potential
 source .venv/bin/activate
@@ -18,25 +20,35 @@ source .venv/bin/activate
 If `.venv/bin/activate` is not found, return to [Create the project Python
 environment](local-setup.md#create-the-project-python-environment) before
 continuing. If activation succeeds, `(.venv)` appears at the start of the
-Terminal prompt. Continue with the required operation below.
+Terminal prompt.
+
+## Set coverage area in config
+
+1. Confirm LINZ coverage for the intended area and update from the defaults set in `config.py`.
 
 ## Acquire source data
 
-1. Confirm LINZ coverage for the intended area before adding or changing a
-   region. Record capture dates and layer identifiers in `config.py`.
-2. Put the scoped LINZ key in `.env` as described in [local setup](local-setup.md).
-3. Fetch the original pilot inputs:
+1. Fetch the original pilot inputs:
 
 ```sh
 .venv/bin/python src/fetch_data.py
 ```
 
-4. Fetch one named expansion region, or omit the name to fetch every configured
+The pilot download is saved in the project's `data/` directory. It includes
+`building_outlines.geojson`, `dsm_mosaic.tif`, and `imagery_mosaic.tif`, plus
+download and extraction files created while the rasters are processed.
+
+2. Fetch one named expansion region, or omit the name to fetch every configured
    region:
 
 ```sh
 .venv/bin/python src/fetch_regions.py frankton_flats
 ```
+
+This command saves the named region under
+`data/regions/frankton_flats/`. Each region directory contains its building
+outlines and mosaicked DSM and imagery inputs. For example, replace
+`frankton_flats` with the region name passed to the command.
 
 Regional fetching is resumable: existing outputs are skipped. Imagery exports
 are split into chunks no larger than $8\,\mathrm{km^2}$ because imagery is the
