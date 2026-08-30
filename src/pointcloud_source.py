@@ -50,7 +50,13 @@ class PointCloudSource:
         # *.laz matches both the pilot's original *.copc.laz tiles and the
         # plain .laz tiles fetch_pointcloud_regions.py pulls from
         # OpenTopography's bulk store -- laspy reads either identically.
-        self.tile_paths = sorted(Path(directory).glob("*.laz"))
+        self.tile_paths = sorted(
+            q for q in Path(directory).glob("*.laz")
+            # macOS tarballs ship AppleDouble "._foo.laz" metadata siblings;
+            # laspy reads one and dies with 'Invalid file signature' -- inside
+            # a pool initialiser that surfaces only as BrokenProcessPool, which
+            # cost an hour of debugging on the VM. Nothing hidden is a tile.
+            if not q.name.startswith("._") and not q.name.startswith("."))
         if not self.tile_paths:
             raise FileNotFoundError(f"No .laz tiles found in {directory}")
         self._bounds = {}
