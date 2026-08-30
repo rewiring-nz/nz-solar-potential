@@ -59,7 +59,7 @@ from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components as sparse_connected_components
 from scipy.spatial import cKDTree
-from shapely.geometry import MultiPoint, Point, shape
+from shapely.geometry import box as shapely_box, MultiPoint, Point, shape
 from shapely.ops import unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -777,6 +777,70 @@ def _lidar_signature(blob, pc_source, plane):
     return off >= 6 or off / len(bp) >= 0.25
 
 
+
+# --- Sunken regions: the deck the height path cannot see ---------------------
+# detect_obstructions_from_height finds points ABOVE the plane -- equipment
+# protrudes. 26 Panorama Terrace is the inverse: a structure Josh marked sits
+# about 2 m BELOW the facet that spans it, the colour path proposes nothing
+# there (similar tone to the roof), and 23.4 m2 of panels went onto it. A
+# region of returns well below its own facet's plane is not roof that facet can
+# rack panels over, whatever it is down there.
+#
+# Facets that MODEL a recessed section (7 Anderson: the recess got its own two
+# faces) are untouched by construction: their points fit their OWN plane, so
+# the residuals here are near zero. Only roof spanned by a plane it does not
+# lie on gets carved.
+SUNKEN_MIN_DEPTH_M = 0.6
+SUNKEN_CELL_M = 0.75
+SUNKEN_MIN_AREA_M2 = 1.5
+SUNKEN_MAX_SHARE = 0.40      # more than this sunken = the facet itself is wrong;
+                             # leave it to the confidence gate, not the carver
+
+
+def _sunken_regions(pc_source, facet_geom, plane):
+    if pc_source is None or facet_geom.is_empty:
+        return []
+    minx, miny, maxx, maxy = facet_geom.bounds
+    pts = pc_source.points_in_bbox(minx, miny, maxx, maxy, building_only=True)
+    if len(pts) < 12:
+        return []
+    import shapely.vectorized as _sv
+    inside = _sv.contains(facet_geom, pts[:, 0], pts[:, 1])
+    bp = pts[inside]
+    if len(bp) < 12:
+        return []
+    a, b, c = plane
+    res = bp[:, 2] - (a * bp[:, 0] + b * bp[:, 1] + c)
+    low = bp[res < -SUNKEN_MIN_DEPTH_M]
+    if len(low) < 6:
+        return []
+    nx = max(2, int(np.ceil((maxx - minx) / SUNKEN_CELL_M)))
+    ny = max(2, int(np.ceil((maxy - miny) / SUNKEN_CELL_M)))
+    if nx * ny > 200000:
+        return []
+    grid = np.zeros((ny, nx), dtype=bool)
+    ix = np.clip(((low[:, 0] - minx) / SUNKEN_CELL_M).astype(int), 0, nx - 1)
+    iy = np.clip(((low[:, 1] - miny) / SUNKEN_CELL_M).astype(int), 0, ny - 1)
+    grid[iy, ix] = True
+    grid = ndimage.binary_closing(grid, structure=np.ones((3, 3), dtype=bool))
+    labeled, n = ndimage.label(grid, structure=np.ones((3, 3), dtype=int))
+    out = []
+    for lab in range(1, n + 1):
+        ys, xs = np.nonzero(labeled == lab)
+        if len(xs) * SUNKEN_CELL_M ** 2 < SUNKEN_MIN_AREA_M2:
+            continue
+        cells = [shapely_box(minx + x * SUNKEN_CELL_M, miny + y * SUNKEN_CELL_M,
+                             minx + (x + 1) * SUNKEN_CELL_M, miny + (y + 1) * SUNKEN_CELL_M)
+                 for y, x in zip(ys, xs)]
+        reg = unary_union(cells).intersection(facet_geom)
+        if not reg.is_empty:
+            out.append(reg)
+    total = sum(r.area for r in out)
+    if total > SUNKEN_MAX_SHARE * facet_geom.area:
+        return []
+    return out
+
+
 def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                                   z_threshold=None, boundary_erode_m=None,
                                   residual_threshold_m=None, roof_geom=None):
@@ -984,7 +1048,10 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     except Exception:
         bright = []
 
-    all_obs = color_obs + compact + confirmed_elongated + bright
+    # Sunken regions join unconditionally: they come from LiDAR alone, so a
+    # rural facet with no imagery still gets its recessed deck carved.
+    sunken = _sunken_regions(pc_source, facet_geom, plane)
+    all_obs = color_obs + compact + confirmed_elongated + bright + sunken
     if not all_obs:
         return []
     merged = unary_union(all_obs)
