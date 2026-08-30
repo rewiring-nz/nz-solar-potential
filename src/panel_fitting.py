@@ -423,7 +423,7 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
             usable = surface_ridge.intersection(surface_building.buffer(-sb))
         else:
             usable = surface_poly.buffer(-sb)   # no outline: fall back to the old behaviour
-        candidate = _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet)
+        candidate = _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet, sibling_facets)
         # The generous setback is tried first and kept unless a tighter one is a
         # REAL gain -- a whole extra row, not one squeezed panel. Josh: "it's
         # less about maximising every inch of roof space, and more about
@@ -434,7 +434,7 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     return best
 
 
-def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet):
+def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet, sibling_facets=None):
     """`usable` is already fully eroded -- edge clearance from the building's
     outer edge, ridge clearance from the facet's own boundary, obstructions
     removed. This just lays the lattice on it."""

@@ -40,6 +40,17 @@ def main():
     new_feats = {}
     for bid in a.ids:
         feats = blg._build_one(bid)
+        if not feats:
+            # A rebuild yielding NOTHING is a crash wearing a quiet face --
+            # _build_one converts any exception into an empty list. Splicing
+            # that in would DELETE the building from the live map. Refuse the
+            # whole run instead: a patch must never ship less than it replaces
+            # by accident. (A genuinely empty building would have been empty
+            # in the district file already.)
+            raise SystemExit(
+                f"ABORT: #{bid} rebuilt to 0 features -- almost certainly a "
+                f"pipeline exception. Run _build_one_inner({bid}) directly for "
+                f"the traceback. Nothing was patched.")
         new_feats[bid] = feats
         n = sum(1 for f in feats if f["properties"]["kind"] == "panel")
         print(f"  #{bid}: {len(feats)} features, {n} panels  "
