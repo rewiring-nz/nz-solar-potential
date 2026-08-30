@@ -342,3 +342,11 @@ surface fit decisively beating the plane fit, distinct from folds which are
 creases), then partition the curved face into narrow parallel strips along
 the curvature direction -- one panel row per strip, racked the way installers
 actually follow gentle arcs. Exclude tight radii as un-rackable.
+
+## Rebuild diff report — from Josh's regression question (30 Aug)
+
+Nothing diffs the whole district build-over-build; the scorecard covers ~20
+known roofs and change-evals cover ~120 samples. Add to the rebuild fan-in:
+per-building panel-count and kWh diff vs the previous build, ranked movers
+both directions, auto-render the top ~10 outliers for Josh's review BEFORE
+the push. Unknown impacts must surface, not hide in 15k buildings.
