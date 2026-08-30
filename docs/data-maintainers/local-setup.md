@@ -73,27 +73,3 @@ disabled. No action is required for the documented data-maintenance commands:
 the project's fetch scripts load `LINZ_API_KEY` from `.env` themselves. Leave
 `python.terminal.useEnvFile` disabled unless there is a separate reason to make
 `.env` variables available to every VS Code terminal command.
-
-## Local serving
-
-Run both local-serving commands from the `nz-solar-potential` project
-directory.
-
-For the static map preview, run:
-
-```sh
-python3 -m http.server 8000
-```
-
-From a browser, view `http://localhost:8000/preview.html`.
-
-For the local parameter-refit API and tuning sliders, run:
-
-```sh
-.venv/bin/python src/live_server.py
-```
-
-This server loads substantial source data at startup and is intended for local
-development only. It serves the project from its parent directory, so open
-`http://localhost:8000/nz-solar-potential/preview.html`. Static hosting does
-not provide its `/api/refit` endpoint.
