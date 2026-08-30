@@ -227,7 +227,14 @@ def gate_area_parallel(name, jobs=None):
         else:
             todo.append(json.dumps(f))
     jobs = jobs or max(1, min(4, (os.cpu_count() or 2) - 1))
-    with ProcessPoolExecutor(max_workers=jobs, initializer=_init_gate_worker) as ex:
+    # Spawn, never fork. On Linux the default is fork, and forked children
+    # inherit the parent's initialised GDAL/rasterio state -- workers segfault
+    # and the pool dies with BrokenProcessPool (seen on the VM's first run).
+    # macOS spawns by default, which is why local testing never showed it.
+    import multiprocessing
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=jobs, initializer=_init_gate_worker,
+                             mp_context=ctx) as ex:
         for fj, ok, why in ex.map(_gate_one, todo, chunksize=256):
             if why == "error-kept":
                 errors += 1
