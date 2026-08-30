@@ -291,3 +291,44 @@ off-plane residual -- both scored this version as fine.
 - A patch script that asserts and then writes at the end is all-or-nothing: a
   failed assertion late in the script silently discards the edits before it.
   Write after each edit, or verify the file actually changed.
+
+## Horizon program — DIRECTED by Josh, 30 Aug (top of queue after Island Bay)
+
+Josh: build the SolarView-style horizon tab, and "make sure all calculations,
+like generation profiles, economics and savings that show, and heat maps, all
+take into account these horizons to make sure you are confident in their
+accuracy." One per-building horizon as the single source of truth, everywhere.
+
+1. **Precompute per building** (VM build stage): 72-bin azimuth horizon in two
+   layers — far terrain (8 m wide DEM, ~20 km) and near-field DSM (~300 m,
+   trees + neighbours, own footprint excluded, ray origin roof-centre at eave
+   height). ~200 bytes/building into solar_potential properties.
+2. **Feed the model**: per-building hourly beam mask (sun el < horizon(az) →
+   blocked) replacing the per-AREA terrain profile in SolarModel; flows into
+   panel ac_kwh_year, so economics/savings inherit automatically. Heatmap
+   stage uses the same factors. Frontend seasonal curves must derive from the
+   same numbers.
+3. **Horizon tab** on the generation chart: azimuth E→N→W, terrain silhouette,
+   darker DSM overlay, four seasonal sun arcs computed client-side.
+4. **Validation**: cross-check horizons + winter curves against NIWA SolarView
+   for ~5 addresses (external ground truth), and record deltas in
+   data/roof_truth.json.
+   Caveats to keep honest: LiDAR-vintage tree heights; ray-origin choice.
+
+## Also queued from the 29-30 Aug live-testing sessions
+
+- District rebuild carrying: fill-order/mean-yield, confetti demotion,
+  gap-fill (Anderson 24→35 at 100%), twin-portrait rule, fusion + sunken
+  obstructions, eviction fix. Run on the VM after Island Bay ships.
+- Region-growing segmentation for multi-level commercial (32 Frankton at 15%
+  fit; 40 Camp). The big-roof panel gate hides the symptom, not the cause.
+- Imagery classifier (SAM-proposer + LiDAR/colour verification): Panorama's
+  recessed deck (geometric routes exhausted, all measured), existing rooftop
+  solar (7 Coronation), Robins-style patio boundaries, Duke's residual speckle.
+- Array regularity: "clean rectangular blocks, equal rows" (45 Camp north
+  array gap).
+- Bucket uploads rejected (gs://rewiring-solar-data empty; SA/composite issue)
+  — blocks the Mac-offload and VM disk relief.
+- VM GitHub deploy key so cloud builds push their own results.
+- Full review tables (bugs fixed / simple done / big for Josh) — still owed.
+- Wellington: swap to 2025 survey when its point cloud is downloadable.
