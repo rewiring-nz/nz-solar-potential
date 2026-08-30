@@ -499,7 +499,9 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
         if _has_twin(facet, sibling_facets):
             # Symmetric pair: no contest. Portrait on both sides, exactly as an
             # installer would rack a gable, unless portrait fits nothing here.
-            chosen = port if (port and port[1]) else land
+            # (land can be None too -- portrait-present-but-empty with no
+            # landscape candidate crashed the whole building's build.)
+            chosen = port if (port and port[1]) else (land or port)
         elif port and land:
             chosen = land if len(land[1]) > len(port[1]) * (1.0 + LANDSCAPE_WIN_MARGIN) else port
         else:
