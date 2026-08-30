@@ -315,6 +315,36 @@ accuracy." One per-building horizon as the single source of truth, everywhere.
    data/roof_truth.json.
    Caveats to keep honest: LiDAR-vintage tree heights; ray-origin choice.
 
+## Multi-level roofs — top-surface filter landed 30 Aug (Josh's #5119630 report)
+
+Island Bay #5119630 (complex hip, two roof levels) exposed a foundational bug:
+under the eaves of a multi-level building LiDAR records BOTH surfaces at the
+same plan location, and every segmentation strategy was fitting planes through
+the mixture -- region-grow facets explaining 0% of their own polygons, the
+partition smearing 12 wedges across a clean hip network. Fix:
+`roof_partition.top_surface()` keeps only each 0.5 m plan cell's top points
+(exposed lower-level roof keeps its points -- there it IS the top). Partition
+explained-fraction on the report building went 0.66 -> 0.76 and the render
+now follows the visible ridge network; #3528763 (textbook hip) comes out
+with crisp hip diagonals.
+
+Also landed: `explained_fraction` metric + a 0.85 gate in `_partition_facets`;
+below it a label-based plane-arrangement rebuild (`partition_with_labels`:
+region-grow labels for assignment, plane-intersection + reflex-corner cuts
+for boundaries) competes and strictly-better wins. On current buildings the
+top-surface partition usually wins; the arrangement is the safety net.
+
+NEW OPEN ITEM from the same sweep: two-level flat commercial (#3371280) --
+the lower band, now cleanly separated by top_surface, gets carved as an
+OBSTRUCTION (height-strong, below main plane) instead of becoming its own
+facet with panels. Conservative, not wrong, but it's free roof area. Wants:
+when a large height-coherent "obstruction" is itself planar and sub-level,
+re-run segmentation on its points and emit facets.
+
+Sample regression (15 Island Bay buildings): 622 -> 540 panels (-13%), the
+big movers verified by render as geometry corrections (panels were on wedges
+crossing ridges). District rebuild will carry this; watch the diff report.
+
 ## Also queued from the 29-30 Aug live-testing sessions
 
 - District rebuild carrying: fill-order/mean-yield, confetti demotion,
