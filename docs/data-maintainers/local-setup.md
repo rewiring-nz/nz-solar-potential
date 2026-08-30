@@ -60,13 +60,11 @@ cp .env.example .env
 6. Copy the API key into `.env`:
 
 ```text
-LINZ_API_KEY=your-key-here
+LINZ_API_KEY=[your-key-here]
 ```
 
-Do not commit `.env` or share the key in issues, chat, or documentation. The
-template `.env.example` is the authoritative list of required environment
-variables. For LDS account and key help, see the official [LINZ Data Service
-guide](https://www.linz.govt.nz/guidance/data-service/linz-data-service-guide).
+**Security Warning** Do not commit your `.env` key into git, issues or chat.
+or share the key in issues, chat, or documentation.
 
 **VS Code note:** You may see a message that terminal environment injection is
 disabled. No action is required for the documented data-maintenance commands:
