@@ -181,6 +181,8 @@ _W = {}
 
 
 def _init_gate_worker():
+    import os
+    os.environ["SOLAR_LAZ_SINGLE"] = "1"   # see pointcloud_source: one decode thread each
     """Per-process context: the point-cloud reader and the wide DEM. Loaded once
     per worker, not per panel."""
     # Workers x cached tiles x decoded-tile size is the real memory bill. Eight
@@ -235,7 +237,11 @@ def gate_area_parallel(name, jobs=None):
     ctx = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=jobs, initializer=_init_gate_worker,
                              mp_context=ctx) as ex:
+        done_n = 0
         for fj, ok, why in ex.map(_gate_one, todo, chunksize=256):
+            done_n += 1
+            if done_n % 5000 == 0:
+                print(f"  {name}: {done_n}/{len(todo)} panels gated", flush=True)
             if why == "error-kept":
                 errors += 1
             if ok:

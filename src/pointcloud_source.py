@@ -61,7 +61,15 @@ class PointCloudSource:
             raise FileNotFoundError(f"No .laz tiles found in {directory}")
         self._bounds = {}
         for path in self.tile_paths:
-            with laspy.open(path) as f:
+            # Single-threaded decompression when fanned out. The default lazrs
+            # backend spawns its own thread pool per read; 12 gate workers each
+            # doing that put load average 141 on a 16-core VM and turned a
+            # ~30-CPU-minute job into 21 CPU-hours of context switching. One
+            # decode thread per worker process is the efficient shape.
+            import os as _os
+            _backend = ([laspy.LazBackend.Lazrs]
+                        if _os.environ.get("SOLAR_LAZ_SINGLE") else None)
+            with laspy.open(path, laz_backend=_backend) as f:
                 h = f.header
                 self._bounds[path] = (h.mins[0], h.mins[1], h.maxs[0], h.maxs[1])
         # Bounded, and it has to be. The cache was unbounded, which is fine for
