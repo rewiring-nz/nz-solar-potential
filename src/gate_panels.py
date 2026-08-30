@@ -189,7 +189,7 @@ def _init_gate_worker():
     # workers each caching eight tiles crashed a 64 GB machine on Wellington's
     # dense survey; two tiles per worker is plenty here because a panel query
     # touches exactly the tile(s) under one building.
-    _W["pc"] = PointCloudSource(max_cached_tiles=2)
+    _W["pc"] = PointCloudSource(max_cached_tiles=3)
     with rasterio.open(DATA_DIR / "dem_wide_mosaic.tif") as ds:
         _W["dem"] = ds.read(1)
         _W["dem_inv"] = ~ds.transform
