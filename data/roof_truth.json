@@ -255,6 +255,31 @@
       "building_id": 4740662,
       "address": "(no address)",
       "live_test_29aug": "Josh: density slider removes panels from SUNNIER areas first. 'You should remove from the shadiest, lowest producing panels first when lowering panel density.' fill_rank ordering bug."
+    },
+    {
+      "building_id": 4735318,
+      "address": "1 Gorge Road",
+      "live_test_29aug_v2": "Hip triangles not detected -- panels over the ridgeline edge. Asymmetric layout on a symmetric gable: portrait array one side, smaller landscape array the other. Josh: 'find a way to attempt to make roofs with the same plane dimension on each side have a mirrored install layout or close to it'. Also outline poorly aligned with the roof; Josh questions using LINZ outlines for anything beyond building selection."
+    },
+    {
+      "building_id": 5370340,
+      "address": "5 Beach Street",
+      "live_test_30aug": "Josh: 'Misidentified obstructions on this roof, plenty of space for panels.' Flat commercial roof speckled with red blobs; the live build predates the fusion/bright/sunken obstruction patches, so first test is whether current code already clears it."
+    },
+    {
+      "building_id": 4735237,
+      "address": "24 Beach Street",
+      "live_test_30aug": "Josh: 'Why do only some of the ridges on this roof get panels, when they are very similar size.' Sawtooth commercial roof; several similar ridge sections empty. Suspects: per-facet fit gate on a big roof, or partition smearing alternate sawtooth faces."
+    },
+    {
+      "building_id": 5372588,
+      "address": "36 Shotover Street",
+      "live_test_30aug": "Josh: 'Panels overlapping holes/off the building here.' Central void/lightwell carries panels; some panels past the edge. Both should be addressed by current code (sunken-region carve + eave-off) -- patching to verify."
+    },
+    {
+      "building_id": 5372566,
+      "address": "19 Camp Street",
+      "live_test_30aug": "Josh: curved (fan-shaped) roof; panels overlap the curve's crest lines and some obstructions. Asked directly whether curves are supported: they are not -- the model is plane-only. Backlog: curved-roof strip-planes."
     }
   ],
   "_metric_note": "Score obstructions by AREA, not object count. Josh combines nearby obstructions when marking, so his object count is not comparable: 'I am combining obstructions together when they are close, so the counting of them might not be the best approach.'",
@@ -273,5 +298,6 @@
   },
   "_obstruction_fusion_principle": "Josh, 29 Aug (6 Weaver St): 'obstructions need to be a careful balance of imagery and lidar. An obstruction should show some signature on both. For example you don't want to identify painting discolouration as an obstruction, which lidar can tell you is flat.' Design rule: a colour-path detection must be confirmed by height residuals inside it, else it is paint. The dedicated skylight path is the exception (flush by nature) but must be compact+regular.",
   "_array_philosophy": "Josh, 29 Aug (45 Camp St): arrays should be 'most equal shapes. like two panel rows, 4 panel rows etc. Avoiding one panel rows. Arrays as in clean rectangular blocks of panels. Though I also appreciate sometimes they need to be a bit more creatively placed to maximise room, but most of the time not.'",
-  "_existing_panel_note": "7 Coronation Dr shows EXISTING solar panels on the roof being panelled over. Existing panels are flush, so the new LiDAR-signature rule cannot see them and the colour path reads them as dark tone. They need their own imagery signature (dark regular rectangular grid) -- a SAM-proposer class, exempt from the flatness veto. Open item."
+  "_existing_panel_note": "7 Coronation Dr shows EXISTING solar panels on the roof being panelled over. Existing panels are flush, so the new LiDAR-signature rule cannot see them and the colour path reads them as dark tone. They need their own imagery signature (dark regular rectangular grid) -- a SAM-proposer class, exempt from the flatness veto. Open item.",
+  "_outline_doubt": "Josh, 29 Aug (1 Gorge Rd): 'Maybe using the building outlines at all for anything other than selecting buildings is not a good idea. Not sure.' Currently the outline IS the partition domain (trimmed in, never extended). The alternative -- LiDAR/imagery-derived roof extent, outline only for identity -- is a large change; candidate for the imagery-model round."
 }
