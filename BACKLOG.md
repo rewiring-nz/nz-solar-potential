@@ -332,3 +332,13 @@ accuracy." One per-building horizon as the single source of truth, everywhere.
 - VM GitHub deploy key so cloud builds push their own results.
 - Full review tables (bugs fixed / simple done / big for Josh) — still owed.
 - Wellington: swap to 2025 survey when its point cloud is downloadable.
+
+## Curved-roof strip-planes — from 19 Camp St (30 Aug)
+
+The model is plane-only; a curved roof gets approximated by a few big sheets
+and panels run across the crest (Josh: "panels overlapping ridgelines...
+have you built in a way to do curves?"). Plan: detect curvature (quadratic
+surface fit decisively beating the plane fit, distinct from folds which are
+creases), then partition the curved face into narrow parallel strips along
+the curvature direction -- one panel row per strip, racked the way installers
+actually follow gentle arcs. Exclude tight radii as un-rackable.
