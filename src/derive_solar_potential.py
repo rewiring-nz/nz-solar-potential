@@ -14,8 +14,27 @@ from collections import defaultdict
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import geopandas as gpd
+import pyproj
+from shapely.geometry import shape
+from shapely.ops import transform as _shtransform
 import config
 from src.region_build import area_paths
+
+_TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
+
+
+def _facet_area_m2(feature):
+    """Plan area in m2 from the facet's own geometry. The layout emitter does
+    not write an area_m2 property on facet features, so reading it out of
+    properties silently produced 0 for every building -- which zeroed the heat
+    map mode's whole estimate ladder (kWp = area x coverage x density)."""
+    a = feature["properties"].get("area_m2")
+    if a:
+        return float(a)
+    try:
+        return _shtransform(_TO_NZTM, shape(feature["geometry"])).area
+    except Exception:
+        return 0.0
 
 
 def derive(region):
@@ -32,7 +51,7 @@ def derive(region):
         k = p["kind"]
         if k == "facet":
             a["facet_count"] += 1
-            area = p.get("area_m2") or 0.0
+            area = _facet_area_m2(f)
             a["facet_area_m2"] += area
             a["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
         elif k == "obstruction":
