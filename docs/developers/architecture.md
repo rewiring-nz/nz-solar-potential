@@ -12,11 +12,13 @@ and selected-building views.
 flowchart TB
     LINZ[LINZ outlines, DSM, DEM, imagery] --> Fetch[fetch_data / fetch_regions]
     Fetch --> Inputs[data or data/regions/name]
-    Inputs --> Segment[roof segmentation]
+    Inputs --> Segment[roof segmentation & skeleton reconstruction]
     Segment --> Detect[obstruction detection]
     Detect --> Fit[panel fitting and gates]
-    Fit --> Model[solar model and shading]
-    Model --> Outputs[region GeoJSON and rasters]
+    Fit --> Layouts[panel_layouts.geojson]
+    Layouts --> Derive[derive_solar_potential]
+    Derive --> Horizon[bake_building_horizons]
+    Horizon --> Outputs[solar_potential.geojson & rasters]
     Outputs --> Merge[merge and tile preparation]
     Merge --> Map[preview.html / static hosting]
 ```
@@ -28,10 +30,21 @@ flowchart TB
 - `src/fetch_data.py` and `src/fetch_regions.py` acquire source inputs.
 - `src/region_build.py` resolves paths and assigns overlapping outlines to one
   region before builds. All region-aware tools should use its path helpers.
-- `src/build_heatmap.py`, `src/build_layout_geojson.py`, and related modules
-  generate per-region outputs. Post-processing gates and ranks layouts.
+- `src/roof_segmentation.py`, `src/roof_partition.py`, and
+  `src/roof_skeleton.py` segment roofs into planar facets using RANSAC and
+  constructive straight-skeleton methods competing under confidence gates.
+- `src/build_layout_geojson.py`, `src/gate_panels.py`, and
+  `src/rerank_layouts.py` fit, gate, and rank physical panel layouts.
+- `src/derive_solar_potential.py` aggregates layout outputs into the
+  building-summary layer (`solar_potential.geojson`), guaranteeing numerical
+  consistency between layout features and building totals without recomputation.
+- `src/building_horizon.py` and `src/bake_building_horizons.py` compute
+  per-building 72-bin horizon profiles (`horizon_b64`, `horizon_beam_pct`)
+  combining wide bare-earth DEM terrain and near DSM obstacles.
 - `src/merge_regions.py` produces site-level artifacts. It is the boundary
   between per-region processing and map-facing datasets.
+- `src/render_building_debug.py` and `src/render_top_movers.py` generate visual
+  debug cards and build-over-build diff reports for pre-release validation.
 - `preview.html` is the static map. `src/live_server.py` adds a local-only
   refit endpoint and must stay behaviourally aligned with the static build.
 

@@ -36,7 +36,9 @@ Terminal prompt.
 
 The pilot download is saved in the project's `data/` directory. It includes
 `building_outlines.geojson`, `dsm_mosaic.tif`, and `imagery_mosaic.tif`, plus
-download and extraction files created while the rasters are processed.
+download and extraction files created while the rasters are processed. When
+calculating per-building horizon profiles across wide terrain, ensure the
+district-scale bare-earth DEM `data/dem_wide_mosaic.tif` is also present.
 
 2. Fetch one named expansion region, or omit the name to fetch every configured
    region:
@@ -81,6 +83,19 @@ The full build runs each area in a separate Python process to keep decoded
 LiDAR tile memory bounded. Logs are written to `data/build_logs/`. A failed
 area prevents merging so incomplete output is not mistaken for a full release.
 
+To derive building solar potential directly from generated layouts and bake
+per-building horizon profiles:
+
+```sh
+.venv/bin/python src/derive_solar_potential.py frankton_flats
+.venv/bin/python src/bake_building_horizons.py frankton_flats
+```
+
+`derive_solar_potential.py` aggregates layout features into
+`solar_potential.geojson` without redundant recomputation, ensuring panel counts
+and building totals agree. `bake_building_horizons.py` computes 72-bin sky
+profiles (`horizon_b64` and `horizon_beam_pct`) using the wide DEM and local DSM.
+
 ## Serve the map locally
 
 Run either command from the `nz-solar-potential` project directory.
@@ -109,10 +124,15 @@ not provide its `/api/refit` endpoint.
 1. Read each requested region log for failed stages and warnings.
 2. Run `src/audit_layout_quality.py` for rebuilt areas; investigate low fill,
    fragmented arrays, multiple panel angles, and excessive obstruction shares.
-3. Use `src/validate_obstructions.py` when changing obstruction behaviour.
-4. Use the local map preview to inspect a representative mix of rooftops,
+3. Run `src/render_top_movers.py` to inspect visual diff cards for the top
+   capacity movers across builds before releasing.
+4. Use `src/render_building_debug.py <building_id>` to generate visual debug
+   cards when investigating individual roof segmentation, plane fits, or
+   skeleton reconstruction issues.
+5. Use `src/validate_obstructions.py` when changing obstruction behaviour.
+6. Use the local map preview to inspect a representative mix of rooftops,
    including known difficult buildings and areas without imagery.
-5. Verify merged feature counts and output sizes. `data/solar_potential.geojson`
+7. Verify merged feature counts and output sizes. `data/solar_potential.geojson`
    is the site-level building summary; `data/panel_layouts.geojson` is detailed
    layout data and can reach hundreds of megabytes.
 

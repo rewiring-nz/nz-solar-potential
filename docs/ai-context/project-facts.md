@@ -1,6 +1,6 @@
 # Project facts
 
-Last verified: 2026-08-30
+Last verified: 2026-08-31
 
 ## Verified facts
 
@@ -14,6 +14,15 @@ Last verified: 2026-08-30
   decoded point-cloud tiles are retained in process memory.
 - Missing aerial imagery does not block builds: the regional fetcher logs a
   warning and the build runs without imagery-based obstruction detection.
+- Roof segmentation uses RANSAC plane fitting and straight-skeleton constructive
+  reconstruction (`src/roof_skeleton.py`) competing under partition confidence
+  gates, with top-surface point filtering and plane refits.
+- Building solar potential summary data (`solar_potential.geojson`) is derived
+  by aggregating layout features directly (`src/derive_solar_potential.py`),
+  ensuring summary totals and individual layouts match without re-segmentation.
+- Shading incorporates per-building 72-bin horizon profiles (`horizon_b64`,
+  `horizon_beam_pct`) combining wide 8m DEM terrain and 1m DSM obstacles
+  evaluated at eave height.
 - `config.PV_ASSUMPTIONS` is the intended single source for displayed PV model
   assumptions and generated summary data.
 - The current static-host configuration publishes repository files. The local

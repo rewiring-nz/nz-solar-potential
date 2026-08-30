@@ -12,14 +12,21 @@ certificate, quote, or guarantee of energy production.
 3. Use the map's heat-map view for a broad comparison and its panel-layout
    view to inspect the modelled roof facets, excluded obstructions, and panel
    positions for a selected building.
+4. In the building detail panel, toggle between **Average** and **Sunny day**
+   seasonal generation curves, or switch to the **Horizon** tab to inspect the
+   skyline silhouette (mountain terrain and nearby trees/buildings) plotted
+   against seasonal sun paths (summer, equinox, winter).
 
 ## Interpret the estimate
 
 - `kWp` is the panels' nameplate capacity at Standard Test Conditions. It is
   not the amount of power produced continuously.
 - Daily and annual `kWh` are model estimates. They combine roof slope and
-  aspect, a pvlib irradiance model, NASA POWER cloud-adjusted data, modelled
-  shading, and the PV assumptions stored in `config.py`.
+  aspect, a pvlib irradiance model, NASA POWER cloud-adjusted data,
+  per-building horizon shading (terrain and nearby obstacles), and the PV
+  assumptions stored in `config.py`.
+- The **Horizon** tab shows the percentage of annual direct-beam solar radiation
+  retained after surrounding topography and nearby structures are accounted for.
 - A roof with no placed panels is not necessarily unsuitable for solar. It
   may be too small after setbacks, too steep, shaded, unresolved by the
   available data, or excluded by the current model.
