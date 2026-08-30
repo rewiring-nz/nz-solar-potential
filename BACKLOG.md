@@ -292,7 +292,31 @@ off-plane residual -- both scored this version as fine.
   failed assertion late in the script silently discards the edits before it.
   Write after each edit, or verify the file actually changed.
 
-## Horizon program — DIRECTED by Josh, 30 Aug (top of queue after Island Bay)
+## Horizon program — SHIPPED 31 Aug (per-building horizons + tab live on national site)
+
+Landed overnight 30-31 Aug (details in the repos' commit log):
+- src/building_horizon.py: two-layer 72-bin per-building profile (far 8m DEM
+  at eave height, near 1m DSM to 300m, own footprint excluded), base64-baked
+  onto solar_potential (horizon_b64 / horizon_far_b64 / horizon_beam_pct).
+- Horizon tab on the building panel (terrain silhouette + darker trees/
+  buildings + 3 seasonal sun arcs, client-side). Hidden until an area bakes.
+- Yield wiring: aspect-aware facet_horizon_factor (far layer vs area
+  baseline) multiplies facet+panel shading; far_beam_ratio scales heatmap
+  rasters. Near-field stays with building_shading_factor (no double count).
+- Validated internally on Island Bay: median beam 92.5%, p5 64%; the 11-29%
+  extremes are tree-buried buildings that already carry zero panels.
+
+STILL OPEN on horizons:
+- SolarView cross-check: NIWA moved SolarView behind DataHub (API key) --
+  needs Josh or a key. Winter-curve comparison for ~5 addresses.
+- Queenstown: needs data/dem_wide_mosaic.tif + a bake before its tab lights
+  up; yield wiring is a no-op there until then. Bake with next build cycle.
+- tshade (seasonal-curve mask) still comes from build_terrain_masks' own DEM
+  scan, not the baked horizon -- consolidate so one profile feeds both.
+- Island Bay relayout carrying horizon yields staged on the VM (ib_relayout.sh),
+  runs after the Queenstown chain.
+
+## Horizon program original spec (kept for reference)
 
 Josh: build the SolarView-style horizon tab, and "make sure all calculations,
 like generation profiles, economics and savings that show, and heat maps, all
