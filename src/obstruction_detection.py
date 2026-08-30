@@ -237,6 +237,10 @@ BRIGHT_MAX_ELONGATION = 4.0
 BRIGHT_MAX_TOTAL_SHARE = 0.15   # if this much of a facet is "bright" it is the roof
 
 
+BRIGHT_MAX_COUNT_PER_FACET = 6   # more 'skylights' than this on one facet is roofing
+BRIGHT_MAX_SHARE = 0.06          # ...as is more than 6% of the facet reading 'bright'
+
+
 def detect_bright_objects(imagery_ds, facet_geom, roof_geom=None):
     """Compact bright blobs: skylights, vents, flashing, plant housings.
 
@@ -817,6 +821,7 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # the worst over-carve is 55%.
     # The cap applies ONLY to blobs with no height corroboration: real
     # equipment that also shows up in the photo still bypasses it entirely.
+    VALLEY_VETO_MAX_DEPTH_M = 1.0
     COLOUR_ONLY_MAX_AREA_M2 = 15.0
     COLOUR_CORROBORATION_MIN_AREA_M2 = 1.0
     COLOUR_CORROBORATION_MIN_FRACTION = 0.15
@@ -848,7 +853,14 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                 bp = bpts[inside]
                 if len(bp) >= 5:
                     res = bp[:, 2] - (va * bp[:, 0] + vb * bp[:, 1] + vc)
-                    if np.median(res) < -HEIGHT_STRONG_ABOVE_MARGIN_M:
+                    med = np.median(res)
+                    # Only a SHALLOW dip is a vault/sawtooth valley photographing
+                    # dark. 26 Panorama's marked structure sits ~2 m below the
+                    # facet plane and this veto was throwing its colour blob
+                    # away, so 23.4 m2 of panels went onto a recessed deck. A
+                    # metre or more below the plane is a level change, and a
+                    # level change under a facet is exactly what must carve.
+                    if -VALLEY_VETO_MAX_DEPTH_M < med < -HEIGHT_STRONG_ABOVE_MARGIN_M:
                         continue  # below-plane valley shadow, not an object
             kept_color.append(blob)
         color_obs = kept_color
@@ -962,6 +974,13 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # the brightness tail finds nine.
     try:
         bright = detect_bright_objects(imagery_ds, facet_geom, roof_geom)
+        # Skylights are FEW and SMALL. 101/8 Duke St, a light membrane roof,
+        # got 33 'skylights' covering 99 m2 from the brightness percentile --
+        # a percentile always finds something, and on a bright roof what it
+        # finds is the roofing. If the path floods, it is reading material:
+        # drop everything it returned for this facet.
+        if len(bright) > BRIGHT_MAX_COUNT_PER_FACET or                 sum(b.area for b in bright) > BRIGHT_MAX_SHARE * facet_geom.area:
+            bright = []
     except Exception:
         bright = []
 
