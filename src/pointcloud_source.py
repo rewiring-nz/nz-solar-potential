@@ -101,7 +101,12 @@ class PointCloudSource:
             np.asarray(las.z, dtype=np.float64), np.asarray(las.classification),
         )
         self._cache[path] = decoded
-        while len(self._cache) >= self._max_cached:
+        # STRICTLY greater: '>=' made a capacity-2 cache hold ONE tile, so a
+        # building straddling a tile border re-decoded a 7.3M-point tile for
+        # EVERY panel -- >13 s each on the VM, an entire gate run spent
+        # decompressing. Off-by-ones in eviction are invisible until capacity
+        # is small and the data is dense, which is exactly when they ruin you.
+        while len(self._cache) > self._max_cached:
             self._cache.popitem(last=False)
         return decoded
 
