@@ -407,6 +407,37 @@ FIXED by adding NIWA's 28-station measured radiation normals to solar_model as
 the calibration source ahead of the sunshine-hours inference. Any future region
 now calibrates from the nearest measured station automatically.
 
+## FOR JOSH: the system derate looks ~4-5 points optimistic (31 Aug)
+
+Not changed, because it is an ASSUMPTION you set and it is editable in the
+UI -- changing it silently would move every payback figure on the site. But
+the evidence is consistent and worth a decision.
+
+Our AC yield sits 11.7-13.3% above PVGIS across angles at Queenstown. It
+decomposes cleanly:
+    irradiance  ours 1559 vs PVGIS 1471 at 20 deg north   +6.0%
+    derate      ours 0.834 vs PVGIS effective 0.791       +5.4%
+
+The irradiance half is defensible: NIWA's MEASURED record supports our level
+for Queenstown, and PVGIS/ERA5 reads low in that alpine valley (it reads high
+in Wellington -- see the corrected Finding 2).
+
+The derate half is the question. PVGIS at loss=0 gives E/H = 0.904, so cell
+temperature + spectral + reflection cost ~9.6% BEFORE any system losses. The
+industry convention (PVWatts) is 14% system losses with temperature modelled
+separately on top, landing near 21% total in a temperate climate. We apply a
+single 16.6% (97% inverter x 14% "soiling, wiring, temperature, mismatch"),
+which only works if temperature is genuinely inside that 14% -- and if it is,
+it leaves ~4% for everything else, which is tight.
+
+OPTIONS
+  a) raise system_derate_pct 14 -> ~18-19, one-line change, matches the
+     PVWatts-style total. Cheapest and defensible.
+  b) model cell temperature properly (pvlib pvwatts_dc + a temperature model),
+     which needs hourly ambient temperature and wind we do not currently fetch.
+  c) leave it and say so in the assumptions text.
+Effect of (a): headline kWh and savings fall ~5%, paybacks lengthen slightly.
+
 ## Build-order rule learned 31 Aug (cost a rebuild)
 
 Stages that write ONLY the merged data/solar_potential.geojson must run AFTER
