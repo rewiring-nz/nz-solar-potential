@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Queenstown rooftop solar potential — pilot preview</title>
+<title>NZ rooftop solar potential — pilot preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4/dist/pmtiles.js"></script>
@@ -713,6 +713,36 @@
 
 <script>
 maplibregl.addProtocol("pmtiles", new pmtiles.Protocol().tile);
+const START_LOCATIONS = {
+  // ?location=<name> (or just ?<name>) opens the map here. Also works from an
+  // embedding page that forwards its query string onto the iframe src.
+  "wellington":  { center: [174.7772, -41.2889], zoom: 13.5 },
+  "island-bay":  { center: [174.7745, -41.3380], zoom: 15.0 },
+  "islandbay":   { center: [174.7745, -41.3380], zoom: 15.0 },
+  "queenstown":  { center: [168.6620, -45.0320], zoom: 15.5 },
+};
+const DEFAULT_VIEW = { center: [174.7745, -41.3380], zoom: 15.0 };  // Island Bay
+
+function startView() {
+  const q = new URLSearchParams(location.search);
+  // explicit coordinates win: ?lat=-41.33&lng=174.77&z=15
+  const lat = parseFloat(q.get("lat")), lng = parseFloat(q.get("lng"));
+  if (isFinite(lat) && isFinite(lng)) {
+    return { center: [lng, lat], zoom: parseFloat(q.get("z")) || 15 };
+  }
+  const name = (q.get("location") || "").toLowerCase().replace(/[^a-z-]/g, "");
+  if (name && START_LOCATIONS[name]) return START_LOCATIONS[name];
+  // bare-parameter form: ?wellington
+  for (const key of q.keys()) {
+    const k = key.toLowerCase().replace(/[^a-z-]/g, "");
+    if (START_LOCATIONS[k]) return START_LOCATIONS[k];
+  }
+  // hash form: #wellington (survives some embed setups that eat queries)
+  const h = location.hash.replace(/^#/, "").toLowerCase().replace(/[^a-z-]/g, "");
+  if (h && START_LOCATIONS[h]) return START_LOCATIONS[h];
+  return DEFAULT_VIEW;
+}
+
 const map = new maplibregl.Map({
   preserveDrawingBuffer: true,  // lets the bug-report button export the canvas
   container: "map",
@@ -748,8 +778,7 @@ const map = new maplibregl.Map({
       { id: "linz-aerial", type: "raster", source: "linz-aerial" }
     ]
   },
-  center: [168.6620, -45.0320],  // Queenstown CBD -- open on the town centre, not the whole basin
-  zoom: 15.5
+  ...startView()
 });
 
 map.addControl(new maplibregl.NavigationControl());
@@ -1364,7 +1393,7 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "28";
+const DATA_VERSION = "30";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 
@@ -3737,16 +3766,18 @@ map.on("load", async () => {
     // smear a shaded valley roof's early winter cut-off onto its neighbours.
     entries.forEach(([bid, entry]) => {
       const binKwp = binKwpFor(entry.facets, entry.panels);
-      const a = mkGrid(), p = mkGrid(), pd = mkGrid();
-      let haveDif = true;
+      const a = mkGrid(), p = mkGrid(), pd = mkGrid(), ad = mkGrid();
+      let haveDif = true, haveAvgDif = true;
       for (const [key, kwp] of Object.entries(binKwp)) {
         const cur = seasonCurves.curves[key];
         if (!cur) continue;
         if (!cur.peak_dif) haveDif = false;
+        if (!cur.avg_dif) haveAvgDif = false;
         for (let s2 = 0; s2 < S; s2++) for (let h = 0; h < 24; h++) {
           a[s2][h] += cur.avg[s2][h] * kwp * derateScale;
           p[s2][h] += cur.peak[s2][h] * kwp * derateScale;
           if (cur.peak_dif) pd[s2][h] += cur.peak_dif[s2][h] * kwp * derateScale;
+          if (cur.avg_dif) ad[s2][h] += cur.avg_dif[s2][h] * kwp * derateScale;
         }
       }
       const src = selectedPropsById[bid] || selectedBuildingProps;
@@ -3756,7 +3787,17 @@ map.on("load", async () => {
         let av = a[s2][h], pk = p[s2][h];
         if (masked) {
           const frac = (+tshade[s2 * 24 + h]) / 9;
-          av *= Math.max(frac, DIFFUSE_FLOOR);
+          // Blocked hours fall back to what the roof still gets with the beam
+          // removed. avg_dif is that curve, built from a real Erbs
+          // decomposition of the cloud-adjusted irradiance; the flat 0.18 floor
+          // it replaces was a stand-in from when the model could not split beam
+          // from diffuse on a cloudy mean. Interpolated by frac so a partly
+          // blocked hour lands between the two rather than snapping.
+          if (haveAvgDif) {
+            av = ad[s2][h] + frac * (av - ad[s2][h]);
+          } else {
+            av *= Math.max(frac, DIFFUSE_FLOOR);
+          }
           // one real day: terrain either blocks that hour or it doesn't
           pk = frac >= 0.5 ? pk : (haveDif ? pd[s2][h] : pk * DIFFUSE_FLOOR);
         }
