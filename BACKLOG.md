@@ -387,19 +387,25 @@ Surfaces that live on diffuse light (south-facing, shaded, winter) are
 understated; sun-facing pitched roofs are overstated. Flat planes are close,
 because they see the total. The frontend already documents this limitation in
 renderSeasonCurves -- it is now quantified from outside.
-FIX would be a real beam/diffuse decomposition (Erbs/DISC/DIRINT from the
-clearness index) instead of scaling clear-sky. That changes every published
-number on both maps, so it needs Josh's sign-off, not an overnight commit.
+FIXED 31 Aug: GHI is scaled alone and split with Erbs, and transposition
+moved from the isotropic default to Perez. Queenstown angular spread went from
+29 points to 3 (worst case -18.3% -> +6.6%). Seasonal curves carry the same
+change so the chart cannot contradict the figure above it, and the frontend's
+flat 0.18 diffuse floor was replaced by a real beam-removed curve.
 
-FINDING 2 -- Wellington's absolute level runs ~5-8% low.
-Flat-plane (i.e. GHI) deltas: Queenstown +2.3%, Island Bay -7.5%. Queenstown
-is calibrated against SolarView MEASURED GHI and lands within 2% of PVGIS,
-which is mutual corroboration and says ERA5 is trustworthy at that latitude.
-Island Bay has no such calibration -- it falls back to NIWA sunshine-hours or
-NASA POWER -- and sits 7.5% below. So the fallback calibration path is the
-weaker one, and Wellington numbers are probably conservative by ~5-8%.
-Resolving it properly wants NIWA measured GHI for Wellington (SolarView is
-behind a DataHub API key -- Josh item).
+FINDING 2 -- SUPERSEDED, and it was backwards. RESOLVED 31 Aug.
+The original entry said Wellington ran ~5-8% LOW, on the strength of PVGIS
+alone. NIWA's published 1991-2020 measured normals say the opposite: against
+Kelburn station (6 km from Island Bay) Wellington was ~8% HIGH.
+    Island Bay flat plane   ours 1498 -> 1384   NIWA Kelburn 1387   PVGIS 1609
+PVGIS/ERA5 overstates Wellington by ~16% versus the ground station and
+understates Queenstown -- a 30 km reanalysis cell is not ground truth in
+coastal or alpine terrain. LESSON: do not treat one external source as truth.
+PVGIS remains excellent for the SHAPE of an error across angles (it found the
+beam:diffuse bug); measured data settles absolute level.
+FIXED by adding NIWA's 28-station measured radiation normals to solar_model as
+the calibration source ahead of the sunshine-hours inference. Any future region
+now calibrates from the nearest measured station automatically.
 
 ## Build-order rule learned 31 Aug (cost a rebuild)
 
