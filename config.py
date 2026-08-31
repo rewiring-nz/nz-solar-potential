@@ -71,7 +71,13 @@ NON_ROOF_BUILDING_IDS = {
 DEMOLISHED_BUILDING_IDS = {
     4735131,  # 61 Ballarat St -- now under the new road corridor (Josh, 23 Aug)
 }
-LINZ_LIDAR_TILE_INDEX_LAYER = 105905  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
+LINZ_LIDAR_TILE_INDEX_LAYER = 105905
+
+# Raw LiDAR point cloud: which OpenTopography bulk store the tiles come from,
+# and the survey year embedded in each tile filename. Hard-coded in the fetcher
+# until 31 Aug, which silently pointed Wellington at the Otago store.
+POINTCLOUD_BULK_URL = "https://opentopography.s3.sdsc.edu/pc-bulk/NZ21_Otago"
+POINTCLOUD_TILE_YEAR = "2021"  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
 # bbox to the CL2_*.copc.laz point-cloud tile names, which are then fetched from OpenTopography's
 # public bulk store (LINZ hosts the derived DSM/DEM rasters but not the raw point cloud)
 
