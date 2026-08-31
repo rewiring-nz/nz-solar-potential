@@ -369,6 +369,38 @@ Sample regression (15 Island Bay buildings): 622 -> 540 panels (-13%), the
 big movers verified by render as geometry corrections (panels were on wedges
 crossing ridges). District rebuild will carry this; watch the diff report.
 
+## EXTERNAL VALIDATION vs PVGIS -- two real biases found 31 Aug
+
+src/validate_against_pvgis.py cross-checks our in-plane irradiation against
+PVGIS (EU JRC, free, no key, global via ERA5). It compares H(i)_y -- annual
+in-plane IRRADIATION -- not PV yield, so it tests what our lookup table
+actually computes rather than PV physics we never attempted. Cached in
+data/pvgis_cache.json; re-run costs nothing.
+
+FINDING 1 -- beam:diffuse partition is wrong, both sites.
+Our clear-sky irradiance is scaled by a monthly cloud factor, which PRESERVES
+the clear-sky beam:diffuse ratio. Real cloudy hours are mostly diffuse, so we
+carry too much beam and too little diffuse. Signature, at 35 deg tilt:
+    Queenstown   north +11.1%   south -18.3%   (spread 29 pts)
+    Island Bay   north  -4.8%   south -16.6%   (spread 12 pts)
+Surfaces that live on diffuse light (south-facing, shaded, winter) are
+understated; sun-facing pitched roofs are overstated. Flat planes are close,
+because they see the total. The frontend already documents this limitation in
+renderSeasonCurves -- it is now quantified from outside.
+FIX would be a real beam/diffuse decomposition (Erbs/DISC/DIRINT from the
+clearness index) instead of scaling clear-sky. That changes every published
+number on both maps, so it needs Josh's sign-off, not an overnight commit.
+
+FINDING 2 -- Wellington's absolute level runs ~5-8% low.
+Flat-plane (i.e. GHI) deltas: Queenstown +2.3%, Island Bay -7.5%. Queenstown
+is calibrated against SolarView MEASURED GHI and lands within 2% of PVGIS,
+which is mutual corroboration and says ERA5 is trustworthy at that latitude.
+Island Bay has no such calibration -- it falls back to NIWA sunshine-hours or
+NASA POWER -- and sits 7.5% below. So the fallback calibration path is the
+weaker one, and Wellington numbers are probably conservative by ~5-8%.
+Resolving it properly wants NIWA measured GHI for Wellington (SolarView is
+behind a DataHub API key -- Josh item).
+
 ## Build-order rule learned 31 Aug (cost a rebuild)
 
 Stages that write ONLY the merged data/solar_potential.geojson must run AFTER
