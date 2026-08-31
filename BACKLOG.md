@@ -7,6 +7,56 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## CODE REVIEW — 31 Aug (Josh asked for one; findings ranked)
+
+Full write-up published as an artifact. The measured findings, in the order
+they should be worked:
+
+1. **The two repos are a hand-maintained fork, and had already diverged.**
+   66 of 68 source files were byte-identical; `panel_fitting.py` differed by
+   70 lines, ALL of them Queenstown-only. Wellington was missing the gap-fill
+   pass AND the straggler yield exception — both things Josh reported, both
+   live in Queenstown for days. Island Bay was placing fewer panels at 100%
+   and stripping good panels first. Synced + pushed + shipped to VM 31 Aug,
+   but nothing prevents the next divergence. Wellington should be a CONFIG of
+   one codebase, not a copy of it. Interim: a CI check that fails on any
+   shared-file diff.
+2. **Preflight assertions on stage inputs.** Three incidents this month share
+   one shape — missing input, no error, plausible-but-wrong output: the absent
+   `dem_wide_mosaic.tif` shipped UNGATED panels; `build_terrain_masks` before
+   `merge_regions` silently wiped the masks; JIT imagery cleanup broke the
+   scorecard. Assert inputs exist before any stage runs; record in a manifest
+   which inputs produced each output.
+3. **Zero tests** (17,923 LOC, 68 modules, 0 test files). Start with pure
+   functions — `our_aspect_to_pvgis`, horizon encode/decode round-trip, seam
+   classification, derate arithmetic — then golden tests over the
+   `roof_truth.json` buildings so a refactor that moves 15% fails loudly.
+4. **Pin dependencies and containerise.** `requirements.txt` has 12 deps and
+   ZERO pinned versions. An unpinned pvlib/shapely minor bump can move
+   published kWh figures with no commit to explain it.
+5. **Per-region resume markers.** No build script skips completed work; the
+   Queenstown rebuild has been relaunched 3x and each restart redoes region 1.
+   ~25 regions x ~28 min = ~12 h all-or-nothing. Same change makes regions
+   distributable.
+6. **Split the big modules; move dev scripts out of `src/`.**
+   `roof_segmentation.py` 2,979 lines holds fit + merge + repair + attach +
+   an off-by-default reconstruction path. 10 analysis scripts in `src/` are
+   imported by nothing. `roof_reconstruct.py` is 860 lines behind
+   `USE_RECONSTRUCTION = False` yet imported by 6 modules — delete or promote.
+7. **GeoParquet intermediates + prepared geometries.** 53 whole-file
+   `json.load` sites; `solar_potential.geojson` read by 10 modules;
+   `panel_layouts.geojson` >80 MB. `shapely.prepared.prep` used in 0 files
+   despite repeated point-in-polygon being the panel-fitting inner loop.
+
+Also found: **`DEFAULT_MAX_JOBS = 10` contradicts the comment directly above
+it**, which records that 11 workers got a run OOM-killed and says "six is what
+has actually been measured working". Memory-bound, so it should derive from
+available RAM, not `cpu_count`.
+
+Genuinely good and worth not breaking: 25-27% comment density explaining WHY
+with measured evidence, zero hardcoded absolute paths, resource limits derived
+from real incidents, and the PVGIS external-validation harness.
+
 ## Planarity repair — landed 27 Aug (29bafa0)
 
 Nothing ever checked that a returned "plane" was planar. Pilot scan: 9% of
