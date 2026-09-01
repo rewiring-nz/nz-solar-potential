@@ -51,6 +51,23 @@ STAGES="build_layout_geojson gate_panels rerank_layouts derive_solar_potential
 echo "=== district build $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}"
 
+# SNAPSHOT THE BUILD WE ARE ABOUT TO REPLACE. The fan-in overwrites
+# data/solar_potential.geojson, and once that is gone there is nothing left to
+# compare the new build against -- every "did this help?" question becomes
+# unanswerable. This was missing on 2 Sep: the only snapshot on the box predated
+# the build that was actually deployed, so a comparison would have measured
+# against the wrong baseline entirely, and it had to be taken by hand from the
+# committed live file before the merge reached it.
+#
+# Deliberately non-fatal. A missing baseline is bad; losing eight hours of
+# compute because the snapshot step tripped would be worse.
+if [ -f data/solar_potential.geojson ]; then
+  $PY src/compare_builds.py --snapshot \
+    || echo "  WARN: could not snapshot the previous build -- comparison will be unavailable"
+else
+  echo "  no existing build to snapshot (first run in this checkout)"
+fi
+
 fail=0
 for r in $REGIONS; do
   echo "=== $r ($(date -u +%H:%M:%S)) ==="

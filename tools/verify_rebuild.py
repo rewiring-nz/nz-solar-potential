@@ -121,6 +121,44 @@ def check_yield():
            f"{len(props):,} buildings, {kw / 1000:.1f} MWp, {kwh / 1e6:.1f} GWh/yr")
 
 
+def check_zeros():
+    """Buildings that lost ALL their panels.
+
+    compare_builds mentions this inside its totals output, where it is easy to
+    miss behind a PASS -- it was, today, on a build where 9 Henry Street went
+    40 -> 0. It deserves its own line and its own verdict, because "every gate
+    regression so far" has this shape.
+
+    Judged against the RATE, not the raw count. A district always has some
+    buildings with no usable roof, and what matters is whether that population
+    suddenly grew."""
+    import sys as _s
+    _s.path.insert(0, str(ROOT / "src"))
+    sp = DATA / "solar_potential.geojson"
+    if not (SNAP.exists() and sp.exists()):
+        record("WARN", "zero-panel buildings", "need both a snapshot and a merged build")
+        return
+    import compare_builds as C
+    snap = json.loads(SNAP.read_text())
+    new = {str(f["properties"].get("building_id")):
+           (f["properties"].get("panel_count") or 0)
+           for f in json.loads(sp.read_text())["features"]}
+    old = {str(i): v[C.PANELS] for i, v in snap.items()}
+    oz = sum(1 for v in old.values() if not v)
+    nz = sum(1 for v in new.values() if not v)
+    went = [i for i, v in new.items() if not v and old.get(i, 0)]
+    big = sorted(((old[i], i) for i in went if old.get(i, 0) >= 5), reverse=True)
+    o_rate, n_rate = oz / max(len(old), 1), nz / max(len(new), 1)
+    detail = (f"{oz} of {len(old)} ({o_rate:.1%}) -> {nz} of {len(new)} ({n_rate:.1%})\n"
+              f"{len(went)} went to zero, {sum(1 for i, v in new.items() if v and i in old and not old[i])} came off it")
+    if big:
+        detail += ("\nhad 5 or more before:\n"
+                   + "\n".join(f"  #{i}  {c} -> 0" for c, i in big[:8]))
+    # a rate that jumps by more than half is a regression; small churn is normal
+    level = "FAIL" if n_rate > o_rate * 1.5 + 0.005 else "PASS"
+    record(level, "zero-panel buildings", detail)
+
+
 def check_watchlist():
     r = subprocess.run([sys.executable, "src/compare_builds.py", "--watchlist"],
                        cwd=ROOT, capture_output=True, text=True)
@@ -164,6 +202,7 @@ def main():
     check_spec()
     check_totals()
     check_yield()
+    check_zeros()
     check_watchlist()
     if not a.skip_invariants:
         check_invariants()
