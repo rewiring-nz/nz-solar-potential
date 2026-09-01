@@ -3,7 +3,7 @@
 <title>Mark up roofs</title>
 <style>
   :root{--bg:#13161a;--panel:#1b2026;--ink:#e9eef2;--muted:#93a1ab;--rule:#2a323a;
-        --ridge:#ff4d4d;--hip:#ff9f1c;--valley:#4dabf7;--cliff:#c77dff;--edge:#2ecc71;--obs:#ffd400;--ok:#2ecc71}
+        --ridge:#1fff7a;--valley:#35b6ff;--cliff:#ff3b30;--edge:#2ecc71;--obs:#c06bff;--ok:#2ecc71}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
        font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -59,7 +59,7 @@
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
   <button data-tool="cliff"><span><span class="sw" style="background:var(--cliff)"></span> Cliff line</span><span class="k">3</span></button>
-  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap together</b> &mdash; a green ring means the click will land exactly on that point, so junctions close cleanly.<br>No need to trace roof edges that sit on the yellow outline. But where the roof <b>stops short</b> of it, draw that edge as a <b>Cliff line</b> and tag the leftover strip below.</div>
+  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap together</b> &mdash; a white ring means the click will land exactly on that point, so junctions close cleanly.<br>No need to trace roof edges &mdash; the outline has them, and anything the outline overshoots onto at <b>ground level</b> is deleted automatically. Only draw an edge where the roof stops short and what is beyond is <b>still high</b> (an upper deck, a carport).</div>
   <div id="tooldesc" class="desc"></div>
   <button id="helpbtn" style="margin-top:6px">What&rsquo;s the difference?<span class="k">?</span></button>
 
@@ -69,7 +69,7 @@
   <div class="hint">Drag on the image to place one. Drag its middle to move, drag a corner to resize, <b>Delete</b> removes the selected shape.</div>
 
   <h2>Panel-able area</h2>
-  <button data-tool="nopanel"><span><span class="sw" style="background:#ff4d4d"></span> No panels here</span><span class="k">6</span></button>
+  <button data-tool="nopanel"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">6</span></button>
   <div class="hint">Your lines already imply the roof faces, so they shade in as you draw &mdash; no need to trace them. Click any face that could <b>never</b> take a panel: a wall caught inside the outline, a canopy, glass. Click it again to unmark.</div>
 
   <h2>Actions</h2>
@@ -96,25 +96,25 @@
   <svg viewBox="0 0 700 448" style="width:100%;margin-top:20px;background:#161b21;border-radius:4px">
     <!-- hipped roof, left -->
     <rect x="30" y="40" width="230" height="170" fill="#2a3138" stroke="#ffd400" stroke-width="2"/>
-    <line x1="90" y1="100" x2="200" y2="100" stroke="#ff4d4d" stroke-width="4"/>
-    <line x1="30" y1="40"  x2="90"  y2="100" stroke="#ff4d4d" stroke-width="3"/>
-    <line x1="260" y1="40" x2="200" y2="100" stroke="#ff4d4d" stroke-width="3"/>
-    <line x1="30" y1="210" x2="90"  y2="100" stroke="#ff4d4d" stroke-width="3"/>
-    <line x1="260" y1="210" x2="200" y2="100" stroke="#ff4d4d" stroke-width="3"/>
-    <text x="145" y="92" fill="#ff4d4d" font-size="13" text-anchor="middle">ridge</text>
-    <text x="46" y="78" fill="#ff4d4d" font-size="12">hip — same</text>
+    <line x1="90" y1="100" x2="200" y2="100" stroke="#1fff7a" stroke-width="4"/>
+    <line x1="30" y1="40"  x2="90"  y2="100" stroke="#1fff7a" stroke-width="3"/>
+    <line x1="260" y1="40" x2="200" y2="100" stroke="#1fff7a" stroke-width="3"/>
+    <line x1="30" y1="210" x2="90"  y2="100" stroke="#1fff7a" stroke-width="3"/>
+    <line x1="260" y1="210" x2="200" y2="100" stroke="#1fff7a" stroke-width="3"/>
+    <text x="145" y="92" fill="#1fff7a" font-size="13" text-anchor="middle">ridge</text>
+    <text x="46" y="78" fill="#1fff7a" font-size="12">hip — same</text>
     <text x="145" y="232" fill="#93a1ab" font-size="12" text-anchor="middle">hipped roof — slopes on all four sides</text>
 
     <!-- L-shaped roof with valley, right -->
     <path d="M330 40 L620 40 L620 210 L470 210 L470 140 L330 140 Z" fill="#2a3138" stroke="#ffd400" stroke-width="2"/>
-    <line x1="390" y1="90" x2="560" y2="90" stroke="#ff4d4d" stroke-width="4"/>
-    <line x1="560" y1="90" x2="560" y2="175" stroke="#ff4d4d" stroke-width="4"/>
-    <line x1="470" y1="140" x2="530" y2="120" stroke="#4dabf7" stroke-width="4"/>
-    <text x="470" y="82" fill="#ff4d4d" font-size="13" text-anchor="middle">ridge</text>
-    <text x="452" y="163" fill="#4dabf7" font-size="13" text-anchor="end">valley</text>
+    <line x1="390" y1="90" x2="560" y2="90" stroke="#1fff7a" stroke-width="4"/>
+    <line x1="560" y1="90" x2="560" y2="175" stroke="#1fff7a" stroke-width="4"/>
+    <line x1="470" y1="140" x2="530" y2="120" stroke="#35b6ff" stroke-width="4"/>
+    <text x="470" y="82" fill="#1fff7a" font-size="13" text-anchor="middle">ridge</text>
+    <text x="452" y="163" fill="#35b6ff" font-size="13" text-anchor="end">valley</text>
     <text x="475" y="232" fill="#93a1ab" font-size="12" text-anchor="middle">L-shaped roof — two sections meeting</text>
-    <rect x="398" y="46" width="52" height="34" fill="#3a444d" stroke="#c77dff" stroke-width="3"/>
-    <text x="424" y="38" fill="#c77dff" font-size="12" text-anchor="middle">cliff</text>
+    <rect x="398" y="46" width="52" height="34" fill="#3a444d" stroke="#ff3b30" stroke-width="3"/>
+    <text x="424" y="38" fill="#ff3b30" font-size="12" text-anchor="middle">cliff</text>
     <text x="424" y="68" fill="#93a1ab" font-size="10" text-anchor="middle">dormer</text>
 
     <!-- Cross-sections. The plan views above cannot show a pitch change at all,
@@ -125,35 +125,35 @@
     <text x="30" y="285" fill="#93a1ab" font-size="12">Sliced side-on — what the fold actually looks like</text>
 
     <path d="M40 390 L120 320 L200 390" fill="none" stroke="#5b6670" stroke-width="9" stroke-linejoin="round"/>
-    <circle cx="120" cy="320" r="7" fill="#ff4d4d"/>
-    <text x="120" y="310" fill="#ff4d4d" font-size="12" text-anchor="middle">ridge</text>
+    <circle cx="120" cy="320" r="7" fill="#1fff7a"/>
+    <text x="120" y="310" fill="#1fff7a" font-size="12" text-anchor="middle">ridge</text>
     <text x="120" y="410" fill="#93a1ab" font-size="11" text-anchor="middle">turns over — falls both ways</text>
 
     <path d="M255 310 L320 385 L440 400" fill="none" stroke="#5b6670" stroke-width="9" stroke-linejoin="round"/>
-    <circle cx="320" cy="385" r="7" fill="#4dabf7"/>
+    <circle cx="320" cy="385" r="7" fill="#35b6ff"/>
     <text x="272" y="352" fill="#93a1ab" font-size="11">60°</text>
     <text x="378" y="384" fill="#93a1ab" font-size="11">20°</text>
-    <text x="330" y="330" fill="#4dabf7" font-size="12">valley</text>
+    <text x="330" y="330" fill="#35b6ff" font-size="12">valley</text>
     <text x="348" y="418" fill="#93a1ab" font-size="11" text-anchor="middle">pitch changes — still falls one way,</text>
     <text x="348" y="432" fill="#93a1ab" font-size="11" text-anchor="middle">and nothing collects here</text>
 
     <path d="M480 395 L560 392 L560 330 L660 327" fill="none" stroke="#5b6670" stroke-width="9" stroke-linejoin="round"/>
-    <line x1="560" y1="392" x2="560" y2="330" stroke="#c77dff" stroke-width="9"/>
-    <text x="572" y="362" fill="#c77dff" font-size="12">cliff</text>
+    <line x1="560" y1="392" x2="560" y2="330" stroke="#ff3b30" stroke-width="9"/>
+    <text x="572" y="362" fill="#ff3b30" font-size="12">cliff</text>
     <text x="570" y="410" fill="#93a1ab" font-size="11" text-anchor="middle">height jumps</text>
   </svg>
 
   <dl>
-    <dt><span class="sw" style="background:#ff4d4d"></span>Ridge line</dt>
+    <dt><span class="sw" style="background:#1fff7a"></span>Ridge line</dt>
     <dd>Any fold where the roof <b>falls away on both sides</b>. Flat along the top (a ridge) or running downhill to a corner (a hip) &mdash; <b>both go here</b>. They are the same thing to the model, so do not spend time deciding which. A roof shaped angle&ndash;flat&ndash;angle has several of these; mark them all.</dd>
 
-    <dt><span class="sw" style="background:#4dabf7"></span>Valley line</dt>
+    <dt><span class="sw" style="background:#35b6ff"></span>Valley line</dt>
     <dd><b>Any other fold</b> &mdash; the two faces meet at an angle, but the roof does <b>not</b> turn over the top. Two common shapes:
     <br>&bull; an <b>internal corner</b>, where two roof sections join, most often on an L or T shaped house;
     <br>&bull; a <b>change of pitch</b>, where a steep face runs into a shallow one &mdash; say 60&deg; into 20&deg; &mdash; and the roof keeps falling the same way, just less steeply.
     <br><br><b>Ignore where water goes.</b> Plenty of valley lines are nowhere near a gutter and nothing would ever collect in them; the pitch-change case above is the obvious one. What the model needs is that the surface <i>folds</i> here, not that it drains here.</dd>
 
-    <dt><span class="sw" style="background:#c77dff"></span>Cliff line</dt>
+    <dt><span class="sw" style="background:#ff3b30"></span>Cliff line</dt>
     <dd><b>Not a fold at all</b> &mdash; the surface stops and the height jumps. Three cases, all the same thing:
     <br>&bull; a <b>stepped or split-level</b> roof;
     <br>&bull; the sides of something <b>raised</b> &mdash; a dormer, clerestory, plant box, lift overrun;
@@ -163,13 +163,13 @@
 
   <div style="margin-top:20px;font-size:13px;color:var(--muted);line-height:1.6">
     <b style="color:var(--ink)">The quick test</b>, in order:
-    <br>1. Does the surface <i>stop</i> and the height jump? <b style="color:#c77dff">Cliff line</b>.
-    <br>2. Otherwise it is a fold. Does the roof <b>turn over</b> here &mdash; falling away on both sides, whether along the top or running down to a corner? <b style="color:#ff4d4d">Ridge line</b>.
-    <br>3. It folds but does not turn over. <b style="color:#4dabf7">Valley line</b>.
+    <br>1. Does the surface <i>stop</i> and the height jump? <b style="color:#ff3b30">Cliff line</b>.
+    <br>2. Otherwise it is a fold. Does the roof <b>turn over</b> here &mdash; falling away on both sides, whether along the top or running down to a corner? <b style="color:#1fff7a">Ridge line</b>.
+    <br>3. It folds but does not turn over. <b style="color:#35b6ff">Valley line</b>.
     <br><br>There are only three because that is all the code actually uses: does the surface <b style="color:var(--ink)">break</b> (stops and drops), or <b style="color:var(--ink)">fold</b> &mdash; and if it folds, does it turn over or not? Ridge versus hip, or which folds a builder would call valleys, is vocabulary the pipeline never consults, so it is not worth your time.
-    <br><br><b style="color:var(--ink)">When the roof ends before the yellow outline.</b> The outline is a <i>building</i> footprint, not a roof, and the two often disagree &mdash; it can take in a deck, a carport, a ground-level lean-to, or simply be drawn too generously. Where the roof genuinely stops short, that edge is a <b style="color:#c77dff">Cliff line</b>: the surface ends and the height drops to the ground, which is a cliff by any other name. Draw it along the real roof edge, then switch to <b style="color:#ff4d4d">No panels here</b> and click the strip left outside it.
-    <br>This is worth the twenty seconds. Left unmarked, the code treats that strip as roof and puts panels on a driveway.
-    <br><br>You do <b>not</b> need to trace roof edges that already sit on the yellow outline &mdash; those are known. Only the ones that disagree with it.
+    <br><br><b style="color:var(--ink)">Roof edges: mostly leave them alone.</b> Do <b>not</b> trace edges that sit on the yellow outline &mdash; those are already known. And do not trace an edge just because the outline overshoots onto a driveway, patio or deck at ground level: every panel already has to stand 2 m above the local ground, measured against LiDAR ground returns, so those are deleted without your help.
+    <br><br>There is <b>one</b> case worth your time: the roof stops short <b>and what is beyond is still high</b> &mdash; an upper-storey deck or balcony, a carport, a shade sail. Those clear 2 m and are flat, so the LiDAR reads them as roof and nothing downstream can tell the difference. Draw the real roof edge as a <b style="color:#ff3b30">Cliff line</b>, then switch to <b style="color:#ff8a00">No panels here</b> and click the strip outside it.
+    <br>If you are unsure whether the thing beyond is high or on the ground, skip it &mdash; the height test will handle it if it is low, and a wrong label is worse than a missing one.
     <br><br>If you cannot tell whether a line is a fold or a break at all, leave it out rather than guess &mdash; a wrong label is worse than a missing one.
   </div>
   <button class="close" id="helpclose">Got it<span class="k">Esc</span></button>
@@ -179,7 +179,7 @@
 
 <script>
 const ROOFS = /*__ROOFS__*/;
-const COL = {ridge:"#ff4d4d",hip:"#ff9f1c",valley:"#4dabf7",cliff:"#c77dff",edge:"#2ecc71"};
+const COL = {ridge:"#1fff7a",valley:"#35b6ff",cliff:"#ff3b30",edge:"#2ecc71"};
 const KEY = "roof_labels_v1";
 const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
 // Every width and size below is authored in CSS pixels. The canvas backing
@@ -395,9 +395,9 @@ function drawFaces(){
     ctx.beginPath();
     f.forEach((q,k)=>{ const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y); });
     ctx.closePath();
-    ctx.fillStyle = bad ? "rgba(255,77,77,.32)" : FACEFILL[i%FACEFILL.length];
+    ctx.fillStyle = bad ? "rgba(255,138,0,.30)" : FACEFILL[i%FACEFILL.length];
     ctx.fill();
-    ctx.strokeStyle = bad ? "#ff4d4d" : "rgba(255,255,255,.55)";
+    ctx.strokeStyle = bad ? "#ff8a00" : "rgba(255,255,255,.55)";
     ctx.lineWidth = lw(bad ? 2.6 : 1.5); ctx.setLineDash([]); ctx.stroke();
     // the area is what decides the panel count, so it is worth reading off the
     // face rather than trusting that the partition looked about right
@@ -426,8 +426,8 @@ function draw(){
   }
   drawFaces();
   // neighbours first, dimmed -- so a busy block reads correctly
-  (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.42)",[5,5],1.4));
-  ring(R().outline,"#ffd400",[],2.6);            // THIS building, solid
+  (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.45)",[5,5],1.8));
+  ring(R().outline,"#ffd400",[],3.2);            // THIS building, solid
   (R().holes||[]).forEach(h=>{                   // courtyard -- open air, not roof
     ctx.fillStyle="rgba(0,0,0,.45)";
     ctx.beginPath(); h.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);});
@@ -440,39 +440,47 @@ function draw(){
     ctx.setLineDash([]); ctx.lineCap="round";
     // dark casing under the colour, so a red line stays readable over a red
     // roof and a purple one over shadow
-    ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=lw(5.2);
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(9.0);
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-    ctx.strokeStyle=COL[l.kind]; ctx.lineWidth=lw(3.2);
+    ctx.strokeStyle=COL[l.kind]; ctx.lineWidth=lw(5.4);
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     ctx.lineCap="butt";
     [[x1,y1],[x2,y2]].forEach(([px,py])=>{
-      ctx.fillStyle="rgba(0,0,0,.55)"; ctx.beginPath();ctx.arc(px,py,lw(4.6),0,7);ctx.fill();
-      ctx.fillStyle=COL[l.kind]; ctx.beginPath();ctx.arc(px,py,lw(3.2),0,7);ctx.fill();});
+      ctx.fillStyle="#000"; ctx.beginPath();ctx.arc(px,py,lw(7.4),0,7);ctx.fill();
+      ctx.fillStyle=COL[l.kind]; ctx.beginPath();ctx.arc(px,py,lw(5.0),0,7);ctx.fill();});
   });
   r.obstructions.forEach((o,i)=>{
     const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
     const w=x2-x1, h=y2-y1;
-    ctx.strokeStyle="#ffd400"; ctx.fillStyle="rgba(255,212,0,.18)"; ctx.lineWidth=lw(2.4);
     ctx.beginPath();
     if(o.shape==="ellipse") ctx.ellipse(x1+w/2,y1+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,7);
     else ctx.rect(x1,y1,w,h);
-    ctx.fill(); ctx.stroke();
+    ctx.fillStyle="rgba(192,107,255,.22)"; ctx.fill();
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4); ctx.stroke();
+    ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4); ctx.stroke();
     if(sel===i){ ctx.fillStyle="#fff"; const H=HANDLE();
       [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(([px,py])=>ctx.fillRect(px-H/2,py-H/2,H,H)); }
   });
   if(pending){
-    ctx.strokeStyle=COL[tool]||"#fff"; ctx.lineWidth=lw(2.8);
-    ctx.setLineDash([6*dpr(),4*dpr()]);
     const[x1,y1]=toPx(pending.a[0],pending.a[1]);
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(pending.px,pending.py); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineCap="round";
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(8.0); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(pending.px,pending.py); ctx.stroke();
+    ctx.strokeStyle=COL[tool]||"#fff"; ctx.lineWidth=lw(4.6);
+    ctx.setLineDash([7*dpr(),5*dpr()]);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(pending.px,pending.py); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineCap="butt";
   }
   if(hoverSnap && LINE_TOOLS.has(tool)){
     const [hx,hy]=toPx(hoverSnap[0],hoverSnap[1]);
-    ctx.strokeStyle="#2ecc71"; ctx.lineWidth=lw(2.4); ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(hx,hy,lw(7),0,7); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(5.0);
+    ctx.beginPath(); ctx.arc(hx,hy,lw(9),0,7); ctx.stroke();
+    ctx.strokeStyle="#fff"; ctx.lineWidth=lw(2.6);
+    ctx.beginPath(); ctx.arc(hx,hy,lw(9),0,7); ctx.stroke();
   }
   if(drag && drag.mode==="new"){
-    ctx.strokeStyle="#ffd400"; ctx.setLineDash([5*dpr(),4*dpr()]); ctx.lineWidth=lw(1.8);
+    ctx.strokeStyle="#c06bff"; ctx.setLineDash([5*dpr(),4*dpr()]); ctx.lineWidth=lw(1.8);
     const x=Math.min(drag.x0,drag.x1), y=Math.min(drag.y0,drag.y1);
     const w=Math.abs(drag.x1-drag.x0), h=Math.abs(drag.y1-drag.y0);
     ctx.beginPath();
