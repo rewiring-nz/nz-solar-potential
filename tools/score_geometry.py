@@ -267,6 +267,7 @@ def main():
 
     ctxs, pc = {}, PointCloudSource()
     agg = defaultdict(list)
+    total_roofs = len(ids)
     print(f"scoring the CURRENT segmenter against {len(ids)} drawn roofs "
           f"(tolerance {a.tol} m)\n")
     print(f"{'building':>10} {'lines P':>8}{'lines R':>8}{'F1':>7}"
@@ -323,8 +324,18 @@ def main():
         true_lines = [_line_points(l) for l in lab.get("lines", [])
                       if l.get("kind") != "outline"]
         true_lines = [p for p in true_lines if p]
-        ls = line_scores(pred_lines, true_lines, a.tol)
-        os_ = obstruction_scores(pred_obs, [_obs_ring(o) for o in lab.get("obstructions", [])])
+        # PARTIAL ANNOTATION. Marking is per-category: several roofs carry
+        # obstructions and no lines, or the reverse. Scoring a category the
+        # labeller did not touch is not a measurement -- with no drawn lines,
+        # precision is 0 by construction because nothing can match, and folding
+        # that into the mean drags the whole baseline down for roofs where
+        # nobody claimed the segmenter was wrong. 26 Panorama Terrace and 5
+        # Beach Street were both being reported as total failures on exactly
+        # this basis. Score a category only where it was actually marked.
+        ls = line_scores(pred_lines, true_lines, a.tol) if true_lines else None
+        marked_obs = [_obs_ring(o) for o in lab.get("obstructions", [])]
+        marked_obs = [r for r in marked_obs if r and len(r) >= 3]
+        os_ = obstruction_scores(pred_obs, marked_obs) if marked_obs else None
 
         lp = f"{ls['precision']:.0%}" if ls else "—"
         lr = f"{ls['recall']:.0%}" if ls else "—"
@@ -346,7 +357,10 @@ def main():
 
     if agg["f1"]:
         n = len(agg["f1"])
-        print(f"\nBASELINE over {n} roofs — the number a model has to beat:")
+        skipped = total_roofs - n
+        print(f"\nBASELINE over {n} roofs with drawn lines"
+              + (f" ({skipped} more marked only obstructions)" if skipped else "")
+              + " — the number a model has to beat:")
         print(f"  line precision {sum(agg['lp'])/n:.1%}   "
               f"recall {sum(agg['lr'])/n:.1%}   F1 {sum(agg['f1'])/n:.1%}")
         print("\nPrecision is 'lines we drew that are real'; recall is 'real lines")
@@ -355,7 +369,8 @@ def main():
     if agg["op"]:
         m = len(agg["op"])
         pa, ta, ov = sum(agg["oa_pred"]), sum(agg["oa_true"]), sum(agg["oa_over"])
-        print(f"\n  OBSTRUCTIONS over {m} roofs, measured by AREA "
+        print(f"\n  OBSTRUCTIONS over {m} roofs that HAVE marked obstructions, "
+              f"measured by AREA "
               f"(counts would be misleading -- one drawn shape often covers "
               f"several objects):")
         print(f"    per-roof mean:  precision {sum(agg['op'])/m:.1%}   "
