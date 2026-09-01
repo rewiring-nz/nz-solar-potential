@@ -396,8 +396,17 @@ def main():
         am = f"{os_['pred_area_m2']:.0f}/{os_['true_area_m2']:.0f}" if os_ else "—"
         print(f"{bid:>10} {lp:>8}{lr:>8}{f1:>7}{op:>7}{orr:>7}{am:>14}{len(facets):>8}")
         if ls:
-            agg["lp"].append(ls["precision"]); agg["lr"].append(ls["recall"])
+            # PRECISION NEEDS A COMPLETE ROOF. Measured on Josh's first 42:
+            # marking density correlates with precision at r = +0.394, and the
+            # densely-marked half scores 63.0% against 43.2% for the sparse
+            # half -- same segmenter, 20 points apart. A line the labeller did
+            # not get to is indistinguishable from one the model invented, so
+            # precision is only meaningful where they say they drew everything.
+            # Recall is unaffected: it is measured against what WAS drawn.
+            agg["lr"].append(ls["recall"])
             agg["f1"].append(ls["f1"])
+            if lab.get("complete"):
+                agg["lp"].append(ls["precision"])
         if os_:
             # weight by MARKED area: a roof with 200 m2 of plant should not
             # count the same as a shed with one vent
@@ -408,12 +417,21 @@ def main():
 
     if agg["f1"]:
         n = len(agg["f1"])
+        n_complete = len(agg["lp"])
         skipped = total_roofs - n
         print(f"\nBASELINE over {n} roofs with drawn lines"
               + (f" ({skipped} more marked only obstructions)" if skipped else "")
               + " — the number a model has to beat:")
-        print(f"  line precision {sum(agg['lp'])/n:.1%}   "
-              f"recall {sum(agg['lr'])/n:.1%}   F1 {sum(agg['f1'])/n:.1%}")
+        print(f"  line RECALL {sum(agg['lr']) / n:.1%}   "
+              f"(F1 {sum(agg['f1']) / n:.1%} against possibly-incomplete labels)")
+        if n_complete:
+            print(f"  line PRECISION {sum(agg['lp']) / n_complete:.1%}   "
+                  f"over the {n_complete} roofs marked COMPLETE")
+        else:
+            print("  line precision: not reportable — no roof is marked complete.")
+            print("    Precision counts model lines the labeller did not draw as")
+            print("    errors, which is only fair where they drew everything.")
+            print("    Tick 'I marked EVERY line' in the tool to enable it.")
         print("\nPrecision is 'lines we drew that are real'; recall is 'real lines")
         print("we found'. Over-segmentation shows as low precision, missed ridges")
         print("as low recall -- which is the distinction facet COUNT cannot make.")

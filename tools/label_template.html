@@ -95,6 +95,10 @@
   <div class="hint">Click any line or shape you have already drawn to select it, then press <b>Delete</b> (or the button below). Undo only ever removes the most recent thing; this reaches the one you actually want.</div>
   <button id="delsel" style="margin-top:4px">Delete selected<span class="k">⌫</span></button>
 
+  <h2>Is this roof finished?</h2>
+  <button id="complete"><span>&#9744; I marked EVERY line on this roof</span><span class="k">C</span></button>
+  <div class="hint">Only tick this if you drew <b>every</b> fold and break you can see, not just the main ones. It is what makes "the model drew a line that is not real" measurable &mdash; without it, a line you simply did not get to looks identical to one the model invented. Leaving it unticked is fine and costs nothing.</div>
+
   <h2>Actions</h2>
   <div class="row">
     <button id="undo">Undo<span class="k">⌘Z</span></button>
@@ -324,6 +328,7 @@ const cv=document.getElementById("c"), ctx=cv.getContext("2d");
 const R = () => ROOFS[idx];
 const rec = () => { const o = (data[R().id] = data[R().id] || {lines:[], obstructions:[]});
   if(!o.nopanel) o.nopanel = [];   // added later; old saves lack it
+  if(o.complete === undefined) o.complete = false;
   return o; };
 
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ return {}; } }
@@ -344,6 +349,7 @@ function save(){
     // collide -- last-writer-wins only bites if two people edit the SAME roof.
     DB.doc("labels/"+R().id).set({
       lines: d.lines, obstructions: d.obstructions, nopanel: d.nopanel||[],
+      complete: !!d.complete,
       area: R().area, address: R().address || "",
       saved_utc: new Date().toISOString(),
     }).catch(e=>{ say("could not sync: "+(e&&e.code||"error")+" — saved locally"); });
@@ -835,6 +841,7 @@ function show(i){
   } else lk.innerHTML="";
   resetView(); sizeCanvas();
   img=new Image(); img.onload=draw; img.src="data:image/jpeg;base64,"+r.jpg;
+  refreshComplete();
   say(`#${r.id} — ${idx+1} of ${ROOFS.length}`); draw();
 }
 
@@ -1078,9 +1085,22 @@ function undo(){
   else if(r.obstructions.length){ r.obstructions.pop(); }
   save(); draw();
 }
+function refreshComplete(){
+  const b=document.getElementById("complete");
+  const on=!!rec().complete;
+  b.classList.toggle("on", on);
+  b.firstChild.innerHTML = (on ? "&#9745;" : "&#9744;")
+    + " I marked EVERY line on this roof";
+}
+document.getElementById("complete").onclick=()=>{
+  const r=rec();
+  r.complete=!r.complete; save(); refreshComplete(); draw();
+  say(r.complete ? "marked complete \u2014 undrawn model lines now count against it"
+                 : "no longer marked complete");
+};
 document.getElementById("undo").onclick=undo;
 document.getElementById("delsel").onclick=deleteSelected;
-document.getElementById("clear").onclick=()=>{ data[R().id]={lines:[],obstructions:[],nopanel:[]};
+document.getElementById("clear").onclick=()=>{ data[R().id]={lines:[],obstructions:[],nopanel:[],complete:false};
   pending=null; sel=null; save(); draw(); };
 // step through the roofs still worth looking at, but never refuse to SHOW a
 // hidden one -- you may have arrived at it deliberately
@@ -1124,7 +1144,7 @@ document.getElementById("download").onclick=()=>{
       out.buildings[r.id]={area:r.area,address:r.address,
         lines:(d.lines||[]).map(l=>({...l, points:[l.a, l.b]})),
         obstructions:(d.obstructions||[]).map(o=>({...o, ring:obsRing(o)})),
-        nopanel:d.nopanel||[],
+        nopanel:d.nopanel||[], complete:!!d.complete,
         // the faces those lines imply, exported so scoring compares against
         // the same construction rather than re-deriving it slightly differently
         faces: facesFor(r.outline, d.lines||[]).map(f=>({
@@ -1190,6 +1210,7 @@ addEventListener("keydown", e=>{
   const k=e.key.toLowerCase();
   if(k==="n"){ step(1); } else if(k==="p"){ step(-1); }
   else if(k==="h"){ document.getElementById("hidedone").click(); }
+  else if(k==="c"){ document.getElementById("complete").click(); }
   else if(k==="u"){ document.getElementById("skipto").click(); }
   else if(k==="s"){ document.getElementById("download").click(); }
 });
@@ -1241,7 +1262,7 @@ show(0);
     Object.keys(remote).forEach(id => {
       if(!data[id] || (!data[id].lines.length && !data[id].obstructions.length))
         data[id] = {lines: remote[id].lines||[], obstructions: remote[id].obstructions||[],
-                    nopanel: remote[id].nopanel||[]};
+                    nopanel: remote[id].nopanel||[], complete: !!remote[id].complete};
     });
     draw();
   }, e => say("shared sync stopped: "+(e&&e.code||"error")+" — still saving locally"));
