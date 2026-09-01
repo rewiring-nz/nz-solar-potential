@@ -55,7 +55,7 @@
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
   <button data-tool="cliff"><span><span class="sw" style="background:var(--cliff)"></span> Cliff line</span><span class="k">3</span></button>
-  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>No need to trace the outer edge of the roof &mdash; the yellow outline is already known.</div>
+  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>No need to trace roof edges that sit on the yellow outline. But where the roof <b>stops short</b> of it, draw that edge as a <b>Cliff line</b> and tag the leftover strip below.</div>
   <div id="tooldesc" class="desc"></div>
   <button id="helpbtn" style="margin-top:6px">What&rsquo;s the difference?<span class="k">?</span></button>
 
@@ -63,6 +63,10 @@
   <button data-tool="rect"><span><span class="sw" style="background:var(--obs)"></span> Box</span><span class="k">4</span></button>
   <button data-tool="ellipse"><span><span class="sw" style="background:var(--obs);border-radius:50%"></span> Circle</span><span class="k">5</span></button>
   <div class="hint">Drag on the image to place one. Drag its middle to move, drag a corner to resize, <b>Delete</b> removes the selected shape.</div>
+
+  <h2>Panel-able area</h2>
+  <button data-tool="nopanel"><span><span class="sw" style="background:#ff4d4d"></span> No panels here</span><span class="k">6</span></button>
+  <div class="hint">Your lines already imply the roof faces, so they shade in as you draw &mdash; no need to trace them. Click any face that could <b>never</b> take a panel: a wall caught inside the outline, a canopy, glass. Click it again to unmark.</div>
 
   <h2>Actions</h2>
   <div class="row">
@@ -73,8 +77,10 @@
     <button id="prev">← Prev<span class="k">P</span></button>
     <button id="next">Next →<span class="k">N</span></button>
   </div>
+  <button id="skipto">Next unmarked<span class="k">U</span></button>
   <button id="download" class="dl" style="margin-top:8px">Download labels<span class="k">S</span></button>
-  <div class="hint">Saved in this browser as you go, so closing the tab is safe. Download when you&rsquo;re done and send me the file.</div>
+  <div class="hint" id="savehint">Saved in this browser as you go, so closing the tab is safe. Mark as few or as many as you like &mdash; Download only includes roofs you actually touched.</div>
+  <div id="sharebar" class="desc" style="display:none"></div>
   <div class="note" id="note" style="display:none"></div>
 </div>
 
@@ -83,7 +89,7 @@
   <h3>Three kinds of line</h3>
   <div style="color:var(--muted);font-size:13px">Seen from above, which is how you&rsquo;ll be looking at them.</div>
 
-  <svg viewBox="0 0 700 260" style="width:100%;margin-top:20px;background:#161b21;border-radius:4px">
+  <svg viewBox="0 0 700 448" style="width:100%;margin-top:20px;background:#161b21;border-radius:4px">
     <!-- hipped roof, left -->
     <rect x="30" y="40" width="230" height="170" fill="#2a3138" stroke="#ffd400" stroke-width="2"/>
     <line x1="90" y1="100" x2="200" y2="100" stroke="#ff4d4d" stroke-width="4"/>
@@ -106,6 +112,31 @@
     <rect x="398" y="46" width="52" height="34" fill="#3a444d" stroke="#c77dff" stroke-width="3"/>
     <text x="424" y="38" fill="#c77dff" font-size="12" text-anchor="middle">cliff</text>
     <text x="424" y="68" fill="#93a1ab" font-size="10" text-anchor="middle">dormer</text>
+
+    <!-- Cross-sections. The plan views above cannot show a pitch change at all,
+         and that is the valley people miss: nothing drains there, so "where
+         water collects" reads it out of existence. Sliced side-on it is
+         obvious. -->
+    <line x1="30" y1="262" x2="670" y2="262" stroke="#2a3138" stroke-width="1"/>
+    <text x="30" y="285" fill="#93a1ab" font-size="12">Sliced side-on — what the fold actually looks like</text>
+
+    <path d="M40 390 L120 320 L200 390" fill="none" stroke="#5b6670" stroke-width="9" stroke-linejoin="round"/>
+    <circle cx="120" cy="320" r="7" fill="#ff4d4d"/>
+    <text x="120" y="310" fill="#ff4d4d" font-size="12" text-anchor="middle">ridge</text>
+    <text x="120" y="410" fill="#93a1ab" font-size="11" text-anchor="middle">turns over — falls both ways</text>
+
+    <path d="M255 310 L320 385 L440 400" fill="none" stroke="#5b6670" stroke-width="9" stroke-linejoin="round"/>
+    <circle cx="320" cy="385" r="7" fill="#4dabf7"/>
+    <text x="272" y="352" fill="#93a1ab" font-size="11">60°</text>
+    <text x="378" y="384" fill="#93a1ab" font-size="11">20°</text>
+    <text x="330" y="330" fill="#4dabf7" font-size="12">valley</text>
+    <text x="348" y="418" fill="#93a1ab" font-size="11" text-anchor="middle">pitch changes — still falls one way,</text>
+    <text x="348" y="432" fill="#93a1ab" font-size="11" text-anchor="middle">and nothing collects here</text>
+
+    <path d="M480 395 L560 392 L560 330 L660 327" fill="none" stroke="#5b6670" stroke-width="9" stroke-linejoin="round"/>
+    <line x1="560" y1="392" x2="560" y2="330" stroke="#c77dff" stroke-width="9"/>
+    <text x="572" y="362" fill="#c77dff" font-size="12">cliff</text>
+    <text x="570" y="410" fill="#93a1ab" font-size="11" text-anchor="middle">height jumps</text>
   </svg>
 
   <dl>
@@ -113,19 +144,28 @@
     <dd>Any fold where the roof <b>falls away on both sides</b>. Flat along the top (a ridge) or running downhill to a corner (a hip) &mdash; <b>both go here</b>. They are the same thing to the model, so do not spend time deciding which. A roof shaped angle&ndash;flat&ndash;angle has several of these; mark them all.</dd>
 
     <dt><span class="sw" style="background:#4dabf7"></span>Valley line</dt>
-    <dd>The opposite fold: the roof <b>rises away on both sides</b>, so rain would collect and run down it. You get one wherever two roof sections join, most often on an L or T shaped house.</dd>
+    <dd><b>Any other fold</b> &mdash; the two faces meet at an angle, but the roof does <b>not</b> turn over the top. Two common shapes:
+    <br>&bull; an <b>internal corner</b>, where two roof sections join, most often on an L or T shaped house;
+    <br>&bull; a <b>change of pitch</b>, where a steep face runs into a shallow one &mdash; say 60&deg; into 20&deg; &mdash; and the roof keeps falling the same way, just less steeply.
+    <br><br><b>Ignore where water goes.</b> Plenty of valley lines are nowhere near a gutter and nothing would ever collect in them; the pitch-change case above is the obvious one. What the model needs is that the surface <i>folds</i> here, not that it drains here.</dd>
 
     <dt><span class="sw" style="background:#c77dff"></span>Cliff line</dt>
-    <dd><b>Not a fold at all</b> &mdash; the surface stops and the height jumps. Covers both a stepped or split-level roof and the sides of something raised: a dormer, clerestory, plant box or lift overrun.
+    <dd><b>Not a fold at all</b> &mdash; the surface stops and the height jumps. Three cases, all the same thing:
+    <br>&bull; a <b>stepped or split-level</b> roof;
+    <br>&bull; the sides of something <b>raised</b> &mdash; a dormer, clerestory, plant box, lift overrun;
+    <br>&bull; <b>where the roof itself ends</b> short of the yellow outline &mdash; see below.
     <br><br><b>How to draw it:</b> put the line along the <b>top edge of the higher surface</b>, following the lip where it drops away. For a dormer, that means drawing round its sides &mdash; one line per side.</dd>
   </dl>
 
   <div style="margin-top:20px;font-size:13px;color:var(--muted);line-height:1.6">
-    <b style="color:var(--ink)">The quick test.</b> Does the line sit at the top with roof falling away both sides? <b style="color:#ff4d4d">Ridge</b>.
-    Does it run downhill to a corner, with roof falling away both sides? <b style="color:#ff9f1c">Hip</b>.
-    Does it run downhill with roof rising away both sides, so water would sit in it? <b style="color:#4dabf7">Valley</b>.
-    Does the surface simply <i>stop</i> and drop, like a little cliff? <b style="color:#c77dff">Cliff line</b>.
-    <br><br>There are only three because that is all the code actually uses: is this a <b style="color:var(--ink)">fold</b> (the surface carries on at a new angle) or a <b style="color:var(--ink)">break</b> (it stops and drops)? Ridge versus hip is architectural vocabulary the pipeline never consults, so it is not worth your time.
+    <b style="color:var(--ink)">The quick test</b>, in order:
+    <br>1. Does the surface <i>stop</i> and the height jump? <b style="color:#c77dff">Cliff line</b>.
+    <br>2. Otherwise it is a fold. Does the roof <b>turn over</b> here &mdash; falling away on both sides, whether along the top or running down to a corner? <b style="color:#ff4d4d">Ridge line</b>.
+    <br>3. It folds but does not turn over. <b style="color:#4dabf7">Valley line</b>.
+    <br><br>There are only three because that is all the code actually uses: does the surface <b style="color:var(--ink)">break</b> (stops and drops), or <b style="color:var(--ink)">fold</b> &mdash; and if it folds, does it turn over or not? Ridge versus hip, or which folds a builder would call valleys, is vocabulary the pipeline never consults, so it is not worth your time.
+    <br><br><b style="color:var(--ink)">When the roof ends before the yellow outline.</b> The outline is a <i>building</i> footprint, not a roof, and the two often disagree &mdash; it can take in a deck, a carport, a ground-level lean-to, or simply be drawn too generously. Where the roof genuinely stops short, that edge is a <b style="color:#c77dff">Cliff line</b>: the surface ends and the height drops to the ground, which is a cliff by any other name. Draw it along the real roof edge, then switch to <b style="color:#ff4d4d">No panels here</b> and click the strip left outside it.
+    <br>This is worth the twenty seconds. Left unmarked, the code treats that strip as roof and puts panels on a driveway.
+    <br><br>You do <b>not</b> need to trace roof edges that already sit on the yellow outline &mdash; those are known. Only the ones that disagree with it.
     <br><br>If you cannot tell whether a line is a fold or a break at all, leave it out rather than guess &mdash; a wrong label is worse than a missing one.
   </div>
   <button class="close" id="helpclose">Got it<span class="k">Esc</span></button>
@@ -144,10 +184,47 @@ let idx=0, tool="ridge", data=load(), img=new Image();
 let pending=null, drag=null, sel=null, shift=false;
 const cv=document.getElementById("c"), ctx=cv.getContext("2d");
 const R = () => ROOFS[idx];
-const rec = () => (data[R().id] = data[R().id] || {lines:[], obstructions:[]});
+const rec = () => { const o = (data[R().id] = data[R().id] || {lines:[], obstructions:[]});
+  if(!o.nopanel) o.nopanel = [];   // added later; old saves lack it
+  return o; };
 
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ return {}; } }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} }
+
+// SHARED MODE. Opened as a published page, everyone marking sees the same
+// progress and nobody re-does a roof someone else already did. Opened as a
+// downloaded file there is no viewer to answer, claude.use resolves null, and
+// it falls back to this browser's own storage -- so the same file works both
+// ways and offline. Never assume the namespace exists: it arrives later, or
+// never (see the capability contract).
+let DB = null, remote = {};
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){}
+  if(DB && data[R().id]){
+    const d = data[R().id];
+    // One document per roof. 156 roofs is far inside the store's limits, and
+    // per-roof documents mean two people labelling different roofs never
+    // collide -- last-writer-wins only bites if two people edit the SAME roof.
+    DB.doc("labels/"+R().id).set({
+      lines: d.lines, obstructions: d.obstructions, nopanel: d.nopanel||[],
+      area: R().area, address: R().address || "",
+      saved_utc: new Date().toISOString(),
+    }).catch(e=>{ say("could not sync: "+(e&&e.code||"error")+" — saved locally"); });
+  }
+}
+function marked(id){ const d=data[id];
+  return !!(remote[id] || (d && ((d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
+function refreshShare(){
+  const bar=document.getElementById("sharebar");
+  const done=ROOFS.filter(r=>marked(r.id)).length;
+  if(DB){
+    bar.style.display="";
+    bar.innerHTML = `<b>${done} of ${ROOFS.length}</b> roofs marked, shared with everyone on this link. `
+      + (marked(R().id) ? "<b>This one is done.</b>" : "This one is not done yet.");
+  }
+  document.getElementById("prog").textContent =
+    `${rec().lines.length} lines · ${rec().obstructions.length} obstructions · `
+    + `${rec().lines.length?faces().length:0} faces · ${done}/${ROOFS.length} marked`;
+}
 const say = t => document.getElementById("status").textContent = t;
 
 // canvas <-> NZTM metres
@@ -162,12 +239,114 @@ function ring(pts, stroke, dash, width){
   ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
 }
 
+// ---------------------------------------------------------------- FACES
+// Drawing planes by hand would be four times the clicks for information the
+// lines already carry: the pipeline builds faces by cutting the footprint with
+// the lines it believes in, as infinite (angle, offset) cuts -- roof_partition.
+// So we do the SAME cut here. The shaded faces are therefore not a decoration,
+// they are a preview of what the code will construct from these lines, and a
+// face that comes out wrong is visible while you are still looking at the roof.
+//
+// The label is not the face. It is which faces carry no panels -- a wall the
+// footprint swallowed, a canopy, glass -- which is the one thing lines cannot
+// say and the failure that put panels down a wall at 9 Henry Street.
+const MIN_FACE_M2 = 1.0;            // below this a piece is a sliver, not a face
+// A zero-length line has no side: clipHalf keeps the whole polygon in BOTH
+// directions and every face silently doubles. Two clicks in the same spot is
+// an easy accident, so guard it at the cut as well as at creation.
+const MIN_LINE_M = 0.3;
+const FACEFILL = ["rgba(46,204,113,.20)","rgba(255,255,255,.15)",
+                  "rgba(93,173,226,.20)","rgba(241,196,15,.16)"];
+
+function polyArea(p){ let s=0;
+  for(let i=0,m=p.length;i<m;i++){ const [x1,y1]=p[i], [x2,y2]=p[(i+1)%m]; s+=x1*y2-x2*y1; }
+  return Math.abs(s)/2; }                       // NZTM is metres, so this is m2
+
+function inPoly(pt,p){ let c=false;
+  for(let i=0,j=p.length-1;i<p.length;j=i++){ const [xi,yi]=p[i], [xj,yj]=p[j];
+    if(((yi>pt[1])!==(yj>pt[1])) && (pt[0] < (xj-xi)*(pt[1]-yi)/(yj-yi)+xi)) c=!c; }
+  return c; }
+
+function clipHalf(poly,a,b,keep){
+  const side = q => (b[0]-a[0])*(q[1]-a[1]) - (b[1]-a[1])*(q[0]-a[0]);
+  const out=[];
+  for(let i=0;i<poly.length;i++){
+    const P=poly[i], Q=poly[(i+1)%poly.length], sp=side(P), sq=side(Q);
+    if(sp*keep>=0) out.push(P);
+    if((sp>0&&sq<0)||(sp<0&&sq>0)){ const u=sp/(sp-sq);
+      out.push([P[0]+(Q[0]-P[0])*u, P[1]+(Q[1]-P[1])*u]); }
+  }
+  return out.length>=3 ? out : null;
+}
+
+function facesFor(outline, lines){
+  let pieces=[outline.slice(0,-1)];             // ring repeats its first point
+  (lines||[]).forEach(l=>{
+    if(Math.hypot(l.b[0]-l.a[0], l.b[1]-l.a[1]) < MIN_LINE_M) return;   // no side
+    const nxt=[];
+    pieces.forEach(pc=>[1,-1].forEach(k=>{
+      const c=clipHalf(pc,l.a,l.b,k);
+      if(c && polyArea(c)>=MIN_FACE_M2) nxt.push(c); }));
+    if(nxt.length) pieces=nxt;                  // a cut that misses changes nothing
+  });
+  return pieces;
+}
+const faces = () => facesFor(R().outline, rec().lines);
+
+// Centroid is outside its own polygon on any L or U shaped face, so the area
+// caption would float over a neighbour. Fall back to scanning for a point that
+// is genuinely inside.
+function labelPoint(f){
+  const c=[f.reduce((s,q)=>s+q[0],0)/f.length, f.reduce((s,q)=>s+q[1],0)/f.length];
+  if(inPoly(c,f)) return c;
+  const xs=f.map(q=>q[0]), ys=f.map(q=>q[1]);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  for(let i=1;i<12;i++) for(let k=1;k<12;k++){
+    const q=[x0+(x1-x0)*i/12, y0+(y1-y0)*k/12];
+    if(inPoly(q,f)) return q;
+  }
+  return c;
+}
+
+function drawFaces(){
+  const r=rec();
+  if(!r.lines.length && !r.nopanel.length) return;
+  faces().forEach((f,i)=>{
+    const bad = r.nopanel.some(pt=>inPoly(pt,f));
+    ctx.beginPath();
+    f.forEach((q,k)=>{ const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.closePath();
+    ctx.fillStyle = bad ? "rgba(255,77,77,.32)" : FACEFILL[i%FACEFILL.length];
+    ctx.fill();
+    ctx.strokeStyle = bad ? "#ff4d4d" : "rgba(255,255,255,.55)";
+    ctx.lineWidth = bad ? 2.5 : 1.4; ctx.setLineDash([]); ctx.stroke();
+    // the area is what decides the panel count, so it is worth reading off the
+    // face rather than trusting that the partition looked about right
+    const [lx,ly]=toPx(...labelPoint(f));
+    const txt = bad ? "no panels" : polyArea(f).toFixed(0)+" m\u00b2";
+    ctx.font="600 12px -apple-system,BlinkMacSystemFont,sans-serif";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    const w=ctx.measureText(txt).width;
+    ctx.fillStyle="rgba(0,0,0,.62)";
+    ctx.fillRect(lx-w/2-5, ly-9, w+10, 18);
+    ctx.fillStyle = bad ? "#ff8f8f" : "#fff";
+    ctx.fillText(txt, lx, ly);
+  });
+}
+
 function draw(){
   ctx.clearRect(0,0,cv.width,cv.height);
   if(img.complete && img.naturalWidth) ctx.drawImage(img,0,0,cv.width,cv.height);
+  drawFaces();
   // neighbours first, dimmed -- so a busy block reads correctly
   (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.30)",[4,4],1));
   ring(R().outline,"#ffd400",[],2.2);            // THIS building, solid
+  (R().holes||[]).forEach(h=>{                   // courtyard -- open air, not roof
+    ctx.fillStyle="rgba(0,0,0,.45)";
+    ctx.beginPath(); h.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.closePath(); ctx.fill();
+    ring(h,"#ffd400",[7,5],2);
+  });
   const r = rec();
   r.lines.forEach((l,i)=>{
     ctx.strokeStyle=COL[l.kind]; ctx.lineWidth=2.6; ctx.setLineDash([]);
@@ -200,9 +379,7 @@ function draw(){
     if(tool==="ellipse") ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,7); else ctx.rect(x,y,w,h);
     ctx.stroke(); ctx.setLineDash([]);
   }
-  const r2=rec();
-  document.getElementById("prog").textContent =
-    `${r2.lines.length} lines · ${r2.obstructions.length} obstructions · ${Object.keys(data).length}/${ROOFS.length} roofs touched`;
+  refreshShare();
 }
 
 function show(i){
@@ -244,10 +421,23 @@ function evPx(e){ const r=cv.getBoundingClientRect();
 
 cv.addEventListener("pointerdown", e=>{
   const [px,py]=evPx(e);
+  if(tool==="nopanel"){
+    const w=toW(px,py), r=rec(), fs=faces();
+    const f=fs.find(g=>inPoly(w,g));
+    if(!f){ say("click inside the building"); return; }
+    const at=r.nopanel.findIndex(pt=>inPoly(pt,f));
+    if(at>=0) r.nopanel.splice(at,1); else r.nopanel.push(w);
+    save(); draw();
+    say(r.nopanel.length ? `${r.nopanel.length} face(s) marked as taking no panels`
+                         : "no faces marked");
+    return;
+  }
   if(LINE_TOOLS.has(tool)){
     if(!pending){ pending={a:toW(px,py),px,py}; }
-    else { const [sx,sy]=snap(pending.a,px,py);
-      rec().lines.push({kind:tool,a:pending.a,b:toW(sx,sy)}); pending=null; save(); }
+    else { const [sx,sy]=snap(pending.a,px,py), b=toW(sx,sy);
+      if(Math.hypot(b[0]-pending.a[0], b[1]-pending.a[1]) < MIN_LINE_M){
+        pending=null; say("too short \u2014 click two separate points"); draw(); return; }
+      rec().lines.push({kind:tool,a:pending.a,b}); pending=null; save(); }
     draw(); return;
   }
   const h=hit(px,py);
@@ -293,10 +483,11 @@ cv.addEventListener("pointerup", e=>{
 
 const DESC = {
   ridge:"Any fold where roof falls AWAY on both sides — flat along the top or running down to a corner, both count.",
-  valley:"A fold where roof RISES away on both sides. Water would collect in it.",
-  cliff:"A height BREAK, not a fold. Draw along the TOP edge, on the higher side.",
+  valley:"Any fold that is NOT a ridge: faces meet at an angle but the roof does not turn over. Internal corners, and pitch changes (60\u00b0 into 20\u00b0). Ignore where water goes.",
+  cliff:"A height BREAK, not a fold: dormer sides, split levels, and the real roof edge where the roof stops short of the yellow outline. Draw along the TOP edge, on the higher side.",
   rect:"Drag out a box over a skylight, vent or existing panel.",
-  ellipse:"Drag out a circle over a round vent or flue."};
+  ellipse:"Drag out a circle over a round vent or flue.",
+  nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
 function setTool(t){ tool=t; pending=null;
   document.getElementById("tooldesc").innerHTML = DESC[t] ? "<b>"+t[0].toUpperCase()+t.slice(1)+".</b> "+DESC[t] : "";
   document.querySelectorAll("[data-tool]").forEach(b=>b.classList.toggle("on", b.dataset.tool===t));
@@ -310,33 +501,61 @@ help.onclick=e=>{ if(e.target===help) help.classList.remove("on"); };
 function undo(){
   const r=rec();
   if(pending){ pending=null; }
+  else if(tool==="nopanel" && r.nopanel.length){ r.nopanel.pop(); }
   else if(r.obstructions.length && sel!==null){ r.obstructions.splice(sel,1); sel=null; }
   else if(r.lines.length){ r.lines.pop(); }
   else if(r.obstructions.length){ r.obstructions.pop(); }
   save(); draw();
 }
 document.getElementById("undo").onclick=undo;
-document.getElementById("clear").onclick=()=>{ data[R().id]={lines:[],obstructions:[]};
+document.getElementById("clear").onclick=()=>{ data[R().id]={lines:[],obstructions:[],nopanel:[]};
   pending=null; sel=null; save(); draw(); };
 document.getElementById("next").onclick=()=>show(idx+1);
+document.getElementById("skipto").onclick=()=>{
+  for(let i=1;i<=ROOFS.length;i++){ const j=(idx+i)%ROOFS.length;
+    if(!marked(ROOFS[j].id)) return show(j); }
+  say("every roof is marked");
+};
 document.getElementById("prev").onclick=()=>show(idx-1);
 document.getElementById("download").onclick=()=>{
   const out={ tool:"label_template", saved_utc:new Date().toISOString(),
     crs:"EPSG:2193", buildings:{} };
-  ROOFS.forEach(r=>{ const d=data[r.id];
-    if(d && (d.lines.length||d.obstructions.length))
-      out.buildings[r.id]={area:r.area,address:r.address,lines:d.lines,obstructions:d.obstructions}; });
-  const blob=new Blob([JSON.stringify(out,null,1)],{type:"application/json"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob); a.download="roof_labels.json";
-  document.body.appendChild(a); a.click(); a.remove();
-  say(`downloaded ${Object.keys(out.buildings).length} labelled roofs`);
+  ROOFS.forEach(r=>{ const d=data[r.id] || remote[r.id];
+    if(d && ((d.lines||[]).length||(d.obstructions||[]).length))
+      out.buildings[r.id]={area:r.area,address:r.address,
+        lines:d.lines||[],obstructions:d.obstructions||[],nopanel:d.nopanel||[],
+        // the faces those lines imply, exported so scoring compares against
+        // the same construction rather than re-deriving it slightly differently
+        faces: facesFor(r.outline, d.lines||[]).map(f=>({
+          ring: f.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]),
+          m2: +polyArea(f).toFixed(1),
+          usable: !(d.nopanel||[]).some(pt=>inPoly(pt,f)) }))}; });
+  const text=JSON.stringify(out,null,1);
+  const n=Object.keys(out.buildings).length;
+  // Two paths on purpose. Opened as a published link the viewer blocks
+  // page-initiated downloads, so the file has to go through the downloads
+  // capability; opened as a local file there is no viewer and a blob link is
+  // the only way. Try the capability first, fall back to the link.
+  (async () => {
+    let dl=null;
+    try { dl = window.claude && claude.use ? await claude.use("downloads") : null; } catch(e) {}
+    if(dl){
+      try { await dl.save({filename:"roof_labels.json", data:text});
+            say(`saved ${n} labelled roofs`); return; }
+      catch(e){ say("download declined or unavailable"); return; }
+    }
+    const blob=new Blob([text],{type:"application/json"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download="roof_labels.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    say(`downloaded ${n} labelled roofs`);
+  })();
 };
 
 addEventListener("keydown", e=>{
   if(e.key==="Shift"){ shift=true; return; }
   if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z")){ e.preventDefault(); undo(); return; }
-  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse"}[e.key];
+  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel"}[e.key];
   if(t){ setTool(t); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
   if(e.key==="Escape"){ document.getElementById("help").classList.remove("on");
@@ -345,11 +564,35 @@ addEventListener("keydown", e=>{
     if(sel!==null){ e.preventDefault(); rec().obstructions.splice(sel,1); sel=null; save(); draw(); } return; }
   const k=e.key.toLowerCase();
   if(k==="n"){ show(idx+1); } else if(k==="p"){ show(idx-1); }
+  else if(k==="u"){ document.getElementById("skipto").click(); }
   else if(k==="s"){ document.getElementById("download").click(); }
 });
 addEventListener("keyup", e=>{ if(e.key==="Shift"){ shift=false; draw(); } });
 
 setTool("ridge");
 show(0);
+
+// Light shared mode up only once the viewer answers. Nothing above depends on
+// it, so a downloaded copy behaves exactly as before.
+(async () => {
+  let db = null;
+  try { db = window.claude && claude.use ? await claude.use("db") : null; } catch(e) { db = null; }
+  if(!db) return;
+  DB = db;
+  document.getElementById("savehint").textContent =
+    "Shared with everyone on this link — your marks appear for them and theirs for you. Mark as few or as many as you like.";
+  db.collection("labels").onSnapshot(snap => {
+    remote = {};
+    snap.docs.forEach(d => { remote[d.id] = d.data(); });
+    // adopt anything we do not have locally, so a roof someone else did shows
+    // as done and opens with their lines rather than blank
+    Object.keys(remote).forEach(id => {
+      if(!data[id] || (!data[id].lines.length && !data[id].obstructions.length))
+        data[id] = {lines: remote[id].lines||[], obstructions: remote[id].obstructions||[],
+                    nopanel: remote[id].nopanel||[]};
+    });
+    draw();
+  }, e => say("shared sync stopped: "+(e&&e.code||"error")+" — still saving locally"));
+})();
 </script>
 </body></html>

@@ -135,6 +135,11 @@ def main():
                 "bounds": [round(v, 2) for v in b],
                 "px": list(size),
                 "outline": [[round(x, 2), round(y, 2)] for x, y in g.exterior.coords],
+                # courtyards. Rare (1 in 156 here) but a hole drawn as solid
+                # roof invites a labeller to mark faces over open air, and on a
+                # big commercial block that is a 1200 m2 mistake.
+                "holes": [[[round(x, 2), round(y, 2)] for x, y in r.coords]
+                          for r in g.interiors],
                 "neighbours": nb,
                 "jpg": jpg,
                 "note": (f"You said {t['faces']} faces. " if t.get("faces") else "")
