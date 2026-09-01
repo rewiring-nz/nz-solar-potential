@@ -123,35 +123,56 @@ def line_scores(pred_lines, true_lines, tol):
 
 
 def obstruction_scores(pred_rings, true_rings, iou_min=OBS_IOU):
+    """Overlap by AREA, deliberately not by count.
+
+    Josh: "numbers are a bad way to measure obstructions because I combine
+    lots of items into one obstruction sometimes." Exactly right, and it
+    breaks one-to-one matching outright: draw a single polygon over a cluster
+    of five vents, have the detector find five separate blobs, and a matcher
+    pairs one of them and calls the other four false positives. The detector
+    was correct and scores 20%.
+
+    Area is cardinality-independent. Merging five marks into one, or splitting
+    one into five, does not move these numbers at all -- only whether the same
+    square metres of roof are covered.
+
+      precision  of the area the detector flagged, how much is really equipment
+      recall     of the area actually marked, how much the detector found
+
+    Counts are still reported, but as context for reading the areas, never as
+    the score.
+    """
     from shapely.geometry import Polygon
-    P = [Polygon(r) for r in pred_rings if r and len(r) >= 3]
-    T = [Polygon(r) for r in true_rings if r and len(r) >= 3]
-    P = [p for p in P if p.is_valid and p.area > 0]
-    T = [t for t in T if t.is_valid and t.area > 0]
+    from shapely.ops import unary_union
+
+    def clean(rings):
+        out = []
+        for r in rings:
+            if not r or len(r) < 3:
+                continue
+            g = Polygon(r)
+            if not g.is_valid:
+                g = g.buffer(0)          # self-intersections drawn by hand
+            if g.is_valid and g.area > 0:
+                out.append(g)
+        return out
+
+    P, T = clean(pred_rings), clean(true_rings)
     if not P and not T:
         return None
-    matched_t = set()
-    tp = 0
-    for p in P:
-        best, bi = 0.0, None
-        for i, t in enumerate(T):
-            if i in matched_t:
-                continue
-            inter = p.intersection(t).area
-            if inter <= 0:
-                continue
-            iou = inter / (p.union(t).area or 1)
-            if iou > best:
-                best, bi = iou, i
-        if bi is not None and best >= iou_min:
-            tp += 1
-            matched_t.add(bi)
-    precision = tp / len(P) if P else 0.0
-    recall = tp / len(T) if T else 0.0
-    return {"precision": precision, "recall": recall,
-            "found": len(P), "marked": len(T), "matched": tp,
-            "pred_area_m2": round(sum(p.area for p in P), 1),
-            "true_area_m2": round(sum(t.area for t in T), 1)}
+    # dissolve first, so overlapping marks are not counted twice
+    pu = unary_union(P) if P else None
+    tu = unary_union(T) if T else None
+    pa = pu.area if pu else 0.0
+    ta = tu.area if tu else 0.0
+    inter = pu.intersection(tu).area if (pu and tu) else 0.0
+    union = pu.union(tu).area if (pu and tu) else (pa or ta)
+    return {"precision": (inter / pa) if pa else 0.0,
+            "recall": (inter / ta) if ta else 0.0,
+            "iou": (inter / union) if union else 0.0,
+            "found": len(P), "marked": len(T),
+            "pred_area_m2": round(pa, 1), "true_area_m2": round(ta, 1),
+            "overlap_m2": round(inter, 1)}
 
 
 def predicted_lines_from_facets(facets, footprint, edge_tol=0.35):
@@ -249,7 +270,7 @@ def main():
     print(f"scoring the CURRENT segmenter against {len(ids)} drawn roofs "
           f"(tolerance {a.tol} m)\n")
     print(f"{'building':>10} {'lines P':>8}{'lines R':>8}{'F1':>7}"
-          f"{'obs P':>7}{'obs R':>7}{'found/marked':>14}{'facets':>8}")
+          f"{'obs P':>7}{'obs R':>7}{'obs m2 f/m':>14}{'facets':>8}")
 
     for bid in ids:
         lab = labels[str(bid)]
@@ -310,13 +331,18 @@ def main():
         f1 = f"{ls['f1']:.0%}" if ls else "—"
         op = f"{os_['precision']:.0%}" if os_ else "—"
         orr = f"{os_['recall']:.0%}" if os_ else "—"
-        fm = f"{os_['found']}/{os_['marked']}" if os_ else "—"
-        print(f"{bid:>10} {lp:>8}{lr:>8}{f1:>7}{op:>7}{orr:>7}{fm:>14}{len(facets):>8}")
+        am = f"{os_['pred_area_m2']:.0f}/{os_['true_area_m2']:.0f}" if os_ else "—"
+        print(f"{bid:>10} {lp:>8}{lr:>8}{f1:>7}{op:>7}{orr:>7}{am:>14}{len(facets):>8}")
         if ls:
             agg["lp"].append(ls["precision"]); agg["lr"].append(ls["recall"])
             agg["f1"].append(ls["f1"])
         if os_:
+            # weight by MARKED area: a roof with 200 m2 of plant should not
+            # count the same as a shed with one vent
             agg["op"].append(os_["precision"]); agg["orr"].append(os_["recall"])
+            agg["oa_pred"].append(os_["pred_area_m2"])
+            agg["oa_true"].append(os_["true_area_m2"])
+            agg["oa_over"].append(os_["overlap_m2"])
 
     if agg["f1"]:
         n = len(agg["f1"])
@@ -328,8 +354,15 @@ def main():
         print("as low recall -- which is the distinction facet COUNT cannot make.")
     if agg["op"]:
         m = len(agg["op"])
-        print(f"\n  obstructions over {m} roofs: precision "
-              f"{sum(agg['op'])/m:.1%}   recall {sum(agg['orr'])/m:.1%}")
+        pa, ta, ov = sum(agg["oa_pred"]), sum(agg["oa_true"]), sum(agg["oa_over"])
+        print(f"\n  OBSTRUCTIONS over {m} roofs, measured by AREA "
+              f"(counts would be misleading -- one drawn shape often covers "
+              f"several objects):")
+        print(f"    per-roof mean:  precision {sum(agg['op'])/m:.1%}   "
+              f"recall {sum(agg['orr'])/m:.1%}")
+        print(f"    area-weighted:  precision {ov/pa if pa else 0:.1%}   "
+              f"recall {ov/ta if ta else 0:.1%}")
+        print(f"    {pa:.0f} m2 flagged, {ta:.0f} m2 marked, {ov:.0f} m2 agreed")
     return 0
 
 
