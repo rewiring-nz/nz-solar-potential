@@ -26,6 +26,29 @@ best matches the predicted ones, and look at the distribution.
 The distinction matters enough to measure before drawing conclusions from a
 52% F1, because only one of these two worlds needs the model fixed.
 
+ANSWER, over Josh's first 41 labelled buildings (2 Sep 2026):
+
+    mean shift              +0.04, -0.05 m
+    directional coherence   0.10
+    height vs shift         r = +0.066   (short 0.73 m, tall 0.71 m)
+
+NO LEAN. Both tests are needed and only together are they conclusive: a mean
+of zero rules out a uniform offset, but lean points away from whatever was
+under the aircraft, so across a survey its DIRECTION varies and cancels while
+its MAGNITUDE grows with height. No height relationship means no lean.
+
+A first pass said the opposite -- r = +0.569, tall roofs wanting 1.27 m against
+0.50 m -- and was wrong, resting on the 10 rows that survived a truncated log.
+Rows are written to data/label_registration.json now rather than trusted from
+stdout.
+
+So the line F1 is a real measurement of the segmenter, and the median 0.71 m
+residual is drawing precision plus genuine error.
+
+Do NOT read the best-shifted F1 as achievable. It fits two free parameters per
+building over 49 candidate positions on noisy data, so most of that gain is
+overfitting, not a correction anyone could apply.
+
 Usage:
     python tools/check_label_registration.py
     python tools/check_label_registration.py --max-shift 2.0 --step 0.25
