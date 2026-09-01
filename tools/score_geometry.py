@@ -22,11 +22,22 @@ planes. So the metrics here are geometric and in metres:
   FACETS       count error against Josh's own count, kept because it is the one
                number he has already given for every marked roof.
 
-WHAT COUNTS AS A PREDICTED LINE. For a planar partition, the roof lines ARE the
-shared edges between adjacent facets. So a prediction is converted by taking
-every facet boundary segment that is interior to the building -- which lets the
-current segmenter be scored on exactly the same footing as a future model, with
-no special-casing for either.
+WHAT COUNTS AS A PREDICTED LINE. For a planar partition, the roof lines are the
+shared edges between adjacent facets -- but that is not the whole story, and
+scoring only those understated the segmenter badly.
+
+The pipeline has TWO ways to represent a raised feature. It can partition it, in
+which case its edges show up as facet boundaries; or it can carve it out as an
+obstruction, in which case they do not. For a dormer, carving is arguably the
+better choice -- you cannot usefully panel its sides and you must avoid it --
+but a labeller draws its edges as cliff lines either way.
+
+Measured on Josh's first 46 roofs: 61% of MISSED cliff lines, 55% of missed
+valleys and 48% of missed ridges had a detected obstruction sitting within a
+metre. Most "missed" lines were being found and simply represented the other
+way. So obstruction boundaries count as predicted lines too. This costs
+precision honestly -- claiming those edges as structure means being scored on
+them -- and it stops the metric punishing a representation choice.
 
 Baseline first. Run this against the segmenter BEFORE training anything: a model
 that cannot beat these numbers is not worth shipping, and there is no way to
@@ -175,6 +186,28 @@ def obstruction_scores(pred_rings, true_rings, iou_min=OBS_IOU):
             "overlap_m2": round(inter, 1)}
 
 
+def predicted_obstruction_lines(obs_rings, footprint, edge_tol=0.35):
+    """A carved obstruction's outline is a claim about roof structure, so its
+    edges are predicted lines -- minus anything lying on the building outline,
+    for the same reason facet boundaries drop those."""
+    from shapely.geometry import Point
+    boundary = footprint.exterior if hasattr(footprint, "exterior") else None
+    out = []
+    for ring in obs_rings or []:
+        if not ring or len(ring) < 3:
+            continue
+        pts = list(ring)
+        if pts[0] != pts[-1]:
+            pts.append(pts[0])
+        for a, b in _segments(pts):
+            if boundary is not None:
+                mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+                if boundary.distance(Point(mid)) < edge_tol:
+                    continue
+            out.append([list(a), list(b)])
+    return out
+
+
 def predicted_lines_from_facets(facets, footprint, edge_tol=0.35):
     """A planar partition's ROOF LINES are its interior shared edges.
 
@@ -315,7 +348,8 @@ def main():
                 elif getattr(g, "geom_type", "") == "MultiPolygon":
                     pred_obs.extend(list(part.exterior.coords) for part in g.geoms)
 
-        pred_lines = predicted_lines_from_facets(facets, geom)
+        pred_lines = (predicted_lines_from_facets(facets, geom)
+                      + predicted_obstruction_lines(pred_obs, geom))
         # The tool writes each line as {kind, a, b} and mirrors it into
         # "points" for consumers like this one; older files have only a/b.
         # Obstructions likewise carry a "ring" alongside their drawn form --
@@ -333,6 +367,23 @@ def main():
         # Beach Street were both being reported as total failures on exactly
         # this basis. Score a category only where it was actually marked.
         ls = line_scores(pred_lines, true_lines, a.tol) if true_lines else None
+
+        # RECALL BY KIND. Overall recall says half the drawn lines are missed
+        # but not WHICH half, and the three kinds fail for different reasons: a
+        # ridge is a fold the LiDAR sees plainly, a cliff is a height break that
+        # should be even easier, and a valley on a shallow roof can be almost
+        # invisible in a 1 m surface. Knowing which kind is being lost points at
+        # a specific mechanism instead of "the segmenter is 54% right".
+        for kind in ("ridge", "valley", "cliff"):
+            kl = [_line_points(l) for l in lab.get("lines", [])
+                  if l.get("kind") == kind]
+            kl = [x for x in kl if x]
+            if not kl:
+                continue
+            ks = line_scores(pred_lines, kl, a.tol)
+            if ks:
+                agg[f"rec_{kind}"].append(ks["recall"])
+                agg[f"len_{kind}"].append(ks["true_segments"])
         marked_obs = [_obs_ring(o) for o in lab.get("obstructions", [])]
         marked_obs = [r for r in marked_obs if r and len(r) >= 3]
         os_ = obstruction_scores(pred_obs, marked_obs) if marked_obs else None
@@ -366,6 +417,14 @@ def main():
         print("\nPrecision is 'lines we drew that are real'; recall is 'real lines")
         print("we found'. Over-segmentation shows as low precision, missed ridges")
         print("as low recall -- which is the distinction facet COUNT cannot make.")
+    kinds = [k for k in ("ridge", "valley", "cliff") if agg[f"rec_{k}"]]
+    if kinds:
+        print("\n  RECALL BY LINE KIND — which drawn lines get missed:")
+        for k in kinds:
+            v = agg[f"rec_{k}"]
+            print(f"    {k:<7} {sum(v) / len(v):>6.1%}   "
+                  f"on {len(v)} roofs, {sum(agg[f'len_{k}'])} segments")
+
     if agg["op"]:
         m = len(agg["op"])
         pa, ta, ov = sum(agg["oa_pred"]), sum(agg["oa_true"]), sum(agg["oa_over"])
