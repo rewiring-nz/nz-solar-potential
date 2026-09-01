@@ -119,6 +119,7 @@ def main():
     head = "".join(f"{f'{n:+.2f}m':>8}" for n in a.nudges)
     print(f"{'building':>10}{'base':>8}{head}{'spread':>9}{'best':>7}")
     spreads, base_tot, best_tot = [], 0, 0
+    per_building = []
 
     for bid in ids:
         ctx = ctx_for(labels[str(bid)].get("area"))
@@ -144,6 +145,7 @@ def main():
         spreads.append(spread)
         base_tot += base
         best_tot += max(vals)
+        per_building.append({"id": bid, "base": base, "got": got})
         cells = "".join(f"{str(v) if v is not None else '-':>8}" for v in got)
         print(f"{bid:>10}{base:>8}{cells}{spread:>8.0f}%{max(vals):>7}")
 
@@ -155,6 +157,34 @@ def main():
           f"moving >10%: {sum(1 for s in spreads if s > 10)}/{len(spreads)}")
     print(f"  panels: base {base_tot}, best-of-perturbations {best_tot} "
           f"({100 * (best_tot / base_tot - 1):+.1f}%)")
+
+    # WHAT IT WOULD COST. Every extra perturbation is another full layout pass,
+    # so the question is not which set wins but which wins per unit of compute.
+    if per_building:
+        print("\n  keeping the best of N layouts, and what each N costs:")
+        combos = [("base only", [])]
+        for i, nudge in enumerate(a.nudges):
+            combos.append((f'base + "{nudge:+.2f}m"', [i]))
+        if len(a.nudges) >= 2:
+            combos.append((f'base + "{a.nudges[0]:+.2f}m" + "{a.nudges[-1]:+.2f}m"',
+                           [0, len(a.nudges) - 1]))
+        combos.append(("all of them", list(range(len(a.nudges)))))
+        for name, idx in combos:
+            tot = sum(max([r["base"]] + [r["got"][i] for i in idx
+                                         if r["got"][i] is not None])
+                      for r in per_building)
+            cost = 1 + len(idx)
+            gain = 100 * (tot / base_tot - 1) if base_tot else 0
+            print(f"    {name:<34}{tot:>7}  ({gain:+5.1f}%)  {cost}x layout"
+                  f"   {gain / cost:>5.1f}% per unit cost")
+        wins = {}
+        for r in per_building:
+            vals = {"base": r["base"]}
+            for i, nudge in enumerate(a.nudges):
+                if r["got"][i] is not None:
+                    vals[f"{nudge:+.2f}m"] = r["got"][i]
+            wins[max(vals, key=vals.get)] = wins.get(max(vals, key=vals.get), 0) + 1
+        print(f"    which one wins: {wins}")
     print("\n  A nudge far smaller than the outlines' own survey accuracy should")
     print("  not move the answer. That it moves this much means a single")
     print("  building's count is one sample from a wide distribution, and that")
