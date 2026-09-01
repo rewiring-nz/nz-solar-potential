@@ -9,6 +9,10 @@ data/*
 !data/heatmap_raster.json
 !data/seasonal_curves.json
 !data/marked_scores.json
+!data/roof_labels.json
+!data/label_set/
+!data/label_set/queue.json
+!data/label_set/summary.json
 !data/heatmaps/
 !data/heatmaps/*
 tiles/

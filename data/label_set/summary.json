@@ -1,0 +1,857 @@
+{
+ "buildings": {
+  "4718482": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "hip (6 facets, 203 m2)"
+  },
+  "4718539": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "gable (2 facets, 52 m2)"
+  },
+  "4718601": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "hip (6 facets, 212 m2)"
+  },
+  "4718758": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "steep (3 facets, 61 m2)"
+  },
+  "4718774": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "small_simple (1 facets, 121 m2)"
+  },
+  "4719283": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "complex_multi (3 facets, 155 m2)"
+  },
+  "4719421": {
+   "address": "",
+   "area": "lake_hayes_est_west",
+   "why": "sawtooth (6 facets, 291 m2)"
+  },
+  "4719462": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "complex_multi (8 facets, 401 m2)"
+  },
+  "4719508": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "hip (4 facets, 257 m2)"
+  },
+  "4719606": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "stepped (6 facets, 121 m2)"
+  },
+  "4719731": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "complex_multi (10 facets, 350 m2)"
+  },
+  "4719759": {
+   "address": "17 Cardigan St",
+   "area": "arrowtown_millbrook",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4720124": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "hip (6 facets, 111 m2)"
+  },
+  "4720230": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "gable (3 facets, 25 m2)"
+  },
+  "4721005": {
+   "address": "",
+   "area": "gorge_road_corridor",
+   "why": "hip (7 facets, 272 m2)"
+  },
+  "4721265": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "steep (11 facets, 281 m2)"
+  },
+  "4721427": {
+   "address": "",
+   "area": "gorge_road_corridor",
+   "why": "complex_multi (11 facets, 241 m2)"
+  },
+  "4721439": {
+   "address": "",
+   "area": "gorge_road_corridor",
+   "why": "stepped (4 facets, 91 m2)"
+  },
+  "4721761": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "hip (6 facets, 179 m2)"
+  },
+  "4721807": {
+   "address": "",
+   "area": "gorge_road_corridor",
+   "why": "complex_multi (12 facets, 219 m2)"
+  },
+  "4722058": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "gable (2 facets, 3286 m2)"
+  },
+  "4722059": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "complex_multi (66 facets, 16010 m2)"
+  },
+  "4723238": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "flat_commercial (3 facets, 378 m2)"
+  },
+  "4723281": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "hip (5 facets, 342 m2)"
+  },
+  "4723359": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "sawtooth (7 facets, 250 m2)"
+  },
+  "4725474": {
+   "address": "23 Brisbane Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4725521": {
+   "address": "9 Brisbane Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4725539": {
+   "address": "",
+   "area": "pilot",
+   "why": "small_simple (1 facets, 150 m2)"
+  },
+  "4725546": {
+   "address": "15B Frankton Road",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4725584": {
+   "address": "32 Frankton Road",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4725717": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "small_simple (1 facets, 99 m2)"
+  },
+  "4725794": {
+   "address": "",
+   "area": "arthurs_point_east",
+   "why": "stepped (10 facets, 298 m2)"
+  },
+  "4726034": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "hip (5 facets, 243 m2)"
+  },
+  "4726047": {
+   "address": "7 Coronation Drive",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4726280": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "steep (7 facets, 220 m2)"
+  },
+  "4726288": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "complex_multi (3 facets, 281 m2)"
+  },
+  "4726530": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "gable (2 facets, 163 m2)"
+  },
+  "4726718": {
+   "address": "",
+   "area": "lake_hayes_est_west",
+   "why": "flat_commercial (2 facets, 363 m2)"
+  },
+  "4726813": {
+   "address": "",
+   "area": "lake_hayes_est_west",
+   "why": "sawtooth (6 facets, 225 m2)"
+  },
+  "4726833": {
+   "address": "",
+   "area": "lake_hayes_est_west",
+   "why": "sawtooth (6 facets, 242 m2)"
+  },
+  "4727413": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "hip (6 facets, 223 m2)"
+  },
+  "4727648": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "sawtooth (10 facets, 360 m2)"
+  },
+  "4727942": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "complex_multi (14 facets, 211 m2)"
+  },
+  "4727955": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "stepped (5 facets, 265 m2)"
+  },
+  "4728006": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "small_simple (1 facets, 14 m2)"
+  },
+  "4728128": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "flat_commercial (2 facets, 397 m2)"
+  },
+  "4728173": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "small_simple (1 facets, 12 m2)"
+  },
+  "4728319": {
+   "address": "",
+   "area": "jacks_point",
+   "why": "sawtooth (7 facets, 471 m2)"
+  },
+  "4729357": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "stepped (7 facets, 172 m2)"
+  },
+  "4729406": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "gable (3 facets, 210 m2)"
+  },
+  "4729423": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "hip (5 facets, 150 m2)"
+  },
+  "4729620": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "complex_multi (12 facets, 526 m2)"
+  },
+  "4730523": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "sawtooth (6 facets, 280 m2)"
+  },
+  "4730598": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "complex_multi (8 facets, 188 m2)"
+  },
+  "4730603": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "complex_multi (11 facets, 259 m2)"
+  },
+  "4731035": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "gable (2 facets, 121 m2)"
+  },
+  "4731647": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "hip (4 facets, 188 m2)"
+  },
+  "4731941": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "flat_commercial (1 facets, 336 m2)"
+  },
+  "4732043": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "flat_commercial (2 facets, 317 m2)"
+  },
+  "4732152": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "sawtooth (6 facets, 216 m2)"
+  },
+  "4733721": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "complex_multi (4 facets, 234 m2)"
+  },
+  "4733765": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "gable (2 facets, 110 m2)"
+  },
+  "4733807": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "hip (5 facets, 128 m2)"
+  },
+  "4733827": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "steep (2 facets, 101 m2)"
+  },
+  "4733916": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "complex_multi (8 facets, 117 m2)"
+  },
+  "4734157": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "sawtooth (6 facets, 209 m2)"
+  },
+  "4734678": {
+   "address": "10 Memorial Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4734685": {
+   "address": "",
+   "area": "pilot",
+   "why": "flat_commercial (9 facets, 1356 m2)"
+  },
+  "4734702": {
+   "address": "",
+   "area": "pilot",
+   "why": "hip (4 facets, 161 m2)"
+  },
+  "4734816": {
+   "address": "6 Weaver Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4734850": {
+   "address": "47 Robins Road",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4734915": {
+   "address": "40 Camp Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735015": {
+   "address": "5 Isle St",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735075": {
+   "address": "6B Limerick Lane",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735237": {
+   "address": "24 Beach Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735242": {
+   "address": "5 Church St",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735249": {
+   "address": "",
+   "area": "town_south_lake",
+   "why": "flat_commercial (4 facets, 543 m2)"
+  },
+  "4735263": {
+   "address": "89 Hallenstein Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735316": {
+   "address": "101/8 Duke Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735318": {
+   "address": "1 Gorge Road",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4735623": {
+   "address": "1 Church Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4736600": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "stepped (5 facets, 139 m2)"
+  },
+  "4737851": {
+   "address": "",
+   "area": "tucker_beach",
+   "why": "steep (3 facets, 138 m2)"
+  },
+  "4738119": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "gable (2 facets, 148 m2)"
+  },
+  "4738517": {
+   "address": "",
+   "area": "tucker_beach",
+   "why": "small_simple (1 facets, 35 m2)"
+  },
+  "4738791": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "hip (6 facets, 196 m2)"
+  },
+  "4739074": {
+   "address": "",
+   "area": "jacks_point",
+   "why": "hip (6 facets, 232 m2)"
+  },
+  "4739261": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "flat_commercial (5 facets, 413 m2)"
+  },
+  "4740398": {
+   "address": "",
+   "area": "frankton_arm_lake",
+   "why": "complex_multi (5 facets, 177 m2)"
+  },
+  "4740517": {
+   "address": "26 Panorama Terrace",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4740662": {
+   "address": "(no address)",
+   "area": "shotover_lakehayes",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4740680": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "sawtooth (7 facets, 261 m2)"
+  },
+  "4741338": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "flat_commercial (4 facets, 514 m2)"
+  },
+  "4741639": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "stepped (5 facets, 148 m2)"
+  },
+  "4741643": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "gable (2 facets, 96 m2)"
+  },
+  "4741644": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "sawtooth (7 facets, 185 m2)"
+  },
+  "4741735": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "gable (2 facets, 43 m2)"
+  },
+  "4741747": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "sawtooth (6 facets, 176 m2)"
+  },
+  "4741798": {
+   "address": "",
+   "area": "kelvin_heights",
+   "why": "complex_multi (6 facets, 138 m2)"
+  },
+  "4742117": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "gable (3 facets, 81 m2)"
+  },
+  "4742200": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "sawtooth (8 facets, 165 m2)"
+  },
+  "4742246": {
+   "address": "",
+   "area": "jacks_point",
+   "why": "stepped (5 facets, 203 m2)"
+  },
+  "4742423": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "complex_multi (11 facets, 294 m2)"
+  },
+  "4742760": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "complex_multi (9 facets, 250 m2)"
+  },
+  "4744109": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "flat_commercial (1 facets, 840 m2)"
+  },
+  "4744126": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "sawtooth (6 facets, 2584 m2)"
+  },
+  "4744292": {
+   "address": "",
+   "area": "town_gorge_north",
+   "why": "gable (2 facets, 252 m2)"
+  },
+  "4744355": {
+   "address": "",
+   "area": "arrowtown_east",
+   "why": "steep (9 facets, 185 m2)"
+  },
+  "4744515": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "steep (9 facets, 372 m2)"
+  },
+  "4746034": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "complex_multi (3 facets, 227 m2)"
+  },
+  "4746110": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "stepped (6 facets, 219 m2)"
+  },
+  "4746196": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "stepped (4 facets, 189 m2)"
+  },
+  "4746243": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "sawtooth (6 facets, 195 m2)"
+  },
+  "4746399": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "hip (6 facets, 140 m2)"
+  },
+  "4746530": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "hip (5 facets, 170 m2)"
+  },
+  "4746984": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "steep (6 facets, 117 m2)"
+  },
+  "4747035": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "stepped (9 facets, 159 m2)"
+  },
+  "4747061": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "small_simple (1 facets, 17 m2)"
+  },
+  "4747375": {
+   "address": "",
+   "area": "kelvin_south",
+   "why": "complex_multi (3 facets, 166 m2)"
+  },
+  "4747486": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "sawtooth (7 facets, 305 m2)"
+  },
+  "4747492": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "sawtooth (6 facets, 270 m2)"
+  },
+  "4747530": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "sawtooth (9 facets, 324 m2)"
+  },
+  "4747535": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "flat_commercial (7 facets, 454 m2)"
+  },
+  "4747637": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "flat_commercial (9 facets, 2116 m2)"
+  },
+  "4748050": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "flat_commercial (3 facets, 591 m2)"
+  },
+  "4748296": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "steep (3 facets, 85 m2)"
+  },
+  "4749439": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "small_simple (1 facets, 76 m2)"
+  },
+  "4749465": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "flat_commercial (1 facets, 483 m2)"
+  },
+  "4750868": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "gable (2 facets, 184 m2)"
+  },
+  "4750952": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "gable (2 facets, 64 m2)"
+  },
+  "4751041": {
+   "address": "29 Edinburgh Dr",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "4751213": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "complex_multi (10 facets, 316 m2)"
+  },
+  "5370340": {
+   "address": "5 Beach Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5370347": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "flat_commercial (1 facets, 325 m2)"
+  },
+  "5370808": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "small_simple (1 facets, 42 m2)"
+  },
+  "5370824": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "gable (2 facets, 134 m2)"
+  },
+  "5370829": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "complex_multi (5 facets, 196 m2)"
+  },
+  "5370862": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "sawtooth (7 facets, 234 m2)"
+  },
+  "5371002": {
+   "address": "",
+   "area": "town_gorge_north",
+   "why": "flat_commercial (3 facets, 437 m2)"
+  },
+  "5371108": {
+   "address": "7 Anderson Heights",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5371176": {
+   "address": "",
+   "area": "pilot",
+   "why": "sawtooth (6 facets, 204 m2)"
+  },
+  "5371487": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "hip (6 facets, 296 m2)"
+  },
+  "5371581": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "stepped (4 facets, 130 m2)"
+  },
+  "5372064": {
+   "address": "",
+   "area": "jacks_point",
+   "why": "stepped (9 facets, 243 m2)"
+  },
+  "5372211": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "steep (6 facets, 155 m2)"
+  },
+  "5372220": {
+   "address": "",
+   "area": "frankton_flats",
+   "why": "hip (7 facets, 2325 m2)"
+  },
+  "5372222": {
+   "address": "",
+   "area": "frankton_east_lake",
+   "why": "flat_commercial (4 facets, 1030 m2)"
+  },
+  "5372232": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "stepped (9 facets, 5526 m2)"
+  },
+  "5372239": {
+   "address": "",
+   "area": "frankton_quail_rise",
+   "why": "flat_commercial (2 facets, 7568 m2)"
+  },
+  "5372256": {
+   "address": "",
+   "area": "lake_hayes_est_west",
+   "why": "complex_multi (1 facets, 269 m2)"
+  },
+  "5372379": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "small_simple (1 facets, 55 m2)"
+  },
+  "5372383": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "flat_commercial (7 facets, 724 m2)"
+  },
+  "5372388": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "sawtooth (19 facets, 406 m2)"
+  },
+  "5372392": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "stepped (8 facets, 364 m2)"
+  },
+  "5372438": {
+   "address": "",
+   "area": "frankton_arm",
+   "why": "small_simple (1 facets, 22 m2)"
+  },
+  "5372561": {
+   "address": "",
+   "area": "arrowtown_millbrook",
+   "why": "flat_commercial (8 facets, 649 m2)"
+  },
+  "5372565": {
+   "address": "1 Memorial Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5372566": {
+   "address": "19 Camp Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5372567": {
+   "address": "",
+   "area": "pilot",
+   "why": "steep (39 facets, 3870 m2)"
+  },
+  "5372585": {
+   "address": "45 Camp Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5372588": {
+   "address": "36 Shotover Street",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5372641": {
+   "address": "",
+   "area": "town_south_lake",
+   "why": "flat_commercial (2 facets, 350 m2)"
+  },
+  "5372729": {
+   "address": "",
+   "area": "speargrass_hayes",
+   "why": "gable (2 facets, 36 m2)"
+  },
+  "5372956": {
+   "address": "",
+   "area": "dalefield",
+   "why": "small_simple (1 facets, 27 m2)"
+  },
+  "5373091": {
+   "address": "",
+   "area": "shotover_lakehayes",
+   "why": "steep (3 facets, 34 m2)"
+  },
+  "5373285": {
+   "address": "",
+   "area": "town_west_fernhill",
+   "why": "stepped (4 facets, 110 m2)"
+  },
+  "5373363": {
+   "address": "no address on file; behind 10 Robins Road",
+   "area": "pilot",
+   "why": "already marked by Josh (prose -> coordinates)"
+  },
+  "5373469": {
+   "address": "",
+   "area": "hanleys_farm",
+   "why": "complex_multi (4 facets, 204 m2)"
+  }
+ },
+ "by_reason": {
+  "already marked by Josh": 28,
+  "complex_multi": 23,
+  "flat_commercial": 21,
+  "gable": 16,
+  "hip": 19,
+  "sawtooth": 21,
+  "small_simple": 12,
+  "steep": 12,
+  "stepped": 16
+ },
+ "rendered": 156,
+ "total": 168
+}
