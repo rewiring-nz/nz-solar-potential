@@ -823,12 +823,15 @@ function show(i){
   const lk=document.getElementById("links");
   if(r.ll){
     const [lat,lon]=r.ll;
-    // Earth's 3D mesh answers "is that a dormer or a flat vent", which one
-    // orthophoto cannot. Street view answers it from below when the mesh is
-    // coarse. Both open in a new tab so a half-drawn roof is never lost.
+    // Google MAPS rather than Earth: same 3D imagery, but Earth web loads a
+    // whole globe client and Josh found it slow and unreliable. The data=!3m1!1e3
+    // suffix is satellite, and 80a/35y/45t tilts it enough to read a roof.
+    // Apple Maps opens the Maps app on a Mac, where Flyover gives a genuinely
+    // better 3D model of a roof than anything in a browser.
+    // Both open in a new tab so a half-drawn roof is never lost.
     lk.innerHTML =
-      `<a target="_blank" rel="noopener" href="https://earth.google.com/web/@${lat},${lon},0a,220d,35y,0h,55t,0r">3D in Google Earth</a>`
-    + `<a target="_blank" rel="noopener" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}">Street view</a>`;
+      `<a target="_blank" rel="noopener" href="https://www.google.com/maps/@${lat},${lon},80a,35y,45t/data=!3m1!1e3">3D satellite</a>`
+    + `<a target="_blank" rel="noopener" href="https://maps.apple.com/?ll=${lat},${lon}&z=19&t=k">Apple Maps</a>`;
   } else lk.innerHTML="";
   resetView(); sizeCanvas();
   img=new Image(); img.onload=draw; img.src="data:image/jpeg;base64,"+r.jpg;
