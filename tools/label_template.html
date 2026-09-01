@@ -196,7 +196,7 @@ function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch
 // it falls back to this browser's own storage -- so the same file works both
 // ways and offline. Never assume the namespace exists: it arrives later, or
 // never (see the capability contract).
-let DB = null, remote = {};
+let DB = null, remote = {}, ingested = {};
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){}
   if(DB && data[R().id]){
@@ -212,7 +212,8 @@ function save(){
   }
 }
 function marked(id){ const d=data[id];
-  return !!(remote[id] || (d && ((d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
+  return !!(remote[id] || ingested[id] ||
+    (d && ((d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
 function refreshShare(){
   const bar=document.getElementById("sharebar");
   const done=ROOFS.filter(r=>marked(r.id)).length;
@@ -571,6 +572,28 @@ addEventListener("keyup", e=>{ if(e.key==="Shift"){ shift=false; draw(); } });
 
 setTool("ridge");
 show(0);
+
+// PUBLISHED ON GITHUB PAGES there is no db to write to -- Pages is static. But
+// the roofs already collected can still be shown, by reading a progress file
+// published beside this one and refreshed whenever a batch of labels comes in.
+// Not live, so two people marking the same evening can still collide; it does
+// stop the likelier case of re-doing a roof that was finished last week. A
+// downloaded copy has no server, the fetch fails, and nothing here runs.
+(async () => {
+  try {
+    const res = await fetch("label_progress.json", {cache:"no-store"});
+    if(!res.ok) return;
+    const d = await res.json();
+    (d.done||[]).forEach(id => { ingested[id] = true; });
+    if(!Object.keys(ingested).length) return;
+    const bar=document.getElementById("sharebar");
+    bar.style.display="";
+    bar.innerHTML = `<b>${(d.done||[]).length} of ${ROOFS.length}</b> roofs already collected`
+      + (d.updated ? ` (as of ${d.updated})` : "")
+      + `. Press <b>U</b> to jump to one nobody has done.`;
+    draw();
+  } catch(e) {}
+})();
 
 // Light shared mode up only once the viewer answers. Nothing above depends on
 // it, so a downloaded copy behaves exactly as before.
