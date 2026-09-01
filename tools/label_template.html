@@ -66,7 +66,8 @@
   <h2>Obstructions &mdash; drag out a shape</h2>
   <button data-tool="rect"><span><span class="sw" style="background:var(--obs)"></span> Box</span><span class="k">4</span></button>
   <button data-tool="ellipse"><span><span class="sw" style="background:var(--obs);border-radius:50%"></span> Circle</span><span class="k">5</span></button>
-  <div class="hint">Drag on the image to place one. Drag its middle to move, drag a corner to resize, <b>Delete</b> removes the selected shape.</div>
+  <button data-tool="tri"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 100%,0 100%)"></span> Triangle</span><span class="k">7</span></button>
+  <div class="hint">Box and circle: <b>drag</b> one out. Triangle: <b>three clicks</b>, one per corner, so it can sit at any angle &mdash; <b>Esc</b> abandons a part-drawn one.<br>Drag a shape&rsquo;s middle to move it, a corner to resize, <b>Delete</b> removes the selected one.</div>
 
   <h2>Panel-able area</h2>
   <button data-tool="nopanel"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">6</span></button>
@@ -82,6 +83,7 @@
     <button id="next">Next →<span class="k">N</span></button>
   </div>
   <button id="skipto">Next unmarked<span class="k">U</span></button>
+  <button id="hidedone">Hide marked roofs<span class="k">H</span></button>
   <button id="download" class="dl" style="margin-top:8px">Download labels<span class="k">S</span></button>
   <div class="hint" id="savehint">Saved in this browser as you go, so closing the tab is safe. Mark as few or as many as you like &mdash; Download only includes roofs you actually touched.</div>
   <div id="sharebar" class="desc" style="display:none"></div>
@@ -182,6 +184,8 @@ const ROOFS = /*__ROOFS__*/;
 const COL = {ridge:"#1fff7a",valley:"#35b6ff",cliff:"#ff3b30",edge:"#2ecc71"};
 const KEY = "roof_labels_v1";
 const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
+const DRAG_SHAPES = new Set(["rect","ellipse"]);
+let triPts = [];        // triangle corners placed so far
 // Every width and size below is authored in CSS pixels. The canvas backing
 // store is devicePixelRatio-scaled, so they must be multiplied up or they draw
 // at HALF thickness on a retina screen -- which is how this shipped: a 2.6 px
@@ -198,6 +202,7 @@ const HANDLE = () => 8 * dpr();
 // corner) makes the junction exact.
 const SNAP_PX = 14;
 let hoverSnap = null;
+let hideDone = false;
 function snapTargets(){
   const r=rec(), out=[];
   r.lines.forEach(l=>{ out.push(l.a); out.push(l.b); });
@@ -297,6 +302,20 @@ function refreshShare(){
     + `${rec().lines.length?faces().length:0} faces · ${done}/${ROOFS.length} marked`;
 }
 const say = t => document.getElementById("status").textContent = t;
+
+// Every obstruction as a closed ring in metres, whatever it was drawn as.
+// This is the form the scorer measures overlap with.
+function obsRing(o){
+  if(o.shape==="triangle") return o.pts.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]);
+  const {x,y,w,h}=o;
+  if(o.shape==="ellipse"){
+    const cx=x+w/2, cy=y+h/2, out=[];
+    for(let i=0;i<28;i++){ const a=i/28*Math.PI*2;
+      out.push([+(cx+Math.cos(a)*w/2).toFixed(3), +(cy+Math.sin(a)*h/2).toFixed(3)]); }
+    return out;
+  }
+  return [[x,y],[x+w,y],[x+w,y+h],[x,y+h]].map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]);
+}
 
 // VIEW. The crop is only ~500-800 px, so pinning the canvas to that left a
 // house floating in the middle of a much larger stage -- too small to draw on.
@@ -522,16 +541,25 @@ function draw(){
       ctx.fillStyle=COL[l.kind]; ctx.beginPath();ctx.arc(px,py,lw(5.0),0,7);ctx.fill();});
   });
   r.obstructions.forEach((o,i)=>{
-    const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
-    const w=x2-x1, h=y2-y1;
+    let corners;
     ctx.beginPath();
-    if(o.shape==="ellipse") ctx.ellipse(x1+w/2,y1+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,7);
-    else ctx.rect(x1,y1,w,h);
+    if(o.shape==="triangle"){
+      const P=o.pts.map(q=>toPx(q[0],q[1]));
+      P.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y));
+      ctx.closePath();
+      corners=P;
+    } else {
+      const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
+      const w=x2-x1, h=y2-y1;
+      if(o.shape==="ellipse") ctx.ellipse(x1+w/2,y1+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,7);
+      else ctx.rect(x1,y1,w,h);
+      corners=[[x1,y1],[x2,y1],[x1,y2],[x2,y2]];
+    }
     ctx.fillStyle="rgba(192,107,255,.22)"; ctx.fill();
     ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4); ctx.stroke();
     ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4); ctx.stroke();
     if(sel===i){ ctx.fillStyle="#fff"; const H=HANDLE();
-      [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(([px,py])=>ctx.fillRect(px-H/2,py-H/2,H,H)); }
+      corners.forEach(([px,py])=>ctx.fillRect(px-H/2,py-H/2,H,H)); }
   });
   if(pending){
     const[x1,y1]=toPx(pending.a[0],pending.a[1]);
@@ -543,7 +571,18 @@ function draw(){
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(pending.px,pending.py); ctx.stroke();
     ctx.setLineDash([]); ctx.lineCap="butt";
   }
-  if(hoverSnap && LINE_TOOLS.has(tool)){
+  if(triPts.length){
+    ctx.setLineDash([]); ctx.lineCap="round";
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4);
+    ctx.beginPath(); triPts.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.stroke();
+    ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4);
+    ctx.beginPath(); triPts.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.stroke();
+    triPts.forEach(q=>{ const[x,y]=toPx(q[0],q[1]);
+      ctx.fillStyle="#000"; ctx.beginPath();ctx.arc(x,y,lw(6.4),0,7);ctx.fill();
+      ctx.fillStyle="#c06bff"; ctx.beginPath();ctx.arc(x,y,lw(4.2),0,7);ctx.fill(); });
+    ctx.lineCap="butt";
+  }
+  if(hoverSnap && (LINE_TOOLS.has(tool) || tool==="tri")){
     const [hx,hy]=toPx(hoverSnap.p[0],hoverSnap.p[1]), r=lw(9);
     const path=()=>{ ctx.beginPath();
       if(hoverSnap.kind==="edge"){                 // diamond = anywhere along a line
@@ -567,7 +606,7 @@ function draw(){
 }
 
 function show(i){
-  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; hoverSnap=null;
+  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; hoverSnap=null; triPts=[];
   const r=R();
   document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
   document.getElementById("addr").textContent = r.address || r.area;
@@ -588,6 +627,14 @@ function hit(px,py){
   const r=rec();
   for(let i=r.obstructions.length-1;i>=0;i--){
     const o=r.obstructions[i];
+    if(o.shape==="triangle"){
+      const P=o.pts.map(q=>toPx(q[0],q[1]));
+      for(let v=0;v<3;v++)
+        if(Math.abs(px-P[v][0])<=HANDLE() && Math.abs(py-P[v][1])<=HANDLE())
+          return {i,mode:"vertex",vi:v};
+      if(inPoly(toW(px,py), o.pts)) return {i,mode:"move"};
+      continue;
+    }
     const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
     const corners=[[x1,y1,"nw"],[x2,y1,"ne"],[x1,y2,"sw"],[x2,y2,"se"]];
     for(const[cx,cy,which] of corners)
@@ -628,6 +675,16 @@ cv.addEventListener("pointerdown", e=>{
                          : "no faces marked");
     return;
   }
+  if(tool==="tri"){
+    const s=snapPoint(px,py);
+    triPts.push(s ? s.p : toW(px,py));
+    if(triPts.length===3){
+      rec().obstructions.push({shape:"triangle", pts:triPts.slice()});
+      sel=rec().obstructions.length-1; triPts=[]; save();
+      say("triangle placed");
+    } else say(`corner ${triPts.length} of 3`);
+    draw(); return;
+  }
   if(LINE_TOOLS.has(tool)){
     const hit=snapPoint(px,py);
     if(!pending){
@@ -648,8 +705,11 @@ cv.addEventListener("pointerdown", e=>{
     draw(); return;
   }
   const h=hit(px,py);
-  if(h){ sel=h.i; drag={mode:h.mode,which:h.which,i:h.i,px,py,orig:{...rec().obstructions[h.i]}}; }
-  else { sel=null; drag={mode:"new",x0:px,y0:py,x1:px,y1:py}; }
+  if(h){ sel=h.i; const src=rec().obstructions[h.i];
+    drag={mode:h.mode,which:h.which,vi:h.vi,i:h.i,px,py,
+          orig: src.shape==='triangle' ? {shape:'triangle', pts:src.pts.map(q=>q.slice())} : {...src}}; }
+  else if(DRAG_SHAPES.has(tool)){ sel=null; drag={mode:"new",x0:px,y0:py,x1:px,y1:py}; }
+  else { sel=null; }
   cv.setPointerCapture(e.pointerId); draw();
 });
 
@@ -657,7 +717,7 @@ cv.addEventListener("pointermove", e=>{
   const [px,py]=evPx(e);
   if(panning){ view.panx=panning.ox+(px-panning.px);
                view.pany=panning.oy+(py-panning.py); draw(); return; }
-  if(LINE_TOOLS.has(tool)){
+  if(LINE_TOOLS.has(tool) || tool==="tri"){
     const h=snapPoint(px,py);
     const changed = JSON.stringify(h)!==JSON.stringify(hoverSnap);
     hoverSnap=h;
@@ -674,6 +734,11 @@ cv.addEventListener("pointermove", e=>{
   else {
     const o=rec().obstructions[drag.i], g=drag.orig;
     const [wx,wy]=toW(px,py), [ox,oy]=toW(drag.px,drag.py);
+    if(o.shape==="triangle"){
+      if(drag.mode==="vertex") o.pts[drag.vi]=[+wx.toFixed(3), +wy.toFixed(3)];
+      else o.pts=g.pts.map(q=>[+(q[0]+wx-ox).toFixed(3), +(q[1]+wy-oy).toFixed(3)]);
+      draw(); return;
+    }
     if(drag.mode==="move"){ o.x=+(g.x+wx-ox).toFixed(3); o.y=+(g.y+wy-oy).toFixed(3); }
     else {
       let x0=g.x, y0=g.y, x1=g.x+g.w, y1=g.y+g.h;
@@ -708,9 +773,13 @@ const DESC = {
   cliff:"A height BREAK, not a fold: dormer sides, split levels, and the real roof edge where the roof stops short of the yellow outline. Draw along the TOP edge, on the higher side.",
   rect:"Drag out a box over a skylight, vent or existing panel.",
   ellipse:"Drag out a circle over a round vent or flue.",
+  tri:"Three clicks, one per corner. Use it for anything not square or round \u2014 a dormer face, a clipped corner.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
-function setTool(t){ tool=t; pending=null; hoverSnap=null;
-  document.getElementById("tooldesc").innerHTML = DESC[t] ? "<b>"+t[0].toUpperCase()+t.slice(1)+".</b> "+DESC[t] : "";
+const NAMES = {ridge:"Ridge line", valley:"Valley line", cliff:"Cliff line",
+               rect:"Box", ellipse:"Circle", tri:"Triangle", nopanel:"No panels here"};
+function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[];
+  document.getElementById("tooldesc").innerHTML =
+    DESC[t] ? "<b>"+(NAMES[t] || t)+".</b> "+DESC[t] : "";
   document.querySelectorAll("[data-tool]").forEach(b=>b.classList.toggle("on", b.dataset.tool===t));
   draw(); }
 document.querySelectorAll("[data-tool]").forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
@@ -721,7 +790,8 @@ help.onclick=e=>{ if(e.target===help) help.classList.remove("on"); };
 
 function undo(){
   const r=rec();
-  if(pending){ pending=null; }
+  if(triPts.length){ triPts.pop(); }
+  else if(pending){ pending=null; }
   else if(tool==="nopanel" && r.nopanel.length){ r.nopanel.pop(); }
   else if(r.obstructions.length && sel!==null){ r.obstructions.splice(sel,1); sel=null; }
   else if(r.lines.length){ r.lines.pop(); }
@@ -731,20 +801,40 @@ function undo(){
 document.getElementById("undo").onclick=undo;
 document.getElementById("clear").onclick=()=>{ data[R().id]={lines:[],obstructions:[],nopanel:[]};
   pending=null; sel=null; save(); draw(); };
-document.getElementById("next").onclick=()=>show(idx+1);
+// step through the roofs still worth looking at, but never refuse to SHOW a
+// hidden one -- you may have arrived at it deliberately
+function step(dir){
+  for(let k=1;k<=ROOFS.length;k++){
+    const j=(idx + dir*k + ROOFS.length*ROOFS.length) % ROOFS.length;
+    if(!hideDone || !marked(ROOFS[j].id)) return show(j);
+  }
+  say("every roof is marked \u2014 turn off Hide to revisit them");
+}
+document.getElementById("hidedone").onclick=()=>{
+  hideDone=!hideDone;
+  const b=document.getElementById("hidedone");
+  b.classList.toggle("on", hideDone);
+  b.firstChild.textContent = hideDone ? "Showing unmarked only" : "Hide marked roofs";
+  const left=ROOFS.filter(r=>!marked(r.id)).length;
+  say(hideDone ? `${left} roofs left to mark` : "showing all roofs");
+  draw();
+};
+document.getElementById("next").onclick=()=>step(1);
 document.getElementById("skipto").onclick=()=>{
   for(let i=1;i<=ROOFS.length;i++){ const j=(idx+i)%ROOFS.length;
     if(!marked(ROOFS[j].id)) return show(j); }
   say("every roof is marked");
 };
-document.getElementById("prev").onclick=()=>show(idx-1);
+document.getElementById("prev").onclick=()=>step(-1);
 document.getElementById("download").onclick=()=>{
   const out={ tool:"label_template", saved_utc:new Date().toISOString(),
     crs:"EPSG:2193", buildings:{} };
   ROOFS.forEach(r=>{ const d=data[r.id] || remote[r.id];
     if(d && ((d.lines||[]).length||(d.obstructions||[]).length))
       out.buildings[r.id]={area:r.area,address:r.address,
-        lines:d.lines||[],obstructions:d.obstructions||[],nopanel:d.nopanel||[],
+        lines:(d.lines||[]).map(l=>({...l, points:[l.a, l.b]})),
+        obstructions:(d.obstructions||[]).map(o=>({...o, ring:obsRing(o)})),
+        nopanel:d.nopanel||[],
         // the faces those lines imply, exported so scoring compares against
         // the same construction rather than re-deriving it slightly differently
         faces: facesFor(r.outline, d.lines||[]).map(f=>({
@@ -780,15 +870,16 @@ addEventListener("keydown", e=>{
   if(e.key==="-"||e.key==="_"){ zoomAt(cv.width/2,cv.height/2,0.8); return; }
   if(e.key==="0"){ resetView(); draw(); say("view reset"); return; }
   if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z")){ e.preventDefault(); undo(); return; }
-  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel"}[e.key];
+  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel","7":"tri"}[e.key];
   if(t){ setTool(t); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
   if(e.key==="Escape"){ document.getElementById("help").classList.remove("on");
-    pending=null; sel=null; draw(); return; }
+    pending=null; sel=null; triPts=[]; draw(); return; }
   if(e.key==="Delete"||e.key==="Backspace"){
     if(sel!==null){ e.preventDefault(); rec().obstructions.splice(sel,1); sel=null; save(); draw(); } return; }
   const k=e.key.toLowerCase();
-  if(k==="n"){ show(idx+1); } else if(k==="p"){ show(idx-1); }
+  if(k==="n"){ step(1); } else if(k==="p"){ step(-1); }
+  else if(k==="h"){ document.getElementById("hidedone").click(); }
   else if(k==="u"){ document.getElementById("skipto").click(); }
   else if(k==="s"){ document.getElementById("download").click(); }
 });

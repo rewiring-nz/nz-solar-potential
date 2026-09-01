@@ -124,8 +124,8 @@ def line_scores(pred_lines, true_lines, tol):
 
 def obstruction_scores(pred_rings, true_rings, iou_min=OBS_IOU):
     from shapely.geometry import Polygon
-    P = [Polygon(r) for r in pred_rings if len(r) >= 3]
-    T = [Polygon(r) for r in true_rings if len(r) >= 3]
+    P = [Polygon(r) for r in pred_rings if r and len(r) >= 3]
+    T = [Polygon(r) for r in true_rings if r and len(r) >= 3]
     P = [p for p in P if p.is_valid and p.area > 0]
     T = [t for t in T if t.is_valid and t.area > 0]
     if not P and not T:
@@ -173,6 +173,34 @@ def predicted_lines_from_facets(facets, footprint, edge_tol=0.35):
                     continue
             out.append([list(a), list(b)])
     return out
+
+
+def _line_points(l):
+    """A drawn line as a polyline, from either shape the tool has written."""
+    if l.get("points"):
+        return l["points"]
+    if l.get("a") and l.get("b"):
+        return [l["a"], l["b"]]
+    return None
+
+
+def _obs_ring(o):
+    """An obstruction as a closed ring, whatever it was drawn as."""
+    if isinstance(o, list):          # already a ring
+        return o
+    if o.get("ring"):
+        return o["ring"]
+    if o.get("shape") == "triangle" and o.get("pts"):
+        return o["pts"]
+    x, y, w, h = o.get("x"), o.get("y"), o.get("w"), o.get("h")
+    if None in (x, y, w, h):
+        return []
+    if o.get("shape") == "ellipse":
+        import math
+        cx, cy = x + w / 2, y + h / 2
+        return [(cx + math.cos(i / 28 * math.tau) * w / 2,
+                 cy + math.sin(i / 28 * math.tau) * h / 2) for i in range(28)]
+    return [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
 
 
 def main():
@@ -223,10 +251,16 @@ def main():
         facets = segment_building_best(ctx["dsm"], pc, geom, bid,
                                        imagery_ds=ctx["img"]) or []
         pred_lines = predicted_lines_from_facets(facets, geom)
-        true_lines = [l["points"] for l in lab.get("lines", [])
+        # The tool writes each line as {kind, a, b} and mirrors it into
+        # "points" for consumers like this one; older files have only a/b.
+        # Obstructions likewise carry a "ring" alongside their drawn form --
+        # this used to read the raw dicts and would throw on the first real
+        # batch of labels.
+        true_lines = [_line_points(l) for l in lab.get("lines", [])
                       if l.get("kind") != "outline"]
+        true_lines = [p for p in true_lines if p]
         ls = line_scores(pred_lines, true_lines, a.tol)
-        os_ = obstruction_scores([], lab.get("obstructions", []))
+        os_ = obstruction_scores([], [_obs_ring(o) for o in lab.get("obstructions", [])])
 
         lp = f"{ls['precision']:.0%}" if ls else "—"
         lr = f"{ls['recall']:.0%}" if ls else "—"
