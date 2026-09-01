@@ -59,7 +59,7 @@
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
   <button data-tool="cliff"><span><span class="sw" style="background:var(--cliff)"></span> Cliff line</span><span class="k">3</span></button>
-  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>No need to trace roof edges that sit on the yellow outline. But where the roof <b>stops short</b> of it, draw that edge as a <b>Cliff line</b> and tag the leftover strip below.</div>
+  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap together</b> &mdash; a green ring means the click will land exactly on that point, so junctions close cleanly.<br>No need to trace roof edges that sit on the yellow outline. But where the roof <b>stops short</b> of it, draw that edge as a <b>Cliff line</b> and tag the leftover strip below.</div>
   <div id="tooldesc" class="desc"></div>
   <button id="helpbtn" style="margin-top:6px">What&rsquo;s the difference?<span class="k">?</span></button>
 
@@ -182,7 +182,38 @@ const ROOFS = /*__ROOFS__*/;
 const COL = {ridge:"#ff4d4d",hip:"#ff9f1c",valley:"#4dabf7",cliff:"#c77dff",edge:"#2ecc71"};
 const KEY = "roof_labels_v1";
 const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
-const HANDLE = 7;
+// Every width and size below is authored in CSS pixels. The canvas backing
+// store is devicePixelRatio-scaled, so they must be multiplied up or they draw
+// at HALF thickness on a retina screen -- which is how this shipped: a 2.6 px
+// line rendered as a 1.3 px hairline. lw() also grows things with zoom, because
+// a fixed hairline laid over a roof magnified 6x is hard to judge against.
+const dpr = () => (window.devicePixelRatio || 1);
+function lw(css){ return css * dpr() * (1 + Math.min(view.zoom - 1, 5) * 0.14); }
+const HANDLE = () => 8 * dpr();
+
+// SNAPPING. Roof lines meet: a ridge runs into two hips, valleys land on the
+// same junction. Eyeballed endpoints leave 10-20 cm gaps that turn a clean
+// junction into three near-misses, and the partition then cuts on three
+// slightly different lines. Snapping to an existing endpoint (or an outline
+// corner) makes the junction exact.
+const SNAP_PX = 14;
+let hoverSnap = null;
+function snapTargets(){
+  const r=rec(), out=[];
+  r.lines.forEach(l=>{ out.push(l.a); out.push(l.b); });
+  (R().outline||[]).slice(0,-1).forEach(q=>out.push(q));
+  (R().holes||[]).forEach(h=>h.slice(0,-1).forEach(q=>out.push(q)));
+  return out;
+}
+function snapPoint(px,py){
+  let best=null, bd=SNAP_PX*dpr();
+  for(const w of snapTargets()){
+    const [x,y]=toPx(w[0],w[1]);
+    const d=Math.hypot(px-x, py-y);
+    if(d<bd){ bd=d; best=[w[0],w[1]]; }
+  }
+  return best;
+}
 
 let idx=0, tool="ridge", data=load(), img=new Image();
 let pending=null, drag=null, sel=null, shift=false, space=false;
@@ -277,7 +308,8 @@ function sizeCanvas(){
 }
 
 function ring(pts, stroke, dash, width){
-  ctx.strokeStyle=stroke; ctx.lineWidth=width||1.4; ctx.setLineDash(dash||[]);
+  ctx.strokeStyle=stroke; ctx.lineWidth=lw(width||1.4);
+  ctx.setLineDash((dash||[]).map(v=>v*dpr()));
   ctx.beginPath(); pts.forEach(([x,y],i)=>{const[p,q]=toPx(x,y); i?ctx.lineTo(p,q):ctx.moveTo(p,q);});
   ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
 }
@@ -298,8 +330,12 @@ const MIN_FACE_M2 = 1.0;            // below this a piece is a sliver, not a fac
 // directions and every face silently doubles. Two clicks in the same spot is
 // an easy accident, so guard it at the cut as well as at creation.
 const MIN_LINE_M = 0.3;
-const FACEFILL = ["rgba(46,204,113,.20)","rgba(255,255,255,.15)",
-                  "rgba(93,173,226,.20)","rgba(241,196,15,.16)"];
+// Kept deliberately faint. A tint heavy enough to read at a glance also veils
+// the roof texture you are tracing against, and the imagery is already at its
+// resolution limit. The white boundary and the area caption carry the
+// partition; the fill only has to separate one face from the next.
+const FACEFILL = ["rgba(46,204,113,.10)","rgba(255,255,255,.07)",
+                  "rgba(93,173,226,.10)","rgba(241,196,15,.08)"];
 
 function polyArea(p){ let s=0;
   for(let i=0,m=p.length;i<m;i++){ const [x1,y1]=p[i], [x2,y2]=p[(i+1)%m]; s+=x1*y2-x2*y1; }
@@ -362,16 +398,16 @@ function drawFaces(){
     ctx.fillStyle = bad ? "rgba(255,77,77,.32)" : FACEFILL[i%FACEFILL.length];
     ctx.fill();
     ctx.strokeStyle = bad ? "#ff4d4d" : "rgba(255,255,255,.55)";
-    ctx.lineWidth = bad ? 2.5 : 1.4; ctx.setLineDash([]); ctx.stroke();
+    ctx.lineWidth = lw(bad ? 2.6 : 1.5); ctx.setLineDash([]); ctx.stroke();
     // the area is what decides the panel count, so it is worth reading off the
     // face rather than trusting that the partition looked about right
     const [lx,ly]=toPx(...labelPoint(f));
     const txt = bad ? "no panels" : polyArea(f).toFixed(0)+" m\u00b2";
-    ctx.font="600 12px -apple-system,BlinkMacSystemFont,sans-serif";
+    ctx.font=`600 ${Math.round(12*dpr())}px -apple-system,BlinkMacSystemFont,sans-serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
-    const w=ctx.measureText(txt).width;
+    const w=ctx.measureText(txt).width, pad=5*dpr(), hh=9*dpr();
     ctx.fillStyle="rgba(0,0,0,.62)";
-    ctx.fillRect(lx-w/2-5, ly-9, w+10, 18);
+    ctx.fillRect(lx-w/2-pad, ly-hh, w+pad*2, hh*2);
     ctx.fillStyle = bad ? "#ff8f8f" : "#fff";
     ctx.fillText(txt, lx, ly);
   });
@@ -381,45 +417,62 @@ function draw(){
   ctx.clearRect(0,0,cv.width,cv.height);
   if(img.complete && img.naturalWidth){
     const [iw,ih]=R().px, s=viewScale(), [ox,oy]=viewOffset();
-    ctx.imageSmoothingEnabled = view.zoom < 2;   // crisp pixels once zoomed in
+    // Always smooth. Source imagery is 0.1 m/px and every view is an upscale,
+    // so nearest-neighbour just shows hard pixel blocks -- which reads as lower
+    // resolution than it is, rather than as detail.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(img, ox, oy, iw*s, ih*s);
   }
   drawFaces();
   // neighbours first, dimmed -- so a busy block reads correctly
-  (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.30)",[4,4],1));
-  ring(R().outline,"#ffd400",[],2.2);            // THIS building, solid
+  (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.42)",[5,5],1.4));
+  ring(R().outline,"#ffd400",[],2.6);            // THIS building, solid
   (R().holes||[]).forEach(h=>{                   // courtyard -- open air, not roof
     ctx.fillStyle="rgba(0,0,0,.45)";
     ctx.beginPath(); h.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);});
     ctx.closePath(); ctx.fill();
-    ring(h,"#ffd400",[7,5],2);
+    ring(h,"#ffd400",[7,5],2.2);
   });
   const r = rec();
   r.lines.forEach((l,i)=>{
-    ctx.strokeStyle=COL[l.kind]; ctx.lineWidth=2.6; ctx.setLineDash([]);
     const[x1,y1]=toPx(l.a[0],l.a[1]), [x2,y2]=toPx(l.b[0],l.b[1]);
+    ctx.setLineDash([]); ctx.lineCap="round";
+    // dark casing under the colour, so a red line stays readable over a red
+    // roof and a purple one over shadow
+    ctx.strokeStyle="rgba(0,0,0,.55)"; ctx.lineWidth=lw(5.2);
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-    [[x1,y1],[x2,y2]].forEach(([px,py])=>{ctx.fillStyle=COL[l.kind];
-      ctx.beginPath();ctx.arc(px,py,3,0,7);ctx.fill();});
+    ctx.strokeStyle=COL[l.kind]; ctx.lineWidth=lw(3.2);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.lineCap="butt";
+    [[x1,y1],[x2,y2]].forEach(([px,py])=>{
+      ctx.fillStyle="rgba(0,0,0,.55)"; ctx.beginPath();ctx.arc(px,py,lw(4.6),0,7);ctx.fill();
+      ctx.fillStyle=COL[l.kind]; ctx.beginPath();ctx.arc(px,py,lw(3.2),0,7);ctx.fill();});
   });
   r.obstructions.forEach((o,i)=>{
     const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
     const w=x2-x1, h=y2-y1;
-    ctx.strokeStyle="#ffd400"; ctx.fillStyle="rgba(255,212,0,.18)"; ctx.lineWidth=2;
+    ctx.strokeStyle="#ffd400"; ctx.fillStyle="rgba(255,212,0,.18)"; ctx.lineWidth=lw(2.4);
     ctx.beginPath();
     if(o.shape==="ellipse") ctx.ellipse(x1+w/2,y1+h/2,Math.abs(w)/2,Math.abs(h)/2,0,0,7);
     else ctx.rect(x1,y1,w,h);
     ctx.fill(); ctx.stroke();
-    if(sel===i){ ctx.fillStyle="#fff";
-      [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(([px,py])=>ctx.fillRect(px-HANDLE/2,py-HANDLE/2,HANDLE,HANDLE)); }
+    if(sel===i){ ctx.fillStyle="#fff"; const H=HANDLE();
+      [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(([px,py])=>ctx.fillRect(px-H/2,py-H/2,H,H)); }
   });
   if(pending){
-    ctx.strokeStyle=COL[tool]||"#fff"; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+    ctx.strokeStyle=COL[tool]||"#fff"; ctx.lineWidth=lw(2.8);
+    ctx.setLineDash([6*dpr(),4*dpr()]);
     const[x1,y1]=toPx(pending.a[0],pending.a[1]);
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(pending.px,pending.py); ctx.stroke(); ctx.setLineDash([]);
   }
+  if(hoverSnap && LINE_TOOLS.has(tool)){
+    const [hx,hy]=toPx(hoverSnap[0],hoverSnap[1]);
+    ctx.strokeStyle="#2ecc71"; ctx.lineWidth=lw(2.4); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(hx,hy,lw(7),0,7); ctx.stroke();
+  }
   if(drag && drag.mode==="new"){
-    ctx.strokeStyle="#ffd400"; ctx.setLineDash([5,4]); ctx.lineWidth=1.6;
+    ctx.strokeStyle="#ffd400"; ctx.setLineDash([5*dpr(),4*dpr()]); ctx.lineWidth=lw(1.8);
     const x=Math.min(drag.x0,drag.x1), y=Math.min(drag.y0,drag.y1);
     const w=Math.abs(drag.x1-drag.x0), h=Math.abs(drag.y1-drag.y0);
     ctx.beginPath();
@@ -430,7 +483,7 @@ function draw(){
 }
 
 function show(i){
-  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null;
+  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; hoverSnap=null;
   const r=R();
   document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
   document.getElementById("addr").textContent = r.address || r.area;
@@ -454,7 +507,7 @@ function hit(px,py){
     const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
     const corners=[[x1,y1,"nw"],[x2,y1,"ne"],[x1,y2,"sw"],[x2,y2,"se"]];
     for(const[cx,cy,which] of corners)
-      if(Math.abs(px-cx)<=HANDLE && Math.abs(py-cy)<=HANDLE) return {i,mode:"resize",which};
+      if(Math.abs(px-cx)<=HANDLE() && Math.abs(py-cy)<=HANDLE()) return {i,mode:"resize",which};
     if(px>=Math.min(x1,x2)&&px<=Math.max(x1,x2)&&py>=Math.min(y1,y2)&&py<=Math.max(y1,y2))
       return {i,mode:"move"};
   }
@@ -492,11 +545,22 @@ cv.addEventListener("pointerdown", e=>{
     return;
   }
   if(LINE_TOOLS.has(tool)){
-    if(!pending){ pending={a:toW(px,py),px,py}; }
-    else { const [sx,sy]=snap(pending.a,px,py), b=toW(sx,sy);
+    const hit=snapPoint(px,py);
+    if(!pending){
+      const a = hit || toW(px,py);
+      const at = hit ? toPx(a[0],a[1]) : [px,py];
+      pending={a, px:at[0], py:at[1]};
+      if(hit) say("snapped to an existing point");
+    }
+    else {
+      let b;
+      if(hit) b=hit;                                  // a real junction wins
+      else { const [sx,sy]=snap(pending.a,px,py); b=toW(sx,sy); }
       if(Math.hypot(b[0]-pending.a[0], b[1]-pending.a[1]) < MIN_LINE_M){
         pending=null; say("too short \u2014 click two separate points"); draw(); return; }
-      rec().lines.push({kind:tool,a:pending.a,b}); pending=null; save(); }
+      rec().lines.push({kind:tool,a:pending.a,b}); pending=null; save();
+      if(hit) say("joined to an existing point");
+    }
     draw(); return;
   }
   const h=hit(px,py);
@@ -509,6 +573,17 @@ cv.addEventListener("pointermove", e=>{
   const [px,py]=evPx(e);
   if(panning){ view.panx=panning.ox+(px-panning.px);
                view.pany=panning.oy+(py-panning.py); draw(); return; }
+  if(LINE_TOOLS.has(tool)){
+    const h=snapPoint(px,py);
+    const changed = JSON.stringify(h)!==JSON.stringify(hoverSnap);
+    hoverSnap=h;
+    if(pending){
+      if(h){ const [hx,hy]=toPx(h[0],h[1]); pending.px=hx; pending.py=hy; }
+      else { const[sx,sy]=snap(pending.a,px,py); pending.px=sx; pending.py=sy; }
+      draw(); return;
+    }
+    if(changed) draw();
+  }
   if(pending){ const[sx,sy]=snap(pending.a,px,py); pending.px=sx; pending.py=sy; draw(); return; }
   if(!drag) return;
   if(drag.mode==="new"){ drag.x1=px; drag.y1=py; }
@@ -550,7 +625,7 @@ const DESC = {
   rect:"Drag out a box over a skylight, vent or existing panel.",
   ellipse:"Drag out a circle over a round vent or flue.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
-function setTool(t){ tool=t; pending=null;
+function setTool(t){ tool=t; pending=null; hoverSnap=null;
   document.getElementById("tooldesc").innerHTML = DESC[t] ? "<b>"+t[0].toUpperCase()+t.slice(1)+".</b> "+DESC[t] : "";
   document.querySelectorAll("[data-tool]").forEach(b=>b.classList.toggle("on", b.dataset.tool===t));
   draw(); }

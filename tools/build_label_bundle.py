@@ -43,26 +43,35 @@ sys.path.insert(0, str(ROOT))
 DATA_DIR = ROOT / "data"
 OUT_DIR = DATA_DIR / "label_set"
 PAD_M = 4.0
-MAX_PX = 820          # per-roof crop; bigger is nicer to draw on but heavier
+MAX_PX = 1400         # per-roof crop. Only a handful of roofs are this big;
+                      # the cap exists to stop one warehouse dominating the
+                      # bundle, not to downscale ordinary houses.
 
 
 def crop(imagery, bounds):
     import numpy as np
     import rasterio.windows
-    from PIL import Image
+    from PIL import Image, ImageFilter
     minx, miny, maxx, maxy = bounds
     w = rasterio.windows.from_bounds(minx, miny, maxx, maxy, imagery.transform)
     rgb = np.moveaxis(imagery.read([1, 2, 3], window=w,
                                    boundless=True, fill_value=0), 0, -1)
     im = Image.fromarray(rgb.astype("uint8"))
+    # Source is 0.1 m/px and the tool always views it upscaled, so roof creases
+    # sit right at the resolution limit. A mild unsharp mask does not invent
+    # detail but it does make the edges that ARE there easier to trace against.
+    # Applied before the resize below so it works on real pixels, not resampled
+    # ones.
+    im = im.filter(ImageFilter.UnsharpMask(radius=1.4, percent=115, threshold=3))
     if max(im.size) > MAX_PX:
         s = MAX_PX / max(im.size)
-        im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))))
+        im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))),
+                       Image.LANCZOS)
     buf = io.BytesIO()
     # Crops are tiny (median 291 px) and get fitted up ~3-4x on screen, so
     # compression artefacts are magnified along with everything else. On images
     # this small the extra quality costs very little.
-    im.save(buf, format="JPEG", quality=90, optimize=True)
+    im.save(buf, format="JPEG", quality=95, optimize=True)
     return base64.b64encode(buf.getvalue()).decode("ascii"), im.size
 
 
