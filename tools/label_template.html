@@ -239,6 +239,19 @@ function finishPoly(){
   if(triPts.length < need){
     say(`needs at least ${need} points`); return;
   }
+  // Three points in a line enclose nothing. It looks like a shape while you
+  // are drawing it, exports as a zero-area ring, and is then thrown out at
+  // ingest -- long after you could have fixed it. Catch it here.
+  if(tool!=="pline" && polyArea(triPts) < 0.05){
+    say("those points are in a straight line \u2014 that encloses no area");
+    return;
+  }
+  if(tool==="pline"){
+    let len=0;
+    for(let i=1;i<triPts.length;i++)
+      len+=Math.hypot(triPts[i][0]-triPts[i-1][0], triPts[i][1]-triPts[i-1][1]);
+    if(len < MIN_LINE_M){ say("that run has no length"); return; }
+  }
   const o = tool==="pline"
     ? {shape:"polyline", pts:triPts.slice(), width_m:PLINE_WIDTH_M}
     : {shape: tool==="tri" ? "triangle" : "polygon", pts:triPts.slice()};
