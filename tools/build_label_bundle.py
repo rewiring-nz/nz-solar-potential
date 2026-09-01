@@ -83,8 +83,16 @@ def main():
     a = ap.parse_args()
 
     import geopandas as gpd
+    import pyproj
     import rasterio
     from src.region_build import area_paths, all_areas
+
+    # Josh: "some rooftops I need to check the 3D shape". The imagery is a
+    # single orthophoto, so a dormer and a flat vent can look identical from
+    # straight above. A lat/lon per roof lets the tool link straight out to
+    # Google Earth's 3D mesh, which settles it in seconds.
+    to_wgs = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326",
+                                         always_xy=True).transform
 
     ids = a.ids
     if ids is None:
@@ -139,11 +147,13 @@ def main():
                            for x, y in og.exterior.coords])
                 if len(nb) >= 12:
                     break
+            lon, lat = to_wgs((minx + maxx) / 2, (miny + maxy) / 2)
             t = truth.get(bid, {})
             roofs.append({
                 "id": bid, "area": name,
                 "address": t.get("address", ""),
                 "m2": round(g.area, 1),
+                "ll": [round(lat, 6), round(lon, 6)],
                 "bounds": [round(v, 2) for v in b],
                 "px": list(size),
                 "outline": [[round(x, 2), round(y, 2)] for x, y in g.exterior.coords],

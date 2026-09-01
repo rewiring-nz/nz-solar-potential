@@ -1,5 +1,26 @@
 {
  "updated": "2026-09-01",
- "done": [],
- "note": "Roof ids already collected. Refreshed when a batch of labels is taken in."
+ "done": [
+  "4719759",
+  "4725474",
+  "4725521",
+  "4725546",
+  "4734816",
+  "4734850",
+  "4735015",
+  "4735075",
+  "4735263",
+  "4735318",
+  "4735623",
+  "4740517",
+  "4740662",
+  "4744126",
+  "4751041",
+  "5370340",
+  "5371108",
+  "5372566",
+  "5372585",
+  "5373363"
+ ],
+ "note": "Roof ids already collected. Refreshed by tools/ingest_labels.py."
 }
