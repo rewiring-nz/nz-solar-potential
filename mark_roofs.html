@@ -59,7 +59,7 @@
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
   <button data-tool="cliff"><span><span class="sw" style="background:var(--cliff)"></span> Cliff line</span><span class="k">3</span></button>
-  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap together</b> &mdash; a white ring means the click will land exactly on that point, so junctions close cleanly.<br>No need to trace roof edges &mdash; the outline has them, and anything the outline overshoots onto at <b>ground level</b> is deleted automatically. Only draw an edge where the roof stops short and what is beyond is <b>still high</b> (an upper deck, a carport).</div>
+  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap</b> &mdash; a white <b>circle</b> means an exact corner, a white <b>diamond</b> means anywhere along an existing line or the outline. Use the diamond for a T-junction, and to land a line exactly on the roof edge.<br>No need to trace roof edges &mdash; the outline has them, and anything the outline overshoots onto at <b>ground level</b> is deleted automatically. Only draw an edge where the roof stops short and what is beyond is <b>still high</b> (an upper deck, a carport).</div>
   <div id="tooldesc" class="desc"></div>
   <button id="helpbtn" style="margin-top:6px">What&rsquo;s the difference?<span class="k">?</span></button>
 
@@ -205,14 +205,49 @@ function snapTargets(){
   (R().holes||[]).forEach(h=>h.slice(0,-1).forEach(q=>out.push(q)));
   return out;
 }
+
+// Every segment you can land ON rather than at the end of: existing lines, the
+// building outline, courtyard rings. A valley commonly meets the MIDDLE of a
+// ridge, and a line has to reach the outline to divide anything at all, so
+// both need to be snappable, not just their corners.
+function snapEdges(){
+  const segs=[];
+  rec().lines.forEach(l=>segs.push([l.a,l.b]));
+  const ring=r=>{ for(let i=0;i<r.length-1;i++) segs.push([r[i],r[i+1]]); };
+  if(R().outline) ring(R().outline);
+  (R().holes||[]).forEach(ring);
+  return segs;
+}
+
+function _projOnSeg(p,a,b){
+  const abx=b[0]-a[0], aby=b[1]-a[1], L2=abx*abx+aby*aby;
+  if(L2===0) return [a[0],a[1]];
+  let t=((p[0]-a[0])*abx + (p[1]-a[1])*aby)/L2;
+  t=Math.max(0, Math.min(1, t));
+  return [a[0]+abx*t, a[1]+aby*t];
+}
+
+// Corners win over edges. An endpoint is a stronger statement than "somewhere
+// along here", so if both are in range the corner should take it.
 function snapPoint(px,py){
-  let best=null, bd=SNAP_PX*dpr();
+  const lim=SNAP_PX*dpr();
+  let best=null, bd=lim;
   for(const w of snapTargets()){
     const [x,y]=toPx(w[0],w[1]);
     const d=Math.hypot(px-x, py-y);
     if(d<bd){ bd=d; best=[w[0],w[1]]; }
   }
-  return best;
+  if(best) return {p:best, kind:"point"};
+
+  const world=toW(px,py);
+  let bp=null, bpd=lim;
+  for(const [a,b] of snapEdges()){
+    const q=_projOnSeg(world,a,b);
+    const [x,y]=toPx(q[0],q[1]);
+    const d=Math.hypot(px-x, py-y);
+    if(d<bpd){ bpd=d; bp=[+q[0].toFixed(3), +q[1].toFixed(3)]; }
+  }
+  return bp ? {p:bp, kind:"edge"} : null;
 }
 
 let idx=0, tool="ridge", data=load(), img=new Image();
@@ -509,12 +544,16 @@ function draw(){
     ctx.setLineDash([]); ctx.lineCap="butt";
   }
   if(hoverSnap && LINE_TOOLS.has(tool)){
-    const [hx,hy]=toPx(hoverSnap[0],hoverSnap[1]);
+    const [hx,hy]=toPx(hoverSnap.p[0],hoverSnap.p[1]), r=lw(9);
+    const path=()=>{ ctx.beginPath();
+      if(hoverSnap.kind==="edge"){                 // diamond = anywhere along a line
+        ctx.moveTo(hx,hy-r); ctx.lineTo(hx+r,hy); ctx.lineTo(hx,hy+r); ctx.lineTo(hx-r,hy);
+        ctx.closePath();
+      } else ctx.arc(hx,hy,r,0,7);                 // circle = an exact corner
+    };
     ctx.setLineDash([]);
-    ctx.strokeStyle="#000"; ctx.lineWidth=lw(5.0);
-    ctx.beginPath(); ctx.arc(hx,hy,lw(9),0,7); ctx.stroke();
-    ctx.strokeStyle="#fff"; ctx.lineWidth=lw(2.6);
-    ctx.beginPath(); ctx.arc(hx,hy,lw(9),0,7); ctx.stroke();
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(5.0); path(); ctx.stroke();
+    ctx.strokeStyle="#fff"; ctx.lineWidth=lw(2.6); path(); ctx.stroke();
   }
   if(drag && drag.mode==="new"){
     ctx.strokeStyle="#c06bff"; ctx.setLineDash([5*dpr(),4*dpr()]); ctx.lineWidth=lw(1.8);
@@ -592,19 +631,19 @@ cv.addEventListener("pointerdown", e=>{
   if(LINE_TOOLS.has(tool)){
     const hit=snapPoint(px,py);
     if(!pending){
-      const a = hit || toW(px,py);
+      const a = hit ? hit.p : toW(px,py);
       const at = hit ? toPx(a[0],a[1]) : [px,py];
       pending={a, px:at[0], py:at[1]};
-      if(hit) say("snapped to an existing point");
+      if(hit) say(hit.kind==="edge" ? "snapped onto the line" : "snapped to an existing point");
     }
     else {
       let b;
-      if(hit) b=hit;                                  // a real junction wins
+      if(hit) b=hit.p;                                // a real junction wins
       else { const [sx,sy]=snap(pending.a,px,py); b=toW(sx,sy); }
       if(Math.hypot(b[0]-pending.a[0], b[1]-pending.a[1]) < MIN_LINE_M){
         pending=null; say("too short \u2014 click two separate points"); draw(); return; }
       rec().lines.push({kind:tool,a:pending.a,b}); pending=null; save();
-      if(hit) say("joined to an existing point");
+      if(hit) say(hit.kind==="edge" ? "joined onto the line" : "joined to an existing point");
     }
     draw(); return;
   }
@@ -623,7 +662,7 @@ cv.addEventListener("pointermove", e=>{
     const changed = JSON.stringify(h)!==JSON.stringify(hoverSnap);
     hoverSnap=h;
     if(pending){
-      if(h){ const [hx,hy]=toPx(h[0],h[1]); pending.px=hx; pending.py=hy; }
+      if(h){ const [hx,hy]=toPx(h.p[0],h.p[1]); pending.px=hx; pending.py=hy; }
       else { const[sx,sy]=snap(pending.a,px,py); pending.px=sx; pending.py=sy; }
       draw(); return;
     }
