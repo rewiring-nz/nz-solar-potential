@@ -36,9 +36,17 @@
   #prog{position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,.75);padding:5px 10px;
         border-radius:3px;font-size:12.5px;color:var(--muted)}
   .dl{background:#1f6f4a;border-color:#2ecc71}
-  .desc{background:#232a31;border-left:2px solid var(--rule);border-radius:2px;
-        padding:8px 10px;margin-top:8px;font-size:12px;line-height:1.5;color:var(--muted)}
+  .desc{background:rgba(255,255,255,.035);border:1px solid var(--rule);
+        border-left:3px solid #5b6670;border-radius:3px;
+        padding:9px 11px;margin-top:9px;font-size:12px;line-height:1.5;color:var(--muted)}
   .desc b{color:var(--ink)}
+  .desc .lab{display:block;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+             color:#7d8894;margin-bottom:4px;font-weight:600}
+  /* an explainer, not a control: no button chrome, no fill, reads as a link */
+  .explain{background:none;border:none;padding:4px 0;margin:6px 0 0;width:auto;
+           color:#8fb8d8;font-size:12px;text-decoration:underline;
+           text-underline-offset:3px;justify-content:flex-start;gap:6px}
+  .explain:hover{background:none;color:#b6d6ee}
   #help{position:fixed;inset:0;background:rgba(8,10,12,.93);z-index:20;display:none;
         overflow-y:auto;padding:34px}
   #help.on{display:block}
@@ -65,19 +73,23 @@
   <button data-tool="cliff"><span><span class="sw" style="background:var(--cliff)"></span> Cliff line</span><span class="k">3</span></button>
   <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap</b> &mdash; a white <b>circle</b> means an exact corner, a white <b>diamond</b> means anywhere along an existing line or the outline. Use the diamond for a T-junction, and to land a line exactly on the roof edge.<br>No need to trace roof edges &mdash; the outline has them, and anything the outline overshoots onto at <b>ground level</b> is deleted automatically. Only draw an edge where the roof stops short and what is beyond is <b>still high</b> (an upper deck, a carport).</div>
   <div id="tooldesc" class="desc"></div>
-  <button id="helpbtn" style="margin-top:6px">What&rsquo;s the difference?<span class="k">?</span></button>
+  <button id="helpbtn" class="explain">&#9432;&nbsp; Read: what counts as each line<span class="k">?</span></button>
 
   <h2>Obstructions &mdash; drag out a shape</h2>
-  <button data-tool="rect"><span><span class="sw" style="background:var(--obs)"></span> Box</span><span class="k">4</span></button>
-  <button data-tool="ellipse"><span><span class="sw" style="background:var(--obs);border-radius:50%"></span> Circle</span><span class="k">5</span></button>
-  <button data-tool="tri"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 100%,0 100%)"></span> Triangle</span><span class="k">7</span></button>
-  <button data-tool="poly"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Polygon</span><span class="k">8</span></button>
-  <button data-tool="pline"><span><span class="sw" style="background:var(--obs);clip-path:polygon(0 38%,100% 0,100% 24%,0 62%)"></span> Line / run</span><span class="k">9</span></button>
-  <div class="hint">Box and circle: <b>drag</b> one out. Triangle: <b>three clicks</b>. Polygon: click each corner, then <b>Enter</b> or click the first point again. Line / run: click along it (a pipe, cable tray, ridge vent) then <b>Enter</b> &mdash; it records a centreline with a width, <b>[</b> and <b>]</b> adjust that. <b>Esc</b> abandons a part-drawn shape, <b>&#8984;Z</b> removes the last point.<br>Drag a shape&rsquo;s middle to move it, a corner to resize, <b>Delete</b> removes the selected one.</div>
+  <button data-tool="poly"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Polygon</span><span class="k">4</span></button>
+  <button data-tool="pline"><span><span class="sw" style="background:var(--obs);clip-path:polygon(0 38%,100% 0,100% 24%,0 62%)"></span> Line / run</span><span class="k">5</span></button>
+  <button data-tool="tri"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 100%,0 100%)"></span> Triangle</span><span class="k">6</span></button>
+  <button data-tool="ellipse"><span><span class="sw" style="background:var(--obs);border-radius:50%"></span> Circle</span><span class="k">7</span></button>
+  <div class="hint"><b>Polygon</b> and <b>Line / run</b>: click each point, then <b>Enter</b> (a polygon also closes if you click its first point again). <b>Triangle</b>: three clicks. <b>Circle</b>: drag one out.<br>A line / run records a centreline with a width &mdash; <b>[</b> and <b>]</b> make it thinner or wider. <b>Esc</b> abandons a part-drawn shape, <b>&#8984;Z</b> removes the last point.<br>Drag a shape&rsquo;s middle to move it, a corner to resize, <b>Delete</b> removes the selected one.</div>
 
   <h2>Panel-able area</h2>
-  <button data-tool="nopanel"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">6</span></button>
+  <button data-tool="nopanel"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">8</span></button>
   <div class="hint">Your lines already imply the roof faces, so they shade in as you draw &mdash; no need to trace them. Click any face that could <b>never</b> take a panel: a wall caught inside the outline, a canopy, glass. Click it again to unmark.</div>
+
+  <h2>Fix a mistake</h2>
+  <button data-tool="select"><span>&#9099; Select &amp; delete</span><span class="k">9</span></button>
+  <div class="hint">Click any line or shape you have already drawn to select it, then press <b>Delete</b> (or the button below). Undo only ever removes the most recent thing; this reaches the one you actually want.</div>
+  <button id="delsel" style="margin-top:4px">Delete selected<span class="k">⌫</span></button>
 
   <h2>Actions</h2>
   <div class="row">
@@ -221,6 +233,7 @@ const SNAP_PX = 14;
 let hoverSnap = null;
 let hideDone = false;
 let handMode = false;
+let selLine = null;      // index into rec().lines, for select-and-delete
 function finishPoly(){
   const need = tool==="pline" ? 2 : 3;
   if(triPts.length < need){
@@ -613,6 +626,10 @@ function draw(){
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
     ctx.strokeStyle=COL[l.kind]; ctx.lineWidth=lw(5.4);
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    if(selLine===i){
+      ctx.strokeStyle="#fff"; ctx.lineWidth=lw(2.0); ctx.setLineDash([6*dpr(),5*dpr()]);
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.setLineDash([]);
+    }
     ctx.lineCap="butt";
     [[x1,y1],[x2,y2]].forEach(([px,py])=>{
       ctx.fillStyle="#000"; ctx.beginPath();ctx.arc(px,py,lw(7.4),0,7);ctx.fill();
@@ -690,7 +707,8 @@ function draw(){
 }
 
 function show(i){
-  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; hoverSnap=null; triPts=[];
+  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; selLine=null;
+  hoverSnap=null; triPts=[];
   const r=R();
   document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
   document.getElementById("addr").textContent = r.address || r.area;
@@ -705,6 +723,36 @@ function snap(a,px,py){
   const ang=Math.atan2(py-ay,px-ax), step=Math.PI/12;
   const s=Math.round(ang/step)*step, d=Math.hypot(px-ax,py-ay);
   return [ax+Math.cos(s)*d, ay+Math.sin(s)*d];
+}
+
+// Nearest drawn LINE under the cursor, in screen space so the tolerance feels
+// the same at every zoom.
+function hitLine(px,py){
+  const r=rec(); let best=null, bd=12*dpr();
+  r.lines.forEach((l,i)=>{
+    const [x1,y1]=toPx(l.a[0],l.a[1]), [x2,y2]=toPx(l.b[0],l.b[1]);
+    const dx=x2-x1, dy=y2-y1, L2=dx*dx+dy*dy;
+    let t = L2 ? ((px-x1)*dx + (py-y1)*dy)/L2 : 0;
+    t=Math.max(0,Math.min(1,t));
+    const d=Math.hypot(px-(x1+dx*t), py-(y1+dy*t));
+    if(d<bd){ bd=d; best=i; }
+  });
+  return best;
+}
+
+function deleteSelected(){
+  const r=rec();
+  if(selLine!==null && r.lines[selLine]!==undefined){
+    const k=r.lines[selLine].kind;
+    r.lines.splice(selLine,1); selLine=null; save(); draw();
+    say(`deleted a ${k} line`); return;
+  }
+  if(sel!==null && r.obstructions[sel]!==undefined){
+    const s=r.obstructions[sel].shape;
+    r.obstructions.splice(sel,1); sel=null; save(); draw();
+    say(`deleted a ${s}`); return;
+  }
+  say("nothing selected \u2014 click a line or shape first");
 }
 
 function hit(px,py){
@@ -764,6 +812,16 @@ cv.addEventListener("pointerdown", e=>{
     say(r.nopanel.length ? `${r.nopanel.length} face(s) marked as taking no panels`
                          : "no faces marked");
     return;
+  }
+  if(tool==="select"){
+    const h=hit(px,py);
+    if(h){ sel=h.i; selLine=null; say(`${rec().obstructions[h.i].shape} selected \u2014 Delete removes it`); }
+    else {
+      const li=hitLine(px,py);
+      if(li!==null){ selLine=li; sel=null; say(`${rec().lines[li].kind} line selected \u2014 Delete removes it`); }
+      else { sel=null; selLine=null; say("nothing there \u2014 click directly on a line or shape"); }
+    }
+    draw(); return;
   }
   if(POLY_TOOLS.has(tool)){
     const s=snapPoint(px,py);
@@ -867,18 +925,20 @@ const DESC = {
   ridge:"Any fold where roof falls AWAY on both sides — flat along the top or running down to a corner, both count.",
   valley:"Any fold that is NOT a ridge: faces meet at an angle but the roof does not turn over. Internal corners, and pitch changes (60\u00b0 into 20\u00b0). Ignore where water goes.",
   cliff:"A height BREAK, not a fold: dormer sides, split levels, and the real roof edge where the roof stops short of the yellow outline. Draw along the TOP edge, on the higher side.",
-  rect:"Drag out a box over a skylight, vent or existing panel.",
   ellipse:"Drag out a circle over a round vent or flue.",
   tri:"Three clicks, one per corner. Use it for anything not square or round \u2014 a dormer face, a clipped corner.",
   poly:"Click each corner, then Enter (or click the first point again) to close. For an awkward shape no box or triangle fits.",
   pline:"Click along a run \u2014 a pipe, a cable tray, a ridge vent \u2014 then Enter. Stored as a centreline with a width; [ and ] make it thinner or wider.",
+  select:"Click a line or shape you have already drawn, then press Delete. Unlike Undo, this reaches any of them, not just the last.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
 const NAMES = {ridge:"Ridge line", valley:"Valley line", cliff:"Cliff line",
                rect:"Box", ellipse:"Circle", tri:"Triangle", poly:"Polygon",
-               pline:"Line / run", nopanel:"No panels here"};
+               pline:"Line / run", nopanel:"No panels here",
+               select:"Select & delete"};
 function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[];
+  if(t!=="select"){ selLine=null; }
   document.getElementById("tooldesc").innerHTML =
-    DESC[t] ? "<b>"+(NAMES[t] || t)+".</b> "+DESC[t] : "";
+    DESC[t] ? '<span class="lab">About this tool</span><b>'+(NAMES[t] || t)+".</b> "+DESC[t] : "";
   document.querySelectorAll("[data-tool]").forEach(b=>b.classList.toggle("on", b.dataset.tool===t));
   draw(); }
 document.querySelectorAll("[data-tool]").forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
@@ -898,6 +958,7 @@ function undo(){
   save(); draw();
 }
 document.getElementById("undo").onclick=undo;
+document.getElementById("delsel").onclick=deleteSelected;
 document.getElementById("clear").onclick=()=>{ data[R().id]={lines:[],obstructions:[],nopanel:[]};
   pending=null; sel=null; save(); draw(); };
 // step through the roofs still worth looking at, but never refuse to SHOW a
@@ -987,8 +1048,9 @@ addEventListener("keydown", e=>{
     draw(); return;
   }
   if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z")){ e.preventDefault(); undo(); return; }
-  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel",
-         "7":"tri","8":"poly","9":"pline"}[e.key];
+  const t={"1":"ridge","2":"valley","3":"cliff",
+         "4":"poly","5":"pline","6":"tri","7":"ellipse",
+         "8":"nopanel","9":"select"}[e.key];
   if(t){ setTool(t); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
   if(e.key==="Enter"){ if(triPts.length){ e.preventDefault(); finishPoly(); } return; }
@@ -1003,7 +1065,7 @@ addEventListener("keydown", e=>{
   if(e.key==="Escape"){ document.getElementById("help").classList.remove("on");
     pending=null; sel=null; triPts=[]; draw(); return; }
   if(e.key==="Delete"||e.key==="Backspace"){
-    if(sel!==null){ e.preventDefault(); rec().obstructions.splice(sel,1); sel=null; save(); draw(); } return; }
+    if(sel!==null || selLine!==null){ e.preventDefault(); deleteSelected(); } return; }
   const k=e.key.toLowerCase();
   if(k==="n"){ step(1); } else if(k==="p"){ step(-1); }
   else if(k==="h"){ document.getElementById("hidedone").click(); }
