@@ -358,15 +358,52 @@ function clipHalf(poly,a,b,keep){
   return out.length>=3 ? out : null;
 }
 
+// A drawn line is a SEGMENT, and it only divides the piece it actually runs
+// across. Applying every line to every piece -- which is what this did first --
+// extends a short mark right across the roof: mark a small cut-off in one
+// corner and the big planes get sliced into slivers by its continuation.
+//
+// This is also what roof_partition really does. Its _cut() takes an infinite
+// line, but _partition() is RECURSIVE: it splits one polygon and then asks each
+// half independently, so a cut only ever reaches the piece being split. The
+// tool now matches that.
+const CROSS_EXTEND_M = 1.0;   // tolerance for a line drawn a little short of the eaves
+
+function _extended(l){
+  const dx=l.b[0]-l.a[0], dy=l.b[1]-l.a[1];
+  const L=Math.hypot(dx,dy)||1, ux=dx/L*CROSS_EXTEND_M, uy=dy/L*CROSS_EXTEND_M;
+  return [[l.a[0]-ux, l.a[1]-uy], [l.b[0]+ux, l.b[1]+uy]];
+}
+
+function crossesFace(l, f){
+  const [e1,e2]=_extended(l);
+  // An end sitting inside the face means the cut stops halfway and cannot
+  // separate it -- a dangling mark, not a division.
+  if(inPoly(e1,f) || inPoly(e2,f)) return false;
+  for(let i=1;i<24;i++){                        // and it must actually pass through
+    const t=i/24;
+    if(inPoly([e1[0]+(e2[0]-e1[0])*t, e1[1]+(e2[1]-e1[1])*t], f)) return true;
+  }
+  return false;
+}
+
 function facesFor(outline, lines){
   let pieces=[outline.slice(0,-1)];             // ring repeats its first point
   (lines||[]).forEach(l=>{
     if(Math.hypot(l.b[0]-l.a[0], l.b[1]-l.a[1]) < MIN_LINE_M) return;   // no side
     const nxt=[];
-    pieces.forEach(pc=>[1,-1].forEach(k=>{
-      const c=clipHalf(pc,l.a,l.b,k);
-      if(c && polyArea(c)>=MIN_FACE_M2) nxt.push(c); }));
-    if(nxt.length) pieces=nxt;                  // a cut that misses changes nothing
+    pieces.forEach(pc=>{
+      if(!crossesFace(l, pc)){ nxt.push(pc); return; }   // untouched, carried through
+      const halves=[];
+      [1,-1].forEach(k=>{
+        const c=clipHalf(pc,l.a,l.b,k);
+        if(c && polyArea(c)>=MIN_FACE_M2) halves.push(c);
+      });
+      // if the cut only yields one usable piece it shaved a sliver rather than
+      // dividing anything; keep the original so area is conserved
+      if(halves.length>=2) halves.forEach(h=>nxt.push(h)); else nxt.push(pc);
+    });
+    pieces=nxt;
   });
   return pieces;
 }
