@@ -293,6 +293,19 @@
     padding: 5px 9px; font-family: inherit; text-align: left; }
   .corner-btn:hover { background: rgba(40,40,40,0.95); color: #fff; }
   #bug-report-btn { color: #ffb3b3; }
+  /* Flagging a layout has to be nearly free or nobody does it. One click
+     sends; the follow-up chips are optional and only appear afterwards. */
+  .flag-wrap { margin-top:12px; border-top:1px solid rgba(255,255,255,.10); padding-top:10px; }
+  .flag-btn { background:rgba(255,120,120,.12); border:1px solid rgba(255,140,140,.45);
+              color:#ffb3b3; border-radius:4px; padding:7px 11px; font-size:12.5px;
+              cursor:pointer; width:100%; text-align:left; }
+  .flag-btn:hover { background:rgba(255,120,120,.22); }
+  .flag-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .flag-chip { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.18);
+               color:inherit; border-radius:11px; padding:4px 10px; font-size:11.5px;
+               cursor:pointer; }
+  .flag-chip:hover { background:rgba(255,255,255,.16); }
+  .flag-done { font-size:12px; color:#9ae6b4; margin-top:7px; }
   /* Layer toggles read their state from a dot rather than the word "Off",
      so the row is the same length whichever way it is set. */
   .corner-btn .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
@@ -1457,7 +1470,7 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "31";
+const DATA_VERSION = "32";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 
@@ -1569,6 +1582,26 @@ map.on("load", async () => {
       ],
       "fill-opacity": 0
     }
+  });
+
+  // NOT ESTIMATED. These roofs used to vanish from the map entirely, which is
+  // the one case where someone searching their own address most wants an
+  // answer: absent is indistinguishable from broken. They now draw in a muted
+  // slate with a dashed edge -- clearly "we looked and could not model this",
+  // not "no data here" and not a real estimate.
+  map.addLayer({
+    id: "buildings-noestimate",
+    type: "fill",
+    source: "buildings",
+    filter: ["has", "no_estimate_reason"],
+    paint: { "fill-color": "#6b7580", "fill-opacity": 0.45 }
+  });
+  map.addLayer({
+    id: "buildings-noestimate-outline",
+    type: "line",
+    source: "buildings",
+    filter: ["has", "no_estimate_reason"],
+    paint: { "line-color": "#aab4be", "line-width": 1.2, "line-dasharray": [2, 2] }
   });
 
   map.addLayer({
@@ -1975,6 +2008,10 @@ map.on("load", async () => {
     }
   }
   function wireCoverageSelect(sel) {
+    // A not-estimated building renders a panel with no coverage control at all.
+    // That is a legitimate panel now, not a broken one, so absence is fine --
+    // without this guard the click handler throws and the panel never opens.
+    if (!sel) return;
     sel.addEventListener("change", () => setCoverage(parseInt(sel.value, 10)));
   }
   const mainSel = document.getElementById("coverage-select-main");
@@ -2347,6 +2384,33 @@ map.on("load", async () => {
   document.getElementById("bug-close").addEventListener("click", () => {
     document.getElementById("bug-report-panel").style.display = "none";
   });
+  // Delegated on purpose: the side panel's HTML is regenerated on every
+  // building click, so per-render bindings would both leak and go stale.
+  document.addEventListener("click", (ev) => {
+    const wrap = ev.target.closest && ev.target.closest("[data-flag-for]");
+    if (!wrap) return;
+    const bid = wrap.getAttribute("data-flag-for");
+    const send = (note) => {
+      document.getElementById("bug-f-note").value = note;
+      document.getElementById("bug-f-context").value =
+        `FLAGGED LAYOUT building ${bid} | ` + bugCtx();
+      document.getElementById("bug-form").submit();
+    };
+    if (ev.target.matches("[data-flag]")) {
+      // one click is enough -- send immediately, then offer detail
+      send(`BAD LAYOUT flagged on building ${bid}`);
+      ev.target.style.display = "none";
+      wrap.querySelector(".flag-after").style.display = "";
+      return;
+    }
+    const chip = ev.target.closest("[data-flag-kind]");
+    if (chip) {
+      send(`BAD LAYOUT on building ${bid}: ${chip.textContent.trim()}`);
+      wrap.querySelector(".flag-chips").innerHTML =
+        `<span class="flag-done">&#10003; "${chip.textContent.trim()}" &mdash; noted.</span>`;
+    }
+  });
+
   document.getElementById("bug-send").addEventListener("click", () => {
     const note = document.getElementById("bug-note").value.trim();
     if (!note) { document.getElementById("bug-status").textContent = "write a note first"; return; }
@@ -2935,6 +2999,36 @@ map.on("load", async () => {
   // content, but it never overlaps the map, survives panning, and clicking
   // a different building just replaces its content rather than spawning a
   // second overlapping popup.
+  // Josh: "a way to mark a building as a bad layout ... very easy to click
+  // mark as bad layout and send so that then you get that data and know that
+  // it might be a building that needs to be marked up".
+  //
+  // One click sends. The categories appear only AFTER that, as an optional
+  // refinement, because a required category is a form and a form is a reason
+  // not to bother. Every flag already carries the building id, so a flagged
+  // roof can go straight into the markup queue.
+  const FLAG_KINDS = [
+    ["missing",    "Missing panels"],
+    ["misplaced",  "Panels in the wrong place"],
+    ["obstruction","Panels over something"],
+    ["roofshape",  "Roof shape is wrong"],
+    ["shouldnone", "Should have no panels"],
+    ["other",      "Something else"],
+  ];
+  function flagBlockHtml(p) {
+    return `
+      <div class="flag-wrap" data-flag-for="${p.building_id}">
+        <button class="flag-btn" data-flag="send">&#9873; This layout looks wrong &mdash; tell us</button>
+        <div class="flag-after" style="display:none;">
+          <div class="flag-done">&#10003; Sent, thank you. What is wrong with it?</div>
+          <div class="flag-chips">
+            ${FLAG_KINDS.map(([k, label]) =>
+              `<button class="flag-chip" data-flag-kind="${k}">${label}</button>`).join("")}
+          </div>
+        </div>
+      </div>`;
+  }
+
   function buildingPanelHtml(p) {
     const multi = p._multi && p._multi.length > 1;
     const title = multi
@@ -2946,6 +3040,42 @@ map.on("load", async () => {
           ? (p.address_count > 1 ? `${p.address_count} addresses · outline #${p.building_id}` : `Building outline #${p.building_id}`)
           : "No street address on record for this outline")
          + ` &nbsp;·&nbsp; <span style="opacity:0.75;">shift-click to add more roofs</span>`);
+    // A building we could not model gets the reason instead of an estimate.
+    // Returned BEFORE buildingEstimate runs: these buildings have no density
+    // deciles baked (14,496 of 15,353 do), so asking for an estimate is at
+    // best meaningless and at worst throws inside the panel.
+    // Showing 0 kW next to the usual sliders would read as "this roof is
+    // worthless", which is a different and wrong claim.
+    if (!multi && p.no_estimate_reason) {
+      return `
+      <div class="popup">
+        <h4 style="font-size:17px;">${title}</h4>
+        <div class="rsp-subtitle">${sub}</div>
+        <div class="est-section" style="border-top:none; margin-top:0; padding-top:0;">
+          <div class="est-title"><span>Not estimated</span></div>
+          <div style="background:rgba(107,117,128,.14); border-left:3px solid #6b7580;
+                      border-radius:3px; padding:10px 12px; margin-top:8px;
+                      font-size:13.5px; line-height:1.5;">
+            <b>${p.no_estimate_text || "This roof could not be modelled"}</b>
+            <div style="margin-top:6px; opacity:.8;">
+              We map this building but do not publish a figure for it. That is a
+              limit of what we can tell from the survey data, not a statement
+              that the roof is unsuitable &mdash; a site visit may well find it
+              usable.
+            </div>
+          </div>
+          <div class="kv" style="margin-top:10px;">
+            <div>Roof outline</div><div>${(p.facet_area_m2 || 0) > 0
+              ? Math.round(p.facet_area_m2) + " m&sup2; resolved" : "not resolved"}</div>
+            <div>Surfaces found</div><div>${p.facet_count || 0}</div>
+          </div>
+          <div style="margin-top:10px; font-size:12.5px; opacity:.75;">
+            If you know this roof, telling us helps us fix it.
+          </div>
+          ${flagBlockHtml(p)}
+        </div>
+      </div>`;
+    }
     const est = buildingEstimate(p, coveragePct);
     return `
       <div class="popup">
@@ -3028,6 +3158,7 @@ map.on("load", async () => {
           <div class="tuning-summary" id="tuning-summary">Adjust a slider to try live values for this roof.</div>
           <button class="tuning-reset" id="tuning-reset">Reset to defaults</button>
         </details>
+        ${multi ? "" : flagBlockHtml(p)}
       </div>`;
   }
 
@@ -3785,8 +3916,12 @@ map.on("load", async () => {
     highlightSelectedBuilding(selectedIds.length ? selectedIds : p.building_id, geom);
     selectedBuildingProps = p;
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
-    updateFittedStats(p.building_id);
-    renderCoverageOptions([p], "bldg-coverage-options");
+    // Everything below assumes the estimate layout. A not-estimated building
+    // deliberately renders none of it.
+    if (!p.no_estimate_reason) {
+      updateFittedStats(p.building_id);
+      renderCoverageOptions([p], "bldg-coverage-options");
+    }
     const hzBtn = panel.querySelector("#horizon-tab-btn");
     if (hzBtn) {
       hzBtn.style.display = p.horizon_b64 ? "" : "none";
@@ -3809,7 +3944,11 @@ map.on("load", async () => {
     // Live re-fitting works on ONE roof's geometry; there is no meaningful
     // "refit these six buildings with a different setback" call behind it.
     if (tuning && (!refitAvailable || multiSel)) tuning.closest("details").style.display = "none";
-    if (!multiSel) wireTuningControls(panel, p.building_id);
+    // A not-estimated panel renders no sliders to wire. Without this the
+    // wiring throws on the missing elements and everything after it in
+    // showBuildingPanel is skipped -- the panel still appeared, which is
+    // exactly how a half-initialised panel hides its own breakage.
+    if (!multiSel && !p.no_estimate_reason) wireTuningControls(panel, p.building_id);
     if (window.__refreshModeUI) window.__refreshModeUI();
   }
 
