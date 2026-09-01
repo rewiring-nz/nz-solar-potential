@@ -59,7 +59,10 @@ def crop(imagery, bounds):
         s = MAX_PX / max(im.size)
         im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))))
     buf = io.BytesIO()
-    im.save(buf, format="JPEG", quality=82, optimize=True)
+    # Crops are tiny (median 291 px) and get fitted up ~3-4x on screen, so
+    # compression artefacts are magnified along with everything else. On images
+    # this small the extra quality costs very little.
+    im.save(buf, format="JPEG", quality=90, optimize=True)
     return base64.b64encode(buf.getvalue()).decode("ascii"), im.size
 
 
@@ -142,8 +145,6 @@ def main():
                           for r in g.interiors],
                 "neighbours": nb,
                 "jpg": jpg,
-                "note": (f"You said {t['faces']} faces. " if t.get("faces") else "")
-                        + (t.get("structure", "")[:180] if t.get("structure") else ""),
             })
             placed = True
             break

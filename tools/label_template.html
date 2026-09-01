@@ -11,7 +11,8 @@
   #side{width:275px;flex:none;background:var(--panel);border-right:1px solid var(--rule);
         padding:14px;overflow-y:auto}
   #stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;background:#0c0f12}
-  canvas{cursor:crosshair;max-width:100%;max-height:100%;touch-action:none}
+  canvas{cursor:crosshair;display:block;width:100%;height:100%;touch-action:none}
+  canvas.pan{cursor:grab}
   h1{font-size:15px;margin:0 0 2px}
   .addr{color:var(--muted);font-size:12.5px;margin-bottom:12px}
   h2{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
@@ -51,6 +52,9 @@
   <h1 id="title">—</h1>
   <div class="addr" id="addr"></div>
 
+  <h2>View</h2>
+  <div class="hint">Scroll to <b>zoom</b> where the cursor is. Hold <b>Space</b> (or the middle button) and drag to <b>pan</b>. <b>0</b> fits the roof again, <b>+</b>/<b>&minus;</b> step the zoom.</div>
+
   <h2>Three lines &mdash; click, then click</h2>
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
@@ -81,7 +85,7 @@
   <button id="download" class="dl" style="margin-top:8px">Download labels<span class="k">S</span></button>
   <div class="hint" id="savehint">Saved in this browser as you go, so closing the tab is safe. Mark as few or as many as you like &mdash; Download only includes roofs you actually touched.</div>
   <div id="sharebar" class="desc" style="display:none"></div>
-  <div class="note" id="note" style="display:none"></div>
+
 </div>
 
 
@@ -181,7 +185,7 @@ const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
 const HANDLE = 7;
 
 let idx=0, tool="ridge", data=load(), img=new Image();
-let pending=null, drag=null, sel=null, shift=false;
+let pending=null, drag=null, sel=null, shift=false, space=false;
 const cv=document.getElementById("c"), ctx=cv.getContext("2d");
 const R = () => ROOFS[idx];
 const rec = () => { const o = (data[R().id] = data[R().id] || {lines:[], obstructions:[]});
@@ -228,11 +232,49 @@ function refreshShare(){
 }
 const say = t => document.getElementById("status").textContent = t;
 
-// canvas <-> NZTM metres
-function toPx(x,y){ const[a,b,c,d]=R().bounds;
-  return [ (x-a)/(c-a)*cv.width, (1-(y-b)/(d-b))*cv.height ]; }
-function toW(px,py){ const[a,b,c,d]=R().bounds;
-  return [ +(a+px/cv.width*(c-a)).toFixed(3), +(b+(1-py/cv.height)*(d-b)).toFixed(3) ]; }
+// VIEW. The crop is only ~500-800 px, so pinning the canvas to that left a
+// house floating in the middle of a much larger stage -- too small to draw on.
+// The canvas now fills the stage and the image is fitted into it, with a user
+// zoom on top. Screen = image_px * (fit * zoom) + offset.
+const view = {zoom:1, panx:0, pany:0};
+const MIN_ZOOM = 1, MAX_ZOOM = 12;
+function fitScale(){
+  const [iw,ih] = R().px;
+  return Math.min(cv.width/iw, cv.height/ih) * 0.94;   // small breathing margin
+}
+function viewScale(){ return fitScale() * view.zoom; }
+function viewOffset(){
+  const [iw,ih] = R().px, s = viewScale();
+  return [ (cv.width - iw*s)/2 + view.panx, (cv.height - ih*s)/2 + view.pany ];
+}
+function resetView(){ view.zoom=1; view.panx=0; view.pany=0; }
+
+// canvas <-> NZTM metres, through the view
+function toPx(x,y){ const[a,b,c,d]=R().bounds, [iw,ih]=R().px;
+  const s=viewScale(), [ox,oy]=viewOffset();
+  return [ (x-a)/(c-a)*iw*s + ox, (1-(y-b)/(d-b))*ih*s + oy ]; }
+function toW(px,py){ const[a,b,c,d]=R().bounds, [iw,ih]=R().px;
+  const s=viewScale(), [ox,oy]=viewOffset();
+  const ix=(px-ox)/s, iy=(py-oy)/s;
+  return [ +(a+ix/iw*(c-a)).toFixed(3), +(b+(1-iy/ih)*(d-b)).toFixed(3) ]; }
+
+function zoomAt(px, py, factor){
+  // keep whatever is under the cursor pinned while the scale changes
+  const before = toW(px, py);
+  view.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, view.zoom*factor));
+  const after = toPx(before[0], before[1]);
+  view.panx += px - after[0];
+  view.pany += py - after[1];
+  draw();
+}
+
+function sizeCanvas(){
+  const st=document.getElementById("stage");
+  const dpr=window.devicePixelRatio||1;
+  const w=Math.max(1, Math.round(st.clientWidth*dpr));
+  const h=Math.max(1, Math.round(st.clientHeight*dpr));
+  if(cv.width!==w || cv.height!==h){ cv.width=w; cv.height=h; }
+}
 
 function ring(pts, stroke, dash, width){
   ctx.strokeStyle=stroke; ctx.lineWidth=width||1.4; ctx.setLineDash(dash||[]);
@@ -337,7 +379,11 @@ function drawFaces(){
 
 function draw(){
   ctx.clearRect(0,0,cv.width,cv.height);
-  if(img.complete && img.naturalWidth) ctx.drawImage(img,0,0,cv.width,cv.height);
+  if(img.complete && img.naturalWidth){
+    const [iw,ih]=R().px, s=viewScale(), [ox,oy]=viewOffset();
+    ctx.imageSmoothingEnabled = view.zoom < 2;   // crisp pixels once zoomed in
+    ctx.drawImage(img, ox, oy, iw*s, ih*s);
+  }
   drawFaces();
   // neighbours first, dimmed -- so a busy block reads correctly
   (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.30)",[4,4],1));
@@ -388,9 +434,7 @@ function show(i){
   const r=R();
   document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
   document.getElementById("addr").textContent = r.address || r.area;
-  const n=document.getElementById("note");
-  n.textContent = r.note||""; n.style.display = r.note ? "" : "none";
-  cv.width=r.px[0]; cv.height=r.px[1];
+  resetView(); sizeCanvas();
   img=new Image(); img.onload=draw; img.src="data:image/jpeg;base64,"+r.jpg;
   say(`#${r.id} — ${idx+1} of ${ROOFS.length}`); draw();
 }
@@ -420,8 +464,22 @@ function hit(px,py){
 function evPx(e){ const r=cv.getBoundingClientRect();
   return [ (e.clientX-r.left)*cv.width/r.width, (e.clientY-r.top)*cv.height/r.height ]; }
 
+cv.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const [px,py]=evPx(e);
+  // trackpad pinch arrives as ctrl+wheel; plain wheel zooms too, which is what
+  // people expect of a single-image markup view
+  zoomAt(px, py, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0022)));
+}, {passive:false});
+
+let panning=null;
 cv.addEventListener("pointerdown", e=>{
   const [px,py]=evPx(e);
+  if(e.button===1 || space){                     // middle-drag or space-drag
+    e.preventDefault();
+    panning={px,py,ox:view.panx,oy:view.pany};
+    cv.setPointerCapture(e.pointerId); return;
+  }
   if(tool==="nopanel"){
     const w=toW(px,py), r=rec(), fs=faces();
     const f=fs.find(g=>inPoly(w,g));
@@ -449,6 +507,8 @@ cv.addEventListener("pointerdown", e=>{
 
 cv.addEventListener("pointermove", e=>{
   const [px,py]=evPx(e);
+  if(panning){ view.panx=panning.ox+(px-panning.px);
+               view.pany=panning.oy+(py-panning.py); draw(); return; }
   if(pending){ const[sx,sy]=snap(pending.a,px,py); pending.px=sx; pending.py=sy; draw(); return; }
   if(!drag) return;
   if(drag.mode==="new"){ drag.x1=px; drag.y1=py; }
@@ -468,6 +528,7 @@ cv.addEventListener("pointermove", e=>{
 });
 
 cv.addEventListener("pointerup", e=>{
+  if(panning){ panning=null; return; }
   if(drag && drag.mode==="new"){
     const [ax,ay]=toW(Math.min(drag.x0,drag.x1), Math.max(drag.y0,drag.y1));
     const [bx,by]=toW(Math.max(drag.x0,drag.x1), Math.min(drag.y0,drag.y1));
@@ -555,6 +616,10 @@ document.getElementById("download").onclick=()=>{
 
 addEventListener("keydown", e=>{
   if(e.key==="Shift"){ shift=true; return; }
+  if(e.code==="Space"){ e.preventDefault(); space=true; cv.classList.add("pan"); return; }
+  if(e.key==="+"||e.key==="="){ zoomAt(cv.width/2,cv.height/2,1.25); return; }
+  if(e.key==="-"||e.key==="_"){ zoomAt(cv.width/2,cv.height/2,0.8); return; }
+  if(e.key==="0"){ resetView(); draw(); say("view reset"); return; }
   if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z")){ e.preventDefault(); undo(); return; }
   const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel"}[e.key];
   if(t){ setTool(t); return; }
@@ -568,7 +633,11 @@ addEventListener("keydown", e=>{
   else if(k==="u"){ document.getElementById("skipto").click(); }
   else if(k==="s"){ document.getElementById("download").click(); }
 });
-addEventListener("keyup", e=>{ if(e.key==="Shift"){ shift=false; draw(); } });
+addEventListener("keyup", e=>{
+  if(e.key==="Shift"){ shift=false; draw(); }
+  if(e.code==="Space"){ space=false; cv.classList.remove("pan"); }
+});
+addEventListener("resize", ()=>{ sizeCanvas(); draw(); });
 
 setTool("ridge");
 show(0);
