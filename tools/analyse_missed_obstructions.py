@@ -22,6 +22,26 @@ LiDAR separates them. For every marked area the detector did not find, measure
 how far the returns there sit above the facet's own plane. No height means
 either roof-between-objects or something flush; clear height means a real miss.
 
+ANSWER over Josh's first 46 labelled roofs (2 Sep 2026). Of 1622 m2 missed:
+
+    standing clear (>=0.30 m)     116 m2    7.2%
+    low relief (0.15-0.30 m)       83 m2    5.1%
+    flush with the roof          1025 m2   63.4%
+    no usable returns             393 m2   24.3%
+
+    recall against genuinely RAISED area   70.4%
+    recall against all marked area         22.6%
+
+The detector finds 70% of the equipment that actually stands off the roof. The
+22.6% headline was measuring how the truth was drawn, not how the model
+performs.
+
+Two things follow. Tuning height thresholds can reach at most 12% of the gap,
+so it is close to pointless. And the 63% flush share is the strongest argument
+yet for the imagery work: skylights, existing panels and hatches sit ON the
+plane and are invisible to LiDAR by construction, so no threshold will ever
+find them and only vision can.
+
 Usage:
     python tools/analyse_missed_obstructions.py
     python tools/analyse_missed_obstructions.py --max-roofs 15
