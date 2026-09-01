@@ -29,6 +29,10 @@
   .note{background:#232a31;border-radius:3px;padding:8px 10px;font-size:12px;color:var(--muted);margin-top:10px}
   #status{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.75);padding:5px 10px;
           border-radius:3px;font-size:12.5px}
+  #viewbar{position:absolute;right:12px;top:12px;display:flex;gap:4px;z-index:5}
+  #viewbar button{width:auto;margin:0;padding:5px 10px;background:rgba(12,15,18,.82);
+                  border-color:rgba(255,255,255,.22);font-size:13px}
+  #viewbar button.on{background:#2f3841;border-color:#fff}
   #prog{position:absolute;right:12px;bottom:12px;background:rgba(0,0,0,.75);padding:5px 10px;
         border-radius:3px;font-size:12.5px;color:var(--muted)}
   .dl{background:#1f6f4a;border-color:#2ecc71}
@@ -53,7 +57,7 @@
   <div class="addr" id="addr"></div>
 
   <h2>View</h2>
-  <div class="hint">Scroll to <b>zoom</b> where the cursor is. Hold <b>Space</b> (or the middle button) and drag to <b>pan</b>. <b>0</b> fits the roof again, <b>+</b>/<b>&minus;</b> step the zoom.</div>
+  <div class="hint"><b>Zoom:</b> scroll where the cursor is, or the <b>+ &minus;</b> buttons top-right.<br><b>Pan:</b> press <b>✋ Pan</b> and drag, or drag with the <b>right button</b>, or hold <b>Space</b> and drag, or use the <b>arrow keys</b> (hold Shift for bigger steps).<br><b>0</b> or <b>Fit</b> puts the whole roof back on screen.</div>
 
   <h2>Three lines &mdash; click, then click</h2>
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
@@ -67,7 +71,9 @@
   <button data-tool="rect"><span><span class="sw" style="background:var(--obs)"></span> Box</span><span class="k">4</span></button>
   <button data-tool="ellipse"><span><span class="sw" style="background:var(--obs);border-radius:50%"></span> Circle</span><span class="k">5</span></button>
   <button data-tool="tri"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 100%,0 100%)"></span> Triangle</span><span class="k">7</span></button>
-  <div class="hint">Box and circle: <b>drag</b> one out. Triangle: <b>three clicks</b>, one per corner, so it can sit at any angle &mdash; <b>Esc</b> abandons a part-drawn one.<br>Drag a shape&rsquo;s middle to move it, a corner to resize, <b>Delete</b> removes the selected one.</div>
+  <button data-tool="poly"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Polygon</span><span class="k">8</span></button>
+  <button data-tool="pline"><span><span class="sw" style="background:var(--obs);clip-path:polygon(0 38%,100% 0,100% 24%,0 62%)"></span> Line / run</span><span class="k">9</span></button>
+  <div class="hint">Box and circle: <b>drag</b> one out. Triangle: <b>three clicks</b>. Polygon: click each corner, then <b>Enter</b> or click the first point again. Line / run: click along it (a pipe, cable tray, ridge vent) then <b>Enter</b> &mdash; it records a centreline with a width, <b>[</b> and <b>]</b> adjust that. <b>Esc</b> abandons a part-drawn shape, <b>&#8984;Z</b> removes the last point.<br>Drag a shape&rsquo;s middle to move it, a corner to resize, <b>Delete</b> removes the selected one.</div>
 
   <h2>Panel-able area</h2>
   <button data-tool="nopanel"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">6</span></button>
@@ -177,7 +183,14 @@
   <button class="close" id="helpclose">Got it<span class="k">Esc</span></button>
 </div></div>
 
-<div id="stage"><canvas id="c"></canvas><div id="status">…</div><div id="prog"></div></div>
+<div id="stage"><canvas id="c"></canvas>
+  <div id="viewbar">
+    <button id="zin"  title="Zoom in">+</button>
+    <button id="zout" title="Zoom out">&minus;</button>
+    <button id="zfit" title="Fit the roof">Fit</button>
+    <button id="hand" title="Drag to pan (or hold Space, or drag with the right button)">✋ Pan</button>
+  </div>
+  <div id="status">…</div><div id="prog"></div></div>
 
 <script>
 const ROOFS = /*__ROOFS__*/;
@@ -185,7 +198,11 @@ const COL = {ridge:"#1fff7a",valley:"#35b6ff",cliff:"#ff3b30",edge:"#2ecc71"};
 const KEY = "roof_labels_v1";
 const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
 const DRAG_SHAPES = new Set(["rect","ellipse"]);
-let triPts = [];        // triangle corners placed so far
+// Everything you build by clicking points. Triangle closes itself at three;
+// polygon and line run until you press Enter, so they take any number.
+const POLY_TOOLS = new Set(["tri","poly","pline"]);
+let triPts = [];        // corners placed so far, for whichever poly tool is active
+const PLINE_WIDTH_M = 0.4;   // a drawn run has no area until it is given one
 // Every width and size below is authored in CSS pixels. The canvas backing
 // store is devicePixelRatio-scaled, so they must be multiplied up or they draw
 // at HALF thickness on a retina screen -- which is how this shipped: a 2.6 px
@@ -203,6 +220,22 @@ const HANDLE = () => 8 * dpr();
 const SNAP_PX = 14;
 let hoverSnap = null;
 let hideDone = false;
+let handMode = false;
+function finishPoly(){
+  const need = tool==="pline" ? 2 : 3;
+  if(triPts.length < need){
+    say(`needs at least ${need} points`); return;
+  }
+  const o = tool==="pline"
+    ? {shape:"polyline", pts:triPts.slice(), width_m:PLINE_WIDTH_M}
+    : {shape: tool==="tri" ? "triangle" : "polygon", pts:triPts.slice()};
+  rec().obstructions.push(o);
+  sel=rec().obstructions.length-1; triPts=[]; save(); draw();
+  say(o.shape==="polyline"
+      ? `line placed \u2014 ${o.width_m.toFixed(2)} m wide, [ and ] change it`
+      : `${o.shape} placed`);
+}
+
 function snapTargets(){
   const r=rec(), out=[];
   r.lines.forEach(l=>{ out.push(l.a); out.push(l.b); });
@@ -289,6 +322,16 @@ function save(){
 function marked(id){ const d=data[id];
   return !!(remote[id] || ingested[id] ||
     (d && ((d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
+let lastNudge = 0;
+function nudgeSave(){
+  if(DB) return;                       // the shared store already holds it
+  const done=ROOFS.filter(r=>marked(r.id)).length;
+  if(done>=lastNudge+15){
+    lastNudge=done;
+    say(`${done} roofs marked \u2014 worth pressing Download (S) to save a copy`);
+  }
+}
+
 function refreshShare(){
   const bar=document.getElementById("sharebar");
   const done=ROOFS.filter(r=>marked(r.id)).length;
@@ -297,6 +340,7 @@ function refreshShare(){
     bar.innerHTML = `<b>${done} of ${ROOFS.length}</b> roofs marked, shared with everyone on this link. `
       + (marked(R().id) ? "<b>This one is done.</b>" : "This one is not done yet.");
   }
+  nudgeSave();
   document.getElementById("prog").textContent =
     `${rec().lines.length} lines · ${rec().obstructions.length} obstructions · `
     + `${rec().lines.length?faces().length:0} faces · ${done}/${ROOFS.length} marked`;
@@ -305,8 +349,26 @@ const say = t => document.getElementById("status").textContent = t;
 
 // Every obstruction as a closed ring in metres, whatever it was drawn as.
 // This is the form the scorer measures overlap with.
+// A polyline is a run -- a pipe, a cable tray, a ridge vent. It has no area
+// until it is given a width, and area is what the obstruction scorer measures,
+// so it is stored as a centreline plus a width and expanded here.
+function polylineRing(pts, w){
+  const h=(w||PLINE_WIDTH_M)/2, left=[], right=[];
+  for(let i=0;i<pts.length;i++){
+    const p=pts[i];
+    const a=pts[Math.max(0,i-1)], b=pts[Math.min(pts.length-1,i+1)];
+    let dx=b[0]-a[0], dy=b[1]-a[1];
+    const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L;
+    left.push([p[0]-dy*h, p[1]+dx*h]);
+    right.push([p[0]+dy*h, p[1]-dx*h]);
+  }
+  return left.concat(right.reverse()).map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]);
+}
+
 function obsRing(o){
-  if(o.shape==="triangle") return o.pts.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]);
+  if(o.shape==="polyline") return polylineRing(o.pts, o.width_m);
+  if(o.shape==="triangle" || o.shape==="polygon")
+    return o.pts.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]);
   const {x,y,w,h}=o;
   if(o.shape==="ellipse"){
     const cx=x+w/2, cy=y+h/2, out=[];
@@ -409,7 +471,18 @@ function clipHalf(poly,a,b,keep){
     if((sp>0&&sq<0)||(sp<0&&sq>0)){ const u=sp/(sp-sq);
       out.push([P[0]+(Q[0]-P[0])*u, P[1]+(Q[1]-P[1])*u]); }
   }
-  return out.length>=3 ? out : null;
+  // a cut landing exactly on a vertex emits it twice; strip repeats so the
+  // exported rings are clean for whatever consumes them
+  const ded=[];
+  for(const q of out){
+    const last=ded[ded.length-1];
+    if(!last || Math.hypot(q[0]-last[0], q[1]-last[1]) > 1e-6) ded.push(q);
+  }
+  if(ded.length>1){
+    const f=ded[0], l=ded[ded.length-1];
+    if(Math.hypot(f[0]-l[0], f[1]-l[1]) <= 1e-6) ded.pop();
+  }
+  return ded.length>=3 ? ded : null;
 }
 
 // A drawn line is a SEGMENT, and it only divides the piece it actually runs
@@ -515,6 +588,11 @@ function draw(){
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(img, ox, oy, iw*s, ih*s);
   }
+  // clip overlays to the photo: neighbour outlines run past the crop, and the
+  // part beyond has no imagery under it to mean anything
+  const [ciw,cih]=R().px, cs=viewScale(), [cox,coy]=viewOffset();
+  ctx.save();
+  ctx.beginPath(); ctx.rect(cox, coy, ciw*cs, cih*cs); ctx.clip();
   drawFaces();
   // neighbours first, dimmed -- so a busy block reads correctly
   (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.45)",[5,5],1.8));
@@ -543,11 +621,12 @@ function draw(){
   r.obstructions.forEach((o,i)=>{
     let corners;
     ctx.beginPath();
-    if(o.shape==="triangle"){
-      const P=o.pts.map(q=>toPx(q[0],q[1]));
-      P.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y));
+    if(o.shape==="triangle" || o.shape==="polygon" || o.shape==="polyline"){
+      // draw the RING, so a run's recorded width is what you actually see
+      const ring=obsRing(o).map(q=>toPx(q[0],q[1]));
+      ring.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y));
       ctx.closePath();
-      corners=P;
+      corners=o.pts.map(q=>toPx(q[0],q[1]));   // handles sit on the real points
     } else {
       const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
       const w=x2-x1, h=y2-y1;
@@ -573,10 +652,14 @@ function draw(){
   }
   if(triPts.length){
     ctx.setLineDash([]); ctx.lineCap="round";
-    ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4);
-    ctx.beginPath(); triPts.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.stroke();
-    ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4);
-    ctx.beginPath(); triPts.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.stroke();
+    const trace=()=>{ ctx.beginPath();
+      triPts.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+      // show the closing edge while a polygon is still open, so its final shape
+      // is obvious before you commit to it
+      if(tool!=="pline" && triPts.length>=3){ const[fx,fy]=toPx(triPts[0][0],triPts[0][1]); ctx.lineTo(fx,fy); }
+    };
+    ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4); trace(); ctx.stroke();
+    ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4); trace(); ctx.stroke();
     triPts.forEach(q=>{ const[x,y]=toPx(q[0],q[1]);
       ctx.fillStyle="#000"; ctx.beginPath();ctx.arc(x,y,lw(6.4),0,7);ctx.fill();
       ctx.fillStyle="#c06bff"; ctx.beginPath();ctx.arc(x,y,lw(4.2),0,7);ctx.fill(); });
@@ -602,6 +685,7 @@ function draw(){
     if(tool==="ellipse") ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,7); else ctx.rect(x,y,w,h);
     ctx.stroke(); ctx.setLineDash([]);
   }
+  ctx.restore();
   refreshShare();
 }
 
@@ -627,12 +711,14 @@ function hit(px,py){
   const r=rec();
   for(let i=r.obstructions.length-1;i>=0;i--){
     const o=r.obstructions[i];
-    if(o.shape==="triangle"){
+    if(o.shape==="triangle" || o.shape==="polygon" || o.shape==="polyline"){
       const P=o.pts.map(q=>toPx(q[0],q[1]));
-      for(let v=0;v<3;v++)
+      for(let v=0;v<P.length;v++)
         if(Math.abs(px-P[v][0])<=HANDLE() && Math.abs(py-P[v][1])<=HANDLE())
           return {i,mode:"vertex",vi:v};
-      if(inPoly(toW(px,py), o.pts)) return {i,mode:"move"};
+      // a run is only as wide as its width, so test against the ring rather
+      // than the bare centreline
+      if(inPoly(toW(px,py), obsRing(o))) return {i,mode:"move"};
       continue;
     }
     const[x1,y1]=toPx(o.x,o.y+o.h), [x2,y2]=toPx(o.x+o.w,o.y);
@@ -648,18 +734,22 @@ function hit(px,py){
 function evPx(e){ const r=cv.getBoundingClientRect();
   return [ (e.clientX-r.left)*cv.width/r.width, (e.clientY-r.top)*cv.height/r.height ]; }
 
+cv.addEventListener("contextmenu", e=>e.preventDefault());   // right-drag pans
 cv.addEventListener("wheel", e=>{
   e.preventDefault();
   const [px,py]=evPx(e);
   // trackpad pinch arrives as ctrl+wheel; plain wheel zooms too, which is what
   // people expect of a single-image markup view
+  if(e.shiftKey || (Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey)){
+    view.panx -= e.deltaX * dpr(); view.pany -= e.deltaY * dpr(); draw(); return;
+  }
   zoomAt(px, py, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0022)));
 }, {passive:false});
 
 let panning=null;
 cv.addEventListener("pointerdown", e=>{
   const [px,py]=evPx(e);
-  if(e.button===1 || space){                     // middle-drag or space-drag
+  if(e.button===2 || e.button===1 || space || handMode){   // right, middle, space, or hand mode
     e.preventDefault();
     panning={px,py,ox:view.panx,oy:view.pany};
     cv.setPointerCapture(e.pointerId); return;
@@ -675,14 +765,20 @@ cv.addEventListener("pointerdown", e=>{
                          : "no faces marked");
     return;
   }
-  if(tool==="tri"){
+  if(POLY_TOOLS.has(tool)){
     const s=snapPoint(px,py);
-    triPts.push(s ? s.p : toW(px,py));
-    if(triPts.length===3){
-      rec().obstructions.push({shape:"triangle", pts:triPts.slice()});
-      sel=rec().obstructions.length-1; triPts=[]; save();
-      say("triangle placed");
-    } else say(`corner ${triPts.length} of 3`);
+    const w=s ? s.p : toW(px,py);
+    // clicking back on the first point closes a polygon, the way drawing tools
+    // normally behave
+    if(tool==="poly" && triPts.length>=3){
+      const f=toPx(triPts[0][0], triPts[0][1]);
+      if(Math.hypot(px-f[0], py-f[1]) <= SNAP_PX*dpr()){ finishPoly(); return; }
+    }
+    triPts.push(w);
+    if(tool==="tri" && triPts.length===3){ finishPoly(); return; }
+    say(tool==="tri" ? `corner ${triPts.length} of 3`
+        : `${triPts.length} point${triPts.length===1?"":"s"} \u2014 Enter to finish, Esc to cancel`
+          + (tool==="poly" && triPts.length>=3 ? ", or click the first point" : ""));
     draw(); return;
   }
   if(LINE_TOOLS.has(tool)){
@@ -707,7 +803,7 @@ cv.addEventListener("pointerdown", e=>{
   const h=hit(px,py);
   if(h){ sel=h.i; const src=rec().obstructions[h.i];
     drag={mode:h.mode,which:h.which,vi:h.vi,i:h.i,px,py,
-          orig: src.shape==='triangle' ? {shape:'triangle', pts:src.pts.map(q=>q.slice())} : {...src}}; }
+          orig: src.pts ? {shape:src.shape, pts:src.pts.map(q=>q.slice())} : {...src}}; }
   else if(DRAG_SHAPES.has(tool)){ sel=null; drag={mode:"new",x0:px,y0:py,x1:px,y1:py}; }
   else { sel=null; }
   cv.setPointerCapture(e.pointerId); draw();
@@ -734,7 +830,7 @@ cv.addEventListener("pointermove", e=>{
   else {
     const o=rec().obstructions[drag.i], g=drag.orig;
     const [wx,wy]=toW(px,py), [ox,oy]=toW(drag.px,drag.py);
-    if(o.shape==="triangle"){
+    if(o.pts){
       if(drag.mode==="vertex") o.pts[drag.vi]=[+wx.toFixed(3), +wy.toFixed(3)];
       else o.pts=g.pts.map(q=>[+(q[0]+wx-ox).toFixed(3), +(q[1]+wy-oy).toFixed(3)]);
       draw(); return;
@@ -774,9 +870,12 @@ const DESC = {
   rect:"Drag out a box over a skylight, vent or existing panel.",
   ellipse:"Drag out a circle over a round vent or flue.",
   tri:"Three clicks, one per corner. Use it for anything not square or round \u2014 a dormer face, a clipped corner.",
+  poly:"Click each corner, then Enter (or click the first point again) to close. For an awkward shape no box or triangle fits.",
+  pline:"Click along a run \u2014 a pipe, a cable tray, a ridge vent \u2014 then Enter. Stored as a centreline with a width; [ and ] make it thinner or wider.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
 const NAMES = {ridge:"Ridge line", valley:"Valley line", cliff:"Cliff line",
-               rect:"Box", ellipse:"Circle", tri:"Triangle", nopanel:"No panels here"};
+               rect:"Box", ellipse:"Circle", tri:"Triangle", poly:"Polygon",
+               pline:"Line / run", nopanel:"No panels here"};
 function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[];
   document.getElementById("tooldesc").innerHTML =
     DESC[t] ? "<b>"+(NAMES[t] || t)+".</b> "+DESC[t] : "";
@@ -818,6 +917,15 @@ document.getElementById("hidedone").onclick=()=>{
   const left=ROOFS.filter(r=>!marked(r.id)).length;
   say(hideDone ? `${left} roofs left to mark` : "showing all roofs");
   draw();
+};
+document.getElementById("zin").onclick =()=>zoomAt(cv.width/2,cv.height/2,1.3);
+document.getElementById("zout").onclick=()=>zoomAt(cv.width/2,cv.height/2,1/1.3);
+document.getElementById("zfit").onclick=()=>{ resetView(); draw(); say("view reset"); };
+document.getElementById("hand").onclick=()=>{
+  handMode=!handMode;
+  document.getElementById("hand").classList.toggle("on", handMode);
+  cv.classList.toggle("pan", handMode);
+  say(handMode ? "pan mode \u2014 drag to move the image" : "back to drawing");
 };
 document.getElementById("next").onclick=()=>step(1);
 document.getElementById("skipto").onclick=()=>{
@@ -869,10 +977,29 @@ addEventListener("keydown", e=>{
   if(e.key==="+"||e.key==="="){ zoomAt(cv.width/2,cv.height/2,1.25); return; }
   if(e.key==="-"||e.key==="_"){ zoomAt(cv.width/2,cv.height/2,0.8); return; }
   if(e.key==="0"){ resetView(); draw(); say("view reset"); return; }
+  if(e.key.startsWith("Arrow")){
+    e.preventDefault();
+    const s=(e.shiftKey?200:70)*dpr();
+    if(e.key==="ArrowLeft")  view.panx+=s;
+    if(e.key==="ArrowRight") view.panx-=s;
+    if(e.key==="ArrowUp")    view.pany+=s;
+    if(e.key==="ArrowDown")  view.pany-=s;
+    draw(); return;
+  }
   if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z")){ e.preventDefault(); undo(); return; }
-  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel","7":"tri"}[e.key];
+  const t={"1":"ridge","2":"valley","3":"cliff","4":"rect","5":"ellipse","6":"nopanel",
+         "7":"tri","8":"poly","9":"pline"}[e.key];
   if(t){ setTool(t); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
+  if(e.key==="Enter"){ if(triPts.length){ e.preventDefault(); finishPoly(); } return; }
+  if(e.key==="["||e.key==="]"){
+    const o=sel!==null ? rec().obstructions[sel] : null;
+    if(o && o.shape==="polyline"){
+      o.width_m=Math.max(0.1, Math.min(3, (o.width_m||PLINE_WIDTH_M)+(e.key==="]"?0.1:-0.1)));
+      save(); draw(); say(`${o.width_m.toFixed(2)} m wide`);
+    }
+    return;
+  }
   if(e.key==="Escape"){ document.getElementById("help").classList.remove("on");
     pending=null; sel=null; triPts=[]; draw(); return; }
   if(e.key==="Delete"||e.key==="Backspace"){

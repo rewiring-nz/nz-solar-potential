@@ -184,13 +184,31 @@ def _line_points(l):
     return None
 
 
+def _polyline_ring(pts, w=0.4):
+    """A drawn run has no area until it is given a width; expand the centreline
+    to the band the tool displays and records."""
+    import math
+    h, left, right = w / 2.0, [], []
+    for i, p in enumerate(pts):
+        a = pts[max(0, i - 1)]
+        b = pts[min(len(pts) - 1, i + 1)]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        dx, dy = dx / L, dy / L
+        left.append((p[0] - dy * h, p[1] + dx * h))
+        right.append((p[0] + dy * h, p[1] - dx * h))
+    return left + right[::-1]
+
+
 def _obs_ring(o):
     """An obstruction as a closed ring, whatever it was drawn as."""
     if isinstance(o, list):          # already a ring
         return o
     if o.get("ring"):
         return o["ring"]
-    if o.get("shape") == "triangle" and o.get("pts"):
+    if o.get("shape") == "polyline" and o.get("pts"):
+        return _polyline_ring(o["pts"], o.get("width_m", 0.4))
+    if o.get("shape") in ("triangle", "polygon") and o.get("pts"):
         return o["pts"]
     x, y, w, h = o.get("x"), o.get("y"), o.get("w"), o.get("h")
     if None in (x, y, w, h):
@@ -223,6 +241,7 @@ def main():
     import geopandas as gpd
     from src.region_build import area_paths
     from src.roof_segmentation import segment_building_best
+    from src.obstruction_detection import detect_obstructions_combined
     from src.pointcloud_source import PointCloudSource
 
     ctxs, pc = {}, PointCloudSource()
@@ -230,7 +249,7 @@ def main():
     print(f"scoring the CURRENT segmenter against {len(ids)} drawn roofs "
           f"(tolerance {a.tol} m)\n")
     print(f"{'building':>10} {'lines P':>8}{'lines R':>8}{'F1':>7}"
-          f"{'obs P':>7}{'obs R':>7}{'facets':>9}")
+          f"{'obs P':>7}{'obs R':>7}{'found/marked':>14}{'facets':>8}")
 
     for bid in ids:
         lab = labels[str(bid)]
@@ -250,6 +269,30 @@ def main():
         geom = ctx["gdf"].loc[bid].geometry
         facets = segment_building_best(ctx["dsm"], pc, geom, bid,
                                        imagery_ds=ctx["img"]) or []
+        # The predicted side used to be hardcoded empty, so obstruction
+        # precision and recall were always 0/0 -- every obstruction anyone drew
+        # scored against nothing. Run the real detector, the same call
+        # build_layout_geojson makes.
+        pred_obs = []
+        for f in facets:
+            if f.get("plane_a") is None:
+                continue
+            try:
+                found = detect_obstructions_combined(
+                    ctx["img"], pc, f["geometry"],
+                    (f["plane_a"], f["plane_b"], f["plane_c"]),
+                    roof_geom=f.get("building_geometry"))
+            except Exception as e:
+                print(f"    obstruction detection failed on a facet: "
+                      f"{type(e).__name__}: {e}")
+                continue
+            for o in (found or []):
+                g = o["geometry"] if isinstance(o, dict) else o
+                if getattr(g, "geom_type", "") == "Polygon":
+                    pred_obs.append(list(g.exterior.coords))
+                elif getattr(g, "geom_type", "") == "MultiPolygon":
+                    pred_obs.extend(list(part.exterior.coords) for part in g.geoms)
+
         pred_lines = predicted_lines_from_facets(facets, geom)
         # The tool writes each line as {kind, a, b} and mirrors it into
         # "points" for consumers like this one; older files have only a/b.
@@ -260,17 +303,20 @@ def main():
                       if l.get("kind") != "outline"]
         true_lines = [p for p in true_lines if p]
         ls = line_scores(pred_lines, true_lines, a.tol)
-        os_ = obstruction_scores([], [_obs_ring(o) for o in lab.get("obstructions", [])])
+        os_ = obstruction_scores(pred_obs, [_obs_ring(o) for o in lab.get("obstructions", [])])
 
         lp = f"{ls['precision']:.0%}" if ls else "—"
         lr = f"{ls['recall']:.0%}" if ls else "—"
         f1 = f"{ls['f1']:.0%}" if ls else "—"
         op = f"{os_['precision']:.0%}" if os_ else "—"
         orr = f"{os_['recall']:.0%}" if os_ else "—"
-        print(f"{bid:>10} {lp:>8}{lr:>8}{f1:>7}{op:>7}{orr:>7}{len(facets):>9}")
+        fm = f"{os_['found']}/{os_['marked']}" if os_ else "—"
+        print(f"{bid:>10} {lp:>8}{lr:>8}{f1:>7}{op:>7}{orr:>7}{fm:>14}{len(facets):>8}")
         if ls:
             agg["lp"].append(ls["precision"]); agg["lr"].append(ls["recall"])
             agg["f1"].append(ls["f1"])
+        if os_:
+            agg["op"].append(os_["precision"]); agg["orr"].append(os_["recall"])
 
     if agg["f1"]:
         n = len(agg["f1"])
@@ -280,6 +326,10 @@ def main():
         print("\nPrecision is 'lines we drew that are real'; recall is 'real lines")
         print("we found'. Over-segmentation shows as low precision, missed ridges")
         print("as low recall -- which is the distinction facet COUNT cannot make.")
+    if agg["op"]:
+        m = len(agg["op"])
+        print(f"\n  obstructions over {m} roofs: precision "
+              f"{sum(agg['op'])/m:.1%}   recall {sum(agg['orr'])/m:.1%}")
     return 0
 
 
