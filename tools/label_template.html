@@ -51,6 +51,11 @@
     background:color-mix(in srgb, var(--tc,#fff) 22%, #2f3841)}
   button[data-tool]:hover{background:color-mix(in srgb, var(--tc,#fff) 12%, #2b333a)}
   .note{background:#232a31;border-radius:3px;padding:8px 10px;font-size:12px;color:var(--muted);margin-top:10px}
+  /* Why the triage flagged this roof -- amber so it reads as "look here",
+     distinct from the tool buttons which are coloured by feature. */
+  .why{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+  .why-chip{background:rgba(240,180,60,.14);border:1px solid rgba(240,180,60,.42);
+            color:#f0c45a;border-radius:3px;padding:3px 7px;font-size:11px}
   #status{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.75);padding:5px 10px;
           border-radius:3px;font-size:12.5px}
   #viewbar{position:absolute;right:12px;top:12px;display:flex;gap:4px;z-index:5}
@@ -87,6 +92,9 @@
 <div id="side">
   <h1 id="title">—</h1>
   <div class="addr" id="addr"></div>
+  <!-- Why the triage put this roof in the queue. Present only for queues built
+       by tools/triage_roofs.py; a hand-picked list has nothing to say here. -->
+  <div class="why" id="why" style="display:none"></div>
   <div id="links" class="links"></div>
 
   <h2>View</h2>
@@ -891,6 +899,11 @@ function show(i){
   const r=R();
   document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
   document.getElementById("addr").textContent = r.address || r.area;
+  const wy=document.getElementById("why");
+  if(r.why && r.why.length){
+    wy.innerHTML = r.why.map(t=>`<span class="why-chip">${t}</span>`).join("");
+    wy.style.display="";
+  } else { wy.style.display="none"; }
   const lk=document.getElementById("links");
   if(r.ll){
     const [lat,lon]=r.ll;
