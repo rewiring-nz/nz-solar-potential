@@ -28,3 +28,5 @@ __pycache__/
 .DS_Store
 au_pilot/
 validation/
+# generated training patches -- regenerate with tools/export_training_data.py
+data/training/
