@@ -67,6 +67,48 @@ way — imagery extent, outline/DSM CRS agreement.
 waits for the repair, re-runs the line model where predictions are missing,
 rebuilds the 14 regions, fans in.
 
+## PRE-REGISTERED PREDICTION FOR THE 3 SEP REBUILD — written before the result
+
+Recorded in advance deliberately. A prediction written after seeing the answer
+is worthless, and "the rebuild helped" is exactly the kind of claim that is
+easy to reach for afterwards.
+
+**Measured, like for like** — same labels (md5 f7fcd75b), same code, truth =
+each build's panels against Josh's drawn lines on the roofs he marked complete:
+
+| build | facets | obstructions | panels | crossing rate |
+|---|---|---|---|---|
+| 30 Aug (local) | 63,648 | 32,449 | 774,642 | **20.4%** |
+| 1 Sep (VM, 14 regions LiDAR-only) | 65,615 | 34,996 | 682,433 | **23.8%** |
+
+The 1 Sep build places 12% fewer panels and crosses Josh's lines more often.
+Split by whether the region had imagery during that build:
+
+| | n roofs | mean crossing |
+|---|---|---|
+| regions WITH imagery | 55 | **21.9%** |
+| regions LiDAR-ONLY | 30 | **27.3%** |
+
+**THE PREDICTION.** If missing imagery is the cause, restoring it should bring
+the LiDAR-only roofs to roughly the imagery-region rate, taking the overall
+figure from 23.8% to **about 21.9%**. That accounts for ~1.9 of the 3.4-point
+gap and leaves **~1.5 points unexplained** — so if the rebuild lands at 21.9%
+the imagery story is confirmed AND something else still separates the 1 Sep
+build from the 30 Aug one.
+
+Outcomes and what each means:
+- **~21.9%** → imagery explains what it should; the residual 1.5 points is a
+  separate question, not to be waved away.
+- **~20.4% or below** → imagery explained more than predicted; good, but check
+  the measurement before celebrating.
+- **still ~23.8%** → imagery was NOT the cause and the split above was
+  confounded (labelled roofs are not randomly distributed across regions).
+  Do not re-explain the result; find the real cause.
+
+Josh's standing instruction applies to all three: "don't assume from your own
+tests that the new version is worse ... do the rebuild then check with me
+visually." This measures one specific defect, not overall quality.
+
 ## THE FIX LOOP — 3 Sep (9104720)
 
 Josh asked for "an easy way to find failed rooftops, which I can then mark up
