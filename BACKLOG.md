@@ -7,6 +7,47 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## TWO SILENT DATA FAILURES — 3 Sep (ed78361, acba5f7)
+
+Both found while checking the 3 Sep district run. Neither raised an error;
+both produced output that looks exactly like a legitimate result.
+
+**1. 14 of 24 regions built LiDAR-only.** `imagery_mosaic.tif` was absent, so
+obstruction detection ran without its input. The downloaded parts and the
+vision-line predictions are still on disk, which is how we know imagery
+*existed* when `predict_roof_lines` last ran — the mosaics were deleted later,
+almost certainly during the 31 Aug disk-pressure episode. Measured cost:
+
+| | buildings | obstructions/bldg | facets/bldg | panels/bldg |
+|---|---|---|---|---|
+| with imagery | 8,265 | **2.70** | 4.90 | 45.79 |
+| no imagery | 7,078 | **1.86** | 4.17 | 39.20 |
+
+~31% fewer obstructions. Confounded — regions differ in building stock — so
+directional, not controlled. Nine regions needed only the merge; five needed
+real downloads. `tools/repair_imagery.sh` restores them **one at a time**:
+rasterio's `merge()` decompresses the whole mosaic into RAM, measured at
+**15.3 GB** for a two-part region, and nine at once would take the 62 GB box
+out. That is very likely how they failed originally — merging while a build
+held ten workers resident.
+
+**2. arrowtown_hills built 50 buildings of zeros.** 0 facets, 0 panels, 0
+obstructions. Nothing failed: the DSM was present, valid, openable and
+correctly projected — and described the wrong ground. The fetch asked LINZ for
+2,341 m of width and got 629 m, the western sliver, while every building sits
+in the east. **Zero overlap.** A file-exists check cannot see this, and the
+output is indistinguishable from a region of genuinely unsuitable roofs.
+`preflight` now compares the two extents and refuses below 20% overlap
+(loose on purpose — real regions have ragged LiDAR edges).
+
+**Lesson worth generalising:** every check in preflight was a *presence* check.
+Both failures were present-but-wrong. Worth auditing the other inputs the same
+way — imagery extent, outline/DSM CRS agreement.
+
+`tools/finish_imagery_rebuild.sh` chains the recovery: waits for the driver,
+waits for the repair, re-runs the line model where predictions are missing,
+rebuilds the 14 regions, fans in.
+
 ## THE FIX LOOP — 3 Sep (9104720)
 
 Josh asked for "an easy way to find failed rooftops, which I can then mark up
