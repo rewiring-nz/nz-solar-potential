@@ -55,6 +55,13 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # perfection would make the guard something people route around.
 MERGE_MIN_BUILT_FRACTION = 0.8
 
+# How much of a region's building extent the DSM must overlap before the build
+# is allowed to proceed. Deliberately loose: real regions have irregular LiDAR
+# edges and a bounding-box overlap is a crude proxy. This is set to catch the
+# catastrophic case (arrowtown_hills: 0% overlap, whole region built as zeros),
+# not to police normal survey boundaries.
+DSM_COVERAGE_MIN = 0.20
+
 
 class PreflightError(SystemExit):
     """SystemExit so an unguarded stage still dies with a readable message
@@ -182,6 +189,45 @@ def preflight(stage, region=None, fatal=True):
             p = area_paths(region)[key]
             if not p.exists() or p.stat().st_size == 0:
                 warnings.append((f"optional input absent: {key}", _describe(p, key)))
+
+    # DOES THE DSM ACTUALLY COVER THE BUILDINGS? A present, valid, openable DSM
+    # can still describe the wrong ground. arrowtown_hills asked LINZ for
+    # 2,341 m of width and got back 629 m -- the western sliver, while all 50 of
+    # its buildings sit in the east. Zero overlap. Nothing checked, so the build
+    # ran happily to completion and produced 0 facets, 0 panels and 0
+    # obstructions for the whole region, which looks identical to a region of
+    # genuinely unsuitable roofs. A file-exists check cannot catch this; only
+    # comparing the two extents can.
+    if spec.get("region") and region is not None and "dsm" in spec.get("region", []):
+        try:
+            from src.region_build import area_paths
+            p = area_paths(region)
+            if p["dsm"].exists() and p["outlines"].exists():
+                import rasterio
+                import geopandas as gpd
+                with rasterio.open(p["dsm"]) as ds:
+                    dx0, dy0, dx1, dy1 = ds.bounds
+                dd = p["dir"] / "building_outlines_dedup.geojson"
+                gdf = gpd.read_file(dd if dd.exists() else p["outlines"])
+                bx0, by0, bx1, by1 = gdf.total_bounds
+                ox = max(0.0, min(dx1, bx1) - max(dx0, bx0))
+                oy = max(0.0, min(dy1, by1) - max(dy0, by0))
+                bw = max(bx1 - bx0, 1e-9)
+                bh = max(by1 - by0, 1e-9)
+                frac = (ox / bw) * (oy / bh)
+                if frac < DSM_COVERAGE_MIN:
+                    problems.append((
+                        f"DSM covers only {100 * frac:.0f}% of this region's "
+                        f"buildings",
+                        f"    dsm bounds      {[round(v) for v in (dx0, dy0, dx1, dy1)]}"
+                        f"\n      building bounds {[round(v) for v in (bx0, by0, bx1, by1)]}"
+                        "\n      The export came back smaller than requested. Building"
+                        "\n      on this produces a region of zeros that is"
+                        "\n      indistinguishable from real unsuitable roofs."
+                        "\n      Re-fetch it:  rm data/regions/"
+                        f"{region}/dsm_mosaic.tif && python src/fetch_regions.py {region}"))
+        except Exception:
+            pass          # a diagnostic must never be the thing that breaks a build
 
     for name in spec.get("root", []):
         _check_file(DATA_DIR / name, name, problems)
