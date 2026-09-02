@@ -7,6 +7,62 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## THE FIX LOOP — 3 Sep (9104720)
+
+Josh asked for "an easy way to find failed rooftops, which I can then mark up
+for you to fix. So we can have a loop that gets every rooftop fixed." The loop
+now runs end to end:
+
+```
+build  ->  tools/triage_roofs.py --validate --bundle 40   (rank every roof)
+       ->  tools/build_label_bundle.py --out mark_worst.html
+       ->  Josh marks up, clicks Download
+       ->  tools/ingest_labels.py
+       ->  rebuild
+       ->  triage_roofs.py --compare data/triage/roof_triage.json  (did it move?)
+```
+
+`--compare` against the previous run is what makes the loop finite: it reports
+mean score before/after and how many roofs improved. Without it we would keep
+labelling with no evidence the labelling is working.
+
+**Validated, not assumed.** Signals are scored against the roofs Josh marked
+complete (truth = this build's panels vs his drawn lines) and anything that
+fails to predict is dropped and said so. Measured Spearman on 84 roofs:
+
+| signal | rho | verdict |
+|---|---|---|
+| panels crossing a vision-model line | **+0.70** | strongest |
+| facets per 100 m² | +0.42 | scale-confounded, NOT used |
+| area-weighted typical facet size | +0.36 | used |
+| share of roof carrying no panels | +0.16 | weak, used |
+| the build's own `roof_confidence` | **−0.10** | no signal, dropped |
+
+Three findings worth carrying forward:
+
+- **The vision model is the best triage signal** despite held-out F1 of 0.43 on
+  ridges and 0.13 on cliffs. Saying "look at this roof" is a much lower bar than
+  saying "the ridge is here". Leak-checked: +0.72 on training-seen roofs vs
+  +0.68 on the model's held-out split, gap 0.04, so it generalises. `--validate`
+  re-runs that check every time because each retrain renews the risk.
+- **`roof_confidence` does not predict failure.** The number the build computes
+  to express doubt is uncorrelated with whether panels land wrong. Open question
+  in its own right — see below.
+- **Panels spanning two of the build's own facets: 2 roofs in 15,261.** Expected
+  to be the strongest signal; it is instead a clean bill of health for
+  `sibling_facets` in the panel fitter.
+
+### Open, from the triage
+
+- `roof_confidence` is not measuring what its name claims. Either fix it or stop
+  surfacing it. It is currently shown to users in the dashboard.
+- 8,457 of 12,449 roofs ≥40 m² have **at least one** panel crossing a predicted
+  line. That is a weak bar (the model over-predicts lines), so it is a ranking
+  input, not a count of broken roofs — do not quote it as one.
+- 80 roofs have no estimate at all; they are kept in a separate list in
+  `data/triage/roof_triage.json` because they need a *reason* (absent? not a
+  building?), not a markup.
+
 ## VM DISK IS DEGRADING THE BUILD — 31 Aug (two corrections, read both)
 
 CORRECTION. I first called this imminent: 20 GB free, 11 regions to go, and a
