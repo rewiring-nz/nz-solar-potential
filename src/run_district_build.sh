@@ -68,6 +68,27 @@ else
   echo "  no existing build to snapshot (first run in this checkout)"
 fi
 
+# AUDIT THE INPUTS BEFORE SPENDING HOURS ON THEM. The 3 Sep run built 14
+# regions LiDAR-only because their imagery mosaics were gone, and built
+# arrowtown_hills as 50 buildings of zeros because its DSM described ground
+# 340 m west of every building in it. Neither raised an error; both produced
+# output indistinguishable from a real result, and both were found afterwards
+# by hand. Ninety seconds of checking beforehand is the cheapest possible way
+# to not repeat that.
+#
+# Non-fatal for the same reason as the snapshot above: a region with degraded
+# inputs still builds, and refusing to start the district because one region is
+# short of imagery would be a worse failure than the one being prevented. The
+# point is that it is stated loudly at the top of the log rather than
+# discovered days later.
+if [ -f tools/audit_region_inputs.py ]; then
+  echo "--- input audit ---"
+  $PY tools/audit_region_inputs.py 2>/dev/null \
+    | grep -E "PROBLEM|-> |only|regions with problems" \
+    || echo "  (audit produced no findings)"
+  echo "--- end input audit ---"
+fi
+
 fail=0
 for r in $REGIONS; do
   echo "=== $r ($(date -u +%H:%M:%S)) ==="
