@@ -132,10 +132,36 @@ Two consequences:
 
 **Revised expectation: ~19%, wide error bars.** The outcome table below still
 applies, shifted: landing near 21.9% now means the seam fix did NOT deliver on
-this set, which is itself worth knowing. And whatever the number, **612c095
-remains an open question** — if the rebuild lands above 20.4% the skeleton-roof
-work is implicated and should be measured on its own rather than left inside a
-change set that also moved two other things.
+this set, which is itself worth knowing.
+
+### The skeleton suspect is largely cleared — `tools/ab_skeleton.py`
+
+Measured rather than argued. `roof_segmentation` picks the skeleton whenever it
+scores within `SKELETON_TIE_MARGIN` (0.05) of the partition, so making that
+margin unreachable turns it off and changes nothing else: same code, same
+points, same panel fitter, one knob. Over 42 of Josh's complete roofs:
+
+| | panels | crossing |
+|---|---|---|
+| skeleton ON (current) | 4,004 | 632 (**15.8%**) |
+| skeleton OFF (pre-612c095) | 4,017 | 642 (**16.0%**) |
+
+**The two arms differed on 1 roof in 42**, and on that one the skeleton was
+clearly better (#4734678: 54 panels/7 crossing vs 67 panels/17). So the
+skeleton barely fires on this set and helps when it does. It is not the cause
+of 20.4% → 23.8%.
+
+**What this does NOT clear.** 612c095 changed three things — skeleton
+reconstruction, a top-surface filter, and a plane refit — across 203 lines of
+`roof_partition` and 149 of `roof_segmentation`. The A/B toggles only the
+skeleton SELECTION. The top-surface filter and plane refit are untested and
+remain live suspects. Saying "612c095 is innocent" on this evidence would be
+exactly the overreach this measurement was built to avoid.
+
+Note also that re-running current code on these 42 roofs gives 15.8%, below
+both stored builds — but that is a different roof subset (42 vs 84) and
+different code, so it is not a fourth data point in the 20.4/23.8 comparison
+and must not be quoted as one.
 
 Outcomes and what each means:
 - **~21.9%** → imagery explains what it should; the residual 1.5 points is a
