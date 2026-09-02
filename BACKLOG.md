@@ -95,8 +95,22 @@ Three findings worth carrying forward:
 
 ### Open, from the triage
 
-- `roof_confidence` is not measuring what its name claims. Either fix it or stop
-  surfacing it. It is currently shown to users in the dashboard.
+- ~~`roof_confidence` is not measuring what its name claims.~~ **CORRECTED, 3 Sep.**
+  That was too strong and would have sent someone to "fix" a working number.
+  It is `_area_weighted_inlier`: the share of a roof's LiDAR points within 30 cm
+  of the planes we place panels on — plane-FIT quality. Panels crossing a ridge
+  is a boundary-PLACEMENT error. Orthogonal failure modes, so the −0.10 against
+  crossings is expected, not damning. Re-tested against what it should predict:
+
+  | roof_confidence vs | rho |
+  |---|---|
+  | panels crossing drawn lines | −0.10 |
+  | **roof area left with no panels** | **−0.26** |
+  | typical facet size | +0.01 |
+
+  Roofs Josh flagged average 0.879 against 0.927 unflagged. It works; it is just
+  not a crossing detector. Leave it in the dashboard. The lesson is about the
+  measurement, not the metric: "does not predict X" is not "does not predict".
 - 8,457 of 12,449 roofs ≥40 m² have **at least one** panel crossing a predicted
   line. That is a weak bar (the model over-predicts lines), so it is a ranking
   input, not a count of broken roofs — do not quote it as one.

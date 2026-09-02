@@ -44,9 +44,14 @@ Three of those findings were not what was expected going in:
   so it generalises rather than remembering. That check must keep running -- each
   retrain on new labels renews the risk.
 
-  ROOF_CONFIDENCE DOES NOT PREDICT FAILURE (-0.10). The number the build already
-  computes to express doubt is uncorrelated with whether panels actually land
-  wrong. Worth knowing separately from this tool.
+  ROOF_CONFIDENCE DOES NOT PREDICT *THIS* FAILURE (-0.10), which is not the same
+  as not working. It is _area_weighted_inlier: the share of a roof's LiDAR points
+  within 30 cm of the planes we place panels on -- plane-FIT quality. A panel
+  crossing a ridge is a boundary-PLACEMENT error, and a roof can fit its planes
+  beautifully while the folds between them are in the wrong place. Tested against
+  what it should predict, it earns its keep: -0.26 against the share of roof left
+  carrying no panels, and roofs Josh flagged average 0.879 against 0.927 for
+  unflagged. It is dropped from THIS score and left alone everywhere else.
 
   CROSS_FACET IS A NON-EVENT: 2 roofs in 15,261 place a panel across their own
   facet boundary. Expected to be the strongest signal and it is instead a clean
