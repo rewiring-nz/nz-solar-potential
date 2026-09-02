@@ -7,16 +7,23 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
-## TWO SILENT DATA FAILURES — 3 Sep (ed78361, acba5f7)
+## ONE SILENT DATA FAILURE, AND ONE I MISDIAGNOSED — 3 Sep (ed78361, 7d23403)
 
-Both found while checking the 3 Sep district run. Neither raised an error;
-both produced output that looks exactly like a legitimate result.
+Found while checking the 3 Sep district run. Read the second one: I reported
+it as a failure and it is not, and the check I wrote on the strength of that
+reading would have blocked a correct build.
 
 **1. 14 of 24 regions built LiDAR-only.** `imagery_mosaic.tif` was absent, so
 obstruction detection ran without its input. The downloaded parts and the
 vision-line predictions are still on disk, which is how we know imagery
-*existed* when `predict_roof_lines` last ran — the mosaics were deleted later,
-almost certainly during the 31 Aug disk-pressure episode. Measured cost:
+*existed* when `predict_roof_lines` last ran.
+
+**Cause confirmed, and it is not an accident:** the retired `qtn_full2.sh`
+deleted each region's imagery mosaic after use (line 44) and skipped fetching
+imagery entirely when free disk fell below 20 GB, logging "WARN low disk:
+<region> LiDAR only" — see the 31 Aug entry below, which called this at the
+time. That script is now gone from both machines and nothing in the current
+pipeline deletes mosaics, so the repair will not be undone. Measured cost:
 
 | | buildings | obstructions/bldg | facets/bldg | panels/bldg |
 |---|---|---|---|---|
