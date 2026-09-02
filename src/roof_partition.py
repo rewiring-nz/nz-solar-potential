@@ -1556,6 +1556,19 @@ def _recessed_region(footprint, pts, faces):
     return poly
 
 
+def _vision_cuts_available(building_id):
+    """Only take the imagery-cut path when a model has actually predicted here.
+
+    With no prediction file this is False and the partition behaves exactly as
+    it did -- the flag it replaced was a hardcoded False, so a building with no
+    model output must be bit-for-bit unchanged."""
+    try:
+        from src.roof_line_source import has_model
+        return has_model(building_id)
+    except Exception:
+        return False
+
+
 def partition_roof(building_id, footprint, pts, imagery_ds=None):
     """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
 
@@ -1606,7 +1619,22 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # What is missing is a way to cut only the stretch a crease actually covers.
     # Clipping the cut to the detected segment's extent was tried and did not
     # help, because on this roof the creases span most of the building anyway.
-    USE_IMAGERY_CUTS = False
+    # Turned back on, but ONLY for lines a model proposed, and only where the
+    # LiDAR agrees. The original failure was Hough lines cutting a whole cell on
+    # evidence covering part of it, which fragmented roofs faster than it fixed
+    # them. Two things are different now.
+    #
+    # First, the proposals come from a model trained on hand-drawn roof lines,
+    # so they are proposals about ROOF CREASES rather than about tonal edges --
+    # a stain, a gutter shadow and a seam all read as Hough lines and none of
+    # them are folds.
+    #
+    # Second, and the part that makes this safe: every proposed line still has
+    # to pass _line_is_real against the point cloud. The model cannot force a
+    # cut. It can only draw attention to a place the LiDAR then confirms is a
+    # fold, which is exactly the case the partition misses on its own -- 19.5%
+    # of panels currently straddle a line Josh drew.
+    USE_IMAGERY_CUTS = _vision_cuts_available(building_id)
 
     cells = [footprint]
     if imagery_ds is not None and USE_IMAGERY_CUTS:
@@ -1619,8 +1647,12 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
             # Via roof_line_source so a vision model can propose these
             # instead. With no model prediction on disk this is the same call
             # it always was -- see that module's header for the fusion rule.
-            from src.roof_line_source import strong_lines
-            for ang, off in strong_lines(imagery_ds, footprint, building_id):
+            # every model line, not just the long ones: a 2 m dormer cliff is
+            # exactly the fold that gets missed, and the LiDAR gate below is
+            # what keeps a short proposal honest
+            from src.roof_line_source import model_lines
+            proposed = model_lines(building_id, footprint) or []
+            for ang, off, _ln, _sc in proposed:
                 nxt = []
                 for c in cells:
                     parts = (_cut(c, ang, off)

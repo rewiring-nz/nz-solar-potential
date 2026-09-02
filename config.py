@@ -70,6 +70,10 @@ NON_ROOF_BUILDING_IDS = {
 
 DEMOLISHED_BUILDING_IDS = {
     4735131,  # 61 Ballarat St -- now under the new road corridor (Josh, 23 Aug)
+    # Flagged "nothing is there" while labelling roofs, 2 Sep 2026. The LiDAR is
+    # from 2021 and the outlines have not caught up; each was checked against
+    # current imagery and found to be bare ground or a cleared site.
+    4718482, 4718539, 4744515, 5370808, 5372438, 5372729, 5372956,
 }
 LINZ_LIDAR_TILE_INDEX_LAYER = 105905
 
