@@ -53,10 +53,20 @@ Three of those findings were not what was expected going in:
   carrying no panels, and roofs Josh flagged average 0.879 against 0.927 for
   unflagged. It is dropped from THIS score and left alone everywhere else.
 
-  CROSS_FACET IS A NON-EVENT: 2 roofs in 15,261 place a panel across their own
-  facet boundary. Expected to be the strongest signal and it is instead a clean
-  bill of health -- sibling_facets in the panel fitter works. Kept in the code
-  because it is nearly free and a regression here would matter.
+  CROSS_FACET IS A NON-EVENT, AND MEASURED THE WRONG THING AT FIRST. Expected to
+  be the strongest signal; it fires on 2 roofs in 15,261 on the old build, which
+  is a clean bill of health for sibling_facets in the panel fitter. On the new
+  build it fired on 75 roofs across 16 regions and looked like a serious
+  regression -- until 21 of 25 flagged roofs turned out to have OVERLAPPING
+  facets. A panel inside the region where two facets overlap sits on one piece
+  of roof that has been described twice; it bridges nothing and is perfectly
+  placeable. Excluding overlapping pairs takes the count from 75 to 3.
+
+  The overlap itself is now reported as its own thing, because it is a real if
+  minor defect: on a random sample of 400 multi-facet roofs, 2.2% have
+  overlapping facets covering 0.65% of facet area. Worth watching, not worth
+  alarm -- and emphatically not worth telling Josh that 75 roofs have
+  unplaceable panels when 3 do.
 
 FACETS/100M2 SCORED HIGHER BUT IS NOT USED. Its median is 7.85 on roofs under
 30 m2 and 2.41 on roofs over 150 m2, so it largely measures how small a roof is
@@ -187,18 +197,49 @@ def _straddles(panel, lines_union):
     return True, sum(big[1:])          # area on the wrong side(s)
 
 
-def _cross_facet_count(panels, facets):
-    """Panels spanning two of the pipeline's own facets.
+def _facet_overlap(facets):
+    """Facet pairs that overlap each other, and how much area is double-covered.
 
-    Uses facet AREAS rather than facet boundaries: a panel that overlaps two
-    facets by a real amount each is on two planes, whatever the boundary
-    geometry looks like at the join.
+    Facets are supposed to partition a roof. When they overlap, the same square
+    metre belongs to two planes at once -- a real (if minor) geometry defect,
+    measured district-wide at 2.2% of multi-facet roofs and 0.65% of facet area.
     """
+    pairs = set()
+    area = 0.0
+    for i in range(len(facets)):
+        for j in range(i + 1, len(facets)):
+            try:
+                a = facets[i].intersection(facets[j]).area
+            except Exception:
+                continue
+            if a > GRAZE_M2:
+                pairs.add((i, j))
+                area += a
+    return pairs, area
+
+
+def _cross_facet_count(panels, facets):
+    """Panels spanning two of the pipeline's own facets -- genuinely.
+
+    THIS MEASURED THE WRONG THING FIRST TIME. A panel overlapping two facets by
+    a real amount looks like it is bridging a fold, and on the old build it
+    essentially never happened (2 roofs in 15,261). On the new build it fired on
+    75 roofs across 16 regions, which read as a serious regression -- until
+    checking showed 21 of 25 flagged roofs simply had OVERLAPPING facets. A
+    panel sitting inside the region where two facets overlap is on one piece of
+    roof that has been described twice; it is not bridging anything, and it is
+    perfectly placeable.
+
+    So overlapping pairs are excluded, and the overlap is reported separately as
+    what it actually is. What survives is a panel spanning two facets that do
+    NOT overlap, which is a real fold and a real placement error.
+    """
+    overlapping, ov_area = _facet_overlap(facets)
     n = 0
     wrong = 0.0
     for pnl in panels:
         parts = []
-        for fc in facets:
+        for k, fc in enumerate(facets):
             if not pnl.intersects(fc):
                 continue
             try:
@@ -206,11 +247,19 @@ def _cross_facet_count(panels, facets):
             except Exception:
                 continue
             if a > GRAZE_M2:
-                parts.append(a)
-        if len(parts) >= 2:
-            n += 1
-            wrong += sum(sorted(parts, reverse=True)[1:])
-    return n, wrong
+                parts.append((k, a))
+        if len(parts) < 2:
+            continue
+        # Every pair this panel touches must be a genuine neighbour, not two
+        # descriptions of the same roof.
+        idx = [k for k, _ in parts]
+        real = any((min(a, b), max(a, b)) not in overlapping
+                   for i, a in enumerate(idx) for b in idx[i + 1:])
+        if not real:
+            continue
+        n += 1
+        wrong += sum(sorted((a for _, a in parts), reverse=True)[1:])
+    return n, wrong, ov_area
 
 
 # ---------------------------------------------------------------- signals
@@ -253,8 +302,8 @@ def compute_signals(facets_gdf, panels_gdf, potential, use_model=True):
         conf_w = (sum(c * a for c, a in confs) / sum(a for _, a in confs)
                   if confs else None)
 
-        n_cross, cross_area = _cross_facet_count(pans, fgeoms) if (
-            pans and len(fgeoms) > 1) else (0, 0.0)
+        n_cross, cross_area, ov_area = _cross_facet_count(pans, fgeoms) if (
+            pans and len(fgeoms) > 1) else (0, 0.0, 0.0)
 
         n_model, model_area = 0, 0.0
         if use_model and pans:
@@ -303,6 +352,8 @@ def compute_signals(facets_gdf, panels_gdf, potential, use_model=True):
             "cross_facet_n": n_cross,
             "cross_facet_frac": round(n_cross / len(pans), 4) if pans else 0.0,
             "cross_facet_area": round(cross_area, 2),
+            "facet_overlap_m2": round(ov_area, 2),
+            "facet_overlap_frac": round(ov_area / farea, 4) if farea else 0.0,
             "cross_model_n": n_model,
             "cross_model_frac": round(n_model / len(pans), 4) if pans else 0.0,
             "unused_frac": round(empty_area / farea, 4) if farea else 0.0,
@@ -521,7 +572,11 @@ def _reasons(r):
         add("not_estimated", f"not estimated: {r['no_estimate_reason']}")
     if r.get("cross_facet_n"):
         add("panel_spans_facets",
-            f"{r['cross_facet_n']} panels span two facets")
+            f"{r['cross_facet_n']} panels span two separate facets")
+    if r.get("facet_overlap_frac", 0) > 0.05:
+        add("facets_overlap",
+            f"facets overlap each other over "
+            f"{r['facet_overlap_m2']:.0f} m2 -- same roof described twice")
     if r.get("unused_frac", 0) > 0.45 and r.get("roof_area_m2", 0) > 40:
         add("roof_unused",
             f"{100 * r['unused_frac']:.0f}% of roof carries no panels")
