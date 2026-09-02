@@ -191,13 +191,21 @@ def preflight(stage, region=None, fatal=True):
                 warnings.append((f"optional input absent: {key}", _describe(p, key)))
 
     # DOES THE DSM ACTUALLY COVER THE BUILDINGS? A present, valid, openable DSM
-    # can still describe the wrong ground. arrowtown_hills asked LINZ for
-    # 2,341 m of width and got back 629 m -- the western sliver, while all 50 of
-    # its buildings sit in the east. Zero overlap. Nothing checked, so the build
-    # ran happily to completion and produced 0 facets, 0 panels and 0
-    # obstructions for the whole region, which looks identical to a region of
-    # genuinely unsuitable roofs. A file-exists check cannot catch this; only
-    # comparing the two extents can.
+    # can still describe the wrong ground -- arrowtown_hills' covers ground
+    # 340 m west of all 50 of its buildings.
+    #
+    # BUT A GAP IS NOT AUTOMATICALLY A BUG, and the first version of this check
+    # got that wrong badly enough to have blocked a correct build. Where the
+    # LiDAR survey genuinely stops, the pipeline already does the right thing:
+    # _diagnose_no_facets returns "no_lidar" and every affected building carries
+    # "Not enough laser survey data over this roof". arrowtown_hills' 50
+    # buildings are all correctly marked that way, and arrowtown_east's 132.
+    # That is the designed behaviour, not a failure.
+    #
+    # So the extent gap is only worth reporting when the POINT CLOUD disagrees
+    # with it -- points present where the DSM says nothing means a raster that
+    # came back short while the data exists. Points absent too means the survey
+    # simply ends there, and the build should proceed and label it.
     if spec.get("region") and region is not None and "dsm" in spec.get("region", []):
         try:
             from src.region_build import area_paths
@@ -216,16 +224,45 @@ def preflight(stage, region=None, fatal=True):
                 bh = max(by1 - by0, 1e-9)
                 frac = (ox / bw) * (oy / bh)
                 if frac < DSM_COVERAGE_MIN:
-                    problems.append((
-                        f"DSM covers only {100 * frac:.0f}% of this region's "
-                        f"buildings",
-                        f"    dsm bounds      {[round(v) for v in (dx0, dy0, dx1, dy1)]}"
-                        f"\n      building bounds {[round(v) for v in (bx0, by0, bx1, by1)]}"
-                        "\n      The export came back smaller than requested. Building"
-                        "\n      on this produces a region of zeros that is"
-                        "\n      indistinguishable from real unsuitable roofs."
-                        "\n      Re-fetch it:  rm data/regions/"
-                        f"{region}/dsm_mosaic.tif && python src/fetch_regions.py {region}"))
+                    # Is there point-cloud data where the DSM has none? If not,
+                    # the survey ends here and the build will correctly mark
+                    # those buildings no_lidar -- let it run.
+                    has_points = False
+                    try:
+                        from src.pointcloud_source import PointCloudSource
+                        pcs = PointCloudSource(max_cached_tiles=1)
+                        for geom in list(gdf.geometry)[:20]:
+                            pts = pcs.points_in_bbox(*geom.buffer(2).bounds)
+                            if pts is not None and len(pts) > 50:
+                                has_points = True
+                                break
+                    except Exception:
+                        has_points = True     # cannot tell: do not block
+                    extents = (
+                        f"    dsm bounds      "
+                        f"{[round(v) for v in (dx0, dy0, dx1, dy1)]}"
+                        f"\n      building bounds "
+                        f"{[round(v) for v in (bx0, by0, bx1, by1)]}")
+                    if not has_points:
+                        warnings.append((
+                            f"DSM covers {100 * frac:.0f}% of this region's "
+                            f"buildings, and there is no point cloud either",
+                            extents
+                            + "\n      The LiDAR survey does not reach this"
+                              " region. Building anyway:"
+                              "\n      every affected roof is marked 'Not enough"
+                              " laser survey data'."))
+                    else:
+                        problems.append((
+                            f"DSM covers only {100 * frac:.0f}% of this "
+                            f"region's buildings, but the point cloud HAS data "
+                            f"there",
+                            extents
+                            + "\n      The export came back smaller than"
+                              " requested while the survey data exists."
+                              "\n      Re-fetch it:  rm data/regions/"
+                            + f"{region}/dsm_mosaic.tif && "
+                              f"python src/fetch_regions.py {region}"))
         except Exception:
             pass          # a diagnostic must never be the thing that breaks a build
 

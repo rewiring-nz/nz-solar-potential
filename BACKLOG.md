@@ -31,14 +31,26 @@ rasterio's `merge()` decompresses the whole mosaic into RAM, measured at
 out. That is very likely how they failed originally — merging while a build
 held ten workers resident.
 
-**2. arrowtown_hills built 50 buildings of zeros.** 0 facets, 0 panels, 0
-obstructions. Nothing failed: the DSM was present, valid, openable and
-correctly projected — and described the wrong ground. The fetch asked LINZ for
-2,341 m of width and got 629 m, the western sliver, while every building sits
-in the east. **Zero overlap.** A file-exists check cannot see this, and the
-output is indistinguishable from a region of genuinely unsuitable roofs.
-`preflight` now compares the two extents and refuses below 20% overlap
-(loose on purpose — real regions have ragged LiDAR edges).
+**2. arrowtown_hills — NOT a failure. I called this wrong.** Its DSM does
+cover ground 340 m west of all 50 of its buildings, and the region produces 0
+facets and 0 panels. I reported that as a silent failure. It is not: the LiDAR
+survey genuinely ends there, and the pipeline already handles it correctly —
+all 50 buildings carry `no_lidar`, "Not enough laser survey data over this
+roof". arrowtown_east likewise: 157 estimated, **132 `no_lidar`**, 18
+low_confidence, 1 too_small. That is the designed behaviour Josh asked for
+("the buildings should stay, with a marking saying why it is not estimated").
+
+Two errors of mine on the way to that, both from swallowed exceptions:
+`points_in_bbox` takes four positional args and I passed a tuple, so a
+`TypeError` I was catching made every building look like it had no LiDAR.
+Corrected, pilot reads 20/20 and arrowtown_east 14/20.
+
+The preflight extent check survives but had to be **fixed, because as first
+written it would have blocked a correct build**. An extent gap only matters
+when the point cloud disagrees with it: points present where the DSM has none
+means a short export and is worth stopping for; points absent too means the
+survey ends there and the build should proceed and label it. Verified all four
+test regions now proceed.
 
 **Lesson worth generalising:** every check in preflight was a *presence* check.
 Both failures were present-but-wrong. Worth auditing the other inputs the same
