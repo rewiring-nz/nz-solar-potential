@@ -701,8 +701,15 @@ def main():
         suspect.sort(key=lambda r: -r["score"])
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # The run CONFIG is saved, not just the weights. --no-model leaves the
+    # weights dict untouched and simply never computes cross_model_frac, so two
+    # runs can carry identical weights and still be incomparable -- which is
+    # exactly what happened: comparing a --no-model baseline against a full run
+    # reported "9152 roofs worse" when nothing about the roofs had changed.
     (OUT_DIR / "roof_triage.json").write_text(json.dumps(
         {"weights": weights, "min_area_m2": a.min_area,
+         "config": {"use_model": not a.no_model, "min_area": a.min_area,
+                    "validated": bool(a.validate)},
          "roofs": suspect, "not_estimated": no_est}, indent=1))
 
     print(f"\nWORST LAYOUTS  (estimated, but the geometry looks wrong)\n")
@@ -723,8 +730,32 @@ def main():
           f"-- separate list, they need a reason not a markup")
 
     if a.compare and Path(a.compare).exists():
-        prev = {r["building_id"]: r for r in
-                json.loads(Path(a.compare).read_text())["roofs"]}
+        prev_doc = json.loads(Path(a.compare).read_text())
+        # THE COMPARISON IS ONLY VALID IF BOTH RUNS SCORED THE SAME WAY.
+        # --validate re-derives the weights every run by dropping whatever
+        # failed to predict, so two runs can easily use different signal sets --
+        # and then the mean score moves because the scoring moved, not because
+        # the roofs got better. That is a fake result of exactly the kind this
+        # tool exists to avoid, so it is checked rather than assumed.
+        pw = prev_doc.get("weights") or {}
+        pc = prev_doc.get("config") or {}
+        now_cfg = {"use_model": not a.no_model, "min_area": a.min_area,
+                   "validated": bool(a.validate)}
+        cfg_differs = bool(pc) and pc != now_cfg
+        if cfg_differs or set(pw) != set(weights) or any(
+                abs(pw.get(k, 0) - weights.get(k, 0)) > 1e-6 for k in
+                set(pw) | set(weights)):
+            print(f"\n  REFUSING TO COMPARE against {a.compare}")
+            print(f"    then: {', '.join(f'{k}={v:.2f}' for k, v in sorted(pw.items())) or '(none)'}"
+                  f"   config {pc or '(not recorded)'}")
+            print(f"    now : {', '.join(f'{k}={v:.2f}' for k, v in sorted(weights.items())) or '(none)'}"
+                  f"   config {now_cfg}")
+            print("    The two runs scored on different signals, so any change")
+            print("    in mean score would be the scoring changing, not the")
+            print("    roofs. Re-run both the same way (e.g. both --no-model).")
+            prev = {}
+        else:
+            prev = {r["building_id"]: r for r in prev_doc["roofs"]}
         moved = [(r["building_id"], prev[r["building_id"]]["score"], r["score"])
                  for r in suspect if r["building_id"] in prev]
         if moved:
