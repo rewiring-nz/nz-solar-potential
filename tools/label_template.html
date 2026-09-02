@@ -75,9 +75,14 @@
   <button data-tool="ridge" class="on"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
   <button data-tool="cliff"><span><span class="sw" style="background:var(--cliff)"></span> Cliff line</span><span class="k">3</span></button>
-  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap</b> &mdash; a white <b>circle</b> means an exact corner, a white <b>diamond</b> means anywhere along an existing line or the outline. Use the diamond for a T-junction, and to land a line exactly on the roof edge.<br>No need to trace roof edges &mdash; the outline has them, and anything the outline overshoots onto at <b>ground level</b> is deleted automatically. Only draw an edge where the roof stops short and what is beyond is <b>still high</b> (an upper deck, a carport).</div>
+  <div class="hint">Each line is its own segment &mdash; two clicks and it&rsquo;s done. <b>Esc</b> abandons a half-drawn one. Hold <b>Shift</b> to snap to 15&deg;.<br>Endpoints <b>snap</b> &mdash; a white <b>circle</b> means an exact corner, a white <b>diamond</b> means anywhere along an existing line or the outline. Use the diamond for a T-junction, and to land a line exactly on the roof edge.<br>When a shaded face is not really roof &mdash; a wall, a canopy &mdash; press <b>8</b> and click it.<br>No need to trace roof edges &mdash; the outline has them, and anything the outline overshoots onto at <b>ground level</b> is deleted automatically. Only draw an edge where the roof stops short and what is beyond is <b>still high</b> (an upper deck, a carport).</div>
   <div id="tooldesc" class="desc"></div>
   <button id="helpbtn" class="explain">&#9432;&nbsp; Read: what counts as each line<span class="k">?</span></button>
+
+  <h2>Faces that take no panels</h2>
+  <button data-tool="nopanel" style="border-color:rgba(255,138,0,.55)"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">8</span></button>
+  <div class="hint">Your lines shade the roof into faces as you draw. Click any face that could <b>never</b> take a panel &mdash; a wall caught inside the outline, a canopy, glass. Click again to unmark.<br><b>This is the one that catches the worst failure we have:</b> panels placed down a wall. If a shaded face is not really roof, this is how you say so.</div>
+  <div id="facenudge" class="desc" style="display:none"></div>
 
   <h2>Obstructions &mdash; drag out a shape</h2>
   <button data-tool="poly"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Polygon</span><span class="k">4</span></button>
@@ -85,10 +90,6 @@
   <button data-tool="tri"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 100%,0 100%)"></span> Triangle</span><span class="k">6</span></button>
   <button data-tool="ellipse"><span><span class="sw" style="background:var(--obs);border-radius:50%"></span> Circle</span><span class="k">7</span></button>
   <div class="hint"><b>Polygon</b> and <b>Line / run</b>: click each point, then <b>Enter</b> (a polygon also closes if you click its first point again). <b>Triangle</b>: three clicks. <b>Circle</b>: drag one out.<br>A line / run records a centreline with a width &mdash; <b>[</b> and <b>]</b> make it thinner or wider. <b>Esc</b> abandons a part-drawn shape, <b>&#8984;Z</b> removes the last point.<br>Drag a shape&rsquo;s middle to move it, a corner to resize, <b>Delete</b> removes the selected one.</div>
-
-  <h2>Panel-able area</h2>
-  <button data-tool="nopanel"><span><span class="sw" style="background:#ff8a00"></span> No panels here</span><span class="k">8</span></button>
-  <div class="hint">Your lines already imply the roof faces, so they shade in as you draw &mdash; no need to trace them. Click any face that could <b>never</b> take a panel: a wall caught inside the outline, a canopy, glass. Click it again to unmark.</div>
 
   <h2>Fix a mistake</h2>
   <button data-tool="select"><span>&#9099; Select &amp; delete</span><span class="k">9</span></button>
@@ -377,6 +378,20 @@ function refreshShare(){
       + (marked(R().id) ? "<b>This one is done.</b>" : "This one is not done yet.");
   }
   nudgeSave();
+  // Josh marked 58 roofs without once using the face tag, and said he simply
+  // did not notice it. A section heading is evidently not enough, so ask
+  // directly at the moment the faces appear -- and only then.
+  (function(){
+    const el=document.getElementById("facenudge");
+    if(!el) return;
+    const r=rec(), nf = r.lines.length ? faces().length : 0;
+    if(nf >= 2 && !r.nopanel.length && tool!=="nopanel"){
+      el.style.display="";
+      el.innerHTML = `<span class="lab">One more thing</span>`
+        + `${nf} faces shaded. Any of them <b>not really roof</b>? `
+        + `Press <b>8</b> and click it.`;
+    } else el.style.display="none";
+  })();
   document.getElementById("prog").textContent =
     `${rec().lines.length} lines · ${rec().obstructions.length} obstructions · `
     + `${rec().lines.length?faces().length:0} faces · ${done}/${ROOFS.length} marked`;
