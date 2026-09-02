@@ -26,7 +26,10 @@ PY=.venv/bin/python
 LOG=data/build_logs/finish_rebuild.log
 mkdir -p data/build_logs
 
-AFFECTED="arrowtown_east arrowtown_hills arrowtown_millbrook arthurs_point
+# The 14 that built LiDAR-only, plus pilot: the district driver was killed
+# mid-gate_panels on pilot (I overwrote the running script, see below), so its
+# layout state is of unknown completeness and is cheaper to redo than to verify.
+AFFECTED="pilot arrowtown_east arrowtown_hills arrowtown_millbrook arthurs_point
           arthurs_point_east dalefield frankton_arm frankton_east_lake
           jacks_point kelvin_heights kelvin_south shotover_lakehayes
           town_south_lake tucker_beach"
