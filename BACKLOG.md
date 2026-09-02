@@ -96,6 +96,47 @@ gap and leaves **~1.5 points unexplained** — so if the rebuild lands at 21.9%
 the imagery story is confirmed AND something else still separates the 1 Sep
 build from the 30 Aug one.
 
+### REVISED, still before the result — the timeline says I framed this wrong
+
+Checking what actually landed between the two builds changes the question.
+Revising a prediction after seeing the answer is worthless; revising it before,
+with the reason stated, is just being less wrong:
+
+```
+08-30 18:38   LOCAL build written                        20.4% crossing
+08-30 21:53   612c095  skeleton-roof reconstruction      <-- the only real
+                       (roof_partition, roof_segmentation,    pipeline geometry
+                        roof_skeleton)                        change in between
+09-01 20:29   VM build written                           23.8% crossing
+09-01 20:32   950a05d  vision seam scaffolding           (3 min after the build)
+09-02 22:47   87e4954  seam FIX, measured -14% crossings
+09-03 08:13   de66301  cap model-proposed cuts
+```
+
+Two consequences:
+
+1. **The 1 Sep build predates the vision seam entirely.** So the 20.4% → 23.8%
+   move has nothing to do with imagery cuts — they were not running. The only
+   substantial pipeline geometry change in that window is **612c095,
+   skeleton-roof reconstruction**. That, not the vision work, is the prime
+   suspect for the regression, and `567d73f` "planar subdivision" is a red
+   herring: it touched only the label tool, never the build.
+
+2. **The rebuild carries two improvements the 1 Sep build lacked**, not one:
+   restored imagery *and* the working seam. So ~21.9% is too pessimistic.
+   Compounding the seam's measured −14% gives roughly **18.5–19%**, i.e.
+   possibly better than the 30 Aug build. Stated as a range and held loosely:
+   the −14% came from 60 roofs against a 19.5% baseline, and multiplying
+   percentages measured on different sets is exactly the sort of arithmetic
+   that produces confident nonsense.
+
+**Revised expectation: ~19%, wide error bars.** The outcome table below still
+applies, shifted: landing near 21.9% now means the seam fix did NOT deliver on
+this set, which is itself worth knowing. And whatever the number, **612c095
+remains an open question** — if the rebuild lands above 20.4% the skeleton-roof
+work is implicated and should be measured on its own rather than left inside a
+change set that also moved two other things.
+
 Outcomes and what each means:
 - **~21.9%** → imagery explains what it should; the residual 1.5 points is a
   separate question, not to be waved away.
