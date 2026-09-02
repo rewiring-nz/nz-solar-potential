@@ -91,7 +91,13 @@ def _facet_fit(f, pc_source):
 # turned out to be PointCloudSource caching all 441 LiDAR tiles unbounded --
 # fixed with an LRU there -- but the cap was never put back. Measured startup is
 # 0.4s per worker and steady RSS is well under a gigabyte each.
-DEFAULT_MAX_JOBS = 10          # hard ceiling; the real limit is memory, below
+# Hard ceiling; the real limit is memory, below. Raised 10 -> 14 after measuring
+# the VM mid-build: 16 vCPUs, 58 of 62 GB free, workers at 0.69 GB rather than
+# the 1.75 GB budgeted. The memory bound allowed 21 and the CPU bound 15, so
+# this constant -- not the machine -- was what held the stage to ten workers.
+# Left at a ceiling rather than removed because the parent process merges every
+# feature single-threaded, and past ~14 producers that merge is the bottleneck.
+DEFAULT_MAX_JOBS = 14
 PER_WORKER_GB = 1.75           # decoded LiDAR tile cache per worker process
 USABLE_RAM_FRACTION = 0.6      # headroom for the parent process and the OS
 
