@@ -1556,6 +1556,13 @@ def _recessed_region(footprint, pts, faces):
     return poly
 
 
+# Bounds on the model-proposed cutting loop. Without them a large roof with
+# hundreds of predictions splits into cells faster than the loop can retire
+# them: the airport took 30 minutes and stopped a 24-region build.
+MAX_MODEL_CUTS = 40          # a roof has a handful of primary creases, not 200
+MAX_CELLS_FROM_MODEL = 60    # past this the roof is already finely divided
+
+
 def _vision_cuts_available(building_id):
     """Only take the imagery-cut path when a model has actually predicted here.
 
@@ -1652,7 +1659,18 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
             # what keeps a short proposal honest
             from src.roof_line_source import model_lines
             proposed = model_lines(building_id, footprint) or []
+            # CAP THE PROPOSALS. Each accepted cut splits cells, and every
+            # later line is then tested against every cell, so the work grows
+            # multiplicatively. Uncapped this killed the airport (#4722059):
+            # 30 minutes on one building and the region watchdog stopped the
+            # whole build. A roof does not have hundreds of primary creases --
+            # keep the longest, most confident ones, which are the ones worth
+            # cutting on anyway.
+            proposed.sort(key=lambda t: -(t[2] * t[3]))     # length x score
+            proposed = proposed[:MAX_MODEL_CUTS]
             for ang, off, _ln, _sc in proposed:
+                if len(cells) >= MAX_CELLS_FROM_MODEL:
+                    break        # already finely divided; stop before it runs away
                 nxt = []
                 for c in cells:
                     parts = (_cut(c, ang, off)
