@@ -7,6 +7,56 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## THREE REGRESSIONS CAUGHT AT THE DEPLOY GATE — 3 Sep evening
+
+Every fix that made Josh's markup matter also created a new way for it to go
+wrong, and **the measurement that proved the fix could not see the breakage**.
+All three were found by comparing the new build against the LIVE site, a check
+that nearly did not get run because the headline numbers looked good.
+
+| building | was | became | cause |
+|---|---|---|---|
+| #4725584 32 Frankton Rd | 465 panels | **0** | small-faces fix: a borrowed plane does not fit its own points, dragging `_area_weighted_inlier` below `MIN_ROOF_CONFIDENCE` |
+| #4735242 | 156 panels | **0** | label-wins fix: a 15.3 m² markup on a 1,054 m² building (1%) replaced the whole partition |
+| 23 buildings | had panels | withheld | same confidence trip as the first |
+
+Fixes: label-derived roofs are not withheld for low confidence (the metric asks
+how well planes WE FITTED explain the points, which does not apply to faces he
+drew); and drawn faces are used only above `DRAWN_COVER_MIN` = 0.50. Coverage
+across his 92 roofs is a median 100% and #4735242 is the only one below 70%.
+
+**`tools/predeploy_check.py` now gates this.** It compares against LIVE, not
+against the last build, because `compare_builds --snapshot` overwrites its
+baseline every run -- after two rebuilds in a day it compares a build to itself
+and reports no change, which happened.
+
+### A duplicate constant ran on the VM for a whole build launch
+
+`DRAWN_COVER_MIN` was defined twice, 0.50 and 0.70, the later winning silently.
+I added the first without noticing the second was already there from reverted
+work. It had no behavioural effect on this data -- the test is `<`, so 70%
+coverage passes a 0.70 threshold -- but the VM launched a rebuild on a value I
+had not chosen. **Read the constant back off the machine, do not assume the
+file you shipped is the file that ran.**
+
+## THE VM STOPS ITSELF AFTER 16 HOURS — 3 Sep
+
+`claude-doing-things` is a SPOT instance with `maxRunDuration: 57600s`,
+`instanceTerminationAction: STOP`, `automaticRestart: false`. It started 23:54
+and stopped 15:54 -- exactly 16 hours -- killing a rebuild mid-region. It did
+the same this morning, which I misread as a network fault when SSH kept
+failing.
+
+Not a crash and not a spot preemption. A configured cap.
+
+  * a full 16-region rebuild is ~4.5 h, so it FITS -- but only if it starts
+    with enough of the window left. Two back-to-back rebuilds do not.
+  * recovery is cheap because the driver logs each region: check
+    `grep '^=== ' <log>` against the region file mtimes, then re-run only the
+    regions that did not finish.
+  * if long runs need to be safe, raise `maxRunDuration` or checkpoint
+    against it.
+
 ## JOSH'S MARKUP NOW DRIVES THE GEOMETRY — 3 Sep
 
 He opened the deployed map and found roofs he had marked himself still wrong.
