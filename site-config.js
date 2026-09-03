@@ -10,6 +10,10 @@
 // Loaded synchronously before the map is constructed, so there is no visible
 // jump from a wrong starting view to the right one.
 window.SITE = {
+  // Bumped on every DEPLOY of this site's data: the ?v= param is the only
+  // thing that makes a browser re-fetch solar_potential.geojson and the
+  // pmtiles, whose URLs are otherwise identical across builds.
+  dataVersion: "34",
   name: "Queenstown",
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
