@@ -52,10 +52,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 VISION_DIR = DATA_DIR / "vision_lines"
 
-# A predicted line below this confidence is not offered at all. Deliberately
-# permissive: the LiDAR gate downstream is the real filter, and throwing away
-# candidates here would hide model recall problems the scorer needs to see.
-MIN_SCORE = 0.25
+# A predicted line below this confidence is not offered at all.
+#
+# WAS 0.25, on the reasoning that "the LiDAR gate downstream is the real
+# filter". Measured, that gate is not a filter at all. Against 659 model lines
+# matching Josh's drawings and 2,043 that do not, _line_is_real keeps 86.1% of
+# the true ones and 83.7% of the false -- 2.4 points of separation, which is
+# noise. It cannot do better: the point cloud is 1.7 returns/m2 and a hip
+# crease falls between samples, so the gate is asking the LiDAR to confirm
+# something it cannot resolve.
+#
+# The model's own confidence separates them properly: at 0.90 it keeps 81.3%
+# of true lines and 22.2% of false, and the old 0.25 admitted essentially
+# every false line (baseline precision 24% -- three cuts in four were wrong).
+#
+# Swept end to end against Josh's markup on 85 roofs, model path only:
+#
+#   MIN_SCORE   lines found   edges he did NOT draw   clutter   facets
+#      0.25        83.6%              25.3%            122       8.4
+#      0.90        82.5%              22.4%            119       8.0
+#      0.95        81.2%              22.6%            113       7.5
+#
+# 0.90 buys the largest fall in invented edges for the smallest loss of real
+# ones. Precision matters more than recall here: a wrong cut fragments a roof
+# and is what got imagery cuts called "actively harmful" once before, while a
+# missed cut just leaves the LiDAR partition to do what it already does.
+MIN_SCORE = 0.90
 
 
 def _to_angle_offset(x1, y1, x2, y2, footprint):
