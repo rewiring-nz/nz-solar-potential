@@ -1310,6 +1310,23 @@ def facets_from_drawn_faces(building_id, footprint, pts):
     return out
 
 
+# MEASURED AND NOT USED FOR MODEL LINES. line_facets subdivides by segment
+# rather than cutting on infinite lines, which is right for geometry Josh drew
+# and wrong for geometry a detector guessed. Re-tested after MIN_SCORE rose to
+# 0.90, so most false lines are already gone:
+#
+#   model path            found   undrawn   clutter   facets
+#   cuts (current)        82.5%    22.4%      119      8.0
+#   subdivision           57.6%    14.4%       47      3.7
+#
+# It does not become good at 0.90, it becomes CONSERVATIVE: half the invented
+# edges, and a quarter of the real creases gone with them. Bigger, cleaner
+# faces that run straight over folds he drew -- which is what puts a panel
+# across a ridge, the failure this work exists to fix.
+#
+# Written down because the numbers flatter it in isolation. Fewer facets and
+# less clutter is what Josh asked for in words, and reported alone this reads
+# as progress.
 def line_facets(building_id, footprint, pts, segs):
     """Faces built by planar subdivision of ROOF-LINE SEGMENTS.
 
