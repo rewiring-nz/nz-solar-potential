@@ -67,6 +67,54 @@ way — imagery extent, outline/DSM CRS agreement.
 waits for the repair, re-runs the line model where predictions are missing,
 rebuilds the 14 regions, fans in.
 
+## JOSH'S MARKUPS NEVER REACH THE BUILD — 3 Sep, found from the live map
+
+He opened the deployed map and found roofs he had marked himself still wrong:
+7 Anderson Heights (#5371108, 14 drawn lines, complete) and 1 Memorial Street
+(#5372565, 19 drawn lines, complete). "This is actually one of the buildings I
+marked up, and you still got the facets wrong."
+
+**He is right, and the cause is structural.** `data/roof_labels.json` is read by
+`src/label_sheet.py` and `src/score_labels.py` only — neither is in the build
+path. `src/label_geometry.py`, written to turn drawn lines into faces, **is
+imported by nothing**. The only label-derived input to the build is
+`data/vision_lines/`, i.e. the CV model's PREDICTIONS. So on a roof he drew
+himself, the build uses the model's guess (held-out F1 0.43 ridge / 0.13 cliff)
+and the LiDAR gate can veto his creases exactly as it vetoes the model's.
+
+### The obvious fix is wrong — measured, not assumed
+
+Wiring his lines into `partition_roof` ungated (his ground truth supersedes a
+prediction; the gate is a proxy for a question he answered by eye) improved the
+two roofs he showed me and **made the average worse** over 28 complete roofs:
+
+| | lines found | edges he did NOT draw | interior edge m | facets |
+|---|---|---|---|---|
+| current build | **84.1%** | **22.3%** | **109** | 8.4 |
+| his lines cut in | 82.6% | 27.7% | 122 | 9.9 |
+
+Reverted. Two hand-picked roofs would have shipped a regression.
+
+**Why it fails is already written in `roof_partition` above the cut loop:**
+`_cut` slices a whole cell with an INFINITE line, while a drawn ridge is a
+SEGMENT with extent. A 3 m dormer crease therefore slices the entire roof.
+That is the same failure the old note records — "cutting a whole cell with a
+line detected over part of it fragments the roof faster than it fixes it ...
+what is missing is a way to cut only the stretch a crease actually covers".
+
+### The real fix
+
+`src/label_geometry.py` already does exactly this and is the module nothing
+imports: snap endpoints, extend dangling ends along their own direction, then
+`polygonize` — a planar subdivision bounded by the segments themselves, no
+infinite cuts. For a labelled roof, build faces from his lines that way and use
+them directly, rather than feeding the lines to a half-plane cutter.
+
+`tools/measure_facet_agreement.py` is the gate for that work. It reports BOTH
+directions, because measuring only whether his lines were found scores
+7 Anderson at 94.8% while the roof on screen is a jumble: every line he drew
+was found, and a dozen he never drew were added beside them.
+
 ## RESULT OF THE 3 SEP REBUILD — 18.2%, prediction held
 
 **Outcome: 18.2% of panels cross Josh's drawn lines.** Revised prediction was

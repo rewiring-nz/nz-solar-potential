@@ -117,6 +117,86 @@ def has_model(building_id):
     return building_id is not None and (VISION_DIR / f"{building_id}.json").exists()
 
 
+# ------------------------------------------------------------------ drawn
+
+# Josh's own lines, for the roofs he has actually marked up.
+#
+# WHY THIS EXISTS. Until now his markups reached the build only by training the
+# line model, whose predictions were then offered as proposals and gated by the
+# LiDAR. So on a roof he had drawn himself, the build used the model's guess
+# (held-out F1 0.43 on ridges, 0.13 on cliffs) instead of his ground truth, and
+# the gate could veto his creases exactly as it vetoes a model's. He found this
+# from the map: 7 Anderson Heights (#5371108, 14 drawn lines) and 1 Memorial
+# Street (#5372565, 19 drawn lines) are both marked complete and both came out
+# with facets that look nothing like what he drew.
+#
+# A drawn line is not a proposal. He looked at the imagery and said "there is a
+# fold here", which is the same evidence the LiDAR gate is a proxy for -- and a
+# better one, because the gate misses creases the point cloud is flat across.
+# The module header note about 7 Anderson says so outright: its hip creases are
+# "unmistakable in 0.1 m imagery and nearly absent from a point cloud".
+_LABELS_CACHE = [None]
+LABELS_PATH = DATA_DIR / "roof_labels.json"
+FOLD_KINDS = {"ridge", "valley", "cliff"}
+# Flags that say the drawn geometry describes nothing trustworthy. bad_outline
+# is deliberately NOT here: an offset outline is exactly the case where the
+# drawn lines are the more reliable description of the roof.
+VOID_FLAGS = {"absent", "not_building", "unclear"}
+
+
+def _labels():
+    if _LABELS_CACHE[0] is None:
+        try:
+            _LABELS_CACHE[0] = json.loads(
+                LABELS_PATH.read_text()).get("buildings", {})
+        except Exception:
+            _LABELS_CACHE[0] = {}
+    return _LABELS_CACHE[0]
+
+
+def drawn_segments(building_id):
+    """Raw [(x1,y1,x2,y2), ...] in NZTM for a roof Josh has marked, else []."""
+    if building_id is None:
+        return []
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS:
+        return []
+    out = []
+    for l in lab.get("lines") or []:
+        if l.get("kind") not in FOLD_KINDS:
+            continue
+        pts = l.get("points")
+        if pts and len(pts) >= 2:
+            for i in range(len(pts) - 1):
+                a, b = pts[i], pts[i + 1]
+                out.append([a[0], a[1], b[0], b[1]])
+        elif l.get("a") and l.get("b"):
+            a, b = l["a"], l["b"]
+            out.append([a[0], a[1], b[0], b[1]])
+    return [s for s in out if math.hypot(s[2] - s[0], s[3] - s[1]) > 0.3]
+
+
+def has_drawn(building_id):
+    return bool(drawn_segments(building_id))
+
+
+def drawn_lines(building_id, footprint=None):
+    """Josh's lines in the same (angle, offset, length, score) shape as the
+    model's, scored 1.0 because they are not predictions."""
+    segs = drawn_segments(building_id)
+    if not segs:
+        return []
+    out = []
+    for s in segs:
+        if footprint is None:
+            out.append((None, None, math.hypot(s[2] - s[0], s[3] - s[1]),
+                        1.0, list(s)))
+            continue
+        ang, off, ln = _to_angle_offset(*s, footprint)
+        out.append((ang, off, ln, 1.0))
+    return out
+
+
 def strong_lines(imagery_ds, footprint, building_id=None):
     """Lines to act on even where the LiDAR cannot confirm them.
 
