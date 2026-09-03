@@ -87,7 +87,11 @@ def main():
 
     pc = PointCloudSource()
     orig = RLS.drawn_segments
+    orig_faces = RLS.drawn_faces
     ctxs = {}
+    # Both label-derived inputs are toggled together. Toggling only
+    # drawn_segments once made an A/B report identical arms, because the path
+    # under test read drawn_faces and never saw the switch.
     arms = (("OFF", lambda b: []), ("ON", orig)) if a.ab else (("ON", orig),)
     tot = {k: {"found": [], "undrawn": [], "clutter": [], "facets": []}
            for k, _ in arms}
@@ -115,6 +119,7 @@ def main():
         geom = ctx["gdf"].loc[bid].geometry
         for name, fn in arms:
             RLS.drawn_segments = fn
+            RLS.drawn_faces = (orig_faces if fn is orig else (lambda b: []))
             RLS._LABELS_CACHE[0] = None
             try:
                 faces = segment_building_best(ctx["dsm"], pc, geom, bid,
@@ -129,6 +134,7 @@ def main():
             tot[name]["clutter"].append(st["clutter_m"])
             tot[name]["facets"].append(st["facets"])
         RLS.drawn_segments = orig
+        RLS.drawn_faces = orig_faces
 
     n = len(tot[arms[-1][0]]["found"])
     if not n:

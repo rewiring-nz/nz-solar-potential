@@ -1118,6 +1118,11 @@ MIN_POINTS_PER_FACE = 12
 # boundary. 2.5 m (label_geometry's default) leaves most faces unclosed.
 LINE_SEAL_M = 6.0
 
+# How much of the footprint faces built from Josh's lines must account for
+# before they are trusted instead of the LiDAR partition. A complete markup
+# tiles the roof; a partial one leaves most of it in one undivided face.
+DRAWN_COVER_MIN = 0.70
+
 
 def _seal_network(segs, boundary, max_ext=None):
     """Close a drawn line network into something polygonize can use.
@@ -1199,6 +1204,64 @@ def _seal_network(segs, boundary, max_ext=None):
                 continue
             nearest = min(cands, key=lambda c: Point(p).distance(c))
             out.append([p, (nearest.x, nearest.y)])
+    return out
+
+
+def facets_from_drawn_faces(building_id, footprint, pts):
+    """Build facets straight from the tool-derived rings in roof_labels.json.
+
+    No sealing, no noding, no topology inference -- the arrangement is already
+    settled. All that is added here is what the labels cannot know: the plane
+    each face sits on, fitted from the LiDAR under it.
+
+    A face the labeller marked `usable: false` -- his "no panels here" click --
+    is dropped rather than fitted. A face with too few returns under it is
+    dropped too: the ring is his, but a plane needs points.
+    """
+    from shapely.geometry import Polygon
+
+    try:
+        from src.roof_line_source import drawn_faces
+    except Exception:
+        return []
+    faces = drawn_faces(building_id)
+    if not faces:
+        return []
+
+    inside = _points_in(footprint, pts)
+    if len(inside) < MIN_POINTS:
+        inside = pts
+    out = []
+    for f in faces:
+        if not f.get("usable", True):
+            continue
+        try:
+            poly = Polygon(f["ring"])
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+        except Exception:
+            continue
+        if poly.is_empty or poly.geom_type != "Polygon" or poly.area < MIN_FACET_M2:
+            continue
+        sub = _points_in(poly, inside)
+        if len(sub) < MIN_POINTS_PER_FACE:
+            continue
+        plane = _fit_plane_robust(sub)
+        if plane is None:
+            continue
+        slope, aspect = _slope_aspect(plane)
+        if slope > config.MAX_ROOF_SLOPE_DEG:
+            continue
+        if slope >= STEEP_FACE_DEG and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT:
+            continue
+        out.append({
+            "building_id": building_id,
+            "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+            "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+            "slope_deg": slope, "aspect_deg": aspect,
+            "area_m2": float(poly.area), "point_count": int(len(sub)),
+            "from_labels": True,
+        })
     return out
 
 
@@ -1886,21 +1949,23 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # made agreement WORSE (lines found 84.1% -> 82.6%, edges he never drew
     # 22.3% -> 27.7%). This path polygonizes the segments against the roof
     # boundary instead, so no line is extrapolated past where it was seen.
-    # NOT WIRED IN -- measured as a regression on the full label set.
+    # THE FACES THE LABELLING TOOL ALREADY DERIVED.
     #
-    # line_facets() below builds faces by subdividing the drawn network instead
-    # of cutting on infinite lines, and _seal_network closes that network by
-    # graph degree. Both fix real bugs (see their docstrings). Neither is good
-    # enough to use yet, and the way that was established matters:
-    #
-    #   first 30 labelled roofs   found 84.1% -> 86.4%, undrawn 22.3% -> 18.7%
-    #   ALL 85 labelled roofs     found 83.6% -> 80.9%, undrawn 25.3% -> 27.6%
-    #
-    # The 30-roof set is sorted by building id, so it is every 47xxxxx building
-    # and none of the 53xxxxx ones -- a geographic slice, not a sample. It
-    # looked like a clean win on every axis and was committed on that basis.
-    # The full set says the opposite. Any future attempt here gets measured on
-    # all 85 before it is believed.
+    # roof_labels.json carries a `faces` array per roof: rings the tool built
+    # from Josh's lines in the browser, with an area and a usable flag, and
+    # nothing has ever read them. Re-deriving faces from the lines in Python
+    # was the wrong instinct -- it cost a sealing rule, a noding bug and two
+    # measured regressions to reconstruct something already computed. It is
+    # also the construction HE was looking at when he called the roof finished,
+    # so a second derivation risks building geometry he never approved.
+    _lf = []
+    try:
+        _lf = facets_from_drawn_faces(building_id, footprint, pts)
+    except Exception as exc:
+        print(f"  roof_partition: drawn faces unavailable ({exc!r})", flush=True)
+    if _lf:
+        return _lf
+
     if imagery_ds is not None and USE_IMAGERY_CUTS:
         # NOT a bare except. A rewrite of roof_outline above once deleted
         # _line_is_real while leaving this call site, and a broad except turned

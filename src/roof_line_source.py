@@ -176,6 +176,43 @@ def drawn_segments(building_id):
     return [s for s in out if math.hypot(s[2] - s[0], s[3] - s[1]) > 0.3]
 
 
+def drawn_faces(building_id):
+    """The faces the LABELLING TOOL derived from Josh's lines, as NZTM rings.
+
+    These were in roof_labels.json the whole time and nothing read them. The
+    tool runs facesFor() in the browser as he draws -- the same construction he
+    is looking at when he decides a roof is finished -- and exports the result
+    with an area and a `usable` flag per face. #5371108 carries 9 of them.
+
+    Re-deriving faces from the lines in Python was the wrong instinct and cost
+    a lot: sealing rules, noding bugs, and two measured regressions, all to
+    reconstruct something already computed and agreed. Worse, a second
+    derivation can silently disagree with the one he saw, so the geometry the
+    build uses would not be the geometry he approved.
+
+    `usable=False` faces are kept here and dropped by the caller: they are
+    exactly the "no panels here" areas he clicked, and knowing a face exists
+    but takes no panels is more useful than not knowing it exists.
+    """
+    if building_id is None:
+        return []
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS:
+        return []
+    out = []
+    for f in lab.get("faces") or []:
+        ring = f.get("ring") or []
+        if len(ring) >= 3:
+            out.append({"ring": [(float(x), float(y)) for x, y in ring],
+                        "m2": float(f.get("m2") or 0.0),
+                        "usable": bool(f.get("usable", True))})
+    return out
+
+
+def has_drawn_faces(building_id):
+    return bool(drawn_faces(building_id))
+
+
 def has_drawn(building_id):
     return bool(drawn_segments(building_id))
 
