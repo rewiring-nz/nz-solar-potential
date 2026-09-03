@@ -67,7 +67,50 @@ way — imagery extent, outline/DSM CRS agreement.
 waits for the repair, re-runs the line model where predictions are missing,
 rebuilds the 14 regions, fans in.
 
-## PRE-REGISTERED PREDICTION FOR THE 3 SEP REBUILD — written before the result
+## RESULT OF THE 3 SEP REBUILD — 18.2%, prediction held
+
+**Outcome: 18.2% of panels cross Josh's drawn lines.** Revised prediction was
+~19% with wide bars; original was ~21.9%. Best of all three builds:
+
+| build | crossing rate | panels |
+|---|---|---|
+| 30 Aug | 20.4% | 774,642 |
+| 1 Sep (14 regions LiDAR-only) | 23.8% | 682,433 |
+| **3 Sep (imagery + seam fix)** | **18.2%** | **623,447** |
+
+District output 368.2 -> 336.9 GWh/yr (**-8.6% panels**, -31.3 GWh). Split:
+
+| | buildings | panels | change |
+|---|---|---|---|
+| rebuilt (imagery restored) | 8,459 | 335,164 -> 299,714 | **-10.6%** |
+| untouched by the chain | 6,894 | 347,269 -> 323,733 | **-6.8%** |
+
+The "untouched" group is NOT a control — the snapshot predates tonight's first
+pass, which rebuilt all 24 regions with the seam fix. So -6.8% is the seam fix
+district-wide and the extra ~3.8 points is imagery-driven obstruction
+detection. A genuine control would need a build with neither change.
+
+**This is the mixed outcome Josh predicted**: "on some faces this will add more
+panels, on others it will reduce them because you were previously overlapping
+things ... hard for you to measure or quality check without me doing it
+visually." Crossings fell 5.6 points AND capacity fell 8.6%. Whether the
+removed panels were wrong is the part only he can judge.
+
+Obstructions per building in rebuilt regions all rose (kelvin_heights
+1.74->2.27, jacks_point 1.52->2.39, arrowtown_millbrook 1.86->2.44,
+frankton_arm 2.16->2.73), which is the mechanism.
+
+### Watch: triage score went the wrong way
+
+Mean 0.047 -> 0.054; 2,038 roofs worse, 397 better. Driven by `roof_unused`
+nearly tripling (88 -> 244 roofs). Plausibly correct — more detected
+obstructions means more roof legitimately carrying no panels — and supported by
+`unused_frac` LOSING its predictive power in validation (+0.155 -> +0.039),
+which is what you would expect if it now measures correctly-excluded area
+rather than failure. Not yet proven. Do not treat the score rise as a
+regression without checking a few of those roofs.
+
+## PREVIOUS PREDICTION (kept for the record) — written before the result
 
 Recorded in advance deliberately. A prediction written after seeing the answer
 is worthless, and "the rebuild helped" is exactly the kind of claim that is
