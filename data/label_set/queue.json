@@ -1,161 +1,170 @@
 {
  "ids": [
-  4719759,
-  4725474,
-  4725521,
-  4725546,
-  4725584,
-  4726047,
-  4734678,
-  4734816,
-  4734850,
-  4734915,
-  4735015,
-  4735075,
-  4735237,
-  4735242,
-  4735263,
-  4735316,
-  4735318,
-  4735623,
-  4740517,
-  4740662,
-  4751041,
-  5370340,
-  5371108,
-  5372565,
-  5372566,
-  5372585,
-  5372588,
-  5373363,
-  4744126,
-  4728319,
-  5372388,
-  4727648,
-  4747530,
-  4747486,
-  4730523,
-  4747492,
-  4740680,
-  4723359,
-  5370862,
-  4732152,
-  4734157,
-  5371176,
-  4746243,
-  4741644,
-  4741747,
-  4742200,
-  5372239,
-  4747637,
-  4734685,
-  5372222,
-  4744109,
-  5372383,
-  5372561,
-  4748050,
-  4735249,
-  4741338,
-  4749465,
-  4747535,
-  5371002,
-  4739261,
-  4728128,
-  4723238,
-  5372641,
-  4731941,
-  5370347,
-  4732043,
-  5372232,
-  5372392,
-  4725794,
-  4727955,
-  5372064,
-  4746110,
-  4742246,
-  4746196,
-  4729357,
-  4747035,
-  4741639,
-  4736600,
-  5371581,
-  4719606,
-  5373285,
-  4722059,
-  4729620,
-  4719462,
-  4719731,
-  4751213,
-  4742423,
-  4726288,
-  4730603,
-  4742760,
-  4733721,
-  4746034,
-  4727942,
-  5373469,
-  5370829,
-  4730598,
-  4740398,
-  4747375,
-  4719283,
-  4741798,
-  4733916,
-  5372220,
-  4723281,
-  5371487,
-  4719508,
-  4726034,
-  4739074,
-  4727413,
-  4718601,
-  4718482,
-  4738791,
-  4731647,
-  4721761,
-  4746530,
-  4734702,
-  4729423,
-  4746399,
-  4733807,
-  4720124,
-  4722058,
-  4744292,
-  4729406,
-  4750868,
-  4726530,
-  4738119,
-  5370824,
-  4731035,
-  4733765,
-  4741643,
-  4742117,
-  4750952,
-  4718539,
-  4741735,
-  5372729,
-  4720230,
-  4725539,
-  4718774,
-  4725717,
-  4749439,
-  5372379,
-  5370808,
-  5372956,
-  5372438,
-  4747061,
-  4728006,
-  4728173,
-  5372567,
-  4744515,
-  4721265,
-  4726280,
-  5372211,
-  4746984,
-  4733827,
-  4748296,
-  4718758,
-  5373091
+  4738242,
+  5373306,
+  5372965,
+  4726017,
+  4740320,
+  4746510,
+  4739159,
+  4751219,
+  4719301,
+  4738241,
+  4719601,
+  5373513,
+  4722983,
+  4740962,
+  4750933,
+  4747171,
+  5371549,
+  4720058,
+  5371068,
+  5370687,
+  4719517,
+  4720546,
+  4738455,
+  4730521,
+  4725691,
+  4738569,
+  4740464,
+  4742038,
+  4736316,
+  5370585,
+  5371069,
+  4738981,
+  4723798,
+  4719770,
+  4735162,
+  4730495,
+  4729566,
+  4729555,
+  4719312,
+  4747172
  ],
- "note": "Only roofs whose imagery is present on this machine. 12 were dropped for missing imagery."
+ "source": "triage_roofs.py",
+ "reasons": {
+  "4738242": [
+   "10 panels cross a predicted line"
+  ],
+  "5373306": [
+   "57% of roof carries no panels",
+   "3 panels cross a predicted line"
+  ],
+  "5372965": [
+   "5 panels cross a predicted line"
+  ],
+  "4726017": [
+   "8 panels cross a predicted line"
+  ],
+  "4740320": [
+   "59% of roof carries no panels",
+   "2 panels cross a predicted line"
+  ],
+  "4746510": [
+   "5 panels cross a predicted line"
+  ],
+  "4739159": [
+   "5 panels cross a predicted line"
+  ],
+  "4751219": [
+   "8 panels cross a predicted line"
+  ],
+  "4719301": [
+   "5 panels cross a predicted line"
+  ],
+  "4738241": [
+   "3 panels cross a predicted line"
+  ],
+  "4719601": [
+   "8 panels cross a predicted line"
+  ],
+  "5373513": [
+   "41 panels cross a predicted line"
+  ],
+  "4722983": [
+   "5 panels cross a predicted line"
+  ],
+  "4740962": [
+   "16 panels cross a predicted line"
+  ],
+  "4750933": [
+   "10 panels cross a predicted line"
+  ],
+  "4747171": [
+   "51% of roof carries no panels",
+   "3 panels cross a predicted line"
+  ],
+  "5371549": [
+   "17 panels cross a predicted line"
+  ],
+  "4720058": [
+   "17 panels cross a predicted line"
+  ],
+  "5371068": [
+   "24 panels cross a predicted line"
+  ],
+  "5370687": [
+   "15 panels cross a predicted line"
+  ],
+  "4719517": [
+   "9 panels cross a predicted line"
+  ],
+  "4720546": [
+   "4 panels cross a predicted line"
+  ],
+  "4738455": [
+   "20 panels cross a predicted line"
+  ],
+  "4730521": [
+   "8 panels cross a predicted line"
+  ],
+  "4725691": [
+   "8 panels cross a predicted line"
+  ],
+  "4738569": [
+   "23 panels cross a predicted line"
+  ],
+  "4740464": [
+   "19 panels cross a predicted line"
+  ],
+  "4742038": [
+   "6 panels cross a predicted line"
+  ],
+  "4736316": [
+   "5 panels cross a predicted line"
+  ],
+  "5370585": [
+   "7 panels cross a predicted line"
+  ],
+  "5371069": [
+   "70 panels cross a predicted line"
+  ],
+  "4738981": [
+   "17 panels cross a predicted line"
+  ],
+  "4723798": [
+   "9 panels cross a predicted line"
+  ],
+  "4719770": [
+   "9 panels cross a predicted line"
+  ],
+  "4735162": [
+   "10 panels cross a predicted line"
+  ],
+  "4730495": [
+   "9 panels cross a predicted line"
+  ],
+  "4729566": [
+   "7 panels cross a predicted line"
+  ],
+  "4729555": [
+   "3 panels cross a predicted line"
+  ],
+  "4719312": [
+   "11 panels cross a predicted line"
+  ],
+  "4747172": [
+   "5 panels cross a predicted line"
+  ]
+ }
 }

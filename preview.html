@@ -1498,7 +1498,16 @@ function wireTuningControls(popupEl, buildingId) {
 // regenerated -- without this, browsers happily keep serving a cached
 // response after a reload even though the file on disk changed (bit us
 // during development: a fix looked like it hadn't taken effect at all).
-const DATA_VERSION = "33";
+// Bumped per DEPLOY of this site's data, not per code change: the ?v= param is
+// the only thing that makes a browser re-fetch solar_potential.geojson and the
+// pmtiles, whose URLs are otherwise identical across builds. 34 = the 3 Sep
+// imagery-restoration rebuild.
+//
+// This is the one line where preview.html deliberately differs between the
+// Queenstown and national repos -- their data versions advance independently.
+// It arguably belongs in site-config.js beside defaultView for that reason;
+// left here for now because moving it mid-deploy is risk for no benefit.
+const DATA_VERSION = "34";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 
