@@ -1106,6 +1106,151 @@ def partition_with_labels(building_id, footprint, pts, labels, planes):
     return out
 
 
+# Points a face needs before its plane is worth fitting. Matches the threshold
+# _diagnose_no_facets uses to call a roof "no_lidar" -- below this there is not
+# enough survey under the face to say what plane it is on.
+MIN_POINTS_PER_FACE = 12
+
+# How far a drawn or predicted line may be pushed along its own direction to
+# reach the roof edge. Measured on Josh's markups: endpoints sit a median 1.4 m
+# from the eave on 7 Anderson and 3.9 m on 1 Memorial, with a 10.7 m worst
+# case -- people stop drawing where the crease visually stops, not at the
+# boundary. 2.5 m (label_geometry's default) leaves most faces unclosed.
+LINE_SEAL_M = 6.0
+
+
+def line_facets(building_id, footprint, pts, segs):
+    """Faces built by planar subdivision of ROOF-LINE SEGMENTS.
+
+    Works for any source of segments -- the lines Josh drew, or the ones the
+    model predicted over imagery it has never seen. The second is the point:
+    the markups exist to train a detector that then runs over every tile, so
+    whatever consumes lines has to serve 15,000 unlabelled roofs, not 114
+    labelled ones.
+
+    THE POINT OF DOING IT THIS WAY. Feeding his lines to _cut was tried first
+    and made things worse across 28 of his completed roofs -- lines found
+    84.1% -> 82.6%, edges he never drew 22.3% -> 27.7%. _cut slices a whole
+    cell with an INFINITE line, while a drawn ridge is a segment with extent, so
+    a 3 m dormer crease sliced the entire roof. The note above the cut loop
+    already said what was missing: "a way to cut only the stretch a crease
+    actually covers".
+
+    This is that way. His segments and the roof boundary are polygonized
+    together, so every face edge is either a line he drew or the edge of the
+    building, and nothing is extrapolated across the roof.
+
+    THE BOUNDARY IS THE TRIMMED FOOTPRINT, NOT label_geometry's drawn hull.
+    That module builds a convex hull of the drawn points, which is right when
+    the surveyed outline is untrusted -- its own docstring explains why -- but
+    wrong here: a convex hull of an L-shaped roof covers the notch, and panels
+    would be placed over open air. Downstream fitting, obstructions and areas
+    all work in footprint space, so the footprint is what the faces must live
+    in.
+
+    Returns [] when there are no usable segments, so callers can fall through.
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import polygonize
+
+    try:
+        from src.label_geometry import snap_endpoints, extend_dangling
+    except Exception:
+        return []
+    if not segs:
+        return []
+
+    segs = [((s[0], s[1]), (s[2], s[3])) for s in segs]
+    # Ends within SNAP_M become one node, then a still-dangling end is pushed
+    # ALONG ITS OWN DIRECTION until it meets another line or the roof edge.
+    # Without sealing, a ridge drawn to where the ridge visually stops leaves a
+    # gap and polygonize returns one big face instead of two.
+    segs = snap_endpoints(segs)
+    try:
+        segs = extend_dangling(segs, footprint.exterior, max_ext=LINE_SEAL_M)
+    except Exception:
+        pass
+
+    # NODE THE ARRANGEMENT BEFORE POLYGONIZING. shapely's polygonize needs its
+    # input split at every crossing; hand it raw segments that cross and it
+    # returns almost nothing. This one missing call is why the whole approach
+    # looked hopeless: 7 Anderson's 14 lines yielded 3 cells (one 177 m2 blob
+    # and two slivers) un-noded, and 7 sensible faces noded. It is also why
+    # label_geometry.faces_from_lines never worked and ended up imported by
+    # nothing -- it polygonizes raw edges the same way.
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
+    lines = [LineString(s) for s in segs] + [footprint.exterior]
+    lines += [r for r in footprint.interiors]
+    try:
+        noded = unary_union(lines)
+    except Exception:
+        return []
+
+    cells = []
+    for poly in polygonize(noded):
+        if not poly.is_valid or poly.area < MIN_FACET_M2:
+            continue
+        # polygonize also closes faces OUTSIDE the footprint where an extended
+        # line and the boundary enclose a sliver of garden.
+        if not poly.representative_point().within(footprint.buffer(0.01)):
+            continue
+        cells.append(poly)
+    if not cells:
+        return []
+
+    inside = _points_in(footprint, pts)
+    out = []
+    for poly in cells:
+        sub = _points_in(poly, inside)
+        if len(sub) < MIN_POINTS_PER_FACE:
+            continue
+        plane = _fit_plane_robust(sub)
+        if plane is None:
+            continue
+        slope, aspect = _slope_aspect(plane)
+        if slope > config.MAX_ROOF_SLOPE_DEG:
+            continue
+        if slope >= STEEP_FACE_DEG and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT:
+            continue
+        out.append({
+            "building_id": building_id,
+            "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+            "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+            "slope_deg": slope, "aspect_deg": aspect,
+            "area_m2": float(poly.area), "point_count": int(len(sub)),
+            "from_lines": True,
+        })
+    return out
+
+
+def roof_line_segments(building_id, min_score=0.60):
+    """The best available roof-line segments for a building, in NZTM.
+
+    Josh's own lines where he has drawn them, the model's predictions
+    otherwise. His supersede rather than merge: on a roof he has drawn, a
+    prediction about the same roof is a worse description of it, and mixing
+    the two re-fragments what he drew.
+
+    The model path is the one that matters at district scale -- 114 roofs are
+    labelled and ~15,000 are not.
+    """
+    try:
+        from src.roof_line_source import drawn_segments, model_lines
+    except Exception:
+        return [], "none"
+    drawn = drawn_segments(building_id)
+    if drawn:
+        return drawn, "drawn"
+    raw = model_lines(building_id, None) or []
+    segs = []
+    for t in raw:
+        # footprint=None yields (None, None, length, score, [x1,y1,x2,y2])
+        if len(t) == 5 and t[3] >= min_score:
+            segs.append(list(t[4]))
+    return segs, ("model" if segs else "none")
+
+
 def partition_by_planes(building_id, footprint, pts, seed=0, planes=None):
     """Big planes from the LiDAR, trimmed by each other and by the building edge.
 
@@ -1644,6 +1789,26 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     USE_IMAGERY_CUTS = _vision_cuts_available(building_id)
 
     cells = [footprint]
+
+    # SUBDIVIDE BY SEGMENTS FIRST, and only fall back to half-plane cutting.
+    #
+    # A roof line is a segment with extent; _cut below slices a whole cell with
+    # its infinite extension. That difference is the whole reason imagery cuts
+    # were once turned off as "actively harmful" -- and it applies to the
+    # model's lines exactly as it did to Hough's, because the geometry of the
+    # cut is what fragments the roof, not where the line came from.
+    #
+    # Measured on 28 of Josh's completed roofs, feeding drawn lines to _cut
+    # made agreement WORSE (lines found 84.1% -> 82.6%, edges he never drew
+    # 22.3% -> 27.7%). This path polygonizes the segments against the roof
+    # boundary instead, so no line is extrapolated past where it was seen.
+    # NOT WIRED IN. line_facets() below is the segment-bounded subdivision this
+    # should eventually use, and it is measurably not ready: on 28 of Josh's
+    # completed roofs it is a wash (lines found 84.1% -> 83.8%, edges he never
+    # drew 22.3% -> 21.1%), and on the two roofs he actually pointed at it is
+    # WORSE (83.2% -> 78.3% found, 20.5% -> 32.8% undrawn). Left callable and
+    # unused rather than deleted, because the noding fix inside it is real and
+    # the remaining gap is in how ends are sealed, not in the approach.
     if imagery_ds is not None and USE_IMAGERY_CUTS:
         # NOT a bare except. A rewrite of roof_outline above once deleted
         # _line_is_real while leaving this call site, and a broad except turned
