@@ -1119,6 +1119,89 @@ MIN_POINTS_PER_FACE = 12
 LINE_SEAL_M = 6.0
 
 
+def _seal_network(segs, boundary, max_ext=None):
+    """Close a drawn line network into something polygonize can use.
+
+    THE RULE IS GRAPH DEGREE, which is what the previous attempts got wrong.
+    label_geometry.extend_dangling skips any end that comes within 25 cm of
+    another line, so on a real markup -- where the lines are drawn to meet each
+    other -- almost nothing is ever extended and the network never reaches the
+    eave. Josh's endpoints sit a median 1.4 m from the roof edge on 7 Anderson
+    and 3.9 m on 1 Memorial, connected to each other but not to the boundary,
+    and the faces therefore never close. Extending EVERY end instead is worse:
+    it drives edges out from junctions in the middle of the roof that nobody
+    drew.
+
+    A node where two lines meet is finished. A node where exactly one line ends
+    is not, and it is the only kind worth pushing. So the network is noded
+    first, degree is counted per node, and only degree-1 ends are extended --
+    along their own line's direction, stopping at the first thing they meet.
+    """
+    import math
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+    from collections import defaultdict
+
+    if max_ext is None:
+        max_ext = LINE_SEAL_M
+    lines = [LineString(s) for s in segs if LineString(s).length > 1e-9]
+    if not lines:
+        return []
+    noded = unary_union(lines)
+    parts = [g for g in getattr(noded, "geoms", [noded])
+             if g.geom_type == "LineString"]
+    if not parts:
+        return []
+
+    def key(p):
+        return (round(p[0], 2), round(p[1], 2))
+
+    deg = defaultdict(int)
+    for ln in parts:
+        cs = list(ln.coords)
+        deg[key(cs[0])] += 1
+        deg[key(cs[-1])] += 1
+
+    out = [list(ln.coords) for ln in parts]
+    for ln in parts:
+        cs = list(ln.coords)
+        for idx, back in ((0, 1), (-1, -2)):
+            p = cs[idx]
+            if deg[key(p)] != 1:
+                continue          # a junction: already sealed
+            q = cs[back]
+            dx, dy = p[0] - q[0], p[1] - q[1]
+            L = math.hypot(dx, dy)
+            if L == 0:
+                continue
+            ux, uy = dx / L, dy / L
+            # start a hair along the ray so it does not re-hit its own endpoint
+            a = (p[0] + ux * 1e-6, p[1] + uy * 1e-6)
+            far = (p[0] + ux * max_ext, p[1] + uy * max_ext)
+            others = [o for o in parts if o is not ln]
+            targets = unary_union(others + [boundary]) if others else boundary
+            try:
+                hit = LineString([a, far]).intersection(targets)
+            except Exception:
+                continue
+            if hit.is_empty:
+                continue
+            cands = []
+            for g in ([hit] if hit.geom_type != "GeometryCollection"
+                      else list(hit.geoms)):
+                if g.geom_type == "Point":
+                    cands.append(g)
+                elif hasattr(g, "geoms"):
+                    cands += [x for x in g.geoms if x.geom_type == "Point"]
+                elif g.geom_type == "LineString" and not g.is_empty:
+                    cands.append(Point(g.coords[0]))
+            if not cands:
+                continue
+            nearest = min(cands, key=lambda c: Point(p).distance(c))
+            out.append([p, (nearest.x, nearest.y)])
+    return out
+
+
 def line_facets(building_id, footprint, pts, segs):
     """Faces built by planar subdivision of ROOF-LINE SEGMENTS.
 
@@ -1161,15 +1244,16 @@ def line_facets(building_id, footprint, pts, segs):
         return []
 
     segs = [((s[0], s[1]), (s[2], s[3])) for s in segs]
-    # Ends within SNAP_M become one node, then a still-dangling end is pushed
-    # ALONG ITS OWN DIRECTION until it meets another line or the roof edge.
-    # Without sealing, a ridge drawn to where the ridge visually stops leaves a
-    # gap and polygonize returns one big face instead of two.
+    # Ends within SNAP_M become one node first: two lines drawn to "the same"
+    # corner are the same corner, and without this they are two degree-1 ends
+    # that both get extended past each other.
     segs = snap_endpoints(segs)
-    try:
-        segs = extend_dangling(segs, footprint.exterior, max_ext=LINE_SEAL_M)
-    except Exception:
-        pass
+    # Then seal by GRAPH DEGREE -- only ends where exactly one line terminates,
+    # stopping at the first line or roof edge met. See _seal_network for why the
+    # touch-rule and the extend-everything variants both fail on a real markup.
+    segs = _seal_network(segs, footprint.exterior)
+    if not segs:
+        return []
 
     # NODE THE ARRANGEMENT BEFORE POLYGONIZING. shapely's polygonize needs its
     # input split at every crossing; hand it raw segments that cross and it
@@ -1802,13 +1886,20 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # made agreement WORSE (lines found 84.1% -> 82.6%, edges he never drew
     # 22.3% -> 27.7%). This path polygonizes the segments against the roof
     # boundary instead, so no line is extrapolated past where it was seen.
-    # NOT WIRED IN. line_facets() below is the segment-bounded subdivision this
-    # should eventually use, and it is measurably not ready: on 28 of Josh's
-    # completed roofs it is a wash (lines found 84.1% -> 83.8%, edges he never
-    # drew 22.3% -> 21.1%), and on the two roofs he actually pointed at it is
-    # WORSE (83.2% -> 78.3% found, 20.5% -> 32.8% undrawn). Left callable and
-    # unused rather than deleted, because the noding fix inside it is real and
-    # the remaining gap is in how ends are sealed, not in the approach.
+    # DRAWN LINES ONLY. Routing the MODEL's lines through this scored 77.4%
+    # against 84.1% for cutting on them: a predicted segment ends where the
+    # detector's activation faded, so sealing it to the eave invents a
+    # boundary, while a drawn segment ends where a person saw the crease end.
+    _lf = []
+    try:
+        _segs, _src = roof_line_segments(building_id)
+        if _segs and _src == "drawn":
+            _lf = line_facets(building_id, footprint, pts, _segs)
+    except Exception as exc:
+        print(f"  roof_partition: line facets unavailable ({exc!r})", flush=True)
+    if _lf:
+        return _lf
+
     if imagery_ds is not None and USE_IMAGERY_CUTS:
         # NOT a bare except. A rewrite of roof_outline above once deleted
         # _line_is_real while leaving this call site, and a broad except turned
