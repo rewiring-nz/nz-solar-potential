@@ -1886,20 +1886,21 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # made agreement WORSE (lines found 84.1% -> 82.6%, edges he never drew
     # 22.3% -> 27.7%). This path polygonizes the segments against the roof
     # boundary instead, so no line is extrapolated past where it was seen.
-    # DRAWN LINES ONLY. Routing the MODEL's lines through this scored 77.4%
-    # against 84.1% for cutting on them: a predicted segment ends where the
-    # detector's activation faded, so sealing it to the eave invents a
-    # boundary, while a drawn segment ends where a person saw the crease end.
-    _lf = []
-    try:
-        _segs, _src = roof_line_segments(building_id)
-        if _segs and _src == "drawn":
-            _lf = line_facets(building_id, footprint, pts, _segs)
-    except Exception as exc:
-        print(f"  roof_partition: line facets unavailable ({exc!r})", flush=True)
-    if _lf:
-        return _lf
-
+    # NOT WIRED IN -- measured as a regression on the full label set.
+    #
+    # line_facets() below builds faces by subdividing the drawn network instead
+    # of cutting on infinite lines, and _seal_network closes that network by
+    # graph degree. Both fix real bugs (see their docstrings). Neither is good
+    # enough to use yet, and the way that was established matters:
+    #
+    #   first 30 labelled roofs   found 84.1% -> 86.4%, undrawn 22.3% -> 18.7%
+    #   ALL 85 labelled roofs     found 83.6% -> 80.9%, undrawn 25.3% -> 27.6%
+    #
+    # The 30-roof set is sorted by building id, so it is every 47xxxxx building
+    # and none of the 53xxxxx ones -- a geographic slice, not a sample. It
+    # looked like a clean win on every axis and was committed on that basis.
+    # The full set says the opposite. Any future attempt here gets measured on
+    # all 85 before it is believed.
     if imagery_ds is not None and USE_IMAGERY_CUTS:
         # NOT a bare except. A rewrite of roof_outline above once deleted
         # _line_is_real while leaving this call site, and a broad except turned
