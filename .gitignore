@@ -30,3 +30,5 @@ au_pilot/
 validation/
 # generated training patches -- regenerate with tools/export_training_data.py
 data/training/
+training_faces/
+data/training_faces/
