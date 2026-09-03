@@ -5,16 +5,28 @@ Track D of the vision pathway: the seam a trained model plugs into, built and
 testable BEFORE the model exists.
 
 The partition does not need to know who proposed a line. It needs (angle,
-offset) in the footprint's own frame, and it then decides for itself whether the
-LiDAR agrees -- `_line_is_real` in roof_partition only cuts where the surface
-actually turns or the two sides sit at different heights. That gate is the whole
-fusion story and it stays exactly where it is:
+offset) in the footprint's own frame.
 
-    THE MODEL PROPOSES, THE LIDAR DISPOSES.
+"THE MODEL PROPOSES, THE LIDAR DISPOSES" was the design, and it does not
+survive measurement. `_line_is_real` keeps 86.1% of model lines that match
+Josh's drawings and 83.7% of those that do not -- 2.4 points of separation.
+The LiDAR is not disposing of anything; it is flipping a coin.
 
-which is also why swapping the proposer is safe. A model that hallucinates a
-ridge produces a candidate that fails the height test and is discarded, exactly
-as a stain or a tonal band in the imagery is discarded today.
+Nor can it do better. The survey is 1.7 returns per m2, roughly 0.77 m
+spacing, and a hip crease is decimetre-scale geometry that falls between
+samples. Asked to confirm creases Josh drew by eye on 0.1 m imagery, the gate
+rejects a quarter of them.
+
+So the fusion is the other way round, which is what Josh described:
+
+    THE IMAGERY FINDS THE LINES. THE LIDAR FITS THE ANGLES.
+
+The imagery is the only sensor here that can see a fold at all, so a bad
+proposal has to be filtered on the model's own confidence -- MIN_SCORE below,
+which separates true from false by 59 points where the gate manages 2. The
+LiDAR's real job is downstream: the plane, slope and aspect of each face once
+the faces exist, which it does well because a plane needs many points and not
+a sharp edge.
 
 Two kinds of candidate, and the distinction matters:
 
