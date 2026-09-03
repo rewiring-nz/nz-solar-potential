@@ -1111,6 +1111,18 @@ def partition_with_labels(building_id, footprint, pts, labels, planes):
 # enough survey under the face to say what plane it is on.
 MIN_POINTS_PER_FACE = 12
 
+# The smallest face kept when the geometry came from Josh's markup.
+#
+# MIN_FACET_M2 is 6.0 -- "below ~3 panels a face is not worth racking" -- which
+# is a decision about PANELS being used to discard GEOMETRY. Measured across his
+# 85 completed roofs it threw away 19.3% of the faces he drew (119 of 615), and
+# where every face on a roof was small the whole roof fell through to the LiDAR
+# partition and lost his markup entirely.
+#
+# A 3 m2 dormer face is real roof. Keeping it costs nothing -- panel fitting
+# will place nothing on it -- and losing it changes the shape of the roof.
+DRAWN_MIN_FACET_M2 = 1.5
+
 # How far a drawn or predicted line may be pushed along its own direction to
 # reach the roof edge. Measured on Josh's markups: endpoints sit a median 1.4 m
 # from the eave on 7 Anderson and 3.9 m on 1 Memorial, with a 10.7 m worst
@@ -1232,6 +1244,7 @@ def facets_from_drawn_faces(building_id, footprint, pts):
     if len(inside) < MIN_POINTS:
         inside = pts
     out = []
+    pending = []
     for f in faces:
         if not f.get("usable", True):
             continue
@@ -1241,10 +1254,18 @@ def facets_from_drawn_faces(building_id, footprint, pts):
                 poly = poly.buffer(0)
         except Exception:
             continue
-        if poly.is_empty or poly.geom_type != "Polygon" or poly.area < MIN_FACET_M2:
+        if (poly.is_empty or poly.geom_type != "Polygon"
+                or poly.area < DRAWN_MIN_FACET_M2):
             continue
         sub = _points_in(poly, inside)
         if len(sub) < MIN_POINTS_PER_FACE:
+            # Too few returns to fit a plane of its own. The face is still real
+            # -- at 1.7 returns/m2 a 4 m2 dormer holds about seven points --
+            # so it borrows the plane of the largest face it touches rather
+            # than being deleted.
+            sub = None
+        if sub is None:
+            pending.append(poly)
             continue
         plane = _fit_plane_robust(sub)
         if plane is None:
@@ -1261,6 +1282,30 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             "slope_deg": slope, "aspect_deg": aspect,
             "area_m2": float(poly.area), "point_count": int(len(sub)),
             "from_labels": True,
+        })
+
+    # Faces with too little survey under them take the plane of the largest
+    # neighbour they share an edge with. Better a small face on its neighbour's
+    # plane than the roof reverting to a partition that ignores the markup.
+    for poly in pending:
+        best = None
+        for f in out:
+            try:
+                shared = poly.buffer(0.2).intersection(f["geometry"]).area
+            except Exception:
+                continue
+            if shared > 0 and (best is None or f["area_m2"] > best["area_m2"]):
+                best = f
+        if best is None:
+            continue
+        out.append({
+            "building_id": building_id,
+            "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+            "plane_a": best["plane_a"], "plane_b": best["plane_b"],
+            "plane_c": best["plane_c"],
+            "slope_deg": best["slope_deg"], "aspect_deg": best["aspect_deg"],
+            "area_m2": float(poly.area), "point_count": 0,
+            "from_labels": True, "plane_borrowed": True,
         })
     return out
 
