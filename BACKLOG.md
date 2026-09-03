@@ -7,6 +7,93 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## JOSH'S MARKUP NOW DRIVES THE GEOMETRY — 3 Sep
+
+He opened the deployed map and found roofs he had marked himself still wrong.
+He was right. Four fixes, **none of them model improvements** — every one was
+his markup being computed correctly and then discarded downstream.
+
+Measured on all 85 roofs he has marked complete
+(`tools/measure_facet_agreement.py`, which reports BOTH directions):
+
+| | lines found | edges he did NOT draw | clutter | facets |
+|---|---|---|---|---|
+| morning | 83.6% | **25.3%** | 122 m | 8.4 |
+| after fix 1 (tool faces) | 84.8% | 19.9% | 115 m | 7.1 |
+| after fix 3 (small faces) | 86.0% | 19.8% | 116 m | 7.3 |
+| **after fix 4 (label wins)** | **87.9%** | **8.0%** | **90 m** | **6.0** |
+
+**Fix 1 — the faces were already in the file.** `roof_labels.json` carries a
+`faces` array per roof: rings the tool builds with `facesFor()` in the browser
+as he draws, each with an area and a `usable` flag. Nothing had ever read them.
+Everything before this was re-deriving in Python what the browser had already
+computed and he had already approved.
+
+**Fix 2 — model lines filtered on confidence, not the LiDAR gate.**
+`MIN_SCORE` was 0.25 because "the LiDAR gate downstream is the real filter".
+It is not a filter: `_line_is_real` keeps 86.1% of true model lines and 83.7%
+of false ones, 2.4 points of separation. Model confidence at 0.90 separates by
+59. At 0.25, **three of four lines the pipeline cut on were wrong**.
+
+**Fix 3 — stopped discarding a fifth of his faces for being small.**
+`MIN_FACET_M2 = 6.0` is a decision about PANELS; it was deleting GEOMETRY.
+119 of 615 faces, and where every face was small the roof fell through to the
+LiDAR partition and lost the markup entirely.
+
+**Fix 4 — the biggest. His geometry was built and then overridden.**
+`segment_building_best` scores the partition with `explained_fraction` and,
+below `PARTITION_GOOD_ENOUGH`, hands the roof to the skeleton or the plane
+arrangement. So a fitted approximation replaced the thing he had drawn. On
+pilot only 7 of 27 labelled roofs shipped his facet count; #4725546 he drew 2
+faces and the build produced 9. Label-derived faces now return immediately.
+
+### The physical constraint behind all of this
+
+**The LiDAR cannot find roof creases and never will.** The survey is 1.7
+returns/m² — about 0.77 m spacing — and the 1 m DSM is already at its native
+resolution, so reading the raw cloud gains nothing. A hip crease is
+decimetre-scale and falls between samples. Asked to confirm creases Josh drew
+by eye on 0.1 m imagery, the gate rejects **25% of them**.
+
+This is exactly the architecture he described: **imagery finds the lines,
+LiDAR fits the angles.** It is not a preference, it is the only split the
+sensors allow. The module header claiming "THE MODEL PROPOSES, THE LIDAR
+DISPOSES" has been corrected.
+
+### Tried and rejected, with numbers
+
+- **Feeding drawn lines to `_cut`**: found 84.1% → 82.6%, undrawn 22.3% →
+  27.7%. `_cut` slices a cell with an INFINITE line; a drawn ridge is a
+  segment.
+- **Segment subdivision for MODEL lines**, re-tested at 0.90: found 82.5% →
+  57.6%, undrawn 22.4% → 14.4%. It becomes conservative, not good — bigger
+  cleaner faces running straight over folds he drew. Cutting stays.
+- **Height channels into the detector**: interior F1 0.834 → 0.883, boundary
+  0.185 → 0.163. Helps where the roof IS, not where it folds.
+- **A face-predicting model**: interior F1 0.883, **boundary 0.163**. Region
+  targets do not sidestep the hard part.
+
+### What more labelling buys — it is worth doing
+
+Learning curve on the face model, boundary F1: 18 roofs 0.122 → 37 0.132 →
+55 0.144 → 74 **0.185**. Monotonic, **+1.1 F1 per 100 roofs**, still climbing —
+unlike the line model, which went flat at 60→74. Interior is saturated at 0.87.
+
+**~106 more roofs for boundary F1 0.30, ~200 more for 0.40.** Prioritise
+variety over volume: complex hips, sawtooths, low-contrast dark roofs,
+multi-level steps. Simple gables add nothing now.
+
+### Methodology notes worth keeping
+
+- **`--limit` is not a sample.** Ids are sorted, so `--limit 30` is every
+  47xxxxx building and no 53xxxxx ones. A "fix" measured that way looked like a
+  win on every axis and was a regression on all 85. Always measure on the full
+  set before believing it.
+- **Both directions or nothing.** Measuring only whether his lines were found
+  scores 7 Anderson at 94.8% while the roof on screen is a jumble.
+- **Patch every input an A/B toggles.** Two harnesses reported identical arms
+  because the path under test read a function that was never patched.
+
 ## ONE SILENT DATA FAILURE, AND ONE I MISDIAGNOSED — 3 Sep (ed78361, 7d23403)
 
 Found while checking the 3 Sep district run. Read the second one: I reported
