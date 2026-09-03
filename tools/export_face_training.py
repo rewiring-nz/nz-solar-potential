@@ -28,6 +28,9 @@ into the target a segmentation model wants.
 
 WHAT IS WRITTEN PER PATCH:
     image     RGB from the same orthophoto he was looking at
+    height    normalised DSM height plus its two gradient components, on the
+              same grid -- a crease is a gradient discontinuity, and until now
+              the model was never shown it
     faces     an integer instance mask, one id per face, 0 for not-roof
     edges     the face boundaries, 2 px wide -- a boundary-aware loss needs
               them and they are free to compute here
@@ -137,7 +140,15 @@ def main():
             ctxs[area] = None if not p["imagery"].exists() else {
                 "gdf": gpd.read_file(dd if dd.exists() else p["outlines"]
                                      ).set_index("building_id", drop=False),
-                "img": rasterio.open(p["imagery"])}
+                "img": rasterio.open(p["imagery"]),
+                # THE HEIGHT DATA THE MODEL HAS NEVER SEEN. A ridge is a slope
+                # discontinuity, which the LiDAR measures directly, and both
+                # exporters fed RGB only -- so the model was asked to infer
+                # roof geometry from colour and shadow while the geometry sat
+                # unused on disk. That is very likely why boundary F1 is 0.185
+                # while interior F1 is 0.83: roof-vs-street is a colour
+                # question, a crease is not.
+                "dsm": rasterio.open(p["dsm"]) if p["dsm"].exists() else None}
         ctx = ctxs[area]
         if not ctx or bid not in ctx["gdf"].index:
             continue
@@ -154,6 +165,32 @@ def main():
         if rgb.shape[0] < a.patch or rgb.shape[1] < a.patch:
             continue
         shape = rgb.shape[:2]
+
+        # Height, resampled onto the imagery grid, as three derived channels:
+        # normalised height (where the roof is high), and the two gradient
+        # components (which way the surface tilts). A crease is where the
+        # gradient CHANGES, so handing the network the gradient rather than raw
+        # z means the discontinuity is one convolution away instead of buried.
+        hgt = np.zeros(shape + (3,), dtype="float32")
+        if ctx.get("dsm") is not None:
+            try:
+                dwin = rasterio.windows.from_bounds(*bounds,
+                                                    ctx["dsm"].transform)
+                z = ctx["dsm"].read(1, window=dwin, boundless=True,
+                                    fill_value=np.nan,
+                                    out_shape=shape).astype("float32")
+                fin = np.isfinite(z)
+                if fin.sum() > 50:
+                    lo = np.nanpercentile(z[fin], 2)
+                    hi = np.nanpercentile(z[fin], 98)
+                    zz = np.clip((np.nan_to_num(z, nan=lo) - lo)
+                                 / max(hi - lo, 1e-3), 0, 1)
+                    gy, gx = np.gradient(zz)
+                    hgt[..., 0] = zz
+                    hgt[..., 1] = np.clip(gx * 8 + 0.5, 0, 1)
+                    hgt[..., 2] = np.clip(gy * 8 + 0.5, 0, 1)
+            except Exception:
+                pass
 
         faces = [f for f in lab["faces"] if len(f.get("ring") or []) >= 3]
         if not faces:
@@ -180,6 +217,7 @@ def main():
                 np.savez_compressed(
                     OUT / split / f"{stem}.npz",
                     image=rgb[sl].astype("uint8"),
+                    height=(hgt[sl] * 255).astype("uint8"),
                     faces=pi.astype("uint16"),
                     edges=edges[sl].astype("uint8"),
                     usable=usable[sl].astype("uint8"),

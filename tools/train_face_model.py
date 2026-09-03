@@ -64,7 +64,14 @@ def load_split(manifest, split, keep=None):
         # A boundary pixel is not interior: the two heads must disagree there,
         # or the watershed has nothing to cut on.
         interior = np.clip(interior - edge, 0, 1)
-        xs.append(d["image"].astype("float32") / 255.0)
+        # RGB and the three height channels, stacked. The height is not a
+        # nicety: a crease is a slope discontinuity, and colour only shows one
+        # where the sun happens to have cast a line.
+        img = d["image"].astype("float32") / 255.0
+        if "height" in d.files:
+            img = np.concatenate([img, d["height"].astype("float32") / 255.0],
+                                 axis=-1)
+        xs.append(img)
         ys.append(np.stack([interior, edge], axis=-1))
         ws.append((d["weight"] > 0).astype("float32"))
     if not xs:
@@ -78,13 +85,30 @@ def load_split(manifest, split, keep=None):
             torch.from_numpy(np.stack(ws))[:, None].contiguous())
 
 
-def build(pretrained=True):
+def build(pretrained=True, in_ch=6):
+    import torch
     import torch.nn as nn
     from train_line_model import build_unet
     m = build_unet(pretrained=pretrained)
     # same body, two heads instead of three kinds
     if hasattr(m, "out"):
         m.out = nn.Conv2d(m.out.in_channels, 2, 1)
+    # WIDEN THE STEM to take height alongside RGB. The ImageNet weights are
+    # kept for the colour channels and copied (halved, so the activation
+    # scale is unchanged) into the new ones -- training the stem from scratch
+    # would throw away the pretrained encoder that is the only reason this
+    # generalises on 92 roofs.
+    if in_ch != 3 and hasattr(m, "stem"):
+        old = m.stem[0]
+        new = nn.Conv2d(in_ch, old.out_channels, old.kernel_size,
+                        old.stride, old.padding, bias=old.bias is not None)
+        with torch.no_grad():
+            w = old.weight
+            reps = (in_ch + 2) // 3
+            new.weight.copy_(w.repeat(1, reps, 1, 1)[:, :in_ch] * (3.0 / in_ch))
+            if old.bias is not None:
+                new.bias.copy_(old.bias)
+        m.stem[0] = new
     return m
 
 
@@ -123,7 +147,7 @@ def evaluate(model, val, device, thr=0.5):
 def train_once(train, val, device, epochs, seed=0, quiet=False, pretrained=True):
     import torch
     torch.manual_seed(seed)
-    model = build(pretrained).to(device)
+    model = build(pretrained, in_ch=train[0].shape[1]).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs)
     x, y, w = train
