@@ -7,6 +7,30 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## OPEN: facesFor() can return its enclosing face — 4 Sep
+
+`facesFor()` in the labelling tool walks a planar subdivision and discards the
+outer boundary by signed area: interior faces are expected counter-clockwise,
+the outer trace negative. On #4725584 it exported a **4,962 m² face on a
+4,032 m² building** alongside 37 real faces of 84 m² and below.
+
+**The obvious explanation is wrong.** All 92 labelled outlines are CLOCKWISE in
+the source GeoJSON, including roofs whose faces are perfect — 7 Anderson
+(#5371108) exports 9 sensible faces from a clockwise outline. So the winding
+convention alone does not discriminate, and the cause of the enclosing face on
+this particular roof is not yet known. Do not "fix" the sign test on the
+strength of the winding count; it would break the 91 roofs that work.
+
+**Worked around in Python**, `roof_partition.facets_from_drawn_faces`: a face
+≥ `OUTER_FACE_FRAC` (0.90) of the outline is dropped WHEN other faces exist,
+and that drop happens BEFORE the coverage check so a roof left with only
+detail faces falls through to the LiDAR partition. Eleven roofs are
+legitimately a single 100% face and are untouched.
+
+**Worth fixing in the tool** before the next big labelling run, so exports are
+right at source. Reproduce with #4725584; the four affected roofs are
+#4725584, #4734685, #4746243, #5372222.
+
 ## THREE REGRESSIONS CAUGHT AT THE DEPLOY GATE — 3 Sep evening
 
 Every fix that made Josh's markup matter also created a new way for it to go
