@@ -7,6 +7,49 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## WHY AN UNLABELLED TWIN LOOKS WORSE — 4 Sep, Josh's test
+
+He found 7 Anderson Heights (#5371108, labelled) correct and 7 Duncan's Place
+(#5371110, NOT labelled) wrong — **the same roof design**. His point: "It needs
+to be fixed baked into the whole process not just you fixing an individual
+building." He is right, and the diagnosis is specific.
+
+**It is not detection coverage.** The model predicts 10 lines on each, and the
+unlabelled one has MORE passing the filter (6 vs 4).
+
+**It is not the LiDAR gate.** Building #5371110 with the gate on and off gives
+the same 9 facets, same areas.
+
+**It is that the model emits STUBS, not folds.** Bearings tell the story:
+
+| | bearing clusters |
+|---|---|
+| Josh's 14 lines on #5371108 | 0/180 (6 lines), 80/90 (4), 40 (3), 130 (3) |
+| model on #5371110 | 140 (3), 40 (2), 10 (1) |
+| model on #5371108 | 130 (3), 40 (1) |
+
+The 0/180 and 80/90 clusters ARE the sawtooth folds. The model finds the
+building's long axes and misses the folds. Where it does see them —
+#5371108 at 85° and 86° — they score 0.880 and 0.850, below the cutoff, and
+are **1.5 m and 1.7 m stubs against his 4.7–7.0 m lines**. Lowering the
+threshold admits stubs, not folds. Same root cause as the 98.5% dangling
+endpoints measured on 3 Sep.
+
+Result: labelled 8 even strips [34,30,23,21,20,13,12,11]; unlabelled 9 facets
+[62,60,20,12,12,11,8,7,7] — two blobs merging strips, plus fragments.
+
+### Untested idea: extend stubs that belong to a parallel set
+
+Roof folds repeat. A 1.5 m stub with siblings at the same bearing is probably
+one of a repeated set, and can be extended along its own bearing to the roof
+edge. Prototyped: #5371110's stubs extend to 20.8, 11.3, 9.8, 9.7 m. But on
+#5371108 the two sawtooth stubs did NOT extend, because requiring two siblings
+excludes a pair.
+
+**Not shipped.** Needs measuring on all 85 roofs with
+`measure_facet_agreement`, and the sibling threshold is the whole design — one
+sibling is weak evidence and would extend noise across every roof.
+
 ## OPEN: facesFor() can return its enclosing face — 4 Sep
 
 `facesFor()` in the labelling tool walks a planar subdivision and discards the
