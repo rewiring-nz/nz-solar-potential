@@ -972,8 +972,14 @@ function show(i){
   idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; selLine=null;
   hoverSnap=null; triPts=[];
   const r=R();
-  document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
-  document.getElementById("addr").textContent = r.address || r.area;
+  // THE ADDRESS IS THE HEADLINE. Josh: "Give me the address in the title for
+  // the building" -- he works from a street address when checking a roof
+  // against what he can see, and a building id is only useful for reporting
+  // one back. Id and area drop to the line beneath, which is where the region
+  // already sat.
+  document.getElementById("title").textContent = r.address || `#${r.id}`;
+  document.getElementById("addr").textContent =
+    (r.address ? `#${r.id} · ` : "") + `${r.m2} m² · ${r.area}`;
   const wy=document.getElementById("why");
   if(r.why && r.why.length){
     wy.innerHTML = r.why.map(t=>`<span class="why-chip">${t}</span>`).join("");
@@ -982,14 +988,22 @@ function show(i){
   const lk=document.getElementById("links");
   if(r.ll){
     const [lat,lon]=r.ll;
-    // Google MAPS rather than Earth: same 3D imagery, but Earth web loads a
-    // whole globe client and Josh found it slow and unreliable. The data=!3m1!1e3
-    // suffix is satellite, and 80a/35y/45t tilts it enough to read a roof.
+    // THE OLD "3D satellite" LINK WAS NOT 3D. It carried 80a/35y/45t, which
+    // Google Maps no longer honours from a URL -- it opened flat satellite,
+    // and adding a distance term made it worse, jumping to a regional view.
+    // Verified by opening both. So the Maps link is now labelled Satellite,
+    // which is what it actually is and still worth having: different imagery
+    // and a different capture date from our orthophoto.
+    //
+    // Earth carries the 3D mesh and its /search/ form is more robust than
+    // @-coordinates. It needs WebGL and is slower, which is why it is a
+    // separate link rather than a replacement.
     // Apple Maps opens the Maps app on a Mac, where Flyover gives a genuinely
     // better 3D model of a roof than anything in a browser.
     // Both open in a new tab so a half-drawn roof is never lost.
     lk.innerHTML =
-      `<a target="_blank" rel="noopener" href="https://www.google.com/maps/@${lat},${lon},80a,35y,45t/data=!3m1!1e3">3D satellite</a>`
+      `<a target="_blank" rel="noopener" href="https://www.google.com/maps/@${lat},${lon},19z/data=!3m1!1e3">Satellite</a>`
+    + `<a target="_blank" rel="noopener" href="https://earth.google.com/web/search/${lat},${lon}">Google Earth 3D</a>`
     + `<a target="_blank" rel="noopener" href="https://maps.apple.com/?ll=${lat},${lon}&z=19&t=k">Apple Maps</a>`;
   } else lk.innerHTML="";
   resetView(); sizeCanvas();

@@ -202,6 +202,22 @@ def main():
             if r.get("building_id"):
                 truth[int(r["building_id"])] = r
 
+    # ADDRESSES COME FROM THE BUILD, NOT FROM roof_truth.json. Josh: "Give me
+    # the address in the title for the building". roof_truth carries 28 roofs;
+    # the built solar_potential.geojson carries an address for all 15,353,
+    # because add_addresses runs over the whole district. Reading truth first
+    # meant almost every roof showed its region name instead of a street.
+    addr = {}
+    sp = DATA_DIR / "solar_potential.geojson"
+    if sp.exists():
+        try:
+            for f in json.loads(sp.read_text()).get("features", []):
+                pr = f.get("properties") or {}
+                if pr.get("building_id") is not None and pr.get("address"):
+                    addr[int(pr["building_id"])] = pr["address"]
+        except Exception:
+            pass
+
     # WHAT THE PIPELINE CURRENTLY THINKS THE ROOF IS.
     #
     # Josh: "showing how you interpret rooftops and how I have drawn them, and
@@ -281,7 +297,7 @@ def main():
             t = truth.get(bid, {})
             roofs.append({
                 "id": bid, "area": name,
-                "address": t.get("address", ""),
+                "address": t.get("address") or addr.get(bid, ""),
                 "m2": round(g.area, 1),
                 "ll": [round(lat, 6), round(lon, 6)],
                 "bounds": [round(v, 2) for v in b],
