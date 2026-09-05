@@ -1684,6 +1684,12 @@ def drop_roof_features(facets, pc_source):
     return out
 
 
+# Whether faces Josh drew keep their boundaries through the repair stages.
+# A flag rather than a bare condition so the change can be A/B'd honestly --
+# toggling a real switch, not two identical code paths.
+DRAWN_KEEP_BOUNDARY = True
+
+
 def _attach_building_geometry(facets, building_geom, pc_source=None, building_id=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
@@ -1700,14 +1706,36 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # whole-facet DROP tests still apply -- a constructed face can still be a
     # deck or a balcony.
     constructed = bool(facets) and all(f.get("constructed") for f in facets)
-    if facets and pc_source is not None and building_id is not None and not constructed:
+    # GEOMETRY JOSH DREW GETS THE SAME EXEMPTION AS CONSTRUCTED GEOMETRY, and
+    # for the reason already given above: these stages repair point-TRACED
+    # boundaries, and re-tracing a boundary that was not traced replaces it
+    # with the blobs the tracing exists to avoid.
+    #
+    # Measured on #5371108, a roof he drew as 9 faces tiling the outline
+    # exactly (zero overlap, 210.8 m2 against a 210.8 m2 footprint):
+    # facets_from_drawn_faces returned his rings unchanged, and
+    # drop_roof_features then carved 18.7 m2 -- 9% of the roof -- out of three
+    # of them, leaving 29.4 -> 22.5, 33.6 -> 30.0 and 28.9 -> 20.6. He reported
+    # it as "extra lines and planes ... it does not match what I drew", which
+    # is exactly what a difference() against LiDAR blobs does to a drawn plane.
+    #
+    # Nothing real is lost by skipping it: obstructions are detected separately
+    # and panel fitting already avoids them, so a chimney on a drawn face still
+    # takes no panels. This only stops a second mechanism re-cutting geometry he
+    # already approved.
+    drawn = (DRAWN_KEEP_BOUNDARY and bool(facets)
+             and all(f.get("from_labels") for f in facets))
+    keep_boundary = constructed or drawn
+    if facets and pc_source is not None and building_id is not None and not keep_boundary:
         facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
     if facets and pc_source is not None:
-        if not constructed:
+        if not keep_boundary:
             facets = repair_nonplanar_facets(facets, pc_source)
+        # Whole-facet DROP tests still apply to both: a drawn face can still be
+        # a deck or a balcony, and dropping one does not redraw the others.
         facets = drop_balcony_levels(facets, pc_source)
         facets = drop_plant_decks(facets, pc_source)
-        if not constructed:
+        if not keep_boundary:
             facets = drop_roof_features(facets, pc_source)
     # Self-consistency refit at the one choke point every strategy passes
     # through: a facet's plane must be the best explanation of the points its

@@ -39,6 +39,7 @@ more often than not, and the surveyed outline is a better source for those
 angles than anything recoverable from a 5.7 pts/m2 cloud.
 """
 
+import math
 import sys
 import warnings
 from pathlib import Path
@@ -1742,6 +1743,30 @@ LINE_MIN_SIDE_POINTS = 30
 CUT_COVER_MIN = 0.55
 
 
+def _reanchor(ang, off, src_poly, dst_poly):
+    """An offset measured from one polygon's centroid, expressed from another's.
+
+    THE BUG THIS FIXES, which produced the spurious lines Josh reported on 107
+    Beach Street. model_lines returns offsets measured from the FOOTPRINT's
+    centroid -- its docstring says so -- but _cut re-anchors whatever offset it
+    is given to the centroid of the polygon it is cutting. The first cell IS the
+    footprint, so the first cut lands correctly; every cell produced by that cut
+    has a different centroid, so the same (ang, off) then describes a different
+    absolute line in each one, and later cuts land where no crease is.
+
+    Measured signature of the drift: coverage of the observed segment over the
+    chord it would cut has p90 = 1.00 (the first-cell cuts, right frame) against
+    a median of 0.00 (the drifted ones) -- 68% of 247 cuts sit below 0.55.
+
+    A line is {p : n.(p - c) = off}. Re-expressing from src to dst centroid:
+    n.(p - dst) = n.(p - src) - n.(dst - src).
+    """
+    a = math.radians(float(ang))
+    nx, ny = -math.sin(a), math.cos(a)
+    s, d = src_poly.centroid, dst_poly.centroid
+    return float(off) - (nx * (d.x - s.x) + ny * (d.y - s.y))
+
+
 def _covers_cell(cell, seg, ang, off):
     """Does the detected segment actually span the cut it is proposing?
 
@@ -2156,14 +2181,19 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
                     break        # already finely divided; stop before it runs away
                 nxt = []
                 for c in cells:
-                    ok = _line_is_real(c, _points_in(c, inside), ang, off)
+                    # The offset arrived measured from the FOOTPRINT's centroid;
+                    # everything below re-anchors to the polygon it is given, so
+                    # it has to be converted per cell or the cut drifts. See
+                    # _reanchor.
+                    off_c = _reanchor(ang, off, footprint, c)
+                    ok = _line_is_real(c, _points_in(c, inside), ang, off_c)
                     # ...and the observation has to actually span this cell.
                     # Without this a crease seen on one bay of a roof cuts
                     # every bay, which is the fragmentation the note above the
                     # imagery-cut block has described since August.
-                    if ok and seg is not None and not _covers_cell(c, seg, ang, off):
+                    if ok and seg is not None and not _covers_cell(c, seg, ang, off_c):
                         ok = False
-                    parts = _cut(c, ang, off) if ok else []
+                    parts = _cut(c, ang, off_c) if ok else []
                     nxt.extend(parts if len(parts) >= 2 else [c])
                 cells = nxt
         except (ImportError, ValueError, AttributeError) as exc:

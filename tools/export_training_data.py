@@ -32,6 +32,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import sys
 import warnings
@@ -72,6 +73,9 @@ def main():
     ap.add_argument("--patch", type=int, default=128)
     ap.add_argument("--stride", type=int, default=64)
     ap.add_argument("--val-frac", type=float, default=0.2)
+    ap.add_argument("--val-ids", default=None,
+                    help="file of building ids to pin as validation -- the "
+                         "benchmark set, which must never train the model")
     ap.add_argument("--min-line-px", type=int, default=40,
                     help="drop patches with almost no line in them")
     a = ap.parse_args()
@@ -93,12 +97,32 @@ def main():
         print("no usable labelled roofs")
         return 1
 
-    # Split by ROOF, deterministically, so re-running does not quietly reshuffle
-    # what the model has already seen.
-    rng = np.random.default_rng(20260902)
-    order = rng.permutation(len(ids))
-    n_val = max(1, int(len(ids) * a.val_frac))
-    val_ids = {ids[i] for i in order[:n_val]}
+    # Split by ROOF, and by a hash of the roof's OWN id.
+    #
+    # The previous version seeded an RNG and permuted range(len(ids)), which is
+    # stable when re-run on the same labels and reshuffles completely the moment
+    # a label is added: len(ids) changes, so does the permutation, and roofs
+    # swap between train and validation. That is fine for a one-off "does more
+    # data help" curve and wrong for the loop Josh actually wants -- mark up
+    # more roofs, retrain, re-score -- where the validation set moving is
+    # indistinguishable from the model changing.
+    #
+    # Hashing each id independently means a roof's side is fixed forever the
+    # first time it is labelled, and adding the 200th roof cannot move the
+    # first 199.
+    def _is_val(bid):
+        h = hashlib.sha1(str(bid).encode()).digest()
+        return (int.from_bytes(h[:4], "big") / 2**32) < a.val_frac
+
+    if a.val_ids:
+        pinned = {line.strip() for line in Path(a.val_ids).read_text().split()
+                  if line.strip()}
+        val_ids = {k for k in ids if k in pinned}
+        if not val_ids:
+            print(f"--val-ids {a.val_ids} matched none of the labelled roofs")
+            return 1
+    else:
+        val_ids = {k for k in ids if _is_val(k)}
 
     OUT.mkdir(parents=True, exist_ok=True)
     for split in ("train", "val"):
