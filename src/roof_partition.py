@@ -1137,7 +1137,9 @@ DRAWN_COVER_MIN = 0.50
 
 # A drawn face at or above this share of the outline, when other faces exist
 # alongside it, is the arrangement's enclosing face rather than a roof plane.
-OUTER_FACE_FRAC = 0.90
+OUTER_FACE_FRAC = 0.90        # kept: still referenced by the older skeleton path
+OUTER_FACE_OVERSPILL = 1.02   # a face bigger than the building cannot be one of its planes
+OUTER_FACE_CONTAINS = 0.90    # ...nor can one that swallows every other face
 
 # How far a drawn or predicted line may be pushed along its own direction to
 # reach the roof edge. Measured on Josh's markups: endpoints sit a median 1.4 m
@@ -1271,9 +1273,55 @@ def facets_from_drawn_faces(building_id, footprint, pts):
     # roof, and the coverage guard below then correctly hands both to the LiDAR
     # partition. Drop it afterwards instead and coverage is computed at 131%,
     # the guard passes, and the building ships 31 tiny facets and 18 panels.
+    # WHAT MAKES A FACE THE ARRANGEMENT'S OUTER FACE, rather than simply large.
+    #
+    # The first version dropped any face covering >= OUTER_FACE_FRAC of the
+    # footprint. That is true of the artefact and also of a roof Josh drew as
+    # ONE plane, and the `len(faces) >= 2` guard did not save those: a roof
+    # marked as one plane plus one small "no panels here" patch has two faces,
+    # so its only real plane was deleted and the remaining 5% failed the
+    # coverage check below. #5372585 -- a 210.8 m2 plane on a 221.8 m2 building
+    # plus an 11 m2 no-panel patch -- was rejected entirely that way.
+    #
+    # An outer face is the COMPLEMENT of the others, so it gives itself away by
+    # either enclosing them or spilling outside the footprint:
+    #
+    #   roof       face/footprint   contains the others
+    #   #5372585            0.951                  0%   a plane he drew
+    #   #5371108            0.161                  0%   a plane he drew
+    #   #5372588            1.000                100%   artefact
+    #   #4725584            1.230                 17%   artefact (4,962 m2
+    #                                                   on a 4,032 m2 building)
+    #
+    # Neither test alone separates all four: containment misses #4725584, and
+    # the area ratio misses #5372588 at 1.0002. Together they classify every
+    # case correctly.
     if len(faces) >= 2:
-        keep = [f for f in faces
-                if (f.get("m2") or 0.0) < OUTER_FACE_FRAC * footprint.area]
+        polys = []
+        for f in faces:
+            try:
+                q = Polygon(f["ring"])
+                polys.append(q if q.is_valid else q.buffer(0))
+            except Exception:
+                polys.append(None)
+
+        def _is_outer(i):
+            q = polys[i]
+            if q is None or q.is_empty:
+                return False
+            if q.area > OUTER_FACE_OVERSPILL * footprint.area:
+                return True
+            rest = [p for j, p in enumerate(polys)
+                    if j != i and p is not None and not p.is_empty]
+            if not rest:
+                return False
+            try:
+                u = unary_union(rest)
+                return q.intersection(u).area / max(u.area, 1e-9) >= OUTER_FACE_CONTAINS
+            except Exception:
+                return False
+
+        keep = [f for i, f in enumerate(faces) if not _is_outer(i)]
         if keep:
             faces = keep
 

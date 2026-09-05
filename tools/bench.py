@@ -16,7 +16,7 @@ WHAT IT SCORES, worst-to-best-understood:
                          the actual visible failure -- the thing he points at in
                          a screenshot -- and no aggregate above it can see it.
   FACES EXACT            for roofs he has drawn, built facets that equal his
-                         rings (IoU > 0.999). Deliberately strict: a face
+                         rings (IoU > FACE_MATCH_IOU). Deliberately strict: a face
                          clipped by 9% scores as a miss, which is how
                          drop_roof_features was caught silently carving 1,312 m2
                          off his markup while every softer metric passed.
@@ -50,6 +50,19 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
+
+# HOW CLOSE COUNTS AS "the face Josh drew".
+#
+# This was 0.999 for its first three runs and that was measuring serialisation,
+# not geometry: preview_sample rounds facet rings to 2 dp for file size, and on
+# a roof whose faces sit at 45 degrees that shifts each face's area by a few
+# tenths of a percent. #5371108 scored 8/8 exact when compared against unrounded
+# geometry and 1/8 through the bundle, which is how it was caught. The reported
+# score jumped from 44% to 81% purely on the threshold.
+#
+# 0.99 is still strict where it matters: drop_roof_features was carving 9-30%
+# off faces Josh drew, which scores 0.71-0.89 and fails cleanly.
+FACE_MATCH_IOU = 0.99
 
 SET_PATH = ROOT / "data" / "bench_set.json"
 IDS_PATH = ROOT / "data" / "bench_ids.txt"
@@ -157,7 +170,7 @@ def score(rows, labels):
                         best = max(best, P.intersection(d).area / u)
                 except Exception:
                     pass
-            if best > 0.999:
+            if best > FACE_MATCH_IOU:
                 out["faces_exact"] += 1
         ac = _panels_across_lines(r)
         if ac is not None:
