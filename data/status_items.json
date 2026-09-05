@@ -1,0 +1,66 @@
+{
+  "_comment": "The half of the status board that cannot be read from the repo. Edited as data; tools/status_board.py renders it. Everything else on the board is fetched or computed.",
+
+  "needs_josh": [
+    {
+      "chip": "Highest value",
+      "title": "Draw every roof in the benchmark cluster",
+      "body": "The benchmark is 152 roofs and only 11 are drawn, so it can see a big regression but not a small one. Drawing 40&ndash;50 roofs in that one cluster would turn it into dense ground truth where a 2% change is visible immediately.",
+      "note": "This is a change of habit, not extra work: the same effort spent in one place instead of scattered across the district. <code>python tools/bench.py --make</code> writes the id list."
+    },
+    {
+      "chip": "High value",
+      "title": "Draw sawtooth and repeated-fold roofs",
+      "body": "Where the detector fails hardest &mdash; it finds a building's long axes and misses every cross-fold. Draw each fold all the way across; a complete line teaches far more than a short one."
+    },
+    {
+      "chip": "Quick",
+      "title": "Press B in the markup tool",
+      "body": "It draws what the build currently makes of each roof under your lines. Any building id where that looks wrong is directly useful.",
+      "note": "A reference, not a tracing guide &mdash; draw what you see, not what it drew."
+    }
+  ],
+
+  "open": [
+    {
+      "chip": "Ready",
+      "title": "District rebuild on the three fixes",
+      "body": "The drawn-face exemption, the cut-frame correction and the working clipper are committed and measured but not yet in a district build. About 4&frac12; hours on the VM, then the deploy gate.",
+      "note": "The live site still carries the old behaviour on unlabelled roofs."
+    },
+    {
+      "chip": "Unexplained",
+      "title": "Six roofs still not reproduced exactly",
+      "body": "After the drawn-face fix, 419 of 438 faces match your markup exactly. The remainder cluster on six roofs &mdash; worst is <code>#4732152</code> at 4 of 7 faces &mdash; so there is a second, smaller cause still to find."
+    },
+    {
+      "chip": "Not started",
+      "title": "Retrain the detector on the newer labels",
+      "body": "The line model dates from 2 Sep and has not seen the labels added since. The training split now pins a roof's side by its own id, so adding labels no longer reshuffles what the model has already seen.",
+      "note": "Pin the benchmark out of training first: <code>export_training_data.py --val-ids data/bench_ids.txt</code>"
+    },
+    {
+      "chip": "Dormant",
+      "title": "Island Bay is unaffected",
+      "body": "No labelled roofs there and the line model has never run over Wellington's imagery, so every fix here is inert until <code>predict_roof_lines.py</code> is run for it."
+    }
+  ],
+
+  "rejected": [
+    {"what": "Extend stubs sharing a bearing", "result": "82.5 → 81.1%",
+     "why": "Makes the full-width cut problem worse"},
+    {"what": "Subdivision for model lines", "result": "82.5 → 57.6%",
+     "why": "Under-segments; runs straight over folds you drew"},
+    {"what": "LiDAR height into the detector", "result": "0.185 → 0.163",
+     "why": "Helps where the roof is, not where it folds"},
+    {"what": "A face-predicting model", "result": "0.163",
+     "why": "Region targets do not dodge the hard part"},
+    {"what": "Extent clipping without the frame fix", "result": "82.7 → 80.3%",
+     "why": "Rejects 163 of 242 cuts by measuring against a chord in the wrong place"}
+  ],
+
+  "constraints": [
+    "<strong>The LiDAR cannot find roof creases.</strong> The survey is 1.7 returns/m&sup2; &mdash; about 0.77&nbsp;m spacing &mdash; and the 1&nbsp;m DSM is already at native resolution, so a hip crease falls between samples. Imagery must find the lines and LiDAR fit the angles.",
+    "<strong>The detector emits stubs, not folds.</strong> Where you draw a 5&nbsp;m fold it finds 1.5&nbsp;m; 98.5% of its line endpoints dangle against 56.4% of yours. More labelled roofs measurably help: boundary F1 has gone 0.122 &rarr; 0.185 as labels grew 18 &rarr; 74, about +1.1 per 100 roofs, still climbing."
+  ]
+}
