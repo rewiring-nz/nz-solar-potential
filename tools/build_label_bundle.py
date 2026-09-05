@@ -78,6 +78,9 @@ def crop(imagery, bounds):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ids", nargs="*", type=int, default=None)
+    ap.add_argument("--bench", action="store_true",
+                    help="the benchmark cluster: the roofs already marked plus "
+                         "every unmarked one around them, opened as a work queue")
     ap.add_argument("--max", type=int, default=None)
     ap.add_argument("--out", default="mark_roofs.html")
     a = ap.parse_args()
@@ -96,6 +99,22 @@ def main():
 
     ids = a.ids
     why = {}
+    # THE BENCHMARK CLUSTER AS A WORK QUEUE. Josh: "only shows the marked
+    # rooftops and then the ones in the area you want me to do. So I can just
+    # press next unmarked".
+    #
+    # Marking scattered roofs across the district trains the detector well and
+    # leaves the scoreboard thin -- tools/bench.py scores 152 roofs of which
+    # only 11 are drawn, which can see a large regression and not a small one.
+    # The same effort spent inside one cluster turns it into dense ground truth.
+    # The marked roofs come along so their geometry is visible for context; the
+    # bundle opens on the first unmarked one.
+    if a.bench and ids is None:
+        bp = DATA_DIR / "bench_ids.txt"
+        if not bp.exists():
+            print("no data/bench_ids.txt -- run tools/bench.py --make first")
+            return 2
+        ids = [int(x) for x in bp.read_text().split() if x.strip()]
     if ids is None:
         q = OUT_DIR / "queue.json"
         if not q.exists():
@@ -111,6 +130,21 @@ def main():
         why = {int(k): v for k, v in (qd.get("reasons") or {}).items()}
     if a.max:
         ids = ids[:a.max]
+
+    _saved = {}
+    lp = DATA_DIR / "roof_labels.json"
+    if lp.exists():
+        for k, v in json.loads(lp.read_text()).get("buildings", {}).items():
+            if not (v.get("lines") or v.get("obstructions")
+                    or v.get("nopanel") or v.get("problem")):
+                continue
+            _saved[int(k)] = {
+                "lines": v.get("lines") or [],
+                "obstructions": v.get("obstructions") or [],
+                "nopanel": v.get("nopanel") or [],
+                "complete": bool(v.get("complete")),
+                "problem": v.get("problem"),
+            }
 
     truth = {}
     tp = DATA_DIR / "roof_truth.json"
@@ -213,6 +247,13 @@ def main():
                 "why": why.get(bid, []),
                 "built": built_cache.setdefault(
                     name, _built_facets(name)).get(bid, []),
+                # WORK ALREADY DONE TRAVELS WITH THE BUNDLE. The tool keeps
+                # marks in the browser's local storage, so a fresh bundle on a
+                # fresh machine shows every roof as untouched -- including the
+                # ones Josh has already drawn, which he would then draw again
+                # and "next unmarked" would stop on. Seeding from
+                # roof_labels.json makes the bundle carry its own history.
+                "saved": _saved.get(bid),
                 "jpg": jpg,
             })
             placed = True
@@ -224,6 +265,10 @@ def main():
 
     html = (ROOT / "tools" / "label_template.html").read_text()
     html = html.replace("/*__ROOFS__*/", json.dumps(roofs, separators=(",", ":")))
+    # Replaces the placeholder AND the "{}" default after it, so the template
+    # stays valid JavaScript when opened directly and valid once substituted.
+    html = html.replace("/*__OPTS__*/{}",
+                        json.dumps({"unmarkedOnly": bool(a.bench)}))
     out = OUT_DIR / a.out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html)

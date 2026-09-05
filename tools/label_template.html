@@ -273,6 +273,7 @@
 
 <script>
 const ROOFS = /*__ROOFS__*/;
+const OPTS = /*__OPTS__*/{};
 const COL = {ridge:"#1fff7a",valley:"#35b6ff",cliff:"#ff3b30",edge:"#2ecc71"};
 const KEY = "roof_labels_v1";
 const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
@@ -298,7 +299,7 @@ const HANDLE = () => 8 * dpr();
 // corner) makes the junction exact.
 const SNAP_PX = 14;
 let hoverSnap = null;
-let hideDone = false;
+let hideDone = !!OPTS.unmarkedOnly;
 // The pipeline's own facets, toggled with B. Default OFF on purpose: see the
 // note where they are drawn.
 let showBuilt = false;
@@ -385,6 +386,17 @@ function snapPoint(px,py){
 }
 
 let idx=0, tool="ridge", data=load(), img=new Image();
+// SEED FROM THE BUNDLE'S OWN HISTORY. A roof Josh has already drawn arrives
+// with its lines attached, so a bundle opened on a machine that has never seen
+// this tool still knows what is done. Local storage always wins -- work in
+// progress here is newer than whatever was exported into the file.
+ROOFS.forEach(r=>{
+  if(r.saved && !data[r.id]){
+    data[r.id] = {lines: r.saved.lines||[], obstructions: r.saved.obstructions||[],
+                  nopanel: r.saved.nopanel||[], complete: !!r.saved.complete,
+                  problem: r.saved.problem||null};
+  }
+});
 let pending=null, drag=null, sel=null, shift=false, space=false;
 const cv=document.getElementById("c"), ctx=cv.getContext("2d");
 const R = () => ROOFS[idx];
@@ -1408,6 +1420,15 @@ addEventListener("resize", ()=>{ sizeCanvas(); draw(); });
 
 setTool("ridge");
 show(0);
+// A FOCUSED BUNDLE OPENS ON WORK. Josh: "So I can just press next unmarked and
+// see what you are wanting me to mark". Opening on roof 0 -- often one he has
+// already done -- means the first thing the tool asks of him is to navigate.
+if(OPTS.unmarkedOnly){
+  const b=document.getElementById("hidedone");
+  b.classList.add("on");
+  b.firstChild.textContent="Showing unmarked only";
+  if(marked(ROOFS[0].id)) document.getElementById("skipto").click();
+}
 
 // PUBLISHED ON GITHUB PAGES there is no db to write to -- Pages is static. But
 // the roofs already collected can still be shown, by reading a progress file
