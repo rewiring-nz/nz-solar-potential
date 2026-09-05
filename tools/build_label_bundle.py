@@ -78,6 +78,12 @@ def crop(imagery, bounds):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ids", nargs="*", type=int, default=None)
+    ap.add_argument("--artifact", action="store_true",
+                    help="strip the document wrapper so the file can be "
+                         "published as an Artifact, which supplies its own")
+    ap.add_argument("--bench-n", type=int, default=0, dest="bench_n",
+                    help="how many unmarked roofs to include (0 = all). The "
+                         "roofs already drawn always come too, for context")
     ap.add_argument("--bench", action="store_true",
                     help="the benchmark cluster: the roofs already marked plus "
                          "every unmarked one around them, opened as a work queue")
@@ -115,6 +121,49 @@ def main():
             print("no data/bench_ids.txt -- run tools/bench.py --make first")
             return 2
         ids = [int(x) for x in bp.read_text().split() if x.strip()]
+        # RIGHT-SIZE THE ASK. Josh: "Does it need to be 152? That is a lot and I
+        # imagine diminishing returns?" It does not, and the returns were
+        # measured rather than guessed: bootstrapping the score over his 84
+        # drawn roofs, the 95% interval is +/-6.2 points at 10 roofs, +/-4.3 at
+        # 25 and +/-2.3 at 84. The knee is around 25-30; past that a day of
+        # drawing buys well under a point.
+        #
+        # The other roofs stay in the BENCHMARK -- they are built and scored
+        # automatically for fragmentation and panel counts, which costs him
+        # nothing. Only the drawn subset needs to grow, so only it is bundled.
+        #
+        # SIMPLEST FIRST, because the scarce resource is Josh's time, not the
+        # roof count. Josh: "Why don't we fix simple roofs first which are
+        # faster for me to draw?" -- and the data agrees more strongly than the
+        # argument did. Across his 84 drawn roofs:
+        #
+        #   simple (2-3 faces)   24 roofs   93.9% of faces exact    4.4 lines/roof
+        #   medium (4-6)         31         95.9%                  10.6
+        #   complex (7+)         29         96.7%                  33.1
+        #
+        # Simple roofs are the WORST band, so they are not already solved, and
+        # they cost a fifth of the drawing. Per line he draws they return about
+        # 1.1 faces of signal against 0.16 for a complex roof -- roughly seven
+        # times the value of the same hour. Ordering by complexity descending,
+        # which is what this did first, optimised faces per ROOF and ignored
+        # that a complex roof is seven roofs' worth of work.
+        if a.bench_n:
+            _lab = json.loads((DATA_DIR / "roof_labels.json").read_text())["buildings"] \
+                if (DATA_DIR / "roof_labels.json").exists() else {}
+            done = [i for i in ids if _lab.get(str(i), {}).get("complete")]
+            todo = [i for i in ids if i not in set(done)]
+
+            def _weight(bid):
+                vp = DATA_DIR / "vision_lines" / f"{bid}.json"
+                nlines = 0
+                if vp.exists():
+                    try:
+                        nlines = len(json.loads(vp.read_text()).get("lines") or [])
+                    except Exception:
+                        nlines = 0
+                return (nlines if nlines else 999)
+            todo.sort(key=_weight)
+            ids = done + todo[:a.bench_n]
     if ids is None:
         q = OUT_DIR / "queue.json"
         if not q.exists():
@@ -269,6 +318,23 @@ def main():
     # stays valid JavaScript when opened directly and valid once substituted.
     html = html.replace("/*__OPTS__*/{}",
                         json.dumps({"unmarkedOnly": bool(a.bench)}))
+    # PUBLISHED ONLINE THE PAGE IS A FRAGMENT, NOT A DOCUMENT. The Artifact
+    # host wraps whatever it is given in its own doctype/head/body, so shipping
+    # ours nests a second document inside the first. Everything between the
+    # tags is kept verbatim -- title, styles and script are all still there.
+    #
+    # Worth it because online the tool reaches claude.use("db") and saves each
+    # roof server-side as it is drawn, instead of trusting one browser's local
+    # storage with a day of markup.
+    if a.artifact:
+        import re
+        html = re.sub(r"(?is)<!doctype[^>]*>", "", html)
+        html = re.sub(r"(?is)</?html[^>]*>", "", html)
+        html = re.sub(r"(?is)</?head[^>]*>", "", html)
+        html = re.sub(r"(?is)</?body[^>]*>", "", html)
+        html = re.sub(r"(?is)<meta[^>]*charset[^>]*>", "", html)
+        html = html.strip()
+
     out = OUT_DIR / a.out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html)
