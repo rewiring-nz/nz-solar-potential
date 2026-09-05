@@ -1731,10 +1731,15 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     if facets and pc_source is not None:
         if not keep_boundary:
             facets = repair_nonplanar_facets(facets, pc_source)
-        # Whole-facet DROP tests still apply to both: a drawn face can still be
-        # a deck or a balcony, and dropping one does not redraw the others.
-        facets = drop_balcony_levels(facets, pc_source)
-        facets = drop_plant_decks(facets, pc_source)
+        # Whole-facet DROP tests still apply to CONSTRUCTED facets: a fitted
+        # face can be a deck or a balcony and dropping one does not redraw the
+        # others. They do NOT apply to faces Josh drew, because he has an
+        # explicit way to say a face takes no panels -- the no-panel tag -- and
+        # these guess at the same question and overrule him. On #4735237 they
+        # took 2 of the 22 faces he drew.
+        if not drawn:
+            facets = drop_balcony_levels(facets, pc_source)
+            facets = drop_plant_decks(facets, pc_source)
         if not keep_boundary:
             facets = drop_roof_features(facets, pc_source)
     # Self-consistency refit at the one choke point every strategy passes
@@ -1749,7 +1754,12 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             facets = _refit_planes(facets, _ts(_pts))
         except Exception as exc:
             _note_fallback("refit_planes", building_id, exc)
-    if APPLY_REALISM_MERGE and facets:
+    # merge_uneconomic_splits combines facets it judges too small to be worth
+    # splitting. That is a reasonable guess about geometry nobody has checked
+    # and simply wrong about geometry Josh drew: on #4735237 it merged his 20
+    # remaining faces into 14, and on #5372610 his 5 into 3. He drew the split;
+    # it is not ours to undo.
+    if APPLY_REALISM_MERGE and facets and not drawn:
         try:
             facets = merge_uneconomic_splits(facets)
         except Exception as exc:

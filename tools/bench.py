@@ -133,7 +133,13 @@ def score(rows, labels):
 
     out = {"roofs": 0, "facets": 0, "panels": 0,
            "labelled_roofs": 0, "faces_exact": 0, "faces_total": 0,
-           "panels_across": 0, "panels_on_labelled": 0, "errors": 0}
+           "panels_across": 0, "panels_on_labelled": 0, "errors": 0,
+           # Josh: "How can you make sure you are not drawing any extra lines
+           # compared to what I've now marked on those exact rooftops?"
+           # faces_exact answers "did it reproduce what he drew"; it does not
+           # answer "and nothing else". A roof can reproduce all 8 of his faces
+           # and add a 9th, and score 8/8.
+           "extra": 0, "missing": 0, "mismatched_roofs": []}
     for r in rows:
         if r.get("error"):
             out["errors"] += 1
@@ -156,6 +162,7 @@ def score(rows, labels):
         if not drawn:
             continue
         out["labelled_roofs"] += 1
+        r_ex = 0
         for f in r.get("facets") or []:
             try:
                 P = Polygon(f["ring"])
@@ -172,6 +179,16 @@ def score(rows, labels):
                     pass
             if best > FACE_MATCH_IOU:
                 out["faces_exact"] += 1
+                r_ex += 1
+        built_n = len(r.get("facets") or [])
+        d_extra = max(0, built_n - len(drawn))
+        d_missing = max(0, len(drawn) - built_n)
+        out["extra"] += d_extra
+        out["missing"] += d_missing
+        if d_extra or d_missing or r_ex < built_n:
+            out["mismatched_roofs"].append(
+                {"id": r["id"], "drew": len(drawn), "built": built_n,
+                 "exact": r_ex})
         ac = _panels_across_lines(r)
         if ac is not None:
             out["panels_across"] += ac
@@ -211,6 +228,11 @@ def show(cur, prev, note):
         line("faces matching markup", pct, ppct, lower_better=False, suffix="%")
         print(f"  {'':26s} {cur['faces_exact']}/{cur['faces_total']} on "
               f"{cur['labelled_roofs']} drawn roofs")
+    if cur.get("extra") or cur.get("missing"):
+        line("extra facets vs markup", cur["extra"],
+             prev.get("extra") if prev else None, fmt="{:.0f}")
+        line("missing facets vs markup", cur["missing"],
+             prev.get("missing") if prev else None, fmt="{:.0f}")
     if cur["panels_on_labelled"]:
         pct = 100 * cur["panels_across"] / cur["panels_on_labelled"]
         ppct = (100 * prev["panels_across"] / prev["panels_on_labelled"]
@@ -278,6 +300,14 @@ def main():
     hist = json.loads(HIST_PATH.read_text()) if HIST_PATH.exists() else []
     prev = hist[-1]["score"] if hist else None
     show(cur, prev, a.note)
+
+    bad = cur.get("mismatched_roofs") or []
+    if bad:
+        print(f"\n  roofs not matching your markup ({len(bad)}):")
+        for b in sorted(bad, key=lambda t: -(abs(t["built"] - t["drew"]))) [:15]:
+            d = b["built"] - b["drew"]
+            tag = (f"{d:+d} facets" if d else f"{b['exact']}/{b['built']} exact")
+            print(f"    #{b['id']}  you drew {b['drew']}, built {b['built']}   {tag}")
 
     hist.append({"when": time.strftime("%Y-%m-%dT%H:%M:%S"),
                  "note": a.note, "secs": round(secs, 1), "score": cur})

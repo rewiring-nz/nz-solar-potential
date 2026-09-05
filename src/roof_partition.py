@@ -1133,6 +1133,7 @@ DRAWN_MIN_FACET_M2 = 1.5
 # Measured across the 92 labelled roofs, coverage is a median 100% and only
 # that one sits below 70%, so this is a guard against a partial markup rather
 # than a threshold anything normal has to clear.
+DRAWN_MAX_SLOPE_DEG = 85.0    # a face he drew is roof unless it is a wall
 DRAWN_COVER_MIN = 0.50
 
 # A drawn face at or above this share of the outline, when other faces exist
@@ -1359,13 +1360,43 @@ def facets_from_drawn_faces(building_id, footprint, pts):
         if sub is None:
             pending.append(poly)
             continue
+        # A BAD PLANE IS NOT A REASON TO DELETE A FACE HE DREW.
+        #
+        # These three tests exist to reject walls and rubbish surfaces found by
+        # the LiDAR partition. On a face Josh drew they reject something else:
+        # the FIT, not the face. At 1.7 returns/m2 a 7 m2 dormer carries about
+        # twelve points, and twelve noisy points routinely fit a plane steeper
+        # than MAX_ROOF_SLOPE. Measured on the two worst roofs in the benchmark,
+        # this was the whole of the loss -- #4735237 lost 7 of 23 faces to slope
+        # and steep-fit, #5372610 lost 3 of 6:
+        #
+        #   #4735237  kept 13, slope>55 4, steep+poor fit 3, too sparse 3
+        #   #5372610  kept  2, slope>55 1, steep+poor fit 2
+        #
+        # He is the authority on which parts of the roof are roof. So a face
+        # whose own fit is unusable borrows a neighbour's plane, exactly as a
+        # face with too few points already does, and is only dropped if it has
+        # no neighbour to borrow from. That keeps the guard against genuine
+        # walls -- a wall drawn in isolation still goes -- without deleting
+        # geometry he marked.
         plane = _fit_plane_robust(sub)
-        if plane is None:
-            continue
-        slope, aspect = _slope_aspect(plane)
-        if slope > config.MAX_ROOF_SLOPE_DEG:
-            continue
-        if slope >= STEEP_FACE_DEG and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT:
+        bad_fit = plane is None
+        if not bad_fit:
+            slope, aspect = _slope_aspect(plane)
+            # Josh: "Panels can be placed steeper than 55 degrees too if
+            # needed". MAX_ROOF_SLOPE_DEG stays at 55 for geometry the LiDAR
+            # guessed, where it is the guard against calling a wall a roof.
+            # On a face he drew it was answering a question he has already
+            # answered, and steep roofs are exactly where the fitted slope is
+            # least trustworthy anyway. Only a near-vertical face is still
+            # refused here, since that is a wall however it was produced.
+            if slope > DRAWN_MAX_SLOPE_DEG:
+                bad_fit = True
+            elif (slope >= STEEP_FACE_DEG
+                  and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT):
+                bad_fit = True
+        if bad_fit:
+            pending.append(poly)
             continue
         out.append({
             "building_id": building_id,
