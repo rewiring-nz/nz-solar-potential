@@ -245,8 +245,18 @@ def drawn_faces(building_id):
         ring = f.get("ring") or []
         if len(ring) >= 3:
             out.append({"ring": [(float(x), float(y)) for x, y in ring],
+                        # islands the tool cut out of this face: a dormer
+                        # drawn as a closed loop, a courtyard
+                        "holes": [[(float(x), float(y)) for x, y in h]
+                                  for h in (f.get("holes") or []) if len(h) >= 3],
                         "m2": float(f.get("m2") or 0.0),
-                        "usable": bool(f.get("usable", True))})
+                        "usable": bool(f.get("usable", True)),
+                        # False: no drawn line bounds it -- the leftover of
+                        # the roof, not a face he described. Absent on
+                        # exports older than 5 Sep 2026; tools/ingest_labels.py
+                        # recomputes them, so it is only missing on a file
+                        # that never went through ingest.
+                        "drawn": bool(f.get("drawn", True))})
     return out
 
 

@@ -1244,16 +1244,29 @@ def facets_from_drawn_faces(building_id, footprint, pts):
     from shapely.geometry import Polygon
 
     try:
-        from src.roof_line_source import drawn_faces
+        from src.roof_line_source import drawn_faces, has_drawn
     except Exception:
         return []
     faces = drawn_faces(building_id)
     if not faces:
         return []
-    # DROP THE ARRANGEMENT'S OUTER FACE. facesFor() walks a planar subdivision
-    # and can return the enclosing face alongside the real ones -- on #4725584
-    # that is a 4,962 m2 ring on a 4,032 m2 building, larger than the building,
-    # sitting beside 37 genuine faces of 84 m2 and below.
+    # WHICH FACES ARE HIS. A face with no drawn line on its boundary is the
+    # part of the roof his lines did not describe: the leftover around a few
+    # dormer stubs (#4735242: 32 stubs, one 1,054 m2 face), or the strip a
+    # grown boundary added outside the surveyed outline. Those never count
+    # toward coverage, so a partial markup cannot pass the gate below on the
+    # strength of the roof it left blank. The one exception is a roof he
+    # marked complete WITHOUT drawing a line -- his way of saying it is one
+    # plane -- where the single face is the markup.
+    has_lines = has_drawn(building_id)
+    for f in faces:
+        f["claimed"] = bool(f.get("drawn", True)) or not has_lines
+    # DROP THE ARRANGEMENT'S OUTER FACE. Before 5 Sep 2026 facesFor() returned
+    # the face around an island as if the island were not there -- on #4725584
+    # a 4,962 m2 ring on a 4,032 m2 building, larger than the building, beside
+    # 37 genuine faces of 84 m2 and below. The tool now cuts islands out and
+    # tools/ingest_labels.py recomputes stored faces, so this should no longer
+    # fire; it stays as the guard for a file that never went through ingest.
     #
     # Kept as a facet it becomes the whole roof: it spans several real planes,
     # so its on-plane fit is 0.16, it is rejected by BIG_ROOF_FACET_MIN_FIT,
@@ -1277,7 +1290,8 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             faces = keep
 
     try:
-        cover = sum(f.get("m2") or 0.0 for f in faces) / max(footprint.area, 1e-9)
+        cover = (sum(f.get("m2") or 0.0 for f in faces if f["claimed"])
+                 / max(footprint.area, 1e-9))
     except Exception:
         cover = 1.0
     if cover < DRAWN_COVER_MIN:
@@ -1292,41 +1306,65 @@ def facets_from_drawn_faces(building_id, footprint, pts):
         if not f.get("usable", True):
             continue
         try:
-            poly = Polygon(f["ring"])
+            poly = Polygon(f["ring"], f.get("holes") or [])
             if not poly.is_valid:
                 poly = poly.buffer(0)
         except Exception:
             continue
-        if (poly.is_empty or poly.geom_type != "Polygon"
-                or poly.area < DRAWN_MIN_FACET_M2):
+        if poly.is_empty:
             continue
-        sub = _points_in(poly, inside)
-        if len(sub) < MIN_POINTS_PER_FACE:
-            # Too few returns to fit a plane of its own. The face is still real
-            # -- at 1.7 returns/m2 a 4 m2 dormer holds about seven points --
-            # so it borrows the plane of the largest face it touches rather
-            # than being deleted.
-            sub = None
-        if sub is None:
-            pending.append(poly)
-            continue
-        plane = _fit_plane_robust(sub)
-        if plane is None:
-            continue
-        slope, aspect = _slope_aspect(plane)
-        if slope > config.MAX_ROOF_SLOPE_DEG:
-            continue
-        if slope >= STEEP_FACE_DEG and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT:
-            continue
-        out.append({
-            "building_id": building_id,
-            "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
-            "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
-            "slope_deg": slope, "aspect_deg": aspect,
-            "area_m2": float(poly.area), "point_count": int(len(sub)),
-            "from_labels": True,
-        })
+        # A face he described may run past the surveyed outline: that is the
+        # bad_outline case and his line is the better boundary. A face he did
+        # not describe has no such authority and is roof only where the
+        # survey says there is building.
+        parts = [poly]
+        if not f["claimed"]:
+            try:
+                clipped = poly.intersection(footprint)
+            except Exception:
+                continue
+            parts = list(getattr(clipped, "geoms", [clipped]))
+        for poly in parts:
+            _add_drawn_face(building_id, poly, inside, out, pending)
+    _borrow_planes(building_id, out, pending)
+    return out
 
+
+def _add_drawn_face(building_id, poly, inside, out, pending):
+    """Fit one drawn face's plane from the survey under it, or queue it to
+    borrow a neighbour's."""
+    if (poly.is_empty or poly.geom_type != "Polygon"
+            or poly.area < DRAWN_MIN_FACET_M2):
+        return
+    sub = _points_in(poly, inside)
+    if len(sub) < MIN_POINTS_PER_FACE:
+        # Too few returns to fit a plane of its own. The face is still real
+        # -- at 1.7 returns/m2 a 4 m2 dormer holds about seven points --
+        # so it borrows the plane of the largest face it touches rather
+        # than being deleted.
+        sub = None
+    if sub is None:
+        pending.append(poly)
+        return
+    plane = _fit_plane_robust(sub)
+    if plane is None:
+        return
+    slope, aspect = _slope_aspect(plane)
+    if slope > config.MAX_ROOF_SLOPE_DEG:
+        return
+    if slope >= STEEP_FACE_DEG and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT:
+        return
+    out.append({
+        "building_id": building_id,
+        "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+        "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+        "slope_deg": slope, "aspect_deg": aspect,
+        "area_m2": float(poly.area), "point_count": int(len(sub)),
+        "from_labels": True,
+    })
+
+
+def _borrow_planes(building_id, out, pending):
     # Faces with too little survey under them take the plane of the largest
     # neighbour they share an edge with. Better a small face on its neighbour's
     # plane than the roof reverting to a partition that ignores the markup.
@@ -1350,7 +1388,6 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             "area_m2": float(poly.area), "point_count": 0,
             "from_labels": True, "plane_borrowed": True,
         })
-    return out
 
 
 # MEASURED AND NOT USED FOR MODEL LINES. line_facets subdivides by segment

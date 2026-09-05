@@ -10,6 +10,9 @@
 # What each one is for:
 #   pure         arithmetic you cannot see -- aspect conventions, the horizon
 #                codec, lookup binning, the derate. Mutation-checked.
+#   faces        the planar subdivision the labelling tool builds from Josh's
+#                lines -- courtyards, islands, and which faces are his. Lifted
+#                out of tools/label_template.html so the tool is what is tested.
 #   economics    the money maths: self-consumption split, savings, payback.
 #                Untestable until 1 Sep, when it was pulled out of preview.html
 #                -- which is how a 2.4x error in the yearly figure survived
@@ -41,6 +44,7 @@ run() {
 run "pure functions"        $PY tests/test_pure.py
 if command -v node >/dev/null 2>&1; then
   run "economics"           node tests/test_economics.mjs
+  run "faces"               node tests/test_faces.mjs
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
 fi

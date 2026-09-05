@@ -227,6 +227,20 @@ def main():
         {"tool": "ingest_labels", "buildings": merged}, indent=1))
     print(f"\nwrote {LABELS}")
 
+    # The faces in a label file are whatever facesFor() drew on the day it was
+    # exported. Recompute them all with the tool's CURRENT geometry, so a fix
+    # there reaches every roof already held and the build never reads faces
+    # two versions of the tool disagree about.
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if node:
+        subprocess.run([node, str(ROOT / "tools" / "refresh_label_faces.js")],
+                       check=False)
+    else:
+        print("node not found: faces left as exported -- run "
+              "tools/refresh_label_faces.js when it is available")
+
     # The bit that is always forgotten by hand: the tool reads this to grey out
     # roofs already collected, so people stop re-marking them.
     from datetime import date

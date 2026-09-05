@@ -38,41 +38,102 @@ endpoints measured on 3 Sep.
 Result: labelled 8 even strips [34,30,23,21,20,13,12,11]; unlabelled 9 facets
 [62,60,20,12,12,11,8,7,7] — two blobs merging strips, plus fragments.
 
-### Untested idea: extend stubs that belong to a parallel set
+### Extending stubs in a parallel set — MEASURED, REJECTED (4 Sep, 157537d)
 
-Roof folds repeat. A 1.5 m stub with siblings at the same bearing is probably
-one of a repeated set, and can be extended along its own bearing to the roof
-edge. Prototyped: #5371110's stubs extend to 20.8, 11.3, 9.8, 9.7 m. But on
-#5371108 the two sawtooth stubs did NOT extend, because requiring two siblings
-excludes a pair.
+Roof folds repeat, so a 1.5 m stub with siblings at the same bearing could be
+extended along its own bearing to the roof edge. Measured on all 85 labelled
+roofs, model path only:
 
-**Not shipped.** Needs measuring on all 85 roofs with
-`measure_facet_agreement`, and the sibling threshold is the whole design — one
-sibling is weak evidence and would extend noise across every roof.
+| | lines found | edges he did NOT draw |
+|---|---|---|
+| unchanged | 82.5% | 22.4% |
+| extend, ≥2 siblings | 81.1% | 23.5% |
+| extend, ≥1 sibling | 81.2% | 23.3% |
 
-## OPEN: facesFor() can return its enclosing face — 4 Sep
+Worse both ways, and the sibling count — supposed to be the whole design —
+is irrelevant. Extending a stub across a roof produces exactly the full-width
+cut that ruins 107 Beach Street. Left in `src/line_network.py` unwired. Worth
+revisiting only alongside a cutter that clips a cut to the extent of the line
+justifying it.
 
-`facesFor()` in the labelling tool walks a planar subdivision and discards the
-outer boundary by signed area: interior faces are expected counter-clockwise,
-the outer trace negative. On #4725584 it exported a **4,962 m² face on a
-4,032 m² building** alongside 37 real faces of 84 m² and below.
+## facesFor() ENCLOSING FACE — FIXED AT SOURCE, 5 Sep
 
-**The obvious explanation is wrong.** All 92 labelled outlines are CLOCKWISE in
-the source GeoJSON, including roofs whose faces are perfect — 7 Anderson
-(#5371108) exports 9 sensible faces from a clockwise outline. So the winding
-convention alone does not discriminate, and the cause of the enclosing face on
-this particular roof is not yet known. Do not "fix" the sign test on the
-strength of the winding count; it would break the 91 roofs that work.
+The 4,962 m² face on 32 Frankton Road was never the outer boundary, and
+winding had nothing to do with it. Two things the arrangement could not see:
 
-**Worked around in Python**, `roof_partition.facets_from_drawn_faces`: a face
-≥ `OUTER_FACE_FRAC` (0.90) of the outline is dropped WHEN other faces exist,
-and that drop happens BEFORE the coverage check so a roof left with only
-detail faces falls through to the LiDAR partition. Eleven roofs are
-legitimately a single 100% face and are untouched.
+1. **The courtyard.** The footprint's hole was drawn on screen and never
+   entered `facesFor`. 107 of his 219 lines run from the street edge to the
+   courtyard edge; with nothing to end on they closed ONE face, the whole
+   building, garden included: 5,232 m² exterior less 270 m² of dormers.
+2. **Islands.** A dormer drawn as a closed loop touching nothing else is its
+   own connected component. The half-edge walk traced it and the face around
+   it independently, so the surround kept the dormer's area and areas summed
+   past the roof. #5372588: a raised section drawn as a hexagon of cliffs came
+   out as the hexagon AND the whole 525 m² outline; the build dropped the
+   larger as "enclosing", found 26% coverage, and discarded the markup.
 
-**Worth fixing in the tool** before the next big labelling run, so exports are
-right at source. Reproduce with #4725584; the four affected roofs are
-#4725584, #4734685, #4746243, #5372222.
+Fixed in `tools/label_template.html` (bundle regenerated): courtyard rings are
+edges of the arrangement; each component's outer cycle becomes a hole in the
+smallest face of another component that contains it; the courtyard's own face
+is dropped; rings are despiked. Exports carry `holes` and `drawn` per face and
+the build reads both (`roof_line_source.drawn_faces`,
+`roof_partition.facets_from_drawn_faces`). `tests/test_faces.mjs` pins it,
+lifting the geometry straight out of the template so the tool is what is
+tested.
+
+**Stored faces are now recomputed, not trusted.** The file carried whatever
+`facesFor` drew on the day each roof was exported, so a fix to the tool never
+reached a roof already held. `tools/refresh_label_faces.js` re-runs the
+template's geometry over every building, and `tools/ingest_labels.py` runs it
+after every merge. Applied to all 114: lines, obstructions and no-panel flags
+byte-identical, only `faces` changed.
+
+### The hull (3c7f347) had never reached the build, and was about to ship air
+
+Stored faces predate 3c7f347, so the refresh was the first time its convex
+hull met real data. On the 13 roofs where it fires:
+
+- it fires on OVERSHOOT as readily as on a wrong outline: #4744126, outline
+  fine, four lines run 3 m past the eave, faces at 114% of the footprint.
+- replacing the outline threw away the edges nine lines in ten were snapped
+  to, so they dangled inside the hull: #4747492 15 faces → 8 (coverage 0.26),
+  #4740680 4 → 2 (0.04). Both would have lost their markup at the gate.
+- #4729620 at 156%: a 127 m² face over a tree, bounded by one cliff and two
+  hull edges.
+- #4735242: 32 dormer stubs became ONE 1,120 m² face, the regression 31b3b74
+  fixed, back through a different door.
+
+Two changes. The surveyed outline stays in the arrangement when the hull is
+used. And a face is **claimed** (`drawn: true`) only if the drawn length on
+its boundary is at least the hull length, and above zero — inside the outline
+that is "any drawn edge"; a face with none is the leftover his lines did not
+describe. The build counts only claimed faces toward `DRAWN_COVER_MIN` and
+clips unclaimed ones to the footprint. A roof marked complete with NO lines
+is still one plane, his way of saying so. After: every hull roof reads
+1.00–1.12 claimed, #4735242 reads 0.02 and falls to the partition.
+
+### Net effect on the build's decision — 89 complete, unflagged roofs
+
+Markup used: **82 → 83**. #4725584 and #5372588 now build from his faces
+(100% coverage; 62 and 2 faces). #4725521 (3 lines, none closing anything)
+drops to the LiDAR partition; it shipped as ONE plane over a gable before. Six
+roofs that read 1.03–1.06 coverage from double-counted dormers now read 1.00.
+Checked with synthetic points through `facets_from_drawn_faces`: #4725584
+gives 62 facets at 1.00 of footprint, largest 1,684 m² with 7 interiors;
+#4729620 11 facets at exactly 1.00 with the hull slop clipped off.
+
+**At the next deploy gate, look at:** #4725584, #5372588, #4725521, and the
+hull roofs #4744126, #4729620, #4747492, #4740680, #5372383, #5372641,
+#4727955, #4741338, #5373469, #5370829. None of this has been through a
+rebuild yet.
+
+### Measured and not done: extending dangling ends
+
+9.1% of endpoints (287 of 3,156) dangle. Gap to the nearest edge or line:
+median 0.63 m perpendicular, 2.4 m along the line's own direction; extending
+within 0.3 m would close 30 of 287. These are unfinished lines, not near
+misses, so the extend-then-polygonize idea in `label_geometry.py` buys
+nothing here. (#4725521's three lines are this.)
 
 ## THREE REGRESSIONS CAUGHT AT THE DEPLOY GATE — 3 Sep evening
 

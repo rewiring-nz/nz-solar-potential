@@ -81,14 +81,21 @@ def _rasterise_faces(shape, faces, bounds):
     usable = Image.new("L", (w, h), 0)
     edges = Image.new("L", (w, h), 0)
     di, du, de = ImageDraw.Draw(inst), ImageDraw.Draw(usable), ImageDraw.Draw(edges)
-    for i, f in enumerate(faces, start=1):
+    # Largest first, so an island -- a dormer drawn as a closed loop, exported
+    # as a hole in the face around it -- is painted over its surround rather
+    # than under it. An unusable island must also clear the usable mask.
+    order = sorted(faces, key=lambda f: -(f.get("m2") or 0.0))
+    for i, f in enumerate(order, start=1):
         ring = [to_px(p) for p in f["ring"]]
         if len(ring) < 3:
             continue
         di.polygon(ring, fill=i)
-        if f.get("usable", True):
-            du.polygon(ring, fill=255)
+        du.polygon(ring, fill=255 if f.get("usable", True) else 0)
         de.line(ring + [ring[0]], fill=255, width=EDGE_PX)
+        for h in f.get("holes") or []:
+            hr = [to_px(p) for p in h]
+            if len(hr) >= 3:
+                de.line(hr + [hr[0]], fill=255, width=EDGE_PX)
     return (np.array(inst).astype("uint16"),
             np.array(edges), np.array(usable))
 

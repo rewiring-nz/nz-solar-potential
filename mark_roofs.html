@@ -51,6 +51,11 @@
     background:color-mix(in srgb, var(--tc,#fff) 22%, #2f3841)}
   button[data-tool]:hover{background:color-mix(in srgb, var(--tc,#fff) 12%, #2b333a)}
   .note{background:#232a31;border-radius:3px;padding:8px 10px;font-size:12px;color:var(--muted);margin-top:10px}
+  /* Why the triage flagged this roof -- amber so it reads as "look here",
+     distinct from the tool buttons which are coloured by feature. */
+  .why{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+  .why-chip{background:rgba(240,180,60,.14);border:1px solid rgba(240,180,60,.42);
+            color:#f0c45a;border-radius:3px;padding:3px 7px;font-size:11px}
   #status{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.75);padding:5px 10px;
           border-radius:3px;font-size:12.5px}
   #viewbar{position:absolute;right:12px;top:12px;display:flex;gap:4px;z-index:5}
@@ -87,6 +92,9 @@
 <div id="side">
   <h1 id="title">—</h1>
   <div class="addr" id="addr"></div>
+  <!-- Why the triage put this roof in the queue. Present only for queues built
+       by tools/triage_roofs.py; a hand-picked list has nothing to say here. -->
+  <div class="why" id="why" style="display:none"></div>
   <div id="links" class="links"></div>
 
   <h2>View</h2>
@@ -563,6 +571,30 @@ function inPoly(pt,p){ let c=false;
     if(((yi>pt[1])!==(yj>pt[1])) && (pt[0] < (xj-xi)*(pt[1]-yi)/(yj-yi)+xi)) c=!c; }
   return c; }
 
+// A face is its ring less the islands nested inside it: a dormer drawn as a
+// closed loop, a raised section, a courtyard. Everything that asks "how big"
+// or "is this click on it" must go through these, or the surround counts the
+// dormer twice and a no-panel click on the dormer marks the whole wing.
+function faceArea(f){ return polyArea(f) - (f.holes||[]).reduce((s,h)=>s+polyArea(h), 0); }
+function inFace(pt,f){ return inPoly(pt,f) && !(f.holes||[]).some(h=>inPoly(pt,h)); }
+
+// Somewhere a face can be captioned or clicked. The centroid is outside its
+// own polygon on any L or U shaped face, and inside the courtyard on a face
+// that wraps one, so the caption would float over a neighbour or the garden.
+// Fall back to scanning for a point that is genuinely on this face.
+function facePoint(f){
+  const c=[f.reduce((s,q)=>s+q[0],0)/f.length, f.reduce((s,q)=>s+q[1],0)/f.length];
+  if(inFace(c,f)) return c;
+  const xs=f.map(q=>q[0]), ys=f.map(q=>q[1]);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  for(let i=1;i<24;i++) for(let k=1;k<24;k++){
+    const q=[x0+(x1-x0)*i/24, y0+(y1-y0)*k/24];
+    if(inFace(q,f)) return q;
+  }
+  return c;
+}
+
+
 function clipHalf(poly,a,b,keep){
   const side = q => (b[0]-a[0])*(q[1]-a[1]) - (b[1]-a[1])*(q[0]-a[0]);
   const out=[];
@@ -623,20 +655,92 @@ function _segIntersect(p1,p2,p3,p4){
 
 function _key(p){ return Math.round(p[0]/NODE_TOL)+"_"+Math.round(p[1]/NODE_TOL); }
 
-function facesFor(outline, lines){
+// The surveyed outline is not always the roof, and where it is wrong Josh's
+// lines are the better description. Measured across his 85 completed roofs,
+// 2.7% of drawn length falls outside the outline overall -- but 12 roofs are
+// over 5% and #5373469 is at 36%, both of the worst being ones he flagged
+// bad_outline himself. Clipping a face to an outline that is in the wrong
+// place ships a face in the wrong place.
+//
+// So when the outline clearly disagrees with the drawing, the boundary grows
+// to a hull that contains both. Only then, and the threshold matters: growing
+// replaces the outline with a CONVEX hull, which throws away courtyards,
+// L-shapes and notches. At 5% it fired on 7 Anderson Heights -- a roof whose
+// outline is fine -- turning a 4-point outline into a 6-point hull for a 1%
+// change in area. At 12% it fires on the eight roofs where the outline really
+// is wrong (#5373469 at 36%, #5370829 at 26%, both flagged bad_outline by
+// hand) and leaves the rest alone.
+const OUTLINE_CLIPS_FRAC = 0.12;
+function convexHull(pts){
+  const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  if(p.length<3) return p;
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[]; for(const q of p){ while(lo.length>=2 && cross(lo[lo.length-2],lo[lo.length-1],q)<=0) lo.pop(); lo.push(q); }
+  const up=[]; for(let i=p.length-1;i>=0;i--){ const q=p[i];
+    while(up.length>=2 && cross(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q); }
+  lo.pop(); up.pop(); return lo.concat(up);
+}
+function boundaryFor(outline, lines){
   const ring=outline.slice(0,-1);
+  if(!lines || !lines.length) return ring;
+  let tot=0, out=0;
+  lines.forEach(l=>{
+    const d=Math.hypot(l.b[0]-l.a[0], l.b[1]-l.a[1]);
+    if(d < MIN_LINE_M) return;
+    tot+=d;
+    // sampled rather than clipped: enough to tell "this line is off the
+    // outline" without pulling in a geometry library
+    let off=0, N=8;
+    for(let i=0;i<=N;i++){
+      const t=i/N, x=l.a[0]+(l.b[0]-l.a[0])*t, y=l.a[1]+(l.b[1]-l.a[1])*t;
+      if(!inPoly([x,y], ring)) off++;
+    }
+    out += d*off/(N+1);
+  });
+  if(tot<=0 || out/tot <= OUTLINE_CLIPS_FRAC) return ring;
+  const pts=ring.slice();
+  lines.forEach(l=>{ pts.push(l.a); pts.push(l.b); });
+  const hull=convexHull(pts);
+  return hull.length>=3 ? hull : ring;
+}
+
+function facesFor(outline, lines, holes){
+  const ring=boundaryFor(outline, lines);
   if(ring.length<3) return [];
 
-  // 1. every segment in play: the footprint, and the lines drawn on it
+  // 1. every segment in play: the footprint, its courtyards, and the lines
+  //    drawn on it.
+  //
+  // A COURTYARD EDGE IS A ROOF EDGE. The footprint's holes were drawn on
+  // screen but never entered the arrangement, so a ridge run from the street
+  // side to the courtyard side stopped at nothing and closed no face. On
+  // 32 Frankton Road (#4725584) 107 of the 219 lines touch the outline and,
+  // with the courtyard missing, closed ONE face: the whole building, garden
+  // included, 4,962 m2 on a 4,032 m2 footprint. With the courtyard in, the
+  // same lines close it into wings.
+  // Each segment carries where it came from: "drawn" is his, "edge" is the
+  // survey (outline and courtyards), "hull" is a boundary we made up.
   const raw=[];
-  for(let i=0;i<ring.length;i++) raw.push([ring[i], ring[(i+1)%ring.length], true]);
+  const orig=outline.slice(0,-1);
+  const grown = ring.length!==orig.length || ring.some((q,i)=>q!==orig[i]);
+  for(let i=0;i<ring.length;i++) raw.push([ring[i], ring[(i+1)%ring.length], grown ? "hull" : "edge"]);
+  // When the boundary has grown to a hull, the surveyed outline STAYS in the
+  // arrangement. Its edges are where nine lines in ten were snapped to, and
+  // dropping them left those lines dangling inside the hull: #4747492 went
+  // from 15 faces to 8 and #4740680 from 4 to 2, both losing their markup at
+  // the build's coverage gate. The strip between outline and hull becomes
+  // faces of its own, claimed below only where his lines actually bound them.
+  if(grown)
+    for(let i=0;i<orig.length;i++) raw.push([orig[i], orig[(i+1)%orig.length], "edge"]);
+  const yards=(holes||[]).map(h=>h.slice(0,-1)).filter(h=>h.length>=3);
+  yards.forEach(h=>{ for(let i=0;i<h.length;i++) raw.push([h[i], h[(i+1)%h.length], "edge"]); });
   (lines||[]).forEach(l=>{
-    if(Math.hypot(l.b[0]-l.a[0], l.b[1]-l.a[1]) >= MIN_LINE_M) raw.push([l.a, l.b, false]);
+    if(Math.hypot(l.b[0]-l.a[0], l.b[1]-l.a[1]) >= MIN_LINE_M) raw.push([l.a, l.b, "drawn"]);
   });
 
   // 2. cut each at every crossing with every other
   const pieces=[];
-  raw.forEach(([a,b,isEdge],i)=>{
+  raw.forEach(([a,b,kind],i)=>{
     const ts=[0,1];
     raw.forEach(([c,d],j)=>{ if(i===j) return;
       const t=_segIntersect(a,b,c,d);
@@ -665,11 +769,11 @@ function facesFor(outline, lines){
       const Q=[a[0]+(b[0]-a[0])*ts[k],   a[1]+(b[1]-a[1])*ts[k]];
       if(Math.hypot(Q[0]-P[0], Q[1]-P[1]) < NODE_TOL) continue;
       // a drawn line can run outside the footprint; keep only what is inside
-      if(!isEdge){
+      if(kind==="drawn"){
         const m=[(P[0]+Q[0])/2, (P[1]+Q[1])/2];
         if(!inPoly(m, ring)) continue;
       }
-      pieces.push([P,Q]);
+      pieces.push([P,Q,kind]);
     }
   });
 
@@ -678,7 +782,11 @@ function facesFor(outline, lines){
   const node=p=>{ const k=_key(p);
     if(!nodes.has(k)) nodes.set(k, {p, out:[]});
     return k; };
-  pieces.forEach(([P,Q])=>{
+  // Which graph edges are HIS, which are the survey's, which are made up. A
+  // line drawn along the outline, or forming the hull, is his: "drawn" wins.
+  const RANK={drawn:3, edge:2, hull:1};
+  const edgeKind=new Map();
+  pieces.forEach(([P,Q,kind])=>{
     const a=node(P), b=node(Q);
     if(a===b) return;
     const pa=nodes.get(a).p, pb=nodes.get(b).p;
@@ -686,12 +794,31 @@ function facesFor(outline, lines){
       nodes.get(a).out.push({to:b, ang:Math.atan2(pb[1]-pa[1], pb[0]-pa[0])});
     if(!nodes.get(b).out.some(e=>e.to===a))
       nodes.get(b).out.push({to:a, ang:Math.atan2(pa[1]-pb[1], pa[0]-pb[0])});
+    for(const k of [a+">"+b, b+">"+a])
+      if(RANK[kind] > (RANK[edgeKind.get(k)]||0)) edgeKind.set(k, kind);
   });
+  // How much of a ring he drew and how much we invented. Judged on the ring
+  // AFTER despiking: a stub that pokes into a face and closes nothing is
+  // walked out and back and stripped, and must not claim the face --
+  // #4735242 is 32 such stubs on a 1,054 m2 roof.
+  const ringLen=(ring_)=>{ const t={drawn:0, edge:0, hull:0};
+    ring_.forEach((p,i)=>{ const q=ring_[(i+1)%ring_.length];
+      t[edgeKind.get(_key(p)+">"+_key(q))||"edge"] += Math.hypot(q[0]-p[0], q[1]-p[1]); });
+    return t; };
   nodes.forEach(nd=>nd.out.sort((x,y)=>x.ang-y.ang));
+
+  // Which connected piece of the arrangement each node belongs to. A closed
+  // loop of lines that touches nothing else -- a dormer, a raised section, a
+  // skylight box -- is its own piece, and the walk below cannot see from one
+  // piece into another. That is what step 5 needs to know.
+  const parent=new Map();
+  const find=k=>{ while(parent.get(k)!==k){ parent.set(k, parent.get(parent.get(k))); k=parent.get(k); } return k; };
+  nodes.forEach((nd,k)=>parent.set(k,k));
+  nodes.forEach((nd,k)=>nd.out.forEach(e=>{ const a=find(k), b=find(e.to); if(a!==b) parent.set(a,b); }));
 
   // 4. walk half-edges. At each node take the next edge clockwise from the one
   //    we arrived on, which traces every face of the arrangement exactly once.
-  const seen=new Set(), out=[];
+  const seen=new Set(), out=[], outer=[];
   nodes.forEach((nd,k)=>{
     nd.out.forEach(e=>{
       let cur=k, nxt=e.to;
@@ -718,47 +845,97 @@ function facesFor(outline, lines){
           const q=poly[(i+1)%poly.length];
           s += poly[i][0]*q[1] - q[0]*poly[i][1];
         }
-        // interior faces come out counter-clockwise; the outer boundary is the
-        // one traced the other way, and is discarded
-        if(s/2 >= MIN_FACE_M2) out.push(poly);
+        // Interior faces come out counter-clockwise. Each connected piece also
+        // yields one cycle traced the other way, around its outside. For the
+        // footprint that is the world beyond the roof and is discarded; for an
+        // island it is the hole the island cuts in whatever surrounds it, so it
+        // is kept for step 5 rather than thrown away with the rest.
+        const clean=_despike(poly);
+        if(clean.length<3) return;
+        if(s/2 >= MIN_FACE_M2) out.push(Object.assign(clean, {comp:find(k), holes:[], len:ringLen(clean)}));
+        else if(-s/2 >= MIN_FACE_M2) outer.push({ring:clean, comp:find(k), len:ringLen(clean)});
       }
     });
   });
-  return out;
-}
-const faces = () => facesFor(R().outline, rec().lines);
 
-// Centroid is outside its own polygon on any L or U shaped face, so the area
-// caption would float over a neighbour. Fall back to scanning for a point that
-// is genuinely inside.
-function labelPoint(f){
-  const c=[f.reduce((s,q)=>s+q[0],0)/f.length, f.reduce((s,q)=>s+q[1],0)/f.length];
-  if(inPoly(c,f)) return c;
-  const xs=f.map(q=>q[0]), ys=f.map(q=>q[1]);
-  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
-  for(let i=1;i<12;i++) for(let k=1;k<12;k++){
-    const q=[x0+(x1-x0)*i/12, y0+(y1-y0)*k/12];
-    if(inPoly(q,f)) return q;
-  }
-  return c;
+  // 5. NEST. A face knew only its own piece, so a face wrapped around an
+  //    island was exported as if the island were not there. On #5372588 a
+  //    raised section drawn as a closed loop of six cliffs came out as the
+  //    loop AND the whole outline -- 525 m2 twice over -- and the build then
+  //    dropped the larger as "an enclosing face" and, finding 4% coverage in
+  //    what was left, threw the markup away. The island's boundary is a hole
+  //    in the smallest face of another piece that contains it, so the areas
+  //    add up to the roof and a no-panel click on a dormer marks the dormer.
+  outer.forEach(o=>{
+    const pt=o.ring[0];           // an island touches nothing, so any vertex is strictly inside or strictly outside
+    let best=null, ba=Infinity;
+    out.forEach(f=>{
+      if(f.comp===o.comp || !inPoly(pt,f)) return;
+      const a=polyArea(f);
+      if(a<ba){ ba=a; best=f; }
+    });
+    if(best){ best.holes.push(o.ring); for(const k in o.len) best.len[k]+=o.len[k]; }
+  });
+
+  // CLAIMED OR NOT. A face is his if his lines bound it, and the test is by
+  // length against the hull's edges, not by presence: the boundary grown for
+  // a wrong outline also grows for a line that merely overshoots the eave,
+  // and the strip that adds is bounded by 3 m of his line and 15 m of hull.
+  // Measured on the 13 roofs where the hull fires, presence alone shipped
+  // #4729620 at 156% of its footprint -- a 127 m2 face over a tree, bounded
+  // by one cliff and two hull edges -- and #4744126 at 114% for four lines
+  // that run 3 m past the roof. Inside the outline there are no hull edges,
+  // so any drawn edge claims the face; with none at all it is the leftover
+  // his lines did not describe. The build treats an unclaimed face as roof
+  // only where the survey says there is building.
+  out.forEach(f=>{ f.drawn = f.len.drawn > 0 && f.len.drawn >= f.len.hull; });
+
+  // 6. The courtyard is now a face of the arrangement too, and it is open air.
+  //    Anything whose interior lies in a footprint hole is not roof.
+  const faces = yards.length ? out.filter(f=>{ const p=facePoint(f); return !yards.some(h=>inPoly(p,h)); }) : out;
+  faces.forEach(f=>{ delete f.comp; delete f.len; });
+  return faces;
 }
+
+// A dangling edge inside a face is walked out and straight back, which leaves
+// a zero-width spike on the ring: harmless to the area, but it makes the
+// exported polygon self-touching and every consumer has to repair it. Strip
+// the out-and-back pairs.
+function _despike(poly){
+  const same=(p,q)=>Math.hypot(p[0]-q[0], p[1]-q[1]) <= 1e-6;
+  let p=poly.slice(), again=true;
+  while(again && p.length>=3){
+    again=false;
+    for(let i=0;i<p.length;i++){
+      const n=p.length, prev=p[(i-1+n)%n], next=p[(i+1)%n];
+      if(same(prev,next) || same(p[i],next)){
+        // drop this vertex and, for a spike, the return leg with it
+        const drop=same(prev,next) ? [i, (i+1)%n] : [i];
+        p=p.filter((_,j)=>!drop.includes(j));
+        again=true; break;
+      }
+    }
+  }
+  return p;
+}
+const faces = () => facesFor(R().outline, rec().lines, R().holes);
 
 function drawFaces(){
   const r=rec();
   if(!r.lines.length && !r.nopanel.length) return;
   faces().forEach((f,i)=>{
-    const bad = r.nopanel.some(pt=>inPoly(pt,f));
+    const bad = r.nopanel.some(pt=>inFace(pt,f));
     ctx.beginPath();
-    f.forEach((q,k)=>{ const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y); });
-    ctx.closePath();
+    const trace=ring=>{ ring.forEach((q,k)=>{ const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.closePath(); };
+    trace(f); (f.holes||[]).forEach(trace);      // islands are cut out, not painted over
     ctx.fillStyle = bad ? "rgba(255,138,0,.30)" : FACEFILL[i%FACEFILL.length];
-    ctx.fill();
+    ctx.fill("evenodd");
     ctx.strokeStyle = bad ? "#ff8a00" : "rgba(255,255,255,.55)";
     ctx.lineWidth = lw(bad ? 2.6 : 1.5); ctx.setLineDash([]); ctx.stroke();
     // the area is what decides the panel count, so it is worth reading off the
     // face rather than trusting that the partition looked about right
-    const [lx,ly]=toPx(...labelPoint(f));
-    const txt = bad ? "no panels" : polyArea(f).toFixed(0)+" m\u00b2";
+    const [lx,ly]=toPx(...facePoint(f));
+    const txt = bad ? "no panels" : faceArea(f).toFixed(0)+" m\u00b2";
     ctx.font=`600 ${Math.round(12*dpr())}px -apple-system,BlinkMacSystemFont,sans-serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     const w=ctx.measureText(txt).width, pad=5*dpr(), hh=9*dpr();
@@ -891,6 +1068,11 @@ function show(i){
   const r=R();
   document.getElementById("title").textContent = `#${r.id} · ${r.m2} m²`;
   document.getElementById("addr").textContent = r.address || r.area;
+  const wy=document.getElementById("why");
+  if(r.why && r.why.length){
+    wy.innerHTML = r.why.map(t=>`<span class="why-chip">${t}</span>`).join("");
+    wy.style.display="";
+  } else { wy.style.display="none"; }
   const lk=document.getElementById("links");
   if(r.ll){
     const [lat,lon]=r.ll;
@@ -997,9 +1179,9 @@ cv.addEventListener("pointerdown", e=>{
   }
   if(tool==="nopanel"){
     const w=toW(px,py), r=rec(), fs=faces();
-    const f=fs.find(g=>inPoly(w,g));
+    const f=fs.find(g=>inFace(w,g));
     if(!f){ say("click inside the building"); return; }
-    const at=r.nopanel.findIndex(pt=>inPoly(pt,f));
+    const at=r.nopanel.findIndex(pt=>inFace(pt,f));
     if(at>=0) r.nopanel.splice(at,1); else r.nopanel.push(w);
     save(); draw();
     say(r.nopanel.length ? `${r.nopanel.length} face(s) marked as taking no panels`
@@ -1245,10 +1427,18 @@ document.getElementById("download").onclick=()=>{
         nopanel:d.nopanel||[], complete:!!d.complete, problem:d.problem||null,
         // the faces those lines imply, exported so scoring compares against
         // the same construction rather than re-deriving it slightly differently
-        faces: facesFor(r.outline, d.lines||[]).map(f=>({
-          ring: f.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]),
-          m2: +polyArea(f).toFixed(1),
-          usable: !(d.nopanel||[]).some(pt=>inPoly(pt,f)) }))}; });
+        faces: facesFor(r.outline, d.lines||[], r.holes).map(f=>{
+          const rnd=ring=>ring.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]);
+          const o={ ring: rnd(f) };
+          // islands inside this face -- a dormer, a courtyard -- as inner rings,
+          // so a consumer builds the same polygon the labeller was shown
+          if((f.holes||[]).length) o.holes=f.holes.map(rnd);
+          o.m2=+faceArea(f).toFixed(1);
+          o.usable=!(d.nopanel||[]).some(pt=>inFace(pt,f));
+          // false = no drawn line on its boundary: leftover roof, or hull
+          // slop, not a face he described
+          o.drawn=!!f.drawn;
+          return o; })}; });
   const text=JSON.stringify(out,null,1);
   const n=Object.keys(out.buildings).length;
   // Two paths on purpose. Opened as a published link the viewer blocks
