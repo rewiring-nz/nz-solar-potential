@@ -6,361 +6,120 @@
   :root{
     --ground:#f4f6f8; --surface:#ffffff; --sunk:#e9edf1;
     --ink:#141a20; --ink-2:#3d4a56; --muted:#6b7a88; --line:#d5dce3;
-    --accent:#c07806;            /* the map's amber, darkened for light ground */
-    --ok:#1d7d55; --you:#1d5fb0; --stop:#b23b36;
+    --accent:#c07806; --ok:#1d7d55; --you:#1d5fb0; --stop:#b23b36;
     --ok-bg:#e2f2ea; --you-bg:#e2ecfa; --stop-bg:#fae6e5;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
       --ground:#0f1317; --surface:#171d23; --sunk:#11161b;
       --ink:#e6ecf2; --ink-2:#c2ccd6; --muted:#8695a3; --line:#26303a;
-      --accent:#ffb43c;
-      --ok:#52c08a; --you:#6ba8ff; --stop:#e0645f;
+      --accent:#ffb43c; --ok:#52c08a; --you:#6ba8ff; --stop:#e0645f;
       --ok-bg:#14261e; --you-bg:#141f2e; --stop-bg:#2a1717;
     }
   }
   :root[data-theme="dark"]{
     --ground:#0f1317; --surface:#171d23; --sunk:#11161b;
     --ink:#e6ecf2; --ink-2:#c2ccd6; --muted:#8695a3; --line:#26303a;
-    --accent:#ffb43c;
-    --ok:#52c08a; --you:#6ba8ff; --stop:#e0645f;
+    --accent:#ffb43c; --ok:#52c08a; --you:#6ba8ff; --stop:#e0645f;
     --ok-bg:#14261e; --you-bg:#141f2e; --stop-bg:#2a1717;
   }
   *{box-sizing:border-box}
-  body{
-    background:var(--ground); color:var(--ink);
+  body{background:var(--ground); color:var(--ink);
     font:16px/1.55 "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
-    margin:0; padding:28px 22px 60px;
-  }
-  .wrap{max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:26px}
-  h1,h2,h3,.lab{font-family:Archivo, ui-sans-serif, system-ui, sans-serif}
+    margin:0; padding:28px 22px 60px;}
+  .wrap{max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:24px}
+  h1,h2,h3,.lab,th{font-family:Archivo, ui-sans-serif, system-ui, sans-serif}
   h1{font-size:26px; font-weight:700; margin:0; letter-spacing:-.01em; text-wrap:balance}
   .sub{color:var(--muted); font-size:14px; margin-top:3px}
-  .lab{
-    font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
-    color:var(--muted);
-  }
-  .num{font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums}
-
-  /* live band */
-  .band{
-    background:var(--surface); border:1px solid var(--line); border-radius:8px;
-    padding:18px 20px; display:flex; flex-wrap:wrap; gap:28px; align-items:flex-end;
-  }
+  .lab{font-size:11px; font-weight:600; letter-spacing:.09em;
+        text-transform:uppercase; color:var(--muted)}
+  .n{font-family:"IBM Plex Mono", ui-monospace, monospace;
+      font-variant-numeric:tabular-nums; white-space:nowrap}
+  .band{background:var(--surface); border:1px solid var(--line); border-radius:8px;
+    padding:18px 20px; display:flex; flex-wrap:wrap; gap:28px; align-items:flex-end;}
   .stat .lab{display:block; margin-bottom:3px}
   .stat .v{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:25px;
-           font-weight:500; font-variant-numeric:tabular-nums; line-height:1.1}
-  .stat .d{font-size:12.5px; color:var(--ok); margin-top:2px}
-  .band .spacer{flex:1}
-
-  /* lanes */
+    font-weight:500; font-variant-numeric:tabular-nums; line-height:1.1}
+  .stat .d{font-size:12.5px; color:var(--muted); margin-top:2px}
   .lanes{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:18px}
   .lane{display:flex; flex-direction:column; gap:10px}
-  .lane > .lab{padding-left:2px}
-  .card{
-    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--line);
-    border-radius:6px; padding:13px 15px;
-  }
+  .card{background:var(--surface); border:1px solid var(--line);
+    border-left:3px solid var(--line); border-radius:6px; padding:13px 15px}
   .card.you{border-left-color:var(--you)}
-  .card.run{border-left-color:var(--accent)}
-  .card.stop{border-left-color:var(--stop)}
-  .card h3{font-size:14.5px; font-weight:600; margin:0 0 5px; letter-spacing:-.005em}
+  .card h3{font-size:14.5px; font-weight:600; margin:0 0 5px}
   .card p{margin:0; font-size:14px; color:var(--ink-2)}
   .card p + p{margin-top:7px}
-  .chip{
-    display:inline-block; font-family:Archivo,sans-serif; font-size:10.5px; font-weight:600;
-    letter-spacing:.07em; text-transform:uppercase; padding:2.5px 7px; border-radius:3px;
-    margin-bottom:7px;
-  }
+  .chip{display:inline-block; font-family:Archivo,sans-serif; font-size:10.5px;
+    font-weight:600; letter-spacing:.07em; text-transform:uppercase;
+    padding:2.5px 7px; border-radius:3px; margin-bottom:7px;
+    background:var(--sunk); color:var(--muted)}
   .chip.you{background:var(--you-bg); color:var(--you)}
-  .chip.run{background:var(--ok-bg); color:var(--ok)}
-  .chip.stop{background:var(--stop-bg); color:var(--stop)}
-  .chip.idle{background:var(--sunk); color:var(--muted)}
-  code{font-family:"IBM Plex Mono",monospace; font-size:12.5px; background:var(--sunk);
-       padding:1px 5px; border-radius:3px; color:var(--ink-2)}
-
-  /* tables */
-  .panel{background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:18px 20px}
+  code{font-family:"IBM Plex Mono",monospace; font-size:12.5px;
+    background:var(--sunk); padding:1px 5px; border-radius:3px; color:var(--ink-2)}
+  .panel{background:var(--surface); border:1px solid var(--line);
+    border-radius:8px; padding:18px 20px}
   .panel h2{font-size:15px; font-weight:600; margin:0 0 3px}
   .panel .note{color:var(--muted); font-size:13.5px; margin:0 0 14px}
   .scroll{overflow-x:auto}
   table{border-collapse:collapse; width:100%; font-size:14px}
-  th,td{text-align:left; padding:7px 12px 7px 0; border-bottom:1px solid var(--line)}
-  th{font-family:Archivo,sans-serif; font-size:11px; font-weight:600; letter-spacing:.07em;
-     text-transform:uppercase; color:var(--muted)}
+  th,td{text-align:left; padding:7px 12px 7px 0; border-bottom:1px solid var(--line);
+    vertical-align:top}
+  th{font-size:11px; font-weight:600; letter-spacing:.07em;
+    text-transform:uppercase; color:var(--muted)}
   tr:last-child td{border-bottom:none}
-  td.n{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap}
-  .win{color:var(--ok)}
+  .win{color:var(--ok)} .bad{color:var(--stop)} .ok{color:var(--ok)}
   .dim{color:var(--muted)}
   ul{margin:0; padding-left:18px}
   li{margin:5px 0; font-size:14px; color:var(--ink-2)}
-  li strong{color:var(--ink); font-weight:600}
-  .foot{color:var(--muted); font-size:13px; text-align:center; padding-top:6px}
+  .foot{color:var(--muted); font-size:13px; text-align:center; padding-top:4px}
 </style>
 
 <div class="wrap">
-
   <header>
     <h1>Rooftop Solar Build Status</h1>
-    <div class="sub">Queenstown district &middot; what is live, what is running, and what needs you</div>
+    <div class="sub">Queenstown district &middot; generated from the repo and the
+    live site at 05 Sep 2026, 20:33</div>
   </header>
 
-  <section class="band">
-    <div class="stat">
-      <span class="lab">Live now</span>
-      <div class="v">649,412</div>
-      <div class="d">panels &middot; +4.2% this week</div>
-    </div>
-    <div class="stat">
-      <span class="lab">Annual output</span>
-      <div class="v">350.6</div>
-      <div class="d">GWh/yr &middot; was 336.9</div>
-    </div>
-    <div class="stat">
-      <span class="lab">Buildings</span>
-      <div class="v">15,353</div>
-      <div class="d dim">24 regions</div>
-    </div>
-    <div class="stat">
-      <span class="lab">Roofs you have drawn</span>
-      <div class="v">114</div>
-      <div class="d dim">92 complete, with faces</div>
-    </div>
-    <div class="spacer"></div>
-    <div class="stat">
-      <span class="lab">Data version</span>
-      <div class="v">36</div>
-      <div class="d dim">rewiring&#8209;nz.github.io</div>
-    </div>
+  <section class="band"><div class="stat"><span class="lab">Live version</span><div class="v">37</div><div class="d"><span class="ok">serving</span></div></div><div class="stat"><span class="lab">Panels</span><div class="v">664,050</div><div class="d">in the local build</div></div><div class="stat"><span class="lab">Annual output</span><div class="v">358.4</div><div class="d">GWh/yr</div></div><div class="stat"><span class="lab">Buildings</span><div class="v">15,353</div><div class="d">869 withheld</div></div><div class="stat"><span class="lab">Roofs you have drawn</span><div class="v">92</div><div class="d">of 114 started</div></div></section>
+
+  
+  <section class="panel">
+    <h2>Benchmark &mdash; 152 roofs, scored in about 90 seconds</h2>
+    <p class="note">Every change is judged here before a district rebuild.
+    <code>python tools/bench.py --note "what I changed"</code></p>
+    <div class="scroll"><table>
+      <thead><tr><th>run</th><th>faces matching<br>your markup</th>
+      <th>panels across<br>a line</th><th>facets<br>per roof</th>
+      <th>panels</th></tr></thead>
+      <tbody><tr><td>drawn-face exemption + frame fix + clipper<div class="dim" style="font-size:12px">09-05 20:32 &middot; 1.5 min</div></td><td class="n">32.3% <span class="win">+10.7%</span></td><td class="n">13.2% <span class="bad">+1.2%</span></td><td class="n">6.1 <span class="bad">+0.1</span></td><td class="n">11,729</td></tr><tr><td>as deployed (v37)<div class="dim" style="font-size:12px">09-05 20:13 &middot; 1.6 min</div></td><td class="n">21.5%</td><td class="n">12.0%</td><td class="n">6.0</td><td class="n">11,635</td></tr></tbody>
+    </table></div>
   </section>
 
   <div class="lanes">
-
-    <div class="lane">
-      <span class="lab">Running now</span>
-
-      <div class="card run">
-        <span class="chip run">20 of 24 regions</span>
-        <h3>Full district rebuild</h3>
-        <p>Shipping the length bar to every unlabelled roof &mdash; the first geometry
-        fix that reaches all 15,000, not just the ones you have drawn.
-        <strong>No failures.</strong> Four regions left, then merge and tiles.</p>
-        <p class="dim" style="font-size:13px">It stalled once: the first run
-        stopped after 2 regions when the VM hit its 16&#8209;hour cap, and had no
-        per&#8209;region marker, so a restart would have begun again at region one.
-        The replacement driver stamps each region as it finishes and resumes
-        where it stopped.</p>
-      </div>
-
-      <div class="card run">
-        <span class="chip run">Runs automatically</span>
-        <h3>Deploy check, at the end of the rebuild</h3>
-        <p>Compares the finished build against the live site and writes a report.
-        The district is a mixture of old and new geometry until then, so nothing
-        should be deployed before it reads clean.</p>
-      </div>
-
-      <div class="card">
-        <span class="chip idle">Queued</span>
-        <h3>Extent&#8209;clipped cutter A/B</h3>
-        <p>Four&#8209;way test: no filter / length bar / bar + clipping / clipping alone.
-        Was running on your Mac and stopped when you shut down. A 20&#8209;minute re&#8209;run.</p>
-      </div>
-    </div>
-
-    <div class="lane">
-      <span class="lab">Needs you</span>
-
-      <div class="card you">
-        <span class="chip you">Highest value</span>
-        <h3>Draw sawtooth and repeated&#8209;fold roofs</h3>
-        <p>This is where the detector fails hardest. It finds a building&rsquo;s long
-        axes and misses every cross&#8209;fold &mdash; both roofs you flagged were this.</p>
-        <p><strong>30 of these is a sharper signal than 100 mixed roofs.</strong>
-        Draw each fold all the way across; a complete line teaches far more than
-        a short one.</p>
-      </div>
-
-      <div class="card you">
-        <span class="chip you">High value</span>
-        <h3>Draw large flat commercial roofs</h3>
-        <p>Most capacity per roof, and the pipeline has historically treated them
-        worst &mdash; five of this week&rsquo;s fixes were about big roofs specifically.</p>
-      </div>
-
-      <div class="card you">
-        <span class="chip you">Quick</span>
-        <h3>Press <code>B</code> in the markup tool</h3>
-        <p>It now shows what the build makes of each roof, dashed blue under your
-        lines. Tell me any building id where that looks wrong.</p>
-        <p>It is a reference, not a tracing guide &mdash; draw what you see, not what
-        it drew.</p>
-      </div>
-
-      <div class="card you">
-        <span class="chip you">When the rebuild lands</span>
-        <h3>Are the panel drops acceptable?</h3>
-        <p>At the last deploy, 72 buildings lost more than 30% of their panels,
-        almost all unlabelled &mdash; the clearest being <code>#5370715</code> at 125 &rarr; 2.
-        The rebuild will produce a fresh list.</p>
-        <p>A drop is not automatically wrong: <code>#4747637</code> going 776 &rarr; 312 is
-        your own &ldquo;no panels here&rdquo; markings finally being respected. This is a
-        judgement only you can make.</p>
-      </div>
-    </div>
-
-    <div class="lane">
-      <span class="lab">Open</span>
-
-      <div class="card">
-        <span class="chip idle">Unproven</span>
-        <h3>Extent&#8209;clipped cutter</h3>
-        <p>Built, committed, and currently does nothing: the length bar already
-        removes the stubs upstream. The A/B will say whether it is the better
-        mechanism or dead weight.</p>
-      </div>
-
-      <div class="card stop">
-        <span class="chip stop">Known bug</span>
-        <h3>The markup tool can export an enclosing face</h3>
-        <p><code>facesFor()</code> sometimes returns the whole&#8209;roof complement alongside
-        real faces &mdash; on <code>#4725584</code> a 4,962&nbsp;m&sup2; face on a 4,032&nbsp;m&sup2; building.
-        Worked around in Python; affects 4 roofs.</p>
-        <p class="dim" style="font-size:13px">Winding is <em>not</em> the cause &mdash; all 92
-        outlines are clockwise, including the ones that work.</p>
-      </div>
-
-      <div class="card">
-        <span class="chip idle">Dormant</span>
-        <h3>Island Bay is unaffected</h3>
-        <p>All this week&rsquo;s fixes are inert there: no labelled roofs, and the line
-        model has never been run over Wellington&rsquo;s imagery. Running
-        <code>predict_roof_lines.py</code> would activate them.</p>
-      </div>
-    </div>
-
+    <div class="lane"><span class="lab">Needs you</span><div class="card you"><span class="chip you">Highest value</span><h3>Draw every roof in the benchmark cluster</h3><p>The benchmark is 152 roofs and only 11 are drawn, so it can see a big regression but not a small one. Drawing 40&ndash;50 roofs in that one cluster would turn it into dense ground truth where a 2% change is visible immediately.</p><p class="dim" style="font-size:13px">This is a change of habit, not extra work: the same effort spent in one place instead of scattered across the district. <code>python tools/bench.py --make</code> writes the id list.</p></div><div class="card you"><span class="chip you">High value</span><h3>Draw sawtooth and repeated-fold roofs</h3><p>Where the detector fails hardest &mdash; it finds a building's long axes and misses every cross-fold. Draw each fold all the way across; a complete line teaches far more than a short one.</p></div><div class="card you"><span class="chip you">Quick</span><h3>Press B in the markup tool</h3><p>It draws what the build currently makes of each roof under your lines. Any building id where that looks wrong is directly useful.</p><p class="dim" style="font-size:13px">A reference, not a tracing guide &mdash; draw what you see, not what it drew.</p></div></div>
+    <div class="lane"><span class="lab">Open</span><div class="card "><span class="chip ">Ready</span><h3>District rebuild on the three fixes</h3><p>The drawn-face exemption, the cut-frame correction and the working clipper are committed and measured but not yet in a district build. About 4&frac12; hours on the VM, then the deploy gate.</p><p class="dim" style="font-size:13px">The live site still carries the old behaviour on unlabelled roofs.</p></div><div class="card "><span class="chip ">Unexplained</span><h3>Six roofs still not reproduced exactly</h3><p>After the drawn-face fix, 419 of 438 faces match your markup exactly. The remainder cluster on six roofs &mdash; worst is <code>#4732152</code> at 4 of 7 faces &mdash; so there is a second, smaller cause still to find.</p></div><div class="card "><span class="chip ">Not started</span><h3>Retrain the detector on the newer labels</h3><p>The line model dates from 2 Sep and has not seen the labels added since. The training split now pins a roof's side by its own id, so adding labels no longer reshuffles what the model has already seen.</p><p class="dim" style="font-size:13px">Pin the benchmark out of training first: <code>export_training_data.py --val-ids data/bench_ids.txt</code></p></div><div class="card "><span class="chip ">Dormant</span><h3>Island Bay is unaffected</h3><p>No labelled roofs there and the line model has never run over Wellington's imagery, so every fix here is inert until <code>predict_roof_lines.py</code> is run for it.</p></div></div>
   </div>
 
   <section class="panel">
-    <h2>What moved this week</h2>
-    <p class="note">Measured on the 85 roofs you have marked complete, against the lines you drew.</p>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th>Measure</th><th>Before</th><th>Now</th><th>Meaning</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Edges you never drew</td>
-            <td class="n">25.3%</td>
-            <td class="n win">~9%</td>
-            <td class="dim">Invented facet boundaries, on your labelled roofs</td>
-          </tr>
-          <tr>
-            <td>Facets per roof</td>
-            <td class="n">8.4</td>
-            <td class="n win">6.0</td>
-            <td class="dim">Fewer, larger sections &mdash; what you asked for</td>
-          </tr>
-          <tr>
-            <td>Your facet count matched</td>
-            <td class="n">7 / 27</td>
-            <td class="n win">52 / 91</td>
-            <td class="dim">Built roofs with exactly the faces you drew</td>
-          </tr>
-          <tr>
-            <td>Invented edges, unlabelled roofs</td>
-            <td class="n">22.4%</td>
-            <td class="n win">20.5%</td>
-            <td class="dim">The length bar &mdash; first fix reaching all 15,000</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <h2>Recent work</h2>
+    <p class="note">Local build written 05 Sep 15:07. <p>Build VM <code>claude-doing-things</code>: <span class="ok">RUNNING</span></p></p>
+    <div class="scroll"><table><tbody><tr><td class="n dim">58ba2c5</td><td>Stop re-cutting the geometry Josh drew, and put model cuts in the right frame</td><td class="n dim">2 minutes ago</td></tr><tr><td class="n dim">e7966f3</td><td>Deploy: the length bar reaches every roof, not just the labelled ones</td><td class="n dim">3 hours ago</td></tr><tr><td class="n dim">e7bd50d</td><td>Handover prompt and a status board Josh can check between sessions</td><td class="n dim">7 hours ago</td></tr><tr><td class="n dim">56fdd92</td><td>Extent-clipped cutting, built but not yet proven to earn its place</td><td class="n dim">12 hours ago</td></tr><tr><td class="n dim">07ab350</td><td>Show the labeller what the build currently makes of each roof</td><td class="n dim">13 hours ago</td></tr><tr><td class="n dim">5512413</td><td>Render a handful of roofs in 44s instead of a 4.5 hour rebuild</td><td class="n dim">13 hours ago</td></tr></tbody></table></div>
   </section>
 
   <section class="panel">
-    <h2>Two constraints that will not move</h2>
-    <p class="note">Both measured. Worth knowing before spending effort against them.</p>
-    <ul>
-      <li><strong>The LiDAR cannot find roof creases.</strong> The survey is
-      1.7 returns/m&sup2; &mdash; about 0.77&nbsp;m spacing &mdash; and the 1&nbsp;m DSM is already at
-      its native resolution. A hip crease falls between samples. So imagery must
-      find the lines and LiDAR fits the angles, which is the split you described.</li>
-      <li><strong>The detector emits stubs, not folds.</strong> Where you draw a
-      5&nbsp;m fold it finds 1.5&nbsp;m at low confidence; 98.5% of its line endpoints
-      dangle, against 56.4% of yours. That single fact explains both roofs you
-      flagged &mdash; missing folds on one, invented lines on the other.</li>
-    </ul>
+    <h2>Measured and rejected</h2>
+    <p class="note">Recorded so none of it gets retried from scratch.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>approach</th><th>result</th><th>why it failed</th></tr></thead>
+      <tbody><tr><td>Extend stubs sharing a bearing</td><td class="n">82.5 → 81.1%</td><td class="dim">Makes the full-width cut problem worse</td></tr><tr><td>Subdivision for model lines</td><td class="n">82.5 → 57.6%</td><td class="dim">Under-segments; runs straight over folds you drew</td></tr><tr><td>LiDAR height into the detector</td><td class="n">0.185 → 0.163</td><td class="dim">Helps where the roof is, not where it folds</td></tr><tr><td>A face-predicting model</td><td class="n">0.163</td><td class="dim">Region targets do not dodge the hard part</td></tr><tr><td>Extent clipping without the frame fix</td><td class="n">82.7 → 80.3%</td><td class="dim">Rejects 163 of 242 cuts by measuring against a chord in the wrong place</td></tr></tbody></table></div>
   </section>
 
   <section class="panel">
-    <h2>Already tried and rejected</h2>
-    <p class="note">Each measured on all 85 roofs. Recorded so none of it gets retried from scratch.</p>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Approach</th><th>Result</th><th>Why it failed</th></tr></thead>
-        <tbody>
-          <tr><td>Extend stubs sharing a bearing</td><td class="n">82.5 &rarr; 81.1%</td>
-              <td class="dim">Makes the full&#8209;width cut problem worse</td></tr>
-          <tr><td>Subdivision for model lines</td><td class="n">82.5 &rarr; 57.6%</td>
-              <td class="dim">Under&#8209;segments; runs over folds you drew</td></tr>
-          <tr><td>LiDAR height into the detector</td><td class="n">0.185 &rarr; 0.163</td>
-              <td class="dim">Helps where the roof <em>is</em>, not where it folds</td></tr>
-          <tr><td>A face&#8209;predicting model</td><td class="n">0.163</td>
-              <td class="dim">Region targets do not dodge the hard part</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <h2>Constraints that will not move</h2>
+    <ul><li><strong>The LiDAR cannot find roof creases.</strong> The survey is 1.7 returns/m&sup2; &mdash; about 0.77&nbsp;m spacing &mdash; and the 1&nbsp;m DSM is already at native resolution, so a hip crease falls between samples. Imagery must find the lines and LiDAR fit the angles.</li><li><strong>The detector emits stubs, not folds.</strong> Where you draw a 5&nbsp;m fold it finds 1.5&nbsp;m; 98.5% of its line endpoints dangle against 56.4% of yours. More labelled roofs measurably help: boundary F1 has gone 0.122 &rarr; 0.185 as labels grew 18 &rarr; 74, about +1.1 per 100 roofs, still climbing.</li></ul>
   </section>
 
-  <section class="panel">
-    <h2>The loop, now that it is fast</h2>
-    <p class="note">A geometry change used to need a 4&frac12;&#8209;hour rebuild to judge. It now takes 44 seconds.</p>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Tool</th><th>Answers</th></tr></thead>
-        <tbody>
-          <tr><td><code>preview_sample.py --ids &hellip;</code></td>
-              <td class="dim">Renders chosen roofs with facets and panels. 44s.</td></tr>
-          <tr><td><code>predeploy_check.py</code></td>
-              <td class="dim">Compares a build against the live site. Caught five regressions.</td></tr>
-          <tr><td><code>measure_facet_agreement.py</code></td>
-              <td class="dim">Facets vs your markup, both directions.</td></tr>
-          <tr><td><code>triage_roofs.py --bundle 40</code></td>
-              <td class="dim">Ranks every roof for suspicion, into a markup queue.</td></tr>
-          <tr><td><code>B</code> in the markup tool</td>
-              <td class="dim">Shows the build&rsquo;s own facets under your lines.</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>Traps worth not rediscovering</h2>
-    <p class="note">Each of these cost real time or a wrong conclusion this week.</p>
-    <ul>
-      <li><strong><code>--limit 30</code> is not a sample.</strong> Building ids are
-      sorted, so it is every 47xxxxx building. A change once won on 30 roofs and
-      lost on all 85. Sample randomly or run the whole set.</li>
-      <li><strong>Facet agreement cannot see a missing building.</strong> It scores
-      shape against your drawings and has no idea whether a roof ships any panels
-      at all. Three regressions passed it and were caught only against the live
-      site.</li>
-      <li><strong>Never overwrite a running shell script.</strong> Bash reads by byte
-      offset; the running driver resumed at a shifted position and re-entered its
-      own loop. Stage to a new filename.</li>
-      <li><strong>A/B harnesses that silently measure nothing.</strong> Three times a
-      test toggled one input while the code read another. Assert the toggle
-      changed the output before trusting a result.</li>
-      <li><strong>Selecting on the signal biases the check.</strong> A &ldquo;75-roof
-      regression&rdquo; was 3 once the flagged roofs stopped being the sample.</li>
-    </ul>
-  </section>
-
-  <div class="foot">
-    More labelling still pays: boundary accuracy rises about 1.1 F1 per 100 roofs
-    and is still climbing &mdash; roughly 106 more roofs to reach 0.30.
-  </div>
-
+  <div class="foot">Regenerate with
+  <code>python tools/status_board.py</code></div>
 </div>
