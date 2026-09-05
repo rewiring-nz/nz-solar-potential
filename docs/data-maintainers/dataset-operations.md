@@ -22,13 +22,20 @@ environment](local-setup.md#create-the-project-python-environment) before
 continuing. If activation succeeds, `(.venv)` appears at the start of the
 Terminal prompt.
 
-## Set coverage area in config
+## Choose and prepare an area
 
-1. Confirm LINZ coverage for the intended area and update from the defaults set in `config.py`.
+Confirm LINZ coverage for the intended area before changing `config.py`. The
+configured area names and bounding boxes in `config.REGIONS` are the source of
+truth. The original Queenstown pilot is named `pilot` by the build code; its
+source files begin in `data/`, while the region-aware build path uses
+`data/regions/pilot/` for the pilot area. The repository code comments describe
+those pilot inputs as symlinked into the region tree. Check that this link or
+equivalent preparation exists before starting a region build.
 
 ## Acquire source data
 
-1. Fetch the original pilot inputs:
+Fetch the original pilot inputs when working with the legacy pilot acquisition
+path:
 
 ```sh
 .venv/bin/python src/fetch_data.py
@@ -40,8 +47,8 @@ download and extraction files created while the rasters are processed. When
 calculating per-building horizon profiles across wide terrain, ensure the
 district-scale bare-earth DEM `data/dem_wide_mosaic.tif` is also present.
 
-2. Fetch one named expansion region, or omit the name to fetch every configured
-   region:
+For new regional acquisition, prefer `fetch_regions.py`. Fetch one named
+expansion region, or omit the name to fetch every configured region:
 
 ```sh
 .venv/bin/python src/fetch_regions.py frankton_flats
@@ -61,40 +68,49 @@ pipeline continues with LiDAR-only inputs.
 ## Prepare and build
 
 After fetching all regions that will be combined, assign each overlapping
-building outline to one owning region:
+building outline to one owning region. This writes deduplicated outline files
+under `data/regions/<area>/` and must happen before region builds:
 
 ```sh
 .venv/bin/python src/region_build.py
 ```
 
-For a fast layout iteration on the pilot or named areas:
+For the current resumable district workflow, use:
 
 ```sh
-bash src/run_dev_loop.sh pilot
+bash src/run_district_build.sh
 ```
 
-For a full regional build, then merged site-level outputs:
+Useful options are:
 
 ```sh
-bash src/run_full_build.sh frankton_flats
+bash src/run_district_build.sh --regions "pilot frankton_flats"
+bash src/run_district_build.sh --force
 ```
 
-The full build runs each area in a separate Python process to keep decoded
-LiDAR tile memory bounded. Logs are written to `data/build_logs/`. A failed
-area prevents merging so incomplete output is not mistaken for a full release.
+The script gets the area list from `config.REGIONS`, includes `pilot`, and
+records stage completion markers so an interrupted run can resume. Its per-area
+stages are layout generation, panel gating, reranking, solar-potential
+derivation, roof-confidence patching, horizon baking, and heatmap-raster
+generation. It then merges regions and runs the district-wide density,
+terrain-mask, seasonal-curve, layout-shrink, and PMTiles stages.
 
-To derive building solar potential directly from generated layouts and bake
-per-building horizon profiles:
+Logs are written to `data/build_logs/<region>.log`. A failed area stops the
+district fan-in, preventing an incomplete set of regions from being presented
+as a complete district. The older `run_full_build.sh` remains a simpler
+region-loop script for targeted or legacy use; it is not the recommended
+district release workflow.
 
-```sh
-.venv/bin/python src/derive_solar_potential.py frankton_flats
-.venv/bin/python src/bake_building_horizons.py frankton_flats
-```
+For fast layout-only iteration, use `run_dev_loop.sh`. The parallel layout
+rerun scripts are specialized alternatives for gate-rule changes; read their
+resource notes before selecting `run_layouts_regate_par.sh`.
 
-`derive_solar_potential.py` aggregates layout features into
-`solar_potential.geojson` without redundant recomputation, ensuring panel counts
-and building totals agree. `bake_building_horizons.py` computes 72-bin sky
-profiles (`horizon_b64` and `horizon_beam_pct`) using the wide DEM and local DSM.
+The district script calls `derive_solar_potential.py` and
+`bake_building_horizons.py` in the supported stage order. These scripts can
+also be run directly for a named region when diagnosing or recovering one
+stage. Horizon baking additionally requires the root-level
+`data/dem_wide_mosaic.tif`; this file is not built by the repository scripts and
+must be copied from the maintained data environment.
 
 ## Serve the map locally
 
@@ -132,17 +148,23 @@ not provide its `/api/refit` endpoint.
 5. Use `src/validate_obstructions.py` when changing obstruction behaviour.
 6. Use the local map preview to inspect a representative mix of rooftops,
    including known difficult buildings and areas without imagery.
-7. Verify merged feature counts and output sizes. `data/solar_potential.geojson`
-   is the site-level building summary; `data/panel_layouts.geojson` is detailed
-   layout data and can reach hundreds of megabytes.
+7. Verify merged feature counts and output sizes. Per-area outputs live under
+   `data/regions/<area>/`; merged site-level outputs are written to `data/`:
+   `solar_potential.geojson`, `panel_layouts.geojson`, heatmap manifests and
+   raster outputs. The district workflow also creates
+   `data/panel_layouts.pmtiles` for map delivery.
 
 ## Publish current artifacts
 
 Static hosting publishes the repository root according to `netlify.toml`.
 The map can use committed static data, but the local `/api/refit` capability is
-not available in static hosting. Do not deploy a monolithic detailed layout
-file directly to browsers at full district scale; the merge code identifies
-PMTiles conversion as the intended delivery path.
+not available in static hosting. The current district workflow generates
+`data/panel_layouts.pmtiles` for detailed layout delivery and also produces
+merged GeoJSON, heatmap rasters, seasonal curves, terrain masks, and density
+metadata. Treat these generated artifacts as publication candidates, and keep
+the input capture, code revision, configuration, and validation evidence with
+the release. Do not deploy the monolithic detailed layout GeoJSON directly to
+browsers at full district scale when the PMTiles artifact is available.
 
 ## Recovery and safety
 

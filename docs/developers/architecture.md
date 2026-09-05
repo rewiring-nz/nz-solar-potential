@@ -11,16 +11,17 @@ and selected-building views.
 ```mermaid
 flowchart TB
     LINZ[LINZ outlines, DSM, DEM, imagery] --> Fetch[fetch_data / fetch_regions]
-    Fetch --> Inputs[data or data/regions/name]
+    Fetch --> Inputs[data and data/regions/name]
     Inputs --> Segment[roof segmentation & skeleton reconstruction]
     Segment --> Detect[obstruction detection]
     Detect --> Fit[panel fitting and gates]
-    Fit --> Layouts[panel_layouts.geojson]
+    Fit --> Layouts[per-area panel_layouts.geojson]
     Layouts --> Derive[derive_solar_potential]
     Derive --> Horizon[bake_building_horizons]
-    Horizon --> Outputs[solar_potential.geojson & rasters]
-    Outputs --> Merge[merge and tile preparation]
-    Merge --> Map[preview.html / static hosting]
+    Horizon --> Raster[heatmap raster]
+    Raster --> Merge[merge and district post-processing]
+    Merge --> Outputs[merged GeoJSON, rasters, PMTiles]
+    Outputs --> Map[preview.html / static hosting]
 ```
 
 ## Key boundaries
@@ -30,6 +31,11 @@ flowchart TB
 - `src/fetch_data.py` and `src/fetch_regions.py` acquire source inputs.
 - `src/region_build.py` resolves paths and assigns overlapping outlines to one
   region before builds. All region-aware tools should use its path helpers.
+- The pilot is a special area: acquisition starts with files in `data/`, while
+  `area_paths("pilot")` resolves build inputs and outputs under
+  `data/regions/pilot/`. The repository currently relies on pilot inputs being
+  prepared in that region tree; keep that preparation visible when operating
+  a fresh checkout.
 - `src/roof_segmentation.py`, `src/roof_partition.py`, and
   `src/roof_skeleton.py` segment roofs into planar facets using RANSAC and
   constructive straight-skeleton methods competing under confidence gates.
@@ -43,6 +49,9 @@ flowchart TB
   combining wide bare-earth DEM terrain and near DSM obstacles.
 - `src/merge_regions.py` produces site-level artifacts. It is the boundary
   between per-region processing and map-facing datasets.
+- `src/run_district_build.sh` is the current resumable release orchestrator.
+  `src/run_full_build.sh` is an older, simpler orchestration path and should
+  not be treated as the complete district architecture.
 - `src/render_building_debug.py` and `src/render_top_movers.py` generate visual
   debug cards and build-over-build diff reports for pre-release validation.
 - `preview.html` is the static map. `src/live_server.py` adds a local-only
@@ -65,7 +74,7 @@ flowchart TB
 
 ## Development workflow
 
-Set up the environment using the [data maintainer guide](../data-maintainers/local-setup.md), then make a narrow change and use `bash src/run_dev_loop.sh pilot` for the fastest behaviour check. Run the relevant audit or validation script before a broad regional rebuild. Use `bash src/run_full_build.sh` only when releasing or checking full-region effects.
+Set up the environment using the [data maintainer guide](../data-maintainers/local-setup.md), then make a narrow change and use `bash src/run_dev_loop.sh pilot` for the fastest behaviour check. Run the relevant audit or validation script before a broad regional rebuild. Use `bash src/run_district_build.sh` for a resumable district release and inspect its stage markers and logs.
 
 There is no established automated test suite or documentation-site generator
 at present. Add targeted tests when changing deterministic algorithms or data
