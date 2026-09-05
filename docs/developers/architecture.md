@@ -10,19 +10,23 @@ and selected-building views.
 
 ```mermaid
 flowchart TB
-    LINZ[LINZ outlines, DSM, DEM, imagery] --> Fetch[fetch_data / fetch_regions]
-    Fetch --> Inputs[data and data/regions/name]
-    Inputs --> Segment[roof segmentation & skeleton reconstruction]
-    Segment --> Detect[obstruction detection]
-    Detect --> Fit[panel fitting and gates]
-    Fit --> Layouts[per-area panel_layouts.geojson]
-    Layouts --> Derive[derive_solar_potential]
-    Derive --> Horizon[bake_building_horizons]
-    Horizon --> Raster[heatmap raster]
-    Raster --> Merge[merge and district post-processing]
-    Merge --> Outputs[merged GeoJSON, rasters, PMTiles]
-    Outputs --> Map[preview.html / static hosting]
+  LINZ[(LINZ source datasets)] --> Fetch[[fetch_data / fetch_regions]]
+  Fetch --> Inputs[(data and data/regions/name)]
+  Inputs --> Segment[[roof segmentation & skeleton reconstruction]]
+  Segment --> Detect[[obstruction detection]]
+  Detect --> Fit[[panel fitting and gates]]
+  Fit --> Layouts[(per-area panel_layouts.geojson)]
+  Layouts --> Derive[[derive_solar_potential]]
+  Derive --> Horizon[[bake_building_horizons]]
+  Horizon --> Raster[(heatmap raster)]
+  Raster --> Merge[[merge and district post-processing]]
+  Merge --> Outputs[(merged GeoJSON, rasters, PMTiles)]
+  Outputs --> Map([preview.html / static hosting])
 ```
+
+In this diagram, cylinders represent data or generated artifacts, subroutine
+shapes represent executable scripts or processing stages, and the rounded map
+node represents the user-facing interface.
 
 ## Key boundaries
 
