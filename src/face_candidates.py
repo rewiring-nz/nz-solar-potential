@@ -533,6 +533,99 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     if extra:
         cleaned = _junction_cleanup(cleaned + extra)
 
+    # ROOF-GRAPH CLOSURE. Josh, three times on the same missing Anderson
+    # ridge -- and topology says he is right to insist. Where two hips meet
+    # and stop, the roof planes either side are still separated, so the fold
+    # MUST continue until it meets another line: a junction whose edges all
+    # leave on one side is not a place a fold can end. The continuation's
+    # existence and direction are both forced -- down the open gap -- and it
+    # terminates only on the network. No evidence gate is needed for what
+    # geometry mandates; four evidence-gated syntheses of this same line each
+    # cost the global mean, because they also admitted lines topology forbids.
+    def closure(net):
+        nodes2 = []
+        for a2, b2 in net:
+            for q in (a2, b2):
+                if not any(np.hypot(*(q - m)) < 3 for m in nodes2):
+                    nodes2.append(q)
+        added = []
+        for nd in nodes2:
+            dirs = []
+            for a2, b2 in net:
+                for q, o in ((a2, b2), (b2, a2)):
+                    if np.hypot(*(q - nd)) < 3:
+                        v = o - q
+                        L = np.hypot(*v)
+                        if L > 1e-6:
+                            dirs.append(np.arctan2(v[1], v[0]))
+            if len(dirs) < 2:
+                continue
+            dirs.sort()
+            gaps = [(dirs[(i + 1) % len(dirs)] - dirs[i]) % (2 * np.pi)
+                    for i in range(len(dirs))]
+            gi = int(np.argmax(gaps))
+            if gaps[gi] < np.radians(200):
+                continue          # edges leave all around: a closed junction
+            bis = dirs[gi] + gaps[gi] / 2
+            u2 = np.array([np.cos(bis), np.sin(bis)])
+            # march down the gap to the first thing the network offers
+            best_t = None
+            for a2, b2 in net:
+                d2 = b2 - a2
+                den = d2[0] * u2[1] - d2[1] * u2[0]
+                if abs(den) < 1e-9:
+                    continue
+                t = ((a2 - nd)[0] * d2[1] - (a2 - nd)[1] * d2[0]) / -den
+                r2 = ((a2 - nd)[0] * u2[1] - (a2 - nd)[1] * u2[0]) / -den
+                if t > 6 and -0.05 <= r2 <= 1.05:
+                    if best_t is None or t < best_t:
+                        best_t = t
+            for m in nodes2:
+                v = m - nd
+                t = v @ u2
+                if t > 6 and np.hypot(*(v - t * u2)) < 5:
+                    if best_t is None or t < best_t:
+                        best_t = t
+            if best_t is not None and best_t <= 100:
+                added.append((nd.copy(), nd + best_t * u2))
+        return added
+
+    def cluster(net, tol=6.0):
+        """Weld near-coincident junctions into one point.
+
+        The probe on Anderson showed why closure misfired: four separate
+        nodes within ~8 px around one pyramid corner, degree-1 fragments
+        hanging off them. Topology rules cannot read a soup. Every endpoint
+        joins the centroid of its cluster; zero-length remains are dropped.
+        """
+        reps = []
+        def find(q):
+            for r in reps:
+                if np.hypot(*(q - r["c"])) <= tol:
+                    return r
+            return None
+        for a2, b2 in net:
+            for q in (a2, b2):
+                r = find(q)
+                if r is None:
+                    reps.append({"c": q.copy(), "m": [q]})
+                else:
+                    r["m"].append(q)
+                    r["c"] = np.mean(r["m"], axis=0)
+        out2 = []
+        for a2, b2 in net:
+            ra, rb = find(a2), find(b2)
+            na = ra["c"] if ra is not None else a2
+            nb = rb["c"] if rb is not None else b2
+            if np.hypot(*(nb - na)) >= 8:
+                out2.append((na, nb))
+        return out2
+
+    cleaned = cluster(cleaned)
+    grown = closure(cleaned)
+    if grown:
+        cleaned = cluster(cleaned + grown)
+
     out = []
     for a2, b2 in cleaned:
         x1, y1 = p2w(a2)
