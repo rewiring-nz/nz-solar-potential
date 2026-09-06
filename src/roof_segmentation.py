@@ -1626,6 +1626,31 @@ def drop_balcony_levels(facets, pc_source):
     main = max(mains, key=lambda t: t[0]["geometry"].area)
     main_area, main_h = main[0]["geometry"].area, main[2]
 
+    # THE STAIRCASE RULE. #4740503's balcony terraces pass every test above:
+    # they are planar (inliers 0.83-0.97, the rule expects < 0.75) and up to
+    # 254 m2. What they cannot hide is their arrangement -- four distinct
+    # levels stepping down from the main roof, each level's area small next
+    # to it. A real lower ROOF is one level, and usually a large one. Three or
+    # more small lower levels is a terrace stack, and every facet more than
+    # 1.5 m below the main roof goes with it.
+    lower = [(f, h) for f, i, h in stats
+             if h is not None and h < main_h - 2.0]
+    if len(lower) >= 3:
+        levels = []
+        for f, h in sorted(lower, key=lambda t: t[1]):
+            for lv in levels:
+                if abs(lv["h"] - h) < 0.8:
+                    lv["area"] += f["geometry"].area
+                    break
+            else:
+                levels.append({"h": h, "area": f["geometry"].area})
+        small = [lv for lv in levels if lv["area"] < 0.30 * main_area]
+        if len(small) >= 3:
+            kept = [f for f, i, h in stats
+                    if h is None or h >= main_h - 1.5]
+            if kept:
+                return kept
+
     kept = []
     for f, inl, h in stats:
         if (inl is not None and h is not None
@@ -1723,10 +1748,12 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # and panel fitting already avoids them, so a chimney on a drawn face still
     # takes no panels. This only stops a second mechanism re-cutting geometry he
     # already approved.
-    drawn = (DRAWN_KEEP_BOUNDARY and bool(facets)
-             and (all(f.get("from_labels") for f in facets)
-                  or all(f.get("from_selected") for f in facets)))
-    keep_boundary = constructed or drawn
+    authored = (DRAWN_KEEP_BOUNDARY and bool(facets)
+                and all(f.get("from_labels") for f in facets))
+    selected = (DRAWN_KEEP_BOUNDARY and bool(facets)
+                and all(f.get("from_selected") for f in facets))
+    drawn = authored          # balcony/deck drops key off this below
+    keep_boundary = constructed or authored or selected
     if facets and pc_source is not None and building_id is not None and not keep_boundary:
         facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
     if facets and pc_source is not None:
@@ -1738,7 +1765,12 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         # explicit way to say a face takes no panels -- the no-panel tag -- and
         # these guess at the same question and overrule him. On #4735237 they
         # took 2 of the 22 faces he drew.
-        if not drawn:
+        # Josh's faces skip these -- he has an explicit no-panel tag and
+        # these guesses overruled him. The SELECTOR's faces must NOT skip
+        # them: SAM segments apartment balcony terraces as cheerfully as roof
+        # (#4740503, panels on every balcony), and no one authored those
+        # faces. Authored geometry is exempt; machine geometry is not.
+        if not authored:
             facets = drop_balcony_levels(facets, pc_source)
             facets = drop_plant_decks(facets, pc_source)
         if not keep_boundary:
