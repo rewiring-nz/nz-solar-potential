@@ -40,6 +40,7 @@ angles than anything recoverable from a 5.7 pts/m2 cloud.
 """
 
 import math
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -1133,6 +1134,8 @@ DRAWN_MIN_FACET_M2 = 1.5
 # Measured across the 92 labelled roofs, coverage is a median 100% and only
 # that one sits below 70%, so this is a guard against a partial markup rather
 # than a threshold anything normal has to clear.
+LINES_LEAD = os.environ.get("SOLAR_LINES_LEAD", "0") == "1"
+FLAT_ROOF_MAX_SLOPE_DEG = 5.0   # below this there is no fold to cut on
 DRAWN_MAX_SLOPE_DEG = 85.0    # a face he drew is roof unless it is a wall
 DRAWN_COVER_MIN = 0.50
 
@@ -1231,6 +1234,99 @@ def _seal_network(segs, boundary, max_ext=None):
                 continue
             nearest = min(cands, key=lambda c: Point(p).distance(c))
             out.append([p, (nearest.x, nearest.y)])
+    return out
+
+
+
+
+# ------------------------------------------------- selected faces (imagery)
+
+# Faces chosen by the candidate selector (tools/predict_faces.py): SAM's
+# reading or the line network's, whichever the evidence scored higher --
+# validated against Josh's markup at 0.776 of a 0.782 oracle on his 28
+# benchmark roofs, and his eye on the winners page: "The rest are good".
+# Precomputed per building because the selector needs SAM and torch, which
+# have no business inside the build environment. Off unless the flag is set.
+SELECTED_FACES_DIR = DATA_DIR / "selected_faces"
+USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "0") == "1"
+SELECTED_MIN_SCORE = 0.30     # below this, neither reading earned trust
+
+
+def facets_from_selected_faces(building_id, footprint, pts):
+    """Facets straight from the precomputed winner, planes from LiDAR.
+
+    Same construction as facets_from_drawn_faces: the rings are taken as
+    the geometry, LiDAR contributes only each face's plane, sparse or
+    unfittable faces borrow a neighbour's plane rather than vanishing.
+    """
+    if not USE_SELECTED_FACES or building_id is None:
+        return []
+    fp = SELECTED_FACES_DIR / f"{building_id}.json"
+    if not fp.exists():
+        return []
+    try:
+        doc = json.loads(fp.read_text())
+    except Exception:
+        return []
+    if doc.get("score", 0.0) < SELECTED_MIN_SCORE:
+        return []
+    inside = _points_in(footprint, pts)
+    if len(inside) < MIN_POINTS:
+        inside = pts
+    out = []
+    pending = []
+    for ring in doc.get("faces") or []:
+        try:
+            poly = Polygon(ring)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+        except Exception:
+            continue
+        if (poly.is_empty or poly.geom_type != "Polygon"
+                or poly.area < DRAWN_MIN_FACET_M2):
+            continue
+        sub = _points_in(poly, inside)
+        plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
+            else None
+        bad = plane is None
+        if not bad:
+            slope, aspect = _slope_aspect(plane)
+            if slope > DRAWN_MAX_SLOPE_DEG:
+                bad = True
+            elif (slope >= STEEP_FACE_DEG
+                  and _inlier_fraction(sub, plane) < STEEP_FACE_MIN_FIT):
+                bad = True
+        if bad:
+            pending.append(poly)
+            continue
+        out.append({
+            "building_id": building_id,
+            "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+            "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+            "slope_deg": slope, "aspect_deg": aspect,
+            "area_m2": float(poly.area), "point_count": int(len(sub)),
+            "from_selected": True,
+        })
+    for poly in pending:
+        best = None
+        for f in out:
+            try:
+                shared = poly.buffer(0.2).intersection(f["geometry"]).area
+            except Exception:
+                continue
+            if shared > 0 and (best is None or f["area_m2"] > best["area_m2"]):
+                best = f
+        if best is None:
+            continue
+        out.append({
+            "building_id": building_id,
+            "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+            "plane_a": best["plane_a"], "plane_b": best["plane_b"],
+            "plane_c": best["plane_c"],
+            "slope_deg": best["slope_deg"], "aspect_deg": best["aspect_deg"],
+            "area_m2": float(poly.area), "point_count": 0,
+            "from_selected": True, "plane_borrowed": True,
+        })
     return out
 
 
@@ -2226,8 +2322,50 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
         print(f"  roof_partition: drawn faces unavailable ({exc!r})", flush=True)
     if _lf:
         return _lf
+    # the selector's winner ranks below Josh's markup and above everything
+    # fitted here -- same construction, weaker author
+    try:
+        _sf = facets_from_selected_faces(building_id, footprint, pts)
+    except Exception as exc:
+        print(f"  roof_partition: selected faces unavailable ({exc!r})",
+              flush=True)
+        _sf = []
+    if _sf:
+        return _sf
 
+    # A FLAT ROOF HAS NO FOLDS, so imagery cuts on one are noise.
+    #
+    # Josh flagged four town-centre roofs: "very simple roof, and you have got
+    # the roof lines way off". They are flat. #4734914 varies 0.87 m across
+    # 224 m2 and fits a plane at 0.3 degrees; #4734913 1.22 m at 1.0; #4734994
+    # at 3.7. The build gave them 4, 11 and 7 facets pitched at 8-10 degrees,
+    # with hips that do not exist.
+    #
+    # The detector is not wrong to fire on them -- a flat commercial roof is
+    # covered in real lines: parapets, plant, membrane seams, shadow edges.
+    # None is a fold. Retraining does not help, and was measured: on 5 of those
+    # 7 roofs a detector retrained on 50 more of his roofs produced an identical
+    # result, because the lines were never the binding constraint.
+    #
+    # Slope separates these cleanly from roofs that do need cutting -- the hips
+    # he drew fit at 9.6-12.5 degrees against 0.3-3.7 here.
+    #
+    # Only for geometry nobody has drawn: this sits after the drawn-faces return
+    # above, so a flat roof he HAS marked keeps every face he drew. #4735237 is
+    # exactly that -- 1,688 m2 at 1.6 degrees with 23 drawn faces.
+    _flat = False
     if imagery_ds is not None and USE_IMAGERY_CUTS:
+        try:
+            _in = _points_in(footprint, pts)
+            if len(_in) >= MIN_POINTS:
+                _pl = _fit_plane_robust(_in)
+                if _pl is not None:
+                    _sl, _ = _slope_aspect(_pl)
+                    _flat = _sl < FLAT_ROOF_MAX_SLOPE_DEG
+        except Exception:
+            _flat = False
+
+    if imagery_ds is not None and USE_IMAGERY_CUTS and not _flat:
         # NOT a bare except. A rewrite of roof_outline above once deleted
         # _line_is_real while leaving this call site, and a broad except turned
         # that into "imagery cuts silently do nothing" -- the measurements looked
@@ -2265,7 +2403,24 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
                     # it has to be converted per cell or the cut drifts. See
                     # _reanchor.
                     off_c = _reanchor(ang, off, footprint, c)
-                    ok = _line_is_real(c, _points_in(c, inside), ang, off_c)
+                    # THE IMAGERY SAYS WHERE THE LINE IS; THE LIDAR ONLY SAYS
+                    # HOW STEEP THE FACES ARE.
+                    #
+                    # Josh: "The image is what tells you the roof lines, the
+                    # lidar just tells you slope." _line_is_real asks the point
+                    # cloud whether the roof changes across a proposed line, and
+                    # at 1.7 returns/m2 on a shallow roof it usually cannot tell
+                    # -- so it vetoes real creases. On #4734696 three lines
+                    # survived the score and length bars and it passed exactly
+                    # one, which is why loosening those bars from 0.90/0.35 to
+                    # 0.30/0.08 moved the lines used from 3 to 20 and left the
+                    # facets identical at 5.
+                    #
+                    # So a confident, long imagery line now cuts on its own
+                    # authority. The LiDAR still fits every resulting facet's
+                    # plane, which is the half of the job it can actually do.
+                    ok = (LINES_LEAD
+                          or _line_is_real(c, _points_in(c, inside), ang, off_c))
                     # ...and the observation has to actually span this cell.
                     # Without this a crease seen on one bay of a roof cuts
                     # every bay, which is the fragmentation the note above the
@@ -2281,6 +2436,27 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
 
     faces = []
     for cell in cells:
+        # ONE FACE PER CELL THE IMAGERY CUT OUT.
+        #
+        # Josh: "The image is what tells you the roof lines, the lidar just
+        # tells you slope." Cutting on imagery lines and then running RANSAC
+        # inside each cell hands the boundaries straight back to the point
+        # cloud -- the cuts happen (thousands of splits on these roofs) and the
+        # edges still land where RANSAC put them, which is why loosening the
+        # line bars from 0.90/0.35 to 0.30/0.08 took the lines used from 3 to 20
+        # and left the facets identical.
+        #
+        # So when the imagery has divided the roof, each cell IS a face and the
+        # LiDAR only fits its plane. _partition returns (polygon, plane) tuples,
+        # not dicts -- the dicts are built further down, and appending one here
+        # broke _recessed_region with a KeyError.
+        if LINES_LEAD and len(cells) > 1:
+            _sub = _points_in(cell, inside)
+            _pl = _fit_plane_robust(_sub) if len(_sub) >= MIN_POINTS_PER_FACE else None
+            if _pl is not None:
+                faces.append((Polygon(cell.exterior,
+                                      [r for r in cell.interiors]), _pl))
+                continue
         faces.extend(_partition(cell, _points_in(cell, inside)))
     if not faces:
         return []

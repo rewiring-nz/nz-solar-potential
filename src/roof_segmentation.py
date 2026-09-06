@@ -1724,7 +1724,8 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # takes no panels. This only stops a second mechanism re-cutting geometry he
     # already approved.
     drawn = (DRAWN_KEEP_BOUNDARY and bool(facets)
-             and all(f.get("from_labels") for f in facets))
+             and (all(f.get("from_labels") for f in facets)
+                  or all(f.get("from_selected") for f in facets)))
     keep_boundary = constructed or drawn
     if facets and pc_source is not None and building_id is not None and not keep_boundary:
         facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
@@ -1759,7 +1760,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # and simply wrong about geometry Josh drew: on #4735237 it merged his 20
     # remaining faces into 14, and on #5372610 his 5 into 3. He drew the split;
     # it is not ours to undo.
-    if APPLY_REALISM_MERGE and facets and not drawn:
+    if APPLY_REALISM_MERGE and facets and not drawn and not LINES_LEAD_KEEP:
         try:
             facets = merge_uneconomic_splits(facets)
         except Exception as exc:
@@ -1987,7 +1988,53 @@ USE_PARTITION = True
 # failed read of the roof and the plane-arrangement path gets to compete.
 # 0.85 mirrors roof_partition.ACCEPT_INLIER -- one face passes at 85%, so a
 # whole building comfortably under it means faces are spanning real folds.
+
+# HOW WELL DOES A CANDIDATE HONOUR THE LINES THE IMAGERY FOUND?
+#
+# explained_fraction asks only whether the facets hug the point cloud, and on
+# the roofs Josh flagged that is exactly the wrong question. Measured on his
+# five: the partition scores 0.879, 0.935 and 0.957 on roofs whose shape he
+# calls plainly wrong, so it returns before any competitor is even tried, and
+# retraining the detector, loosening the line bars and guarding flat roofs all
+# changed nothing because none of them ever got a turn.
+#
+# This asks the other half of the question the architecture was built on --
+# imagery finds the lines, LiDAR fits the angles. A candidate that puts facet
+# edges where the imagery saw creases is reading the roof; one that does not is
+# hugging points.
+LINE_MATCH_M = 1.0
+
+
+def line_agreement(facets, segs):
+    """Fraction of detected roof lines that lie along some facet edge."""
+    if not facets or not segs:
+        return None
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
+    try:
+        edges = unary_union([f["geometry"].exterior for f in facets
+                             if f.get("geometry") is not None])
+    except Exception:
+        return None
+    hit = tot = 0.0
+    for s in segs:
+        try:
+            ln = LineString([(s[0], s[1]), (s[2], s[3])])
+            if ln.length <= 0:
+                continue
+            tot += ln.length
+            hit += ln.intersection(edges.buffer(LINE_MATCH_M)).length
+        except Exception:
+            continue
+    return (hit / tot) if tot > 0 else None
+
+
 PARTITION_GOOD_ENOUGH = 0.85
+# ...and it must also put its edges where the imagery saw creases.
+PARTITION_LINE_MIN = 0.45
+# Candidate: keep the structure the imagery cuts produced instead of merging
+# it away. Josh judges this from the render; the numbers cannot.
+LINES_LEAD_KEEP = __import__('os').environ.get('SOLAR_LINES_LEAD', '0') == '1'
 
 # How far behind the partition (points-explained) the skeleton reconstruction
 # may fall and still win on being constructible geometry. See _partition_facets.
@@ -2081,8 +2128,35 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         # hip network it has misread while the correct geometry scores lower.
         if faces and any(f.get("from_labels") for f in faces):
             return faces
+        if faces and any(f.get("from_selected") for f in faces):
+            return faces
 
-        if score >= PARTITION_GOOD_ENOUGH:
+        # THE IMAGERY DECIDES WHERE THE LINES ARE; THE LIDAR ONLY SETS SLOPE.
+        #
+        # Josh: "you need to place higher importance to where the lines are
+        # visually in the image. The image is what tells you the roof lines, the
+        # lidar just tells you slope."
+        #
+        # explained_fraction alone cannot see that. On the roofs he flagged the
+        # partition scored 0.879, 0.935 and 0.957 -- comfortably "good enough"
+        # -- and returned before any competitor was tried, on roofs whose shape
+        # he calls plainly wrong. That short-circuit is why retraining the
+        # detector, loosening the line bars and guarding flat roofs each changed
+        # nothing: none of them ever got a turn.
+        #
+        # So a partition that hugs the points but ignores the creases the
+        # imagery found no longer ends the search. It stays a candidate and is
+        # judged against the others on both counts.
+        _segs = []
+        try:
+            from src.roof_line_source import model_lines as _ml
+            _segs = [t[4] for t in (_ml(building_id, building_geom) or [])
+                     if len(t) > 4 and t[4]]
+        except Exception:
+            _segs = []
+        _agree = line_agreement(faces, _segs)
+        if score >= PARTITION_GOOD_ENOUGH and (_agree is None
+                                               or _agree >= PARTITION_LINE_MIN):
             return faces
         # The cut partition failed to read this roof. Two competitors get a
         # shot, judged on the same points-explained metric.
