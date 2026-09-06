@@ -176,8 +176,12 @@ const g = document.getElementById('g');
 for (const r of ROOFS) {
   const d = document.createElement('div'); d.className = 'card';
   const nlab = (r.facets||[]).filter(f=>f.labels).length;
+  const nsel = (r.facets||[]).filter(f=>f.selected).length;
   d.innerHTML = `<h2>#${r.id}</h2><div class="meta">${(r.facets||[]).length} facets`
-    + (nlab? ` (${nlab} from markup)`:'') + ` &middot; ${(r.panels||[]).length} panels`
+    + (nlab? ` (${nlab} from markup)`:'')
+    + (nsel? ` (${nsel} selected)`:'')
+    + (!nlab && !nsel ? ` (old path)`:'')
+    + ` &middot; ${(r.panels||[]).length} panels`
     + (r.error? ` &middot; <span style="color:#ff8080">${r.error}</span>`:'') + `</div>`;
   const c = document.createElement('canvas'); c.width = c.height = 520;
   d.appendChild(c); g.appendChild(d);

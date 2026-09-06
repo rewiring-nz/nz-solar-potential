@@ -408,7 +408,7 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     blob face -- "This is still broken", and it was.
     """
     from src.line_extract import (extract, clip_to, _line_mean,
-                                  _junction_cleanup)
+                                  _junction_cleanup, _colinear_merge)
     import shapely.affinity as aff
     from shapely.ops import unary_union
 
@@ -653,6 +653,66 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     grown = closure(cleaned)
     if grown:
         cleaned = cluster(cleaned + grown)
+
+    # STRAIGHTEN JOGS. Josh, on the one line still wrong on Anderson: "A
+    # misplaced line in the middle, which should be at the point of the
+    # triangle" -- a 1.9 m skewed splice between two runs of one straight
+    # ridge, turning it just short of the apex. When a short segment's two
+    # neighbours run nearly collinear THROUGH it, the jog is an artefact of
+    # tracing, not a fold: project its endpoints onto the neighbours' common
+    # line so the collinear merge can absorb all three into one.
+    def straighten_jogs(net):
+        for i, (a2, b2) in enumerate(net):
+            L = np.hypot(*(b2 - a2))
+            if not (1.0 < L < 30.0):
+                continue
+            def longest_other_at(pt):
+                best = None
+                for j, (c2, e2) in enumerate(net):
+                    if j == i:
+                        continue
+                    for q, o in ((c2, e2), (e2, c2)):
+                        if np.hypot(*(q - pt)) < 3:
+                            Ln2 = np.hypot(*(o - q))
+                            if Ln2 > 2 * L and (best is None or Ln2 > best[0]):
+                                best = (Ln2, q, o)
+                return best
+            na = longest_other_at(a2)
+            nb = longest_other_at(b2)
+            if na is None or nb is None:
+                continue
+            da = na[2] - na[1]
+            db = nb[2] - nb[1]
+            ang = abs(np.degrees(np.arctan2(da[1], da[0])
+                                 - np.arctan2(db[1], db[0]))) % 180
+            if min(ang, 180 - ang) > 12:
+                continue
+            u2 = da / max(np.hypot(*da), 1e-9)
+            # both neighbours on one line? check B's anchor against A's line
+            nrm = np.array([-u2[1], u2[0]])
+            if abs((nb[1] - na[1]) @ nrm) > 3:
+                continue
+            base = na[1]
+            net[i] = (base + ((a2 - base) @ u2) * u2,
+                      base + ((b2 - base) @ u2) * u2)
+        return net
+
+    cleaned = straighten_jogs(list(cleaned))
+    merged4 = True
+    while merged4:
+        merged4 = False
+        for i in range(len(cleaned)):
+            if cleaned[i] is None:
+                continue
+            for j in range(i + 1, len(cleaned)):
+                if cleaned[j] is None:
+                    continue
+                m4 = _colinear_merge(cleaned[i], cleaned[j])
+                if m4 is not None:
+                    cleaned[i] = m4
+                    cleaned[j] = None
+                    merged4 = True
+        cleaned = [c for c in cleaned if c is not None]
 
     out = []
     for a2, b2 in cleaned:
