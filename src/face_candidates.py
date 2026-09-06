@@ -237,8 +237,7 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
         return (b[0] + px / w * (b[2] - b[0]),
                 b[1] + (1 - py / h) * (b[3] - b[1]))
 
-    segs = [r["seg"] for r in clip_to(extract(pr, tw), geom)
-            if r["score"] >= 0.5]
+    segs = network_lines(pr, geom, b, w, h, pts)
     if not segs:
         return [], pr
     facets = line_facets(building_id, geom, pts, segs) or []
@@ -348,3 +347,141 @@ def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
     coverage = min(1.0, sum(f.area for f in faces) / max(geom.area, 1e-9))
     return (0.3 * edge_term + 0.2 * recall_term + 0.2 * step_term
             + 0.3 * plane_term) * coverage
+
+
+# ------------------------------------------------- line-network generator
+
+def _medial_axis(poly):
+    """Interior medial-axis segments of one polygon, straightened."""
+    from scipy.spatial import Voronoi
+    from shapely.geometry import Point, LineString, MultiLineString
+    from shapely.ops import linemerge
+    ring = list(poly.exterior.coords)[:-1]
+    dense = []
+    for a2, b2 in zip(ring, ring[1:] + ring[:1]):
+        L = np.hypot(b2[0] - a2[0], b2[1] - a2[1])
+        n2 = max(int(L / 0.4), 1)
+        for t in range(n2):
+            dense.append((a2[0] + (b2[0] - a2[0]) * t / n2,
+                          a2[1] + (b2[1] - a2[1]) * t / n2))
+    if len(dense) < 8:
+        return []
+    vor = Voronoi(np.array(dense))
+    shrunk = poly.buffer(-0.25)
+    if shrunk.is_empty:
+        return []
+    raw = []
+    for v1, v2 in vor.ridge_vertices:
+        if v1 < 0 or v2 < 0:
+            continue
+        p1, p2 = vor.vertices[v1], vor.vertices[v2]
+        if shrunk.contains(Point(*p1)) and shrunk.contains(Point(*p2)):
+            raw.append(LineString([p1, p2]))
+    if not raw:
+        return []
+    merged = linemerge(MultiLineString(raw))
+    segs = []
+    for g2 in getattr(merged, "geoms", [merged]):
+        c = list(g2.coords)
+
+        def rec(i, j):
+            a3 = np.array(c[i]); b3 = np.array(c[j])
+            d = b3 - a3; L = np.hypot(*d)
+            if L < 1e-9 or j - i < 2:
+                segs.append((a3, b3)); return
+            nv = np.array([-d[1], d[0]]) / L
+            devs = [abs((np.array(c[k]) - a3) @ nv) for k in range(i, j + 1)]
+            k = int(np.argmax(devs))
+            if devs[k] > 0.35:
+                rec(i, i + k); rec(i + k, j)
+            else:
+                segs.append((a3, b3))
+        rec(0, len(c) - 1)
+    return [(a3, b3) for a3, b3 in segs if np.hypot(*(b3 - a3)) >= 0.9]
+
+
+def network_lines(prob3, geom, bounds, w, h, pts):
+    """The line network Josh rated best: candidate nets scored whole, winner
+    snapped to the activation and junction-cleaned. Ported from the preview
+    where it lived while he judged it; the selector was still feeding
+    line_facets the RAW extraction, which reads 7 Anderson Heights as one
+    blob face -- "This is still broken", and it was.
+    """
+    from src.line_extract import (extract, clip_to, _line_mean,
+                                  _junction_cleanup)
+    import shapely.affinity as aff
+    from shapely.ops import unary_union
+
+    b = bounds
+    P = prob3.max(axis=0)
+
+    def w2p(x, y):
+        return np.array([(x - b[0]) / (b[2] - b[0]) * w,
+                         (1 - (y - b[1]) / (b[3] - b[1])) * h])
+
+    def p2w(a):
+        return (b[0] + a[0] / w * (b[2] - b[0]),
+                b[1] + (1 - a[1] / h) * (b[3] - b[1]))
+
+    def tw(px, py):
+        return p2w(np.array([px, py]))
+
+    ext = clip_to(extract(prob3, tw), geom)
+    cand_A = [(w2p(r["seg"][0], r["seg"][1]), w2p(r["seg"][2], r["seg"][3]))
+              for r in ext]
+    blobs = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
+    cand_B, cand_C, cand_D = [], [], []
+    for blob in blobs:
+        for a3, b3 in _medial_axis(blob):
+            cand_B.append((w2p(*a3), w2p(*b3)))
+        mrr = blob.minimum_rotated_rectangle
+        cc = list(mrr.exterior.coords)[:4]
+        e = sorted(((np.hypot(cc[(k + 1) % 4][0] - cc[k][0],
+                              cc[(k + 1) % 4][1] - cc[k][1]), k)
+                    for k in range(4)), reverse=True)
+        k0 = e[0][1]
+        mid_a = ((np.array(cc[k0]) + np.array(cc[(k0 + 3) % 4])) / 2)
+        mid_b = ((np.array(cc[(k0 + 1) % 4]) + np.array(cc[(k0 + 2) % 4])) / 2)
+        cand_C.append((w2p(*mid_a), w2p(*mid_b)))
+        if e[0][0] / max(e[2][0], 1e-6) < 1.5:
+            inner = aff.scale(mrr, 0.35, 0.35, origin="centroid")
+            ic = list(inner.exterior.coords)[:4]
+            for k in range(4):
+                cand_D.append((w2p(*ic[k]), w2p(*ic[(k + 1) % 4])))
+                cand_D.append((w2p(*ic[k]), w2p(*cc[k])))
+
+    def snap(a2, b2):
+        d2 = b2 - a2
+        L = np.hypot(*d2)
+        if L < 1e-6:
+            return a2, b2
+        u2 = d2 / L
+        nrm = np.array([-u2[1], u2[0]])
+        best, bo = -1.0, 0.0
+        for o in np.arange(-5.0, 5.01, 0.5):
+            m2 = _line_mean(P, a2 + o * nrm, b2 + o * nrm)
+            if m2 > best:
+                best, bo = m2, o
+        return a2 + bo * nrm, b2 + bo * nrm
+
+    def score_net(net):
+        tot = 0.0
+        for a2, b2 in net:
+            a3, b3 = snap(a2, b2)
+            tot += np.hypot(*(b3 - a3)) * (_line_mean(P, a3, b3) - 0.25)
+        return tot
+
+    best_net, best_sc = [], -1e9
+    for c in (cand_A, cand_B, cand_C, cand_D):
+        if not c:
+            continue
+        sc = score_net(c)
+        if sc > best_sc:
+            best_sc, best_net = sc, c
+    cleaned = _junction_cleanup([snap(a2, b2) for a2, b2 in best_net])
+    out = []
+    for a2, b2 in cleaned:
+        x1, y1 = p2w(a2)
+        x2, y2 = p2w(b2)
+        out.append([x1, y1, x2, y2])
+    return out
