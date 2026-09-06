@@ -40,13 +40,13 @@ versions; they are validation evidence, not a universal error bar.
 ```mermaid
 flowchart TB
   A[(Authoritative sources\nLINZ + point clouds)] --> B[(Roof evidence\noutline + DSM + points)]
-  B --> C[[Competing roof models\nplanes + skeleton]]
+  B --> C[[Competing roof models\nplanes + skeleton, slope + aspect]]
   I[(Current imagery)] --> D[[Roof-object evidence\nskylights, vents, HVAC]]
   C --> E[[Usable facets\nsetbacks + confidence gates]]
   D --> E
-  T[(Wide DEM + near-building DSM)] --> F[(72-bin horizon\nterrain + structures)]
+  T[(Wide DEM + near-building DSM)] --> F[(72-bin horizon\nnear + far shade)]
   E --> G[(Physical panel layouts)]
-  F --> H[[pvlib irradiance + cloud calibration]]
+  F --> H[[pvlib irradiance + cloud calibration\nsun path]]
   G --> H
   H --> J[(Building summary\nfrom the same layouts)]
   J --> K([Economics.js\ncost, savings, payback])
@@ -124,6 +124,39 @@ roof objects. Conservative image detection reduces false carving but can miss
 objects; permissive detection can remove too much usable roof. This trade-off,
 including over-carving and missed equipment, remains an explicit validation
 risk rather than a hidden accuracy claim.
+
+### Shading distance and compute
+
+Shade is handled as two separate distance scales, because a mountain range
+and a neighbour's roof block the sun in the same geometric sense but need
+very different search ranges and sampling to stay affordable across tens of
+thousands of buildings:
+
+- **Far shade (hills and mountains).** The building's displayed horizon
+  searches the wide 8 m bare-earth DEM out to 20 km, stepping every 24 m along
+  each ray. A separate, coarser search (2 degree steps, 30 km, 100 m along the
+  ray) is computed once per area rather than per building, and sets the
+  baseline horizon used by the underlying irradiance lookup table before any
+  per-building correction is applied. Both stop well short of a full ray scan
+  because horizon angle changes slowly with distance past a few kilometres --
+  a coarse step loses little accuracy while keeping each ray to a few hundred
+  samples instead of thousands.
+- **Near shade (trees and neighbouring buildings).** The same building's
+  displayed horizon separately searches the 1 m DSM out to 300 m, stepping
+  every 2 m, to catch structures and vegetation close enough to matter at that
+  resolution. The actual per-facet yield calculation uses a third, narrower
+  search -- 100 m, with a coarser 4 degree azimuth step -- because it runs once
+  per roof facet rather than once per building, and this project has tens of
+  thousands of facets.
+
+The three searches do not currently share one radius or resolution, and they
+feed the model in different ways: the near and far horizons combine by taking
+the higher angle in each direction to produce the horizon shown to a user,
+while the per-facet search instead scales the irradiance value used for the
+published yield. This is a known area for improvement rather than a settled
+design: reconciling the per-facet shading distance with the displayed
+per-building horizon would remove one source of possible disagreement between
+what a user sees on the horizon tab and what the published kWh figure assumes.
 
 ### Solar and economic models
 
