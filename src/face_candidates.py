@@ -714,3 +714,53 @@ def network_lines(prob3, geom, bounds, w, h, pts):
         if np.hypot(*(pts2[1] - pts2[0])) >= 0.8:
             snapped.append([pts2[0][0], pts2[0][1], pts2[1][0], pts2[1][1]])
     return snapped
+
+
+def rect_parts(geom, depth=0):
+    """Split a footprint at reflex corners into near-rectangular parts.
+
+    Public here because flatness is a PER-PART question: #5371128 is a flat
+    block joined to a gabled hall, and a whole-building plane fit read the
+    pair as flat, deferring a roof the selector should own.
+    """
+    from shapely.geometry import LineString
+    from shapely.ops import split as shp_split
+    ring = list(geom.exterior.coords)[:-1]
+    n = len(ring)
+    area2 = sum(ring[i][0] * ring[(i + 1) % n][1]
+                - ring[(i + 1) % n][0] * ring[i][1] for i in range(n))
+    if depth >= 6:
+        return [geom]
+    for i in range(n):
+        ax, ay = ring[i - 1]
+        bx, by = ring[i]
+        cx, cy = ring[(i + 1) % n]
+        cross = (bx - ax) * (cy - by) - (by - ay) * (cx - bx)
+        if (cross < 0) != (area2 > 0):
+            continue
+        best = None
+        for ox, oy in ((bx - ax, by - ay), (bx - cx, by - cy)):
+            L = np.hypot(ox, oy)
+            if L < 1e-9:
+                continue
+            u = (ox / L, oy / L)
+            cut = LineString([(bx - u[0] * 0.05, by - u[1] * 0.05),
+                              (bx + u[0] * 200, by + u[1] * 200)])
+            inner = cut.intersection(geom)
+            ln = sum(g2.length for g2 in getattr(inner, "geoms", [inner])
+                     if g2.geom_type == "LineString")
+            if ln > 0.5 and (best is None or ln < best[0]):
+                best = (ln, cut)
+        if best is None:
+            continue
+        try:
+            pieces = [g2 for g2 in shp_split(geom, best[1]).geoms
+                      if g2.geom_type == "Polygon" and g2.area > 4.0]
+        except Exception:
+            continue
+        if len(pieces) >= 2:
+            out = []
+            for pc2 in pieces:
+                out.extend(rect_parts(pc2, depth + 1))
+            return out
+    return [geom]

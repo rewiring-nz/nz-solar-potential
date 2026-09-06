@@ -138,6 +138,7 @@ def _one(bid):
         "facets": [{"ring": ring(f["geometry"]),
                     "slope": round(f.get("slope_deg", 0), 1),
                     "labels": bool(f.get("from_labels")),
+                    "selected": bool(f.get("from_selected")),
                     "m2": round(f.get("area_m2", 0), 1)} for f in facets],
         "panels": [ring(p) for p in panels],
         "drawn": [list(s) for s in (drawn_segments(bid) or [])],

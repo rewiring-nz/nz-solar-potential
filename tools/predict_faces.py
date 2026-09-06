@@ -110,6 +110,38 @@ def main():
             return (b[0] + px2 / w * (b[2] - b[0]),
                     b[1] + (1 - py2 / h) * (b[3] - b[1]))
 
+        # NEAR-FLAT ROOFS ARE NOT THE SELECTOR'S TO SHIP. Josh, on the first
+        # region render: the flat, obstruction-heavy commercials came out as
+        # arbitrary webs -- the line net polygonises plant edges, and the
+        # scorer cannot tell, because a flat plane fits every partition of
+        # itself. The proven LiDAR path already handles these acceptably on
+        # the live map, so the selector writes nothing and the build falls
+        # through to it.
+        # ...and flatness is judged PER PART: #5371128 is a flat block joined
+        # to a gabled hall, and a whole-building fit read the pair as flat.
+        # Defer only when every reflex-split part reads flat -- 118 of 152
+        # deferred under the whole-building test, which was the test failing,
+        # not the roofs.
+        if pts is not None and len(pts) > 80:
+            import numpy as _np
+            from src.roof_partition import (_fit_plane_robust, _slope_aspect,
+                                            _points_in)
+            from src.face_candidates import rect_parts
+            all_flat = True
+            for part in rect_parts(geom):
+                sub = _points_in(part, pts)
+                if len(sub) < 40:
+                    continue
+                z = sub[:, 2]
+                spread = float(_np.percentile(z, 95) - _np.percentile(z, 5))
+                pl0 = _fit_plane_robust(sub)
+                sl0 = _slope_aspect(pl0)[0] if pl0 is not None else 99.0
+                if not (sl0 < 4.5 and spread < 1.2):
+                    all_flat = False
+                    break
+            if all_flat:
+                continue
+
         try:
             f_sam, _ = sam_faces(predictor, rgb, geom, b, pts)
         except Exception:
