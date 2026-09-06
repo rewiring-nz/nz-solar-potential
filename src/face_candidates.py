@@ -304,6 +304,35 @@ def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
                 hit += 1
         recall_term = hit / len(pxs)
 
+    # STEP RECALL. Josh, on 8 Isle Street: "This missed a roof plane" -- the
+    # selector shipped the reading that ran one face across an annex sitting a
+    # storey lower. A height step is the one boundary LiDAR sees decisively,
+    # and no term looked at it: a reading that separates faces across a big
+    # step earns credit, one that papers over it pays.
+    step_term = 0.5
+    if pts is not None and len(pts) > 80:
+        from scipy.spatial import cKDTree
+        import shapely.geometry as sg
+        from shapely.ops import unary_union
+        xy = pts[:, :2]
+        tree = cKDTree(xy)
+        rng = np.random.default_rng(11)
+        idx = rng.permutation(len(pts))[:250]
+        steps = []
+        for i in idx:
+            nb = tree.query_ball_point(xy[i], 1.0)
+            if len(nb) < 4:
+                continue
+            z = pts[nb, 2]
+            if z.max() - z.min() > 0.7:
+                steps.append(xy[i])
+        if len(steps) >= 8:
+            net = unary_union(
+                [sg.LineString(list(f.exterior.coords)) for f in faces])
+            hit = sum(1 for q in steps
+                      if net.distance(sg.Point(q)) < 0.8)
+            step_term = hit / len(steps)
+
     plane_num = plane_den = 0.0
     for f in faces:
         pl, sub = _plane(f, pts)
@@ -317,4 +346,5 @@ def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
     # scored best of all before this factor -- quality of what it kept, no
     # charge for what it dropped (#4734678: score 0.77, agreement 0.28).
     coverage = min(1.0, sum(f.area for f in faces) / max(geom.area, 1e-9))
-    return (0.4 * edge_term + 0.3 * recall_term + 0.3 * plane_term) * coverage
+    return (0.3 * edge_term + 0.2 * recall_term + 0.2 * step_term
+            + 0.3 * plane_term) * coverage
