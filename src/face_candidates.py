@@ -479,6 +479,60 @@ def network_lines(prob3, geom, bounds, w, h, pts):
         if sc > best_sc:
             best_sc, best_net = sc, c
     cleaned = _junction_cleanup([snap(a2, b2) for a2, b2 in best_net])
+
+    # COMPLETE THE WINNER'S JUNCTIONS. Josh, on the first Anderson reading he
+    # called much better: "you are missing a few ridge lines and therefore
+    # faces missing" -- the short links between the dormer pyramid and the end
+    # hips. One candidate family rarely carries every line, but the missing
+    # ones have a structural signature: both endpoints already ARE nodes of
+    # the winning network. A line from any family may join the winner if the
+    # activation supports it, it duplicates nothing, and it connects two
+    # existing nodes -- nothing free-floating is ever added.
+    from src.line_extract import _line_mean as _lm
+    nodes = []
+    for a2, b2 in cleaned:
+        nodes.extend([a2, b2])
+    extra = []
+    for fam in (cand_A, cand_B, cand_C, cand_D):
+        for a2, b2 in fam:
+            a3, b3 = snap(a2, b2)
+            if np.hypot(*(b3 - a3)) < 12:
+                continue
+            if _lm(P, a3, b3) < 0.45:
+                continue
+            near_a = any(np.hypot(*(a3 - n)) < 12 for n in nodes)
+            near_b = any(np.hypot(*(b3 - n)) < 12 for n in nodes)
+            if not (near_a and near_b):
+                continue
+            d3 = (b3 - a3) / max(np.hypot(*(b3 - a3)), 1e-9)
+            dup = False
+            for ka, kb in cleaned + extra:
+                kd = kb - ka
+                kL = np.hypot(*kd)
+                if kL < 1e-9:
+                    continue
+                kd = kd / kL
+                ang = abs(np.degrees(np.arctan2(kd[1], kd[0])
+                                     - np.arctan2(d3[1], d3[0]))) % 180
+                if min(ang, 180 - ang) > 12:
+                    continue
+                nrm = np.array([-kd[1], kd[0]])
+                if (abs((a3 - ka) @ nrm) < 6 and abs((b3 - ka) @ nrm) < 6):
+                    dup = True
+                    break
+            if not dup:
+                extra.append((a3, b3))
+    # Node-pair SYNTHESIS -- inventing a connector between two existing
+    # junctions -- was built and measured in four variants (activation-gated,
+    # dual-evidence, crossing-guarded, plane-intersection-tested) and every
+    # one lowered mean agreement with Josh's faces below this configuration
+    # (0.737 / 0.711 / 0.731 against 0.744). It found the one ridge he named
+    # on Anderson only in the variant that hurt most elsewhere. Not kept: a
+    # connector invisible to both instruments routes its roof to the markup
+    # queue instead of being guessed.
+    if extra:
+        cleaned = _junction_cleanup(cleaned + extra)
+
     out = []
     for a2, b2 in cleaned:
         x1, y1 = p2w(a2)
