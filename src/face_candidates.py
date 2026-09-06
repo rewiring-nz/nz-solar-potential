@@ -558,7 +558,35 @@ def network_lines(prob3, geom, bounds, w, h, pts):
                         L = np.hypot(*v)
                         if L > 1e-6:
                             dirs.append(np.arctan2(v[1], v[0]))
-            if len(dirs) < 2:
+            if len(dirs) == 1:
+                # A DANGLING FOLD END MID-ROOF IS THE CANONICAL MUST-CONTINUE
+                # CASE -- a fold cannot end on a plane -- and this rule
+                # originally skipped exactly those nodes. Anderson's missing
+                # right ridge was a short stub off the pyramid corner whose
+                # far end dangled here, invisible to a junction-gap test.
+                # Continue along the stub's own direction; direction is never
+                # invented, only length, and only to a network hit.
+                bis = dirs[0] + np.pi
+                u2 = np.array([np.cos(bis), np.sin(bis)])
+                best_t = None
+                for a2, b2 in net:
+                    d2 = b2 - a2
+                    den = d2[0] * u2[1] - d2[1] * u2[0]
+                    if abs(den) < 1e-9:
+                        continue
+                    t = ((a2 - nd)[0] * d2[1] - (a2 - nd)[1] * d2[0]) / -den
+                    r2 = ((a2 - nd)[0] * u2[1] - (a2 - nd)[1] * u2[0]) / -den
+                    if t > 6 and -0.05 <= r2 <= 1.05:
+                        if best_t is None or t < best_t:
+                            best_t = t
+                for m in nodes2:
+                    v = m - nd
+                    t = v @ u2
+                    if t > 6 and np.hypot(*(v - t * u2)) < 5:
+                        if best_t is None or t < best_t:
+                            best_t = t
+                if best_t is not None and best_t <= 140:
+                    added.append((nd.copy(), nd + best_t * u2))
                 continue
             dirs.sort()
             gaps = [(dirs[(i + 1) % len(dirs)] - dirs[i]) % (2 * np.pi)
