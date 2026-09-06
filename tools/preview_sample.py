@@ -101,8 +101,9 @@ def _one(bid):
                 roof_geom=f.get("building_geometry")) or []
             try:
                 from src.roof_line_source import drawn_obstruction_polys
-                obs = list(obs) + [o for o in drawn_obstruction_polys(bid)
-                                   if o.intersects(f["geometry"])]
+                _dobs = drawn_obstruction_polys(bid)
+                if _dobs:
+                    obs = [o for o in _dobs if o.intersects(f["geometry"])]
             except Exception:
                 pass
         except Exception:
@@ -296,7 +297,9 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     dest = OUT_DIR / a.out
     sub = (f"{len(out)} roofs from {region} &middot; built with the current "
-           f"working tree, not the deployed build")
+           f"working tree, not the deployed build &middot; panels shown are ALL "
+           f"fittable, before yield ranking (the live map ranks and hides poor "
+           f"performers)")
     dest.write_text(PAGE.replace("__ROOFS__", json.dumps(out, separators=(",", ":")))
                         .replace("__SUB__", sub))
     mb = dest.stat().st_size / 1024 / 1024

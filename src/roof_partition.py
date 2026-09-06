@@ -2358,6 +2358,40 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
               flush=True)
         _sf = []
     if _sf:
+        # COVERAGE IS GUARANTEED, quality gates or not. Dropping a garbage
+        # machine face used to leave its area EMPTY -- Josh: "Missing a lot of
+        # great sunny faces", "you only have panels on the shady side!" on a
+        # pyramid whose two sunny faces had failed the one-plane gate. The
+        # residue now goes back to the LiDAR partition, whose facets carry no
+        # from_selected flag and so face every downstream drop as usual.
+        try:
+            covered = unary_union([f["geometry"] for f in _sf])
+            residual = footprint.difference(covered.buffer(0.05))
+            if residual.area > max(12.0, 0.12 * footprint.area):
+                inside_r = _points_in(footprint, pts)
+                for cell in getattr(residual, "geoms", [residual]):
+                    if cell.geom_type != "Polygon" or cell.area < 8.0:
+                        continue
+                    for poly2, plane2 in _partition(
+                            cell, _points_in(cell, inside_r)):
+                        slope2, aspect2 = _slope_aspect(plane2)
+                        if slope2 > config.MAX_ROOF_SLOPE_DEG:
+                            continue
+                        sub2 = _points_in(poly2, inside_r)
+                        _sf.append({
+                            "building_id": building_id,
+                            "geometry": Polygon(
+                                poly2.exterior,
+                                [r for r in poly2.interiors]),
+                            "plane_a": plane2[0], "plane_b": plane2[1],
+                            "plane_c": plane2[2],
+                            "slope_deg": slope2, "aspect_deg": aspect2,
+                            "area_m2": float(poly2.area),
+                            "point_count": int(len(sub2)),
+                        })
+        except Exception as exc:
+            print(f"  roof_partition: residual fill failed ({exc!r})",
+                  flush=True)
         return _sf
 
     # A FLAT ROOF HAS NO FOLDS, so imagery cuts on one are noise.

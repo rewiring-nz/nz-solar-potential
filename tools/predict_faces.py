@@ -117,6 +117,28 @@ def main():
         # itself. The proven LiDAR path already handles these acceptably on
         # the live map, so the selector writes nothing and the build falls
         # through to it.
+        # THE IMAGERY OUTVOTES THE FLATNESS DEFER. #4734914 sits at 0.87 m of
+        # LiDAR spread -- "flat" -- yet its hips are plainly visible and v4
+        # fires ten lines at score 1.0 along them; deferring it handed the
+        # roof to the old path, which invented diagonals ("Clearly wrong
+        # building lines even though this is a very easy roof visually").
+        # A roof only defers when LiDAR reads flat AND the detector sees
+        # nothing worth drawing.
+        strong_lines = 0
+        try:
+            ph0, pw0 = (-h) % 16, (-w) % 16
+            arr0 = np.pad(rgb, ((0, ph0), (0, pw0), (0, 0)))
+            x0 = torch.from_numpy(arr0).float().permute(2, 0, 1)[None] / 255.0
+            with torch.no_grad():
+                pr = torch.sigmoid(lm(x0.to(device)))[0].cpu().numpy()[:, :h, :w]
+            from src.line_extract import extract as _lex0, clip_to as _lclip0
+            strong_lines = sum(1 for r0 in _lclip0(_lex0(pr, lambda px0, py0: (
+                b[0] + px0 / w * (b[2] - b[0]),
+                b[1] + (1 - py0 / h) * (b[3] - b[1]))), geom)
+                if r0["score"] >= 0.6)
+        except Exception:
+            pr = None
+
         # ...and flatness is judged PER PART: #5371128 is a flat block joined
         # to a gabled hall, and a whole-building fit read the pair as flat.
         # Defer only when every reflex-split part reads flat -- 118 of 152
@@ -139,7 +161,7 @@ def main():
                 if not (sl0 < 4.5 and spread < 1.2):
                     all_flat = False
                     break
-            if all_flat:
+            if all_flat and strong_lines < 3:
                 continue
 
         try:

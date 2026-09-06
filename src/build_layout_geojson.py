@@ -419,9 +419,15 @@ def _build_one_at(building_id, nudge_m):
                                                     roof_geom=f.get("building_geometry"))
         try:
             from src.roof_line_source import drawn_obstruction_polys
-            obstructions = list(obstructions or []) + [
-                o for o in drawn_obstruction_polys(f.get("building_id"))
-                if o.intersects(f["geometry"])]
+            _drawn_obs = drawn_obstruction_polys(f.get("building_id"))
+            if _drawn_obs:
+                # Josh marked this roof's obstructions in detail; the auto
+                # detector was hallucinating 140 m2 of phantom blockage on a
+                # bright membrane where his careful markup totals 17 m2
+                # (#5372565, "Clear empty space you are not filling"). Where
+                # he has spoken, only he speaks.
+                obstructions = [o for o in _drawn_obs
+                                if o.intersects(f["geometry"])]
         except Exception:
             pass
         siblings = [other for other in facets if other is not f]
