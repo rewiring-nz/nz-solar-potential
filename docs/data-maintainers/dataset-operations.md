@@ -34,6 +34,17 @@ flowchart TB
   N -- yes --> P[[Publish via netlify.toml]]
 ```
 
+`run_district_build.sh` is one resumable command covering the whole build and
+merge: per region it runs:
+
+* `build_layout_geojson → gate_panels → rerank_layouts → derive_solar_potential → patch_roof_confidence → bake_building_horizons → build_heatmap_raster`, 
+
+then fans in with:
+
+* `merge_regions → bake_density_deciles → build_terrain_masks → build_seasonal_curves → shrink_panels_for_tiles` and a Tippecanoe PMTiles build. 
+
+Fetching inputs is a separate, earlier step.
+
 | Decision or task | What you do | Config or source of truth | Location |
 | --- | --- | --- | --- |
 | Decide on an area | Choose or add a region name and bounding box | `config.REGIONS`, `config.PILOT_BBOX` | `config.py` |
