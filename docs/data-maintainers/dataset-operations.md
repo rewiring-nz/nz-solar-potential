@@ -5,6 +5,51 @@ environment active. `config.py` is the authoritative definition of pilot and
 regional bounding boxes, data-layer identifiers, exclusions, and PV
 assumptions.
 
+## Process
+
+This section maps a data-maintenance session to the decisions you make, the
+config you update, and where each dataset lives. For code-level module
+boundaries, see [architecture.md](../developers/architecture.md).
+
+```mermaid
+flowchart TB
+  A{Decide on area} --> B[[Update config.py]]
+  B --> C{Inputs already present?}
+  C -- no --> D[[fetch_data.py / fetch_regions.py]]
+  D --> E[(data or data/regions/name)]
+  C -- yes --> E
+  E --> F{Wide DEM present?}
+  F -- no --> G[[Obtain data/dem_wide_mosaic.tif]]
+  G --> H[[region_build.py: dedupe outlines]]
+  F -- yes --> H
+  H --> I[[run_district_build.sh / run_stage.py]]
+  I --> J[(per-area layouts and solar_potential)]
+  J --> K[[merge_regions.py and fan-in]]
+  K --> L[(merged GeoJSON, rasters, PMTiles)]
+  L --> M[[Serve locally: preview.html / live_server.py]]
+  M --> N{Validation passes?}
+  N -- no: data or config issue --> B
+  N -- no: algorithm issue --> O[[Fix src logic]]
+  O --> I
+  N -- yes --> P[[Publish via netlify.toml]]
+```
+
+| Decision or task | What you do | Config or source of truth | Location |
+| --- | --- | --- | --- |
+| Decide on an area | Choose or add a region name and bounding box | `config.REGIONS`, `config.PILOT_BBOX` | `config.py` |
+| Check LINZ coverage | Confirm the area has outlines, DSM, and imagery | LINZ Data Service | https://data.linz.govt.nz |
+| Check if inputs already exist | Look before fetching; fetches are resumable and skip existing files | filesystem | `data/` (pilot) or `data/regions/<area>/` |
+| Acquire missing inputs | Fetch outlines, DSM, imagery | `fetch_data.py` / `fetch_regions.py` | writes to the same locations |
+| Check the wide DEM is present | District-scale bare-earth DEM, not built by this repo | maintained data environment | `data/dem_wide_mosaic.tif` |
+| Prepare | Assign overlapping outlines to one owning region | `region_build.py` | `data/regions/<area>/building_outlines_dedup.geojson` |
+| Build | Run per-area and district stages, resumable via markers | `run_district_build.sh` / `run_stage.py` | per-area outputs in `data/regions/<area>/`, markers in `data/build_state/` |
+| Merge | Combine per-area outputs into site-level datasets | `merge_regions.py` and the district fan-in | `data/*.geojson`, rasters, `data/panel_layouts.pmtiles` |
+| Validate | Check logs, run audits, review the map visually | audit/render/validate scripts, local map | `data/build_logs/`, browser |
+| Decide: fix data/config or algorithm | A validation failure is either a coverage/config problem or a modelling problem | maintainer judgement | — |
+| Correct config or re-acquire | Adjust bbox, exclusions, or assumptions, or refetch | `config.py` | loops back to Build |
+| Correct an algorithm | Change segmentation, gating, or model code | `src/*.py` | loops back to Build |
+| Publish | Deploy the static site | `netlify.toml` | repo root / hosting |
+
 ## Prerequisites
 
 Ensure you have setup your environment, per the [Local Setup](local-setup.md).
