@@ -432,27 +432,24 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     ext = clip_to(extract(prob3, tw), geom)
     cand_A = [(w2p(r["seg"][0], r["seg"][1]), w2p(r["seg"][2], r["seg"][3]))
               for r in ext]
-    blobs = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
-    cand_B, cand_C, cand_D = [], [], []
-    for blob in blobs:
-        for a3, b3 in _medial_axis(blob):
-            cand_B.append((w2p(*a3), w2p(*b3)))
-        mrr = blob.minimum_rotated_rectangle
-        cc = list(mrr.exterior.coords)[:4]
-        e = sorted(((np.hypot(cc[(k + 1) % 4][0] - cc[k][0],
-                              cc[(k + 1) % 4][1] - cc[k][1]), k)
-                    for k in range(4)), reverse=True)
-        k0 = e[0][1]
-        mid_a = ((np.array(cc[k0]) + np.array(cc[(k0 + 3) % 4])) / 2)
-        mid_b = ((np.array(cc[(k0 + 1) % 4]) + np.array(cc[(k0 + 2) % 4])) / 2)
-        cand_C.append((w2p(*mid_a), w2p(*mid_b)))
-        if e[0][0] / max(e[2][0], 1e-6) < 1.5:
-            inner = aff.scale(mrr, 0.35, 0.35, origin="centroid")
-            ic = list(inner.exterior.coords)[:4]
-            for k in range(4):
-                cand_D.append((w2p(*ic[k]), w2p(*ic[(k + 1) % 4])))
-                cand_D.append((w2p(*ic[k]), w2p(*cc[k])))
-
+    # Josh, third flag on the same two-part building: "Still missing the
+    # middle ridgeline here, I have told you this many times". The archetype
+    # candidates were built from the WHOLE footprint -- a gable "ridge" for a
+    # flat-block-plus-hall runs diagonally across both, scores nothing, and
+    # the hall's own obvious ridge is never proposed. Decompose first: each
+    # near-rectangular part proposes its own medial axis and its own gable.
+    try:
+        parts = [b2 for b2 in rect_parts(geom) if b2.area > 15]
+    except Exception:
+        parts = []
+    # decompose only when the parts are SUBSTANTIAL: a garage notch on a
+    # simple hip house is not a second building, and splitting there cost
+    # 0.04 of benchmark agreement on the drawn houses that were already right
+    big = [b2 for b2 in parts if b2.area > 0.12 * geom.area]
+    if len(big) >= 2:
+        blobs = big
+    else:
+        blobs = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
     def snap(a2, b2):
         d2 = b2 - a2
         L = np.hypot(*d2)
@@ -474,13 +471,65 @@ def network_lines(prob3, geom, bounds, w, h, pts):
             tot += np.hypot(*(b3 - a3)) * (_line_mean(P, a3, b3) - 0.25)
         return tot
 
-    best_net, best_sc = [], -1e9
-    for c in (cand_A, cand_B, cand_C, cand_D):
-        if not c:
+    # PER-PART SELECTION. One family rarely fits a compound building: the
+    # hall wants its gable, the wing wants its hips, and a whole-building
+    # winner forces one answer on both. Each part runs its own contest --
+    # extraction segments assigned by midpoint, archetypes built per part --
+    # and the winners union into the net.
+    def seg_mid_in(a2, b2, blob):
+        from shapely.geometry import Point
+        m = (a2 + b2) / 2
+        return blob.buffer(0.4).contains(Point(p2w(m)))
+
+    best_net = []
+    all_fams = []
+    for blob in blobs:
+        fam_A = [(a2, b2) for a2, b2 in cand_A if seg_mid_in(a2, b2, blob)]
+        fam_B = [(w2p(*a3), w2p(*b3)) for a3, b3 in _medial_axis(blob)]
+        mrr = blob.minimum_rotated_rectangle
+        cc = list(mrr.exterior.coords)[:4]
+        e = sorted(((np.hypot(cc[(k + 1) % 4][0] - cc[k][0],
+                              cc[(k + 1) % 4][1] - cc[k][1]), k)
+                    for k in range(4)), reverse=True)
+        k0 = e[0][1]
+        mid_a = (np.array(cc[k0]) + np.array(cc[(k0 + 3) % 4])) / 2
+        mid_b = (np.array(cc[(k0 + 1) % 4]) + np.array(cc[(k0 + 2) % 4])) / 2
+        fam_C = [(w2p(*mid_a), w2p(*mid_b))]
+        fam_D = []
+        if e[0][0] / max(e[2][0], 1e-6) < 1.5:
+            import shapely.affinity as _aff2
+            inner = _aff2.scale(mrr, 0.35, 0.35, origin="centroid")
+            ic = list(inner.exterior.coords)[:4]
+            for k in range(4):
+                fam_D.append((w2p(*ic[k]), w2p(*ic[(k + 1) % 4])))
+                fam_D.append((w2p(*ic[k]), w2p(*cc[k])))
+        b_net, b_sc = [], -1e9
+        for fam in (fam_A, fam_B, fam_C, fam_D):
+            if not fam:
+                continue
+            sc = score_net(fam)
+            if sc > b_sc:
+                b_sc, b_net = sc, fam
+        all_fams.extend([fam_B, fam_C, fam_D])
+        best_net.extend(b_net)
+
+    # THE TWO REGIMES COMPETE. Per-part selection fixed the compound
+    # buildings Josh flagged three times ("Still missing the middle
+    # ridgeline") and cost 0.03 on the drawn benchmark: an L-shaped house
+    # that whole-building extraction read perfectly gets split and its parts
+    # out-voted. Neither regime owns every building, so the per-part union
+    # and the whole-building winner are both assembled and the higher-scoring
+    # net ships -- the same selection principle one level up.
+    whole_best, whole_sc = [], -1e9
+    for fam in [cand_A] + all_fams:
+        if not fam:
             continue
-        sc = score_net(c)
-        if sc > best_sc:
-            best_sc, best_net = sc, c
+        sc = score_net(fam)
+        if sc > whole_sc:
+            whole_sc, whole_best = sc, fam
+    if not best_net or score_net(best_net) < whole_sc:
+        best_net = whole_best
+
     cleaned = _junction_cleanup([snap(a2, b2) for a2, b2 in best_net])
 
     # COMPLETE THE WINNER'S JUNCTIONS. Josh, on the first Anderson reading he
@@ -496,7 +545,7 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     for a2, b2 in cleaned:
         nodes.extend([a2, b2])
     extra = []
-    for fam in (cand_A, cand_B, cand_C, cand_D):
+    for fam in [cand_A] + all_fams:
         for a2, b2 in fam:
             a3, b3 = snap(a2, b2)
             if np.hypot(*(b3 - a3)) < 12:
