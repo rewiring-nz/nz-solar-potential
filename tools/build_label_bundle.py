@@ -163,6 +163,18 @@ def main():
                         nlines = 0
                 return (nlines if nlines else 999)
             todo.sort(key=_weight)
+            # ROOFS JOSH HAS POINTED AT COME FIRST, whatever their complexity.
+            # The ordering below is a proxy for his drawing effort and it is a
+            # rough one: #4734696 is a plain hip roof that the detector fires 20
+            # lines at, so it sorted to the back of a "simplest first" queue
+            # while being both quick to draw and visibly wrong on the map. A
+            # roof he has looked at and called wrong is worth more than any
+            # proxy, so those are pulled to the front.
+            flag = DATA_DIR / "flagged_ids.txt"
+            if flag.exists():
+                want = [int(x) for x in flag.read_text().split() if x.strip()]
+                todo = ([b for b in want if b in todo]
+                        + [b for b in todo if b not in set(want)])
             ids = done + todo[:a.bench_n]
     if ids is None:
         q = OUT_DIR / "queue.json"
