@@ -39,6 +39,7 @@ more often than not, and the surveyed outline is a better source for those
 angles than anything recoverable from a 5.7 pts/m2 cloud.
 """
 
+import json
 import math
 import os
 import sys
@@ -1247,7 +1248,8 @@ def _seal_network(segs, boundary, max_ext=None):
 # benchmark roofs, and his eye on the winners page: "The rest are good".
 # Precomputed per building because the selector needs SAM and torch, which
 # have no business inside the build environment. Off unless the flag is set.
-SELECTED_FACES_DIR = DATA_DIR / "selected_faces"
+SELECTED_FACES_DIR = (Path(__file__).resolve().parent.parent
+                      / "data" / "selected_faces")
 USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "0") == "1"
 SELECTED_MIN_SCORE = 0.30     # below this, neither reading earned trust
 
@@ -1266,7 +1268,10 @@ def facets_from_selected_faces(building_id, footprint, pts):
         return []
     try:
         doc = json.loads(fp.read_text())
-    except Exception:
+    except (OSError, ValueError):
+        # narrow on purpose: a bare except here swallowed a missing import
+        # for a whole debugging session, exactly as this module's own
+        # docstrings warn
         return []
     if doc.get("score", 0.0) < SELECTED_MIN_SCORE:
         return []
