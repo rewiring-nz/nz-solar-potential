@@ -659,4 +659,58 @@ def network_lines(prob3, geom, bounds, w, h, pts):
         x1, y1 = p2w(a2)
         x2, y2 = p2w(b2)
         out.append([x1, y1, x2, y2])
-    return out
+
+    # NEAR-DUPLICATE SEGMENTS SHATTER THE POLYGONIZATION. The Anderson autopsy:
+    # 13 of Josh's 14 lines present, polygonize yields 9 cells matching his 9
+    # faces -- and one is an 83 m2 leak beside a 2.6 m2 SLIVER. Two almost-
+    # coincident lines survive the pixel weld, polygonize builds a thin
+    # corridor between them, and the faces either side connect around its
+    # ends. Keep the longer of any coincident pair, in metres, at the end.
+    ded = []
+    for seg in sorted(out, key=lambda s2: -np.hypot(s2[2] - s2[0],
+                                                    s2[3] - s2[1])):
+        a3 = np.array(seg[:2]); b3 = np.array(seg[2:])
+        L = np.hypot(*(b3 - a3))
+        if L < 1e-6:
+            continue
+        u3 = (b3 - a3) / L
+        dup = False
+        for k in ded:
+            ka = np.array(k[:2]); kb = np.array(k[2:])
+            kd = kb - ka
+            kL = np.hypot(*kd)
+            kd = kd / kL
+            ang = abs(np.degrees(np.arctan2(kd[1], kd[0])
+                                 - np.arctan2(u3[1], u3[0]))) % 180
+            if min(ang, 180 - ang) > 10:
+                continue
+            nrm = np.array([-kd[1], kd[0]])
+            if abs((a3 - ka) @ nrm) > 0.4 or abs((b3 - ka) @ nrm) > 0.4:
+                continue
+            t = sorted(((a3 - ka) @ kd, (b3 - ka) @ kd))
+            if min(t[1], kL) - max(t[0], 0.0) > 0.5 * L:
+                dup = True
+                break
+        if not dup:
+            ded.append(seg)
+
+    # AN ALMOST-CLOSED MOUTH LEAKS A WHOLE FACE. Two hips welded to each
+    # other half a metre above the eave corner are both degree-2 there, so the
+    # degree-based sealer never extends them, and polygonize leaks two of
+    # Josh's faces into one 83 m2 cell through the gap. Snapping every
+    # near-outline endpoint onto the ring was measured and REVERTED -- it
+    # dragged legitimate interior ends sideways and cost 0.06 of mean
+    # agreement. The mouth case is specific: an endpoint near a footprint
+    # VERTEX belongs on that corner, and only that is done.
+    corners = [np.array(c) for c in list(geom.exterior.coords)[:-1]]
+    snapped = []
+    for seg in ded:
+        pts2 = [np.array(seg[:2]), np.array(seg[2:])]
+        for i2 in range(2):
+            for c2 in corners:
+                if 1e-6 < np.hypot(*(pts2[i2] - c2)) < 0.8:
+                    pts2[i2] = c2.copy()
+                    break
+        if np.hypot(*(pts2[1] - pts2[0])) >= 0.8:
+            snapped.append([pts2[0][0], pts2[0][1], pts2[1][0], pts2[1][1]])
+    return snapped
