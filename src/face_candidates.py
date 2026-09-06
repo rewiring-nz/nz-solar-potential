@@ -134,7 +134,10 @@ def sam_faces(predictor, rgb, geom, bounds, pts):
 
     faces = []
     uncovered = geom
-    for _ in range(SAM_MAX_PROMPTS):
+    # a fixed prompt budget starves big buildings: #4726050's whole west wing
+    # went unpanelled because fourteen prompts ran out before coverage did
+    budget = max(SAM_MAX_PROMPTS, int(geom.area / 120))
+    for _ in range(budget):
         if uncovered.is_empty or uncovered.area < 3.0:
             break
         probe = max(getattr(uncovered, "geoms", [uncovered]),

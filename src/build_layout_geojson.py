@@ -417,6 +417,13 @@ def _build_one_at(building_id, nudge_m):
         plane = (f["plane_a"], f["plane_b"], f["plane_c"])
         obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane,
                                                     roof_geom=f.get("building_geometry"))
+        try:
+            from src.roof_line_source import drawn_obstruction_polys
+            obstructions = list(obstructions or []) + [
+                o for o in drawn_obstruction_polys(f.get("building_id"))
+                if o.intersects(f["geometry"])]
+        except Exception:
+            pass
         siblings = [other for other in facets if other is not f]
         # A FACE JOSH DREW IS NOT JUDGED ON ITS PLANE FIT, for the same reason
         # it is not withheld for low confidence: _facet_fit asks how well the

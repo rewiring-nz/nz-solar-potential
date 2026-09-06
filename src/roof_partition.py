@@ -1407,11 +1407,22 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             except Exception:
                 polys.append(None)
 
+        filled = Polygon(footprint.exterior)
+
         def _is_outer(i):
             q = polys[i]
             if q is None or q.is_empty:
                 return False
             if q.area > OUTER_FACE_OVERSPILL * footprint.area:
+                return True
+            # A COURTYARD HID THE ARTEFACT. #4725584's footprint arrives with
+            # its courtyard filled (5,172 m2 against 4,032 with the hole), so
+            # the 4,962 m2 complement face stopped overspilling and shipped
+            # 1,383 panels across the ridges Josh drew. Against the FILLED
+            # footprint it is 96% -- no real plane is 90% of a roof that
+            # carries five other faces beside it. The many-faces gate keeps
+            # #5372585's legitimate 95% single plane (two faces) safe.
+            if len(faces) >= 6 and q.area > 0.9 * filled.area:
                 return True
             rest = [p for j, p in enumerate(polys)
                     if j != i and p is not None and not p.is_empty]

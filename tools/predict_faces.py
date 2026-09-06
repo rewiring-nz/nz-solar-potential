@@ -163,9 +163,39 @@ def main():
             if f_line else 0.0
         if not f_sam and not f_line:
             continue
-        pick, faces, score = (("sam", f_sam, sc_sam)
-                              if sc_sam >= sc_line
-                              else ("line", f_line, sc_line))
+        # Josh: "If you are not detecting clear lines you should not just
+        # randomly draw them." A line-winner must stand on clear lines --
+        # length-weighted activation along its interior edges >= 0.5.
+        # Calibrated on his verdicts: the two webs he flagged sit at 0.43 and
+        # 0.47, Anderson at 0.87. A roof that fails falls to SAM if SAM earned
+        # a score, else to no file and the old pipeline -- deferring a decent
+        # roof costs little, shipping a web costs a flag.
+        line_ok = bool(f_line)
+        if line_ok:
+            from src.line_extract import _line_mean as _lm2
+            import shapely.geometry as _sg
+            rim2 = geom.exterior.buffer(0.5)
+            sup2 = len2 = 0.0
+            for f in f_line:
+                cs = list(f.exterior.coords)
+                for aa, bb in zip(cs, cs[1:]):
+                    seg2 = _sg.LineString([aa, bb])
+                    Li = seg2.difference(rim2).length
+                    if Li < 0.5:
+                        continue
+                    pa2 = np.array(to_px(*aa))
+                    pb2 = np.array(to_px(*bb))
+                    sup2 += Li * _lm2(P, pa2, pb2)
+                    len2 += Li
+            line_ok = len2 > 2 and (sup2 / len2) >= 0.5
+        if line_ok and sc_line >= sc_sam:
+            pick, faces, score = "line", f_line, sc_line
+        elif f_sam and sc_sam >= 0.30:
+            pick, faces, score = "sam", f_sam, sc_sam
+        elif line_ok:
+            pick, faces, score = "line", f_line, sc_line
+        else:
+            continue
         (OUT / f"{bid}.json").write_text(json.dumps({
             "source": pick, "score": round(score, 3),
             "score_sam": round(sc_sam, 3), "score_line": round(sc_line, 3),

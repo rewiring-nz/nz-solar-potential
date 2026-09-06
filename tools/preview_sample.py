@@ -99,6 +99,12 @@ def _one(bid):
                 _CTX["img"], _CTX["pc"], f["geometry"],
                 (f["plane_a"], f["plane_b"], f["plane_c"]),
                 roof_geom=f.get("building_geometry")) or []
+            try:
+                from src.roof_line_source import drawn_obstruction_polys
+                obs = list(obs) + [o for o in drawn_obstruction_polys(bid)
+                                   if o.intersects(f["geometry"])]
+            except Exception:
+                pass
         except Exception:
             obs = []
         sib = [o for o in facets if o is not f]
