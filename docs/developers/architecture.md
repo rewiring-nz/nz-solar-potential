@@ -28,6 +28,12 @@ In this diagram, cylinders represent data or generated artifacts, subroutine
 shapes represent executable scripts or processing stages, and the rounded map
 node represents the user-facing interface.
 
+The diagram shows the logical flow. The current release orchestration is
+implemented by `src/run_district_build.sh`, which wraps individual stages with
+`src/run_stage.py` preflight checks and completion markers. Its final fan-in
+also runs density deciles, terrain masks, seasonal curves, layout shrinking,
+and Tippecanoe PMTiles generation.
+
 ## Key boundaries
 
 - `config.py` owns model constants, source layer IDs, area definitions,
@@ -43,6 +49,8 @@ node represents the user-facing interface.
 - `src/roof_segmentation.py`, `src/roof_partition.py`, and
   `src/roof_skeleton.py` segment roofs into planar facets using RANSAC and
   constructive straight-skeleton methods competing under confidence gates.
+- `src/preflight.py` declares stage inputs and provides early failure messages;
+  `src/run_stage.py` records stage completion and supports resume-by-marker.
 - `src/build_layout_geojson.py`, `src/gate_panels.py`, and
   `src/rerank_layouts.py` fit, gate, and rank physical panel layouts.
 - `src/derive_solar_potential.py` aggregates layout outputs into the
@@ -60,6 +68,10 @@ node represents the user-facing interface.
   debug cards and build-over-build diff reports for pre-release validation.
 - `preview.html` is the static map. `src/live_server.py` adds a local-only
   refit endpoint and must stay behaviourally aligned with the static build.
+- `site-config.js` contains deployment-specific map settings such as data
+  version, default view, site name, and searchable towns. `economics.js` holds
+  pure client-side cost, savings, and payback calculations, separated from the
+  page so they can be tested by `tests/test_economics.mjs`.
 
 ## Design principles
 
@@ -80,7 +92,10 @@ node represents the user-facing interface.
 
 Set up the environment using the [data maintainer guide](../data-maintainers/local-setup.md), then make a narrow change and use `bash src/run_dev_loop.sh pilot` for the fastest behaviour check. Run the relevant audit or validation script before a broad regional rebuild. Use `bash src/run_district_build.sh` for a resumable district release and inspect its stage markers and logs.
 
-There is no established automated test suite or documentation-site generator
-at present. Add targeted tests when changing deterministic algorithms or data
-contracts, and update the matching document when a command, output, model
-assumption, or operational constraint changes.
+The repository has a local automated check suite at `tests/run_all.sh`, but no
+CI/CD workflow or documentation-site generator is currently documented here.
+Run `bash tests/run_all.sh --fast` for a quick check; the full suite adds
+golden-building regression tests that require local region data. Add targeted
+tests when changing deterministic algorithms or data contracts, and update the
+matching document when a command, output, model assumption, or operational
+constraint changes.

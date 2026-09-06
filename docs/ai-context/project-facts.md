@@ -24,6 +24,14 @@ Last verified: 2026-09-05
 - Per-area generated outputs are under `data/regions/<area>/`; merged map-facing
   outputs are under `data/`, including GeoJSON, heatmap artifacts, and
   `panel_layouts.pmtiles`.
+- `src/run_stage.py` is the thin stage wrapper used by the current district
+  build. It runs preflight checks, records completion markers under
+  `data/build_state/`, and skips only stages whose declared inputs are older
+  than their marker.
+- `tests/run_all.sh` is the repository's local automated check entry point. It
+  includes pure Python, economics, deprecated-API, repository-sync,
+  architecture-diagram, and optional golden-building checks. It is not a CI
+  service.
 - Missing aerial imagery does not block builds: the regional fetcher logs a
   warning and the build runs without imagery-based obstruction detection.
 - `data/dem_wide_mosaic.tif` is a required root-level input for several current
@@ -40,6 +48,9 @@ Last verified: 2026-09-05
   evaluated at eave height.
 - `config.PV_ASSUMPTIONS` is the intended single source for displayed PV model
   assumptions and generated summary data.
+- `site-config.js` contains deployment-specific frontend settings, while
+  `economics.js` contains the pure client-side cost, savings, and payback model
+  used by the map and its Node test.
 - The current static-host configuration publishes repository files. The local
   refit API exists only through `src/live_server.py` and is unavailable on
   static hosting.

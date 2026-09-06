@@ -59,6 +59,11 @@ This command saves the named region under
 outlines and mosaicked DSM and imagery inputs. For example, replace
 `frankton_flats` with the region name passed to the command.
 
+Before a large build, check that the required root-level
+`data/dem_wide_mosaic.tif` is present. The build does not create this file;
+obtain it from the maintained data environment. Regional imagery is optional,
+but the build will report degraded LiDAR-only processing when imagery is absent.
+
 Regional fetching is resumable: existing outputs are skipped. Imagery exports
 are split into chunks no larger than $8\,\mathrm{km^2}$ because imagery is the
 largest source and provider export jobs have practical size limits. Some rural
@@ -95,6 +100,11 @@ derivation, roof-confidence patching, horizon baking, and heatmap-raster
 generation. It then merges regions and runs the district-wide density,
 terrain-mask, seasonal-curve, layout-shrink, and PMTiles stages.
 
+Each stage is run through `src/run_stage.py`. Preflight checks verify declared
+inputs before expensive work, and successful stages write markers under
+`data/build_state/`. With the default resume mode, a stage is skipped only when
+its marker is newer than its declared inputs. Use `--force` to rebuild stages.
+
 Logs are written to `data/build_logs/<region>.log`. A failed area stops the
 district fan-in, preventing an incomplete set of regions from being presented
 as a complete district. The older `run_full_build.sh` remains a simpler
@@ -104,6 +114,10 @@ district release workflow.
 For fast layout-only iteration, use `run_dev_loop.sh`. The parallel layout
 rerun scripts are specialized alternatives for gate-rule changes; read their
 resource notes before selecting `run_layouts_regate_par.sh`.
+
+The older `run_full_build.sh` does not use the current stage-marker and
+preflight orchestration. Use it only when a targeted legacy workflow is
+specifically required.
 
 The district script calls `derive_solar_potential.py` and
 `bake_building_horizons.py` in the supported stage order. These scripts can
@@ -153,6 +167,21 @@ not provide its `/api/refit` endpoint.
    `solar_potential.geojson`, `panel_layouts.geojson`, heatmap manifests and
    raster outputs. The district workflow also creates
    `data/panel_layouts.pmtiles` for map delivery.
+
+## Run automated checks
+
+From the project directory, run the repository's checks before pushing code or
+releasing a dataset:
+
+```sh
+bash tests/run_all.sh --fast
+```
+
+This runs pure-function checks, economics checks when Node.js is available,
+deprecated-API checks, repository-sync checks, and architecture-diagram checks.
+The full command, `bash tests/run_all.sh`, also runs the golden-building
+regression checks and needs the relevant local region data. A non-zero exit
+status means at least one check failed.
 
 ## Publish current artifacts
 
