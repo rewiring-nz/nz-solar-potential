@@ -1251,7 +1251,8 @@ def _seal_network(segs, boundary, max_ext=None):
 SELECTED_FACES_DIR = (Path(__file__).resolve().parent.parent
                       / "data" / "selected_faces")
 USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "0") == "1"
-SELECTED_MIN_SCORE = 0.30     # below this, neither reading earned trust
+SELECTED_MIN_SCORE = 0.30
+SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 
 
 def facets_from_selected_faces(building_id, footprint, pts):
@@ -1293,6 +1294,16 @@ def facets_from_selected_faces(building_id, footprint, pts):
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
             else None
+        if plane is not None:
+            # A FACE THAT IS NOT ONE PLANE IS NOT A FACE. #4740503's balcony
+            # panels rode in on an 835 m2 SAM mask whose plane inlier was
+            # 0.13 -- a mask spanning the main roof AND three terrace levels.
+            # Machine-chosen geometry earns no borrowed plane for that: it is
+            # dropped outright, and the fitter simply places nothing there.
+            # (Josh's own faces never hit this path; sparse faces still
+            # borrow below.)
+            if _inlier_fraction(sub, plane) < SELECTED_MIN_PLANE_INLIER:
+                continue
         bad = plane is None
         if not bad:
             slope, aspect = _slope_aspect(plane)

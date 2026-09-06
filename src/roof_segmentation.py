@@ -1644,7 +1644,11 @@ def drop_balcony_levels(facets, pc_source):
                     break
             else:
                 levels.append({"h": h, "area": f["geometry"].area})
-        small = [lv for lv in levels if lv["area"] < 0.30 * main_area]
+        # 0.30 was tuned against the old path's 1,114 m2 main; SAM reads the
+        # same main as 836 m2 (obstruction clipped) and the identical terrace
+        # levels then just exceed the share, so the same balconies shipped
+        # again. Half the main is still nothing like a roof level.
+        small = [lv for lv in levels if lv["area"] < 0.50 * main_area]
         if len(small) >= 3:
             kept = [f for f, i, h in stats
                     if h is None or h >= main_h - 1.5]
@@ -2161,7 +2165,13 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         if faces and any(f.get("from_labels") for f in faces):
             return faces
         if faces and any(f.get("from_selected") for f in faces):
-            return faces
+            # THROUGH the attach stage, unlike Josh's own faces: its whole-
+            # facet drops (balcony staircase, plant decks) must run on
+            # machine-chosen faces -- #4740503 shipped 850 panels over
+            # apartment balconies because this return used to skip them.
+            # keep_boundary still holds, so nothing reshapes the geometry.
+            return _attach_building_geometry(faces, building_geom,
+                                             pc_source, building_id)
 
         # THE IMAGERY DECIDES WHERE THE LINES ARE; THE LIDAR ONLY SETS SLOPE.
         #

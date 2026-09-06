@@ -217,7 +217,18 @@ def sam_faces(predictor, rgb, geom, bounds, pts):
                         break
             if changed:
                 break
-    return [p.simplify(0.3) for p in polys if p.area >= 2.0], obs
+    # a roof edge is straight; a wavy boundary is mask noise, and Josh reads
+    # it as "fuzzy incorrect lines". Simplify harder, and collapse micro-jags
+    # by closing/opening before the simplify so staircase pixels go first.
+    out_faces = []
+    for p2 in polys:
+        if p2.area < 2.0:
+            continue
+        q = p2.buffer(0.15).buffer(-0.15).simplify(0.35)
+        if q.geom_type != "Polygon" or q.is_empty:
+            q = p2.simplify(0.3)
+        out_faces.append(q)
+    return out_faces, obs
 
 
 # ------------------------------------------------------------ line faces

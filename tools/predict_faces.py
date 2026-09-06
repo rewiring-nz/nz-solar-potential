@@ -194,6 +194,17 @@ def main():
             pick, faces, score = "sam", f_sam, sc_sam
         elif line_ok:
             pick, faces, score = "line", f_line, sc_line
+        elif f_sam:
+            # a pitched building must not fall back to the old path's webs
+            # (#5372567: both candidates dropped, the old pipeline drew "lots
+            # of incorrect lines"). SAM's honest partial ships if its faces
+            # are good QUALITY even at low coverage -- score is quality x
+            # coverage, so divide coverage back out.
+            cov = min(1.0, sum(f.area for f in f_sam) / max(geom.area, 1e-9))
+            if cov > 0.15 and sc_sam / max(cov, 1e-9) >= 0.55:
+                pick, faces, score = "sam", f_sam, sc_sam
+            else:
+                continue
         else:
             continue
         (OUT / f"{bid}.json").write_text(json.dumps({
