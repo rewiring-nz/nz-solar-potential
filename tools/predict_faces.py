@@ -59,7 +59,7 @@ def main():
     sam = sam_model_registry["vit_b"](checkpoint=str(ROOT / "data/sam_vit_b.pth"))
     sam.to(device)
     predictor = SamPredictor(sam)
-    ck = torch.load(ROOT / "data/models/roof_lines_v3.pt",
+    ck = torch.load(ROOT / "data/models/roof_lines_v4.pt",
                     map_location="cpu", weights_only=False)
     lm = T.build_unet(ck.get("pretrained", False))
     lm.load_state_dict(ck["state_dict"])

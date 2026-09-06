@@ -74,7 +74,7 @@ def main():
     ap.add_argument("--flagged", action="store_true",
                     help="the roofs Josh has flagged (data/flagged_ids.txt)")
     ap.add_argument("--model-old", default="data/models/roof_lines_v1.pt")
-    ap.add_argument("--model-new", default="data/models/roof_lines_v3.pt")
+    ap.add_argument("--model-new", default="data/models/roof_lines_v4.pt")
     ap.add_argument("--out", default="lines_check.html")
     a = ap.parse_args()
 

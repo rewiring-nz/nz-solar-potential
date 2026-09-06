@@ -111,7 +111,7 @@ def main():
     try:
         sys.path.insert(0, str(ROOT / "tools"))
         import train_line_model as _T
-        _ck = torch.load(ROOT / "data/models/roof_lines_v3.pt",
+        _ck = torch.load(ROOT / "data/models/roof_lines_v4.pt",
                          map_location="cpu", weights_only=False)
         line_model = _T.build_unet(_ck.get("pretrained", False))
         line_model.load_state_dict(_ck["state_dict"])
