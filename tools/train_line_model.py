@@ -205,6 +205,30 @@ def train_once(train, val, device, epochs, seed=0, quiet=False, pretrained=False
         for i in range(0, n, 16):
             idx = perm[i:i + 16]
             xb, yb, wb = x[idx].to(device), y[idx].to(device), w[idx].to(device)
+            # SCALE AND COLOUR JITTER, for the country beyond Queenstown.
+            # Josh: "Make sure when we are building this training, it's
+            # scaleable to many other households. Our goal is to scale to all
+            # of NZ." Every label so far is one district at one survey's
+            # 0.1 m/px and one summer's colour balance; national imagery runs
+            # 0.075-0.3 m/px across surveys and seasons. A detector that has
+            # only ever seen one look will fail quietly on the next region, so
+            # every batch is randomly rescaled (0.7-1.4x) and colour-jittered
+            # before the dihedral flips.
+            if True:
+                import torch.nn.functional as F
+                sc = float(torch.empty(1).uniform_(0.7, 1.4))
+                hw = xb.shape[-1]
+                nh = max(32, int(round(hw * sc / 16)) * 16)
+                if nh != hw:
+                    xb = F.interpolate(xb, size=(nh, nh), mode="bilinear",
+                                       align_corners=False)
+                    yb = F.interpolate(yb, size=(nh, nh), mode="bilinear",
+                                       align_corners=False)
+                    wb = F.interpolate(wb, size=(nh, nh), mode="bilinear",
+                                       align_corners=False)
+                xb = xb * float(torch.empty(1).uniform_(0.8, 1.2))
+                xb = xb + float(torch.empty(1).uniform_(-0.08, 0.08))
+                xb = xb.clamp(0, 1)
             # dihedral augmentation, free and the only thing standing between
             # 150 roofs and immediate overfitting
             if torch.rand(1).item() < 0.5:
