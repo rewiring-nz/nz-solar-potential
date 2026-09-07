@@ -62,7 +62,8 @@ def main():
     from src.region_build import area_paths
     from src.pointcloud_source import PointCloudSource
     from src.roof_partition import top_surface
-    from src.face_candidates import sam_faces, line_faces, score_candidate
+    from src.face_candidates import (sam_faces, line_faces, score_candidate,
+                                     evidence_map)
     import train_line_model as T
 
     _oac = _RLS.apply_coords
@@ -73,7 +74,7 @@ def main():
     sam = sam_model_registry["vit_b"](checkpoint=str(ROOT / "data/sam_vit_b.pth"))
     sam.to(device)
     predictor = SamPredictor(sam)
-    ck = torch.load(ROOT / "data/models/roof_lines_v4.pt",
+    ck = torch.load(ROOT / "data/models/roof_lines_v5.pt",
                     map_location="cpu", weights_only=False)
     lm = T.build_unet(ck.get("pretrained", False))
     lm.load_state_dict(ck["state_dict"])
@@ -140,7 +141,7 @@ def main():
             x2 = _t.from_numpy(arr).float().permute(2, 0, 1)[None] / 255.0
             with _t.no_grad():
                 pr = _t.sigmoid(lm(x2.to(device)))[0].cpu().numpy()[:, :h, :w]
-        P = pr.max(axis=0)
+        P = evidence_map(pr.max(axis=0), rgb)
 
         drawn = []
         for f in labels.get(str(bid), {}).get("faces") or []:

@@ -260,6 +260,28 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
 
 # --------------------------------------------------------------- scorer
 
+def evidence_map(prob_max, rgb):
+    """Support for a boundary: the model's activation OR a visible edge.
+
+    Josh, on a run of roofs the selector fumbled: "It's pretty clear the model
+    is not working very well at detecting lines from my markups." He is right
+    -- and worse, the scorer judged every candidate BY that weak model's
+    activation, so on #4735106 SAM's six faces at 99% coverage (his verdict:
+    clearly better) scored 0.341 and lost to a two-face reading. The judge
+    had the defendant's eyesight.
+
+    Image gradient is model-free: his "clearly visible lines" are literally
+    high gradient. Evidence = max(model activation, scaled gradient), so a
+    correct boundary on a visible crease scores even where the model is blind.
+    """
+    g = rgb.astype(np.float32).mean(axis=2)
+    gy, gx = np.gradient(g)
+    mag = np.hypot(gx, gy)
+    hi = np.percentile(mag, 99) or 1.0
+    grad = np.clip(mag / hi, 0, 1)
+    return np.maximum(prob_max, 0.75 * grad)
+
+
 def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
     """How well a face-set fits the evidence. Higher is better.
 
@@ -306,14 +328,22 @@ def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
         import shapely.geometry as sg
         from shapely.ops import unary_union
         rings = [sg.LineString(list(f.exterior.coords)) for f in faces]
-        net = unary_union(rings).buffer(3.0)   # px frame? no -- world; convert
-        # boundaries are in world coords; activation in px. Sample activation
-        # pixels back to world for the test.
+        # Tolerance is the teeth of this term. buffer(3.0) here was WORLD
+        # metres -- any boundary within ~3.4 m "explained" an evidence pixel,
+        # so recall read 0.62 vs 0.59 on #4735106 while edge precision (which
+        # structurally favours the line family, whose edges are built ON the
+        # activation) decided the contest alone. A fold you missed by 3 m is
+        # a fold you missed.
+        net = unary_union(rings)
+        # (Tried interior-only recall -- excluding rim-adjacent evidence --
+        # on the theory the outline gradient inflates under-segmented
+        # readings. Measured 0.736 vs 0.769 on the drawn benchmark: worse.
+        # Rim evidence stays in.)
         pxs = np.c_[xs, ys][np.random.default_rng(7).permutation(len(xs))[:400]]
         hit = 0
         for x2, y2 in pxs:
             wpt = sg.Point(inv_px(x2, y2))
-            if net.distance(wpt) < 0.45:
+            if net.distance(wpt) < 0.7:
                 hit += 1
         recall_term = hit / len(pxs)
 
@@ -359,6 +389,9 @@ def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
     # scored best of all before this factor -- quality of what it kept, no
     # charge for what it dropped (#4734678: score 0.77, agreement 0.28).
     coverage = min(1.0, sum(f.area for f in faces) / max(geom.area, 1e-9))
+    # (Weights 0.2 edge / 0.3 recall measured 0.734 vs 0.769 -- the edge
+    # term earns its 0.3 on the drawn corpus; the bias it carries is real
+    # but repricing it globally costs more than it buys.)
     return (0.3 * edge_term + 0.2 * recall_term + 0.2 * step_term
             + 0.3 * plane_term) * coverage
 
@@ -476,10 +509,18 @@ def network_lines(prob3, geom, bounds, w, h, pts):
         return a2 + bo * nrm, b2 + bo * nrm
 
     def score_net(net):
+        # Baseline is the price of drawing a line. At 0.25, any line above
+        # faint activation ADDS score, so a long weakly-supported ring
+        # out-totals a short strongly-supported skeleton: #4734914's
+        # truncated-hip band (huge length, eave-shadow support) beat the
+        # extracted hip skeleton that matched the visible ridge exactly.
+        # Josh: "If you are not detecting clear lines you should not just
+        # randomly draw them" -- a line must be clearly supported to pay
+        # for itself.
         tot = 0.0
         for a2, b2 in net:
             a3, b3 = snap(a2, b2)
-            tot += np.hypot(*(b3 - a3)) * (_line_mean(P, a3, b3) - 0.25)
+            tot += np.hypot(*(b3 - a3)) * (_line_mean(P, a3, b3) - 0.45)
         return tot
 
     # PER-PART SELECTION. One family rarely fits a compound building: the
@@ -515,6 +556,12 @@ def network_lines(prob3, geom, bounds, w, h, pts):
                 fam_D.append((w2p(*ic[k]), w2p(*ic[(k + 1) % 4])))
                 fam_D.append((w2p(*ic[k]), w2p(*cc[k])))
         b_net, b_sc = [], -1e9
+        import os as _os
+        if _os.environ.get("SOLAR_DEBUG_NET"):
+            for nm, fam in (("A-extract", fam_A), ("B-medial", fam_B),
+                            ("C-gable", fam_C), ("D-trunc", fam_D)):
+                print(f"    part {nm}: {len(fam)} segs "
+                      f"score {score_net(fam) if fam else float('nan'):.1f}")
         for fam in (fam_A, fam_B, fam_C, fam_D):
             if not fam:
                 continue
@@ -532,6 +579,10 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     # and the whole-building winner are both assembled and the higher-scoring
     # net ships -- the same selection principle one level up.
     whole_best, whole_sc = [], -1e9
+    import os as _os
+    if _os.environ.get("SOLAR_DEBUG_NET"):
+        print(f"    whole A-extract: {len(cand_A)} segs score {score_net(cand_A):.1f}; "
+              f"parts-union: {len(best_net)} segs score {score_net(best_net) if best_net else float('nan'):.1f}")
     for fam in [cand_A] + all_fams:
         if not fam:
             continue
