@@ -2372,8 +2372,47 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
                 for cell in getattr(residual, "geoms", [residual]):
                     if cell.geom_type != "Polygon" or cell.area < 8.0:
                         continue
-                    for poly2, plane2 in _partition(
-                            cell, _points_in(cell, inside_r)):
+                    fill = list(_partition(cell, _points_in(cell, inside_r)))
+                    # Josh, on the facet web the fill drew over a cluttered
+                    # flat (#4734913): "you should not create roof lines
+                    # unless you are confident in them." The boundary between
+                    # two fill facets whose planes barely differ is exactly
+                    # such a line -- merge them until every remaining boundary
+                    # separates planes that clearly disagree.
+                    merged = True
+                    while merged and len(fill) > 1:
+                        merged = False
+                        for i in range(len(fill)):
+                            for j2 in range(i + 1, len(fill)):
+                                pi, pli = fill[i]
+                                pj, plj = fill[j2]
+                                si, _ = _slope_aspect(pli)
+                                sj, _ = _slope_aspect(plj)
+                                _, ai = _slope_aspect(pli)
+                                _, aj = _slope_aspect(plj)
+                                d_asp = abs((ai - aj + 180) % 360 - 180)
+                                alike = (abs(si - sj) < 7.0
+                                         and (max(si, sj) < 8.0
+                                              or d_asp < 30.0))
+                                if not alike:
+                                    continue
+                                if not pi.buffer(0.1).intersects(pj):
+                                    continue
+                                u = pi.union(pj).buffer(0.05).buffer(-0.05)
+                                if u.geom_type != "Polygon":
+                                    continue
+                                sub_u = _points_in(u, inside_r)
+                                pl_u = (_fit_plane_robust(sub_u)
+                                        if len(sub_u) > 12
+                                        else (pli if pi.area >= pj.area
+                                              else plj))
+                                fill[i] = (u, pl_u)
+                                del fill[j2]
+                                merged = True
+                                break
+                            if merged:
+                                break
+                    for poly2, plane2 in fill:
                         slope2, aspect2 = _slope_aspect(plane2)
                         if slope2 > config.MAX_ROOF_SLOPE_DEG:
                             continue
