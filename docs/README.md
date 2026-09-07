@@ -8,6 +8,7 @@ This directory documents only the `nz-solar-potential` project. The sibling
 | Audience | Document | Purpose | Update trigger |
 | --- | --- | --- | --- |
 | Web map users | [Using the web map](web-map-users.md) | Find a building and interpret an estimate. | Map interaction, metrics, or assumptions change. |
+| Researchers / academic readers | [Why a building estimate can be trusted](theory/theory.md) | Explain the evidence chain, datasets, models, and limits behind per-building estimates. | Source provenance, model strategy, validation evidence, or uncertainty framing changes. |
 | Data maintainers | [Local setup](data-maintainers/local-setup.md) | Set up a supported workstation and obtain required credentials. | Dependencies, supported platforms, or credentials change. |
 | Data maintainers | [Dataset operations](data-maintainers/dataset-operations.md) | Fetch, build, validate, merge, and publish data. | Pipeline scripts, source datasets, outputs, or release checks change. |
 | Software contributors | [Architecture](developers/architecture.md) | Understand the code, data flow, boundaries, and development workflow. | Module boundaries, output contracts, or local workflow change. |
