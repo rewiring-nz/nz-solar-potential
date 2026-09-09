@@ -1,17 +1,30 @@
-"""
-Per building footprint: extract the DSM patch, split into planar roof
-facets, drop facets over config.MAX_ROOF_SLOPE_DEG or too small to hold a
-panel.
+"""Roof segmentation: one building footprint -> planar facets.
 
-Method: multi-plane RANSAC directly on the DSM's pixel grid (each valid
-pixel inside the footprint treated as an (x, y, z) point). This is the
-grid-based variant of the standard LiDAR-roof-segmentation approach from
-the literature -- we don't have the raw point cloud locally (only the DSM
-raster), so pixel centres stand in for points. At 1m resolution a small
-garage roof is only a handful of pixels, which is the real precision
-ceiling of this approach; it's fine for the pilot, and swapping in the
-raw LAZ point cloud later (higher point density) would be a drop-in
-upgrade to `points_from_window` without touching the RANSAC/vectorize code.
+THE ENTRY POINT is segment_building_best() near the bottom: it runs the
+competing methods, applies the confidence gates, and hands every winning
+facet set to _attach_building_geometry() for the shared finishing rules.
+Everything above it is either a method or a finishing rule.
+
+Map of this module (grep the function name, line numbers rot):
+
+  1. DSM-grid RANSAC (the original 2023 method, still a competitor):
+     points_from_window .. segment_building_from_pointcloud
+  2. Image-guided partition (detect ridge lines in imagery, cut, fit):
+     _detect_interior_roof_lines .. segment_building_image_guided
+  3. Point-native segmentation (RANSAC/clustering on raw LAZ points):
+     _local_normals .. segment_building_orientation_clustered
+  4. Facet repair and physical-plausibility drops (shared finishing):
+     repair_nonplanar_facets, drop_plant_decks, drop_balcony_levels
+  5. _attach_building_geometry: the ONE funnel every facet set passes --
+     realism merge, footprint clip (machine facets only; drawn faces are
+     exempt from every rule in this module), building_geometry stamping
+  6. segment_building_best: method competition + confidence gates +
+     source precedence (owner's markup > selected faces > old paths).
+
+Historical note: this module grew rule-per-incident over a year of the
+owner's per-roof verdicts; each rule's comment carries the incident and
+the measurement that licensed it. The staged split of this file is
+tracked in docs/developers/reviewers-guide.md ("comprehension debt").
 """
 
 import sys

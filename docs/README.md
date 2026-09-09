@@ -12,6 +12,7 @@ This directory documents only the `nz-solar-potential` project. The sibling
 | Data maintainers | [Local setup](data-maintainers/local-setup.md) | Set up a supported workstation and obtain required credentials. | Dependencies, supported platforms, or credentials change. |
 | Data maintainers | [Dataset operations](data-maintainers/dataset-operations.md) | Fetch, build, validate, merge, and publish data. | Pipeline scripts, source datasets, outputs, or release checks change. |
 | Software contributors | [Architecture](developers/architecture.md) | Understand the code, data flow, boundaries, and development workflow. | Module boundaries, output contracts, or local workflow change. |
+| Reviewers | [Reviewer's guide](developers/reviewers-guide.md) | Verify the logic: rule-to-code map, per-stage check commands, glossary. | A rule's enforcement point or check command changes. |
 | AI context maintainers | [AI context](ai-context/README.md) | Maintain concise, verified project context for AI-assisted work. | A durable decision, constraint, workflow, or unresolved issue changes. |
 | Project maintainers | [ADR 0001](decisions/0001-containerisation-strategy.md) | Evaluate containerisation without adopting it prematurely. | Docker or cloud execution is proposed, trialled, adopted, or rejected. |
 

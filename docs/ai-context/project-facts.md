@@ -1,6 +1,6 @@
 # Project facts
 
-Last verified: 2026-09-05
+Last verified: 2026-09-09
 
 ## Verified facts
 
@@ -37,9 +37,16 @@ Last verified: 2026-09-05
 - `data/dem_wide_mosaic.tif` is a required root-level input for several current
   stages, including building horizons and terrain masks. No repository script
   builds it; a maintained copy must be supplied separately.
-- Roof segmentation uses RANSAC plane fitting and straight-skeleton constructive
-  reconstruction (`src/roof_skeleton.py`) competing under partition confidence
-  gates, with top-surface point filtering and plane refits.
+- Roof geometry has two generations (verified 2026-09-09, see
+  docs/developers/reviewers-guide.md). The fallback: RANSAC plane fitting and
+  straight-skeleton reconstruction (`src/roof_skeleton.py`) competing under
+  partition confidence gates. Leading when `SOLAR_SELECTED_FACES=1`: an
+  offline precompute (`tools/predict_faces.py`) scores three candidate face
+  readings per building (SAM vit_b, a U-Net line detector v5 trained on the
+  owner's markups, and normal-grown LiDAR regions) and writes the winner to
+  `data/selected_faces/<id>.json`, consumed by
+  `roof_partition.facets_from_selected_faces` with a one-plane gate and
+  residual fill. Precedence: owner's markup > selected faces > fallback.
 - Building solar potential summary data (`solar_potential.geojson`) is derived
   by aggregating layout features directly (`src/derive_solar_potential.py`),
   ensuring summary totals and individual layouts match without re-segmentation.

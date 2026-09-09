@@ -37,6 +37,23 @@ Cut directions come from the footprint itself. Roofs are built on walls, so
 ridges, hips and valleys run parallel or perpendicular to the walls below far
 more often than not, and the surveyed outline is a better source for those
 angles than anything recoverable from a 5.7 pts/m2 cloud.
+
+Map of this module (grep the function name, line numbers rot):
+
+  1. Plane fitting and partition core: _fit_plane / _fit_plane_robust,
+     _partition (the recursive cut engine), partition_by_planes
+  2. Point utilities: top_surface (top-of-cloud filter), _points_in,
+     explained_fraction
+  3. GEOMETRY SOURCES, in the precedence the build applies them --
+     partition_with_labels / facets_from_drawn_faces (the owner's markup,
+     exempt from all quality gates), facets_from_selected_faces (the
+     precomputed SAM/line/LiDAR winner behind SOLAR_SELECTED_FACES=1,
+     one-plane gate + RESIDUAL FILL so coverage is guaranteed),
+     line_facets (vision-line polygonisation), partition_roof (old path)
+  4. Footprint hygiene: roof_outline, trim_to_roof (courtyards, decks)
+
+The precedence contract and per-rule history live in
+docs/developers/reviewers-guide.md.
 """
 
 import json

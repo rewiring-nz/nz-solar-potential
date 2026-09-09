@@ -1,5 +1,10 @@
 # Architecture for software contributors
 
+> Reviewing rather than contributing? Start with the
+> [reviewer's guide](reviewers-guide.md): the two geometry generations,
+> the owner's rule constitution mapped to enforcement points, and a
+> verification command per stage.
+
 ## System shape
 
 `nz-solar-potential` is a local Python geospatial pipeline plus a static
@@ -12,7 +17,11 @@ and selected-building views.
 flowchart TB
   LINZ[(LINZ source datasets)] --> Fetch[[fetch_data / fetch_regions]]
   Fetch --> Inputs[(data and data/regions/name)]
-  Inputs --> Segment[[roof segmentation & skeleton reconstruction]]
+  Inputs --> Vision[[predict_faces: SAM / line detector / LiDAR candidates + evidence scorer]]
+  Vision --> Selected[(data/selected_faces/id.json)]
+  Selected --> Segment
+  Labels[(data/roof_labels.json - owner's markup)] --> Segment
+  Inputs --> Segment[[roof segmentation: markup > selected faces > RANSAC+skeleton]]
   Segment --> Detect[[obstruction detection]]
   Detect --> Fit[[panel fitting and gates]]
   Fit --> Layouts[(per-area panel_layouts.geojson)]
