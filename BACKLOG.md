@@ -50,7 +50,9 @@ excludes a pair.
 `measure_facet_agreement`, and the sibling threshold is the whole design — one
 sibling is weak evidence and would extend noise across every roof.
 
-## OPEN: facesFor() can return its enclosing face — 4 Sep
+## FIXED 9 Sep: facesFor() enclosing face — guard at the sink (see commit)
+
+## WAS OPEN: facesFor() can return its enclosing face — 4 Sep
 
 `facesFor()` in the labelling tool walks a planar subdivision and discards the
 outer boundary by signed area: interior faces are expected counter-clockwise,
