@@ -25,6 +25,13 @@
 set -u
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
+
+# The selected-faces chain LEADS district builds (Josh, 9 Sep: "deploy this
+# fix to all of the Queenstown regions"). Without this export the build
+# silently ignores every data/selected_faces/*.json the precompute wrote --
+# there is no error, the old path just answers instead. Set
+# SOLAR_SELECTED_FACES=0 explicitly to build old-path only.
+export SOLAR_SELECTED_FACES="${SOLAR_SELECTED_FACES:-1}"
 LOGDIR=data/build_logs
 mkdir -p "$LOGDIR"
 
