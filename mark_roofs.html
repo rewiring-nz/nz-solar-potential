@@ -797,6 +797,39 @@ function facesFor(outline, lines){
       }
     });
   });
+  // A corrupted walk can trace a positive mega-face: #4725584 exported a
+  // self-intersecting 164-vertex, 4,962 m2 "face" on a 4,032 m2 building
+  // (219 drawn lines; near-coincident nodes break the rotation system).
+  // Guard at source, mirroring the build's OUTER_FACE_FRAC workaround:
+  // when other faces exist, drop any face that engulfs the outline or
+  // strays materially outside it. A genuine single-face roof is untouched.
+  if(out.length > 1){
+    let oa=0;
+    for(let i=0;i<ring.length;i++){
+      const q=ring[(i+1)%ring.length];
+      oa += ring[i][0]*q[1] - q[0]*ring[i][1];
+    }
+    oa=Math.abs(oa/2);
+    const inside=f=>{
+      let bad=0;
+      f.forEach(pt=>{ if(!inPoly(pt, ring)){
+        // tolerance: a vertex may sit a hair outside a jagged outline
+        const d=ring.reduce((m,rp)=>Math.min(m,Math.hypot(pt[0]-rp[0],pt[1]-rp[1])),1e9);
+        if(d > 1.0) bad++;
+      }});
+      return bad <= Math.max(1, f.length*0.05);
+    };
+    const area=f=>{
+      let s2=0;
+      for(let i=0;i<f.length;i++){
+        const q=f[(i+1)%f.length];
+        s2 += f[i][0]*q[1] - q[0]*f[i][1];
+      }
+      return Math.abs(s2/2);
+    };
+    const kept=out.filter(f=>area(f) < 0.9*oa && inside(f));
+    if(kept.length) return kept;
+  }
   return out;
 }
 const faces = () => facesFor(R().outline, rec().lines);
