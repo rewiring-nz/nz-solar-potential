@@ -140,6 +140,12 @@ code, re-run the check.
    attach/gates vs competition vs vision-lines lead;
    `roof_partition` → partition core vs selected-faces consumption vs
    top-surface utilities.
+1b. **Golden snapshots vs markup precedence** (resolved 2026-09-09): two
+   golden buildings "collapsed" from 4 and 10 facets to 1 and 2 -- that is
+   the markup-wins rule working correctly (the owner drew 1 and 2 faces on
+   those roofs; the snapshots predate the markup). When a golden building
+   fails with a facet-count DROP, check `data/roof_labels.json` for that id
+   before suspecting the gates.
 2. **Dead standalone scripts**: `src/compare_reconstruct.py`,
    `src/scan_defects.py`, `src/label_sheet.py`, `src/triage_sheet.py`
    are imported by nothing and belong to finished arcs. Deletion staged
