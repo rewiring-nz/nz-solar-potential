@@ -16,6 +16,7 @@ its own shipping threshold without recomputing anything.
 
 import argparse
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -84,7 +85,11 @@ def main():
 
     OUT.mkdir(parents=True, exist_ok=True)
     done = 0
+    resume = os.environ.get("SOLAR_PREDICT_RESUME", "0") == "1"
     for bid in ids:
+        if resume and (OUT / f"{bid}.json").exists():
+            done += 1
+            continue
         if bid not in gdf.index:
             continue
         geom = gdf.loc[bid].geometry
