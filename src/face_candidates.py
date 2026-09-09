@@ -260,6 +260,172 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
 
 # --------------------------------------------------------------- scorer
 
+def lidar_faces(pts, geom):
+    """LiDAR-first reading: normal-based region growing on the point cloud,
+    regularised to the building's axes, tiled to the footprint.
+
+    Why a third family: the two imagery families go blind exactly where Josh
+    kept flagging failures -- tree shadow (#4735106) and cluttered flats
+    (#4735244). Shadows and clutter do not exist in the point cloud. Greedy
+    RANSAC was measured absorbing small raised faces into neighbouring big
+    planes (2 Kent St: 4 faces where Josh counts 13-14); growing regions by
+    NORMAL agreement is the fix the audit named.
+    """
+    import numpy as np
+    from scipy.spatial import cKDTree
+    from shapely.geometry import Point, Polygon, MultiPoint
+    from shapely.ops import unary_union, voronoi_diagram
+
+    if pts is None or len(pts) < 60:
+        return []
+    xy = pts[:, :2]
+    tree = cKDTree(xy)
+    n = len(pts)
+
+    # per-point unit normals + curvature by local PCA (k nearest)
+    k = min(12, n - 1)
+    _, idx = tree.query(xy, k=k + 1)
+    normals = np.zeros((n, 3))
+    curv = np.full(n, 1.0)
+    P3 = pts[:, :3]
+    for i in range(n):
+        nb = P3[idx[i]]
+        c = nb - nb.mean(axis=0)
+        cov = c.T @ c
+        w, v = np.linalg.eigh(cov)
+        nv = v[:, 0]
+        if nv[2] < 0:
+            nv = -nv
+        normals[i] = nv
+        tot = w.sum()
+        curv[i] = w[0] / tot if tot > 0 else 1.0
+
+    # region growing: flattest seeds first, admit a neighbour when its normal
+    # agrees with the REGION's running mean and it sits on the region's plane
+    ANG = np.cos(np.radians(12.0))
+    DIST = 0.13
+    label = np.full(n, -1)
+    order = np.argsort(curv)
+    region_id = 0
+    for seed in order:
+        if label[seed] >= 0:
+            continue
+        stack = [seed]
+        label[seed] = region_id
+        members = [seed]
+        nsum = normals[seed].copy()
+        csum = P3[seed].copy()
+        while stack:
+            i = stack.pop()
+            for j in tree.query_ball_point(xy[i], 1.1):
+                if label[j] >= 0:
+                    continue
+                m = nsum / np.linalg.norm(nsum)
+                if normals[j] @ m < ANG:
+                    continue
+                cen = csum / len(members)
+                if abs((P3[j] - cen) @ m) > DIST:
+                    continue
+                label[j] = region_id
+                members.append(j)
+                nsum += normals[j]
+                csum += P3[j]
+                stack.append(j)
+        region_id += 1
+
+    # regions -> footprint-tiled polygons: every point claims its cell of a
+    # dense grid Voronoi (cheap: nearest-labelled-point lookup on a raster)
+    minx, miny, maxx, maxy = geom.bounds
+    step = 0.4
+    gx = np.arange(minx - 0.2, maxx + 0.2, step)
+    gy = np.arange(miny - 0.2, maxy + 0.2, step)
+    GX, GY = np.meshgrid(gx, gy)
+    q = np.c_[GX.ravel(), GY.ravel()]
+    _, nearest = tree.query(q)
+    cell_label = label[nearest].reshape(GY.shape)
+
+    sizes = np.bincount(label[label >= 0])
+    keep = {r for r in range(region_id) if sizes[r] >= 25}
+    # small regions dissolve into their biggest neighbour at the raster level
+    if keep:
+        big = max(keep, key=lambda r: sizes[r])
+        flat = cell_label.ravel()
+        flat[~np.isin(flat, list(keep))] = -9
+        # nearest kept label for dissolved cells
+        for _ in range(3):
+            m2 = flat.reshape(cell_label.shape)
+            for dy in (-1, 1):
+                roll = np.roll(m2, dy, axis=0)
+                m2[(m2 == -9) & (roll != -9)] = roll[(m2 == -9) & (roll != -9)]
+            for dx in (-1, 1):
+                roll = np.roll(m2, dx, axis=1)
+                m2[(m2 == -9) & (roll != -9)] = roll[(m2 == -9) & (roll != -9)]
+        cell_label = m2
+        cell_label[cell_label == -9] = big
+
+    # dominant axes of the footprint for boundary regularisation
+    mrr = geom.minimum_rotated_rectangle
+    cc = list(mrr.exterior.coords)
+    ax = np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0])
+
+    faces = []
+    for r in sorted(set(cell_label.ravel())):
+        if r < 0:
+            continue
+        mask = cell_label == r
+        if mask.sum() < 12:
+            continue
+        boxes = []
+        ys, xs = np.nonzero(mask)
+        for yy, xx in zip(ys, xs):
+            boxes.append(Polygon([
+                (gx[xx] - step / 2, gy[yy] - step / 2),
+                (gx[xx] + step / 2, gy[yy] - step / 2),
+                (gx[xx] + step / 2, gy[yy] + step / 2),
+                (gx[xx] - step / 2, gy[yy] + step / 2)]))
+        poly = unary_union(boxes).buffer(step * 0.51).buffer(-step * 0.51)
+        poly = poly.intersection(geom)
+        if poly.is_empty:
+            continue
+        parts = list(getattr(poly, "geoms", [poly]))
+        for part in parts:
+            if part.geom_type != "Polygon" or part.area < 6.0:
+                continue
+            # regularise: rotate into the building frame, simplify with a
+            # coarse tolerance there (axis-parallel jags collapse), rotate back
+            import shapely.affinity as aff
+            rot = aff.rotate(part, -np.degrees(ax), origin=(0, 0))
+            rot = rot.simplify(0.55)
+            # axis-snap: raster stair-steps survive simplify as short jogs;
+            # in the building frame a nearly-axis-parallel edge IS axis
+            # parallel, so collapse runs of nearly-equal x (or y) vertices
+            if rot.geom_type == "Polygon":
+                cs = list(rot.exterior.coords)[:-1]
+                snapped = []
+                for i2 in range(len(cs)):
+                    x0, y0 = cs[i2]
+                    xp, yp = cs[i2 - 1]
+                    if abs(x0 - xp) < 0.5:
+                        x0 = (x0 + xp) / 2
+                        if snapped:
+                            snapped[-1] = (x0, snapped[-1][1])
+                    if abs(y0 - yp) < 0.5:
+                        y0 = (y0 + yp) / 2
+                        if snapped:
+                            snapped[-1] = (snapped[-1][0], y0)
+                    snapped.append((x0, y0))
+                if len(snapped) >= 3:
+                    cand2 = Polygon(snapped)
+                    if cand2.is_valid and cand2.area > 0.7 * rot.area:
+                        rot = cand2.simplify(0.35)
+            reg = aff.rotate(rot, np.degrees(ax), origin=(0, 0))
+            if not reg.is_valid or reg.is_empty or reg.geom_type != "Polygon":
+                reg = part.simplify(0.3)
+            if reg.geom_type == "Polygon" and reg.area >= 6.0:
+                faces.append(reg)
+    return faces
+
+
 def evidence_map(prob_max, rgb):
     """Support for a boundary: the model's activation OR a visible edge.
 

@@ -49,7 +49,7 @@ def main():
     from src.pointcloud_source import PointCloudSource
     from src.roof_partition import top_surface
     from src.face_candidates import (sam_faces, line_faces, score_candidate,
-                                     evidence_map)
+                                     evidence_map, lidar_faces)
     import train_line_model as T
 
     _oac = _RLS.apply_coords
@@ -184,7 +184,21 @@ def main():
             if f_sam else 0.0
         sc_line = score_candidate(f_line, geom, P, to_px, pts, inv_px) \
             if f_line else 0.0
-        if not f_sam and not f_line:
+        # LIDAR-FIRST reading: normals region-grown on the point cloud.
+        # Where the imagery is blind -- tree shadow (#4735106), cluttered
+        # flats -- both imagery families fail their gates and the roof used
+        # to fall to the old RANSAC path. This family exists for exactly
+        # those roofs. On roofs imagery reads fine it may win outright only
+        # by a clear margin (+0.08, measured on the 32 drawn roofs as the
+        # no-harm threshold: 3-way naive picking LOST 0.03 of agreement, so
+        # deference to the imagery winner is the measured default).
+        try:
+            f_lid = lidar_faces(pts, geom)
+        except Exception:
+            f_lid = []
+        sc_lid = score_candidate(f_lid, geom, P, to_px, pts, inv_px) \
+            if f_lid else 0.0
+        if not f_sam and not f_line and not f_lid:
             continue
         # Josh: "If you are not detecting clear lines you should not just
         # randomly draw them." A line-winner must stand on clear lines --
@@ -211,12 +225,35 @@ def main():
                     sup2 += Li * _lm2(P, pa2, pb2)
                     len2 += Li
             line_ok = len2 > 2 and (sup2 / len2) >= 0.5
-        if line_ok and sc_line >= sc_sam:
+        # Imagery-degraded roofs judge themselves: #4735106 sits under tree
+        # shadow at mean in-footprint luminance 96 with 15% deep-dark pixels,
+        # where normal roofs read 130-145 with ~0%. Under shadow the imagery
+        # candidates' scores are not trustworthy evidence, so LiDAR needs no
+        # margin there -- near-parity suffices.
+        try:
+            from rasterio.features import geometry_mask as _gm
+            import rasterio.transform as _rt
+            _tr = _rt.from_bounds(*b, w, h)
+            _m = ~_gm([geom], out_shape=(h, w), transform=_tr)
+            _lum = rgb.astype(np.float32).mean(axis=2)[_m]
+            dark = _lum.mean() < 110 or (_lum < 70).mean() > 0.08
+        except Exception:
+            dark = False
+        if f_lid and dark and sc_lid >= 0.30 \
+                and sc_lid >= max(sc_sam, sc_line) - 0.10:
+            pick, faces, score = "lidar", f_lid, sc_lid
+        elif f_lid and sc_lid > max(sc_sam, sc_line) + 0.08:
+            pick, faces, score = "lidar", f_lid, sc_lid
+        elif line_ok and sc_line >= sc_sam:
             pick, faces, score = "line", f_line, sc_line
         elif f_sam and sc_sam >= 0.30:
             pick, faces, score = "sam", f_sam, sc_sam
         elif line_ok:
             pick, faces, score = "line", f_line, sc_line
+        elif f_lid and sc_lid >= 0.30:
+            # both imagery readings refused -- the roof the old path used to
+            # inherit. The regularised LiDAR reading ships instead.
+            pick, faces, score = "lidar", f_lid, sc_lid
         elif f_sam:
             # a pitched building must not fall back to the old path's webs
             # (#5372567: both candidates dropped, the old pipeline drew "lots
@@ -233,6 +270,7 @@ def main():
         (OUT / f"{bid}.json").write_text(json.dumps({
             "source": pick, "score": round(score, 3),
             "score_sam": round(sc_sam, 3), "score_line": round(sc_line, 3),
+            "score_lidar": round(sc_lid, 3),
             "faces": [[[round(v, 2) for v in xy]
                        for xy in f.exterior.coords] for f in faces]}))
         done += 1

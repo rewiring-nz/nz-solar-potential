@@ -63,7 +63,7 @@ def main():
     from src.pointcloud_source import PointCloudSource
     from src.roof_partition import top_surface
     from src.face_candidates import (sam_faces, line_faces, score_candidate,
-                                     evidence_map)
+                                     evidence_map, lidar_faces)
     import train_line_model as T
 
     _oac = _RLS.apply_coords
@@ -98,7 +98,7 @@ def main():
 
     rows = []
     right = wrong = 0
-    print(f"  {'roof':>10s} {'SAM':>6s} {'LINE':>6s} {'oracle':>7s} "
+    print(f"  {'roof':>10s} {'SAM':>6s} {'LINE':>6s} {'LIDAR':>6s} {'oracle':>7s} "
           f"{'scorer picks':>12s} {'correct':>8s}")
     for bid in ids:
         if bid not in gdf.index:
@@ -156,21 +156,34 @@ def main():
 
         if not drawn:
             continue
+        try:
+            f_lid = lidar_faces(pts, geom)
+        except Exception:
+            f_lid = []
         ag_sam = agreement(f_sam, drawn)
         ag_line = agreement(f_line, drawn)
+        ag_lid = agreement(f_lid, drawn)
         sc_sam = score_candidate(f_sam, geom, P, to_px, pts, inv_px)
         sc_line = score_candidate(f_line, geom, P, to_px, pts, inv_px)
-        pick = "SAM" if sc_sam >= sc_line else "LINE"
-        oracle = "SAM" if (ag_sam or 0) >= (ag_line or 0) else "LINE"
-        ok = pick == oracle or abs((ag_sam or 0) - (ag_line or 0)) < 0.03
+        sc_lid = score_candidate(f_lid, geom, P, to_px, pts, inv_px)
+        by_sc = sorted([("SAM", sc_sam, ag_sam or 0), ("LINE", sc_line, ag_line or 0),
+                        ("LIDAR", sc_lid, ag_lid or 0)], key=lambda t: -t[1])
+        pick = by_sc[0][0]
+        by_ag = sorted([("SAM", ag_sam or 0), ("LINE", ag_line or 0),
+                        ("LIDAR", ag_lid or 0)], key=lambda t: -t[1])
+        oracle = by_ag[0][0]
+        picked_ag = dict((n2, a2) for n2, _, a2 in by_sc)[pick]
+        ok = pick == oracle or (by_ag[0][1] - picked_ag) < 0.03
         right += ok
         wrong += not ok
         rows.append({"id": bid, "ag_sam": ag_sam, "ag_line": ag_line,
+                     "ag_lid": ag_lid, "sc_lid": sc_lid,
+                     "sc_sam": sc_sam, "sc_line": sc_line,
                      "pick": pick, "n_sam": len(f_sam), "n_line": len(f_line),
-                     "faces": f_sam if pick == "SAM" else f_line})
-        print(f"  #{bid:<9d} {ag_sam:6.2f} {ag_line:6.2f} {oracle:>7s} "
+                     "faces": {"SAM": f_sam, "LINE": f_line, "LIDAR": f_lid}[pick]})
+        print(f"  #{bid:<9d} {ag_sam:6.2f} {ag_line:6.2f} {ag_lid:6.2f} {oracle:>7s} "
               f"{pick:>12s} {'yes' if ok else 'NO':>8s}"
-              f"   sc {sc_sam:.2f}/{sc_line:.2f}  n {len(f_sam)}/{len(f_line)}")
+              f"   sc {sc_sam:.2f}/{sc_line:.2f}/{sc_lid:.2f}  n {len(f_sam)}/{len(f_line)}/{len(f_lid)}")
 
     if a.render:
         import base64, io
@@ -252,7 +265,12 @@ def main():
                        else min(r["ag_sam"], r["ag_line"]) for r in rows])
         picked = np.mean([r["ag_sam"] if r["pick"] == "SAM" else r["ag_line"]
                           for r in rows])
-        oracle_m = np.mean([max(r["ag_sam"], r["ag_line"]) for r in rows])
+        import json as _json
+        _rows = [{k: v for k, v in r.items() if k != "faces"} for r in rows]
+        open(ROOT / "data" / "select_rows.json", "w").write(_json.dumps(_rows))
+        oracle_m = np.mean([max(r["ag_sam"], r["ag_line"], r.get("ag_lid", 0)) for r in rows])
+        lid_m = np.mean([r.get("ag_lid", 0) for r in rows])
+        print(f"    LIDAR always  {lid_m:.3f}")
         print(f"\n  agreement with Josh's faces (mean of {n} roofs):")
         print(f"    SAM always   {m_s:.3f}")
         print(f"    LINE always  {m_l:.3f}")
