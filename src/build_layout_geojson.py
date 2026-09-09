@@ -445,16 +445,25 @@ def _build_one_at(building_id, nudge_m):
         # #4725584 (4,032), and 1 Memorial Street, one of the two roofs he
         # first showed me as wrong.
         drawn = f.get("from_labels")
-        if big_roof and not drawn and _facet_fit(f, pc_source) < BIG_ROOF_FACET_MIN_FIT:
-            per_facet.append({"facet": f, "panels": [], "obstructions": obstructions,
-                              "poa": facet_poa * shading_factor,
-                              "shading_factor": shading_factor})
-            continue
+        # A low plane-fit big-roof facet used to get NO panels at all. Josh:
+        # "fill in every area possible when doing 100% panel density" -- and
+        # #4735613 shipped its 372 and 337 m2 facets EMPTY through this skip
+        # (382 panels refit vs 107 shipped). The facet still fits, but its
+        # panels are DEMOTED to the straggler band: hidden at default density,
+        # present at 100%. Deleting is a verdict; demotion is a ranking.
+        low_fit = (big_roof and not drawn
+                   and _facet_fit(f, pc_source) < BIG_ROOF_FACET_MIN_FIT)
         panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings)
+        if low_fit:
+            for pnl in panels:
+                pnl["straggler"] = True
+                pnl["low_conf_fit"] = True
         # Same exemption: "this face is too small to bother racking" is a
         # judgement about a face the pipeline guessed at. He drew this one.
         if big_roof and not drawn and len(panels) < BIG_ROOF_MIN_PANELS:
-            panels = []
+            for pnl in panels:
+                pnl["straggler"] = True
+                pnl["low_conf_fit"] = True
         kept_panels = []
         for pnl in panels:
             cpt = pnl["geometry"].centroid
@@ -514,6 +523,7 @@ def _build_one_at(building_id, nudge_m):
                     "fill_order": pnl["fill_order"],
                     "array_id": pnl["array_id"],
                     "array_size": pnl["array_size"],
+                    **({"low_conf_fit": 1} if pnl.get("low_conf_fit") else {}),
                 },
             })
     return features

@@ -1806,6 +1806,31 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             _note_fallback("merge_uneconomic_splits", building_id, exc)
     for f in facets:
         f["building_geometry"] = building_geom
+    # A machine facet must live on the roof it claims. #4735613 shipped a
+    # "260 m2" facet of which 224 m2 hung OUTSIDE the outline over the
+    # neighbour -- the fitter then correctly refused most of it and the map
+    # showed a big sunny face with 6 panels. Clip to the footprint (small
+    # tolerance for eave overhang); Josh-drawn faces are exempt as always.
+    if building_geom is not None and not building_geom.is_empty:
+        tol = building_geom.buffer(0.4)
+        clipped = []
+        for f in facets:
+            if f.get("from_labels"):
+                clipped.append(f)
+                continue
+            g = f["geometry"]
+            try:
+                if g.difference(tol).area > 0.15 * g.area:
+                    gi = g.intersection(tol)
+                    if gi.geom_type == "MultiPolygon" and not gi.is_empty:
+                        gi = max(gi.geoms, key=lambda q: q.area)
+                    if gi.geom_type != "Polygon" or gi.area < 4.0:
+                        continue
+                    f = dict(f, geometry=gi, area_m2=float(gi.area))
+            except Exception:
+                pass
+            clipped.append(f)
+        facets = clipped
     return facets
 
 
