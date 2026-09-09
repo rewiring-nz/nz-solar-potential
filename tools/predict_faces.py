@@ -164,10 +164,21 @@ def main():
                 spread = float(_np.percentile(z, 95) - _np.percentile(z, 5))
                 pl0 = _fit_plane_robust(sub)
                 sl0 = _slope_aspect(pl0)[0] if pl0 is not None else 99.0
-                if not (sl0 < 4.5 and spread < 1.2):
+                # a flat membrane under heavy plant reads "not flat" by
+                # spread alone -- the ducting IS the spread. #5370338 (223 m2
+                # of ducting on a flat roof, the class this defer was built
+                # for) sailed past it and the selector shipped duct-top
+                # faces. A dominant flat plane with outliers is still flat.
+                from src.roof_partition import _inlier_fraction as _inl0
+                flat_inl = _inl0(sub, pl0) if pl0 is not None else 0.0
+                if not (sl0 < 4.5 and (spread < 1.2 or flat_inl > 0.55)):
                     all_flat = False
                     break
             if all_flat and strong_lines < 3:
+                # a stale file from an earlier chain must not outlive the
+                # decision to defer -- delete it or the build keeps shipping
+                # the very reading the defer just refused
+                (OUT / f"{bid}.json").unlink(missing_ok=True)
                 continue
 
         try:

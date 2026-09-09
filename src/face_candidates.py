@@ -346,11 +346,64 @@ def lidar_faces(pts, geom):
 
     sizes = np.bincount(label[label >= 0])
     keep = {r for r in range(region_id) if sizes[r] >= 25}
+    # EQUIPMENT IS NOT ROOF. Region growing is too good at ducting: the
+    # reference roof (#5370338, 223 m2 of plant) came back as tidy duct-top
+    # "faces" that won selection. Two dead ends are recorded here so they
+    # are not retried: (a) "small region above the MAIN plane" -- a hip
+    # face across the ridge is above the main face's extended plane too,
+    # and it cost #4735106 two real faces; (b) border-cell z jumps -- the
+    # point-Voronoi raster smooths borders to ~0.00 m (measured), walls
+    # donate their z to both sides. What separates plant is REGION MEDIANS:
+    # measured on the reference roof, ducts sit +0.65-0.8 m above the
+    # membrane region that dominates their border, storeys sit 2.5 m+
+    # away. Flag a region whose dominant neighbour is 0.35-1.8 m below it.
+    equipment = set()
+    if keep and len(keep) > 1:
+        zmed = {r2: float(np.median(P3[label == r2, 2])) for r2 in keep}
+        neigh = {r2: {} for r2 in keep}
+        for dy2, dx2 in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nb = np.roll(cell_label, (dy2, dx2), axis=(0, 1))
+            for r2 in keep:
+                edge = (cell_label == r2) & (nb != r2) & (nb >= 0)
+                if edge.any():
+                    vals, cnts = np.unique(nb[edge], return_counts=True)
+                    for v2, c2 in zip(vals, cnts):
+                        if v2 in keep:
+                            neigh[r2][v2] = neigh[r2].get(v2, 0) + int(c2)
+        # ...and only between near-FLAT pairs: on a pitched roof two faces'
+        # medians differ by slope geometry, not by a step (this test at its
+        # first cut took #4735106's lidar reading from 0.48 to 0.08 by
+        # flagging its hip faces). Plant sits on flat membrane.
+        def _slope_of(r2):
+            q3 = P3[label == r2]
+            if len(q3) < 20:
+                return 99.0
+            A2 = np.c_[q3[:, 0], q3[:, 1], np.ones(len(q3))]
+            try:
+                coef, *_ = np.linalg.lstsq(A2, q3[:, 2], rcond=None)
+            except Exception:
+                return 99.0
+            return float(np.degrees(np.arctan(np.hypot(coef[0], coef[1]))))
+        slope_c = {r2: _slope_of(r2) for r2 in keep}
+        for r2 in list(keep):
+            if sizes[r2] > 700 or not neigh[r2]:
+                continue
+            dom = max(neigh[r2], key=neigh[r2].get)
+            dz = zmed[r2] - zmed[dom]
+            # the region's OWN slope says nothing (half-round duct tops fit
+            # 8-20 degree planes and slipped through); what matters is what
+            # it stands ON: plant stands on flat membrane, a hip triangle's
+            # dominant neighbour is itself pitched.
+            if 0.35 < dz < 1.8 and slope_c[dom] < 8.0:
+                equipment.add(r2)
+        keep -= equipment
+
     # small regions dissolve into their biggest neighbour at the raster level
     if keep:
         big = max(keep, key=lambda r: sizes[r])
         flat = cell_label.ravel()
-        flat[~np.isin(flat, list(keep))] = -9
+        flat[np.isin(flat, list(equipment))] = -1   # holes stay holes
+        flat[~np.isin(flat, list(keep) + [-1])] = -9
         # nearest kept label for dissolved cells
         for _ in range(3):
             m2 = flat.reshape(cell_label.shape)
@@ -550,6 +603,10 @@ def score_candidate(faces, geom, prob_max, to_px, pts, inv_px=None):
         plane_num += f.area * _inlier_fraction(sub, pl)
         plane_den += f.area
     plane_term = (plane_num / plane_den) if plane_den else 0.0
+    # (Tried gating coverage credit on per-face plane inlier to stop
+    # equipment-tracing readings -- it crushed SAM harder than the junk:
+    # big honest faces spanning ducts fail the floor while small duct-top
+    # regions pass it. Reverted; the flat-defer owns that roof class.)
     # A reading is also answerable for the roof it left unexplained. Josh's
     # faces tile the footprint; a candidate of two clean faces covering 40%
     # scored best of all before this factor -- quality of what it kept, no
