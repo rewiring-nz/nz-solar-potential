@@ -133,4 +133,17 @@ tippecanoe -o data/panel_layouts.pmtiles --force -l layout \
   -y ac_kwh_year -y slope_deg -y aspect_deg -y roof_confidence \
   -y poa_kwh_m2_yr -y panel_count data/panel_layouts.geojson || exit 1
 
+# DID THE BUILD ACTUALLY USE ITS INPUTS? On 10 Sep a resumed district run
+# skipped every layout stage on stale markers and shipped the previous
+# geometry with fresh mtimes -- zero errors, bit-identical totals. A green
+# build that ignored its inputs must FAIL here, not deploy quietly.
+if [ "${SOLAR_SELECTED_FACES}" = "1" ] && [ "$(ls data/selected_faces 2>/dev/null | wc -l)" -gt 100 ]; then
+  n_sel=$(grep -aco '"from_selected"' data/panel_layouts.geojson || true)
+  if [ "${n_sel:-0}" -lt 50 ]; then
+    echo "FAILED: selected-faces enabled but only ${n_sel} from_selected facets in merged layouts -- the build did not use its inputs"
+    exit 1
+  fi
+  echo "guard: ${n_sel} from_selected facets in merged layouts"
+fi
+
 echo "=== complete $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="

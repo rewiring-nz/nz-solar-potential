@@ -497,6 +497,11 @@ def _build_one_at(building_id, nudge_m):
             "properties": {
                 "kind": "facet",
                 "building_id": int(building_id),
+                # provenance, so a shipped file can PROVE which geometry
+                # chain produced it (the 10 Sep no-op build was only
+                # detectable by bit-identical totals)
+                **({"from_selected": 1} if f.get("from_selected") else {}),
+                **({"from_labels": 1} if f.get("from_labels") else {}),
                 "slope_deg": round(f["slope_deg"], 1),
                 "aspect_deg": round(f["aspect_deg"], 1),
                 "poa_kwh_m2_yr": round(pf["poa"], 0),
