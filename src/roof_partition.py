@@ -1272,6 +1272,56 @@ SELECTED_MIN_SCORE = 0.30
 SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 
 
+def _regularise_machine_face(poly, footprint):
+    """Enforce the module's founding invariant on faces from the selected
+    chain: STRAIGHT BY CONSTRUCTION. SAM masks and LiDAR raster tilings
+    arrive as traced boundaries -- lightly smoothed wobble -- and on
+    10 Sep Josh flagged both in one sweep ("These roof lines are fuzzy,
+    no roof lines are fuzzy" #4734994; jagged overlapping faces on
+    #4735106). A face either becomes a low-vertex polygon whose edges
+    snap to the building's dominant axes, or it does not ship (residual
+    fill covers its area with clean partition cuts).
+    """
+    import numpy as np
+    import shapely.affinity as _aff
+    if poly.geom_type != "Polygon" or poly.is_empty:
+        return None
+    mrr = footprint.minimum_rotated_rectangle
+    cc = list(mrr.exterior.coords)
+    ax = np.degrees(np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0]))
+    rot = _aff.rotate(poly, -ax, origin=(0, 0))
+    for tol in (0.3, 0.5, 0.8, 1.2):
+        cand = rot.simplify(tol)
+        if cand.geom_type != "Polygon" or cand.is_empty:
+            continue
+        cs = list(cand.exterior.coords)[:-1]
+        # snap near-axis-parallel edges truly parallel (the straightness
+        # that a traced boundary lacks)
+        snapped = []
+        for i in range(len(cs)):
+            x0, y0 = cs[i]
+            xp, yp = cs[i - 1]
+            if abs(x0 - xp) < 0.45:
+                x0 = (x0 + xp) / 2
+                if snapped:
+                    snapped[-1] = (x0, snapped[-1][1])
+            if abs(y0 - yp) < 0.45:
+                y0 = (y0 + yp) / 2
+                if snapped:
+                    snapped[-1] = (snapped[-1][0], y0)
+            snapped.append((x0, y0))
+        if len(snapped) < 3:
+            continue
+        out = Polygon(snapped)
+        if not out.is_valid or out.is_empty:
+            continue
+        if len(snapped) <= 10 and abs(out.area - poly.area) < 0.25 * poly.area:
+            back = _aff.rotate(out, ax, origin=(0, 0))
+            if back.is_valid and back.geom_type == "Polygon":
+                return back
+    return None
+
+
 def facets_from_selected_faces(building_id, footprint, pts):
     """Facets straight from the precomputed winner, planes from LiDAR.
 
@@ -1308,6 +1358,12 @@ def facets_from_selected_faces(building_id, footprint, pts):
         if (poly.is_empty or poly.geom_type != "Polygon"
                 or poly.area < DRAWN_MIN_FACET_M2):
             continue
+        # straight-by-construction, enforced at the seam: a traced boundary
+        # either regularises to a clean low-vertex polygon or does not ship
+        reg = _regularise_machine_face(poly, footprint)
+        if reg is None:
+            continue
+        poly = reg
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
             else None

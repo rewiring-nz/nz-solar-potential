@@ -1639,6 +1639,34 @@ def drop_balcony_levels(facets, pc_source):
     main = max(mains, key=lambda t: t[0]["geometry"].area)
     main_area, main_h = main[0]["geometry"].area, main[2]
 
+    # THE HILLSIDE STAIRCASE. On the 10 Sep sweep #4740503 shipped 527
+    # panels with terraces full of them again: the building descends a
+    # hillside, so the LARGEST facet is itself a mid-level terrace and
+    # every "below main" test measures from the wrong floor. Josh: "the
+    # depth should be in the lidar" -- it is. Cluster ALL facet heights
+    # into levels; four or more levels stepping down in storey-sized
+    # treads (1.2-3.2 m) IS a terraced apartment block, and only levels
+    # within 4 m of the TOP one are roof. Everything lower is balcony,
+    # whatever its area, whoever fitted it.
+    heights = sorted(h for _, i, h in stats if h is not None)
+    if heights:
+        lvls = [heights[0]]
+        for h in heights[1:]:
+            if h - lvls[-1] > 0.8:
+                lvls.append(h)
+        steps = [b - a for a, b in zip(lvls, lvls[1:])]
+        stair = (len(lvls) >= 4
+                 and sum(1 for st in steps if 1.2 <= st <= 3.2) >= 3)
+        if stair:
+            top = lvls[-1]
+            kept = [f for f, i, h in stats
+                    if h is None or h > top - 4.0 or f.get("from_labels")]
+            dropped = len(facets) - len(kept)
+            if dropped:
+                print(f"  staircase: {len(lvls)} levels, dropped {dropped} "
+                      f"balcony facets below top-4m", flush=True)
+                return kept
+
     # THE STAIRCASE RULE. #4740503's balcony terraces pass every test above:
     # they are planar (inliers 0.83-0.97, the rule expects < 0.75) and up to
     # 254 m2. What they cannot hide is their arrangement -- four distinct
@@ -1817,6 +1845,31 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             # it must not be invisible either -- a merge that always throws would
             # otherwise look exactly like a merge that never applies.
             _note_fallback("merge_uneconomic_splits", building_id, exc)
+    # NO FUZZY BOUNDARIES LEAVE THIS FUNNEL. Josh, on #4734994: "These
+    # roof lines are fuzzy, no roof lines are fuzzy, this makes no sense."
+    # The partition is straight by construction, but trim_to_roof and the
+    # residual-fill difference geometry can hand a facet a raster-traced
+    # exterior (928 vertices measured on that roof). Authored faces are
+    # exempt as always; everything else simplifies until it reads as
+    # drawn-with-a-ruler or loses its wobble to progressively coarser
+    # tolerance.
+    for f in facets:
+        if f.get("from_labels"):
+            continue
+        g = f.get("geometry")
+        if g is None or g.geom_type != "Polygon":
+            continue
+        if len(g.exterior.coords) > 24:
+            for tol in (0.35, 0.6, 1.0):
+                g2 = g.simplify(tol)
+                if (g2.geom_type == "Polygon" and g2.is_valid
+                        and not g2.is_empty
+                        and abs(g2.area - g.area) < 0.15 * g.area):
+                    g = g2
+                    if len(g.exterior.coords) <= 24:
+                        break
+            f["geometry"] = g
+            f["area_m2"] = float(g.area)
     for f in facets:
         f["building_geometry"] = building_geom
     # A machine facet must live on the roof it claims. #4735613 shipped a

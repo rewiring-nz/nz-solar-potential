@@ -810,11 +810,25 @@ function facesFor(outline, lines){
       oa += ring[i][0]*q[1] - q[0]*ring[i][1];
     }
     oa=Math.abs(oa/2);
+    const segDist=(pt,a,b)=>{
+      const L2=(b[0]-a[0])**2+(b[1]-a[1])**2;
+      if(L2<1e-12) return Math.hypot(pt[0]-a[0],pt[1]-a[1]);
+      let u=((pt[0]-a[0])*(b[0]-a[0])+(pt[1]-a[1])*(b[1]-a[1]))/L2;
+      u=Math.max(0,Math.min(1,u));
+      return Math.hypot(pt[0]-(a[0]+u*(b[0]-a[0])), pt[1]-(a[1]+u*(b[1]-a[1])));
+    };
     const inside=f=>{
       let bad=0;
       f.forEach(pt=>{ if(!inPoly(pt, ring)){
-        // tolerance: a vertex may sit a hair outside a jagged outline
-        const d=ring.reduce((m,rp)=>Math.min(m,Math.hypot(pt[0]-rp[0],pt[1]-rp[1])),1e9);
+        // distance to the outline's EDGES, not its vertices: a face that
+        // follows a long outline edge has mid-edge vertices metres from any
+        // outline VERTEX, and the first cut of this guard wrongly rejected
+        // a legitimate 56 m2 face that way (#4734696, Josh: "the valley
+        // lines are missing"). On-boundary vertices also fail inPoly by
+        // float instability; edge distance is the honest test for both.
+        let d=1e9;
+        for(let i=0;i<ring.length;i++)
+          d=Math.min(d, segDist(pt, ring[i], ring[(i+1)%ring.length]));
         if(d > 1.0) bad++;
       }});
       return bad <= Math.max(1, f.length*0.05);
@@ -828,6 +842,8 @@ function facesFor(outline, lines){
       return Math.abs(s2/2);
     };
     const kept=out.filter(f=>area(f) < 0.9*oa && inside(f));
+    window.__ff_rejected = out.filter(f=>!(area(f) < 0.9*oa && inside(f)))
+      .map(f=>({verts:f.length, m2:Math.round(area(f)), big:area(f)>=0.9*oa}));
     if(kept.length) return kept;
   }
   return out;
