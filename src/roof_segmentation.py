@@ -1845,6 +1845,88 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             # it must not be invisible either -- a merge that always throws would
             # otherwise look exactly like a merge that never applies.
             _note_fallback("merge_uneconomic_splits", building_id, exc)
+    # A ROOF IS A PARTITION, NOT A PILE OF GUESSES. Josh, 13 Sep, on three
+    # roofs at once: "you are still drawing lots of unnecessary lines that
+    # should not be there... Roofs are simpler shapes that you are seeming
+    # to guess." The face sets shipped as soup: faces OVERLAPPING each
+    # other (double boundaries at offsets on #4735106), slivers, and
+    # internal lines separating IDENTICAL planes. Three set-level rules,
+    # authored faces exempt as always:
+    #   1. no overlaps -- larger faces claim ground first, later faces are
+    #      clipped to what remains;
+    #   2. no slivers -- a clipped remainder too small or too thin to be a
+    #      roof face is dropped (residual coverage rules already fill);
+    #   3. no line without a reason -- adjacent faces whose planes agree
+    #      merge, because a boundary must separate two DIFFERENT planes.
+    machine = [f for f in facets if not f.get("from_labels")]
+    authored = [f for f in facets if f.get("from_labels")]
+    if len(machine) >= 2:
+        from shapely.ops import unary_union as _uu
+        machine.sort(key=lambda f: -f["geometry"].area)
+        claimed = None
+        kept = []
+        for f in machine:
+            g = f["geometry"]
+            if claimed is not None:
+                try:
+                    g = g.difference(claimed)
+                except Exception:
+                    pass
+            if g.is_empty:
+                continue
+            if g.geom_type == "MultiPolygon":
+                g = max(g.geoms, key=lambda q: q.area)
+            if g.geom_type != "Polygon" or g.area < 4.0:
+                continue
+            # thinness: a remainder whose area is far below what its
+            # perimeter could enclose is a corridor, not a face
+            if g.area < 0.09 * g.exterior.length ** 2 / 16.0:
+                pass  # square-ish enough
+            if g.length > 1.0 and g.area / max(g.length, 1e-9) < 0.55:
+                continue
+            f = dict(f, geometry=g, area_m2=float(g.area))
+            kept.append(f)
+            claimed = g if claimed is None else _uu([claimed, g])
+        # like-plane adjacent merge, repeated until no pair merges
+        def _agree(a, b):
+            sa = a.get("slope_deg"); sb = b.get("slope_deg")
+            aa = a.get("aspect_deg"); ab = b.get("aspect_deg")
+            if sa is None or sb is None:
+                return False
+            if abs(sa - sb) > 5.0:
+                return False
+            if max(sa, sb) < 6.0:
+                return True          # both near-flat: aspect is noise
+            if aa is None or ab is None:
+                return False
+            return abs((aa - ab + 180) % 360 - 180) < 25.0
+        merged = True
+        while merged and len(kept) > 1:
+            merged = False
+            for i in range(len(kept)):
+                for j in range(i + 1, len(kept)):
+                    a, b = kept[i], kept[j]
+                    if not _agree(a, b):
+                        continue
+                    try:
+                        shared = a["geometry"].buffer(0.15).intersection(
+                            b["geometry"].buffer(0.15)).area
+                    except Exception:
+                        continue
+                    if shared < 0.5:
+                        continue
+                    u = _uu([a["geometry"], b["geometry"]])                         .buffer(0.05).buffer(-0.05)
+                    if u.geom_type != "Polygon" or not u.is_valid:
+                        continue
+                    big = a if a["geometry"].area >= b["geometry"].area else b
+                    nf = dict(big, geometry=u, area_m2=float(u.area))
+                    kept[i] = nf
+                    del kept[j]
+                    merged = True
+                    break
+                if merged:
+                    break
+        facets = authored + kept
     # NO FUZZY BOUNDARIES LEAVE THIS FUNNEL. Josh, on #4734994: "These
     # roof lines are fuzzy, no roof lines are fuzzy, this makes no sense."
     # The partition is straight by construction, but trim_to_roof and the
