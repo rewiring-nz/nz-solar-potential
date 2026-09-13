@@ -1900,31 +1900,44 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             if aa is None or ab is None:
                 return False
             return abs((aa - ab + 180) % 360 - 180) < 25.0
-        merged = True
-        while merged and len(kept) > 1:
-            merged = False
-            for i in range(len(kept)):
-                for j in range(i + 1, len(kept)):
-                    a, b = kept[i], kept[j]
-                    if not _agree(a, b):
-                        continue
-                    try:
-                        shared = a["geometry"].buffer(0.15).intersection(
-                            b["geometry"].buffer(0.15)).area
-                    except Exception:
-                        continue
-                    if shared < 0.5:
-                        continue
-                    u = _uu([a["geometry"], b["geometry"]])                         .buffer(0.05).buffer(-0.05)
-                    if u.geom_type != "Polygon" or not u.is_valid:
-                        continue
-                    big = a if a["geometry"].area >= b["geometry"].area else b
-                    nf = dict(big, geometry=u, area_m2=float(u.area))
-                    kept[i] = nf
-                    del kept[j]
-                    merged = True
-                    break
-                if merged:
+        # BOUNDED: the first cut restarted the O(n^2) scan after every
+        # merge -- on #4722059 (frankton_flats industrial, hundreds of
+        # facets) that is O(n^3) with geometry ops inside, and it hung the
+        # district build for 4.5 hours until the stall guard killed it.
+        # Three sweeps catch transitive merges on every roof that matters;
+        # a roof with >80 machine facets skips the merge entirely (it has
+        # bigger problems than one extra internal line).
+        if len(kept) <= 80:
+            for _sweep in range(3):
+                did = False
+                i = 0
+                while i < len(kept):
+                    j = i + 1
+                    while j < len(kept):
+                        a, b = kept[i], kept[j]
+                        if not _agree(a, b):
+                            j += 1
+                            continue
+                        try:
+                            if a["geometry"].distance(b["geometry"]) > 0.3:
+                                j += 1
+                                continue
+                            u = _uu([a["geometry"], b["geometry"]]) \
+                                .buffer(0.05).buffer(-0.05)
+                        except Exception:
+                            j += 1
+                            continue
+                        if u.geom_type != "Polygon" or not u.is_valid:
+                            j += 1
+                            continue
+                        big = (a if a["geometry"].area >= b["geometry"].area
+                               else b)
+                        kept[i] = dict(big, geometry=u,
+                                       area_m2=float(u.area))
+                        del kept[j]
+                        did = True
+                    i += 1
+                if not did:
                     break
         facets = authored + kept
     # NO FUZZY BOUNDARIES LEAVE THIS FUNNEL. Josh, on #4734994: "These

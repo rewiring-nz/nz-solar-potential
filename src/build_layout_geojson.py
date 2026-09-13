@@ -133,7 +133,13 @@ BUILDING_TIME_BUDGET_S = 600  # the partition alone may now spend 240s on a
 # on top of that. Still bounded: a stall is cut off, just later.
 
 
-class _BuildingTimeout(Exception):
+class _BuildingTimeout(BaseException):
+    # BaseException DELIBERATELY: the segmentation fallback machinery
+    # catches Exception to try its next method, and on #4722059 it caught
+    # the whole-building alarm as if RANSAC had merely failed -- the alarm
+    # fires once, so the building then ran unbounded and stalled the
+    # district build for 4.5 hours. A time budget must not be negotiable
+    # by any except-Exception between here and the stall.
     pass
 
 
