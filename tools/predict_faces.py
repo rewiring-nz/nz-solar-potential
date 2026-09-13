@@ -50,7 +50,8 @@ def main():
     from src.pointcloud_source import PointCloudSource
     from src.roof_partition import top_surface
     from src.face_candidates import (sam_faces, line_faces, score_candidate,
-                                     evidence_map, lidar_faces)
+                                     evidence_map, lidar_faces,
+                                     hypothesis_faces)
     import train_line_model as T
 
     _oac = _RLS.apply_coords
@@ -255,7 +256,25 @@ def main():
             dark = _lum.mean() < 110 or (_lum < 70).mean() > 0.08
         except Exception:
             dark = False
-        if f_lid and dark and sc_lid >= 0.30 \
+        # SIMPLE FORMS FOR SIMPLE ROOFS. Josh on the side-by-side panel
+        # (14 Sep): "Neither are great. but hypothesis is slightly better...
+        # at least the lines are simpler and there are less extra
+        # unnecessary lines." Ships for the weak class only: residential
+        # scale, no incumbent reading scoring >= 0.50, and the form itself
+        # decisive (conf >= 0.55, with aspect agreement in the score so a
+        # pyramid claim needs four tilt directions in the LiDAR).
+        f_hyp, conf_hyp = [], 0.0
+        if geom.area <= 450:
+            try:
+                f_hyp = hypothesis_faces(pts, geom, P, to_px)
+                conf_hyp = getattr(hypothesis_faces, "last_confidence", 0.0)
+            except Exception:
+                f_hyp, conf_hyp = [], 0.0
+        if f_hyp and conf_hyp >= 0.55 \
+                and max(sc_sam, sc_line, sc_lid) < 0.50:
+            pick, faces = "hypothesis", f_hyp
+            score = score_candidate(f_hyp, geom, P, to_px, pts, inv_px)
+        elif f_lid and dark and sc_lid >= 0.30 \
                 and sc_lid >= max(sc_sam, sc_line) - 0.10:
             pick, faces, score = "lidar", f_lid, sc_lid
         elif f_lid and sc_lid > max(sc_sam, sc_line) + 0.08:
@@ -270,6 +289,14 @@ def main():
             # both imagery readings refused -- the roof the old path used to
             # inherit. The regularised LiDAR reading ships instead.
             pick, faces, score = "lidar", f_lid, sc_lid
+        elif (_hyp := hypothesis_faces(pts, geom, P, to_px)) and \
+                score_candidate(_hyp, geom, P, to_px, pts, inv_px) >= 0.28:
+            # last resort before the old path's webs: the SIMPLEST roof form
+            # consistent with the evidence. Josh, 14 Sep: "Roofs are simpler
+            # shapes that you are seeming to guess" -- when nothing reads
+            # clearly, guess simple, not elaborate.
+            pick, faces = "hypothesis", _hyp
+            score = score_candidate(_hyp, geom, P, to_px, pts, inv_px)
         elif f_sam:
             # a pitched building must not fall back to the old path's webs
             # (#5372567: both candidates dropped, the old pipeline drew "lots

@@ -233,9 +233,51 @@ def sam_faces(predictor, rgb, geom, bounds, pts):
 
 # ------------------------------------------------------------ line faces
 
+def obstruction_mask(rgb, geom, bounds, pts, h, w):
+    """Pixel mask of probable rooftop obstructions, computed BEFORE any
+    line reasoning. Josh, 14 Sep: "there can be really clear roof lines
+    with a few obstructions and they seem to throw off your roof lines...
+    define the simple roof lines first, then try to detect the
+    obstructions." The detector cannot tell a duct edge from a ridge, so
+    obstruction pixels are silenced in its activation before extraction.
+    """
+    import numpy as np
+    mask = np.zeros((h, w), dtype=bool)
+    try:
+        from src.roof_partition import _fit_plane_robust, _points_in
+        from scipy.spatial import cKDTree
+        sub = _points_in(geom, pts) if pts is not None else None
+        if sub is None or len(sub) < 60:
+            return mask
+        pl = _fit_plane_robust(sub)
+        if pl is None:
+            return mask
+        resid = sub[:, 2] - (pl[0] * sub[:, 0] + pl[1] * sub[:, 1] + pl[2])
+        high = sub[resid > 0.45]
+        if len(high) < 8:
+            return mask
+        b = bounds
+        px = ((high[:, 0] - b[0]) / (b[2] - b[0]) * w).astype(int)
+        py = ((1 - (high[:, 1] - b[1]) / (b[3] - b[1])) * h).astype(int)
+        ok = (px >= 0) & (px < w) & (py >= 0) & (py < h)
+        # each above-plane return silences a small disc around itself
+        R = max(3, int(0.6 / max((b[2] - b[0]) / w, 1e-6)))
+        yy, xx = np.mgrid[-R:R + 1, -R:R + 1]
+        disc = (yy ** 2 + xx ** 2) <= R * R
+        for x0, y0 in zip(px[ok], py[ok]):
+            y1, y2 = max(0, y0 - R), min(h, y0 + R + 1)
+            x1, x2 = max(0, x0 - R), min(w, x0 + R + 1)
+            mask[y1:y2, x1:x2] |= disc[(y1 - y0 + R):(y2 - y0 + R),
+                                       (x1 - x0 + R):(x2 - x0 + R)]
+    except Exception:
+        pass
+    return mask
+
+
 def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     """The line-network reading: detect -> extract -> polygonize -> faces."""
     import torch
+    import os
     from src.line_extract import extract, clip_to
     from src.roof_partition import line_facets
 
@@ -246,6 +288,17 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     x = torch.from_numpy(arr).float().permute(2, 0, 1)[None] / 255.0
     with torch.no_grad():
         pr = torch.sigmoid(line_model(x.to(device)))[0].cpu().numpy()[:, :h, :w]
+    # MEASURED DEAD END (14 Sep): silencing above-plane pixels before
+    # extraction dropped LINE agreement 0.754 -> 0.578 on the drawn
+    # benchmark -- a pitched roof's RIDGE is above its single robust
+    # plane, so the mask killed real ridges along with ducts. Obstructions
+    # are only definable relative to structure (see hypothesis_faces);
+    # the flag stays for re-testing with per-face planes, default off.
+    if os.environ.get("SOLAR_MASK_OBSTRUCTIONS", "0") == "1":
+        m = obstruction_mask(rgb, geom, bounds, pts, h, w)
+        if m.any():
+            pr = pr.copy()
+            pr[:, m] = 0.0
 
     def tw(px, py):
         return (b[0] + px / w * (b[2] - b[0]),
@@ -477,6 +530,186 @@ def lidar_faces(pts, geom):
             if reg.geom_type == "Polygon" and reg.area >= 6.0:
                 faces.append(reg)
     return faces
+
+
+def hypothesis_faces(pts, geom, prob_max, to_px):
+    """STRUCTURE FIRST: test simple parametric roof forms against the
+    evidence, instead of assembling detections into shapes.
+
+    Josh, 14 Sep, after weeks of bottom-up failures on visually obvious
+    roofs: "Roofs are simpler shapes... define the simple roof lines
+    first, then try to detect the obstructions." Bottom-up compounds
+    errors -- fragments, guessed archetypes, obstruction edges read as
+    ridges. Here the vocabulary is closed: per rectangular part, the roof
+    is FLAT, a GABLE, a HIP, or a PYRAMID; each form's predicted seams
+    and faces are scored jointly on detector activation and LiDAR plane
+    fit, with complexity paying rent (a gable must beat flat by a real
+    margin, a hip must beat a gable). Obstructions cannot create a false
+    ridge because ridges exist only in the vocabulary.
+    """
+    import numpy as np
+    from shapely.geometry import Polygon, LineString
+    from shapely.ops import unary_union
+    from src.roof_partition import _fit_plane_robust, _points_in
+    from src.line_extract import _line_mean
+
+    if pts is None or len(pts) < 40:
+        return []
+
+    def seam_support(a, b):
+        pa = np.array(to_px(*a)); pb = np.array(to_px(*b))
+        return _line_mean(prob_max, pa, pb)
+
+    def face_plane(poly):
+        """(inlier, downhill_unit_or_None, slope_deg) for one face."""
+        sub = _points_in(poly, pts)
+        if len(sub) < 15:
+            return 0.5, None, 0.0
+        pl = _fit_plane_robust(sub)
+        if pl is None:
+            return 0.0, None, 0.0
+        r = sub[:, 2] - (pl[0] * sub[:, 0] + pl[1] * sub[:, 1] + pl[2])
+        inl = float((np.abs(r) < 0.18).mean())
+        gnorm = float(np.hypot(pl[0], pl[1]))
+        slope = float(np.degrees(np.arctan(gnorm)))
+        down = (np.array([-pl[0], -pl[1]]) / gnorm) if gnorm > 1e-6 else None
+        return inl, down, slope
+
+    def forms_for(part):
+        mrr = part.minimum_rotated_rectangle
+        cc = list(mrr.exterior.coords)[:4]
+        e = [(np.hypot(cc[(k + 1) % 4][0] - cc[k][0],
+                       cc[(k + 1) % 4][1] - cc[k][1]), k) for k in range(4)]
+        e.sort(reverse=True)
+        L, k0 = e[0]
+        Wd = e[2][0] if len(e) > 2 else e[1][0]
+        A = np.array(cc[k0]); B = np.array(cc[(k0 + 1) % 4])
+        D = np.array(cc[(k0 + 3) % 4])
+        u = (B - A) / max(np.linalg.norm(B - A), 1e-9)
+        v = (D - A) / max(np.linalg.norm(D - A), 1e-9)
+        out = {"flat": ([part], [])}
+        # GABLE: ridge full length. Real gables are asymmetric, so the
+        # ridge SLIDES across the width and keeps the offset where seam
+        # activation peaks (v1 fixed it at the midline and scored 0.5-0.6
+        # on his simple gables while the incumbents hit 0.85+).
+        best_off, best_sup = 0.5, -1.0
+        for t in (0.3, 0.38, 0.44, 0.5, 0.56, 0.62, 0.7):
+            ra = A + v * (Wd * t); rb = ra + u * L
+            sup = seam_support(tuple(ra), tuple(rb))
+            if sup > best_sup:
+                best_sup, best_off = sup, t
+        mid_a = A + v * (Wd * best_off)
+        mid_b = mid_a + u * L
+        half1 = Polygon([A, A + u * L, mid_b, mid_a])
+        half2 = Polygon([mid_a, mid_b, D + u * L, D])
+        g1 = half1.intersection(part); g2 = half2.intersection(part)
+        if g1.geom_type == "Polygon" and g2.geom_type == "Polygon" \
+                and g1.area > 4 and g2.area > 4:
+            out["gable"] = ([g1, g2], [(tuple(mid_a), tuple(mid_b))])
+        # GABLE ACROSS: some parts pitch along the short axis
+        sa = A + u * (L * 0.5)
+        sb = sa + v * Wd
+        c_half1 = Polygon([A, sa, sb, D])
+        c_half2 = Polygon([sa, A + u * L, D + u * L, sb])
+        x1 = c_half1.intersection(part); x2 = c_half2.intersection(part)
+        if x1.geom_type == "Polygon" and x2.geom_type == "Polygon" \
+                and x1.area > 4 and x2.area > 4:
+            out["gable_x"] = ([x1, x2], [(tuple(sa), tuple(sb))])
+        # HIP: ridge inset half-width from both ends
+        if L > Wd * 1.15:
+            h1 = mid_a + u * (Wd / 2)
+            h2 = mid_b - u * (Wd / 2)
+            c1, c2, c3, c4 = A, A + u * L, D + u * L, D
+            fA = Polygon([c1, c2, h2, h1])          # long side 1
+            fB = Polygon([c4, c3, h2, h1])          # long side 2
+            fC = Polygon([c1, h1, c4])              # end triangle
+            fD = Polygon([c2, h2, c3])              # end triangle
+            faces = [f.intersection(part) for f in (fA, fB, fC, fD)]
+            if all(f.geom_type == "Polygon" and f.area > 3 for f in faces):
+                seams = [(tuple(h1), tuple(h2)),
+                         (tuple(c1), tuple(h1)), (tuple(c4), tuple(h1)),
+                         (tuple(c2), tuple(h2)), (tuple(c3), tuple(h2))]
+                out["hip"] = (faces, seams)
+        else:
+            # PYRAMID on square-ish parts
+            ctr = (A + u * L / 2 + v * Wd / 2)
+            c1, c2, c3, c4 = A, A + u * L, D + u * L, D
+            faces = [Polygon([c1, c2, ctr]).intersection(part),
+                     Polygon([c2, c3, ctr]).intersection(part),
+                     Polygon([c3, c4, ctr]).intersection(part),
+                     Polygon([c4, c1, ctr]).intersection(part)]
+            if all(f.geom_type == "Polygon" and f.area > 3 for f in faces):
+                seams = [(tuple(c1), tuple(ctr)), (tuple(c2), tuple(ctr)),
+                         (tuple(c3), tuple(ctr)), (tuple(c4), tuple(ctr))]
+                out["pyramid"] = (faces, seams)
+        return out
+
+    try:
+        parts = [q for q in rect_parts(geom) if q.area > 15]
+    except Exception:
+        parts = []
+    big = [q for q in parts if q.area > 0.12 * geom.area]
+    blobs = big if len(big) >= 2 else \
+        ([geom] if geom.geom_type == "Polygon" else list(geom.geoms))
+
+    COMPLEXITY_RENT = {"flat": 0.0, "gable": 0.045, "gable_x": 0.045,
+                      "hip": 0.09, "pyramid": 0.09}
+    out_faces = []
+    confs = []
+    for blob in blobs:
+        best_name, best_sc, best_faces = None, -1e9, None
+        for name, (faces, seams) in forms_for(blob).items():
+            from shapely.geometry import LineString as _LS, Point as _Pt
+            from shapely.ops import unary_union as _uu2
+            ridge = _uu2([_LS([a, b]) for a, b in seams]) if seams else None
+            pl_num = pl_den = 0.0
+            asp_num = asp_den = 0.0
+            pitched_area = 0.0
+            for f in faces:
+                inl, down, slope = face_plane(f)
+                pl_num += f.area * inl
+                pl_den += f.area
+                if slope >= 4.0:
+                    pitched_area += f.area
+                # ASPECT AGREEMENT -- the discriminator Josh's verdict
+                # demanded ("mistaking too many rooftops as pyramid...
+                # then missing some when they are"): plane FIT accepts any
+                # partition of a shallow roof, but each face's fitted
+                # plane must TILT the way the form predicts -- away from
+                # the ridge (or apex) toward its own eave. Four tilt
+                # directions is a pyramid; two is a gable; disagreement
+                # is a wrong form, however well the planes fit.
+                if ridge is not None and down is not None and slope >= 4.0:
+                    c = f.centroid
+                    npt = ridge.interpolate(ridge.project(c))
+                    d = np.array([c.x - npt.x, c.y - npt.y])
+                    nd = np.linalg.norm(d)
+                    if nd > 0.4:
+                        agree = float(np.dot(down, d / nd))
+                        asp_num += f.area * max(0.0, agree)
+                        asp_den += f.area
+            plane = pl_num / max(pl_den, 1e-9)
+            aspect = (asp_num / asp_den) if asp_den > 0 else 0.5
+            if seams:
+                sup = np.mean([seam_support(a, b) for a, b in seams])
+            else:
+                sup = 0.0
+            sc = 0.35 * plane + 0.30 * aspect + 0.25 * sup \
+                - COMPLEXITY_RENT[name]
+            # a flat claim on a clearly pitched part is not simplicity,
+            # it is denial: charge it the aspect term it dodged
+            if name == "flat":
+                _, downb, slopeb = face_plane(blob)
+                sc = 0.35 * plane + 0.25 * sup \
+                    + (0.30 if slopeb < 4.0 else 0.0)
+            if sc > best_sc:
+                best_sc, best_name, best_faces = sc, name, faces
+        if best_faces:
+            out_faces.extend(best_faces)
+            confs.append(best_sc)
+    hypothesis_faces.last_confidence = \
+        (min(confs) if confs else 0.0)
+    return out_faces
 
 
 def evidence_map(prob_max, rgb):

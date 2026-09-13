@@ -63,7 +63,8 @@ def main():
     from src.pointcloud_source import PointCloudSource
     from src.roof_partition import top_surface
     from src.face_candidates import (sam_faces, line_faces, score_candidate,
-                                     evidence_map, lidar_faces)
+                                     evidence_map, lidar_faces,
+                                     hypothesis_faces)
     import train_line_model as T
 
     _oac = _RLS.apply_coords
@@ -160,6 +161,14 @@ def main():
             f_lid = lidar_faces(pts, geom)
         except Exception:
             f_lid = []
+        try:
+            f_hyp = hypothesis_faces(pts, geom, P, to_px)
+        except Exception:
+            f_hyp = []
+        conf_hyp = getattr(hypothesis_faces, "last_confidence", 0.0)
+        ag_hyp = agreement(f_hyp, drawn)
+        sc_hyp = score_candidate(f_hyp, geom, P, to_px, pts, inv_px) \
+            if f_hyp else 0.0
         ag_sam = agreement(f_sam, drawn)
         ag_line = agreement(f_line, drawn)
         ag_lid = agreement(f_lid, drawn)
@@ -178,6 +187,8 @@ def main():
         wrong += not ok
         rows.append({"id": bid, "ag_sam": ag_sam, "ag_line": ag_line,
                      "ag_lid": ag_lid, "sc_lid": sc_lid,
+                     "ag_hyp": ag_hyp, "sc_hyp": sc_hyp, "n_hyp": len(f_hyp),
+                     "conf_hyp": conf_hyp,
                      "sc_sam": sc_sam, "sc_line": sc_line,
                      "pick": pick, "n_sam": len(f_sam), "n_line": len(f_line),
                      "faces": {"SAM": f_sam, "LINE": f_line, "LIDAR": f_lid}[pick]})
@@ -268,6 +279,11 @@ def main():
         import json as _json
         _rows = [{k: v for k, v in r.items() if k != "faces"} for r in rows]
         open(ROOT / "data" / "select_rows.json", "w").write(_json.dumps(_rows))
+        hyp_m = np.mean([r.get("ag_hyp", 0) for r in rows])
+        print(f"    HYP always    {hyp_m:.3f}")
+        oracle4 = np.mean([max(r["ag_sam"], r["ag_line"], r.get("ag_lid", 0),
+                               r.get("ag_hyp", 0)) for r in rows])
+        print(f"    oracle+HYP    {oracle4:.3f}")
         oracle_m = np.mean([max(r["ag_sam"], r["ag_line"], r.get("ag_lid", 0)) for r in rows])
         lid_m = np.mean([r.get("ag_lid", 0) for r in rows])
         print(f"    LIDAR always  {lid_m:.3f}")
