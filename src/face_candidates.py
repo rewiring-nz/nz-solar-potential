@@ -553,12 +553,47 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
     from src.roof_partition import _fit_plane_robust, _points_in
     from src.line_extract import _line_mean
 
+    import os as _os
     if pts is None or len(pts) < 40:
         return []
 
     def seam_support(a, b):
         pa = np.array(to_px(*a)); pb = np.array(to_px(*b))
         return _line_mean(prob_max, pa, pb)
+
+    def tilt_field(part):
+        """Local downhill direction per ~2 m cell: the LiDAR's own tilt
+        field, compared against each form's PREDICTION at every cell."""
+        from scipy.spatial import cKDTree
+        from shapely.geometry import Point
+        sub = _points_in(part, pts)
+        if len(sub) < 60:
+            return []
+        tree = cKDTree(sub[:, :2])
+        minx, miny, maxx, maxy = part.bounds
+        cells = []
+        step = 2.0
+        y = miny + step / 2
+        while y < maxy:
+            x = minx + step / 2
+            while x < maxx:
+                if part.contains(Point(x, y)):
+                    nb = tree.query_ball_point([x, y], 1.6)
+                    if len(nb) >= 10:
+                        q = sub[nb]
+                        Amat = np.c_[q[:, 0], q[:, 1], np.ones(len(q))]
+                        try:
+                            coef, *_ = np.linalg.lstsq(Amat, q[:, 2],
+                                                       rcond=None)
+                            gn = float(np.hypot(coef[0], coef[1]))
+                            if gn > 0.05:
+                                cells.append((x, y,
+                                              -coef[0] / gn, -coef[1] / gn))
+                        except Exception:
+                            pass
+                x += step
+            y += step
+        return cells
 
     def face_plane(poly):
         """(inlier, downhill_unit_or_None, slope_deg) for one face."""
@@ -615,22 +650,84 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
         if x1.geom_type == "Polygon" and x2.geom_type == "Polygon" \
                 and x1.area > 4 and x2.area > 4:
             out["gable_x"] = ([x1, x2], [(tuple(sa), tuple(sb))])
-        # HIP: ridge inset half-width from both ends
+        # HIP with a RIDGE BAND. Josh's #4735623 gold: hips at the ends
+        # and a THIN flat band along the ridge (a clerestory strip). Pure
+        # hip (band 0) and truncated hip are endpoints of one family; the
+        # band width is chosen by evidence like the gable ridge offset.
+        # "You are meant to be recognising this" -- the form existed only
+        # at the endpoints, so the 1.5 m band matched neither and a plain
+        # gable won the vote.
         if L > Wd * 1.15:
-            h1 = mid_a + u * (Wd / 2)
-            h2 = mid_b - u * (Wd / 2)
             c1, c2, c3, c4 = A, A + u * L, D + u * L, D
-            fA = Polygon([c1, c2, h2, h1])          # long side 1
-            fB = Polygon([c4, c3, h2, h1])          # long side 2
-            fC = Polygon([c1, h1, c4])              # end triangle
-            fD = Polygon([c2, h2, c3])              # end triangle
-            faces = [f.intersection(part) for f in (fA, fB, fC, fD)]
+            for wb in (0.0, 1.6, 2.6):
+                if wb >= Wd * 0.6:
+                    continue
+                half = (Wd - wb) / 2
+                r1a = A + v * half + u * half
+                r1b = A + v * half + u * (L - half)
+                r2a = r1a + v * wb
+                r2b = r1b + v * wb
+                fA = Polygon([c1, c2, r1b, r1a])
+                fB = Polygon([c4, c3, r2b, r2a])
+                if wb > 0.1:
+                    fC = Polygon([c1, r1a, r2a, c4])
+                    fD = Polygon([c2, r1b, r2b, c3])
+                    band = Polygon([r1a, r1b, r2b, r2a])
+                    fam = [fA, fB, fC, fD, band]
+                    seams = [(tuple(r1a), tuple(r1b)),
+                             (tuple(r2a), tuple(r2b)),
+                             (tuple(c1), tuple(r1a)), (tuple(c4), tuple(r2a)),
+                             (tuple(c2), tuple(r1b)), (tuple(c3), tuple(r2b))]
+                    name = f"hip_band{wb:g}"
+                else:
+                    fC = Polygon([c1, r1a, c4])
+                    fD = Polygon([c2, r1b, c3])
+                    fam = [fA, fB, fC, fD]
+                    seams = [(tuple(r1a), tuple(r1b)),
+                             (tuple(c1), tuple(r1a)), (tuple(c4), tuple(r1a)),
+                             (tuple(c2), tuple(r1b)), (tuple(c3), tuple(r1b))]
+                    name = "hip"
+                faces = [f.intersection(part) for f in fam]
+                if all(f.geom_type == "Polygon" and f.area > 1.5
+                       for f in faces):
+                    out[name] = (faces, seams)
+        # TRUNCATED HIP: sloped skirt around a flat top -- the form both
+        # #4735623 and #5371107 actually are (Josh's gold overlay made it
+        # unmissable: perimeter hips, recessed centre). Inset slides like
+        # the gable ridge does: the top edge sits where seam evidence
+        # peaks.
+        c1, c2, c3, c4 = A, A + u * L, D + u * L, D
+        best_t, best_ts = None, -1.0
+        for t in (0.22, 0.30, 0.38):
+            d0 = min(Wd, L) * t
+            i1 = c1 + u * d0 + v * d0
+            i2 = c2 - u * d0 + v * d0
+            i3 = c3 - u * d0 - v * d0
+            i4 = c4 + u * d0 - v * d0
+            sup4 = np.mean([seam_support(tuple(i1), tuple(i2)),
+                            seam_support(tuple(i2), tuple(i3)),
+                            seam_support(tuple(i3), tuple(i4)),
+                            seam_support(tuple(i4), tuple(i1))])
+            if sup4 > best_ts:
+                best_ts, best_t = sup4, t
+        d0 = min(Wd, L) * best_t
+        if d0 > 1.2:
+            i1 = c1 + u * d0 + v * d0
+            i2 = c2 - u * d0 + v * d0
+            i3 = c3 - u * d0 - v * d0
+            i4 = c4 + u * d0 - v * d0
+            top = Polygon([i1, i2, i3, i4])
+            skirts = [Polygon([c1, c2, i2, i1]),
+                      Polygon([c2, c3, i3, i2]),
+                      Polygon([c3, c4, i4, i3]),
+                      Polygon([c4, c1, i1, i4])]
+            faces = [top.intersection(part)] + \
+                [f.intersection(part) for f in skirts]
             if all(f.geom_type == "Polygon" and f.area > 3 for f in faces):
-                seams = [(tuple(h1), tuple(h2)),
-                         (tuple(c1), tuple(h1)), (tuple(c4), tuple(h1)),
-                         (tuple(c2), tuple(h2)), (tuple(c3), tuple(h2))]
-                out["hip"] = (faces, seams)
-        else:
+                seams = [(tuple(i1), tuple(i2)), (tuple(i2), tuple(i3)),
+                         (tuple(i3), tuple(i4)), (tuple(i4), tuple(i1))]
+                out["trunc_hip"] = (faces, seams)
+        if not (L > Wd * 1.15):
             # PYRAMID on square-ish parts
             ctr = (A + u * L / 2 + v * Wd / 2)
             c1, c2, c3, c4 = A, A + u * L, D + u * L, D
@@ -648,67 +745,160 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
         parts = [q for q in rect_parts(geom) if q.area > 15]
     except Exception:
         parts = []
-    big = [q for q in parts if q.area > 0.12 * geom.area]
+    # Josh on the residential panel: "overly simplified. Missing some
+    # clearly defined faces." An attached wing or garage is 8-11% of the
+    # footprint, so the substantial-parts filter absorbed it into the main
+    # blob and its faces never existed. At residential scale every
+    # rectangular part >= 16 m2 gets its own form.
+    big = [q for q in parts if q.area >= 16] if geom.area <= 450 else \
+        [q for q in parts if q.area > 0.12 * geom.area]
     blobs = big if len(big) >= 2 else \
         ([geom] if geom.geom_type == "Polygon" else list(geom.geoms))
 
     COMPLEXITY_RENT = {"flat": 0.0, "gable": 0.045, "gable_x": 0.045,
-                      "hip": 0.09, "pyramid": 0.09}
+                      "hip": 0.09, "pyramid": 0.09, "skeleton": 0.07,
+                      "trunc_hip": 0.10, "hip_band1.6": 0.10,
+                      "hip_band2.6": 0.10}
+    # THE SKELETON FORM. Josh's 3-6 face tier (his villas: hips with
+    # valleys wrapping the wings) measured 0.14-0.40 because no simple
+    # form has an L-hip. The constructive straight-skeleton builder from
+    # the August arc generates exactly that network from the outline; it
+    # competes on the WHOLE footprint against the per-part assembly.
+    skel_faces = []
+    try:
+        from src.roof_skeleton import skeleton_roof
+        # its internal envelope-fit gate (0.55) was tuned to refuse
+        # borderline roofs outright; HERE the contest judges, so the gate
+        # opens wide (0.10) and a bad skeleton simply loses on evidence
+        sk = skeleton_roof(0, geom, pts, min_envelope_fit=0.10)
+        skel_faces = [f["geometry"] for f in sk
+                      if f.get("geometry") is not None
+                      and f["geometry"].geom_type == "Polygon"
+                      and f["geometry"].area > 3]
+    except Exception as _e:
+        import os as _os
+        if _os.environ.get("SOLAR_DEBUG_HYP"):
+            print("  skel gen failed:", repr(_e)[:100], flush=True)
+        skel_faces = []
+    import os as _os
+    if _os.environ.get("SOLAR_DEBUG_HYP"):
+        print(f"  skel_faces: {len(skel_faces)}", flush=True)
     out_faces = []
     confs = []
     for blob in blobs:
         best_name, best_sc, best_faces = None, -1e9, None
+        cells = tilt_field(blob)
+        from shapely.geometry import LineString as _LS, Point as _Pt
+        from shapely.ops import unary_union as _uu2
         for name, (faces, seams) in forms_for(blob).items():
-            from shapely.geometry import LineString as _LS, Point as _Pt
-            from shapely.ops import unary_union as _uu2
             ridge = _uu2([_LS([a, b]) for a, b in seams]) if seams else None
             pl_num = pl_den = 0.0
-            asp_num = asp_den = 0.0
-            pitched_area = 0.0
             for f in faces:
                 inl, down, slope = face_plane(f)
                 pl_num += f.area * inl
                 pl_den += f.area
-                if slope >= 4.0:
-                    pitched_area += f.area
-                # ASPECT AGREEMENT -- the discriminator Josh's verdict
-                # demanded ("mistaking too many rooftops as pyramid...
-                # then missing some when they are"): plane FIT accepts any
-                # partition of a shallow roof, but each face's fitted
-                # plane must TILT the way the form predicts -- away from
-                # the ridge (or apex) toward its own eave. Four tilt
-                # directions is a pyramid; two is a gable; disagreement
-                # is a wrong form, however well the planes fit.
-                if ridge is not None and down is not None and slope >= 4.0:
-                    c = f.centroid
-                    npt = ridge.interpolate(ridge.project(c))
-                    d = np.array([c.x - npt.x, c.y - npt.y])
-                    nd = np.linalg.norm(d)
-                    if nd > 0.4:
-                        agree = float(np.dot(down, d / nd))
-                        asp_num += f.area * max(0.0, agree)
-                        asp_den += f.area
             plane = pl_num / max(pl_den, 1e-9)
-            aspect = (asp_num / asp_den) if asp_den > 0 else 0.5
+            # FIELD ASPECT -- per-face means hid the disagreement: on
+            # #4735623 a gable scored aspect 1.00 over a hip-band roof
+            # because its two big faces average away the end zones where
+            # the LiDAR tilts ENDWAYS. Every pitched ~2 m cell votes: does
+            # the local tilt match what this form predicts at that cell
+            # (away from the ridge of whichever face holds it)?
+            agree_sum = 0.0
+            agree_n = 0
+            if cells and ridge is not None:
+                for (cx, cy, dx, dy) in cells:
+                    pt = _Pt(cx, cy)
+                    holder = None
+                    for f in faces:
+                        if f.contains(pt):
+                            holder = f
+                            break
+                    if holder is None:
+                        continue
+                    npt = ridge.interpolate(ridge.project(pt))
+                    d0 = np.array([cx - npt.x, cy - npt.y])
+                    nd = np.linalg.norm(d0)
+                    if nd < 0.3:
+                        continue
+                    # UNCLIPPED: a wrong prediction must cost. Clipped at
+                    # zero, a gable claiming a hip's end zones paid nothing
+                    # for predicting sideways where the roof tilts endways,
+                    # and the complexity rent then decided AGAINST the true
+                    # form on both #4735623 and #5371107.
+                    agree_sum += float(dx * d0[0] / nd + dy * d0[1] / nd)
+                    agree_n += 1
+            aspect = ((agree_sum / agree_n + 1) / 2) if agree_n >= 8 else 0.5
+            # seams CONFIRM; absence in a hip-blind detector must not
+            # DENY (mean over all seams drowned true hips at 0.16-0.18
+            # while a gable's one lucky ridge scored 0.61): mean of the
+            # best half.
             if seams:
-                sup = np.mean([seam_support(a, b) for a, b in seams])
+                ss = sorted((seam_support(a, b) for a, b in seams),
+                            reverse=True)
+                sup = float(np.mean(ss[:max(1, len(ss) // 2)]))
             else:
                 sup = 0.0
-            sc = 0.35 * plane + 0.30 * aspect + 0.25 * sup \
+            sc = 0.30 * plane + 0.45 * aspect + 0.15 * sup \
                 - COMPLEXITY_RENT[name]
+            if _os.environ.get("SOLAR_DEBUG_HYP"):
+                print(f"    form {name:11s} pl {plane:.2f} asp {aspect:.2f} "
+                      f"sup {sup:.2f} -> {sc:.3f}", flush=True)
             # a flat claim on a clearly pitched part is not simplicity,
             # it is denial: charge it the aspect term it dodged
             if name == "flat":
                 _, downb, slopeb = face_plane(blob)
-                sc = 0.35 * plane + 0.25 * sup \
-                    + (0.30 if slopeb < 4.0 else 0.0)
+                sc = 0.30 * plane + 0.15 * sup \
+                    + (0.45 if slopeb < 4.0 and len(cells) < 8 else 0.0)
             if sc > best_sc:
                 best_sc, best_name, best_faces = sc, name, faces
         if best_faces:
             out_faces.extend(best_faces)
             confs.append(best_sc)
-    hypothesis_faces.last_confidence = \
-        (min(confs) if confs else 0.0)
+    part_conf = min(confs) if confs else 0.0
+    # whole-building skeleton vs per-part assembly -- judged with the SAME
+    # terms (plane + aspect + seam - rent). The first cut skipped the
+    # aspect term for skeletons and weighted seams 0.35, which punished
+    # the skeleton exactly where it is right: the detector is blind on
+    # hips (ridge F1 0.446), so hip seams score low. Aspect agreement is
+    # the term the skeleton wins on -- every face tilts away from its
+    # ridge by construction, and the LiDAR confirms it when the form fits.
+    if skel_faces:
+        from shapely.geometry import LineString as _LS
+        from shapely.ops import unary_union as _uu3
+        rim = geom.exterior.buffer(0.5)
+        seams = []
+        for f in skel_faces:
+            cs = list(f.exterior.coords)
+            for a2, b2 in zip(cs, cs[1:]):
+                if _LS([a2, b2]).difference(rim).length > 0.8:
+                    seams.append((a2, b2))
+        ridge = _uu3([_LS([a2, b2]) for a2, b2 in seams]) if seams else None
+        pl_num = pl_den = asp_num = asp_den = 0.0
+        for f in skel_faces:
+            inl, down, slope = face_plane(f)
+            pl_num += f.area * inl
+            pl_den += f.area
+            if ridge is not None and down is not None and slope >= 4.0:
+                c = f.centroid
+                npt = ridge.interpolate(ridge.project(c))
+                d = np.array([c.x - npt.x, c.y - npt.y])
+                nd = np.linalg.norm(d)
+                if nd > 0.4:
+                    asp_num += f.area * max(0.0, float(np.dot(down, d / nd)))
+                    asp_den += f.area
+        plane = pl_num / max(pl_den, 1e-9)
+        aspect = (asp_num / asp_den) if asp_den > 0 else 0.5
+        sup = (np.mean([seam_support(a2, b2) for a2, b2 in seams[:40]])
+               if seams else 0.0)
+        sk_conf = 0.35 * plane + 0.30 * aspect + 0.25 * sup \
+            - COMPLEXITY_RENT["skeleton"]
+        if _os.environ.get("SOLAR_DEBUG_HYP"):
+            print(f"  sk_conf {sk_conf:.3f} (pl {plane:.2f} asp {aspect:.2f} sup {sup:.2f}) vs part_conf {part_conf:.3f}", flush=True)
+        if sk_conf > part_conf and len(skel_faces) >= 2:
+            hypothesis_faces.last_confidence = sk_conf
+            return skel_faces
+    hypothesis_faces.last_confidence = part_conf
     return out_faces
 
 
