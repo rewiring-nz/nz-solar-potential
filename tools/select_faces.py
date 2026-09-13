@@ -77,9 +77,22 @@ def main():
     predictor = SamPredictor(sam)
     ck = torch.load(ROOT / "data/models/roof_lines_v5.pt",
                     map_location="cpu", weights_only=False)
-    lm = T.build_unet(ck.get("pretrained", False))
+    lm = T.build_unet(ck.get("pretrained", False), out_channels=3)
     lm.load_state_dict(ck["state_dict"])
     lm.to(device).eval()
+    # ROLE SPLIT: v5 drives the line-extraction stack (its statistics are
+    # what every threshold downstream was calibrated on -- v6 there
+    # collapsed LINE agreement 0.754 -> 0.422); v6, which finally SEES
+    # hips (combined crease F1 0.736 vs 0.446), is the EVIDENCE model:
+    # the scorer's eyes and the form contest's seam support.
+    ck6 = torch.load(ROOT / "data/models/roof_lines_v6.pt",
+                     map_location="cpu", weights_only=False)
+    lm6 = T.build_unet(ck6.get("pretrained", False), out_channels=4)
+    try:
+        lm6.load_state_dict(ck6["state_dict"])
+        lm6.to(device).eval()
+    except Exception:
+        lm6 = None
 
     labels = json.loads((ROOT / "data/roof_labels.json").read_text())["buildings"]
     if a.ids:
@@ -142,7 +155,22 @@ def main():
             x2 = _t.from_numpy(arr).float().permute(2, 0, 1)[None] / 255.0
             with _t.no_grad():
                 pr = _t.sigmoid(lm(x2.to(device)))[0].cpu().numpy()[:, :h, :w]
-        P = evidence_map(pr.max(axis=0), rgb)
+        # evidence = the calibrated v5 landscape PLUS the one thing v5
+        # cannot see: v6's dedicated hip channel (activation along Josh's
+        # drawn hips 0.16-0.24 -> 0.74-0.79). Swapping the whole map to v6
+        # cost 0.021 of picked agreement -- its hotter statistics
+        # mis-calibrate the edge term -- so only the new signal joins.
+        ev = pr.max(axis=0)
+        if lm6 is not None:
+            import torch as _t6
+            _ph, _pw = (-h) % 16, (-w) % 16
+            _arr = np.pad(rgb, ((0, _ph), (0, _pw), (0, 0)))
+            _x6 = _t6.from_numpy(_arr).float().permute(2, 0, 1)[None] / 255.0
+            with _t6.no_grad():
+                _p6 = _t6.sigmoid(lm6(_x6.to(device)))[0].cpu().numpy()[:, :h, :w]
+            if _p6.shape[0] >= 4:
+                ev = np.maximum(ev, _p6[3])
+        P = evidence_map(ev, rgb)
 
         drawn = []
         for f in labels.get(str(bid), {}).get("faces") or []:

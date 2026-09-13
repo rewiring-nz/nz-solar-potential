@@ -42,7 +42,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "training"
-KINDS = ["ridge", "valley", "cliff"]
+KINDS = ["ridge", "valley", "cliff", "hip"]
 
 
 def load_split(manifest, split, keep_buildings=None):
@@ -66,7 +66,7 @@ def load_split(manifest, split, keep_buildings=None):
     return x, y, w
 
 
-def build_unet(pretrained=False):
+def build_unet(pretrained=False, out_channels=4):
     """A U-Net, optionally on a pretrained ImageNet encoder.
 
     From scratch, 74 roofs is not enough: training loss halves between epochs 50
@@ -100,7 +100,7 @@ def build_unet(pretrained=False):
                 self.c1 = block(128, 64)
                 self.u0 = nn.ConvTranspose2d(64, 32, 2, 2)
                 self.c0 = block(32, 32)
-                self.out = nn.Conv2d(32, 3, 1)
+                self.out = nn.Conv2d(32, out_channels, 1)
 
             def forward(self, x):
                 s = self.stem(x)            # /2
@@ -115,10 +115,10 @@ def build_unet(pretrained=False):
                 return self.out(x)
 
         return ResUNet()
-    return _build_scratch_unet()
+    return _build_scratch_unet(out_channels)
 
 
-def _build_scratch_unet():
+def _build_scratch_unet(out_channels=4):
     import torch.nn as nn
 
     def block(i, o):
@@ -138,7 +138,7 @@ def _build_scratch_unet():
             self.c2 = block(base * 4, base * 2)
             self.u1 = nn.ConvTranspose2d(base * 2, base, 2, 2)
             self.c1 = block(base * 2, base)
-            self.out = nn.Conv2d(base, 3, 1)
+            self.out = nn.Conv2d(base, out_channels, 1)
 
         def forward(self, x):
             import torch
@@ -179,7 +179,7 @@ def evaluate(model, val, device, thr=0.5):
         for i in range(0, len(x), 32):
             preds.append(torch.sigmoid(model(x[i:i + 32].to(device))).cpu())
         p = torch.cat(preds)
-    for k in range(3):
+    for k in range(p.shape[1]):
         pk = ((p[:, k] > thr).float() * w[:, 0])
         tk = (y[:, k] * w[:, 0])
         tp = (pk * tk).sum()
@@ -194,7 +194,15 @@ def train_once(train, val, device, epochs, seed=0, quiet=False, pretrained=False
     model = build_unet(pretrained).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
     x, y, w = train
-    pos = torch.tensor([8.0, 8.0, 8.0], device=device).view(1, 3, 1, 1)
+    # per-channel positive weight by pixel scarcity: uniform 8.0 let the
+    # scarce channels starve (valley F1 0.048 with 558 drawn lines) --
+    # the optimiser buys ridge accuracy with valley neglect at equal prices
+    with torch.no_grad():
+        freq = y.mean((0, 2, 3)).clamp_min(1e-5)
+    # anchor: the historical 8.0 was right for ridge at ~1.5%% positive
+    # pixels, so c = 8 * 0.015; scarcer channels scale up from there
+    pos = (0.12 / freq).clamp(6.0, 40.0).to(device).view(1, -1, 1, 1)
+    print(f"    pos_weight per channel: {[round(float(v),1) for v in pos.flatten()]}")
     n = len(x)
     sched = torch.optim.lr_scheduler.OneCycleLR(
         opt, max_lr=2e-3, total_steps=max(1, epochs * ((n + 15) // 16)))

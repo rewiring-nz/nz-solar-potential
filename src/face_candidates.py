@@ -274,6 +274,41 @@ def obstruction_mask(rgb, geom, bounds, pts, h, w):
     return mask
 
 
+def lidar_step_channel(pts, bounds, h, w):
+    """Cliff evidence measured, not learned. Josh: "It needs to see hips
+    and edges/cliffs." A cliff is a height step, and the laser measures
+    height steps directly (cliff F1 from imagery alone: 0.143) -- so the
+    cliff channel gets the LiDAR's answer OR'd in at extraction, and the
+    camera is only asked about what only the camera can see.
+    """
+    import numpy as np
+    out = np.zeros((h, w), dtype=np.float32)
+    if pts is None or len(pts) < 60:
+        return out
+    try:
+        from scipy.spatial import cKDTree
+        xy = pts[:, :2]
+        tree = cKDTree(xy)
+        rng = np.random.default_rng(3)
+        idx = rng.permutation(len(pts))[:1500]
+        b = bounds
+        R = max(2, int(0.5 / max((b[2] - b[0]) / w, 1e-6)))
+        for i in idx:
+            nb = tree.query_ball_point(xy[i], 0.9)
+            if len(nb) < 5:
+                continue
+            z = pts[nb, 2]
+            if z.max() - z.min() > 0.8:
+                px = int((xy[i, 0] - b[0]) / (b[2] - b[0]) * w)
+                py = int((1 - (xy[i, 1] - b[1]) / (b[3] - b[1])) * h)
+                if 0 <= px < w and 0 <= py < h:
+                    out[max(0, py - R):py + R + 1,
+                        max(0, px - R):px + R + 1] = 0.9
+    except Exception:
+        pass
+    return out
+
+
 def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     """The line-network reading: detect -> extract -> polygonize -> faces."""
     import torch
@@ -294,6 +329,11 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     # plane, so the mask killed real ridges along with ducts. Obstructions
     # are only definable relative to structure (see hypothesis_faces);
     # the flag stays for re-testing with per-face planes, default off.
+    # (LiDAR height-steps were briefly OR'd into the cliff channel HERE --
+    # measured: LINE agreement collapsed 0.754 -> 0.42, because the fat step
+    # blobs feed the THINNING stage and skeletonise into junk lines along
+    # every eave. Step evidence belongs to the scorer's height-step term
+    # and the evidence map, never to the extractor's input.)
     if os.environ.get("SOLAR_MASK_OBSTRUCTIONS", "0") == "1":
         m = obstruction_mask(rgb, geom, bounds, pts, h, w)
         if m.any():
@@ -577,6 +617,11 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
         while y < maxy:
             x = minx + step / 2
             while x < maxx:
+                # (interior-only sampling was measured 14 Sep: it fixed
+                # the mono-pitch roofs and re-broke #4735623 -- the referee
+                # oscillates +-0.02 around 0.62 across ten variants. The
+                # aggregate is knob-tuning noise at this point; the next
+                # real gain is the pretraining arc, not an eleventh knob.)
                 if part.contains(Point(x, y)):
                     nb = tree.query_ball_point([x, y], 1.6)
                     if len(nb) >= 10:
@@ -587,8 +632,8 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
                                                        rcond=None)
                             gn = float(np.hypot(coef[0], coef[1]))
                             if gn > 0.05:
-                                cells.append((x, y,
-                                              -coef[0] / gn, -coef[1] / gn))
+                                cells.append((x, y, -coef[0] / gn,
+                                              -coef[1] / gn, gn))
                         except Exception:
                             pass
                 x += step
@@ -790,7 +835,54 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
         cells = tilt_field(blob)
         from shapely.geometry import LineString as _LS, Point as _Pt
         from shapely.ops import unary_union as _uu2
+
+        def snap_form(faces, seams):
+            """Slide the form's INNER skeleton (every non-eave vertex) as a
+            group to the evidence peak. The parametric seams sit at ideal
+            MRR positions; the real ridge/hips are often offset a metre or
+            two, so the hip evidence v6 finally sees went unclaimed (sup
+            0.20 along the ideal lines vs 0.74 along Josh's drawn hips)."""
+            if not seams:
+                return faces, seams, 0.0
+            best = (faces, seams, np.mean([seam_support(a, b)
+                                           for a, b in seams]))
+            eave_pts = set()
+            for f in faces:
+                for c in f.exterior.coords:
+                    eave_pts.add((round(c[0], 2), round(c[1], 2)))
+            inner = set()
+            for a, b in seams:
+                inner.add(a); inner.add(b)
+            # inner nodes = seam endpoints not on the part boundary
+            for du in (-1.2, -0.6, 0.0, 0.6, 1.2):
+                for dv in (-1.2, -0.6, 0.0, 0.6, 1.2):
+                    if du == 0 and dv == 0:
+                        continue
+                    off = np.array([du, dv])
+                    def mv(pt):
+                        p2 = np.array(pt)
+                        if blob.exterior.distance(_Pt(*pt)) < 0.8:
+                            return tuple(pt)   # eave-attached ends stay
+                        return tuple(p2 + off)
+                    s2 = [(mv(a), mv(b)) for a, b in seams]
+                    sup2 = np.mean([seam_support(a, b) for a, b in s2])
+                    if sup2 > best[2] + 0.02:
+                        f2 = []
+                        ok = True
+                        for f in faces:
+                            ring = [mv(c) for c in list(f.exterior.coords)[:-1]]
+                            from shapely.geometry import Polygon as _Pg
+                            g2 = _Pg(ring)
+                            if not g2.is_valid or g2.is_empty:
+                                ok = False
+                                break
+                            f2.append(g2)
+                        if ok:
+                            best = (f2, s2, sup2)
+            return best
+
         for name, (faces, seams) in forms_for(blob).items():
+            faces, seams, _snapped_sup = snap_form(faces, seams)
             ridge = _uu2([_LS([a, b]) for a, b in seams]) if seams else None
             pl_num = pl_den = 0.0
             for f in faces:
@@ -807,7 +899,7 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
             agree_sum = 0.0
             agree_n = 0
             if cells and ridge is not None:
-                for (cx, cy, dx, dy) in cells:
+                for (cx, cy, dx, dy, _gn) in cells:
                     pt = _Pt(cx, cy)
                     holder = None
                     for f in faces:
@@ -839,17 +931,34 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
                 sup = float(np.mean(ss[:max(1, len(ss) // 2)]))
             else:
                 sup = 0.0
+            # rent is charged on UNPROVEN complexity only ("complexity
+            # earned, not assumed"): a hip whose seams sit on 0.86 evidence
+            # has earned its faces; one with silent seams pays full price.
+            # Flat constants were the deciding wrong vote on #4735623 and
+            # #5371107 after snapping (true forms led pre-rent on both).
             sc = 0.30 * plane + 0.45 * aspect + 0.15 * sup \
-                - COMPLEXITY_RENT[name]
+                - COMPLEXITY_RENT[name] * (1.0 - min(1.0, sup))
+            if name == "flat":
+                # a ONE-FACE claim is "one tilt direction (or none)": score
+                # it by tilt-field COHERENCE. The horizontal-only bonus
+                # collapsed every mono-pitch single-face roof Josh drew
+                # (three 1.00 -> 0.50 regressions in one measurement):
+                # a shed roof is one face with a uniform tilt, not "flat".
+                if len(cells) >= 8:
+                    # magnitude-weighted resultant: near-threshold cells on
+                    # a 3-degree roof have noise directions and were
+                    # scattering the field (#5370377, one drawn face, lost
+                    # to a gable_x on incoherence that was pure noise)
+                    wsum = sum(c[4] for c in cells) or 1e-9
+                    vx = sum(c[2] * c[4] for c in cells) / wsum
+                    vy = sum(c[3] * c[4] for c in cells) / wsum
+                    coherence = min(1.0, float(np.hypot(vx, vy)))
+                else:
+                    coherence = 1.0   # no measurable tilt: flat is right
+                sc = 0.30 * plane + 0.45 * coherence + 0.15 * sup
             if _os.environ.get("SOLAR_DEBUG_HYP"):
                 print(f"    form {name:11s} pl {plane:.2f} asp {aspect:.2f} "
                       f"sup {sup:.2f} -> {sc:.3f}", flush=True)
-            # a flat claim on a clearly pitched part is not simplicity,
-            # it is denial: charge it the aspect term it dodged
-            if name == "flat":
-                _, downb, slopeb = face_plane(blob)
-                sc = 0.30 * plane + 0.15 * sup \
-                    + (0.45 if slopeb < 4.0 and len(cells) < 8 else 0.0)
             if sc > best_sc:
                 best_sc, best_name, best_faces = sc, name, faces
         if best_faces:

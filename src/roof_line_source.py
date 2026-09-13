@@ -225,7 +225,7 @@ def has_model(building_id):
 # "unmistakable in 0.1 m imagery and nearly absent from a point cloud".
 _LABELS_CACHE = [None]
 LABELS_PATH = DATA_DIR / "roof_labels.json"
-FOLD_KINDS = {"ridge", "valley", "cliff"}
+FOLD_KINDS = {"ridge", "valley", "cliff", "hip"}
 # Flags that say the drawn geometry describes nothing trustworthy. bad_outline
 # is deliberately NOT here: an offset outline is exactly the case where the
 # drawn lines are the more reliable description of the roof.

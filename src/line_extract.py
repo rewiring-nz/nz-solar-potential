@@ -65,7 +65,7 @@ DUP_DIST_PX = 3.5
 SHORT_PX = 22.0            # ~2 m at 0.1 m/px
 SHORT_PENALTY = 0.15       # what a short line must add in confidence          # ...and lying on it: the same crease seen twice
 
-KINDS = ["ridge", "valley", "cliff"]
+KINDS = ["ridge", "valley", "cliff", "hip"]
 
 
 # ---------------------------------------------------------------- thinning
@@ -372,7 +372,7 @@ def _colinear_merge(s1, s2):
 # ------------------------------------------------------------------ public
 
 def extract(prob3, to_world, thr=THR):
-    """(3,H,W) probabilities -> [{'seg': [x1,y1,x2,y2], 'kind', 'score'}].
+    """(C,H,W) probabilities -> [{'seg': [x1,y1,x2,y2], 'kind', 'score'}].
 
     Geometry comes from the channels COMBINED (their max): one crease should be
     one line even where two channels half-fire on it, and the kind is read back
@@ -486,11 +486,11 @@ def extract(prob3, to_world, thr=THR):
     out = []
     for score, a, b in kept:
         # which channel owns this line
-        ks = np.zeros(3)
+        ks = np.zeros(prob3.shape[0])
         L = np.hypot(*(b - a))
         for t in np.linspace(0, 1, max(int(L), 2)):
             q = a + t * (b - a)
-            ks += [_bilinear(prob3[c], *q) for c in range(3)]
+            ks += [_bilinear(prob3[c], *q) for c in range(prob3.shape[0])]
         ax, ay = to_world(a[0], a[1])
         bx, by = to_world(b[0], b[1])
         out.append({"seg": [ax, ay, bx, by],

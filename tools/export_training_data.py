@@ -45,7 +45,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 LABELS = ROOT / "data" / "roof_labels.json"
 OUT = ROOT / "data" / "training"
-KINDS = ["ridge", "valley", "cliff"]
+KINDS = ["ridge", "valley", "cliff", "hip"]
 SKIP_FLAGS = {"absent", "not_building", "unclear"}
 LINE_WIDTH_PX = 3          # targets are widened; a 1px line is nearly unlearnable
 PAD_M = 4.0
@@ -160,11 +160,26 @@ def main():
             continue
         shape = rgb.shape[:2]
 
-        # one channel per kind, so the model can be asked which it found
+        # one channel per kind, so the model can be asked which it found.
+        # HIP is derived, not drawn: the tool offers ridge/valley/cliff, so
+        # his hips live inside "ridge" as the minority pattern (subtle
+        # diagonal creases vs high-contrast axis ridges) -- that is why the
+        # detector "can't see hips". A ridge-kind line with an endpoint at
+        # a footprint corner IS a hip on NZ vernacular roofs.
+        corners = list(geom.exterior.coords)
+        def _near_corner(pt, tol=2.0):
+            return any((pt[0] - c[0]) ** 2 + (pt[1] - c[1]) ** 2 < tol * tol
+                       for c in corners)
+        def _kind_of(l):
+            k = l.get("kind")
+            if (k == "ridge" and l.get("a") and l.get("b")
+                    and (_near_corner(l["a"]) or _near_corner(l["b"]))):
+                return "hip"
+            return k
         masks = []
         for kind in KINDS:
             segs = [(l["a"], l["b"]) for l in lab["lines"]
-                    if l.get("kind") == kind and l.get("a") and l.get("b")]
+                    if _kind_of(l) == kind and l.get("a") and l.get("b")]
             masks.append(rasterise(shape, segs, bounds, LINE_WIDTH_PX))
         mask = np.stack(masks, axis=-1)
 
