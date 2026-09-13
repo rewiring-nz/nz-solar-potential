@@ -188,7 +188,8 @@ def _build_one(building_id):
         _area = _CTX["gdf"].loc[building_id].geometry.area
     except Exception:
         _area = 0.0
-    budget = int(min(1800, max(BUILDING_TIME_BUDGET_S,
+    _cap = int(os.environ.get("SOLAR_BUILDING_BUDGET_CAP_S", "1800"))
+    budget = int(min(_cap, max(BUILDING_TIME_BUDGET_S,
                                BUILDING_TIME_BUDGET_S + (_area - 1500) * 0.6)))
     signal.alarm(budget)
     try:
