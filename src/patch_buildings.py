@@ -122,6 +122,11 @@ def main():
             if bid not in agg:
                 continue
             b = agg[bid]
+            # a rebuilt building with panels must not keep a stale
+            # no-estimate reason from the run it is replacing
+            if b["panel_count"] > 0:
+                f["properties"].pop("no_estimate_reason", None)
+                f["properties"].pop("reason", None)
             f["properties"].update({
                 "facet_count": b["facet_count"],
                 "obstruction_count": b["obstruction_count"],
