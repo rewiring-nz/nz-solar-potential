@@ -1930,6 +1930,27 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                         if u.geom_type != "Polygon" or not u.is_valid:
                             j += 1
                             continue
+                        # angle agreement is not PLANE agreement: merging
+                        # across a gentle crease built facets that fail the
+                        # area-weighted inlier and got 693 buildings
+                        # WITHHELD for low confidence (#4744069: 1,780 live
+                        # panels -> 0). The union must still read as one
+                        # plane on its own points.
+                        if pc_source is not None:
+                            try:
+                                up = _facet_points(pc_source, u)
+                                if len(up) >= 30:
+                                    upl = fit_plane_lstsq_centered(up)
+                                    res = up[:, 2] - (upl[0] * up[:, 0]
+                                                      + upl[1] * up[:, 1]
+                                                      + upl[2])
+                                    import numpy as _np2
+                                    if float((_np2.abs(res - _np2.median(res))
+                                              < 0.18).mean()) < 0.55:
+                                        j += 1
+                                        continue
+                            except Exception:
+                                pass
                         big = (a if a["geometry"].area >= b["geometry"].area
                                else b)
                         kept[i] = dict(big, geometry=u,

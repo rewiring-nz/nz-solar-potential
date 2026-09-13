@@ -180,11 +180,21 @@ def _init_worker(area, model):
 def _build_one(building_id):
     """Everything for one building. Returns its GeoJSON features."""
     signal.signal(signal.SIGALRM, _on_timeout)
-    signal.alarm(BUILDING_TIME_BUDGET_S)
+    # the budget scales with the roof: a flat 600s cap zeroed the
+    # district's biggest building (#4722059, 3,704 live panels) while
+    # every neighbour got its estimate. One 30-minute outlier on one
+    # worker is cheap; a dark landmark is not.
+    try:
+        _area = _CTX["gdf"].loc[building_id].geometry.area
+    except Exception:
+        _area = 0.0
+    budget = int(min(1800, max(BUILDING_TIME_BUDGET_S,
+                               BUILDING_TIME_BUDGET_S + (_area - 1500) * 0.6)))
+    signal.alarm(budget)
     try:
         return _build_one_inner(building_id)
     except _BuildingTimeout:
-        print(f"  building {building_id} DROPPED: over {BUILDING_TIME_BUDGET_S}s budget",
+        print(f"  building {building_id} DROPPED: over {budget}s budget",
               file=sys.stderr, flush=True)
         return _no_estimate_only(building_id, "timed_out")
     except Exception as exc:
