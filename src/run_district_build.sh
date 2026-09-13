@@ -138,7 +138,10 @@ tippecanoe -o data/panel_layouts.pmtiles --force -l layout \
 # geometry with fresh mtimes -- zero errors, bit-identical totals. A green
 # build that ignored its inputs must FAIL here, not deploy quietly.
 if [ "${SOLAR_SELECTED_FACES}" = "1" ] && [ "$(ls data/selected_faces 2>/dev/null | wc -l)" -gt 100 ]; then
-  n_sel=$(grep -aco '"from_selected"' data/panel_layouts.geojson || true)
+  # grep -c counts LINES and a geojson is one line: -aco reported "1"
+  # against 41,589 real occurrences and failed two good builds. Count
+  # occurrences.
+  n_sel=$(grep -ao '"from_selected"' data/panel_layouts.geojson | wc -l | tr -d " ")
   if [ "${n_sel:-0}" -lt 50 ]; then
     echo "FAILED: selected-faces enabled but only ${n_sel} from_selected facets in merged layouts -- the build did not use its inputs"
     exit 1
