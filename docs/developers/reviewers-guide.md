@@ -31,8 +31,9 @@ precompute (`tools/predict_faces.py`) builds up to three candidate readings
 per building and an evidence scorer picks one:
 
 - `sam_faces` — Segment Anything (vit_b), coverage-completion prompting
-- `line_faces` — a U-Net line detector (`data/models/roof_lines_v5.pt`,
-  trained on the hand-drawn markups) → line extraction → polygonisation
+- `line_faces` — a U-Net line detector (v5 extracts; v6's hip channel
+  joins the evidence map — see the Detector bullet below) → line
+  extraction → polygonisation
 - `lidar_faces` — normal-based region growing on the point cloud,
   regularised to building axes; wins only by a +0.08 margin, on
   shadow-degraded imagery (mean in-footprint luminance < 110), or when
@@ -112,9 +113,17 @@ code, re-run the check.
   a candidate merged build against production, listing zeroed buildings
   and >30% panel drops. Nothing deploys without reading this.
 - **Detector**: `tools/train_line_model.py --epochs N` prints held-out
-  ridge/valley/cliff F1 per epoch (hash-based split, pinnable via
-  `data/bench_ids.txt`). v5: ridge 0.446. 150 epochs measured no better
-  than 90 at current data size.
+  per-channel F1 (ridge/valley/cliff/hip; hash-based split, pinnable via
+  `data/bench_ids.txt`). Two models serve different roles: v5 (3-channel)
+  drives line EXTRACTION -- its statistics are what the extractor's
+  thresholds were calibrated on; v6 (4-channel, hip class derived from
+  markup corner geometry + scarcity-anchored loss) contributes its hip
+  channel to the EVIDENCE map only. Combined crease F1: v5 0.446 ->
+  v6 0.736. Two recorded traps: v6 as the extraction model collapses
+  LINE agreement (0.754 -> 0.42), and LiDAR step blobs must never feed
+  the extractor's thinning stage (same collapse); steps belong to the
+  scorer. Pretraining corpus flow: `tools/export_rid_training.py` then
+  `--extra-dir/--init/--lr` on the trainer.
 
 ## Environment flags
 
