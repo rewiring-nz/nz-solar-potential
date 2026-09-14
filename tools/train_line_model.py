@@ -62,9 +62,11 @@ def load_split(manifest, split, keep_buildings=None):
     if not xs:
         return None
     import torch
-    x = torch.from_numpy(np.stack(xs)).float().permute(0, 3, 1, 2) / 255.0
-    y = torch.from_numpy(np.stack(ys)).float().permute(0, 3, 1, 2) / 255.0
-    w = torch.from_numpy(np.stack(ws)).float().unsqueeze(1) / 255.0
+    # uint8 storage: 59k float32 patches is ~30 GB and the pretrain run
+    # died SIGKILL at epoch 5; batches normalise to float on the fly
+    x = torch.from_numpy(np.stack(xs)).permute(0, 3, 1, 2).contiguous()
+    y = torch.from_numpy(np.stack(ys)).permute(0, 3, 1, 2).contiguous()
+    w = torch.from_numpy(np.stack(ws)).unsqueeze(1).contiguous()
     cw = torch.from_numpy(np.stack(cws)).float()
     return x, y, w, cw
 
@@ -88,9 +90,11 @@ def load_dir(path):
     if not xs:
         return None
     import torch
-    x = torch.from_numpy(np.stack(xs)).float().permute(0, 3, 1, 2) / 255.0
-    y = torch.from_numpy(np.stack(ys)).float().permute(0, 3, 1, 2) / 255.0
-    w = torch.from_numpy(np.stack(ws)).float().unsqueeze(1) / 255.0
+    # uint8 storage: 59k float32 patches is ~30 GB and the pretrain run
+    # died SIGKILL at epoch 5; batches normalise to float on the fly
+    x = torch.from_numpy(np.stack(xs)).permute(0, 3, 1, 2).contiguous()
+    y = torch.from_numpy(np.stack(ys)).permute(0, 3, 1, 2).contiguous()
+    w = torch.from_numpy(np.stack(ws)).unsqueeze(1).contiguous()
     cw = torch.from_numpy(np.stack(cws)).float()
     return x, y, w, cw
 
@@ -204,12 +208,15 @@ def loss_fn(logits, y, w, pos_weight, cw=None):
 def evaluate(model, val, device, thr=0.5):
     import torch
     x, y, w = val[:3]
+    y = y.float() / 255.0 if y.dtype == torch.uint8 else y
+    w = w.float() / 255.0 if w.dtype == torch.uint8 else w
     model.eval()
     f1s = []
     with torch.no_grad():
         preds = []
         for i in range(0, len(x), 32):
-            preds.append(torch.sigmoid(model(x[i:i + 32].to(device))).cpu())
+            xb = x[i:i + 32].to(device).float() / 255.0
+            preds.append(torch.sigmoid(model(xb)).cpu())
         p = torch.cat(preds)
     for k in range(p.shape[1]):
         pk = ((p[:, k] > thr).float() * w[:, 0])
@@ -237,7 +244,8 @@ def train_once(train, val, device, epochs, seed=0, quiet=False,
     # scarce channels starve (valley F1 0.048 with 558 drawn lines) --
     # the optimiser buys ridge accuracy with valley neglect at equal prices
     with torch.no_grad():
-        freq = y.mean((0, 2, 3)).clamp_min(1e-5)
+        ysub = y[:2000].float() / 255.0
+        freq = ysub.mean((0, 2, 3)).clamp_min(1e-5)
     # anchor: the historical 8.0 was right for ridge at ~1.5%% positive
     # pixels, so c = 8 * 0.015; scarcer channels scale up from there
     pos = (0.12 / freq).clamp(6.0, 40.0).to(device).view(1, -1, 1, 1)
@@ -251,7 +259,9 @@ def train_once(train, val, device, epochs, seed=0, quiet=False,
         tot = 0.0
         for i in range(0, n, 16):
             idx = perm[i:i + 16]
-            xb, yb, wb = x[idx].to(device), y[idx].to(device), w[idx].to(device)
+            xb = x[idx].to(device).float() / 255.0
+            yb = y[idx].to(device).float() / 255.0
+            wb = w[idx].to(device).float() / 255.0
             cwb = cwall[idx].to(device).view(len(idx), -1, 1, 1)
             # SCALE AND COLOUR JITTER, for the country beyond Queenstown.
             # Josh: "Make sure when we are building this training, it's
