@@ -329,6 +329,11 @@ def main():
                     help="initialise from this checkpoint (pretrain -> "
                          "fine-tune)")
     ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--oversample-base", type=int, default=1,
+                    help="repeat the base (Josh) training patches N times "
+                         "when joining an --extra-dir corpus, so 59k Dutch "
+                         "patches cannot swamp 1k NZ ones (98%% Dutch mix "
+                         "measured: better typing, union F1 0.52 vs 0.72)")
     ap.add_argument("--save-eval", type=str, default=None,
                     help="save the eval-path model (train split + extra "
                          "dir only; val stays unseen)")
@@ -394,7 +399,13 @@ def main():
             ex = load_dir(a.extra_dir)
             if ex is not None:
                 print(f"  + {len(ex[0])} extra patches from {a.extra_dir}")
-                train = tuple(_te.cat([train[i], ex[i]]) for i in range(4))
+                base = tuple(_te.cat([train[i]] * a.oversample_base)
+                             for i in range(4)) \
+                    if a.oversample_base > 1 else train
+                if a.oversample_base > 1:
+                    print(f"  base oversampled x{a.oversample_base} "
+                          f"-> {len(base[0])}")
+                train = tuple(_te.cat([base[i], ex[i]]) for i in range(4))
         model, f1 = train_once(train, val, device, a.epochs,
                                pretrained=a.pretrained,
                                init_state=init_state, lr=a.lr)
