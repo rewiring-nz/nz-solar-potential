@@ -319,6 +319,9 @@ def main():
                     help="initialise from this checkpoint (pretrain -> "
                          "fine-tune)")
     ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--save-eval", type=str, default=None,
+                    help="save the eval-path model (train split + extra "
+                         "dir only; val stays unseen)")
     a = ap.parse_args()
 
     init_state = None
@@ -382,9 +385,20 @@ def main():
             if ex is not None:
                 print(f"  + {len(ex[0])} extra patches from {a.extra_dir}")
                 train = tuple(_te.cat([train[i], ex[i]]) for i in range(4))
-        _, f1 = train_once(train, val, device, a.epochs,
-                           pretrained=a.pretrained,
-                           init_state=init_state, lr=a.lr)
+        model, f1 = train_once(train, val, device, a.epochs,
+                               pretrained=a.pretrained,
+                               init_state=init_state, lr=a.lr)
+        if a.save_eval:
+            # honest-checkpoint path: trained on the TRAIN split (plus any
+            # --extra-dir corpus) only -- the val roofs stay unseen, so a
+            # later fine-tune's held-out numbers remain comparable
+            import torch as _ts
+            outp = Path(a.save_eval)
+            outp.parent.mkdir(parents=True, exist_ok=True)
+            _ts.save({"state_dict": model.state_dict(),
+                      "pretrained": a.pretrained, "kinds": KINDS,
+                      "patch": manifest["patch"]}, outp)
+            print(f"wrote {outp} (train-split only; val untouched)")
         print(f"\nfinal val F1: " +
               "  ".join(f"{k} {v:.3f}" for k, v in zip(KINDS, f1)) +
               f"   mean {sum(f1)/3:.3f}   ({time.time()-t0:.0f}s)")
