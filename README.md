@@ -9,6 +9,11 @@ Nationwide LiDAR is multi-terabyte and processing ~2M+ buildings is a real
 batch-compute job — not something to attempt first. This pilot proves the
 method on one small area, locally, before any of that.
 
+**Verify it yourself:** [docs/quickstart.md](docs/quickstart.md) runs the
+identical methodology — same code, thresholds, and gates as the live map —
+on any small NZ area you choose, in minutes, with a per-building report to
+check against the aerial photo.
+
 ## Data sources (verified August 2026)
 
 | Source | What | License | Access |
