@@ -1421,3 +1421,21 @@ known roofs and change-evals cover ~120 samples. Add to the rebuild fan-in:
 per-building panel-count and kWh diff vs the previous build, ranked movers
 both directions, auto-render the top ~10 outliers for Josh's review BEFORE
 the push. Unknown impacts must surface, not hide in 15k buildings.
+
+## Step change in layout accuracy — Josh's directive (17 Sep)
+
+Josh, on the district release (#4735292, textbook pyramid with a hip
+missing): "We need a step change in your accuracy of panel layout."
+First instance found and shipped: the hypothesis area cap (450 m2) was
+excluding the simple-forms chain from exactly the large simple roofs it
+is best at; raised to 2000 after a clean bench A/B. The standing hunt:
+places where a LOW-scoring fragmentary reading (SAM slivers + residual
+fill) beats the simple-form answer on a technicality, not on evidence.
+Candidate levers, in evidence order:
+- coverage-honesty in the ship gate: a reading whose faces cover <60% of
+  the footprint hands the REST to residual fill, which knows no ridges --
+  its score should carry that risk, not just the faces it did draw.
+- bench "panels across a line" sits at 17.1% of panels on drawn roofs;
+  drive that number down and Josh's screenshots follow.
+- refresh the bench recorded baseline after each adopted change (last
+  gap was 6 Sep -> 17 Sep, which made deltas unreadable).
