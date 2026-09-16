@@ -1865,7 +1865,11 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # (the district's biggest roof, hundreds of facets) it blew through a
     # 2-hour budget that the same building beat before coherence landed.
     # A roof that size is beyond tidy-partition aesthetics anyway.
-    if len(machine) >= 2 and len(machine) <= 120:
+    import os as _osc
+    _skip_polish = _osc.environ.get("SOLAR_SKIP_FACET_POLISH", "0") == "1"
+    if _skip_polish:
+        machine = machine  # pre-coherence behaviour for pathological giants
+    if len(machine) >= 2 and len(machine) <= 120 and not _skip_polish:
         from shapely.ops import unary_union as _uu
         machine.sort(key=lambda f: -f["geometry"].area)
         claimed = None
@@ -1975,6 +1979,8 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # drawn-with-a-ruler or loses its wobble to progressively coarser
     # tolerance.
     for f in facets:
+        if _skip_polish:
+            break
         if f.get("from_labels"):
             continue
         g = f.get("geometry")
