@@ -239,3 +239,35 @@ PV_ASSUMPTIONS = {
         "survey was flown -- tree growth in particular."
     ),
 }
+
+
+# ---------------------------------------------------------------- my area
+# QUICKSTART: an optional user-defined area for open-source verification.
+# Drop a my_area.json next to this file (see my_area.example.json) and every
+# tool in the repo -- fetching, the build stages, the previews -- treats it
+# exactly like a first-class region. Nothing about the methodology changes:
+# that is the point. The optional survey overrides exist because LINZ layer
+# ids are per-survey; the defaults above cover the Queenstown Lakes 2021
+# LiDAR + 2026 imagery captures.
+import json as _json
+import os as _os
+_MY_AREA = _os.path.join(_os.path.dirname(__file__), "my_area.json")
+if _os.path.exists(_MY_AREA):
+    try:
+        _ma = _json.load(open(_MY_AREA))
+        _name = str(_ma["name"]).strip()
+        _bbox = [float(v) for v in _ma["bbox"]]
+        assert len(_bbox) == 4 and _name and _name not in REGIONS
+        REGIONS[_name] = _bbox
+        for _key, _var in (("dsm_layer", "LINZ_DSM_LAYER"),
+                           ("dem_layer", "LINZ_DEM_LAYER"),
+                           ("imagery_layer", "LINZ_IMAGERY_LAYER"),
+                           ("lidar_tile_index_layer",
+                            "LINZ_LIDAR_TILE_INDEX_LAYER"),
+                           ("pointcloud_bulk_url", "POINTCLOUD_BULK_URL"),
+                           ("pointcloud_tile_year", "POINTCLOUD_TILE_YEAR")):
+            if _ma.get(_key):
+                globals()[_var] = _ma[_key]
+        print(f"[config] my_area.json loaded: region '{_name}' {_bbox}")
+    except Exception as _exc:
+        print(f"[config] my_area.json IGNORED ({_exc!r})")
