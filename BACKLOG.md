@@ -1439,3 +1439,24 @@ Candidate levers, in evidence order:
   drive that number down and Josh's screenshots follow.
 - refresh the bench recorded baseline after each adopted change (last
   gap was 6 Sep -> 17 Sep, which made deltas unreadable).
+
+### Step-change progress (17 Sep) and what remains
+
+SHIPPED, measured on tools/bench.py against Josh's drawn lines:
+  - hypothesis area cap 450 -> 2000 m2 (37 district roofs flipped)
+  - fold_keepouts subtracted post-clearance in the fitter, width 0.22 m
+    (bench crossings 500 -> 1 of 2,663 panels on drawn roofs)
+  - marked roofs skip the lumpy/sparse surface gates
+
+NEXT, in evidence order:
+  - MACHINE-READ roofs have no keepouts: the same protection needs a source
+    of folds where Josh has not drawn. The line detector's own high-score
+    creases (roof_line_source MIN_SCORE 0.90 lines) are the obvious
+    candidate -- bench it exactly like the drawn ones, on the roofs he HAS
+    drawn, so the measurement is against truth rather than against itself.
+  - The bench set (152 roofs) did not contain #4725488, and a fix validated
+    only on it broke that roof. Add every roof Josh has ever flagged in a
+    screenshot to the set.
+  - refit_one.py bypasses the keepout path; it disagreed with the real
+    builder by 88 panels. Either route it through _build_one or print a
+    warning that it is not the shipping path.
