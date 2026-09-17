@@ -898,18 +898,53 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
             # (away from the ridge of whichever face holds it)?
             agree_sum = 0.0
             agree_n = 0
-            if cells and ridge is not None:
+            # WATER RUNS TO THE EAVE. The prediction for a cell is the
+            # direction toward its own face's EAVE -- the part of that
+            # face's boundary lying on the building outline -- because
+            # that is what every form in this vocabulary actually claims.
+            #
+            # It used to be "away from the nearest seam", which is a
+            # geometric artifact, not a claim: a pyramid's seams are the
+            # four corner diagonals, so "away from the seam" points 45
+            # degrees off the true downhill and a PERFECTLY CORRECT
+            # pyramid scored ~0.78, while a truncated hip -- whose flat
+            # top's seams run parallel to the eaves -- scored 0.91 for
+            # inventing a flat top that is not there. #4735292 (36 Stanley
+            # St, the square pyramid Josh has flagged repeatedly) lost
+            # 0.733 to 0.689 on exactly this and shipped with a box
+            # carved into one slope. Josh: "you are inventing places to
+            # put lines that are clearly not right in the visual imagery."
+            eaves = []
+            _rim = geom.exterior.buffer(0.6)
+            for f in faces:
+                try:
+                    ev = f.exterior.intersection(_rim)
+                    eaves.append(ev if (not ev.is_empty and ev.length > 0.8)
+                                 else None)
+                except Exception:
+                    eaves.append(None)
+            if cells:
                 for (cx, cy, dx, dy, _gn) in cells:
                     pt = _Pt(cx, cy)
-                    holder = None
-                    for f in faces:
+                    hi = None
+                    for k, f in enumerate(faces):
                         if f.contains(pt):
-                            holder = f
+                            hi = k
                             break
-                    if holder is None:
+                    if hi is None:
                         continue
-                    npt = ridge.interpolate(ridge.project(pt))
-                    d0 = np.array([cx - npt.x, cy - npt.y])
+                    ev = eaves[hi]
+                    if ev is None:
+                        # An INTERIOR face claims flat (the flat top of a
+                        # truncated hip, a hip band). Cells only exist
+                        # where the LiDAR tilts at all, so every cell here
+                        # is evidence against that claim -- and a claim
+                        # that cannot be contradicted is not evidence.
+                        agree_sum += -min(1.0, _gn / 0.09)
+                        agree_n += 1
+                        continue
+                    npt = ev.interpolate(ev.project(pt))
+                    d0 = np.array([npt.x - cx, npt.y - cy])
                     nd = np.linalg.norm(d0)
                     if nd < 0.3:
                         continue
