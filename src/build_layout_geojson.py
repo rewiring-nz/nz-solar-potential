@@ -500,8 +500,15 @@ def _build_one_at(building_id, nudge_m):
         # present at 100%. Deleting is a verdict; demotion is a ranking.
         low_fit = (big_roof and not drawn
                    and _facet_fit(f, pc_source) < BIG_ROOF_FACET_MIN_FIT)
-        panels = fit_panels_on_facet(f, obstructions=obstructions, sibling_facets=siblings,
-                                     fold_keepouts=_keepouts)
+        if f.get("no_panel"):
+            # Josh clicked "no panels here" on this face. It exists as
+            # geometry -- his lines are the roof's lines -- and takes
+            # nothing. See facets_from_drawn_faces.
+            panels = []
+        else:
+            panels = fit_panels_on_facet(f, obstructions=obstructions,
+                                         sibling_facets=siblings,
+                                         fold_keepouts=_keepouts)
         if low_fit:
             for pnl in panels:
                 pnl["straggler"] = True

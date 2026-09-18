@@ -11,7 +11,7 @@
     "It's the same and still wrong",
     "On the pyramid you are missing the square in the middle at the top. It ends in a square at the peak which should be visible in both imagery and lidar."
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 3,
    "history": [
     {
@@ -27,6 +27,13 @@
      "coverage": 1.0,
      "fingerprint": "fc98e45217dd",
      "at": "2026-09-18T22:13:42"
+    },
+    {
+     "facets": 5,
+     "panels": 185,
+     "coverage": 1.0,
+     "fingerprint": "4833c8ef144a",
+     "at": "2026-09-19T11:07:31"
     }
    ],
    "notes": [
@@ -132,7 +139,7 @@
     "These roof lines are fuzzy, no roof lines are fuzzy, this makes no sense.",
     "A failure adding extra lines and faces that shouldn't be there"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 2,
    "history": [
     {
@@ -148,6 +155,13 @@
      "coverage": 0.604,
      "fingerprint": "e512d3cde4d5",
      "at": "2026-09-18T22:13:47"
+    },
+    {
+     "facets": 5,
+     "panels": 16,
+     "coverage": 0.75,
+     "fingerprint": "5e036d510da8",
+     "at": "2026-09-19T11:07:37"
     }
    ],
    "verdicts": [
@@ -170,7 +184,7 @@
     "This roof here has gotten much worse. It makes no sense and is not even close to the obvious faces visually",
     "Clearly wrong and nothing like the roof. It is getting confused by shadows."
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 2,
    "history": [
     {
@@ -186,6 +200,13 @@
      "coverage": 0.7,
      "fingerprint": "ddf24835c9e3",
      "at": "2026-09-18T22:13:48"
+    },
+    {
+     "facets": 5,
+     "panels": 23,
+     "coverage": 0.853,
+     "fingerprint": "4fa2939d2eee",
+     "at": "2026-09-19T11:07:38"
     }
    ],
    "verdicts": [
@@ -249,7 +270,7 @@
     "This is clearly wrong the hypothesis. You can see from my lines it is much more detailed.",
     "This is good but missing one valley line compared to what I drew"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 1,
    "history": [
     {
@@ -262,6 +283,22 @@
      "drew": 7,
      "across": 0,
      "at": "2026-09-18T22:01:12"
+    },
+    {
+     "facets": 8,
+     "panels": 82,
+     "coverage": 1.0,
+     "fingerprint": "f0ceb5f51019",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 7,
+     "across": 0,
+     "lines_drawn": 16,
+     "lines_found": 15,
+     "missing": {
+      "valley": 1
+     },
+     "at": "2026-09-19T11:08:28"
     }
    ],
    "verdicts": [
@@ -281,7 +318,7 @@
     "Same here back to the one we have looked at many times.",
     "This one is great"
    ],
-   "status": "fixed",
+   "status": "regressed",
    "flagged_times": 2,
    "history": [
     {
@@ -294,6 +331,19 @@
      "drew": 7,
      "across": 0,
      "at": "2026-09-18T22:01:13"
+    },
+    {
+     "facets": 7,
+     "panels": 42,
+     "coverage": 1.0,
+     "fingerprint": "1cdd64d2eaf3",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 7,
+     "across": 0,
+     "lines_drawn": 12,
+     "lines_found": 12,
+     "at": "2026-09-19T11:08:28"
     }
    ],
    "verdicts": [
@@ -446,6 +496,37 @@
      "drew": 119,
      "across": 0,
      "at": "2026-09-18T22:01:19"
+    },
+    {
+     "facets": 64,
+     "panels": 71,
+     "coverage": 0.685,
+     "fingerprint": "04069de0f47e",
+     "agree": 0.456,
+     "matched": 0.479,
+     "drew": 119,
+     "across": 0,
+     "lines_drawn": 252,
+     "lines_found": 232,
+     "missing": {
+      "ridge": 12,
+      "valley": 6,
+      "cliff": 2
+     },
+     "at": "2026-09-19T11:08:38"
+    },
+    {
+     "facets": 119,
+     "panels": 96,
+     "coverage": 1.0,
+     "fingerprint": "6056bbc15cd5",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 119,
+     "across": 0,
+     "lines_drawn": 252,
+     "lines_found": 252,
+     "at": "2026-09-19T11:10:58"
     }
    ],
    "verdicts": [

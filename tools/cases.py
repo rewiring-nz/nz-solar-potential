@@ -224,7 +224,18 @@ def cmd_check(a):
         # a roof he PASSED that has since moved is a regression until he
         # says otherwise -- this is the check that was missing when
         # #4722059 quietly re-acquired its bad reading
-        if c["status"] == "fixed" and changed:
+        # A REGRESSION THAT UNDOES ITSELF CLEARS ITSELF. The fingerprint
+        # Josh approved is recorded with his verdict, so a roof that comes
+        # back to exactly that geometry is fixed again and must not sit in
+        # his queue asking to be re-judged -- his attention is the scarce
+        # input. Anything else stays flagged until he looks.
+        approved = next((v.get("fingerprint") for v in
+                         reversed(c.get("verdicts") or [])
+                         if v.get("verdict") == "fixed"), None)
+        if c["status"] == "regressed" and m.get("fingerprint") == approved:
+            c["status"] = "fixed"
+            changed = False
+        elif c["status"] == "fixed" and changed:
             c["status"] = "regressed"
         elif c["status"] in ("open", "wrong") and changed:
             c["status"] = "needs_verdict"
