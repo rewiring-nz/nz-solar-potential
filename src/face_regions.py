@@ -15,6 +15,36 @@ Over-segmentation is controlled where Josh asked for it to be -- "we need to
 avoid too many lines or random invented lines" -- by MIN_FACE_FRAC and the
 seed threshold, both measurable against his face counts rather than tuned by
 eye.
+
+STATUS 18 Sep: MEASURED, NOT SHIPPING. On the 35 held-out roofs it has
+never trained on (tools/eval_face_sources.py), against Josh's own faces:
+
+    reading                    agree   matched   faces vs Josh
+    the chain that ships now   0.714     77.6%   +1.9 (over on 19 roofs)
+    learned from his markup    0.577     55.9%   -1.0 (under on 14)
+
+It is not close enough to replace anything, so nothing in the build calls
+it. But note HOW each one fails: the shipping chain INVENTS faces, which is
+the complaint Josh keeps raising, and this one draws too few. Every polygon
+it does draw is closed and straight -- there is no junk to clean up, only
+detail to gain.
+
+TWO MEASURED DEAD ENDS, so neither is retried blind:
+  * RID2 pretraining. 1,819 roof-centred German roofs reach 0.624 boundary
+    F1 on their OWN held-out split -- the architecture learns creases well
+    given data -- but fine-tuned onto Josh's roofs it scores 0.544/48.8%,
+    WORSE than training on his 96 alone (0.567/54.0%). RID has no LiDAR
+    (four of seven channels neutral), its masks are azimuth classes rather
+    than face instances, and German roofs are not NZ roofs. This is the
+    same corpus that was a dead end for the line detector; it is now a
+    measured dead end twice, for different targets.
+  * Watershed knobs. Swept core threshold 0.50/0.70/0.85 against minimum
+    face 0.012/0.005: the best pairing (0.50, 0.005) buys 0.567 -> 0.577.
+    The shortfall is not in the post-processing.
+
+WHAT WOULD ACTUALLY MOVE IT: more of Josh's roofs. 96 training roofs is the
+binding constraint, and unlike the shape-fitting path, this one converts his
+marking effort directly into the output -- the only lever measured to work.
 """
 
 import os
@@ -24,11 +54,12 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL = ROOT / "data" / "models" / "face_regions_v1.pt"
+MODEL = Path(os.environ.get("SOLAR_FACE_REGION_MODEL",
+                            ROOT / "data" / "models" / "face_regions_v1.pt"))
 SIZE = 256
 FILL_PX = 208
-MIN_FACE_FRAC = 0.012      # a region under this share of the roof is noise
-CORE_THR = 0.50
+MIN_FACE_FRAC = float(os.environ.get("SOLAR_FR_MIN_FACE", "0.005"))
+CORE_THR = float(os.environ.get("SOLAR_FR_CORE_THR", "0.50"))
 _NET = [None]
 
 

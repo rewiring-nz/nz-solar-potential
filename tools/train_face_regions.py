@@ -40,14 +40,17 @@ DATA = ROOT / "data" / "face_regions"
 OUTM = ROOT / "data" / "models" / "face_regions_v1.pt"
 
 
-def load_split(split):
+def load_split(split, root=None, only=None):
+    root = root or DATA
     xs, ys, ws, ids = [], [], [], []
-    for p in sorted((DATA / split).glob("*.npz")):
+    for p in sorted((root / split).glob("*.npz")):
+        if only is not None and p.stem not in only:
+            continue
         d = np.load(p)
         xs.append(d["image"]); ys.append(d["target"])
-        ws.append(d["weight"]); ids.append(int(p.stem))
+        ws.append(d["weight"]); ids.append(p.stem)
     if not xs:
-        raise SystemExit(f"no samples in {DATA/split} -- run export_face_regions")
+        raise SystemExit(f"no samples in {root/split} -- run the exporter")
     return (torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(ys)),
             torch.from_numpy(np.stack(ws)), ids)
 
@@ -125,11 +128,29 @@ def main():
     ap.add_argument("--epochs", type=int, default=120)
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--data", default=None,
+                    help="dataset root (default data/face_regions)")
+    ap.add_argument("--init", default=None,
+                    help="checkpoint to start from (fine-tuning)")
+    ap.add_argument("--out", default=None)
     a = ap.parse_args()
+    root = Path(a.data) if a.data else DATA
+    outm = Path(a.out) if a.out else OUTM
 
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
-    xt, yt, wt, _ = load_split("train")
-    xv, yv, wv, vid = load_split("val")
+    # A dataset with no val split (RID pretraining) carves one by hash, so
+    # the same roofs are always held out however often it is re-run.
+    import hashlib
+    if (root / "val").exists() and any((root / "val").glob("*.npz")):
+        xt, yt, wt, _ = load_split("train", root)
+        xv, yv, wv, vid = load_split("val", root)
+    else:
+        stems = sorted(p.stem for p in (root / "train").glob("*.npz"))
+        vs = {s2 for s2 in stems
+              if int.from_bytes(hashlib.sha1(s2.encode()).digest()[:4],
+                                "big") / 2**32 < 0.10}
+        xt, yt, wt, _ = load_split("train", root, only=set(stems) - vs)
+        xv, yv, wv, vid = load_split("train", root, only=vs)
     print(f"train {len(xt)} roofs   val {len(xv)} roofs   device {dev}")
 
     # boundary is ~4% of roof pixels, core ~70%: weight each class by its
@@ -142,6 +163,11 @@ def main():
     pos_weight = [torch.tensor(v, device=dev) for v in pw]
 
     net = UNet().to(dev)
+    if a.init:
+        ck = torch.load(a.init, map_location="cpu", weights_only=False)
+        net.load_state_dict(ck["state_dict"])
+        print(f"initialised from {a.init} "
+              f"(its held-out F1 {ck.get('val_boundary_f1', float('nan')):.3f})")
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, a.epochs)
     xv_d = (xv.permute(0, 3, 1, 2).float() / 255).to(dev)
@@ -174,14 +200,14 @@ def main():
             flag = ""
             if f1 > best:
                 best = f1
-                OUTM.parent.mkdir(parents=True, exist_ok=True)
+                outm.parent.mkdir(parents=True, exist_ok=True)
                 torch.save({"state_dict": net.state_dict(), "cin": 7,
                             "cout": 2, "val_boundary_f1": f1,
-                            "val_ids": vid}, OUTM)
+                            "val_ids": vid}, outm)
                 flag = "  <- saved"
             print(f"ep {ep+1:3d}  train {tot/len(xt):.4f}  val {vl:.4f}  "
                   f"held-out boundary F1 {f1:.3f}{flag}", flush=True)
-    print(f"best held-out boundary F1 {best:.3f}  ({time.time()-t0:.0f}s)  -> {OUTM}")
+    print(f"best held-out boundary F1 {best:.3f}  ({time.time()-t0:.0f}s)  -> {outm}")
 
 
 if __name__ == "__main__":
