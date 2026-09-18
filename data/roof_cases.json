@@ -1,0 +1,294 @@
+{
+ "_readme": "Every roof Josh has pointed at, with what he said and whether it is fixed NOW. Written by tools/cases.py; edit by hand only to correct a quote. A case is never deleted -- a fixed roof that breaks again must be visible as a REGRESSION, not vanish.",
+ "cases": [
+  {
+   "id": 4735292,
+   "region": "pilot",
+   "first_flagged": "2026-09-16",
+   "defect": "square pyramid read with an invented flat top -- a box carved into one slope",
+   "quotes": [
+    "Clearly you have made up a square box on one of the sides of the rectangles",
+    "It's the same and still wrong"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 3,
+   "history": [
+    {
+     "facets": 4,
+     "panels": 177,
+     "coverage": 1.0,
+     "fingerprint": "8a2dc5470032",
+     "at": "2026-09-18T22:00:25"
+    }
+   ]
+  },
+  {
+   "id": 4724740,
+   "region": "dalefield",
+   "first_flagged": "2026-09-18",
+   "defect": "216 m2 flat middle had no facet at all, so no panels",
+   "quotes": [
+    "Why are there no panels in the middle here? It's a flat section and also has no obstructions or lines covering it?"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "history": []
+  },
+  {
+   "id": 4734913,
+   "region": "pilot",
+   "first_flagged": "2026-09-14",
+   "defect": "unnecessary inaccurate roof lines drawn where none exist",
+   "quotes": [
+    "You've drawn a bunch of unnecessary inaccurate roof lines here"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 11,
+     "panels": 64,
+     "coverage": 0.981,
+     "fingerprint": "d9339e90a066",
+     "at": "2026-09-18T22:00:29"
+    }
+   ]
+  },
+  {
+   "id": 4734696,
+   "region": "pilot",
+   "first_flagged": "2026-09-14",
+   "defect": "valley lines missing from the preview",
+   "quotes": [
+    "The valley lines are missing from the preview here on thr right"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 8,
+     "panels": 28,
+     "coverage": 0.994,
+     "fingerprint": "860308471369",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 7,
+     "across": 0,
+     "at": "2026-09-18T22:00:30"
+    }
+   ]
+  },
+  {
+   "id": 4734994,
+   "region": "pilot",
+   "first_flagged": "2026-09-14",
+   "defect": "fuzzy, jagged boundaries following nothing visible",
+   "quotes": [
+    "These roof lines are fuzzy, no roof lines are fuzzy, this makes no sense."
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 2,
+   "history": [
+    {
+     "facets": 5,
+     "panels": 21,
+     "coverage": 0.769,
+     "fingerprint": "ac123880641b",
+     "at": "2026-09-18T22:00:31"
+    }
+   ]
+  },
+  {
+   "id": 4735106,
+   "region": "pilot",
+   "first_flagged": "2026-09-14",
+   "defect": "not close to the obvious faces visible in the imagery",
+   "quotes": [
+    "This roof here has gotten much worse. It makes no sense and is not even close to the obvious faces visually"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 2,
+   "history": [
+    {
+     "facets": 3,
+     "panels": 10,
+     "coverage": 0.773,
+     "fingerprint": "b0dd37039acb",
+     "at": "2026-09-18T22:00:32"
+    }
+   ]
+  },
+  {
+   "id": 4740503,
+   "region": "pilot",
+   "first_flagged": "2026-09-15",
+   "defect": "panels placed on balconies; the depth is in the LiDAR",
+   "quotes": [
+    "You are placing panels on balconies here that makes no sense and the depth should be in the lidar"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 5,
+     "panels": 419,
+     "coverage": 0.562,
+     "fingerprint": "2bd65ed893f8",
+     "at": "2026-09-18T22:01:12"
+    }
+   ]
+  },
+  {
+   "id": 4735623,
+   "region": "pilot",
+   "first_flagged": "2026-09-15",
+   "defect": "far less detailed than the markup; clearly defined faces missed",
+   "quotes": [
+    "This is clearly wrong the hypothesis. You can see from my lines it is much more detailed."
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 6,
+     "panels": 82,
+     "coverage": 0.817,
+     "fingerprint": "92b83b17126d",
+     "agree": 0.714,
+     "matched": 0.714,
+     "drew": 7,
+     "across": 0,
+     "at": "2026-09-18T22:01:12"
+    }
+   ]
+  },
+  {
+   "id": 5371107,
+   "region": "pilot",
+   "first_flagged": "2026-09-15",
+   "defect": "invented kite-shaped face in the middle of a plain roof",
+   "quotes": [
+    "Same here back to the one we have looked at many times."
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 2,
+   "history": [
+    {
+     "facets": 6,
+     "panels": 40,
+     "coverage": 0.878,
+     "fingerprint": "8b35ff0bc298",
+     "agree": 0.857,
+     "matched": 0.857,
+     "drew": 7,
+     "across": 0,
+     "at": "2026-09-18T22:01:13"
+    }
+   ]
+  },
+  {
+   "id": 4735099,
+   "region": "pilot",
+   "first_flagged": "2026-09-15",
+   "defect": "simple roof read wrongly",
+   "quotes": [
+    "Another simple roof clearly wrong"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 6,
+     "panels": 25,
+     "coverage": 0.999,
+     "fingerprint": "e590a38526d6",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 6,
+     "across": 0,
+     "at": "2026-09-18T22:01:13"
+    }
+   ]
+  },
+  {
+   "id": 4734914,
+   "region": "pilot",
+   "first_flagged": "2026-09-13",
+   "defect": "bow-tie facets that cross themselves",
+   "quotes": [
+    "This one makes no sense"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 4,
+     "panels": 59,
+     "coverage": 0.973,
+     "fingerprint": "8773d65c90ef",
+     "at": "2026-09-18T22:01:14"
+    }
+   ]
+  },
+  {
+   "id": 5372565,
+   "region": "pilot",
+   "first_flagged": "2026-09-15",
+   "defect": "clear empty roof left unfilled",
+   "quotes": [
+    "Clear empty space you are not filling"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 6,
+     "panels": 358,
+     "coverage": 1.0,
+     "fingerprint": "e08428ed3e13",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 4,
+     "across": 0,
+     "at": "2026-09-18T22:01:16"
+    }
+   ]
+  },
+  {
+   "id": 4722059,
+   "region": "frankton_flats",
+   "first_flagged": "2026-09-16",
+   "defect": "85-face web from duct edges; shipped DARK twice",
+   "quotes": [
+    "(found by predeploy: 3,513 panels -> 0)"
+   ],
+   "status": "open",
+   "flagged_times": 2,
+   "history": []
+  },
+  {
+   "id": 4725488,
+   "region": "pilot",
+   "first_flagged": "2026-09-17",
+   "defect": "119-face sawtooth stripped by the surface gates (100 panels -> 12)",
+   "quotes": [
+    "(found by predeploy, not by Josh -- kept as a case because a fix broke it)"
+   ],
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 119,
+     "panels": 96,
+     "coverage": 1.0,
+     "fingerprint": "6056bbc15cd5",
+     "agree": 1.0,
+     "matched": 1.0,
+     "drew": 119,
+     "across": 0,
+     "at": "2026-09-18T22:01:19"
+    }
+   ]
+  }
+ ]
+}
