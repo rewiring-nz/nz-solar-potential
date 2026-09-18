@@ -1460,3 +1460,12 @@ NEXT, in evidence order:
   - refit_one.py bypasses the keepout path; it disagreed with the real
     builder by 88 panels. Either route it through _build_one or print a
     warning that it is not the shipping path.
+
+### Two small buildings zeroed in the 18 Sep release (open)
+
+#4732192 (32 panels -> 0, frankton_arm, lidar reading, faces 38.0 + 40.1 m2)
+and #4725682 (7 -> 0, town_west_fernhill, sam reading, one 36.8 m2 face).
+Both rebuild cleanly -- facets exist, no crash -- but place no panels, so
+something downstream of the facets is refusing them (confidence, obstruction
+or shading). 39 panels total, surfaced by predeploy rather than hidden.
+Worth diagnosing because "facets exist but no panels" is a silent class.
