@@ -86,6 +86,9 @@
      "verdict": "wrong",
      "fingerprint": "0eab09a6d9dc"
     }
+   ],
+   "notes": [
+    "FLAT COMMERCIAL WITH PLANT -- no deep shade at all (0% below luminance 70) and low contrast (sd 27). The line detector polygonises duct and plant edges into roof lines: same failure as #4722059's 85-face web, at smaller scale. Line reading scores 0.58 so the complexity gate does not catch it."
    ]
   },
   {
@@ -153,6 +156,9 @@
      "verdict": "wrong",
      "fingerprint": "e512d3cde4d5"
     }
+   ],
+   "notes": [
+    "MULTI-LEVEL FOOTPRINT -- one outline spanning 10.66 m of height over 167 m2, so the roof is several separate roofs and is read as one. Surface is CLEAN (0.18 m cell spread), so this is not shade; the single-plane inlier of 0.13 is the giveaway. Needs splitting by height level before any form is fitted."
    ]
   },
   {
@@ -188,6 +194,9 @@
      "verdict": "wrong",
      "fingerprint": "ddf24835c9e3"
     }
+   ],
+   "notes": [
+    "UNDER TREES -- neither sensor can see this roof. LiDAR top surface is rough at 0.64 m within 1 m cells (a clean roof measures 0.18-0.22) and 20% of its pixels sit below luminance 70. Best plane fit over the whole footprint is 0.15 inlier. Every reading scores 0.37-0.42. Josh: 'getting confused by shadows'. The honest output here is minimal geometry or none, not five fragments."
    ]
   },
   {

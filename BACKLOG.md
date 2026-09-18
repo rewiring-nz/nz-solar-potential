@@ -1469,3 +1469,28 @@ Both rebuild cleanly -- facets exist, no crash -- but place no panels, so
 something downstream of the facets is refusing them (confidence, obstruction
 or shading). 39 panels total, surfaced by predeploy rather than hidden.
 Worth diagnosing because "facets exist but no panels" is a silent class.
+
+### The two failure classes Josh's verdicts separated (18 Sep)
+
+His verdicts split cleanly, and the measurements say they are not one problem:
+
+TOO MANY LINES (roofs he has not marked), three DIFFERENT causes:
+  - #4735106 under trees: LiDAR top surface rough at 0.64 m per 1 m cell
+    (clean roofs measure 0.18-0.22), 20% of pixels below luminance 70,
+    whole-footprint plane inlier 0.15. Neither sensor can see it. Every
+    reading scores 0.37-0.42 and we ship one anyway. Honest output is
+    minimal geometry or none.
+  - #4734994 multi-level footprint: 10.66 m of height range over 167 m2,
+    surface CLEAN. Several roofs read as one. Split by height level first.
+  - #4734913 flat commercial: zero deep shade, low contrast; the line
+    detector polygonises plant and duct edges. Scores 0.58 so the
+    complexity gate misses it.
+
+TOO FEW LINES (roofs he HAS marked), each short by one or two of his own:
+  #4734696 13/14, #4735623 15/16, #5372565 17/19. All score 0.55-0.69.
+  These are close; the missing lines are specific and countable.
+
+SCORE PREDICTS HIS VERDICT. The roofs he called complete failures score
+0.33-0.37, barely over the 0.30 ship bar; the ones he called close score
+0.55-0.69. A reading under ~0.45 is a guess we should not be shipping as
+confident geometry.
