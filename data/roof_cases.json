@@ -5,12 +5,13 @@
    "id": 4735292,
    "region": "pilot",
    "first_flagged": "2026-09-16",
-   "defect": "square pyramid read with an invented flat top -- a box carved into one slope",
+   "defect": "truncated pyramid: 4 slopes plus a real 4 m flat square at the peak",
    "quotes": [
     "Clearly you have made up a square box on one of the sides of the rectangles",
-    "It's the same and still wrong"
+    "It's the same and still wrong",
+    "On the pyramid you are missing the square in the middle at the top. It ends in a square at the peak which should be visible in both imagery and lidar."
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 3,
    "history": [
     {
@@ -29,7 +30,15 @@
     }
    ],
    "notes": [
-    "verdict on 18 Sep was given against a render made WITHOUT SOLAR_SELECTED_FACES -- the old geometry path, not what ships. Re-rendered correctly for a fresh verdict."
+    "verdict on 18 Sep was given against a render made WITHOUT SOLAR_SELECTED_FACES -- the old geometry path, not what ships. Re-rendered correctly for a fresh verdict.",
+    "LiDAR 18 Sep: a plateau of cells at 2.32-2.38 m above the eave, ~4 m across, ~0.9 m above the surrounding roof with a sharp step. The flat top is REAL. trunc_hip was right in kind but placed it off-centre (snap_form slid it); the pyramid fix then deleted it. Correct answer: 4 slopes + the square, located from the LiDAR plateau rather than from a guess-grid."
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "fc98e45217dd"
+    }
    ]
   },
   {
@@ -152,9 +161,10 @@
    "first_flagged": "2026-09-14",
    "defect": "not close to the obvious faces visible in the imagery",
    "quotes": [
-    "This roof here has gotten much worse. It makes no sense and is not even close to the obvious faces visually"
+    "This roof here has gotten much worse. It makes no sense and is not even close to the obvious faces visually",
+    "Clearly wrong and nothing like the roof. It is getting confused by shadows."
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 2,
    "history": [
     {
@@ -171,6 +181,13 @@
      "fingerprint": "ddf24835c9e3",
      "at": "2026-09-18T22:13:48"
     }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "ddf24835c9e3"
+    }
    ]
   },
   {
@@ -180,9 +197,10 @@
    "defect": "panels placed on balconies; the depth is in the LiDAR",
    "quotes": [
     "You are placing panels on balconies here that makes no sense and the depth should be in the lidar",
-    "Close to good, though has some strange extra sections along the front edge where panels shouldn't be added"
+    "Close to good, though has some strange extra sections along the front edge where panels shouldn't be added",
+    "Still kept one of the strange rectangle extensions along the front edge. Rest looks quite good though a few areas protruding into where apartment balconies are"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 1,
    "history": [
     {
@@ -205,6 +223,11 @@
      "at": "2026-09-18",
      "verdict": "wrong",
      "fingerprint": "2bd65ed893f8"
+    },
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "605858014514"
     }
    ]
   },
@@ -246,9 +269,10 @@
    "first_flagged": "2026-09-15",
    "defect": "invented kite-shaped face in the middle of a plain roof",
    "quotes": [
-    "Same here back to the one we have looked at many times."
+    "Same here back to the one we have looked at many times.",
+    "This one is great"
    ],
-   "status": "needs_verdict",
+   "status": "fixed",
    "flagged_times": 2,
    "history": [
     {
@@ -261,6 +285,13 @@
      "drew": 7,
      "across": 0,
      "at": "2026-09-18T22:01:13"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "fixed",
+     "fingerprint": "8b35ff0bc298"
     }
    ]
   },
@@ -303,9 +334,10 @@
    "defect": "bow-tie facets that cross themselves",
    "quotes": [
     "This one makes no sense",
-    "This is clearly wrong, on a very clearly defined roof shape which should be obvious from the imagery"
+    "This is clearly wrong, on a very clearly defined roof shape which should be obvious from the imagery",
+    "Much better though missing an edge along the bottom"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 1,
    "history": [
     {
@@ -328,6 +360,11 @@
      "at": "2026-09-18",
      "verdict": "wrong",
      "fingerprint": "8773d65c90ef"
+    },
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "53586108d4c4"
     }
    ],
    "notes": [
