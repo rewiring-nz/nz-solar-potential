@@ -75,10 +75,11 @@ SIZE = 256          # frame the model sees
 FILL_PX = 208       # footprint long side spans this many pixels
 BOUNDARY_PX = 3     # a 1 px target line is nearly unlearnable
 CORE_ERODE_PX = 4   # seed region inside each face
+EAVE_ERASE_PX = 5   # how wide a band of footprint edge to erase from it
 VOID = {"absent", "not_building", "unclear"}
 
 
-def roof_sample(geom, faces, img_ds, pc):
+def roof_sample(geom, faces, img_ds, pc):  # noqa: C901
     """(image HxWx7 float32, target HxW float32, weight HxW bool) or None."""
     minx, miny, maxx, maxy = geom.bounds
     span = max(maxx - minx, maxy - miny)
@@ -137,6 +138,17 @@ def roof_sample(geom, faces, img_ds, pc):
         ring = [to_px(x, y) for x, y in f]
         wd.polygon(ring, fill=255)
         bd.line(ring + [ring[0]], fill=255, width=BOUNDARY_PX)
+    # DO NOT ASK THE MODEL TO PREDICT THE EAVES. The footprint is known
+    # exactly at inference, and eave pixels outnumber crease pixels several
+    # to one, so training on them spends the capacity of a 96-roof dataset
+    # on the one boundary that needs no learning. Measured 18 Sep: with
+    # eaves in the target the model returned the outline and little else
+    # (#4734678 one face where Josh drew three, #4735104 two where he drew
+    # eight). Erasing them leaves only the interior creases -- the actual
+    # unknown -- and the watershed gets the outline from the roof mask.
+    ed = ImageDraw.Draw(bim)
+    fr = [to_px(x, y) for x, y in geom.exterior.coords]
+    ed.line(fr + [fr[0]], fill=0, width=BOUNDARY_PX + EAVE_ERASE_PX)
     weight = np.array(wim) > 0
     if weight.sum() < 400:
         return None
