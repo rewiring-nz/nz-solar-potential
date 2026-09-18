@@ -216,7 +216,7 @@ def main():
         n[split] += 1
     if not a.preview:
         (OUT / "manifest.json").write_text(json.dumps(
-            {"size": SIZE, "fill_px": FILL_PX, "dist_norm": DIST_NORM,
+            {"size": SIZE, "fill_px": FILL_PX,
              "channels": ["r", "g", "b", "z", "slope", "asp_x", "asp_y"],
              "train": n["train"], "val": n["val"]}, indent=1))
         print(f"exported train {n['train']}  val {n['val']}   skipped {skipped}")
