@@ -19,6 +19,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 PY = sys.executable
 
 
+
+def _all_regions():
+    """Every region with data on disk, not just those config lists.
+
+    config.REGIONS had 23 entries while data/regions held 24: `pilot` --
+    the town centre, where most of Josh's flagged roofs are and where he
+    looks first -- was missing. Two district rebuilds skipped it in
+    silence, and he got the same wrong roof back twice. A driver that
+    iterates the config can therefore MISS A WHOLE REGION without ever
+    erroring; iterate the disk and take the union.
+    """
+    import config
+    from pathlib import Path as _P
+    on_disk = {p.name for p in (_P("data/regions")).iterdir() if p.is_dir()} \
+        if _P("data/regions").exists() else set()
+    return sorted(on_disk | set(config.REGIONS))
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--patch", action="store_true")
@@ -33,7 +50,7 @@ def main():
                 if v.get("problem") not in VOID_FLAGS}
     print(f"{len(labelled)} labelled buildings", flush=True)
     seen = set()
-    for region in (a.regions or list(config.REGIONS)):
+    for region in (a.regions or _all_regions()):
         outlines = area_paths(region)["outlines"]
         if not Path(outlines).exists():
             continue
