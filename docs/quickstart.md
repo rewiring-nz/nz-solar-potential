@@ -11,7 +11,14 @@ meaningful.
 
 ## What you need
 
-- macOS or Linux, ~10 GB free disk, Python 3.11+
+- macOS, Linux, or Windows, ~10 GB free disk, Python 3.11+
+  - **Windows:** the simplest route is WSL (Windows Subsystem for Linux),
+    where everything below is just the Linux instructions. Native Windows
+    works too, from Git Bash — with one caveat: the per-building time
+    budget relies on a POSIX alarm signal Windows does not have, so it is
+    switched off there (the run says so). A pathological roof will take a
+    long time instead of being dropped and named. On a small quickstart
+    area that is unlikely to matter.
 - A free LINZ API key (data.linz.govt.nz → account → API keys, enable the
   **REST API** scope)
 - Environment set up per

@@ -14,7 +14,11 @@
 # methodology. See docs/quickstart.md for how to check each stage.
 set -u
 cd "$(dirname "$0")"
-PY=.venv/bin/python
+# Windows (Git Bash / MSYS) puts the interpreter somewhere else.
+if [ -x .venv/bin/python ]; then PY=.venv/bin/python
+elif [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe
+else PY=.venv/bin/python
+fi
 AREA="${1:-}"
 if [ -z "$AREA" ]; then
   echo "usage: bash quickstart.sh <area-name-from-my_area.json>"; exit 2
