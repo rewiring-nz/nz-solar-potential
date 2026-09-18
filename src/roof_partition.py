@@ -1272,7 +1272,16 @@ def _seal_network(segs, boundary, max_ext=None):
 # have no business inside the build environment. Off unless the flag is set.
 SELECTED_FACES_DIR = (Path(__file__).resolve().parent.parent
                       / "data" / "selected_faces")
-USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "0") == "1"
+# DEFAULTS ON, because production does. It defaulted OFF while every
+# shipping path exported SOLAR_SELECTED_FACES=1, so any tool that forgot
+# the variable silently measured and rendered the OLD geometry path --
+# not what ships. That cost three wrong answers in one day, the worst of
+# them a contact sheet of twelve roofs sent to Josh for his verdict, all
+# drawn from the wrong pipeline, including the pyramid he then had to
+# tell me was still wrong for the fourth time. A default that disagrees
+# with production is a trap, not a safety net; opt OUT with
+# SOLAR_SELECTED_FACES=0 to build the old path deliberately.
+USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "1") == "1"
 SELECTED_MIN_SCORE = 0.30
 SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 

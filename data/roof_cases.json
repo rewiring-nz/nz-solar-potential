@@ -19,7 +19,17 @@
      "coverage": 1.0,
      "fingerprint": "8a2dc5470032",
      "at": "2026-09-18T22:00:25"
+    },
+    {
+     "facets": 4,
+     "panels": 167,
+     "coverage": 1.0,
+     "fingerprint": "fc98e45217dd",
+     "at": "2026-09-18T22:13:42"
     }
+   ],
+   "notes": [
+    "verdict on 18 Sep was given against a render made WITHOUT SOLAR_SELECTED_FACES -- the old geometry path, not what ships. Re-rendered correctly for a fresh verdict."
    ]
   },
   {
@@ -40,9 +50,10 @@
    "first_flagged": "2026-09-14",
    "defect": "unnecessary inaccurate roof lines drawn where none exist",
    "quotes": [
-    "You've drawn a bunch of unnecessary inaccurate roof lines here"
+    "You've drawn a bunch of unnecessary inaccurate roof lines here",
+    "Very wrong, way too many faces being created and in the wrong places with the wrong roof lines, basically a complete failure"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 1,
    "history": [
     {
@@ -51,6 +62,20 @@
      "coverage": 0.981,
      "fingerprint": "d9339e90a066",
      "at": "2026-09-18T22:00:29"
+    },
+    {
+     "facets": 10,
+     "panels": 46,
+     "coverage": 0.925,
+     "fingerprint": "0eab09a6d9dc",
+     "at": "2026-09-18T22:13:46"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "0eab09a6d9dc"
     }
    ]
   },
@@ -60,9 +85,10 @@
    "first_flagged": "2026-09-14",
    "defect": "valley lines missing from the preview",
    "quotes": [
-    "The valley lines are missing from the preview here on thr right"
+    "The valley lines are missing from the preview here on thr right",
+    "Mostly good except missing two valley lines and a ridgeline that I clearly drew"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 1,
    "history": [
     {
@@ -76,6 +102,13 @@
      "across": 0,
      "at": "2026-09-18T22:00:30"
     }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "860308471369"
+    }
    ]
   },
   {
@@ -84,9 +117,10 @@
    "first_flagged": "2026-09-14",
    "defect": "fuzzy, jagged boundaries following nothing visible",
    "quotes": [
-    "These roof lines are fuzzy, no roof lines are fuzzy, this makes no sense."
+    "These roof lines are fuzzy, no roof lines are fuzzy, this makes no sense.",
+    "A failure adding extra lines and faces that shouldn't be there"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 2,
    "history": [
     {
@@ -95,6 +129,20 @@
      "coverage": 0.769,
      "fingerprint": "ac123880641b",
      "at": "2026-09-18T22:00:31"
+    },
+    {
+     "facets": 3,
+     "panels": 15,
+     "coverage": 0.604,
+     "fingerprint": "e512d3cde4d5",
+     "at": "2026-09-18T22:13:47"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "e512d3cde4d5"
     }
    ]
   },
@@ -115,6 +163,13 @@
      "coverage": 0.773,
      "fingerprint": "b0dd37039acb",
      "at": "2026-09-18T22:00:32"
+    },
+    {
+     "facets": 5,
+     "panels": 13,
+     "coverage": 0.7,
+     "fingerprint": "ddf24835c9e3",
+     "at": "2026-09-18T22:13:48"
     }
    ]
   },
@@ -124,7 +179,8 @@
    "first_flagged": "2026-09-15",
    "defect": "panels placed on balconies; the depth is in the LiDAR",
    "quotes": [
-    "You are placing panels on balconies here that makes no sense and the depth should be in the lidar"
+    "You are placing panels on balconies here that makes no sense and the depth should be in the lidar",
+    "Close to good, though has some strange extra sections along the front edge where panels shouldn't be added"
    ],
    "status": "needs_verdict",
    "flagged_times": 1,
@@ -135,6 +191,20 @@
      "coverage": 0.562,
      "fingerprint": "2bd65ed893f8",
      "at": "2026-09-18T22:01:12"
+    },
+    {
+     "facets": 5,
+     "panels": 382,
+     "coverage": 0.476,
+     "fingerprint": "605858014514",
+     "at": "2026-09-18T22:14:37"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "2bd65ed893f8"
     }
    ]
   },
@@ -144,9 +214,10 @@
    "first_flagged": "2026-09-15",
    "defect": "far less detailed than the markup; clearly defined faces missed",
    "quotes": [
-    "This is clearly wrong the hypothesis. You can see from my lines it is much more detailed."
+    "This is clearly wrong the hypothesis. You can see from my lines it is much more detailed.",
+    "This is good but missing one valley line compared to what I drew"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 1,
    "history": [
     {
@@ -159,6 +230,13 @@
      "drew": 7,
      "across": 0,
      "at": "2026-09-18T22:01:12"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "92b83b17126d"
     }
    ]
   },
@@ -192,9 +270,10 @@
    "first_flagged": "2026-09-15",
    "defect": "simple roof read wrongly",
    "quotes": [
-    "Another simple roof clearly wrong"
+    "Another simple roof clearly wrong",
+    "This looks good"
    ],
-   "status": "needs_verdict",
+   "status": "fixed",
    "flagged_times": 1,
    "history": [
     {
@@ -208,6 +287,13 @@
      "across": 0,
      "at": "2026-09-18T22:01:13"
     }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "fixed",
+     "fingerprint": "e590a38526d6"
+    }
    ]
   },
   {
@@ -216,7 +302,8 @@
    "first_flagged": "2026-09-13",
    "defect": "bow-tie facets that cross themselves",
    "quotes": [
-    "This one makes no sense"
+    "This one makes no sense",
+    "This is clearly wrong, on a very clearly defined roof shape which should be obvious from the imagery"
    ],
    "status": "needs_verdict",
    "flagged_times": 1,
@@ -227,7 +314,24 @@
      "coverage": 0.973,
      "fingerprint": "8773d65c90ef",
      "at": "2026-09-18T22:01:14"
+    },
+    {
+     "facets": 3,
+     "panels": 55,
+     "coverage": 0.839,
+     "fingerprint": "53586108d4c4",
+     "at": "2026-09-18T22:14:39"
     }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "8773d65c90ef"
+    }
+   ],
+   "notes": [
+    "verdict on 18 Sep was given against a render made WITHOUT SOLAR_SELECTED_FACES -- the old geometry path, not what ships. Re-rendered correctly for a fresh verdict."
    ]
   },
   {
@@ -236,9 +340,10 @@
    "first_flagged": "2026-09-15",
    "defect": "clear empty roof left unfilled",
    "quotes": [
-    "Clear empty space you are not filling"
+    "Clear empty space you are not filling",
+    "This is missing two ridge lines that I drew"
    ],
-   "status": "needs_verdict",
+   "status": "wrong",
    "flagged_times": 1,
    "history": [
     {
@@ -251,6 +356,13 @@
      "drew": 4,
      "across": 0,
      "at": "2026-09-18T22:01:16"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "wrong",
+     "fingerprint": "e08428ed3e13"
     }
    ]
   },
@@ -272,9 +384,10 @@
    "first_flagged": "2026-09-17",
    "defect": "119-face sawtooth stripped by the surface gates (100 panels -> 12)",
    "quotes": [
-    "(found by predeploy, not by Josh -- kept as a case because a fix broke it)"
+    "(found by predeploy, not by Josh -- kept as a case because a fix broke it)",
+    "This looks fine, a very messy complicated roof"
    ],
-   "status": "needs_verdict",
+   "status": "fixed",
    "flagged_times": 1,
    "history": [
     {
@@ -287,6 +400,13 @@
      "drew": 119,
      "across": 0,
      "at": "2026-09-18T22:01:19"
+    }
+   ],
+   "verdicts": [
+    {
+     "at": "2026-09-18",
+     "verdict": "fixed",
+     "fingerprint": "6056bbc15cd5"
     }
    ]
   }
