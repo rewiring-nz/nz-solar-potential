@@ -110,6 +110,10 @@
   .rate-band { display: flex; justify-content: space-between; align-items: center;
     gap: var(--s2); font-size: var(--fs-label); padding: 1px 0; }
   .rate-input { width: 52px; text-align: right; }
+  /* The 3D toggle sits with the zoom buttons and reads as one of them. */
+  #btn-3d { font: 700 12px/1 system-ui, sans-serif; width: 29px; height: 29px;
+    background: #fff; border: 0; cursor: pointer; color: #333; }
+  #btn-3d.active { background: var(--accent, #ffd24a); color: #111; }
   .panel-caveat { font-size: var(--fs-meta); color: var(--warn); margin-top: var(--s2); line-height: 1.4; }
   /* Economics reads as four plain statements rather than a table of rows: the
      label carries the weight and the figure sits under it light, so the eye
@@ -901,7 +905,51 @@ const map = new maplibregl.Map({
   ...startView()
 });
 
-map.addControl(new maplibregl.NavigationControl());
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
+
+// ---- 3D -----------------------------------------------------------------
+// Josh, 19 Sep: "Is there an ability to add a 3D option to the map? So you
+// can see a 3D view of terrain, trees, and the household?"
+//
+// All three come from ONE surface. The terrain tiles encode the DSM -- the
+// top of whatever the LiDAR hit, so ground where there is ground, canopy
+// where there are trees and roof where there is a roof. That is also the
+// exact surface the shading model reads, so tilting the map shows what the
+// estimates were computed from rather than a decorative extrusion sitting
+// next to it. tools/build_terrain_tiles.py writes them.
+//
+// Off by default: it is a different way of looking, not a better one, and
+// the flat view is what the numbers are read on.
+let terrain3d = false;
+function setTerrain3D(on) {
+  terrain3d = on;
+  try {
+    if (on && !map.getSource("dsm-terrain")) {
+      map.addSource("dsm-terrain", {
+        type: "raster-dem", tiles: [`data/terrain/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
+        tileSize: 256, encoding: "mapbox", minzoom: 13, maxzoom: 17,
+      });
+    }
+    map.setTerrain(on ? { source: "dsm-terrain", exaggeration: 1 } : null);
+    map.easeTo({ pitch: on ? 62 : 0, duration: 700 });
+    const b = document.getElementById("btn-3d");
+    if (b) b.classList.toggle("active", on);
+  } catch (e) {
+    console.warn("3D unavailable", e);
+  }
+}
+class ThreeDControl {
+  onAdd() {
+    const d = document.createElement("div");
+    d.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    d.innerHTML = `<button id="btn-3d" type="button" title="3D view — terrain, trees and roofs from the LiDAR surface">3D</button>`;
+    d.addEventListener("click", e => { e.preventDefault(); setTerrain3D(!terrain3d); });
+    this._c = d;
+    return d;
+  }
+  onRemove() { this._c.remove(); }
+}
+map.addControl(new ThreeDControl());
 // Box zoom OWNS shift+drag in MapLibre, and it swallows the shift+click that
 // multi-select needs before any layer handler sees it (verified: the
 // buildings-fill click handler never fired while it was on). Nobody has asked
