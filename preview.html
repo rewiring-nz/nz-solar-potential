@@ -931,6 +931,16 @@ function setTerrain3D(on) {
       });
     }
     map.setTerrain(on ? { source: "dsm-terrain", exaggeration: 1 } : null);
+    // Hide or restore the heat-map image layers: see attachHeatmap.
+    try {
+      map.getStyle().layers.filter(l => l.id.startsWith("heatmap-raster-"))
+        .forEach(l => map.setLayoutProperty(
+          l.id, "visibility",
+          (!on && typeof mode !== "undefined" && mode === "heatmap")
+            ? "visible" : "none"));
+    } catch (e) { /* style not ready yet; applyToggles will catch up */ }
+    const hint = document.getElementById("map-3d-hint");
+    if (hint) hint.style.display = on ? "" : "none";
     map.easeTo({ pitch: on ? 62 : 0, duration: 700 });
     const b = document.getElementById("btn-3d");
     if (b) b.classList.toggle("active", on);
@@ -938,6 +948,21 @@ function setTerrain3D(on) {
     console.warn("3D unavailable", e);
   }
 }
+// Say where the heat map went, rather than leaving a reader to wonder.
+(function addHint() {
+  const d = document.createElement("div");
+  d.id = "map-3d-hint";
+  d.style.cssText = "display:none;position:absolute;left:50%;transform:translateX(-50%);" +
+    "bottom:86px;z-index:5;background:rgba(0,0,0,0.72);color:#e8edf2;" +
+    "font:600 11px/1.3 system-ui,sans-serif;padding:5px 10px;border-radius:6px;" +
+    "pointer-events:none;text-align:center;max-width:82vw;";
+  d.textContent = "3D — surface from the LiDAR, so terrain, trees and roofs are measured. " +
+    "The heat map is flat imagery and is hidden here; panel layouts still show.";
+  const attach = () => (document.getElementById("map") || document.body).appendChild(d);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
+  else attach();
+})();
+
 class ThreeDControl {
   onAdd() {
     const d = document.createElement("div");
@@ -2966,7 +2991,14 @@ map.on("load", async () => {
       id: rec.layer, type: "raster", source: rec.src,
       // Set at add time, not left to applyToggles: a layer added while in
       // Panel Layout mode would otherwise flash over the panels.
-      layout: { visibility: mode === "heatmap" ? "visible" : "none" },
+      // AN IMAGE SOURCE CANNOT DRAPE ON TERRAIN. The heat map is 24
+      // positioned PNGs, and MapLibre renders an image source as a flat
+      // quad -- switch terrain on underneath and it smears into vertical
+      // streaks across the view. That is what the first 3D build looked
+      // like on the live site, and it was NOT the terrain data, which
+      // decodes to sane heights. Hidden in 3D until the heat map is
+      // tiled; the imagery basemap and the vector panels drape fine.
+      layout: { visibility: (mode === "heatmap" && !terrain3d) ? "visible" : "none" },
       paint: { "raster-opacity": cur ? 0 : HEATMAP_OPACITY, "raster-resampling": "linear" }
     }, cur ? cur.layer : "buildings-fill");
     if (!cur) { attached.set(m.id, rec); return; }
