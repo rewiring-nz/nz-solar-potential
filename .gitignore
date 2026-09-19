@@ -11,6 +11,9 @@ data/*
 !data/marked_scores.json
 # the roofs Josh has flagged: tracked, never ignored
 !data/roof_cases.json
+# 3D terrain: the DSM as Mapbox terrain-RGB tiles, served straight off Pages
+!data/terrain/
+!data/terrain/**
 !data/roof_labels.json
 !data/bench_ids.txt
 !data/bench_set.json
