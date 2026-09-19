@@ -1494,3 +1494,11 @@ SCORE PREDICTS HIS VERDICT. The roofs he called complete failures score
 0.33-0.37, barely over the 0.30 ship bar; the ones he called close score
 0.55-0.69. A reading under ~0.45 is a guess we should not be shipping as
 confident geometry.
+
+### #4736606 and #4746239: facets exist, no panels (open, 19 Sep)
+
+Both rebuild cleanly to 1-2 features and place nothing, losing 18 panels
+between them. Same silent class as #4732192/#4725682 logged yesterday:
+the geometry survives and the fitter refuses it, so nothing errors and the
+only sign is the predeploy gate. Worth one diagnosis for the class rather
+than four for the instances.
