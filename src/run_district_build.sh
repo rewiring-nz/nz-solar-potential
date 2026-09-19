@@ -127,6 +127,13 @@ for s in merge_regions bake_density_deciles build_terrain_masks \
   $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
 done
 
+# Josh's drawn lines, as the map overlay that shows them (added 19 Sep, after
+# he reported the same line "missing" three times when the map had simply
+# never been asked to draw it). Derived from data/roof_labels.json, so it
+# goes stale the moment he marks another roof -- which is exactly the kind of
+# thing that is never noticed until he is looking at an old one.
+$PY tools/build_markup_lines.py || echo "WARNING: markup overlay not rebuilt" 
+
 tippecanoe -o data/panel_layouts.pmtiles --force -l layout \
   -Z13 -z16 --drop-densest-as-needed --detect-shared-borders \
   -y kind -y building_id -y fill_rank -y fill_order -y array_id -y array_size \
