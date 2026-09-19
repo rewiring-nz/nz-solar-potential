@@ -433,3 +433,201 @@ def drawn_line_keepouts(building_id, width=None):
         except Exception:
             pass
     return out
+
+
+# ------------------------------------------------- open-ended drawn lines
+
+# WHY A DRAWN LINE CAN STOP SHORT OF AN EDGE, AND WHAT TO DO ABOUT IT.
+#
+# Josh, 19 Sep: "sometimes lines are not meant to go all the way to an edge."
+# He is right about his own drawing, and it is also why three roofs kept
+# coming back: "missing two valley lines and a ridgeline that I clearly
+# drew" (#4734696), "missing one valley line" (#4735623), "missing two ridge
+# lines that I drew" (#5372565).
+#
+# Measured, the rule is exact and has no exceptions. Across those three
+# roofs every line whose two ends CLOSE -- onto the footprint or onto
+# another line -- is reproduced as a facet boundary, and every line with a
+# FREE end is dropped. Faces come from a planar subdivision, and a dangling
+# edge bounds no region, so the labelling tool never exported one.
+#
+# Extending every dropped line to the boundary was tried on 19 Sep and
+# measured much worse -- fidelity 94.8% -> 77.2%, facets 5 -> 25 -- because
+# it asserted a cut right across the roof from a line that might be 2 m
+# long. That verdict stands and the code below is not a retry of it.
+#
+# The difference is that the extension is now EVIDENCE-GATED and SHORT. A
+# free end is closed only when:
+#
+#   * the gap to the nearest closing target is under GAP_MAX (3.5 m), and
+#   * the LiDAR still shows the fold ACROSS the gap.
+#
+# The fold is measured as the larger of a slope disagreement either side of
+# the line (normalised at 0.30 m/m, for a ridge or valley) and a height step
+# across it (normalised at 0.40 m, for a cliff), so the same test reads both
+# kinds. It must be unmistakable on the drawn part (>= 1.0) and still
+# clearly present at the middle of the gap (>= 0.6).
+#
+# On the roof Josh keeps flagging this is not a marginal call. #5372565's
+# 30.6 m ridge dies 2.7 m short of the parapet; probed outward in half-metre
+# steps the fold reads +0.42, +0.53, +0.67, +0.77 across the gap and only
+# fades at +4.0 m, past the wall it needed to reach. He drew the line short;
+# the roof does not stop there.
+#
+# Scope, over all 116 marked roofs with survey under them: 291 free ends,
+# 119 pass the gate, and after splitting they add 18 faces on 11 roofs.
+# Most passing ends are near-misses of a metre or less that the tool had
+# already noded, so extending them changes nothing at all.
+
+# DEFAULT OFF, AND THE MEASUREMENT IS WHY.
+#
+# With the gate above plus the two-planes test in roof_partition, the whole
+# change reduces to two roofs on the 152-roof bench, and on each one it is an
+# exact one-for-one trade:
+#
+#                            off            on
+#   faces matching markup   94.8%   ->    92.5%
+#   his lines found         80.8%   ->    81.4%
+#   extra facets                5   ->        6
+#   panels across a line     1/2708 ->   1/2716
+#
+# That is arithmetic, not tuning: splitting a face always loses the parent's
+# exact match and neither child replaces it, so face agreement can only fall
+# and line recall can only rise. Which one is the truth is the one thing here
+# that cannot be measured -- his LINES say the ridge is there, the FACES his
+# tool exported say it is not, and both are his markup.
+#
+# So it ships off and the question goes to him with a picture, rather than
+# 2.3 points of the metric that has caught every real regression being traded
+# away on my opinion. Turn on with SOLAR_EXTEND_DANGLING=1.
+EXTEND_DANGLING = os.environ.get("SOLAR_EXTEND_DANGLING", "0") == "1"
+DANGLE_GAP_MAX = float(os.environ.get("SOLAR_DANGLE_GAP_MAX", "3.5"))
+DANGLE_FREE_MIN = 0.6      # under this the tool has already noded the end
+DANGLE_EV_DRAWN = 1.0      # fold must be unmistakable where he drew it
+DANGLE_EV_GAP = 0.6        # and still clearly there across the gap
+_SLOPE_REF = 0.30          # m/m of slope disagreement that scores 1.0
+_STEP_REF = 0.40           # m of height step that scores 1.0
+
+
+def _fold_evidence(pts, origin, along, normal, s0, s1,
+                   near=0.8, far=4.5, min_pts=10):
+    """How strongly the LiDAR folds across a line, over the span s0..s1.
+
+    Returns max(slope disagreement / 0.30, height step / 0.40), or None when
+    either side is too sparse to say. One number for ridges, valleys and
+    cliffs alike: a ridge shows up as opposing slopes, a cliff as a step."""
+    import numpy as np
+    rel = pts[:, :2] - origin
+    s = rel @ along
+    t = rel @ normal
+    band = (s > s0) & (s < s1)
+    sides = []
+    for sgn in (-1, 1):
+        p = pts[band & (sgn * t > near) & (sgn * t < far)]
+        if len(p) < min_pts:
+            return None
+        A = np.c_[p[:, 0] - p[:, 0].mean(), p[:, 1] - p[:, 1].mean(),
+                  np.ones(len(p))]
+        c, *_ = np.linalg.lstsq(A, p[:, 2], rcond=None)
+        sides.append((c[0] * normal[0] + c[1] * normal[1],
+                      float(np.median(p[:, 2]))))
+    return max(abs(sides[0][0] - sides[1][0]) / _SLOPE_REF,
+               abs(sides[0][1] - sides[1][1]) / _STEP_REF)
+
+
+def drawn_polylines(building_id):
+    """Josh's lines as whole polylines, not broken into segments."""
+    if building_id is None:
+        return []
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS:
+        return []
+    from shapely.geometry import LineString
+    out = []
+    for l in lab.get("lines") or []:
+        if l.get("kind") not in FOLD_KINDS:
+            continue
+        pts = l.get("points")
+        if not pts and l.get("a") and l.get("b"):
+            pts = [l["a"], l["b"]]
+        if not pts or len(pts) < 2:
+            continue
+        try:
+            ls = LineString([(float(p[0]), float(p[1])) for p in pts])
+        except Exception:
+            continue
+        if ls.length > 0.3:
+            out.append(ls)
+    return out
+
+
+def drawn_network(building_id, footprint, pts):
+    """His lines, with a free end closed where the LiDAR says the fold goes on.
+
+    Returns a list of LineStrings -- the drawn lines unchanged, except that an
+    end left hanging within DANGLE_GAP_MAX of the footprint or of another line
+    is run out to meet it when the fold is still there across the gap. Returns
+    the lines untouched if anything is missing or the feature is switched off.
+    """
+    lines = drawn_polylines(building_id)
+    if not lines or not EXTEND_DANGLING or footprint is None or pts is None:
+        return lines
+    try:
+        import numpy as np
+        from shapely.geometry import Point, LineString
+        from shapely.ops import unary_union
+    except Exception:
+        return lines
+    if len(pts) < 60:
+        return lines
+    try:
+        fp = footprint.exterior
+    except Exception:
+        return lines
+
+    out = []
+    for i, ls in enumerate(lines):
+        coords = [tuple(c) for c in ls.coords]
+        others = None
+        if len(lines) > 1:
+            try:
+                others = unary_union([o for j, o in enumerate(lines) if j != i])
+            except Exception:
+                others = None
+
+        for at_end in (False, True):
+            end = np.array(coords[-1] if at_end else coords[0])
+            prev = np.array(coords[-2] if at_end else coords[1])
+            v = end - prev
+            seg = float(np.linalg.norm(v))
+            if seg < 1e-6:
+                continue
+            d = v / seg                      # outward at this end
+            gaps = [fp.distance(Point(end))]
+            if others is not None:
+                gaps.append(others.distance(Point(end)))
+            gap = min(gaps)
+            if gap <= DANGLE_FREE_MIN or gap > DANGLE_GAP_MAX:
+                continue
+            # measure in the terminal segment's own frame
+            o = prev
+            n = np.array([-d[1], d[0]])
+            w = min(6.0, seg)
+            e_drawn = _fold_evidence(pts, o, d, n, seg - w, seg)
+            if e_drawn is None or e_drawn < DANGLE_EV_DRAWN:
+                continue
+            mid = seg + gap / 2.0
+            half = max(0.6, gap / 2.0)
+            e_gap = _fold_evidence(pts, o, d, n, mid - half, mid + half)
+            if e_gap is None or e_gap < DANGLE_EV_GAP:
+                continue
+            tip = tuple(end + d * (gap + 0.35))
+            if at_end:
+                coords = coords + [tip]
+            else:
+                coords = [tip] + coords
+        try:
+            out.append(LineString(coords))
+        except Exception:
+            out.append(ls)
+    return out

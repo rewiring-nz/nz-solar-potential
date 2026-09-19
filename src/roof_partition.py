@@ -1523,6 +1523,150 @@ def facets_from_selected_faces(building_id, footprint, pts):
     return out
 
 
+# How many parts one face may be cut into by his open-ended lines. A face that
+# falls apart into five is not a fold being honoured, it is a bad cut.
+OPEN_LINE_MAX_PARTS = 4
+OPEN_LINE_MIN_PART_M2 = 2.0
+
+
+# How different two sides of a cut must be for the cut to be worth making.
+OPEN_LINE_MIN_ASPECT_DEG = 20.0
+OPEN_LINE_MIN_SLOPE_DEG = 5.0
+# and how much better two planes must fit than one
+OPEN_LINE_MIN_RMS = 0.15
+OPEN_LINE_MIN_RMS_GAIN = 0.20
+
+
+def _planes_differ(parts, poly, pts):
+    """Is this face genuinely two planes, or one plane with a line drawn on it?
+
+    Two tests, both of which must pass. The pieces have to face the sun
+    differently -- that is the only way a cut changes the estimate -- and
+    the whole face has to fit ONE plane materially worse than the pieces fit
+    two, which is what says the fold is in the survey and not just in the
+    drawing.
+    """
+    import numpy as np
+
+    def rms(sub):
+        pl = _fit_plane_robust(sub)
+        if pl is None:
+            return None, None
+        r = sub[:, 2] - (pl[0] * sub[:, 0] + pl[1] * sub[:, 1] + pl[2])
+        return float(np.sqrt((r ** 2).mean())), _slope_aspect(pl)
+
+    whole = _points_in(poly, pts)
+    if len(whole) < MIN_POINTS_PER_FACE * 2:
+        return False
+    r_one, _ = rms(whole)
+    if r_one is None:
+        return False
+    subs = []
+    fits = []
+    for q in parts:
+        sub = _points_in(q, pts)
+        if len(sub) < MIN_POINTS_PER_FACE:
+            return False          # cannot tell, so do not cut
+        r, sa = rms(sub)
+        if r is None:
+            return False
+        subs.append((r, len(sub)))
+        fits.append(sa)
+    n = sum(k for _, k in subs)
+    r_two = (sum(r * r * k for r, k in subs) / max(n, 1)) ** 0.5
+    if r_one < OPEN_LINE_MIN_RMS or r_two > (1.0 - OPEN_LINE_MIN_RMS_GAIN) * r_one:
+        return False
+    for i in range(len(fits)):
+        for j in range(i + 1, len(fits)):
+            (s1, a1), (s2, a2) = fits[i], fits[j]
+            da = abs(a1 - a2) % 360.0
+            da = min(da, 360.0 - da)
+            if abs(s1 - s2) >= OPEN_LINE_MIN_SLOPE_DEG:
+                return True
+            if min(s1, s2) >= 3.0 and da >= OPEN_LINE_MIN_ASPECT_DEG:
+                return True
+    return False
+
+
+def _split_on_open_lines(building_id, footprint, pts, faces):
+    """Cut his faces where a line he drew stops short of an edge.
+
+    The labelling tool exports faces from a planar subdivision, so a line with
+    a free end bounds no region and never reaches the build. Measured on the
+    three roofs Josh kept re-flagging, that is the WHOLE of the "missing lines"
+    complaint: every closed line he drew is reproduced, every open-ended one is
+    dropped.
+
+    roof_line_source.drawn_network closes a free end only where the LiDAR fold
+    carries on across the gap, and only over a short gap -- see the long note
+    there, and in particular why this is not the 19 Sep experiment that
+    extended every dropped line to the boundary and cost 17.6 points of
+    fidelity.
+
+    A face is replaced by its parts only if the cut produces at least two
+    sensible ones. Anything else leaves the face exactly as he drew it.
+    """
+    try:
+        from src.roof_line_source import drawn_network, EXTEND_DANGLING
+    except Exception:
+        return faces
+    if not EXTEND_DANGLING or not faces:
+        return faces
+    try:
+        net = drawn_network(building_id, footprint, pts)
+    except Exception:
+        return faces
+    if not net:
+        return faces
+    from shapely.geometry import Polygon
+    from shapely.ops import split as _split
+    try:
+        cut = unary_union(net)
+    except Exception:
+        return faces
+
+    out = []
+    for f in faces:
+        try:
+            poly = Polygon(f["ring"])
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            if poly.is_empty or poly.geom_type != "Polygon" or poly.area < 4.0:
+                out.append(f)
+                continue
+            parts = [q for q in _split(poly, cut).geoms
+                     if q.geom_type == "Polygon" and q.area > OPEN_LINE_MIN_PART_M2]
+        except Exception:
+            out.append(f)
+            continue
+        if len(parts) < 2 or len(parts) > OPEN_LINE_MAX_PARTS:
+            out.append(f)
+            continue
+        # the cut must not have shaved the face -- the parts have to account
+        # for it, or something other than a fold has been subtracted
+        if sum(q.area for q in parts) < 0.97 * poly.area:
+            out.append(f)
+            continue
+        # A CUT HAS TO CHANGE THE ANSWER TO BE WORTH THE FACE.
+        #
+        # Every split costs one exact match against the faces his tool
+        # derived, because neither child equals the parent. Measured over the
+        # bench that is one-for-one: 9 more of his lines found, 7 fewer faces
+        # exact. So a cut only earns its keep where the two sides really are
+        # different roof -- a different way to face the sun, which is the
+        # whole reason a fold matters to the estimate. Where the planes agree,
+        # the fold is cosmetic, the panel keepout already stops panels
+        # spanning it, and the map draws it from his own markup layer.
+        if not _planes_differ(parts, poly, pts):
+            out.append(f)
+            continue
+        for q in parts:
+            out.append({"ring": list(q.exterior.coords),
+                        "m2": float(q.area),
+                        "usable": f.get("usable", True)})
+    return out
+
+
 def facets_from_drawn_faces(building_id, footprint, pts):
     """Build facets straight from the tool-derived rings in roof_labels.json.
 
@@ -1636,6 +1780,9 @@ def facets_from_drawn_faces(building_id, footprint, pts):
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         inside = pts
+
+    faces = _split_on_open_lines(building_id, footprint, inside, faces)
+
     out = []
     pending = []
     for f in faces:
@@ -1740,24 +1887,34 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             "from_labels": True, "plane_borrowed": True,
             **({"no_panel": True} if _no_panel else {}),
         })
-    # WHY WE DO NOT SPLIT ON A LINE HIS TOOL DID NOT USE.
+    # WHY A LINE HIS TOOL DID NOT USE STILL DOES NOT SPLIT A FACE.
     #
     # Josh reported lines missing from three roofs: "missing two valley lines
-    # and a ridgeline that I clearly drew". Measured, the lines are real and
-    # the gap is real -- #5372565 has a 30.6 m ridge sitting 8.2 m from any
-    # facet edge. They are lines his LABELLING TOOL drew but did not turn
-    # into a face boundary, because they do not close a region; the faces it
-    # exports are therefore fewer than the lines he drew.
+    # and a ridgeline that I clearly drew", "missing one valley line",
+    # "missing two ridge lines that I drew". Measured (19 Sep), one rule
+    # accounts for all three with no exceptions: every line whose two ends
+    # CLOSE is reproduced as a facet boundary, and every line with a FREE end
+    # is dropped -- the tool exports faces from a planar subdivision, and a
+    # dangling edge bounds no region.
     #
-    # Cutting the faces on those lines was tried (19 Sep) and measured worse
-    # against his own markup: fidelity 94.8% -> 77.2%, extra facets 5 -> 25.
-    # That is the honest verdict -- his FACES are the ground truth, and
-    # splitting them invents faces he did not draw, however real the line is.
+    # Two attempts to honour them:
     #
-    # The line is still honoured where it matters: fold_keepouts stops panels
-    # crossing it. What is missing is only that the map does not DRAW it, and
-    # that belongs in the renderer or in the labelling tool's own face
-    # derivation, not here.
+    #   extend every dropped line to the boundary   94.8% -> 77.2% fidelity,
+    #                                               facets 5 -> 25.
+    #   extend only where the LiDAR fold carries    94.8% -> 92.5%, two roofs
+    #   across the gap, and only where two planes   changed, each +1 of his
+    #   fit the face better than one                lines and -1 exact face.
+    #
+    # The second is _split_on_open_lines above, kept behind
+    # SOLAR_EXTEND_DANGLING and OFF. Splitting a face he drew can only lose
+    # its exact match and neither child replaces it, so the trade is
+    # one-for-one by construction and the arithmetic cannot settle it: his
+    # LINES say the fold is there, the FACES his tool exported say it is not,
+    # and both are his markup. That question goes to him, not to a threshold.
+    #
+    # The line is honoured meanwhile where it matters: fold_keepouts stops
+    # panels crossing it, and the map's "My roof markup" layer draws every
+    # line he drew, dangling or not.
     return out
 
 

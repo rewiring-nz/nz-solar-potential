@@ -460,6 +460,9 @@
      "verdict": "wrong",
      "fingerprint": "e08428ed3e13"
     }
+   ],
+   "notes": [
+    "19 Sep: the two ridges he counted missing are lines with a FREE end; the tool's faces never carry one. Extending them where the LiDAR fold persists puts the 30.6 m ridge in (17/19 -> 18/19) but costs one exact face. Behind SOLAR_EXTEND_DANGLING, off, waiting on his call."
    ]
   },
   {

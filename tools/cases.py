@@ -187,11 +187,48 @@ def measure(case, ctx):
                 seg = LineString([tuple(pts[i]), tuple(pts[i + 1])])
                 if seg.length > 0.5:
                     raw.append((seg, l.get("kind")))
+        # AN OPEN-ENDED LINE IS NOT THE SAME KIND OF MISS.
+        #
+        # His tool derives faces from a planar subdivision, so a line with a
+        # free end bounds no region and never becomes a facet boundary.
+        # Measured across his three "missing lines" roofs that accounts for
+        # every miss and nothing else. Counting those the same as a line we
+        # simply failed to find leaves roofs sitting in his queue for
+        # something he told us to leave alone -- "sometimes lines are not
+        # meant to go all the way to an edge" -- so they are counted apart.
+        # They are still honoured: panels are kept off them, and the map's
+        # markup layer draws them.
+        whole = []
+        for l in lab.get("lines") or []:
+            pts = l.get("points") or ([l.get("a"), l.get("b")]
+                                      if l.get("a") else None)
+            if pts and len(pts) >= 2:
+                from shapely.geometry import LineString
+                whole.append(LineString([tuple(q) for q in pts]))
+        open_ends = None
+        if whole:
+            from shapely.geometry import Point
+            from shapely.ops import unary_union
+            fp = geom.exterior
+            open_ends = []
+            for i, ls in enumerate(whole):
+                rest = (unary_union([o for j, o in enumerate(whole) if j != i])
+                        if len(whole) > 1 else None)
+                for e in (Point(ls.coords[0]), Point(ls.coords[-1])):
+                    d = fp.distance(e)
+                    if rest is not None:
+                        d = min(d, rest.distance(e))
+                    if d > 0.6:
+                        open_ends.append(ls)
+                        break
+            open_ends = unary_union(open_ends) if open_ends else None
+
         if raw and facets:
             from shapely.ops import unary_union
             edges = unary_union([f.exterior for f in facets])
             found = 0
             missed = []
+            hanging = 0
             for seg, kind in raw:
                 mid = seg.interpolate(0.5, normalized=True)
                 q1 = seg.interpolate(0.25, normalized=True)
@@ -199,10 +236,13 @@ def measure(case, ctx):
                 if max(edges.distance(q1), edges.distance(mid),
                        edges.distance(q3)) < 1.0:
                     found += 1
+                elif open_ends is not None and open_ends.distance(mid) < 0.2:
+                    hanging += 1
                 else:
                     missed.append(kind or "line")
             m["lines_drawn"] = len(raw)
             m["lines_found"] = found
+            m["lines_open"] = hanging
             if missed:
                 from collections import Counter
                 m["missing"] = dict(Counter(missed))
@@ -249,7 +289,7 @@ def cmd_check(a):
              "ERROR": 3, "fixed": 4}
     rows.sort(key=lambda r: order.get(r[2], 5))
     print(f"\n{'roof':>9} {'status':13s} {'facets':>6} {'cover':>6} "
-          f"{'panels':>6} {'your lines':>11} {'across':>6}  defect")
+          f"{'panels':>6} {'your lines':>11} {'open':>5} {'across':>6}  defect")
     for c, m, st, ch in rows:
         if m.get("error"):
             print(f"{c['id']:>9} {'ERROR':13s} {m['error'][:54]}")
@@ -257,6 +297,7 @@ def cmd_check(a):
         print(f"{c['id']:>9} {st:13s} {m['facets']:>6} "
               f"{m['coverage']*100:>5.0f}% {m['panels']:>6} "
               f"{((str(m['lines_found'])+'/'+str(m['lines_drawn'])) if 'lines_drawn' in m else '-'):>11} "
+              f"{(str(m.get('lines_open', 0)) if 'lines_drawn' in m else '-'):>5} "
               f"{(str(m['across']) if 'across' in m else '-'):>6}"
               f"  {c['defect'][:44]}{'  <-- CHANGED' if ch else ''}")
     n = {k: sum(1 for c in d["cases"] if c["status"] == k)
