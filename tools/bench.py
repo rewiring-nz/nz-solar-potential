@@ -151,10 +151,15 @@ def score(rows, labels):
         lab = labels.get(str(r["id"]))
         if not lab or not lab.get("complete"):
             continue
+        # A "no panels here" face IS a face he drew, and since 19 Sep the
+        # build keeps it as geometry that simply takes no panels -- that is
+        # how Josh got back the valley line he said was missing on #4735623.
+        # Excluding them here made every restored line count as an INVENTED
+        # one: extra jumped 5 -> 16 and fidelity appeared to fall six points
+        # on a change that did exactly what he asked for. The target has to
+        # be the roof he drew, not the part of it that takes panels.
         drawn = []
         for f in lab.get("faces") or []:
-            if not f.get("usable", True):
-                continue
             try:
                 drawn.append(Polygon([(p[0], p[1]) for p in f["ring"]]))
             except Exception:

@@ -864,7 +864,19 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
                       Polygon([c3, c4, j4, j3]), Polygon([c4, c1, j1, j4])]
                 faces = [top.intersection(part)] + \
                     [f.intersection(part) for f in sk]
-                if all(f.geom_type == "Polygon" and f.area > 2 for f in faces):
+                # A FLAT TOP THAT EATS THE ROOF IS NOT A FLAT TOP. When the
+                # detected plateau covers most of the part, the four skirts
+                # degenerate into slivers and the "form" is a big face with
+                # scraps around it -- #5371115 shipped 63 m2 plus four
+                # pieces of 4-7 m2 and then placed no panels at all. A
+                # truncated hip is a top INSIDE a roof: if the plateau is
+                # most of the surface the honest reading is a flat roof,
+                # which the flat form already offers and can win on its own.
+                _top_share = (faces[0].area / max(part.area, 1e-9)
+                              if faces and faces[0].geom_type == "Polygon" else 1.0)
+                if all(f.geom_type == "Polygon" and f.area > 2 for f in faces) \
+                        and _top_share < 0.55 \
+                        and min(f.area for f in faces[1:]) > 0.04 * part.area:
                     out["trunc_lidar"] = (faces, [
                         (tuple(j1), tuple(j2)), (tuple(j2), tuple(j3)),
                         (tuple(j3), tuple(j4)), (tuple(j4), tuple(j1))])
