@@ -1740,6 +1740,24 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             "from_labels": True, "plane_borrowed": True,
             **({"no_panel": True} if _no_panel else {}),
         })
+    # WHY WE DO NOT SPLIT ON A LINE HIS TOOL DID NOT USE.
+    #
+    # Josh reported lines missing from three roofs: "missing two valley lines
+    # and a ridgeline that I clearly drew". Measured, the lines are real and
+    # the gap is real -- #5372565 has a 30.6 m ridge sitting 8.2 m from any
+    # facet edge. They are lines his LABELLING TOOL drew but did not turn
+    # into a face boundary, because they do not close a region; the faces it
+    # exports are therefore fewer than the lines he drew.
+    #
+    # Cutting the faces on those lines was tried (19 Sep) and measured worse
+    # against his own markup: fidelity 94.8% -> 77.2%, extra facets 5 -> 25.
+    # That is the honest verdict -- his FACES are the ground truth, and
+    # splitting them invents faces he did not draw, however real the line is.
+    #
+    # The line is still honoured where it matters: fold_keepouts stops panels
+    # crossing it. What is missing is only that the map does not DRAW it, and
+    # that belongs in the renderer or in the labelling tool's own face
+    # derivation, not here.
     return out
 
 
