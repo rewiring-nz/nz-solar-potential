@@ -10,6 +10,8 @@ data/*
 !data/seasonal_curves.json
 !data/marked_scores.json
 # the roofs Josh has flagged: tracked, never ignored
+# Josh's drawn lines as a map overlay -- see tools/build_markup_lines.py
+!data/markup_lines.geojson
 !data/roof_cases.json
 # 3D terrain: the DSM as Mapbox terrain-RGB tiles, served straight off Pages
 !data/terrain/

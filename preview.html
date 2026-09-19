@@ -578,6 +578,7 @@
 </div>
 <div id="corner-actions">
   <button class="corner-btn" id="toggle-outlines"><span class="dot"></span>Building outlines</button>
+  <button class="corner-btn" id="toggle-markup"><span class="dot"></span>My roof markup</button>
   <button class="corner-btn" id="toggle-obstructions"><span class="dot"></span>Avoided obstructions</button>
   <button class="corner-btn" id="toggle-panel-econ"><span class="dot"></span>Panel economics</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
@@ -4529,6 +4530,55 @@ map.on("load", async () => {
     if (window.__invalidateInView) window.__invalidateInView();
     rebuildEconMatch();
     refreshDerived();
+  });
+
+  // JOSH'S OWN LINES, DRAWN ON THE MAP.
+  //
+  // A line he draws is not always meant to reach an edge, so it cannot be
+  // forced into the face geometry -- cutting faces on those lines measured
+  // worse against his own markup (fidelity 94.8% -> 77.2%, extra facets
+  // 5 -> 25). His faces are the ground truth. What was actually missing is
+  // that the map never DREW the lines, so one he had drawn looked absent
+  // and he reported it as a modelling failure three times.
+  //
+  // Loaded on demand: 399 kB of lines rather than the 1.9 MB label file,
+  // and only when someone asks to see them.
+  let markupOn = false, markupLoaded = false;
+  async function ensureMarkupLayer() {
+    if (markupLoaded) return true;
+    try {
+      const r = await fetch(`data/markup_lines.geojson?v=${DATA_VERSION}`);
+      if (!r.ok) return false;
+      map.addSource("markup-lines", { type: "geojson", data: await r.json() });
+      map.addLayer({
+        id: "markup-lines", type: "line", source: "markup-lines",
+        layout: { "line-cap": "round", visibility: "none" },
+        paint: {
+          // one colour per kind, so the overlay says what he called each
+          // line rather than just that something is there
+          "line-color": ["match", ["get", "kind"],
+            "ridge", "#ff4da6", "valley", "#4dd2ff", "cliff", "#ffd24a",
+            "#8cff66"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 1.2, 19, 3.5],
+          "line-opacity": 0.95,
+        },
+      });
+      markupLoaded = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  document.getElementById("toggle-markup").addEventListener("click", async () => {
+    const btn = document.getElementById("toggle-markup");
+    if (!markupOn && !(await ensureMarkupLayer())) {
+      btn.textContent = "No markup available";
+      return;
+    }
+    markupOn = !markupOn;
+    btn.classList.toggle("active", markupOn);
+    if (map.getLayer("markup-lines")) {
+      map.setLayoutProperty("markup-lines", "visibility",
+                            markupOn ? "visible" : "none");
+    }
   });
 
   document.getElementById("toggle-outlines").addEventListener("click", () => {
