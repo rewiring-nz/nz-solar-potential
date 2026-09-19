@@ -69,6 +69,28 @@ def main():
         json.dump(d, open(path, "w"))
         print(f"  patched {path.name}: {before} -> {len(d['features'])} features", flush=True)
 
+    # WHAT EACH BUILDING WAS BUILT FROM, recorded so an interrupted district
+    # run can resume. The VM is preemptible and two rebuilds have now been
+    # half-applied: the driver fingerprints, predicts, then patches what
+    # changed, so on restart the already-predicted buildings look unchanged
+    # (they were changed by the run that died) and are never patched.
+    # File mtimes cannot answer it either -- patching rewrites the layouts,
+    # so the layouts become newer than every selected reading. A hash of the
+    # reading each building was actually built from is the only signal that
+    # survives being interrupted.
+    def _record_built():
+        import hashlib
+        state_path = DATA / "built_from.json"
+        try:
+            state = json.loads(state_path.read_text())
+        except Exception:
+            state = {}
+        for bid in a.ids:
+            sp = DATA / "selected_faces" / f"{bid}.json"
+            state[str(bid)] = (hashlib.md5(sp.read_bytes()).hexdigest()[:12]
+                               if sp.exists() else "none")
+        state_path.write_text(json.dumps(state))
+
     region = area_paths(a.area)["panel_layouts"]
     patch(region)
     # gate just this area's new panels (in place, cheap for a handful of ids)
@@ -144,6 +166,8 @@ def main():
         # density deciles (fill_*) for the patched buildings come from the
         # merged layouts; bake refreshes them (writes solar_potential in place)
         subprocess.run([sys.executable, "src/bake_density_deciles.py"], check=True, cwd=ROOT)
+
+    _record_built()
 
     if not a.skip_tiles:
         subprocess.run([sys.executable, "src/shrink_panels_for_tiles.py"], check=True, cwd=ROOT)
