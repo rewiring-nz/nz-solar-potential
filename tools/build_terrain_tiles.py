@@ -181,6 +181,7 @@ def build_all(regions, min_z, max_z, area_paths):
                 for y in range(y0, y1 + 1):
                     want.setdefault((x, y), []).append(vrt)
         span_m = 2 * ORIGIN / (2 ** z) * math.cos(math.radians(-45.03))
+        m_per_px = span_m / TILE
         for (x, y), vrts in want.items():
             b = tile_bounds(z, x, y)
             acc = np.full((TILE, TILE), np.nan, "float32")
@@ -194,9 +195,20 @@ def build_all(regions, min_z, max_z, area_paths):
                 sx, sy = TILE / win.width, TILE / win.height
                 ow = max(1, int(round(clipped.width * sx)))
                 oh = max(1, int(round(clipped.height * sy)))
+                # A ROOF EDGE IS A CLIFF, NOT A RAMP. Bilinear resampling
+                # smears the 1 m step at a building's edge across a couple
+                # of metres, and anything draped on the terrain -- the
+                # panels especially -- then runs down that ramp and appears
+                # to hang off the side of the building. Josh: "unrealistic
+                # panels drooped over the sides of buildings on walls
+                # rather than rooftops." At detail zooms the tile grid is
+                # already near the 1 m source, so nearest keeps the step
+                # sharp; at overview zooms bilinear still avoids aliasing.
+                rs = (Resampling.nearest if m_per_px <= 1.5
+                      else Resampling.bilinear)
                 try:
                     part = vrt.read(1, window=clipped, out_shape=(oh, ow),
-                                    resampling=Resampling.bilinear)
+                                    resampling=rs)
                 except Exception:
                     continue
                 ox = max(0, min(TILE - 1, int(round((clipped.col_off - win.col_off) * sx))))
