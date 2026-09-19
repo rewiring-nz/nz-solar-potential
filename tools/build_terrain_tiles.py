@@ -69,10 +69,26 @@ def _overlaps(win, vrt):
 
 
 def encode(h):
-    """Mapbox terrain-RGB. NaN becomes the encoding's own zero, which reads
-    as -10000 m; MapLibre never shows it because the tile is clipped to the
-    data extent, and a nodata hole is better than a spike."""
-    v = np.where(np.isfinite(h), (h + 10000.0) * 10.0, 0.0)
+    """Mapbox terrain-RGB.
+
+    NODATA MUST NOT BE A CLIFF. The first version encoded NaN as the
+    encoding's zero, which decodes to -10000 m, and asserted in this
+    docstring that MapLibre would never show it. It shows it: every hole and
+    every tile edge became a 10 km chasm and the live map rendered two
+    thirds of the view as vertical smears. Holes are filled from the nearest
+    measured height instead, so a gap is flat ground at about the right
+    level rather than a hole through the planet.
+    """
+    if not np.isfinite(h).all():
+        finite = np.isfinite(h)
+        if not finite.any():
+            h = np.zeros_like(h)
+        else:
+            from scipy.ndimage import distance_transform_edt
+            idx = distance_transform_edt(~finite, return_distances=False,
+                                         return_indices=True)
+            h = h[tuple(idx)]
+    v = (h + 10000.0) * 10.0
     v = np.clip(np.rint(v), 0, 256 ** 3 - 1).astype(np.uint32)
     rgb = np.empty(v.shape + (3,), np.uint8)
     rgb[..., 0] = (v >> 16) & 255
