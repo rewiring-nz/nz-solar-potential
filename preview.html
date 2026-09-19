@@ -921,6 +921,10 @@ map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
 // Off by default: it is a different way of looking, not a better one, and
 // the flat view is what the numbers are read on.
 let terrain3d = false;
+// Steeper than this and a camera near the ground at z18 clips through a
+// hillside; MapLibre does not push it back out.
+const MAX_PITCH_3D = 58;
+
 function setTerrain3D(on) {
   terrain3d = on;
   try {
@@ -933,7 +937,13 @@ function setTerrain3D(on) {
     map.setTerrain(on ? { source: "dsm-terrain", exaggeration: 1 } : null);
     const hint = document.getElementById("map-3d-hint");
     if (hint) hint.style.display = on ? "" : "none";
-    map.easeTo({ pitch: on ? 62 : 0, duration: 700 });
+    // KEEP THE CAMERA ABOVE THE GROUND. With terrain on, a fly-to at high
+    // zoom and a steep pitch can put the camera inside the hillside and the
+    // screen goes blank -- which is what the address search did in 3D, the
+    // way anyone would navigate to their own house. A shallower ceiling and
+    // a re-frame after each move keeps it outside the terrain.
+    map.setMaxPitch(on ? MAX_PITCH_3D : 60);
+    map.easeTo({ pitch: on ? 55 : 0, duration: 700 });
     const b = document.getElementById("btn-3d");
     if (b) b.classList.toggle("active", on);
   } catch (e) {
@@ -953,6 +963,15 @@ function setTerrain3D(on) {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
   else attach();
 })();
+
+// After any programmatic move (the address search flies), re-seat the
+// camera: if a move left it steeper than the 3D ceiling, ease it back.
+map.on("moveend", () => {
+  if (!terrain3d) return;
+  if (map.getPitch() > MAX_PITCH_3D + 0.5) {
+    map.easeTo({ pitch: MAX_PITCH_3D, duration: 300 });
+  }
+});
 
 class ThreeDControl {
   onAdd() {
@@ -2164,7 +2183,8 @@ map.on("load", async () => {
       const lat = ring.reduce((a, c) => a + c[1], 0) / ring.length;
       results.style.display = "none";
       input.value = item.addr;
-      map.flyTo({ center: [lng, lat], zoom: 18, duration: 1200 });
+      map.flyTo({ center: [lng, lat], zoom: terrain3d ? 17.3 : 18,
+                  pitch: terrain3d ? MAX_PITCH_3D : undefined, duration: 1200 });
       selectBuilding(item.f.properties.building_id);
       showBuildingPanel(item.f.properties, { lng, lat }, item.f.geometry);
     };
@@ -2190,7 +2210,8 @@ map.on("load", async () => {
       if (coordMarker) coordMarker.remove();
       coordMarker = new maplibregl.Marker({ color: "#e5484d" })
         .setLngLat([lng, lat]).addTo(map);
-      map.flyTo({ center: [lng, lat], zoom: 18, duration: 1400 });
+      map.flyTo({ center: [lng, lat], zoom: terrain3d ? 17.3 : 18,
+                  pitch: terrain3d ? MAX_PITCH_3D : undefined, duration: 1400 });
       // If the point lands on (or within ~25 m of) a building we know,
       // open its panel too -- coordinate reports are usually about one.
       let best = null, bestD = Infinity;
