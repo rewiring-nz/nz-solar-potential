@@ -142,6 +142,64 @@ check("zero or negative inputs return nothing rather than nonsense", () => {
   assert(E.economicsFor(11.4, 0, 200) === null, "0 kWh should return null");
 });
 
+
+// ---- hourly engine: battery and time-of-use plans -----------------------
+// These exist because both features are invisible at annual resolution: a
+// battery only moves energy between hours, and a plan only differs from
+// another by pricing hours differently. If the hourly engine were wrong,
+// the annual assertions above would all still pass.
+
+function flatGen(kw) {
+  // one representative day per season, sun from 8 to 17
+  const row = new Array(24).fill(0);
+  for (let h = 8; h < 17; h++) row[h] = kw;
+  return [row, row, row, row];
+}
+
+check("a battery lifts self-consumption and cuts export", () => {
+  const gen = flatGen(4), days = [91.25, 91.25, 91.25, 91.25];
+  const no = E.economicsHourlyFor(5, gen, days, 150,
+    { battery: { enabled: false }, useKwh: 7000 });
+  const yes = E.economicsHourlyFor(5, gen, days, 150,
+    { battery: { enabled: true, kwh: 10, kw: 5 }, useKwh: 7000 });
+  assert(yes.selfKwh > no.selfKwh, "battery did not raise self-consumption");
+  assert(yes.exportKwh < no.exportKwh, "battery did not reduce export");
+  // and it cannot invent energy
+  const tol = 1;
+  assert(Math.abs((no.selfKwh + no.exportKwh) - no.genKwh) < tol,
+    `energy not conserved without battery: ${no.selfKwh + no.exportKwh} vs ${no.genKwh}`);
+  assert(yes.selfKwh + yes.exportKwh <= no.genKwh + tol,
+    "battery output exceeds generation");
+});
+
+check("a battery costs money and is replaced inside the system life", () => {
+  const gen = flatGen(4), days = [91.25, 91.25, 91.25, 91.25];
+  const no = E.economicsHourlyFor(5, gen, days, 150, { battery: { enabled: false } });
+  const yes = E.economicsHourlyFor(5, gen, days, 150,
+    { battery: { enabled: true, kwh: 10, cost_per_kwh: 1000 } });
+  assert(yes.cost > no.cost, "battery added no capital cost");
+  assert(yes.batteryReplaceCost > 0, "battery replacement not charged");
+});
+
+check("a time-of-use plan values the same generation differently", () => {
+  const gen = flatGen(4), days = [91.25, 91.25, 91.25, 91.25];
+  const flat = E.RETAIL_PLANS.find(p => p.id === "flat");
+  const peak = E.RETAIL_PLANS.find(p => p.id === "peak_offpeak");
+  const a = E.economicsHourlyFor(5, gen, days, 150, { plan: flat });
+  const b = E.economicsHourlyFor(5, gen, days, 150, { plan: peak });
+  assert(Math.abs(a.annual - b.annual) > 1,
+    "plan structure made no difference at all");
+  assert(a.genKwh === b.genKwh, "the roof changed with the plan");
+});
+
+check("no sun means no savings, with or without a battery", () => {
+  const dark = [0, 1, 2, 3].map(() => new Array(24).fill(0));
+  const e = E.economicsHourlyFor(5, dark, [91.25, 91.25, 91.25, 91.25], 150,
+    { battery: { enabled: true, kwh: 10 } });
+  assert(e.selfKwh === 0 && e.exportKwh === 0, "energy from nowhere");
+  assert(e.annual === 0, `annual ${e.annual} on a dark roof`);
+});
+
 console.log(`\n${pass}/${pass + failures.length} passed`);
 if (failures.length) {
   console.log("failed: " + failures.join(", "));
