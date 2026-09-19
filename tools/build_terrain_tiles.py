@@ -63,6 +63,36 @@ def merc_to_tile(z, mx, my):
     return int((mx + ORIGIN) / span), int((ORIGIN - my) / span)
 
 
+def despike(h, m_per_px, rise_m=8.0, window_m=9.0):
+    """Remove thin spikes that are not real structures.
+
+    The DSM carries returns from things that are not surfaces -- a crane,
+    a mast, a bird, a stray multipath return. Josh, 19 Sep, on a building in
+    the town centre: "seems to be incorrect in 3D, way too high and spiky."
+    Measured there: cells sitting 45-47 m above the median of everything
+    within 15 m of them.
+
+    A median filter over a WINDOW IN METRES is the discriminator, because a
+    real object is wider than its height error is tall. Inside a building or
+    a tree crown the local median is the building or the crown, so the cell
+    barely differs from it and nothing is touched; a pole or a noise return
+    is one or two cells wide, so the median ignores it and the difference is
+    large. Only cells exceeding the local median by `rise_m` are pulled back
+    to it, which leaves every genuine roof and tree standing.
+
+    Skipped where a pixel is already coarser than the window: at district
+    zooms the filter would be smoothing hills, not spikes.
+    """
+    if m_per_px <= 0 or window_m / m_per_px < 3:
+        return h
+    from scipy.ndimage import median_filter
+    w = int(max(3, min(15, round(window_m / m_per_px))))
+    if w % 2 == 0:
+        w += 1
+    med = median_filter(h, size=w, mode="nearest")
+    return np.where(h - med > rise_m, med, h)
+
+
 def _overlaps(win, vrt):
     return not (win.col_off + win.width <= 0 or win.row_off + win.height <= 0
                 or win.col_off >= vrt.width or win.row_off >= vrt.height)
@@ -150,6 +180,7 @@ def build_all(regions, min_z, max_z, area_paths):
             for x in range(x0, x1 + 1):
                 for y in range(y0, y1 + 1):
                     want.setdefault((x, y), []).append(vrt)
+        span_m = 2 * ORIGIN / (2 ** z) * math.cos(math.radians(-45.03))
         for (x, y), vrts in want.items():
             b = tile_bounds(z, x, y)
             acc = np.full((TILE, TILE), np.nan, "float32")
@@ -199,6 +230,7 @@ def build_all(regions, min_z, max_z, area_paths):
                             pass
             if not np.isfinite(acc).any():
                 continue
+            acc = despike(acc, span_m / TILE)
             d = OUT / str(z) / str(x)
             d.mkdir(parents=True, exist_ok=True)
             Image.fromarray(encode(acc)).save(d / f"{y}.png", optimize=True)

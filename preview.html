@@ -931,14 +931,6 @@ function setTerrain3D(on) {
       });
     }
     map.setTerrain(on ? { source: "dsm-terrain", exaggeration: 1 } : null);
-    // Hide or restore the heat-map image layers: see attachHeatmap.
-    try {
-      map.getStyle().layers.filter(l => l.id.startsWith("heatmap-raster-"))
-        .forEach(l => map.setLayoutProperty(
-          l.id, "visibility",
-          (!on && typeof mode !== "undefined" && mode === "heatmap")
-            ? "visible" : "none"));
-    } catch (e) { /* style not ready yet; applyToggles will catch up */ }
     const hint = document.getElementById("map-3d-hint");
     if (hint) hint.style.display = on ? "" : "none";
     map.easeTo({ pitch: on ? 62 : 0, duration: 700 });
@@ -956,8 +948,7 @@ function setTerrain3D(on) {
     "bottom:86px;z-index:5;background:rgba(0,0,0,0.72);color:#e8edf2;" +
     "font:600 11px/1.3 system-ui,sans-serif;padding:5px 10px;border-radius:6px;" +
     "pointer-events:none;text-align:center;max-width:82vw;";
-  d.textContent = "3D — surface from the LiDAR, so terrain, trees and roofs are measured. " +
-    "The heat map is flat imagery and is hidden here; panel layouts still show.";
+  d.textContent = "3D — the surface is the LiDAR itself, so terrain, trees and roofs are measured.";
   const attach = () => (document.getElementById("map") || document.body).appendChild(d);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
   else attach();
@@ -2998,7 +2989,12 @@ map.on("load", async () => {
       // like on the live site, and it was NOT the terrain data, which
       // decodes to sane heights. Hidden in 3D until the heat map is
       // tiled; the imagery basemap and the vector panels drape fine.
-      layout: { visibility: (mode === "heatmap" && !terrain3d) ? "visible" : "none" },
+      // The heat map DOES drape on terrain. The smearing that made it look
+      // otherwise was holes in the terrain itself -- MapLibre drawing the
+      // boundary between terrain and no-terrain as a curtain -- and the
+      // wide-DEM floor fixed that. Josh: "The heat map should also work in
+      // 3D always, that's important." It stays visible.
+      layout: { visibility: mode === "heatmap" ? "visible" : "none" },
       paint: { "raster-opacity": cur ? 0 : HEATMAP_OPACITY, "raster-resampling": "linear" }
     }, cur ? cur.layer : "buildings-fill");
     if (!cur) { attached.set(m.id, rec); return; }
