@@ -932,36 +932,33 @@ let terrain3d = false;
 // z17.3 a 55 degree pitch renders a blank screen and 40 degrees renders the
 // scene perfectly. This keeps a usable tilt when looking across a suburb
 // and eases off over a single roof.
-// The zoom past which 3D cannot be trusted. Measured on the Queenstown
-// Gardens hilltop (374 m, tall trees -- the district's worst case):
-//   z16.2, pitch 48   renders correctly
-//   z17.3, pitch 30   renders when reached by jumping flat then tilting
-//   z17.3, pitch 31   camera inside the hill when reached by flying there
-// MapLibre places the camera for a FLAT world, so on high ground at close
-// range it can start underneath the surface, and nothing in its public API
-// reliably pushes it back out. Rather than ship a view that is blank for
-// some people in some places, 3D switches itself off past this zoom and
-// says so. The district and neighbourhood views -- which is where seeing
-// the terrain, the trees and the roof shapes actually tells you something
-// -- are well inside it.
-const MAX_ZOOM_3D = 16.6;
-
-function maxPitchFor(zoom) {
-  // Calibrated on the Queenstown Gardens hilltop (374 m), the worst case in
-  // the district because it is high ground covered in tall trees:
-  //   z16.2  pitch 48  renders
-  //   z17.3  pitch 40  camera inside the canopy
-  //   z17.3  pitch 30  renders
-  // MapLibre places the camera for a FLAT world, so the higher the ground
-  // and the closer the view, the more likely the camera starts underneath
-  // it. The ceiling therefore has to fall as you zoom in.
-  return Math.max(20, Math.min(58, 58 - (zoom - 14) * 8));
+// 3D TERRAIN NEEDS A WHOLE-NUMBER ZOOM. Measured on the Queenstown Gardens
+// hilltop, asking MapLibre for the ground height under the camera:
+//   z15  350 m     z16  368 m     z17  374 m     z18  376 m   (all correct)
+//   z16.5  0       z17.2  0       z17.5  0                    (fails)
+// At a fractional zoom the DEM lookup returns nothing, so the camera is
+// placed as if the ground were at sea level -- and on a 374 m hill that
+// puts it underneath the terrain, which is the blank screen. It is not a
+// pitch problem and not a zoom-depth problem: 3D works fine at z18 once the
+// zoom is a whole number, which is what Josh needs for looking at a roof.
+//
+// So while terrain is on, the zoom snaps to integers. The cost is that
+// zooming steps rather than glides; the alternative was no close 3D at all.
+function snapZoom3D() {
+  const z = map.getZoom();
+  const r = Math.round(z);
+  if (Math.abs(z - r) > 0.001) map.setZoom(r);
+  return r;
 }
 
+function maxPitchFor(zoom) {
+  // A gentle ceiling only. The steep-pitch failures were the elevation bug
+  // above, not the tilt, so this no longer has to be severe.
+  return Math.max(45, Math.min(60, 60 - (zoom - 17) * 3));
+}
+
+
 function setTerrain3D(on) {
-  if (on && map.getZoom() > MAX_ZOOM_3D) {
-    map.easeTo({ zoom: MAX_ZOOM_3D, duration: 500 });
-  }
   terrain3d = on;
   try {
     if (on && !map.getSource("dsm-terrain")) {
@@ -978,12 +975,14 @@ function setTerrain3D(on) {
     // screen goes blank -- which is what the address search did in 3D, the
     // way anyone would navigate to their own house. A shallower ceiling and
     // a re-frame after each move keeps it outside the terrain.
+    if (on) snapZoom3D();
     const cap = maxPitchFor(map.getZoom());
     map.setMaxPitch(on ? cap : 60);
     if (on) {
-      // a frame flat first, so the camera knows what is under it
+      // a frame flat, at a whole-number zoom, so the ground height resolves
+      // before the camera is tilted
       map.jumpTo({ pitch: 0 });
-      setTimeout(() => { if (terrain3d) map.easeTo({ pitch: cap, duration: 700 }); }, 250);
+      setTimeout(() => { if (terrain3d) map.easeTo({ pitch: cap, duration: 700 }); }, 350);
     } else {
       map.easeTo({ pitch: 0, duration: 700 });
     }
@@ -1018,23 +1017,21 @@ function setTerrain3D(on) {
 let reseating = false;
 map.on("moveend", () => {
   if (!terrain3d || reseating) return;
-  if (map.getZoom() > MAX_ZOOM_3D) {
-    setTerrain3D(false);
-    const h = document.getElementById("map-3d-hint");
-    if (h) {
-      h.textContent = "3D turns off this close in — the camera cannot be kept "
-        + "clear of the terrain at street level. Zoom out to use it again.";
-      h.style.display = "";
-      setTimeout(() => { if (!terrain3d) h.style.display = "none"; }, 4500);
-    }
-    return;
-  }
-  const cap = maxPitchFor(map.getZoom());
-  map.setMaxPitch(cap);
-  if (Math.abs(map.getPitch() - cap) < 0.5) return;
   reseating = true;
-  map.easeTo({ pitch: cap, duration: 350 });
-  setTimeout(() => { reseating = false; }, 500);
+  const z = map.getZoom();
+  const r = Math.round(z);
+  // Snap first (the DEM only resolves at whole-number zooms), then tilt --
+  // sequenced here rather than waiting for the snap's own moveend, which
+  // this guard would swallow and leave the map flat.
+  if (Math.abs(z - r) > 0.001) map.setZoom(r);
+  setTimeout(() => {
+    const cap = maxPitchFor(map.getZoom());
+    map.setMaxPitch(cap);
+    if (Math.abs(map.getPitch() - cap) > 0.5) {
+      map.easeTo({ pitch: cap, duration: 350 });
+    }
+    setTimeout(() => { reseating = false; }, 450);
+  }, 180);
 });
 
 class ThreeDControl {
@@ -2247,7 +2244,7 @@ map.on("load", async () => {
       const lat = ring.reduce((a, c) => a + c[1], 0) / ring.length;
       results.style.display = "none";
       input.value = item.addr;
-      map.flyTo({ center: [lng, lat], zoom: terrain3d ? MAX_ZOOM_3D : 18,
+      map.flyTo({ center: [lng, lat], zoom: 18,
                   pitch: terrain3d ? 0 : undefined, duration: 1200 });
       selectBuilding(item.f.properties.building_id);
       showBuildingPanel(item.f.properties, { lng, lat }, item.f.geometry);
@@ -2274,7 +2271,7 @@ map.on("load", async () => {
       if (coordMarker) coordMarker.remove();
       coordMarker = new maplibregl.Marker({ color: "#e5484d" })
         .setLngLat([lng, lat]).addTo(map);
-      map.flyTo({ center: [lng, lat], zoom: terrain3d ? MAX_ZOOM_3D : 18,
+      map.flyTo({ center: [lng, lat], zoom: 18,
                   pitch: terrain3d ? 0 : undefined, duration: 1400 });
       // If the point lands on (or within ~25 m of) a building we know,
       // open its panel too -- coordinate reports are usually about one.
