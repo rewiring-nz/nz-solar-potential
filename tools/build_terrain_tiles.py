@@ -122,7 +122,23 @@ def build_all(regions, min_z, max_z, area_paths):
     if not srcs:
         print("no DSMs found")
         return 0
-    print(f"{len(srcs)} region surfaces", flush=True)
+    # A COARSE FLOOR UNDER THE DETAIL. The 1 m DSM exists only in patches
+    # over the built-up areas, so between and around them a tile had holes,
+    # and MapLibre draws the boundary between terrain and no-terrain as a
+    # vertical curtain -- the walls standing over Lake Wakatipu in the first
+    # 3D builds. The district DEM is 8 m bare earth over 29 x 38 km, which
+    # is everywhere the DSM is not. It fills what the DSM cannot answer:
+    # detail where we surveyed it, honest coarse ground elsewhere, and no
+    # cliff where one ends and the other begins.
+    dem = None
+    dem_path = ROOT / "data" / "dem_wide_mosaic.tif"
+    if dem_path.exists():
+        dsrc = rasterio.open(dem_path)
+        dem = WarpedVRT(dsrc, crs="EPSG:3857", resampling=Resampling.bilinear,
+                        src_nodata=dsrc.nodata, nodata=np.nan, dtype="float32")
+    print(f"{len(srcs)} region surfaces"
+          f"{', plus the wide DEM as a floor' if dem is not None else ''}",
+          flush=True)
 
     written = 0
     for z in range(min_z, max_z + 1):
@@ -161,6 +177,26 @@ def build_all(regions, min_z, max_z, area_paths):
                 tgt = acc[oy:oy + oh, ox:ox + ow]
                 acc[oy:oy + oh, ox:ox + ow] = np.where(
                     np.isfinite(tgt), tgt, part[:oh, :ow])
+            if dem is not None and not np.isfinite(acc).all():
+                win = from_bounds(*b, transform=dem.transform)
+                if _overlaps(win, dem):
+                    clipped = win.intersection(Window(0, 0, dem.width, dem.height))
+                    if clipped.width >= 1 and clipped.height >= 1:
+                        sx, sy = TILE / win.width, TILE / win.height
+                        ow = max(1, int(round(clipped.width * sx)))
+                        oh = max(1, int(round(clipped.height * sy)))
+                        try:
+                            part = dem.read(1, window=clipped, out_shape=(oh, ow),
+                                            resampling=Resampling.bilinear)
+                            ox = max(0, min(TILE - 1, int(round((clipped.col_off - win.col_off) * sx))))
+                            oy = max(0, min(TILE - 1, int(round((clipped.row_off - win.row_off) * sy))))
+                            ow = min(ow, TILE - ox); oh = min(oh, TILE - oy)
+                            if ow >= 1 and oh >= 1:
+                                tgt = acc[oy:oy + oh, ox:ox + ow]
+                                acc[oy:oy + oh, ox:ox + ow] = np.where(
+                                    np.isfinite(tgt), tgt, part[:oh, :ow])
+                        except Exception:
+                            pass
             if not np.isfinite(acc).any():
                 continue
             d = OUT / str(z) / str(x)
@@ -170,6 +206,8 @@ def build_all(regions, min_z, max_z, area_paths):
         print(f"  z{z}: {written} tiles so far", flush=True)
     for _, vrt in srcs:
         vrt.close()
+    if dem is not None:
+        dem.close()
     return written
 
 
