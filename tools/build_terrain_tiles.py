@@ -97,63 +97,79 @@ def encode(h):
     return rgb
 
 
-def build(region, min_z, max_z, paths):
-    src_path = paths["dsm"]
-    if not Path(src_path).exists():
-        print(f"{region}: no DSM"); return 0
+def build_all(regions, min_z, max_z, area_paths):
+    """Tile by TILE, not region by region.
+
+    Writing one region at a time meant a tile covered by two regions got
+    whichever wrote last, and a tile whose neighbour came from a different
+    region filled its gaps from different data -- so the two disagreed along
+    their shared edge and the 3D view showed stepped cliffs at every seam.
+    Here each tile gathers from EVERY region that covers it before anything
+    is filled, so a gap is only ever filled when no survey has the answer.
+    """
+    srcs = []
+    for r in regions:
+        try:
+            p = area_paths(r)
+        except Exception:
+            continue
+        if not Path(p["dsm"]).exists():
+            continue
+        src = rasterio.open(p["dsm"])
+        vrt = WarpedVRT(src, crs="EPSG:3857", resampling=Resampling.bilinear,
+                        src_nodata=src.nodata, nodata=np.nan, dtype="float32")
+        srcs.append((r, vrt))
+    if not srcs:
+        print("no DSMs found")
+        return 0
+    print(f"{len(srcs)} region surfaces", flush=True)
+
     written = 0
-    with rasterio.open(src_path) as src:
-        with WarpedVRT(src, crs="EPSG:3857",
-                       resampling=Resampling.bilinear,
-                       src_nodata=src.nodata, nodata=np.nan,
-                       dtype="float32") as vrt:
-            left, bottom, right, top = vrt.bounds
-            for z in range(min_z, max_z + 1):
-                x0, y0 = merc_to_tile(z, left, top)
-                x1, y1 = merc_to_tile(z, right, bottom)
-                for x in range(x0, x1 + 1):
-                    for y in range(y0, y1 + 1):
-                        b = tile_bounds(z, x, y)
-                        # A WarpedVRT refuses boundless reads, and a tile at
-                        # the edge of the survey always overhangs it. So the
-                        # window is clipped to the VRT and the result is
-                        # pasted into a NaN tile at the right offset --
-                        # which is what boundless would have done.
-                        win = from_bounds(*b, transform=vrt.transform)
-                        clipped = win.intersection(
-                            Window(0, 0, vrt.width, vrt.height)) \
-                            if _overlaps(win, vrt) else None
-                        if clipped is None or clipped.width < 1 or clipped.height < 1:
-                            continue
-                        sx = TILE / win.width
-                        sy = TILE / win.height
-                        ow = max(1, int(round(clipped.width * sx)))
-                        oh = max(1, int(round(clipped.height * sy)))
-                        try:
-                            part = vrt.read(1, window=clipped,
-                                            out_shape=(oh, ow),
-                                            resampling=Resampling.bilinear)
-                        except Exception as exc:
-                            print(f"    z{z}/{x}/{y}: {exc!r}", flush=True)
-                            continue
-                        a = np.full((TILE, TILE), np.nan, "float32")
-                        ox = int(round((clipped.col_off - win.col_off) * sx))
-                        oy = int(round((clipped.row_off - win.row_off) * sy))
-                        ox = max(0, min(TILE - 1, ox))
-                        oy = max(0, min(TILE - 1, oy))
-                        ow = min(ow, TILE - ox)
-                        oh = min(oh, TILE - oy)
-                        if ow < 1 or oh < 1:
-                            continue
-                        a[oy:oy + oh, ox:ox + ow] = part[:oh, :ow]
-                        if not np.isfinite(a).any():
-                            continue
-                        d = OUT / str(z) / str(x)
-                        d.mkdir(parents=True, exist_ok=True)
-                        Image.fromarray(encode(a)).save(
-                            d / f"{y}.png", optimize=True)
-                        written += 1
-    print(f"{region}: {written} tiles z{min_z}-{max_z}", flush=True)
+    for z in range(min_z, max_z + 1):
+        want = {}
+        for _, vrt in srcs:
+            l, b, r2, t = vrt.bounds
+            x0, y0 = merc_to_tile(z, l, t)
+            x1, y1 = merc_to_tile(z, r2, b)
+            for x in range(x0, x1 + 1):
+                for y in range(y0, y1 + 1):
+                    want.setdefault((x, y), []).append(vrt)
+        for (x, y), vrts in want.items():
+            b = tile_bounds(z, x, y)
+            acc = np.full((TILE, TILE), np.nan, "float32")
+            for vrt in vrts:
+                win = from_bounds(*b, transform=vrt.transform)
+                if not _overlaps(win, vrt):
+                    continue
+                clipped = win.intersection(Window(0, 0, vrt.width, vrt.height))
+                if clipped.width < 1 or clipped.height < 1:
+                    continue
+                sx, sy = TILE / win.width, TILE / win.height
+                ow = max(1, int(round(clipped.width * sx)))
+                oh = max(1, int(round(clipped.height * sy)))
+                try:
+                    part = vrt.read(1, window=clipped, out_shape=(oh, ow),
+                                    resampling=Resampling.bilinear)
+                except Exception:
+                    continue
+                ox = max(0, min(TILE - 1, int(round((clipped.col_off - win.col_off) * sx))))
+                oy = max(0, min(TILE - 1, int(round((clipped.row_off - win.row_off) * sy))))
+                ow = min(ow, TILE - ox)
+                oh = min(oh, TILE - oy)
+                if ow < 1 or oh < 1:
+                    continue
+                tgt = acc[oy:oy + oh, ox:ox + ow]
+                acc[oy:oy + oh, ox:ox + ow] = np.where(
+                    np.isfinite(tgt), tgt, part[:oh, :ow])
+            if not np.isfinite(acc).any():
+                continue
+            d = OUT / str(z) / str(x)
+            d.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(encode(acc)).save(d / f"{y}.png", optimize=True)
+            written += 1
+        print(f"  z{z}: {written} tiles so far", flush=True)
+    for _, vrt in srcs:
+        vrt.close()
     return written
 
 
@@ -169,14 +185,7 @@ def main():
     d = ROOT / "data/regions"
     regions = a.regions or sorted(p.name for p in d.iterdir() if p.is_dir())
     OUT.mkdir(parents=True, exist_ok=True)
-    total = 0
-    bounds = {}
-    for r in regions:
-        try:
-            paths = area_paths(r)
-        except Exception:
-            continue
-        total += build(r, a.min_zoom, a.max_zoom, paths)
+    total = build_all(regions, a.min_zoom, a.max_zoom, area_paths)
     (OUT / "meta.json").write_text(json.dumps(
         {"encoding": "mapbox", "tileSize": TILE,
          "minzoom": a.min_zoom, "maxzoom": a.max_zoom,
