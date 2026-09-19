@@ -200,6 +200,21 @@ check("no sun means no savings, with or without a battery", () => {
   assert(e.annual === 0, `annual ${e.annual} on a dark roof`);
 });
 
+
+check("council zoning decides use, not roof size", () => {
+  // a big house in a residential zone is still a house
+  assert(E.isBusiness(40, 900, "home") === false,
+    "a 900 m2 building in a residential zone was called a business");
+  // a small shop in a town centre is still a shop
+  assert(E.isBusiness(5, 120, "business") === true,
+    "a 120 m2 building in a town centre was called a home");
+  // no zoning available: fall back to the old geometry test rather than
+  // refusing to answer
+  assert(E.isBusiness(5, 900, undefined) === true, "fallback lost");
+  assert(E.isBusiness(5, 120, undefined) === false, "fallback lost");
+  assert(E.isBusiness(5, 900, "mixed") === true, "mixed should fall back");
+});
+
 console.log(`\n${pass}/${pass + failures.length} passed`);
 if (failures.length) {
   console.log("failed: " + failures.join(", "));

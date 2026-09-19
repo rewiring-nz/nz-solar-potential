@@ -123,8 +123,28 @@ function systemCost(kwp) { return kwp * costPerKw(kwp); }
 // discount rate or price inflation -- two assumptions that mostly cancel and
 // that nobody can check, and their absence is easier to explain than a
 // number picked to make payback look good.
-// Business or home? Either signal is enough -- see biz_min_* above.
-function isBusiness(kwp, roofM2) {
+// Business or home?
+//
+// THE COUNCIL ALREADY ANSWERED THIS. Josh, 19 Sep: "I've seen some homes
+// misclassified as businesses. Is there building data on this?" There is:
+// the district plan. A zone is a statement about what may legally be built
+// on the land, from the authority that decides it, and tools/fetch_zoning.py
+// joins it onto every building as `zone_class`.
+//
+// Roof area was never a use signal and could not become one -- a 450 m2
+// house in a suburb and a 450 m2 small business look identical from above,
+// so the old rule mislabelled large houses by construction. Measured on the
+// pilot: 205 of 1,066 buildings disagree with the zoning, in both
+// directions. 66 homes were being billed as businesses (including six
+// apartment blocks in High Density Residential), and 139 small buildings in
+// the Queenstown Town Centre were being billed as homes.
+//
+// Zoning leads; where a zone genuinely holds both uses (Business Mixed Use,
+// Settlements) or no zoning is available, the old geometry test still
+// decides, because a blunt answer beats no answer.
+function isBusiness(kwp, roofM2, zoneClass) {
+  if (zoneClass === "business") return true;
+  if (zoneClass === "home") return false;
   return (roofM2 || 0) >= econ.biz_min_roof_m2 || (kwp || 0) >= econ.biz_min_kw;
 }
 // Export rate in a calendar year: today's rate declining at a steady
@@ -138,7 +158,9 @@ function sellRate(year, startCents) {
 
 function economicsFor(kwp, kwhYear, roofM2, override) {
   if (!(kwp > 0) || !(kwhYear > 0)) return null;
-  const biz = isBusiness(kwp, roofM2);
+  const biz = (override && override.biz != null)
+    ? override.biz
+    : isBusiness(kwp, roofM2, override && override.zoneClass);
   const buy = biz ? econ.biz_buy_c : econ.home_buy_c;
   const sellNow = biz ? econ.biz_sell_c : econ.home_sell_c;
   // The decline schedule is anchored on today's rate, so editing the
@@ -441,7 +463,7 @@ function simulateYear(genByHour, seasonDays, dailyKwh, shape, batt) {
 function economicsHourlyFor(kwp, genByHour, seasonDays, roofM2, override) {
   if (!(kwp > 0) || !genByHour || !genByHour.length) return null;
   const o = override || {};
-  const biz = (o.biz != null) ? o.biz : isBusiness(kwp, roofM2);
+  const biz = (o.biz != null) ? o.biz : isBusiness(kwp, roofM2, o.zoneClass);
   const plan = o.plan || RETAIL_PLANS.find(p => !!p.biz === !!biz) || RETAIL_PLANS[0];
   const buyRates = o.buyRates || plan.buy();
   const sellStart = (o.sell_c != null) ? o.sell_c : plan.sell_c;
@@ -509,7 +531,7 @@ function economicsHourlyFor(kwp, genByHour, seasonDays, roofM2, override) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = Object.assign(module.exports || {}, {
-    LOAD_SHAPES, RETAIL_PLANS, BATTERY_DEFAULTS,
+    LOAD_SHAPES, RETAIL_PLANS, BATTERY_DEFAULTS, isBusiness,
     simulateDay, simulateYear, economicsHourlyFor,
   });
 }
