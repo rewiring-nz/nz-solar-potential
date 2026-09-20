@@ -95,6 +95,36 @@ LINZ_IMAGERY_LAYER = 124754  # "Queenstown 0.1m Urban Aerial Photos (2026)" -- c
 # (both still 2021) -- worth revisiting if that skew ever shows up as a real building-outline/roof
 # misalignment, but the two are already independently-sourced datasets with their own tolerances.
 
+# WHICH SURVEY COVERS WHERE. The constants above are the Queenstown answer to
+# a national question -- New Zealand's LiDAR is a patchwork of regional
+# captures flown in different years and published as separate LINZ layers, so
+# the right layer is a property of the PLACE, not of the pipeline. Hard-coded,
+# it pointed the Wellington deploy at the Otago point-cloud store until
+# 31 August: every download 404'd and regions fell back silently to the 1 m
+# DSM.
+#
+# src/surveys.py resolves a region's bbox against this list; a region covered
+# by none of it is an error naming what is known, rather than a plausible
+# wrong answer. With the list absent, every lookup returns the constants above
+# and nothing changes -- which is how this landed without a re-fetch.
+#
+# Coverage must CONTAIN a region, not merely overlap it: a region straddling
+# two captures needs splitting, and that is a decision for a person.
+SURVEYS = [
+    {
+        "name": "otago-queenstown-2021",
+        # The Queenstown Lakes LiDAR block, generously bounded.
+        "bbox": [168.2, -45.6, 169.5, -44.4],
+        "dsm_layer": LINZ_DSM_LAYER,
+        "dem_layer": LINZ_DEM_LAYER,
+        "imagery_layer": LINZ_IMAGERY_LAYER,
+        "lidar_tile_index_layer": LINZ_LIDAR_TILE_INDEX_LAYER,
+        "pointcloud_bulk_url": POINTCLOUD_BULK_URL,
+        "pointcloud_tile_year": POINTCLOUD_TILE_YEAR,
+    },
+]
+
+
 # Trina Vertex S+ TSM-500NEG18R.25 -- the panel Josh picked as representative
 # of what is actually installed in NZ now (Lightforce, 2025). N-type i-TOPCon,
 # 1961 x 1134 mm, 500 W, which works out at 22.5% module efficiency.

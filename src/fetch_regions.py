@@ -28,6 +28,7 @@ from rasterio.merge import merge
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from src.surveys import survey_for
 from src.fetch_data import fetch_building_outlines, fetch_raster
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -129,8 +130,12 @@ def main():
         else:
             print(f"[{name}] outlines exist, skipping")
 
-        print(f"[{name}] DSM...")
-        fetch_raster_chunked(bbox, api_key, config.LINZ_DSM_LAYER, "dsm", out_dir, "grid")
+        # Which survey covers THIS region, not "the" DSM layer. See
+        # src/surveys.py: a national build is a patchwork of captures and a
+        # constant here is how Wellington got pointed at Otago's data.
+        sv = survey_for(bbox, name)
+        print(f"[{name}] DSM (survey {sv.get('name', 'default')})...")
+        fetch_raster_chunked(bbox, api_key, sv["dsm_layer"], "dsm", out_dir, "grid")
 
     # Pass 2: imagery (the long pole), region by region.
     for name in wanted:
@@ -138,7 +143,8 @@ def main():
         out_dir = REGIONS_DIR / name
         print(f"[{name}] imagery ({bbox_area_km2(bbox):.1f} km2)...")
         try:
-            fetch_raster_chunked(bbox, api_key, config.LINZ_IMAGERY_LAYER, "imagery", out_dir, "raster")
+            fetch_raster_chunked(bbox, api_key, survey_for(bbox, name)["imagery_layer"],
+                                 "imagery", out_dir, "raster")
         except Exception as e:
             # LINZ's 0.1m aerial layer is URBAN-only: rural regions 400 here.
             # Never let that abort the run -- DSM+outlines are what the build

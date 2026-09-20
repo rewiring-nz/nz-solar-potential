@@ -28,33 +28,40 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from src.surveys import survey_for
 from src.fetch_data import fetch_building_outlines
 
 POINTCLOUD_DIR = Path(__file__).resolve().parent.parent / "data" / "pointcloud"
 # Survey-specific values live in config, never here: hard-coding them meant the
 # Wellington repo asked the OTAGO bulk store for 2021-named tiles and every
 # download 404'd, leaving regions to fall back silently to the 1 m DSM.
+# Per SURVEY, not per repo. These remain as the defaults for a deployment with
+# no registry; tilename_to_filename and the fetch take the survey's own values
+# where one covers the region. See src/surveys.py.
 BULK_URL = config.POINTCLOUD_BULK_URL
 TILE_YEAR = config.POINTCLOUD_TILE_YEAR
 TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
 
 
-def tilename_to_filename(tilename):
+def tilename_to_filename(tilename, year=None):
     sheet, tile = tilename.split("_", 1)  # "CC11_1000_0712" -> ("CC11", "1000_0712")
-    return f"CL2_{sheet}_{TILE_YEAR}_{tile}.laz"
+    return f"CL2_{sheet}_{year or TILE_YEAR}_{tile}.laz"
 
 
 def area_bbox_wgs84(name):
-    if name == "pilot":
-        return config.PILOT_BBOX
-    return config.REGIONS[name]
+    # Through region_build, which derives a bbox from the region's own
+    # outlines when config does not list it -- a region that has data is
+    # buildable, full stop.
+    from src.region_build import area_bbox_wgs84 as _bbox
+    return _bbox(name)
 
 
 def tiles_for_bbox_wgs84(bbox, api_key):
     minx, miny = TO_NZTM.transform(bbox[0], bbox[1])
     maxx, maxy = TO_NZTM.transform(bbox[2], bbox[3])
-    data = fetch_building_outlines([minx, miny, maxx, maxy], api_key,
-                                    layer_id=config.LINZ_LIDAR_TILE_INDEX_LAYER)
+    data = fetch_building_outlines(
+        [minx, miny, maxx, maxy], api_key,
+        layer_id=survey_for(bbox)["lidar_tile_index_layer"])
     return sorted({f["properties"]["tilename"] for f in data["features"]})
 
 

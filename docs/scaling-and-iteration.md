@@ -94,19 +94,23 @@ region that has data is buildable. The remaining manual step is deciding *which*
 areas to build; at national scale that has to come from a population or
 building-density grid, not from typing bboxes.
 
-**Data sources must be keyed by location.** `config.py` hardcodes one LINZ layer
-per product — `LINZ_DSM_LAYER = 105855` is *Otago Queenstown 2021*, and
-`POINTCLOUD_BULK_URL` points at the Otago store. Wellington needed a different
-store and was silently pointed at Otago until 31 August. NZ LiDAR is a patchwork
-of surveys by year and region, so this has to become a lookup: given a bbox,
-which survey covers it, and where does it live.
+**Data sources are keyed by location now.** Done 21 September.
+`src/surveys.py` resolves a region's bbox against `config.SURVEYS`, and the
+DSM, DEM, imagery, tile-index and point-cloud fetchers all go through it. A
+region covered by no listed survey raises an error naming the surveys that
+exist, instead of quietly fetching someone else's data — which is what happened
+to Wellington until 31 August, pointed at the Otago point-cloud store with
+every download 404ing and regions falling back to the 1 m DSM. With no registry
+configured the lookup returns the old constants, so nothing had to be
+re-fetched to land it. What remains manual is maintaining the list; what is
+gone is the chance of a region silently inheriting the wrong capture.
 
 ### Order to do them in
 
 1. ~~Buildings as vector tiles~~ — done 20 September.
 1. Heat-map rasters as tiles (now the largest download).
 2. Incremental build as the default (makes every later step iterable).
-3. Survey registry keyed by bbox (replaces four hardcoded constants).
+3. ~~Survey registry keyed by bbox~~ — done 21 September.
 4. Region selection from a density grid (replaces the hand-written list).
 5. Distributed build — only worth doing once 1–4 are true.
 
