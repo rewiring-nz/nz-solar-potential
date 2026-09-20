@@ -2595,6 +2595,30 @@ map.on("load", async () => {
       recomputeInViewSummary();
     }, 140);
   };
+  // TILES ARRIVE AFTER THE VIEW SETTLES, so the view is not the only thing
+  // that invalidates the summary.
+  //
+  // inViewBuildingProps caches its queryRenderedFeatures result and only threw
+  // it away when the view moved. That was safe while every building was
+  // already in memory from one GeoJSON fetch. With buildings tiled, a cold
+  // tile lands a second or two after moveend, the cache holds the empty
+  // snapshot taken before it, and the dashboard sits on "0 buildings, 0.0 kW"
+  // over a screen full of roofs -- seen on the live site at exactly z13 with
+  // 2,429 buildings rendered.
+  //
+  // Debounced, because a tiled source fires sourcedata per tile and there is
+  // no point recomputing a 15k-building sum once per tile.
+  let tileTimer = null;
+  map.on("sourcedata", (e) => {
+    if (!e.isSourceLoaded) return;
+    if (e.sourceId !== "buildings" && e.sourceId !== "cells") return;
+    clearTimeout(tileTimer);
+    tileTimer = setTimeout(() => {
+      invalidateInView();
+      recomputeInViewSummary();
+    }, 200);
+  });
+
   // Panel layouts sometimes vanish and only a page refresh brings them back --
   // reported by Josh, and he suspected tab switching, which fits. The basemap
   // survives because it is a plain raster source; the panels come from a
