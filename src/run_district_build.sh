@@ -124,6 +124,13 @@ fi
 # forty roofs costs minutes. The full path is unchanged and is still what a new
 # region, a new stage, or anything outside the selected-faces chain needs.
 #
+# NOT FOR A WHOLE-DISTRICT CHANGE. patch_buildings works in chunks of 60 and
+# each chunk re-reads and rewrites the 394 MB merged layouts, which is cheap
+# for a handful of roofs and ruinous for all of them: re-predicting every
+# reading would be 223 chunks of that. When the change touches most buildings
+# -- a new face_candidates, a new fitter -- the FULL path is the fast one.
+# Rough line: under a thousand buildings, patch; above it, rebuild.
+#
 # data/built_from.json IS PER MACHINE and is not committed -- it records what
 # THIS checkout has built. On a machine that has never run a full build
 # everything hashes as stale and --incremental degrades to a full rebuild,
