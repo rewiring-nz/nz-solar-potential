@@ -137,6 +137,7 @@ if [ $INCREMENTAL -eq 1 ]; then
   done
   $PY src/split_building_detail.py || { echo "FAILED: split_building_detail"; exit 1; }
   $PY src/build_building_tiles.py  || { echo "FAILED: build_building_tiles"; exit 1; }
+  $PY tools/build_heatmap_tiles.py || echo "WARNING: heat-map tiles not rebuilt"
 else
 
 fail=0
@@ -179,6 +180,11 @@ done
 # it removes are baked into them.
 $PY src/split_building_detail.py || { echo "FAILED: split_building_detail"; exit 1; }
 $PY src/build_building_tiles.py  || { echo "FAILED: build_building_tiles"; exit 1; }
+
+# The heat map is raster tiles too (tools/build_heatmap_tiles.py). Built from
+# the published data/heatmaps PNGs, so this runs after whatever regenerated
+# them and reprojects exactly what would otherwise have been served whole.
+$PY tools/build_heatmap_tiles.py || echo "WARNING: heat-map tiles not rebuilt"
 
 fi   # end of the full-build branch
 

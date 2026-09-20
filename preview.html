@@ -1752,8 +1752,6 @@ map.on("load", async () => {
     source: "layout",
     paint: { "fill-opacity": 0 }
   });
-  const heatmapManifestPromise = fetch(`data/heatmaps/manifest.json?v=${DATA_VERSION}`)
-    .then(r => r.json()).catch(() => null);
 
   const assumptions = await fetch(`data/assumptions.json?v=${DATA_VERSION}`)
     .then(r => r.json());
@@ -3146,230 +3144,59 @@ map.on("load", async () => {
   document.getElementById("toggle-heatmap-dash").addEventListener("click", () => setMode("heatmap"));
   document.getElementById("toggle-layout-dash").addEventListener("click", () => setMode("layout"));
 
-  // Per-DSM-pixel generation-potential heatmap, before any panel layout --
-  // one image per built area (see src/build_heatmap_raster.py), same
-  // diverging blue/south -> red/north scale as the facet colours.
-  // Region builds publish data/heatmaps/manifest.json with one raster per
-  // region; the single-image pilot form stays as the fallback so the site
-  // works identically before the first full-region deploy.
-  let heatmapImages;
-  try {
-    const manifest = await heatmapManifestPromise;   // started before the big fetch
-    if (!manifest) throw new Error("no regional heat-map manifest");
-    heatmapImages = manifest.map(m => ({
-      id: `heatmap-raster-${m.name}`,
-      url: `${m.png}?v=${DATA_VERSION}`,
-      urlLod: m.png_lod ? `${m.png_lod}?v=${DATA_VERSION}` : null,
-      urlMid: m.png_mid ? `${m.png_mid}?v=${DATA_VERSION}` : null,
-      size: m.size, sizeLod: m.size_lod || m.size,
-      sizeMid: m.size_mid || m.size_lod || m.size,
-      coordinates: m.coordinates
-    }));
-  } catch (e) {
-    // Legacy single-raster fallback. A region with NO heatmap rasters at all
-    // (Island Bay's first build) 404s here, and the unhandled SyntaxError from
-    // parsing the 404 page killed the entire map init -- no panels, nothing.
-    // Heat-map imagery is optional; the map is not.
-    try {
-      const heatmapMeta = await (await fetch(`data/heatmap_raster.json?v=${DATA_VERSION}`)).json();
-      heatmapImages = [{ id: "heatmap-raster", url: `data/heatmap_raster.png?v=${DATA_VERSION}`,
-                         urlLod: null, size: null, sizeLod: null, coordinates: heatmapMeta.coordinates }];
-    } catch (e) {
-      heatmapImages = [];
-    }
-  }
-  // No heat-map imagery at all (a region whose rasters haven't been built
-  // yet): landing in heat-map mode would show a blank map, so start in
-  // panel-layout mode instead. The Heat Map button stays clickable.
-  if (heatmapImages.length === 0 && mode === "heatmap") {
-    setMode("layout");
-  }
-  // Heat rasters are attached ONLY while they intersect the viewport. A
-  // MapLibre image source is not tiled: adding one uploads the entire PNG as
-  // a GPU texture. With 24 regional rasters (64MB of PNG, several hundred MB
-  // once decoded to RGBA) attaching them all at startup made pan/zoom stutter
-  // badly at town scale. Attach/detach on movement instead -- you can only
-  // ever look at a few regions at once.
+  // Per-pixel generation potential, computed from the point cloud before any
+  // panel layout (src/build_heatmap_raster.py), on the same diverging
+  // blue/south -> red/north scale as the facet colours.
+  //
+  // THE HEAT MAP IS TILES NOW, and the 218 lines this replaces were all
+  // consequences of it not being.
+  //
+  // It used to be one PNG per region attached as a MapLibre image source: not
+  // tiled, so adding one uploads the ENTIRE image as a GPU texture. With 24
+  // regions that is 135 MB of PNG and several hundred MB decoded, which is why
+  // there were three resolutions per region, hysteresis between them, a
+  // megapixel budget, and attach/detach on every movement. Measured on the
+  // live site it still cost 9.6 MB to look at one street -- after buildings
+  // became tiles it was the largest thing the map downloaded.
+  //
+  // data/heatmap_tiles/{z}/{x}/{y}.png is the same imagery, reprojected into
+  // web mercator (tools/build_heatmap_tiles.py) from the deployed PNGs, so the
+  // picture is unchanged. A view fetches the dozen tiles under it, the browser
+  // caches them, and the cost stops depending on how big the region is --
+  // which is the only version of this that works at national scale.
   const HEATMAP_OPACITY = 0.78;
-  const heatmapById = Object.fromEntries(heatmapImages.map(m => [m.id, m]));
-  // Above this zoom a roof is a few pixels across and the 0.4m/px original
-  // earns its keep; below it, the overview copy (src/build_heatmap_lod.py,
-  // max 4096px) is indistinguishable and up to 15x cheaper.
-  // Hysteresis, not one threshold: swapping resolution means detaching and
-  // re-uploading the texture, and a user nudging the zoom around 16.5 (which
-  // is exactly where people sit) would do that on every nudge. Go to detail
-  // at 16.5, fall back only below 16.0.
-  const HEATMAP_DETAIL_ZOOM_IN = 16.5, HEATMAP_DETAIL_ZOOM_OUT = 16.0;
-  // A MIDDLE TIER between the two. The overview copies are capped at 4096px
-  // so twenty regions can attach at district zoom, which in the big regions
-  // means 1.1-1.65 m/px -- far coarser than the 0.4 m rasters or the point
-  // cloud behind them. Josh: "It seems low resolution and maybe lower
-  // resolution than the underlying point cloud data?" He was right, but only
-  // below z16.5. From z15 up only a handful of regions are in view, so they
-  // can afford the 8192px copies: the worst region halves to 0.83 m/px.
-  const HEATMAP_MID_ZOOM_IN = 15.0, HEATMAP_MID_ZOOM_OUT = 14.5;
-  let heatmapDetail = false;
-  let heatmapMid = false;
-  // Hard ceiling on attached texture, in megapixels (x4 bytes for RGBA). The
-  // uncapped version attached 20 of 24 rasters at district zoom -- measured
-  // 4.1GB of texture for a view where a whole building is two pixels. When
-  // the budget binds, the rasters nearest the middle of the screen win.
-  const HEATMAP_BUDGET_MP = 220;
-  const heatmapBounds = {};
-  heatmapImages.forEach(m => {
-    const lngs = m.coordinates.map(c => c[0]), lats = m.coordinates.map(c => c[1]);
-    heatmapBounds[m.id] = [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
-  });
-  // id -> { url, layer, src } for what is on screen, and separately for a
-  // replacement still decoding. Layer ids carry a slot number because during a
-  // resolution swap BOTH exist for a moment, and MapLibre ids must be unique.
-  const attached = new Map();
-  const pending = new Map();
-  let slotSeq = 0;
-  function removeSlot(rec) {
-    if (!rec) return;
-    if (map.getLayer(rec.layer)) map.removeLayer(rec.layer);
-    if (map.getSource(rec.src)) map.removeSource(rec.src);
-  }
-  function cancelPending(id) { removeSlot(pending.get(id)); pending.delete(id); }
-  function detachHeatmap(id) {
-    cancelPending(id);
-    removeSlot(attached.get(id));
-    attached.delete(id);
-  }
-  // MapLibre gives no promise for "this image source has an image now", and
-  // the whole point here is not to remove anything until it does.
-  function whenSourceReady(srcId, done) {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      map.off("sourcedata", onData);
-      clearTimeout(timer);
-      done();
-    };
-    const onData = e => {
-      if (e.sourceId === srcId && map.getSource(srcId) && map.isSourceLoaded(srcId)) finish();
-    };
-    map.on("sourcedata", onData);
-    // A raster whose PNG never arrives must not strand an invisible layer on
-    // top of the visible one forever -- give up and swap anyway.
-    const timer = setTimeout(finish, 6000);
-    if (map.getSource(srcId) && map.isSourceLoaded(srcId)) finish();
-  }
-  // Josh: "the heat map flashes off and on when zooming". Crossing the
-  // detail-zoom threshold used to removeLayer/removeSource and then addSource
-  // the other resolution -- and an image source fetches and decodes its PNG
-  // asynchronously, so for those frames there was simply nothing to draw.
-  // Now the replacement is uploaded UNDERNEATH the outgoing one at zero
-  // opacity (stacking two 0.78 rasters would pulse darker instead of blink)
-  // and the old one is dropped in the same frame the new one can draw.
-  function attachHeatmap(m, url) {
-    const cur = attached.get(m.id);
-    if (cur && cur.url === url) return;
-    if (pending.has(m.id)) return;   // a swap is already in flight for this one
-    const n = ++slotSeq;
-    const rec = { url, layer: `${m.id}#${n}`, src: `${m.id}#${n}-src` };
-    map.addSource(rec.src, { type: "image", url, coordinates: m.coordinates });
+  let heatmapTilesOk = true;
+  try {
+    const meta = await fetch(`data/heatmap_tiles/meta.json?v=${DATA_VERSION}`)
+      .then(r => r.ok ? r.json() : null);
+    if (!meta) throw new Error("no heat-map tiles");
+    map.addSource("heatmap-tiles", {
+      type: "raster",
+      tiles: [`data/heatmap_tiles/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
+      tileSize: meta.tileSize || 256,
+      minzoom: meta.minzoom, maxzoom: meta.maxzoom,
+    });
     map.addLayer({
-      id: rec.layer, type: "raster", source: rec.src,
-      // Set at add time, not left to applyToggles: a layer added while in
-      // Panel Layout mode would otherwise flash over the panels.
-      // AN IMAGE SOURCE CANNOT DRAPE ON TERRAIN. The heat map is 24
-      // positioned PNGs, and MapLibre renders an image source as a flat
-      // quad -- switch terrain on underneath and it smears into vertical
-      // streaks across the view. That is what the first 3D build looked
-      // like on the live site, and it was NOT the terrain data, which
-      // decodes to sane heights. Hidden in 3D until the heat map is
-      // tiled; the imagery basemap and the vector panels drape fine.
-      // The heat map DOES drape on terrain. The smearing that made it look
-      // otherwise was holes in the terrain itself -- MapLibre drawing the
-      // boundary between terrain and no-terrain as a curtain -- and the
-      // wide-DEM floor fixed that. Josh: "The heat map should also work in
-      // 3D always, that's important." It stays visible.
-      layout: { visibility: mode === "heatmap" ? "visible" : "none" },
-      paint: { "raster-opacity": cur ? 0 : HEATMAP_OPACITY, "raster-resampling": "linear" }
-    }, cur ? cur.layer : "buildings-fill");
-    if (!cur) { attached.set(m.id, rec); return; }
-    pending.set(m.id, rec);
-    whenSourceReady(rec.src, () => {
-      if (pending.get(m.id) !== rec) return;   // superseded or cancelled
-      pending.delete(m.id);
-      if (!map.getLayer(rec.layer)) return;
-      map.setPaintProperty(rec.layer, "raster-opacity", HEATMAP_OPACITY);
-      removeSlot(attached.get(m.id));
-      attached.set(m.id, rec);
-      // The view may have moved on while that PNG was decoding.
-      syncHeatmapRasters();
-    });
+      id: "heatmap-raster",
+      type: "raster",
+      source: "heatmap-tiles",
+      layout: { visibility: overlayOn && mode === "heatmap" ? "visible" : "none" },
+      // linear, so the 0.4 m source stays smooth when overzoomed past the
+      // top tile zoom rather than going blocky
+      paint: { "raster-opacity": HEATMAP_OPACITY, "raster-resampling": "linear" },
+    }, "buildings-fill");
+  } catch (e) {
+    // No tiles built for this deployment. The map is not optional; the heat
+    // map is -- an earlier version of this path killed the whole init by
+    // letting a 404's SyntaxError escape.
+    console.warn("heat-map tiles unavailable", e);
+    heatmapTilesOk = false;
+    if (mode === "heatmap") setMode("layout");
   }
-  function syncHeatmapRasters() {
-    const b = map.getBounds();
-    // Keep neighbours warm so a short pan doesn't re-upload -- but PROPORTIONAL
-    // to the viewport, not a fixed 0.01 degrees. A fixed pad is ~1.1km, which
-    // at z17 is bigger than the whole viewport: it was pulling in six
-    // full-resolution regions to show one street.
-    const padX = (b.getEast() - b.getWest()) * 0.2, padY = (b.getNorth() - b.getSouth()) * 0.2;
-    const w = b.getWest() - padX, e = b.getEast() + padX,
-          so = b.getSouth() - padY, n = b.getNorth() + padY;
-    const z = map.getZoom();
-    if (z >= HEATMAP_DETAIL_ZOOM_IN) heatmapDetail = true;
-    else if (z < HEATMAP_DETAIL_ZOOM_OUT) heatmapDetail = false;
-    const detail = heatmapDetail;
-    if (z >= HEATMAP_MID_ZOOM_IN) heatmapMid = true;
-    else if (z < HEATMAP_MID_ZOOM_OUT) heatmapMid = false;
-    const mid = heatmapMid && !detail;
-    const cx = (b.getWest() + b.getEast()) / 2, cy = (b.getSouth() + b.getNorth()) / 2;
-
-    const wanted = new Map();
-    // overlayOn too: with the heat map toggled off the rasters are DETACHED,
-    // not just hidden, so bare-imagery mode costs nothing to hold open --
-    // which is the state Josh wants while looking at roofs in 3D.
-    if (overlayOn && mode === "heatmap") {
-      const candidates = heatmapImages
-        .filter(m => {
-          const [mw, ms, me, mn] = heatmapBounds[m.id];
-          return !(me < w || mw > e || mn < so || ms > n);
-        })
-        .map(m => {
-          const [mw, ms, me, mn] = heatmapBounds[m.id];
-          const dx = Math.max(mw - cx, 0, cx - me), dy = Math.max(ms - cy, 0, cy - mn);
-          return { m, dist: dx * dx + dy * dy };
-        })
-        .sort((a, b2) => a.dist - b2.dist);
-      let spent = 0;
-      for (const { m } of candidates) {
-        const size = detail ? m.size : (mid ? m.sizeMid : m.sizeLod);
-        const mp = size ? size[0] * size[1] / 1e6 : 0;
-        // Always attach the nearest one even if it alone blows the budget --
-        // a blank heat map is worse than a heavy one.
-        if (wanted.size && spent + mp > HEATMAP_BUDGET_MP) continue;
-        spent += mp;
-        wanted.set(m.id, detail ? m.url
-                                : (mid ? (m.urlMid || m.urlLod || m.url)
-                                       : (m.urlLod || m.url)));
-      }
-    }
-
-    [...attached.keys()].forEach(id => {
-      const url = wanted.get(id);
-      // Out of view or priced out of the budget: this one really does go.
-      if (!url) { detachHeatmap(id); return; }
-      // Still wanted, different resolution -- swap it without a gap.
-      if (url !== attached.get(id).url) attachHeatmap(heatmapById[id], url);
-    });
-    heatmapImages.forEach(m => {
-      const url = wanted.get(m.id);
-      if (url && !attached.has(m.id)) attachHeatmap(m, url);
-    });
-  }
-  window.__syncHeatmapRasters = syncHeatmapRasters;
-  // Live, not a fixed list: slot ids change on every resolution swap, and
-  // applyToggles (defined earlier, top-level) needs whatever exists right now.
-  Object.defineProperty(window, "__heatmapLayers", {
-    get: () => [...attached.values(), ...pending.values()].map(r => r.layer)
-  });
-  syncHeatmapRasters();
+  // applyToggles drives layer visibility through this; with a tiled source
+  // there is exactly one layer and nothing to attach or detach.
+  window.__heatmapLayers = heatmapTilesOk ? ["heatmap-raster"] : [];
+  window.__syncHeatmapRasters = () => {};
 
   // Panel layouts come as vector tiles (PMTiles, ~24MB for all of
   // Queenstown vs ~364MB as GeoJSON): tiles stream on demand, so density

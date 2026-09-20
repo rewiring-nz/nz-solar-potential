@@ -28,6 +28,11 @@ data/*
 !data/assumptions.json
 !data/building_detail/
 !data/building_detail/**
+
+# The heat map is raster tiles too (tools/build_heatmap_tiles.py), replacing
+# 24 whole-region PNGs the browser downloaded one of to see one street.
+!data/heatmap_tiles/
+!data/heatmap_tiles/**
 !data/roof_labels.json
 !data/bench_ids.txt
 !data/bench_set.json
