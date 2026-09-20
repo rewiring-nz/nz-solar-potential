@@ -221,13 +221,14 @@ def sam_faces(predictor, rgb, geom, bounds, pts):
     # it as "fuzzy incorrect lines". Simplify harder, and collapse micro-jags
     # by closing/opening before the simplify so staircase pixels go first.
     out_faces = []
+    ax = building_axis(geom)
     for p2 in polys:
         if p2.area < 2.0:
             continue
-        q = p2.buffer(0.15).buffer(-0.15).simplify(0.35)
+        q = p2.buffer(0.15).buffer(-0.15)
         if q.geom_type != "Polygon" or q.is_empty:
-            q = p2.simplify(0.3)
-        out_faces.append(q)
+            q = p2
+        out_faces.append(regularise(q, ax))
     return out_faces, obs
 
 
@@ -348,10 +349,93 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     if not segs:
         return [], pr
     facets = line_facets(building_id, geom, pts, segs) or []
-    return [f["geometry"] for f in facets], pr
+    ax = building_axis(geom)
+    return [regularise(f["geometry"], ax) for f in facets], pr
 
 
 # --------------------------------------------------------------- scorer
+
+# ---------------------------------------------------------- straight edges
+
+# A ROOF EDGE IS STRAIGHT. Everything here exists because Josh reads a wavy
+# boundary as a mistake about the roof, and says so in those terms:
+# "fuzzy, jagged boundaries following nothing visible in the imagery",
+# "unnecessary inaccurate roof lines drawn where there are none",
+# "way too many faces being created and in the wrong places".
+#
+# Each reading traces something raster -- a SAM mask, a thinned line network,
+# a LiDAR label grid -- and a raster traces a straight eave as a staircase.
+# An isotropic simplify cannot remove a staircase, because every tread is a
+# real vertex a fixed distance from the chord; rotating into the BUILDING'S
+# frame first can, because there the staircase is a run of nearly-equal
+# coordinates and collapses to one line.
+#
+# This was written for lidar_faces and lived inside it, so the two readings
+# that produced every roof he has called jagged did not get it: sam_faces
+# only simplified isotropically at 0.35, and line_faces did not simplify at
+# all. Shared here, and applied by all three.
+SNAP_M = 0.5            # a jog shorter than this in the building frame is noise
+SIMPLIFY_M = 0.55       # chord tolerance in the building frame
+SIMPLIFY_FINAL_M = 0.35
+MIN_KEEP_FRAC = 0.7     # a snap that eats 30% of the face was not a jog
+
+
+def building_axis(geom):
+    """The angle of the building's long side, in radians."""
+    try:
+        cc = list(geom.minimum_rotated_rectangle.exterior.coords)
+        return float(np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0]))
+    except Exception:
+        return 0.0
+
+
+def regularise(part, ax):
+    """Straighten a traced boundary in the building's own frame."""
+    import shapely.affinity as aff
+    from shapely.geometry import Polygon
+    # Polygon is imported HERE on purpose. This body was lifted out of
+    # lidar_faces, which imports it locally, and the first version relied on a
+    # module-level name that does not exist -- so every call raised NameError
+    # into the except below, fell back to an isotropic simplify, and quietly
+    # did the opposite of its job: #4735106 went 35 -> 67 vertices and
+    # #4734994 50 -> 56, both roofs Josh had already called jagged.
+    if part is None or part.is_empty or part.geom_type != "Polygon":
+        return part
+    try:
+        rot = aff.rotate(part, -np.degrees(ax), origin=(0, 0))
+        rot = rot.simplify(SIMPLIFY_M)
+        if rot.geom_type == "Polygon":
+            cs = list(rot.exterior.coords)[:-1]
+            snapped = []
+            for i2 in range(len(cs)):
+                x0, y0 = cs[i2]
+                xp, yp = cs[i2 - 1]
+                if abs(x0 - xp) < SNAP_M:
+                    x0 = (x0 + xp) / 2
+                    if snapped:
+                        snapped[-1] = (x0, snapped[-1][1])
+                if abs(y0 - yp) < SNAP_M:
+                    y0 = (y0 + yp) / 2
+                    if snapped:
+                        snapped[-1] = (snapped[-1][0], y0)
+                snapped.append((x0, y0))
+            if len(snapped) >= 3:
+                cand = Polygon(snapped)
+                if cand.is_valid and cand.area > MIN_KEEP_FRAC * rot.area:
+                    rot = cand.simplify(SIMPLIFY_FINAL_M)
+        reg = aff.rotate(rot, np.degrees(ax), origin=(0, 0))
+    except Exception:
+        reg = None
+    # NO AREA GUARD HERE. The inner snap already refuses a collapse that eats
+    # MIN_KEEP_FRAC of the face; adding a second test on the whole result only
+    # sends good rectifications back to an isotropic simplify, which measured
+    # WORSE -- #4735106 went from 6 to 12 vertices a face and #4734994 from
+    # 10 to 11, both of them roofs Josh had already called jagged.
+    if (reg is None or not reg.is_valid or reg.is_empty
+            or reg.geom_type != "Polygon"):
+        return part.simplify(0.3)
+    return reg
+
 
 def lidar_faces(pts, geom):
     """LiDAR-first reading: normal-based region growing on the point cloud,
@@ -509,10 +593,7 @@ def lidar_faces(pts, geom):
         cell_label = m2
         cell_label[cell_label == -9] = big
 
-    # dominant axes of the footprint for boundary regularisation
-    mrr = geom.minimum_rotated_rectangle
-    cc = list(mrr.exterior.coords)
-    ax = np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0])
+    ax = building_axis(geom)
 
     faces = []
     for r in sorted(set(cell_label.ravel())):
@@ -537,36 +618,7 @@ def lidar_faces(pts, geom):
         for part in parts:
             if part.geom_type != "Polygon" or part.area < 6.0:
                 continue
-            # regularise: rotate into the building frame, simplify with a
-            # coarse tolerance there (axis-parallel jags collapse), rotate back
-            import shapely.affinity as aff
-            rot = aff.rotate(part, -np.degrees(ax), origin=(0, 0))
-            rot = rot.simplify(0.55)
-            # axis-snap: raster stair-steps survive simplify as short jogs;
-            # in the building frame a nearly-axis-parallel edge IS axis
-            # parallel, so collapse runs of nearly-equal x (or y) vertices
-            if rot.geom_type == "Polygon":
-                cs = list(rot.exterior.coords)[:-1]
-                snapped = []
-                for i2 in range(len(cs)):
-                    x0, y0 = cs[i2]
-                    xp, yp = cs[i2 - 1]
-                    if abs(x0 - xp) < 0.5:
-                        x0 = (x0 + xp) / 2
-                        if snapped:
-                            snapped[-1] = (x0, snapped[-1][1])
-                    if abs(y0 - yp) < 0.5:
-                        y0 = (y0 + yp) / 2
-                        if snapped:
-                            snapped[-1] = (snapped[-1][0], y0)
-                    snapped.append((x0, y0))
-                if len(snapped) >= 3:
-                    cand2 = Polygon(snapped)
-                    if cand2.is_valid and cand2.area > 0.7 * rot.area:
-                        rot = cand2.simplify(0.35)
-            reg = aff.rotate(rot, np.degrees(ax), origin=(0, 0))
-            if not reg.is_valid or reg.is_empty or reg.geom_type != "Polygon":
-                reg = part.simplify(0.3)
+            reg = regularise(part, ax)
             if reg.geom_type == "Polygon" and reg.area >= 6.0:
                 faces.append(reg)
     return faces

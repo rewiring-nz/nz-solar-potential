@@ -37,6 +37,14 @@ def main():
     ap.add_argument("--bench", action="store_true",
                     help="every roof in the benchmark set")
     ap.add_argument("--limit", type=int, default=0)
+    # SHARDING, because one process is 5 s a building and the district is
+    # 13,400 of them -- 18 hours serial. Deterministic by index, so N shards
+    # partition the region exactly once with no coordination and no shared
+    # state; each writes its own files under data/selected_faces.
+    ap.add_argument("--shard", default=None,
+                    help="i/n -- this process takes every nth building from i")
+    ap.add_argument("--skip-existing-newer-than", default=None,
+                    help="ISO date; skip a building whose prediction is newer")
     a = ap.parse_args()
 
     import numpy as np
@@ -94,6 +102,16 @@ def main():
     pc = PointCloudSource(max_cached_tiles=3)
     if not ids:
         ids = [int(x) for x in gdf["building_id"]]
+    if a.shard:
+        i, n = (int(x) for x in a.shard.split("/"))
+        ids = [b for k, b in enumerate(ids) if k % n == i]
+    if a.skip_existing_newer_than:
+        import datetime
+        cut = datetime.datetime.fromisoformat(
+            a.skip_existing_newer_than).timestamp()
+        ids = [b for b in ids
+               if not ((OUT / f"{b}.json").exists()
+                       and (OUT / f"{b}.json").stat().st_mtime > cut)]
     if a.limit:
         ids = ids[:a.limit]
 
