@@ -1537,3 +1537,18 @@ out of a console buffer that survives navigation in the test browser, so they
 came from earlier 3D clicks in the same session. Confirmed present at HEAD
 before the building-tile work. Reproduce with a genuinely fresh tab before
 spending time on it.
+
+## arrowtown_hills is a dead region: 50 buildings, none estimated (20 Sep)
+
+Every one of its 50 buildings is `no_estimate`, and its heat-map raster is a
+fully transparent 5852x7343 PNG -- 43 megapixels of nothing, which is why it
+produced zero heat-map tiles and how it was noticed.
+
+The cause was recorded during the 3 Sep district run: its DSM "described
+ground 340 m west of every building in it". So it is an input problem, not a
+geometry one, and fixing it means re-fetching that region's DSM and rebuilding
+it -- VM work, needing the region's source data.
+
+Small (0.3% of the district) but it is a whole area of the map saying "we
+could not model this", which is exactly the case someone searching their own
+address minds most.

@@ -33,6 +33,10 @@ data/*
 # 24 whole-region PNGs the browser downloaded one of to see one street.
 !data/heatmap_tiles/
 !data/heatmap_tiles/**
+
+# The overview copies of the heat map. Dead since it became tiles -- 75 MB
+# across 48 files that nothing fetches, deployed on every push.
+data/heatmaps/lod/
 !data/roof_labels.json
 !data/bench_ids.txt
 !data/bench_set.json
