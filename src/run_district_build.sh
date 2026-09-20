@@ -135,6 +135,8 @@ if [ $INCREMENTAL -eq 1 ]; then
   for s in build_terrain_masks build_seasonal_curves shrink_panels_for_tiles; do
     $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
   done
+  $PY src/split_building_detail.py || { echo "FAILED: split_building_detail"; exit 1; }
+  $PY src/build_building_tiles.py  || { echo "FAILED: build_building_tiles"; exit 1; }
 else
 
 fail=0
@@ -167,6 +169,16 @@ for s in merge_regions bake_density_deciles build_terrain_masks \
          build_seasonal_curves shrink_panels_for_tiles; do
   $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
 done
+
+# The browser reads buildings as TILES, not as one 26 MB download, so the
+# tiles and the per-building detail have to be rebuilt from the merged file
+# every time it changes -- otherwise the map shows last build's buildings
+# beside this build's panels, which is the kind of mismatch nobody notices
+# until Josh is looking at a roof that disagrees with itself.
+# Order matters: the split must run before the tiles, or the horizon blobs
+# it removes are baked into them.
+$PY src/split_building_detail.py || { echo "FAILED: split_building_detail"; exit 1; }
+$PY src/build_building_tiles.py  || { echo "FAILED: build_building_tiles"; exit 1; }
 
 fi   # end of the full-build branch
 

@@ -16,6 +16,18 @@ data/*
 # 3D terrain: the DSM as Mapbox terrain-RGB tiles, served straight off Pages
 !data/terrain/
 !data/terrain/**
+
+# Buildings are served as TILES now, not as one solar_potential.geojson
+# download (src/build_building_tiles.py, src/split_building_detail.py). These
+# are what the live map fetches, so they have to be deployed.
+# NOTE: a trailing comment on the same line as a pattern silently breaks it --
+# that has already cost this file once. Comments go on their own line.
+!data/buildings.pmtiles
+!data/building_cells.pmtiles
+!data/addresses.json
+!data/assumptions.json
+!data/building_detail/
+!data/building_detail/**
 !data/roof_labels.json
 !data/bench_ids.txt
 !data/bench_set.json
@@ -42,3 +54,11 @@ validation/
 data/training/
 training_faces/
 data/training_faces/
+
+# A second local virtualenv (the SAM/torch one used by tools/predict_faces.py).
+# .venv is already ignored; this one was not, and a `git add -A` put 21,387
+# site-packages files into a commit.
+.venv-sam/
+
+# Per-machine quickstart area, written by the user running quickstart.sh.
+my_area.json

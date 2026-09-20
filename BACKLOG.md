@@ -1502,3 +1502,27 @@ between them. Same silent class as #4732192/#4725682 logged yesterday:
 the geometry survives and the fitter refuses it, so nothing errors and the
 only sign is the predeploy gate. Worth one diagnosis for the class rather
 than four for the instances.
+
+## Merged layouts disagree with the per-region layouts (found 20 Sep)
+
+`data/panel_layouts.geojson` and `data/regions/<r>/panel_layouts.geojson` are
+two different generations of geometry. On the pilot region alone: 503 buildings
+have MORE facets in the merged file, 59 have fewer, and 226 have the same count
+with a different total area -- only 311 of 1,065 agree.
+
+The merged file is the newer of the two and is what tippecanoe builds
+`panel_layouts.pmtiles` from, so it is what the live map draws. The region
+files are what `derive_solar_potential` reads, so the dashboard numbers were
+being derived from the older geometry.
+
+Both `patch_buildings` and `merge_regions` are supposed to keep them in step.
+Find which driver writes one without the other. Until then, anything deriving
+building aggregates must read the MERGED file (see tools/repair_facet_area.py).
+
+## "3D unavailable" TypeError at startup (pre-existing, found 20 Sep)
+
+`setTerrain3D` throws `Cannot read properties of null (reading '0')` on a cold
+load when 3D is restored from localStorage before the terrain source exists.
+Caught and logged as "3D unavailable", and 3D works once toggled by hand, so it
+is cosmetic -- but it is two console errors on every load and it hides real
+ones. Confirmed present at HEAD before the building-tile work.

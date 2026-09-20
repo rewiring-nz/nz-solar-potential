@@ -1452,28 +1452,49 @@ function panelLayerFilter(id, excludeBuildingId) {
 // a phone where a tap can register twice. What makes it safe now is that both
 // buttons visibly go unlit in that state, on desktop and mobile, so "nothing
 // is selected" reads as a state rather than a failure.
+// TOGGLE, and the earlier objection to toggling is fixed rather than dodged.
+//
+// Josh, 20 Sep: "It also needs to be possible to toggle off heat map mode and
+// panel layout mode... When viewing in 3D, it's often useful just to see clear
+// roof imagery with heat map turned off."
+//
+// This was select-only because toggling used to fall through to a third state,
+// "none", which hid both overlays AND switched the numbers off with them: a
+// blank map with the building panel still captioned "at the current panel
+// density" over a coverage estimate.
+//
+// The mistake there was conflating two things. WHICH OVERLAY IS DRAWN and
+// WHICH ESTIMATE IS SHOWN are separate questions, and only the first one has a
+// sensible "off". So `mode` keeps meaning heatmap-or-layout and keeps driving
+// every number, caption and control; `overlayOn` says whether its layers are
+// painted. Turning the overlay off gives bare imagery -- which in 3D is the
+// whole point -- and the panel keeps reading exactly as it did.
+let overlayOn = true;
+
 function setMode(newMode) {
-  // SELECT, not toggle. Clicking the button for the mode you are ALREADY in
-  // used to fall through to "none", which hides both overlays: a blank map,
-  // with the building panel still captioned "at the current panel density"
-  // over a coverage estimate. Josh had the mobile buttons changed to
-  // select-not-toggle for exactly this reason; the dashboard pair was missed.
-  mode = newMode;
+  if (newMode === mode && overlayOn) {
+    overlayOn = false;            // clicking the on button turns it off
+  } else {
+    mode = newMode;               // the other button always switches and turns on
+    overlayOn = true;
+  }
   applyToggles();
 }
 
 function syncToggleButtons() {
   const globalBtn = document.getElementById("toggle-heatmap-global");
   if (globalBtn) {
-    globalBtn.classList.toggle("active", mode === "heatmap");
-    globalBtn.textContent = mode === "heatmap" ? "On" : "Off";
+    globalBtn.classList.toggle("active", overlayOn && mode === "heatmap");
+    globalBtn.textContent = overlayOn && mode === "heatmap" ? "On" : "Off";
   }
   const lf = document.querySelector(".legend-facet");
-  if (lf) lf.style.display = mode === "heatmap" ? "" : "none";
+  if (lf) lf.style.display = overlayOn && mode === "heatmap" ? "" : "none";
   const dashHeat = document.getElementById("toggle-heatmap-dash");
   const dashLayout = document.getElementById("toggle-layout-dash");
-  if (dashHeat) dashHeat.classList.toggle("active", mode === "heatmap");
-  if (dashLayout) dashLayout.classList.toggle("active", mode === "layout");
+  // Active only while it is actually painting something, so the pair reads as
+  // two independent on/off switches that happen to be mutually exclusive.
+  if (dashHeat) dashHeat.classList.toggle("active", overlayOn && mode === "heatmap");
+  if (dashLayout) dashLayout.classList.toggle("active", overlayOn && mode === "layout");
   const coverageControl = document.getElementById("coverage-control");
   if (coverageControl) coverageControl.style.display = mode === "heatmap" ? "block" : "none";
   // The layer toggles moved to the corner cluster; keep their state in step
@@ -1505,7 +1526,8 @@ function applyToggles() {
   if (window.__syncHeatmapRasters) window.__syncHeatmapRasters();  // attach/detach for this mode
   (window.__heatmapLayers || ["heatmap-raster"]).forEach(id => {
     if (map.getLayer(id)) {
-      map.setLayoutProperty(id, "visibility", mode === "heatmap" ? "visible" : "none");
+      map.setLayoutProperty(id, "visibility",
+        overlayOn && mode === "heatmap" ? "visible" : "none");
     }
   });
   if (layoutReady) {
@@ -1516,7 +1538,7 @@ function applyToggles() {
       // Josh: "the dotted building outline stays on either way, just another
       // one is turned on". It now rides the same toggle, so the default view is
       // panels on the bare roof and the toggle brings back both outlines.
-      const vis = mode === "layout" && (
+      const vis = overlayOn && mode === "layout" && (
         id.startsWith("obstructions") ? obstructionsOn :
         id === "facets-outline" ? outlinesOn : true);
       map.setLayoutProperty(id, "visibility", vis ? "visible" : "none");
@@ -1733,26 +1755,58 @@ map.on("load", async () => {
   const heatmapManifestPromise = fetch(`data/heatmaps/manifest.json?v=${DATA_VERSION}`)
     .then(r => r.json()).catch(() => null);
 
-  const resp = await fetch(`data/solar_potential.geojson?v=${DATA_VERSION}`);
-  const data = await resp.json();
-  const assumptions = data.assumptions;
+  const assumptions = await fetch(`data/assumptions.json?v=${DATA_VERSION}`)
+    .then(r => r.json());
 
-  // tolerance:0 matters more than it looks. MapLibre tiles a GeoJSON source
-  // internally with geojson-vt, which simplifies at low zoom and DROPS polygons
-  // whose area falls under a tolerance-derived threshold -- and a house is a
-  // very small polygon once you are a few zoom levels out. Measured: 11,968
-  // buildings in the source at z12, 819 at z10.5, which is what Josh saw as
-  // "10000 buildings in view to just 800, a sudden drop".
+  // BUILDINGS ARE TILES, AND THE TOTALS COME FROM SOMEWHERE ELSE.
   //
-  // That silently truncated the district totals too, not just the count: the
-  // dashboard sums whatever the source hands back, so the whole-town figure was
-  // quietly a sample once you zoomed out far enough to want it.
-  map.addSource("buildings", { type: "geojson", data, tolerance: 0 });
+  // Josh, 20 Sep: "make the solar potential geojson work in a different way so
+  // it's not the whole thing downloading... fast for all NZ, then increase in
+  // accuracy as we get closer."
+  //
+  // It used to be one 26 MB fetch of every building in the district. For New
+  // Zealand's 2.1 million that is about 3.4 GB, so the map would never open.
+  // Now it is data/buildings.pmtiles from z13 up, and the browser fetches the
+  // handful of tiles it is actually looking at.
+  //
+  // THE TOTALS CANNOT COME FROM THE TILES, and the reason is written in the
+  // bug this replaces. The old GeoJSON source was created with tolerance:0
+  // because MapLibre's internal geojson-vt DROPS polygons below an
+  // area threshold as you zoom out -- 11,968 buildings at z12, 819 at z10.5 --
+  // and the dashboard sums whatever the source hands back, so the whole-town
+  // figure quietly became a sample. Josh saw it: "10000 buildings in view to
+  // just 800, a sudden drop".
+  //
+  // Real vector tiles have the same property and no tolerance:0 to turn it
+  // off: a byte budget per tile is what makes them fast. So the sums move to
+  // data/building_cells.pmtiles -- one feature per ~7 km cell, carrying the
+  // count and the summed kWp/kWh at every coverage step, computed per building
+  // from that building's own cov_poa_N before aggregation. Below z13 the
+  // dashboard adds up cells and is exact; from z13 it adds up buildings and is
+  // exact. Coarser as you zoom out, never wrong.
+  map.addSource("buildings", {
+    type: "vector", url: `pmtiles://data/buildings.pmtiles?v=${DATA_VERSION}`,
+  });
+  // Mirrors CELL_BANDS / BUILDING_MIN_Z in src/build_building_tiles.py.
+  // Each band draws a grid three zooms finer than the zoom it is shown at, so
+  // the viewport always spans roughly eight cells: a cell clipped by the edge
+  // of the screen is counted whole, and with one coarse grid for every zoom
+  // that error was most of the answer (z12.9 read 7,839 buildings against
+  // z13.1's 2,267 for the same place).
+  const CELL_BANDS = [[9, 0, 6], [12, 6, 9], [16, 9, 13]];
+  const BUILDING_MIN_Z = 13;
+  const cellLodFor = (z) => {
+    for (const [lod, from, to] of CELL_BANDS) if (z >= from && z < to) return lod;
+    return CELL_BANDS[CELL_BANDS.length - 1][0];
+  };
+  map.addSource("cells", {
+    type: "vector", url: `pmtiles://data/building_cells.pmtiles?v=${DATA_VERSION}`,
+  });
 
   map.addLayer({
     id: "buildings-fill",
     type: "fill",
-    source: "buildings",
+    source: "buildings", "source-layer": "buildings",
     paint: {
       // Per-building kWp choropleth colour, kept defined but invisible
       // (opacity 0 below) -- the per-pixel heatmap-raster layer is the
@@ -1775,6 +1829,36 @@ map.on("load", async () => {
     }
   });
 
+  // THE ZOOMS ABOVE THE BUILDINGS. Below BUILDING_MIN_Z there are no building
+  // tiles at all -- there is one box per ~7 km cell, shaded by how much roof
+  // solar it holds. That is the "fast for all NZ, more accurate as you get
+  // closer" half: a national view is a few thousand boxes instead of two
+  // million polygons, and zooming past z13 swaps in the real roofs.
+  CELL_BANDS.forEach(([lod, from, to]) => {
+    map.addLayer({
+      id: `cells-fill-${lod}`,
+      type: "fill",
+      source: "cells", "source-layer": "cells",
+      filter: ["==", ["get", "lod"], lod],
+      minzoom: from, maxzoom: to,
+      paint: {
+        // Shaded by roof solar PER SQUARE KILOMETRE, not by cell total, so the
+        // colour means the same thing in every band -- a total would make the
+        // coarse grid look uniformly hotter simply for holding more land.
+        "fill-color": ["interpolate", ["linear"],
+          ["/", ["coalesce", ["get", "kwh_100"], 0],
+                ["max", ["coalesce", ["get", "km2"], 1], 0.01]],
+          0, "#2b1055", 2e5, "#7a1f6b", 1e6, "#d0435c",
+          5e6, "#f9a520", 2e7, "#ffe97a"],
+        // Empty land should look empty. A cell holding four houses is mostly
+        // mountain, and painting it the same as a suburb is the map telling a
+        // lie about where the roofs are.
+        "fill-opacity": ["interpolate", ["linear"],
+          ["coalesce", ["get", "n"], 0], 0, 0, 5, 0.18, 60, 0.45, 400, 0.6],
+      }
+    });
+  });
+
   // NOT ESTIMATED. These roofs used to vanish from the map entirely, which is
   // the one case where someone searching their own address most wants an
   // answer: absent is indistinguishable from broken. They now draw in a muted
@@ -1783,14 +1867,14 @@ map.on("load", async () => {
   map.addLayer({
     id: "buildings-noestimate",
     type: "fill",
-    source: "buildings",
+    source: "buildings", "source-layer": "buildings",
     filter: ["has", "no_estimate_reason"],
     paint: { "fill-color": "#6b7580", "fill-opacity": 0.45 }
   });
   map.addLayer({
     id: "buildings-noestimate-outline",
     type: "line",
-    source: "buildings",
+    source: "buildings", "source-layer": "buildings",
     filter: ["has", "no_estimate_reason"],
     paint: { "line-color": "#aab4be", "line-width": 1.2, "line-dasharray": [2, 2] }
   });
@@ -1799,7 +1883,7 @@ map.on("load", async () => {
     id: "buildings-outline",
     layout: { visibility: "none" },  // off by default (Josh) -- toggle on the left dashboard
     type: "line",
-    source: "buildings",
+    source: "buildings", "source-layer": "buildings",
     paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.15, 15, 0.35, 17, 0.6], "line-opacity": 0.4 }
   });
 
@@ -1833,13 +1917,13 @@ map.on("load", async () => {
   // it reads against both a dark roof and a pale one.
   map.addLayer({
     id: "buildings-selected-halo",
-    type: "line", source: "buildings",
+    type: "line", source: "buildings", "source-layer": "buildings",
     filter: SELECTED_NONE,
     paint: { "line-color": "#ffd166", "line-width": 5, "line-opacity": 0.28, "line-blur": 2 }
   });
   map.addLayer({
     id: "buildings-selected",
-    type: "line", source: "buildings",
+    type: "line", source: "buildings", "source-layer": "buildings",
     filter: SELECTED_NONE,
     paint: { "line-color": "#ffd166", "line-width": 1.8, "line-opacity": 0.95 }
   });
@@ -2109,7 +2193,69 @@ map.on("load", async () => {
   }
   window.__refreshDerived = refreshDerived;
 
+  // Below BUILDING_MIN_Z the dashboard adds up CELLS, not buildings.
+  //
+  // This is the whole reason building_cells.pmtiles exists. A tiled source
+  // drops features to meet a per-tile byte budget, so summing what the map
+  // rendered is a sample -- and the old GeoJSON source had exactly this bug
+  // before tolerance:0 was added to it: 11,968 buildings at z12 and 819 at
+  // z10.5, which Josh saw as "10000 buildings in view to just 800, a sudden
+  // drop". A cell carries the total for everything inside it, dropped or not,
+  // so the figure stays exact as you zoom out instead of quietly becoming a
+  // fraction of itself.
+  //
+  // Both sides use the same per-building numbers: the cell's kwh_N was summed
+  // at build time from each building's own cov_poa_N, the same ladder
+  // bestPoa() interpolates here, so the total does not jump at the handover.
+  function cellSummary() {
+    const lod = cellLodFor(map.getZoom());
+    const cells = map.queryRenderedFeatures({ layers: [`cells-fill-${lod}`] });
+    const seen = new Set();
+    let n = 0, kwp = 0, kwhYear = 0;
+    for (const c of cells) {
+      const k = c.properties.cell;
+      if (seen.has(k)) continue;         // one cell spans several tiles
+      seen.add(k);
+      n += c.properties.n || 0;
+      kwp += lerpCell(c.properties, "kwp", coveragePct);
+      kwhYear += lerpCell(c.properties, "kwh", coveragePct);
+    }
+    return { n, kwp, kwhYear };
+  }
+  function lerpCell(p, prefix, pct) {
+    const steps = COVERAGE_POA_STEPS.filter(c => p[`${prefix}_${c}`] != null);
+    if (!steps.length) return 0;
+    const q = Math.max(steps[0], Math.min(steps[steps.length - 1], pct));
+    for (let i = 0; i < steps.length; i++) {
+      if (q === steps[i]) return p[`${prefix}_${steps[i]}`];
+      if (q < steps[i]) {
+        const lo = steps[i - 1], hi = steps[i];
+        const vLo = p[`${prefix}_${lo}`], vHi = p[`${prefix}_${hi}`];
+        return vLo + (vHi - vLo) * (q - lo) / (hi - lo);
+      }
+    }
+    return p[`${prefix}_${steps[steps.length - 1]}`];
+  }
+
   function recomputeInViewSummary() {
+    // Panel Layout mode is only ever on at building zooms, so it always counts
+    // real panels; Heat Map mode is the one you can be looking at from orbit.
+    if (map.getZoom() < BUILDING_MIN_Z && mode !== "layout") {
+      const c = cellSummary();
+      document.getElementById("inview-count").textContent = c.n;
+      document.getElementById("inview-power").textContent = fmtPower(c.kwp);
+      document.getElementById("inview-energy").textContent = fmtEnergy(c.kwhYear);
+      const mp0 = document.getElementById("m-all-power");
+      if (mp0) {
+        mp0.textContent = fmtPower(c.kwp);
+        document.getElementById("m-all-energy").textContent = fmtEnergy(c.kwhYear);
+      }
+      // The coverage ladder and the per-building economics both need
+      // buildings; at this zoom there are none, and an empty ladder is
+      // honest where a ladder built from a sample is not.
+      renderCoverageOptions([]);
+      return;
+    }
     const props = inViewBuildingProps();
     let kwp = 0, kwhYear = 0;
     document.getElementById("inview-count").textContent = props.length;
@@ -2267,9 +2413,22 @@ map.on("load", async () => {
     // box. Same bug as the hardcoded DEFAULT_VIEW, in the other direction.
     const TOWNS = ((window.SITE && window.SITE.towns) || [])
       .map(([name, lng, lat, z]) => ({ addr: name + " (area)", lower: name.toLowerCase(), town: { lng, lat, z } }));
-    const searchable = TOWNS.concat(data.features
-      .filter(f => f.properties.address)
-      .map(f => ({ addr: f.properties.address, lower: f.properties.address.toLowerCase(), f })));
+    // With buildings tiled, the page can no longer see every address by
+    // reading the source -- it only has the tiles on screen. data/addresses.json
+    // is a flat [address, lng, lat, building_id] index, 0.7 MB for the
+    // district. That is the right size here and is NOT the right answer
+    // nationally: 2.1 million addresses is roughly 34 MB, so national search
+    // needs this sharded by prefix or replaced with a geocoder
+    // (docs/scaling-and-iteration.md). It is a separate problem from the one
+    // this change fixes, and a tenth of the size.
+    let searchable = TOWNS.slice();
+    fetch(`data/addresses.json?v=${DATA_VERSION}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => {
+        searchable = TOWNS.concat(rows.map(([addr, lng, lat, id]) => ({
+          addr, lower: addr.toLowerCase(), at: { lng, lat, id } })));
+      })
+      .catch(() => {});
     const input = document.getElementById("addr-input");
     const results = document.getElementById("addr-results");
     const openResult = (item) => {
@@ -2280,15 +2439,21 @@ map.on("load", async () => {
         map.flyTo({ center: [item.town.lng, item.town.lat], zoom: item.town.z, duration: 1400 });
         return;
       }
-      const ring = item.f.geometry.type === "Polygon" ? item.f.geometry.coordinates[0] : item.f.geometry.coordinates[0][0];
-      const lng = ring.reduce((a, c) => a + c[0], 0) / ring.length;
-      const lat = ring.reduce((a, c) => a + c[1], 0) / ring.length;
+      const { lng, lat, id } = item.at;
       results.style.display = "none";
       input.value = item.addr;
       map.flyTo({ center: [lng, lat], zoom: 18,
                   pitch: terrain3d ? 0 : undefined, duration: 1200 });
-      selectBuilding(item.f.properties.building_id);
-      showBuildingPanel(item.f.properties, { lng, lat }, item.f.geometry);
+      selectBuilding(id);
+      // The address index carries a point and an id, not the feature -- with
+      // buildings tiled there is no in-memory feature to hand over. The flyTo
+      // above lands at z18 on this exact building, so once the map is idle its
+      // tile is loaded and the real feature is right there.
+      map.once("idle", () => {
+        const f = map.queryRenderedFeatures({ layers: ["buildings-fill"] })
+          .find(x => x.properties.building_id === id);
+        if (f) showBuildingPanel(f.properties, { lng, lat }, f.geometry);
+      });
     };
     // Coordinates paste straight from a bug report or Google Maps:
     // "-44.95041,168.83692" (lat,lon) or lon-first. |value|>90 must be the
@@ -2306,7 +2471,7 @@ map.on("load", async () => {
       return { lat, lng };
     };
     let coordMarker = null;
-    const openCoords = ({ lat, lng }) => {
+    const openCoords = async ({ lat, lng }) => {
       results.style.display = "none";
       input.value = lat.toFixed(5) + ", " + lng.toFixed(5);
       if (coordMarker) coordMarker.remove();
@@ -2316,9 +2481,13 @@ map.on("load", async () => {
                   pitch: terrain3d ? 0 : undefined, duration: 1400 });
       // If the point lands on (or within ~25 m of) a building we know,
       // open its panel too -- coordinate reports are usually about one.
+      // Against the buildings now RENDERED at the flown-to point rather than
+      // every building in the district -- the flyTo above lands at z18, so the
+      // tiles covering the report are exactly the ones on screen.
+      await new Promise(r => map.once("idle", r));
       let best = null, bestD = Infinity;
       const mPerDegLat = 111320, mPerDegLng = mPerDegLat * Math.cos(lat * Math.PI / 180);
-      for (const f of data.features) {
+      for (const f of map.queryRenderedFeatures({ layers: ["buildings-fill"] })) {
         const ring = f.geometry.type === "Polygon" ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0];
         const cx = ring.reduce((a2, c) => a2 + c[0], 0) / ring.length;
         const cy = ring.reduce((a2, c) => a2 + c[1], 0) / ring.length;
@@ -2574,8 +2743,9 @@ map.on("load", async () => {
     recomputeInViewSummary();
     const mh = document.getElementById("m-heatmap-btn");
     if (mh) {
-      mh.classList.toggle("active", mode === "heatmap");
-      document.getElementById("m-layout-btn").classList.toggle("active", isLayout);
+      mh.classList.toggle("active", overlayOn && mode === "heatmap");
+      document.getElementById("m-layout-btn")
+        .classList.toggle("active", overlayOn && isLayout);
       if (window.__syncMobileSheet) window.__syncMobileSheet();
     }
     if (window.__updateZoomHint) window.__updateZoomHint();
@@ -3152,7 +3322,10 @@ map.on("load", async () => {
     const cx = (b.getWest() + b.getEast()) / 2, cy = (b.getSouth() + b.getNorth()) / 2;
 
     const wanted = new Map();
-    if (mode === "heatmap") {
+    // overlayOn too: with the heat map toggled off the rasters are DETACHED,
+    // not just hidden, so bare-imagery mode costs nothing to hold open --
+    // which is the state Josh wants while looking at roofs in 3D.
+    if (overlayOn && mode === "heatmap") {
       const candidates = heatmapImages
         .filter(m => {
           const [mw, ms, me, mn] = heatmapBounds[m.id];
@@ -4454,6 +4627,61 @@ map.on("load", async () => {
       ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}</div>`;
   }
 
+  // ----------------------------------------------- per-building detail
+  //
+  // A building's shading horizon and its hourly shade mask are 38% of what
+  // solar_potential.geojson used to weigh, and exactly one building's copy is
+  // ever read -- the one someone clicked. At national scale that is roughly
+  // 600 MB of base64 downloaded so it can be thrown away.
+  //
+  // They now live in data/building_detail/<z>/<x>/<y>.json, keyed by the z13
+  // tile of the building's centroid, so neighbours share a file and browsing
+  // a suburb costs one fetch. See src/split_building_detail.py.
+  const DETAIL_Z = 13;
+  let detailIndex = null;          // null = not loaded yet, {} = unavailable
+  const detailTiles = new Map();   // "x/y" -> Promise<object>
+
+  function detailTileOf(lon, lat) {
+    const n = 2 ** DETAIL_Z;
+    const x = Math.floor((lon + 180) / 360 * n);
+    const r = lat * Math.PI / 180;
+    const y = Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * n);
+    return [Math.max(0, Math.min(n - 1, x)), Math.max(0, Math.min(n - 1, y))];
+  }
+
+  async function loadDetailIndex() {
+    if (detailIndex) return detailIndex;
+    try {
+      const r = await fetch(`data/building_detail/index.json?v=${DATA_VERSION}`);
+      detailIndex = r.ok ? await r.json() : {};
+    } catch (e) { detailIndex = {}; }
+    return detailIndex;
+  }
+
+  // Resolves to the detail object for this building, or null. NEVER throws and
+  // never blocks the panel: a missing tile means the horizon tab is hidden,
+  // which is the same thing that already happens for a building that has no
+  // horizon baked.
+  async function buildingDetail(props, lngLat) {
+    if (props.horizon_b64 || props.tshade) return props;   // still inline
+    const idx = await loadDetailIndex();
+    if (!idx || !idx.tiles) return null;
+    let lon = lngLat && lngLat.lng, lat = lngLat && lngLat.lat;
+    if (lon == null) { lon = props._sx; lat = props._sy; }
+    if (lon == null) return null;
+    const [x, y] = detailTileOf(lon, lat);
+    const key = `${x}/${y}`;
+    if (!(key in idx.tiles)) return null;
+    if (!detailTiles.has(key)) {
+      detailTiles.set(key, fetch(
+        `data/building_detail/${idx.z}/${x}/${y}.json?v=${DATA_VERSION}`)
+        .then(r => r.ok ? r.json() : {})
+        .catch(() => ({})));
+    }
+    const tile = await detailTiles.get(key);
+    return tile[String(props.building_id)] || null;
+  }
+
   function showBuildingPanel(p, lngLat, geom) {
     const panel = document.getElementById("side-panel");
     // Anything that opens a panel with a plain single building (the address
@@ -4481,8 +4709,19 @@ map.on("load", async () => {
     }
     const hzBtn = panel.querySelector("#horizon-tab-btn");
     if (hzBtn) {
+      // Hidden until the detail tile answers. The panel is already drawn and
+      // usable by then -- the horizon is the one part that waits, and it is
+      // also the one part nobody is looking at in the first 200 ms.
       hzBtn.style.display = p.horizon_b64 ? "" : "none";
       if (!p.horizon_b64 && curveMode === "horizon") curveMode = "avg";
+      if (!p.horizon_b64) {
+        buildingDetail(p, lngLat).then(d => {
+          if (!d || selectedPanelBuildingId !== p.building_id) return;
+          Object.assign(p, d);
+          if (p.horizon_b64) hzBtn.style.display = "";
+          renderSeasonCurves(p.building_id);   // tshade arrived with it
+        });
+      }
     }
     panel.querySelectorAll(".curve-btn").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.curve === curveMode);

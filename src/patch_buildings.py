@@ -124,6 +124,7 @@ def main():
     sp_path = DATA / "solar_potential.geojson"
     if sp_path.exists():
         import config
+        from src.derive_solar_potential import _facet_area_m2
         reg = json.load(open(region))
         agg = {}
         for f in reg["features"]:
@@ -136,7 +137,18 @@ def main():
             k = p["kind"]
             if k == "facet":
                 b["facet_count"] += 1
-                area = p.get("area_m2") or 0.0
+                # THROUGH derive_solar_potential's helper, not a local copy.
+                # This read p["area_m2"] directly, and the layout emitter does
+                # not write area_m2 on a facet -- so every building this driver
+                # patched came out with facet_area_m2 = 0, and Heat Map mode
+                # (kWp = area x coverage x density) showed it as 0.0 kW while
+                # Panel Layout mode showed its real 89.5 kW two clicks away.
+                #
+                # derive_solar_potential found and fixed exactly this, in a
+                # docstring that says so, and the fix never reached the copy
+                # here. 2,496 of the district's 14,507 roofs with panels -- 17%
+                # -- were reading zero because of it.
+                area = _facet_area_m2(f)
                 b["facet_area_m2"] += area
                 b["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
             elif k == "obstruction":
