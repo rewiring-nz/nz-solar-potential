@@ -1539,6 +1539,10 @@ APPLY_REALISM_MERGE = True
 # multi-level roof is never touched.
 BALCONY_MAIN_MIN_INLIER = 0.85     # the main roof has to be convincingly planar
 BALCONY_MAIN_MIN_AREA_M2 = 120.0   # ...and big enough to be the building's roof
+# How deep a surface can be and still be a balcony rather than a storey's
+# roof. Measured on the two buildings that define the boundary -- see
+# drop_balcony_levels.
+BALCONY_MAX_DEPTH_M = 4.0
 BALCONY_MIN_DROP_M = 2.5           # a balcony sits this far below it, at least
 BALCONY_MAX_INLIER = 0.75          # ...does not lie on a plane...
 BALCONY_MAX_AREA_SHARE = 0.25      # ...and is small next to the main roof
@@ -1658,13 +1662,45 @@ def drop_balcony_levels(facets, pc_source):
         stair = (len(lvls) >= 4
                  and sum(1 for st in steps if 1.2 <= st <= 3.2) >= 3)
         if stair:
+            # A BALCONY IS NARROW. THE STOREY BELOW IS NOT.
+            #
+            # "Only levels within 4 m of the top are roof, whatever their
+            # area" was written for #4740503, where it is right: that
+            # building's terraces are strips along a facade. On a TALL
+            # stepped building it is badly wrong. Josh found it -- 30
+            # Brunswick Street (#5371160), 5,272 m2 over ten levels spanning
+            # 31 m: "Why is this roof excluded when it can clearly have
+            # panels?" The rule discarded 22 facets and 3,442 m2 of plain
+            # flat roof, the coverage fill replaced the hole with one plane
+            # spanning every level (inlier 0.10), and the building failed the
+            # confidence gate and shipped no panels at all.
+            #
+            # Depth separates the two cleanly, measured on both:
+            #
+            #                        below top-4m     of which <= 4 m deep
+            #   #5371160 Brunswick   22 / 3,442 m2      6 /    87 m2
+            #   #4740503 terraces    17 / 1,158 m2     12 /   257 m2
+            #
+            # So the strips go and the storeys stay, which is what the words
+            # "balcony" and "roof" already meant.
             top = lvls[-1]
+
+            def _narrow(poly):
+                try:
+                    c = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
+                    e = [np.hypot(c[(k + 1) % 4][0] - c[k][0],
+                                  c[(k + 1) % 4][1] - c[k][1]) for k in range(4)]
+                    return min(e[0], e[1]) <= BALCONY_MAX_DEPTH_M
+                except Exception:
+                    return False
+
             kept = [f for f, i, h in stats
-                    if h is None or h > top - 4.0 or f.get("from_labels")]
+                    if h is None or h > top - 4.0 or f.get("from_labels")
+                    or not _narrow(f["geometry"])]
             dropped = len(facets) - len(kept)
             if dropped:
                 print(f"  staircase: {len(lvls)} levels, dropped {dropped} "
-                      f"balcony facets below top-4m", flush=True)
+                      f"narrow balcony facets below top-4m", flush=True)
                 return kept
 
     # THE STAIRCASE RULE. #4740503's balcony terraces pass every test above:
