@@ -2449,6 +2449,18 @@ map.on("load", async () => {
       .catch(() => {});
     const input = document.getElementById("addr-input");
     const results = document.getElementById("addr-results");
+    // NEVER PASS pitch: undefined. MapLibre 5 aborts the whole animation on
+    // it -- flyTo returns normally, nothing moves, and the only trace is a
+    // cross-origin "Script error." from inside maplibre-gl.js. That is what
+    // broke the address search on the live site: picking a result did
+    // nothing at all, while every part of it tested fine in isolation.
+    // Land flat in 3D (the camera needs a frame at pitch 0 to resolve the
+    // terrain under it before tilting), and simply omit pitch otherwise.
+    const flyToPlace = (lng, lat, zoom, duration) => {
+      const o = { center: [lng, lat], zoom, duration };
+      if (terrain3d) o.pitch = 0;
+      map.flyTo(o);
+    };
     const openResult = (item) => {
       if (item.coords) { openCoords(item.coords); return; }
       if (item.town) {
@@ -2460,8 +2472,7 @@ map.on("load", async () => {
       const { lng, lat, id } = item.at;
       results.style.display = "none";
       input.value = item.addr;
-      map.flyTo({ center: [lng, lat], zoom: 18,
-                  pitch: terrain3d ? 0 : undefined, duration: 1200 });
+      flyToPlace(lng, lat, 18, 1200);
       selectBuilding(id);
       // The address index carries a point and an id, not the feature -- with
       // buildings tiled there is no in-memory feature to hand over. The flyTo
@@ -2495,8 +2506,7 @@ map.on("load", async () => {
       if (coordMarker) coordMarker.remove();
       coordMarker = new maplibregl.Marker({ color: "#e5484d" })
         .setLngLat([lng, lat]).addTo(map);
-      map.flyTo({ center: [lng, lat], zoom: 18,
-                  pitch: terrain3d ? 0 : undefined, duration: 1400 });
+      flyToPlace(lng, lat, 18, 1400);
       // If the point lands on (or within ~25 m of) a building we know,
       // open its panel too -- coordinate reports are usually about one.
       // Against the buildings now RENDERED at the flown-to point rather than
