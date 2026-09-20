@@ -45,19 +45,21 @@ Data acquisition requires a LINZ Data Service (LDS) account and API key. LDS
 provides the building outlines, elevation data, and imagery used by the
 pipeline.
 
+Create the API Key:
 1. Go to [LINZ Data Service](https://data.linz.govt.nz/) and select **Log in**.
 2. Create an account, or sign in to an existing account.
-3. Open the account menu, select **API keys**, and create an API key.
-4. Enable its OGC web-services access and its **Search and Download** REST
-  access. The project uses web services for building outlines and the export
-  API for elevation data and imagery.
-5. From the project directory, create the local credentials file:
+3. Go to the [LINZ - API Keys](https://data.linz.govt.nz/my/api/)
+4. Select **API Key** > **Manual scope**
+5. Enable maximum access to all the LINZ services for this key. This involves changing pull-down selection of "No Access" to "Create, edit, and ..."
+
+Save the API Key locally:
+1. From the project directory, create the local credentials file:
 
 ```sh
 cp .env.example .env
 ```
 
-6. Copy the API key into `.env`:
+2. Copy the API key into `.env`:
 
 ```text
 LINZ_API_KEY=[your-key-here]
