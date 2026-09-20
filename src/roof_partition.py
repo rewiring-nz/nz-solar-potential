@@ -1494,7 +1494,24 @@ def facets_from_selected_faces(building_id, footprint, pts):
             "area_m2": float(poly.area), "point_count": int(len(sub)),
             "from_selected": True,
         })
-    for poly, _no_panel in pending:
+    # PLAIN POLYGONS, because that is what this function's pending list holds.
+    #
+    # This loop said `for poly, _no_panel in pending` -- the shape used by
+    # facets_from_drawn_faces, where a face carries Josh's "no panels here"
+    # flag. It was changed here by mistake while that flag was being added
+    # there, and this function's two producers still append a bare Polygon.
+    #
+    # The cost was invisible and large. Any building on the selected-faces
+    # chain with even one PENDING face -- a face too sparse to fit its own
+    # plane, or one whose fit is unusable -- raised TypeError, which
+    # partition_roof catches and reports as "selected faces unavailable"
+    # before falling back to the old RANSAC path. So the reading was
+    # discarded and the old path answered instead, with no error anyone would
+    # see. Josh found it from the map: 30 Brunswick Street, a 5,272 m2 roof
+    # with a 37-face LiDAR reading, came out as "Too complex to finish
+    # modelling" -- the fallback collapsed it to 2 facets and ran past its
+    # 1,800-second budget.
+    for poly in pending:
         best = None
         for f in out:
             try:
