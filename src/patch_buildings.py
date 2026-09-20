@@ -26,6 +26,14 @@ def main():
     ap.add_argument("ids", nargs="+", type=int)
     ap.add_argument("--area", default="pilot")
     ap.add_argument("--push", action="store_true")
+    # A DISTRICT-WIDE POST-PROCESS DOES NOT BELONG INSIDE A 60-BUILDING
+    # CHUNK. bake_density_deciles re-reads the whole merged layouts and
+    # rewrites solar_potential for the entire district; running it per chunk
+    # costs 13 s x however many chunks the driver splits the work into, for
+    # a result only the LAST run keeps. patch_stale_selected passes this and
+    # bakes once at the end.
+    ap.add_argument("--skip-bake", action="store_true",
+                    help="do not re-bake density deciles (caller will)")
     ap.add_argument("--skip-tiles", action="store_true",
                     help="patch the geojson only (for chained invocations; run tiles once at the end)")
     a = ap.parse_args()
@@ -165,7 +173,9 @@ def main():
         print(f"  solar_potential: updated {n_upd} buildings", flush=True)
         # density deciles (fill_*) for the patched buildings come from the
         # merged layouts; bake refreshes them (writes solar_potential in place)
-        subprocess.run([sys.executable, "src/bake_density_deciles.py"], check=True, cwd=ROOT)
+        if not a.skip_bake:
+            subprocess.run([sys.executable, "src/bake_density_deciles.py"],
+                           check=True, cwd=ROOT)
 
     _record_built()
 

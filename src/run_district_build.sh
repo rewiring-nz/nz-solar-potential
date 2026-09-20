@@ -10,8 +10,10 @@
 # inputs, records a completion marker on success, and (with --skip-done) skips
 # work whose marker is newer than all of its inputs. So:
 #
-#   ./src/run_district_build.sh                 # resume: skip what is done
-#   ./src/run_district_build.sh --force         # rebuild everything
+#   ./src/run_district_build.sh                  # resume: skip what is done
+#   ./src/run_district_build.sh --incremental    # only buildings whose
+#                                                # reading changed (minutes)
+#   ./src/run_district_build.sh --force          # rebuild everything
 #   ./src/run_district_build.sh --regions "a b"  # just these regions
 #
 # Interrupting this and re-running it continues where it stopped.
@@ -37,18 +39,23 @@ mkdir -p "$LOGDIR"
 
 SKIP="--skip-done"
 REGIONS=""
+INCREMENTAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --force)   SKIP=""; shift ;;
-    --regions) REGIONS="$2"; shift 2 ;;
+    --force)       SKIP=""; shift ;;
+    --incremental) INCREMENTAL=1; shift ;;
+    --regions)     REGIONS="$2"; shift 2 ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
 
-# The region list comes from config, not from a list pasted into this file --
-# a hard-coded list is how a new region silently never gets built.
+# The region list comes from all_areas(), which unions the config with what is
+# actually on disk. A hard-coded list -- or the config alone -- is how a region
+# silently never gets built: config.REGIONS held 23 entries while data/regions
+# held 24, the missing one was `pilot`, and two district rebuilds skipped the
+# town centre without erroring.
 if [ -z "$REGIONS" ]; then
-  REGIONS="pilot $($PY -c 'import config; print(" ".join(config.REGIONS))')"
+  REGIONS="$($PY -c 'from src.region_build import all_areas; print(" ".join(all_areas()))')"
 fi
 
 # Per-region stages, in dependency order.
@@ -96,6 +103,40 @@ if [ -f tools/audit_region_inputs.py ]; then
   echo "--- end input audit ---"
 fi
 
+# ---------------------------------------------------------------- incremental
+#
+# THE FAST PATH WAS ALREADY BUILT AND NOTHING CALLED IT. Josh, 20 Sep: "it
+# seems to take a long time to fix things at the moment."
+#
+# It does, because the unit of work here is the DISTRICT. A one-line change in
+# face_candidates invalidates build_layout_geojson for all 24 regions and costs
+# four and a half hours, including every building that reading cannot have
+# touched.
+#
+# tools/patch_stale_selected.py has done the right thing for weeks: it hashes
+# each building's selected reading against data/built_from.json and rebuilds
+# only the mismatches -- layouts, gate, merged file, solar_potential and all.
+# Content-hashed rather than mtime-based, so it is correct however many times a
+# preemptible VM kills it, and unlike mtimes it survives the patching that
+# rewrites the layouts underneath it.
+#
+# So: --incremental does that and then the district tail, and a change touching
+# forty roofs costs minutes. The full path is unchanged and is still what a new
+# region, a new stage, or anything outside the selected-faces chain needs.
+#
+# data/built_from.json IS PER MACHINE and is not committed -- it records what
+# THIS checkout has built. On a machine that has never run a full build
+# everything hashes as stale and --incremental degrades to a full rebuild,
+# which is correct but slow. Builds run on the VM, which has the state.
+if [ $INCREMENTAL -eq 1 ]; then
+  echo "=== incremental: rebuilding only buildings whose reading changed ==="
+  $PY tools/patch_stale_selected.py --patch || exit 1
+  echo "=== fan-in ($(date -u +%H:%M:%S)) ==="
+  for s in build_terrain_masks build_seasonal_curves shrink_panels_for_tiles; do
+    $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
+  done
+else
+
 fail=0
 for r in $REGIONS; do
   echo "=== $r ($(date -u +%H:%M:%S)) ==="
@@ -126,6 +167,8 @@ for s in merge_regions bake_density_deciles build_terrain_masks \
          build_seasonal_curves shrink_panels_for_tiles; do
   $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
 done
+
+fi   # end of the full-build branch
 
 # Josh's drawn lines, as the map overlay that shows them (added 19 Sep, after
 # he reported the same line "missing" three times when the map had simply

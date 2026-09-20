@@ -61,9 +61,13 @@ def main():
             chunk = ids[i:i + 60]
             rc = subprocess.run(
                 [PY_, "src/patch_buildings.py", *map(str, chunk),
-                 "--area", region, "--skip-tiles"],
+                 "--area", region, "--skip-tiles", "--skip-bake"],
                 env={**os.environ, "SOLAR_SELECTED_FACES": "1"}).returncode
             print(f"{region}: chunk rc={rc}", flush=True)
+    # Once, at the end, instead of once per 60-building chunk: it is a
+    # district-wide pass over the merged layouts and only the last run counts.
+    if a.patch and total:
+        subprocess.run([PY_, "src/bake_density_deciles.py"], check=True)
     print(f"TOTAL {total}", flush=True)
 
 
