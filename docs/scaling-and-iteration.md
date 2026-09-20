@@ -59,7 +59,8 @@ million in the LINZ outlines — about **137×**. Multiplying what exists:
 
 | Thing | Queenstown now | ×137 | Verdict |
 | --- | --- | --- | --- |
-| `data/solar_potential.geojson`, **fetched whole by the browser at load** | 25 MB | 3.4 GB | hard blocker |
+| ~~`data/solar_potential.geojson`, fetched whole at load~~ | ~~25 MB~~ | ~~3.4 GB~~ | **fixed 20 Sep** — buildings are tiles; 238 kB for a street view, flat with district size |
+| `data/heatmaps/*`, positioned images | 9.6 MB per view | same per view | now the biggest download; tile it next |
 | `data/panel_layouts.geojson` (merged, pre-tiling) | 480 MB | 65 GB | hard blocker |
 | `data/panel_layouts.pmtiles` (what the map reads) | 29 MB | 4 GB | fine — it is tiled, and a client only fetches the tiles it looks at |
 | `data/` on disk | 133 GB | 18 TB | not a laptop, and not one VM disk |
@@ -69,10 +70,18 @@ million in the LINZ outlines — about **137×**. Multiplying what exists:
 
 Four things follow from that table.
 
-**Buildings must become vector tiles.** Panel layouts already are; buildings are
-not, and the browser downloads all of them. This is the single change that
-decides whether the map can open at national scale, and it is independent of
-every geometry question.
+**Buildings are now vector tiles.** Done 20 September. `data/buildings.pmtiles`
+from z13, `data/building_cells.pmtiles` below it carrying exact per-cell totals
+at three resolutions, and the per-building horizon blobs split into
+`data/building_detail/` and fetched on click. Measured on the live site: a
+street view pulls 238 kB of buildings where it used to pull 26 MB, and that
+number does not grow when the district does.
+
+Two things this left behind. The heat-map rasters are now the largest download
+at 9.6 MB for one view -- they are positioned images, not tiles, and should
+become tiles next. And `data/addresses.json` is a flat 0.7 MB index, which is
+right for a district and wrong for 2.1 million addresses (~34 MB): national
+search needs it sharded by prefix, or a real geocoder.
 
 **Nothing may be merged into one file.** The fan-in
 (`merge_regions → bake_density_deciles → …`) exists because the frontend wants
@@ -94,7 +103,8 @@ which survey covers it, and where does it live.
 
 ### Order to do them in
 
-1. Buildings as vector tiles (unblocks everything, no geometry risk).
+1. ~~Buildings as vector tiles~~ — done 20 September.
+1. Heat-map rasters as tiles (now the largest download).
 2. Incremental build as the default (makes every later step iterable).
 3. Survey registry keyed by bbox (replaces four hardcoded constants).
 4. Region selection from a density grid (replaces the hand-written list).
