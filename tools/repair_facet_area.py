@@ -13,16 +13,22 @@ need a four-hour rebuild to stop lying about a sixth of its roofs.
 Computed the same way src/derive_solar_potential.py does it, through the same
 helper, so this cannot drift from the stage whose output it is patching.
 
-FROM THE MERGED LAYOUTS, DELIBERATELY, and that needs saying because the
-per-region layouts are the stage's own input and they DISAGREE: on the pilot
-region alone, 503 buildings have more facets in the merged file and 59 have
-fewer. The merged file is the newer of the two -- this month's work added
-facets, through residual fill and the plateau splits -- and, more to the
-point, it is the one tippecanoe builds panel_layouts.pmtiles from, so it is
-what the map actually draws. Aligning the dashboard to anything else would
-make the summary disagree with the panels beside it.
+ONLY THE ZEROS, AND FROM THE REGION LAYOUTS.
 
-That the two ever diverged is its own bug and is logged in BACKLOG.md.
+The first version rewrote every building from data/panel_layouts.geojson, on
+the reasoning that the merged file is what tippecanoe tiles and therefore what
+the map draws. That was wrong twice over. Rendered against imagery, the merged
+file's reading for #5373416 is 9 facets cutting across the roof while the
+region file's 5 match both the imagery and what the current code produces --
+the merged copy is the OLDER one, not the newer. And the divergence is a
+laptop artefact in the first place: this machine's region layouts are from
+16 September and the build VM's are from the 19th, so a local merge ships
+three-day-old geometry.
+
+So this repairs only what is provably broken -- a building with facets whose
+area is exactly zero, which no roof has -- and takes the value from the region
+file, which is derive_solar_potential's own input. Everything else is left
+alone for the district build to regenerate properly.
 
 Usage: python tools/repair_facet_area.py [--write]
 """
@@ -45,22 +51,26 @@ def main():
     ap.add_argument("--write", action="store_true")
     a = ap.parse_args()
 
-    layouts = DATA / "panel_layouts.geojson"
+    from src.region_build import all_areas, area_paths
     sp_path = DATA / "solar_potential.geojson"
-    if not layouts.exists() or not sp_path.exists():
-        print("need both data/panel_layouts.geojson and data/solar_potential.geojson")
+    if not sp_path.exists():
+        print("need data/solar_potential.geojson")
         return 1
 
     agg = defaultdict(lambda: {"area": 0.0, "poa_w": 0.0, "n": 0})
-    for f in json.loads(layouts.read_text())["features"]:
-        p = f["properties"]
-        if p.get("kind") != "facet":
+    for region in all_areas():
+        lp = area_paths(region)["panel_layouts"]
+        if not lp.exists():
             continue
-        b = agg[p["building_id"]]
-        area = _facet_area_m2(f)
-        b["area"] += area
-        b["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
-        b["n"] += 1
+        for f in json.loads(lp.read_text())["features"]:
+            p = f["properties"]
+            if p.get("kind") != "facet":
+                continue
+            b = agg[p["building_id"]]
+            area = _facet_area_m2(f)
+            b["area"] += area
+            b["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
+            b["n"] += 1
 
     sp = json.loads(sp_path.read_text())
     fixed = moved = 0
@@ -69,18 +79,19 @@ def main():
         b = agg.get(p.get("building_id"))
         if not b or b["n"] == 0:
             continue
-        area = round(b["area"], 1)
-        poa = round(b["poa_w"] / b["area"], 0) if b["area"] > 0 else 0
         was = p.get("facet_area_m2") or 0
-        if abs(was - area) > 0.05:
-            moved += 1
-            if not was:
-                fixed += 1
+        if was:
+            continue                 # only the provable zeros
+        area = round(b["area"], 1)
+        if area <= 0:
+            continue
         p["facet_area_m2"] = area
-        p["avg_poa_kwh_m2"] = poa
+        p["avg_poa_kwh_m2"] = round(b["poa_w"] / b["area"], 0)
+        moved += 1
+        fixed += 1
 
-    print(f"{moved} buildings with a different roof area, "
-          f"{fixed} of them previously zero")
+    print(f"{fixed} buildings repaired (roof area was zero, now from the "
+          f"region layouts)")
     if not a.write:
         print("dry run -- pass --write to apply")
         return 0

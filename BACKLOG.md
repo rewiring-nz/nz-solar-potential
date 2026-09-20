@@ -1503,26 +1503,37 @@ the geometry survives and the fitter refuses it, so nothing errors and the
 only sign is the predeploy gate. Worth one diagnosis for the class rather
 than four for the instances.
 
-## Merged layouts disagree with the per-region layouts (found 20 Sep)
+## The laptop's merged layouts are older than its region layouts (20 Sep)
 
-`data/panel_layouts.geojson` and `data/regions/<r>/panel_layouts.geojson` are
-two different generations of geometry. On the pilot region alone: 503 buildings
-have MORE facets in the merged file, 59 have fewer, and 226 have the same count
-with a different total area -- only 311 of 1,065 agree.
+`data/panel_layouts.geojson` on THIS machine disagrees with
+`data/regions/<r>/panel_layouts.geojson`: on the pilot alone, 503 buildings
+have more facets in the merged file, 59 fewer, and only 311 of 1,065 agree.
 
-The merged file is the newer of the two and is what tippecanoe builds
-`panel_layouts.pmtiles` from, so it is what the live map draws. The region
-files are what `derive_solar_potential` reads, so the dashboard numbers were
-being derived from the older geometry.
+Rendered against imagery, the merged copy is the OLDER one. #5373416 reads 9
+facets there, cutting across the roof; the region file reads 5, which match
+both the imagery and what the current code produces.
 
-Both `patch_buildings` and `merge_regions` are supposed to keep them in step.
-Find which driver writes one without the other. Until then, anything deriving
-building aggregates must read the MERGED file (see tools/repair_facet_area.py).
+It is a sync artefact, not a production bug: this machine's region layouts are
+from 16 September and the build VM's are from the 19th, and the merged file
+came down in a different sync from the regions. The VM builds them together,
+so the deployed tiles are consistent.
 
-## "3D unavailable" TypeError at startup (pre-existing, found 20 Sep)
+The lesson is about this repo's habits, not about merge_regions: anything
+deriving building aggregates on the laptop must read the REGION files, and
+nothing should ship from here (see tools/repair_facet_area.py, which got this
+wrong the first time and pulled 13,519 buildings toward three-day-old
+geometry before it was caught).
 
-`setTerrain3D` throws `Cannot read properties of null (reading '0')` on a cold
-load when 3D is restored from localStorage before the terrain source exists.
-Caught and logged as "3D unavailable", and 3D works once toggled by hand, so it
-is cosmetic -- but it is two console errors on every load and it hides real
-ones. Confirmed present at HEAD before the building-tile work.
+## "3D unavailable" TypeError when toggling 3D (pre-existing, found 20 Sep)
+
+`setTerrain3D` throws `Cannot read properties of null (reading '0')` at the
+`map.jumpTo({pitch: 0})` line. Caught and logged as "3D unavailable", and 3D
+renders correctly regardless, so it is cosmetic -- but it is two console
+errors that hide real ones.
+
+NOT a startup bug, despite this note's first version saying so: `terrain3d`
+starts false and is only set from the button handler. The errors were read
+out of a console buffer that survives navigation in the test browser, so they
+came from earlier 3D clicks in the same session. Confirmed present at HEAD
+before the building-tile work. Reproduce with a genuinely fresh tab before
+spending time on it.
