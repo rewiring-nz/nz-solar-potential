@@ -18,11 +18,7 @@ SEL = Path("data/selected_faces")
 PY_ = sys.executable
 
 
-def _all_regions():
-    import config
-    d = Path("data/regions")
-    on_disk = {p.name for p in d.iterdir() if p.is_dir()} if d.exists() else set()
-    return sorted(on_disk | set(config.REGIONS))
+from src.region_build import all_areas as _all_regions
 
 
 def main():

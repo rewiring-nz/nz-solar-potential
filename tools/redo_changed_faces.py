@@ -17,34 +17,7 @@ PY_ = sys.executable
 
 
 
-def _all_regions():
-    """Every region with data on disk, not just those config lists.
-
-    config.REGIONS had 23 entries while data/regions held 24: `pilot` --
-    the town centre, where most of Josh's flagged roofs are and where he
-    looks first -- was missing. Two district rebuilds skipped it in
-    silence, and he got the same wrong roof back twice. A driver that
-    iterates the config can therefore MISS A WHOLE REGION without ever
-    erroring; iterate the disk and take the union.
-    """
-    import config
-    from pathlib import Path as _P
-    on_disk = {p.name for p in (_P("data/regions")).iterdir() if p.is_dir()} \
-        if _P("data/regions").exists() else set()
-    return sorted(on_disk | set(config.REGIONS))
-
-def fingerprint(bid):
-    p = SEL / f"{bid}.json"
-    if not p.exists():
-        return None
-    try:
-        d = json.loads(p.read_text())
-    except Exception:
-        return None
-    rings = [[(round(x, 2), round(y, 2)) for x, y in f] for f in d["faces"]]
-    return hashlib.md5(
-        json.dumps([d.get("source"), sorted(rings)], sort_keys=True).encode()
-    ).hexdigest()
+from src.region_build import all_areas as _all_regions
 
 
 def main():
