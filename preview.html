@@ -1715,26 +1715,50 @@ map.on("load", async () => {
   // Adding the vector source here starts the PMTiles range requests
   // immediately -- its layers are still added further down, in the right
   // stacking order, by which point the tiles are already in flight.
-  map.addSource("layout", { type: "vector", url: `pmtiles://data/panel_layouts.pmtiles?v=${DATA_VERSION}` });
+  // EVERY PMTILES SOURCE NEEDS THE RETRY, not just this one.
+  //
   // GitHub Pages' CDN sometimes answers a cold-cache Range request with a
   // plain 200 and no content-length; the pmtiles library errors out and the
   // source stays permanently empty -- a blank map until a manual reload.
-  // Retry with a fresh URL: it gives pmtiles a clean instance (it caches the
+  // Retrying with a fresh URL gives pmtiles a clean instance (it caches the
   // failed header read per-URL) and by then the CDN edge is warm.
-  let layoutRetries = 0;
+  //
+  // That was written for the panel layouts and wired only to them. When
+  // buildings and the aggregate cells became PMTiles their edges were stone
+  // cold -- brand new files -- and both stayed empty on the live site while
+  // working perfectly against a local server: the dashboard read 0.0 kW and
+  // no building was clickable. The page itself recorded the evidence, in the
+  // layout source's own URL: it had already been rewritten to `&retry=2`.
+  const pmtilesRetries = {};
+  function addPmtilesSource(id, path, extra) {
+    map.addSource(id, Object.assign(
+      { type: "vector", url: `pmtiles://${path}?v=${DATA_VERSION}` },
+      extra || {}));
+    pmtilesRetries[id] = { path, n: 0 };
+  }
   map.on("error", (e) => {
     const msg = String((e && e.error && e.error.message) || "");
-    const fromLayout = e && e.sourceId === "layout";
     const byteServing = /Byte Serving|content-length/i.test(msg);
-    if (!(fromLayout || byteServing) || layoutRetries >= 5) return;
-    layoutRetries += 1;
-    setTimeout(() => {
-      const src = map.getSource("layout");
-      if (src && src.setUrl) {
-        src.setUrl(`pmtiles://data/panel_layouts.pmtiles?v=${DATA_VERSION}&retry=${layoutRetries}`);
-      }
-    }, 1000 * layoutRetries);
+    // A byte-serving failure does not always name its source, so when one is
+    // reported without an id every pmtiles source that has not loaded is a
+    // candidate -- retrying a healthy one costs a header read.
+    const ids = e && e.sourceId && pmtilesRetries[e.sourceId]
+      ? [e.sourceId]
+      : (byteServing ? Object.keys(pmtilesRetries) : []);
+    for (const id of ids) {
+      const r = pmtilesRetries[id];
+      if (!r || r.n >= 5) continue;
+      if (map.getSource(id) && map.isSourceLoaded(id) && id !== e.sourceId) continue;
+      r.n += 1;
+      setTimeout(() => {
+        const src = map.getSource(id);
+        if (src && src.setUrl) {
+          src.setUrl(`pmtiles://${r.path}?v=${DATA_VERSION}&retry=${r.n}`);
+        }
+      }, 1000 * r.n);
+    }
   });
+  addPmtilesSource("layout", "data/panel_layouts.pmtiles");
   // Adding the SOURCE alone downloads nothing -- MapLibre only requests tiles
   // for a source some layer actually uses (verified in the network waterfall:
   // with just the source, the PMTiles range requests still waited for the
@@ -1782,9 +1806,7 @@ map.on("load", async () => {
   // from that building's own cov_poa_N before aggregation. Below z13 the
   // dashboard adds up cells and is exact; from z13 it adds up buildings and is
   // exact. Coarser as you zoom out, never wrong.
-  map.addSource("buildings", {
-    type: "vector", url: `pmtiles://data/buildings.pmtiles?v=${DATA_VERSION}`,
-  });
+  addPmtilesSource("buildings", "data/buildings.pmtiles");
   // Mirrors CELL_BANDS / BUILDING_MIN_Z in src/build_building_tiles.py.
   // Each band draws a grid three zooms finer than the zoom it is shown at, so
   // the viewport always spans roughly eight cells: a cell clipped by the edge
@@ -1797,9 +1819,7 @@ map.on("load", async () => {
     for (const [lod, from, to] of CELL_BANDS) if (z >= from && z < to) return lod;
     return CELL_BANDS[CELL_BANDS.length - 1][0];
   };
-  map.addSource("cells", {
-    type: "vector", url: `pmtiles://data/building_cells.pmtiles?v=${DATA_VERSION}`,
-  });
+  addPmtilesSource("cells", "data/building_cells.pmtiles");
 
   map.addLayer({
     id: "buildings-fill",
