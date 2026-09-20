@@ -32,7 +32,9 @@ SYSTEM_PANEL_STEPS = [7, 10, 14, 17, 20, 27, 34, 45, 68]
 
 
 
-COVERAGE_STEPS = [5, 10, 25, 50, 100]
+# Every step the coverage dropdown offers, so each listed option is measured
+# rather than interpolated. Mirrored by COVERAGE_POA_STEPS in preview.html.
+COVERAGE_STEPS = [5, 10, 15, 25, 50, 75, 100]
 
 
 def _ring_area(geom):

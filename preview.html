@@ -1235,7 +1235,7 @@ function mergeBuildingProps(list) {
     out["fill_kwh_" + d] = sum("fill_kwh_" + d);
   }
   ["avg_poa_kwh_m2", "roof_confidence"].forEach(k => { out[k] = areaWeighted(k); });
-  [5, 10, 25, 50, 100].forEach(c => {
+  COVERAGE_POA_STEPS.forEach(c => {
     const k = "cov_poa_" + c;
     if (list.some(p => p[k] !== undefined)) out[k] = areaWeighted(k);
   });
@@ -1661,6 +1661,9 @@ function wireTuningControls(popupEl, buildingId) {
 const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
+// Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between
+// them are interpolated; outside them, clamped.
+const COVERAGE_POA_STEPS = [5, 10, 15, 25, 50, 75, 100];
 
 function fmtPower(kwp) {
   // Precision follows magnitude. A house is the case where the decimal earns
@@ -1866,12 +1869,41 @@ map.on("load", async () => {
   // currently on screen at the single selected coverage level, queried
   // against buildings-fill (invisible but always rendered, so it is the
   // hit-test/query layer for everything on the map).
+  // THE SUNNIEST PART OF THE ROOF GETS COVERED FIRST. Josh, 20 Sep: "if it's
+  // just 25% coverage it should be the highest producing 25% of the roof."
+  //
+  // That was already true of the coverage LADDER and not of the headline
+  // figure beside it, which is worse than either being wrong: the same panel
+  // showed a roof's 25% two different ways. cov_poa_N -- the mean irradiance
+  // over the sunniest N% of this roof -- has been baked by
+  // src/bake_density_deciles.py since the ladder was built; nothing else ever
+  // read it. So the estimate uses it here rather than gaining a second copy
+  // of the same idea, and the fallback keeps a pre-bake release reading
+  // exactly as it did.
+  function bestPoa(props, pct) {
+    const steps = COVERAGE_POA_STEPS.filter(c => props["cov_poa_" + c] != null);
+    if (!steps.length) return props.avg_poa_kwh_m2 || 0;
+    const p = Math.max(steps[0], Math.min(steps[steps.length - 1], pct));
+    for (let i = 0; i < steps.length; i++) {
+      if (p === steps[i]) return props["cov_poa_" + steps[i]];
+      if (p < steps[i]) {
+        const lo = steps[i - 1], hi = steps[i];
+        const vLo = props["cov_poa_" + lo], vHi = props["cov_poa_" + hi];
+        return vLo + (vHi - vLo) * (p - lo) / (hi - lo);
+      }
+    }
+    return props["cov_poa_" + steps[steps.length - 1]];
+  }
+
   function buildingEstimate(props, pct) {
     const kwp = (props.facet_area_m2 || 0) * (pct / 100) * panelDensityKw;
-    const kwhYear = kwp * (props.avg_poa_kwh_m2 || 0)
+    const kwhYear = kwp * bestPoa(props, pct)
       * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100);
     return { kwp, kwhYear };
   }
+  // Exposed so the estimate can be checked from the console or a browser test
+  // without clicking through the UI. Pure functions, no state.
+  window.__estimate = { bestPoa, buildingEstimate };
 
   // queryRenderedFeatures over buildings-fill is the expensive half of this --
   // it hands back every in-view building with full geometry, thousands of them
@@ -2129,9 +2161,10 @@ map.on("load", async () => {
         const area = pr.facet_area_m2 || 0;
         if (!area) return;
         const k = area * (pct / 100) * panelDensityKw;
-        // Falls back to the flat roof average on data built before cov_poa_*
-        // existed, so the panel still reads sensibly mid-rebuild.
-        const poa = pr[`cov_poa_${pct}`] || pr.avg_poa_kwh_m2 || 0;
+        // Through bestPoa, so the ladder and the headline figure above it can
+        // never disagree about the same roof at the same coverage -- which is
+        // what they did while only the ladder knew about cov_poa_*.
+        const poa = bestPoa(pr, pct);
         kwp += k;
         kwh += k * poa * derate;
       });
@@ -2177,7 +2210,14 @@ map.on("load", async () => {
     if (mode !== "layout" && selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
     const bp = document.getElementById("bldg-power");
     if (bp && bp.dataset.area) {
-      const est = buildingEstimate({ facet_area_m2: +bp.dataset.area, avg_poa_kwh_m2: +bp.dataset.poa }, pct);
+      // The real property bag, not two numbers copied into data- attributes:
+      // rebuilding props from those dropped every cov_poa_*, so the one place
+      // a person actually reads their own roof's estimate was the one place
+      // still charging it the roof average.
+      const est = buildingEstimate(
+        selectedBuildingProps
+          || { facet_area_m2: +bp.dataset.area, avg_poa_kwh_m2: +bp.dataset.poa },
+        pct);
       bp.textContent = fmtPower(est.kwp);
       document.getElementById("bldg-energy").textContent = fmtEnergy(est.kwhYear);
       // Same coverage ladder as the map-view dashboard, but for this one roof
