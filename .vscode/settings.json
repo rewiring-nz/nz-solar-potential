@@ -1,0 +1,18 @@
+{
+  // Reduce search and file-watcher load from generated and local files.
+  "search.useIgnoreFiles": true,
+  "search.exclude": {
+    "**/data/**": true,
+    "**/.venv/**": true,
+    "**/.venv-sam/**": true,
+    "**/validation/**": true,
+    "**/__pycache__/**": true
+  },
+  "files.watcherExclude": {
+    "**/data/**": true,
+    "**/.venv/**": true,
+    "**/.venv-sam/**": true,
+    "**/validation/**": true,
+    "**/__pycache__/**": true
+  }
+}
