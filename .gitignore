@@ -71,3 +71,7 @@ data/training_faces/
 
 # Per-machine quickstart area, written by the user running quickstart.sh.
 my_area.json
+
+# The code map (tools/build_code_graph.sh). Regenerable in ~40 s, 3 MB, and
+# it has no business on the public site.
+graphify-out/
