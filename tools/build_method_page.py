@@ -13,8 +13,8 @@ that buries the one thing worth reading.
 
 So this takes .ua/domain-graph.json and lays it out as a document: every step
 in order, with what it decides, what it decides it from, and where that lives
-if he ever wants to point at it. He can flag any step that looks wrong; the
-flags are his own and stay in his browser.
+if he ever wants to point at it. Collapsed by default, two levels deep, so
+the first screen is six lines rather than a hundred and nine.
 
 Usage: python tools/build_method_page.py [out.html]
 """
@@ -61,24 +61,32 @@ def main():
         toc.append(f'<li><a href="#{esc(did)}"><span class="toc-n">{di}</span>'
                    f'<span>{esc(dm["name"])}</span>'
                    f'<span class="toc-c">{nst}</span></a></li>')
-        sec = [f'<section class="domain" id="{esc(did)}">',
-               f'<header class="dhead"><p class="eyebrow">Part {di} of {len(domains)}'
-               f' &middot; {len(fl)} processes &middot; {nst} steps</p>',
-               f'<h2>{esc(dm["name"])}</h2>',
+        sec = [f'<details class="domain" id="{esc(did)}">',
+               '<summary class="dhead">',
+               f'<span class="dnum">{di}</span>',
+               f'<span class="dname">{esc(dm["name"])}</span>',
+               f'<span class="dcount">{len(fl)} processes &middot; {nst} steps</span>',
+               '<span class="chev" aria-hidden="true"></span>',
+               '</summary>',
+               '<div class="dbody">',
                f'<p class="lede">{esc(dm.get("summary"))}</p>']
         meta = dm.get("domainMeta") or {}
         rules = meta.get("businessRules") or []
         if rules:
             sec.append('<div class="rules"><h3>Rules this part holds to</h3><ul>'
                         + "".join(f"<li>{esc(r)}</li>" for r in rules) + "</ul></div>")
-        sec.append("</header>")
 
         for f in fl:
             fn = node[f]
             fm = fn.get("domainMeta") or {}
             trig = fm.get("entryPoint")
-            sec.append(f'<article class="flow" id="{esc(f)}">')
-            sec.append(f'<h3>{esc(fn["name"])}</h3>')
+            nsteps = len(steps_of.get(f, []))
+            sec.append(f'<details class="flow" id="{esc(f)}">')
+            sec.append('<summary class="fhead">'
+                       f'<span class="fname">{esc(fn["name"])}</span>'
+                       f'<span class="fcount">{nsteps} steps</span>'
+                       '<span class="chev" aria-hidden="true"></span></summary>')
+            sec.append('<div class="fbody">')
             sec.append(f'<p class="fsum">{esc(fn.get("summary"))}</p>')
             if trig:
                 sec.append(f'<p class="trigger"><span>Starts when</span> '
@@ -94,13 +102,9 @@ def main():
                     loc = f"{fp}:{lr[0]}" if lr and lr[0] else fp
                     where = f'<span class="where">{esc(loc)}</span>'
                 sec.append(
-                    f'<li class="step" data-step="{esc(sid)}">'
-                    f'<div class="sbody"><p class="sname">{esc(s["name"])}</p>'
-                    f'<p class="ssum">{esc(s.get("summary"))}</p>{where}</div>'
-                    f'<button class="flag" type="button" aria-pressed="false" '
-                    f'title="Mark this step as looking wrong">Looks wrong</button>'
-                    f'</li>')
-            sec.append("</ol></article>")
+                    f'<li class="step"><p class="sname">{esc(s["name"])}</p>'
+                    f'<p class="ssum">{esc(s.get("summary"))}</p>{where}</li>')
+            sec.append("</ol></div></details>")
 
         links = [e for e in cross if e["source"] == did]
         if links:
@@ -111,30 +115,32 @@ def main():
                             f'<span>{esc(e.get("description"))}</span></li>'
                             for e in links if e["target"] in node)
                         + "</ul></div>")
-        sec.append("</section>")
+        sec.append("</div></details>")
         parts.append("\n".join(sec))
 
-    page = f"""<title>How a Roof Estimate Is Made</title>
+    page = f"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a Roof Estimate Is Made</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400&display=swap">
 <style>
 :root {{
   --paper:#faf7f2; --surface:#ffffff; --ink:#1d1726; --body:#3a3347;
   --muted:#736b81; --line:#e6ded3; --line-soft:#f0e9e0;
-  --ember:#c2410c; --plum:#7a1f6b; --flagbg:#fdf2e9;
+  --ember:#c2410c; --plum:#7a1f6b;
   --shadow:0 1px 2px rgba(29,23,38,.05);
 }}
 @media (prefers-color-scheme: dark) {{
   :root:not([data-theme="light"]) {{
     --paper:#141119; --surface:#1c1823; --ink:#f3eee7; --body:#cfc7d6;
     --muted:#9a91a6; --line:#302937; --line-soft:#262030;
-    --ember:#f79b5c; --plum:#d089c4; --flagbg:#2a2030;
+    --ember:#f79b5c; --plum:#d089c4;
     --shadow:0 1px 2px rgba(0,0,0,.4);
   }}
 }}
 :root[data-theme="dark"] {{
   --paper:#141119; --surface:#1c1823; --ink:#f3eee7; --body:#cfc7d6;
   --muted:#9a91a6; --line:#302937; --line-soft:#262030;
-  --ember:#f79b5c; --plum:#d089c4; --flagbg:#2a2030;
+  --ember:#f79b5c; --plum:#d089c4;
   --shadow:0 1px 2px rgba(0,0,0,.4);
 }}
 * {{ box-sizing:border-box; }}
@@ -170,36 +176,61 @@ nav.toc ol {{ list-style:none; margin:0; padding:0; display:flex; flex-direction
 nav.toc a {{ display:grid; grid-template-columns:22px 1fr auto; gap:10px; align-items:baseline;
   padding:7px 8px; border-radius:4px; text-decoration:none; color:var(--body); font-size:14.5px; }}
 nav.toc a:hover, nav.toc a:focus-visible {{ background:var(--line-soft); color:var(--ink); }}
+.allctl {{ display:flex; gap:8px; margin-top:18px; }}
+.allctl button {{ font:400 12px/1 "IBM Plex Mono", monospace; background:none;
+  border:1px solid var(--line); color:var(--body); padding:7px 10px;
+  border-radius:4px; cursor:pointer; }}
+.allctl button:hover {{ border-color:var(--ember); color:var(--ember); }}
 .toc-n {{ font:400 12px/1.4 "IBM Plex Mono", monospace; color:var(--ember); }}
 .toc-c {{ font:400 12px/1.4 "IBM Plex Mono", monospace; color:var(--muted); font-variant-numeric:tabular-nums; }}
-.flagbar {{ margin-top:22px; padding:12px 12px 13px; border:1px solid var(--line);
-  border-radius:6px; background:var(--surface); font-size:13.5px; color:var(--muted); }}
-.flagbar b {{ color:var(--ember); font-variant-numeric:tabular-nums; }}
-.flagbar button {{ margin-top:8px; font:inherit; font-size:12.5px; background:none;
-  border:1px solid var(--line); color:var(--body); padding:4px 9px; border-radius:4px; cursor:pointer; }}
-.domain {{ padding-block:0 60px; }}
-.domain + .domain {{ border-top:1px solid var(--line); padding-block-start:52px; }}
-.eyebrow {{ font:400 11.5px/1 "IBM Plex Mono", monospace; letter-spacing:.11em;
-  text-transform:uppercase; color:var(--muted); margin:0 0 12px; }}
-.domain h2 {{ font:600 clamp(26px,3.4vw,36px)/1.15 "Fraunces", Georgia, serif;
-  color:var(--ink); margin:0; letter-spacing:-.012em; text-wrap:balance; }}
-.lede {{ margin:14px 0 0; max-width:66ch; font-size:17px; }}
-.rules {{ margin-top:22px; padding:16px 18px; border-left:3px solid var(--plum);
+/* ACCORDIONS, CLOSED BY DEFAULT. Native <details> so they work with no
+   script, keyboard-operate for free, and survive the browser's own find. */
+details.domain {{ border:1px solid var(--line); border-radius:7px;
+  background:var(--surface); margin-bottom:10px; overflow:hidden; }}
+details.domain[open] {{ box-shadow:var(--shadow); }}
+summary.dhead {{ display:grid; grid-template-columns:30px 1fr auto 20px;
+  gap:6px 14px; align-items:baseline; padding:17px 18px; cursor:pointer;
+  list-style:none; }}
+summary.dhead::-webkit-details-marker {{ display:none; }}
+summary.dhead:hover {{ background:var(--line-soft); }}
+.dnum {{ font:400 12px/1.5 "IBM Plex Mono", monospace; color:var(--ember);
+  font-variant-numeric:tabular-nums; }}
+.dname {{ font:600 clamp(19px,2.3vw,25px)/1.2 "Fraunces", Georgia, serif;
+  color:var(--ink); letter-spacing:-.01em; text-wrap:balance; }}
+.dcount {{ font:400 12px/1.6 "IBM Plex Mono", monospace; color:var(--muted);
+  white-space:nowrap; }}
+.chev {{ width:11px; height:11px; border-right:1.8px solid var(--muted);
+  border-bottom:1.8px solid var(--muted); transform:rotate(45deg);
+  justify-self:end; align-self:center; transition:transform .18s ease; }}
+details[open] > summary .chev {{ transform:rotate(-135deg); }}
+.dbody {{ padding:2px 18px 24px; }}
+@media (max-width:620px) {{
+  summary.dhead {{ grid-template-columns:30px 1fr 20px; }}
+  .dcount {{ grid-column:2; }}
+}}
+.lede {{ margin:6px 0 0; max-width:66ch; font-size:17px; }}
+.rules {{ margin-top:18px; padding:16px 18px; border-left:3px solid var(--plum);
   background:var(--surface); border-radius:0 6px 6px 0; }}
 .rules h3 {{ margin:0 0 8px; font:400 11.5px/1 "IBM Plex Mono", monospace;
   letter-spacing:.11em; text-transform:uppercase; color:var(--plum); }}
 .rules ul {{ margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px; }}
 .rules li {{ font-size:15px; max-width:66ch; }}
-.flow {{ margin-top:38px; }}
-.flow h3 {{ font:600 20px/1.3 "Fraunces", Georgia, serif; color:var(--ink); margin:0; }}
-.fsum {{ margin:7px 0 0; max-width:66ch; color:var(--body); }}
+details.flow {{ margin-top:10px; border:1px solid var(--line-soft);
+  border-radius:6px; background:var(--paper); }}
+summary.fhead {{ display:grid; grid-template-columns:1fr auto 18px; gap:12px;
+  align-items:baseline; padding:12px 14px; cursor:pointer; list-style:none; }}
+summary.fhead::-webkit-details-marker {{ display:none; }}
+summary.fhead:hover {{ background:var(--line-soft); }}
+.fname {{ font:600 17.5px/1.3 "Fraunces", Georgia, serif; color:var(--ink); }}
+.fcount {{ font:400 12px/1.5 "IBM Plex Mono", monospace; color:var(--muted); white-space:nowrap; }}
+.fbody {{ padding:0 14px 16px; }}
+.fsum {{ margin:0 0 4px; max-width:66ch; color:var(--body); }}
 .trigger {{ margin:10px 0 0; font-size:13.5px; color:var(--muted); }}
 .trigger span {{ letter-spacing:.05em; text-transform:uppercase; font-size:11.5px; }}
 .trigger code {{ font:400 13px/1 "IBM Plex Mono", monospace; color:var(--ink); }}
-ol.steps {{ list-style:none; counter-reset:s; margin:16px 0 0; padding:0;
+ol.steps {{ list-style:none; counter-reset:s; margin:14px 0 0; padding:0;
   display:flex; flex-direction:column; gap:1px; }}
-li.step {{ counter-increment:s; display:grid; grid-template-columns:1fr auto; gap:14px;
-  align-items:start; padding:14px 16px 15px 46px; position:relative;
+li.step {{ counter-increment:s; padding:14px 18px 15px 46px; position:relative;
   background:var(--surface); border:1px solid var(--line-soft); }}
 li.step:first-child {{ border-radius:6px 6px 0 0; }}
 li.step:last-child {{ border-radius:0 0 6px 6px; }}
@@ -208,17 +239,10 @@ li.step + li.step {{ border-top:none; }}
 li.step::before {{ content:counter(s); position:absolute; left:16px; top:15px;
   font:400 12px/1.5 "IBM Plex Mono", monospace; color:var(--muted);
   font-variant-numeric:tabular-nums; }}
-li.step[data-flagged="1"] {{ background:var(--flagbg); border-color:var(--ember); }}
-li.step[data-flagged="1"] + li.step {{ border-top:1px solid var(--ember); }}
 .sname {{ margin:0; font-weight:600; color:var(--ink); font-size:15.5px; }}
 .ssum {{ margin:5px 0 0; max-width:64ch; font-size:15px; }}
 .where {{ display:inline-block; margin-top:8px; font:400 12px/1.4 "IBM Plex Mono", monospace;
   color:var(--muted); word-break:break-all; }}
-button.flag {{ font:400 12px/1 "IBM Plex Mono", monospace; letter-spacing:.03em;
-  background:none; border:1px solid var(--line); color:var(--muted);
-  padding:6px 9px; border-radius:4px; cursor:pointer; white-space:nowrap; }}
-button.flag:hover {{ border-color:var(--ember); color:var(--ember); }}
-button.flag[aria-pressed="true"] {{ background:var(--ember); border-color:var(--ember); color:#fff; }}
 :focus-visible {{ outline:2px solid var(--ember); outline-offset:2px; }}
 .cross {{ margin-top:34px; padding-top:18px; border-top:1px dashed var(--line); }}
 .cross h3 {{ margin:0 0 10px; font:400 11.5px/1 "IBM Plex Mono", monospace;
@@ -241,7 +265,8 @@ footer.note code {{ font:400 13px/1 "IBM Plex Mono", monospace; color:var(--body
     <p class="standfirst">Every decision the pipeline makes between a laser scan and
     the number on the map — what it decides, and what it decides it from. Written
     to be read by someone who does not read code, so that a mistake in the
-    <em>method</em> can be caught without opening a file.</p>
+    <em>method</em> can be caught without opening a file. Open a part to see its
+    processes; open a process to see its steps.</p>
     <div class="figures">
       <div><b>{len(domains)}</b><span>Parts</span></div>
       <div><b>{sum(len(v) for v in flows_of.values())}</b><span>Processes</span></div>
@@ -253,9 +278,9 @@ footer.note code {{ font:400 13px/1 "IBM Plex Mono", monospace; color:var(--body
     <nav class="toc" aria-label="Contents">
       <h2>Contents</h2>
       <ol>{"".join(toc)}</ol>
-      <div class="flagbar">
-        <span id="flagcount"><b>0</b> steps flagged</span>
-        <button type="button" id="clearflags">Clear all</button>
+      <div class="allctl">
+        <button type="button" id="openall">Open all</button>
+        <button type="button" id="shutall">Close all</button>
       </div>
     </nav>
     <main>
@@ -266,50 +291,13 @@ footer.note code {{ font:400 13px/1 "IBM Plex Mono", monospace; color:var(--body
         Rebuild after the pipeline changes with
         <code>python tools/build_method_page.py</code>. The step summaries are
         written from the code and its comments — where one disagrees with what the
-        pipeline actually does, that disagreement is itself worth knowing about.
-        Flags are stored in this browser only.
+        pipeline actually does, that disagreement is itself worth knowing about
+        — say which step and it gets fixed.
       </footer>
     </main>
   </div>
 </div>
 
-<script>
-(function () {{
-  var KEY = "roof-method-flags";
-  var flags = {{}};
-  try {{ flags = JSON.parse(localStorage.getItem(KEY) || "{{}}") || {{}}; }} catch (e) {{ flags = {{}}; }}
-  var countEl = document.getElementById("flagcount");
-
-  function paint() {{
-    var n = 0;
-    document.querySelectorAll("li.step").forEach(function (li) {{
-      var on = !!flags[li.dataset.step];
-      if (on) n++;
-      li.dataset.flagged = on ? "1" : "0";
-      var b = li.querySelector("button.flag");
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-      b.textContent = on ? "Flagged" : "Looks wrong";
-    }});
-    countEl.innerHTML = "<b>" + n + "</b> step" + (n === 1 ? "" : "s") + " flagged";
-  }}
-
-  function save() {{
-    try {{ localStorage.setItem(KEY, JSON.stringify(flags)); }} catch (e) {{}}
-  }}
-
-  document.querySelectorAll("li.step button.flag").forEach(function (b) {{
-    b.addEventListener("click", function () {{
-      var id = b.closest("li.step").dataset.step;
-      if (flags[id]) {{ delete flags[id]; }} else {{ flags[id] = 1; }}
-      save(); paint();
-    }});
-  }});
-  document.getElementById("clearflags").addEventListener("click", function () {{
-    flags = {{}}; save(); paint();
-  }});
-  paint();
-}})();
-</script>
 """
     out_path.write_text(page, encoding="utf-8")
     print(f"{out_path}  ({out_path.stat().st_size/1000:.0f} kB)  "
