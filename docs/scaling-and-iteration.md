@@ -68,8 +68,8 @@ Queenstown actually consumed, not from a rate card:
 | `data/panel_layouts.geojson` (merged, pre-tiling) | 480 MB | 65 GB | hard blocker |
 | `data/panel_layouts.pmtiles` (what the map reads) | 29 MB | 4 GB | fine — it is tiled, and a client only fetches the tiles it looks at |
 | `data/` on disk, inputs kept | 139 GB | **31 TB** | not a laptop, and not one VM disk |
-| district build | 4.3 h | **956 VM-hours** | needs incremental + parallel regions |
-| face precompute | 7.0 h (16 cores, sharded) | **1,556 VM-hours** | needs sharding (`--shard i/n` added today) |
+| district build | 6.1 h | **1,347 VM-hours** | needs incremental + parallel regions |
+| face precompute | 6.6 h (16 cores, sharded) | **1,461 VM-hours** | needs sharding (`--shard i/n` added today) |
 | region definitions | 24 hand-written bboxes | **1,384, derived** | needs to be derived, not typed |
 
 Four things follow from that table.
@@ -130,24 +130,54 @@ gone is the chance of a region silently inheriting the wrong capture.
 
 ### What a national run actually costs
 
-Scaled from what Queenstown consumed today on one 16-core preemptible VM:
+Scaled from what Queenstown consumed on 20–21 September, one 16-core
+preemptible VM, data already on disk:
 
-| | VM-hours | on one machine | on twenty |
+| | VM-hours | 1 machine | 20 | 50 | 100 |
+| --- | --- | --- | --- | --- | --- |
+| face precompute | 1,461 | 61 d | 3.0 d | 1.2 d | 0.6 d |
+| region builds | 1,347 | 56 d | 2.8 d | 1.1 d | 0.6 d |
+| **total compute** | **2,808** | **117 d** | **5.8 d** | **2.3 d** | **1.2 d** |
+
+Compute divides cleanly. The planner caps every region at 3,000 buildings, so
+the 1,384 regions are close to even and there is no straggler that holds the
+whole run open — that even split is the reason more machines keep paying.
+
+**The download does not divide.** That table is compute on data already
+fetched. Queenstown needed 116 GB of point cloud, elevation and imagery;
+nationally that is **26 TB**, all of it from LINZ, which is one service:
+
+| LINZ serves, in aggregate | download takes |
+| --- | --- |
+| 0.5 Gbit/s | 4.8 days |
+| 1 Gbit/s | 2.4 days |
+| 2 Gbit/s | 1.2 days |
+| 5 Gbit/s | 0.5 days |
+
+Fifty machines do not make that faster. They may make it slower — fifty
+clients on one API is how you find its rate limiter. Nobody has measured what
+LINZ will actually sustain, and that number, not the machine count, sets the
+floor for a national run. **Measure it on one city before buying parallelism
+for the whole country.**
+
+**And the fan-in is serial**, which is a second reason not to think of this as
+one run: merge, bake, tile, deploy. At district scale it is minutes. At
+national scale it is the 65 GB merged file that must not exist at all (see
+above), so it needs redesigning before it is timed.
+
+### Do the cities, not the country
+
+Half of New Zealand's buildings are in the densest **20 of 389 cells**:
+
+| | buildings | compute | download |
 | --- | --- | --- | --- |
-| face precompute | 1,556 | 65 days | 3.2 days |
-| region builds | 956 | 40 days | 2.0 days |
-| **total** | **2,512** | **105 days** | **5.2 days** |
+| densest 20 cells | 1,709,541 (50%) | 1,403 VM-h — **1.2 days on 50** | 12.9 TB |
+| all 389 cells | 3,413,097 | 2,808 VM-h — 2.3 days on 50 | 25.7 TB |
 
-Two things that table does not say. It assumes no preemption — today's run
-lost about an hour to one, and at national scale that is a tax, not an
-incident, so the resumable runners matter. And it assumes the pipeline stays
-as fast per building as it is now; the biggest roofs cost far more than the
-median, and the cities are where the biggest roofs are.
+Half the country for half the cost, publishing as each city lands, and the
+second half can wait for the storage fix and a measured LINZ rate.
 
-The storage line is the one to fix first, because it is the difference
-between 31 TB and roughly 80 GB.
-
-### Order to do them in
+### Order to do them in### Order to do them in
 
 1. ~~Buildings as vector tiles~~ — done 20 September.
 1. Heat-map rasters as tiles (now the largest download).
