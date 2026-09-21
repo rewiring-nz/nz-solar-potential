@@ -7,6 +7,13 @@
 PILOT_BBOX = [168.655, -45.045, 168.675, -45.025]
 PILOT_BBOX_NZTM2000 = [1257815.95, 5002860.10, 1259272.13, 5005166.35]  # EPSG:2193, same area
 
+# WGS84 [min_lon, min_lat, max_lon, max_lat], matching REGIONS below. This
+# covers the full configured pilot/district extent plus a 30 km buffer in
+# EPSG:2193, which is the maximum far-terrain ray distance used by the
+# horizon calculations. The metric source bounds are approximately
+# [1225154.0, 4966857.5, 1305935.6, 5045588.3] in EPSG:2193.
+DEM_WIDE_BBOX = [168.214585, -45.351447, 169.289392, -44.682770]
+
 # --- Queenstown-wide expansion regions --------------------------------------
 # WGS84 [min_lon, min_lat, max_lon, max_lat] per urban sub-region. Boxes are
 # data-driven, not hand-drawn: candidate rectangles were validated against

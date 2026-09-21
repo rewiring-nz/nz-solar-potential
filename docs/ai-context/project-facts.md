@@ -36,8 +36,8 @@ Last verified: 2026-09-09
   warning and the build runs without imagery-based obstruction detection.
 - `data/dem_wide_mosaic.tif` is a required root-level input for several current
   stages, including building horizons and terrain masks. `src/fetch_dem_wide.py`
-  fetches LINZ layer `51768` over the pilot plus configured regions and a 10 km
-  NZTM buffer when the file is absent; LINZ describes that source as
+  fetches LINZ layer `51768` over the configured `config.DEM_WIDE_BBOX`, which
+  includes a 30 km EPSG:2193 buffer; LINZ describes that source as
   cartographic rather than suitable for precision terrain analysis.
 - Roof geometry has two generations (verified 2026-09-09, see
   docs/developers/reviewers-guide.md). The fallback: RANSAC plane fitting and

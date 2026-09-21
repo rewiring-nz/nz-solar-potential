@@ -117,7 +117,7 @@ outlines and mosaicked DSM and imagery inputs. For example, replace
 
 The fetcher also ensures the required root-level `data/dem_wide_mosaic.tif`
 exists. It requests LINZ layer `51768` (the nationwide 8m DEM) over the pilot
-and configured regional DSM extent plus a 10 km buffer. To fetch it on its own,
+and configured regional DSM extent plus a 30 km buffer. To fetch it on its own,
 run `.venv/bin/python src/fetch_dem_wide.py`. LINZ describes this dataset as
 cartographic and unsuitable for precision terrain analysis; it is used here
 only for distant horizon context, while local roof and terrain evidence comes

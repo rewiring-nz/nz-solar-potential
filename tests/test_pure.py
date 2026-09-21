@@ -253,18 +253,20 @@ def test_export_cleanup_never_raises():
 
 
 def test_wide_dem_bbox_has_requested_metric_buffer():
-    from src.fetch_dem_wide import TO_NZTM, wide_dem_bbox_wgs84
-    bbox = wide_dem_bbox_wgs84(buffer_m=10_000)
-    min_x, min_y = TO_NZTM.transform(bbox[0], bbox[1])
-    max_x, max_y = TO_NZTM.transform(bbox[2], bbox[3])
+    import pyproj
+    from src.fetch_dem_wide import wide_dem_bbox_wgs84
+    to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+    bbox = wide_dem_bbox_wgs84()
+    min_x, min_y = to_nztm.transform(bbox[0], bbox[1])
+    max_x, max_y = to_nztm.transform(bbox[2], bbox[3])
     district = [config.PILOT_BBOX, *config.REGIONS.values()]
-    points = [TO_NZTM.transform(lon, lat)
+    points = [to_nztm.transform(lon, lat)
               for item in district
               for lon, lat in ((item[0], item[1]), (item[2], item[3]))]
-    assert min_x <= min(point[0] for point in points) - 9_999
-    assert min_y <= min(point[1] for point in points) - 9_999
-    assert max_x >= max(point[0] for point in points) + 9_999
-    assert max_y >= max(point[1] for point in points) + 9_999
+    assert min_x <= min(point[0] for point in points) - 29_999
+    assert min_y <= min(point[1] for point in points) - 29_999
+    assert max_x >= max(point[0] for point in points) + 29_999
+    assert max_y >= max(point[1] for point in points) + 29_999
 
 
 def test_wide_dem_fetch_skips_existing_mosaic():
