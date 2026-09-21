@@ -1904,34 +1904,32 @@ def facets_from_drawn_faces(building_id, footprint, pts):
             "from_labels": True, "plane_borrowed": True,
             **({"no_panel": True} if _no_panel else {}),
         })
-    # WHY A LINE HIS TOOL DID NOT USE STILL DOES NOT SPLIT A FACE.
+    # A LINE HIS TOOL DID NOT USE STILL SPLITS A FACE -- HIS CALL, 21 SEP.
     #
-    # Josh reported lines missing from three roofs: "missing two valley lines
+    # He reported lines missing from three roofs: "missing two valley lines
     # and a ridgeline that I clearly drew", "missing one valley line",
-    # "missing two ridge lines that I drew". Measured (19 Sep), one rule
-    # accounts for all three with no exceptions: every line whose two ends
-    # CLOSE is reproduced as a facet boundary, and every line with a FREE end
-    # is dropped -- the tool exports faces from a planar subdivision, and a
+    # "missing two ridge lines that I drew". Measured, one rule accounts for
+    # all three with no exceptions: every line whose two ends CLOSE is
+    # reproduced as a facet boundary, and every line with a FREE end is
+    # dropped -- the tool exports faces from a planar subdivision, and a
     # dangling edge bounds no region.
     #
-    # Two attempts to honour them:
+    # Extending every dropped line to the boundary was tried first and cost
+    # 17.6 points of fidelity (94.8% -> 77.2%, facets 5 -> 25). What ships is
+    # the narrow version above: a free end is run out only while the LiDAR
+    # fold carries on across the gap, only over a short gap, and only where
+    # two planes fit the face better than one.
     #
-    #   extend every dropped line to the boundary   94.8% -> 77.2% fidelity,
-    #                                               facets 5 -> 25.
-    #   extend only where the LiDAR fold carries    94.8% -> 92.5%, two roofs
-    #   across the gap, and only where two planes   changed, each +1 of his
-    #   fit the face better than one                lines and -1 exact face.
+    # The trade it makes is exact and could not be resolved by measuring:
     #
-    # The second is _split_on_open_lines above, kept behind
-    # SOLAR_EXTEND_DANGLING and OFF. Splitting a face he drew can only lose
-    # its exact match and neither child replaces it, so the trade is
-    # one-for-one by construction and the arithmetic cannot settle it: his
-    # LINES say the fold is there, the FACES his tool exported say it is not,
-    # and both are his markup. That question goes to him, not to a threshold.
+    #   faces matching his markup   97.0% -> 95.8%
+    #   lines of his found          80.8% -> 81.4%
     #
-    # The line is honoured meanwhile where it matters: fold_keepouts stops
-    # panels crossing it, and the map's "My roof markup" layer draws every
-    # line he drew, dangling or not.
+    # one-for-one by construction, because splitting a face always loses the
+    # parent's exact match and neither child replaces it. The real question
+    # was which of two things HE authored wins when they disagree -- his
+    # LINES, or the FACES his tool exported after dropping one. He was asked
+    # with the measurements and a picture, and said: "Run them out."
     return out
 
 

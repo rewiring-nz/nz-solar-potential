@@ -484,28 +484,27 @@ def drawn_line_keepouts(building_id, width=None):
 # Most passing ends are near-misses of a metre or less that the tool had
 # already noded, so extending them changes nothing at all.
 
-# DEFAULT OFF, AND THE MEASUREMENT IS WHY.
+# ON, BECAUSE JOSH MADE THE CALL. 21 Sep: "Run them out."
 #
-# With the gate above plus the two-planes test in roof_partition, the whole
-# change reduces to two roofs on the 152-roof bench, and on each one it is an
-# exact one-for-one trade:
+# The measurement never settled this and could not. With the gate above plus
+# the two-planes test in roof_partition, the whole change is an exact
+# one-for-one trade on his own 29 marked roofs:
 #
 #                            off            on
-#   faces matching markup   94.8%   ->    92.5%
+#   faces matching markup   97.0%   ->    95.8%
 #   his lines found         80.8%   ->    81.4%
-#   extra facets                5   ->        6
-#   panels across a line     1/2708 ->   1/2716
+#   extra facets                2   ->        3
+#   panels across a line     1/2708 ->   1/2696
 #
 # That is arithmetic, not tuning: splitting a face always loses the parent's
 # exact match and neither child replaces it, so face agreement can only fall
-# and line recall can only rise. Which one is the truth is the one thing here
-# that cannot be measured -- his LINES say the ridge is there, the FACES his
-# tool exported say it is not, and both are his markup.
+# and line recall can only rise. The question underneath was which of two
+# things he authored wins when they disagree -- his LINES, which say a fold
+# is there, or the FACES his tool exported, which dropped the line because it
+# bounded no region. He says the lines.
 #
-# So it ships off and the question goes to him with a picture, rather than
-# 2.3 points of the metric that has caught every real regression being traded
-# away on my opinion. Turn on with SOLAR_EXTEND_DANGLING=1.
-EXTEND_DANGLING = os.environ.get("SOLAR_EXTEND_DANGLING", "0") == "1"
+# Turn off with SOLAR_EXTEND_DANGLING=0.
+EXTEND_DANGLING = os.environ.get("SOLAR_EXTEND_DANGLING", "1") == "1"
 DANGLE_GAP_MAX = float(os.environ.get("SOLAR_DANGLE_GAP_MAX", "3.5"))
 DANGLE_FREE_MIN = 0.6      # under this the tool has already noded the end
 DANGLE_EV_DRAWN = 1.0      # fold must be unmistakable where he drew it
