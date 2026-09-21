@@ -1,6 +1,7 @@
 """
-Pull building outlines (WFS) and the DSM raster (Exports API) for
-config.PILOT_BBOX from the LINZ Data Service, and save both under data/.
+ Pull building outlines (WFS), DSM, imagery, and the wide terrain DEM
+ (Exports API) for the pilot from the LINZ Data Service, and save them under
+ data/.
 
 Requires a LINZ_API_KEY with REST API scope enabled (Account -> API keys
 -> edit the key -> enable "Search and Download"), not just the default
@@ -201,6 +202,10 @@ def main():
 
     print(f"Fetching DSM for bbox {config.PILOT_BBOX} (WGS84)...")
     fetch_raster(config.PILOT_BBOX, api_key, config.LINZ_DSM_LAYER, "dsm")
+
+    from src.fetch_dem_wide import ensure_dem_wide
+    print("Ensuring wide 8m DEM for distant terrain...")
+    ensure_dem_wide(api_key)
 
     print(f"Fetching aerial imagery for bbox {config.PILOT_BBOX} (WGS84)...")
     fetch_raster(config.PILOT_BBOX, api_key, config.LINZ_IMAGERY_LAYER, "imagery", format_key="raster")

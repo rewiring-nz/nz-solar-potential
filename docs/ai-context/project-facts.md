@@ -35,8 +35,10 @@ Last verified: 2026-09-09
 - Missing aerial imagery does not block builds: the regional fetcher logs a
   warning and the build runs without imagery-based obstruction detection.
 - `data/dem_wide_mosaic.tif` is a required root-level input for several current
-  stages, including building horizons and terrain masks. No repository script
-  builds it; a maintained copy must be supplied separately.
+  stages, including building horizons and terrain masks. `src/fetch_dem_wide.py`
+  fetches LINZ layer `51768` over the pilot plus configured regions and a 10 km
+  NZTM buffer when the file is absent; LINZ describes that source as
+  cartographic rather than suitable for precision terrain analysis.
 - Roof geometry has two generations (verified 2026-09-09, see
   docs/developers/reviewers-guide.md). The fallback: RANSAC plane fitting and
   straight-skeleton reconstruction (`src/roof_skeleton.py`) competing under

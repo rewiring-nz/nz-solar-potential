@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from src.surveys import survey_for
 from src.fetch_data import fetch_building_outlines, fetch_raster
+from src.fetch_dem_wide import ensure_dem_wide
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 REGIONS_DIR = DATA_DIR / "regions"
@@ -108,6 +109,9 @@ def main():
     api_key = os.environ.get("LINZ_API_KEY")
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set")
+
+    print("[wide terrain] ensuring 8m DEM...")
+    ensure_dem_wide(api_key)
 
     wanted = sys.argv[1:] or list(config.REGIONS)
     for name in wanted:

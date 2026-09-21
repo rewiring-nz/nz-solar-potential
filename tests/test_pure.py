@@ -252,6 +252,31 @@ def test_export_cleanup_never_raises():
         assert reclaim(Path("/nonexistent/x.zip"), Path("/nonexistent/d"), m) == 0
 
 
+def test_wide_dem_bbox_has_requested_metric_buffer():
+    from src.fetch_dem_wide import TO_NZTM, wide_dem_bbox_wgs84
+    bbox = wide_dem_bbox_wgs84(buffer_m=10_000)
+    min_x, min_y = TO_NZTM.transform(bbox[0], bbox[1])
+    max_x, max_y = TO_NZTM.transform(bbox[2], bbox[3])
+    district = [config.PILOT_BBOX, *config.REGIONS.values()]
+    points = [TO_NZTM.transform(lon, lat)
+              for item in district
+              for lon, lat in ((item[0], item[1]), (item[2], item[3]))]
+    assert min_x <= min(point[0] for point in points) - 9_999
+    assert min_y <= min(point[1] for point in points) - 9_999
+    assert max_x >= max(point[0] for point in points) + 9_999
+    assert max_y >= max(point[1] for point in points) + 9_999
+
+
+def test_wide_dem_fetch_skips_existing_mosaic():
+    import tempfile
+    from pathlib import Path
+    from src.fetch_dem_wide import ensure_dem_wide
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "dem_wide_mosaic.tif"
+        path.write_bytes(b"existing")
+        assert ensure_dem_wide("unused", tmp) == path
+
+
 # --------------------------------------------------------------------------
 
 def _main():

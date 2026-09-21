@@ -115,10 +115,14 @@ This command saves the named region under
 outlines and mosaicked DSM and imagery inputs. For example, replace
 `frankton_flats` with the region name passed to the command.
 
-Before a large build, check that the required root-level
-`data/dem_wide_mosaic.tif` is present. The build does not create this file;
-obtain it from the maintained data environment. Regional imagery is optional,
-but the build will report degraded LiDAR-only processing when imagery is absent.
+The fetcher also ensures the required root-level `data/dem_wide_mosaic.tif`
+exists. It requests LINZ layer `51768` (the nationwide 8m DEM) over the pilot
+and configured regional DSM extent plus a 10 km buffer. To fetch it on its own,
+run `.venv/bin/python src/fetch_dem_wide.py`. LINZ describes this dataset as
+cartographic and unsuitable for precision terrain analysis; it is used here
+only for distant horizon context, while local roof and terrain evidence comes
+from the LiDAR DSM/DEM. Regional imagery is optional, but the build will report
+degraded LiDAR-only processing when imagery is absent.
 
 Regional fetching is resumable: existing outputs are skipped. Imagery exports
 are split into chunks no larger than $8\,\mathrm{km^2}$ because imagery is the

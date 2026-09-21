@@ -125,10 +125,8 @@ REQUIRED = {
 # whole point is that the message arrives before hours of compute, not after.
 HOW_TO_GET = {
     "dem_wide_mosaic.tif":
-        "NO script in this repo builds it -- copy it from a machine that has "
-        "one (it is gitignored, so it does NOT travel with a clone). This is "
-        "exactly how the ungated-panel incident happened: a fresh VM had every "
-        "other input and silently lacked this one.",
+        "python src/fetch_dem_wide.py (requires LINZ_API_KEY; fetches layer "
+        "51768 for the configured district plus a 10 km buffer)",
     "outlines":  "python src/fetch_regions.py <region>",
     "dsm":       "python src/fetch_regions.py <region>  (pass 1: LiDAR/DSM)",
     "imagery":   "python src/fetch_regions.py <region>  (pass 2: aerial imagery)",

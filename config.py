@@ -89,6 +89,7 @@ POINTCLOUD_TILE_YEAR = "2021"  # "Otago - Queenstown LiDAR Tile Index (2021)" --
 LINZ_BUILDING_OUTLINES_LAYER = 101290
 LINZ_DSM_LAYER = 105855  # "Otago - Queenstown LiDAR 1m DSM (2021)"
 LINZ_DEM_LAYER = 105898  # "Otago - Queenstown LiDAR 1m DEM (2021)" -- bare earth, for shading horizon
+LINZ_WIDE_DEM_LAYER = 51768  # "NZ 8m Digital Elevation Model (2012)" -- distant terrain context
 LINZ_IMAGERY_LAYER = 124754  # "Queenstown 0.1m Urban Aerial Photos (2026)" -- captured 12 Feb-3 Mar
 # 2026, replacing the 2021 capture this pilot originally used. More current (new/changed rooftop
 # equipment, growth) at the cost of no longer matching the DSM/building-outline capture year exactly
