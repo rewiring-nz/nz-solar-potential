@@ -54,8 +54,12 @@ including the 47% of buildings that reading cannot possibly have touched.
 
 ## Part 2 — what actually blocks New Zealand
 
-Queenstown, measured today: 15,353 buildings. New Zealand has roughly 2.1
-million in the LINZ outlines — about **137×**. Multiplying what exists:
+Queenstown, measured today: 15,353 buildings. New Zealand has **3,413,097**
+in the LINZ outlines — **222×**, not the 137× this document claimed until
+21 September. That earlier figure was a remembered 2.1 million and it was
+wrong by 63%; the real one comes from asking LINZ cell by cell
+(`tools/plan_national_regions.py`). Every estimate below is scaled from what
+Queenstown actually consumed, not from a rate card:
 
 | Thing | Queenstown now | ×137 | Verdict |
 | --- | --- | --- | --- |
@@ -63,10 +67,10 @@ million in the LINZ outlines — about **137×**. Multiplying what exists:
 | `data/heatmaps/*`, positioned images | 9.6 MB per view | same per view | now the biggest download; tile it next |
 | `data/panel_layouts.geojson` (merged, pre-tiling) | 480 MB | 65 GB | hard blocker |
 | `data/panel_layouts.pmtiles` (what the map reads) | 29 MB | 4 GB | fine — it is tiled, and a client only fetches the tiles it looks at |
-| `data/` on disk | 133 GB | 18 TB | not a laptop, and not one VM disk |
-| district build, serial | 4.5 h | 26 days | needs incremental + parallel regions |
-| face precompute, serial | 18 h | 100 days | needs sharding (`--shard i/n` added today) |
-| region definitions | 24 hand-written bboxes | ~3,000 | needs to be derived, not typed |
+| `data/` on disk, inputs kept | 139 GB | **31 TB** | not a laptop, and not one VM disk |
+| district build | 4.3 h | **956 VM-hours** | needs incremental + parallel regions |
+| face precompute | 7.0 h (16 cores, sharded) | **1,556 VM-hours** | needs sharding (`--shard i/n` added today) |
+| region definitions | 24 hand-written bboxes | **1,384, derived** | needs to be derived, not typed |
 
 Four things follow from that table.
 
@@ -83,16 +87,35 @@ become tiles next. And `data/addresses.json` is a flat 0.7 MB index, which is
 right for a district and wrong for 2.1 million addresses (~34 MB): national
 search needs it sharded by prefix, or a real geocoder.
 
+**Do not keep the inputs.** 31 TB is the figure for hoarding every point
+cloud and every orthophoto, and there is no reason to. They are inputs: fetch
+a region, build it, emit its tiles, delete them. Peak storage becomes one
+region's working set plus the published tiles, which at Queenstown's ratio is
+about 80 GB of output for the whole country. This is a change to the fetch
+step, not a bigger disk, and it is the single largest saving available.
+
 **Nothing may be merged into one file.** The fan-in
 (`merge_regions → bake_density_deciles → …`) exists because the frontend wants
 one file. Once buildings are tiles, each region can be tiled independently and
 the tiles combined, so the 65 GB intermediate never exists.
 
-**A region must be self-describing.** Fixed today: `area_bbox_wgs84()` derives a
-region's bbox from its own outlines when the config does not list one, so a
-region that has data is buildable. The remaining manual step is deciding *which*
-areas to build; at national scale that has to come from a population or
-building-density grid, not from typing bboxes.
+**Regions are derived now, not typed.** Done 21 September.
+`tools/plan_national_regions.py` lays a grid over the country, asks LINZ how
+many buildings are in each cell, keeps the populated ones and splits anything
+over 3,000 buildings — Queenstown's largest working region is 2,712. Result:
+**389 populated cells of 1,836, 1,384 build regions**. It plans only; nothing
+is fetched or built.
+
+It also found a trap worth knowing about. LINZ's WFS returns `lon,lat` where
+the spec says `lat,lon`, and the wrong order returns a valid 200 reporting
+**zero buildings** — an empty New Zealand with no error anywhere. The planner
+now counts a bbox known to hold thousands before trusting any answer.
+
+**The country is not uniform, and the plan should not be either.** Half of New
+Zealand's buildings sit in the densest **20 of 389 cells**: Auckland,
+Christchurch, Wellington, Hamilton. A national rollout is not one 105-day run
+— it is Auckland first, then the next nineteen, publishing as each lands. Each
+of those is roughly a Queenstown, which is a day.
 
 **Data sources are keyed by location now.** Done 21 September.
 `src/surveys.py` resolves a region's bbox against `config.SURVEYS`, and the
@@ -104,6 +127,25 @@ every download 404ing and regions falling back to the 1 m DSM. With no registry
 configured the lookup returns the old constants, so nothing had to be
 re-fetched to land it. What remains manual is maintaining the list; what is
 gone is the chance of a region silently inheriting the wrong capture.
+
+### What a national run actually costs
+
+Scaled from what Queenstown consumed today on one 16-core preemptible VM:
+
+| | VM-hours | on one machine | on twenty |
+| --- | --- | --- | --- |
+| face precompute | 1,556 | 65 days | 3.2 days |
+| region builds | 956 | 40 days | 2.0 days |
+| **total** | **2,512** | **105 days** | **5.2 days** |
+
+Two things that table does not say. It assumes no preemption — today's run
+lost about an hour to one, and at national scale that is a tax, not an
+incident, so the resumable runners matter. And it assumes the pipeline stays
+as fast per building as it is now; the biggest roofs cost far more than the
+median, and the cities are where the biggest roofs are.
+
+The storage line is the one to fix first, because it is the difference
+between 31 TB and roughly 80 GB.
 
 ### Order to do them in
 
