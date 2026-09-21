@@ -112,7 +112,7 @@ def roof_sample(geom, faces, img_ds, pc):  # noqa: C901
         z[dist.reshape(SIZE, SIZE) > 2.5] = np.nan
     base = np.nanpercentile(z, 5) if np.isfinite(z).any() else 0.0
     zf = np.nan_to_num(z - base, nan=0.0)
-    # SMOOTH BEFORE DIFFERENTIATING. The survey is ~1.7 returns/m2, so a
+    # SMOOTH BEFORE DIFFERENTIATING. The survey is ~4.9 returns/m2, so a
     # nearest-neighbour grid at 0.1 m/px is a staircase and its per-pixel
     # gradient is confetti (visible in the first preview). Blur at roughly
     # the sample spacing first -- the same 1.5 m-ish neighbourhood a local

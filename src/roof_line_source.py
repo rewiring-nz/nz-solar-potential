@@ -81,9 +81,14 @@ VISION_DIR = Path(os.environ.get("SOLAR_VISION_DIR",
 # filter". Measured, that gate is not a filter at all. Against 659 model lines
 # matching Josh's drawings and 2,043 that do not, _line_is_real keeps 86.1% of
 # the true ones and 83.7% of the false -- 2.4 points of separation, which is
-# noise. It cannot do better: the point cloud is 1.7 returns/m2 and a hip
-# crease falls between samples, so the gate is asking the LiDAR to confirm
-# something it cannot resolve.
+# noise. The measured separation is the finding; the explanation this note
+# used to give for it was wrong. It said the cloud is 1.7 returns/m2 and a
+# hip crease falls between samples. Measured over 40 pilot roofs on 21 Sep
+# the building-class density is 4.9 returns/m2 (10th-90th 4.1-6.8), which
+# is 0.45 m spacing, not 0.77 m. The gate still does not separate true from
+# false -- that was measured directly -- but not because the survey is too
+# sparse to see a crease. Why it fails is now an open question, and worth
+# asking before anyone builds on the claim that it cannot be improved.
 #
 # The model's own confidence separates them properly: at 0.90 it keeps 81.3%
 # of true lines and 22.2% of false, and the old 0.25 admitted essentially

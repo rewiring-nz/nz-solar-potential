@@ -1825,7 +1825,7 @@ def facets_from_drawn_faces(building_id, footprint, pts):
         sub = _points_in(poly, inside)
         if len(sub) < MIN_POINTS_PER_FACE:
             # Too few returns to fit a plane of its own. The face is still real
-            # -- at 1.7 returns/m2 a 4 m2 dormer holds about seven points --
+            # -- at 4.9 returns/m2 a 4 m2 dormer holds about twenty points --
             # so it borrows the plane of the largest face it touches rather
             # than being deleted.
             sub = None
@@ -1836,8 +1836,8 @@ def facets_from_drawn_faces(building_id, footprint, pts):
         #
         # These three tests exist to reject walls and rubbish surfaces found by
         # the LiDAR partition. On a face Josh drew they reject something else:
-        # the FIT, not the face. At 1.7 returns/m2 a 7 m2 dormer carries about
-        # twelve points, and twelve noisy points routinely fit a plane steeper
+        # the FIT, not the face. At 4.9 returns/m2 a 7 m2 dormer carries about
+        # thirty points, and thirty noisy points still routinely fit a plane steeper
         # than MAX_ROOF_SLOPE. Measured on the two worst roofs in the benchmark,
         # this was the whole of the loss -- #4735237 lost 7 of 23 faces to slope
         # and steep-fit, #5372610 lost 3 of 6:
@@ -2822,7 +2822,7 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
                     # Josh: "The image is what tells you the roof lines, the
                     # lidar just tells you slope." _line_is_real asks the point
                     # cloud whether the roof changes across a proposed line, and
-                    # at 1.7 returns/m2 on a shallow roof it usually cannot tell
+                    # at 4.9 returns/m2 on a shallow roof it usually cannot tell
                     # -- so it vetoes real creases. On #4734696 three lines
                     # survived the score and length bars and it passed exactly
                     # one, which is why loosening those bars from 0.90/0.35 to

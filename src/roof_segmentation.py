@@ -2414,7 +2414,7 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         # case -- he drew 2 faces and the build shipped 9.
         #
         # explained_fraction is the wrong judge here anyway. It rewards hugging
-        # the point cloud, and at 1.7 returns/m2 a wedge partition can hug a
+        # the point cloud, and at 4.9 returns/m2 a wedge partition can hug a
         # hip network it has misread while the correct geometry scores lower.
         if faces and any(f.get("from_labels") for f in faces):
             return faces
