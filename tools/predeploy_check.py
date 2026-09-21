@@ -60,7 +60,43 @@ DROP_MIN = 20       # ...and at least this many
 
 
 def _panels(p):
-    return p.get("fill_panels_100", p.get("panel_count", 0)) or 0
+    """Panels actually placed on this roof.
+
+    THIS USED TO PREFER fill_panels_100, AND THAT MADE THE GATE LIE. The two
+    are the same number by definition -- fill_panels_100 counts the panels at
+    or below rank 100, which is all of them -- so preferring one over the
+    other should never matter. It matters when the file is internally
+    inconsistent, which the LIVE file is: on 21 Sep, 13,265 of its 15,353
+    buildings carried a ladder that disagreed with their own panel_count,
+    overstating the district by 116,470 panels (+18%). The ladder was baked
+    from one generation of layouts and the count spliced in from another.
+
+    Comparing that inflated ladder against a freshly-baked build reported a
+    14% COLLAPSE on a build that in fact placed 1.5% MORE panels -- a false
+    alarm big enough to stop a good release, and, pointed the other way, big
+    enough to wave a bad one through.
+
+    So: count what was placed, and let _ladder_consistent() report the
+    disagreement as the defect it is instead of silently pricing it in.
+    """
+    return p.get("panel_count", 0) or 0
+
+
+def _ladder_consistent(props_by_id, label):
+    """fill_panels_100 must equal panel_count. Report where it does not."""
+    bad = [(b, p) for b, p in props_by_id.items()
+           if "fill_panels_100" in p
+           and (p.get("fill_panels_100") or 0) != (p.get("panel_count") or 0)]
+    if not bad:
+        return
+    over = sum((p.get("fill_panels_100") or 0) - (p.get("panel_count") or 0)
+               for _, p in bad)
+    print(f"\n  STALE DENSITY LADDER IN THE {label} BUILD")
+    print(f"    {len(bad)} of {len(props_by_id)} buildings have fill_panels_100 "
+          f"disagreeing with panel_count, {over:+,} panels")
+    print("    The dashboard reads the ladder and the map draws the count, so "
+          "they are telling\n    different stories about the same roof. "
+          "Re-run src/bake_density_deciles.py.")
 
 
 def main():
@@ -89,6 +125,9 @@ def main():
     new = {int(f["properties"]["building_id"]): f["properties"]
            for f in json.loads(newp.read_text())["features"]
            if f["properties"].get("building_id") is not None}
+    _ladder_consistent(live, "LIVE")
+    _ladder_consistent(new, "NEW")
+
     common = sorted(set(live) & set(new))
     if not common:
         print("no buildings in common -- is this the same district?")

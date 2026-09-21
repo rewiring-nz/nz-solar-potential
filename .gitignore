@@ -78,4 +78,3 @@ graphify-out/
 
 # Understand-Anything working data (tools/build_method_page.py reads it).
 .ua/
-method.html
