@@ -46,7 +46,8 @@ from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor
 from src.building_horizon import (far_profile as _hz_far_profile,
                                   facet_horizon_factor as _hz_facet_factor,
-                                  eave_height as _hz_eave_height)
+                                  eave_height as _hz_eave_height,
+                                  load_far_dem as _hz_load_far_dem)
 from src.region_build import area_paths, area_centroid_wgs84, areas_from_argv
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -155,16 +156,14 @@ def _init_worker(area, model):
     NASA POWER request per process."""
     paths = area_paths(area)
     dsm_ds = rasterio.open(paths["dsm"])
-    dem_wide_path = DATA_DIR / "dem_wide_mosaic.tif"
-    if dem_wide_path.exists():
-        _dw = rasterio.open(dem_wide_path)
-        _CTX.update({"dem_wide_band": _dw.read(1), "dem_wide_transform": _dw.transform,
-                     "dem_wide_nodata": _dw.nodata})
-    else:
-        # no wide DEM shipped for this deployment -- per-building far-horizon
-        # correction degrades to a no-op rather than failing the build
-        _CTX.update({"dem_wide_band": None, "dem_wide_transform": None,
-                     "dem_wide_nodata": None})
+    # Only the slice this region's rays can reach. The pool spawns rather than
+    # forks, so whatever this reads is held once PER WORKER -- see
+    # building_horizon.load_far_dem. A missing or non-overlapping wide DEM
+    # degrades the far-horizon correction to a no-op rather than failing.
+    _dw_band, _dw_tr, _dw_nd = _hz_load_far_dem(
+        DATA_DIR / "dem_wide_mosaic.tif", dsm_ds.bounds)
+    _CTX.update({"dem_wide_band": _dw_band, "dem_wide_transform": _dw_tr,
+                 "dem_wide_nodata": _dw_nd})
     _CTX.update({
         "gdf": gpd.read_file(paths["outlines"]).set_index("building_id", drop=False),
         "dsm_ds": dsm_ds,

@@ -102,13 +102,9 @@ def main():
     region = area_paths(a.area)["panel_layouts"]
     patch(region)
     # gate just this area's new panels (in place, cheap for a handful of ids)
-    import rasterio
     from src.gate_panels import gate_area
     from src.pointcloud_source import PointCloudSource
-    with rasterio.open(DATA / "dem_wide_mosaic.tif") as ds:
-        dem = ds.read(1)
-        dem_inv = ~ds.transform
-    gate_area(a.area, PointCloudSource(), dem, dem_inv, only_ids=ids)
+    gate_area(a.area, PointCloudSource(), only_ids=ids)
     # re-copy region layouts into the merged district file
     patch(DATA / "panel_layouts.geojson")
 

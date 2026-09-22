@@ -49,7 +49,8 @@ from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor
 from src.building_horizon import (far_profile as _hz_far_profile,
                                   far_beam_ratio as _hz_far_ratio,
-                                  eave_height as _hz_eave_height)
+                                  eave_height as _hz_eave_height,
+                                  load_far_dem as _hz_load_far_dem)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 VMIN, VMAX = 700, 1650  # kWh/m2/yr -- same fixed scale as preview.html's legend and demo_figure.py
@@ -220,13 +221,11 @@ def main(area="pilot"):
 
     t0 = time.time()
     rendered = 0
-    dem_wide_path = DATA_DIR / "dem_wide_mosaic.tif"
-    if dem_wide_path.exists():
-        _dw = rasterio.open(dem_wide_path)
-        dem_wide_band, dem_wide_transform, dem_wide_nodata = _dw.read(1), _dw.transform, _dw.nodata
-    else:
-        dem_wide_band = dem_wide_transform = dem_wide_nodata = None
-        print(f"[{area}] WARNING: no data/dem_wide_mosaic.tif -- far-terrain "
+    # Only the slice this region's rays can reach (building_horizon.load_far_dem).
+    dem_wide_band, dem_wide_transform, dem_wide_nodata = _hz_load_far_dem(
+        DATA_DIR / "dem_wide_mosaic.tif", dsm_ds.bounds)
+    if dem_wide_band is None:
+        print(f"[{area}] WARNING: no usable data/dem_wide_mosaic.tif -- far-terrain "
               f"correction is OFF for this raster.", flush=True)
 
     for i, row in enumerate(gdf.itertuples()):

@@ -89,11 +89,12 @@ REQUIRED = {
         "optional_region": ["imagery"],
     },
     "gate_panels": {
-        # The incident. gate_area opens the wide DEM in the worker initializer,
-        # so a missing file kills every worker at once and the pool error says
-        # nothing about DEMs.
+        # No wide DEM any more: the gate stopped reading it when the
+        # height-above-DEM test was removed, and the worker load went with the
+        # parameters on 22 September. The stage that made this a preflight
+        # entry -- a missing file killing every worker at once, with a pool
+        # error that said nothing about DEMs -- can no longer happen here.
         "region": ["panel_layouts"],
-        "root": ["dem_wide_mosaic.tif"],
     },
     "rerank_layouts":        {"region": ["panel_layouts"]},
     "derive_solar_potential": {"region": ["panel_layouts", "outlines"]},
