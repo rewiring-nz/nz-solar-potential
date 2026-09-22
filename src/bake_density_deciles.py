@@ -85,9 +85,17 @@ def _coverage_poa(facets, pct):
     return acc_weighted / acc_area if acc_area > 0 else 0.0
 
 
-def main():
-    preflight("bake_density_deciles")
-    layouts = json.loads((DATA_DIR / "panel_layouts.geojson").read_text())
+def bake(sp, layouts):
+    """Bake the ladders into `sp` (a solar_potential document) from `layouts`
+    (a panel_layouts document). Returns how many buildings matched a layout.
+
+    A FUNCTION OF TWO DOCUMENTS, not of two files at the data root: it is
+    per-building arithmetic and always was. It read the merged files only
+    because they were there, which is what made it a fan-in stage -- and
+    the fan-in is what does not scale (docs/scale-architecture.md).
+    emit_region calls this on one region; main() below still serves the
+    merged path while it exists.
+    """
     per_building = {}
     # Facet (area, POA) pairs per building, for the coverage curve below.
     facets_by_building = {}
@@ -105,8 +113,6 @@ def main():
             (p.get("fill_rank", 100), p.get("ac_kwh_year", 0),
              p.get("fill_order", 0), p.get("array_size", 1)))
 
-    sp_path = DATA_DIR / "solar_potential.geojson"
-    sp = json.loads(sp_path.read_text())
     matched = 0
     for feat in sp["features"]:
         b = feat["properties"]["building_id"]
@@ -142,6 +148,15 @@ def main():
             feat["properties"][f"sys_kwh_{n}"] = int(round(sum(t[1] for t in sel)))
         if panels:
             matched += 1
+    return matched
+
+
+def main():
+    preflight("bake_density_deciles")
+    layouts = json.loads((DATA_DIR / "panel_layouts.geojson").read_text())
+    sp_path = DATA_DIR / "solar_potential.geojson"
+    sp = json.loads(sp_path.read_text())
+    matched = bake(sp, layouts)
     write_json_atomic(sp_path, sp)
     print(f"Baked deciles for {matched}/{len(sp['features'])} buildings "
           f"({sp_path.stat().st_size / 1e6:.1f}MB)")

@@ -42,9 +42,32 @@ SNAP = DATA_DIR / "build_snapshot_prev.json"
 PANELS, KWH, LEGACY_COUNT, ADDRESS = 0, 1, 2, 3
 
 
+SUMMARIES = DATA_DIR / "summaries"
+
+
 def _read_current():
-    d = json.loads(SOLAR.read_text())
+    """Per-building [panels, kwh, panel_count, address].
+
+    From data/summaries/<region>.json when the build emitted per region
+    (the ship path since 22 Sep), else from the merged file. The summaries
+    carry no address; the merged file, where it still exists, fills it in.
+    """
     out = {}
+    if SUMMARIES.exists() and any(SUMMARIES.glob("*.json")):
+        for f in SUMMARIES.glob("*.json"):
+            for b, (panels, kwh) in json.loads(f.read_text()).get("ladder", {}).items():
+                out[str(b)] = [panels, kwh, panels, ""]
+        if SOLAR.exists():
+            try:
+                for f in json.loads(SOLAR.read_text())["features"]:
+                    p = f["properties"]
+                    b = str(p["building_id"])
+                    if b in out:
+                        out[b][ADDRESS] = p.get("address", "")
+            except Exception:
+                pass
+        return out
+    d = json.loads(SOLAR.read_text())
     for f in d["features"]:
         p = f["properties"]
         out[str(p["building_id"])] = [p.get("fill_panels_100", 0), p.get("fill_kwh_100", 0),

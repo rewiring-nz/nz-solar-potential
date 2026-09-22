@@ -192,6 +192,15 @@
      control you use to bring the band back. */
   .econ-band.off { opacity: 0.32; }
   .econ-band.off .cnt { text-decoration: line-through; }
+  /* Building-type chips: a hidden type stays legible, it is the control that
+     brings it back. */
+  .btype-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .btype-row:empty { display: none; }
+  .btype-chip { font: inherit; font-size: var(--fs-meta); padding: 3px 8px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.10); color: inherit;
+    cursor: pointer; line-height: 1.3; }
+  .btype-chip:hover { background: rgba(255,255,255,0.18); }
+  .btype-chip.off { opacity: 0.38; text-decoration: line-through; }
   .econ-basis { font-size: var(--fs-meta); color: var(--ink-3); line-height: 1.45; margin-top: var(--s2); }
   /* Layout details table: same rhythm and alignment as .kv rows. */
   .popup #layout-details table { width: 100%; font-size: var(--fs-label); margin: 0; }
@@ -632,6 +641,7 @@
       </div>
       <div id="coverage-options" style="display:none;"></div>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
+      <div id="btype-toggles" class="btype-row"></div>
       <div id="layout-disclaimer" style="margin:10px 0 0;padding:8px 10px;background:rgba(255,80,80,0.10);
            border:1px solid rgba(255,110,110,0.25);border-radius:8px;font-size:10px;line-height:1.45;
            color:#f2c6c6;">
@@ -968,7 +978,7 @@ function setTerrain3D(on) {
   try {
     if (on && !map.getSource("dsm-terrain")) {
       map.addSource("dsm-terrain", {
-        type: "raster-dem", tiles: [`data/terrain/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
+        type: "raster-dem", tiles: [`${DATA_BASE}data/terrain/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
         tileSize: 256, encoding: "mapbox", minzoom: 13, maxzoom: 17,
       });
     }
@@ -1099,6 +1109,61 @@ let outlinesOn = false;      // building outlines, default hidden (Josh)
 // building (however well segmented) looked completely blank until clicked.
 // That is almost certainly the dominant cause of "large areas of the roof
 // have no panels" reports made against wide, multi-building screenshots.
+// BUILDING TYPES (Josh, 22 Sep: "a toggle for building types ... Homes,
+// Schools, Hospitals, Businesses"). Every building, panel and aggregate cell
+// carries `btype` (src/building_types.py), so hiding a type is one attribute
+// filter on each layer and the in-view sums simply skip it. All on by default;
+// the last one on cannot be turned off, for the same reason as the economics
+// bands: there is no useful "show nothing" state.
+let btypesAll = [];                 // [[key, label], ...] from assumptions.json
+const btypesOff = new Set();
+function btypeExpr() {
+  if (!btypesOff.size) return null;
+  return ["!", ["in", ["coalesce", ["get", "btype"], "home"], ["literal", [...btypesOff]]]];
+}
+function withBtype(base) {
+  const b = btypeExpr();
+  if (!b) return base || null;
+  return base ? ["all", base, b] : b;
+}
+function applyBtypeFilters() {
+  if (!map) return;
+  const base = { "buildings-fill": null, "buildings-outline": null,
+                 "buildings-noestimate": ["has", "no_estimate_reason"],
+                 "buildings-noestimate-outline": ["has", "no_estimate_reason"] };
+  for (const [id, f] of Object.entries(base)) {
+    if (map.getLayer(id)) map.setFilter(id, withBtype(f));
+  }
+  (typeof CELL_BANDS !== "undefined" ? CELL_BANDS : []).forEach(([lod]) => {
+    if (map.getLayer(`cells-fill-${lod}`)) {
+      map.setFilter(`cells-fill-${lod}`, withBtype(["==", ["get", "lod"], lod]));
+    }
+  });
+  if (typeof LAYOUT_LAYERS !== "undefined") {
+    LAYOUT_LAYERS.forEach(id => { if (map.getLayer(id)) map.setFilter(id, panelLayerFilter(id)); });
+  }
+}
+function buildBtypeToggles(list) {
+  const box = document.getElementById("btype-toggles");
+  if (!box || !Array.isArray(list) || !list.length) return;
+  btypesAll = list;
+  box.innerHTML = list.map(([k, label]) =>
+    `<button type="button" class="btype-chip${btypesOff.has(k) ? " off" : ""}" data-t="${k}">${label}</button>`).join("");
+  box.querySelectorAll(".btype-chip").forEach(btn => btn.addEventListener("click", () => {
+    const k = btn.dataset.t;
+    if (btypesOff.has(k)) btypesOff.delete(k);
+    else {
+      if (btypesOff.size >= btypesAll.length - 1) return;   // last one stays on
+      btypesOff.add(k);
+    }
+    btn.classList.toggle("off", btypesOff.has(k));
+    applyBtypeFilters();
+    inViewProps = null;
+    if (typeof refreshDerived === "function") refreshDerived();
+    else if (typeof recomputeInViewSummary === "function") recomputeInViewSummary();
+  }));
+}
+
 const LAYOUT_KIND_FILTER = {
   "facets-outline": ["==", ["get", "kind"], "facet"],
   "obstructions-fill": ["==", ["get", "kind"], "obstruction"],
@@ -1477,6 +1542,8 @@ function panelLayerFilter(id, excludeBuildingId) {
   if (excludeBuildingId !== undefined) {
     parts.push(["!=", ["get", "building_id"], excludeBuildingId]);
   }
+  const bt = btypeExpr();
+  if (bt) parts.push(bt);
   return parts.length === 1 ? parts[0] : ["all", ...parts];
 }
 
@@ -1715,6 +1782,11 @@ function wireTuningControls(popupEl, buildingId) {
 // on 3 Sep while Wellington was still on 33 -- and preview.html is meant
 // to be byte-identical between them, which this line was quietly breaking.
 const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
+// Where the data lives. Empty = beside the page (GitHub Pages, as today).
+// A bucket URL ending in "/" moves every tile, detail and index fetch there
+// without touching the page: Pages caps a file at 100 MB and Auckland's
+// panel tiles alone are ~1.5 GB (docs/scale-architecture.md).
+const DATA_BASE = (window.SITE && window.SITE.dataBase) || "";
 let coveragePct = 100;
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 // Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between
@@ -1792,7 +1864,7 @@ map.on("load", async () => {
       }, 1000 * r.n);
     }
   });
-  addPmtilesSource("layout", "data/panel_layouts.pmtiles");
+  addPmtilesSource("layout", `${DATA_BASE}data/panel_layouts.pmtiles`);
   // Adding the SOURCE alone downloads nothing -- MapLibre only requests tiles
   // for a source some layer actually uses (verified in the network waterfall:
   // with just the source, the PMTiles range requests still waited for the
@@ -1811,7 +1883,7 @@ map.on("load", async () => {
     paint: { "fill-opacity": 0 }
   });
 
-  const assumptions = await fetch(`data/assumptions.json?v=${DATA_VERSION}`)
+  const assumptions = await fetch(`${DATA_BASE}data/assumptions.json?v=${DATA_VERSION}`)
     .then(r => r.json());
 
   // BUILDINGS ARE TILES, AND THE TOTALS COME FROM SOMEWHERE ELSE.
@@ -1840,7 +1912,7 @@ map.on("load", async () => {
   // from that building's own cov_poa_N before aggregation. Below z13 the
   // dashboard adds up cells and is exact; from z13 it adds up buildings and is
   // exact. Coarser as you zoom out, never wrong.
-  addPmtilesSource("buildings", "data/buildings.pmtiles");
+  addPmtilesSource("buildings", `${DATA_BASE}data/buildings.pmtiles`);
   // Mirrors CELL_BANDS / BUILDING_MIN_Z in src/build_building_tiles.py.
   // Each band draws a grid three zooms finer than the zoom it is shown at, so
   // the viewport always spans roughly eight cells: a cell clipped by the edge
@@ -1853,7 +1925,9 @@ map.on("load", async () => {
     for (const [lod, from, to] of CELL_BANDS) if (z >= from && z < to) return lod;
     return CELL_BANDS[CELL_BANDS.length - 1][0];
   };
-  addPmtilesSource("cells", "data/building_cells.pmtiles");
+  addPmtilesSource("cells", `${DATA_BASE}data/building_cells.pmtiles`);
+  fetch(`${DATA_BASE}data/assumptions.json?v=${DATA_VERSION}`).then(r => r.ok ? r.json() : null)
+    .then(a => { if (a && a.btypes) buildBtypeToggles(a.btypes); }).catch(() => {});
 
   map.addLayer({
     id: "buildings-fill",
@@ -2060,6 +2134,7 @@ map.on("load", async () => {
       const id = f.properties.building_id;
       if (seen.has(id)) return;
       seen.add(id);
+      if (btypesOff.has(f.properties.btype || "home")) return;
       out.push(f.properties);
     });
     inViewProps = out;
@@ -2265,9 +2340,12 @@ map.on("load", async () => {
     const seen = new Set();
     let n = 0, kwp = 0, kwhYear = 0;
     for (const c of cells) {
-      const k = c.properties.cell;
+      // One feature per (cell, building type): key on both, or every type
+      // but the first would be dropped as a duplicate of the same cell.
+      const k = c.properties.cell + "|" + (c.properties.btype || "");
       if (seen.has(k)) continue;         // one cell spans several tiles
       seen.add(k);
+      if (btypesOff.has(c.properties.btype || "home")) continue;
       n += c.properties.n || 0;
       kwp += lerpCell(c.properties, "kwp", coveragePct);
       kwhYear += lerpCell(c.properties, "kwh", coveragePct);
@@ -2474,13 +2552,24 @@ map.on("load", async () => {
     // (docs/scaling-and-iteration.md). It is a separate problem from the one
     // this change fixes, and a tenth of the size.
     let searchable = TOWNS.slice();
-    fetch(`data/addresses.json?v=${DATA_VERSION}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(rows => {
-        searchable = TOWNS.concat(rows.map(([addr, lng, lat, id]) => ({
-          addr, lower: addr.toLowerCase(), at: { lng, lat, id } })));
+    const addrRow = ([addr, lng, lat, id]) => ({ addr, lower: addr.toLowerCase(), at: { lng, lat, id } });
+    // Flat file where the build is small; shards by the first two characters
+    // where it is not (combine_regions), fetched as they are typed.
+    let addrShards = null;
+    const addrShardLoaded = new Set();
+    fetch(`${DATA_BASE}data/addresses/index.json?v=${DATA_VERSION}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(idx => {
+        if (idx && idx.shards) { addrShards = new Set(idx.shards); return; }
+        return fetch(`${DATA_BASE}data/addresses.json?v=${DATA_VERSION}`)
+          .then(r => r.ok ? r.json() : [])
+          .then(rows => { searchable = TOWNS.concat(rows.map(addrRow)); });
       })
       .catch(() => {});
+    const addrShardKey = q => {
+      const s2 = q.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return s2.length >= 2 ? s2.slice(0, 2) : null;
+    };
     const input = document.getElementById("addr-input");
     const results = document.getElementById("addr-results");
     // NEVER PASS pitch: undefined. MapLibre 5 aborts the whole animation on
@@ -2574,6 +2663,16 @@ map.on("load", async () => {
         results.innerHTML = `<div data-i="0">${matches[0].addr}</div>`;
         results.style.display = "block";
         return;
+      }
+      if (addrShards) {
+        const key = addrShardKey(q);
+        if (key && addrShards.has(key) && !addrShardLoaded.has(key)) {
+          addrShardLoaded.add(key);
+          fetch(`${DATA_BASE}data/addresses/${key}.json?v=${DATA_VERSION}`).then(r => r.json())
+            .then(rows => { searchable = searchable.concat(rows.map(addrRow));
+                            input.dispatchEvent(new Event("input")); })
+            .catch(() => { addrShardLoaded.delete(key); });
+        }
       }
       const starts = searchable.filter(x => x.lower.startsWith(q));
       const contains = searchable.filter(x => !x.lower.startsWith(q) && x.lower.includes(q));
@@ -3254,12 +3353,12 @@ map.on("load", async () => {
   const HEATMAP_OPACITY = 0.78;
   let heatmapTilesOk = true;
   try {
-    const meta = await fetch(`data/heatmap_tiles/meta.json?v=${DATA_VERSION}`)
+    const meta = await fetch(`${DATA_BASE}data/heatmap_tiles/meta.json?v=${DATA_VERSION}`)
       .then(r => r.ok ? r.json() : null);
     if (!meta) throw new Error("no heat-map tiles");
     map.addSource("heatmap-tiles", {
       type: "raster",
-      tiles: [`data/heatmap_tiles/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
+      tiles: [`${DATA_BASE}data/heatmap_tiles/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
       tileSize: meta.tileSize || 256,
       minzoom: meta.minzoom, maxzoom: meta.maxzoom,
     });
@@ -4110,7 +4209,26 @@ map.on("load", async () => {
   // current density, each panel weighted by its own roof face's orientation.
   const SEASON_COLORS = { summer: "#ff7a00", autumn: "#7dff5e", winter: "#00c8ff", spring: "#ffe600" };
   let seasonCurves = null;
-  fetch(`data/seasonal_curves.json?v=${DATA_VERSION}`).then(r => r.json())
+  // One curve set per degree of latitude (combine_regions). The single
+  // seasonal_curves.json stays as the fallback; when the index exists the
+  // band for the OPEN building's latitude is loaded on demand and swapped in.
+  let curveBands = null;
+  const curveBandDocs = {};
+  fetch(`${DATA_BASE}data/seasonal_curves/index.json?v=${DATA_VERSION}`)
+    .then(r => r.ok ? r.json() : null).then(d => { curveBands = d && d.bands ? d.bands : null; })
+    .catch(() => {});
+  function ensureCurvesFor(lat) {
+    if (!curveBands || !Number.isFinite(lat)) return;
+    const key = `m${Math.abs(Math.floor(lat))}`;
+    if (!curveBands[key]) return;
+    if (curveBandDocs[key]) { seasonCurves = curveBandDocs[key]; return; }
+    curveBandDocs[key] = true;   // in flight
+    fetch(`${DATA_BASE}data/seasonal_curves/${key}.json?v=${DATA_VERSION}`).then(r => r.json())
+      .then(doc => { curveBandDocs[key] = doc; seasonCurves = doc;
+                     if (typeof refreshDerived === "function") refreshDerived(); })
+      .catch(() => { delete curveBandDocs[key]; });
+  }
+  fetch(`${DATA_BASE}data/seasonal_curves.json?v=${DATA_VERSION}`).then(r => r.json())
     .then(d => { seasonCurves = d; }).catch(() => {});
 
   function pointInRing(pt, ring) {
@@ -4566,7 +4684,7 @@ map.on("load", async () => {
   async function loadDetailIndex() {
     if (detailIndex) return detailIndex;
     try {
-      const r = await fetch(`data/building_detail/index.json?v=${DATA_VERSION}`);
+      const r = await fetch(`${DATA_BASE}data/building_detail/index.json?v=${DATA_VERSION}`);
       detailIndex = r.ok ? await r.json() : {};
     } catch (e) { detailIndex = {}; }
     return detailIndex;
@@ -4588,7 +4706,7 @@ map.on("load", async () => {
     if (!(key in idx.tiles)) return null;
     if (!detailTiles.has(key)) {
       detailTiles.set(key, fetch(
-        `data/building_detail/${idx.z}/${x}/${y}.json?v=${DATA_VERSION}`)
+        `${DATA_BASE}data/building_detail/${idx.z}/${x}/${y}.json?v=${DATA_VERSION}`)
         .then(r => r.ok ? r.json() : {})
         .catch(() => ({})));
     }
@@ -4614,6 +4732,7 @@ map.on("load", async () => {
     selectedPanelBuildingId = p.building_id;
     highlightSelectedBuilding(selectedIds.length ? selectedIds : p.building_id, geom);
     selectedBuildingProps = p;
+    ensureCurvesFor(lngLat && lngLat.lat);
     if (lngLat) { selectedBuildingProps._sx = lngLat.lng; selectedBuildingProps._sy = lngLat.lat; }
     // Everything below assumes the estimate layout. A not-estimated building
     // deliberately renders none of it.
@@ -4740,7 +4859,7 @@ map.on("load", async () => {
   async function ensureMarkupLayer() {
     if (markupLoaded) return true;
     try {
-      const r = await fetch(`data/markup_lines.geojson?v=${DATA_VERSION}`);
+      const r = await fetch(`${DATA_BASE}data/markup_lines.geojson?v=${DATA_VERSION}`);
       if (!r.ok) return false;
       map.addSource("markup-lines", { type: "geojson", data: await r.json() });
       map.addLayer({

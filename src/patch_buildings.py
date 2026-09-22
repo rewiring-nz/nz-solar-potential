@@ -105,8 +105,15 @@ def main():
     from src.gate_panels import gate_area
     from src.pointcloud_source import PointCloudSource
     gate_area(a.area, PointCloudSource(), only_ids=ids)
-    # re-copy region layouts into the merged district file
-    patch(DATA / "panel_layouts.geojson")
+    # THE MERGED FILES ARE NOT THE SHIP PATH ANY MORE. Since 22 Sep each region
+    # emits its own tiles and combine_regions joins them (docs/scale-
+    # architecture.md), so patching a building is: rebuild it in its region
+    # file (done above), re-emit that region, recombine. Minutes, and the
+    # 400 MB chunked rewrite of data/panel_layouts.geojson is gone. The merged
+    # files are still maintained where a checkout has them, for tools that
+    # have not moved yet, and skipped where it does not.
+    if (DATA / "panel_layouts.geojson").exists():
+        patch(DATA / "panel_layouts.geojson")
 
     # solar_potential must tell the same story as the layouts it summarises.
     # Until 31 Aug this file's docstring claimed it patched solar_potential and
@@ -188,19 +195,16 @@ def main():
     _record_built()
 
     if not a.skip_tiles:
-        subprocess.run([sys.executable, "src/shrink_panels_for_tiles.py"], check=True, cwd=ROOT)
-        subprocess.run(
-            ["tippecanoe", "-o", "data/panel_layouts.pmtiles", "--force", "-l", "layout",
-             "-Z13", "-z16", "--drop-densest-as-needed", "--detect-shared-borders",
-             "-y", "kind", "-y", "building_id", "-y", "fill_rank", "-y", "fill_order",
-             "-y", "array_id", "-y", "array_size", "-y", "ac_kwh_year", "-y", "slope_deg",
-             "-y", "aspect_deg", "-y", "roof_confidence", "-y", "poa_kwh_m2_yr",
-             "-y", "panel_count", "data/panel_layouts.geojson"],
-            check=True, cwd=ROOT)
-        print(f"  tiles rebuilt ({time.time()-t0:.0f}s total)", flush=True)
+        # Re-emit this region and recombine: tiles, cells, detail and summary
+        # all come from the region files this patch just rewrote.
+        subprocess.run([sys.executable, "src/emit_region.py", a.area], check=True, cwd=ROOT)
+        subprocess.run([sys.executable, "src/combine_regions.py"], check=True, cwd=ROOT)
+        print(f"  region re-emitted and tiles recombined ({time.time()-t0:.0f}s total)", flush=True)
 
     if a.push:
-        subprocess.run(["git", "add", "data/panel_layouts.pmtiles"], cwd=ROOT, check=True)
+        subprocess.run(["git", "add", "data/panel_layouts.pmtiles", "data/buildings.pmtiles",
+                        "data/building_cells.pmtiles", "data/summaries", "data/build_summary.json",
+                        "data/building_detail"], cwd=ROOT, check=True)
         subprocess.run(["git", "-c", "user.name=Josh", "-c", "user.email=josh@ideatious.com",
                         "commit", "-q", "-m",
                         f"Patch buildings {' '.join(map(str, a.ids))} with current code"],

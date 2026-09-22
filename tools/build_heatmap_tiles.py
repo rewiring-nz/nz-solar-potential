@@ -62,6 +62,74 @@ def tile_bounds_3857(x, y, z):
     return (-c + x * s, c - (y + 1) * s, -c + (x + 1) * s, c - y * s)
 
 
+def tiles_for_region(png, corners, out_dir, zmin=13, zmax=17, label=""):
+    """Reproject one region's heat-map PNG into web-mercator tiles under
+    out_dir/z/x/y.png. Returns the number written, or -1 if the sidecar's
+    corners are not an NZTM rectangle.
+
+    A FUNCTION OF ONE REGION, so emit_region can write a region's tiles into
+    that region's own output folder and combine_regions can composite the seam
+    tiles later. main() below is the whole-district form and calls this per
+    region into one folder, which is what it always did.
+    """
+    import numpy as np
+    from rasterio.transform import from_bounds
+    from rasterio.warp import reproject, Resampling
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    import pyproj
+    to_nztm = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
+    out_dir = Path(out_dir)
+    nz = [to_nztm(x, y) for x, y in corners]
+    xs = [p[0] for p in nz]
+    ys = [p[1] for p in nz]
+    # The sidecar promises a rectangle. Check it, because everything below
+    # assumes a north-up grid and a silently skewed one would put the heat
+    # map metres away from the roofs it describes.
+    if (abs(nz[0][0] - nz[3][0]) > 0.5 or abs(nz[1][0] - nz[2][0]) > 0.5
+            or abs(nz[0][1] - nz[1][1]) > 0.5
+            or abs(nz[3][1] - nz[2][1]) > 0.5):
+        print(f"  {label}: corners are not an NZTM rectangle -- skipped")
+        return -1
+    west, east = min(xs), max(xs)
+    south, north = min(ys), max(ys)
+
+    img = np.array(Image.open(png).convert("RGBA"))
+    h, w = img.shape[:2]
+    src_t = from_bounds(west, south, east, north, w, h)
+    src = np.moveaxis(img, 2, 0)
+
+    lons = [c[0] for c in corners]
+    lats = [c[1] for c in corners]
+    n_written = 0
+    for z in range(zmin, zmax + 1):
+        x0, y0 = tile_xy(min(lons), max(lats), z)
+        x1, y1 = tile_xy(max(lons), min(lats), z)
+        for tx in range(x0, x1 + 1):
+            for ty in range(y0, y1 + 1):
+                b = tile_bounds_3857(tx, ty, z)
+                dst = np.zeros((4, TILE, TILE), dtype=np.uint8)
+                reproject(
+                    source=src, destination=dst,
+                    src_transform=src_t, src_crs="EPSG:2193",
+                    dst_transform=from_bounds(*b, TILE, TILE),
+                    dst_crs="EPSG:3857",
+                    resampling=Resampling.bilinear,
+                    src_nodata=None, dst_nodata=None)
+                if not dst[3].any():
+                    continue          # nothing of this region lands here
+                p = out_dir / str(z) / str(tx) / f"{ty}.png"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                new = Image.fromarray(np.moveaxis(dst, 0, 2), "RGBA")
+                if p.exists():
+                    # a tile on a region seam: keep both, do not overwrite
+                    new = Image.alpha_composite(
+                        Image.open(p).convert("RGBA"), new)
+                new.save(p, optimize=True)
+                n_written += 1
+    return n_written
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--zmin", type=int, default=13)
@@ -100,54 +168,10 @@ def main():
         png = ROOT / entry["png"]
         if not png.exists():
             continue
-        corners = entry["coordinates"]
-        nz = [to_nztm(x, y) for x, y in corners]
-        xs = [p[0] for p in nz]
-        ys = [p[1] for p in nz]
-        # The sidecar promises a rectangle. Check it, because everything below
-        # assumes a north-up grid and a silently skewed one would put the heat
-        # map metres away from the roofs it describes.
-        if (abs(nz[0][0] - nz[3][0]) > 0.5 or abs(nz[1][0] - nz[2][0]) > 0.5
-                or abs(nz[0][1] - nz[1][1]) > 0.5
-                or abs(nz[3][1] - nz[2][1]) > 0.5):
-            print(f"  {region}: corners are not an NZTM rectangle -- skipped")
+        n_written = tiles_for_region(png, entry["coordinates"], OUT,
+                                     a.zmin, a.zmax, label=region)
+        if n_written < 0:
             continue
-        west, east = min(xs), max(xs)
-        south, north = min(ys), max(ys)
-
-        img = np.array(Image.open(png).convert("RGBA"))
-        h, w = img.shape[:2]
-        src_t = from_bounds(west, south, east, north, w, h)
-        src = np.moveaxis(img, 2, 0)
-
-        lons = [c[0] for c in corners]
-        lats = [c[1] for c in corners]
-        n_written = 0
-        for z in range(a.zmin, a.zmax + 1):
-            x0, y0 = tile_xy(min(lons), max(lats), z)
-            x1, y1 = tile_xy(max(lons), min(lats), z)
-            for tx in range(x0, x1 + 1):
-                for ty in range(y0, y1 + 1):
-                    b = tile_bounds_3857(tx, ty, z)
-                    dst = np.zeros((4, TILE, TILE), dtype=np.uint8)
-                    reproject(
-                        source=src, destination=dst,
-                        src_transform=src_t, src_crs="EPSG:2193",
-                        dst_transform=from_bounds(*b, TILE, TILE),
-                        dst_crs="EPSG:3857",
-                        resampling=Resampling.bilinear,
-                        src_nodata=None, dst_nodata=None)
-                    if not dst[3].any():
-                        continue          # nothing of this region lands here
-                    p = OUT / str(z) / str(tx) / f"{ty}.png"
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    new = Image.fromarray(np.moveaxis(dst, 0, 2), "RGBA")
-                    if p.exists():
-                        # a tile on a region seam: keep both, do not overwrite
-                        new = Image.alpha_composite(
-                            Image.open(p).convert("RGBA"), new)
-                    new.save(p, optimize=True)
-                    n_written += 1
         written += n_written
         print(f"  {region}: {n_written} tiles", flush=True)
 

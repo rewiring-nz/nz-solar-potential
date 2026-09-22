@@ -18,12 +18,13 @@
 #
 # Interrupting this and re-running it continues where it stopped.
 #
-# ORDER MATTERS, and one ordering rule is not obvious: build_terrain_masks and
-# build_seasonal_curves write ONLY into the merged data/solar_potential.geojson,
-# and merge_regions REGENERATES that file from the region files. Running them
-# before the merge silently discards their work -- it cost a full rebuild once.
-# They run after the merge here, and run_stage's preflight independently
-# refuses to run them against a stale merge.
+# THERE IS NO MERGE ANY MORE. Each region ends by emitting its own tiles,
+# cells, detail, heat-map tiles, addresses and a summary (src/emit_region.py),
+# and src/combine_regions.py joins them into the served set. Nothing after the
+# per-region stages reads the district into memory, which is what lets the
+# same script build a town or a country (docs/scale-architecture.md). The
+# terrain masks, deciles and panel shrink that used to run on the merged file
+# run inside the emit, per region, at that region's own sun.
 set -u
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
@@ -61,6 +62,9 @@ fi
 # Per-region stages, in dependency order.
 STAGES="build_layout_geojson gate_panels rerank_layouts derive_solar_potential
         patch_roof_confidence bake_building_horizons build_heatmap_raster"
+# After addresses: the region's own tiles, cells, detail and summary. This
+# is what replaced the fan-in (docs/scale-architecture.md).
+EMIT="emit_region"
 
 echo "=== district build $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}"
@@ -75,7 +79,12 @@ echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}"
 #
 # Deliberately non-fatal. A missing baseline is bad; losing eight hours of
 # compute because the snapshot step tripped would be worse.
-if [ -f data/solar_potential.geojson ]; then
+# The previous build's per-building ladders live in data/summaries/ now
+# (written by combine); keep a copy so compare_builds can diff against them.
+if [ -d data/summaries ]; then
+  rm -rf data/summaries_prev && cp -r data/summaries data/summaries_prev \
+    || echo "  WARN: could not snapshot the previous build -- comparison will be unavailable"
+elif [ -f data/solar_potential.geojson ]; then
   $PY src/compare_builds.py --snapshot \
     || echo "  WARN: could not snapshot the previous build -- comparison will be unavailable"
 else
@@ -138,13 +147,16 @@ fi
 if [ $INCREMENTAL -eq 1 ]; then
   echo "=== incremental: rebuilding only buildings whose reading changed ==="
   $PY tools/patch_stale_selected.py --patch || exit 1
-  echo "=== fan-in ($(date -u +%H:%M:%S)) ==="
-  for s in build_terrain_masks build_seasonal_curves shrink_panels_for_tiles; do
-    $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
+  # Re-emit every region whose files the patch touched, then combine. The
+  # emit stage's marker is older than the patched region files, so
+  # --skip-done re-emits exactly those and skips the rest.
+  echo "=== re-emit ($(date -u +%H:%M:%S)) ==="
+  for r in $REGIONS; do
+    $PY src/run_stage.py --skip-done emit_region "$r" >>"$LOGDIR/$r.log" 2>&1 \
+      || { echo "  FAILED: emit_region for $r (see $LOGDIR/$r.log)"; exit 1; }
   done
-  $PY src/split_building_detail.py || { echo "FAILED: split_building_detail"; exit 1; }
-  $PY src/build_building_tiles.py  || { echo "FAILED: build_building_tiles"; exit 1; }
-  $PY tools/build_heatmap_tiles.py || echo "WARNING: heat-map tiles not rebuilt"
+  echo "=== combine ($(date -u +%H:%M:%S)) ==="
+  $PY src/combine_regions.py || { echo "FAILED: combine_regions"; exit 1; }
 else
 
 fail=0
@@ -162,6 +174,10 @@ for r in $REGIONS; do
   # later with: python src/run_stage.py add_addresses <region>
   $PY src/run_stage.py $SKIP add_addresses "$r" >>"$LOGDIR/$r.log" 2>&1 \
     || echo "  WARN: addresses failed for $r -- patch later"
+  if ! $PY src/run_stage.py $SKIP $EMIT "$r" >>"$LOGDIR/$r.log" 2>&1; then
+    echo "  FAILED: $EMIT for $r (see $LOGDIR/$r.log)"
+    fail=1
+  fi
 done
 
 if [ $fail -ne 0 ]; then
@@ -170,58 +186,29 @@ if [ $fail -ne 0 ]; then
   exit 1
 fi
 
-echo "=== fan-in ($(date -u +%H:%M:%S)) ==="
-# The merge and everything after it are district-wide, so they always run:
-# any region rebuild invalidates them, and they are cheap next to the regions.
-for s in merge_regions bake_density_deciles build_terrain_masks \
-         build_seasonal_curves shrink_panels_for_tiles; do
-  $PY src/run_stage.py --force "$s" || { echo "FAILED: $s"; exit 1; }
-done
-
-# The browser reads buildings as TILES, not as one 26 MB download, so the
-# tiles and the per-building detail have to be rebuilt from the merged file
-# every time it changes -- otherwise the map shows last build's buildings
-# beside this build's panels, which is the kind of mismatch nobody notices
-# until Josh is looking at a roof that disagrees with itself.
-# Order matters: the split must run before the tiles, or the horizon blobs
-# it removes are baked into them.
-$PY src/split_building_detail.py || { echo "FAILED: split_building_detail"; exit 1; }
-$PY src/build_building_tiles.py  || { echo "FAILED: build_building_tiles"; exit 1; }
-
-# The heat map is raster tiles too (tools/build_heatmap_tiles.py). Built from
-# the published data/heatmaps PNGs, so this runs after whatever regenerated
-# them and reprojects exactly what would otherwise have been served whole.
-$PY tools/build_heatmap_tiles.py || echo "WARNING: heat-map tiles not rebuilt"
+echo "=== combine ($(date -u +%H:%M:%S)) ==="
+# NO MERGE. Each region emitted its own tiles, cells, detail, heat-map tiles
+# and addresses under data/out/<region>/; combine_regions joins them into the
+# served set without ever reading the district into memory. The merged
+# solar_potential.geojson and panel_layouts.geojson are no longer produced by
+# the build -- src/merge_regions.py still exists for debugging, and nothing
+# in the ship path reads its output.
+$PY src/combine_regions.py || { echo "FAILED: combine_regions"; exit 1; }
 
 fi   # end of the full-build branch
-
-# Josh's drawn lines, as the map overlay that shows them (added 19 Sep, after
-# he reported the same line "missing" three times when the map had simply
-# never been asked to draw it). Derived from data/roof_labels.json, so it
-# goes stale the moment he marks another roof -- which is exactly the kind of
-# thing that is never noticed until he is looking at an old one.
-$PY tools/build_markup_lines.py || echo "WARNING: markup overlay not rebuilt" 
-
-tippecanoe -o data/panel_layouts.pmtiles --force -l layout \
-  -Z13 -z16 --drop-densest-as-needed --detect-shared-borders \
-  -y kind -y building_id -y fill_rank -y fill_order -y array_id -y array_size \
-  -y ac_kwh_year -y slope_deg -y aspect_deg -y roof_confidence \
-  -y poa_kwh_m2_yr -y panel_count data/panel_layouts.geojson || exit 1
 
 # DID THE BUILD ACTUALLY USE ITS INPUTS? On 10 Sep a resumed district run
 # skipped every layout stage on stale markers and shipped the previous
 # geometry with fresh mtimes -- zero errors, bit-identical totals. A green
-# build that ignored its inputs must FAIL here, not deploy quietly.
+# build that ignored its inputs must FAIL here, not deploy quietly. The count
+# now comes from the region summaries the emit stage wrote, summed by combine.
 if [ "${SOLAR_SELECTED_FACES}" = "1" ] && [ "$(ls data/selected_faces 2>/dev/null | wc -l)" -gt 100 ]; then
-  # grep -c counts LINES and a geojson is one line: -aco reported "1"
-  # against 41,589 real occurrences and failed two good builds. Count
-  # occurrences.
-  n_sel=$(grep -ao '"from_selected"' data/panel_layouts.geojson | wc -l | tr -d " ")
+  n_sel=$($PY -c 'import json; print(int(json.load(open("data/build_summary.json"))["totals"].get("from_selected_facets", 0)))')
   if [ "${n_sel:-0}" -lt 50 ]; then
-    echo "FAILED: selected-faces enabled but only ${n_sel} from_selected facets in merged layouts -- the build did not use its inputs"
+    echo "FAILED: selected-faces enabled but only ${n_sel} from_selected facets across the build -- it did not use its inputs"
     exit 1
   fi
-  echo "guard: ${n_sel} from_selected facets in merged layouts"
+  echo "guard: ${n_sel} from_selected facets across the build"
 fi
 
 echo "=== complete $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="

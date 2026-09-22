@@ -78,3 +78,8 @@ graphify-out/
 
 # Understand-Anything working data (tools/build_method_page.py reads it).
 .ua/
+
+# per-region emitted outputs and combine scratch (docs/scale-architecture.md)
+data/out/
+data/summaries_prev/
+data/combine_*/

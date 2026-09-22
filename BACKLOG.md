@@ -1568,6 +1568,57 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## DONE 22 SEP - no more merged file: regions emit tiles, combine joins them
+
+Josh: "How can you make it not all one file? Maybe set that up first." The
+design and its alternatives are in docs/scale-architecture.md; the code is
+`src/emit_region.py` (one region -> its own pmtiles, partial cell sums, detail
+tiles, heat-map tiles, addresses, summary under data/out/<region>/) and
+`src/combine_regions.py` (tile-join, add the cell sums, merge detail, composite
+heat-map seams, shard addresses above 150k, one curve set per degree of
+latitude). `run_district_build.sh` now ends every region with the emit and
+replaces the fan-in with the combine. The four fan-in stages that were
+per-building all along (deciles, terrain masks, panel shrink, detail split)
+run inside the emit, at each region's OWN sun -- `build_terrain_masks` had
+Queenstown's latitude hard-coded for every building in the country.
+
+Proved on the laptop's 24 regions, same inputs through both paths: **0 of
+15,353 buildings differ** in panels or kWh. Buildings tiles are byte-identical
+in size per zoom. Panel tiles at z13 came out heavier at first (each region
+thinned against its own budget, then joined with -pk) and are capped per region
+at 200 kB now: z13 max 565 kB / median 164 kB against the old 368 / 66. Still
+heavier at the outermost zoom; lower the cap if it shows.
+
+**Building types shipped with it** (Josh: "a toggle for building types").
+`src/building_types.py` classifies every building from LINZ `use`/`name`
+(schools, hospitals, supermarkets -- named for 1.5% of the pilot) and
+otherwise by the same size line economics.js uses for the business tariff.
+Types ride on buildings, panels AND the aggregate cells (one cell feature per
+type, so totals stay exact at every zoom), and the page has a chip row under
+"For buildings in map view". Verified in the browser at all three zoom paths:
+Homes off at z11 leaves 708 buildings = 638 businesses + 65 schools + 5
+hospitals in the summary, exactly. Queenstown has 65 schools and 5 hospitals
+by this reading; nothing is "community" yet because LINZ names none here.
+
+NOT YET (the rest of Josh's list, in order): (1) delete a region's inputs
+after its outputs are in the bucket -- `src/publish_region.py`, the manifest
+and the shared point-cloud-tile rule; (3) the bucket queue, worker loop and
+fleet script. Both designed in docs/scale-architecture.md. The current VM's
+service account has storage READ-ONLY scope (fixed at creation), so uploads
+need fleet VMs created with write scopes; creating VMs from this session's
+account is untried -- if refused it is one IAM grant from Josh.
+
+## GLENORCHY HAS NO LIDAR (22 Sep)
+
+Josh asked for Glenorchy alongside Kingston and Wanaka. LINZ's national DSM
+survey index says the Southland 2020-2024 survey intersects it, but that is
+the survey's hull: its tile index has **0 tiles** in Glenorchy's bbox and the
+nearest coverage stops 15 km west at the Greenstone (lon 168.17-168.21).
+Queenstown 2016 and 2021 both stop at 168.61. Imagery: only Otago 0.3 m rural
+2017-19 (6 tiles). The pipeline reads roofs from a 1 m DSM, so Glenorchy
+cannot be built until a survey is published. 530 buildings in the village
+bbox, 730 wider. Re-check the survey index when a new Otago capture lands.
+
 ## TODO - patch 9 marked roofs for the open-ended-line extension (measured 22 Sep)
 
 Josh said "Run them out" and `SOLAR_EXTEND_DANGLING` defaulted to on, but no

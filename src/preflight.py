@@ -104,6 +104,9 @@ REQUIRED = {
         "root": ["dem_wide_mosaic.tif"],
     },
     "add_addresses":          {"region": ["solar_potential"]},
+    # The region's own tiles, cells, detail and summary (docs/scale-architecture.md).
+    "emit_region":            {"region": ["solar_potential", "panel_layouts"],
+                               "optional_region": ["heatmap_png"]},
     "build_heatmap_raster":   {"region": ["solar_potential", "outlines", "dsm"]},
     # merge_regions REGENERATES the district files from the region files, so a
     # full merge run while most regions are missing their outputs replaces a

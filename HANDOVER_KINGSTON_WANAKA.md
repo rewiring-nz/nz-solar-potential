@@ -55,21 +55,46 @@ Done when `expand.out` ends with `EXPAND_DONE`.
 
 ## Finishing it: the deploy
 
+**Updated 22 Sep: the build path changed under this run.** `expand.sh` on the
+VM calls the VM's copy of `run_district_build.sh`, which still merges. The
+repo's version now emits per region and combines (docs/scale-architecture.md),
+and the site's page expects that output (per-type cells, `btype` on panels,
+`data/summaries/`). So when `EXPAND_DONE` appears:
+
+```bash
+# ship the new pipeline to the VM and emit every region there
+cd ~/Desktop/J/Website/solar-map
+for f in src/emit_region.py src/combine_regions.py src/building_types.py \
+         src/bake_density_deciles.py src/build_terrain_masks.py \
+         src/shrink_panels_for_tiles.py src/build_seasonal_curves.py \
+         src/preflight.py src/run_district_build.sh src/compare_builds.py \
+         src/patch_buildings.py tools/build_heatmap_tiles.py; do
+  gcloud compute scp --zone australia-southeast1-b --quiet "$f" claude-doing-things:"~/solar-map/$f"
+done
+gcloud compute ssh claude-doing-things --zone australia-southeast1-b --command \
+  "cd ~/solar-map && .venv/bin/pip install -q pmtiles && for r in \$(.venv/bin/python -c 'from src.region_build import all_areas; print(\" \".join(all_areas()))'); do .venv/bin/python src/emit_region.py \$r; done && .venv/bin/python src/combine_regions.py"
+```
+
+Then pull the SERVED SET (not the merged files) and push:
+
+
+
 The VM is an scp'd payload copy, not a git clone, so it cannot publish. Pull
 the artefacts to the laptop and push from there:
 
 ```bash
 cd ~/Desktop/J/Website/solar-map
 for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles \
-         addresses.json assumptions.json solar_potential.geojson \
-         seasonal_curves.json; do
+         addresses.json assumptions.json seasonal_curves.json build_summary.json; do
   gcloud compute scp --zone australia-southeast1-b --quiet \
     claude-doing-things:"~/solar-map/data/$f" "data/$f"
 done
-rm -rf data/building_detail
-gcloud compute scp --zone australia-southeast1-b --quiet --recurse \
-  claude-doing-things:"~/solar-map/data/building_detail" data/
-python tools/build_heatmap_tiles.py          # new regions need their tiles
+for d in building_detail heatmap_tiles summaries seasonal_curves; do
+  rm -rf data/$d
+  gcloud compute scp --zone australia-southeast1-b --quiet --recurse \
+    claude-doing-things:"~/solar-map/data/$d" data/
+done
+python src/compare_builds.py                 # per-building diff against summaries_prev
 python tools/predeploy_check.py              # compare against live BEFORE pushing
 git add -A data && git commit && git push
 ```
