@@ -28,17 +28,28 @@ removed. Load and parameters gone. And `tests/test_both_repos_import.py` is
 new, because dropping those parameters broke Wellington through the exact hole
 `check_repo_sync.py` leaves open on purpose.
 
-## OPEN — the golden buildings moved and nothing explains it yet
+## DONE 22 SEP — the goldens moved because his fold lines became keepouts
 
-`tests/test_golden.py` matches 5/28. Checked and ruled out: the label store
-(the goldens still fail against the store as it was when they were recorded),
-`SOLAR_EXTEND_DANGLING` (same result either way), and the input data (the
-recording commit scores 28/28 against today's data). So it is code, somewhere
-between the recording commit and now; a bisect over the 42 src/ commits was
-running when this was written. Panels move **-14.7%** and yield **-17.4%**
-across the 17 that changed, which is the opposite direction to the district
-build that shipped, so it needs an answer before the goldens are re-recorded.
-**Do not re-record until the cause is named.**
+`tests/test_golden.py` had fallen to 5/28. Ruled out first: the label store
+(they still failed against the store as recorded), `SOLAR_EXTEND_DANGLING`
+(identical either way), and the input data (the recording commit scores 28/28
+against today's data). So it was code, and a scan over the 42 src/ commits
+since found the boundary exactly: `bcf55c07` scores 28/28 and the very next
+commit, **`f79df419` "Drawn fold lines are no-panel strips"**, scores 2/28.
+
+It accounts for effectively all of it: 22 buildings move at that commit,
+3,634 -> 2,748 panels. By HEAD only 17 still differ and the total is 2,731 --
+so later work (keepout width 0.25 -> 0.18 m and the rest) put five buildings
+back and changed the final count by 17 panels.
+
+The drop is the fix working. Those panels straddled ridges Josh had drawn;
+that commit's own bench measured line crossings 17.1% -> 0 and 497 invalid
+panels removed. It reads as a 14.7% collapse here only because 27 of the 28
+golden roofs are marked-up ones -- exactly the roofs the change touches.
+District-wide just 144 of 14,508 buildings carry markup, which is why the
+shipped build went UP 1.5% over the same period.
+
+Re-recorded at HEAD: 28/28. The guard is live again.
 
 ## WHY AN UNLABELLED TWIN LOOKS WORSE — 4 Sep, Josh's test
 
