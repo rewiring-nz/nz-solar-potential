@@ -1598,9 +1598,17 @@ orthophoto is off by relief displacement, per building: 28% of 61 pilot roofs
 (Sobel edges of DSM vs photo, +/-4 m, gated at 4% gain, < 6 m) and
 `emit_region` shifts the DRAWN geometry only. Pilot: 444/1,066 shifted,
 median 2.2 m. Verified in the browser on 42 Suburb St after a sign flip.
-CAVEAT: registered against the region's LINZ imagery mosaic; the site shows
-LINZ Basemaps. They matched for Queenstown; check on the next district that
-the basemap is the same capture, or register against basemap tiles instead.
+**NOT SHIPPED -- fails validation at scale.** On the first district run the
+shifts were medians of 3.6-4.1 m with 8-14% at the search bound, and
+neighbouring roofs (<40 m, same photo) agreed on direction only 38-49% of the
+time against 33% for chance. Real relief displacement is locally coherent;
+this is edge-matching locking onto trees and shadows. 42 Suburb Street was a
+lucky hit. `emit_region` applies shifts only with SOLAR_IMAGE_SHIFT=1; the
+stage still runs and its measurement stays on disk for a better gate to be
+tested against. What a better gate needs: a roof-only edge mask (DSM height
+edges within the outline's buffer, not the whole window), a coherence test
+against neighbours, and a check that the basemap the site shows is the same
+capture as the mosaic. Validate on roofs Josh flags before it ships.
 
 **Not yet on the live site.** All four need the layout stage re-run
 (regulariser, slider, setbacks) or the new stage (registration). The

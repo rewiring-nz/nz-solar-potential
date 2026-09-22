@@ -33,6 +33,7 @@ Usage: python src/emit_region.py <region> [--out data/out]
 import argparse
 import copy
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -171,9 +172,17 @@ def emit(region, out_root=OUT_ROOT):
     # the map DRAWS -- outline, facets, panels, obstructions -- moves by the
     # shift so it lands on the roof people see (Josh: "matched to the actual
     # image of the roof because that's what people are actually seeing").
+    # OFF BY DEFAULT UNTIL IT IS VALIDATED. The stage's shifts were right on
+    # 42 Suburb Street and wrong at scale: on the first district run,
+    # neighbouring roofs (<40 m apart, same photo) agreed on direction only
+    # 38-49% of the time against 33% for pure chance, medians of 3.6-4.1 m
+    # with 8-14% at the search bound. That is edge-matching locking onto
+    # trees and shadows, not relief displacement. Set SOLAR_IMAGE_SHIFT=1 to
+    # apply what register_imagery measured; the measurement is kept on disk
+    # either way so a better gate can be tested against it.
     shifts = {}
     sf = paths["dir"] / "image_shift.json"
-    if sf.exists():
+    if sf.exists() and os.environ.get("SOLAR_IMAGE_SHIFT", "0") == "1":
         try:
             shifts = json.loads(sf.read_text())
         except Exception:
