@@ -26,6 +26,15 @@ DEM_WIDE_BBOX = [168.214585, -45.351447, 169.289392, -44.682770]
 # The pilot itself stays on its original top-level paths; each region here
 # gets its own data/regions/<name>/ tree.
 REGIONS = {
+    # Kingston and Wanaka, added 22 Sep at Josh's request. Split to stay
+    # inside the measured 3,000-building ceiling; each sits wholly inside its
+    # own LiDAR survey's real extent (see SURVEYS below), which is why the
+    # bboxes are clipped rather than drawn round the townships.
+    "kingston":            [168.687, -45.359, 168.749, -45.320],   # 380
+    "wanaka_town":         [169.110, -44.715, 169.185, -44.670],   # 8,945
+    "wanaka_albert_town":  [169.185, -44.700, 169.250, -44.660],   # 718
+    "wanaka_west":         [169.092, -44.720, 169.110, -44.670],   # ~415
+    "hawea":               [169.230, -44.630, 169.289, -44.606],   # ~1,826
     "town_west_fernhill":  [168.6211, -45.0463, 168.6578, -45.0295],  # 1245 buildings
     "town_gorge_north":    [168.6573, -45.0233, 168.6717, -45.0098],  # 189
     "frankton_flats":      [168.7001, -45.0309, 168.7499, -45.0147],  # 1625
@@ -121,14 +130,57 @@ LINZ_IMAGERY_LAYER = 124754  # "Queenstown 0.1m Urban Aerial Photos (2026)" -- c
 SURVEYS = [
     {
         "name": "otago-queenstown-2021",
-        # The Queenstown Lakes LiDAR block, generously bounded.
-        "bbox": [168.2, -45.6, 169.5, -44.4],
+        # THE LAYER'S OWN EXTENT, read from the LINZ API, not a generous box
+        # drawn around the district. The first version of this claimed
+        # [168.2, -45.6, 169.5, -44.4] on the reasoning that it covered
+        # "Queenstown Lakes". It does not: the DSM, DEM and tile index all
+        # stop at [168.61, -45.11, 168.87, -44.93]. Asked to build Kingston
+        # and Wanaka, the registry would have said "covered", the fetch would
+        # have returned nothing over either, and the build would have fallen
+        # back to whatever it could find -- the exact silent-wrong-data
+        # failure this registry exists to prevent.
+        "bbox": [168.61, -45.11, 168.87, -44.93],
         "dsm_layer": LINZ_DSM_LAYER,
         "dem_layer": LINZ_DEM_LAYER,
         "imagery_layer": LINZ_IMAGERY_LAYER,
         "lidar_tile_index_layer": LINZ_LIDAR_TILE_INDEX_LAYER,
         "pointcloud_bulk_url": POINTCLOUD_BULK_URL,
         "pointcloud_tile_year": POINTCLOUD_TILE_YEAR,
+    },
+    {
+        # Wanaka, Albert Town, Hawea. 11,955 buildings counted 22 Sep.
+        "name": "otago-wanaka-2022",
+        "bbox": [169.092, -44.757, 169.289, -44.606],
+        "dsm_layer": 113096,
+        "dem_layer": 113095,
+        "lidar_tile_index_layer": 113097,
+        # Queenstown Lakes 0.1m Urban Aerial Photos (2022-2023), whose extent
+        # matches this survey's exactly.
+        "imagery_layer": 112781,
+        # UNKNOWN. OpenTopography forbids listing its bulk prefixes, so the
+        # dataset name for this survey has not been confirmed. Left None
+        # DELIBERATELY: with no point cloud the pipeline falls back to the 1 m
+        # DSM, which works but is about five times coarser than the
+        # 4.9 returns/m2 Queenstown is built from, and roof geometry would be
+        # materially worse. Confirm the store before building this, or accept
+        # the downgrade knowingly.
+        "pointcloud_bulk_url": None,
+        "pointcloud_tile_year": "2022",
+    },
+    {
+        # Kingston, at the south end of Lake Wakatipu. 380 buildings.
+        "name": "otago-kingston-2025",
+        "bbox": [168.687, -45.359, 168.749, -45.320],
+        "dsm_layer": 123405,
+        "dem_layer": 123404,
+        "lidar_tile_index_layer": 123527,
+        # No 0.1 m urban capture found over Kingston -- the Queenstown Lakes
+        # urban photos stop well north of it. Left as the district default
+        # until someone checks the rural 0.2 m coverage; imagery is optional
+        # to the build and its absence degrades gracefully.
+        "imagery_layer": LINZ_IMAGERY_LAYER,
+        "pointcloud_bulk_url": None,
+        "pointcloud_tile_year": "2025",
     },
 ]
 
