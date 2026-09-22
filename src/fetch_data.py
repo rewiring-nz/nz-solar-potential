@@ -93,8 +93,30 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
         # LINZ returns a JSON body naming the exact problem (bad extent, wrong
         # format for the layer type, area outside coverage) -- surface it
         # instead of a bare 400.
-        raise RuntimeError(f"Exports API {resp.status_code} for layer {layer_id} "
-                            f"({name}): {resp.text[:300]}")
+        #
+        # SHOW THE REASON, NOT THE PREAMBLE. This truncated at 300 characters,
+        # and the first 300 characters of that body are the licence and item
+        # boilerplate every response carries -- so a 400 on the Wanaka DSM
+        # printed a Creative Commons URL and hid why. Pull out the fields that
+        # actually say what is wrong, and keep a longer tail behind them.
+        detail = ""
+        try:
+            j = resp.json()
+            bits = []
+            for it in (j.get("items") or []):
+                r = it.get("invalid_reasons") or it.get("reasons")
+                if r:
+                    bits.append(f"item: {r}")
+            for k in ("error", "detail", "message", "non_field_errors",
+                      "extent", "formats", "crs"):
+                if j.get(k):
+                    bits.append(f"{k}: {j[k]}")
+            detail = " | ".join(str(b) for b in bits)
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Exports API {resp.status_code} for layer {layer_id} ({name}): "
+            f"{detail or resp.text[:800]}")
     job = resp.json()
     job_url = job["url"]
     print(f"Export job {job['id']} created, polling...")

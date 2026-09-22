@@ -65,7 +65,7 @@ def tiles_for_bbox_wgs84(bbox, api_key):
     return sorted({f["properties"]["tilename"] for f in data["features"]})
 
 
-def download_tile(filename, retries=4):
+def download_tile(filename, store=None, retries=4):
     dest = POINTCLOUD_DIR / filename
     copc_variant = POINTCLOUD_DIR / filename.replace(".laz", ".copc.laz")
     if dest.exists() or copc_variant.exists():
@@ -73,7 +73,7 @@ def download_tile(filename, retries=4):
     part = dest.with_suffix(".part")
     for attempt in range(retries):
         try:
-            resp = requests.get(f"{BULK_URL}/{filename}", stream=True, timeout=120)
+            resp = requests.get(f"{store or BULK_URL}/{filename}", stream=True, timeout=120)
             if resp.status_code == 404:
                 return "missing-upstream"
             resp.raise_for_status()
@@ -104,17 +104,32 @@ def main(region_names=None):
     # left holes over the town centre (Turner St, 23 Aug).
     region_names = region_names or sys.argv[1:] or (["pilot"] + list(config.REGIONS))
 
-    all_tiles = {}  # filename -> first region needing it (tiles can span regions)
+    # filename -> (region, the bulk store that region's survey uses). BOTH the
+    # store and the YEAR are per survey, and until 22 Sep neither reached
+    # here: the year came from the module-level TILE_YEAR, so asking for
+    # Wanaka's 2022 tiles produced CL2_CA12_2021_*.laz and every one of 165
+    # tiles 404'd. The run reported a "coverage gap to investigate" and
+    # carried on to build Wanaka off the 1 m DSM.
+    all_tiles = {}
     for name in region_names:
-        tiles = tiles_for_bbox_wgs84(area_bbox_wgs84(name), api_key)
-        print(f"{name}: {len(tiles)} tiles")
+        bbox = area_bbox_wgs84(name)
+        sv = survey_for(bbox, name)
+        store = sv.get("pointcloud_bulk_url")
+        if not store:
+            print(f"{name}: survey {sv.get('name')} publishes no point cloud "
+                  f"-- this region will build from its 1 m DSM")
+            continue
+        year = sv.get("pointcloud_tile_year") or TILE_YEAR
+        tiles = tiles_for_bbox_wgs84(bbox, api_key)
+        print(f"{name}: {len(tiles)} tiles from {store.rsplit('/', 1)[-1]} ({year})")
         for t in tiles:
-            all_tiles.setdefault(tilename_to_filename(t), name)
+            all_tiles.setdefault(tilename_to_filename(t, year), (name, store))
 
     print(f"\n{len(all_tiles)} unique tiles across {len(region_names)} regions")
     missing_upstream = []
     for i, filename in enumerate(sorted(all_tiles)):
-        result = download_tile(filename)
+        _region, store = all_tiles[filename]
+        result = download_tile(filename, store)
         if result == "missing-upstream":
             missing_upstream.append(filename)
         print(f"  [{i + 1}/{len(all_tiles)}] {filename}: {result}")
