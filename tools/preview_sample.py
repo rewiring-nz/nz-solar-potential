@@ -77,7 +77,7 @@ def _one(bid):
     from PIL import Image
     from src.roof_segmentation import segment_building_best
     from src.obstruction_detection import detect_obstructions_combined
-    from src.panel_fitting import fit_panels_on_facet
+    from src.panel_fitting import fit_panels_on_facet, building_frame, register_frame
     from src.roof_line_source import drawn_segments
 
     g = _CTX["gdf"]
@@ -90,6 +90,13 @@ def _one(bid):
     except Exception as exc:
         return {"id": bid, "error": f"{type(exc).__name__}: {exc}"}
 
+    # the same building frame the build uses (panel_fitting.building_frame)
+    frame = building_frame(facets, geom) if facets else None
+    if frame is not None:
+        try:
+            frame = register_frame(frame, facets)
+        except Exception:
+            pass
     panels = []
     for f in facets:
         if f.get("plane_a") is None:
@@ -116,7 +123,7 @@ def _one(bid):
             obs = []
         sib = [o for o in facets if o is not f]
         try:
-            for pnl in (fit_panels_on_facet(f, obstructions=obs,
+            for pnl in (fit_panels_on_facet(f, obstructions=obs, frame=frame,
                                             sibling_facets=sib,
                                             fold_keepouts=kout) or []):
                 panels.append(pnl["geometry"] if isinstance(pnl, dict) else pnl)

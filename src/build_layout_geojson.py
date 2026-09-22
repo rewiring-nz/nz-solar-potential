@@ -40,7 +40,7 @@ import geopandas as gpd
 
 from src.roof_segmentation import segment_building_best, _area_weighted_inlier
 from src.pointcloud_source import PointCloudSource
-from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks
+from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
 from src.solar_model import SolarModel
 from src.building_shading import building_shading_factor
@@ -440,6 +440,15 @@ def _build_one_at(building_id, nudge_m):
                                    _CTX["dem_wide_nodata"], row_geom, _eave)
 
     per_facet = []
+    # ONE GRID FRAME PER BUILDING (panel_fitting.building_frame): every face
+    # racks to the same bearing from the same origin, so rows and columns
+    # line up across the roof instead of each face choosing its own.
+    _frame = building_frame(facets, row_geom) if facets else None
+    if _frame is not None:
+        try:
+            _frame = register_frame(_frame, facets)
+        except Exception as exc:
+            _note_fallback("register_frame", building_id, exc)
     for f in facets:
         facet_centroid = f["geometry"].centroid
         shading_factor = building_shading_factor(
@@ -509,7 +518,8 @@ def _build_one_at(building_id, nudge_m):
         else:
             panels = fit_panels_on_facet(f, obstructions=obstructions,
                                          sibling_facets=siblings,
-                                         fold_keepouts=_keepouts)
+                                         fold_keepouts=_keepouts,
+                                         frame=_frame)
         if low_fit:
             for pnl in panels:
                 pnl["straggler"] = True

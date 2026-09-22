@@ -63,6 +63,165 @@ SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least
 # inch" -- not to refuse real capacity.
 
 
+FRAME_SNAP_DEG = 7.0   # a facet's eave within this of the building axis takes the axis
+
+
+def building_frame(facets, building_polygon):
+    """ONE grid frame for the whole building: a bearing (mod 90) and an origin.
+
+    Josh, 22 Sep, on 32 Frankton Road: "a very disorganised layout. The
+    underlying roof is actually quite simple / straight, it just has lots of
+    obstructions." Measured on it: 832 panels on FIVE grid bearings -- 40,
+    45, 50, 135 and 140 degrees -- because every one of its 42 faces racked
+    to its own rectangle, from its own centroid, with its own choice of
+    portrait or landscape and its own row and column phase. Four independent
+    choices per face, and a simple roof came out as a patchwork.
+
+    A real install racks the whole roof to one frame. The bearing is the
+    area-weighted dominant eave direction of the pitched faces (rows run
+    along eaves), snapped to the building outline's own axis when within
+    FRAME_SNAP_DEG of it; a building with no pitched faces takes the outline
+    axis. The origin is the building centroid, so panel edges fall on the
+    same grid lines on every face. fit_panels_on_facet uses this frame when
+    it is given one; nothing changes for callers that pass none.
+    """
+    import math
+    def axis_of(poly):
+        try:
+            cc = list(poly.minimum_rotated_rectangle.exterior.coords)
+        except Exception:
+            return None
+        if len(cc) < 3:
+            return None
+        e = [(math.hypot(cc[i + 1][0] - cc[i][0], cc[i + 1][1] - cc[i][1]),
+              math.degrees(math.atan2(cc[i + 1][1] - cc[i][1], cc[i + 1][0] - cc[i][0])))
+             for i in range(2)]
+        return max(e)[1] % 90.0
+    bld = axis_of(building_polygon) if building_polygon is not None else None
+    # area-weighted circular mean of eave bearings, mod 90
+    sx = sy = 0.0
+    for f in facets or []:
+        slope = f.get("slope_deg") or 0.0
+        if slope < FLAT_SLOPE_DEG:
+            continue
+        eave = ((f.get("aspect_deg") or 0.0) + 90.0) % 90.0
+        a = f["geometry"].area
+        sx += a * math.cos(math.radians(eave * 4)); sy += a * math.sin(math.radians(eave * 4))
+    if sx or sy:
+        ang = (math.degrees(math.atan2(sy, sx)) / 4.0) % 90.0
+        if bld is not None and min(abs(ang - bld), 90 - abs(ang - bld)) <= FRAME_SNAP_DEG:
+            ang = bld
+    else:
+        ang = bld if bld is not None else 0.0
+    c = building_polygon.centroid if building_polygon is not None else \
+        (facets[0]["geometry"].centroid if facets else None)
+    return {"angle": float(ang), "origin": (float(c.x), float(c.y)) if c is not None else (0.0, 0.0),
+            "portrait": True}
+
+
+def register_frame(frame, facets, obstructions=None, **fit_kwargs):
+    """Let the LARGEST face choose the frame's registration and orientation.
+
+    A locked grid loses up to a column and a row on every face wherever the
+    face's edges do not sit on the frame's grid lines. Measured on the first
+    locked pass: 32 Frankton Road 832 -> 690 panels, 4 Kent Street 44 -> 31.
+    Searching the phase once, on the face with the most to lose, and moving
+    the frame origin so that phase becomes zero keeps the alignment and gives
+    back most of the count: every face still racks to one bearing from one
+    origin, the origin is just the best one for the roof's main face.
+    """
+    if not facets:
+        return frame
+    big = max(facets, key=lambda f: f["geometry"].area)
+    best = None
+    for portrait in (True, False):
+        trial = dict(frame, portrait=portrait, _search=True)
+        # The orientation is judged on the WHOLE building's count, not the
+        # largest face's: on a hip roof the largest face is one of four and
+        # the other three can lose more than it gains. The registration
+        # (origin) still comes from the largest face.
+        total = 0; big_placed = []
+        for f in facets:
+            try:
+                placed = fit_panels_on_facet(f, obstructions=obstructions, frame=trial,
+                                             sibling_facets=[o for o in facets if o is not f], **fit_kwargs)
+            except Exception:
+                placed = []
+            total += len(placed)
+            if f is big:
+                big_placed = placed
+        if total and big_placed and (best is None or total > best[2] * ((1.0 + LANDSCAPE_WIN_MARGIN) if not portrait else 1.0)):
+            best = (portrait, big_placed, total)
+    if not best:
+        return frame
+    portrait, placed, _ = best
+    # PHASE PER FACE GROUP. One phase for the whole building lost 15% of the
+    # panels on the marked-roof bench: a hip roof has two perpendicular grid
+    # families and a phase that suits one strands columns on the other. Faces
+    # that rack along the same frame axis share a phase; it is searched over
+    # the group's faces jointly, then locked, so rows stay tidy within the
+    # family and the count comes back. Flat groups also search the row phase.
+    res = fit_kwargs.get("resolution", RASTER_RESOLUTION_M)
+    pw, ph = (config.PANEL_WIDTH_M, config.PANEL_HEIGHT_M) if portrait else (config.PANEL_HEIGHT_M, config.PANEL_WIDTH_M)
+    w_cells, h_cells = max(1, round(pw / res)), max(1, round(ph / res))
+    groups = {}
+    for f in facets:
+        groups.setdefault(frame_group(frame, f.get("aspect_deg"), f.get("slope_deg")), []).append(f)
+    phases = {}
+    for gk, members in groups.items():
+        def total_for(col_phase, row_phase):
+            trial = dict(frame, portrait=portrait, col_phase={gk: col_phase}, row_phase={gk: row_phase})
+            n = 0
+            for f in members:
+                try:
+                    n += len(fit_panels_on_facet(f, obstructions=obstructions, frame=trial,
+                                                 sibling_facets=[o for o in facets if o is not f], **fit_kwargs))
+                except Exception:
+                    pass
+            return n
+        flat = all((f.get("slope_deg") or 0.0) < FLAT_SLOPE_DEG for f in members)
+        best_c = max(range(w_cells), key=lambda c: total_for(c, None))
+        best_r = max(range(h_cells), key=lambda r: total_for(best_c, r)) if flat else None
+        phases[gk] = (best_c, best_r)
+    return dict(frame, portrait=portrait,
+                col_phase={k: v[0] for k, v in phases.items()},
+                row_phase={k: v[1] for k, v in phases.items()})
+
+
+def frame_group(frame, aspect_deg, slope_deg):
+    """0 or 1: which of the frame's two perpendicular axes this face's rows
+    run along. Faces in the same group share a column phase."""
+    import math
+    a = math.radians(frame["angle"])
+    cands = [np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])]
+    if (slope_deg or 0.0) < FLAT_SLOPE_DEG:
+        return 0
+    theta = math.radians(aspect_deg or 0.0)
+    eave = np.array([math.cos(theta), -math.sin(theta)])
+    return int(np.argmax([abs(float(c @ eave)) for c in cands]))
+
+
+def _frame_axes(frame, aspect_deg, slope_deg):
+    """u along the frame bearing (or its perpendicular -- whichever runs along
+    THIS facet's eave), v perpendicular and pointing up-slope."""
+    import math
+    a = math.radians(frame["angle"])
+    cands = [np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])]
+    theta = math.radians(aspect_deg or 0.0)
+    up = np.array([math.sin(theta), math.cos(theta)])        # up-slope, plan view
+    eave = np.array([math.cos(theta), -math.sin(theta)])     # along the eave
+    if (slope_deg or 0.0) < FLAT_SLOPE_DEG:
+        u_hat = cands[0]
+    else:
+        u_hat = max(cands, key=lambda c: abs(float(c @ eave)))
+        if float(u_hat @ eave) < 0:
+            u_hat = -u_hat
+    v_hat = np.array([-u_hat[1], u_hat[0]])
+    if (slope_deg or 0.0) >= FLAT_SLOPE_DEG and float(v_hat @ up) < 0:
+        v_hat = -v_hat
+    return u_hat, v_hat
+
+
 def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polygon=None):
     """Real installers rack panels parallel to the roof edge, not to
     whatever direction the RANSAC-fit plane's aspect happens to point --
@@ -186,7 +345,7 @@ ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fit
 # jagged/angled facet edge where rigid columns strand serious usable area still falls back
 
 
-def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
+def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS, phases=None):
     """occupancy: boolean grid, True = usable. w, h in metres (grid cells).
 
     Two packing strategies, best-of:
@@ -226,9 +385,19 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
     row_offsets = range(h_cells) if h_cells <= 2 * offset_steps else \
         np.linspace(0, h_cells, offset_steps, endpoint=False, dtype=int)
 
+    col_offsets = range(w_cells)
+    # A building frame fixes the phase (building_frame): the grid is anchored
+    # to the frame origin, and a locked phase is not searched. The free
+    # per-row scan below is skipped too -- staggered columns are exactly what
+    # the frame exists to prevent.
+    if phases is not None:
+        row_phase, col_phase = phases
+        col_offsets = [col_phase]
+        if row_phase is not None:
+            row_offsets = [row_phase]
     best_aligned = []
     for r_off in row_offsets:
-        for c_off in range(w_cells):
+        for c_off in col_offsets:
             placed = []
             r0 = r_off
             while r0 + h_cells <= rows:
@@ -242,7 +411,7 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS):
                 best_aligned = placed
 
     best_free = []
-    for r_off in row_offsets:
+    for r_off in ([] if phases is not None else row_offsets):
         placed = []
         r0 = r_off
         while r0 + h_cells <= rows:
@@ -348,7 +517,7 @@ def _has_twin(facet, sibling_facets):
 def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=config.PANEL_HEIGHT_M,
                          setback=config.PANEL_EDGE_SETBACK_M, resolution=RASTER_RESOLUTION_M,
                          obstructions=None, sibling_facets=None, ridge_setback=config.RIDGE_SETBACK_M,
-                         fallback_setback=config.PANEL_EDGE_SETBACK_FALLBACK_M,
+                         fallback_setback=config.PANEL_EDGE_SETBACK_FALLBACK_M, frame=None,
                          fold_keepouts=None):
     """Returns list of panel dicts: {geometry (world XY Polygon), facet_id fields}.
     obstructions: optional list of world-XY Polygons (e.g. from
@@ -381,9 +550,15 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
         if geom.is_empty:
             return []
 
-    origin = (facet["geometry"].centroid.x, facet["geometry"].centroid.y)
-    u_hat, v_hat = _edge_aligned_axes(facet["geometry"], aspect_deg, slope_deg,
-                                       facet.get("building_geometry"))
+    if frame is not None:
+        # The building's frame, not this facet's: same bearing, same origin,
+        # so rows and columns line up across every face (building_frame).
+        origin = frame["origin"]
+        u_hat, v_hat = _frame_axes(frame, aspect_deg, slope_deg)
+    else:
+        origin = (facet["geometry"].centroid.x, facet["geometry"].centroid.y)
+        u_hat, v_hat = _edge_aligned_axes(facet["geometry"], aspect_deg, slope_deg,
+                                           facet.get("building_geometry"))
     to_surface, to_world = _surface_transform(u_hat, v_hat, slope_deg, origin)
 
     surface_poly = shapely_transform(lambda x, y, z=None: to_surface(x, y), geom)
@@ -452,7 +627,17 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
             usable = surface_poly.buffer(-sb)   # no outline: fall back to the old behaviour
         if surface_keepout is not None:
             usable = usable.difference(surface_keepout)
-        candidate = _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet, sibling_facets)
+        # Under a building frame the grid is anchored to the frame origin:
+        # columns always, rows too on a flat face (no eave to hang rows from).
+        lock = None
+        if frame is not None:
+            gk = frame_group(frame, aspect_deg, slope_deg)
+            lock = {"cols": True, "rows": (slope_deg or 0.0) < FLAT_SLOPE_DEG,
+                    "portrait": frame.get("portrait", True), "search": frame.get("_search", False),
+                    "col_phase": (frame.get("col_phase") or {}).get(gk),
+                    "row_phase": (frame.get("row_phase") or {}).get(gk)}
+        candidate = _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
+                                 sibling_facets, lock=lock)
         # The generous setback is tried first and kept unless a tighter one is a
         # REAL gain -- a whole extra row, not one squeezed panel. Josh: "it's
         # less about maximising every inch of roof space, and more about
@@ -463,7 +648,8 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     return best
 
 
-def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet, sibling_facets=None):
+def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet, sibling_facets=None,
+                 lock=None):
     """`usable` is already fully eroded -- edge clearance from the building's
     outer edge, ridge clearance from the facet's own boundary, obstructions
     removed. This just lays the lattice on it."""
@@ -513,12 +699,35 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
     # shallow strip fits far more panels lying down -- but it has to earn it
     # rather than win a tie.
     candidates = []
-    for is_portrait, (w, h) in ((True, (panel_width, panel_height)),
-                                (False, (panel_height, panel_width))):
-        result = _pack_orientation(occupancy, resolution, w, h)
+    orients = ((True, (panel_width, panel_height)), (False, (panel_height, panel_width)))
+    if lock:
+        # one orientation per building, decided by register_frame -- and its
+        # trials must each be held to ONE orientation too, or both trials
+        # report the same best-of-both count and portrait wins by default
+        # (4 Kent Street: 44 -> 32 panels, landscape 24+20 against portrait
+        # 18+16, and the trial could not tell).
+        orients = ((True, (panel_width, panel_height)),) if lock.get("portrait", True) \
+            else ((False, (panel_height, panel_width)),)
+    for is_portrait, (w, h) in orients:
+        phases = None
+        if lock and not lock.get("search"):
+            # Grid lines at multiples of the panel pitch from the FRAME origin
+            # (surface u = v = 0). The occupancy grid starts at (u_min, v_min),
+            # so the first grid line inside it sits this many cells in.
+            wc_, hc_ = max(1, round(w / resolution)), max(1, round(h / resolution))
+            # grid lines at multiples of the pitch from the frame origin, shifted
+            # by the group's registered phase (register_frame)
+            col_phase = (int(round(-u_min / resolution)) + (lock.get("col_phase") or 0)) % wc_
+            row_phase = None
+            if lock.get("rows"):
+                row_phase = (int(round(-v_min / resolution)) + (lock.get("row_phase") or 0)) % hc_
+            phases = (row_phase, col_phase)
+        result = _pack_orientation(occupancy, resolution, w, h, phases=phases)
         if result:
             placed_o, wc, hc = result
             candidates.append((is_portrait, placed_o, wc, hc))
+        if lock and lock.get("search") and not is_portrait:
+            pass
 
     panels = []
     extra_placed, gap_set = [], set()
