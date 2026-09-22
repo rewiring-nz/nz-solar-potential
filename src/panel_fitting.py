@@ -585,6 +585,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
 MAIN_ARRAY_MIN_PANELS = 10  # straggler banding only applies when the building's largest
 # array is at least this big: a "big commercial main array" exists. Below it (residential),
 # a couple of 2-panel blocks IS the install -- never banded (direct user feedback).
+STRAGGLER_MAX_SHARE = 0.35  # low-fit demotion may take at most this share of a roof's panels
 STRAGGLER_RANK_FLOOR = 80  # stragglers rank 81..100: the 80% default density shows exactly
 # the arrays an installer would quote; sliding past 80 progressively adds the extras.
 MINOR_ARRAY_MIN_PANELS = 4  # a straggler group smaller than this is dropped (see below) --
@@ -808,6 +809,24 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     for p in panels:
         if p.get("low_conf_fit"):
             p["straggler"] = True
+    # A DEMOTION CANNOT SWALLOW THE ROOF. The low-fit rule on big roofs sends
+    # a facet's panels to the straggler band when its LiDAR plane fit is poor
+    # -- right for a plant deck, wrong for a flat commercial roof with vents
+    # on it, where the fit is poor BECAUSE of the vents and the panels are
+    # fine. 22 Earl Street: 601 of 686 panels demoted, so the 80% slider
+    # showed 85 panels and 100% showed 686 (Josh: "at 80% almost none of the
+    # panels show, at 100% far more are added"). Twenty buildings on the live
+    # build hid over half their panels at 80%, 4,954 panels between them.
+    # When the low-fit demotion would take more than STRAGGLER_MAX_SHARE of
+    # the building, the tag is describing the roof, not the stragglers: those
+    # panels go back into the main order, ranked by yield like everything
+    # else. Confetti and fragments -- tagged by array size -- stay demoted.
+    low_fit_only = [p for p in panels if p.get("straggler") and p.get("low_conf_fit")
+                    and not p.get("confetti")
+                    and p.get("array_size", 1) >= MIN_CLUSTER_PANELS]
+    if low_fit_only and len(low_fit_only) > STRAGGLER_MAX_SHARE * len(panels):
+        for p in low_fit_only:
+            p["straggler"] = False
     main = _order_by_array(([p for p in panels if not p.get("straggler")]), poa_key)
     extras = sorted((p for p in panels if p.get("straggler")),
                     key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
