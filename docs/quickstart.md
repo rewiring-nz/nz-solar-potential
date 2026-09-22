@@ -130,16 +130,12 @@ for every rule, is
   Otago convention (`CL2_<sheet>_<year>_<tile>.laz`). If your survey's
   store names them differently every tile 404s and the run is DSM-only —
   the fetch lists the missing names.
-- The cloud correction to clear-sky irradiance uses a NIWA station's
-  sunshine record within ~50 km (only Queenstown is configured). Anywhere
-  else it uses NASA POWER's ~100 km grid instead, which needs network access
-  at build time and which `src/solar_model.py` documents as reading 8–22%
-  high against the Queenstown station. Compare absolute kWh with that in
-  mind; panel counts and geometry are unaffected.
-- Without torch/SAM, the vision precompute is skipped and every roof uses
-  the LiDAR partition — the same fallback production uses where the
-  vision chain declines. Roof shapes on complex houses are noticeably
-  better with the vision chain on.
+- The cloud correction to clear-sky irradiance comes from the nearest of
+  ~28 NIWA measured-radiation stations (`src/solar_model.py`,
+  `NIWA_MEASURED_GHI_STATIONS`), so a town far from its station inherits
+  that station's cloud climate. Only well away from every station does it
+  fall back to NASA POWER's ~100 km grid, which needs network access at
+  build time.
 - Hand-drawn markup (`data/roof_labels.json`) only exists for Queenstown
   benchmark roofs; your area's roofs will all be machine-read.
 - Your area is marked as a quickstart area on disk

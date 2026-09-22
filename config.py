@@ -378,8 +378,10 @@ def _load_my_area(path):
     w, s_, e, n = bbox
     if not (w < e and s_ < n):
         raise ValueError(f"bbox must be [west, south, east, north], got {bbox}")
-    if not (166 <= w <= 179 and -48 <= s_ <= -34):
-        raise ValueError(f"bbox {bbox} is not in New Zealand (lon 166..179, lat -48..-34)")
+    # (the Chatham Islands sit east of the antimeridian, at lon ~ -176)
+    if not ((166 <= w <= 179 or -177.5 <= w <= -175.5) and -48 <= s_ <= -34):
+        raise ValueError(f"bbox {bbox} is not in New Zealand "
+                         f"(lon 166..179 or the Chathams, lat -48..-34)")
     given = {k: ma[k] for k in _SURVEY_KEYS if ma.get(k) is not None}
     parents = [sv for sv in SURVEYS
                if sv["bbox"][0] <= w and sv["bbox"][1] <= s_
