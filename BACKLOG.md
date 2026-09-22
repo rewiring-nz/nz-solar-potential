@@ -1568,19 +1568,34 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
-## "3D unavailable" TypeError when toggling 3D (pre-existing, found 20 Sep)
+## DONE 22 SEP - "3D unavailable" does not reproduce; the real bug next to it does
 
-`setTerrain3D` throws `Cannot read properties of null (reading '0')` at the
-`map.jumpTo({pitch: 0})` line. Caught and logged as "3D unavailable", and 3D
-renders correctly regardless, so it is cosmetic -- but it is two console
-errors that hide real ones.
+Three attempts at HEAD, each in a genuinely fresh tab, none reproduced the
+`Cannot read properties of null (reading '0')`:
 
-NOT a startup bug, despite this note's first version saying so: `terrain3d`
-starts false and is only set from the button handler. The errors were read
-out of a console buffer that survives navigation in the test browser, so they
-came from earlier 3D clicks in the same session. Confirmed present at HEAD
-before the building-tile work. Reproduce with a genuinely fresh tab before
-spending time on it.
+1. load at z17, toggle 3D three times - clean
+2. click the 3D button in the same tick the button appears, before any
+   terrain tile can have decoded - clean
+3. load at z11 (below the terrain source's minzoom 13, so no tile exists for
+   the view) and toggle three times fast - clean, and `snapZoom3D` pulled the
+   zoom to 15 as designed
+
+The note's own suspicion was right: those errors came out of a console buffer
+that survived navigation, from earlier clicks in the same session. Do not
+spend more time on it unless it is seen again with a timestamp.
+
+Reading it did find a real one, though, and it is fixed. `setTerrain3D` set
+the button's `active` class AFTER the camera move. The terrain is already
+enabled by then, so any throw in `jumpTo`/`easeTo` -- which is exactly what
+was being reported -- left the button unlit while 3D was running, and the
+next click "turned on" a mode that was already on. The button state is now
+set before the camera moves, and the moves have their own guard so they
+cannot take the state with them. The message they log says the camera move
+failed rather than "3D unavailable", which is what sent someone looking for a
+missing terrain source in the first place.
+
+Verified: active=false -> on gives active=true, pitch 60, terrain live -> off
+gives active=false, pitch 0, terrain null.
 
 ## arrowtown_hills is a dead region: 50 buildings, none estimated (20 Sep)
 

@@ -983,16 +983,31 @@ function setTerrain3D(on) {
     if (on) snapZoom3D();
     const cap = maxPitchFor(map.getZoom());
     map.setMaxPitch(on ? cap : 60);
-    if (on) {
-      // a frame flat, at a whole-number zoom, so the ground height resolves
-      // before the camera is tilted
-      map.jumpTo({ pitch: 0 });
-      setTimeout(() => { if (terrain3d) map.easeTo({ pitch: cap, duration: 700 }); }, 350);
-    } else {
-      map.easeTo({ pitch: 0, duration: 700 });
-    }
+
+    // THE BUTTON BEFORE THE CAMERA. The terrain is already on by this point,
+    // so if a camera move throws -- and one has been reported doing exactly
+    // that, a null read inside jumpTo when no terrain tile has decoded yet --
+    // the old order left the button unlit while 3D was running, and the next
+    // click "turned on" a mode that was already on. State first, movement
+    // after, and the movement gets its own guard so it cannot take the state
+    // with it.
     const b = document.getElementById("btn-3d");
     if (b) b.classList.toggle("active", on);
+
+    try {
+      if (on) {
+        // a frame flat, at a whole-number zoom, so the ground height resolves
+        // before the camera is tilted
+        map.jumpTo({ pitch: 0 });
+        setTimeout(() => { if (terrain3d) map.easeTo({ pitch: cap, duration: 700 }); }, 350);
+      } else {
+        map.easeTo({ pitch: 0, duration: 700 });
+      }
+    } catch (e) {
+      // 3D itself is fine -- say what actually failed, because "3D
+      // unavailable" sent someone looking for a missing terrain source.
+      console.warn("3D is on; the camera move failed", e);
+    }
   } catch (e) {
     console.warn("3D unavailable", e);
   }
