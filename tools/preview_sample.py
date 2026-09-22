@@ -158,6 +158,7 @@ def _one(bid):
         "outline": ring(geom),
         "facets": [{"ring": ring(f["geometry"]),
                     "slope": round(f.get("slope_deg", 0), 1),
+                    "aspect": round(f.get("aspect_deg", 0), 1),
                     "labels": bool(f.get("from_labels")),
                     "selected": bool(f.get("from_selected")),
                     "m2": round(f.get("area_m2", 0), 1)} for f in facets],
