@@ -104,6 +104,8 @@ REQUIRED = {
         "root": ["dem_wide_mosaic.tif"],
     },
     "add_addresses":          {"region": ["solar_potential"]},
+    # Per-building image-vs-LiDAR offset; emit moves the drawing by it.
+    "register_imagery":       {"region": ["outlines", "dsm"], "optional_region": ["imagery"]},
     # The region's own tiles, cells, detail and summary (docs/scale-architecture.md).
     "emit_region":            {"region": ["solar_potential", "panel_layouts"],
                                "optional_region": ["heatmap_png"]},

@@ -64,7 +64,7 @@ DEM_WIDE = DATA_DIR / "dem_wide_mosaic.tif"
 HEATMAP_ZMIN, HEATMAP_ZMAX = 9, 17
 
 # What the map's building layer carries, plus the type fields the toggle reads.
-SLIM_KEEP = KEEP + ["btype", "use", "name"]
+SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy"]
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
@@ -164,6 +164,47 @@ def emit(region, out_root=OUT_ROOT):
         t["kwp"] += p.get("kwp") or 0.0
         t["kwh"] += p.get("ac_kwh_year") or 0.0
 
+    # THE DRAWING FOLLOWS THE PHOTO. register_imagery measured, per building,
+    # how far the orthophoto sits from the LiDAR (relief displacement: 28% of
+    # pilot roofs 2 m or more, per building, no regional constant). Every
+    # number was computed where the LiDAR is and stays there; the geometry
+    # the map DRAWS -- outline, facets, panels, obstructions -- moves by the
+    # shift so it lands on the roof people see (Josh: "matched to the actual
+    # image of the roof because that's what people are actually seeing").
+    shifts = {}
+    sf = paths["dir"] / "image_shift.json"
+    if sf.exists():
+        try:
+            shifts = json.loads(sf.read_text())
+        except Exception:
+            shifts = {}
+    def _shift_geom(geom, bid):
+        s = shifts.get(str(bid))
+        if not s:
+            return geom
+        dx, dy = s[0], s[1]
+        c = _centroid(geom)
+        if c is None:
+            return geom
+        lat = c[1]
+        dlon = dx / (111320.0 * max(0.2, __import__("math").cos(__import__("math").radians(lat))))
+        dlat = dy / 110540.0
+        def mv(node):
+            if isinstance(node[0], (int, float)):
+                return [node[0] + dlon, node[1] + dlat]
+            return [mv(n) for n in node]
+        return {"type": geom["type"], "coordinates": mv(geom["coordinates"])}
+    n_shifted = 0
+    for f in feats:
+        p = f["properties"]
+        s = shifts.get(str(p["building_id"]))
+        if s:
+            p["img_dx"], p["img_dy"] = s[0], s[1]
+            f["geometry"] = _shift_geom(f["geometry"], p["building_id"])
+            n_shifted += 1
+    if shifts:
+        print(f"[{region}] drawing shifted onto the photo for {n_shifted} buildings")
+
     # The enriched region document, for tools and for the bucket. Written
     # BEFORE the detail is split out, so it is the complete record.
     write_json_atomic(tmp / "solar_potential.geojson", sp)
@@ -245,6 +286,8 @@ def emit(region, out_root=OUT_ROOT):
     for f in lay_copy["features"]:
         b = f["properties"].get("building_id")
         f["properties"]["btype"] = btype_of.get(int(b), "home") if b is not None else "home"
+        if b is not None and shifts.get(str(b)):
+            f["geometry"] = _shift_geom(f["geometry"], b)
     shrink(lay_copy)
     lay_tmp = tmp / "_layouts.geojson"
     lay_tmp.write_text(json.dumps(lay_copy, separators=(",", ":")))

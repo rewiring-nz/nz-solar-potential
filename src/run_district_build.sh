@@ -174,6 +174,10 @@ for r in $REGIONS; do
   # later with: python src/run_stage.py add_addresses <region>
   $PY src/run_stage.py $SKIP add_addresses "$r" >>"$LOGDIR/$r.log" 2>&1 \
     || echo "  WARN: addresses failed for $r -- patch later"
+  # Where the photo sits relative to the LiDAR, per building; a failure here
+  # only means the drawing stays where the LiDAR is.
+  $PY src/run_stage.py $SKIP register_imagery "$r" >>"$LOGDIR/$r.log" 2>&1 \
+    || echo "  WARN: image registration failed for $r -- drawing unshifted"
   if ! $PY src/run_stage.py $SKIP $EMIT "$r" >>"$LOGDIR/$r.log" 2>&1; then
     echo "  FAILED: $EMIT for $r (see $LOGDIR/$r.log)"
     fail=1

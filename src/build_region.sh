@@ -62,6 +62,8 @@ for s in build_layout_geojson gate_panels rerank_layouts derive_solar_potential 
 done
 $PY src/run_stage.py --skip-done add_addresses "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
   || log "WARN: addresses failed -- patch later"
+$PY src/run_stage.py --skip-done register_imagery "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
+  || log "WARN: image registration failed -- drawing unshifted"
 
 log "emit"
 $PY src/run_stage.py --skip-done emit_region "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
