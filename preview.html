@@ -175,9 +175,13 @@
   .inview-heading { width: 100%; font-size: var(--fs-body); font-weight: 300; color: #fff;
     margin: var(--s2) 0 var(--s1); letter-spacing: 0.01em; text-align: left; }
   #econ-bands-global { width: 100%; }
-  .econ-bands { display: flex; gap: 6px; margin-top: var(--s2); width: 100%; }
-  .econ-band { flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: center;
-    padding: 8px 4px 6px; border: 1px solid transparent; border-radius: 5px;
+  .econ-bands { display: flex; gap: 4px; margin-top: var(--s2); width: 100%; }
+  /* Four bands, not three (Josh's ROI scale), so the widest label -- "2x and
+     over" -- has about 10px less room than it used to. Narrow side padding and
+     min-width:0 keep it on one line instead of clipping it. */
+  .econ-band { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+    align-items: center;
+    padding: 8px 2px 6px; border: 1px solid transparent; border-radius: 5px;
     font: inherit; cursor: pointer; }
   .econ-band:hover { filter: brightness(1.12); }
   .econ-band .cnt { color: #fff; font-weight: 700; font-size: 17px; line-height: 1.05;
@@ -1255,8 +1259,7 @@ function densityOpacityExpr(baseOpacity) {
   // Filtering by band rides on OPACITY, not setFilter: setFilter re-evaluates
   // and re-uploads the geometry of every loaded tile, which is far too heavy
   // for a control meant to be flicked on and off (see setLayoutExclusion).
-  const shown = panelBandExpr(panelEconShow.low, panelEconShow.mid,
-                              panelEconShow.high, true);
+  const shown = panelBandExpr(b => panelEconShow[b.key], true);
   return ["case", ["all", dense, shown], baseOpacity, 0];
 }
 const PANEL_FILL_OPACITY = 0.72, PANEL_LINE_OPACITY = 0.5;
@@ -1277,16 +1280,28 @@ let panelEcon = null;   // null = off, else { buildingId, breakEvenKwh }
 // Three bands rather than pass/fail (Josh): a panel that merely repays its
 // share is a different proposition from one that returns twice it, and the
 // middle band is where most panels actually land.
-// Where the top band starts, as a multiple of break-even (Josh). One constant,
-// because the paint expression and the chip tally must not be able to disagree
-// about where the line is.
-const PANEL_ECON_HIGH_MULT = 1.5;
+// Where the bands sit, as multiples of break-even. Josh, 22 September: "2.0x
+// dark green, 1.1x - 2x light green, 0.9x - 1.1x yellow, less than 1.1x red"
+// -- yellow owns 0.9x to 1.1x, so red is everything below 0.9x.
+//
+// `max` is the EXCLUSIVE top of each band and the last one is open-ended. This
+// is one ordered list rather than a threshold constant per band because four
+// separate callers read it -- the paint expression, the on-screen chip tally,
+// the per-building chips and the decile-based filtered totals -- and the last
+// arrangement, which spelled the rule out in each of them, is exactly how the
+// seasonal curve came to describe panels that were no longer on the map.
 const PANEL_ECON_BANDS = [
-  { key: "low",  colour: "#c0392b", label: "0x \u2013 1x ROI" },
-  { key: "mid",  colour: "#86d98d", label: "1x \u2013 1.5x ROI" },
-  { key: "high", colour: "#12703f", label: "1.5x + ROI" },
+  { key: "poor", max: 0.9,      colour: "#c0392b", label: "under 0.9\u00d7" },
+  { key: "even", max: 1.1,      colour: "#e0b93a", label: "0.9\u00d7 \u2013 1.1\u00d7" },
+  { key: "good", max: 2.0,      colour: "#86d98d", label: "1.1\u00d7 \u2013 2\u00d7" },
+  { key: "best", max: Infinity, colour: "#12703f", label: "2\u00d7 and over" },
 ];
-let panelEconShow = { low: true, mid: true, high: true };
+const PANEL_ECON_KEYS = PANEL_ECON_BANDS.map(b => b.key);
+let panelEconShow = Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, true]));
+const emptyBandTally = () => Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, 0]));
+// The band a panel returning `ratio` times its share of the install falls in.
+const bandForRatio = ratio =>
+  (PANEL_ECON_BANDS.find(b => ratio < b.max) || PANEL_ECON_BANDS[PANEL_ECON_BANDS.length - 1]).key;
 // "blended" spreads the building's average value over every panel, which is
 // what Josh first specified. "marginal" asks the harder question -- is it worth
 // adding THIS panel -- and answers it at the export rate, because the
@@ -1353,10 +1368,10 @@ function panelBandOf(props) {
   const m = panelEconMerit && panelEconMerit.get(props.building_id);
   if (m && props.fill_order != null) {
     const be = props.fill_order <= m.cutoff ? m.retailBE : m.exportBE;
-    return k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
+    return bandForRatio(k / Math.max(be, 1e-9));
   }
   const be = breakEvenFor(props.building_id);
-  return k < be ? "low" : k < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
+  return bandForRatio(k / Math.max(be, 1e-9));
 }
 
 // Switching the LAST band off leaves a building with no panels, which made
@@ -1403,20 +1418,24 @@ function panelBreakEvenExpr() {
   return panelEcon ? panelEcon.breakEvenKwh : PANEL_ECON_FALLBACK_KWH;
 }
 
-function panelBandExpr(lowVal, midVal, highVal, otherVal) {
+// `valueFor(band)` is what to paint/return for each band, so colour and
+// visibility share one ladder and cannot drift apart.
+function panelBandExpr(valueFor, otherVal) {
   const kwh = ["coalesce", ["get", "ac_kwh_year"], 0];
   const be = panelBreakEvenExpr();
-  const bands = [
-    ["<", kwh, be], lowVal,
-    ["<", kwh, ["*", PANEL_ECON_HIGH_MULT, be]], midVal,
-    highVal];
+  const last = PANEL_ECON_BANDS.length - 1;
+  const bands = [];
+  PANEL_ECON_BANDS.forEach((b, i) => {
+    if (i < last) bands.push(["<", kwh, ["*", b.max, be]]);
+    bands.push(valueFor(b));
+  });
   if (panelEconGlobal) return ["case", ...bands];
   return ["case", ["!=", ["get", "building_id"], panelEcon.buildingId], otherVal, ...bands];
 }
 
 function panelColourExpr() {
   if (!panelEcon) return PANEL_BASE_COLOUR;
-  return panelBandExpr("#c0392b", "#86d98d", "#12703f", PANEL_BASE_COLOUR);
+  return panelBandExpr(b => b.colour, PANEL_BASE_COLOUR);
 }
 
 function applyPanelDensityPaint() {
@@ -2156,7 +2175,7 @@ map.on("load", async () => {
       return;
     }
     box.style.display = "";
-    const tally = { low: 0, mid: 0, high: 0 };
+    const tally = emptyBandTally();
     let feats = [];
     try { feats = map.queryRenderedFeatures({ layers: ["panels-fill"] }); } catch (e) { feats = []; }
     // Per-panel tiles only exist at close zooms (the district's ~790k panels
@@ -2725,8 +2744,7 @@ map.on("load", async () => {
       prevP = cp; prevK = ck;
       if (dp <= 0) continue;
       const perPanel = (dk / dp) * bakedKwhScale();   // marginal yield in this slice
-      const band = perPanel < be ? "low"
-                 : perPanel < PANEL_ECON_HIGH_MULT * be ? "mid" : "high";
+      const band = bandForRatio(perPanel / Math.max(be, 1e-9));
       if (!panelEconShow[band]) continue;
       panels += dp; kwh += dk;
     }
@@ -2735,7 +2753,7 @@ map.on("load", async () => {
 
   function panelSumsFor(propsList) {
     let panels = 0, kwh = 0;
-    const banded = !!panelEcon && !(panelEconShow.low && panelEconShow.mid && panelEconShow.high);
+    const banded = !!panelEcon && !PANEL_ECON_KEYS.every(k => panelEconShow[k]);
     propsList.forEach(pr => {
       if (banded) {
         const b = bandSplitFor(pr, panelDensityPct);
@@ -3988,7 +4006,7 @@ map.on("load", async () => {
           } else {
             // Counted from what is on the map, so a band reading zero says so
             // rather than being an absence of colour the reader has to notice.
-            const tally = { low: 0, mid: 0, high: 0 };
+            const tally = emptyBandTally();
             try {
               map.queryRenderedFeatures({ layers: ["panels-fill"] }).forEach(f => {
                 const pr = f.properties;
