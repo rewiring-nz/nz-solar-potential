@@ -1581,6 +1581,24 @@ Also fixed and live: the sidebar read 0.0 kW zoomed out in Panel Layout
 (it summed buildings that are not loaded below z13); both modes sum the
 cells now.
 
+## ZOOMED-OUT VIEW IS A DENSITY HEAT MAP - 23 Sep (6755ec19, cf0f571f)
+
+Josh: "a more traditional heat map rather than the blocks... based on
+generation density across areas." combine_regions writes a `cellpts` point
+layer into building_cells.pmtiles (kWh/km2 at every coverage step, and for
+placed panels) plus a 95th-percentile density per band in assumptions.json
+(`density_p95_kwh_km2_by_lod`); the page draws MapLibre heatmap layers from
+it below z13. One scale per band, because coarse cells average roofs over
+empty land: measured lod-12 p95 is 2.1e6 against lod-16's 2.8e7, lod-9 7.8e4.
+The coverage ladder below z13 is summed from the same cells (it showed
+0.0 kW rows under a real headline).
+
+Live now with v39 data, which has no cellpts: the page reads the tileset's
+vector_layers and keeps the old block fills until a build with the new
+combine ships. The VM has the new combine_regions.py in both ~/solar-map
+and ~/solar-map-new; the re-lay's final combine will carry cellpts. The
+Wellington site is the same case until its data is recombined.
+
 ## LAYOUT ENGINE, 22 SEP - one grid frame per building (Josh: "fundamental fixes")
 
 Cases: #4725584 (32 Frankton Rd, "very disorganised"), #5371139 (14C, "clean
