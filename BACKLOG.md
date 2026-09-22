@@ -1568,6 +1568,24 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## LIVE 22 SEP (data v38): Kingston, Wanaka, Albert Town, Hawea + the type toggle
+
+29 regions, 26,742 buildings, 1,110,005 panels, 619.3 GWh/yr. First release
+served from the emit + combine path. Gate: 15,353 buildings in common with
+the previous live build, 655,000 -> 655,000 panels, nothing zeroed or
+dropped. Not in it: the image shift (held back) and the day's layout fixes.
+
+**Running on the VM: the full re-lay** (`relay_all.sh`, `--force`, ~6 h) with
+the regulariser cap, the straggler cap and the 0.1 m setbacks. Deploy it with
+`tools/deploy_from_vm.sh --push` when `RELAY_DONE` appears in `relay.out`;
+expect panel counts UP (bench +9.8%) and the Earl Street wing back.
+
+Fixed on the way: `patch_buildings` updated only the merged building record,
+so the nine re-laid roofs showed new tiles over an old count (73 vs 64) --
+it now updates the region record too. And `.gitignore`'s `data/*` had kept
+`build_summary.json`, `summaries/` and `seasonal_curves/` out of the push;
+they are served now.
+
 ## JOSH'S ROOF CASES, 22 SEP - four defects, each measured, three fixed
 
 Cases logged in data/roof_cases.json: #4726050 (22 Earl St), #4751260
