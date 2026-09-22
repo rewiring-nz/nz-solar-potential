@@ -1576,15 +1576,19 @@ straight rows on each sawtooth"), #5371141 (1/24), #4735304 (12/16 Kent),
 from its own centroid, with its own portrait/landscape and its own row and
 column phase. 32 Frankton: 832 panels on FIVE bearings (40/45/50/135/140).
 
-Now `panel_fitting.building_frame` + `register_frame`: one bearing per
-building (area-weighted eave direction, snapped to the outline axis within
-7 deg), one orientation chosen on the whole roof's count, one column phase
-per face GROUP (faces racking along the same frame axis), searched jointly
-and locked; flat groups lock the row phase too; the free per-row scan is
-off under a frame. Results: 32 Frankton 832 -> 694 on one bearing; 1/24
-333 -> 312; 12/16 Kent 296 -> 263; 4 Kent 44 -> 41; 14C 100 -> 73 with rows
-now parallel across every sawtooth strip (checked in the browser). Bench of
-152 marked roofs: 12,675 -> 11,077 panels (-12.6%), crossings 3 -> 0. The
+Now `panel_fitting.building_frame` + `register_frame`: FAMILIES of bearings
+per building (Josh: "are you sure the one bearing thing won't mess up
+multi-angled rooftops?" -- measured, it would have: 10-18% of pitched
+buildings had a face >10 deg off a single frame, 4-6% of pitched area racked
+skew). Pitched faces cluster by eave bearing within 10 deg; each family gets
+its own bearing (area-weighted, snapped to the outline axis within 7 deg),
+flat faces join the outline-aligned family. After: p90 deviation from own
+family 5-6 deg, area >10 deg skew 0.17%. One orientation chosen on the whole
+roof's count, one column phase per family, searched jointly and locked; flat groups lock the row phase too; the free per-row scan is
+off under a frame. Results: 32 Frankton 832 -> 692 on one bearing; 1/24
+333 -> 316; 12/16 Kent 296 -> 270; 4 Kent 44 -> 45; 14C 100 -> 86 with rows
+parallel across every sawtooth strip (checked in the browser). Bench of 152
+marked roofs: 12,675 -> 11,130 panels (-12.2%), crossings 3 -> 1. The
 count is the cost of rows that line up. The bench harness had never packed
 through the build's frame (it read 12,675 twice); it does now.
 

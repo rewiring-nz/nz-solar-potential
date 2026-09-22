@@ -63,7 +63,8 @@ SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least
 # inch" -- not to refuse real capacity.
 
 
-FRAME_SNAP_DEG = 7.0   # a facet's eave within this of the building axis takes the axis
+FRAME_SNAP_DEG = 7.0   # a family's bearing within this of the building axis takes the axis
+FAMILY_TOL_DEG = 10.0  # eaves within this of each other rack to one bearing
 
 
 def building_frame(facets, building_polygon):
@@ -98,24 +99,49 @@ def building_frame(facets, building_polygon):
              for i in range(2)]
         return max(e)[1] % 90.0
     bld = axis_of(building_polygon) if building_polygon is not None else None
-    # area-weighted circular mean of eave bearings, mod 90
-    sx = sy = 0.0
-    for f in facets or []:
-        slope = f.get("slope_deg") or 0.0
-        if slope < FLAT_SLOPE_DEG:
-            continue
-        eave = ((f.get("aspect_deg") or 0.0) + 90.0) % 90.0
-        a = f["geometry"].area
-        sx += a * math.cos(math.radians(eave * 4)); sy += a * math.sin(math.radians(eave * 4))
-    if sx or sy:
-        ang = (math.degrees(math.atan2(sy, sx)) / 4.0) % 90.0
-        if bld is not None and min(abs(ang - bld), 90 - abs(ang - bld)) <= FRAME_SNAP_DEG:
+    # FAMILIES OF BEARINGS, NOT ONE BEARING. Josh: "Are you sure the one
+    # bearing thing won't mess up other buildings that have multi-angled
+    # rooftops?" Measured on four regions: 10-18% of pitched buildings have a
+    # face more than 10 degrees off a single frame, 4-6% of pitched roof area
+    # would have been racked skew to its own eave. So the pitched faces are
+    # clustered by eave bearing (mod 90) within FAMILY_TOL_DEG; each family
+    # gets its own bearing -- the area-weighted mean, snapped to the outline
+    # axis when within FRAME_SNAP_DEG -- and its own registration. Faces in a
+    # family line up with each other; a wing at a different angle is its own
+    # family and lines up with itself. Flat faces join the family nearest the
+    # outline's axis, which is the only edge a flat roof has to rack against.
+    def dev(a, b):
+        d = abs(a - b) % 90.0
+        return min(d, 90.0 - d)
+    pitched = [(f["geometry"].area, ((f.get("aspect_deg") or 0.0) + 90.0) % 90.0)
+               for f in facets or [] if (f.get("slope_deg") or 0.0) >= FLAT_SLOPE_DEG]
+    families = []   # [(angle, weight)]
+    for a, e in sorted(pitched, key=lambda t: -t[0]):
+        for k, (ang, w) in enumerate(families):
+            if dev(e, ang) <= FAMILY_TOL_DEG:
+                # circular mean mod 90, area-weighted
+                sx = w * math.cos(math.radians(ang * 4)) + a * math.cos(math.radians(e * 4))
+                sy = w * math.sin(math.radians(ang * 4)) + a * math.sin(math.radians(e * 4))
+                families[k] = ((math.degrees(math.atan2(sy, sx)) / 4.0) % 90.0, w + a)
+                break
+        else:
+            families.append((e, a))
+    angles = []
+    for ang, _ in families:
+        if bld is not None and dev(ang, bld) <= FRAME_SNAP_DEG:
             ang = bld
-    else:
-        ang = bld if bld is not None else 0.0
+        angles.append(float(ang))
+    if not angles:
+        angles = [float(bld) if bld is not None else 0.0]
+    flat_family = 0
+    if bld is not None:
+        flat_family = int(min(range(len(angles)), key=lambda k: dev(angles[k], bld)))
+        if dev(angles[flat_family], bld) > FAMILY_TOL_DEG:
+            angles.append(float(bld)); flat_family = len(angles) - 1
     c = building_polygon.centroid if building_polygon is not None else \
         (facets[0]["geometry"].centroid if facets else None)
-    return {"angle": float(ang), "origin": (float(c.x), float(c.y)) if c is not None else (0.0, 0.0),
+    return {"angle": angles[0], "angles": angles, "flat_family": flat_family,
+            "origin": (float(c.x), float(c.y)) if c is not None else (0.0, 0.0),
             "portrait": True}
 
 
@@ -189,23 +215,25 @@ def register_frame(frame, facets, obstructions=None, **fit_kwargs):
 
 
 def frame_group(frame, aspect_deg, slope_deg):
-    """0 or 1: which of the frame's two perpendicular axes this face's rows
-    run along. Faces in the same group share a column phase."""
-    import math
-    a = math.radians(frame["angle"])
-    cands = [np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])]
+    """Which bearing family this face belongs to: the family whose bearing is
+    nearest its own eave (mod 90). Flat faces take the outline-aligned family.
+    Faces in the same family share a bearing and a column phase."""
+    angles = frame.get("angles") or [frame["angle"]]
     if (slope_deg or 0.0) < FLAT_SLOPE_DEG:
-        return 0
-    theta = math.radians(aspect_deg or 0.0)
-    eave = np.array([math.cos(theta), -math.sin(theta)])
-    return int(np.argmax([abs(float(c @ eave)) for c in cands]))
+        return int(frame.get("flat_family", 0))
+    eave = ((aspect_deg or 0.0) + 90.0) % 90.0
+    def dev(a, b):
+        d = abs(a - b) % 90.0
+        return min(d, 90.0 - d)
+    return int(min(range(len(angles)), key=lambda k: dev(angles[k], eave)))
 
 
 def _frame_axes(frame, aspect_deg, slope_deg):
-    """u along the frame bearing (or its perpendicular -- whichever runs along
-    THIS facet's eave), v perpendicular and pointing up-slope."""
+    """u along the face's FAMILY bearing (or its perpendicular -- whichever
+    runs along this facet's eave), v perpendicular and pointing up-slope."""
     import math
-    a = math.radians(frame["angle"])
+    angles = frame.get("angles") or [frame["angle"]]
+    a = math.radians(angles[frame_group(frame, aspect_deg, slope_deg)])
     cands = [np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])]
     theta = math.radians(aspect_deg or 0.0)
     up = np.array([math.sin(theta), math.cos(theta)])        # up-slope, plan view
