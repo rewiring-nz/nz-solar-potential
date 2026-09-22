@@ -76,7 +76,6 @@ class PreflightError(SystemExit):
 # missing entry is another silent-degradation incident.
 REQUIRED = {
     "build_layout_geojson": {
-        "region": ["outlines", "dsm"],
         # selected_faces and roof_labels CHANGE THE GEOMETRY this stage
         # builds. Neither was declared, so on 10 Sep a district run skipped
         # every layout stage on Sep-3 markers and shipped old geometry with
@@ -84,8 +83,20 @@ REQUIRED = {
         # panels, bit-identical totals to the previous build, no error.
         # A directory's mtime updates when entries are added, which is
         # exactly the precompute-finished signal.
-        "root": ["dem_wide_mosaic.tif", "selected_faces",
-                 "roof_labels.json"],
+        #
+        # selected_faces is OPTIONAL, though, not required: it is the vision
+        # precompute's output, and a build without it falls back to the LiDAR
+        # partition for every roof -- which is exactly what the quickstart
+        # promises a reader who has no torch. Requiring it made that promised
+        # fallback a hard stop. It stays declared so run_stage still sees it
+        # change; absent, it is a warning.
+        #
+        # dem_wide is per region: the quickstart area fetches its own (its own
+        # 30 km of terrain, not the whole district's), and area_paths resolves
+        # to it when present and to data/dem_wide_mosaic.tif otherwise.
+        "region": ["outlines", "dsm", "dem_wide"],
+        "root": ["roof_labels.json"],
+        "optional_root": ["selected_faces"],
         "optional_region": ["imagery"],
     },
     "gate_panels": {
@@ -132,7 +143,14 @@ REQUIRED = {
 HOW_TO_GET = {
     "dem_wide_mosaic.tif":
         "python src/fetch_dem_wide.py (requires LINZ_API_KEY; fetches layer "
-        "51768 for the configured district plus a 10 km buffer)",
+        "51768 for the configured district plus a 30 km buffer)",
+    "dem_wide":
+        "python src/fetch_regions.py <region>  (fetches the wide 8 m DEM: "
+        "the district's, or a quickstart area's own)",
+    "selected_faces":
+        "tools/predict_faces.py --region <region>  (optional: needs torch, "
+        "torchvision and segment-anything; without it every roof uses the "
+        "LiDAR partition)",
     "outlines":  "python src/fetch_regions.py <region>",
     "dsm":       "python src/fetch_regions.py <region>  (pass 1: LiDAR/DSM)",
     "imagery":   "python src/fetch_regions.py <region>  (pass 2: aerial imagery)",
@@ -152,7 +170,7 @@ def _check_file(path, key, problems, what="missing"):
     if not path.exists():
         problems.append((f"{what}: {key}", _describe(path, key)))
         return False
-    if path.stat().st_size == 0:
+    if path.is_file() and path.stat().st_size == 0:
         # A zero-byte raster opens without error and fails far from here.
         problems.append((f"empty (0 bytes): {key}", _describe(path, key)))
         return False
@@ -280,6 +298,10 @@ def preflight(stage, region=None, fatal=True):
 
     for name in spec.get("root", []):
         _check_file(DATA_DIR / name, name, problems)
+    for name in spec.get("optional_root", []):
+        if not (DATA_DIR / name).exists():
+            warnings.append((f"optional input absent: {name}",
+                             _describe(DATA_DIR / name, name)))
 
     # A DISTRICT-wide merge (no region named) must not run against a mostly
     # empty tree. Merging a named subset is a normal, deliberate operation --

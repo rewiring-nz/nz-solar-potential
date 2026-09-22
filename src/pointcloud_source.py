@@ -57,8 +57,16 @@ class PointCloudSource:
             # a pool initialiser that surfaces only as BrokenProcessPool, which
             # cost an hour of debugging on the VM. Nothing hidden is a tile.
             if not q.name.startswith("._") and not q.name.startswith("."))
+        # NO TILES AT ALL IS AN EMPTY SOURCE, NOT A CRASH. It raised here, and
+        # because this runs inside the pool initialiser the user saw only
+        # BrokenProcessPool -- for a survey that simply has no public point
+        # cloud (Kingston 2025), or a first quickstart run. An empty directory
+        # is the same fact as tiles that do not reach this region, which every
+        # caller already handles by falling back to the DSM; build_layout_geojson
+        # probes coverage up front and says so LOUDLY, so this is not silent.
         if not self.tile_paths:
-            raise FileNotFoundError(f"No .laz tiles found in {directory}")
+            print(f"[pointcloud] no .laz tiles in {directory} -- every building "
+                  f"uses the 1 m DSM", file=sys.stderr, flush=True)
         self._bounds = {}
         for path in self.tile_paths:
             # Single-threaded decompression when fanned out. The default lazrs

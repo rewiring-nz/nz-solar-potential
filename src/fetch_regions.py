@@ -141,13 +141,30 @@ def main():
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set")
 
-    print("[wide terrain] ensuring 8m DEM...")
-    ensure_dem_wide(api_key)
-
     wanted = sys.argv[1:] or list(config.REGIONS)
+    my = config.MY_AREA["name"] if config.MY_AREA else None
     for name in wanted:
-        if name not in config.REGIONS:
-            raise SystemExit(f"unknown region {name!r} -- known: {list(config.REGIONS)}")
+        if name not in config.REGIONS and name != my:
+            hint = ""
+            if config.MY_AREA_ERROR:
+                hint = f"\n  (my_area.json was not loaded: {config.MY_AREA_ERROR})"
+            elif my:
+                hint = f"\n  (my_area.json defines {my!r})"
+            raise SystemExit(f"unknown region {name!r} -- known: "
+                             f"{list(config.REGIONS)}{hint}")
+
+    # The wide 8 m DEM (distant-terrain horizons). The district's covers every
+    # district region; a quickstart area gets its own -- see
+    # fetch_dem_wide.ensure_area_dem_wide for why it is not folded in.
+    if any(n != my for n in wanted):
+        print("[wide terrain] ensuring 8m DEM for the district...")
+        ensure_dem_wide(api_key)
+    if my in wanted:
+        from src.fetch_dem_wide import ensure_area_dem_wide
+        from src.region_build import mark_quickstart_area
+        mark_quickstart_area(my)
+        print(f"[wide terrain] ensuring 8m DEM for {my} (+30 km)...")
+        ensure_area_dem_wide(api_key, my, config.MY_AREA["bbox"])
 
     # Pass 1: outlines + DSM for every region (small and fast).
     for name in wanted:

@@ -3,8 +3,8 @@
 # area of New Zealand, end to end, and inspect every step of the result.
 #
 #   1. cp my_area.example.json my_area.json   (edit name + bbox)
-#   2. export LINZ_API_KEY=...                (free key from data.linz.govt.nz,
-#                                              REST API scope enabled)
+#   2. export LINZ_API_KEY=...                (free key from data.linz.govt.nz --
+#                                              see docs/data-maintainers/local-setup.md)
 #   3. bash quickstart.sh <name>
 #
 # This is NOT a simplified re-implementation. Your area becomes a
@@ -26,36 +26,70 @@ fi
 if [ ! -f my_area.json ]; then
   echo "my_area.json not found -- copy my_area.example.json and edit it"; exit 2
 fi
-if [ -z "${LINZ_API_KEY:-}" ] && ! grep -q LINZ_API_KEY .env 2>/dev/null; then
+# A key, not just the line: .env.example ships "LINZ_API_KEY=" empty, and a
+# bare grep passed that and failed later inside the fetch.
+if [ -z "${LINZ_API_KEY:-}" ] && ! grep -Eq '^[[:space:]]*LINZ_API_KEY=[^[:space:]]' .env 2>/dev/null; then
   echo "LINZ_API_KEY not set (env or .env) -- free key at data.linz.govt.nz"; exit 2
 fi
 if [ ! -x "$PY" ]; then
   echo "no .venv -- see docs/data-maintainers/local-setup.md first"; exit 2
 fi
+# Is my_area.json valid, and does it define THIS name? Checked here, in one
+# line, rather than as "unknown region" from deep inside the fetch.
+$PY - "$AREA" <<'PYEOF' || exit 2
+import sys, config
+area = sys.argv[1]
+if config.MY_AREA_ERROR:
+    sys.exit(f"my_area.json: {config.MY_AREA_ERROR}")
+if not config.MY_AREA or config.MY_AREA["name"] != area:
+    sys.exit(f"my_area.json names {config.MY_AREA and config.MY_AREA['name']!r}, "
+             f"not {area!r} -- pass that name, or edit the file")
+sv = config.MY_AREA["survey"]
+print(f"area {area}: bbox {config.MY_AREA['bbox']}, survey {sv['name']}")
+print(f"  DSM layer {sv.get('dsm_layer')}, imagery {sv.get('imagery_layer')}, "
+      f"point cloud {sv.get('pointcloud_bulk_url') or 'none (DSM-only)'}")
+PYEOF
 
-echo "=== 1/5 fetch: outlines, DSM/DEM, imagery, LiDAR tiles (LINZ + OpenTopography) ==="
+echo "=== 1/5 fetch: outlines, DSM, wide DEM, imagery, LiDAR tiles (LINZ + OpenTopography) ==="
+# fetch_regions fetches the point cloud too (its pass 3), and says so if the
+# survey has none -- the build then runs DSM-only, see docs/quickstart.md.
 $PY src/fetch_regions.py "$AREA" || exit 1
-$PY src/fetch_pointcloud_regions.py "$AREA" || \
-  echo "  (point cloud unavailable for this survey -- continuing; LiDAR-dependent
-   stages degrade and docs/quickstart.md explains exactly which)"
 
 echo "=== 2/5 vision models (optional but part of the shipped methodology) ==="
 VISION=1
-if [ ! -f data/sam_vit_b.pth ]; then
-  echo "  downloading SAM ViT-B checkpoint (358 MB, Meta AI's public release)"
-  curl -L -o data/sam_vit_b.pth \
-    https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth \
-    || VISION=0
-fi
-[ -f data/models/roof_lines_v5.pt ] || VISION=0
-if [ "$VISION" = "1" ] && $PY -c "import torch, segment_anything" 2>/dev/null; then
-  echo "=== 3/5 vision precompute: SAM + line detector + LiDAR candidates per roof ==="
-  $PY tools/predict_faces.py --region "$AREA" || VISION=0
-else
+WHY=""
+# torchvision too: segment_anything imports it, and without it this check
+# failed and the vision chain was skipped with a message blaming torch.
+if ! MISSING=$($PY -c "import torch, torchvision, segment_anything" 2>&1); then
   VISION=0
+  WHY="python packages: $(echo "$MISSING" | tail -1)
+  install: pip install torch torchvision segment-anything  (see docs/quickstart.md)"
+elif [ ! -f data/models/roof_lines_v5.pt ] || [ ! -f data/models/roof_lines_v6.pt ]; then
+  VISION=0
+  WHY="data/models/roof_lines_v5.pt / v6.pt missing from this checkout"
+elif [ ! -f data/sam_vit_b.pth ]; then
+  echo "  downloading SAM ViT-B checkpoint (358 MB, Meta AI's public release)"
+  # -f: an HTTP error must not be saved AS the checkpoint. .part + rename: a
+  # killed download must not leave a truncated file every later run trusts.
+  if curl -fL --retry 3 -o data/sam_vit_b.pth.part \
+       https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth \
+     && [ "$(wc -c < data/sam_vit_b.pth.part)" -gt 300000000 ]; then
+    mv data/sam_vit_b.pth.part data/sam_vit_b.pth
+  else
+    rm -f data/sam_vit_b.pth.part
+    VISION=0
+    WHY="SAM checkpoint download failed (re-run to retry)"
+  fi
+fi
+if [ "$VISION" = "1" ]; then
+  echo "=== 3/5 vision precompute: SAM + line detector + LiDAR candidates per roof ==="
+  if ! $PY tools/predict_faces.py --region "$AREA"; then
+    VISION=0
+    WHY="tools/predict_faces.py failed (output above)"
+  fi
 fi
 if [ "$VISION" = "0" ]; then
-  echo "  vision chain skipped (torch/segment-anything or checkpoints missing)."
+  echo "  vision chain skipped -- $WHY"
   echo "  The build falls back to the LiDAR partition for every roof -- the"
   echo "  same fallback the production map uses where the vision chain defers."
 fi

@@ -339,31 +339,81 @@ PV_ASSUMPTIONS = {
 
 # ---------------------------------------------------------------- my area
 # QUICKSTART: an optional user-defined area for open-source verification.
-# Drop a my_area.json next to this file (see my_area.example.json) and every
-# tool in the repo -- fetching, the build stages, the previews -- treats it
-# exactly like a first-class region. Nothing about the methodology changes:
-# that is the point. The optional survey overrides exist because LINZ layer
-# ids are per-survey; the defaults above cover the Queenstown Lakes 2021
-# LiDAR + 2026 imagery captures.
+# Drop a my_area.json next to this file (see my_area.example.json) and the
+# fetch and build stages treat it exactly like a region. Nothing about the
+# methodology changes: that is the point.
+#
+# IT IS REGISTERED AS A SURVEY, NOT BY OVERWRITING THE DEFAULTS. This used to
+# assign my_area.json's layer ids over LINZ_DSM_LAYER and friends -- but
+# src/surveys.survey_for answers from SURVEYS, never from those constants, so
+# the overrides were silently ignored inside Otago and an area anywhere else
+# died with "no survey covers". Now the area gets its own SURVEYS record with
+# its own bbox (smallest coverage wins, so it wins for itself): inside a known
+# survey it inherits that survey's layers and overrides only what the file
+# sets; outside every known survey it has exactly what the file sets.
+#
+# It is also NOT added to REGIONS: that list is the district, and a stranger's
+# test area -- possibly in Wellington -- has no business in district-wide
+# fetches, the district wide-DEM extent, or merges. config.MY_AREA carries it;
+# src/region_build knows how to find it.
 import json as _json
 import os as _os
+import sys as _sys
+MY_AREA = None
+MY_AREA_ERROR = None
 _MY_AREA = _os.path.join(_os.path.dirname(__file__), "my_area.json")
+_SURVEY_KEYS = ("dsm_layer", "dem_layer", "imagery_layer",
+                "lidar_tile_index_layer", "pointcloud_bulk_url",
+                "pointcloud_tile_year")
+
+
+def _load_my_area(path):
+    ma = _json.load(open(path))
+    name = str(ma["name"]).strip()
+    bbox = [float(v) for v in ma["bbox"]]
+    if not name or len(bbox) != 4:
+        raise ValueError("needs a non-empty name and a 4-number bbox")
+    if name in REGIONS or name == "pilot":
+        raise ValueError(f"name {name!r} is already a district region -- pick another")
+    w, s_, e, n = bbox
+    if not (w < e and s_ < n):
+        raise ValueError(f"bbox must be [west, south, east, north], got {bbox}")
+    if not (166 <= w <= 179 and -48 <= s_ <= -34):
+        raise ValueError(f"bbox {bbox} is not in New Zealand (lon 166..179, lat -48..-34)")
+    given = {k: ma[k] for k in _SURVEY_KEYS if ma.get(k) is not None}
+    parents = [sv for sv in SURVEYS
+               if sv["bbox"][0] <= w and sv["bbox"][1] <= s_
+               and sv["bbox"][2] >= e and sv["bbox"][3] >= n]
+    parents.sort(key=lambda sv: (sv["bbox"][2] - sv["bbox"][0])
+                 * (sv["bbox"][3] - sv["bbox"][1]))
+    if parents:
+        record = dict(parents[0])
+        record["name"] = f"my_area:{name} (from {parents[0].get('name', '?')})"
+    else:
+        # Outside every known survey: nothing may be inherited, or a Wellington
+        # area would quietly fetch Queenstown's layers. Explicit None = "none".
+        record = {k: None for k in _SURVEY_KEYS}
+        record["name"] = f"my_area:{name}"
+        if not given.get("dsm_layer"):
+            raise ValueError(
+                f"bbox {bbox} is outside every survey this repo knows "
+                f"({', '.join(sv.get('name', '?') for sv in SURVEYS)}), so "
+                f"my_area.json must name its survey's layers -- at least "
+                f"dsm_layer. See the _readme in my_area.example.json.")
+    record.update(given)
+    record["bbox"] = bbox
+    record["only_for"] = name
+    if bool(record.get("pointcloud_bulk_url")) != bool(record.get("lidar_tile_index_layer")):
+        raise ValueError("pointcloud_bulk_url and lidar_tile_index_layer go "
+                         "together: set both, or neither (DSM-only)")
+    return {"name": name, "bbox": bbox, "survey": record}
+
+
 if _os.path.exists(_MY_AREA):
     try:
-        _ma = _json.load(open(_MY_AREA))
-        _name = str(_ma["name"]).strip()
-        _bbox = [float(v) for v in _ma["bbox"]]
-        assert len(_bbox) == 4 and _name and _name not in REGIONS
-        REGIONS[_name] = _bbox
-        for _key, _var in (("dsm_layer", "LINZ_DSM_LAYER"),
-                           ("dem_layer", "LINZ_DEM_LAYER"),
-                           ("imagery_layer", "LINZ_IMAGERY_LAYER"),
-                           ("lidar_tile_index_layer",
-                            "LINZ_LIDAR_TILE_INDEX_LAYER"),
-                           ("pointcloud_bulk_url", "POINTCLOUD_BULK_URL"),
-                           ("pointcloud_tile_year", "POINTCLOUD_TILE_YEAR")):
-            if _ma.get(_key):
-                globals()[_var] = _ma[_key]
-        print(f"[config] my_area.json loaded: region '{_name}' {_bbox}")
+        MY_AREA = _load_my_area(_MY_AREA)
+        SURVEYS.append(MY_AREA["survey"])
     except Exception as _exc:
-        print(f"[config] my_area.json IGNORED ({_exc!r})")
+        MY_AREA_ERROR = f"{type(_exc).__name__}: {_exc}"
+        print(f"[config] my_area.json IGNORED -- {MY_AREA_ERROR}",
+              file=_sys.stderr)

@@ -43,8 +43,12 @@ DEM_WIDE_LAYER = config.LINZ_WIDE_DEM_LAYER
 WIDE_DEM_BUFFER_M = 30_000
 
 
-def wide_dem_bbox_wgs84():
+def wide_dem_bbox_wgs84(boxes=None):
     """The WGS84 extent the wide DEM must cover: every region, buffered.
+
+    `boxes` narrows it to specific areas (a quickstart area's own DEM); the
+    district's config.DEM_WIDE_BBOX is then NOT unioned in, since the point
+    is to fetch that area's 30 km of terrain rather than the district's.
 
     Buffered in METRES, in NZTM, because a degree of longitude is 0.7 km
     narrower at Kingston than at Hawea and a degree-based buffer would be
@@ -58,7 +62,9 @@ def wide_dem_bbox_wgs84():
 
     fwd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
     inv = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
-    boxes = [config.PILOT_BBOX, *config.REGIONS.values()]
+    district = boxes is None
+    if district:
+        boxes = [config.PILOT_BBOX, *config.REGIONS.values()]
     pts = [fwd.transform(lon, lat)
            for b in boxes
            for lon, lat in ((b[0], b[1]), (b[2], b[3]))]
@@ -66,7 +72,7 @@ def wide_dem_bbox_wgs84():
     w, s = inv.transform(min(p[0] for p in pts) - b, min(p[1] for p in pts) - b)
     e, n = inv.transform(max(p[0] for p in pts) + b, max(p[1] for p in pts) + b)
 
-    fixed = getattr(config, "DEM_WIDE_BBOX", None)
+    fixed = getattr(config, "DEM_WIDE_BBOX", None) if district else None
     if fixed:
         w, s = min(w, fixed[0]), min(s, fixed[1])
         e, n = max(e, fixed[2]), max(n, fixed[3])
@@ -94,11 +100,12 @@ def mosaic_covers(mosaic_path, bbox):
             and have[2] >= bbox[2] and have[3] >= bbox[3])
 
 
-def ensure_dem_wide(api_key, out_dir=DATA_DIR):
-    """Fetch the wide DEM unless the one on disk already covers the district."""
+def ensure_dem_wide(api_key, out_dir=DATA_DIR, bbox=None):
+    """Fetch the wide DEM unless the one on disk already covers `bbox` (the
+    district's extent by default)."""
     out_dir = Path(out_dir)
     mosaic_path = out_dir / "dem_wide_mosaic.tif"
-    bbox = wide_dem_bbox_wgs84()
+    bbox = bbox or wide_dem_bbox_wgs84()
     if mosaic_path.exists() and mosaic_path.stat().st_size > 0:
         covers = mosaic_covers(mosaic_path, bbox)
         if covers is not False:
@@ -111,6 +118,26 @@ def ensure_dem_wide(api_key, out_dir=DATA_DIR):
 
     print(f"Fetching 8m DEM layer {DEM_WIDE_LAYER} for bbox {bbox}...")
     return fetch_raster(bbox, api_key, DEM_WIDE_LAYER, "dem_wide", out_dir=out_dir)
+
+
+def ensure_area_dem_wide(api_key, name, area_bbox):
+    """A quickstart area's wide DEM: the district's if that already covers the
+    area plus its 30 km, else the area's OWN, in data/regions/<name>/.
+
+    The district extent is every region buffered 30 km -- ~16,500 km2 for
+    Queenstown Lakes. Folding a stranger's test street into that would fetch
+    the district's terrain for one street, or (for a Wellington street) a box
+    from Queenstown to Wellington, ~290,000 km2. An area's own is ~3,700 km2,
+    ~250 MB, and region_build.area_paths reads it in preference to the root.
+    """
+    need = wide_dem_bbox_wgs84([area_bbox])
+    root = DATA_DIR / "dem_wide_mosaic.tif"
+    if root.exists() and mosaic_covers(root, need):
+        print(f"  {root} already covers {name} plus {WIDE_DEM_BUFFER_M // 1000} km")
+        return root
+    out_dir = DATA_DIR / "regions" / name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return ensure_dem_wide(api_key, out_dir=out_dir, bbox=need)
 
 
 def main():

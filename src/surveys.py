@@ -78,11 +78,17 @@ def survey_for(bbox, name=None):
     if not registry:
         base["name"] = getattr(config, "SURVEY_NAME", "default")
         return base
-    hits = [s for s in registry if _covers(s, bbox)]
+    # A record made from my_area.json (config._load_my_area) speaks for that
+    # area only: a district region that happens to sit inside a stranger's
+    # bbox must not start fetching whatever layers their file names.
+    hits = [s for s in registry if _covers(s, bbox)
+            and not (s.get("only_for") and name is not None
+                     and name != s["only_for"])]
     if not hits:
         raise LookupError(
             f"no survey covers {name or bbox}. Add one to config.SURVEYS with "
-            f"its coverage bbox and layer ids, or widen an existing one -- "
+            f"its coverage bbox and layer ids, or widen an existing one (for a "
+            f"quickstart area: set the layer ids in my_area.json) -- "
             f"known: {', '.join(s.get('name', '?') for s in registry)}")
     # Smallest coverage wins: a city-scale capture inside a regional one is
     # the more specific answer, and usually the newer and higher resolution.

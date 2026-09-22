@@ -53,7 +53,7 @@ def write_json_atomic(path, obj):
         raise
 
 
-def all_areas():
+def all_areas(include_quickstart=False):
     """Every build area: what config lists, UNION what is on disk.
 
     "pilot" is the original town-centre build area -- the REGIONS bboxes do
@@ -74,8 +74,35 @@ def all_areas():
     """
     on_disk = set()
     if REGIONS_DIR.exists():
-        on_disk = {p.name for p in REGIONS_DIR.iterdir() if p.is_dir()}
+        # ...except a quickstart area. It is a stranger's verification run
+        # (quickstart.sh, my_area.json), possibly on the other side of the
+        # country, and a maintainer who once tried the quickstart must not
+        # find it merged into the district map. Marked on disk, not looked up
+        # in my_area.json, so deleting that file does not re-admit it.
+        # Per-building tools (refit_one) pass include_quickstart=True: finding
+        # a building is not merging it.
+        on_disk = {p.name for p in REGIONS_DIR.iterdir()
+                   if p.is_dir() and (include_quickstart
+                                      or not (p / QUICKSTART_MARKER).exists())}
     return sorted(on_disk | {"pilot"} | set(config.REGIONS))
+
+
+QUICKSTART_MARKER = "QUICKSTART_AREA"
+
+
+def mark_quickstart_area(name):
+    d = REGIONS_DIR / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / QUICKSTART_MARKER).write_text(
+        "Built by quickstart.sh from my_area.json. Excluded from district\n"
+        "builds and merges (src/region_build.all_areas). Delete this directory\n"
+        "to remove the area.\n")
+
+
+def is_quickstart_area(name):
+    my = getattr(config, "MY_AREA", None)
+    return bool(my and my["name"] == name) or \
+        (REGIONS_DIR / name / QUICKSTART_MARKER).exists()
 
 
 def area_paths(name):
@@ -86,9 +113,15 @@ def area_paths(name):
     outlines = d / "building_outlines_dedup.geojson"
     if not outlines.exists():
         outlines = d / "building_outlines.geojson"
+    # The wide DEM is district-wide at the data root, except where an area
+    # carries its own (a quickstart area: its own 30 km, not the district's).
+    dem_wide = d / "dem_wide_mosaic.tif"
+    if not dem_wide.exists():
+        dem_wide = DATA_DIR / "dem_wide_mosaic.tif"
     return {
         "dir": d,
         "outlines": outlines,
+        "dem_wide": dem_wide,
         "dsm": d / "dsm_mosaic.tif",
         "imagery": d / "imagery_mosaic.tif",
         "solar_potential": d / "solar_potential.geojson",
@@ -122,6 +155,9 @@ def area_bbox_wgs84(name):
             pass
     if name in config.REGIONS:
         return list(config.REGIONS[name])
+    my = getattr(config, "MY_AREA", None)
+    if my and my["name"] == name:
+        return list(my["bbox"])
     if name == "pilot":
         return list(config.PILOT_BBOX)
     path = REGIONS_DIR / name / "building_outlines.geojson"

@@ -161,7 +161,7 @@ def _init_worker(area, model):
     # building_horizon.load_far_dem. A missing or non-overlapping wide DEM
     # degrades the far-horizon correction to a no-op rather than failing.
     _dw_band, _dw_tr, _dw_nd = _hz_load_far_dem(
-        DATA_DIR / "dem_wide_mosaic.tif", dsm_ds.bounds)
+        paths["dem_wide"], dsm_ds.bounds)
     _CTX.update({"dem_wide_band": _dw_band, "dem_wide_transform": _dw_tr,
                  "dem_wide_nodata": _dw_nd})
     _CTX.update({
@@ -624,7 +624,7 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
     # profile. Written as a silent fallback when the horizon work landed -- which
     # is precisely the failure mode that cost us the terrain masks and nearly
     # cost us an Island Bay rebuild.
-    if not (DATA_DIR / "dem_wide_mosaic.tif").exists():
+    if not area_paths(area)["dem_wide"].exists():
         print(f"[{area}] WARNING: no data/dem_wide_mosaic.tif -- per-building "
               f"horizons are OFF and yields fall back to the area terrain "
               f"profile.", flush=True)
@@ -644,7 +644,8 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
 
     print(f"[{area}] Building solar yield lookup table (pvlib + NASA POWER)...")
     centroid = area_centroid_wgs84(area)
-    model = SolarModel() if centroid is None else SolarModel(*centroid)
+    model = (SolarModel() if centroid is None
+             else SolarModel(*centroid, dem_path=area_paths(area)["dem_wide"]))
 
     # Bounded by MEMORY, not by core count. PointCloudSource caches every
     # decoded LiDAR tile for the life of its process (the full set is ~10GB

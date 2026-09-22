@@ -562,7 +562,7 @@ def _nearest_bin(value, bin_size, max_value=None):
 DEM_WIDE_PATH = Path(__file__).resolve().parent.parent / "data" / "dem_wide_mosaic.tif"
 
 
-def _pilot_horizon_profile(lat, lon):
+def _pilot_horizon_profile(lat, lon, dem_path=None):
     """Computes the terrain horizon profile from the wide-area DEM if it's
     present, else None (falls back to the old open-horizon assumption --
     e.g. a dev environment that hasn't fetched data/dem_wide_mosaic.tif
@@ -570,22 +570,26 @@ def _pilot_horizon_profile(lat, lon):
     ~180-ray DEM scan per SolarModel construction, a couple seconds, not
     worth the staleness risk of a cache keyed on a DEM file that could
     change."""
-    if not DEM_WIDE_PATH.exists():
+    dem_path = Path(dem_path) if dem_path else DEM_WIDE_PATH
+    if not dem_path.exists():
         return None
     to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
     x, y = to_nztm.transform(lon, lat)
     try:
-        return compute_horizon_profile(str(DEM_WIDE_PATH), x, y)
+        return compute_horizon_profile(str(dem_path), x, y)
     except ValueError:
         return None  # observer point outside the DEM extent -- degrade to open-horizon rather than crash
 
 
 class SolarModel:
-    def __init__(self, lat=None, lon=None):
+    def __init__(self, lat=None, lon=None, dem_path=None):
+        """dem_path: the wide DEM to take the area horizon from -- a
+        quickstart area's own (region_build.area_paths(...)["dem_wide"]);
+        default data/dem_wide_mosaic.tif."""
         if lat is None or lon is None:
             lat, lon = pilot_location()
         self.lat, self.lon = lat, lon
-        self.horizon_profile = _pilot_horizon_profile(lat, lon)
+        self.horizon_profile = _pilot_horizon_profile(lat, lon, dem_path)
         self.lookup, self.monthly_factor, self.hourly = build_poa_lookup_table(
             lat, lon, horizon_profile=self.horizon_profile)
 

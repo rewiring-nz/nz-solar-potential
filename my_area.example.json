@@ -1,9 +1,8 @@
 {
-  "_readme": "Copy this file to my_area.json, set a name and bbox, and run bash quickstart.sh <name>. The bbox is [west, south, east, north] in WGS84 degrees. Keep it small on a first run: ~0.005 x 0.005 degrees (~400 x 550 m) is a few dozen buildings and finishes in minutes. The survey-layer fields are OPTIONAL: the defaults cover the Queenstown Lakes district (2021 LiDAR, 2026 imagery). For any other part of NZ, find your district's DSM/DEM/imagery layer ids at data.linz.govt.nz (search e.g. 'Wellington LiDAR 1m DSM') and the matching OpenTopography pc-bulk dataset at opentopography.org; building outlines are national and need no change.",
+  "_readme": "Copy this file to my_area.json, set a name and bbox, and run bash quickstart.sh <name>. The bbox is [west, south, east, north] in WGS84 degrees. Keep it small on a first run: ~0.005 x 0.005 degrees (~400 x 550 m) is a few dozen buildings. The name must not be one of config.REGIONS. The survey-layer fields are OPTIONAL inside the surveys this repo already knows (config.SURVEYS: Queenstown 2021, Wanaka 2022, Kingston 2025) -- leave them null and the covering survey's layers are used; set one to override just that layer. ANYWHERE ELSE in NZ they are required, at least dsm_layer: find your survey's layer ids at data.linz.govt.nz (search '<your district> LiDAR 1m DSM', '... LiDAR Index Tiles' and '... Aerial Photos'; the id is the number in the layer's URL, e.g. data.linz.govt.nz/layer/105855-...) and, if OpenTopography publishes its point cloud, its pc-bulk URL (https://opentopography.s3.sdsc.edu/pc-bulk/<dataset>, as config.SURVEYS shows for Otago) and the year in its tile file names. pointcloud_bulk_url and lidar_tile_index_layer go together: set both, or neither for a DSM-only run. Building outlines are national and need no change.",
   "name": "my_test_area",
   "bbox": [168.6600, -45.0330, 168.6650, -45.0290],
   "dsm_layer": null,
-  "dem_layer": null,
   "imagery_layer": null,
   "lidar_tile_index_layer": null,
   "pointcloud_bulk_url": null,

@@ -79,7 +79,7 @@ def _declared_inputs(stage, region):
             p = paths.get(key)
             if p is not None:
                 out.append(Path(p))
-    for name in spec.get("root", []):
+    for name in list(spec.get("root", [])) + list(spec.get("optional_root", [])):
         out.append(PF_DATA / name)
     return out
 

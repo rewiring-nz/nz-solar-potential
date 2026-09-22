@@ -42,7 +42,7 @@ _CACHE = {}
 def _area_of(building_id):
     """Which area owns this building? Scan the shipped layouts by raw text --
     far cheaper than parsing 24 files to find one id."""
-    for area in all_areas():
+    for area in all_areas(include_quickstart=True):
         p = area_paths(area)["panel_layouts"]
         if not p.exists():
             continue

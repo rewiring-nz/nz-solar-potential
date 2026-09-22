@@ -279,6 +279,79 @@ def test_wide_dem_fetch_skips_existing_mosaic():
         assert ensure_dem_wide("unused", tmp) == path
 
 
+# ---------------------------------------------------------------- quickstart
+
+def _my_area(tmp, **fields):
+    import json
+    from pathlib import Path
+    p = Path(tmp) / "my_area.json"
+    p.write_text(json.dumps({"name": "qs_test", **fields}))
+    return config._load_my_area(str(p))
+
+
+def test_my_area_inside_a_survey_inherits_it_and_overrides_only_what_it_sets():
+    """my_area.json's layer ids used to be written over the module constants,
+    which survey_for never reads once SURVEYS exists -- so they were ignored."""
+    import tempfile
+    from src import surveys
+    with tempfile.TemporaryDirectory() as tmp:
+        bbox = [168.66, -45.033, 168.665, -45.029]
+        ma = _my_area(tmp, bbox=bbox, dsm_layer=111)
+        saved = list(config.SURVEYS)
+        try:
+            config.SURVEYS.append(ma["survey"])
+            sv = surveys.survey_for(bbox, "qs_test")
+            assert sv["dsm_layer"] == 111
+            assert sv["imagery_layer"] == config.LINZ_IMAGERY_LAYER
+            # ...and it speaks for that area only
+            assert surveys.survey_for(bbox, "someone_else")["dsm_layer"] == config.LINZ_DSM_LAYER
+        finally:
+            config.SURVEYS[:] = saved
+
+
+def test_my_area_outside_every_survey_needs_layers_and_inherits_nothing():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        wgtn = [174.775, -41.295, 174.78, -41.29]
+        try:
+            _my_area(tmp, bbox=wgtn)
+            raise AssertionError("an unknown survey with no dsm_layer loaded")
+        except ValueError as e:
+            assert "dsm_layer" in str(e)
+        sv = _my_area(tmp, bbox=wgtn, dsm_layer=5)["survey"]
+        assert sv["dsm_layer"] == 5
+        assert sv["imagery_layer"] is None            # not Queenstown's
+        assert sv["pointcloud_bulk_url"] is None
+
+
+def test_quickstart_area_wide_dem_is_its_own_not_the_district():
+    """Folding a Wellington street into the district extent asked LINZ for a
+    ~290,000 km2 DEM. An area's own is its bbox plus 30 km."""
+    import pyproj
+    from src.fetch_dem_wide import wide_dem_bbox_wgs84
+    t = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
+    w, s, e, n = wide_dem_bbox_wgs84([[174.775, -41.295, 174.78, -41.29]])
+    x0, y0 = t.transform(w, s)
+    x1, y1 = t.transform(e, n)
+    assert (x1 - x0) * (y1 - y0) / 1e6 < 4_500
+
+
+def test_build_does_not_require_the_optional_vision_precompute():
+    from src.preflight import REQUIRED
+    spec = REQUIRED["build_layout_geojson"]
+    assert "selected_faces" not in spec.get("root", [])
+    assert "selected_faces" in spec.get("optional_root", [])
+
+
+def test_empty_pointcloud_directory_is_an_empty_source():
+    import tempfile
+    from src.pointcloud_source import PointCloudSource
+    with tempfile.TemporaryDirectory() as tmp:
+        pc = PointCloudSource(tmp)
+        assert pc.points_in_bbox(0, 0, 1, 1).shape == (0, 3)
+        assert pc.ground_points_in_bbox(0, 0, 1, 1).shape == (0, 3)
+
+
 # --------------------------------------------------------------------------
 
 def _main():
