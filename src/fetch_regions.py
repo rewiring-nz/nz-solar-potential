@@ -78,13 +78,43 @@ def fetch_raster_chunked(bbox_wgs84, api_key, layer_id, name, out_dir, format_ke
         return mosaic_path
     parts = split_bbox(bbox_wgs84, MAX_EXPORT_KM2)
     part_paths = []
+    outside = 0
     for i, part in enumerate(parts):
         part_name = name if len(parts) == 1 else f"{name}_part{i}"
         part_path = out_dir / f"{part_name}_mosaic.tif"
         if not part_path.exists():
             print(f"  exporting {part_name} ({bbox_area_km2(part):.1f} km2)...")
-            fetch_raster(part, api_key, layer_id, part_name, out_dir=out_dir, format_key=format_key)
+            try:
+                fetch_raster(part, api_key, layer_id, part_name,
+                             out_dir=out_dir, format_key=format_key)
+            except RuntimeError as exc:
+                # A CHUNK OUTSIDE THE SURVEY IS NOT A FAILURE, IT IS A FACT.
+                #
+                # A layer's published extent is a bounding box; the data
+                # inside it is a polygon with gaps and a ragged edge. Any
+                # region whose own box overhangs that edge has chunks with
+                # nothing in them, and LINZ answers those with
+                # 400 invalid_reasons ['outside-extent']. Albert Town hit it
+                # on its third chunk and aborted the whole expansion.
+                #
+                # Skip the empty chunk and keep the rest: buildings with no
+                # DSM under them already ship as "not estimated" with a
+                # reason, which is the honest outcome. Only a region where
+                # EVERY chunk is outside is a real error -- that means the
+                # region is in the wrong survey, which is worth stopping for.
+                if "outside-extent" not in str(exc):
+                    raise
+                print(f"  {part_name}: outside this survey's coverage, skipped")
+                outside += 1
+                continue
         part_paths.append(part_path)
+    if not part_paths:
+        raise RuntimeError(
+            f"{name}: every one of {len(parts)} chunks is outside layer "
+            f"{layer_id}'s coverage -- this region is assigned to the wrong "
+            f"survey, or its bbox is in the wrong place")
+    if outside:
+        print(f"  {name}: {outside} of {len(parts)} chunks had no data")
     if len(part_paths) == 1:
         if part_paths[0] != mosaic_path:
             part_paths[0].rename(mosaic_path)
