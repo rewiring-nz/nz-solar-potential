@@ -1614,6 +1614,14 @@ untouched. Dry run on the region with the 1 m DSM: 139 ridges in 134 of
 2,541 buildings move, median 0.47 m, p90 0.75, max 1.55. Unit tests: tests/test_ridge_snap.py (synthetic gable, hip apex,
 labelled, flat, wandering crest).
 
+A/B on the VM, 120 arrowtown_millbrook roofs, measured against the point
+cloud: ridges beyond 0.5 m from the crest 16% -> 10%, p90 0.68 -> 0.49 m,
+median 0.20 -> 0.12 m; panels 13,067 -> 13,056 (-0.1%); facet count
+unchanged. Goldens: 28/28 identical with the snap on and off (none of the
+28 has a ridge it moves); the golden file was re-recorded for the frame,
+families, regulariser cap and 0.1 m setbacks that had drifted it (0/28
+before), not for the snap.
+
 OPEN: 30-40% of measured ridges that should move are reverted by the
 union/overlap guard -- a third facet shares a vertex just outside the 0.3 m
 tolerance. Moving coincident vertices of every facet (not just those on the

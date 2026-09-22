@@ -2,7 +2,7 @@
  "_note": "Recorded output of build_layout_geojson._build_one -- the real per-building pipeline path -- NOT ground truth. Re-record deliberately and explain the change in the commit.",
  "buildings": {
   "4719759": {
-   "ac_kwh_year": 14339.0,
+   "ac_kwh_year": 5069.0,
    "address": "17 Cardigan St",
    "area": "arrowtown_millbrook",
    "aspects": [
@@ -46,40 +46,40 @@
     0,
     0,
     0,
-    2,
-    2,
-    2,
-    2,
-    3,
-    15
+    0,
+    0,
+    0,
+    0,
+    0,
+    8
    ],
    "facets": 22,
    "josh_faces": null,
    "obstructions": 9,
-   "panels": 26,
+   "panels": 8,
    "poa": [
-    845.0,
-    851.0,
-    860.0,
-    876.0,
-    909.0,
-    925.0,
-    1030.0,
-    1073.0,
-    1075.0,
-    1143.0,
-    1258.0,
-    1283.0,
-    1288.0,
-    1293.0,
-    1322.0,
-    1362.0,
-    1402.0,
-    1421.0,
-    1425.0,
-    1426.0,
-    1471.0,
-    1484.0
+    843.0,
+    847.0,
+    859.0,
+    874.0,
+    905.0,
+    923.0,
+    1033.0,
+    1074.0,
+    1081.0,
+    1145.0,
+    1276.0,
+    1299.0,
+    1303.0,
+    1303.0,
+    1344.0,
+    1382.0,
+    1417.0,
+    1440.0,
+    1444.0,
+    1444.0,
+    1495.0,
+    1512.0
    ],
    "slopes": [
     3.6,
@@ -107,7 +107,7 @@
    ]
   },
   "4725474": {
-   "ac_kwh_year": 11123.0,
+   "ac_kwh_year": 3361.0,
    "address": "23 Brisbane Street",
    "area": "pilot",
    "aspects": [
@@ -115,13 +115,13 @@
     338.9
    ],
    "facet_panels": [
-    8,
-    10
+    0,
+    5
    ],
    "facets": 2,
    "josh_faces": 4,
    "obstructions": 0,
-   "panels": 18,
+   "panels": 5,
    "poa": [
     1336.0,
     1564.0
@@ -132,19 +132,19 @@
    ]
   },
   "4725521": {
-   "ac_kwh_year": 23379.0,
+   "ac_kwh_year": 19135.0,
    "address": "9 Brisbane Street",
    "area": "pilot",
    "aspects": [
     155.5
    ],
    "facet_panels": [
-    44
+    36
    ],
    "facets": 1,
    "josh_faces": 4,
    "obstructions": 0,
-   "panels": 44,
+   "panels": 36,
    "poa": [
     1306.0
    ],
@@ -153,7 +153,7 @@
    ]
   },
   "4725546": {
-   "ac_kwh_year": 14551.0,
+   "ac_kwh_year": 10893.0,
    "address": "15B Frankton Road",
    "area": "pilot",
    "aspects": [
@@ -161,13 +161,13 @@
     189.4
    ],
    "facet_panels": [
-    4,
-    21
+    0,
+    19
    ],
    "facets": 2,
    "josh_faces": 8,
-   "obstructions": 6,
-   "panels": 25,
+   "obstructions": 7,
+   "panels": 19,
    "poa": [
     1332.0,
     1404.0
@@ -178,52 +178,46 @@
    ]
   },
   "4725584": {
-   "ac_kwh_year": 455659.0,
+   "ac_kwh_year": 409246.0,
    "address": "32 Frankton Road",
    "area": "pilot",
    "aspects": [
-    40.8,
-    41.3,
-    41.3,
-    42.1,
-    42.3,
+    11.1,
+    38.6,
+    40.4,
+    41.8,
+    42.4,
     42.6,
-    43.0,
-    44.2,
-    44.9,
-    73.7,
-    84.8,
-    124.2,
-    127.5,
-    131.8,
-    132.3,
-    133.0,
-    133.1,
-    172.6,
-    183.5,
-    216.4,
-    218.3,
+    42.6,
+    43.2,
+    43.7,
+    98.2,
+    125.5,
+    127.0,
+    129.9,
+    132.2,
+    132.4,
+    169.2,
+    194.0,
+    208.3,
+    220.5,
     221.0,
-    221.0,
-    221.9,
-    222.0,
+    221.1,
+    221.1,
+    221.2,
+    221.7,
     222.1,
-    222.2,
-    222.6,
-    223.5,
-    225.4,
-    225.9,
-    254.6,
-    263.2,
-    268.4,
-    295.0,
-    298.8,
-    307.6,
-    308.4,
+    222.4,
+    226.1,
+    227.4,
+    307.7,
     312.2,
+    312.8,
     312.9,
-    313.1,
-    313.2
+    316.3,
+    324.6,
+    326.5,
+    329.5
    ],
    "facet_panels": [
     0,
@@ -239,131 +233,113 @@
     0,
     0,
     0,
-    0,
-    1,
-    2,
-    2,
     2,
     2,
     3,
     3,
-    3,
-    4,
-    6,
+    5,
     6,
     7,
-    11,
+    7,
     12,
-    18,
-    20,
-    23,
-    24,
-    26,
-    30,
-    30,
-    42,
-    46,
+    15,
+    15,
+    16,
+    29,
+    31,
+    33,
+    38,
+    39,
+    49,
     50,
-    76,
-    79,
-    97,
-    164
+    57,
+    63,
+    71,
+    150
    ],
-   "facets": 42,
+   "facets": 36,
    "josh_faces": null,
-   "obstructions": 24,
-   "panels": 789,
+   "obstructions": 28,
+   "panels": 703,
    "poa": [
     477.0,
-    861.0,
-    997.0,
-    1021.0,
-    1053.0,
-    1059.0,
-    1189.0,
-    1197.0,
+    887.0,
+    989.0,
     1203.0,
-    1207.0,
-    1222.0,
-    1246.0,
-    1248.0,
-    1256.0,
+    1250.0,
     1261.0,
     1268.0,
     1284.0,
-    1288.0,
+    1286.0,
     1293.0,
     1293.0,
+    1294.0,
+    1294.0,
     1294.0,
     1294.0,
     1308.0,
-    1330.0,
+    1309.0,
+    1329.0,
     1351.0,
-    1361.0,
-    1371.0,
     1375.0,
+    1386.0,
     1387.0,
-    1402.0,
-    1410.0,
+    1399.0,
     1426.0,
-    1430.0,
+    1426.0,
     1436.0,
     1442.0,
-    1454.0,
-    1455.0,
-    1460.0,
+    1452.0,
+    1459.0,
     1462.0,
     1463.0,
     1463.0,
-    1507.0
+    1463.0,
+    1470.0,
+    1486.0,
+    1516.0
    ],
    "slopes": [
-    0.2,
     0.3,
-    1.5,
-    3.2,
+    0.3,
+    1.4,
+    2.0,
+    3.1,
     3.4,
-    5.2,
+    5.1,
+    5.6,
     6.8,
-    7.7,
-    8.2,
-    8.7,
-    9.3,
-    9.3,
-    9.6,
-    10.3,
-    10.4,
-    10.5,
+    8.1,
+    8.3,
+    9.2,
+    9.5,
+    10.6,
+    10.6,
+    10.6,
     10.6,
     10.7,
     10.7,
-    10.7,
-    10.7,
+    10.8,
+    10.8,
     10.8,
     10.9,
-    11.0,
+    10.9,
     11.0,
     11.1,
+    11.6,
+    11.7,
     12.1,
-    12.3,
-    12.7,
-    12.9,
-    14.1,
-    14.2,
-    16.9,
-    21.2,
-    21.5,
-    21.7,
-    21.7,
-    21.9,
-    22.2,
-    27.6,
-    28.2,
-    44.9
+    16.7,
+    17.4,
+    20.0,
+    25.0,
+    30.9,
+    35.3,
+    35.9
    ]
   },
   "4726047": {
-   "ac_kwh_year": 57796.0,
+   "ac_kwh_year": 63768.0,
    "address": "7 Coronation Drive",
    "area": "pilot",
    "aspects": [
@@ -372,12 +348,12 @@
    ],
    "facet_panels": [
     0,
-    97
+    107
    ],
    "facets": 2,
    "josh_faces": null,
    "obstructions": 2,
-   "panels": 97,
+   "panels": 107,
    "poa": [
     1101.0,
     1387.0
@@ -388,7 +364,7 @@
    ]
   },
   "4734678": {
-   "ac_kwh_year": 24892.0,
+   "ac_kwh_year": 20175.0,
    "address": "10 Memorial Street",
    "area": "pilot",
    "aspects": [
@@ -398,13 +374,13 @@
    ],
    "facet_panels": [
     0,
-    21,
-    24
+    16,
+    21
    ],
    "facets": 3,
    "josh_faces": null,
    "obstructions": 13,
-   "panels": 45,
+   "panels": 37,
    "poa": [
     1258.0,
     1304.0,
@@ -417,7 +393,7 @@
    ]
   },
   "4734816": {
-   "ac_kwh_year": 20466.0,
+   "ac_kwh_year": 24350.0,
    "address": "6 Weaver Street",
    "area": "pilot",
    "aspects": [
@@ -425,13 +401,13 @@
     263.7
    ],
    "facet_panels": [
-    18,
-    24
+    23,
+    28
    ],
    "facets": 2,
    "josh_faces": null,
    "obstructions": 3,
-   "panels": 42,
+   "panels": 51,
    "poa": [
     1077.0,
     1173.0
@@ -442,7 +418,7 @@
    ]
   },
   "4734850": {
-   "ac_kwh_year": 13269.0,
+   "ac_kwh_year": 13231.0,
    "address": "47 Robins Road",
    "area": "pilot",
    "aspects": [
@@ -467,44 +443,68 @@
    ]
   },
   "4734915": {
-   "ac_kwh_year": 9436.0,
+   "ac_kwh_year": 8098.0,
    "address": "40 Camp Street",
    "area": "pilot",
    "aspects": [
-    90.2,
-    258.1,
-    266.2,
-    304.6,
-    311.9
+    43.9,
+    95.8,
+    152.4,
+    161.8,
+    255.3,
+    261.9,
+    265.5,
+    296.0,
+    311.7,
+    311.8,
+    312.5
    ],
    "facet_panels": [
     0,
+    0,
+    0,
+    0,
+    0,
     2,
-    5,
-    5,
-    5
+    2,
+    2,
+    2,
+    3,
+    4
    ],
-   "facets": 5,
+   "facets": 11,
    "josh_faces": null,
-   "obstructions": 7,
-   "panels": 17,
+   "obstructions": 10,
+   "panels": 15,
    "poa": [
-    764.0,
-    1122.0,
-    1258.0,
+    491.0,
+    833.0,
+    971.0,
+    1097.0,
+    1139.0,
+    1153.0,
+    1186.0,
+    1273.0,
     1366.0,
-    1388.0
+    1369.0,
+    1395.0
    ],
    "slopes": [
-    1.1,
-    3.5,
-    4.7,
-    38.7,
-    43.8
+    0.3,
+    2.2,
+    4.1,
+    11.4,
+    13.5,
+    17.0,
+    23.4,
+    28.1,
+    37.0,
+    44.4,
+    44.7
    ]
   },
   "4735015": {
-   "ac_kwh_year": 115020.0,
+   "ac_kwh_year": 104395.0,
    "address": "5 Isle St",
    "area": "pilot",
    "aspects": [
@@ -513,14 +513,14 @@
     293.7
    ],
    "facet_panels": [
-    18,
-    68,
-    122
+    12,
+    66,
+    110
    ],
    "facets": 3,
    "josh_faces": 3,
    "obstructions": 1,
-   "panels": 208,
+   "panels": 188,
    "poa": [
     1282.0,
     1309.0,
@@ -533,7 +533,7 @@
    ]
   },
   "4735075": {
-   "ac_kwh_year": 20818.0,
+   "ac_kwh_year": 14352.0,
    "address": "6B Limerick Lane",
    "area": "pilot",
    "aspects": [
@@ -546,18 +546,18 @@
     300.4
    ],
    "facet_panels": [
-    2,
+    0,
+    3,
+    4,
+    5,
     5,
     6,
-    6,
-    6,
-    7,
-    9
+    6
    ],
    "facets": 7,
    "josh_faces": 8,
    "obstructions": 1,
-   "panels": 41,
+   "panels": 29,
    "poa": [
     163.0,
     1086.0,
@@ -578,7 +578,7 @@
    ]
   },
   "4735237": {
-   "ac_kwh_year": 180231.0,
+   "ac_kwh_year": 88568.0,
    "address": "24 Beach Street",
    "area": "pilot",
    "aspects": [
@@ -617,24 +617,24 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
     2,
     2,
-    2,
-    2,
-    2,
-    3,
-    3,
-    5,
-    10,
+    13,
+    15,
     18,
-    28,
-    94,
-    143
+    47,
+    56
    ],
    "facets": 23,
    "josh_faces": null,
    "obstructions": 22,
-   "panels": 314,
+   "panels": 153,
    "poa": [
     952.0,
     1013.0,
@@ -687,19 +687,19 @@
    ]
   },
   "4735242": {
-   "ac_kwh_year": 99785.0,
+   "ac_kwh_year": 96627.0,
    "address": "5 Church St",
    "area": "pilot",
    "aspects": [
     336.5
    ],
    "facet_panels": [
-    179
+    172
    ],
    "facets": 1,
    "josh_faces": null,
    "obstructions": 30,
-   "panels": 179,
+   "panels": 172,
    "poa": [
     1372.0
    ],
@@ -708,7 +708,7 @@
    ]
   },
   "4735263": {
-   "ac_kwh_year": 17556.0,
+   "ac_kwh_year": 19167.0,
    "address": "89 Hallenstein Street",
    "area": "pilot",
    "aspects": [
@@ -725,14 +725,14 @@
     0,
     2,
     3,
-    5,
-    7,
-    17
+    9,
+    10,
+    13
    ],
    "facets": 7,
    "josh_faces": null,
    "obstructions": 5,
-   "panels": 34,
+   "panels": 37,
    "poa": [
     1095.0,
     1128.0,
@@ -753,7 +753,7 @@
    ]
   },
   "4735316": {
-   "ac_kwh_year": 174658.0,
+   "ac_kwh_year": 158339.0,
    "address": "101/8 Duke Street",
    "area": "pilot",
    "aspects": [
@@ -762,12 +762,12 @@
    ],
    "facet_panels": [
     0,
-    305
+    276
    ],
    "facets": 2,
    "josh_faces": null,
    "obstructions": 27,
-   "panels": 305,
+   "panels": 276,
    "poa": [
     408.0,
     1355.0
@@ -778,7 +778,7 @@
    ]
   },
   "4735318": {
-   "ac_kwh_year": 15273.0,
+   "ac_kwh_year": 16799.0,
    "address": "1 Gorge Road",
    "area": "pilot",
    "aspects": [
@@ -791,12 +791,12 @@
     0,
     2,
     13,
-    14
+    17
    ],
    "facets": 4,
    "josh_faces": null,
    "obstructions": 4,
-   "panels": 29,
+   "panels": 32,
    "poa": [
     1163.0,
     1266.0,
@@ -811,7 +811,7 @@
    ]
   },
   "4735623": {
-   "ac_kwh_year": 41760.0,
+   "ac_kwh_year": 42867.0,
    "address": "1 Church Street",
    "area": "pilot",
    "aspects": [
@@ -827,17 +827,17 @@
    "facet_panels": [
     0,
     0,
-    3,
+    2,
     6,
-    6,
-    17,
+    7,
+    16,
     22,
-    28
+    31
    ],
    "facets": 8,
    "josh_faces": 7,
    "obstructions": 3,
-   "panels": 82,
+   "panels": 84,
    "poa": [
     781.0,
     1118.0,
@@ -860,7 +860,7 @@
    ]
   },
   "4740517": {
-   "ac_kwh_year": 16309.0,
+   "ac_kwh_year": 11063.0,
    "address": "26 Panorama Terrace",
    "area": "pilot",
    "aspects": [
@@ -871,14 +871,14 @@
    ],
    "facet_panels": [
     0,
+    5,
     7,
-    10,
-    13
+    8
    ],
    "facets": 4,
    "josh_faces": 5,
    "obstructions": 6,
-   "panels": 30,
+   "panels": 20,
    "poa": [
     856.0,
     1097.0,
@@ -893,7 +893,7 @@
    ]
   },
   "4740662": {
-   "ac_kwh_year": 89644.0,
+   "ac_kwh_year": 81802.0,
    "address": "(no address)",
    "area": "shotover_lakehayes",
    "aspects": [
@@ -909,32 +909,32 @@
     320.8
    ],
    "facet_panels": [
+    0,
     2,
-    2,
+    9,
     10,
     10,
-    10,
-    18,
-    21,
-    24,
-    27,
-    33
+    14,
+    16,
+    22,
+    23,
+    34
    ],
    "facets": 10,
    "josh_faces": null,
    "obstructions": 15,
-   "panels": 157,
+   "panels": 140,
    "poa": [
-    1102.0,
-    1110.0,
-    1111.0,
-    1130.0,
-    1139.0,
-    1293.0,
-    1387.0,
-    1420.0,
-    1444.0,
-    1449.0
+    1107.0,
+    1115.0,
+    1117.0,
+    1137.0,
+    1147.0,
+    1301.0,
+    1418.0,
+    1463.0,
+    1487.0,
+    1489.0
    ],
    "slopes": [
     0.2,
@@ -950,7 +950,7 @@
    ]
   },
   "4751041": {
-   "ac_kwh_year": 32925.0,
+   "ac_kwh_year": 22156.0,
    "address": "29 Edinburgh Dr",
    "area": "pilot",
    "aspects": [
@@ -963,16 +963,16 @@
    ],
    "facet_panels": [
     0,
-    2,
-    11,
-    13,
-    18,
-    19
+    0,
+    8,
+    9,
+    12,
+    13
    ],
    "facets": 6,
    "josh_faces": 5,
    "obstructions": 12,
-   "panels": 63,
+   "panels": 42,
    "poa": [
     1051.0,
     1074.0,
@@ -991,19 +991,19 @@
    ]
   },
   "5370340": {
-   "ac_kwh_year": 32395.0,
+   "ac_kwh_year": 33133.0,
    "address": "5 Beach Street",
    "area": "pilot",
    "aspects": [
     308.6
    ],
    "facet_panels": [
-    66
+    67
    ],
    "facets": 1,
    "josh_faces": null,
    "obstructions": 12,
-   "panels": 66,
+   "panels": 67,
    "poa": [
     1204.0
    ],
@@ -1012,7 +1012,7 @@
    ]
   },
   "5371108": {
-   "ac_kwh_year": 13226.0,
+   "ac_kwh_year": 11252.0,
    "address": "7 Anderson Heights",
    "area": "pilot",
    "aspects": [
@@ -1030,17 +1030,17 @@
     0,
     0,
     0,
-    2,
+    0,
     3,
+    7,
+    7,
     8,
-    8,
-    8,
-    9
+    8
    ],
    "facets": 9,
    "josh_faces": 8,
    "obstructions": 1,
-   "panels": 38,
+   "panels": 33,
    "poa": [
     587.0,
     746.0,
@@ -1065,7 +1065,7 @@
    ]
   },
   "5372565": {
-   "ac_kwh_year": 198731.0,
+   "ac_kwh_year": 182761.0,
    "address": "1 Memorial Street",
    "area": "pilot",
    "aspects": [
@@ -1078,18 +1078,18 @@
     305.6
    ],
    "facet_panels": [
-    11,
-    15,
-    21,
-    33,
+    9,
+    14,
+    17,
+    35,
     79,
-    93,
-    114
+    79,
+    103
    ],
    "facets": 7,
    "josh_faces": null,
    "obstructions": 13,
-   "panels": 366,
+   "panels": 336,
    "poa": [
     1088.0,
     1123.0,
@@ -1110,7 +1110,7 @@
    ]
   },
   "5372566": {
-   "ac_kwh_year": 131322.0,
+   "ac_kwh_year": 130149.0,
    "address": "19 Camp Street",
    "area": "pilot",
    "aspects": [
@@ -1122,13 +1122,13 @@
    "facet_panels": [
     0,
     14,
-    102,
-    110
+    104,
+    106
    ],
    "facets": 4,
    "josh_faces": null,
    "obstructions": 1,
-   "panels": 226,
+   "panels": 224,
    "poa": [
     1318.0,
     1332.0,
@@ -1143,7 +1143,7 @@
    ]
   },
   "5372585": {
-   "ac_kwh_year": 22553.0,
+   "ac_kwh_year": 26241.0,
    "address": "45 Camp Street",
    "area": "pilot",
    "aspects": [
@@ -1152,12 +1152,12 @@
    ],
    "facet_panels": [
     0,
-    51
+    57
    ],
    "facets": 2,
    "josh_faces": null,
    "obstructions": 2,
-   "panels": 51,
+   "panels": 57,
    "poa": [
     969.0,
     1285.0
@@ -1168,40 +1168,40 @@
    ]
   },
   "5372588": {
-   "ac_kwh_year": 32068.0,
+   "ac_kwh_year": 47526.0,
    "address": "36 Shotover Street",
    "area": "pilot",
    "aspects": [
-    128.5,
-    131.8,
-    133.3,
-    226.4
+    127.8,
+    130.7,
+    134.7,
+    261.1
    ],
    "facet_panels": [
     0,
-    5,
-    13,
-    41
+    4,
+    33,
+    51
    ],
    "facets": 4,
    "josh_faces": null,
-   "obstructions": 4,
-   "panels": 59,
+   "obstructions": 6,
+   "panels": 88,
    "poa": [
-    1096.0,
-    1158.0,
-    1315.0,
-    1353.0
+    1162.0,
+    1330.0,
+    1333.0,
+    1356.0
    ],
    "slopes": [
-    0.8,
-    4.1,
-    4.6,
-    4.8
+    1.0,
+    1.2,
+    4.4,
+    5.1
    ]
   },
   "5373363": {
-   "ac_kwh_year": 43258.0,
+   "ac_kwh_year": 28020.0,
    "address": "no address on file; behind 10 Robins Road",
    "area": "pilot",
    "aspects": [
@@ -1224,20 +1224,20 @@
     0,
     0,
     0,
+    0,
+    2,
     3,
     4,
-    4,
-    4,
     5,
+    6,
     11,
-    18,
-    18,
-    18
+    12,
+    13
    ],
    "facets": 13,
    "josh_faces": 11,
    "obstructions": 12,
-   "panels": 85,
+   "panels": 56,
    "poa": [
     966.0,
     975.0,
