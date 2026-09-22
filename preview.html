@@ -2338,7 +2338,7 @@ map.on("load", async () => {
     const lod = cellLodFor(map.getZoom());
     const cells = map.queryRenderedFeatures({ layers: [`cells-fill-${lod}`] });
     const seen = new Set();
-    let n = 0, kwp = 0, kwhYear = 0;
+    let n = 0, kwp = 0, kwhYear = 0, fittedKwp = 0, fittedKwh = 0;
     for (const c of cells) {
       // One feature per (cell, building type): key on both, or every type
       // but the first would be dropped as a duplicate of the same cell.
@@ -2349,8 +2349,10 @@ map.on("load", async () => {
       n += c.properties.n || 0;
       kwp += lerpCell(c.properties, "kwp", coveragePct);
       kwhYear += lerpCell(c.properties, "kwh", coveragePct);
+      fittedKwp += c.properties.fitted_kwp || 0;
+      fittedKwh += c.properties.fitted_kwh || 0;
     }
-    return { n, kwp, kwhYear };
+    return { n, kwp, kwhYear, fittedKwp, fittedKwh };
   }
   function lerpCell(p, prefix, pct) {
     const steps = COVERAGE_POA_STEPS.filter(c => p[`${prefix}_${c}`] != null);
@@ -2370,15 +2372,23 @@ map.on("load", async () => {
   function recomputeInViewSummary() {
     // Panel Layout mode is only ever on at building zooms, so it always counts
     // real panels; Heat Map mode is the one you can be looking at from orbit.
-    if (map.getZoom() < BUILDING_MIN_Z && mode !== "layout") {
+    // BELOW THE BUILDING ZOOM THERE ARE NO BUILDINGS TO SUM, in either mode.
+    // This branch used to run only for the heat map; in Panel Layout the
+    // code fell through to the per-building sum, found nothing loaded, and
+    // the sidebar read "0.0 kW" over a whole town (Josh, Wanaka, 22 Sep).
+    // Layout mode sums the cells' PLACED panels (fitted_kwp/fitted_kwh --
+    // every panel that fits, i.e. 100% density); the heat map sums the
+    // coverage ladder at the chosen percentage, as before.
+    if (map.getZoom() < BUILDING_MIN_Z) {
       const c = cellSummary();
+      const layout = mode === "layout";
       document.getElementById("inview-count").textContent = c.n;
-      document.getElementById("inview-power").textContent = fmtPower(c.kwp);
-      document.getElementById("inview-energy").textContent = fmtEnergy(c.kwhYear);
+      document.getElementById("inview-power").textContent = fmtPower(layout ? c.fittedKwp : c.kwp);
+      document.getElementById("inview-energy").textContent = fmtEnergy(layout ? c.fittedKwh : c.kwhYear);
       const mp0 = document.getElementById("m-all-power");
       if (mp0) {
-        mp0.textContent = fmtPower(c.kwp);
-        document.getElementById("m-all-energy").textContent = fmtEnergy(c.kwhYear);
+        mp0.textContent = fmtPower(layout ? c.fittedKwp : c.kwp);
+        document.getElementById("m-all-energy").textContent = fmtEnergy(layout ? c.fittedKwh : c.kwhYear);
       }
       // The coverage ladder and the per-building economics both need
       // buildings; at this zoom there are none, and an empty ladder is
