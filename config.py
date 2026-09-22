@@ -199,7 +199,9 @@ SURVEYS = [
 # longer and 13 cm wider than the placeholder.
 PANEL_WIDTH_M = 1.134
 PANEL_HEIGHT_M = 1.961
-PANEL_EDGE_SETBACK_M = 0.3  # clearance from the roof's own outer edge (eave/verge) -- common
+PANEL_EDGE_SETBACK_M = 0.1  # Josh, 22 Sep: "reduce the edge setbacks and ridge setbacks to 0.1m".
+# History below is why it was 0.3 for a while; his call now, measured on the bench in the commit.
+# Previously: clearance from the roof's own outer edge (eave/verge) -- common
 # fire-code convention. Lowered to 0.1 earlier per explicit request after it was found strangling
 # narrow facets (a real ~1.4m-wide strip loses 0.6m total, under the panel's own 1m minimum
 # dimension, so it fit zero panels despite real usable area, on #5371143) -- but that traded away
@@ -209,7 +211,7 @@ PANEL_EDGE_SETBACK_M = 0.3  # clearance from the roof's own outer edge (eave/ver
 PANEL_EDGE_SETBACK_FALLBACK_M = 0.1  # retried only for a facet that fits zero panels at the
 # primary setback above -- keeps narrow facets panelable without loosening the default for
 # everything else.
-RIDGE_SETBACK_M = 0.25  # extra clearance specifically along a boundary shared with another real
+RIDGE_SETBACK_M = 0.1  # Josh, 22 Sep: 0.1 m (was 0.25). Extra clearance specifically along a boundary shared with another real
 # roof plane on the same building (a real ridge, hip, or valley) -- separate from, and on top of,
 # PANEL_EDGE_SETBACK_M's outer-edge clearance. Two adjacent facets each erode this far back from
 # their shared boundary, so the real join between two differently-angled roof sections reads as

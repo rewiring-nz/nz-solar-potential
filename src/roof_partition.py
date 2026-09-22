@@ -1286,6 +1286,9 @@ SELECTED_MIN_SCORE = 0.30
 SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 
 
+BIG_FACE_KEEP_M2 = 100.0   # a machine face this big ships even over the vertex cap
+
+
 def _regularise_machine_face(poly, footprint):
     """Enforce the module's founding invariant on faces from the selected
     chain: STRAIGHT BY CONSTRUCTION. SAM masks and LiDAR raster tilings
@@ -1304,6 +1307,18 @@ def _regularise_machine_face(poly, footprint):
     cc = list(mrr.exterior.coords)
     ax = np.degrees(np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0]))
     rot = _aff.rotate(poly, -ax, origin=(0, 0))
+    # THE VERTEX CAP SCALES WITH THE FACE. A flat 10-corner limit was right
+    # for a house face and wrong for a commercial wing: 22 Earl Street's
+    # 1,115 m2 and 937 m2 faces both regularised cleanly at every tolerance,
+    # had more than ten corners because the wing genuinely has more than ten
+    # corners, and were DROPPED -- a fifth of the roof gone, with residual
+    # fill scraping back 154 m2 of it (Josh, 22 Sep: "missing a whole
+    # perfectly good section of roof"). Ten corners per 150 m2 on top of the
+    # base ten, capped at thirty; and a face over BIG_FACE_KEEP_M2 ships at
+    # the coarsest tolerance rather than not at all, because deleting it is
+    # the larger error.
+    max_vertices = int(min(30, 10 + poly.area / 150.0))
+    fallback = None
     for tol in (0.3, 0.5, 0.8, 1.2):
         cand = rot.simplify(tol)
         if cand.geom_type != "Polygon" or cand.is_empty:
@@ -1329,10 +1344,14 @@ def _regularise_machine_face(poly, footprint):
         out = Polygon(snapped)
         if not out.is_valid or out.is_empty:
             continue
-        if len(snapped) <= 10 and abs(out.area - poly.area) < 0.25 * poly.area:
+        if abs(out.area - poly.area) < 0.25 * poly.area:
             back = _aff.rotate(out, ax, origin=(0, 0))
             if back.is_valid and back.geom_type == "Polygon":
-                return back
+                if len(snapped) <= max_vertices:
+                    return back
+                fallback = back      # over the cap, but a real, clean polygon
+    if fallback is not None and poly.area >= BIG_FACE_KEEP_M2:
+        return fallback
     return None
 
 
