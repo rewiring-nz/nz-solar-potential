@@ -1568,6 +1568,29 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## TODO - patch 9 marked roofs for the open-ended-line extension (measured 22 Sep)
+
+Josh said "Run them out" and `SOLAR_EXTEND_DANGLING` defaulted to on, but no
+build has run since, so the live site still has those roofs built with it off.
+
+Measured rather than assumed, on all 111 marked-up buildings whose region data
+is on the laptop, the real `_build_one` path, flag off against flag on:
+
+- **9 of 111 change** (8%)
+- panels 15,105 -> 15,126 (**+0.14%**), kWh 8,725.7 -> 8,737.6 MWh (**+0.14%**)
+- every changed roof gains a facet except one; the biggest movers are
+  #4746196 (40 -> 49 panels), #4740662 (151 -> 157) and #5372565 (358 -> 366)
+
+Changed ids: 4746196, 4746110, 4726034, 5372565, 4735237, 5372388, 4740662,
+4740680, 4729620. Two lose a few panels (#4746110, #4729620), which is the
+extension splitting a face that was being read as one.
+
+So it is worth doing and it is not urgent. It is also NOT covered by the
+Kingston/Wanaka run, which builds only the five new regions. Do it as a
+targeted `patch_buildings.py` pass on the VM after that build lands, in the
+same deploy. The other 33 marked buildings live in regions without local data,
+so the real total may be a little larger.
+
 ## DONE 22 SEP - "3D unavailable" does not reproduce; the real bug next to it does
 
 Three attempts at HEAD, each in a genuinely fresh tab, none reproduced the
