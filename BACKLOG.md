@@ -1568,6 +1568,40 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## LAYOUT ENGINE, 22 SEP - one grid frame per building (Josh: "fundamental fixes")
+
+Cases: #4725584 (32 Frankton Rd, "very disorganised"), #5371139 (14C, "clean
+straight rows on each sawtooth"), #5371141 (1/24), #4735304 (12/16 Kent),
+#4735039 (4 Kent). Measured cause: every face racked to its own rectangle,
+from its own centroid, with its own portrait/landscape and its own row and
+column phase. 32 Frankton: 832 panels on FIVE bearings (40/45/50/135/140).
+
+Now `panel_fitting.building_frame` + `register_frame`: one bearing per
+building (area-weighted eave direction, snapped to the outline axis within
+7 deg), one orientation chosen on the whole roof's count, one column phase
+per face GROUP (faces racking along the same frame axis), searched jointly
+and locked; flat groups lock the row phase too; the free per-row scan is
+off under a frame. Results: 32 Frankton 832 -> 694 on one bearing; 1/24
+333 -> 312; 12/16 Kent 296 -> 263; 4 Kent 44 -> 41; 14C 100 -> 73 with rows
+now parallel across every sawtooth strip (checked in the browser). Bench of
+152 marked roofs: 12,675 -> 11,077 panels (-12.6%), crossings 3 -> 0. The
+count is the cost of rows that line up. The bench harness had never packed
+through the build's frame (it read 12,675 twice); it does now.
+
+**Not bugs after measuring:** 1/24's "panels under the tree" -- the DSM has
+zero cells above the roof planes inside the outline; the tree stands beside
+the building and the photo leans it across the roof (relief displacement);
+those panels carry the tree's shading in their yield (505 vs 569 kWh
+median). 14C's sawtooth is genuinely steep: fourteen 55-degree faces in two
+aspects, right at MAX_ROOF_SLOPE_DEG -- a packing problem, not a face one.
+
+**Re-lay state:** the frame code was swapped into the running re-lay after
+its first six regions (arrowtown_east, arrowtown_hills, arrowtown_millbrook,
+arthurs_point, arthurs_point_east, dalefield -- listed in
+`relay_prefrane_regions.txt` on the VM). After RELAY_DONE, re-run
+`run_district_build.sh --regions "<those six>"` before the deploy so the
+whole district packs the same way.
+
 ## FIXED 22 SEP - the cloud factor was divided by the wrong sky (Josh: "this should never have happened")
 
 179 Warren Street, Wanaka: a 7.5 kW roof showed a 12.1 kW WINTER afternoon.

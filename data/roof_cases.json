@@ -572,6 +572,61 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4735304,
+   "region": "pilot",
+   "first_flagged": "2026-09-23",
+   "defect": "12/16 Kent Street: panels being added over an edge (left wing), and no panels on the right",
+   "quotes": [
+    "12/16 Kent Street: panels being added over an edge (left wing), and no panels on the right wing's empty flat area"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4735039,
+   "region": "pilot",
+   "first_flagged": "2026-09-23",
+   "defect": "4 Kent Street: an extra row could clearly be added down the middle of this flat roof and i",
+   "quotes": [
+    "4 Kent Street: an extra row could clearly be added down the middle of this flat roof and it is not being added"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4725584,
+   "region": "pilot",
+   "first_flagged": "2026-09-23",
+   "defect": "32 Frankton Road: a very disorganised layout. The underlying roof is simple and straight, ",
+   "quotes": [
+    "32 Frankton Road: a very disorganised layout. The underlying roof is simple and straight, it just has lots of obstructions; the way panels are laid out on it is clearly wrong"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371141,
+   "region": "pilot",
+   "first_flagged": "2026-09-23",
+   "defect": "1/24 Frankton Road: lots of panels missing that could be added (west arm), and many added ",
+   "quotes": [
+    "1/24 Frankton Road: lots of panels missing that could be added (west arm), and many added in the shade of a tree"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371139,
+   "region": "pilot",
+   "first_flagged": "2026-09-23",
+   "defect": "14C Frankton Road: not a clean layout on this sawtooth roof; should be clean straight rows",
+   "quotes": [
+    "14C Frankton Road: not a clean layout on this sawtooth roof; should be clean straight rows on each sawtooth. Fundamental fixes to how panels are laid out"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
