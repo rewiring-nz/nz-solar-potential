@@ -1568,6 +1568,40 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## FIXED 22 SEP - the cloud factor was divided by the wrong sky (Josh: "this should never have happened")
+
+179 Warren Street, Wanaka: a 7.5 kW roof showed a 12.1 kW WINTER afternoon.
+The Wanaka latitude band's curves were built at the band centroid -- a point
+in the Crown Range 0.27 deg from the pilot, inside the SolarView calibration's
+0.30 deg reach -- and the calibration divides GHI measured at the pilot by a
+clear sky cut by the horizon at the point being modelled. Deep local horizon
+-> "cloud factor" of 2.94 in June. See the commit "The cloud factor is derived
+once, at the pilot, and can never exceed one".
+
+**Every Queenstown region carried the same construction** since the wide DEM
+reached its centroid; measured on the VM, old yield factor vs corrected:
+JUN x0.85-x1.69, annual-weighted x0.98-x1.13 (worst: town_gorge_north +13%,
+town_south_lake +9%, frankton_arm +4% annual / +69% June). Kingston, Wanaka
+and Hawea use the NIWA-station path and were never affected.
+
+Shipped: curve bands rebuilt (data v39) so the chart is right now; the yields
+follow with the corrected re-lay running on the VM (`relay.out`,
+RELAY_DONE). A guard now refuses any monthly factor above 1.05.
+
+OPEN: pilot_location() and SOLARVIEW_CAL_LOCATION are 600 m apart and differ
+by 15% in the June clear sky behind the horizon (0.72 vs 0.84 June factor).
+Continuity with the shipped figures decided it; the honest resolution is a
+re-calibration against the Queenstown Aero station normal (open ground, no
+horizon term), then a PVGIS cross-check.
+
+## KINGSTON IS ENTIRELY WITHHELD (22 Sep, Josh) - confidence needs a DSM fallback
+
+359 of 383 Kingston buildings are `low_confidence`, roof_confidence 0 for all,
+0 with panels, 539 facets found. `_area_weighted_inlier` scores facets against
+POINT-CLOUD returns; Kingston has no published point cloud, so every facet has
+<12 points and the score is 0 by construction, not by evidence. Fix in
+progress: score against DSM cells when the point cloud is absent.
+
 ## LIVE 22 SEP (data v38): Kingston, Wanaka, Albert Town, Hawea + the type toggle
 
 29 regions, 26,742 buildings, 1,110,005 panels, 619.3 GWh/yr. First release
