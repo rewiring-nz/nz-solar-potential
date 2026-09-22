@@ -1568,6 +1568,46 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## JOSH'S ROOF CASES, 22 SEP - four defects, each measured, three fixed
+
+Cases logged in data/roof_cases.json: #4726050 (22 Earl St), #4751260
+(42 Suburb St), #4746298 (13 Douglas Ave). Verdicts are his.
+
+**1. A big face with many corners was deleted** (Earl St's missing wing).
+The face reading held the 1,115 m2 wing; `_regularise_machine_face` dropped
+any face with >10 corners after simplification, and the wing has 21. Cap now
+scales with area (10 per 150 m2 on top of 10, max 30) and a face over 100 m2
+ships at the coarsest tolerance rather than not at all. Earl St 2,494 ->
+3,062 m2 covered, 686 -> 881 panels. Bench: facets and crossings unchanged.
+Still 544 m2 uncovered there: a 179 m2 sloped face fails the one-plane test
+(inlier 0.11, resid p90 2.3 m) -- possibly real equipment; not touched.
+
+**2. The 80% slider emptied big flat roofs.** Low plane-fit facets on roofs
+over 1,000 m2 had ALL panels demoted to ranks 81-100; on Earl St that was 601
+of 686. Twenty live buildings hid over half their panels at 80% (4,954
+panels). Now the low-fit demotion may take at most 35% of a roof; beyond that
+the panels rank by yield. Earl St: 85 -> 562 shown at 80%. Bench unchanged.
+
+**3. Setbacks 0.1 m** (edge 0.3 -> 0.1, ridge 0.25 -> 0.1, his call). Bench
+11,553 -> 12,688 panels (+9.8%), crossings 1 -> 3 of ~2,800.
+
+**4. "Outline misaligned with the roof" is the PHOTO, not the outline.**
+Against LiDAR building returns the outlines are within 0.5-1 m. The
+orthophoto is off by relief displacement, per building: 28% of 61 pilot roofs
+>= 2 m, 16% >= 3 m, regional median zero. New stage `register_imagery`
+(Sobel edges of DSM vs photo, +/-4 m, gated at 4% gain, < 6 m) and
+`emit_region` shifts the DRAWN geometry only. Pilot: 444/1,066 shifted,
+median 2.2 m. Verified in the browser on 42 Suburb St after a sign flip.
+CAVEAT: registered against the region's LINZ imagery mosaic; the site shows
+LINZ Basemaps. They matched for Queenstown; check on the next district that
+the basemap is the same capture, or register against basemap tiles instead.
+
+**Not yet on the live site.** All four need the layout stage re-run
+(regulariser, slider, setbacks) or the new stage (registration). The
+Kingston/Wanaka chain on the VM applies registration + the new emit to every
+region and re-lays the nine marked roofs; the full district re-lay with the
+new regulariser/setbacks is a separate --force build (~6 h) to schedule.
+
 ## DONE 22 SEP - no more merged file: regions emit tiles, combine joins them
 
 Josh: "How can you make it not all one file? Maybe set that up first." The

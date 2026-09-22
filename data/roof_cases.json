@@ -539,6 +539,39 @@
      "fingerprint": "6056bbc15cd5"
     }
    ]
+  },
+  {
+   "id": 4726050,
+   "region": "my_test_area",
+   "first_flagged": "2026-09-22",
+   "defect": "22 Earl Street: missing a whole perfectly good section of roof (the raised NE wing, 1,100 ",
+   "quotes": [
+    "22 Earl Street: missing a whole perfectly good section of roof (the raised NE wing, 1,100 m2). At 80% density almost none of the panels show, at 100% far more are added"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751260,
+   "region": "pilot",
+   "first_flagged": "2026-09-22",
+   "defect": "42 Suburb Street: far more panels could fit; the outline does not align with the actual ro",
+   "quotes": [
+    "42 Suburb Street: far more panels could fit; the outline does not align with the actual roof (a common problem) and the panels follow the outline, not the image"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4746298,
+   "region": "arrowtown_millbrook",
+   "first_flagged": "2026-09-22",
+   "defect": "13 Douglas Avenue: a good example of the alignment problem -- outline offset from the roof",
+   "quotes": [
+    "13 Douglas Avenue: a good example of the alignment problem -- outline offset from the roof in the image, panels follow the outline and hang off the roof"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
