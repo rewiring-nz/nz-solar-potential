@@ -1135,8 +1135,8 @@ function applyBtypeFilters() {
     if (map.getLayer(id)) map.setFilter(id, withBtype(f));
   }
   (typeof CELL_BANDS !== "undefined" ? CELL_BANDS : []).forEach(([lod]) => {
-    if (map.getLayer(`cells-fill-${lod}`)) {
-      map.setFilter(`cells-fill-${lod}`, withBtype(["==", ["get", "lod"], lod]));
+    for (const id of [`cells-fill-${lod}`, `cells-heat-${lod}`]) {
+      if (map.getLayer(id)) map.setFilter(id, withBtype(["==", ["get", "lod"], lod]));
     }
   });
   if (typeof LAYOUT_LAYERS !== "undefined") {
@@ -1573,6 +1573,8 @@ function panelLayerFilter(id, excludeBuildingId) {
 let overlayOn = true;
 
 function setMode(newMode) {
+  // the zoomed-out surface weights by placed panels in layout mode, by coverage otherwise
+  setTimeout(() => { if (typeof refreshHeatWeights === "function") refreshHeatWeights(); }, 0);
   if (newMode === mode && overlayOn) {
     overlayOn = false;            // clicking the on button turns it off
   } else {
@@ -1976,14 +1978,65 @@ map.on("load", async () => {
                 ["max", ["coalesce", ["get", "km2"], 1], 0.01]],
           0, "#2b1055", 2e5, "#7a1f6b", 1e6, "#d0435c",
           5e6, "#f9a520", 2e7, "#ffe97a"],
-        // Empty land should look empty. A cell holding four houses is mostly
-        // mountain, and painting it the same as a suburb is the map telling a
-        // lie about where the roofs are.
-        "fill-opacity": ["interpolate", ["linear"],
-          ["coalesce", ["get", "n"], 0], 0, 0, 5, 0.18, 60, 0.45, 400, 0.6],
+        // INVISIBLE. The cells still carry the exact sums the sidebar adds up
+        // (queryRenderedFeatures reads them regardless of opacity); what is
+        // drawn at these zooms is the density heat map below (Josh, 22 Sep:
+        // "a more traditional heat map rather than the blocks").
+        "fill-opacity": 0,
       }
     });
   });
+  // THE ZOOMED-OUT PICTURE: a kernel heat map of generation density. Each
+  // cell ships a centre point carrying kWh per km2 at every coverage step
+  // (combine_regions, layer "cellpts"); MapLibre blends them into a smooth
+  // surface. Weight is density over the build's 95th-percentile density, so
+  // the top of the ramp means "among the densest 5% of built land here".
+  const DENSITY_P95_FALLBACK = 2e7;
+  function densityKey() {
+    if (mode === "layout") return "dens_fit";
+    const steps = COVERAGE_POA_STEPS;
+    let best = steps[0];
+    for (const c of steps) if (Math.abs(c - coveragePct) < Math.abs(best - coveragePct)) best = c;
+    return `dens_${best}`;
+  }
+  // Each band has its own scale: a coarse cell averages its roofs over the
+  // empty land around them, so lod-12 densities run ~10x below lod-16 and
+  // lod-9 ~30x below that. One scale left the zoomed-out view nearly blank.
+  const DENSITY_LOD_FALLBACK = { 16: 1, 12: 0.045, 9: 0.0016 };
+  function heatWeightExpr(lod) {
+    const a = (typeof assumptions !== "undefined" && assumptions) || {};
+    const byLod = a.density_p95_kwh_km2_by_lod || {};
+    const p95 = byLod[String(lod)] ||
+      ((a.density_p95_kwh_km2 || DENSITY_P95_FALLBACK) * (DENSITY_LOD_FALLBACK[lod] || 1));
+    return ["min", 1, ["/", ["coalesce", ["get", densityKey()], 0], p95]];
+  }
+  CELL_BANDS.forEach(([lod, from, to]) => {
+    map.addLayer({
+      id: `cells-heat-${lod}`,
+      type: "heatmap",
+      source: "cells", "source-layer": "cellpts",
+      filter: ["==", ["get", "lod"], lod],
+      minzoom: from, maxzoom: to,
+      paint: {
+        "heatmap-weight": heatWeightExpr(lod),
+        // radius in pixels grows with zoom so the kernels of one band overlap
+        // the same amount at every zoom the band is shown at
+        "heatmap-radius": ["interpolate", ["linear"], ["zoom"],
+          from, 14, to, 46],
+        "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], from, 0.9, to, 1.4],
+        // the roof heat map's own ramp, so the two views read as one scale
+        "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"],
+          0, "rgba(43,16,85,0)", 0.08, "rgba(43,16,85,0.55)", 0.25, "#7a1f6b",
+          0.5, "#d0435c", 0.75, "#f9a520", 1, "#ffe97a"],
+        "heatmap-opacity": 0.85,
+      }
+    }, `cells-fill-${lod}`);
+  });
+  function refreshHeatWeights() {
+    CELL_BANDS.forEach(([lod]) => {
+      if (map.getLayer(`cells-heat-${lod}`)) map.setPaintProperty(`cells-heat-${lod}`, "heatmap-weight", heatWeightExpr(lod));
+    });
+  }
 
   // NOT ESTIMATED. These roofs used to vanish from the map entirely, which is
   // the one case where someone searching their own address most wants an
@@ -2339,6 +2392,9 @@ map.on("load", async () => {
     const cells = map.queryRenderedFeatures({ layers: [`cells-fill-${lod}`] });
     const seen = new Set();
     let n = 0, kwp = 0, kwhYear = 0, fittedKwp = 0, fittedKwh = 0;
+    // The coverage ladder too: every step it lists is one the cells carry
+    // exactly, so the rows are sums, not interpolations.
+    const ladder = Object.fromEntries(COVERAGE_OPTION_STEPS.map(pct => [pct, { pct, kwp: 0, kwh: 0 }]));
     for (const c of cells) {
       // One feature per (cell, building type): key on both, or every type
       // but the first would be dropped as a duplicate of the same cell.
@@ -2351,8 +2407,12 @@ map.on("load", async () => {
       kwhYear += lerpCell(c.properties, "kwh", coveragePct);
       fittedKwp += c.properties.fitted_kwp || 0;
       fittedKwh += c.properties.fitted_kwh || 0;
+      for (const pct of COVERAGE_OPTION_STEPS) {
+        ladder[pct].kwp += lerpCell(c.properties, "kwp", pct);
+        ladder[pct].kwh += lerpCell(c.properties, "kwh", pct);
+      }
     }
-    return { n, kwp, kwhYear, fittedKwp, fittedKwh };
+    return { n, kwp, kwhYear, fittedKwp, fittedKwh, ladder: COVERAGE_OPTION_STEPS.map(pct => ladder[pct]) };
   }
   function lerpCell(p, prefix, pct) {
     const steps = COVERAGE_POA_STEPS.filter(c => p[`${prefix}_${c}`] != null);
@@ -2390,10 +2450,10 @@ map.on("load", async () => {
         mp0.textContent = fmtPower(layout ? c.fittedKwp : c.kwp);
         document.getElementById("m-all-energy").textContent = fmtEnergy(layout ? c.fittedKwh : c.kwhYear);
       }
-      // The coverage ladder and the per-building economics both need
-      // buildings; at this zoom there are none, and an empty ladder is
-      // honest where a ladder built from a sample is not.
-      renderCoverageOptions([]);
+      // The ladder is summed from the same cells as the headline, so it
+      // never reads "0.0 kW" under a real total (it did, until 23 Sep). The
+      // per-building economics still need buildings and stay off here.
+      renderCoverageRows(c.ladder);
       return;
     }
     const props = inViewBuildingProps();
@@ -2456,6 +2516,13 @@ map.on("load", async () => {
       });
       return { pct, kwp, kwh };
     });
+    renderCoverageRows(rows, box);
+  }
+  function renderCoverageRows(rows, box) {
+    box = box || document.getElementById("coverage-options");
+    if (!box) return;
+    if (mode !== "heatmap") { box.style.display = "none"; return; }
+    box.style.display = "";
     // Only the first row is captioned. A bare "100%" says nothing on its own,
     // but repeating "of rooftop coverage" five times would turn a scannable
     // ladder into a wall of the same three words (Josh).
@@ -2474,6 +2541,7 @@ map.on("load", async () => {
   // including the on-map kWp labels.
   function setCoverage(pct) {
     coveragePct = pct;
+    if (typeof refreshHeatWeights === "function") refreshHeatWeights();
     document.querySelectorAll(".coverage-select").forEach(sel => {
       // The slider can land on values the dropdown doesn't list (e.g. 55%);
       // keep a single synthetic option so the dropdown always shows the

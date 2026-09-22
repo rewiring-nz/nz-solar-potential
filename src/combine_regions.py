@@ -110,10 +110,44 @@ def _combine_cells(regions, out_root, dest_tmp):
     src = dest_tmp / "_cells.geojson"
     src.write_text(json.dumps({"type": "FeatureCollection", "features": feats},
                               separators=(",", ":")))
+    # A SECOND LAYER OF CELL-CENTRE POINTS. Josh: "change the very zoomed out
+    # view to be a more traditional heat map rather than the blocks... based
+    # on generation density across areas." MapLibre's heat-map rendering takes
+    # points, not polygons, so each cell also ships as a point at its centre
+    # carrying the same sums plus its density; the page draws the smooth
+    # surface from these and keeps the (invisible) cells for exact sums.
+    pts = []
+    for f in feats:
+        p = dict(f["properties"])
+        w, s_, e, n = tile_bounds(*[int(v) for v in p["cell"].split("/")[1:]], p["lod"])
+        km2 = max(p.get("km2") or 0.001, 0.001)
+        for pct in COVERAGE_STEPS:
+            p[f"dens_{pct}"] = round((p.get(f"kwh_{pct}") or 0.0) / km2)   # kWh/yr per km2
+        p["dens_fit"] = round((p.get("fitted_kwh") or 0.0) / km2)
+        pts.append({"type": "Feature", "properties": p,
+                    "geometry": {"type": "Point", "coordinates": [(w + e) / 2, (s_ + n) / 2]}})
+    src_pts = dest_tmp / "_cellpts.geojson"
+    src_pts.write_text(json.dumps({"type": "FeatureCollection", "features": pts},
+                                  separators=(",", ":")))
     _run(["tippecanoe", "-q", "-o", str(dest_tmp / "building_cells.pmtiles"), "--force",
-          "-l", "cells", "-Z", "0", "-z", str(max(hi for _, _, hi in CELL_BANDS)),
-          "--simplification=2", "--no-feature-limit", "--no-tile-size-limit", str(src)])
-    src.unlink()
+          "-Z", "0", "-z", str(max(hi for _, _, hi in CELL_BANDS)),
+          "--simplification=2", "--no-feature-limit", "--no-tile-size-limit",
+          "-r1", "-L", f"cells:{src}", "-L", f"cellpts:{src_pts}"])
+    src.unlink(); src_pts.unlink()
+    # the density scale the page normalises against: the 95th percentile of
+    # the finest band's cells at full coverage, so the top of the ramp means
+    # "among the densest 5% of built land in this build", whatever the build
+    # -- and one per band, because a coarse cell averages its roofs over the
+    # empty land around them: lod-12 densities run ~10x below lod-16, lod-9
+    # ~30x below that, and one scale would leave the zoomed-out view blank.
+    import numpy as np
+    by_lod = {}
+    for lod, _, _ in CELL_BANDS:
+        d = [q["properties"]["dens_100"] for q in pts if q["properties"]["lod"] == lod and q["properties"]["n"] >= 5]
+        by_lod[str(lod)] = float(np.percentile(d, 95)) if d else 0.0
+    fine = str(max(z for z, _, _ in CELL_BANDS))
+    _combine_cells.density_p95 = by_lod[fine]
+    _combine_cells.density_p95_by_lod = by_lod
     return len(feats)
 
 
@@ -257,6 +291,8 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR):
         # extra request.
         assumptions = dict(next((s["assumptions"] for s in summaries if s.get("assumptions")), {}))
         assumptions["btypes"] = BTYPES
+        assumptions["density_p95_kwh_km2"] = getattr(_combine_cells, "density_p95", 0.0)
+        assumptions["density_p95_kwh_km2_by_lod"] = getattr(_combine_cells, "density_p95_by_lod", {})
         (work / "assumptions.json").write_text(json.dumps(assumptions))
 
         # per-region summaries for the gate, and the totals
