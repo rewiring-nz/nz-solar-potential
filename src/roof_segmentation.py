@@ -2139,14 +2139,60 @@ RECONSTRUCT_MIN_USABLE_SHARE = 0.90    # ...that does not shatter the roof to ge
 # setback before packing, so total usable area IS the fragmentation cost.
 
 
-def _area_weighted_inlier(facets, pc_source):
+def _dsm_points_in(geom, dsm):
+    """DSM cell centres inside a facet, as an (n, 3) array -- the stand-in
+    for point-cloud returns where a survey publishes none."""
+    if dsm is None:
+        return np.empty((0, 3))
+    band, transform, nodata = dsm
+    try:
+        from rasterio.features import geometry_mask
+        from rasterio.transform import xy as _xy
+        from shapely.geometry import mapping
+        minx, miny, maxx, maxy = geom.bounds
+        r0, c0 = ~transform * (minx, maxy)
+        r1, c1 = ~transform * (maxx, miny)
+        c_lo, c_hi = int(max(0, np.floor(min(r0, r1)))), int(min(band.shape[1], np.ceil(max(r0, r1)) + 1))
+        r_lo, r_hi = int(max(0, np.floor(min(c0, c1)))), int(min(band.shape[0], np.ceil(max(c0, c1)) + 1))
+        if r_hi <= r_lo or c_hi <= c_lo:
+            return np.empty((0, 3))
+        sub = band[r_lo:r_hi, c_lo:c_hi]
+        from rasterio.windows import transform as _wt, Window
+        tr = _wt(Window(c_lo, r_lo, c_hi - c_lo, r_hi - r_lo), transform)
+        m = geometry_mask([mapping(geom)], out_shape=sub.shape, transform=tr, invert=True)
+        rows, cols = np.nonzero(m)
+        if not len(rows):
+            return np.empty((0, 3))
+        xs, ys = _xy(tr, rows, cols)
+        z = sub[rows, cols].astype(float)
+        ok = np.isfinite(z)
+        if nodata is not None:
+            ok &= z != nodata
+        return np.column_stack([np.asarray(xs)[ok], np.asarray(ys)[ok], z[ok]])
+    except Exception:
+        return np.empty((0, 3))
+
+
+def _area_weighted_inlier(facets, pc_source, dsm=None):
     """Share of a roof's points lying within 30 cm of their own facet's plane,
-    weighted by facet area. The same measure the defect scanner ranks on."""
+    weighted by facet area. The same measure the defect scanner ranks on.
+
+    `dsm` = (band, transform, nodata) is the fallback evidence WHERE THE
+    SURVEY PUBLISHES NO POINT CLOUD. Kingston's 2025 LiDAR has no point cloud
+    on OpenTopography; its facets were fitted from the 1 m DSM, and this
+    function then scored every one of them against zero returns -- 0.0 by
+    construction, "low_confidence" on 359 of 383 buildings, not one panel in
+    the town (Josh, 22 Sep). A facet with fewer than 12 returns is scored
+    against the DSM cells inside it instead, which is the surface it was
+    fitted to in the first place.
+    """
     if not facets:
         return 0.0
     tot = num = 0.0
     for f in facets:
         pts = _facet_points(pc_source, f["geometry"])
+        if len(pts) < 12:
+            pts = _dsm_points_in(f["geometry"], dsm)
         if len(pts) < 12:
             continue
         r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])

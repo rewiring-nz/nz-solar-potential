@@ -397,7 +397,9 @@ def _build_one_at(building_id, nudge_m):
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
     # map; only the layout is withheld.
-    confidence = _area_weighted_inlier(facets, pc_source) if facets else 0.0
+    _dsm_ev = (_CTX["dsm_band"], _CTX["dsm_ds"].transform, _CTX["dsm_ds"].nodata) \
+        if _CTX.get("dsm_ds") is not None else None
+    confidence = _area_weighted_inlier(facets, pc_source, dsm=_dsm_ev) if facets else 0.0
     # A ROOF JOSH DREW IS NOT WITHHELD FOR LOW CONFIDENCE.
     #
     # _area_weighted_inlier asks how well the points fit the planes we FITTED.
