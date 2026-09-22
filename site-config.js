@@ -13,8 +13,7 @@ window.SITE = {
   // Bumped on every DEPLOY of this site's data: the ?v= param is the only
   // thing that makes a browser re-fetch solar_potential.geojson and the
   // pmtiles, whose URLs are otherwise identical across builds.
-  dataVersion: "37",
-  name: "Queenstown",
+  dataVersion: "38",
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
   towns: [
@@ -25,6 +24,9 @@ window.SITE = {
     ["Speargrass Flat", 168.7800, -44.9700, 14], ["Kelvin Heights", 168.7000, -45.0380, 14.5],
     ["Jacks Point", 168.7420, -45.0870, 14.5], ["Hanley's Farm", 168.7510, -45.0680, 14.8],
     ["Quail Rise", 168.7470, -45.0000, 15], ["Shotover Country", 168.7560, -44.9950, 14.8],
-    ["Lake Hayes Estate", 168.7610, -44.9880, 14.8], ["Queenstown Airport", 168.7390, -45.0210, 15]
+    ["Lake Hayes Estate", 168.7610, -44.9880, 14.8], ["Queenstown Airport", 168.7390, -45.0210, 15],
+    ["Kingston", 168.7180, -45.3380, 15], ["Wanaka", 169.1330, -44.7000, 14.5],
+    ["Albert Town", 169.2100, -44.6820, 15], ["Hawea", 169.2550, -44.6150, 14.5]
   ],
+  name: "Queenstown Lakes",
 };
