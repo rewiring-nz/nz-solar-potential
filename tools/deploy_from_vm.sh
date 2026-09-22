@@ -28,7 +28,7 @@ done
 [ -f data/addresses.json ] && [ -d data/addresses ] && rm -rf data/addresses   # flat file wins when both exist
 
 echo "=== what the VM built ==="
-$PY -c 'import json; s=json.load(open("data/build_summary.json")); t=s["totals"]; print(f"{len(s[\"regions\"])} regions, {int(t[\"n\"]):,} buildings, {int(t[\"panel_count\"]):,} panels, {t[\"kwh\"]/1e6:,.1f} GWh"); print("by type:", {k:int(v["n"]) for k,v in s["by_type"].items()})'
+$PY -c "import json; s=json.load(open('data/build_summary.json')); t=s['totals']; print(len(s['regions']), 'regions,', int(t['n']), 'buildings,', int(t['panel_count']), 'panels,', round(t['kwh']/1e6,1), 'GWh; by type:', {k:int(v['n']) for k,v in s['by_type'].items()})"
 
 echo "=== gate against live ==="
 $PY tools/predeploy_check.py || { echo "GATE FAILED -- not pushing"; exit 1; }

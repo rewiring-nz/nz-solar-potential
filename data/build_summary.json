@@ -1,0 +1,100 @@
+{
+ "built_at": "2026-09-22T12:28:25Z",
+ "regions": [
+  "arrowtown_east",
+  "arrowtown_hills",
+  "arrowtown_millbrook",
+  "arthurs_point",
+  "arthurs_point_east",
+  "dalefield",
+  "frankton_arm",
+  "frankton_arm_lake",
+  "frankton_east_lake",
+  "frankton_flats",
+  "frankton_quail_rise",
+  "gorge_road_corridor",
+  "hanleys_farm",
+  "hawea",
+  "jacks_point",
+  "kelvin_heights",
+  "kelvin_south",
+  "kingston",
+  "lake_hayes_est_west",
+  "pilot",
+  "shotover_lakehayes",
+  "speargrass_hayes",
+  "town_gorge_north",
+  "town_south_lake",
+  "town_west_fernhill",
+  "tucker_beach",
+  "wanaka_albert_town",
+  "wanaka_town",
+  "wanaka_west"
+ ],
+ "totals": {
+  "n": 26742.0,
+  "n_est": 24608.0,
+  "panel_count": 1110005.0,
+  "kwp": 555002.5,
+  "kwh": 619282067.0,
+  "from_selected_facets": 75357.0
+ },
+ "by_type": {
+  "home": {
+   "n": 25599.0,
+   "n_est": 23476.0,
+   "panel_count": 875657.0,
+   "kwp": 437828.5,
+   "kwh": 484111165.0
+  },
+  "business": {
+   "n": 1004.0,
+   "n_est": 996.0,
+   "panel_count": 214413.0,
+   "kwp": 107206.5,
+   "kwh": 123413794.0
+  },
+  "school": {
+   "n": 134.0,
+   "n_est": 131.0,
+   "panel_count": 17576.0,
+   "kwp": 8788.0,
+   "kwh": 10416947.0
+  },
+  "hospital": {
+   "n": 5.0,
+   "n_est": 5.0,
+   "panel_count": 2359.0,
+   "kwp": 1179.5,
+   "kwh": 1340161.0
+  }
+ },
+ "btypes": [
+  [
+   "home",
+   "Homes"
+  ],
+  [
+   "business",
+   "Businesses"
+  ],
+  [
+   "school",
+   "Schools"
+  ],
+  [
+   "hospital",
+   "Hospitals"
+  ],
+  [
+   "community",
+   "Community"
+  ]
+ ],
+ "cells": 1236,
+ "detail_tiles": 41,
+ "heatmap_tiles": 3449,
+ "addresses": 23343,
+ "address_shards": 0,
+ "curve_bands": 2
+}

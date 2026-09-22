@@ -83,3 +83,11 @@ graphify-out/
 data/out/
 data/summaries_prev/
 data/combine_*/
+
+# SERVED with the map (docs/scale-architecture.md): per-region summaries for the
+# deploy gate, the build totals, and the per-latitude-band curves.
+!data/summaries/
+!data/summaries/*.json
+!data/build_summary.json
+!data/seasonal_curves/
+!data/seasonal_curves/*.json
