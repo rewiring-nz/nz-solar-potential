@@ -197,7 +197,9 @@ def areas_from_argv(argv):
         return ["pilot"]
     if args == ["all"]:
         return all_areas()
-    known = set(all_areas())
+    # Named explicitly, a quickstart area is buildable; it is only left out
+    # of the implicit every-area lists.
+    known = set(all_areas(include_quickstart=True))
     for a in args:
         if a not in known:
             raise SystemExit(f"unknown region {a!r} (known: {', '.join(sorted(known))})")
