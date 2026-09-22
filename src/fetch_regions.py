@@ -31,6 +31,7 @@ import config
 from src.surveys import survey_for
 from src.fetch_data import fetch_building_outlines, fetch_raster
 from src.fetch_dem_wide import ensure_dem_wide
+from src.region_build import area_bbox_wgs84
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 REGIONS_DIR = DATA_DIR / "regions"
@@ -150,7 +151,7 @@ def main():
 
     # Pass 1: outlines + DSM for every region (small and fast).
     for name in wanted:
-        bbox = config.REGIONS[name]
+        bbox = area_bbox_wgs84(name)   # task.json, config, or the outlines on disk
         out_dir = REGIONS_DIR / name
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,7 +174,7 @@ def main():
 
     # Pass 2: imagery (the long pole), region by region.
     for name in wanted:
-        bbox = config.REGIONS[name]
+        bbox = area_bbox_wgs84(name)   # task.json, config, or the outlines on disk
         out_dir = REGIONS_DIR / name
         print(f"[{name}] imagery ({bbox_area_km2(bbox):.1f} km2)...")
         try:

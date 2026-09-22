@@ -122,8 +122,19 @@ def main(region_names=None):
         year = sv.get("pointcloud_tile_year") or TILE_YEAR
         tiles = tiles_for_bbox_wgs84(bbox, api_key)
         print(f"{name}: {len(tiles)} tiles from {store.rsplit('/', 1)[-1]} ({year})")
-        for t in tiles:
-            all_tiles.setdefault(tilename_to_filename(t, year), (name, store))
+        names = [tilename_to_filename(t, year) for t in tiles]
+        for fn in names:
+            all_tiles.setdefault(fn, (name, store))
+        # RECORD WHICH TILES THIS REGION USES. Tiles are shared at region
+        # borders, and publish_region deletes a tile only when no other region
+        # still on the disk lists it -- which it can only know from this file.
+        try:
+            from src.region_build import area_paths
+            d = area_paths(name)["dir"]
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "pointcloud_tiles.txt").write_text("\n".join(sorted(names)) + "\n")
+        except Exception as exc:
+            print(f"  (could not record {name}'s tile list: {exc})")
 
     print(f"\n{len(all_tiles)} unique tiles across {len(region_names)} regions")
     missing_upstream = []

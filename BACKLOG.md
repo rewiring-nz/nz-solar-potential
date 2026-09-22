@@ -1600,13 +1600,46 @@ Homes off at z11 leaves 708 buildings = 638 businesses + 65 schools + 5
 hospitals in the summary, exactly. Queenstown has 65 schools and 5 hospitals
 by this reading; nothing is "community" yet because LINZ names none here.
 
-NOT YET (the rest of Josh's list, in order): (1) delete a region's inputs
-after its outputs are in the bucket -- `src/publish_region.py`, the manifest
-and the shared point-cloud-tile rule; (3) the bucket queue, worker loop and
-fleet script. Both designed in docs/scale-architecture.md. The current VM's
-service account has storage READ-ONLY scope (fixed at creation), so uploads
-need fleet VMs created with write scopes; creating VMs from this session's
-account is untried -- if refused it is one IAM grant from Josh.
+## DONE 22 SEP - #1 publish-then-delete, #3 queue + worker + fleet
+
+`src/publish_region.py <r>` uploads data/out/<r>/, the region GeoJSONs and
+the region's face readings to gs://rewiring-solar-data/build/regions/<r>/,
+verifies every file size against the bucket, writes
+data/regions/<r>/manifest.json (survey, git, totals, where it went), THEN
+deletes the rasters and the point-cloud tiles no other unpublished region on
+the disk lists (each region records its tiles at fetch time now). Tested for
+real on `pilot` (970 readings, verified, --no-delete).
+
+`src/gcs_queue.py` is the queue: queue/ claims/ done/ failed/ as bucket
+objects, claims by atomic create-if-absent, heartbeat every 5 min, a claim
+45 min stale is taken over by deleting it with its generation (only one taker
+wins), three attempts then a person. Tested on a throwaway prefix: two
+claims, a third finds nothing, a live claim cannot be stolen, a stale one is
+taken over, failed -> retried, done. `src/worker.sh` is the loop;
+`src/build_region.sh <r>` is one region start to finish (fetch -> predict ->
+stages -> emit -> publish), resumable at every step; `tools/enqueue_regions.py`
+fills the queue from config or the national plan (with --bbox for a city);
+`tools/fleet.sh image|up N|status|down` runs C2D spot workers in
+australia-southeast1-a that delete themselves when the queue is empty;
+`tools/status.py` is the one-line health report.
+
+Settled by trying: this session's account CAN create VMs with storage-rw and
+compute-rw scopes (a probe VM was created and deleted). Nothing is needed from
+Josh to run a fleet of six; past six is a C2D quota request.
+
+**To run a city, in order:**
+```
+tools/fleet.sh image                     # once, from the build VM's disk
+python tools/enqueue_regions.py --plan data/national_regions.json --bbox 174.4 -37.4 175.3 -36.4
+tools/fleet.sh up 6
+tools/fleet.sh status                    # until done == queued
+python src/combine_regions.py            # after pulling regions/*/out from the bucket
+```
+NOT YET: a `pull_regions.py` that fetches `regions/<r>/out/` from the bucket
+onto the combining machine, and publishing the combined set to the bucket with
+`SITE.dataBase` pointed at it (the page already supports it). Both are small.
+Also untested at scale: a fleet run itself -- everything above was tested
+piecewise on the laptop, never as six machines at once.
 
 ## GLENORCHY HAS NO LIDAR (22 Sep)
 

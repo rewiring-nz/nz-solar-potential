@@ -169,6 +169,13 @@ it is the only thing on his side of the line.
 failed 0`, and per-worker, what it is on and for how long. The same numbers
 are the object counts in the bucket folders. A failed region names its log.
 
+## Status, 22 September
+
+1 and 2 below are built and tested piecewise (BACKLOG.md has the evidence);
+3 is built and its queue is tested on the real bucket; the fleet itself has
+not yet been run as a fleet. Creating VMs with write scopes from this
+session's account was tried and works, so nothing here needs Josh.
+
 ## Order of work
 
 1. **Emit and combine** -- `src/emit_region.py`, `src/combine_regions.py`,

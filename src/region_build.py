@@ -110,6 +110,16 @@ def area_bbox_wgs84(name):
     stop -- which is also the only way a national rollout works, since nobody
     is going to hand-write a bbox for every suburb in New Zealand.
     """
+    # A queued task's bbox first: a worker built from the queue may hold no
+    # config entry for the region at all (tools/enqueue_regions.py).
+    task = REGIONS_DIR / name / "task.json"
+    if task.exists():
+        try:
+            bbox = json.loads(task.read_text()).get("bbox")
+            if bbox and len(bbox) == 4:
+                return [float(v) for v in bbox]
+        except Exception:
+            pass
     if name in config.REGIONS:
         return list(config.REGIONS[name])
     if name == "pilot":
