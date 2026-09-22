@@ -2546,6 +2546,22 @@ _IMAGERY_UNSET = object()
 def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
                            ransac_distance_threshold=None, min_facet_area_m2=None,
                            imagery_ds=_IMAGERY_UNSET):
+    """The best segmentation, with every shared ridge moved onto the crest the
+    returns show (src/ridge_snap.py). Wrapped here rather than at each of the
+    seven return sites below, and here rather than only in the build, because
+    two dozen tools call this directly and a preview that skipped the snap
+    would not show what ships (2 Preston Drive, 23 Sep, was first checked
+    through such a preview and looked unchanged)."""
+    from src.ridge_snap import snap_ridges_to_crest
+    facets = _segment_building_best_unsnapped(dsm_ds, pc_source, building_geom, building_id,
+                                              ransac_distance_threshold, min_facet_area_m2,
+                                              imagery_ds)
+    return snap_ridges_to_crest(facets, pc_source) if facets else facets
+
+
+def _segment_building_best_unsnapped(dsm_ds, pc_source, building_geom, building_id,
+                                     ransac_distance_threshold=None, min_facet_area_m2=None,
+                                     imagery_ds=_IMAGERY_UNSET):
     """Runs the point-cloud global solver, the (greedy) point-cloud-native
     segmentation, and the DSM-raster fallback, and keeps whichever explains
     more real roof area. Verified directly on a 400-building sample: the

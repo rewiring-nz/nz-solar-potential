@@ -39,6 +39,7 @@ from src.preflight import preflight
 import geopandas as gpd
 
 from src.roof_segmentation import segment_building_best, _area_weighted_inlier
+from src.ridge_snap import snap_ridges_to_crest
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
@@ -393,12 +394,16 @@ def _build_one_at(building_id, nudge_m):
         f = _no_estimate_feature(building_id, row_geom, to_wgs84,
                                  _diagnose_no_facets(row_geom, pc_source))
         return [f] if f else []
+    _dsm_ev = (_CTX["dsm_band"], _CTX["dsm_ds"].transform, _CTX["dsm_ds"].nodata) \
+        if _CTX.get("dsm_ds") is not None else None
+    # Where two faces meet is decided by the crest the returns show, not by
+    # where two noisy plane fits happen to cross -- see src/ridge_snap.py
+    # (2 Preston Drive: a ridge 0.8 m off with a panel column astride it).
+    facets = snap_ridges_to_crest(facets, pc_source, dsm=_dsm_ev)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
     # map; only the layout is withheld.
-    _dsm_ev = (_CTX["dsm_band"], _CTX["dsm_ds"].transform, _CTX["dsm_ds"].nodata) \
-        if _CTX.get("dsm_ds") is not None else None
     confidence = _area_weighted_inlier(facets, pc_source, dsm=_dsm_ev) if facets else 0.0
     # A ROOF JOSH DREW IS NOT WITHHELD FOR LOW CONFIDENCE.
     #

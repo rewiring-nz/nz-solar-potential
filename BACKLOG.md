@@ -1581,6 +1581,45 @@ Also fixed and live: the sidebar read 0.0 kW zoomed out in Panel Layout
 (it summed buildings that are not loaded below z13); both modes sum the
 cells now.
 
+## RIDGES SNAP TO THE CREST - 23 Sep (src/ridge_snap.py)
+
+Josh, 2 Preston Drive (#4736551): "These panels are going over a ridge line
+on the building." Not an image offset this time: outline and LiDAR agree at
+the west eave to 2 cm. The two 24-degree faces meet 3.66 m across an 8.4 m
+wing; the point cloud puts the crest at 4.44 m on every slice along the
+wing. The ridge was 0.8 m west of the roof's ridge and the east face's first
+column of panels sat astride the real one. The current code (frame +
+families) reproduces it exactly, so the re-lay would not have fixed it.
+
+Population, arrowtown_millbrook: 2,576 shared ridges >= 4 m between
+opposite-facing pitched faces; against the point cloud 18% are more than
+0.5 m from the crest and 2% more than 1 m (tools/ridge_offsets.py). The
+cause is structural: roof_partition puts the boundary where two fitted
+planes cross, and on ~4 returns/m2 two planes each 10 cm off in height meet
+half a metre from where they should. The crest itself is the best-determined
+thing on the roof.
+
+The pass (segment_building_best now returns through it, so every tool sees
+what ships): fit a tent -- two planes meeting on a line parallel to the
+boundary -- to the returns within 3 m of each shared ridge; if the crest is
+0.3-2.5 m off, both sides fall away from it, the fit is clean and the slices
+along the run agree on where it is, move every vertex on that boundary
+(both faces and any hip apex on it) by the offset. The crest is where the
+MAJORITY of 2 m slices agree: on this roof 12 m of slices say +0.80 with
+rms 0.03 and two slices in the junction with the south hip section say
+-0.75 and -0.15; a spread or drift test over all slices refused it, the
+majority rule outvotes the junction. Reverted when the building's facet
+union or overlap changes (10 of 182 did, before the guard). Labelled roofs
+untouched. Dry run on the region with the 1 m DSM: 139 ridges in 134 of
+2,541 buildings move, median 0.47 m, p90 0.75, max 1.55. Unit tests: tests/test_ridge_snap.py (synthetic gable, hip apex,
+labelled, flat, wandering crest).
+
+OPEN: 30-40% of measured ridges that should move are reverted by the
+union/overlap guard -- a third facet shares a vertex just outside the 0.3 m
+tolerance. Moving coincident vertices of every facet (not just those on the
+line) would recover them. Measure with tools/ridge_offsets.py after the
+next re-lay; goldens re-recorded for the moved boundaries.
+
 ## ZOOMED-OUT VIEW IS A DENSITY HEAT MAP - 23 Sep (6755ec19, cf0f571f)
 
 Josh: "a more traditional heat map rather than the blocks... based on
