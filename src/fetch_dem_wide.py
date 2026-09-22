@@ -100,9 +100,11 @@ def mosaic_covers(mosaic_path, bbox):
             and have[2] >= bbox[2] and have[3] >= bbox[3])
 
 
-def ensure_dem_wide(api_key, out_dir=DATA_DIR, bbox=None):
+def ensure_dem_wide(api_key, out_dir=DATA_DIR, bbox=None, pad_deg=0.0):
     """Fetch the wide DEM unless the one on disk already covers `bbox` (the
-    district's extent by default)."""
+    district's extent by default). `pad_deg` widens what is REQUESTED but not
+    what is checked: an export cropped or grid-snapped a hair inside the
+    request would otherwise fail the check forever and refetch every run."""
     out_dir = Path(out_dir)
     mosaic_path = out_dir / "dem_wide_mosaic.tif"
     bbox = bbox or wide_dem_bbox_wgs84()
@@ -116,6 +118,9 @@ def ensure_dem_wide(api_key, out_dir=DATA_DIR, bbox=None):
         print(f"  {mosaic_path} does not cover {bbox} -- refetching. Horizons "
               f"baked against the old one are now stale.")
 
+    if pad_deg:
+        bbox = [bbox[0] - pad_deg, bbox[1] - pad_deg,
+                bbox[2] + pad_deg, bbox[3] + pad_deg]
     print(f"Fetching 8m DEM layer {DEM_WIDE_LAYER} for bbox {bbox}...")
     return fetch_raster(bbox, api_key, DEM_WIDE_LAYER, "dem_wide", out_dir=out_dir)
 
@@ -137,7 +142,7 @@ def ensure_area_dem_wide(api_key, name, area_bbox):
         return root
     out_dir = DATA_DIR / "regions" / name
     out_dir.mkdir(parents=True, exist_ok=True)
-    return ensure_dem_wide(api_key, out_dir=out_dir, bbox=need)
+    return ensure_dem_wide(api_key, out_dir=out_dir, bbox=need, pad_deg=0.02)
 
 
 def main():
