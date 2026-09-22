@@ -1568,6 +1568,19 @@ nothing should ship from here (see tools/repair_facet_area.py, which got this
 wrong the first time and pulled 13,519 buildings toward three-day-old
 geometry before it was caught).
 
+## 13 Plantation Road (#4727237, Wanaka) - expected fixed by the re-lay; verify
+
+Josh: "lots of panels missing on this roof". Shipped: 4 facets, 174 panels,
+the east half of the long wing empty. On the VM with the current code the
+reading's 7 faces come through as 6 (925 of 1,004 m2): the 474 m2 face that
+was the empty half now regularises (it was the >10-corner drop, same as
+Earl Street). The one face still dropped is 81 m2 at 21 deg with plane
+inlier 0.09 -- plant, not roof. Check the count after wanaka_town re-lays.
+
+Also fixed and live: the sidebar read 0.0 kW zoomed out in Panel Layout
+(it summed buildings that are not loaded below z13); both modes sum the
+cells now.
+
 ## LAYOUT ENGINE, 22 SEP - one grid frame per building (Josh: "fundamental fixes")
 
 Cases: #4725584 (32 Frankton Rd, "very disorganised"), #5371139 (14C, "clean
