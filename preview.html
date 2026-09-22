@@ -2037,6 +2037,18 @@ map.on("load", async () => {
       if (map.getLayer(`cells-heat-${lod}`)) map.setPaintProperty(`cells-heat-${lod}`, "heatmap-weight", heatWeightExpr(lod));
     });
   }
+  // A build from before the point layer existed (a deploy whose data has not
+  // been recombined yet) has no cellpts: the heat map would draw nothing and
+  // the cells are invisible, so the zoomed-out view would be blank. Restore
+  // the block fills for that data set rather than show nothing.
+  new pmtiles.PMTiles(`${DATA_BASE}data/building_cells.pmtiles?v=${DATA_VERSION}`).getMetadata().then(meta => {
+    const layers = ((meta && meta.vector_layers) || []).map(l => l.id);
+    if (!layers.length || layers.includes("cellpts")) return;
+    CELL_BANDS.forEach(([lod]) => {
+      if (map.getLayer(`cells-fill-${lod}`)) map.setPaintProperty(`cells-fill-${lod}`, "fill-opacity",
+        ["interpolate", ["linear"], ["coalesce", ["get", "n"], 0], 0, 0, 5, 0.18, 60, 0.45, 400, 0.6]);
+    });
+  }).catch(() => {});
 
   // NOT ESTIMATED. These roofs used to vanish from the map entirely, which is
   // the one case where someone searching their own address most wants an
