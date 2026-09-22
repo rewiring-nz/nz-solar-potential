@@ -89,7 +89,16 @@ def survey_for(bbox, name=None):
     hits.sort(key=lambda s: (s["bbox"][2] - s["bbox"][0])
               * (s["bbox"][3] - s["bbox"][1]))
     out = dict(base)
-    out.update({k: v for k, v in hits[0].items() if v is not None})
+    # KEY PRESENCE, NOT TRUTHINESS. This skipped None values, so a survey
+    # saying "this product does not exist for me" -- pointcloud_bulk_url:
+    # None for Kingston, whose 2025 LiDAR OpenTopography has not published --
+    # silently inherited Queenstown's Otago store instead. It would have
+    # fetched 2025 tile names from a 2021 dataset, got 404s, and fallen back
+    # to the DSM: right answer, wrong reason, and a config that reads as
+    # though Kingston uses Otago's point cloud. An explicit None is an
+    # answer, and it is "none".
+    out.update({k: hits[0][k] for k in KEYS if k in hits[0]})
+    out["name"] = hits[0].get("name", "unnamed")
     return out
 
 

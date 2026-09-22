@@ -157,14 +157,11 @@ SURVEYS = [
         # Queenstown Lakes 0.1m Urban Aerial Photos (2022-2023), whose extent
         # matches this survey's exactly.
         "imagery_layer": 112781,
-        # UNKNOWN. OpenTopography forbids listing its bulk prefixes, so the
-        # dataset name for this survey has not been confirmed. Left None
-        # DELIBERATELY: with no point cloud the pipeline falls back to the 1 m
-        # DSM, which works but is about five times coarser than the
-        # 4.9 returns/m2 Queenstown is built from, and roof geometry would be
-        # materially worse. Confirm the store before building this, or accept
-        # the downgrade knowingly.
-        "pointcloud_bulk_url": None,
+        # CONFIRMED by HEAD, not guessed: the Wanaka tile index gives
+        # CA12_1000_5035, and CL2_CA12_2022_1000_5035.laz is 6.6 MB at this
+        # store. Listing the bulk prefixes is forbidden, so every candidate
+        # was probed against a real tile name from the LINZ index.
+        "pointcloud_bulk_url": "https://opentopography.s3.sdsc.edu/pc-bulk/NZ22_Wanaka",
         "pointcloud_tile_year": "2022",
     },
     {
@@ -174,11 +171,18 @@ SURVEYS = [
         "dsm_layer": 123405,
         "dem_layer": 123404,
         "lidar_tile_index_layer": 123527,
-        # No 0.1 m urban capture found over Kingston -- the Queenstown Lakes
-        # urban photos stop well north of it. Left as the district default
-        # until someone checks the rural 0.2 m coverage; imagery is optional
-        # to the build and its absence degrades gracefully.
-        "imagery_layer": LINZ_IMAGERY_LAYER,
+        # Otago 0.3m Rural Aerial Photos (2019-2021) -- the only LINZ layer
+        # whose extent contains Kingston. Three times coarser than the 0.1 m
+        # Queenstown uses, so imagery-derived cuts will be weaker here; the
+        # LiDAR does the load-bearing work either way.
+        "imagery_layer": 106403,
+        # NO RAW POINT CLOUD. The Kingston survey is 2025 and OpenTopography
+        # has not published it -- every candidate store and year was probed
+        # against a real tile name (CD11_1000_0326) and all 404. So this
+        # region builds from the 1 m DSM of that same 2025 survey: a real
+        # LiDAR product, but gridded, against the ~4.9 returns/m2 Queenstown
+        # gets. Roofs here will be read less finely, and that is worth
+        # revisiting when OpenTopography catches up.
         "pointcloud_bulk_url": None,
         "pointcloud_tile_year": "2025",
     },
