@@ -1635,11 +1635,12 @@ tools/fleet.sh up 6
 tools/fleet.sh status                    # until done == queued
 python src/combine_regions.py            # after pulling regions/*/out from the bucket
 ```
-NOT YET: a `pull_regions.py` that fetches `regions/<r>/out/` from the bucket
-onto the combining machine, and publishing the combined set to the bucket with
-`SITE.dataBase` pointed at it (the page already supports it). Both are small.
-Also untested at scale: a fleet run itself -- everything above was tested
-piecewise on the laptop, never as six machines at once.
+`tools/pull_regions.py` fetches `regions/<r>/out/` from the bucket onto the
+combining machine; `tools/publish_served.py <version> [--public]` pushes the
+combined set to `gs://rewiring-solar-tiles/v<version>/data/` (own bucket,
+CORS set, private until --public) and prints the `dataBase` line for
+site-config.js. Untested at scale: a fleet run itself -- everything above was
+tested piecewise on the laptop, never as six machines at once.
 
 ## GLENORCHY HAS NO LIDAR (22 Sep)
 

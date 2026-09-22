@@ -63,9 +63,12 @@ file.
 ## Where the tiles live
 
 GitHub Pages caps a file at 100 MB. Queenstown's tiles are 60 MB; Auckland's
-would be about 1.5 GB. So tiles are published to the bucket
-(`gs://rewiring-solar-data/tiles/<version>/`), served with public read and
-CORS, and the site points at them through `site-config.js` (`dataBase`). The
+would be about 1.5 GB. So tiles are published to a bucket of
+their own -- `gs://rewiring-solar-tiles/v<version>/data/`, created 22 Sep
+with CORS for Range requests and still private until there is something to
+serve (`tools/publish_served.py <version> --public` grants public read) --
+and the site points at them through `site-config.js` (`dataBase`). The data
+bucket, which holds models and inputs, stays private. The
 pmtiles format is built for exactly this -- a browser fetches byte ranges of
 one large file -- and it is the same code path the map uses today, with a
 different base URL. Queenstown on Pages keeps working unchanged: `dataBase`
