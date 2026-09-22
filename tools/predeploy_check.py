@@ -107,8 +107,9 @@ def main():
     a = ap.parse_args()
 
     newp = Path(a.new)
-    if not newp.exists():
-        print(f"no build at {newp}")
+    summaries = ROOT / "data" / "summaries"
+    if not newp.exists() and not summaries.is_dir():
+        print(f"no build at {newp} and no {summaries}")
         return 2
     print(f"fetching the live build from {a.live_url.split('/data/')[0]} ...")
     try:
@@ -122,9 +123,21 @@ def main():
     live = {int(f["properties"]["building_id"]): f["properties"]
             for f in live_doc["features"]
             if f["properties"].get("building_id") is not None}
-    new = {int(f["properties"]["building_id"]): f["properties"]
-           for f in json.loads(newp.read_text())["features"]
-           if f["properties"].get("building_id") is not None}
+    # THE NEW BUILD IS PER-REGION SUMMARIES NOW (docs/scale-architecture.md).
+    # Each carries a per-building [panel_count, kwh] ladder; that is what the
+    # gate compares. The merged file is read only where a checkout still has
+    # one and no summaries.
+    if summaries.is_dir() and any(summaries.glob("*.json")):
+        new = {}
+        for sp in summaries.glob("*.json"):
+            for b, (panels, kwh) in json.loads(sp.read_text()).get("ladder", {}).items():
+                new[int(b)] = {"panel_count": panels, "fill_panels_100": panels,
+                               "ac_kwh_year": kwh, "building_id": int(b)}
+        print(f"new build: {len(new):,} buildings from {len(list(summaries.glob('*.json')))} region summaries")
+    else:
+        new = {int(f["properties"]["building_id"]): f["properties"]
+               for f in json.loads(newp.read_text())["features"]
+               if f["properties"].get("building_id") is not None}
     _ladder_consistent(live, "LIVE")
     _ladder_consistent(new, "NEW")
 
