@@ -88,6 +88,39 @@ gcloud compute instances stop claude-doing-things --zone australia-southeast1-b
 The 400 GB disk keeps billing while stopped. Deleting it means re-fetching
 ~140 GB of LiDAR and imagery next time, so it is a trade, not an obvious win.
 
+## The wide DEM was too small, and is now right
+
+Found on 22 September while rebasing onto a colleague's new coverage test.
+`data/dem_wide_mosaic.tif` -- the 8 m bare-earth model every far-horizon
+calculation reads -- covered only 168.47-168.87 lon, -45.20 to -44.87, on the
+laptop and on the VM. Kingston sits 20 km south of its bottom edge and Wanaka
+is off it entirely, so both towns would have been modelled with **open sky in
+the directions that are mountains**. Nothing would have said so:
+`building_horizon.far_profile` marches to `FAR_MAX_KM` and stops at the DEM
+edge, so a short DEM does not error, it just returns a sunnier roof.
+
+Refetched on the VM: 15,555 x 18,251 at 8 m, 1.12 GB, covering
+[168.086, -45.662, 169.754, -44.295]. What it is worth, measured on 25
+buildings a region:
+
+| region | direct beam lost to terrain |
+| --- | --- |
+| Kingston | **-3.86%** |
+| Wanaka town | -0.85% |
+| Hawea | -0.51% |
+
+Queenstown was measured too, old mosaic against new, seven regions and 175
+buildings: **-0.00% to -0.01%**. The terrain that matters to Queenstown was
+already inside the small mosaic, so the existing 24 regions do NOT need
+rebuilding, and about six VM-hours were not spent finding that out the
+expensive way.
+
+The extent is no longer a constant. `src/fetch_dem_wide.py` derives it from
+`config.REGIONS` at call time and refuses a mosaic whose own bounds do not
+contain it, so adding a region can no longer silently outgrow the terrain
+model. The builders read only the window a region's rays reach (about 127 MB,
+not 1.12 GB, and the pool spawns so that cost was per worker).
+
 ## Known limits, on purpose
 
 **Kingston has no raw point cloud.** Its LiDAR is a 2025 survey and

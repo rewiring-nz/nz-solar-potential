@@ -7,6 +7,39 @@ compacted, which is why Josh kept having to re-state the list.
 
 Ordered by evidence, not by appeal. Every item names what it is based on.
 
+## DONE 22 SEP — the wide DEM was too small for the towns being built
+
+`data/dem_wide_mosaic.tif` covered 168.47-168.87 lon on the laptop and the VM.
+Kingston was 20 km outside it and Wanaka entirely outside, so both were about
+to be modelled with open sky where the mountains are. `far_profile` stops at
+the DEM edge without erroring, so nothing would have said so.
+
+Fixed: the extent is derived from `config.REGIONS` at call time and the file
+is trusted only when its own bounds contain it. Refetched on the VM (1.12 GB,
+[168.086, -45.662, 169.754, -44.295]) before the build stage reached horizons.
+
+Measured: Kingston **-3.86%** direct beam, Wanaka -0.85%, Hawea -0.51%.
+Queenstown old-vs-new over 175 buildings in 7 regions: **-0.00% to -0.01%**,
+so the existing 24 regions do not need rebuilding.
+
+Also: `gate_panels` was loading the whole mosaic in every worker and passing
+it to `panel_ok`, which has not read it since the height-above-DEM test was
+removed. Load and parameters gone. And `tests/test_both_repos_import.py` is
+new, because dropping those parameters broke Wellington through the exact hole
+`check_repo_sync.py` leaves open on purpose.
+
+## OPEN — the golden buildings moved and nothing explains it yet
+
+`tests/test_golden.py` matches 5/28. Checked and ruled out: the label store
+(the goldens still fail against the store as it was when they were recorded),
+`SOLAR_EXTEND_DANGLING` (same result either way), and the input data (the
+recording commit scores 28/28 against today's data). So it is code, somewhere
+between the recording commit and now; a bisect over the 42 src/ commits was
+running when this was written. Panels move **-14.7%** and yield **-17.4%**
+across the 17 that changed, which is the opposite direction to the district
+build that shipped, so it needs an answer before the goldens are re-recorded.
+**Do not re-record until the cause is named.**
+
 ## WHY AN UNLABELLED TWIN LOOKS WORSE — 4 Sep, Josh's test
 
 He found 7 Anderson Heights (#5371108, labelled) correct and 7 Duncan's Place
