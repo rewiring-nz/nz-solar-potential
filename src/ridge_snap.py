@@ -58,6 +58,7 @@ MIN_POINTS = 24
 VERTEX_TOL_M = 0.3
 MIN_FACET_M2 = 1.0
 GAP_BRIDGE_M = 0.12           # faces cut from buffered slivers sit up to ~10 cm apart
+SIMPLIFY_M = 0.03             # straighten the bridge's rounded ends off the outline
 FOOTPRINT_TOL_M2 = 0.5        # the facets' union may not grow or shrink by more
 OVERLAP_TOL_M2 = 0.3          # nor may they start overlapping each other
 
@@ -246,7 +247,10 @@ def _recut(gi, gj, c0, u, n, length, d):
         parts = _polys(new_taker)
         if not parts or sum(q.area for q in parts[1:]) > 0.05:
             return None
-        new_taker = parts[0]
+        # the bridge is a buffer and leaves its rounded ends on the outline:
+        # 73 vertices on 2 Preston Drive's west face and 56 panels where
+        # there had been 81. Straighten it back.
+        new_taker = parts[0].simplify(SIMPLIFY_M, preserve_topology=True)
     except Exception:
         return None
     for g in (new_giver, new_taker):
