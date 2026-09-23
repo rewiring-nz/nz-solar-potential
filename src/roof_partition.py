@@ -205,6 +205,15 @@ MIN_SPLIT_GAIN = 0.005
 # about six faces, which is the blockiness Josh asked for. Past 2.0 nothing
 # changes, so the rule is only ever binding on the roofs where it should be.
 SETBACK_COST_PER_FIT = 2.0
+# THE PARTITION'S SETBACK IS NOT THE PANEL SETBACK. Cut economics were tuned
+# with a 0.25 m strip: a cut has to buy more fit than the racking area its
+# ridge strip costs. When config.RIDGE_SETBACK_M went to 0.1 (Josh, 22 Sep,
+# for the panels) every cut became 2.5x cheaper here, the recursion bought
+# fit it should not have, and 40 Avalon Crescent (#4747072) went from 3
+# faces and 81% of its roof to one face and 18% -- bisected to that one
+# constant. What panels keep clear of a ridge is his call; what a partition
+# pays for a cut is a tuning of this module, and stays put.
+PARTITION_SETBACK_M = 0.25
 
 # A "fold" test was tried here -- treat a face carrying points far off its own
 # plane as containing a physical drop, and cut it regardless of setback cost.
@@ -256,7 +265,7 @@ def _inlier_fraction(pts, plane):
 
 def _usable(poly, setback=None):
     """Area left after the ridge setback -- what panel packing actually gets."""
-    setback = config.RIDGE_SETBACK_M if setback is None else setback
+    setback = PARTITION_SETBACK_M if setback is None else setback
     if poly.is_empty:
         return 0.0
     try:
@@ -889,9 +898,9 @@ def _merge_bridgeable(faces, pts):
                         rejected.add(key)
                         continue
                     u = Polygon(closed.exterior, [r for r in closed.interiors])
-                gain = (u.buffer(-config.RIDGE_SETBACK_M).area
-                        - pi.buffer(-config.RIDGE_SETBACK_M).area
-                        - pj.buffer(-config.RIDGE_SETBACK_M).area)
+                gain = (u.buffer(-PARTITION_SETBACK_M).area
+                        - pi.buffer(-PARTITION_SETBACK_M).area
+                        - pj.buffer(-PARTITION_SETBACK_M).area)
                 same_plane = (_plane_angle(li, lj) <= SAME_PLANE_ANGLE_DEG
                               and _step_at_join(li, lj, pi, pj) <= SAME_PLANE_STEP_M)
                 if gain <= 0.5 and not same_plane:
@@ -1486,12 +1495,18 @@ def facets_from_selected_faces(building_id, footprint, pts):
         # straight-by-construction, enforced at the seam: a traced boundary
         # either regularises to a clean low-vertex polygon or does not ship
         reg = _regularise_machine_face(poly, footprint)
+        _dbg = os.environ.get("SOLAR_FACE_DEBUG")
         if reg is None:
+            if _dbg:
+                print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners: regulariser dropped it")
             continue
         poly, forced = reg
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
             else None
+        if _dbg:
+            print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners forced={forced} "
+                  f"pts={len(sub)} inlier={_inlier_fraction(sub, plane) if plane is not None else None}")
         if forced and (plane is None
                        or _inlier_fraction(sub, plane) < BIG_FACE_MIN_PLANE_INLIER):
             continue          # over the cap and not one plane: residual fill cuts it properly
@@ -1566,7 +1581,11 @@ def facets_from_selected_faces(building_id, footprint, pts):
     # part of a roof left the rest with no facet at all -- and no facet
     # means no panels, no obstructions, nothing. #4724740 shipped 63%
     # coverage and a bare 216 m2 flat middle.
-    out.extend(residual_fill(building_id, footprint, pts, out))
+    filled = residual_fill(building_id, footprint, pts, out)
+    if os.environ.get("SOLAR_FACE_DEBUG"):
+        print(f"[face {building_id}] selected kept {len(out)} ({sum(f['area_m2'] for f in out):.0f} m2), "
+              f"residual fill added {len(filled)} ({sum(f['geometry'].area for f in filled):.0f} m2) of footprint {footprint.area:.0f} m2")
+    out.extend(filled)
     return out
 
 

@@ -27,6 +27,7 @@ the measurement that licensed it. The staged split of this file is
 tracked in docs/developers/reviewers-guide.md ("comprehension debt").
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -67,6 +68,11 @@ MIN_FACET_AREA_M2 = 3.0  # below this, can't usefully fit even one setback-shrun
 # 0.35, with no increase in a same-building proxy for "wrongly merged two
 # real roof planes into one" (11/120 flagged at both 0.30 and 0.35) --
 # that failure mode only shows up past ~0.40, where it climbs to 13-14/120.
+# The setback the SEGMENTATION economics assume -- how much usable area a
+# split costs -- independent of config.RIDGE_SETBACK_M, which is what the
+# panels keep clear of a ridge (0.1 m since 22 Sep). See roof_partition.
+# PARTITION_SETBACK_M for the measurement that separated the two.
+SEGMENTATION_SETBACK_M = 0.25
 RANSAC_DISTANCE_THRESHOLD_M = 0.35
 # On a *shallow*-pitched multi-face roof (a gentle hip/pyramid, ~10-11 deg
 # per face -- confirmed directly from the DSM on a reported building:
@@ -1543,6 +1549,7 @@ BALCONY_MAIN_MIN_AREA_M2 = 120.0   # ...and big enough to be the building's roof
 # roof. Measured on the two buildings that define the boundary -- see
 # drop_balcony_levels.
 BALCONY_MAX_DEPTH_M = 4.0
+BALCONY_STAIR_MAX_DROP_SHARE = 0.40  # balcony rules drop balconies, never most of the roof
 BALCONY_MIN_DROP_M = 2.5           # a balcony sits this far below it, at least
 BALCONY_MAX_INLIER = 0.75          # ...does not lie on a plane...
 BALCONY_MAX_AREA_SHARE = 0.25      # ...and is small next to the main roof
@@ -1622,7 +1629,28 @@ def drop_plant_decks(facets, pc_source):
 
 
 def drop_balcony_levels(facets, pc_source):
-    """Remove stepped balcony surfaces from a building that has a clear main roof."""
+    """Remove stepped balcony surfaces from a building that has a clear main roof.
+
+    BALCONIES ARE A MINORITY OF A ROOF, whichever rule below finds them: on
+    #4740503 the terraces are 22% of the facet area, on 30 Brunswick Street
+    3%. On the Arthur's Point hotel #4737389 (23 Sep re-lay) the rules took
+    40 of 47 faces and 63% of the roof, because a 47-face reading of a
+    stepped commercial roof has faces below the main one everywhere, most
+    of them small. A rule that would drop most of the roof is wrong about
+    which part is the roof, so the drop is refused and every face stays."""
+    kept = _drop_balcony_levels_rules(facets, pc_source)
+    if kept is facets or len(kept) == len(facets):
+        return kept
+    total = sum(f["geometry"].area for f in facets)
+    share = 1.0 - sum(f["geometry"].area for f in kept) / max(total, 1e-9)
+    if share > BALCONY_STAIR_MAX_DROP_SHARE:
+        print(f"  balcony rules refused: they would drop {100 * share:.0f}% of the roof", flush=True)
+        return facets
+    return kept
+
+
+def _drop_balcony_levels_rules(facets, pc_source):
+    """The rules; drop_balcony_levels applies them and the majority guard."""
     if len(facets) < 2:
         return facets
     stats = []
@@ -1796,6 +1824,14 @@ def drop_roof_features(facets, pc_source):
 DRAWN_KEEP_BOUNDARY = True
 
 
+def __dbg_stage(facets, label, building_id):
+    if os.environ.get("SOLAR_FACE_DEBUG"):
+        try:
+            print(f"[attach {building_id}] after {label}: {len(facets)} faces, {sum(f['geometry'].area for f in facets):.0f} m2")
+        except Exception:
+            print(f"[attach {building_id}] after {label}: {len(facets)} faces")
+
+
 def _attach_building_geometry(facets, building_geom, pc_source=None, building_id=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
@@ -1837,9 +1873,11 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     keep_boundary = constructed or authored or selected
     if facets and pc_source is not None and building_id is not None and not keep_boundary:
         facets = _maybe_reconstruct(facets, pc_source, building_geom, building_id)
+        __dbg_stage(facets, "_maybe_reconstruct", building_id)
     if facets and pc_source is not None:
         if not keep_boundary:
             facets = repair_nonplanar_facets(facets, pc_source)
+            __dbg_stage(facets, "repair_nonplanar_facets", building_id)
         # Whole-facet DROP tests still apply to CONSTRUCTED facets: a fitted
         # face can be a deck or a balcony and dropping one does not redraw the
         # others. They do NOT apply to faces Josh drew, because he has an
@@ -1853,9 +1891,12 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         # faces. Authored geometry is exempt; machine geometry is not.
         if not authored:
             facets = drop_balcony_levels(facets, pc_source)
+            __dbg_stage(facets, "drop_balcony_levels", building_id)
             facets = drop_plant_decks(facets, pc_source)
+            __dbg_stage(facets, "drop_plant_decks", building_id)
         if not keep_boundary:
             facets = drop_roof_features(facets, pc_source)
+            __dbg_stage(facets, "drop_roof_features", building_id)
     # Self-consistency refit at the one choke point every strategy passes
     # through: a facet's plane must be the best explanation of the points its
     # own polygon contains (see _refit_planes for the 45 Camp St case).
@@ -1866,6 +1907,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                                             building_only=True)
             from src.roof_partition import top_surface as _ts
             facets = _refit_planes(facets, _ts(_pts))
+            __dbg_stage(facets, "_refit_planes", building_id)
         except Exception as exc:
             _note_fallback("refit_planes", building_id, exc)
     # merge_uneconomic_splits combines facets it judges too small to be worth
@@ -1876,6 +1918,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     if APPLY_REALISM_MERGE and facets and not drawn and not LINES_LEAD_KEEP:
         try:
             facets = merge_uneconomic_splits(facets)
+            __dbg_stage(facets, "merge_uneconomic_splits", building_id)
         except Exception as exc:
             # A bad merge must never cost a building its whole segmentation, but
             # it must not be invisible either -- a merge that always throws would
@@ -2006,6 +2049,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                 if not did:
                     break
         facets = authored + kept
+        __dbg_stage(facets, "authored + kept", building_id)
     # NO FUZZY BOUNDARIES LEAVE THIS FUNNEL. Josh, on #4734994: "These
     # roof lines are fuzzy, no roof lines are fuzzy, this makes no sense."
     # The partition is straight by construction, but trim_to_roof and the
@@ -2060,6 +2104,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                 pass
             clipped.append(f)
         facets = clipped
+        __dbg_stage(facets, "clipped", building_id)
     return facets
 
 
@@ -2210,7 +2255,7 @@ def _usable_area(facets):
     tot = 0.0
     for f in facets:
         try:
-            tot += max(0.0, f["geometry"].buffer(-config.RIDGE_SETBACK_M).area)
+            tot += max(0.0, f["geometry"].buffer(-SEGMENTATION_SETBACK_M).area)
         except Exception:
             continue
     return tot
@@ -2470,8 +2515,11 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
             # machine-chosen faces -- #4740503 shipped 850 panels over
             # apartment balconies because this return used to skip them.
             # keep_boundary still holds, so nothing reshapes the geometry.
-            return _attach_building_geometry(faces, building_geom,
-                                             pc_source, building_id)
+            att = _attach_building_geometry(faces, building_geom, pc_source, building_id)
+            if os.environ.get("SOLAR_FACE_DEBUG"):
+                print(f"[partition {building_id}] partition_roof -> {len(faces)} faces (explained {score:.2f}); "
+                      f"attach -> {len(att)} faces, {sum(f['geometry'].area for f in att):.0f} m2")
+            return att
 
         # THE IMAGERY DECIDES WHERE THE LINES ARE; THE LIDAR ONLY SETS SLOPE.
         #
@@ -2497,6 +2545,9 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         except Exception:
             _segs = []
         _agree = line_agreement(faces, _segs)
+        if os.environ.get("SOLAR_FACE_DEBUG"):
+            print(f"[partition {building_id}] machine partition -> {len(faces)} faces, "
+                  f"{sum(f['geometry'].area for f in faces):.0f} m2, explained {score:.2f}, line agreement {_agree}")
         if score >= PARTITION_GOOD_ENOUGH and (_agree is None
                                                or _agree >= PARTITION_LINE_MIN):
             return faces
@@ -2523,6 +2574,8 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
             skel = []
         if skel:
             s_score = explained_fraction(skel, pts)
+            if os.environ.get("SOLAR_FACE_DEBUG"):
+                print(f"[partition {building_id}] skeleton -> {len(skel)} faces, {sum(f['geometry'].area for f in skel):.0f} m2, explained {s_score:.2f}")
             if s_score >= score - SKELETON_TIE_MARGIN:
                 for f in skel:
                     f["constructed"] = True
@@ -2532,10 +2585,16 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         except Exception as exc:
             _note_fallback("arrangement", building_id, exc)
             arr = []
+        if os.environ.get("SOLAR_FACE_DEBUG"):
+            print(f"[partition {building_id}] arrangement -> {len(arr)} faces, explained {explained_fraction(arr, pts) if arr else 0:.2f}")
         if arr and explained_fraction(arr, pts) > score:
             return arr
         return faces
     except Exception as exc:
+        if os.environ.get("SOLAR_FACE_DEBUG"):
+            import traceback
+            print(f"[partition {building_id}] EXCEPTION {type(exc).__name__}: {exc}")
+            traceback.print_exc()
         _note_fallback("partition", building_id, exc)
         return []
 
@@ -3406,7 +3465,7 @@ def merge_uneconomic_splits(facets, setback_m=None):
     """Fuse adjacent faces whose split costs more usable area than the yield it
     buys. Repeats until nothing else qualifies, smallest face first."""
     if setback_m is None:
-        setback_m = getattr(config, "RIDGE_SETBACK_M", 0.25)
+        setback_m = SEGMENTATION_SETBACK_M
     if len(facets) < 2:
         return facets
     facets = list(facets)
