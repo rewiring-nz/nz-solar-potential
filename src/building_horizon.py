@@ -1,7 +1,7 @@
 """
 Per-building horizon: ONE 72-bin profile per building, the single source of
-truth for every number the site shows (Josh, 30 Aug: "make sure all
-calculations, like generation profiles, economics and savings that show, and
+truth for every number the site shows (every calculation -- generation
+profiles, economics, savings -- and
 heat maps, all take into account these horizons").
 
 Two layers, combined by per-bin max:

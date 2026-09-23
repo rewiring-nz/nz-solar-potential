@@ -1,8 +1,8 @@
 """Where each roof actually is in the picture, relative to where the LiDAR
 puts it.
 
-Josh, 22 September, on 42 Suburb Street and 13 Douglas Avenue: "the outline
-does not align very well with the actual roof (a common problem)... the
+On 42 Suburb Street and 13 Douglas Avenue the outline does not align well
+with the actual roof (a common problem): the
 panels seem to follow the outline not the image, it should be the reverse,
 matched to the actual image of the roof because that's what people are
 actually seeing when they look."
@@ -18,8 +18,8 @@ was rectified to, so it leans away from the camera by an amount that depends
 on its height and where it sat in the frame. Local, per building, and not a
 constant anyone could subtract.
 
-So the panels are physically in the right place and the picture is not. Josh
-is still right about what to do: people judge the map against the picture.
+So the panels are physically in the right place and the picture is not. The
+right response is still to follow the picture: people judge the map against it.
 This stage measures each building's image offset -- the XY shift that best
 aligns the photo's edges with the LiDAR's height edges, within a few metres --
 and emit_region moves the DRAWN geometry (facets, panels, obstructions, the

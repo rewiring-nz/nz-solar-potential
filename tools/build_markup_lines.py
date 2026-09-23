@@ -1,10 +1,10 @@
-"""Josh's drawn lines as a GeoJSON overlay for the map.
+"""The drawn lines as a GeoJSON overlay for the map.
 
-Josh, 19 Sep: a line he draws is not always meant to reach an edge, so it
+A drawn line is not always meant to reach an edge, so it
 cannot be forced into the face geometry -- cutting faces on those lines was
-measured worse against his own markup (fidelity 94.8% -> 77.2%). What was
-actually missing is that the map never DREW them, so a line he had drawn
-looked absent.
+measured worse against the markup (fidelity 94.8% -> 77.2%). What was
+actually missing is that the map never DREW them, so a drawn line looked
+absent.
 
 This extracts just the lines from data/roof_labels.json -- 2,380 of them
 across 144 roofs -- as a small file the frontend can load on demand, rather

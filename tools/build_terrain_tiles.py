@@ -1,7 +1,6 @@
 """Terrain-RGB tiles from the DSM, so the map can be viewed in 3D.
 
-Josh, 19 Sep: "Is there an ability to add a 3D option to the map? So you can
-see a 3D view of terrain, trees, and the household?"
+A 3D option for the map: terrain, trees and the building.
 
 All three at once, from one surface. The DSM is the top of everything the
 LiDAR hit -- ground where there is ground, tree canopy where there are
@@ -67,8 +66,8 @@ def despike(h, m_per_px, rise_m=8.0, window_m=9.0):
     """Remove thin spikes that are not real structures.
 
     The DSM carries returns from things that are not surfaces -- a crane,
-    a mast, a bird, a stray multipath return. Josh, 19 Sep, on a building in
-    the town centre: "seems to be incorrect in 3D, way too high and spiky."
+    a mast, a bird, a stray multipath return -- a town-centre building came
+    out way too high and spiky in 3D.
     Measured there: cells sitting 45-47 m above the median of everything
     within 15 m of them.
 
@@ -199,7 +198,7 @@ def build_all(regions, min_z, max_z, area_paths):
                 # smears the 1 m step at a building's edge across a couple
                 # of metres, and anything draped on the terrain -- the
                 # panels especially -- then runs down that ramp and appears
-                # to hang off the side of the building. Josh: "unrealistic
+                # to hang off the side of the building: unrealistic
                 # panels drooped over the sides of buildings on walls
                 # rather than rooftops." At detail zooms the tile grid is
                 # already near the 1 m source, so nearest keeps the step

@@ -150,7 +150,7 @@ def test_nearest_bin_clamps_slope():
 # --------------------------------------------------------------------------
 
 def test_total_losses_are_fourteen_percent_including_the_inverter():
-    """Josh set the TOTAL at 14% including the inverter, so the thing to pin is
+    """The TOTAL is 14% including the inverter, so the thing to pin is
     the product, not either factor alone. Losses compound multiplicatively --
     3% inverter plus 11% everything-else is NOT 14% -- which is why the derate
     is 11.34 and not a round number.

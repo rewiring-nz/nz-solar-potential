@@ -1,7 +1,6 @@
 """Split the per-building detail out of the map source, into tiles fetched on click.
 
-WHY. Josh, 20 Sep: "can we make the solar potential geojson work in a
-different way so it's not the whole thing downloading needed for it to work
+WHY. The solar potential data must not download whole for the map to work
 for all of NZ? Maybe we need an approach that will be fast for all NZ, then
 increase in accuracy as we get closer?"
 

@@ -95,7 +95,7 @@ def download_tile(filename, store=None, retries=4):
 def main(region_names=None):
     """region_names lets fetch_regions call this directly, so setting up a new
     region pulls its point cloud automatically instead of relying on someone
-    remembering a second script (Josh, 31 Aug)."""
+    remembering a second script."""
     load_dotenv()
     api_key = os.environ["LINZ_API_KEY"]
     POINTCLOUD_DIR.mkdir(parents=True, exist_ok=True)

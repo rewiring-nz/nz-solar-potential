@@ -12,15 +12,15 @@ fixes that measured well:
   23 buildings                withheld as low_confidence that had panels before
 
 NONE of them were visible in tools/measure_facet_agreement.py, which is what
-had been driving the work all day. That tool scores facet SHAPE against Josh's
-drawings; it has no idea whether a building ships any panels at all. A roof can
-match his markup beautifully and show nothing on the map.
+had been driving the work all day. That tool scores facet SHAPE against the
+drawn markup; it has no idea whether a building ships any panels at all. A roof
+can match the markup beautifully and show nothing on the map.
 
 WHY AGAINST LIVE, NOT AGAINST THE LAST BUILD. `compare_builds.py --snapshot`
 overwrites its baseline every run, so after two rebuilds in a day it compares a
 build to itself and reports no change -- which happened. The deployed site is
 the only baseline that cannot be overwritten by the thing being tested, and it
-is also the thing Josh is actually looking at.
+is also the thing people are actually looking at.
 
 WHAT IS FLAGGED, worst first:
   ZEROED     had panels, now has none. The most visible failure there is: a
@@ -31,8 +31,8 @@ WHAT IS FLAGGED, worst first:
   WITHHELD   newly carries a no_estimate_reason having been estimated before.
 
 A drop is not automatically wrong -- better geometry legitimately removes
-panels that were overlapping a ridge, and Josh said so himself: "on some faces
-this will add more panels, on others it will reduce them". This does not judge.
+panels that were overlapping a ridge: on some faces better geometry adds
+panels, on others it removes them. This does not judge.
 It surfaces what a person should look at before pushing.
 
 Usage:
@@ -176,11 +176,10 @@ def main():
     show("NEWLY WITHHELD", withheld,
          lambda r: f"#{r[0]}  had {r[1]} panels, now: {r[2]}")
 
-    # THE ROOFS JOSH HAS POINTED AT get their own section, always. He said
-    # it plainly on 18 Sep: "I provide examples but they don't often get
-    # fully fixed." A release that moves one of his cases must say so here,
-    # and a release that moves one he already PASSED is a regression that
-    # has to be seen before the push, not after he finds it again.
+    # THE FLAGGED ROOFS get their own section, always: flagged examples did
+    # not reliably get fully fixed. A release that moves one of the cases
+    # must say so here, and a release that moves one already PASSED is a
+    # regression that has to be seen before the push, not after.
     try:
         import json as _json
         from pathlib import Path as _P
@@ -208,7 +207,7 @@ def main():
                   f"moved. Do not deploy without looking at them.")
         pending = [c["id"] for c in reg["cases"]
                    if c.get("status") in ("open", "wrong", "needs_verdict")]
-        print(f"    {len(pending)} still unfixed or awaiting his verdict")
+        print(f"    {len(pending)} still unfixed or awaiting a verdict")
     except Exception as _exc:
         print(f"\n  (case register unavailable: {_exc!r})")
 

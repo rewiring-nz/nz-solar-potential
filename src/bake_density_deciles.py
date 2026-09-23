@@ -62,8 +62,8 @@ def _coverage_poa(facets, pct):
     Roof coverage is not linear in output and treating it as such overstates a
     partial system badly. Someone covering 10% of their roof puts the panels on
     the best 10%, which yields well above the roof average; someone covering
-    100% is also taking the south face. Josh: "if just 10% is covered, it would
-    be the sunniest 10% ... 100% would not be 10 times higher than the 10%".
+    100% is also taking the south face: 10% coverage is the sunniest 10%, and
+    100% is not ten times the 10% figure.
 
     kWp stays linear in area -- half the roof is half the panels -- so only the
     POA term changes, which keeps this a drop-in for the existing estimate.
@@ -141,7 +141,7 @@ def bake(sp, layouts):
         # System-size targeting: cumulative kWh by fill_order, so the frontend
         # can ask "the best N panels" (a 6kW system) and get the right energy
         # without loading the panel tiles. Stored at the sizes a real quote
-        # uses; households are 3-12kW (Josh), so the ladder is dense there.
+        # uses; households are 3-12kW, so the ladder is dense there.
         by_order = sorted(t for t in panels if t[2])
         for n in SYSTEM_PANEL_STEPS:
             sel = by_order[:n]

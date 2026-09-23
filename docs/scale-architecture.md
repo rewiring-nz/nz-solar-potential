@@ -1,11 +1,7 @@
 # Building New Zealand one region at a time
 
-Josh, 22 September 2026: *"How can you make it not all one file? Maybe set
-that up first, and solve [deleting inputs] and [coordinating machines]. Then
-I'll decide what city to do. Make sure you think through in detail what the
-best option is for scaling and coordinating the process cleanly."*
-
-This is that thinking. Every number is measured on the Queenstown build or on
+How the build stops being one file, deletes its inputs as it goes, and
+coordinates many machines -- the groundwork for building any city. Every number is measured on the Queenstown build or on
 the VM as it stands today; every choice names the alternative it beat and why.
 
 ## The one idea
@@ -76,10 +72,10 @@ defaults to the site's own origin.
 
 Egress from the bucket is about NZ$0.20 per GB. A street view is ~1.3 MB, so
 ten thousand views is a few dollars. Cloudflare R2 has no egress fee at all,
-but it would need an account Josh sets up; the bucket needs nothing from him
-and can be swapped later by changing one URL.
+but it would need a new account; the bucket needs nothing and can be swapped
+later by changing one URL.
 
-## Deleting inputs (Josh's #1)
+## Deleting inputs
 
 Inputs are 200 GB of the VM's 217 GB. Nationally they would be terabytes, and
 they are all re-fetchable from LINZ. So a region's inputs are deleted **the
@@ -98,23 +94,22 @@ Peak disk on a worker is then one region's working set -- 42 GB at the worst
 Queenstown region -- plus what it has not yet uploaded. The 400 GB disk stops
 being the thing that decides how big the country can be.
 
-## Coordinating machines (Josh's #3)
+## Coordinating machines
 
 ### The choice
 
 Three ways to run 1,384 independent jobs on N spot machines:
 
-| option | what it needs from Josh | what it gives |
+| option | what it needs from an administrator | what it gives |
 | --- | --- | --- |
 | **Google Cloud Batch** | enable the Batch API, grant IAM to a service account | retries, spot handling and a task list, all managed |
 | **a queue in the bucket + plain VMs** | nothing -- compute and storage already work | the same properties, in ~200 lines we can read |
 | Pub/Sub or Cloud Tasks | enable two APIs, IAM | a queue, plus a subscriber to write anyway |
 
 The service account this session runs as **cannot enable APIs or read IAM**
--- both were tried. So Batch means a console session from Josh before
-anything moves, and every later change to permissions is his too. The bucket
-queue needs nothing from him, and its state is a folder he can open in the
-console: `queue/`, `claims/`, `done/`, `failed/`. Counting the objects in
+-- both were tried. So Batch means an administrator's console session before
+anything moves, and every later change to permissions too. The bucket queue
+needs nothing, and its state is a folder anyone can open in the console: `queue/`, `claims/`, `done/`, `failed/`. Counting the objects in
 each is the progress report. That legibility is worth more here than Batch's
 polish, because the person deciding whether the run is healthy does not read
 logs.
@@ -162,9 +157,9 @@ One thing the existing VM cannot do is upload: its service account carries
 `storage read-only` scope, fixed at creation. Fleet VMs are created with
 read-write storage and compute scopes so they can publish their region and
 retire themselves. Creating VMs from this session's account has not been
-tried yet; if it is refused, that is a single IAM grant from Josh
+tried yet; if it is refused, that is a single IAM grant
 (`compute.instanceAdmin` and `serviceAccountUser` on `claude-batch`), and
-it is the only thing on his side of the line.
+it is the only thing that needs an administrator.
 
 ### What "the run is healthy" looks like
 
@@ -177,7 +172,7 @@ are the object counts in the bucket folders. A failed region names its log.
 1 and 2 below are built and tested piecewise (BACKLOG.md has the evidence);
 3 is built and its queue is tested on the real bucket; the fleet itself has
 not yet been run as a fleet. Creating VMs with write scopes from this
-session's account was tried and works, so nothing here needs Josh.
+session's account was tried and works, so nothing here needs an administrator.
 
 ## Order of work
 
@@ -188,7 +183,7 @@ session's account was tried and works, so nothing here needs Josh.
 2. **Upload and delete** -- `src/publish_region.py`, the manifest, the
    shared-tile rule for point clouds.
 3. **Queue, worker, fleet, status.**
-4. Josh picks a city.
+4. Pick a city.
 
 Kingston and Wanaka, already running on the old path, land on the old path;
 they are then re-emitted through the new one, which is minutes.

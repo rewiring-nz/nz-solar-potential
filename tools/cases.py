@@ -1,42 +1,41 @@
-"""Every roof Josh has pointed at, and whether it is fixed RIGHT NOW.
+"""Every flagged roof, and whether it is fixed RIGHT NOW.
 
-THE PROBLEM THIS SOLVES. Josh, 18 Sep: "I provide examples but they don't
-often get fully fixed... We might need some sort of tracked way to make sure
-things are improving." He is right, and the failures were structural, not
-bad luck. In one day:
+THE PROBLEM THIS SOLVES. Flagged examples did not reliably get fully fixed;
+there has to be a tracked way to make sure things are improving. The
+failures were structural, not bad luck. In one day:
 
   * #4735292 was called fixed on the strength of a SCORE. Nobody looked at
     the roof. It was still wrong.
   * The fix was then real, but a district driver skipped its region in
-    silence, so it never reached the map -- twice. He saw the same roof back
+    silence, so it never reached the map -- twice. The same roof came back
     unchanged, twice.
   * #4722059 re-acquired the exact pathological reading that had already
     been fixed once, and shipped dark.
 
-Nothing in the system knew about any of it, because his examples lived only
+Nothing in the system knew about any of it, because the examples lived only
 as screenshots in a chat. This makes them first-class objects with a status
 that is recomputed from the data every time.
 
-WHAT A CASE IS. One roof he pointed at, what he said about it, and a
-fingerprint of the geometry he was complaining about. A case is never
+WHAT A CASE IS. One flagged roof, the note that came with it, and a
+fingerprint of the geometry it was flagged for. A case is never
 deleted: a roof that gets fixed and then breaks again must surface as a
 REGRESSION rather than quietly disappear.
 
-THE LOOP, and note where Josh's time goes -- only the last step:
+THE LOOP, and note where the reviewer's time goes -- only the last step:
 
-    1. He points at a roof.          tools/cases.py add <id> "what he said"
+    1. A roof is flagged.            tools/cases.py add <id> "the note"
     2. Every build re-measures it.   tools/cases.py check
     3. Changed roofs get rendered.   -> data/preview/cases.html
-    4. He looks and says.            tools/cases.py verdict <id> fixed|wrong
+    4. The reviewer rules on it.     tools/cases.py verdict <id> fixed|wrong
 
-He is only ever shown roofs whose geometry CHANGED since he last ruled on
-them, before and after, side by side. A roof he has already passed and that
-has not moved never appears again. That is the whole point: his attention is
-the scarce input, so it is spent only where it can change a decision.
+The reviewer is only ever shown roofs whose geometry CHANGED since the last
+ruling, before and after, side by side. A roof already passed that has not
+moved never appears again. That is the whole point: review attention is the
+scarce input, so it is spent only where it can change a decision.
 
 WHAT IT MEASURES per case, from the data rather than from an opinion:
-    facets, coverage of the footprint, panels, and -- where he has drawn the
-    roof -- agreement with his faces and panels crossing his lines.
+    facets, coverage of the footprint, panels, and -- where the roof has been
+    drawn -- agreement with the drawn faces and panels crossing drawn lines.
 The fingerprint is the geometry itself, so "unchanged" is a fact.
 
     python tools/cases.py check
@@ -140,7 +139,7 @@ def measure(case, ctx):
                       for x, y in f.exterior.coords] for f in facets]),
              sort_keys=True).encode()).hexdigest()[:12]}
 
-    # where he drew the roof, measure against HIS faces, not against ourselves
+    # where the roof was drawn, measure against the DRAWN faces, not against ourselves
     labs = json.loads((ROOT / "data/roof_labels.json").read_text())["buildings"]
     lab = labs.get(str(bid))
     if lab and lab.get("faces"):
@@ -169,13 +168,13 @@ def measure(case, ctx):
         if segs and panels:
             m["across"] = sum(1 for p in panels
                               if any(p.intersects(s) for s in segs))
-        # HIS LINES, ONE BY ONE. Every verdict he gave on 18 Sep was
+        # THE DRAWN LINES, ONE BY ONE. Every verdict of 18 Sep was
         # counted in lines, not faces: "missing two valley lines and a
         # ridgeline that I clearly drew", "missing one valley line",
         # "missing two ridge lines that I drew". So the number tracked has
-        # to be the same one he is counting -- how many of the lines he
+        # to be the same one the reviewer counts -- how many of the lines
         # drew exist as a facet boundary, and how much boundary we drew
-        # that he did not. Face-level agreement averages both away.
+        # that were not drawn. Face-level agreement averages both away.
         raw = []
         for l in lab.get("lines") or []:
             pts = l.get("points") or ([l.get("a"), l.get("b")]
@@ -189,13 +188,13 @@ def measure(case, ctx):
                     raw.append((seg, l.get("kind")))
         # AN OPEN-ENDED LINE IS NOT THE SAME KIND OF MISS.
         #
-        # His tool derives faces from a planar subdivision, so a line with a
+        # The labelling tool derives faces from a planar subdivision, so a line with a
         # free end bounds no region and never becomes a facet boundary.
-        # Measured across his three "missing lines" roofs that accounts for
+        # Measured across the three "missing lines" roofs that accounts for
         # every miss and nothing else. Counting those the same as a line we
-        # simply failed to find leaves roofs sitting in his queue for
-        # something he told us to leave alone -- "sometimes lines are not
-        # meant to go all the way to an edge" -- so they are counted apart.
+        # simply failed to find leaves roofs sitting in the queue for
+        # something deliberate -- a line is not always meant to go all the
+        # way to an edge -- so they are counted apart.
         # They are still honoured: panels are kept off them, and the map's
         # markup layer draws them.
         whole = []
@@ -261,14 +260,14 @@ def cmd_check(a):
         if m.get("error"):
             rows.append((c, m, "ERROR", False))
             continue
-        # a roof he PASSED that has since moved is a regression until he
-        # says otherwise -- this is the check that was missing when
+        # a roof PASSED that has since moved is a regression until the
+        # reviewer says otherwise -- this is the check that was missing when
         # #4722059 quietly re-acquired its bad reading
         # A REGRESSION THAT UNDOES ITSELF CLEARS ITSELF. The fingerprint
-        # Josh approved is recorded with his verdict, so a roof that comes
+        # approved is recorded with the verdict, so a roof that comes
         # back to exactly that geometry is fixed again and must not sit in
-        # his queue asking to be re-judged -- his attention is the scarce
-        # input. Anything else stays flagged until he looks.
+        # the queue asking to be re-judged -- review attention is the scarce
+        # input. Anything else stays flagged until it is looked at.
         approved = next((v.get("fingerprint") for v in
                          reversed(c.get("verdicts") or [])
                          if v.get("verdict") == "fixed"), None)
@@ -303,9 +302,9 @@ def cmd_check(a):
     n = {k: sum(1 for c in d["cases"] if c["status"] == k)
          for k in ("fixed", "regressed", "needs_verdict", "open", "wrong")}
     total = len(d["cases"])
-    print(f"\n  {n['fixed']}/{total} fixed and confirmed by Josh"
+    print(f"\n  {n['fixed']}/{total} fixed and confirmed"
           f"   {n['regressed']} REGRESSED"
-          f"   {n['needs_verdict']} awaiting his verdict"
+          f"   {n['needs_verdict']} awaiting a verdict"
           f"   {n['open'] + n['wrong']} still open")
     if a.render:
         render([r for r in rows if r[3] or r[2] in ("regressed", "open",

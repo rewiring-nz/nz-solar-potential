@@ -9,7 +9,7 @@ offset) in the footprint's own frame.
 
 "THE MODEL PROPOSES, THE LIDAR DISPOSES" was the design, and it survives only
 in a much weaker form than it claims. Line by line, `_line_is_real` keeps 86.1%
-of model lines that match Josh's drawings and 83.7% of those that do not --
+of model lines that match the drawn lines and 83.7% of those that do not --
 2.4 points of separation, near enough to a coin flip.
 
 End to end it is still worth keeping, which is not the same thing and was
@@ -21,10 +21,10 @@ as "the whole fusion story".
 
 Nor can it do better. The survey is 1.7 returns per m2, roughly 0.77 m
 spacing, and a hip crease is decimetre-scale geometry that falls between
-samples. Asked to confirm creases Josh drew by eye on 0.1 m imagery, the gate
+samples. Asked to confirm creases drawn by eye on 0.1 m imagery, the gate
 rejects a quarter of them.
 
-So the fusion is the other way round, which is what Josh described:
+So the fusion is the other way round:
 
     THE IMAGERY FINDS THE LINES. THE LIDAR FITS THE ANGLES.
 
@@ -79,7 +79,7 @@ VISION_DIR = Path(os.environ.get("SOLAR_VISION_DIR",
 #
 # WAS 0.25, on the reasoning that "the LiDAR gate downstream is the real
 # filter". Measured, that gate is not a filter at all. Against 659 model lines
-# matching Josh's drawings and 2,043 that do not, _line_is_real keeps 86.1% of
+# matching the drawn lines and 2,043 that do not, _line_is_real keeps 86.1% of
 # the true ones and 83.7% of the false -- 2.4 points of separation, which is
 # noise. The measured separation is the finding; the explanation this note
 # used to give for it was wrong. It said the cloud is 1.7 returns/m2 and a
@@ -94,9 +94,9 @@ VISION_DIR = Path(os.environ.get("SOLAR_VISION_DIR",
 # of true lines and 22.2% of false, and the old 0.25 admitted essentially
 # every false line (baseline precision 24% -- three cuts in four were wrong).
 #
-# Swept end to end against Josh's markup on 85 roofs, model path only:
+# Swept end to end against the markup on 85 roofs, model path only:
 #
-#   MIN_SCORE   lines found   edges he did NOT draw   clutter   facets
+#   MIN_SCORE   lines found   edges not drawn   clutter   facets
 #      0.25        83.6%              25.3%            122       8.4
 #      0.90        82.5%              22.4%            119       8.0
 #      0.95        81.2%              22.6%            113       7.5
@@ -111,17 +111,17 @@ MIN_SCORE = float(os.environ.get("SOLAR_MIN_SCORE", "0.90"))
 #
 # CONFIDENCE WAS THE WRONG AXIS ON ITS OWN. Raising MIN_SCORE made cuts more
 # likely to be REAL; it did nothing about them being SHORT, and _cut extends
-# whatever it is given into an infinite line across the whole cell. Josh found
-# it on 107 Beach Street (#4725721): a 127 m2 roof, about 11 m across, sliced
+# whatever it is given into an infinite line across the whole cell. 107 Beach
+# Street (#4725721) showed it: a 127 m2 roof, about 11 m across, sliced
 # by five model lines of 1.8, 2.0, 2.1, 3.1 and 5.5 m. A 1.8 m observation
 # became an 11 m assertion.
 #
 # Across ~4,000 currently-cutting lines the median is 0.25 of sqrt(roof area),
 # so HALF the cuts come from stubs under a quarter of the roof's own scale.
 #
-# Swept on Josh's 85 labelled roofs, model path only:
+# Swept on the 85 labelled roofs, model path only:
 #
-#   bar     lines found   edges he did NOT draw   clutter   facets
+#   bar     lines found   edges not drawn   clutter   facets
 #   none       82.5%             22.4%              119      8.0
 #   0.25       82.5%             21.4%              115      7.7
 #   0.35       82.7%             20.5%              112      7.5
@@ -212,16 +212,16 @@ def has_model(building_id):
 
 # ------------------------------------------------------------------ drawn
 
-# Josh's own lines, for the roofs he has actually marked up.
+# The drawn lines, for the roofs that have been marked up.
 #
-# WHY THIS EXISTS. Until now his markups reached the build only by training the
+# WHY THIS EXISTS. Until now the markups reached the build only by training the
 # line model, whose predictions were then offered as proposals and gated by the
-# LiDAR. So on a roof he had drawn himself, the build used the model's guess
-# (held-out F1 0.43 on ridges, 0.13 on cliffs) instead of his ground truth, and
-# the gate could veto his creases exactly as it vetoes a model's. He found this
-# from the map: 7 Anderson Heights (#5371108, 14 drawn lines) and 1 Memorial
-# Street (#5372565, 19 drawn lines) are both marked complete and both came out
-# with facets that look nothing like what he drew.
+# LiDAR. So on a marked roof the build used the model's guess (held-out F1
+# 0.43 on ridges, 0.13 on cliffs) instead of the ground truth, and the gate
+# could veto drawn creases exactly as it vetoes a model's. It showed on the
+# map: 7 Anderson Heights (#5371108, 14 drawn lines) and 1 Memorial Street
+# (#5372565, 19 drawn lines) are both marked complete and both came out with
+# facets that look nothing like the markup.
 #
 # A drawn line is not a proposal. He looked at the imagery and said "there is a
 # fold here", which is the same evidence the LiDAR gate is a proxy for -- and a
@@ -248,7 +248,7 @@ def _labels():
 
 
 def drawn_segments(building_id):
-    """Raw [(x1,y1,x2,y2), ...] in NZTM for a roof Josh has marked, else []."""
+    """Raw [(x1,y1,x2,y2), ...] in NZTM for a marked roof, else []."""
     if building_id is None:
         return []
     lab = _labels().get(str(building_id))
@@ -270,11 +270,11 @@ def drawn_segments(building_id):
 
 
 def drawn_faces(building_id):
-    """The faces the LABELLING TOOL derived from Josh's lines, as NZTM rings.
+    """The faces the LABELLING TOOL derived from the drawn lines, as NZTM rings.
 
     These were in roof_labels.json the whole time and nothing read them. The
-    tool runs facesFor() in the browser as he draws -- the same construction he
-    is looking at when he decides a roof is finished -- and exports the result
+    tool runs facesFor() in the browser as lines are drawn -- the construction
+    on screen when a roof is marked finished -- and exports the result
     with an area and a `usable` flag per face. #5371108 carries 9 of them.
 
     Re-deriving faces from the lines in Python was the wrong instinct and cost
@@ -303,12 +303,12 @@ def drawn_faces(building_id):
 
 
 def drawn_obstruction_polys(building_id):
-    """The obstructions Josh marked, as world polygons for the panel fitter.
+    """The marked obstructions, as world polygons for the panel fitter.
 
-    He drew 549 of them and, until 6 Sep, nothing at fitting time read one:
-    they scored the detector and were then ignored, so panels sat on vents he
-    had personally boxed ("panels clearly overlapping obstructions",
-    #5372565). The fitter takes world polygons; these are exactly that.
+    549 were drawn and, for a long time, nothing at fitting time read one:
+    they scored the detector and were then ignored, so panels sat on vents
+    that had been boxed by hand (#5372565). The fitter takes world polygons;
+    these are exactly that.
     """
     if building_id is None:
         return []
@@ -341,7 +341,7 @@ def has_drawn(building_id):
 
 
 def drawn_lines(building_id, footprint=None):
-    """Josh's lines in the same (angle, offset, length, score) shape as the
+    """Drawn lines in the same (angle, offset, length, score) shape as the
     model's, scored 1.0 because they are not predictions."""
     segs = drawn_segments(building_id)
     if not segs:
@@ -408,12 +408,12 @@ def provenance(building_id):
 
 
 def drawn_line_keepouts(building_id, width=None):
-    """Josh's fold lines as thin no-panel strips for the fitter.
+    """Drawn fold lines as thin no-panel strips for the fitter.
 
-    Found via #4735237 (17 Sep): his two big faces carry 79 internal
+    Found via #4735237: its two big drawn faces carry 79 internal
     ridge/valley/cliff lines, but lines that do not close into a cell never
     become facet boundaries, so 264 of 450 panels tiled straight across
-    lines he drew. A drawn line is a fold in the real roof whether or not
+    drawn lines. A drawn line is a fold in the real roof whether or not
     the partition split on it; panels must not span it.
 
     Consumed via fit_panels_on_facet(fold_keepouts=...), NOT as an
@@ -444,11 +444,9 @@ def drawn_line_keepouts(building_id, width=None):
 
 # WHY A DRAWN LINE CAN STOP SHORT OF AN EDGE, AND WHAT TO DO ABOUT IT.
 #
-# Josh, 19 Sep: "sometimes lines are not meant to go all the way to an edge."
-# He is right about his own drawing, and it is also why three roofs kept
-# coming back: "missing two valley lines and a ridgeline that I clearly
-# drew" (#4734696), "missing one valley line" (#4735623), "missing two ridge
-# lines that I drew" (#5372565).
+# Sometimes a drawn line is not meant to go all the way to an edge. That is
+# also why three roofs kept coming back with drawn valley and ridge lines
+# missing (#4734696, #4735623, #5372565).
 #
 # Measured, the rule is exact and has no exceptions. Across those three
 # roofs every line whose two ends CLOSE -- onto the footprint or onto
@@ -473,41 +471,41 @@ def drawn_line_keepouts(building_id, width=None):
 # kinds. It must be unmistakable on the drawn part (>= 1.0) and still
 # clearly present at the middle of the gap (>= 0.6).
 #
-# On the roof Josh keeps flagging this is not a marginal call. #5372565's
+# On the roof most often flagged this is not a marginal call. #5372565's
 # 30.6 m ridge dies 2.7 m short of the parapet; probed outward in half-metre
 # steps the fold reads +0.42, +0.53, +0.67, +0.77 across the gap and only
-# fades at +4.0 m, past the wall it needed to reach. He drew the line short;
-# the roof does not stop there.
+# fades at +4.0 m, past the wall it needed to reach. The line was drawn
+# short; the roof does not stop there.
 #
 # Scope, over all 116 marked roofs with survey under them: 291 free ends,
 # 119 pass the gate, and after splitting they add 18 faces on 11 roofs.
 # Most passing ends are near-misses of a metre or less that the tool had
 # already noded, so extending them changes nothing at all.
 
-# ON, BECAUSE JOSH MADE THE CALL. 21 Sep: "Run them out."
+# ON, BY DECISION: the lines win.
 #
 # The measurement never settled this and could not. With the gate above plus
 # the two-planes test in roof_partition, the whole change is an exact
-# one-for-one trade on his own 29 marked roofs:
+# one-for-one trade on the 29 marked roofs:
 #
 #                            off            on
 #   faces matching markup   97.0%   ->    95.8%
-#   his lines found         80.8%   ->    81.4%
+#   drawn lines found       80.8%   ->    81.4%
 #   extra facets                2   ->        3
 #   panels across a line     1/2708 ->   1/2696
 #
 # That is arithmetic, not tuning: splitting a face always loses the parent's
 # exact match and neither child replaces it, so face agreement can only fall
 # and line recall can only rise. The question underneath was which of two
-# things he authored wins when they disagree -- his LINES, which say a fold
-# is there, or the FACES his tool exported, which dropped the line because it
-# bounded no region. He says the lines.
+# authored things wins when they disagree -- the drawn LINES, which say a fold
+# is there, or the FACES the tool exported, which dropped the line because it
+# bounded no region. The lines.
 #
 # Turn off with SOLAR_EXTEND_DANGLING=0.
 EXTEND_DANGLING = os.environ.get("SOLAR_EXTEND_DANGLING", "1") == "1"
 DANGLE_GAP_MAX = float(os.environ.get("SOLAR_DANGLE_GAP_MAX", "3.5"))
 DANGLE_FREE_MIN = 0.6      # under this the tool has already noded the end
-DANGLE_EV_DRAWN = 1.0      # fold must be unmistakable where he drew it
+DANGLE_EV_DRAWN = 1.0      # fold must be unmistakable where the line was drawn
 DANGLE_EV_GAP = 0.6        # and still clearly there across the gap
 _SLOPE_REF = 0.30          # m/m of slope disagreement that scores 1.0
 _STEP_REF = 0.40           # m of height step that scores 1.0
@@ -540,7 +538,7 @@ def _fold_evidence(pts, origin, along, normal, s0, s1,
 
 
 def drawn_polylines(building_id):
-    """Josh's lines as whole polylines, not broken into segments."""
+    """Drawn lines as whole polylines, not broken into segments."""
     if building_id is None:
         return []
     lab = _labels().get(str(building_id))

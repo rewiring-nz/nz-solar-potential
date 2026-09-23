@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.preflight import preflight
 from src.region_build import write_json_atomic
-GAP_M = 0.04  # was 0.07 -- Josh: gaps a touch smaller
+GAP_M = 0.04  # was 0.07; gaps a touch smaller
 # The buffer is applied in DEGREES using the longitude scale at the panel's
 # latitude, so the north-south shrink is ~1/cos(lat) larger than east-west
 # (~5.7cm vs 4cm at -45). Cosmetically invisible at panel size and this is the

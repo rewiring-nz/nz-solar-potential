@@ -26,7 +26,7 @@ DEM_WIDE_BBOX = [168.214585, -45.351447, 169.289392, -44.682770]
 # The pilot itself stays on its original top-level paths; each region here
 # gets its own data/regions/<name>/ tree.
 REGIONS = {
-    # Kingston and Wanaka, added 22 Sep at Josh's request. Split to stay
+    # Kingston and Wanaka, added 22 Sep. Split to stay
     # inside the measured 3,000-building ceiling; each sits wholly inside its
     # own LiDAR survey's real extent (see SURVEYS below), which is why the
     # bboxes are clipped rather than drawn round the townships.
@@ -45,15 +45,15 @@ REGIONS = {
     "shotover_lakehayes":  [168.7335, -45.0008, 168.7814, -44.9606],  # 814
     "arthurs_point":       [168.6733, -44.9934, 168.7114, -44.9691],  # 413
     "arrowtown_millbrook": [168.7904, -44.9599, 168.8476, -44.9376],  # 2712
-    # Gap-filler (Josh, 23 Aug): the strip between shotover_lakehayes and
+    # Gap-filler: the strip between shotover_lakehayes and
     # arrowtown_millbrook plus the whole Lake Hayes east side fell between
     # the original bboxes -- Speargrass Flat properties reported missing.
     "speargrass_hayes":    [168.7780, -45.0100, 168.8480, -44.9550],
-    # Old Arthurs Point (Josh, 23 Aug): lower Arthurs Point Rd / Shotover
+    # Old Arthurs Point: lower Arthurs Point Rd / Shotover
     # bridge side fell east of the original arthurs_point bbox. 318 outlines,
     # full 2021 LiDAR coverage confirmed.
     "arthurs_point_east":  [168.7114, -45.0050, 168.7420, -44.9700],
-    # Third gap region (Josh, 23 Aug): the whole Frankton Rd arm hillside --
+    # Third gap region: the whole Frankton Rd arm hillside --
     # Panorama Tce, Goldfield Hts, mid-arm -- sat between the (CBD-only)
     # pilot box and frankton_flats. Never fetched, never built.
     "frankton_arm":        [168.6740, -45.0330, 168.7360, -45.0080],
@@ -70,7 +70,7 @@ REGIONS = {
     # category as Glenorchy/Kinloch. Cannot be modelled until a new capture.
     "dalefield":           [168.7491, -44.9630, 168.7924, -44.9377],  # 119
     "arrowtown_hills":     [168.8595, -44.9877, 168.8910, -44.9624],  # 79
-    "frankton_arm_lake":   [168.6725, -45.0379, 168.6815, -45.0305],  # 79 (Josh's strip)
+    "frankton_arm_lake":   [168.6725, -45.0379, 168.6815, -45.0305],  # 79
     "town_south_lake":     [168.6541, -45.0275, 168.6651, -45.0209],  # 56
     "frankton_east_lake":  [168.7478, -45.0307, 168.7564, -45.0215],  # 24
     "kelvin_south":        [168.7528, -45.0519, 168.7718, -45.0405],  # 15
@@ -81,11 +81,11 @@ REGIONS = {
 # Real buildings whose top surface is not a usable roof (rooftop car decks,
 # etc.) -- kept on the map, but no panels placed.
 NON_ROOF_BUILDING_IDS = {
-    4744271,  # 19 Industrial Pl -- rooftop parking deck (Josh, 23 Aug)
+    4744271,  # 19 Industrial Pl -- rooftop parking deck
 }
 
 DEMOLISHED_BUILDING_IDS = {
-    4735131,  # 61 Ballarat St -- now under the new road corridor (Josh, 23 Aug)
+    4735131,  # 61 Ballarat St -- now under the new road corridor
     # Flagged "nothing is there" while labelling roofs, 2 Sep 2026. The LiDAR is
     # from 2021 and the outlines have not caught up; each was checked against
     # current imagery and found to be bare ground or a cleared site.
@@ -189,7 +189,7 @@ SURVEYS = [
 ]
 
 
-# Trina Vertex S+ TSM-500NEG18R.25 -- the panel Josh picked as representative
+# Trina Vertex S+ TSM-500NEG18R.25 -- the panel chosen as representative
 # of what is actually installed in NZ now (Lightforce, 2025). N-type i-TOPCon,
 # 1961 x 1134 mm, 500 W, which works out at 22.5% module efficiency.
 #
@@ -199,9 +199,8 @@ SURVEYS = [
 # longer and 13 cm wider than the placeholder.
 PANEL_WIDTH_M = 1.134
 PANEL_HEIGHT_M = 1.961
-PANEL_EDGE_SETBACK_M = 0.1  # Josh, 22 Sep: "reduce the edge setbacks and ridge setbacks to 0.1m".
-# History below is why it was 0.3 for a while; his call now, measured on the bench in the commit.
-# Previously: clearance from the roof's own outer edge (eave/verge) -- common
+PANEL_EDGE_SETBACK_M = 0.1  # edge and ridge setbacks are 0.1 m (22 Sep); measured on the bench in the commit.
+# History below is why it was 0.3 for a while. Previously: clearance from the roof's own outer edge (eave/verge) -- common
 # fire-code convention. Lowered to 0.1 earlier per explicit request after it was found strangling
 # narrow facets (a real ~1.4m-wide strip loses 0.6m total, under the panel's own 1m minimum
 # dimension, so it fit zero panels despite real usable area, on #5371143) -- but that traded away
@@ -211,19 +210,18 @@ PANEL_EDGE_SETBACK_M = 0.1  # Josh, 22 Sep: "reduce the edge setbacks and ridge 
 PANEL_EDGE_SETBACK_FALLBACK_M = 0.1  # retried only for a facet that fits zero panels at the
 # primary setback above -- keeps narrow facets panelable without loosening the default for
 # everything else.
-RIDGE_SETBACK_M = 0.1  # Josh, 22 Sep: 0.1 m (was 0.25). Extra clearance specifically along a boundary shared with another real
+RIDGE_SETBACK_M = 0.1  # was 0.25 until 22 Sep. Extra clearance specifically along a boundary shared with another real
 # roof plane on the same building (a real ridge, hip, or valley) -- separate from, and on top of,
 # PANEL_EDGE_SETBACK_M's outer-edge clearance. Two adjacent facets each erode this far back from
 # their shared boundary, so the real join between two differently-angled roof sections reads as
 # an actual visible gap (like real ridge cap flashing) instead of two panel grids butting flush
 # against each other with no visual break between them.
-# Was 45, which was cutting off real roofs rather than unusable ones. Josh, on
-# 1/5 Sydney St -- a twelve-unit terrace whose facets are ALL 44-50 degrees, so
-# the cap silently excluded the entire building and left it with 6 panels:
-# "I also don't know why there is a panel cut off at 45 degree, even 90 degree
-# panels can be economic if facing the right direction."
+# Was 45, which was cutting off real roofs rather than unusable ones: 1/5
+# Sydney St, a twelve-unit terrace whose facets are ALL 44-50 degrees, so the
+# cap silently excluded the entire building and left it with 6 panels. Even a
+# 90-degree panel can be economic if it faces the right way.
 #
-# He is right that steepness alone does not make a panel uneconomic -- the solar
+# Steepness alone does not make a panel uneconomic -- the solar
 # model already prices slope and aspect, and the per-panel ROI bands already show
 # a badly-oriented panel as red. A hard slope cut is doing that job twice, and
 # worse.
@@ -237,11 +235,10 @@ RIDGE_SETBACK_M = 0.1  # Josh, 22 Sep: 0.1 m (was 0.25). Extra clearance specifi
 # admitted walls too, and the cost is not spread evenly -- it is concentrated
 # and total on the buildings it hits.
 #
-# Josh spotted it on the map at 9 Henry Street (#5371115, footprint 85 m2). Its
+# It showed on the map at 9 Henry Street (#5371115, footprint 85 m2). Its
 # four facets were 2.1, 5.6, 67.1 and 67.3 degrees, and ALL 44 PANELS -- the
 # entire 19.4 kW the dashboard claimed -- sat on the two 67-degree faces. The
-# actual roof got nothing. The panels also LOOK wrong there, which is what drew
-# his eye: a panel on a 67-degree wall foreshortens to 39% of its length in plan
+# actual roof got nothing. The panels also LOOK wrong there: a panel on a 67-degree wall foreshortens to 39% of its length in plan
 # view, so it draws as a squat rectangle in the wrong place.
 #
 # District-wide this is small in aggregate and severe per building:
@@ -250,7 +247,7 @@ RIDGE_SETBACK_M = 0.1  # Josh, 22 Sep: 0.1 m (was 0.25). Extra clearance specifi
 #     slope > 60 deg     506 panels  0.1%
 # 55 removes 0.3% of district panels while fixing the class of building where
 # the error is 100% of the claim. It stays clear of the genuinely ambiguous
-# 42-50 degree band, where Josh's own truth data has both real steep roofs and
+# 42-50 degree band, where the markup has both real steep roofs and
 # the stepped-house risers at 26 Panorama Terrace that are also walls -- that
 # band needs evidence, not a threshold, and is still open.
 # Best-of-N panel placement. Empty = off, which is the default.
@@ -289,7 +286,7 @@ PV_ASSUMPTIONS = {
     "panel_area_m2": PANEL_WIDTH_M * PANEL_HEIGHT_M,
     "panel_efficiency_pct": 22.5,  # STC efficiency implied by 500W / 2.2238m2 / 1000W/m2
     "inverter_efficiency_pct": 97.0,  # typical string/micro-inverter conversion efficiency
-    # TOTAL system losses are 14%, INCLUDING the inverter (Josh, 1 Sep).
+    # TOTAL system losses are 14%, INCLUDING the inverter.
     #
     # Read this with inverter_efficiency_pct above: the two multiply, and the
     # product is what matters.

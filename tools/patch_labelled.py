@@ -1,7 +1,7 @@
-"""Rebuild every roof Josh has marked, region by region.
+"""Rebuild every marked roof, region by region.
 
 Run after a change that alters how markup is consumed (e.g. the drawn-line
-keepouts, 17 Sep), so his roofs pick it up without a district rebuild.
+keepouts, 17 Sep), so the marked roofs pick it up without a district rebuild.
 Patches with --skip-tiles per region; rebuild tiles once afterwards.
 
     .venv/bin/python tools/patch_labelled.py            # dry: list counts

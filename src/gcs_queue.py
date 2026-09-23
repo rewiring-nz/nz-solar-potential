@@ -1,9 +1,9 @@
 """A work queue that is nothing but objects in the bucket.
 
 WHY A BUCKET AND NOT A SERVICE. Google Cloud Batch and Pub/Sub both need an
-API enabled and IAM granted by Josh before anything moves; the bucket already
+API enabled and IAM granted before anything moves; the bucket already
 works from every account this project uses. And the queue's state is a folder
-Josh can open in the console -- `queue/`, `claims/`, `done/`, `failed/` -- so
+anyone can open in the console -- `queue/`, `claims/`, `done/`, `failed/` -- so
 "is the run healthy" is four object counts, not a log to read
 (docs/scale-architecture.md, "Coordinating machines").
 

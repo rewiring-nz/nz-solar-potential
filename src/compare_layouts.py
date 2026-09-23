@@ -1,5 +1,5 @@
 """
-Before/after panel layouts, side by side, for Josh to judge.
+Before/after panel layouts, side by side, for review.
 
 The point of this over every metric tried so far: he looks at a pair and says
 which is better. Plane counts, off-plane residuals and fill percentages have

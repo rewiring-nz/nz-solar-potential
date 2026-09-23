@@ -61,8 +61,8 @@ SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least
 # panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
 # with facet size, so it blocked a genuine extra row on a small roof while waving through a
 # handful of edge-jammed panels on a big one. The point of the rule is only to refuse the
-# single panel squeezed hard against a boundary -- Josh's "clean install over every square
-# inch" -- not to refuse real capacity.
+# single panel squeezed hard against a boundary -- a clean install over every square
+# inch -- not to refuse real capacity.
 
 
 FRAME_SNAP_DEG = 7.0   # a family's bearing within this of the building axis takes the axis
@@ -85,9 +85,8 @@ def eave_bearing_deg(aspect_deg):
 def building_frame(facets, building_polygon):
     """ONE grid frame for the whole building: a bearing (mod 90) and an origin.
 
-    Josh, 22 Sep, on 32 Frankton Road: "a very disorganised layout. The
-    underlying roof is actually quite simple / straight, it just has lots of
-    obstructions." Measured on it: 832 panels on FIVE grid bearings -- 40,
+    32 Frankton Road had a disorganised layout on a simple, straight roof
+    with many obstructions. Measured on it: 832 panels on FIVE grid bearings -- 40,
     45, 50, 135 and 140 degrees -- because every one of its 42 faces racked
     to its own rectangle, from its own centroid, with its own choice of
     portrait or landscape and its own row and column phase. Four independent
@@ -114,9 +113,8 @@ def building_frame(facets, building_polygon):
              for i in range(2)]
         return max(e)[1] % 90.0
     bld = axis_of(building_polygon) if building_polygon is not None else None
-    # FAMILIES OF BEARINGS, NOT ONE BEARING. Josh: "Are you sure the one
-    # bearing thing won't mess up other buildings that have multi-angled
-    # rooftops?" Measured on four regions: 10-18% of pitched buildings have a
+    # FAMILIES OF BEARINGS, NOT ONE BEARING. One bearing per building would
+    # skew multi-angled roofs. Measured on four regions: 10-18% of pitched buildings have a
     # face more than 10 degrees off a single frame, 4-6% of pitched roof area
     # would have been racked skew to its own eave. So the pitched faces are
     # clustered by eave bearing (mod 90) within FAMILY_TOL_DEG; each family
@@ -295,7 +293,7 @@ def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polyg
     # building-outline fallback below FLAT_SLOPE_DEG, on the theory that a
     # pitched facet always has trustworthy eave/ridge lines. It does not: a
     # BLOBBY facet's minimum rotated rectangle is an unreliable axis estimate
-    # at any pitch, and two examples from Josh show it plainly -- 26 Ballarat
+    # at any pitch, and two examples show it plainly -- 26 Ballarat
     # St's bad facet sits at 12.0 deg (rectangularity 0.63) and 18 Ballarat
     # St's at 29.1 deg (rectangularity 0.44, its axis running 41.9 deg against
     # the building's own 132.3 deg, a 90-degree cross-grain block). On 111
@@ -313,9 +311,8 @@ def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polyg
         # NEAR-FLAT facets always defer to the building, blobby or not. A flat
         # roof has no real slope direction, so its "aspect" is noise, and two
         # facets of the SAME flat roof can end up racked at different angles --
-        # Josh on 26 Isle St: "this roof filled with two different angles of
-        # panels when it should just fill consistently in the same direction".
-        # Deferring to the building outline is what makes every array on one
+        # 26 Isle St filled with two different angles of panels where it should
+        # fill consistently in one direction. Deferring to the building outline is what makes every array on one
         # building share an angle, which is the thing that reads as a real
         # install. A pitched facet still uses its own eave/ridge lines, because
         # there the slope direction IS real -- unless the facet is blobby, in
@@ -481,8 +478,7 @@ SHALLOW_SEAM_DEG = 9.0         # a fold gentler than this needs no ridge cap.
 # they point: 36 Stanley St is a 8-degree pyramid whose hips measure only
 # 10.6-11.5 degrees between normals, so every hip was granted the token
 # clearance and its four arrays butted together across the ridges with a 7 cm
-# gap. Josh: "it's a pyramid shaped roof but now it has overlaps on ridges
-# which it didn't before."
+# gap: a pyramid roof with overlaps on its ridges.
 #
 # Aspect is NOT the discriminator, though it looks like one: the case this
 # relief was built for, 7 Malaghan St, has seams between faces pointing 176
@@ -526,14 +522,12 @@ def _shallow_seams(facet, sibling_facets):
 def _has_twin(facet, sibling_facets):
     """Is this face one half of a symmetric pair -- the other side of a ridge?
 
-    Josh, 1 Gorge Rd: "make roofs with the same plane dimension on each side
-    have a mirrored install layout or close to it, doesn't make sense to have
-    mostly vertical portrait panel array on one side, then a horizontal
-    landscape array on the other... Both sides are the same plane just the
-    other side of the roof." The per-facet orientation contest cannot deliver
-    that: an obstruction or setback nick on ONE side changes that side's
-    winner. So a face with a twin does not get a contest at all -- both halves
-    take portrait (his stated norm), landscape only if portrait fits nothing.
+    Roofs with the same plane dimension on each side should have a mirrored
+    install layout, not portrait on one side and landscape on the other (1
+    Gorge Rd). The per-facet orientation contest cannot deliver that: an
+    obstruction or setback nick on ONE side changes that side's winner. So a
+    face with a twin does not get a contest at all -- both halves take
+    portrait (the norm), landscape only if portrait fits nothing.
     Deterministic and symmetric by construction: both halves evaluate the same
     predicate about each other."""
     if not sibling_facets:
@@ -615,8 +609,8 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     # a 6 degree seam get the same 0.25 m each side -- a 0.5 m gap between
     # arrays. Measured on 7 Malaghan St, whose faces differ by 5.6-6.7 degrees
     # with height steps of 0.06-0.09 m, the setback costs 71 m2 of a 474 m2 roof
-    # while packing inside the usable area is already 84-87% efficient. Josh on
-    # that building: "lots of empty space not used".
+    # while packing inside the usable area is already 84-87% efficient: lots
+    # of empty space unused.
     #
     # So a boundary shared with a near-coplanar neighbour keeps only a token
     # clearance, and a real ridge keeps the full amount.
@@ -646,9 +640,8 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     # an exhaustive row phase all placed the same 12 panels, against a
     # geometric ceiling of 14 for two rows); the usable SHAPE was.
     #
-    # This is Josh's call, and it is the right one under "place them everywhere
-    # that is technically feasible": "maybe there is too tight of a tolerance on
-    # panels going next to each other that could be relaxed a bit". The generous
+    # Under "place them everywhere that is technically feasible", the
+    # tolerance between adjacent panels can be relaxed. The generous
     # setback stays the default because it wins whenever it can; it just no
     # longer strands a whole row to keep a margin nobody asked for.
     # Drawn fold lines subtract from the usable surface AFTER the clearance
@@ -683,10 +676,9 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
         candidate = _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
                                  sibling_facets, lock=lock)
         # The generous setback is tried first and kept unless a tighter one is a
-        # REAL gain -- a whole extra row, not one squeezed panel. Josh: "it's
-        # less about maximising every inch of roof space, and more about
-        # building a clean install". One extra panel hard against an edge is
-        # exactly the scrappiness he is asking us not to produce.
+        # REAL gain -- a whole extra row, not one squeezed panel. The goal is
+        # a clean install, not every inch of roof. One extra panel hard
+        # against an edge is exactly the scrappiness to avoid.
         if len(candidate) >= len(best) + SETBACK_LADDER_MIN_GAIN_PANELS:
             best = candidate
     return best
@@ -710,9 +702,8 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
     # Packing each piece separately gave every piece its own grid origin AND its
     # own independent choice of portrait/landscape, so a roof split in two by a
     # small vent came out as one tidy row and one broken, offset row at a
-    # different orientation. Josh reported exactly that ("why can't you have a
-    # consistent and clean two rows here, rather than one consistent row and
-    # then another one broken up"), and it is why a 3.3 m2 obstruction could
+    # different orientation, where two consistent rows should be, and it is
+    # why a 3.3 m2 obstruction could
     # wreck a 90 m2 layout. A single grid spans the exclusion: rows stay
     # collinear across it and on both sides of it, which is how a real install
     # is racked.
@@ -732,10 +723,9 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
     # margin. Picking whichever orientation fits one more panel is what put
     # different orientations on MIRRORED HALVES of the same roof face, because
     # a centimetre of difference between two nearly identical halves flips the
-    # winner. Josh on 7 York St: "the change in angles of vertical or
-    # horizontal panels on mirrored sides of the same roof face. A normal
-    # install would have these oriented in the same way, likely usually
-    # portrait with the small edge facing the top roof ridge."
+    # winner. On 7 York St the mirrored sides of one roof came out in
+    # different orientations; a normal install has both the same, usually
+    # portrait with the short edge facing the ridge.
     #
     # u runs along the eave/ridge and v up-slope (see facet_axes), so the first
     # candidate, 1 m across by 2 m up, IS portrait-with-short-edge-to-the-ridge.
@@ -803,9 +793,8 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             chosen = port or land
         _, placed, w_cells, h_cells = chosen
 
-        # Gap-fill pass (Josh: "100% should place every possible panel... you
-        # are placing a few extras at 100% but not all the extras that could
-        # possibly fit"). One grid in one orientation leaves usable pockets --
+        # Gap-fill pass: 100% should place every possible panel. One grid in
+        # one orientation leaves usable pockets --
         # odd corners, strips beside obstructions -- that the other orientation
         # or a shifted origin would take. Mask out what was placed and pack the
         # residue with BOTH orientations, keeping the better; the extras are
@@ -861,8 +850,8 @@ MINOR_ARRAY_MIN_FRACTION = 0.25  # ...unless it's still a meaningful share of th
 MINOR_ARRAY_ALWAYS_KEEP_PANELS = 20  # ...and an array this size is a real install whatever
 # else is on the roof. The relative test alone does not scale to big commercial roofs: 25% of
 # 29 Park St's 399-panel main array is 100 panels, which called its 72-panel secondary array a
-# fragment. That is a ~32 kW array. Josh: "maybe filling in big secondary roofs if there is
-# ample space for big arrays".
+# fragment. That is a ~32 kW array; big secondary roofs with room for big arrays should
+# be filled.
 
 
 def drop_minor_arrays(facet_panels):
@@ -905,7 +894,7 @@ def _erosion_order(panels, poa_key):
 
     Why: filling row-major peels row-by-row, so a reduced system can end up a
     thin strip hugging a parapet. A real small install on a big roof is a
-    compact block in the sunniest deep part of the roof (Josh's spec). The
+    compact block in the sunniest deep part of the roof. The
     edge term is normalised by the building's own array extent, so on a small
     house -- where every panel is near an edge -- it vanishes and placement
     stays realistic rather than being pushed artificially inward.
@@ -963,8 +952,7 @@ def _tag_fragment_arrays(panels):
     matters: the roof is curved, segmentation splits it into three sections,
     each section holds plenty of panels, so nothing is a straggler -- while
     within each section the panels are a big clean block PLUS a scatter of
-    lone panels and 2-3 panel fragments. Josh: "lots of lonely panels and
-    small arrays of panels surrounding a large array". Facet size cannot see
+    lone panels and 2-3 panel fragments surrounding a large array. Facet size cannot see
     those; contiguous array size can.
 
     Same two thresholds as drop_minor_arrays, and the same relative test that
@@ -981,7 +969,7 @@ def _tag_fragment_arrays(panels):
     # A small array is only a straggler if it is also NOT the sunny one. The
     # unconditional demotion sent small sunny arrays to the remove-first band,
     # so lowering density stripped good panels while a big shaded array
-    # survived -- Josh, twice: remove the shadiest, lowest-producing first.
+    # survived. The rule: remove the shadiest, lowest-producing first.
     # A fragment whose mean yield beats the main arrays' mean stays ranked on
     # yield like everything else; scrappiness only tie-breaks among equals.
     poa = "poa_kwh_m2_yr"
@@ -1007,8 +995,8 @@ def _order_by_array(panels, poa_key):
     sunniness. So reducing the density slider stripped the least sunny SIDE
     first -- a large clean array -- while lone panels on the sunny side
     survived, because sunniness is a per-panel property and being a fragment
-    is not. Josh: "the panels from one side get removed before all the lonely
-    panels and small arrays from other areas get removed. That's unrealistic."
+    is not. Removing one side's panels before the lonely panels and small
+    arrays elsewhere is unrealistic.
 
     Arrays are taken in order of total yield, so the main array fills first
     and a big secondary roof follows, while fragments -- already tagged
@@ -1024,10 +1012,9 @@ def _order_by_array(panels, poa_key):
         groups.setdefault(p.get("array_id", 0), []).append(p)
     # MEAN yield per panel, not total. Total let a big shaded array outrank a
     # small sunny one -- 40 panels x poor sun beats 12 x full sun on total --
-    # so lowering the density slider stripped the SUNNY panels first. Josh,
-    # live-testing (#4740662): "you are removing panels from sunnier areas
-    # first... You should remove from the shadiest, lowest producing panels
-    # first." Fragments are already fenced into the straggler band above, so
+    # so lowering the density slider stripped the SUNNY panels first
+    # (#4740662). The shadiest, lowest-producing panels must go first.
+    # Fragments are already fenced into the straggler band above, so
     # mean cannot promote a two-panel scrap over a real array; among real
     # arrays the sunniest fills first, which is also the order an installer
     # would actually build them.
@@ -1061,8 +1048,8 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     for q in panels:
         sizes[q.get("array_id", 0)] = sizes.get(q.get("array_id", 0), 0) + 1
     if sizes and max(sizes.values()) >= MIN_CLUSTER_PANELS:
-        # Josh's refinement: "100% panel density should place every possible
-        # panel." So confetti is not deleted -- it is DEMOTED to the very top
+        # 100% panel density places every possible panel, so confetti is
+        # not deleted -- it is DEMOTED to the very top
         # of the slider. Below 100% the map shows clean arrays; at 100% every
         # panel that physically fits appears.
         for q in panels:
@@ -1080,8 +1067,7 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     # -- right for a plant deck, wrong for a flat commercial roof with vents
     # on it, where the fit is poor BECAUSE of the vents and the panels are
     # fine. 22 Earl Street: 601 of 686 panels demoted, so the 80% slider
-    # showed 85 panels and 100% showed 686 (Josh: "at 80% almost none of the
-    # panels show, at 100% far more are added"). Twenty buildings on the live
+    # showed 85 panels and 100% showed 686. Twenty buildings on the live
     # build hid over half their panels at 80%, 4,954 panels between them.
     # When the low-fit demotion would take more than STRAGGLER_MAX_SHARE of
     # the building, the tag is describing the roof, not the stragglers: those
@@ -1108,7 +1094,7 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     # A percentile cannot express "the best 14 panels", and that is the question
     # a real quote asks: an installer looks for an easy spot for a 6kW or 9kW
     # system, finds the best place for an array that size, and quotes on it
-    # (Josh). Because the order comes from reverse erosion -- repeatedly strip
+    # Because the order comes from reverse erosion -- repeatedly strip
     # the worst panel, then reverse -- the first N of it is already a compact
     # block in the sunniest deep part of the roof, which is exactly the array
     # such an installer would pick. So a target system size becomes
@@ -1126,12 +1112,11 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     return panels
 
 
-MIN_CLUSTER_PANELS = 4       # Josh, on 100% density looking "randomly placed":
-# "it doesn't maximise placement of panels, but also doesn't only do clean big
-# arrays, it's some weird thing in between... that function needs to be
-# refined." So 100% now MEANS "every clean array": contiguous clusters under
-# four panels are dropped at fit time on every roof -- the residential analogue
-# of his 8-panel commercial rule -- unless they are the only panels the roof
+MIN_CLUSTER_PANELS = 4       # 100% density once looked randomly placed: neither
+# every panel nor only clean arrays. So 100% now MEANS "every clean array":
+# contiguous clusters under four panels are dropped at fit time on every roof
+# -- the residential analogue of the 8-panel commercial rule -- unless they are
+# the only panels the roof
 # has, because some small roofs genuinely only fit a scrap and that scrap is
 # still worth showing.
 ARRAY_TOUCH_TOL_M = 0.35   # panels this close are the same physical array (tile gaps are 4cm)

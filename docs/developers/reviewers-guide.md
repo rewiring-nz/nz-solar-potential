@@ -45,7 +45,7 @@ build consumes it in
 
 **Precedence during a build** (this ordering is the contract):
 
-1. Josh's drawn markup for the building (`data/roof_labels.json`) — always
+1. The drawn markup for the building (`data/roof_labels.json`) — always
    wins, never second-guessed (no plane-fit tests, no confidence gates).
 2. The selected-faces JSON, if present and above `SELECTED_MIN_SCORE`
    (0.30), each face passing a one-plane gate
@@ -73,9 +73,9 @@ The deployed site IS this repository on GitHub Pages: pushing `main`
 deploys. `tools/predeploy_check.py` diffs a candidate build against the
 LIVE site before any push.
 
-## The rule constitution — owner's rules → enforcement → check
+## The rule constitution — project rules → enforcement → check
 
-These are standing rules from the project owner (Josh), each with the code
+These are standing rules, each with the code
 that enforces it and the command that verifies it. If you change enforcement
 code, re-run the check.
 
@@ -104,11 +104,11 @@ code, re-run the check.
   patches).
 - **Panel gates**: the dev loop (`bash src/run_dev_loop.sh pilot`) ends
   with a layout-quality block and an obstruction-validation block over
-  named reference roofs, each annotated with the owner's original
+  named reference roofs, each annotated with the original
   complaint and the previous build's numbers.
 - **Whole-region eyeball**: `tools/preview_sample.py --ids ... --out x.html`
   renders imagery + facets + panels per building; the standing "verdict
-  panel" is this over the ~29 roofs the owner has ruled on.
+  panel" is this over the ~29 roofs with a recorded verdict.
 - **Against the live site**: `python tools/predeploy_check.py` — compares
   a candidate merged build against production, listing zeroed buildings
   and >30% panel drops. Nothing deploys without reading this.
@@ -151,7 +151,7 @@ code, re-run the check.
    top-surface utilities.
 1b. **Golden snapshots vs markup precedence** (resolved 2026-09-09): two
    golden buildings "collapsed" from 4 and 10 facets to 1 and 2 -- that is
-   the markup-wins rule working correctly (the owner drew 1 and 2 faces on
+   the markup-wins rule working correctly (1 and 2 faces were drawn on
    those roofs; the snapshots predate the markup). When a golden building
    fails with a facet-count DROP, check `data/roof_labels.json` for that id
    before suspecting the gates.
@@ -171,14 +171,14 @@ code, re-run the check.
 
 - **facet** — one planar roof face as shipped (a `kind: "facet"` feature)
 - **face** — a candidate facet inside the selection chain, before gates
-- **drawn / authored / from_labels** — geometry from the owner's markup
+- **drawn / authored / from_labels** — geometry from the hand-drawn markup
 - **selected** — geometry from `data/selected_faces/` (the new chain)
 - **old path** — RANSAC partition + skeleton competition
 - **straggler / confetti** — panels banded to ranks 81–100: real
   placements hidden at default density, visible at 100%
 - **fill_rank / fill_order** — percentile band and exact sequence used by
   the client-side density slider (tiles are static; the slider filters)
-- **verdict panel** — the ~29-roof render the owner rules on; the
+- **verdict panel** — the ~29-roof render that verdicts are given on; the
   regression gate for geometry changes (`data/verdicts.json`)
 - **defer** — the precompute refusing to write a selected-faces file so
   the building falls to the old path deliberately

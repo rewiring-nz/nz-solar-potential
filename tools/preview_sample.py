@@ -2,8 +2,8 @@
 Build and RENDER a handful of roofs, so a geometry change can be judged in
 minutes instead of a district rebuild.
 
-Josh: "is there a way to test on a smaller amount of buildings so we can have a
-more efficient feedback loop". Yes, and the lack of one has been the real cost
+A way to test on a small number of buildings, for a faster feedback loop.
+The lack of one has been the real cost
 this week. Every change today was judged either by an aggregate that cannot see
 a building shipping zero panels, or by a 4.5 hour rebuild followed by opening
 the live map. Both are too slow and too coarse, which is why five regressions
@@ -21,8 +21,8 @@ which is what a partition change alters and what a person can actually judge by
 eye. The panel count here is what the fitter placed, before gating -- close to
 but not identical with what ships.
 
-CHOOSING THE SAMPLE MATTERS MORE THAN THE SIZE. --labelled draws from the roofs
-Josh has drawn, where there is ground truth; --like takes buildings that
+CHOOSING THE SAMPLE MATTERS MORE THAN THE SIZE. --labelled draws from the
+marked roofs, where there is ground truth; --like takes buildings that
 resemble a given one, which is how you check whether a fix generalises off the
 roofs it was tuned on. That distinction is exactly what caught the sawtooth
 twin: 7 Anderson Heights was right and 7 Duncan's Place, the same roof design
@@ -189,9 +189,9 @@ PAGE = """<title>Roof preview</title>
 <div class="sub">__SUB__</div>
 <div class="key">
  <span class="k" style="background:var(--fac)"></span>facet edge
- <span class="k" style="background:var(--lab)"></span>facet from Josh's markup
+ <span class="k" style="background:var(--lab)"></span>facet from the markup
  <span class="k" style="background:var(--pan)"></span>panel
- <span class="k" style="background:var(--drawn)"></span>line Josh drew
+ <span class="k" style="background:var(--drawn)"></span>drawn line
 </div>
 <div class="grid" id="g"></div>
 <script>
@@ -244,7 +244,7 @@ def main():
     ap.add_argument("--region", default="pilot")
     ap.add_argument("--n", type=int, default=24)
     ap.add_argument("--labelled", action="store_true",
-                    help="sample from roofs Josh has marked complete")
+                    help="sample from roofs marked complete")
     ap.add_argument("--jobs", type=int, default=0)
     ap.add_argument("--out", default="preview.html")
     a = ap.parse_args()

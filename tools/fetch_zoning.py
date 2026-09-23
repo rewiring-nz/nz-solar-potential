@@ -1,7 +1,7 @@
 """District-plan zoning for every building, so a home is not called a business.
 
-Josh, 19 Sep: "Is there also a potential better way to classify between home
-and business installs? I've seen some homes misclassified as businesses. Is
+Homes were being misclassified as businesses; a better home/business
+classification was needed. Is
 there building data on this?"
 
 What was being used: roof area over 400 m2. That is not a use signal at all,

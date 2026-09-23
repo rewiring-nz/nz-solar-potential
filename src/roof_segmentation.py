@@ -127,7 +127,7 @@ def fit_plane_lstsq(points):
     plane fitted to the union of two faces measured 0.1 degrees apart with a
     0.00 m step at their join scored 16% on-plane against 99% for each face
     alone; that blocked a merge that should plainly have happened, and left
-    5 Isle St at five faces where Josh counted three. Fixing it there took that
+    5 Isle St at five faces where it has three. Fixing it there took that
     roof to exactly three, and 47 Stanley St from 18 faces at 93% to 11 at 97%.
 
     This function has eleven call sites and the centred variant below has one,
@@ -1345,9 +1345,8 @@ def _facets_are_structured(facets):
 # residuals RANSAC is willing to accept. 93 Beach St came out as ONE 2249 m2
 # facet at 11.8 degrees spanning a 21 m height range with six distinct storeys
 # in its height histogram -- on a building whose roof is flat. Panels were then
-# packed across all of it, which is what Josh reported: "these are not part of
-# the main flat roof plane which is likely the only place the panels should be
-# on this roof".
+# packed across all of it, when only the main flat roof plane should carry
+# panels.
 #
 # The trigger is the residual spread, but the SPLIT is on genuine height gaps.
 # That distinction is what makes this safe: a real facet that is merely rough
@@ -1521,11 +1520,8 @@ APPLY_REALISM_MERGE = True
 
 # Balconies on a stepped apartment building are not roof.
 #
-# Josh has given the same instruction twice, on two different buildings. On 93
-# Beach St: "these are not part of the main flat roof plane which is likely the
-# only place the panels should be on this roof". On 7 Panorama Tce: "it's a
-# roof with a clear flat plane, and then lots of stepped apartment balconies
-# and you are placing panels on balconies incorrectly".
+# 93 Beach St and 7 Panorama Tce both have a clear flat main roof plane and
+# stepped apartment balconies below it; panels belong on the main plane only.
 #
 # 7 Panorama shows the signature plainly. Two large clean roofs -- 469 m2 and
 # 263 m2, both 95% on-plane, at 363.3 m and 360.9 m -- and then ten small
@@ -1576,7 +1572,7 @@ PLANT_MAX_AREA_SHARE = 1.00   # ...but it can out-cover any SINGLE face beneath 
 # Height and area alone CANNOT tell a duct platform from a stepped roof level --
 # the reference's plant deck is 178 m2 at +0.65 m and 5 Isle St's genuine upper
 # roof is 191 m2 at +1.15 m. Shipping without this test cost 5 Isle two of the
-# three faces Josh counted on it. What separates them is that a plant deck is
+# three faces it has. What separates them is that a plant deck is
 # CLUTTERED: ducting, condensers, rails and walkways leave its points refusing
 # to lie flat (79% on-plane on the reference) while a real roof section is clean
 # (95-99% on 5 Isle). Same reasoning as the balcony filter, where occlusion and
@@ -1674,8 +1670,8 @@ def _drop_balcony_levels_rules(facets, pc_source):
     # THE HILLSIDE STAIRCASE. On the 10 Sep sweep #4740503 shipped 527
     # panels with terraces full of them again: the building descends a
     # hillside, so the LARGEST facet is itself a mid-level terrace and
-    # every "below main" test measures from the wrong floor. Josh: "the
-    # depth should be in the lidar" -- it is. Cluster ALL facet heights
+    # every "below main" test measures from the wrong floor. The depth is
+    # in the LiDAR. Cluster ALL facet heights
     # into levels; four or more levels stepping down in storey-sized
     # treads (1.2-3.2 m) IS a terraced apartment block, and only levels
     # within 4 m of the TOP one are roof. Everything lower is balcony,
@@ -1695,10 +1691,10 @@ def _drop_balcony_levels_rules(facets, pc_source):
             # "Only levels within 4 m of the top are roof, whatever their
             # area" was written for #4740503, where it is right: that
             # building's terraces are strips along a facade. On a TALL
-            # stepped building it is badly wrong. Josh found it -- 30
-            # Brunswick Street (#5371160), 5,272 m2 over ten levels spanning
-            # 31 m: "Why is this roof excluded when it can clearly have
-            # panels?" The rule discarded 22 facets and 3,442 m2 of plain
+            # stepped building it is badly wrong: 30 Brunswick Street
+            # (#5371160), 5,272 m2 over ten levels spanning 31 m, was
+            # excluded when it can clearly have panels. The rule discarded
+            # 22 facets and 3,442 m2 of plain
             # flat roof, the coverage fill replaced the hole with one plane
             # spanning every level (inlier 0.10), and the building failed the
             # confidence gate and shipped no panels at all.
@@ -1775,8 +1771,8 @@ def _drop_balcony_levels_rules(facets, pc_source):
 # OUT of the face they sit in. See src/roof_features.py for why this needs to be
 # a region rather than a line: a line through a face gives two half-planes, and
 # no sequence of them ever encloses a shape in the middle of one. That is why
-# four attempts at 7 Anderson Heights' central feature all failed, and why Josh
-# kept seeing panels laid straight across it.
+# four attempts at 7 Anderson Heights' central feature all failed, and why
+# panels kept being laid straight across it.
 def drop_roof_features(facets, pc_source):
     """Remove compact non-roof regions from the faces containing them."""
     if not facets:
@@ -1818,7 +1814,7 @@ def drop_roof_features(facets, pc_source):
     return out
 
 
-# Whether faces Josh drew keep their boundaries through the repair stages.
+# Whether drawn faces keep their boundaries through the repair stages.
 # A flag rather than a bare condition so the change can be A/B'd honestly --
 # toggling a real switch, not two identical code paths.
 DRAWN_KEEP_BOUNDARY = True
@@ -1853,17 +1849,17 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # boundaries, and re-tracing a boundary that was not traced replaces it
     # with the blobs the tracing exists to avoid.
     #
-    # Measured on #5371108, a roof he drew as 9 faces tiling the outline
+    # Measured on #5371108, a roof drawn as 9 faces tiling the outline
     # exactly (zero overlap, 210.8 m2 against a 210.8 m2 footprint):
-    # facets_from_drawn_faces returned his rings unchanged, and
+    # facets_from_drawn_faces returned the rings unchanged, and
     # drop_roof_features then carved 18.7 m2 -- 9% of the roof -- out of three
-    # of them, leaving 29.4 -> 22.5, 33.6 -> 30.0 and 28.9 -> 20.6. He reported
-    # it as "extra lines and planes ... it does not match what I drew", which
-    # is exactly what a difference() against LiDAR blobs does to a drawn plane.
+    # of them, leaving 29.4 -> 22.5, 33.6 -> 30.0 and 28.9 -> 20.6 -- extra
+    # lines and planes that do not match the markup, which is exactly what a
+    # difference() against LiDAR blobs does to a drawn plane.
     #
     # Nothing real is lost by skipping it: obstructions are detected separately
     # and panel fitting already avoids them, so a chimney on a drawn face still
-    # takes no panels. This only stops a second mechanism re-cutting geometry he
+    # takes no panels. This only stops a second mechanism re-cutting geometry
     # already approved.
     authored = (DRAWN_KEEP_BOUNDARY and bool(facets)
                 and all(f.get("from_labels") for f in facets))
@@ -1880,12 +1876,10 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             __dbg_stage(facets, "repair_nonplanar_facets", building_id)
         # Whole-facet DROP tests still apply to CONSTRUCTED facets: a fitted
         # face can be a deck or a balcony and dropping one does not redraw the
-        # others. They do NOT apply to faces Josh drew, because he has an
+        # others. They do NOT apply to drawn faces, because the markup has an
         # explicit way to say a face takes no panels -- the no-panel tag -- and
-        # these guess at the same question and overrule him. On #4735237 they
-        # took 2 of the 22 faces he drew.
-        # Josh's faces skip these -- he has an explicit no-panel tag and
-        # these guesses overruled him. The SELECTOR's faces must NOT skip
+        # these guess at the same question and overrule it. On #4735237 they
+        # took 2 of 22 drawn faces. The SELECTOR's faces must NOT skip
         # them: SAM segments apartment balcony terraces as cheerfully as roof
         # (#4740503, panels on every balcony), and no one authored those
         # faces. Authored geometry is exempt; machine geometry is not.
@@ -1912,9 +1906,9 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             _note_fallback("refit_planes", building_id, exc)
     # merge_uneconomic_splits combines facets it judges too small to be worth
     # splitting. That is a reasonable guess about geometry nobody has checked
-    # and simply wrong about geometry Josh drew: on #4735237 it merged his 20
-    # remaining faces into 14, and on #5372610 his 5 into 3. He drew the split;
-    # it is not ours to undo.
+    # and simply wrong about drawn geometry: on #4735237 it merged the 20
+    # remaining faces into 14, and on #5372610 5 into 3. A drawn split is
+    # not the pipeline's to undo.
     if APPLY_REALISM_MERGE and facets and not drawn and not LINES_LEAD_KEEP:
         try:
             facets = merge_uneconomic_splits(facets)
@@ -1924,10 +1918,9 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             # it must not be invisible either -- a merge that always throws would
             # otherwise look exactly like a merge that never applies.
             _note_fallback("merge_uneconomic_splits", building_id, exc)
-    # A ROOF IS A PARTITION, NOT A PILE OF GUESSES. Josh, 13 Sep, on three
-    # roofs at once: "you are still drawing lots of unnecessary lines that
-    # should not be there... Roofs are simpler shapes that you are seeming
-    # to guess." The face sets shipped as soup: faces OVERLAPPING each
+    # A ROOF IS A PARTITION, NOT A PILE OF GUESSES. Roofs are simpler than
+    # the unnecessary lines that were being drawn on them. The face sets
+    # shipped as soup: faces OVERLAPPING each
     # other (double boundaries at offsets on #4735106), slivers, and
     # internal lines separating IDENTICAL planes. Three set-level rules,
     # authored faces exempt as always:
@@ -2050,9 +2043,8 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                     break
         facets = authored + kept
         __dbg_stage(facets, "authored + kept", building_id)
-    # NO FUZZY BOUNDARIES LEAVE THIS FUNNEL. Josh, on #4734994: "These
-    # roof lines are fuzzy, no roof lines are fuzzy, this makes no sense."
-    # The partition is straight by construction, but trim_to_roof and the
+    # NO FUZZY BOUNDARIES LEAVE THIS FUNNEL. No real roof line is fuzzy
+    # (#4734994 shipped fuzzy ones). The partition is straight by construction, but trim_to_roof and the
     # residual-fill difference geometry can hand a facet a raster-traced
     # exterior (928 vertices measured on that roof). Authored faces are
     # exempt as always; everything else simplifies until it reads as
@@ -2083,7 +2075,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # "260 m2" facet of which 224 m2 hung OUTSIDE the outline over the
     # neighbour -- the fitter then correctly refused most of it and the map
     # showed a big sunny face with 6 panels. Clip to the footprint (small
-    # tolerance for eave overhang); Josh-drawn faces are exempt as always.
+    # tolerance for eave overhang); drawn faces are exempt as always.
     if building_geom is not None and not building_geom.is_empty:
         tol = building_geom.buffer(0.4)
         clipped = []
@@ -2117,15 +2109,13 @@ FLAT_WINNER_MIN_SLOPE_GAIN_DEG = 6.0  # 3.0 was tried: it fixed 55 Arrowtown-Lak
 FLAT_WINNER_MIN_AREA_SHARE = 0.45     # ...over a decent share of the same roof
 
 
-# Reconstruction is the primary segmenter (Josh, 26 Aug: "just roll out the new
-# 3D option and then we can improve on that rather than me providing feedback on
-# the old way again"). It builds the roof as planes joined along their
+# Reconstruction is the primary segmenter. It builds the roof as planes joined along their
 # intersection lines and clipped to the surveyed outline, instead of tracing each
 # facet independently -- so facets come out straight-edged, sharing exact
 # borders, and covering more of the roof (median 96.9% vs 93.4% on a household
 # sample).
 #
-# It scored level with the strategies below on PLANE COUNT against Josh's 20
+# It scored level with the strategies below on PLANE COUNT against the 20
 # labelled roofs (24 total error each). That was the wrong basis to judge it on
 # and is not why it is here: a count cannot see straight edges, shared ridges or
 # coverage, which are the things panel placement actually sits on.
@@ -2151,11 +2141,11 @@ FLAT_WINNER_MIN_AREA_SHARE = 0.45     # ...over a decent share of the same roof
 # Do not switch this back on without running a full area and checking panel
 # COUNT, not just facet shape.
 # Reconstruction is not better everywhere, so it is not chosen everywhere.
-# Measured on the six roofs Josh called out for bad roof shape on 27 Aug, the
-# area-weighted share of points lying within 30 cm of their own facet's plane:
+# Measured on six roofs flagged for bad roof shape, the area-weighted share of
+# points lying within 30 cm of their own facet's plane:
 #
-#   5 Isle St        segmenter 24%  ->  reconstruct 82%   (he said "3 planes,
-#                                                          one is not detected")
+#   5 Isle St        segmenter 24%  ->  reconstruct 82%   (3 planes, one
+#                                                          not detected)
 #   47 Stanley St    segmenter 59%  ->  reconstruct 97%   (mitre joints)
 #   53 Hallenstein   segmenter 75%  ->  reconstruct 98%   ("fuzzy outlines")
 #   2/8 Wakatipu     segmenter 58%  ->  reconstruct 49%
@@ -2169,8 +2159,8 @@ FLAT_WINNER_MIN_AREA_SHARE = 0.45     # ...over a decent share of the same roof
 # So: run the segmenter, measure it, and only reach for reconstruction when the
 # segmenter is doing badly -- then keep whichever result actually describes the
 # roof better. The facet-count guard is what stops it trading a bad plane for a
-# shattered one, which is the failure Josh rejected this module for in the
-# first place ("they need to be large and blocky most of the time").
+# shattered one, which is the failure this module was first rejected for:
+# faces need to be large and blocky most of the time.
 USE_RECONSTRUCTION = False        # unconditional use -- still off, and should stay off
 RECONSTRUCT_MIN_POINTS = 40
 RECONSTRUCT_WHEN_INLIER_BELOW = 0.70   # only consider it for roofs the segmenter fits badly
@@ -2178,7 +2168,7 @@ RECONSTRUCT_MIN_INLIER_GAIN = 0.10     # ...and only switch on a clear win, not 
 RECONSTRUCT_MIN_USABLE_SHARE = 0.90    # ...that does not shatter the roof to get there.
 # Counting facets was tried first and is the wrong guard: on 5 Isle St the
 # segmenter returns ONE facet, so any reconstruction at all exceeds a ratio
-# bound, including the 3 planes Josh says that roof actually has. What matters
+# bound, including the 3 planes that roof actually has. What matters
 # is not how many faces there are but whether the extra edges cost panel area,
 # and that can be measured directly -- every facet is eroded by the ridge
 # setback before packing, so total usable area IS the fragmentation cost.
@@ -2227,7 +2217,7 @@ def _area_weighted_inlier(facets, pc_source, dsm=None):
     on OpenTopography; its facets were fitted from the 1 m DSM, and this
     function then scored every one of them against zero returns -- 0.0 by
     construction, "low_confidence" on 359 of 383 buildings, not one panel in
-    the town (Josh, 22 Sep). A facet with fewer than 12 returns is scored
+    the town. A facet with fewer than 12 returns is scored
     against the DSM cells inside it instead, which is the surface it was
     fitted to in the first place.
     """
@@ -2352,10 +2342,9 @@ def _reconstruct_facets(pc_source, building_geom, building_id):
 # a plane down from 12.7% to 7.8% -- more panels AND fewer bad ones, which
 # usually trade against each other.
 #
-# It also fixes the defect Josh has now reported five times. 1/5 Sydney St came
-# out of a full rebuild with twelve facets carrying 593-1,035 vertices each:
-# "pretty clearly still fuzzy and incorrect... This should be a cleanly defined
-# roof, it is lots of straight planes and angles together." A partition cannot
+# It also fixes a recurring defect. 1/5 Sydney St came out of a full rebuild
+# with twelve facets carrying 593-1,035 vertices each -- fuzzy, where the
+# roof is straight planes and angles. A partition cannot
 # produce that shape -- every boundary is a surveyed footprint edge or a cut
 # line, so vertex count is bounded by the number of cuts.
 #
@@ -2373,9 +2362,9 @@ USE_PARTITION = True
 # HOW WELL DOES A CANDIDATE HONOUR THE LINES THE IMAGERY FOUND?
 #
 # explained_fraction asks only whether the facets hug the point cloud, and on
-# the roofs Josh flagged that is exactly the wrong question. Measured on his
-# five: the partition scores 0.879, 0.935 and 0.957 on roofs whose shape he
-# calls plainly wrong, so it returns before any competitor is even tried, and
+# the flagged roofs that is exactly the wrong question. Measured on five of
+# them: the partition scores 0.879, 0.935 and 0.957 on roofs whose shape is
+# plainly wrong, so it returns before any competitor is even tried, and
 # retraining the detector, loosening the line bars and guarding flat roofs all
 # changed nothing because none of them ever got a turn.
 #
@@ -2414,7 +2403,7 @@ PARTITION_GOOD_ENOUGH = 0.85
 # ...and it must also put its edges where the imagery saw creases.
 PARTITION_LINE_MIN = 0.45
 # Candidate: keep the structure the imagery cuts produced instead of merging
-# it away. Josh judges this from the render; the numbers cannot.
+# it away. Judged from the render; the numbers cannot.
 LINES_LEAD_KEEP = __import__('os').environ.get('SOLAR_LINES_LEAD', '0') == '1'
 
 # How far behind the partition (points-explained) the skeleton reconstruction
@@ -2454,8 +2443,8 @@ def _arrangement_facets(pts, building_geom, building_id):
     """Plane-arrangement rebuild for complex roofs: region growing supplies the
     plane hypotheses (it reads hip networks correctly but draws organic blob
     boundaries), partition_by_planes rebuilds the polygons cut along the exact
-    plane-intersection lines -- which ARE the ridges, hips and valleys. Josh's
-    #5119630 report is the type case: recursive wall-angle cutting smeared 12
+    plane-intersection lines -- which ARE the ridges, hips and valleys.
+    #5119630 is the type case: recursive wall-angle cutting smeared 12
     wedges across a clean multi-hip roof that region growing had already read
     correctly, 7 planes in 4 aspect families all near 25 degrees."""
     from src.roof_partition import partition_with_labels
@@ -2494,15 +2483,15 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         faces = partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds)
         score = explained_fraction(faces, pts) if faces else 0.0
 
-        # GEOMETRY JOSH DREW IS NOT A CANDIDATE. If partition_roof returned
-        # faces built from his markup, they are the answer -- the competitors
-        # below are all fitted approximations of the thing he already told us.
+        # DRAWN GEOMETRY IS NOT A CANDIDATE. If partition_roof returned
+        # faces built from the markup, they are the answer -- the competitors
+        # below are all fitted approximations of what the markup states.
         #
         # Without this the markup was produced and then thrown away: checked
         # against pilot, only 7 of 27 labelled roofs came out with the facet
-        # count he drew, because a low explained_fraction handed the roof to
+        # count drawn, because a low explained_fraction handed the roof to
         # the skeleton or the arrangement instead. #4725546 is the clearest
-        # case -- he drew 2 faces and the build shipped 9.
+        # case -- 2 faces drawn and the build shipped 9.
         #
         # explained_fraction is the wrong judge here anyway. It rewards hugging
         # the point cloud, and at 4.9 returns/m2 a wedge partition can hug a
@@ -2510,7 +2499,7 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         if faces and any(f.get("from_labels") for f in faces):
             return faces
         if faces and any(f.get("from_selected") for f in faces):
-            # THROUGH the attach stage, unlike Josh's own faces: its whole-
+            # THROUGH the attach stage, unlike drawn faces: its whole-
             # facet drops (balcony staircase, plant decks) must run on
             # machine-chosen faces -- #4740503 shipped 850 panels over
             # apartment balconies because this return used to skip them.
@@ -2523,14 +2512,13 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
 
         # THE IMAGERY DECIDES WHERE THE LINES ARE; THE LIDAR ONLY SETS SLOPE.
         #
-        # Josh: "you need to place higher importance to where the lines are
-        # visually in the image. The image is what tells you the roof lines, the
-        # lidar just tells you slope."
+        # The image is what tells you the roof lines; the LiDAR tells you
+        # slope.
         #
-        # explained_fraction alone cannot see that. On the roofs he flagged the
+        # explained_fraction alone cannot see that. On the flagged roofs the
         # partition scored 0.879, 0.935 and 0.957 -- comfortably "good enough"
         # -- and returned before any competitor was tried, on roofs whose shape
-        # he calls plainly wrong. That short-circuit is why retraining the
+        # is plainly wrong. That short-circuit is why retraining the
         # detector, loosening the line bars and guarding flat roofs each changed
         # nothing: none of them ever got a turn.
         #
@@ -2562,9 +2550,8 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         #    (planes averaged across shallow hips stay inside the band), so
         #    when the skeleton explains the roof within SKELETON_TIE_MARGIN of
         #    the partition, the constructible geometry is the better read.
-        #    Josh, on exactly this failure: "the ridges on it are quite clear
-        #    in imagery, yet the outlines are way off... should be modellable
-        #    into a clean 3D geometry" (#5119630).
+        #    On #5119630 the ridges are clear in imagery yet the outlines
+        #    were way off; the roof is modellable as clean 3D geometry.
         # 2. The label-based plane arrangement, strictly-better only.
         try:
             from src.roof_skeleton import skeleton_roof
@@ -2653,7 +2640,7 @@ def _segment_building_best_unsnapped(dsm_ds, pc_source, building_geom, building_
     # result was five separate tools -- anderson2, scan_defects,
     # validate_obstructions, build_heatmap, compare_layouts -- plus live_server
     # quietly analysing a weaker pipeline than the one being shipped, and
-    # rendering pictures Josh was asked to judge. Passing None is still fine and
+    # rendering pictures that were then judged. Passing None is still fine and
     # means "this area genuinely has no imagery"; forgetting to pass it is not.
     if imagery_ds is _IMAGERY_UNSET:
         raise TypeError(
@@ -3394,10 +3381,8 @@ def segment_building_from_pointcloud_regiongrow(pc_source, building_geom, buildi
 
 # --- Realism pass: roofs are few large faces, not many slivers -------------
 #
-# Josh, 26 Aug, after judging ten before/after layouts: "They need to be large
-# and blocky most of the time like real rooftops. It's a lot more common for
-# rooftops to be clear large flat surfaces on a few different angles and slopes,
-# than it is to have lots of small changes."
+# Faces need to be large and blocky most of the time, like real rooftops:
+# clear large surfaces on a few angles and slopes, not lots of small changes.
 #
 # This is not only about looking realistic. panel_fitting erodes every facet by
 # RIDGE_SETBACK_M and panels cannot span two facets, so every split costs usable
@@ -3423,8 +3408,8 @@ SLIVER_MIN_SHARED_M = 0.5       # must actually adjoin, not just touch at a corn
 #
 # The first version had only the cosine yield term, and it merged across real
 # ridges: measured over 120 buildings, the median accepted merge was 19.6 deg
-# and half were 20 deg or more. Josh saw the result immediately -- panels
-# "going over ridge or roof edges ... edge of a roof section".
+# and half were 20 deg or more, and panels went over ridges and roof-section
+# edges.
 #
 # The error was modelling a ridge crossing as lost YIELD. It is not. A panel is
 # rigid: across a join of angle t it lifts about (panel_length / 2) * tan(t) off
@@ -3436,9 +3421,8 @@ SLIVER_MAX_MERGE_ANGLE_DEG = 4.0   # ~6 cm lift on a 1.7 m panel
 #
 # _plane_angle_deg compares plane NORMALS, so two parallel roof sections at
 # different heights read as 0 degrees apart and sail through the cap above.
-# Merging them puts panels across a vertical step -- Josh, on 6 Shotover St:
-# "clearly overlapping roof ridges". The reconstruction module had this test
-# and this one did not; the omission is mine.
+# Merging them puts panels across a vertical step (6 Shotover St). The
+# reconstruction module had this test and this one did not.
 #
 # Measured at the shared boundary, because two planes that genuinely fold
 # together are identical there and only diverge away from it.

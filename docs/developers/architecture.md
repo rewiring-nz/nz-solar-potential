@@ -20,7 +20,7 @@ flowchart TB
   Inputs --> Vision[[predict_faces: SAM / line detector / LiDAR candidates + evidence scorer]]
   Vision --> Selected[(data/selected_faces/id.json)]
   Selected --> Segment
-  Labels[(data/roof_labels.json - owner's markup)] --> Segment
+  Labels[(data/roof_labels.json - hand-drawn markup)] --> Segment
   Inputs --> Segment[[roof segmentation: markup > selected faces > RANSAC+skeleton]]
   Segment --> Detect[[obstruction detection]]
   Detect --> Fit[[panel fitting and gates]]

@@ -190,8 +190,8 @@ def main():
     # segmentation, obstruction height evidence, panel gating and shading all
     # read it, and the Wellington survey carries 16 pts/m2 against the 1 m DSM's
     # single sample. Without it every building falls back to the DSM SILENTLY.
-    # It used to be a second script you had to remember to run. Josh, 31 Aug:
-    # "that should be part of the automatic process for all future regions."
+    # It used to be a second script you had to remember to run; it is part
+    # of the automatic process for every region.
     print(f"\n[point cloud] fetching LiDAR tiles for {len(wanted)} region(s)...")
     try:
         from src.fetch_pointcloud_regions import main as fetch_pointcloud

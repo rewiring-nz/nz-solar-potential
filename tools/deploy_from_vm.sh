@@ -6,7 +6,7 @@
 #
 # The VM cannot publish (scp'd payload, no git). This is the one place the
 # laptop is in the ship path, and it does nothing but relay files the VM
-# built: nothing here is computed on the laptop (Josh, 6 Sep).
+# built: nothing here is computed on the laptop.
 set -u
 cd "$(dirname "$0")/.."
 VM=claude-doing-things; ZONE=australia-southeast1-b

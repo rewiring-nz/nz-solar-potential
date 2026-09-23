@@ -1,7 +1,7 @@
 /**
  * Tests for the money maths in economics.js.
  *
- * These exist because Josh spotted a building reading "$1,000 yearly, $12,000
+ * These exist because a building read "$1,000 yearly, $12,000
  * lifetime, -$8,600 net loss" on 13 MWh/yr of generation, and nothing in the
  * codebase could check whether that was right. Running the same model on the
  * same inputs gives $2,407 / $55,083 / +$34,563 -- a factor of 2.4 that flips
@@ -36,7 +36,7 @@ function close(a, b, tol, msg) {
 }
 
 // A representative house: 11.4 kW, 13 MWh/yr, 234 m2 of roof. This is the
-// building Josh was looking at (105 Arrowtown-Lake Hayes Road).
+// building where the bug was found (105 Arrowtown-Lake Hayes Road).
 const HOUSE = [11.4, 13000, 234.4];
 
 check("a house is not classified as a business", () => {
@@ -71,7 +71,7 @@ check("self-consumption is capped by the daytime load, not the roof", () => {
 });
 
 check("raising household consumption raises self-consumption", () => {
-  // Josh, 1 Sep: changing 7,000 -> 10,000 kWh used to change nothing at all,
+  // Changing 7,000 -> 10,000 kWh used to change nothing at all,
   // because the kW ceiling always bound first.
   const base = E.economicsFor(...HOUSE, { useKwh: 7000 });
   const more = E.economicsFor(...HOUSE, { useKwh: 10000 });

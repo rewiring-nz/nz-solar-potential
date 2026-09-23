@@ -62,8 +62,8 @@ def all_areas():
 
     THE UNION IS THE POINT, and it was learned the hard way. config.REGIONS
     held 23 entries while data/regions held 24, and the missing one was
-    `pilot` -- the town centre, where most of Josh's flagged roofs are and
-    where he looks first. Two district rebuilds skipped it in silence and he
+    `pilot` -- the town centre, where most of the flagged roofs are and
+    where reviewers look first. Two district rebuilds skipped it in silence and it
     got the same wrong roof back twice. Iterating the config alone can MISS A
     WHOLE REGION without ever erroring.
 

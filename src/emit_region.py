@@ -170,8 +170,7 @@ def emit(region, out_root=OUT_ROOT):
     # pilot roofs 2 m or more, per building, no regional constant). Every
     # number was computed where the LiDAR is and stays there; the geometry
     # the map DRAWS -- outline, facets, panels, obstructions -- moves by the
-    # shift so it lands on the roof people see (Josh: "matched to the actual
-    # image of the roof because that's what people are actually seeing").
+    # shift so it lands on the roof people see in the image.
     # OFF BY DEFAULT UNTIL IT IS VALIDATED. The stage's shifts were right on
     # 42 Suburb Street and wrong at scale: on the first district run,
     # neighbouring roofs (<40 m apart, same photo) agreed on direction only

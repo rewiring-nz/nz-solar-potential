@@ -13,7 +13,7 @@
 #   economics    the money maths: self-consumption split, savings, payback.
 #                Untestable until 1 Sep, when it was pulled out of preview.html
 #                -- which is how a 2.4x error in the yearly figure survived
-#                long enough for Josh to spot it on the map.
+#                long enough to be spotted on the map.
 #   deprecations the class that nearly removed shapely.vectorized from under
 #                the geometry core on a routine dependency upgrade.
 #   sync         the two repos have already diverged twice, silently, with

@@ -1,7 +1,6 @@
 """Move each shared ridge onto the crest the LiDAR actually shows.
 
-Josh, 23 September, 2 Preston Drive: "These panels are going over a ridge
-line on the building." Measured: a symmetric 24/24 degree gable whose two
+2 Preston Drive shipped panels over a ridge line. Measured: a symmetric 24/24 degree gable whose two
 faces met 3.66 m across an 8.4 m wing -- 0.8 m west of the crest, which the
 point cloud puts at 4.44 m on every 1 m slice along the wing. The east face
 was 115 m2 to the west's 88, and its first column of panels sat astride the
@@ -30,8 +29,8 @@ line), every vertex on that boundary -- of either facet and of any hip
 piece whose apex sits on it -- moves by the offset. The facets keep their
 fitted planes; only the line where one hands over to the other moves.
 
-Roofs Josh drew are not touched: his lines win (build_layout_geojson,
-"A ROOF JOSH DREW IS NOT WITHHELD").
+Drawn roofs are not touched: the markup wins (build_layout_geojson,
+"A DRAWN ROOF IS NOT WITHHELD").
 """
 
 import os

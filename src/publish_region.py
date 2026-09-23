@@ -1,6 +1,6 @@
 """Put a region's outputs in the bucket, then delete its inputs.
 
-Josh's #1: "delete inputs after build". Inputs are 200 GB of the VM's 217 GB
+Inputs are deleted after the build. They are 200 GB of the VM's 217 GB
 today and terabytes nationally, and every byte is re-fetchable from LINZ.
 They go the moment the outputs are safe -- and not a moment before.
 

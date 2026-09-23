@@ -1,7 +1,6 @@
 """Buildings as vector tiles, plus an aggregate grid for the zooms above them.
 
-WHY. Josh, 20 Sep: "can we make the solar potential geojson work in a
-different way so it's not the whole thing downloading... Maybe we need an
+WHY. The solar potential data must not download whole; the map needs an
 approach that will be fast for all NZ, then increase in accuracy as we get
 closer?"
 
@@ -29,8 +28,8 @@ the summed kWp and kWh -- computed per building with that building's own
 cov_poa_N, so the sunniest-part-first rule survives the aggregation.
 
 WHAT IS NOT HERE. The cells hold no economics: cost, payback and savings are
-per building by Josh's own decision ("a district-wide dollar figure invites
-being read as a forecast for the town"), and they are computed client-side
+per building by design (a district-wide dollar figure invites being read as
+a forecast for the town), and they are computed client-side
 from the estimate anyway.
 
 Usage: python src/build_building_tiles.py
@@ -60,8 +59,8 @@ SRC = DATA / "solar_potential.geojson"
 # The fix is for the cell to stay small RELATIVE TO THE VIEW: each band uses a
 # grid three zooms finer than the zoom you are at, so the viewport always spans
 # roughly eight cells and the edge error is bounded at about a quarter instead
-# of several times over. Which is also the thing Josh asked for in the first
-# place -- "fast for all NZ, then increase in accuracy as we get closer".
+# of several times over. Which is also the requirement: fast for all of NZ,
+# then more accurate as the map zooms in.
 #
 # All three resolutions ship in one layer tagged `lod`; the style draws one
 # band at a time and the dashboard sums the matching one. They are a few

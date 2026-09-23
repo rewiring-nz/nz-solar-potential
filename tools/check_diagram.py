@@ -1,7 +1,7 @@
 """
 Verify that the architecture diagram still describes the code.
 
-Josh: "the diagram should always accurately match the code." A diagram that can
+The diagram must always match the code. A diagram that can
 drift is worse than no diagram, because a reviewer trusts it and then reads the
 code expecting to find what it promised. This file is what stops that.
 

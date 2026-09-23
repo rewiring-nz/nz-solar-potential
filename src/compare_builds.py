@@ -2,8 +2,7 @@
 Diff a finished build against the previous one, per building.
 
 Why this exists: every placement regression in this project so far was
-found the same way -- Josh looked at a roof on the live map and said "this
-is wrong". Three separate gate rules each deleted real panels from real
+found the same way -- by looking at a roof on the live map. Three separate gate rules each deleted real panels from real
 houses (4 Abbottswood Ln 61->6, 6 Shotover St 72kW->4, 7 Cedar Dr 69->6),
 and nothing in the pipeline noticed, because every run prints healthy
 totals whether or not it just destroyed a suburb. Totals hide it: a rule
@@ -145,7 +144,7 @@ def compare(top=40, min_loss=5):
             print(f"  #{b}  {p[PANELS]} -> 0 panels  {p[ADDRESS]}")
 
 
-# The 11 buildings from Josh's first bug doc (docs/bugdoc-2026-08-22.md).
+# The 11 buildings from the first bug doc (docs/bugdoc-2026-08-22.md).
 # Every rebuild should be checked against these by name, not just in the
 # aggregate -- they are the cases that defined what "wrong" looks like here.
 WATCHLIST = {

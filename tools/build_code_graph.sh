@@ -1,8 +1,8 @@
 #!/bin/bash
 # Build the browsable map of this codebase: graphify-out/graph.html
 #
-# WHY GRAPHIFY AND NOT THE OTHER ONE. Josh, 21 Sep: "I need to be able to
-# identify bugs and methodological mistakes but I do not understand code."
+# WHY GRAPHIFY AND NOT THE OTHER ONE. The reader needs to identify bugs and
+# methodological mistakes without reading code.
 # Two candidates were evaluated -- Graphify-Labs/graphify and
 # Egonex-AI/Understand-Anything. Understand-Anything has the friendlier
 # output: an LLM writes a plain-English summary of every node, plus guided
@@ -25,8 +25,8 @@
 # semantic, not structural -- a value computed and never read, a rule correct
 # for one building and wrong for another, a loop unpacking a shape its
 # producers do not emit. None of those appear in a call graph. The tools that
-# DO catch them are tools/bench.py (geometry against Josh's markup),
-# tools/cases.py (every roof he has flagged) and tests/run_all.sh.
+# DO catch them are tools/bench.py (geometry against the markup),
+# tools/cases.py (every flagged roof) and tests/run_all.sh.
 #
 # Usage:  ./tools/build_code_graph.sh          then open graphify-out/graph.html
 set -eu

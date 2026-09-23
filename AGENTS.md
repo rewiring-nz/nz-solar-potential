@@ -25,6 +25,10 @@ changing deterministic algorithms or data contracts.
 
 ## Conventions
 
+- Comments and docs state the rule, the measurement and the reason. No
+  conversational attribution ("X said", quotes from chat, dates of
+  conversations); write the fact itself.
+
 - Processing CRS is EPSG:2193 (NZTM2000); web-map output is EPSG:4326. Don't
   mix them.
 - Generated datasets (`data/*.geojson`, rasters) are contracts consumed by the

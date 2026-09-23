@@ -1,7 +1,6 @@
 """What kind of building a roof sits on: home, business, school, hospital...
 
-Josh, 22 September: "create a toggle for building types, so you can toggle
-on and off different building types. For example, Homes, Schools, Hospitals,
+A toggle for building types on the map: Homes, Schools, Hospitals,
 Businesses, etc. Whatever the detailed building type categories you can find
 access to."
 

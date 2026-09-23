@@ -120,7 +120,7 @@
      lands on what the number IS before what it says. */
   /* One series at a time: eight lines at once was a lot to read, and the
      comparison people want is between seasons, not between a typical and a
-     sunny day of the same season (Josh). */
+     sunny day of the same season. */
   .curve-toggle { display: flex; gap: var(--s1); margin-top: var(--s4); }
   .curve-btn { flex: none; padding: 4px 11px; font-size: var(--fs-label); font-weight: 650;
     font-family: inherit; cursor: pointer; border-radius: 6px;
@@ -146,7 +146,7 @@
     font-variant-numeric: tabular-nums; }
   .econ-value.econ-pos { color: var(--good); }
   .econ-value.econ-neg { color: #ff6b60; }
-  /* Net sits alongside lifetime rather than under it (Josh): it is a reading OF
+  /* Net sits alongside lifetime rather than under it: it is a reading OF
      that figure -- what is left after the install -- not a separate result. */
   .econ-net-inline { font-size: 14px; font-weight: 500; margin-left: 8px;
     font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -167,16 +167,16 @@
   .panel-econ-btn .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
   .panel-econ-note { font-size: var(--fs-meta); color: var(--ink-3); margin-top: 4px;
     line-height: 1.45; }
-  /* The whole block carries the band's colour (Josh), so the legend IS the
+  /* The whole block carries the band's colour, so the legend IS the
      control -- no separate swatch to map back to the map. */
   /* width:100% because the row is a flex container justified to flex-end --
-     without it both of these get pushed to the right-hand edge (Josh). The
+     without it both of these get pushed to the right-hand edge. The
      same reason .est-title already carries it. */
   .inview-heading { width: 100%; font-size: var(--fs-body); font-weight: 300; color: #fff;
     margin: var(--s2) 0 var(--s1); letter-spacing: 0.01em; text-align: left; }
   #econ-bands-global { width: 100%; }
   .econ-bands { display: flex; gap: 4px; margin-top: var(--s2); width: 100%; }
-  /* Four bands, not three (Josh's ROI scale), so the widest label -- "2x and
+  /* Four bands, not three, so the widest label -- "2x and
      over" -- has about 10px less room than it used to. Narrow side padding and
      min-width:0 keep it on one line instead of clipping it. */
   .econ-band { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
@@ -211,7 +211,7 @@
   .popup td { padding: 2px 8px 2px 0; }
   .popup td.val { font-weight: 600; text-align: right; padding-right: 0; }
   .popup .assumptions { font-size: 11px; color: #555; border-top: 1px solid #ddd; padding-top: 6px; max-width: 260px; }
-  /* Standing disclaimer (Josh): red pill at the top of the map, dismissible.
+  /* Standing disclaimer: red pill at the top of the map, dismissible.
      Above every other overlay on purpose -- it is the one thing a first-time
      visitor should read before believing a number. */
   .ai-banner {
@@ -285,7 +285,7 @@
     display: flex; align-items: baseline; justify-content: center; gap: var(--s3); }
   /* Panel count sits beside the capacity at the SAME size, carrying the
      difference in weight rather than in scale -- they are two readings of one
-     system, so neither should look subordinate (Josh). Only where panels are
+     system, so neither should look subordinate. Only where panels are
      actually placed; Heat Map mode places none, so it has no count. */
   .rsp-statbox .rsp-count { font-size: var(--fs-hero); font-weight: 250; letter-spacing: -0.5px;
     color: rgba(22,24,29,0.72); padding-left: var(--s3);
@@ -927,8 +927,7 @@ window.__map = map;
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
 
 // ---- 3D -----------------------------------------------------------------
-// Josh, 19 Sep: "Is there an ability to add a 3D option to the map? So you
-// can see a 3D view of terrain, trees, and the household?"
+// A 3D view of terrain, trees and the building.
 //
 // All three come from ONE surface. The terrain tiles encode the DSM -- the
 // top of whatever the LiDAR hit, so ground where there is ground, canopy
@@ -955,7 +954,7 @@ let terrain3d = false;
 // placed as if the ground were at sea level -- and on a 374 m hill that
 // puts it underneath the terrain, which is the blank screen. It is not a
 // pitch problem and not a zoom-depth problem: 3D works fine at z18 once the
-// zoom is a whole number, which is what Josh needs for looking at a roof.
+// zoom is a whole number, which is what looking at a roof needs.
 //
 // So while terrain is on, the zoom snaps to integers. The cost is that
 // zooming steps rather than glides; the alternative was no close 3D at all.
@@ -1080,16 +1079,15 @@ map.addControl(new ThreeDControl());
 // multi-select needs before any layer handler sees it (verified: the
 // buildings-fill click handler never fired while it was on). Nobody has asked
 // for drag-a-box-to-zoom; the +/- buttons, scroll and double-click all still
-// zoom. Josh asked for shift-select, so shift belongs to selection.
+// zoom. Shift belongs to selection.
 map.boxZoom.disable();
 
 let selectedBuildingId = -1;
 // MULTI-SELECT (shift-click). selectedIds is the authoritative set; the
 // single-selection variables around it still carry the REPRESENTATIVE building
 // (the largest by roof area), so every existing code path -- live tuning, the
-// econ-band hook, the mobile box -- keeps working untouched. Josh asked for a
-// site-wide total: "shift-select multiple buildings ... show as one building
-// in the dashboard, results as the sum of all selected".
+// econ-band hook, the mobile box -- keeps working untouched. Shift-selected
+// buildings show as one building in the dashboard, with the results summed.
 let selectedIds = [];
 let selectedPropsById = {};
 let selectedGeomById = {};
@@ -1100,8 +1098,8 @@ let layoutReady = false;
 // that blue was the heatmap, still on underneath. 'none' | 'heatmap' | 'layout'.
 let mode = "heatmap";
 const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
-let obstructionsOn = false;  // default hidden (Josh)
-let outlinesOn = false;      // building outlines, default hidden (Josh)
+let obstructionsOn = false;  // default hidden
+let outlinesOn = false;      // building outlines, default hidden
 // Base filter per layout layer -- always shows every building's facets/
 // panels/obstructions at once. Previously selectBuilding() replaced this
 // with a single building_id filter on click, which meant Panel Layout mode
@@ -1109,8 +1107,8 @@ let outlinesOn = false;      // building outlines, default hidden (Josh)
 // building (however well segmented) looked completely blank until clicked.
 // That is almost certainly the dominant cause of "large areas of the roof
 // have no panels" reports made against wide, multi-building screenshots.
-// BUILDING TYPES (Josh, 22 Sep: "a toggle for building types ... Homes,
-// Schools, Hospitals, Businesses"). Every building, panel and aggregate cell
+// BUILDING TYPES: a toggle for homes, schools, hospitals, businesses. Every
+// building, panel and aggregate cell
 // carries `btype` (src/building_types.py), so hiding a type is one attribute
 // filter on each layer and the in-view sums simply skip it. All on by default;
 // the last one on cannot be turned off, for the same reason as the economics
@@ -1192,9 +1190,9 @@ let selectedPanelBuildingId = -1;
 const SELECTED_NONE = ["==", ["get", "building_id"], -1];
 
 // --- Focus spotlight -------------------------------------------------------
-// Josh: darken everything except the clicked building, "a quick gradient at
-// the edge to go from completely visible building at the outline, to then a
-// quick gradient, to 30% opacity overlay for the rest of the map", fading in
+// Darken everything except the clicked building: fully visible at the
+// outline, a quick gradient at the edge, then a dimming overlay for the rest
+// of the map, fading in
 // rather than snapping.
 //
 // Built as ONE world-covering polygon with the building as an interior ring,
@@ -1203,7 +1201,7 @@ const SELECTED_NONE = ["==", ["get", "building_id"], -1];
 // with no per-frame work. The soft edge is a blurred line following the same
 // ring, offset outward, so the ramp lives OUTSIDE the building and the roof
 // itself stays completely clear.
-const FOCUS_DIM_OPACITY = 0.48;   // 0.30 first, too weak to separate the roof (Josh)
+const FOCUS_DIM_OPACITY = 0.48;   // 0.30 first, too weak to separate the roof
 const FOCUS_FADE_MS = 420;
 const FOCUS_GAP_M = 2.5;      // clear margin before the ramp starts
 const FOCUS_RAMP_PX = 26;     // width of the blurred edge band
@@ -1344,9 +1342,9 @@ function densityOpacityExpr(baseOpacity) {
 }
 const PANEL_FILL_OPACITY = 0.72, PANEL_LINE_OPACITY = 0.5;
 const PANEL_BASE_COLOUR = "#081e3f";
-// Which panels earn back their own share of the install. Josh: "it would be
-// good to know if south facing panels are not economic ... account for how much
-// electricity a specific panel would generate itself, and applying the
+// Which panels earn back their own share of the install: whether a south-
+// facing panel is economic depends on how much electricity that panel itself
+// would generate, applying the
 // assumptions on cost, self consumption etc, to see if the individual panel
 // pays back its proportion of the cost (the total cost divided by number of
 // panels)".
@@ -1357,12 +1355,11 @@ const PANEL_BASE_COLOUR = "#081e3f";
 // which a panel exactly repays cost/count over the system life, and the map
 // paints each panel against it. No per-feature computation, no extra data.
 let panelEcon = null;   // null = off, else { buildingId, breakEvenKwh }
-// Three bands rather than pass/fail (Josh): a panel that merely repays its
+// Three bands rather than pass/fail: a panel that merely repays its
 // share is a different proposition from one that returns twice it, and the
 // middle band is where most panels actually land.
-// Where the bands sit, as multiples of break-even. Josh, 22 September: "2.0x
-// dark green, 1.1x - 2x light green, 0.9x - 1.1x yellow, less than 1.1x red"
-// -- yellow owns 0.9x to 1.1x, so red is everything below 0.9x.
+// Where the bands sit, as multiples of break-even: 2.0x and over dark green,
+// 1.1x-2x light green, 0.9x-1.1x yellow, below 0.9x red.
 //
 // `max` is the EXCLUSIVE top of each band and the last one is open-ended. This
 // is one ordered list rather than a threshold constant per band because four
@@ -1383,12 +1380,12 @@ const emptyBandTally = () => Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, 0])
 const bandForRatio = ratio =>
   (PANEL_ECON_BANDS.find(b => ratio < b.max) || PANEL_ECON_BANDS[PANEL_ECON_BANDS.length - 1]).key;
 // "blended" spreads the building's average value over every panel, which is
-// what Josh first specified. "marginal" asks the harder question -- is it worth
+// the original specification. "marginal" asks the harder question -- is it worth
 // adding THIS panel -- and answers it at the export rate, because the
 // self-consumption a blended rate credits it with is already spoken for.
 // Back to blended by default. Marginal is still the sharper question for "is
 // one more panel worth it", but defaulting to it made the panel and the map
-// contradict each other, which Josh caught: 17/60 Hallenstein showed every
+// contradict each other: 17/60 Hallenstein showed every
 // panel red while the building itself reported $20,900 net profit.
 //
 // Both were right and that is the problem. The headline prices the
@@ -1406,7 +1403,7 @@ let panelEconBasis = "blended";
 // no break-even yet and falls back to the baked deciles. One guarded re-run
 // settles it; the guard stops that becoming a loop.
 let panelEconSettling = false;
-// Josh: the bands should apply to EVERY building, not only the clicked one,
+// The bands apply to EVERY building, not only the clicked one,
 // with the controls on the left dashboard. Break-even is per building -- it is
 // that roof's cost-per-panel over the lifetime value of a kWh -- so going
 // global means one threshold per building, carried as a MapLibre match on
@@ -1426,7 +1423,7 @@ const PANEL_ECON_FALLBACK_KWH = 250;   // for a building not in the current view
 // expression, the chip tallies and the filtered totals, and the seasonal curves
 // did not know about it at all -- so switching a band off changed the map and the
 // economics but left the generation curve describing panels that were no longer
-// there (Josh). Three copies of a rule is three chances to forget the fourth
+// there. Three copies of a rule is three chances to forget the fourth
 // caller. Two of those copies were also still using the single-building
 // break-even after the mode went district-wide, so they disagreed with the map.
 function breakEvenFor(buildingId) {
@@ -1457,7 +1454,7 @@ function panelBandOf(props) {
 // Switching the LAST band off leaves a building with no panels, which made
 // economicsFor return null, which hid the whole economics block -- and the
 // in-panel band toggles live inside it, so the controls needed to undo it
-// disappeared with it (Josh). The state also survived reselecting a building,
+// disappeared with it. The state also survived reselecting a building,
 // so every roof then read 0 kW with nothing on screen explaining why.
 //
 // Simplest honest fix: a band can always be turned ON, and the last one ON
@@ -1548,16 +1545,15 @@ function panelLayerFilter(id, excludeBuildingId) {
 }
 
 // Clicking the ACTIVE mode turns it off, leaving neither overlay drawn, so the
-// roof itself can be seen (Josh). These buttons briefly did not toggle: with
+// roof itself can be seen. These buttons briefly did not toggle: with
 // only two of them, switching both off looked like a broken map, especially on
 // a phone where a tap can register twice. What makes it safe now is that both
 // buttons visibly go unlit in that state, on desktop and mobile, so "nothing
 // is selected" reads as a state rather than a failure.
 // TOGGLE, and the earlier objection to toggling is fixed rather than dodged.
 //
-// Josh, 20 Sep: "It also needs to be possible to toggle off heat map mode and
-// panel layout mode... When viewing in 3D, it's often useful just to see clear
-// roof imagery with heat map turned off."
+// Both heat map mode and panel layout mode can be toggled off: in 3D it is
+// often useful to see the clear roof imagery alone.
 //
 // This was select-only because toggling used to fall through to a third state,
 // "none", which hid both overlays AND switched the numbers off with them: a
@@ -1609,7 +1605,7 @@ function syncToggleButtons() {
   if (tb) tb.classList.toggle("active", obstructionsOn);
   // Obstructions only mean anything in Panel Layout.
   if (tb) tb.style.display = mode === "layout" ? "" : "none";
-  // Nor does panel economics (Josh): the heat map places no panels, so there is
+  // Nor does panel economics: the heat map places no panels, so there is
   // nothing to price. Switch the mode off with it rather than just hiding the
   // button, or it would come back on invisibly when Panel Layout returns.
   const tp = document.getElementById("toggle-panel-econ");
@@ -1638,8 +1634,8 @@ function applyToggles() {
       // facets-outline is the dotted line drawn around each roof plane. It used
       // to be on permanently in Panel Layout, so toggling "Building outlines"
       // looked like it did nothing except add a SECOND dotted outline on top --
-      // Josh: "the dotted building outline stays on either way, just another
-      // one is turned on". It now rides the same toggle, so the default view is
+      // the dotted building outline stayed on either way. It now rides the
+      // same toggle, so the default view is
       // panels on the bare roof and the toggle brings back both outlines.
       const vis = overlayOn && mode === "layout" && (
         id.startsWith("obstructions") ? obstructionsOn :
@@ -1698,7 +1694,7 @@ function clearSelection() {
   // Via the window hook, not directly: clearSelection is top-level while
   // renderGlobalEconBands is inside a closure, so calling it by name threw a
   // ReferenceError and aborted this function -- which is exactly how the
-  // overlay got stuck on (Josh).
+  // overlay got stuck on.
   if (window.__refreshDerived) window.__refreshDerived();
   clearLiveTuning();
   applyToggles();
@@ -1798,7 +1794,7 @@ const COVERAGE_POA_STEPS = [5, 10, 15, 25, 50, 75, 100];
 function fmtPower(kwp) {
   // Precision follows magnitude. A house is the case where the decimal earns
   // its place -- 9 kW vs 9.4 kW is a real difference in system size to someone
-  // pricing one (Josh). Past ~100 kW the decimal is false precision against a
+  // pricing one. Past ~100 kW the decimal is false precision against a
   // model carrying several percent of uncertainty, and on a district total it
   // is just noise.
   if (kwp >= 1000) return (kwp / 1000).toFixed(1) + " MW";
@@ -1890,9 +1886,8 @@ map.on("load", async () => {
 
   // BUILDINGS ARE TILES, AND THE TOTALS COME FROM SOMEWHERE ELSE.
   //
-  // Josh, 20 Sep: "make the solar potential geojson work in a different way so
-  // it's not the whole thing downloading... fast for all NZ, then increase in
-  // accuracy as we get closer."
+  // The data must not download whole: fast for all of NZ, then more detail
+  // as the map zooms in.
   //
   // It used to be one 26 MB fetch of every building in the district. For New
   // Zealand's 2.1 million that is about 3.4 GB, so the map would never open.
@@ -1904,8 +1899,7 @@ map.on("load", async () => {
   // because MapLibre's internal geojson-vt DROPS polygons below an
   // area threshold as you zoom out -- 11,968 buildings at z12, 819 at z10.5 --
   // and the dashboard sums whatever the source hands back, so the whole-town
-  // figure quietly became a sample. Josh saw it: "10000 buildings in view to
-  // just 800, a sudden drop".
+  // figure quietly became a sample: 10,000 buildings in view dropped to 800.
   //
   // Real vector tiles have the same property and no tolerance:0 to turn it
   // off: a byte budget per tile is what makes them fast. So the sums move to
@@ -1980,8 +1974,8 @@ map.on("load", async () => {
           5e6, "#f9a520", 2e7, "#ffe97a"],
         // INVISIBLE. The cells still carry the exact sums the sidebar adds up
         // (queryRenderedFeatures reads them regardless of opacity); what is
-        // drawn at these zooms is the density heat map below (Josh, 22 Sep:
-        // "a more traditional heat map rather than the blocks").
+        // drawn at these zooms is the density heat map below -- a
+        // traditional heat map rather than blocks.
         "fill-opacity": 0,
       }
     });
@@ -2072,7 +2066,7 @@ map.on("load", async () => {
 
   map.addLayer({
     id: "buildings-outline",
-    layout: { visibility: "none" },  // off by default (Josh) -- toggle on the left dashboard
+    layout: { visibility: "none" },  // off by default -- toggle on the left dashboard
     type: "line",
     source: "buildings", "source-layer": "buildings",
     paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.15, 15, 0.35, 17, 0.6], "line-opacity": 0.4 }
@@ -2099,9 +2093,8 @@ map.on("load", async () => {
              "line-opacity-transition": { duration: FOCUS_FADE_MS, delay: 0 } }
   });
 
-  // Which building the figures on the right actually describe. Josh: "useful
-  // especially in dense areas where it's hard to tell where the building you
-  // are measuring stops and starts and where the neighbouring building is."
+  // Which building the figures on the right actually describe -- in dense
+  // areas it is hard to tell where one building stops and the next starts.
   // Always on when something is selected, independent of the white outlines
   // toggle -- that toggle answers "show me every footprint", this answers
   // "which one am I reading". Drawn wide-and-faint under narrow-and-solid so
@@ -2134,7 +2127,7 @@ map.on("load", async () => {
   // them and then called setData(), which makes MapLibre re-parse and re-tile
   // the WHOLE buildings source. It ran on every coverage-slider tick and every
   // keystroke in the assumptions editor. Those two properties fed the
-  // per-building map labels, and those were removed at Josh's request -- so
+  // per-building map labels, and those were removed -- so
   // nothing had read either property for a while. Every number on screen is
   // computed on demand from facet_area_m2 / avg_poa_kwh_m2 by
   // buildingEstimate(), which is where the same arithmetic already lives.
@@ -2144,8 +2137,8 @@ map.on("load", async () => {
   // currently on screen at the single selected coverage level, queried
   // against buildings-fill (invisible but always rendered, so it is the
   // hit-test/query layer for everything on the map).
-  // THE SUNNIEST PART OF THE ROOF GETS COVERED FIRST. Josh, 20 Sep: "if it's
-  // just 25% coverage it should be the highest producing 25% of the roof."
+  // THE SUNNIEST PART OF THE ROOF GETS COVERED FIRST: 25% coverage is the
+  // highest-producing 25% of the roof.
   //
   // That was already true of the coverage LADDER and not of the headline
   // figure beside it, which is worse than either being wrong: the same panel
@@ -2217,9 +2210,8 @@ map.on("load", async () => {
       if (!(count > 0)) return;
       const kwhYear = decileInterp(pr, "fill_kwh", panelDensityPct) * bakedKwhScale();
       // A panel's own economics must not move when the density slider does
-      // (Josh): "other than the self consumption portion of panels, the number
-      // of panels should not change other panels ROIs, the ROI should be on a
-      // per panel basis".
+      // -- other than the self-consumption share, the number of panels must
+      // not change other panels' ROIs; ROI is per panel.
       //
       // The cost tiers were doing exactly that. cost/count is
       // costPerKw(kwp) x panel watts, and kwp follows the slider, so crossing a
@@ -2237,7 +2229,7 @@ map.on("load", async () => {
       if (!e) return;
       const basis = eFull || e;
       const basisCount = eFull ? fullCount : count;
-      // Merit order (Josh): panels are laid sunniest-first, and the site's
+      // Merit order: panels are laid sunniest-first, and the site's
       // daytime load is met by the ones that come first. So the earliest panels
       // sell into RETAIL and everything after them exports -- two panels of
       // identical output on the same face are worth different amounts purely by
@@ -2248,7 +2240,7 @@ map.on("load", async () => {
       // kWh. Below it, retail; above it, export.
       // The cutoff DOES still follow the slider, and should: how many panels the
       // site's daytime load can absorb genuinely depends on how many are there.
-      // That is the one dependence Josh called out as legitimate.
+      // That is the one legitimate dependence.
       const perPanelKwh = kwhYear / count;
       const cutoff = perPanelKwh > 0 ? Math.min(count, e.selfKwh / perPanelKwh) : 0;
       const costPerPanel = basis.cost / basisCount;
@@ -2271,9 +2263,9 @@ map.on("load", async () => {
       : null;
   }
 
-  // What the roof looks like once bands are switched off. Josh: hiding the red
-  // panels "does not adjust the size, cost, and general economics like it
-  // should" -- and it should, because excluding a panel is a decision to not
+  // What the roof looks like once bands are switched off. Hiding the red
+  // panels must adjust the size, cost and economics, because excluding a
+  // panel is a decision to not
   // install it, so the system genuinely gets smaller and cheaper.
   //
   // Read from the rendered tiles rather than the baked deciles, because the
@@ -2289,12 +2281,12 @@ map.on("load", async () => {
     // from the tiles, and hiding a band can only ever subtract.
     // queryRenderedFeatures only sees what is CURRENTLY DRAWN, so this count
     // moves with the viewport: pan a roof half off-screen and its panel count
-    // drops. Josh hit that on 15 Kent Street -- the panel read "25 panels"
+    // drops. On 15 Kent Street the panel read "25 panels"
     // where the tiles hold 54 at that density and 79 exist in the layout.
     //
     // So this path is now used ONLY when a band is actually hidden, which is
     // the one case a per-panel count is genuinely needed for. With every band
-    // shown -- the normal case, and the one Josh was looking at -- fall through
+    // shown -- the normal case -- fall through
     // to the baked deciles, which are per-building and do not care where the
     // map is pointing.
     if (Object.keys(panelEconShow).every(k => panelEconShow[k])) return null;
@@ -2391,8 +2383,7 @@ map.on("load", async () => {
   // drops features to meet a per-tile byte budget, so summing what the map
   // rendered is a sample -- and the old GeoJSON source had exactly this bug
   // before tolerance:0 was added to it: 11,968 buildings at z12 and 819 at
-  // z10.5, which Josh saw as "10000 buildings in view to just 800, a sudden
-  // drop". A cell carries the total for everything inside it, dropped or not,
+  // z10.5 -- 10,000 buildings in view dropping to 800. A cell carries the total for everything inside it, dropped or not,
   // so the figure stays exact as you zoom out instead of quietly becoming a
   // fraction of itself.
   //
@@ -2447,7 +2438,7 @@ map.on("load", async () => {
     // BELOW THE BUILDING ZOOM THERE ARE NO BUILDINGS TO SUM, in either mode.
     // This branch used to run only for the heat map; in Panel Layout the
     // code fell through to the per-building sum, found nothing loaded, and
-    // the sidebar read "0.0 kW" over a whole town (Josh, Wanaka, 22 Sep).
+    // the sidebar read "0.0 kW" over a whole town (Wanaka).
     // Layout mode sums the cells' PLACED panels (fitted_kwp/fitted_kwh --
     // every panel that fits, i.e. 100% density); the heat map sums the
     // coverage ladder at the chosen percentage, as before.
@@ -2492,7 +2483,7 @@ map.on("load", async () => {
     if (mp) { mp.textContent = fmtPower(kwp); document.getElementById("m-all-energy").textContent = fmtEnergy(kwhYear); }
 
     // Economics are deliberately NOT shown here, only on the individual
-    // building panel (Josh). A district-wide dollar figure invites being read
+    // building panel. A district-wide dollar figure invites being read
     // as a forecast for the town, which it is not -- it assumes every single
     // roof gets built. Per building it is a question someone can actually act
     // on. The whole per-building loop that summed it is gone with it rather
@@ -2537,7 +2528,7 @@ map.on("load", async () => {
     box.style.display = "";
     // Only the first row is captioned. A bare "100%" says nothing on its own,
     // but repeating "of rooftop coverage" five times would turn a scannable
-    // ladder into a wall of the same three words (Josh).
+    // ladder into a wall of the same three words.
     box.innerHTML = rows.map((r, i) =>
       `<button class="cov-row${r.pct === coveragePct ? " active" : ""}" data-pct="${r.pct}">` +
       `<span class="cov-pct">${r.pct}%` +
@@ -2587,7 +2578,7 @@ map.on("load", async () => {
       bp.textContent = fmtPower(est.kwp);
       document.getElementById("bldg-energy").textContent = fmtEnergy(est.kwhYear);
       // Same coverage ladder as the map-view dashboard, but for this one roof
-      // (Josh). Its shape differs building to building: a roof that is all one
+      // Its shape differs building to building: a roof that is all one
       // good pitch barely bends between 10% and 100%, while one with a big
       // south face bends hard, and that difference is the whole point.
       if (selectedBuildingProps) {
@@ -2612,8 +2603,8 @@ map.on("load", async () => {
   mainSel.outerHTML = coverageSelectHtml("coverage-select-main");
   wireCoverageSelect(document.getElementById("coverage-select-main"));
 
-  // (Per-building kW/kWh map labels removed at Josh's request 23 Aug --
-  // the info lives in the click panel; on-map text cluttered the heat map.)
+  // (Per-building kW/kWh map labels removed -- the info lives in the click
+  // panel; on-map text cluttered the heat map.)
 
   document.getElementById("inview-collapse-btn").addEventListener("click", (e) => {
     const panel = document.getElementById("dashboard-inview");
@@ -2843,12 +2834,12 @@ map.on("load", async () => {
   });
 
   // Panel layouts sometimes vanish and only a page refresh brings them back --
-  // reported by Josh, and he suspected tab switching, which fits. The basemap
+  // tab switching is the likely trigger, which fits. The basemap
   // survives because it is a plain raster source; the panels come from a
   // PMTiles vector source over HTTP range requests, and if those are aborted
   // while the tab is hidden, MapLibre can be left holding tiles marked as
   // failed and will not retry them on its own. Reloading the page rebuilds the
-  // source, which is exactly the workaround he found.
+  // source, which is exactly the workaround that was found.
   //
   // Detect it rather than assume it: the buildings layer comes from a GeoJSON
   // source that is parsed once and never goes stale, so buildings present with
@@ -2924,8 +2915,8 @@ map.on("load", async () => {
 
   // Band split for ONE building without touching the panel tiles.
   //
-  // Josh needs the district total to respond to the ROI bands "even when zoomed
-  // out very far", and per-panel ac_kwh_year only exists in the layout tiles,
+  // The district total must respond to the ROI bands even when zoomed out
+  // very far, and per-panel ac_kwh_year only exists in the layout tiles,
   // which are not loaded past a few hundred metres. But the baked deciles are
   // cumulative BEST-PANELS-FIRST, so the difference between consecutive ones is
   // the marginal yield of that slice of the roof -- a ten-point yield
@@ -2976,7 +2967,7 @@ map.on("load", async () => {
     // With both overlays off the numbers are still the coverage-based estimate,
     // but calling it the "heat map estimate" while no heat map is drawn reads
     // as a bug. Name it for what it is instead.
-    // No title or swatch in Panel Layout on the LEFT dashboard (Josh) -- the
+    // No title or swatch in Panel Layout on the LEFT dashboard -- the
     // mode buttons directly above already say which mode this is, so the
     // heading was repeating them, and the draft caveat is gone from here too.
     document.getElementById("inview-mode-title").innerHTML = isLayout
@@ -2996,7 +2987,7 @@ map.on("load", async () => {
       document.getElementById("vslider-value").textContent = coveragePct + "%";
     }
     // The slider only means something for panel density now; Heat Map mode uses
-    // the coverage ladder in the dashboard instead (Josh).
+    // the coverage ladder in the dashboard instead.
     const vwrap = document.getElementById("vslider-wrap");
     if (vwrap) vwrap.style.display = isLayout ? "" : "none";
     const eh = document.getElementById("est-heatmap"), ep = document.getElementById("est-panels"),
@@ -3058,7 +3049,7 @@ map.on("load", async () => {
   // Bug reports: capture the current map view as a PNG download (so the
   // tester can attach it) and open the Jotform pre-filled with machine
   // context -- building, view, settings -- which is what diagnosis needs.
-  // In-map quick-fire reports (Josh): note -> Send -> keep browsing -> send
+  // In-map quick-fire reports: note -> Send -> keep browsing -> send
   // another. Posts straight to the Jotform submit endpoint through a hidden
   // iframe -- no tab, no page leave. Context (building/view/settings) rides
   // along invisibly; a PNG of the map downloads on open for optional use.
@@ -3210,7 +3201,7 @@ map.on("load", async () => {
   // kWh/yr, both of which are already on screen. Keeping them here means the
   // numbers can be retuned without a three-hour rebuild.
   //
-  // Installed cost bands are Josh's, in $/kW. Note the spec had a gap between
+  // Installed cost bands in $/kW. Note the spec had a gap between
   // 8kW and 9kW; the $2000 band is closed at 8kW and $1800 picks up from
   // there, so there is no size with an undefined price.
   // Economics live in economics.js so the money maths is ONE implementation
@@ -3221,11 +3212,11 @@ map.on("load", async () => {
   const fmtMoney = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M"
                     : v >= 1e3 ? "$" + Math.round(v / 1e3) + "k"
                     : "$" + Math.round(v);
-  // Economics figures are written out in full (Josh). "$30k" is fine for a
+  // Economics figures are written out in full. "$30k" is fine for a
   // district total nobody will act on, but these four are about one building
   // and someone reading them is deciding whether to spend that money -- a
   // rounded abbreviation quietly hides up to $500 of it.
-  // Rounded to the nearest $100 (Josh). The model is not accurate to the
+  // Rounded to the nearest $100. The model is not accurate to the
   // dollar and printing "$45,540" claims a precision it does not have.
   const fmtMoneyFull = v => {
     const r = Math.round(v / 100) * 100;
@@ -3605,9 +3596,8 @@ map.on("load", async () => {
   // content, but it never overlaps the map, survives panning, and clicking
   // a different building just replaces its content rather than spawning a
   // second overlapping popup.
-  // Josh: "a way to mark a building as a bad layout ... very easy to click
-  // mark as bad layout and send so that then you get that data and know that
-  // it might be a building that needs to be marked up".
+  // A one-click way to mark a building as a bad layout and send it, so the
+  // report arrives with its data and the building can be queued for markup.
   //
   // One click sends. The categories appear only AFTER that, as an optional
   // refinement, because a required category is a form and a form is a reason
@@ -3846,7 +3836,7 @@ map.on("load", async () => {
     const props = selectedBuildingProps;
     if (!props || props.building_id !== buildingId) return;
     // Where the system size comes from depends on which map you are looking at
-    // (Josh: the economics did not move when the coverage option changed). In
+    // (the economics once failed to move when the coverage option changed). In
     // Panel Layout it is the fitted panels at the current density. In Heat Map
     // there are no panels at all -- the number on screen is coveragePct of the
     // roof -- so the economics have to be built from the same estimate the
@@ -3871,7 +3861,7 @@ map.on("load", async () => {
     if (el("bldg-fitted-power")) {
       el("bldg-fitted-power").textContent = fmtPower(kwp);
       el("bldg-fitted-energy").textContent = fmtEnergy(kwhYear);
-      // No panel count in Heat Map mode -- nothing has been laid out (Josh).
+      // No panel count in Heat Map mode -- nothing has been laid out.
       if (el("bldg-fitted-panels") && count !== null) {
         el("bldg-fitted-panels").textContent = count.toLocaleString() + " panels";
       }
@@ -3880,8 +3870,8 @@ map.on("load", async () => {
     // 0 kW for no visible reason -- which looks like a broken page rather than
     // an honest answer. See MIN_ROOF_CONFIDENCE in build_layout_geojson.py:
     // below that share of the laser scan matching the roof planes we fitted, no
-    // layout is proposed at all. Josh, on 10 Stanley St: "very complicated roof,
-    // this one should probably just have no panels on it at all."
+    // layout is proposed at all: a very complicated roof (10 Stanley St)
+    // should have no panels rather than a wrong layout.
     const unmod = el("bldg-unmodelled");
     if (unmod) {
       const conf = props.roof_confidence;
@@ -3902,7 +3892,7 @@ map.on("load", async () => {
       be.style.display = (e || (panelEcon && isLayout)) ? "" : "none";
       if (e) {
         // Four figures, each as a bold yellow label with a light-weight value
-        // under it (Josh). Net savings is what is left after the system has
+        // under it. Net savings is what is left after the system has
         // paid for itself, which is the number people actually mean when they
         // ask what solar is worth -- lifetime savings on its own reads as
         // profit and is not.
@@ -3910,7 +3900,7 @@ map.on("load", async () => {
           `<div class="econ-item"><div class="econ-label">${label}</div>` +
           `<div class="econ-value${cls ? " " + cls : ""}" id="${id}"></div></div>`;
         // Assumptions sit UNDER the figures and show only the side that
-        // applies to this building (Josh): a house has no business tariff, and
+        // applies to this building: a house has no business tariff, and
         // showing both invites the reader to wonder which one they got.
         const p = e.biz ? "biz_" : "home_";
         const kind = e.biz ? "business" : "home";
@@ -3940,9 +3930,8 @@ map.on("load", async () => {
             `<input type="range" id="econ-self" min="0.2" max="${e.biz ? 30 : 6}" ` +
               `step="${e.biz ? 0.5 : 0.1}" value="${econ[p + "daytime_kw"]}">` +
             `<div class="econ-cap" id="econ-self-note"></div>` +
-            // RETAIL PLAN. Josh, 19 Sep: "I want to build in the option to
-            // select example retail plans, just a few and customisable
-            // ones." These are SHAPES of plan sold in New Zealand, not
+            // RETAIL PLAN: a few example plans, each customisable. These
+            // are SHAPES of plan sold in New Zealand, not
             // offers -- no retailer is named, and every rate stays editable
             // above. A plan only changes the answer because the hourly
             // engine prices each hour separately; on the annual model they
@@ -3953,9 +3942,8 @@ map.on("load", async () => {
                 `<option value="${pl.id}">${pl.label}</option>`).join("") +
               `</select></label>` +
             `<div class="econ-cap" id="econ-plan-note"></div>` +
-            // WHAT YOU PAY, AND WHEN. Josh, 19 Sep: "You need to make the
-            // prices all transparent, so the user can see them and see what
-            // hours they apply to." A plan that only shows a name is the
+            // WHAT YOU PAY, AND WHEN. Prices are transparent: the user sees
+            // each rate and the hours it applies to. A plan that only shows a name is the
             // same opaque number the flat rate was. This draws the 24 hours
             // with the price of each, marks the hours the roof actually
             // generates, and lets every band be edited -- which is also
@@ -4110,7 +4098,7 @@ map.on("load", async () => {
           el("econ-v-annual").textContent = fmtMoneyFull(e.annual);
           // Net carries the colour, because it is the one figure here that can
           // go the wrong way -- green if the system is ahead over its life, red
-          // if it never gets there (Josh).
+          // if it never gets there.
           el("econ-v-life").innerHTML = fmtMoneyFull(e.lifetime) +
             `<span class="econ-net-inline ${net >= 0 ? "econ-pos" : "econ-neg"}">` +
             `(${net < 0 ? "-" : ""}${fmtMoneyFull(Math.abs(net))} ` +
@@ -4137,7 +4125,7 @@ map.on("load", async () => {
             el("econ-self-val").textContent = e.daytimeKw.toFixed(1) + " kW";
             el("econ-self-note").innerHTML = selfNote(e);
           }
-          // Stated in full under the figure it produced (Josh), because every
+          // Stated in full under the figure it produced, because every
           // one of these moves the answer materially and a reader cannot check
           // a number whose basis is invisible.
           el("econ-method").innerHTML =
@@ -4266,8 +4254,8 @@ map.on("load", async () => {
         };
         // The corner toggle drives whichever building is currently open.
         window.__setPanelEcon = setPanelEcon;
-        // Stays on across buildings (Josh: "at the moment it turns off and then
-        // you need to go click it on each time"). It used to require the mode's
+        // Stays on across buildings rather than turning off on each click.
+        // It used to require the mode's
         // building to match, which a newly clicked one never does. Now that the
         // bands colour every roof, the id only decides which building the
         // right-hand readout describes, so switching buildings just retargets.
@@ -4510,7 +4498,7 @@ map.on("load", async () => {
     // 45 degrees or steeper was looking up key "45_..." -- which is not a bin,
     // so no curve was found and the chart came up empty. That is every
     // sawtooth roof (Turner St's teeth are ~52 degrees) and every steep gable.
-    // Josh: "the load profile is not working on this".
+    // The load profile was failing on those.
     const binOf = fx => {
       const ss = seasonCurves.slope_step, as = seasonCurves.aspect_step;
       seasonMaxSlopeBin();
@@ -4651,9 +4639,9 @@ map.on("load", async () => {
     // instead of sitting squashed under the other one's peak.
     const showPeak = curveMode === "peak";
     const shown = showPeak ? peak : avg;
-    // NAMEPLATE. Josh, 19 Sep: "add a kW peak line to the generation profile
-    // graph. Which just shows the theoretical maximum generation so its easy
-    // to contextualise between low sun and high sun households." The array's
+    // NAMEPLATE: a kW peak line on the generation profile shows the
+    // theoretical maximum, so low-sun and high-sun roofs read against the
+    // same ceiling. The array's
     // DC rating is the ceiling no hour can pass, so how close a roof's curve
     // climbs toward it IS the comparison between a sunny roof and a shaded
     // one -- 47 of 88 kW reads quite differently from 47 of 52.
@@ -4713,7 +4701,7 @@ map.on("load", async () => {
           `<text x="${L + 2}" y="${y(v) - 2.5}" fill="#fff" font-size="8">${fmtv(v)}</text>`;
       });
     }
-    // Drawn as Josh asked: a white dotted line with the band above it
+    // A white dotted line with the band above it
     // lightly shaded, so the shading reads as the region generation cannot
     // enter rather than as another series. The gradient fades upward so the
     // line itself stays the crisp edge.
@@ -4919,7 +4907,7 @@ map.on("load", async () => {
   });
   /* legend On/Off removed -- the mode toggles already own this */
   document.getElementById("toggle-panel-econ").addEventListener("click", () => {
-    // No longer needs a selection (Josh): the bands apply to every building on
+    // No longer needs a selection: the bands apply to every building on
     // screen, each against its own break-even. A selected building still gets
     // its own readout on the right, but it is no longer a precondition.
     if (window.__setPanelEcon) { window.__setPanelEcon(!panelEcon); return; }
@@ -4934,14 +4922,14 @@ map.on("load", async () => {
     refreshDerived();
   });
 
-  // JOSH'S OWN LINES, DRAWN ON THE MAP.
+  // THE DRAWN LINES, DRAWN ON THE MAP.
   //
-  // A line he draws is not always meant to reach an edge, so it cannot be
+  // A drawn line is not always meant to reach an edge, so it cannot be
   // forced into the face geometry -- cutting faces on those lines measured
-  // worse against his own markup (fidelity 94.8% -> 77.2%, extra facets
-  // 5 -> 25). His faces are the ground truth. What was actually missing is
-  // that the map never DREW the lines, so one he had drawn looked absent
-  // and he reported it as a modelling failure three times.
+  // worse against the markup (fidelity 94.8% -> 77.2%, extra facets
+  // 5 -> 25). The drawn faces are the ground truth. What was actually
+  // missing is that the map never DREW the lines, so a drawn line looked
+  // absent and read as a modelling failure.
   //
   // Loaded on demand: 399 kB of lines rather than the 1.9 MB label file,
   // and only when someone asks to see them.
@@ -4956,7 +4944,7 @@ map.on("load", async () => {
         id: "markup-lines", type: "line", source: "markup-lines",
         layout: { "line-cap": "round", visibility: "none" },
         paint: {
-          // one colour per kind, so the overlay says what he called each
+          // one colour per kind, so the overlay says what the markup called each
           // line rather than just that something is there
           "line-color": ["match", ["get", "kind"],
             "ridge", "#ff4da6", "valley", "#4dd2ff", "cliff", "#ffd24a",

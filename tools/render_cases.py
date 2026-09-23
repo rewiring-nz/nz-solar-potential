@@ -1,8 +1,8 @@
-"""Contact sheet of the case roofs awaiting Josh's verdict.
+"""Contact sheet of the case roofs awaiting a verdict.
 
-Red = the facets the build produces now. Green = the faces he drew, where
-he drew them. One tile per roof, captioned with what he said, so a verdict
-costs him a glance rather than a navigation.
+Red = the facets the build produces now. Green = the drawn faces, where
+they were drawn. One tile per roof, captioned with its note, so a verdict
+costs a glance rather than a navigation.
 """
 import json, sys, warnings
 warnings.filterwarnings("ignore")

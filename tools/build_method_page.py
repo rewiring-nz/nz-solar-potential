@@ -1,10 +1,10 @@
 """Render the domain graph as something a non-coder can actually read.
 
-Josh, 21 Sep, after being shown a 1,554-node code graph: "This seems overly
-complicated for what we are doing... this is not helping me understand, just
-looks like a very complicated graph of nodes."
+A 1,554-node code graph is overly complicated for what this project does;
+it does not help a reader understand, just
+looks like a very complicated graph of nodes.
 
-He is right, and the fix is not a better graph. The useful output of
+The fix is not a better graph. The useful output of
 Understand-Anything's domain pass is not its picture -- it is its TEXT: six
 domains, twenty-two flows and a hundred-odd steps, each one naming a decision
 the pipeline makes and the evidence it makes it on, written in roofs and sun
@@ -13,7 +13,7 @@ that buries the one thing worth reading.
 
 So this takes .ua/domain-graph.json and lays it out as a document: every step
 in order, with what it decides, what it decides it from, and where that lives
-if he ever wants to point at it. Collapsed by default, two levels deep, so
+if a reader wants to point at it. Collapsed by default, two levels deep, so
 the first screen is six lines rather than a hundred and nine.
 
 Usage: python tools/build_method_page.py [out.html]

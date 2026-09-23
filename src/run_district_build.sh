@@ -29,8 +29,7 @@ set -u
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
 
-# The selected-faces chain LEADS district builds (Josh, 9 Sep: "deploy this
-# fix to all of the Queenstown regions"). Without this export the build
+# The selected-faces chain LEADS district builds. Without this export the build
 # silently ignores every data/selected_faces/*.json the precompute wrote --
 # there is no error, the old path just answers instead. Set
 # SOLAR_SELECTED_FACES=0 explicitly to build old-path only.
@@ -114,8 +113,8 @@ fi
 
 # ---------------------------------------------------------------- incremental
 #
-# THE FAST PATH WAS ALREADY BUILT AND NOTHING CALLED IT. Josh, 20 Sep: "it
-# seems to take a long time to fix things at the moment."
+# THE FAST PATH WAS ALREADY BUILT AND NOTHING CALLED IT, so fixes took a
+# long time.
 #
 # It does, because the unit of work here is the DISTRICT. A one-line change in
 # face_candidates invalidates build_layout_geojson for all 24 regions and costs

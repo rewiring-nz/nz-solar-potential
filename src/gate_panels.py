@@ -110,8 +110,8 @@ def panel_ok(poly, pc):
     #     82% had their outliers mostly BELOW the roof plane  (edge artefact)
     #     10% had them mostly ABOVE                            (real structure)
     # and separately, 87% of all gate drops were edge panels. It was cutting
-    # 45 Camp St from 63 fitted panels to 31 -- a roof Josh reported as
-    # "sparsely populated even though plenty of extra space".
+    # 45 Camp St from 63 fitted panels to 31 -- a roof left sparsely
+    # populated with plenty of space free.
     #
     # Same physics guard obstruction_detection already applies to its own
     # candidates: deviation on both sides is roof form, deviation above is an
@@ -135,7 +135,7 @@ def panel_ok(poly, pc):
 
 
 def _has_usable_markup(building_id):
-    """A roof Josh drew is not second-guessed by the surface gates, for the
+    """A drawn roof is not second-guessed by the surface gates, for the
     same reason a drawn face skips the plane-fit judgment: lumpy/sparse ask
     whether the SURFACE is real roof, and he has answered by hand. #4725488
     (119-face sawtooth, tiny 26-degree faces, 1.7 pts/m2): the sparse gate

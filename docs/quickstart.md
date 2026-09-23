@@ -69,7 +69,7 @@ for every rule, is
 1. **Facets against the photograph.** Open the report and compare white
    boundaries to what you can see: ridges where ridges are, one facet per
    roof plane, boundaries straight. This is the single strongest check —
-   it is the one the project's owner performs on every change.
+   it is the one performed on every change.
 2. **Panels against physics.** Panels are 1.134 × 1.961 m
    (`config.PANEL_WIDTH_M/HEIGHT_M`, a real Trina module). Measure a roof
    you know: does the count fit the area, minus the 0.3 m edge setback

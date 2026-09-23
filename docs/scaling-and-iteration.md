@@ -1,8 +1,7 @@
 # Scaling to New Zealand, and why changes take so long
 
-Josh, 20 September 2026: *"I want you to get it ready for scaling to NZ wide.
-While making sure new customisations can still happen quickly. It seems to take
-a long time to fix things at the moment."*
+The goal: ready to scale NZ-wide, while customisations still happen quickly
+and fixes stop taking a long time.
 
 Two questions, one answer each. Both are measured, not estimated from feel.
 
@@ -15,7 +14,7 @@ Four instances found in a single day's review, all independent, all shipped:
 
 | The correct thing | Where it existed | Who was missing it |
 | --- | --- | --- |
-| Straighten a traced roof boundary in the building's frame | inside `lidar_faces` | `sam_faces` (isotropic simplify only) and `line_faces` (nothing at all) — the source of every roof Josh has called jagged |
+| Straighten a traced roof boundary in the building's frame | inside `lidar_faces` | `sam_faces` (isotropic simplify only) and `line_faces` (nothing at all) — the source of every roof flagged as jagged |
 | Mean irradiance over the sunniest N% of a roof (`cov_poa_N`) | baked by `bake_density_deciles`, on 15,122 of 15,353 buildings | the headline kW/kWh figure, which used the roof average — so the same panel described the same roof two ways |
 | Region list must union the disk, not trust the config | written five times, once per patch driver | `all_areas()`, which every *stage* calls. The drivers were immune; the build was not, and skipped `pilot` twice in silence |
 | Rebuild only the buildings whose reading actually changed | `tools/patch_stale_selected.py`, content-hashed and resume-safe | `run_district_build.sh`, which rebuilds every region from scratch |
@@ -26,8 +25,8 @@ already fast:
 | Loop | Time | What it answers |
 | --- | --- | --- |
 | `tests/run_all.sh --fast` | ~20 s | did I break an invariant |
-| `tools/bench.py` | 0.9 min | did geometry move against Josh's markup, on 152 roofs |
-| `tools/cases.py check` | ~1 min | is every roof Josh has flagged still fixed |
+| `tools/bench.py` | 0.9 min | did geometry move against the markup, on 152 roofs |
+| `tools/cases.py check` | ~1 min | is every flagged roof still fixed |
 | a frontend change | seconds | — |
 | **shipping a geometry change** | **3 h precompute + 4.5 h build** | — |
 

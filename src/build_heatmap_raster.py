@@ -101,8 +101,7 @@ def shading_grid(dsm_band, dsm_transform, dsm_nodata, geom, hourly,
     The raster used to scale a whole building by ONE factor taken at its
     footprint centroid, so its within-roof variation came only from
     orientation -- a roof half-buried under a neighbour's macrocarpa rendered
-    as brightly as an open one, and Josh (31 Aug) asked why the heat map does
-    not show shadows. It now varies per position, which is the whole point of
+    as brightly as an open one: the heat map did not show shadows. It now varies per position, which is the whole point of
     a per-pixel layer.
 
     Returns (grid, xs, ys): grid[j, i] is the factor at (xs[i], ys[j]), ys

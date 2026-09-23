@@ -110,8 +110,8 @@ def _combine_cells(regions, out_root, dest_tmp):
     src = dest_tmp / "_cells.geojson"
     src.write_text(json.dumps({"type": "FeatureCollection", "features": feats},
                               separators=(",", ":")))
-    # A SECOND LAYER OF CELL-CENTRE POINTS. Josh: "change the very zoomed out
-    # view to be a more traditional heat map rather than the blocks... based
+    # A SECOND LAYER OF CELL-CENTRE POINTS: the zoomed-out view is a
+    # traditional heat map rather than blocks, based
     # on generation density across areas." MapLibre's heat-map rendering takes
     # points, not polygons, so each cell also ships as a point at its centre
     # carrying the same sums plus its density; the page draws the smooth
@@ -334,7 +334,7 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR):
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
-    # Josh's drawn lines, as the overlay that shows them -- global and tiny.
+    # The drawn lines, as the overlay that shows them -- global and tiny.
     ml = ROOT / "tools" / "build_markup_lines.py"
     if ml.exists():
         subprocess.run([sys.executable, str(ml)], cwd=ROOT)
