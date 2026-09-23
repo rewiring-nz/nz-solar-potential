@@ -241,7 +241,20 @@ def _recut(gi, gj, c0, u, n, length, d):
         if not remainder:
             return None
         new_giver, extras = remainder[0], remainder[1:]
-        bridge = piece.buffer(GAP_BRIDGE_M).intersection(taker.buffer(GAP_BRIDGE_M))
+        # The bridge fills the faces' gap ONLY between the band's own ends: a
+        # bare buffer protruded past them as 20 cm round bumps, and the
+        # building frame -- which reads bearings off every facet edge --
+        # took those stray edges seriously (2 Preston Drive: 81 panels to
+        # 56, on facets the snap never touched).
+        rel = np.asarray(piece.exterior.coords)[:, :2] - c0 if piece.geom_type == "Polygon" else \
+            np.vstack([np.asarray(q.exterior.coords)[:, :2] for q in piece.geoms]) - c0
+        a_lo, a_hi = float((rel @ u).min()), float((rel @ u).max())
+        sgn = 1.0 if d > 0 else -1.0
+        band = Polygon([tuple(c0 + u * a_lo - n * sgn * GAP_BRIDGE_M), tuple(c0 + u * a_hi - n * sgn * GAP_BRIDGE_M),
+                        tuple(c0 + u * a_hi + n * d), tuple(c0 + u * a_lo + n * d)])
+        if not band.is_valid:
+            band = band.buffer(0)
+        bridge = piece.buffer(GAP_BRIDGE_M).intersection(taker.buffer(GAP_BRIDGE_M)).intersection(band)
         new_taker = unary_union([taker, piece, bridge] + extras)
         new_taker = shapely.set_precision(new_taker, 1e-3)
         parts = _polys(new_taker)
