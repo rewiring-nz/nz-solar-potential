@@ -48,6 +48,8 @@ bash quickstart.sh my_test_area
 
 Keep the bbox small the first time (~0.005° × 0.005°, a few dozen
 buildings): the build takes a minute or two and the report stays readable.
+The optional vision precompute adds ~10 s per roof on a CPU (a 100-roof
+area took 17 minutes in testing); a GPU or Apple-silicon Mac is much faster.
 The first run's downloads take longer than the build — mostly the wide 8 m
 terrain model below.
 
