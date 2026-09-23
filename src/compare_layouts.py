@@ -24,6 +24,7 @@ import argparse
 import base64
 import io
 import json
+import os
 import sys
 import warnings
 from collections import defaultdict
@@ -126,7 +127,8 @@ def _refit_ids(area, ids, partition=False):
             facets = segment_building_best(dsm, pc, geom, bid, imagery_ds=img)
         per_facet = []
         # the same building frame the build uses (panel_fitting.building_frame)
-        frame = building_frame(facets, geom) if facets else None
+        # SOLAR_FRAME=0 lays out the old way (each face its own grid) for A/B runs
+        frame = building_frame(facets, geom) if facets and os.environ.get("SOLAR_FRAME", "1") != "0" else None
         if frame is not None:
             try:
                 frame = register_frame(frame, facets)

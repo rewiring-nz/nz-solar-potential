@@ -448,7 +448,8 @@ def _build_one_at(building_id, nudge_m):
     # ONE GRID FRAME PER BUILDING (panel_fitting.building_frame): every face
     # racks to the same bearing from the same origin, so rows and columns
     # line up across the roof instead of each face choosing its own.
-    _frame = building_frame(facets, row_geom) if facets else None
+    # SOLAR_FRAME=0 lays out the old way (each face its own grid) for A/B runs
+    _frame = building_frame(facets, row_geom) if facets and os.environ.get("SOLAR_FRAME", "1") != "0" else None
     if _frame is not None:
         try:
             _frame = register_frame(_frame, facets)
