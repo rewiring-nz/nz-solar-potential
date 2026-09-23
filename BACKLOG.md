@@ -1610,8 +1610,30 @@ roofs. Not shipped.
    (28 -> 4, 85% -> 32% of the roof covered). BIG_FACE_MIN_PLANE_INLIER =
    0.80 restores #5372674; the other two are still short and being traced.
 
-Re-lay needed for everything (the snap and both fixes touch every region).
-SOLAR_FRAME=0 and SOLAR_RIDGE_SNAP=0 exist for A/B runs.
+3. BALCONY RULES NEVER DROP MOST OF A ROOF (646427c7). drop_balcony_levels
+   took 40 of the Arthur's Point hotel's 47 faces (63% of #4737389): a
+   47-face reading of a stepped commercial roof has faces below the main
+   one everywhere. Balconies are 22% of #4740503 and 3% of 30 Brunswick;
+   any balcony drop over 40% of facet area is refused. #4737389 back to 33
+   facets / 475 panels / 88% (live 28 / 454 / 85%).
+
+4. SEGMENTATION KEEPS ITS OWN SETBACK (646427c7). The partition's cut
+   economics and merge_uneconomic_splits read config.RIDGE_SETBACK_M; the
+   0.1 m panel setback made every cut 2.5x cheaper and 40 Avalon Crescent
+   (#4747072) went from 3 faces / 81% to one face / 18% -- isolated to
+   that constant on the VM (mix3). PARTITION_SETBACK_M and
+   SEGMENTATION_SETBACK_M stay at the tuned 0.25 m; panels keep 0.1.
+
+5. A FACE LEAVES THE FRAME WHEN THE FRAME COSTS IT >25% (FRAME_MAX_LOSS).
+   With the bearing right, the 211 roofs are at -4.2% frame vs no frame,
+   but narrow strips still lose a row each to a single phase: 28 Melbourne
+   St 207 -> 119, 10 Stanley St 124 -> 60, 24 Beach St 340 -> 152 (flat).
+   Each face is also packed free in the frame's orientation; if the locked
+   grid places under 75% of that, the free packing stands for that face.
+
+Re-lay needed for everything (the snap and every fix touches every region).
+SOLAR_FRAME=0, SOLAR_FRAME_ROWS=0, SOLAR_RIDGE_SNAP=0 and SOLAR_FACE_DEBUG=1
+exist for A/B and tracing.
 
 ## RIDGES SNAP TO THE CREST - 23 Sep (src/ridge_snap.py)
 

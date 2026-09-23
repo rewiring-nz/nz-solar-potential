@@ -28,6 +28,8 @@ from pathlib import Path
 
 import warnings
 
+import os
+
 import numpy as np
 from affine import Affine
 from rasterio.features import rasterize
@@ -380,6 +382,7 @@ def _surface_transform(u_hat, v_hat, slope_deg, origin):
     return to_surface, to_world
 
 
+FRAME_MAX_LOSS = 0.25        # a face leaves the building frame if the locked grid costs it more than this
 ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fits more than
 # max(1, this fraction) fewer panels than the free per-row scan -- real installers rack rows
 # with columns lined up, so a small capacity cost buys a much more realistic layout, but a
@@ -760,10 +763,23 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             # by the group's registered phase (register_frame)
             col_phase = (int(round(-u_min / resolution)) + (lock.get("col_phase") or 0)) % wc_
             row_phase = None
-            if lock.get("rows"):
+            if lock.get("rows") and os.environ.get("SOLAR_FRAME_ROWS", "1") != "0":
                 row_phase = (int(round(-v_min / resolution)) + (lock.get("row_phase") or 0)) % hc_
             phases = (row_phase, col_phase)
         result = _pack_orientation(occupancy, resolution, w, h, phases=phases)
+        if phases is not None and result is not None:
+            # THE FRAME MAY COST A FACE A ROW OR A COLUMN, NOT A THIRD OF IT.
+            # A locked grid on a narrow strip loses a row wherever the
+            # strip's edges miss the grid lines; on 28 Melbourne Street's 38
+            # strips that was 207 -> 119 panels, on 10 Stanley Street's 119
+            # sawtooth faces 124 -> 60, with the bearing already right. So
+            # each face is also packed free in the SAME orientation, and if
+            # the frame places fewer than (1 - FRAME_MAX_LOSS) of that, the
+            # face leaves the frame: alignment where it is cheap, count
+            # where alignment is not.
+            free = _pack_orientation(occupancy, resolution, w, h)
+            if free and len(free[0]) * (1.0 - FRAME_MAX_LOSS) > len(result[0]):
+                result = free
         if result:
             placed_o, wc, hc = result
             candidates.append((is_portrait, placed_o, wc, hc))
