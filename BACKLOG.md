@@ -1581,6 +1581,38 @@ Also fixed and live: the sidebar read 0.0 kW zoomed out in Panel Layout
 (it summed buildings that are not loaded below z13); both modes sum the
 cells now.
 
+## THE 23 SEP RE-LAY FAILED THE GATE - two regressions, both bisected
+
+tools/predeploy_check.py on the re-lay (frame + families, 0.1 m setbacks,
+regulariser cap, calibration fix): panels 654,889 -> 640,576 (-2.2%), 23
+roofs zeroed, 211 losing more than 30%. Josh's flagged roofs mostly went UP
+(1/24 Frankton 254 -> 276, 14C 76 -> 85, 4 Kent 36 -> 45, 12/16 Kent 257
+-> 266); the losses were elsewhere, on sawtooth strips and commercial
+roofs. Not shipped.
+
+1. THE FRAME BEARING WAS IN THE WRONG CONVENTION (3bb931ce). building_frame
+   took each family's eave as (aspect + 90) mod 90, a compass angle; the
+   outline axis and the panel axes are math angles (counter-clockwise from
+   east). They agree only at 0 and 45 degrees mod 90 -- so every E-W roof
+   and 32 Frankton Road (40-50 deg) racked cleanly, and a 62-degree
+   sawtooth came out 34 degrees skew (SOLAR_FRAME=0 vs 1 over the 211:
+   15,166 -> 8,761 panels, 187 of 211 losing >30%, 37 -> 2 on the worst;
+   the render shows panels diagonal across the strips). Now (-aspect) mod
+   90, unit-tested. 2 Preston Drive's 81 -> 56 after the ridge snap was
+   the same bug: a 0.7 m jog the re-cut left on one face was enough.
+
+2. A FORCED BIG FACE MUST BE ONE PLANE (3bb931ce). 2a44ad96 let a machine
+   face over 100 m2 ship over the vertex cap. The cap had been a planarity
+   proxy by accident: a SAM mask that covers a whole hip roof has many
+   corners and spans several planes; once it shipped it passed the 0.45
+   inlier bar as one facet at confidence 0.42 and the roof was withheld.
+   Bisected on #5372674 (6 facets -> 1), #4747072 (3 -> 1), #4737389
+   (28 -> 4, 85% -> 32% of the roof covered). BIG_FACE_MIN_PLANE_INLIER =
+   0.80 restores #5372674; the other two are still short and being traced.
+
+Re-lay needed for everything (the snap and both fixes touch every region).
+SOLAR_FRAME=0 and SOLAR_RIDGE_SNAP=0 exist for A/B runs.
+
 ## RIDGES SNAP TO THE CREST - 23 Sep (src/ridge_snap.py)
 
 Josh, 2 Preston Drive (#4736551): "These panels are going over a ridge line
