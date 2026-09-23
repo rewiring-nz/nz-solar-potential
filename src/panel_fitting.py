@@ -67,6 +67,19 @@ FRAME_SNAP_DEG = 7.0   # a family's bearing within this of the building axis tak
 FAMILY_TOL_DEG = 10.0  # eaves within this of each other rack to one bearing
 
 
+def eave_bearing_deg(aspect_deg):
+    """The eave direction of a face, mod 90, in the MATH convention the frame
+    uses everywhere else (degrees counter-clockwise from east -- what
+    atan2 and cos/sin mean). aspect_deg is compass, clockwise from north;
+    the eave runs perpendicular to it, and in plan that vector is
+    (cos a, -sin a), whose angle is -a. This was (a + 90) mod 90 -- compass
+    -- and the two agree only at 0 and 45 degrees mod 90, which is why every
+    E-W and N-S roof and 32 Frankton Road (40-50 degrees) racked cleanly
+    while a 62-degree sawtooth came out 34 degrees skew: 211 roofs lost
+    42% of their panels to the frame on the 23 Sep re-lay (37 -> 2, 87 -> 11)."""
+    return (-(aspect_deg or 0.0)) % 90.0
+
+
 def building_frame(facets, building_polygon):
     """ONE grid frame for the whole building: a bearing (mod 90) and an origin.
 
@@ -113,7 +126,7 @@ def building_frame(facets, building_polygon):
     def dev(a, b):
         d = abs(a - b) % 90.0
         return min(d, 90.0 - d)
-    pitched = [(f["geometry"].area, ((f.get("aspect_deg") or 0.0) + 90.0) % 90.0)
+    pitched = [(f["geometry"].area, eave_bearing_deg(f.get("aspect_deg")))
                for f in facets or [] if (f.get("slope_deg") or 0.0) >= FLAT_SLOPE_DEG]
     families = []   # [(angle, weight)]
     for a, e in sorted(pitched, key=lambda t: -t[0]):
@@ -221,7 +234,7 @@ def frame_group(frame, aspect_deg, slope_deg):
     angles = frame.get("angles") or [frame["angle"]]
     if (slope_deg or 0.0) < FLAT_SLOPE_DEG:
         return int(frame.get("flat_family", 0))
-    eave = ((aspect_deg or 0.0) + 90.0) % 90.0
+    eave = eave_bearing_deg(aspect_deg)
     def dev(a, b):
         d = abs(a - b) % 90.0
         return min(d, 90.0 - d)

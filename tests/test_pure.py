@@ -299,5 +299,27 @@ def _main():
     return 1 if failed else 0
 
 
+
+def test_frame_bearing_follows_the_eave():
+    """The frame's family bearing is the eave's MATH angle, so panels lie
+    along the strips of a 62-degree sawtooth (they were 34 degrees skew)."""
+    import math
+    import numpy as np
+    from shapely.geometry import Polygon
+    from src.panel_fitting import building_frame, _frame_axes, eave_bearing_deg
+    assert abs(eave_bearing_deg(62.0) - 28.0) < 1e-9
+    assert abs(eave_bearing_deg(90.0) - 0.0) < 1e-9
+    assert abs(eave_bearing_deg(45.0) - 45.0) < 1e-9
+    # a strip along the eave of a 62-deg-aspect face: plan vector (cos 62, -sin 62),
+    # math angle -62 deg, which is 28 mod 90 -- the grid the frame must pick
+    a = math.radians(-62.0)
+    u = np.array([math.cos(a), math.sin(a)]); v = np.array([-u[1], u[0]])
+    strip = Polygon([tuple(u * t + v * w) for t, w in ((0, 0), (20, 0), (20, 2.5), (0, 2.5))])
+    facets = [{"geometry": strip, "slope_deg": 25.0, "aspect_deg": 62.0}]
+    frame = building_frame(facets, strip)
+    uh, _ = _frame_axes(frame, 62.0, 25.0)
+    assert abs(abs(float(uh @ u)) - 1.0) < 1e-6, (frame, uh)
+
+
 if __name__ == "__main__":
     sys.exit(_main())

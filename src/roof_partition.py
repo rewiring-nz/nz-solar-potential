@@ -1287,11 +1287,19 @@ SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, ne
 
 
 BIG_FACE_KEEP_M2 = 100.0   # a machine face this big ships even over the vertex cap
+# ...but only if it is convincingly ONE plane. The ten-corner cap had been a
+# planarity proxy by accident: a SAM mask that covers a whole hip roof has
+# many corners and spans several planes, and the cap threw it out, after
+# which residual fill cut the area into real faces. Letting it ship at the
+# ordinary 0.45 inlier bar (23 Sep re-lay, bisected to 2a44ad96) turned
+# #5372674 from 6 facets into one at confidence 0.42 (withheld), #4747072
+# from 3 into one, and #4737389's 28 facets / 85% of the roof into 4 / 32%.
+BIG_FACE_MIN_PLANE_INLIER = 0.80
 
 
 def _regularise_machine_face(poly, footprint):
-    """Enforce the module's founding invariant on faces from the selected
-    chain: STRAIGHT BY CONSTRUCTION. SAM masks and LiDAR raster tilings
+    """(polygon, forced) or None. Enforce the module's founding invariant on
+    faces from the selected chain: STRAIGHT BY CONSTRUCTION. SAM masks and LiDAR raster tilings
     arrive as traced boundaries -- lightly smoothed wobble -- and on
     10 Sep Josh flagged both in one sweep ("These roof lines are fuzzy,
     no roof lines are fuzzy" #4734994; jagged overlapping faces on
@@ -1348,10 +1356,10 @@ def _regularise_machine_face(poly, footprint):
             back = _aff.rotate(out, ax, origin=(0, 0))
             if back.is_valid and back.geom_type == "Polygon":
                 if len(snapped) <= max_vertices:
-                    return back
+                    return back, False
                 fallback = back      # over the cap, but a real, clean polygon
     if fallback is not None and poly.area >= BIG_FACE_KEEP_M2:
-        return fallback
+        return fallback, True
     return None
 
 
@@ -1480,10 +1488,13 @@ def facets_from_selected_faces(building_id, footprint, pts):
         reg = _regularise_machine_face(poly, footprint)
         if reg is None:
             continue
-        poly = reg
+        poly, forced = reg
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
             else None
+        if forced and (plane is None
+                       or _inlier_fraction(sub, plane) < BIG_FACE_MIN_PLANE_INLIER):
+            continue          # over the cap and not one plane: residual fill cuts it properly
         if plane is not None:
             # A FACE THAT IS NOT ONE PLANE IS NOT A FACE. #4740503's balcony
             # panels rode in on an 835 m2 SAM mask whose plane inlier was
