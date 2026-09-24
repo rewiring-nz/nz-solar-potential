@@ -1,0 +1,70 @@
+{
+ "files": {
+  "data/out/zz_harness/addresses.json": "4f53cda18c2baa0c",
+  "data/out/zz_harness/buildings.pmtiles": "d23c5259e21931f0",
+  "data/out/zz_harness/cells.json": "a9c450b696deb783",
+  "data/out/zz_harness/detail/13/7934/5246.json": "7ce9b180e3d6187c",
+  "data/out/zz_harness/heatmap/11/1983/1311.png": "9348b244fb9739fe",
+  "data/out/zz_harness/heatmap/12/3967/2623.png": "63307b653391b835",
+  "data/out/zz_harness/heatmap/13/7934/5246.png": "c6c0fb5960a0a39d",
+  "data/out/zz_harness/heatmap/14/15868/10492.png": "e427d5649d0934a5",
+  "data/out/zz_harness/heatmap/15/31736/20985.png": "7b998b60ce8786c2",
+  "data/out/zz_harness/heatmap/16/63472/41970.png": "4c9c21d62e3ec024",
+  "data/out/zz_harness/heatmap/17/126944/83940.png": "c09e31c63921ea38",
+  "data/out/zz_harness/panel_layouts.pmtiles": "167961352ce23f06",
+  "data/out/zz_harness/solar_potential.geojson": "0077be0b67b50846",
+  "data/out/zz_harness/summary.json": "eaea876e4e42bcfd",
+  "data/regions/zz_harness/heatmap_raster.json": "6bb6a420c035a5d8",
+  "data/regions/zz_harness/heatmap_raster.png": "225e2c97e651b6c5",
+  "data/regions/zz_harness/image_shift.json": "64c17b97dd939101",
+  "data/regions/zz_harness/panel_layouts.geojson": "3b6b9bb1be2fd94d",
+  "data/regions/zz_harness/solar_potential.geojson": "e0d34ccef9cc9779"
+ },
+ "headline": {
+  "features": 534,
+  "kwh_total": 284472.0,
+  "panels": 508,
+  "per_building": {
+   "990000001": [
+    56,
+    2,
+    31276.0
+   ],
+   "990000002": [
+    70,
+    2,
+    38036.0
+   ],
+   "990000003": [
+    70,
+    4,
+    39667.0
+   ],
+   "990000004": [
+    105,
+    6,
+    57466.0
+   ],
+   "990000005": [
+    117,
+    1,
+    68562.0
+   ],
+   "990000006": [
+    40,
+    1,
+    24539.0
+   ],
+   "990000007": [
+    0,
+    1,
+    0.0
+   ],
+   "990000008": [
+    50,
+    2,
+    24926.0
+   ]
+  }
+ }
+}

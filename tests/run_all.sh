@@ -2,8 +2,8 @@
 # Every check this repo has, in one command. Run before a push.
 #
 #   ./tests/run_all.sh          # everything
-#   ./tests/run_all.sh --fast   # skip the golden tests (they segment real
-#                               # buildings and take a few minutes)
+#   ./tests/run_all.sh --fast   # skip the synthetic-region build and the
+#                               # golden tests (a minute or more each)
 #
 # Exit status is non-zero if any check fails, so it works as a pre-push hook.
 #
@@ -20,6 +20,11 @@
 #                the def it resolves to. On 22 Sep a signature change left a
 #                caller passing four arguments to a two-argument function.
 #   ridge snap   the shared-ridge snap on synthetic gables and hips.
+#   xref         every import of a repo name, including inside functions and
+#                in tools/, still resolves -- what a deletion breaks first.
+#   synthetic    the whole district build on a made-up eight-roof region,
+#                fingerprinted against tests/synthetic/reference.json. Runs
+#                anywhere (no LiDAR needed); about a minute.
 #   diagram      the architecture page names 78 functions and constants. This
 #                fails if any has moved or changed value, because a diagram
 #                that drifts is worse than none -- a reviewer trusts it.
@@ -49,12 +54,14 @@ fi
 run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
+run "xref"                  $PY tests/test_xref.py
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
+  run "synthetic region"    $PY tests/synthetic/run.py
   run "golden buildings"    $PY -W ignore tests/test_golden.py
 else
   echo ""
-  echo "=== golden buildings: SKIPPED (--fast) ==="
+  echo "=== synthetic region + golden buildings: SKIPPED (--fast) ==="
 fi
 
 echo ""
