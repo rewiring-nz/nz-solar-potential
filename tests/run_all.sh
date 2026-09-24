@@ -55,6 +55,7 @@ run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
 run "xref"                  $PY tests/test_xref.py
+run "output contract"       $PY tests/test_output_contract.py
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py

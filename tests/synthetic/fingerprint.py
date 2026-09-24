@@ -12,7 +12,9 @@ from pathlib import Path
 W = Path(sys.argv[1]).resolve()
 VOLATILE = {"generated", "generated_utc", "finished_utc", "built_utc", "timestamp",
             "commit", "git_sha", "sha", "seconds", "elapsed_s", "built_at", "created",
-            "time", "date", "version_time", "build_time", "git"}
+            "time", "date", "version_time", "build_time", "git",
+            # code hashes: they change with every commit by design
+            "mv", "model", "yield_model"}
 
 
 def scrub(o):

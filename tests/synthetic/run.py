@@ -183,6 +183,16 @@ def main():
                   + (r.stdout + r.stderr).strip()[-400:])
             a.keep = True
             return 1
+        r = subprocess.run([py, "-c", "import sys, json; sys.path.insert(0, '.'); "
+                            "from src.output_contract import validate_region; "
+                            f"print(json.dumps(validate_region('data/out/{REGION}')))"],
+                           cwd=work, capture_output=True, text=True)
+        problems = json.loads(r.stdout) if r.returncode == 0 else [r.stderr.strip()[-300:]]
+        if problems:
+            print("  FAIL  output breaks the contract (src/output_contract.py):\n        "
+                  + "\n        ".join(problems[:10]))
+            a.keep = True
+            return 1
         fp = fingerprint(work, py)
         if not a.record:
             bad = incremental_check(work, py, fp)

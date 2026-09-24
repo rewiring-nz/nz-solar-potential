@@ -84,6 +84,8 @@ def main(area):
     # round-trips bit for bit.
     model = SolarModel() if centroid is None else SolarModel(*centroid)
     updated, changed, missing = apply_yield(layouts, model)
+    from src.build_keys import yield_code_hash
+    layouts["yield_model"] = yield_code_hash()
     write_json_atomic(path, layouts)
     msg = f"[{area}] yield: {updated:,} features recomputed, {changed:,} changed"
     if missing:

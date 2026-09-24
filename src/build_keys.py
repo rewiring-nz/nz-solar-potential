@@ -156,3 +156,28 @@ def stale_buildings(region, building_ids, geometry_hash=None):
     gh = geometry_hash or stage_code_hash(GEOMETRY_STAGE)
     keys = load_keys(region)
     return [int(b) for b in building_ids if keys.get(str(int(b))) != building_key(int(b), gh)]
+
+
+YIELD_STAGE = "apply_yield"
+
+
+def yield_code_hash():
+    """Hash of the code that turns geometry into kWh (the solar model and
+    what it imports, config, the lock). Stamped on the layouts by whichever
+    stage last computed their kWh, so a region can say which sun it used."""
+    return stage_code_hash(YIELD_STAGE)
+
+
+def geometry_hash_of_key(key):
+    """The geometry-code part of a recorded building key, or None."""
+    return key.rsplit("+", 1)[-1] if key and "+" in key else None
+
+
+def model_version(geometry_hash, yield_hash):
+    """What the map shows as a building's model version: geometry and sun,
+    six characters each. A building whose numbers move between two builds
+    can be told apart by which half changed."""
+    g = geometry_hash[:6] if geometry_hash else "unknown"
+    y = yield_hash if yield_hash in ("mixed",) else (yield_hash[:6] if yield_hash else "unknown")
+    return f"g{g}-y{y}"
+

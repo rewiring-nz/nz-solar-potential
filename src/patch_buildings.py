@@ -91,6 +91,11 @@ def main():
         rank = {b: i for i, b in enumerate(outline_order)}
         order.sort(key=lambda b: rank.get(b, len(rank)))   # stable: unknown ids keep their place
         d["features"] = [f for b in order for f in groups[b]]
+        # the rebuilt buildings' kWh come from today's yield code; if the rest
+        # of the file's did not, say so rather than claim either
+        from src.build_keys import yield_code_hash
+        if d.get("yield_model") != yield_code_hash():
+            d["yield_model"] = "mixed"
         json.dump(d, open(path, "w"))
         print(f"  patched {path.name}: {before} -> {len(d['features'])} features", flush=True)
 

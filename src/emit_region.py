@@ -42,6 +42,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from src.build_keys import stage_code_hash
+from src.output_contract import CONTRACT_VERSION
 from src.region_build import (DATA_DIR, area_paths, area_centroid_wgs84,
                               write_json_atomic)
 from src.bake_density_deciles import bake
@@ -227,10 +229,17 @@ def emit(region, out_root=OUT_ROOT):
                                  "fitted_kwp": 0.0, "fitted_kwh": 0.0, "area": 0.0})
     addrs = []
     ladder = {}
+    # Each building's model version: the geometry code its layout was built
+    # with (its build key) and the solar code that priced it (stamped on the
+    # layouts). See src/output_contract.py.
+    from src.build_keys import load_keys, geometry_hash_of_key, model_version
+    keys = load_keys(region)
+    yield_model = layouts.get("yield_model")
     for f in feats:
         p = f["properties"]
         cen = _centroid(f["geometry"])
         d = {k: p[k] for k in DETAIL_KEYS if k in p}
+        d["mv"] = model_version(geometry_hash_of_key(keys.get(str(p["building_id"]))), yield_model)
         if d and cen is not None:
             x, y = tile_of(cen[0], cen[1], DETAIL_Z)
             detail[(x, y)][str(p["building_id"])] = d
@@ -344,6 +353,10 @@ def emit(region, out_root=OUT_ROOT):
         "detail_tiles": len(detail), "heatmap_tiles": n_heat, "addresses": len(addrs),
         "assumptions": sp.get("assumptions", {}),
         "seconds": round(time.time() - t0, 1),
+        "model": {"yield": yield_model,
+                  "geometry": sorted({geometry_hash_of_key(k) or "unknown" for k in keys.values()}),
+                  "emit": stage_code_hash("emit_region")},
+        "contract": CONTRACT_VERSION,
         "ladder": ladder,
     }
     (tmp / "summary.json").write_text(json.dumps(summary, separators=(",", ":")))

@@ -766,7 +766,10 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
         print(f"[{area}] dry run: {len(features)} features in {time.time() - t0:.0f}s "
               f"on {jobs} workers -- nothing written")
         return
-    geojson = {"type": "FeatureCollection", "features": features}
+    from src.build_keys import yield_code_hash
+    # which sun computed these kWh (src/apply_yield.py re-stamps it)
+    geojson = {"type": "FeatureCollection", "yield_model": yield_code_hash(),
+               "features": features}
     out_path = paths["panel_layouts"]
     out_path.write_text(json.dumps(geojson))
     # What every building in this file was built from (src/build_keys.py), so
