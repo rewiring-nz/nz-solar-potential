@@ -14,6 +14,10 @@
 #   ./src/run_district_build.sh --incremental    # only buildings whose
 #                                                # reading changed (minutes)
 #   ./src/run_district_build.sh --force          # rebuild everything
+#   ./src/run_district_build.sh --yield-only     # the sun changed, the roofs
+#                                                # did not: recompute every kWh
+#                                                # from stored geometry, no LiDAR
+#                                                # (src/apply_yield.py)
 #   ./src/run_district_build.sh --regions "a b"  # just these regions
 #
 # Interrupting this and re-running it continues where it stopped.
@@ -40,10 +44,12 @@ mkdir -p "$LOGDIR"
 SKIP="--skip-done"
 REGIONS=""
 INCREMENTAL=0
+YIELD_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --force)       SKIP=""; shift ;;
     --incremental) INCREMENTAL=1; shift ;;
+    --yield-only)  YIELD_ONLY=1; SKIP=""; shift ;;
     --regions)     REGIONS="$2"; shift 2 ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
@@ -64,6 +70,13 @@ STAGES="build_layout_geojson gate_panels rerank_layouts derive_solar_potential
 # After addresses: the region's own tiles, cells, detail and summary. This
 # is what replaced the fan-in (docs/scale-architecture.md).
 EMIT="emit_region"
+if [ $YIELD_ONLY -eq 1 ]; then
+  # The yield layer only: geometry, panels and shading factors stay as built;
+  # every kWh is recomputed from them with the current solar model and
+  # everything downstream of a kWh is redone. See src/apply_yield.py.
+  STAGES="apply_yield rerank_layouts derive_solar_potential
+          patch_roof_confidence bake_building_horizons build_heatmap_raster"
+fi
 
 echo "=== district build $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}"

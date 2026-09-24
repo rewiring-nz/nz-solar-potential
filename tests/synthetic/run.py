@@ -97,6 +97,15 @@ def main():
             print(f"FAIL  {len(failed)} stage(s) failed: {', '.join(failed)}  (logs in {work})")
             a.keep = True
             return 1
+        # The yield layer must round-trip: recomputing every kWh from the
+        # stored geometry with the same model changes nothing (apply_yield).
+        r = subprocess.run([py, "src/apply_yield.py", REGION], cwd=work,
+                           capture_output=True, text=True)
+        if r.returncode != 0 or " 0 changed" not in r.stdout or "WARNING" in r.stdout:
+            print("  FAIL  apply_yield does not round-trip on fresh output:\n        "
+                  + (r.stdout + r.stderr).strip()[-400:])
+            a.keep = True
+            return 1
         fp = fingerprint(work, py)
         if a.record:
             REFERENCE.write_text(json.dumps(fp, indent=1, sort_keys=True) + "\n")

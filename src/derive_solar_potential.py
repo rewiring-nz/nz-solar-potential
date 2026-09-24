@@ -131,6 +131,23 @@ def derive(region):
                    if reason else {}),
             },
         })
+    # Addresses come from the network (add_addresses, LINZ) and this file is
+    # rebuilt from scratch, so carry them over from the record being replaced.
+    # Otherwise a yield-only rebuild (run_district_build.sh --yield-only),
+    # which needs no LiDAR and should need no LINZ either, would strip every
+    # address until add_addresses ran again. A full build re-runs
+    # add_addresses straight after this and overwrites them anyway.
+    if paths["solar_potential"].exists():
+        try:
+            prev = {f["properties"].get("building_id"): f["properties"] for f in
+                    json.loads(paths["solar_potential"].read_text())["features"]}
+        except (ValueError, KeyError):
+            prev = {}
+        for f in features:
+            old = prev.get(f["properties"]["building_id"]) or {}
+            for k in ("address", "address_count"):
+                if k in old:
+                    f["properties"][k] = old[k]
     out = {"type": "FeatureCollection", "assumptions": config.PV_ASSUMPTIONS,
            "features": features}
     paths["solar_potential"].write_text(json.dumps(out))

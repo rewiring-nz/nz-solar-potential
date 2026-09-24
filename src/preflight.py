@@ -97,6 +97,9 @@ REQUIRED = {
         "region": ["panel_layouts"],
     },
     "rerank_layouts":        {"region": ["panel_layouts"]},
+    # The yield layer: kWh from the current solar model over geometry the
+    # layouts already carry. See src/apply_yield.py.
+    "apply_yield":           {"region": ["panel_layouts"]},
     "derive_solar_potential": {"region": ["panel_layouts", "outlines"]},
     "patch_roof_confidence":  {"region": ["panel_layouts", "solar_potential"]},
     "bake_building_horizons": {

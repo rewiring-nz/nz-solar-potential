@@ -581,6 +581,7 @@ def _build_one_at(building_id, nudge_m):
                 "poa_kwh_m2_yr": round(pf["poa"], 0),
                 "panel_count": len(panels),
                 "roof_confidence": round(confidence, 2),
+                **_yield_inputs(f, pf["shading_factor"]),
             },
         })
         for o in pf["obstructions"]:
@@ -598,6 +599,7 @@ def _build_one_at(building_id, nudge_m):
                     "kind": "panel",
                     "building_id": int(building_id),
                     "ac_kwh_year": round(y["ac_kwh_year"], 0),
+                    **_yield_inputs(f, pnl.get("shading_factor", pf["shading_factor"])),
                     "fill_rank": pnl["fill_rank"],
                     "fill_order": pnl["fill_order"],
                     "array_id": pnl["array_id"],
@@ -606,6 +608,23 @@ def _build_one_at(building_id, nudge_m):
                 },
             })
     return features
+
+
+def _yield_inputs(facet, shading_factor):
+    """Everything the yield layer needs, unrounded, on the feature itself.
+
+    THE GEOMETRY AND THE SUN ARE SEPARATE LAYERS. Where panels go and how
+    shaded each one is (geometry: faces, obstructions, the near-field and
+    far-terrain horizon) is expensive and needs the LiDAR. What a
+    square metre at a given slope and aspect earns in a year (the sun: the
+    lookup table, the cloud calibration, the derate) is cheap and changes
+    for different reasons. src/apply_yield.py recomputes every kWh from these
+    three numbers with the current model, so a calibration change re-runs in
+    minutes instead of re-laying every roof. Full precision so the recompute
+    is bit-identical to what was computed here."""
+    return {"plane_slope_deg": float(facet["slope_deg"]),
+            "plane_aspect_deg": float(facet["aspect_deg"]),
+            "shading_factor": float(shading_factor)}
 
 
 def main(area="pilot", jobs=None, limit=0, dry_run=False):

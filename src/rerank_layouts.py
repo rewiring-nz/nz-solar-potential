@@ -98,9 +98,17 @@ def rerank_area(name):
         for aid, g in groups.items():
             yield_of[aid] = (sum(pf["properties"].get("ac_kwh_year") or 0
                                  for pf in g) / len(g))
+        # fill_order breaks fill_rank ties. fill_rank is a banded percentile,
+        # so several panels share one, and a tie fell back to their order in
+        # the FILE -- which meant re-ranking an already-ranked layout (every
+        # yield-only rebuild, src/apply_yield.py) could swap neighbours that a
+        # fresh build would not: 18 of 508 synthetic panels on first test.
+        # fill_order is the exact sequence the fit (or the last rerank)
+        # produced, consistent with fill_rank, so ties now follow the fit.
         key = lambda pf: (-yield_of.get(pf["properties"].get("array_id", 0), 0),
                           pf["properties"].get("array_id", 0),
-                          pf["properties"].get("fill_rank", 100))
+                          pf["properties"].get("fill_rank", 100),
+                          pf["properties"].get("fill_order", 0))
         main = sorted((pf for pf in b["panels"] if id(pf) not in straggler_ids), key=key)
         extras = sorted((pf for pf in b["panels"] if id(pf) in straggler_ids), key=key)
         for i, pf in enumerate(main):
