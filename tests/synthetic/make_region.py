@@ -1,6 +1,6 @@
 """Fabricate a small synthetic region so the real build stages can run end to
 end without LINZ data: point cloud (LAZ), 1 m DSM, RGB imagery, wide DEM and
-building outlines for nine roofs of known shape.
+building outlines for ten roofs of known shape.
 
 Usage: python make_region.py <repo_root>   (writes into <repo_root>/data)
 Called by tests/synthetic/run.py, which never points it at a real checkout.
@@ -79,6 +79,24 @@ B.append((990000008, box(80, 30, 92, 40), lambda x, y: G + 5 + gable_x(x, y, 30,
 # which is what makes the pack test (src/pack_region.py) able to fail.
 B.append((990000009, box(125, 45, 133, 55), lambda x, y: G + 5 + gable_y(x, y, 125, 133, 0, 25)))
 UNCLASSIFIED = lambda x, y: x > 100   # >20 m of unclassified all round building 9
+
+
+# A flat commercial roof crowded with plant (17 Church Street, #4726056): ~30%
+# of it under units and ducts standing 0.8-2.5 m proud. The plane is right; the
+# plant is obstructions, and the roof has plenty of clear space between them.
+_PLANT = [(62, 55, 66, 58, 1.8), (70, 54, 72, 64, 0.9), (75, 56, 80, 59, 2.4),
+          (61, 62, 64, 66, 1.2), (66, 63, 70, 64, 0.8), (77, 62, 80, 66, 1.6),
+          (68, 58, 69, 62, 1.0), (62, 59, 63, 61, 2.0), (73, 60, 76, 62, 1.4)]
+
+
+def plant_roof(x, y):
+    z = np.full_like(x, G + 7.0)
+    for x0, y0, x1, y1, h in _PLANT:
+        z = np.where((x >= x0) & (x <= x1) & (y >= y0) & (y <= y1), G + 7.0 + h, z)
+    return z
+
+
+B.append((990000010, box(60, 53, 82, 68), plant_roof))
 TREE = (86.0, 46.0, 3.5, 12.0)   # x, y, radius, height -- north of building 8
 
 

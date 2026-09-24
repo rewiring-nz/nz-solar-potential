@@ -38,7 +38,7 @@ import config
 from src.preflight import preflight
 import geopandas as gpd
 
-from src.roof_segmentation import segment_building_best, _area_weighted_inlier, _note_fallback
+from src.roof_segmentation import segment_building_best, roof_confidence, _note_fallback
 from src.ridge_snap import snap_ridges_to_crest
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
@@ -403,10 +403,10 @@ def _build_one_at(building_id, nudge_m):
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
     # map; only the layout is withheld.
-    confidence = _area_weighted_inlier(facets, pc_source, dsm=_dsm_ev) if facets else 0.0
+    confidence = roof_confidence(facets, pc_source, dsm=_dsm_ev) if facets else 0.0
     # A ROOF JOSH DREW IS NOT WITHHELD FOR LOW CONFIDENCE.
     #
-    # _area_weighted_inlier asks how well the points fit the planes we FITTED.
+    # roof_confidence asks how well the points fit the planes we FITTED.
     # On a roof whose faces came from his markup that question does not apply:
     # the faces are his, and small ones with too little survey under them
     # deliberately borrow a neighbour's plane, which by construction does not

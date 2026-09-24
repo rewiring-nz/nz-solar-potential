@@ -104,7 +104,7 @@ def incremental_check(work, py, full_fp):
     r = subprocess.run([py, "tools/patch_stale_selected.py", "--regions", REGION, "--patch"],
                        cwd=work, env=env, capture_output=True, text=True)
     (work / "_incremental.log").write_text(r.stdout + r.stderr)
-    if r.returncode != 0 or "patch (1/9 stale)" not in r.stdout:
+    if r.returncode != 0 or "patch (1/10 stale)" not in r.stdout:
         return "patch step: " + (r.stdout + r.stderr).strip()[-300:]
     r = subprocess.run([py, "src/run_stage.py", "--force", "emit_region", REGION],
                        cwd=work, env=env, capture_output=True, text=True)

@@ -1688,6 +1688,52 @@ def _area_weighted_inlier(facets, pc_source, dsm=None):
     return num / tot if tot else 0.0
 
 
+# ROOF CONFIDENCE (what the publish gate reads) differs from the fit score
+# above in ONE place: a flat face. Returns standing ABOVE a flat plane are
+# objects on the roof -- plant, ducts, lift and stair housings -- not a sign
+# the roof was misread; obstruction detection carves them out and the panel
+# gate rejects any panel left on a lumpy surface. Scored as misfits, they
+# withheld exactly the commercial roofs with the most space: 17 Church Street
+# (#4726056), 830 m2 of flat roof with clear lanes between its plant, 0.42
+# against the 0.45 gate, not one panel. A misread roof deviates on BOTH sides
+# of its plane; plant only stands up. So on a face flatter than
+# CONFIDENCE_FLAT_DEG, above-plane returns count as explained, provided at
+# least CONFIDENCE_FLAT_MIN_INLIER of its returns are genuinely on the plane.
+# Below-plane returns (a lower level merged in) still count against it, and
+# pitched faces are scored exactly as before -- there a wrong plane moves the
+# yield, and the gate exists for them.
+CONFIDENCE_FLAT_DEG = 5.0
+CONFIDENCE_FLAT_MIN_INLIER = 0.25
+# ...and at most this share below it. Residuals are centred on their median,
+# so a pitched roof misread as one flat plane scatters about as far below as
+# above and fails here; plant leaves the underside clean.
+CONFIDENCE_FLAT_MAX_BELOW = 0.15
+
+
+def roof_confidence(facets, pc_source, dsm=None):
+    """Area-weighted share of each facet's returns the model explains: on its
+    plane, or (flat facets only) standing above it. See CONFIDENCE_FLAT_DEG."""
+    if not facets:
+        return 0.0
+    tot = num = 0.0
+    for f in facets:
+        pts = _facet_points(pc_source, f["geometry"])
+        if len(pts) < 12:
+            pts = _dsm_points_in(f["geometry"], dsm)
+        if len(pts) < 12:
+            continue
+        r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+        d = r - np.median(r)
+        inl = float((np.abs(d) < PLANARITY_INLIER_BAND_M).mean())
+        if (f.get("slope_deg", 90.0) < CONFIDENCE_FLAT_DEG and inl >= CONFIDENCE_FLAT_MIN_INLIER
+                and (d <= -PLANARITY_INLIER_BAND_M).mean() <= CONFIDENCE_FLAT_MAX_BELOW):
+            inl += float((d >= PLANARITY_INLIER_BAND_M).mean())
+        a = f["geometry"].area
+        num += inl * a
+        tot += a
+    return num / tot if tot else 0.0
+
+
 def _usable_area(facets):
     """Total area left after each facet is eroded by the ridge setback -- what
     panel packing actually gets to use. Fragmenting a roof shows up here as
