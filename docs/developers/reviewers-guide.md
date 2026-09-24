@@ -159,10 +159,10 @@ code, re-run the check.
    `src/scan_defects.py`, `src/label_sheet.py`, `src/triage_sheet.py`
    are imported by nothing and belong to finished arcs. Deletion staged
    with the split.
-3. **Two repos, hand-synced**: `solar-map` (Queenstown, deployed) and
-   `solar-wellington` share most code by copy. `tools/check_repo_sync.py`
-   diffs them and must be run before pushing shared-code changes.
-   `site-config.js` is the ONLY intended per-deployment divergence point.
+3. **One repo.** `solar-wellington` was a hand-synced copy of this code;
+   it was retired on 24 Sep 2026 and `tools/check_repo_sync.py` with it.
+   `site-config.js` stays as the per-deployment settings point (which town
+   the map opens on, where tiles are served from).
 4. **`preview.html` (4,200 lines)** is one file by design (static Pages
    deploy, no build step). Its sections are ordered: CSS, DOM, map setup,
    data loading, selection/panel UI, search, economics hooks.

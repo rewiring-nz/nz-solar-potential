@@ -5,8 +5,9 @@ outlines, LiDAR and aerial imagery: how much sun each roof face gets, how many
 panels physically fit, what they would generate, and what that is worth.
 
 Live map: https://rewiring-nz.github.io/nz-solar-potential/ (Queenstown Lakes:
-Queenstown, Arrowtown, Frankton, Kingston, Wanaka, Albert Town, Hawea). A
-sibling deployment covers Wellington.
+Queenstown, Arrowtown, Frankton, Kingston, Wanaka, Albert Town, Hawea). This
+is the one codebase that scales to the rest of the country; the separate
+Wellington copy was retired in September 2026.
 
 **Verify it yourself:** [docs/quickstart.md](docs/quickstart.md) runs the
 identical methodology on any small NZ area you choose, in minutes, with a
@@ -62,7 +63,7 @@ Nothing at district scale is computed on a laptop.
 ## Checks
 
 ```bash
-bash tests/run_all.sh --fast    # unit, economics, deprecation, repo-sync and diagram checks
+bash tests/run_all.sh --fast    # unit, economics, deprecation, import/arity, ridge-snap and diagram checks
 python tools/predeploy_check.py # what a new build changes against the live one
 python tools/bench.py           # geometry against the hand-drawn markup
 python tools/cases.py check     # every flagged roof, fixed or not

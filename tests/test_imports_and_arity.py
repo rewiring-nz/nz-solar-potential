@@ -1,24 +1,19 @@
-"""Every module in BOTH repos still imports.
+"""Every src module still imports, and every positional call matches its def.
 
-WHY. tools/check_repo_sync.py lists three files that are MEANT to differ
-between solar-map and solar-wellington, and stops comparing them. That is
-right -- Wellington is a single-region deploy and its patch_buildings.py
-genuinely does something else -- but it also means a shared function can have
-its signature changed in one repo while the allowed-divergent file in the
-other still calls the old one. That happened on 22 September: dropping the
-unused `dem` and `dem_inv` parameters from gate_area() left Wellington's
-patch_buildings.py passing four arguments to a function that now takes two.
-The sync check passed. Nothing else would have caught it until a Wellington
-rebuild crashed.
+WHY. A signature change can leave a caller passing the wrong number of
+arguments, and nothing notices until that path runs on the VM hours into a
+build. On 22 September dropping the unused `dem` and `dem_inv` parameters from
+gate_area() left a caller passing four arguments to a function that now took
+two. A byte-compile does not catch that -- the call is syntactically fine --
+so this reads every call site against the definition it resolves to.
 
-A byte-compile would not catch it -- the call is syntactically fine. Importing
-does not catch it either, but it catches the much larger class of "a module in
-the other repo now references something that no longer exists", and it is the
-cheapest check that looks at the sibling repo's code at all.
+Importing every module also catches the larger class of "a module references
+something that no longer exists", which is the first thing a deletion breaks.
 
-The signature case specifically is caught by the arity check below, which
-reads both repos' call sites for the functions they share.
+(This used to run across two repos, solar-map and solar-wellington, kept in
+step by hand. Wellington was retired on 24 September 2026; one repo now.)
 """
+
 
 import ast
 import subprocess
@@ -26,7 +21,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SIBLINGS = [ROOT, *(p for p in (ROOT.parent / "solar-wellington",) if p.is_dir())]
 
 
 def _modules(repo):
@@ -40,9 +34,9 @@ SYMBOL_ERRORS = ("ImportError", "ModuleNotFoundError", "AttributeError",
                  "NameError", "TypeError", "SyntaxError", "IndentationError")
 
 
-def test_every_module_imports_in_every_repo():
+def test_every_module_imports():
     bad = []
-    for repo in SIBLINGS:
+    for repo in (ROOT,):
         py = repo / ".venv" / "bin" / "python"
         py = py if py.exists() else Path(sys.executable)
         for mod in _modules(repo):
@@ -83,10 +77,10 @@ def _defs(repo):
     return {k: v.pop() for k, v in seen.items() if len(v) == 1}
 
 
-def test_call_sites_match_the_definition_in_both_repos():
+def test_call_sites_match_the_definition():
     """A positional call with the wrong number of arguments, anywhere."""
     bad = []
-    for repo in SIBLINGS:
+    for repo in (ROOT,):
         defs = _defs(repo)
         for path in sorted((repo / "src").glob("*.py")):
             try:

@@ -58,5 +58,3 @@ in git.
   never by aggregate counts alone.
 - Nothing at district scale is built on a laptop; the VM builds, the laptop
   only relays through `tools/deploy_from_vm.sh`.
-- `solar-map` and `solar-wellington` share code by hand: run
-  `tools/check_repo_sync.py` before pushing shared files.

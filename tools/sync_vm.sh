@@ -1,8 +1,8 @@
 #!/bin/bash
-# Ship the current local code to the build VM -- both trees, safely.
+# Ship the current local code to the build VM, safely.
 #
-# The VM's ~/solar-map and ~/solar-wellington are scp'd payload copies, not git
-# clones, so they do not update themselves and can silently fall behind. That
+# The VM's ~/solar-map is an scp'd payload copy, not a git
+# clone, so they do not update themselves and can silently fall behind. That
 # matters more than it sounds: on 31 Aug the Island Bay rebuild was staged
 # against a tree whose panel_fitting was missing the gap-fill pass, so the
 # rebuild would have reproduced the bug it was meant to fix.
@@ -13,7 +13,7 @@
 # build. That is unrecoverable without rebuilding, and undetectable afterwards.
 # Use --force only if you are certain nothing is building.
 #
-#   ./tools/sync_vm.sh              # both trees, if the VM is idle
+#   ./tools/sync_vm.sh              # if the VM is idle
 #   ./tools/sync_vm.sh --force      # skip the busy check (know why)
 set -u
 cd "$(dirname "$0")/.."
@@ -62,13 +62,12 @@ sync_tree() {
 }
 
 sync_tree solar-map "$LOCAL_ROOT"
-sync_tree solar-wellington "$LOCAL_ROOT/../solar-wellington"
 
-# Confirm the fix that motivated all of this actually landed, in both trees.
+# Confirm the tree landed.
 echo ""
 echo "=== verifying ==="
 $SSH '
-for t in solar-map solar-wellington; do
+for t in solar-map; do
   if [ -f ~/$t/src/panel_fitting.py ]; then
     if grep -q gap_fill ~/$t/src/panel_fitting.py; then g=yes; else g=NO; fi
     if [ -f ~/$t/src/preflight.py ]; then p=yes; else p=NO; fi

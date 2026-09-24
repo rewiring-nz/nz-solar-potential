@@ -43,8 +43,9 @@ including the 47% of buildings that reading cannot possibly have touched.
    layouts. `run_district_build.sh` should call it, and keep `--force` for the
    full rebuild. A change touching 40 roofs should cost minutes.
 2. **One seam per concept, and a check that says when there are two.**
-   `check_repo_sync.py` and `check_diagram.py` already do exactly this for two
-   other kinds of drift, and both have caught real bugs. The same shape of
+   `check_diagram.py` already does exactly this for one kind of drift (and
+   `check_repo_sync.py` did for another until the Wellington copy was
+   retired); both caught real bugs. The same shape of
    check should assert that the frontend's coverage steps match the baker's,
    that every candidate reading goes through `regularise`, and so on.
 3. **Delete on sight.** 11 scripts in `src/` (1,122 lines) were referenced by
@@ -192,7 +193,7 @@ None of this needs the geometry work to pause. They touch different files.
 - **The comments.** Nearly every constant in this repo carries the measurement
   that set it and the failure that motivated it. That is why a regression can
   be diagnosed in minutes. It is not clutter.
-- **The check scripts.** `check_repo_sync`, `check_diagram`, `test_golden`,
+- **The check scripts.** `check_diagram`, `test_golden`, `test_imports_and_arity`,
   `bench.py`, `cases.py` — five different kinds of drift detector, each
   written after a real escape. More of these, not fewer.
 - **`preflight.py` and `run_stage.py`.** Stages that refuse to run against
