@@ -284,6 +284,93 @@ def _shift_coincident(geom, ridge_pts, n, d):
     return Polygon(ext, ints) if changed else geom
 
 
+def _ends_inside(facets, c0, u, length, tol=0.1):
+    """True when both ends of the ridge run lie inside the roof outline, not
+    on it: a hip ridge between two apexes. A gable ridge ends on the wall."""
+    from shapely.geometry import Point, MultiLineString
+    try:
+        # exterior rings only: slivers between faces make holes in the union,
+        # and a hole's ring beside an apex is not a wall
+        U = unary_union([f["geometry"] for f in facets])
+        outline = MultiLineString([q.exterior for q in _polys(U)])
+    except Exception:
+        return False
+    return all(outline.distance(Point(*(c0 + u * t))) > tol for t in (0.0, length))
+
+
+def _moves_slide(facets, ridge_pts, n, d):
+    """Every face's ridge vertices moved across by d, or None."""
+    moved = []
+    for k, f in enumerate(facets):
+        g = _shift_coincident(f["geometry"], ridge_pts, n, d)
+        if g is f["geometry"]:
+            continue
+        if not g.is_valid:
+            g = g.buffer(0)
+        if g.geom_type != "Polygon" or g.is_empty or g.area < MIN_FACET_M2:
+            return None
+        moved.append((k, g))
+    return moved or None
+
+
+def _moves_recut(facets, i, j, c0, u, n, length, d, ridge_pts):
+    """The two faces re-cut along the shifted line, and any third face that
+    shares a ridge vertex following it, or None (counted)."""
+    # The two faces are RE-CUT along the shifted line. Sliding their vertices
+    # sideways instead put a gable-end vertex off its wall and changed the
+    # footprint on 48 of 253 ridges; a cut cannot.
+    recut = _recut(facets[i]["geometry"], facets[j]["geometry"], c0, u, n, length, d)
+    if recut is None:
+        SNAP_STATS["recut_failed"] += 1
+        return None
+    gi, gj = recut
+    moved = [(i, gi), (j, gj)]
+    claimed = unary_union([gi, gj])
+    # A third facet follows the ridge only where it SHARES a vertex with it --
+    # a hip apex, a dormer corner sitting on the ridge -- and then gives up
+    # whatever now lies under the two faces. Anything looser (every vertex
+    # within 0.3 m of the line) dragged neighbouring faces along and lost
+    # footprint on 92 of 253 ridges.
+    for k, f in enumerate(facets):
+        if k in (i, j):
+            continue
+        g = _shift_coincident(f["geometry"], ridge_pts, n, d)
+        if g is not f["geometry"] and not g.is_valid:
+            g = g.buffer(0)
+        try:
+            under = g.intersection(claimed).area
+            if g is f["geometry"] and under < 0.05:
+                continue
+            if under > 0.05:
+                g = g.difference(claimed)
+        except Exception:
+            SNAP_STATS["third_facet_failed"] += 1
+            return None
+        if g.geom_type != "Polygon" or not g.is_valid or g.is_empty or g.area < MIN_FACET_M2:
+            SNAP_STATS["third_facet_failed"] += 1
+            return None
+        moved.append((k, g))
+    return moved
+
+
+def _guard(facets, moved):
+    """The roof must still tile the same ground: no footprint change, no
+    overlap opened. "ok", or why not."""
+    before = [f["geometry"] if f["geometry"].is_valid else f["geometry"].buffer(0) for f in facets]
+    after = list(before)
+    for k, g in moved:
+        after[k] = g
+    try:
+        u0, u1 = unary_union(before), unary_union(after)
+    except Exception:                 # a topology GEOS cannot resolve: leave the roof alone
+        return "topology"
+    overlap0 = sum(g.area for g in before) - u0.area
+    overlap1 = sum(g.area for g in after) - u1.area
+    if abs(u1.area - u0.area) > FOOTPRINT_TOL_M2 or overlap1 - overlap0 > OVERLAP_TOL_M2:
+        return "footprint"
+    return "ok"
+
+
 def snap_ridges_to_crest(facets, pc_source, dsm=None):
     """Return facets with each shared ridge moved onto the measured crest.
     SOLAR_RIDGE_SNAP=0 in the environment turns the pass off, so a golden or
@@ -309,62 +396,38 @@ def snap_ridges_to_crest(facets, pc_source, dsm=None):
             d, (c0, u, n, length) = r
             if abs(d) < SNAP_MIN_M or abs(d) > SNAP_MAX_M:
                 continue
-            # The two faces are RE-CUT along the shifted line. Sliding their
-            # vertices sideways instead put a gable-end vertex off its wall
-            # and changed the footprint on 48 of 253 ridges; a cut cannot.
-            recut = _recut(fi["geometry"], fj["geometry"], c0, u, n, length, d)
-            if recut is None:
-                SNAP_STATS["recut_failed"] += 1
-                continue
-            gi, gj = recut
-            moved = [(i, gi), (j, gj)]
-            ok = True
-            claimed = unary_union([gi, gj])
-            # A third facet follows the ridge only where it SHARES a vertex
-            # with it -- a hip apex, a dormer corner sitting on the ridge --
-            # and then gives up whatever now lies under the two faces.
-            # Anything looser (every vertex within 0.3 m of the line) dragged
-            # neighbouring faces along and lost footprint on 92 of 253 ridges.
             ridge_pts = _ridge_vertices([fi["geometry"], fj["geometry"]], c0, u, n, length)
-            for k, f in enumerate(facets):
-                if k in (i, j):
-                    continue
-                g = _shift_coincident(f["geometry"], ridge_pts, n, d)
-                if g is not f["geometry"] and not g.is_valid:
-                    g = g.buffer(0)
-                try:
-                    under = g.intersection(claimed).area
-                    if g is f["geometry"] and under < 0.05:
-                        continue
-                    if under > 0.05:
-                        g = g.difference(claimed)
-                except Exception:
-                    ok = False
+            # Two ways to move the ridge, tried in order; the first whose
+            # result passes the footprint/overlap guard is kept.
+            #   slide  -- a HIP ridge (both ends interior apexes, not walls):
+            #             its vertices slide across in every face sharing
+            #             them, both sides and the hip ends, which is the
+            #             exact hip roof with its ridge on the crest. The
+            #             re-cut runs its strip a metre past each end (a
+            #             gable's ridge ends ON the wall and must reach it);
+            #             past a hip apex that cut into the hip triangles,
+            #             left a notch, and the guard reverted every plain
+            #             hip roof.
+            #   recut  -- everything else, and hips whose apex sits too far
+            #             off the ridge vertex for the slide to carry it.
+            attempts = []
+            if _ends_inside(facets, c0, u, length):
+                attempts.append(lambda: _moves_slide(facets, ridge_pts, n, d))
+            attempts.append(lambda: _moves_recut(facets, i, j, c0, u, n, length, d, ridge_pts))
+            chosen, guarded = None, False
+            for attempt in attempts:
+                moved = attempt()
+                if moved is None:
+                    continue              # _moves_recut counts its own failures
+                if _guard(facets, moved) == "ok":
+                    chosen = moved
                     break
-                if g.geom_type != "Polygon" or not g.is_valid or g.is_empty or g.area < MIN_FACET_M2:
-                    ok = False
-                    break
-                moved.append((k, g))
-            if not ok:
-                SNAP_STATS["third_facet_failed"] += 1
+                guarded = True
+            if chosen is None:
+                if guarded:
+                    SNAP_STATS["guard_reverted"] += 1
                 continue
-            # The roof must still tile the same ground: no footprint change,
-            # no overlap opened. Revert those.
-            before = [f["geometry"] if f["geometry"].is_valid else f["geometry"].buffer(0) for f in facets]
-            after = list(before)
-            for k, g in moved:
-                after[k] = g
-            try:
-                u0, u1 = unary_union(before), unary_union(after)
-            except Exception:                 # a topology GEOS cannot resolve: leave the roof alone
-                SNAP_STATS["guard_reverted"] += 1
-                continue
-            overlap0 = sum(g.area for g in before) - u0.area
-            overlap1 = sum(g.area for g in after) - u1.area
-            if abs(u1.area - u0.area) > FOOTPRINT_TOL_M2 or overlap1 - overlap0 > OVERLAP_TOL_M2:
-                SNAP_STATS["guard_reverted"] += 1
-                continue
-            for k, g in moved:
+            for k, g in chosen:
                 facets[k]["geometry"] = g
                 if "area_m2" in facets[k]:
                     facets[k]["area_m2"] = g.area

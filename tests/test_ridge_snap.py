@@ -95,6 +95,32 @@ def test_wandering_crest_is_refused():
     assert abs(_boundary_x(out[0]) - 3.66) < 1e-9
 
 
+def _hip(bx, off, W=8.4, L=16.0):
+    """A hip roof: ridge x=bx from y=4 to y=12, hip apexes `off` m off it."""
+    west = {"geometry": Polygon([(0, 0), (bx, 4.0), (bx, 12.0), (0, L)]), "slope_deg": 24.0, "aspect_deg": 270.0}
+    east = {"geometry": Polygon([(bx, 4.0), (W, 0), (W, L), (bx, 12.0)]), "slope_deg": 24.0, "aspect_deg": 90.0}
+    south = {"geometry": Polygon([(0, 0), (W, 0), (bx + off, 4.0)]), "slope_deg": 24.0, "aspect_deg": 180.0}
+    north = {"geometry": Polygon([(0, L), (bx - off, 12.0), (W, L)]), "slope_deg": 24.0, "aspect_deg": 0.0}
+    return [west, east, south, north]
+
+
+def test_hip_ridge_between_apexes_snaps():
+    # A plain hip roof -- ridge ending at two interior apexes shared by all
+    # four faces -- was ALWAYS reverted: the re-cut's strip runs a metre past
+    # each end (a gable's ridge must reach its wall) and cut into the hip
+    # triangles. Its vertices now slide instead; an apex too far off the ridge
+    # vertex to slide falls back to the re-cut.
+    from shapely.ops import unary_union
+    for off in (0.0, 0.03, 0.15):
+        fs = _hip(3.66, off)
+        before = unary_union([f["geometry"] for f in fs]).area
+        out = snap_ridges_to_crest(fs, _Cloud(_gable(crest_x=4.4)))
+        ridge_x = max(np.asarray(out[0]["geometry"].exterior.coords)[:, 0])
+        assert abs(ridge_x - 4.4) < 0.12, (off, ridge_x)
+        assert abs(unary_union([f["geometry"] for f in out]).area - before) < 0.05, off
+        assert all(f["geometry"].is_valid for f in out)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
