@@ -40,6 +40,7 @@ import geopandas as gpd
 
 from src.roof_segmentation import segment_building_best, roof_confidence, _note_fallback
 from src.ridge_snap import snap_ridges_to_crest
+from src.plane_seams import snap_seams_to_plane_intersections
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
@@ -399,6 +400,10 @@ def _build_one_at(building_id, nudge_m):
     # where two noisy plane fits happen to cross -- see src/ridge_snap.py
     # (2 Preston Drive: a ridge 0.8 m off with a panel column astride it).
     facets = snap_ridges_to_crest(facets, pc_source, dsm=_dsm_ev)
+    # ...and roof a face took from its neighbour across a hip or valley goes
+    # back, or obstruction detection marks the neighbour's slope as an object
+    # over clear roof (src/plane_seams.py).
+    facets = snap_seams_to_plane_intersections(facets, pc_source, dsm=_dsm_ev)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the

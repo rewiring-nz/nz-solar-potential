@@ -71,7 +71,7 @@ def explain(bid, region=None, log=print):
     rows = []
     for o in shipped:
         by = defaultdict(float)
-        stand = None
+        stand, best_ov = None, 0.0
         for g, plane, ex, pcs in facets:
             if not g.intersects(o):
                 continue
@@ -79,7 +79,10 @@ def explain(bid, region=None, log=print):
                 for s in shapes:
                     if s.intersects(o):
                         by[name] += s.intersection(o).area
-            if pcs is not None and stand is None:
+            # against the plane of the face it mostly sits on, not the first it touches
+            ov = g.intersection(o).area
+            if pcs is not None and ov > best_ov:
+                best_ov = ov
                 minx, miny, maxx, maxy = o.bounds
                 pts = pcs.points_in_bbox(minx, miny, maxx, maxy, building_only=True)
                 if len(pts):

@@ -25,22 +25,19 @@ in git.
 
 ## Geometry
 
-- **Hips and valleys: faces overreach, and the overreach ships as
-  obstructions.** Reproduced with no LiDAR: the synthetic L roof
-  (#990000004, two plain gables, nothing on them) ships four obstructions,
-  25 m2. The north face swallows the main wing's ridge in the corner (a
-  12.6 m2 "object" 0.7 m above it) and the south face runs past the valley
-  onto the east slope (8.8 m2, 2.2 m below it). Same cause as "lines miss the
-  valleys" (1 Ballarat St) and, likely, "obstructions over clear roof"
-  (9 Marine Parade, 8 Sydney St). ridge_snap handles only opposite faces.
-  Tried 24 Sep: a pair-wise split on the plane intersection (the infinite
-  line cuts legitimate area far from the seam) and a whole-roof
-  `partition_by_planes` re-cut with the faces' own planes (mean residual
-  0.064 -> 0.16 m: its cells are too coarse). Neither shipped. Next: split
-  only within a band around the shared boundary, judged cell by cell. Check
-  real roofs first with `tools/explain_obstructions.py <id>` on the VM:
-  which detector drew each obstruction and how far its returns sit off
-  the plane.
+- **Hips and valleys: overreach, and what is left of it.** Faces that ran
+  past a hip or valley shipped the neighbour's slope as an obstruction (the
+  synthetic L roof, two plain gables: 25 m2 of "objects"). Since 24 Sep
+  `src/plane_seams.py` hands such roof back when the returns vouch for it
+  (off their own plane by > 0.3 m, on a neighbour's within 0.15 m), cut on
+  the planes' intersection. On the L roof that removed 6 m2 of phantom
+  height obstruction. Two things remain there, both worth checking on real
+  roofs with `tools/explain_obstructions.py <id>`: an overreach separated
+  from its true face by roof with no returns cannot be judged; and
+  COLOUR-only blobs sitting exactly on the plane at a fold (8.8 m2, median
+  +0.01 m), which is shading, not an object -- but a flush skylight looks the
+  same to the LiDAR, so any fix must use the blob's shape or position on the
+  fold, not its height.
 - **Ridge snap reverts: re-measure.** Plain hip roofs were ALWAYS reverted
   (the re-cut strip ran past the apex); fixed 24 Sep by sliding the vertices of
   a ridge whose ends are both interior. After the re-lay, run
