@@ -180,12 +180,9 @@ def gate_area(name, pc, only_ids=None):
         if _has_usable_markup(f["properties"].get("building_id")):
             kept.append(f)   # drawn roofs skip the surface gates
             continue
-        try:
-            poly = shp_transform(TO_NZTM, shape(f["geometry"]))
-            ok, why = panel_ok(poly, pc)
-        except Exception:
-            ok, why = True, "error-kept"  # never drop a panel on a gate crash
-            errors += 1
+        ok, why = _gate_feature(f, pc)
+        if why == "error-kept":
+            errors += 1   # never drop a panel on a gate crash
         if ok:
             kept.append(f)
         else:
@@ -254,8 +251,11 @@ def _init_gate_worker():
     # 13 GB of an array nothing reads.
 
 
-def _gate_one(feature_json):
-    f = json.loads(feature_json)
+def _gate_feature(f, pc):
+    """(ok, why) for one panel feature -- the ONE per-panel rule, used by the
+    serial gate (patching) and the parallel one (district builds) alike. The
+    serial path used to lack the corrupt-geometry veto, so a patched building
+    and the same building in a full build could be gated differently."""
     try:
         poly = shp_transform(TO_NZTM, shape(f["geometry"]))
         minx, miny, maxx, maxy = poly.bounds
@@ -264,10 +264,14 @@ def _gate_one(feature_json):
             # its bbox query scans every tile -- one such panel wedged the
             # island_bay gate at 5,000/121,273 with ordered reporting hiding
             # everything queued behind it. Corrupt input never earns a panel.
-            return feature_json, False, "corrupt-geometry"
-        ok, why = panel_ok(poly, _W["pc"])
+            return False, "corrupt-geometry"
+        return panel_ok(poly, pc)
     except Exception:
-        return feature_json, True, "error-kept"
+        return True, "error-kept"
+
+
+def _gate_one(feature_json):
+    ok, why = _gate_feature(json.loads(feature_json), _W["pc"])
     return feature_json, ok, why
 
 

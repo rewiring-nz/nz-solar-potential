@@ -769,6 +769,13 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
     geojson = {"type": "FeatureCollection", "features": features}
     out_path = paths["panel_layouts"]
     out_path.write_text(json.dumps(geojson))
+    # What every building in this file was built from (src/build_keys.py), so
+    # the next incremental build rebuilds exactly the ones whose reading,
+    # markup or geometry code has changed since. Not for a --limit run, which
+    # did not build the region.
+    if not limit:
+        from src.build_keys import record_keys
+        record_keys(area, ids, replace=True)
 
     n_facets = sum(1 for f in features if f["properties"]["kind"] == "facet")
     n_panels = sum(1 for f in features if f["properties"]["kind"] == "panel")

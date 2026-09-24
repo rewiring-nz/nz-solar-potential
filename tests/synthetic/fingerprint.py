@@ -32,7 +32,9 @@ for root in roots:
         if not p.is_file() or p.suffix in (".tif", ".laz", ".log"):
             continue
         rel = str(p.relative_to(W))
-        if p.name in ("building_outlines.geojson", "task.json"):
+        # inputs, and the build keys (which carry code hashes, so they change
+        # with every commit by design)
+        if p.name in ("building_outlines.geojson", "task.json", "built_from.json"):
             continue
         b = p.read_bytes()
         if p.suffix == ".pmtiles":

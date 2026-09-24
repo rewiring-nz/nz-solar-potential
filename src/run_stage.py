@@ -48,6 +48,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.build_keys import stage_code_hash
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -85,10 +86,24 @@ def _declared_inputs(stage, region):
 
 
 def is_done(stage, region):
-    """True only if the marker exists AND no declared input is newer."""
+    """True only if the marker exists, was written by the same CODE, and no
+    declared input is newer.
+
+    The code check is the half that was missing: markers compared mtimes
+    only, so fixing a bug in a module a stage imports invalidated nothing and
+    a --skip-done build skipped every stage on its old marker. A marker
+    written before code hashes were recorded counts as not done -- nothing
+    says which code wrote it."""
     m = marker_path(stage, region)
     if not m.exists():
         return False, "no marker"
+    try:
+        recorded = json.loads(m.read_text()).get("code")
+    except ValueError:
+        recorded = None
+    if recorded != stage_code_hash(stage):
+        return False, ("marker predates code hashing" if recorded is None
+                       else "code changed since the marker")
     m_time = m.stat().st_mtime
     for p in _declared_inputs(stage, region):
         if p.exists() and p.stat().st_mtime > m_time + 1.0:
@@ -104,6 +119,7 @@ def write_marker(stage, region, seconds):
         "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "seconds": round(seconds, 1),
         "commit": _git_sha(),
+        "code": stage_code_hash(stage),
     }, indent=1))
 
 

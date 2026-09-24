@@ -112,7 +112,11 @@ REQUIRED = {
     # The region's own tiles, cells, detail and summary (docs/scale-architecture.md).
     "emit_region":            {"region": ["solar_potential", "panel_layouts"],
                                "optional_region": ["heatmap_png"]},
-    "build_heatmap_raster":   {"region": ["solar_potential", "outlines", "dsm"]},
+    # The per-pixel heat map reads the outlines, the DSM and the point cloud --
+    # never solar_potential. Declaring it made every stage that rewrites that
+    # file in place (confidence, horizons) invalidate the most expensive
+    # per-region stage for nothing.
+    "build_heatmap_raster":   {"region": ["outlines", "dsm"]},
     # merge_regions REGENERATES the district files from the region files, so a
     # full merge run while most regions are missing their outputs replaces a
     # complete district with a partial one -- destructively, and with only a

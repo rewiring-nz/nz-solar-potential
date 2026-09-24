@@ -1,10 +1,11 @@
 """Rebuild NAMED buildings with the current code and push just them live.
 
 The iterate-by-full-rebuild loop takes hours; this takes minutes. It runs the
-same per-building path as build_layout_geojson (so what you see is what a full
-rebuild would produce for those buildings), swaps their features into the
-region file, the merged district file and solar_potential, re-runs the panel
-shrink + tippecanoe over the district, and optionally commits.
+same per-building path as build_layout_geojson, swaps their features into the
+region's layouts, gates them, runs the region's post-layout stages (rerank,
+derive, roof confidence), records their build keys, then re-emits the region
+and recombines the tiles -- so a patched building is byte-for-byte what a full
+rebuild would produce (tests/synthetic checks it). Optionally commits.
 
 Usage:
   python src/patch_buildings.py 5371108 4734850 ... [--area pilot] [--push]
@@ -66,38 +67,32 @@ def main():
 
     # run the same post-stages those buildings would get in a full build
     ids = set(a.ids)
+    outline_order = [int(b) for b in blg._CTX["gdf"]["building_id"]]
 
     def patch(path):
+        """Swap the rebuilt buildings in, keeping the file in the full build's
+        order (buildings as the outlines list them, each building's features
+        as its build emitted them). Appending them at the end instead made a
+        patched file differ from a fully built one in order alone -- enough
+        to change array ids and fill-order tie-breaks downstream."""
         d = json.load(open(path))
         before = len(d["features"])
-        d["features"] = [f for f in d["features"]
-                         if f["properties"].get("building_id") not in ids]
+        groups, order = {}, []
+        for f in d["features"]:
+            bid = f["properties"].get("building_id")
+            if bid not in groups:
+                groups[bid] = []
+                order.append(bid)
+            groups[bid].append(f)
         for bid in a.ids:
-            d["features"].extend(new_feats[bid])
+            if bid not in groups:
+                order.append(bid)
+            groups[bid] = new_feats[bid]
+        rank = {b: i for i, b in enumerate(outline_order)}
+        order.sort(key=lambda b: rank.get(b, len(rank)))   # stable: unknown ids keep their place
+        d["features"] = [f for b in order for f in groups[b]]
         json.dump(d, open(path, "w"))
         print(f"  patched {path.name}: {before} -> {len(d['features'])} features", flush=True)
-
-    # WHAT EACH BUILDING WAS BUILT FROM, recorded so an interrupted district
-    # run can resume. The VM is preemptible and two rebuilds have now been
-    # half-applied: the driver fingerprints, predicts, then patches what
-    # changed, so on restart the already-predicted buildings look unchanged
-    # (they were changed by the run that died) and are never patched.
-    # File mtimes cannot answer it either -- patching rewrites the layouts,
-    # so the layouts become newer than every selected reading. A hash of the
-    # reading each building was actually built from is the only signal that
-    # survives being interrupted.
-    def _record_built():
-        import hashlib
-        state_path = DATA / "built_from.json"
-        try:
-            state = json.loads(state_path.read_text())
-        except Exception:
-            state = {}
-        for bid in a.ids:
-            sp = DATA / "selected_faces" / f"{bid}.json"
-            state[str(bid)] = (hashlib.md5(sp.read_bytes()).hexdigest()[:12]
-                               if sp.exists() else "none")
-        state_path.write_text(json.dumps(state))
 
     region = area_paths(a.area)["panel_layouts"]
     patch(region)
@@ -105,101 +100,42 @@ def main():
     from src.gate_panels import gate_area
     from src.pointcloud_source import PointCloudSource
     gate_area(a.area, PointCloudSource(), only_ids=ids)
+
+    # THE SAME POST-STAGES A FULL BUILD RUNS, NOT A PRIVATE COPY OF THEM.
+    # This used to splice the rebuilt buildings' aggregates into
+    # solar_potential by hand -- and for its whole life that splice sat one
+    # indent too deep, after a `continue`, and never ran. Even running, it
+    # skipped rerank_layouts (array order and fill ranks), roof_confidence
+    # and everything else a full build does after the layout, so a patched
+    # building was not what a full build would have produced, which is the
+    # one thing this script promises. Now it runs the stages themselves, on
+    # the whole region: each is per-building and cheap, and derive carries
+    # addresses and horizons over rather than recomputing them (neither
+    # depends on the layouts). tests/synthetic checks that a patched building
+    # comes out byte-identical to a full build.
+    for stage in ("rerank_layouts", "derive_solar_potential", "patch_roof_confidence"):
+        subprocess.run([sys.executable, "src/run_stage.py", "--force", stage, a.area],
+                       check=True, cwd=ROOT)
+
     # THE MERGED FILES ARE NOT THE SHIP PATH ANY MORE. Since 22 Sep each region
     # emits its own tiles and combine_regions joins them (docs/scale-
-    # architecture.md), so patching a building is: rebuild it in its region
-    # file (done above), re-emit that region, recombine. Minutes, and the
-    # 400 MB chunked rewrite of data/panel_layouts.geojson is gone. The merged
-    # files are still maintained where a checkout has them, for tools that
-    # have not moved yet, and skipped where it does not.
+    # architecture.md). The merged layouts are still maintained where a
+    # checkout has them, for tools that have not moved yet, and skipped where
+    # it does not.
     if (DATA / "panel_layouts.geojson").exists():
         patch(DATA / "panel_layouts.geojson")
-
-    # solar_potential must tell the same story as the layouts it summarises.
-    # Until 31 Aug this file's docstring claimed it patched solar_potential and
-    # the code never did: a patched building got new panels on the map while
-    # the dashboard beside it kept quoting the old count, kW and generation.
-    # Ported from the Wellington copy, which had the implementation all along
-    # -- the two repos are hand-synced, so each had a piece the other lacked.
-    #
-    # Splice ONLY the patched buildings' aggregates, preserving every other
-    # building untouched (roof_confidence etc. live on these features).
-    # THE REGION'S OWN RECORD FIRST. Only the merged file was updated here,
-    # and since 22 Sep the merged file is not what ships -- emit_region reads
-    # data/regions/<r>/solar_potential.geojson. So a patch rewrote a roof's
-    # layouts and left its building record saying the old count: the nine
-    # roofs re-laid on 22 Sep showed 73 panels in the tiles and 64 in the
-    # building, and the deploy gate reported "0 changed". Both files now.
-    for sp_path in (area_paths(a.area)["solar_potential"], DATA / "solar_potential.geojson"):
-        if not sp_path.exists():
-            continue
-        import config
-        from src.derive_solar_potential import _facet_area_m2
-        reg = json.load(open(region))
-        agg = {}
-        for f in reg["features"]:
-            p = f["properties"]
-            if p.get("building_id") not in ids:
-                continue
-            b = agg.setdefault(p["building_id"], {"facet_count": 0, "obstruction_count": 0,
-                                                  "panel_count": 0, "ac_kwh_year": 0.0,
-                                                  "facet_area_m2": 0.0, "poa_w": 0.0})
-            k = p["kind"]
-            if k == "facet":
-                b["facet_count"] += 1
-                # THROUGH derive_solar_potential's helper, not a local copy.
-                # This read p["area_m2"] directly, and the layout emitter does
-                # not write area_m2 on a facet -- so every building this driver
-                # patched came out with facet_area_m2 = 0, and Heat Map mode
-                # (kWp = area x coverage x density) showed it as 0.0 kW while
-                # Panel Layout mode showed its real 89.5 kW two clicks away.
-                #
-                # derive_solar_potential found and fixed exactly this, in a
-                # docstring that says so, and the fix never reached the copy
-                # here. 2,496 of the district's 14,507 roofs with panels -- 17%
-                # -- were reading zero because of it.
-                area = _facet_area_m2(f)
-                b["facet_area_m2"] += area
-                b["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
-            elif k == "obstruction":
-                b["obstruction_count"] += 1
-            elif k == "panel":
-                b["panel_count"] += 1
-                b["ac_kwh_year"] += p.get("ac_kwh_year") or 0.0
-        sp = json.load(open(sp_path))
-        panel_kw = config.PV_ASSUMPTIONS["panel_rated_power_w"] / 1000.0
-        n_upd = 0
-        for f in sp["features"]:
-            bid = f["properties"].get("building_id")
-            if bid not in agg:
-                continue
-            b = agg[bid]
-            # a rebuilt building with panels must not keep a stale
-            # no-estimate reason from the run it is replacing
-            if b["panel_count"] > 0:
-                f["properties"].pop("no_estimate_reason", None)
-                f["properties"].pop("reason", None)
-            f["properties"].update({
-                "facet_count": b["facet_count"],
-                "obstruction_count": b["obstruction_count"],
-                "panel_count": b["panel_count"],
-                "kwp": round(b["panel_count"] * panel_kw, 2),
-                "ac_kwh_day_avg": round(b["ac_kwh_year"] / 365.0, 1),
-                "ac_kwh_year": round(b["ac_kwh_year"], 0),
-                "facet_area_m2": round(b["facet_area_m2"], 1),
-                "avg_poa_kwh_m2": round(b["poa_w"] / b["facet_area_m2"], 0)
-                                  if b["facet_area_m2"] > 0 else 0,
-            })
-            n_upd += 1
-        json.dump(sp, open(sp_path, "w"))
-        print(f"  solar_potential: updated {n_upd} buildings", flush=True)
-        # density deciles (fill_*) for the patched buildings come from the
-        # merged layouts; bake refreshes them (writes solar_potential in place)
         if not a.skip_bake:
             subprocess.run([sys.executable, "src/bake_density_deciles.py"],
                            check=True, cwd=ROOT)
 
-    _record_built()
+    # WHAT EACH BUILDING WAS BUILT FROM, recorded so an interrupted district
+    # run can resume and an incremental one knows what is stale: the reading,
+    # the drawn markup and the geometry code (src/build_keys.py). The VM is
+    # preemptible and two rebuilds were half-applied when this was a
+    # fingerprint-then-patch driver; a key recorded only AFTER the building is
+    # in the file is the one signal that survives being interrupted.
+    from src.build_keys import record_keys
+    record_keys(a.area, a.ids)
 
     if not a.skip_tiles:
         # Re-emit this region and recombine: tiles, cells, detail and summary

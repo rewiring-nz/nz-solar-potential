@@ -73,6 +73,53 @@ def build(work, py, log=print):
     return failed
 
 
+def incremental_check(work, py, full_fp):
+    """Make one building stale, run the incremental path, and require every
+    output to come back byte-identical to the full build. Returns an error
+    string, or None.
+
+    This is the promise the incremental build rests on: patching a building
+    produces what a full rebuild would have. Its layout features are deleted,
+    its building record corrupted and its build key dropped, so nothing of
+    the old answer can leak through."""
+    bid = 990000003
+    lay = work / "data/regions" / REGION / "panel_layouts.geojson"
+    d = json.loads(lay.read_text())
+    d["features"] = [f for f in d["features"] if f["properties"].get("building_id") != bid]
+    lay.write_text(json.dumps(d))
+    spp = work / "data/regions" / REGION / "solar_potential.geojson"
+    d = json.loads(spp.read_text())
+    for f in d["features"]:
+        if f["properties"].get("building_id") == bid:
+            f["properties"].update(panel_count=999, ac_kwh_year=1.0, kwp=0.0)
+    spp.write_text(json.dumps(d))
+    keys = work / "data/regions" / REGION / "built_from.json"
+    k = json.loads(keys.read_text())
+    if str(bid) not in k:
+        return "the full build recorded no build key for #%d" % bid
+    k.pop(str(bid))
+    keys.write_text(json.dumps(k))
+    env = {**os.environ, "SOLAR_SELECTED_FACES": "1", "PYTHONHASHSEED": "0",
+           "SOLAR_FULL_FRACTION": "0.5"}
+    r = subprocess.run([py, "tools/patch_stale_selected.py", "--regions", REGION, "--patch"],
+                       cwd=work, env=env, capture_output=True, text=True)
+    (work / "_incremental.log").write_text(r.stdout + r.stderr)
+    if r.returncode != 0 or "patch (1/8 stale)" not in r.stdout:
+        return "patch step: " + (r.stdout + r.stderr).strip()[-300:]
+    r = subprocess.run([py, "src/run_stage.py", "--force", "emit_region", REGION],
+                       cwd=work, env=env, capture_output=True, text=True)
+    if r.returncode != 0:
+        return "emit after patch: " + (r.stdout + r.stderr).strip()[-300:]
+    r = subprocess.run([py, "tools/patch_stale_selected.py", "--regions", REGION],
+                       cwd=work, env=env, capture_output=True, text=True)
+    if "clean" not in r.stdout:
+        return "after patching, the plan is not clean: " + r.stdout.strip()
+    got = fingerprint(work, py)
+    diff = [k for k in set(got["files"]) | set(full_fp["files"])
+            if got["files"].get(k) != full_fp["files"].get(k)]
+    return ("differs from the full build in " + ", ".join(sorted(diff))) if diff else None
+
+
 def fingerprint(work, py):
     out = subprocess.run([py, str(HERE / "fingerprint.py"), str(work)],
                          capture_output=True, text=True, check=True).stdout
@@ -107,6 +154,12 @@ def main():
             a.keep = True
             return 1
         fp = fingerprint(work, py)
+        if not a.record:
+            bad = incremental_check(work, py, fp)
+            if bad:
+                print("  FAIL  incremental rebuild is not a full build: " + bad)
+                a.keep = True
+                return 1
         if a.record:
             REFERENCE.write_text(json.dumps(fp, indent=1, sort_keys=True) + "\n")
             print(f"recorded {len(fp['files'])} outputs, {fp['headline'].get('panels')} panels "

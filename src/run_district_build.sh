@@ -10,9 +10,9 @@
 # inputs, records a completion marker on success, and (with --skip-done) skips
 # work whose marker is newer than all of its inputs. So:
 #
-#   ./src/run_district_build.sh                  # resume: skip what is done
-#   ./src/run_district_build.sh --incremental    # only buildings whose
-#                                                # reading changed (minutes)
+#   ./src/run_district_build.sh                  # incremental: rebuild only
+#                                                # stale buildings, resume the
+#                                                # rest (see the plan below)
 #   ./src/run_district_build.sh --force          # rebuild everything
 #   ./src/run_district_build.sh --yield-only     # the sun changed, the roofs
 #                                                # did not: recompute every kWh
@@ -128,58 +128,50 @@ if [ -f tools/audit_region_inputs.py ]; then
   echo "--- end input audit ---"
 fi
 
-# ---------------------------------------------------------------- incremental
+# ------------------------------------------------------ incremental by default
 #
-# THE FAST PATH WAS ALREADY BUILT AND NOTHING CALLED IT, so fixes took a
-# long time.
+# EVERY BUILDING IS REBUILT ONLY IF WHAT IT IS BUILT FROM HAS CHANGED: its
+# selected reading, its drawn markup, or the geometry code (src/build_keys.py
+# records all three per building). tools/patch_stale_selected.py plans each
+# region:
+#   clean  nothing stale -- layout and gate are skipped, the rest resumes
+#   patch  a few stale -- patch_buildings rebuilds just them (layout, gate,
+#          rerank, derive, confidence), byte-identical to a full build
+#   full   no layouts, no keys, or over a tenth stale -- the full layout, which
+#          fans across every core and is the faster way past that point
+# The stages after the layout run with --skip-done, whose markers now record
+# the code that wrote them, so a code change re-runs them and a preempted run
+# resumes where it stopped.
 #
-# It does, because the unit of work here is the DISTRICT. A one-line change in
-# face_candidates invalidates build_layout_geojson for all 24 regions and costs
-# four and a half hours, including every building that reading cannot have
-# touched.
-#
-# tools/patch_stale_selected.py has done the right thing for weeks: it hashes
-# each building's selected reading against data/built_from.json and rebuilds
-# only the mismatches -- layouts, gate, merged file, solar_potential and all.
-# Content-hashed rather than mtime-based, so it is correct however many times a
-# preemptible VM kills it, and unlike mtimes it survives the patching that
-# rewrites the layouts underneath it.
-#
-# So: --incremental does that and then the district tail, and a change touching
-# forty roofs costs minutes. The full path is unchanged and is still what a new
-# region, a new stage, or anything outside the selected-faces chain needs.
-#
-# NOT FOR A WHOLE-DISTRICT CHANGE. patch_buildings works in chunks of 60 and
-# each chunk re-reads and rewrites the 394 MB merged layouts, which is cheap
-# for a handful of roofs and ruinous for all of them: re-predicting every
-# reading would be 223 chunks of that. When the change touches most buildings
-# -- a new face_candidates, a new fitter -- the FULL path is the fast one.
-# Rough line: under a thousand buildings, patch; above it, rebuild.
-#
-# data/built_from.json IS PER MACHINE and is not committed -- it records what
-# THIS checkout has built. On a machine that has never run a full build
-# everything hashes as stale and --incremental degrades to a full rebuild,
-# which is correct but slow. Builds run on the VM, which has the state.
-if [ $INCREMENTAL -eq 1 ]; then
-  echo "=== incremental: rebuilding only buildings whose reading changed ==="
-  $PY tools/patch_stale_selected.py --patch || exit 1
-  # Re-emit every region whose files the patch touched, then combine. The
-  # emit stage's marker is older than the patched region files, so
-  # --skip-done re-emits exactly those and skips the rest.
-  echo "=== re-emit ($(date -u +%H:%M:%S)) ==="
-  for r in $REGIONS; do
-    $PY src/run_stage.py --skip-done emit_region "$r" >>"$LOGDIR/$r.log" 2>&1 \
-      || { echo "  FAILED: emit_region for $r (see $LOGDIR/$r.log)"; exit 1; }
-  done
-  echo "=== combine ($(date -u +%H:%M:%S)) ==="
-  $PY src/combine_regions.py || { echo "FAILED: combine_regions"; exit 1; }
-else
+# --force still rebuilds every stage of every region; --yield-only skips the
+# geometry altogether (see src/apply_yield.py). --incremental is accepted for
+# old scripts and changes nothing: this is what it used to ask for.
+PLAN=data/build_state/incremental_plan.json
+mkdir -p data/build_state
+if [ -n "$SKIP" ] && [ $YIELD_ONLY -eq 0 ]; then
+  echo "=== plan ==="
+  $PY tools/patch_stale_selected.py --regions $REGIONS --plan "$PLAN" || exit 1
+  echo "=== patch ($(date -u +%H:%M:%S)) ==="
+  $PY tools/patch_stale_selected.py --regions $REGIONS --patch >>"$LOGDIR/_patch.log" 2>&1 \
+    || { echo "FAILED: patching (see $LOGDIR/_patch.log)"; exit 1; }
+fi
+mode_of() {
+  if [ -z "$SKIP" ] || [ $YIELD_ONLY -eq 1 ] || [ ! -f "$PLAN" ]; then echo full; return; fi
+  $PY -c "import json,sys; print(json.load(open('$PLAN')).get(sys.argv[1], {}).get('mode', 'full'))" "$1"
+}
 
 fail=0
 for r in $REGIONS; do
-  echo "=== $r ($(date -u +%H:%M:%S)) ==="
+  mode=$(mode_of "$r")
+  echo "=== $r: $mode ($(date -u +%H:%M:%S)) ==="
   for s in $STAGES; do
-    if ! $PY src/run_stage.py $SKIP "$s" "$r" >>"$LOGDIR/$r.log" 2>&1; then
+    flag=$SKIP
+    if [ "$s" = "build_layout_geojson" ] || [ "$s" = "gate_panels" ]; then
+      # the keys, not the markers, say whether the layout is current
+      if [ "$mode" != "full" ]; then continue; fi
+      if [ "$s" = "build_layout_geojson" ]; then flag="--force"; fi
+    fi
+    if ! $PY src/run_stage.py $flag "$s" "$r" >>"$LOGDIR/$r.log" 2>&1; then
       echo "  FAILED: $s for $r (see $LOGDIR/$r.log)"
       fail=1
       break
@@ -215,7 +207,6 @@ echo "=== combine ($(date -u +%H:%M:%S)) ==="
 # in the ship path reads its output.
 $PY src/combine_regions.py || { echo "FAILED: combine_regions"; exit 1; }
 
-fi   # end of the full-build branch
 
 # DID THE BUILD ACTUALLY USE ITS INPUTS? On 10 Sep a resumed district run
 # skipped every layout stage on stale markers and shipped the previous

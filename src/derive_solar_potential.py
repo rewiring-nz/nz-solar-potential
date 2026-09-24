@@ -54,6 +54,11 @@ def _facet_area_m2(feature):
         return 0.0
 
 
+# Properties another stage writes that do not depend on the layouts (see derive).
+CARRIED_OVER = ("address", "address_count",
+                "horizon_b64", "horizon_far_b64", "horizon_beam_pct")
+
+
 def derive(region):
     paths = area_paths(region)
     gdf = gpd.read_file(paths["outlines"]).set_index("building_id", drop=False)
@@ -131,12 +136,15 @@ def derive(region):
                    if reason else {}),
             },
         })
-    # Addresses come from the network (add_addresses, LINZ) and this file is
-    # rebuilt from scratch, so carry them over from the record being replaced.
-    # Otherwise a yield-only rebuild (run_district_build.sh --yield-only),
-    # which needs no LiDAR and should need no LINZ either, would strip every
-    # address until add_addresses ran again. A full build re-runs
-    # add_addresses straight after this and overwrites them anyway.
+    # This file is rebuilt from scratch, but two things on it do not depend on
+    # the layouts and are carried over from the record being replaced:
+    #   addresses -- from the network (add_addresses, LINZ), so a yield-only
+    #     rebuild (run_district_build.sh --yield-only), which needs no LiDAR,
+    #     does not need LINZ either;
+    #   horizons -- from the footprint, DSM, wide DEM and sun only
+    #     (bake_building_horizons), so patching a few buildings' panels does
+    #     not have to re-scan the horizon of every building in the region.
+    # A full build re-runs both stages after this one and overwrites them.
     if paths["solar_potential"].exists():
         try:
             prev = {f["properties"].get("building_id"): f["properties"] for f in
@@ -145,7 +153,7 @@ def derive(region):
             prev = {}
         for f in features:
             old = prev.get(f["properties"]["building_id"]) or {}
-            for k in ("address", "address_count"):
+            for k in CARRIED_OVER:
                 if k in old:
                     f["properties"][k] = old[k]
     out = {"type": "FeatureCollection", "assumptions": config.PV_ASSUMPTIONS,
