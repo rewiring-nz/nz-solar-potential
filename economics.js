@@ -193,22 +193,22 @@ function economicsFor(kwp, kwhYear, roofM2, override) {
   const loadCeiling = scaledDaytimeKw * econ.daytime_hours * 365;
   const ceiling = Math.min(loadCeiling, useKwh);
   const selfKwhFor = gen => Math.min(gen, ceiling);
-  const valueInYear = y => {
-    const gen = kwhYear * Math.pow(1 - d, y);
-    const selfKwh = selfKwhFor(gen);
-    return (selfKwh * buy + (gen - selfKwh) * sellRate(THIS_YEAR + y, sellNow)) / 100;
-  };
   // Retail inflates, export does not, and everything is discounted back to
-  // today. Applied in valueInYear's caller rather than inside it so payback
-  // below uses the same figures.
+  // today. One function for every year so the annual figure, the lifetime
+  // sum and the payback walk below all use the same numbers; memoised,
+  // because those three ask for the same years over again.
   const infl = 1 + econ.elec_inflation_pct / 100;
   const disc = 1 + econ.discount_rate_pct / 100;
+  const realValues = [];
   const realValueInYear = y => {
-    const gen = kwhYear * Math.pow(1 - d, y);
-    const selfKwh = selfKwhFor(gen);
-    const retail = selfKwh * buy * Math.pow(infl, y);
-    const exported = (gen - selfKwh) * sellRate(THIS_YEAR + y, sellNow);
-    return (retail + exported) / 100 / Math.pow(disc, y);
+    if (realValues[y] === undefined) {
+      const gen = kwhYear * Math.pow(1 - d, y);
+      const selfKwh = selfKwhFor(gen);
+      const retail = selfKwh * buy * Math.pow(infl, y);
+      const exported = (gen - selfKwh) * sellRate(THIS_YEAR + y, sellNow);
+      realValues[y] = (retail + exported) / 100 / Math.pow(disc, y);
+    }
+    return realValues[y];
   };
   const annual = realValueInYear(0);
   let lifetime = 0;
@@ -477,7 +477,16 @@ function economicsHourlyFor(kwp, genByHour, seasonDays, roofM2, override) {
   const infl = 1 + econ.elec_inflation_pct / 100;
   const disc = 1 + econ.discount_rate_pct / 100;
 
+  // Re-simulating a year is the expensive step, and the annual figure, the
+  // lifetime sum and the payback walk ask for the same years up to three
+  // times over (~90 simulations per call, on every keystroke in the panel).
+  // simulateYear is pure, so each year is simulated once.
+  const years = new Map();
   const yearOf = y => {
+    if (!years.has(y)) years.set(y, simulateYearValue(y));
+    return years.get(y);
+  };
+  const simulateYearValue = y => {
     const deg = Math.pow(1 - d, y);
     const gen = genByHour.map(row => row.map(v => v * deg));
     const sim = simulateYear(gen, days, dailyKwh, shape, batt);

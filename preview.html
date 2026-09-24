@@ -1426,14 +1426,24 @@ const PANEL_ECON_FALLBACK_KWH = 250;   // for a building not in the current view
 // there. Three copies of a rule is three chances to forget the fourth
 // caller. Two of those copies were also still using the single-building
 // break-even after the mode went district-wide, so they disagreed with the map.
+// id -> break-even, indexed once per match expression. A linear scan of the
+// expression per call was O(buildings) and it is called once per building.
+// The expression is only ever replaced, never edited, so a WeakMap on the
+// array is exact; the first entry for an id wins, as the scan's did.
+const _breakEvenIndex = new WeakMap();
 function breakEvenFor(buildingId) {
   if (!panelEcon) return Infinity;
   if (!panelEconGlobal) return panelEcon.breakEvenKwh;
   if (!panelEconMatch) return PANEL_ECON_FALLBACK_KWH;
-  for (let i = 2; i < panelEconMatch.length - 1; i += 2) {
-    if (panelEconMatch[i] === buildingId) return panelEconMatch[i + 1];
+  let idx = _breakEvenIndex.get(panelEconMatch);
+  if (!idx) {
+    idx = new Map();
+    for (let i = 2; i < panelEconMatch.length - 1; i += 2) {
+      if (!idx.has(panelEconMatch[i])) idx.set(panelEconMatch[i], panelEconMatch[i + 1]);
+    }
+    _breakEvenIndex.set(panelEconMatch, idx);
   }
-  return PANEL_ECON_FALLBACK_KWH;
+  return idx.has(buildingId) ? idx.get(buildingId) : PANEL_ECON_FALLBACK_KWH;
 }
 
 function panelBandOf(props) {
@@ -1581,11 +1591,6 @@ function setMode(newMode) {
 }
 
 function syncToggleButtons() {
-  const globalBtn = document.getElementById("toggle-heatmap-global");
-  if (globalBtn) {
-    globalBtn.classList.toggle("active", overlayOn && mode === "heatmap");
-    globalBtn.textContent = overlayOn && mode === "heatmap" ? "On" : "Off";
-  }
   const lf = document.querySelector(".legend-facet");
   if (lf) lf.style.display = overlayOn && mode === "heatmap" ? "" : "none";
   const dashHeat = document.getElementById("toggle-heatmap-dash");
@@ -1594,8 +1599,6 @@ function syncToggleButtons() {
   // two independent on/off switches that happen to be mutually exclusive.
   if (dashHeat) dashHeat.classList.toggle("active", overlayOn && mode === "heatmap");
   if (dashLayout) dashLayout.classList.toggle("active", overlayOn && mode === "layout");
-  const coverageControl = document.getElementById("coverage-control");
-  if (coverageControl) coverageControl.style.display = mode === "heatmap" ? "block" : "none";
   // The layer toggles moved to the corner cluster; keep their state in step
   // here rather than only in their own click handlers, so anything else that
   // changes a layer is reflected too.
@@ -1622,7 +1625,6 @@ function syncToggleButtons() {
 }
 
 function applyToggles() {
-  if (window.__syncHeatmapRasters) window.__syncHeatmapRasters();  // attach/detach for this mode
   (window.__heatmapLayers || ["heatmap-raster"]).forEach(id => {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, "visibility",
@@ -2804,7 +2806,6 @@ map.on("load", async () => {
   const onViewChanged = () => {
     clearTimeout(viewTimer);
     viewTimer = setTimeout(() => {
-      if (window.__syncHeatmapRasters) window.__syncHeatmapRasters();
       invalidateInView();
       recomputeInViewSummary();
     }, 140);
@@ -3209,9 +3210,6 @@ map.on("load", async () => {
   // see that file's header for why. ECON_DEFAULTS, SELF_PROFILES, econ,
   // costPerKw, systemCost, isBusiness, sellRate and economicsFor all come
   // from there, loaded as a plain script before this one.
-  const fmtMoney = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M"
-                    : v >= 1e3 ? "$" + Math.round(v / 1e3) + "k"
-                    : "$" + Math.round(v);
   // Economics figures are written out in full. "$30k" is fine for a
   // district total nobody will act on, but these four are about one building
   // and someone reading them is deciding whether to spend that money -- a
@@ -3463,7 +3461,6 @@ map.on("load", async () => {
   // applyToggles drives layer visibility through this; with a tiled source
   // there is exactly one layer and nothing to attach or detach.
   window.__heatmapLayers = heatmapTilesOk ? ["heatmap-raster"] : [];
-  window.__syncHeatmapRasters = () => {};
 
   // Panel layouts come as vector tiles (PMTiles, ~24MB for all of
   // Queenstown vs ~364MB as GeoJSON): tiles stream on demand, so density
@@ -5020,11 +5017,9 @@ map.on("load", async () => {
 <script>
 (function () {
   var EXPLAINER_VIDEO_URL = "https://vimeo.com/1222404841/8a70cb3a3f";
-  var btn = document.getElementById("explainer-btn");
   var box = document.getElementById("explainer-lightbox");
   var player = document.getElementById("explainer-player");
   if (!EXPLAINER_VIDEO_URL) return;         // button stays hidden until a video exists
-  if (btn) btn.style.display = "";
   var dash = document.getElementById("explainer-btn-dash");
   if (dash) {
     // Wherever the markup left it, park it as the SIBLING right after the
@@ -5049,7 +5044,6 @@ map.on("load", async () => {
     box.style.display = "flex";
   }
   function close() { box.style.display = "none"; player.innerHTML = ""; }
-  if (btn) btn.addEventListener("click", open);
   document.getElementById("explainer-close").addEventListener("click", close);
   box.addEventListener("click", function (e) { if (e.target === box) close(); });
   document.addEventListener("keydown", function (e) {
