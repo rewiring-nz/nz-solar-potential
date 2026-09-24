@@ -274,10 +274,10 @@ def main(area="pilot"):
     # transitions read as thin gradients, not aliased staircases.
     alpha = gaussian_filter(alpha, sigma=EDGE_FEATHER_SIGMA_PX)
     alpha = np.minimum(alpha, np.where(gaussian_filter(covered.astype(float), 1.5) > 0.05, 255, 0))
+    weight = gaussian_filter(covered.astype(float), sigma=EDGE_FEATHER_SIGMA_PX)  # same for every channel
     for ch in range(3):
         band = rgba[..., ch].astype(float)
         band_s = gaussian_filter(np.where(covered, band, 0.0), sigma=EDGE_FEATHER_SIGMA_PX)
-        weight = gaussian_filter(covered.astype(float), sigma=EDGE_FEATHER_SIGMA_PX)
         rgba[..., ch] = np.where(weight > 0.02, band_s / np.maximum(weight, 0.02), band).astype(np.uint8)
     rgba[..., 3] = alpha.astype(np.uint8)
 

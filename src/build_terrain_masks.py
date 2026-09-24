@@ -90,6 +90,15 @@ def apply_masks(sp, dem_band, dem_transform, dem_nodata, lat, lon, altitude=310)
     # re-reads the whole raster per call, which across ~1.5k cells is the
     # dominant cost of this script for no benefit -- terrain_horizon exposes
     # the array-taking variant for exactly this reason.
+    # The 96 season-hour daylight masks depend on the sun only, not on the
+    # cell: built once here instead of once per horizon cell.
+    daylight_slots = []
+    for months in SEASONS.values():
+        in_season = np.isin(month, months)
+        for h in range(24):
+            daylight = in_season & (hour == h) & (sun_el > 0)
+            n_day = daylight.sum()
+            daylight_slots.append((daylight, n_day))
     done = 0
     fallbacks = 0
     for cell, members in cells.items():
@@ -102,16 +111,12 @@ def apply_masks(sp, dem_band, dem_transform, dem_nodata, lat, lon, altitude=310)
             visible = sun_el > 0  # outside DEM -- open horizon fallback
             fallbacks += 1
         mask = ""
-        for months in SEASONS.values():
-            in_season = np.isin(month, months)
-            for h in range(24):
-                sel = in_season & (hour == h)
-                daylight = sel & (sun_el > 0)
-                if daylight.sum() == 0:
-                    mask += "9"  # night hours -- curve is zero anyway, don't dim
-                else:
-                    frac = visible[daylight].sum() / daylight.sum()
-                    mask += str(min(9, int(round(frac * 9))))
+        for daylight, n_day in daylight_slots:
+            if n_day == 0:
+                mask += "9"  # night hours -- curve is zero anyway, don't dim
+            else:
+                frac = visible[daylight].sum() / n_day
+                mask += str(min(9, int(round(frac * 9))))
         for f in members:
             f["properties"]["tshade"] = mask
         done += 1

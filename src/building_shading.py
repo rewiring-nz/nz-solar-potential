@@ -73,6 +73,38 @@ OWN_ROOF_MARGIN_M = 1.0  # buffer added around the building's own footprint befo
 # observer (x, y) is the footprint centroid, not necessarily the roof's own highest point
 
 
+# The last own_geom's buffer, and the last (hourly, terrain profile)'s sun
+# arrays and baseline. A layout calls this once per PANEL with the same facet
+# geometry and the same model every time, and the heat map once per pixel,
+# so both are recomputed only when the objects change. Keyed by identity with
+# the objects themselves held, so a recycled id() can never match; the
+# inputs are never mutated after SolarModel builds them.
+_OWN_BUFFER = [None, None]
+_SUN = [None, None, None]
+
+
+def _own_buffer(own_geom):
+    if _OWN_BUFFER[0] is not own_geom:
+        _OWN_BUFFER[:] = [own_geom, own_geom.buffer(OWN_ROOF_MARGIN_M)]
+    return _OWN_BUFFER[1]
+
+
+def _sun_baseline(hourly, terrain_horizon_profile):
+    if _SUN[0] is not hourly or _SUN[1] is not terrain_horizon_profile:
+        sun_az = hourly["solar_azimuth"].to_numpy()
+        sun_el = hourly["solar_elevation"].to_numpy()
+        dni = hourly["dni"].to_numpy()
+        if terrain_horizon_profile is not None:
+            terrain_horizon_at_sun_az = horizon_angle_at(terrain_horizon_profile, sun_az)
+            baseline_visible = sun_el > terrain_horizon_at_sun_az
+        else:
+            baseline_visible = sun_el > 0
+        baseline_dni = dni[baseline_visible].sum()
+        _SUN[:] = [hourly, terrain_horizon_profile,
+                   (sun_az, sun_el, dni, baseline_visible, baseline_dni)]
+    return _SUN[2]
+
+
 def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, own_geom=None,
                               terrain_horizon_profile=None):
     """Returns a [0, 1] scalar: fraction of hourly['dni'] (already filtered
@@ -85,7 +117,7 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
     polygon (in the DSM's CRS) -- ray samples falling inside it (buffered
     by OWN_ROOF_MARGIN_M) are excluded per-ray so the facet's own roof
     isn't mistaken for a neighbour; omitting it disables that exclusion."""
-    exclude_geom = own_geom.buffer(OWN_ROOF_MARGIN_M) if own_geom is not None else None
+    exclude_geom = _own_buffer(own_geom) if own_geom is not None else None
     # Mask the observer's own roof, but NOT anything towering over it: tree
     # canopy overhanging a roof used to be skipped as "own building" and so
     # cast no shade at all, which is precisely the case where you should not
@@ -117,18 +149,9 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
     if not any(v > 0.5 for v in profile.values()):
         return 1.0  # nothing nearby taller than half a degree in any direction -- not worth the rest of this
 
-    sun_az = hourly["solar_azimuth"].to_numpy()
-    sun_el = hourly["solar_elevation"].to_numpy()
-    dni = hourly["dni"].to_numpy()
-
+    sun_az, sun_el, dni, baseline_visible, baseline_dni = _sun_baseline(
+        hourly, terrain_horizon_profile)
     building_horizon_at_sun_az = horizon_angle_at(profile, sun_az)
-    if terrain_horizon_profile is not None:
-        terrain_horizon_at_sun_az = horizon_angle_at(terrain_horizon_profile, sun_az)
-        baseline_visible = sun_el > terrain_horizon_at_sun_az
-    else:
-        baseline_visible = sun_el > 0
-
-    baseline_dni = dni[baseline_visible].sum()
     if baseline_dni <= 0:
         return 1.0
 

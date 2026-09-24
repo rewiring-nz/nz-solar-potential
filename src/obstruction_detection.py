@@ -608,6 +608,7 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
 
     facet_area_m2 = facet_geom.area
     abs_residual = np.abs(residual[flagged])
+    flagged_pts = pts[flagged]   # indexed per cluster below; built once
     obstructions = []
     for label_id in np.unique(labels):
         member_idx = np.where(labels == label_id)[0]
@@ -625,7 +626,7 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
             # facet -- 76%, instantly over any sane ceiling), and the hull blankets the real
             # usable lanes BETWEEN equipment along with the equipment itself. Per-point buffers
             # hug what the LiDAR actually saw and leave the lanes usable.
-            member_pts3d = pts[flagged][member_idx]
+            member_pts3d = flagged_pts[member_idx]
             footprint = unary_union([Point(p).buffer(HEIGHT_STRONG_POINT_RADIUS_M) for p in fpts[member_idx]])
             trimmed = footprint.buffer(-OBSTRUCTION_TRIM_M)
             if not trimmed.is_empty:
@@ -669,8 +670,7 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
                         continue
                 strong_area_used += part.area
                 if part.area >= HEIGHT_STRONG_PLANAR_MIN_AREA_M2:
-                    in_part = shapely.contains_xy(part, member_pts3d[:, 0], member_pts3d[:, 1])
-                    part_pts = member_pts3d[in_part]
+                    part_pts = part_pts3d   # the same points, selected above
                     if len(part_pts) >= 6:
                         x0, y0 = part_pts[:, 0].mean(), part_pts[:, 1].mean()
                         A = np.column_stack([part_pts[:, 0] - x0, part_pts[:, 1] - y0,
@@ -688,7 +688,7 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
         # Same above-plane physics as the strong branch: a cluster whose
         # points straddle the plane is roof shape (vault/rib/valley), not a
         # protruding object -- the sawtooth-canopy stripes came through here.
-        member3d = pts[flagged][member_idx]
+        member3d = flagged_pts[member_idx]
         if len(member3d) >= 5:
             pz = plane[0] * member3d[:, 0] + plane[1] * member3d[:, 1] + plane[2]
             if float(np.mean(member3d[:, 2] > pz + HEIGHT_STRONG_ABOVE_MARGIN_M)) < HEIGHT_STRONG_ABOVE_FRACTION:

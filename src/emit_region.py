@@ -31,7 +31,6 @@ Usage: python src/emit_region.py <region> [--out data/out]
 """
 
 import argparse
-import copy
 import json
 import os
 import shutil
@@ -285,11 +284,17 @@ def emit(region, out_root=OUT_ROOT):
     addrs.sort()
     (tmp / "addresses.json").write_text(json.dumps(addrs, separators=(",", ":")))
 
-    # 5. the panel layer, from a SHRUNK COPY of the layouts. Every layout
+    # 5. the panel layer, from the layouts SHRUNK for display. Every layout
     # feature also gets its building's type, so the map can hide a type's
     # panels with a plain attribute filter instead of a per-building lookup.
     btype_of = {int(f["properties"]["building_id"]): f["properties"]["btype"] for f in feats}
-    lay_copy = copy.deepcopy(layouts)
+    from_selected = sum(1 for f in layouts["features"]
+                        if f["properties"].get("kind") == "facet"
+                        and f["properties"].get("from_selected"))
+    # In place, not a deepcopy: past the count above nothing reads `layouts`
+    # again and it is never written back to the region file, so the "copy"
+    # was a second full copy of every panel in the region held in memory.
+    lay_copy = layouts
     for f in lay_copy["features"]:
         b = f["properties"].get("building_id")
         f["properties"]["btype"] = btype_of.get(int(b), "home") if b is not None else "home"
@@ -309,9 +314,6 @@ def emit(region, out_root=OUT_ROOT):
                  "--maximum-tile-bytes=200000",
                  *[a for k in LAYOUT_PROPS for a in ("-y", k)]])
     lay_tmp.unlink()
-    from_selected = sum(1 for f in layouts["features"]
-                        if f["properties"].get("kind") == "facet"
-                        and f["properties"].get("from_selected"))
 
     # 6. heat-map tiles
     n_heat = 0
