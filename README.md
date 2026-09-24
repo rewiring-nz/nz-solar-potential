@@ -58,12 +58,18 @@ approach used in the published LiDAR-solar-potential literature (GRASS
 
 Builds run on a cloud VM, region by region (`src/run_district_build.sh`;
 architecture in [docs/scale-architecture.md](docs/scale-architecture.md)).
-Nothing at district scale is computed on a laptop.
+Nothing at district scale is computed on a laptop. The build is incremental:
+only buildings whose reading, markup or geometry code changed are rebuilt, and
+a change to the solar model alone is `--yield-only` (no LiDAR). Before a
+region's inputs are deleted, a pack of what the geometry needs is kept
+(`src/pack_region.py`). The national dress rehearsal is
+[docs/national-rehearsal.md](docs/national-rehearsal.md).
 
 ## Checks
 
 ```bash
-bash tests/run_all.sh --fast    # unit, economics, deprecation, import/arity, ridge-snap and diagram checks
+bash tests/run_all.sh           # everything, incl. the whole build on a synthetic region (~1 min)
+bash tests/run_all.sh --fast    # unit, economics, deprecation, import/arity, xref, contract, ridge-snap and diagram checks
 python tools/predeploy_check.py # what a new build changes against the live one
 python tools/bench.py           # geometry against the hand-drawn markup
 python tools/cases.py check     # every flagged roof, fixed or not

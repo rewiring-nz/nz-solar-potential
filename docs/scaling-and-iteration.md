@@ -177,14 +177,21 @@ Half of New Zealand's buildings are in the densest **20 of 389 cells**:
 Half the country for half the cost, publishing as each city lands, and the
 second half can wait for the storage fix and a measured LINZ rate.
 
-### Order to do them in### Order to do them in
+### Order to do them in
 
 1. ~~Buildings as vector tiles~~ — done 20 September.
-1. Heat-map rasters as tiles (now the largest download).
-2. Incremental build as the default (makes every later step iterable).
-3. ~~Survey registry keyed by bbox~~ — done 21 September.
-4. Region selection from a density grid (replaces the hand-written list).
-5. Distributed build — only worth doing once 1–4 are true.
+2. ~~Heat-map rasters as tiles~~ — done (emit_region writes them per region).
+3. ~~Incremental build as the default~~ — done 24 September: per-building
+   build keys (reading + markup + geometry code) and code-aware stage markers
+   (`src/build_keys.py`); a patched building is byte-identical to a full build.
+4. ~~Survey registry keyed by bbox~~ — done 21 September.
+5. ~~Region selection from a density grid~~ — done 21 September.
+6. ~~The layers~~ — done 24 September: region packs keep what geometry needs
+   before inputs are deleted (`src/pack_region.py`); kWh is its own layer
+   (`src/apply_yield.py`, `--yield-only`); the served output has a contract
+   (`src/output_contract.py`).
+7. Distributed build — built; its first real run is the dress rehearsal,
+   [national-rehearsal.md](national-rehearsal.md).
 
 None of this needs the geometry work to pause. They touch different files.
 

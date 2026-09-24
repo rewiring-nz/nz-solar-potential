@@ -94,6 +94,31 @@ Peak disk on a worker is then one region's working set -- 42 GB at the worst
 Queenstown region -- plus what it has not yet uploaded. The 400 GB disk stops
 being the thing that decides how big the country can be.
 
+### What is kept: the region pack
+
+Deleting the inputs outright would make every geometry fix a re-download, and
+geometry is the layer that keeps improving. So before a region's inputs go,
+`src/pack_region.py` keeps what any build stage can read -- points of every
+class within 4 m of each building, ground returns within 23.5 m, imagery within
+13 m (lossless) and the DSM -- written per source tile so a rebuild from the
+pack is byte-identical (tests/synthetic proves it). publish uploads and verifies
+the pack with everything else; `build_region.sh` restores it instead of fetching
+when a region is rebuilt. The real pack ratio is measured in the rehearsal.
+
+## Three layers, three costs
+
+What a rebuild costs depends on which layer changed (24 Sep 2026):
+
+| layer | what | re-run | cost |
+| --- | --- | --- | --- |
+| inputs | LiDAR, imagery, DSM, outlines | once; after that, the region pack | the download |
+| geometry | faces, obstructions, panels, shading factors | only stale buildings (build keys), from packs | CPU |
+| sun | kWh from the model, calibration, derate | `run_district_build.sh --yield-only` | minutes, no LiDAR |
+| economics | cost, payback | nothing: computed in the browser | none |
+
+Every building's detail record carries its model version (`mv`: geometry and
+sun code hashes), and the served names are frozen in `src/output_contract.py`.
+
 ## Coordinating machines
 
 ### The choice
@@ -166,6 +191,12 @@ it is the only thing that needs an administrator.
 `tools/status.py` prints one line: `done 412 / claimed 6 / queued 966 /
 failed 0`, and per-worker, what it is on and for how long. The same numbers
 are the object counts in the bucket folders. A failed region names its log.
+
+## Status, 24 September
+
+Everything below is built. The layers above landed on 24 Sep. The fleet has
+still never run as a fleet: the dress rehearsal (docs/national-rehearsal.md)
+is the next step.
 
 ## Status, 22 September
 
