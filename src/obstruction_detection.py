@@ -976,9 +976,13 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
             filtered_color.append(blob)
     color_obs = filtered_color
 
-    if not height_obs:
-        return color_obs
-
+    # NO EARLY RETURN WHEN THE HEIGHT PATH FINDS NOTHING. There was one, and it
+    # skipped the two detectors below on every facet without a height
+    # obstruction -- which is exactly the clean facet where a skylight (flush,
+    # so invisible to height) is most likely the only thing there, and where a
+    # recessed deck's own comment says it joins "unconditionally". It also
+    # returned the colour blobs un-merged. Everything below handles an empty
+    # height list.
     compact = [h for h, strong in height_obs
                if strong or _elongation_ratio(h) <= ELONGATION_RATIO_THRESHOLD]
     elongated = [h for h, strong in height_obs

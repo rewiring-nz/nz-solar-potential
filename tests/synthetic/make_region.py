@@ -146,6 +146,11 @@ img[2] = np.where(ic == 6, 50 * shade, np.where(ic == 5, 40, 70))
 lx, ly = gx.reshape(rows, cols), gy.reshape(rows, cols)
 ac = (lx >= 42) & (lx <= 44) & (ly >= 36) & (ly <= 37.5)
 img[:, ac] = 235
+# a flush skylight on building 1's west face: bright in the photo, nothing in
+# the LiDAR -- the case only the bright-object detector can see
+SKYLIGHT = (2.0, 6.0, 3.2, 7.0)
+sky = (lx >= SKYLIGHT[0]) & (lx <= SKYLIGHT[2]) & (ly >= SKYLIGHT[1]) & (ly <= SKYLIGHT[3])
+img[:, sky] = 250
 prof = dict(driver="GTiff", width=cols, height=rows, count=3, dtype="uint8",
             crs="EPSG:2193", transform=from_origin(X0 + minx, Y0 + maxy, res, res))
 with rasterio.open(RD / "imagery_mosaic.tif", "w", **prof) as ds:
