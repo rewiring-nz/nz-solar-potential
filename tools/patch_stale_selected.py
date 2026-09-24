@@ -46,6 +46,7 @@ def main():
     regions = sorted({p.name for p in d.iterdir() if p.is_dir()}
                      | set(config.REGIONS))
     total = 0
+    failed = []
     for region in regions:
         op = Path(area_paths(region)["outlines"])
         if not op.exists():
@@ -64,11 +65,19 @@ def main():
                  "--area", region, "--skip-tiles", "--skip-bake"],
                 env={**os.environ, "SOLAR_SELECTED_FACES": "1"}).returncode
             print(f"{region}: chunk rc={rc}", flush=True)
+            if rc != 0:
+                failed.append(f"{region} chunk {i // 60} (rc={rc})")
     # Once, at the end, instead of once per 60-building chunk: it is a
     # district-wide pass over the merged layouts and only the last run counts.
     if a.patch and total:
         subprocess.run([PY_, "src/bake_density_deciles.py"], check=True)
     print(f"TOTAL {total}", flush=True)
+    # A failed chunk used to be printed and forgotten: this exited 0 either
+    # way, so run_district_build.sh's `|| exit 1` could never stop an
+    # incremental build that had not actually applied its patches.
+    if failed:
+        print(f"FAILED: {len(failed)} chunk(s): " + ", ".join(failed), flush=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

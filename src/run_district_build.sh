@@ -79,9 +79,13 @@ echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}"
 # Deliberately non-fatal. A missing baseline is bad; losing eight hours of
 # compute because the snapshot step tripped would be worse.
 # The previous build's per-building ladders live in data/summaries/ now
-# (written by combine); keep a copy so compare_builds can diff against them.
+# (written by combine). compare_builds reads them there, so the snapshot it
+# diffs against is taken here as well: this branch only copied the folder to
+# summaries_prev, which nothing reads, and the comparison ran against
+# whatever stale build_snapshot_prev.json an older build had left behind.
 if [ -d data/summaries ]; then
   rm -rf data/summaries_prev && cp -r data/summaries data/summaries_prev \
+    && $PY src/compare_builds.py --snapshot \
     || echo "  WARN: could not snapshot the previous build -- comparison will be unavailable"
 elif [ -f data/solar_potential.geojson ]; then
   $PY src/compare_builds.py --snapshot \

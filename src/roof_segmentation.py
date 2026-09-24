@@ -1718,7 +1718,7 @@ def _maybe_reconstruct(facets, pc_source, building_geom, building_id):
             return facets   # better planes, but paid for by shattering the roof
         return alt
     except Exception as exc:
-        _note_fallback("repair_nonplanar", None, exc)
+        _note_fallback("reconstruct", building_id, exc)
         return facets
 
 

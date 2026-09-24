@@ -133,66 +133,66 @@ def main():
     for sp_path in (area_paths(a.area)["solar_potential"], DATA / "solar_potential.geojson"):
         if not sp_path.exists():
             continue
-            import config
-            from src.derive_solar_potential import _facet_area_m2
-            reg = json.load(open(region))
-            agg = {}
-            for f in reg["features"]:
-                p = f["properties"]
-                if p.get("building_id") not in ids:
-                    continue
-                b = agg.setdefault(p["building_id"], {"facet_count": 0, "obstruction_count": 0,
-                                                      "panel_count": 0, "ac_kwh_year": 0.0,
-                                                      "facet_area_m2": 0.0, "poa_w": 0.0})
-                k = p["kind"]
-                if k == "facet":
-                    b["facet_count"] += 1
-                    # THROUGH derive_solar_potential's helper, not a local copy.
-                    # This read p["area_m2"] directly, and the layout emitter does
-                    # not write area_m2 on a facet -- so every building this driver
-                    # patched came out with facet_area_m2 = 0, and Heat Map mode
-                    # (kWp = area x coverage x density) showed it as 0.0 kW while
-                    # Panel Layout mode showed its real 89.5 kW two clicks away.
-                    #
-                    # derive_solar_potential found and fixed exactly this, in a
-                    # docstring that says so, and the fix never reached the copy
-                    # here. 2,496 of the district's 14,507 roofs with panels -- 17%
-                    # -- were reading zero because of it.
-                    area = _facet_area_m2(f)
-                    b["facet_area_m2"] += area
-                    b["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
-                elif k == "obstruction":
-                    b["obstruction_count"] += 1
-                elif k == "panel":
-                    b["panel_count"] += 1
-                    b["ac_kwh_year"] += p.get("ac_kwh_year") or 0.0
-            sp = json.load(open(sp_path))
-            panel_kw = config.PV_ASSUMPTIONS["panel_rated_power_w"] / 1000.0
-            n_upd = 0
-            for f in sp["features"]:
-                bid = f["properties"].get("building_id")
-                if bid not in agg:
-                    continue
-                b = agg[bid]
-                # a rebuilt building with panels must not keep a stale
-                # no-estimate reason from the run it is replacing
-                if b["panel_count"] > 0:
-                    f["properties"].pop("no_estimate_reason", None)
-                    f["properties"].pop("reason", None)
-                f["properties"].update({
-                    "facet_count": b["facet_count"],
-                    "obstruction_count": b["obstruction_count"],
-                    "panel_count": b["panel_count"],
-                    "kwp": round(b["panel_count"] * panel_kw, 2),
-                    "ac_kwh_day_avg": round(b["ac_kwh_year"] / 365.0, 1),
-                    "ac_kwh_year": round(b["ac_kwh_year"], 0),
-                    "facet_area_m2": round(b["facet_area_m2"], 1),
-                    "avg_poa_kwh_m2": round(b["poa_w"] / b["facet_area_m2"], 0)
-                                      if b["facet_area_m2"] > 0 else 0,
-                })
-                n_upd += 1
-            json.dump(sp, open(sp_path, "w"))
-            print(f"  solar_potential: updated {n_upd} buildings", flush=True)
+        import config
+        from src.derive_solar_potential import _facet_area_m2
+        reg = json.load(open(region))
+        agg = {}
+        for f in reg["features"]:
+            p = f["properties"]
+            if p.get("building_id") not in ids:
+                continue
+            b = agg.setdefault(p["building_id"], {"facet_count": 0, "obstruction_count": 0,
+                                                  "panel_count": 0, "ac_kwh_year": 0.0,
+                                                  "facet_area_m2": 0.0, "poa_w": 0.0})
+            k = p["kind"]
+            if k == "facet":
+                b["facet_count"] += 1
+                # THROUGH derive_solar_potential's helper, not a local copy.
+                # This read p["area_m2"] directly, and the layout emitter does
+                # not write area_m2 on a facet -- so every building this driver
+                # patched came out with facet_area_m2 = 0, and Heat Map mode
+                # (kWp = area x coverage x density) showed it as 0.0 kW while
+                # Panel Layout mode showed its real 89.5 kW two clicks away.
+                #
+                # derive_solar_potential found and fixed exactly this, in a
+                # docstring that says so, and the fix never reached the copy
+                # here. 2,496 of the district's 14,507 roofs with panels -- 17%
+                # -- were reading zero because of it.
+                area = _facet_area_m2(f)
+                b["facet_area_m2"] += area
+                b["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
+            elif k == "obstruction":
+                b["obstruction_count"] += 1
+            elif k == "panel":
+                b["panel_count"] += 1
+                b["ac_kwh_year"] += p.get("ac_kwh_year") or 0.0
+        sp = json.load(open(sp_path))
+        panel_kw = config.PV_ASSUMPTIONS["panel_rated_power_w"] / 1000.0
+        n_upd = 0
+        for f in sp["features"]:
+            bid = f["properties"].get("building_id")
+            if bid not in agg:
+                continue
+            b = agg[bid]
+            # a rebuilt building with panels must not keep a stale
+            # no-estimate reason from the run it is replacing
+            if b["panel_count"] > 0:
+                f["properties"].pop("no_estimate_reason", None)
+                f["properties"].pop("reason", None)
+            f["properties"].update({
+                "facet_count": b["facet_count"],
+                "obstruction_count": b["obstruction_count"],
+                "panel_count": b["panel_count"],
+                "kwp": round(b["panel_count"] * panel_kw, 2),
+                "ac_kwh_day_avg": round(b["ac_kwh_year"] / 365.0, 1),
+                "ac_kwh_year": round(b["ac_kwh_year"], 0),
+                "facet_area_m2": round(b["facet_area_m2"], 1),
+                "avg_poa_kwh_m2": round(b["poa_w"] / b["facet_area_m2"], 0)
+                                  if b["facet_area_m2"] > 0 else 0,
+            })
+            n_upd += 1
+        json.dump(sp, open(sp_path, "w"))
+        print(f"  solar_potential: updated {n_upd} buildings", flush=True)
         # density deciles (fill_*) for the patched buildings come from the
         # merged layouts; bake refreshes them (writes solar_potential in place)
         if not a.skip_bake:
