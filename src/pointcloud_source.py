@@ -149,6 +149,46 @@ class PointCloudSource:
         return np.column_stack([x, y, z])
 
 
+# Bytes one decoded return costs in the tile cache: x, y, z as float64 and the
+# classification byte (PointCloudSource._load_tile).
+DECODED_BYTES_PER_POINT = 25
+
+
+def survey_tile_stats(bbox_nztm=None, directory=POINTCLOUD_DIR):
+    """(largest decoded tile in GB, mean returns per m2) over the tiles that
+    overlap bbox_nztm (all tiles if None), from LAZ headers only -- cheap.
+
+    WHY: worker counts were constants measured on Queenstown's survey, and a
+    denser one decodes fatter tiles. Eight gate workers once took down a 64 GB
+    machine on Wellington's. The memory a worker needs is its tile cache times
+    the size of a decoded tile, and the header already says how many points a
+    tile holds. (0.0, 0.0) where there are no tiles."""
+    biggest, pts, area = 0, 0, 0.0
+    for path in sorted(Path(directory).glob("*.laz")):
+        if path.name.startswith("."):
+            continue
+        with laspy.open(path) as f:
+            h = f.header
+            if bbox_nztm is not None:
+                minx, miny, maxx, maxy = bbox_nztm
+                if h.maxs[0] < minx or h.mins[0] > maxx or h.maxs[1] < miny or h.mins[1] > maxy:
+                    continue
+            biggest = max(biggest, h.point_count)
+            pts += h.point_count
+            area += max(0.0, (h.maxs[0] - h.mins[0]) * (h.maxs[1] - h.mins[1]))
+    return biggest * DECODED_BYTES_PER_POINT / 1e9, (pts / area if area else 0.0)
+
+
+def per_worker_gb(floor_gb, base_gb, cached_tiles, bbox_nztm=None, safety=1.5):
+    """Memory to budget per worker: the measured floor, or the survey's own
+    need -- base + cached tiles x the largest decoded tile, with headroom --
+    whichever is larger. On Queenstown's survey the floor binds, so worker
+    counts there are unchanged; a denser survey raises it."""
+    tile_gb, density = survey_tile_stats(bbox_nztm)
+    need = base_gb + cached_tiles * tile_gb * safety
+    return max(floor_gb, need), tile_gb, density
+
+
 def rasterize_pointcloud_window(pc_source, building_geom, resolution, pad_m=2.0):
     """Bins point-cloud points inside (a small pad around) building_geom's
     bounds onto a regular grid at `resolution` -- median z per cell, same

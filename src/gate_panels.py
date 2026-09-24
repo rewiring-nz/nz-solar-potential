@@ -218,14 +218,28 @@ GATE_USABLE_RAM_FRACTION = 0.55   # headroom for the parent, which holds every f
 GATE_MAX_JOBS = 12                # past this the parent-side merge is the bottleneck
 
 
-def _gate_jobs():
+GATE_CACHED_TILES = 3   # _init_gate_worker's PointCloudSource cache
+
+
+def _gate_jobs(name=None):
     import os
+    per = GATE_PER_WORKER_GB
+    if name is not None:
+        # the survey's own tile size, from LAZ headers (pointcloud_source);
+        # GATE_PER_WORKER_GB stays the floor, so Queenstown is unchanged
+        try:
+            from src.pointcloud_source import per_worker_gb
+            from src.region_build import area_bbox_nztm
+            per, tile_gb, _ = per_worker_gb(GATE_PER_WORKER_GB, 0.5, GATE_CACHED_TILES,
+                                            area_bbox_nztm(name))
+        except Exception:
+            per = GATE_PER_WORKER_GB
     try:
         total_gb = (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
                     / 1024 ** 3)
     except (ValueError, OSError, AttributeError):
         return 4                  # unknown machine: the old conservative value
-    by_ram = int(total_gb * GATE_USABLE_RAM_FRACTION // GATE_PER_WORKER_GB)
+    by_ram = int(total_gb * GATE_USABLE_RAM_FRACTION // per)
     return max(1, min(by_ram, (os.cpu_count() or 2) - 1, GATE_MAX_JOBS))
 
 
@@ -241,7 +255,7 @@ def _init_gate_worker():
     # workers each caching eight tiles crashed a 64 GB machine on Wellington's
     # dense survey; two tiles per worker is plenty here because a panel query
     # touches exactly the tile(s) under one building.
-    _W["pc"] = PointCloudSource(max_cached_tiles=3)
+    _W["pc"] = PointCloudSource(max_cached_tiles=GATE_CACHED_TILES)
     # NO wide DEM here. Every worker used to read the whole mosaic and pass it
     # to panel_ok, which has not looked at it since the height-above-DEM test
     # was removed (see the comment in panel_ok) -- the load and the two
@@ -312,7 +326,7 @@ def gate_area_parallel(name, jobs=None):
         else:
             todo.append(json.dumps(f))
             todo_slot.append(i)
-    jobs = jobs or _gate_jobs()
+    jobs = jobs or _gate_jobs(name)
     # Spawn, never fork. On Linux the default is fork, and forked children
     # inherit the parent's initialised GDAL/rasterio state -- workers segfault
     # and the pool dies with BrokenProcessPool (seen on the VM's first run).

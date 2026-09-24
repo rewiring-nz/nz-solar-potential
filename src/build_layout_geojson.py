@@ -104,14 +104,14 @@ PER_WORKER_GB = 1.75           # decoded LiDAR tile cache per worker process
 USABLE_RAM_FRACTION = 0.6      # headroom for the parent process and the OS
 
 
-def _memory_bounded_jobs():
+def _memory_bounded_jobs(per_worker_gb=PER_WORKER_GB):
     """Workers this machine can actually feed. See the long note in main()."""
     try:
         total_gb = (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
                     / 1024 ** 3)
     except (ValueError, OSError, AttributeError):
         return 4               # unknown machine: the conservative middle
-    by_ram = int(total_gb * USABLE_RAM_FRACTION // PER_WORKER_GB)
+    by_ram = int(total_gb * USABLE_RAM_FRACTION // per_worker_gb)
     return max(1, min(by_ram, (os.cpu_count() or 2) - 1, DEFAULT_MAX_JOBS))
 
 # How long the whole pool may go without a single building completing before it
@@ -689,7 +689,22 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
     # 18GB Mac -> 6 workers (the number actually measured working, 280s -> 114s
     # on 100 buildings), 62GB VM -> 10. HARD_CAP keeps a very large machine from
     # spawning a pool whose parent-side merge becomes the bottleneck.
-    jobs = jobs or _memory_bounded_jobs()
+    # ...and by THIS survey: a worker caches MAX_CACHED_TILES decoded tiles,
+    # and how big a decoded tile is depends on the survey's density, which
+    # the LAZ headers state. PER_WORKER_GB stays the floor (Queenstown's
+    # measurement); a denser survey raises the budget and lowers the count.
+    if not jobs:
+        from src.pointcloud_source import per_worker_gb, MAX_CACHED_TILES
+        from src.region_build import area_bbox_nztm
+        try:
+            budget, tile_gb, density = per_worker_gb(PER_WORKER_GB, 0.3, MAX_CACHED_TILES,
+                                                     area_bbox_nztm(area))
+            print(f"[{area}] survey: {density:.1f} returns/m2, largest tile "
+                  f"{tile_gb:.2f} GB decoded -> {budget:.2f} GB per worker", flush=True)
+        except Exception as exc:
+            budget = PER_WORKER_GB
+            print(f"[{area}] survey size unknown ({exc!r}); {budget} GB per worker", flush=True)
+        jobs = _memory_bounded_jobs(budget)
     print(f"[{area}] {len(ids)} buildings on {jobs} workers", flush=True)
 
     features, done, t0 = [], 0, time.time()
