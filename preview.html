@@ -1097,6 +1097,10 @@ let layoutReady = false;
 // at once was exactly the "why is there blue behind the panels" confusion:
 // that blue was the heatmap, still on underneath. 'none' | 'heatmap' | 'layout'.
 let mode = "heatmap";
+// Mirrors CELL_BANDS / BUILDING_MIN_Z in src/build_building_tiles.py: [lod,
+// minzoom, maxzoom] per cell band. Top level because applyBtypeFilters, also
+// top level, filters the cells-* layers by building type.
+const CELL_BANDS = [[9, 0, 6], [12, 6, 9], [16, 9, 13]];
 const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
 let obstructionsOn = false;  // default hidden
 let outlinesOn = false;      // building outlines, default hidden
@@ -1132,13 +1136,15 @@ function applyBtypeFilters() {
   for (const [id, f] of Object.entries(base)) {
     if (map.getLayer(id)) map.setFilter(id, withBtype(f));
   }
-  (typeof CELL_BANDS !== "undefined" ? CELL_BANDS : []).forEach(([lod]) => {
+  CELL_BANDS.forEach(([lod]) => {
     for (const id of [`cells-fill-${lod}`, `cells-heat-${lod}`]) {
       if (map.getLayer(id)) map.setFilter(id, withBtype(["==", ["get", "lod"], lod]));
     }
   });
   if (typeof LAYOUT_LAYERS !== "undefined") {
-    LAYOUT_LAYERS.forEach(id => { if (map.getLayer(id)) map.setFilter(id, panelLayerFilter(id)); });
+    LAYOUT_LAYERS.forEach(id => {
+      if (map.getLayer(id)) map.setFilter(id, panelLayerFilter(id, layoutExcludedBuildingId));
+    });
   }
 }
 function buildBtypeToggles(list) {
@@ -1156,15 +1162,17 @@ function buildBtypeToggles(list) {
     }
     btn.classList.toggle("off", btypesOff.has(k));
     applyBtypeFilters();
-    inViewProps = null;
-    if (typeof refreshDerived === "function") refreshDerived();
-    else if (typeof recomputeInViewSummary === "function") recomputeInViewSummary();
+    // The cache and the refresh live inside the map-load closure, so they are
+    // reached through window: by name they are undefined out here.
+    if (window.__invalidateInView) window.__invalidateInView();
+    if (window.__refreshDerived) window.__refreshDerived();
   }));
 }
 
 const LAYOUT_KIND_FILTER = {
   "facets-outline": ["==", ["get", "kind"], "facet"],
   "obstructions-fill": ["==", ["get", "kind"], "obstruction"],
+  "obstructions-outline": ["==", ["get", "kind"], "obstruction"],
   "panels-fill": ["==", ["get", "kind"], "panel"],
   "panels-outline": ["==", ["get", "kind"], "panel"],
 };
@@ -1570,7 +1578,7 @@ let overlayOn = true;
 
 function setMode(newMode) {
   // the zoomed-out surface weights by placed panels in layout mode, by coverage otherwise
-  setTimeout(() => { if (typeof refreshHeatWeights === "function") refreshHeatWeights(); }, 0);
+  setTimeout(() => { if (window.__refreshHeatWeights) window.__refreshHeatWeights(); }, 0);
   if (newMode === mode && overlayOn) {
     overlayOn = false;            // clicking the on button turns it off
   } else {
@@ -1909,13 +1917,12 @@ map.on("load", async () => {
   // dashboard adds up cells and is exact; from z13 it adds up buildings and is
   // exact. Coarser as you zoom out, never wrong.
   addPmtilesSource("buildings", `${DATA_BASE}data/buildings.pmtiles`);
-  // Mirrors CELL_BANDS / BUILDING_MIN_Z in src/build_building_tiles.py.
+  // CELL_BANDS (top level) mirrors src/build_building_tiles.py.
   // Each band draws a grid three zooms finer than the zoom it is shown at, so
   // the viewport always spans roughly eight cells: a cell clipped by the edge
   // of the screen is counted whole, and with one coarse grid for every zoom
   // that error was most of the answer (z12.9 read 7,839 buildings against
   // z13.1's 2,267 for the same place).
-  const CELL_BANDS = [[9, 0, 6], [12, 6, 9], [16, 9, 13]];
   const BUILDING_MIN_Z = 13;
   const cellLodFor = (z) => {
     for (const [lod, from, to] of CELL_BANDS) if (z >= from && z < to) return lod;
@@ -2031,6 +2038,7 @@ map.on("load", async () => {
       if (map.getLayer(`cells-heat-${lod}`)) map.setPaintProperty(`cells-heat-${lod}`, "heatmap-weight", heatWeightExpr(lod));
     });
   }
+  window.__refreshHeatWeights = refreshHeatWeights;
   // A build from before the point layer existed (a deploy whose data has not
   // been recombined yet) has no cellpts: the heat map would draw nothing and
   // the cells are invisible, so the zoomed-out view would be blank. Restore
@@ -3073,6 +3081,8 @@ map.on("load", async () => {
       `v${DATA_VERSION}`, navigator.userAgent.split(") ")[0] + ")"
     ].join(" | ");
   };
+  // Exposed for panel_editor.js, which cannot see into this closure.
+  window.__bugCtx = bugCtx;
   document.getElementById("bug-report-btn").addEventListener("click", () => {
     const panel = document.getElementById("bug-report-panel");
     panel.style.display = panel.style.display === "none" ? "block" : "none";
@@ -3517,7 +3527,7 @@ map.on("load", async () => {
     "source-layer": "layout",
     type: "line",
     source: "layout",
-    filter: LAYOUT_KIND_FILTER["obstructions-fill"],
+    filter: LAYOUT_KIND_FILTER["obstructions-outline"],
     paint: { "line-color": "#ff3b30", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.2, 15, 0.6, 17, 1.0], "line-dasharray": [2, 2], "line-opacity": 0.9 }
   });
   map.addLayer({
@@ -3886,6 +3896,9 @@ map.on("load", async () => {
     const be = el("bldg-econ");
     if (be) {
       let e = economicsFor(kwp, kwhYear, props.facet_area_m2);
+      // refresh() swaps e for the hourly result when it can, and that result
+      // has no exportLifetimePerKwhYr; the marginal break-even reads it here.
+      let eAnnual = e;
       // A selection can legitimately come to zero panels -- keeping only "under
       // 1x" on a roof where none are. Hiding the block in that case would take
       // the band controls with it, so it stays and says so.
@@ -4062,6 +4075,9 @@ map.on("load", async () => {
           // agree -- requiring a match just silently fell back to the
           // annual model on most buildings.
           const canHourly = gp && gp.gen && gp.kwp > 0;
+          const annual = economicsFor(kwp, kwhYear, props.facet_area_m2,
+                                      { zoneClass: props.zone_class });
+          if (annual) eAnnual = annual;
           if (canHourly) {
             const k = kwp / gp.kwp;
             const gen = gp.gen.map(row => row.map(v => v * k));
@@ -4075,8 +4091,7 @@ map.on("load", async () => {
                         gen.reduce((t, row) => t + row[h], 0) / gen.length)
                         : null);
           } else {
-            e = economicsFor(kwp, kwhYear, props.facet_area_m2,
-                             { zoneClass: props.zone_class });
+            e = annual;
           }
           if (!e) return;
           const bb = el("econ-batt-box");
@@ -4179,7 +4194,7 @@ map.on("load", async () => {
             panelEcon = null;
           } else {
             const perKwh = panelEconBasis === "marginal"
-              ? e.exportLifetimePerKwhYr : e.lifetime / kwhYear;
+              ? eAnnual.exportLifetimePerKwhYr : e.lifetime / kwhYear;
             panelEcon = { buildingId,
                           breakEvenKwh: (e.cost / count) / Math.max(perKwh, 1e-9) };
           }
@@ -4287,6 +4302,12 @@ map.on("load", async () => {
   // current density, each panel weighted by its own roof face's orientation.
   const SEASON_COLORS = { summer: "#ff7a00", autumn: "#7dff5e", winter: "#00c8ff", spring: "#ffe600" };
   let seasonCurves = null;
+  let maxSlopeBin = null;   // cached from seasonCurves by seasonMaxSlopeBin
+  function setSeasonCurves(doc) {
+    if (doc === seasonCurves) return;
+    seasonCurves = doc;
+    maxSlopeBin = null;
+  }
   // One curve set per degree of latitude (combine_regions). The single
   // seasonal_curves.json stays as the fallback; when the index exists the
   // band for the OPEN building's latitude is loaded on demand and swapped in.
@@ -4299,15 +4320,19 @@ map.on("load", async () => {
     if (!curveBands || !Number.isFinite(lat)) return;
     const key = `m${Math.abs(Math.floor(lat))}`;
     if (!curveBands[key]) return;
-    if (curveBandDocs[key]) { seasonCurves = curveBandDocs[key]; return; }
+    if (curveBandDocs[key]) {
+      // true = still in flight: keep the current curves until it lands
+      if (curveBandDocs[key] !== true) setSeasonCurves(curveBandDocs[key]);
+      return;
+    }
     curveBandDocs[key] = true;   // in flight
     fetch(`${DATA_BASE}data/seasonal_curves/${key}.json?v=${DATA_VERSION}`).then(r => r.json())
-      .then(doc => { curveBandDocs[key] = doc; seasonCurves = doc;
+      .then(doc => { curveBandDocs[key] = doc; setSeasonCurves(doc);
                      if (typeof refreshDerived === "function") refreshDerived(); })
       .catch(() => { delete curveBandDocs[key]; });
   }
   fetch(`${DATA_BASE}data/seasonal_curves.json?v=${DATA_VERSION}`).then(r => r.json())
-    .then(d => { seasonCurves = d; }).catch(() => {});
+    .then(d => { setSeasonCurves(d); }).catch(() => {});
 
   function pointInRing(pt, ring) {
     let inside = false;
@@ -4328,7 +4353,6 @@ map.on("load", async () => {
   // Per-building overrides for the two economics inputs a reader is most
   // likely to know better than we do. Reset from the defaults each time a
   // building is opened, so one house's numbers never leak into the next.
-  let maxSlopeBin = null;
   function seasonMaxSlopeBin() {
     if (maxSlopeBin === null) {
       maxSlopeBin = Math.max(...Object.keys(seasonCurves.curves).map(k => +k.split("_")[0]));

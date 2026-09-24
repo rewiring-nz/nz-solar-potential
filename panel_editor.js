@@ -287,8 +287,11 @@
   // ---------- session ----------
   function enter(buildingId, lngLatHint) {
     const tiles = readPanelsFromTiles(buildingId);
+    // Reset re-enters with no hint; a roof with no tile panels then keeps
+    // the frame it already had.
     const seed = tiles.length ? tiles[0].lngLatRing[0]
-                              : [lngLatHint.lng, lngLatHint.lat];
+               : lngLatHint ? [lngLatHint.lng, lngLatHint.lat]
+               : S.origin || map.getCenter().toArray();
     setOrigin(seed[0], seed[1]);
     S.buildingId = buildingId;
     S.panels = tiles.map(t => ({
@@ -371,7 +374,7 @@
     note.value = `PANEL CORRECTION building ${S.buildingId}: `
       + `${S.originalCount} -> ${S.panels.length} panels`;
     ctx.value = `EDITED LAYOUT building ${S.buildingId} | `
-      + (typeof bugCtx === "function" ? bugCtx() : "")
+      + (window.__bugCtx ? window.__bugCtx() : "")
       + " | centres: " + cs.join("; ");
     form.submit();
     S.dirty = false;
