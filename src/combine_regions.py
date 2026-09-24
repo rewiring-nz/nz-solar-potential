@@ -208,6 +208,19 @@ def _addr_key(addr):
     return (s[:2] if len(s) >= 2 else (s + "_")[:2]) or "__"
 
 
+def _street_of(addr):
+    """The street part of "12 Frankton Road", "1/23 Arrowtown-Lake Hayes Road"
+    or "12A Main St": everything from the first word that starts with a
+    letter and is not a unit/number suffix. None if there is no such word."""
+    words = addr.split()
+    for i, w in enumerate(words):
+        if w[:1].isalpha() and not (i == 0 and any(ch.isdigit() for ch in w)):
+            if len(w) == 1 and i + 1 < len(words):   # "12 A Main St": a suffix
+                continue
+            return " ".join(words[i:])
+    return None
+
+
 def _combine_addresses(regions, out_root, dest_tmp):
     rows = []
     for r in regions:
@@ -220,15 +233,28 @@ def _combine_addresses(regions, out_root, dest_tmp):
         return len(rows), 0
     # Sharded: the search box fetches the shard for the first two characters
     # typed. A flat 2-million-row file is 34 MB nobody asked for.
+    #
+    # Each address goes into TWO shards: its own first two characters (almost
+    # always the house number, "12 Frankton Road" -> "12") and its street's
+    # ("fr"). With the number shard alone, searching a street without a number
+    # found nothing -- or, worse, found whatever an earlier search had happened
+    # to load, so results depended on history. The matcher is a substring
+    # match, so the street shard is all it takes.
     shards = defaultdict(list)
     for row in rows:
-        shards[_addr_key(row[0])].append(row)
+        keys = {_addr_key(row[0])}
+        street = _street_of(row[0])
+        if street:
+            keys.add(_addr_key(street))
+        for k in keys:
+            shards[k].append(row)
     out = dest_tmp / "addresses"
     out.mkdir(parents=True, exist_ok=True)
     for k, v in shards.items():
         (out / f"{k}.json").write_text(json.dumps(v, separators=(",", ":")))
     (out / "index.json").write_text(json.dumps(
-        {"prefix_chars": 2, "shards": sorted(shards), "total": len(rows)}))
+        {"prefix_chars": 2, "shards": sorted(shards), "total": len(rows),
+         "keys": "house number and street name"}))
     return len(rows), len(shards)
 
 

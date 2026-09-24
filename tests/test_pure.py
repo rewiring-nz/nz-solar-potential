@@ -321,5 +321,34 @@ def test_frame_bearing_follows_the_eave():
     assert abs(abs(float(uh @ u)) - 1.0) < 1e-6, (frame, uh)
 
 
+def test_address_shards_find_a_street_without_a_number():
+    # Sharded addresses were keyed by their first two characters -- the house
+    # number -- so "frankton" found nothing unless the "12" shard happened to be
+    # loaded already. Each row now also lives under its street's key.
+    import json, tempfile
+    from pathlib import Path as P
+    import src.combine_regions as cr
+    assert cr._street_of("12 Frankton Road") == "Frankton Road"
+    assert cr._street_of("1/23 Arrowtown-Lake Hayes Road") == "Arrowtown-Lake Hayes Road"
+    assert cr._street_of("12A Main St") == "Main St"
+    assert cr._street_of("12 A Main St") == "Main St"
+    assert cr._street_of("Ōtāhuhu Lodge") == "Ōtāhuhu Lodge"
+    assert cr._street_of("42") is None
+    with tempfile.TemporaryDirectory() as t:
+        t = P(t)
+        (t / "out" / "r").mkdir(parents=True)
+        rows = [["12 Frankton Road", 1, 2, 3], ["5 Gorge Road", 4, 5, 6]]
+        (t / "out" / "r" / "addresses.json").write_text(json.dumps(rows))
+        old = cr.ADDR_SHARD_AT
+        cr.ADDR_SHARD_AT = 0
+        try:
+            cr._combine_addresses(["r"], t / "out", t)
+        finally:
+            cr.ADDR_SHARD_AT = old
+        shard = lambda k: json.loads((t / "addresses" / f"{k}.json").read_text())
+        assert shard("fr") == [rows[0]] and shard("12") == [rows[0]]
+        assert shard("go") == [rows[1]] and shard("5g") == [rows[1]]
+
+
 if __name__ == "__main__":
     sys.exit(_main())
