@@ -45,15 +45,23 @@ DATA_DIR = PROJECT_DIR / "data"
 # every link already shared for this pilot rather than dropping the prefix.
 SERVE_ROOT = PROJECT_DIR.parent
 
+# The refit inputs (outlines, DSM, imagery) are build outputs, not committed.
+# Without them the static site still serves -- it only needs the committed
+# data/ tiles -- and /api/refit answers 503 instead of the server not starting.
+REFIT_UNAVAILABLE = None
 print("Loading shared data (buildings, DSM, imagery, solar model)...")
-GDF = gpd.read_file(DATA_DIR / "building_outlines.geojson").set_index("building_id", drop=False)
-DSM_DS = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
-IMAGERY_DS = rasterio.open(DATA_DIR / "imagery_mosaic.tif")
-PC_SOURCE = PointCloudSource()
-MODEL = SolarModel()
-DSM_BAND = DSM_DS.read(1)  # loaded once, reused for every building's own near-field shading scan
+try:
+    GDF = gpd.read_file(DATA_DIR / "building_outlines.geojson").set_index("building_id", drop=False)
+    DSM_DS = rasterio.open(DATA_DIR / "dsm_mosaic.tif")
+    IMAGERY_DS = rasterio.open(DATA_DIR / "imagery_mosaic.tif")
+    PC_SOURCE = PointCloudSource()
+    MODEL = SolarModel()
+    DSM_BAND = DSM_DS.read(1)  # loaded once, reused for every building's own near-field shading scan
+    print("Ready.")
+except Exception as e:
+    REFIT_UNAVAILABLE = f"refit data not available: {e}"
+    print(f"Static files only, /api/refit disabled ({REFIT_UNAVAILABLE})")
 TO_WGS84 = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
-print("Ready.")
 
 
 def refit_building(building_id, setback, ransac_threshold, z_threshold, density_pct=100):
@@ -176,6 +184,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(f.read(end - start + 1))
 
     def handle_refit(self):
+        if REFIT_UNAVAILABLE:
+            body = json.dumps({"error": REFIT_UNAVAILABLE}).encode()
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         try:
             building_id = int(params["building_id"][0])
@@ -206,7 +223,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     server = http.server.ThreadingHTTPServer(("", port), Handler)
-    print(f"Serving {SERVE_ROOT} on http://localhost:{port} (with /api/refit)")
+    refit = "without /api/refit" if REFIT_UNAVAILABLE else "with /api/refit"
+    print(f"Serving {SERVE_ROOT} on http://localhost:{port} ({refit})")
     server.serve_forever()
 
 
