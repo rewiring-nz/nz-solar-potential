@@ -29,7 +29,6 @@ from shapely.geometry import shape
 import shapely
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.preflight import preflight
-import config
 from src.fetch_data import fetch_building_outlines
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -44,14 +43,17 @@ def fetch_addresses(bbox_nztm, api_key):
 
 def main(area="pilot"):
     preflight("add_addresses", area)
-    from src.region_build import area_paths, write_json_atomic
+    from src.region_build import area_paths, area_bbox_wgs84, write_json_atomic
     load_dotenv()
     api_key = os.environ["LINZ_API_KEY"]
 
     print(f"Fetching NZ Addresses for {area} bbox...")
     # WGS84 bbox, not NZTM: unlike the outlines layer, this layer's WFS default
     # SRS is lon/lat -- an NZTM bbox silently matches zero features.
-    bbox = config.PILOT_BBOX if area == "pilot" else config.REGIONS[area]
+    # area_bbox_wgs84, not config.REGIONS: a region planned for the national
+    # queue carries its bbox in task.json and is in no config, and indexing
+    # config.REGIONS raised KeyError for every one of them.
+    bbox = area_bbox_wgs84(area)
     addr = fetch_addresses(bbox, api_key)
     pts, labels = [], []
     for f in addr["features"]:
@@ -66,8 +68,11 @@ def main(area="pilot"):
         short = label.split(",")[0].strip()
         pts.append(g["coordinates"][:2])
         labels.append(short)
-    pts = np.array(pts)
+    pts = np.array(pts).reshape(-1, 2)
     print(f"{len(pts)} address points")
+    if len(pts) == 0:
+        print(f"[{area}] no address points in the bbox -- buildings keep their ids")
+        return
 
     sp_path = area_paths(area)["solar_potential"]
     sp = json.loads(sp_path.read_text())
@@ -75,8 +80,10 @@ def main(area="pilot"):
     # Address coordinates come back in the WFS layer's CRS -- this layer serves
     # NZGD2000 lon/lat, and solar_potential geometries are WGS84 lon/lat too
     # (equivalent at this precision), so the join runs directly in degrees with
-    # a metre-scaled KD-tree (lon compressed by cos(lat)).
-    lat0 = np.radians(-45.03)
+    # a metre-scaled KD-tree (lon compressed by cos(lat)) -- at THIS region's
+    # latitude. It was fixed at Queenstown's -45.03, which stretches east-west
+    # distances ~13% at Auckland and moves the 40 m nearest-address cut-off.
+    lat0 = np.radians((bbox[1] + bbox[3]) / 2.0)
     scale = np.array([np.cos(lat0) * 111320.0, 111132.0])
     tree = cKDTree(pts * scale)
 

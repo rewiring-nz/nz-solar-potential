@@ -110,18 +110,41 @@ def _physical_yield_ceiling():
 # against 79 actually placed. Re-running bake_density_deciles fixed every one,
 # so the failure is ORDERING, not arithmetic -- which is exactly the kind of
 # thing a build does silently and a check catches in a second.
-def _decile_layout_agreement(regions):
+def _inputs(regions):
+    """(solar_potential features, layout paths) for the build to check.
+
+    Each region's own files first: since 22 Sep the district build emits per
+    region and the merged data/solar_potential.geojson is no longer produced,
+    so reading only the merged file made this report "run the build first" on
+    every current build. The merged file is still used where no region has
+    its own (an older checkout)."""
+    from src.region_build import area_paths
+    feats, layouts = [], []
+    for a in regions:
+        paths = area_paths(a)
+        if paths["solar_potential"].exists():
+            feats += json.loads(paths["solar_potential"].read_text())["features"]
+            if paths["panel_layouts"].exists():
+                layouts.append(paths["panel_layouts"])
+    if not feats and (DATA_DIR / "solar_potential.geojson").exists():
+        feats = json.loads((DATA_DIR / "solar_potential.geojson").read_text())["features"]
+        if (DATA_DIR / "panel_layouts.geojson").exists():
+            layouts = [DATA_DIR / "panel_layouts.geojson"]
+    return feats, layouts
+
+
+def _decile_layout_agreement(feats, layouts):
     """Buildings where fill_panels_100 disagrees with the actual panel count."""
     from collections import Counter
-    lay_path = DATA_DIR / "panel_layouts.geojson"
-    if not lay_path.exists():
+    if not layouts:
         return None
     actual = Counter()
-    for f in json.loads(lay_path.read_text())["features"]:
-        if f["properties"].get("kind") == "panel":
-            actual[f["properties"]["building_id"]] += 1
+    for lay_path in layouts:
+        for f in json.loads(lay_path.read_text())["features"]:
+            if f["properties"].get("kind") == "panel":
+                actual[f["properties"]["building_id"]] += 1
     out = []
-    for f in json.loads((DATA_DIR / "solar_potential.geojson").read_text())["features"]:
+    for f in feats:
         p = f["properties"]
         d = p.get("fill_panels_100")
         if d is None:
@@ -150,12 +173,11 @@ def _footprints(regions):
 def check(regions=None, top=15):
     from src.region_build import all_areas
     regions = regions or list(all_areas())
-    sp_path = DATA_DIR / "solar_potential.geojson"
-    if not sp_path.exists():
-        print(f"no {sp_path} -- run the build first")
+    feats, layouts = _inputs(regions)
+    if not feats:
+        print("no solar_potential for these regions -- run the build first")
         return 2
 
-    sp = json.loads(sp_path.read_text())
     foot = _footprints(regions)
     panel_m2 = config.PV_ASSUMPTIONS["panel_area_m2"]
     yield_max = _physical_yield_ceiling()
@@ -164,7 +186,7 @@ def check(regions=None, top=15):
                 "7 deciles vs layouts": []}
     checked = 0
 
-    for f in sp["features"]:
+    for f in feats:
         p = f["properties"]
         bid = int(p.get("building_id", 0))
         area = foot.get(bid)
@@ -205,7 +227,7 @@ def check(regions=None, top=15):
                      f"{per:.0f} kWh per kWp -- implausibly low "
                      f"(floor {YIELD_PER_KWP_MIN:.0f})"))
 
-    agree = _decile_layout_agreement(regions)
+    agree = _decile_layout_agreement(feats, layouts)
     if agree is not None:
         findings["7 deciles vs layouts"] = agree
 

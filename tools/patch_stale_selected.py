@@ -68,8 +68,12 @@ def main():
             if rc != 0:
                 failed.append(f"{region} chunk {i // 60} (rc={rc})")
     # Once, at the end, instead of once per 60-building chunk: it is a
-    # district-wide pass over the merged layouts and only the last run counts.
-    if a.patch and total:
+    # district-wide pass over the MERGED layouts and only the last run counts.
+    # Only where a merged file exists: the per-region ship path bakes each
+    # region inside emit_region (which the incremental build runs next), and
+    # without a merged file this stage fails its preflight -- which, once a
+    # failure here stops the build, would stop every incremental build.
+    if a.patch and total and Path("data/panel_layouts.geojson").exists():
         subprocess.run([PY_, "src/bake_density_deciles.py"], check=True)
     print(f"TOTAL {total}", flush=True)
     # A failed chunk used to be printed and forgotten: this exited 0 either

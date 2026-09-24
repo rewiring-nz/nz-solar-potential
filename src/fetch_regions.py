@@ -145,9 +145,16 @@ def main():
     ensure_dem_wide(api_key)
 
     wanted = sys.argv[1:] or list(config.REGIONS)
+    # Known = has a bbox from ANY source area_bbox_wgs84 accepts: task.json
+    # (a queued national region, in no config), config.REGIONS, or outlines
+    # on disk. Checking config.REGIONS alone refused every queued region, so
+    # build_region.sh could not fetch one -- the whole point of the queue.
     for name in wanted:
-        if name not in config.REGIONS:
-            raise SystemExit(f"unknown region {name!r} -- known: {list(config.REGIONS)}")
+        try:
+            area_bbox_wgs84(name)
+        except KeyError:
+            raise SystemExit(f"unknown region {name!r}: no task.json, no config entry, "
+                             f"no outlines on disk -- known in config: {list(config.REGIONS)}")
 
     # Pass 1: outlines + DSM for every region (small and fast).
     for name in wanted:
