@@ -36,7 +36,7 @@ Drawn roofs are not touched: the markup wins (build_layout_geojson,
 import os
 
 import numpy as np
-from shapely.geometry import Polygon, MultiPolygon, box
+from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
 RIDGE_MIN_LEN_M = 4.0
@@ -180,25 +180,6 @@ def crest_offset(pc_source, dsm, ga, gb):
         if drift > SLICE_DRIFT_MAX_M:
             return None
     return float(np.median(agree[:, 1])), rl
-
-
-def _shift_vertices(geom, c0, u, n, length, d):
-    """Move every vertex on the boundary run by d along n."""
-    def ring(coords):
-        out = []
-        for x, y in coords:
-            rel = np.array([x, y]) - c0
-            a, t = rel @ u, rel @ n
-            if abs(t) <= VERTEX_TOL_M and -0.5 <= a <= length + 0.5:
-                out.append((x + n[0] * d, y + n[1] * d))
-            else:
-                out.append((x, y))
-        return out
-    if geom.geom_type == "Polygon":
-        return Polygon(ring(geom.exterior.coords), [ring(i.coords) for i in geom.interiors])
-    if geom.geom_type == "MultiPolygon":
-        return MultiPolygon([_shift_vertices(g, c0, u, n, length, d) for g in geom.geoms])
-    return geom
 
 
 def _polys(g):

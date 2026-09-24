@@ -84,10 +84,8 @@ def main():
     import geopandas as gpd
     import rasterio
     import rasterio.windows
-    import shapely
     from PIL import Image, ImageDraw
     from src.region_build import area_paths
-    from score_geometry import _line_points
 
     labels = json.loads(LABELS.read_text())["buildings"]
     usable = {k: v for k, v in labels.items()

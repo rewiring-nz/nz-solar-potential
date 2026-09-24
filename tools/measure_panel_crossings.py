@@ -57,7 +57,6 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
 
-    import numpy as np
     import geopandas as gpd
     import rasterio
     from shapely.geometry import LineString

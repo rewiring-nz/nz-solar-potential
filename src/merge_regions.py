@@ -102,8 +102,8 @@ def collect_heatmaps(regions):
     # hysteresis between them made that bearable. The heat map is raster tiles
     # now (tools/build_heatmap_tiles.py); a view fetches the tiles under it and
     # the whole LOD idea has nothing left to do. 75 MB across 48 files that
-    # nothing read, deployed on every push. src/build_heatmap_lod.py is kept
-    # for reference and is no longer called.
+    # nothing read, deployed on every push. src/build_heatmap_lod.py, which
+    # made them, was deleted on 24 Sep 2026 (git history has it).
 
 
 def main():

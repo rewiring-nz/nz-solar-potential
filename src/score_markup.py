@@ -2,7 +2,7 @@
 import sys, json, warnings; sys.path.insert(0,"."); sys.path.insert(0,"src")
 warnings.filterwarnings("ignore")
 import numpy as np, geopandas as gpd, shapely
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon
 from src.region_build import area_paths
 from src.pointcloud_source import PointCloudSource
 import src.roof_partition as rp

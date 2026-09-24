@@ -40,7 +40,6 @@ import math
 SNAP_M = 0.40        # ends this close are the same point
 EXTEND_M = 2.50      # how far a dangling end may reach for something to meet
 HIT_TOL_M = 0.25     # how near an extension must pass to count as meeting
-MIN_FACE_M2 = 1.0
 
 
 def _dist(a, b):
@@ -153,66 +152,3 @@ def extend_dangling(segs, boundary=None, max_ext=EXTEND_M):
     return out
 
 
-def drawn_hull(segs, pad=0.0):
-    """Outer boundary from the DRAWN lines, not the surveyed outline.
-
-    Using the outline would bake its offset into every face -- and the offset is
-    the thing we are working around."""
-    from shapely.geometry import MultiPoint
-    pts = [p for s in segs for p in s]
-    if len(pts) < 3:
-        return None
-    hull = MultiPoint(pts).convex_hull
-    if pad:
-        hull = hull.buffer(pad)
-    return hull if hull.geom_type == "Polygon" else None
-
-
-def faces_from_lines(lines, outline=None, snap=SNAP_M, extend=EXTEND_M):
-    """Closed faces implied by the drawn lines, after sealing.
-
-    `lines` is [((x,y),(x,y)), ...] in metres. `outline` is used only as a
-    fallback boundary when the drawn lines do not enclose enough on their own.
-    Returns (faces, stats)."""
-    from shapely.geometry import Polygon
-    from shapely.ops import unary_union, polygonize
-
-    segs = [(tuple(a), tuple(b)) for a, b in lines if _dist(a, b) > 1e-6]
-    if not segs:
-        return [], {"reason": "no lines"}
-    raw_faces = list(polygonize([list(s) for s in segs]))
-
-    snapped = snap_endpoints(segs, snap)
-    boundary = None
-    hull = drawn_hull(snapped)
-    if hull is not None:
-        boundary = hull.exterior
-    elif outline is not None:
-        boundary = outline.exterior
-
-    sealed = extend_dangling(snapped, boundary, extend)
-    edges = [list(s) for s in sealed]
-    if boundary is not None:
-        coords = list(boundary.coords)
-        edges += [[coords[i], coords[i + 1]] for i in range(len(coords) - 1)]
-
-    # NODE FIRST. shapely's polygonize requires its input split at every
-    # crossing; given raw segments that cross, it returns almost nothing. This
-    # module was written without it and produced one big face plus slivers on
-    # every real roof, which is why it ended up imported by nothing. Measured on
-    # 7 Anderson Heights: 3 cells un-noded (a 177 m2 blob and two slivers),
-    # 7 sensible faces noded.
-    from shapely.ops import unary_union
-    from shapely.geometry import LineString
-    try:
-        noded = unary_union([LineString(e) for e in edges])
-    except Exception:
-        noded = edges
-    faces = [f for f in polygonize(noded)
-             if f.is_valid and f.area >= MIN_FACE_M2]
-    return faces, {
-        "segments": len(segs),
-        "faces_before_sealing": len([f for f in raw_faces if f.area >= MIN_FACE_M2]),
-        "faces_after_sealing": len(faces),
-        "area_m2": round(sum(f.area for f in faces), 1),
-    }

@@ -276,7 +276,6 @@ def gate_area_parallel(name, jobs=None):
     of every build: single-threaded at 9-11 minutes per area while everything
     around it scaled with cores. Panels are independent, so it fans trivially;
     measured behaviour is identical because panel_ok is pure per panel."""
-    import os
     from concurrent.futures import ProcessPoolExecutor
     import config
     non_roof = getattr(config, "NON_ROOF_BUILDING_IDS", set())

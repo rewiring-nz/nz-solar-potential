@@ -42,8 +42,8 @@ from pathlib import Path
 import numpy as np
 import shapely
 from scipy.spatial import cKDTree
-from shapely.geometry import LineString, MultiPoint, Point, Polygon
-from shapely.ops import split as shapely_split, unary_union
+from shapely.geometry import MultiPoint, Point
+from shapely.ops import unary_union
 
 warnings.filterwarnings("ignore")
 # ...but never deprecations. A blanket ignore is exactly how 68 calls to
@@ -66,7 +66,6 @@ CLUSTER_ANGLE_DEG = 14.0     # normals closer than this are the same surface
 MIN_CLUSTER_POINTS = 40
 MIN_CLUSTER_SHARE = 0.10     # of the face's points; below this it is noise
 MAX_SUBFACES = 5             # a hip is 3-4; more than this is not a feature
-MIN_SUBFACE_M2 = 6.0
 
 
 def _local_normals(pts, k=NORMAL_K):
@@ -120,37 +119,6 @@ def _fit(pts):
 def _inlier(pts, plane, band=TRIGGER_BAND_M):
     r = pts[:, 2] - (plane[0] * pts[:, 0] + plane[1] * pts[:, 1] + plane[2])
     return float((np.abs(r - np.median(r)) < band).mean())
-
-
-def _cut_on_planes(poly, planes):
-    """Cut a face along the exact intersection lines of its own sub-planes."""
-    cx, cy = poly.centroid.x, poly.centroid.y
-    cells = [poly]
-    for i in range(len(planes)):
-        for j in range(i + 1, len(planes)):
-            pa, pb = planes[i], planes[j]
-            A, B = pa[0] - pb[0], pa[1] - pb[1]
-            n = float(np.hypot(A, B))
-            if n < 1e-3:
-                continue                     # parallel: a step, not a fold
-            C = ((pa[0] * cx + pa[1] * cy + pa[2]) - (pb[0] * cx + pb[1] * cy + pb[2]))
-            d = np.array([-B, A]) / n
-            pt0 = np.array([cx, cy]) - np.array([A, B]) * (C / (n ** 2))
-            span = max(poly.bounds[2] - poly.bounds[0],
-                       poly.bounds[3] - poly.bounds[1]) * 2 + 10
-            line = LineString([pt0 - d * span, pt0 + d * span])
-            nxt = []
-            for c in cells:
-                try:
-                    parts = [q for q in shapely_split(c, line).geoms
-                             if isinstance(q, Polygon) and q.area >= 1.0]
-                except Exception:
-                    parts = []
-                nxt.extend(parts if len(parts) >= 2 else [c])
-            cells = nxt
-            if len(cells) > 60:
-                return cells
-    return cells
 
 
 # A compact feature has to be cut out as a REGION, not sliced with a line.
@@ -243,67 +211,3 @@ def _plane_angle(pa, pb):
     return float(np.degrees(np.arccos(np.clip(abs(na @ nb), -1.0, 1.0))))
 
 
-def subdivide_face(face_poly, pts, plane):
-    """Split one face into its real sub-planes, or return None to leave it alone.
-
-    Returns [(polygon, plane), ...] or None."""
-    if face_poly.is_empty or face_poly.area < TRIGGER_MIN_AREA_M2:
-        return None
-    inside = pts[shapely.contains_xy(face_poly, pts[:, 0], pts[:, 1])] \
-        if len(pts) else pts
-    if len(inside) < TRIGGER_MIN_POINTS:
-        return None
-    if _inlier(inside, plane) >= TRIGGER_INLIER:
-        return None                          # the face already is one plane
-
-    normals = _local_normals(inside)
-    groups = _cluster_by_normal(normals, max(MIN_CLUSTER_POINTS,
-                                             int(MIN_CLUSTER_SHARE * len(inside))))
-    if len(groups) < 2:
-        return None                          # turns only one way: not a feature
-
-    planes = [_fit(inside[g]) for g in groups if g.sum() >= 8]
-    if len(planes) < 2:
-        return None
-
-    cells = _cut_on_planes(face_poly, planes)
-    if len(cells) < 2:
-        return None
-
-    # Each cell goes to whichever sub-plane its own points sit on.
-    labelled = {}
-    for cell in cells:
-        sub = inside[shapely.contains_xy(cell, inside[:, 0], inside[:, 1])]
-        if len(sub) < 6:
-            best = min(range(len(planes)),
-                       key=lambda k: abs(planes[k][0] * cell.centroid.x
-                                         + planes[k][1] * cell.centroid.y
-                                         + planes[k][2]))
-        else:
-            best = int(np.argmin([np.median(np.abs(
-                sub[:, 2] - (p[0] * sub[:, 0] + p[1] * sub[:, 1] + p[2]))) for p in planes]))
-        labelled.setdefault(best, []).append(cell)
-
-    out = []
-    for k, polys in labelled.items():
-        merged = unary_union(polys)
-        for q in (merged.geoms if merged.geom_type == "MultiPolygon" else [merged]):
-            if q.area < MIN_SUBFACE_M2:
-                continue
-            sub = inside[shapely.contains_xy(q, inside[:, 0], inside[:, 1])]
-            out.append((Polygon(q.exterior, [r for r in q.interiors]),
-                        _fit(sub) if len(sub) >= 8 else planes[k]))
-    if len(out) < 2:
-        return None
-
-    # Only worth it if the sub-planes genuinely explain the face better.
-    before = _inlier(inside, plane)
-    tot = num = 0.0
-    for q, pl in out:
-        sub = inside[shapely.contains_xy(q, inside[:, 0], inside[:, 1])]
-        if len(sub) < 8:
-            continue
-        num += _inlier(sub, pl) * q.area
-        tot += q.area
-    after = (num / tot) if tot else 0.0
-    return out if after > before + 0.05 else None

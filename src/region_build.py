@@ -68,7 +68,8 @@ def all_areas():
     WHOLE REGION without ever erroring.
 
     Five patch drivers each carried their own private copy of this fix
-    (tools/redo_*.py, tools/patch_labelled.py, tools/refill_partial_roofs.py)
+    (the since-deleted tools/redo_*.py, tools/patch_labelled.py,
+    tools/refill_partial_roofs.py)
     while all_areas -- the function every STAGE calls -- still did not have
     it. One definition, here, where both kinds of caller already look.
     """

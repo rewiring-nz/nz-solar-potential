@@ -19,7 +19,6 @@ candidate that agrees better with the drawn faces. Selection accuracy against
 the markup is the only accepted validation here.
 """
 
-import math
 import sys
 from pathlib import Path
 
@@ -104,7 +103,6 @@ def sam_faces(predictor, rgb, geom, bounds, pts):
     import rasterio.features
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
-    from src.roof_partition import _slope_aspect
 
     h, w = rgb.shape[:2]
     b = bounds
@@ -244,7 +242,6 @@ def obstruction_mask(rgb, geom, bounds, pts, h, w):
     mask = np.zeros((h, w), dtype=bool)
     try:
         from src.roof_partition import _fit_plane_robust, _points_in
-        from scipy.spatial import cKDTree
         sub = _points_in(geom, pts) if pts is not None else None
         if sub is None or len(sub) < 60:
             return mask
@@ -273,46 +270,10 @@ def obstruction_mask(rgb, geom, bounds, pts, h, w):
     return mask
 
 
-def lidar_step_channel(pts, bounds, h, w):
-    """Cliff evidence measured, not learned. The reading has to see hips
-    and cliffs. A cliff is a height step, and the laser measures
-    height steps directly (cliff F1 from imagery alone: 0.143) -- so the
-    cliff channel gets the LiDAR's answer OR'd in at extraction, and the
-    camera is only asked about what only the camera can see.
-    """
-    import numpy as np
-    out = np.zeros((h, w), dtype=np.float32)
-    if pts is None or len(pts) < 60:
-        return out
-    try:
-        from scipy.spatial import cKDTree
-        xy = pts[:, :2]
-        tree = cKDTree(xy)
-        rng = np.random.default_rng(3)
-        idx = rng.permutation(len(pts))[:1500]
-        b = bounds
-        R = max(2, int(0.5 / max((b[2] - b[0]) / w, 1e-6)))
-        for i in idx:
-            nb = tree.query_ball_point(xy[i], 0.9)
-            if len(nb) < 5:
-                continue
-            z = pts[nb, 2]
-            if z.max() - z.min() > 0.8:
-                px = int((xy[i, 0] - b[0]) / (b[2] - b[0]) * w)
-                py = int((1 - (xy[i, 1] - b[1]) / (b[3] - b[1])) * h)
-                if 0 <= px < w and 0 <= py < h:
-                    out[max(0, py - R):py + R + 1,
-                        max(0, px - R):px + R + 1] = 0.9
-    except Exception:
-        pass
-    return out
-
-
 def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     """The line-network reading: detect -> extract -> polygonize -> faces."""
     import torch
     import os
-    from src.line_extract import extract, clip_to
     from src.roof_partition import line_facets
 
     h, w = rgb.shape[:2]
@@ -447,8 +408,8 @@ def lidar_faces(pts, geom):
     """
     import numpy as np
     from scipy.spatial import cKDTree
-    from shapely.geometry import Point, Polygon, MultiPoint
-    from shapely.ops import unary_union, voronoi_diagram
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
 
     if pts is None or len(pts) < 60:
         return []
@@ -621,8 +582,6 @@ def lidar_faces(pts, geom):
     return faces
 
 
-
-
 def _lidar_plateau(part, pts, cell=0.75, step=0.35, min_area=4.0,
                    want_step=False):
     """A raised flat region inside `part`, or None.
@@ -638,7 +597,7 @@ def _lidar_plateau(part, pts, cell=0.75, step=0.35, min_area=4.0,
     wrong place) and the plain pyramid (which denied it) were wrong.
     """
     import numpy as np
-    from shapely.geometry import Polygon, MultiPoint
+    from shapely.geometry import MultiPoint
     from src.roof_partition import _points_in
     _none = (None, None) if want_step else None
     sub = _points_in(part, pts)
@@ -702,8 +661,7 @@ def hypothesis_faces(pts, geom, prob_max, to_px):
     ridge because ridges exist only in the vocabulary.
     """
     import numpy as np
-    from shapely.geometry import Polygon, LineString
-    from shapely.ops import unary_union
+    from shapely.geometry import Polygon
     from src.roof_partition import _fit_plane_robust, _points_in
     from src.line_extract import _line_mean
 
@@ -1279,7 +1237,6 @@ def type_agreement(faces, geom, typed_probs, to_px, pts):
     winners.
     """
     import numpy as np
-    import shapely.geometry as sg
     from src.line_extract import _line_mean
     if typed_probs is None or len(faces) < 2 or pts is None:
         return 0.5, 0
@@ -1539,8 +1496,6 @@ def network_lines(prob3, geom, bounds, w, h, pts):
     """
     from src.line_extract import (extract, clip_to, _line_mean,
                                   _junction_cleanup, _colinear_merge)
-    import shapely.affinity as aff
-    from shapely.ops import unary_union
 
     b = bounds
     P = prob3.max(axis=0)

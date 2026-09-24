@@ -138,10 +138,6 @@ def main():
     ap.add_argument("--clean", action="store_true")
     a = ap.parse_args()
 
-    import numpy as np
-    import rasterio
-    from rasterio.transform import from_bounds
-    from rasterio.warp import reproject, Resampling
     from PIL import Image
     # These rasters are legitimately enormous -- speargrass_hayes is 208
     # megapixels -- and PIL refuses anything over ~179 Mpx as a possible
@@ -150,7 +146,6 @@ def main():
     # from the end.
     Image.MAX_IMAGE_PIXELS = None
     import pyproj
-    from src.region_build import all_areas
 
     to_nztm = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
     if a.clean and OUT.exists():

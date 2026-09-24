@@ -59,7 +59,6 @@ def roof_mask(pc, geom, ground_z, others=None):
     1 m raster already resampled, and the question here is about sub-metre
     boundary placement."""
     import numpy as np
-    from shapely.geometry import Point
 
     minx, miny, maxx, maxy = geom.bounds
     x0, y0 = minx - PAD_M, miny - PAD_M

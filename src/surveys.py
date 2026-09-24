@@ -102,6 +102,3 @@ def survey_for(bbox, name=None):
     return out
 
 
-def survey_for_region(name):
-    from src.region_build import area_bbox_wgs84
-    return survey_for(area_bbox_wgs84(name), name)

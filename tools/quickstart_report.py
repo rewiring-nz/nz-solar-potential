@@ -23,7 +23,6 @@ def main():
     import warnings
     warnings.filterwarnings("ignore")
     import numpy as np
-    import geopandas as gpd
     import pyproj
     import rasterio
     import rasterio.windows

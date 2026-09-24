@@ -30,7 +30,6 @@ import socket
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 BUCKET = os.environ.get("SOLAR_BUCKET", "gs://rewiring-solar-data")
 PREFIX = os.environ.get("SOLAR_BUILD_PREFIX", "build")

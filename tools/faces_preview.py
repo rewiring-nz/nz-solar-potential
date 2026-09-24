@@ -37,7 +37,6 @@ FILLS = [(31, 255, 122), (53, 182, 255), (255, 179, 60), (255, 99, 195),
 
 def render(rgb, faces, bounds, outline, grey=()):
     """Translucent face fills + boundaries over the crop."""
-    import numpy as np
     from PIL import Image, ImageDraw
     h, w = rgb.shape[:2]
     im = Image.fromarray(rgb.astype("uint8")).convert("RGB").resize(
@@ -84,9 +83,8 @@ def main():
     import rasterio
     import rasterio.windows
     import rasterio.features
-    from shapely.geometry import shape as shp_shape, Polygon
-    from segment_anything import (sam_model_registry, SamAutomaticMaskGenerator,
-                                  SamPredictor)
+    from shapely.geometry import Polygon
+    from segment_anything import (sam_model_registry, SamPredictor)
     from src.region_build import area_paths, all_areas
 
     # SAM's automatic generator hands float64 point grids to torch, which MPS
@@ -363,7 +361,6 @@ def main():
                 try:
                     from src.line_extract import extract as _lex, \
                         clip_to as _lclip
-                    from shapely.ops import split as _shsplit
                     from shapely.geometry import LineString as _LS2
                     ph, pw2 = (-h) % 16, (-w) % 16
                     arr2 = np.pad(rgb, ((0, ph), (0, pw2), (0, 0)))

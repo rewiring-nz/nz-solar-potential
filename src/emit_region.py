@@ -49,8 +49,8 @@ from src.bake_density_deciles import bake
 from src.build_terrain_masks import apply_masks
 from src.building_horizon import load_far_dem
 from src.shrink_panels_for_tiles import shrink
-from src.building_types import classify, BTYPES
-from src.build_building_tiles import (tile_of, tile_bounds, _centroid, _best_poa,
+from src.building_types import classify
+from src.build_building_tiles import (tile_of, _centroid, _best_poa,
                                       CELL_BANDS, COVERAGE_STEPS, KEEP,
                                       BUILDING_MIN_Z, BUILDING_MAX_Z)
 from src.split_building_detail import DETAIL_KEYS, DETAIL_Z
@@ -135,7 +135,6 @@ def emit(region, out_root=OUT_ROOT):
     c = area_centroid_wgs84(region)
     lat, lon = c if c else (-45.03, 168.66)
     if DEM_WIDE.exists():
-        import rasterio
         from src.region_build import area_bbox_nztm
         band, tr, nd = load_far_dem(DEM_WIDE, area_bbox_nztm(region))
         if band is not None:

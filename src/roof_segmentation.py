@@ -8,11 +8,10 @@ Everything above it is either a method or a finishing rule.
 Map of this module (grep the function name, line numbers rot):
 
   1. DSM-grid RANSAC (the original 2023 method, still a competitor):
-     points_from_window .. segment_building_from_pointcloud
-  2. Image-guided partition (detect ridge lines in imagery, cut, fit):
-     _detect_interior_roof_lines .. segment_building_image_guided
+     points_from_window .. _segment_from_window
+  2. (Image-guided partition: tried and removed; a note marks where.)
   3. Point-native segmentation (RANSAC/clustering on raw LAZ points):
-     _local_normals .. segment_building_orientation_clustered
+     _cluster_points_spatially .. segment_building_orientation_clustered
   4. Facet repair and physical-plausibility drops (shared finishing):
      repair_nonplanar_facets, drop_plant_decks, drop_balcony_levels
   5. _attach_building_geometry: the ONE funnel every facet set passes --
@@ -31,19 +30,18 @@ import os
 import sys
 from pathlib import Path
 
-import cv2
 import math
 import numpy as np
 import rasterio
 import shapely
-from rasterio.features import rasterize, shapes as rasterio_shapes
+from rasterio.features import shapes as rasterio_shapes
 from rasterio.mask import mask as rasterio_mask
 from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components as sparse_connected_components
 from scipy.spatial import cKDTree
-from shapely.geometry import LineString, MultiPoint, Point, Polygon, shape as shapely_shape
-from shapely.ops import polygonize, unary_union
+from shapely.geometry import LineString, MultiPoint, Polygon, shape as shapely_shape
+from shapely.ops import unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
@@ -137,20 +135,6 @@ def fit_plane_lstsq(points):
     coeffs, *_ = np.linalg.lstsq(A, points[:, 2], rcond=None)
     a, b = float(coeffs[0]), float(coeffs[1])
     return np.array([a, b, float(coeffs[2]) - a * x0 - b * y0])
-
-
-def fit_plane_lstsq_centered(points):
-    """Exact alias of fit_plane_lstsq, kept only so existing call sites and
-    saved references keep working.
-
-    This was once a genuinely different function: fit_plane_lstsq solved on raw
-    NZTM coordinates and this one centred first. That difference is gone --
-    fit_plane_lstsq now centres internally -- and the two are bit-for-bit
-    identical on random roof-scale inputs. The old docstring here still claimed
-    it existed *because* the other one was un-centred, which would send the next
-    reader looking for a numerical difference that no longer exists.
-    """
-    return fit_plane_lstsq(points)
 
 
 def plane_residuals(points, plane):
@@ -437,21 +421,6 @@ def segment_building(dsm_ds, building_geom, building_id, ransac_distance_thresho
                                  ransac_distance_threshold, min_facet_area_m2)
 
 
-def segment_building_from_pointcloud(pc_source, building_geom, building_id, resolution=0.3,
-                                      ransac_distance_threshold=None, min_facet_area_m2=None):
-    """Same segmentation, sourced from the raw LiDAR point cloud (rasterized
-    onto a fine grid, see pointcloud_source.rasterize_pointcloud_window)
-    instead of the 1m DSM -- everything past that point is identical,
-    exactly the "drop-in upgrade to points_from_window" this module's own
-    docstring anticipated from the start."""
-    from src.pointcloud_source import rasterize_pointcloud_window
-    window_array, window_transform, nodata = rasterize_pointcloud_window(pc_source, building_geom, resolution)
-    if window_array is None:
-        return []
-    return _segment_from_window(window_array[0], window_transform, nodata, building_geom, building_id,
-                                 ransac_distance_threshold, min_facet_area_m2)
-
-
 def _segment_from_window(window_array, window_transform, nodata, building_geom, building_id,
                           ransac_distance_threshold=None, min_facet_area_m2=None):
     min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
@@ -510,349 +479,14 @@ def _segment_from_window(window_array, window_transform, nodata, building_geom, 
     return merge_similar_facets(facets)
 
 
-# --- Image-guided segmentation ---------------------------------------------
+# --- Tried and removed: image-guided segmentation ---------------------------
 #
-# The RANSAC approach above asks the 1m DSM to do two things at once: find
-# where a roof divides into separate faces (the boundary) and find each
-# face's slope/aspect (the fit) -- and it's the *boundary* discovery that
-# breaks down on shallow multi-face roofs (see RANSAC_DISTANCE_THRESHOLD_M's
-# comment): a compromise plane spanning several true faces can out-compete
-# any single real face for inlier count. But roof *edges* are usually
-# clearly visible in the 0.1m RGB imagery even when the DSM can't resolve
-# the slope difference across them -- confirmed directly: on a real ~10-11
-# deg hip/pyramid roof RANSAC kept merging into one flat facet, Canny edge
-# detection + a Hough transform on the same building's imagery found all
-# four ridge lines cleanly.
-#
-# So: detect candidate interior ridge/hip lines from the imagery, partition
-# the building polygon along them, then fit each resulting wedge's
-# slope/aspect from just the DSM points inside it -- a much easier problem
-# than discovering the wedge boundary and its slope simultaneously. Falls
-# back to the pure-DSM segment_building() at several points whenever the
-# image doesn't yield a confident partition, rather than trusting a
-# possibly-wrong line: no interior lines found, a wedge's own points don't
-# fit a plane well (the "ridge line" was probably noise -- a shadow edge,
-# a roofing seam, not a real slope change), or the result doesn't cover
-# enough of the footprint to be worth preferring over the fallback.
-
-ROOFLINE_CANNY_LOW, ROOFLINE_CANNY_HIGH = 40, 120
-ROOFLINE_HOUGH_THRESHOLD = 25
-ROOFLINE_HOUGH_MIN_LINE_LENGTH_PX = 15  # ~1.5m at 0.1m/px
-ROOFLINE_HOUGH_MAX_LINE_GAP_PX = 8
-# A detected segment whose whole length sits this close to the building's
-# own outline is just re-finding the eave/edge, which we already have
-# precisely from the (0.1m, imagery-derived) building outline polygon --
-# only *interior* divisions add anything.
-ROOFLINE_BOUNDARY_EXCLUSION_M = 1.0
-ROOFLINE_MIN_INTERIOR_LENGTH_M = 2.0  # shorter than this, after clipping to the footprint, isn't a real dividing line
-ROOFLINE_CLUSTER_ANGLE_DEG = 8.0  # candidate segments this close in angle and...
-ROOFLINE_CLUSTER_DIST_M = 1.5  # ...this close in perpendicular offset are treated as the same real line, not two
-ROOFLINE_WEDGE_MIN_POINTS = 6
-ROOFLINE_WEDGE_MAX_RMS_RESIDUAL_M = 0.35  # if a wedge's best-fit plane doesn't explain its own points this well,
-# the line that created it probably wasn't a real ridge -- distrust the whole partition rather than one wedge,
-# since a wrong line usually means neighbouring wedges are wrong too (they share that boundary)
-ROOFLINE_MIN_COVERAGE_FRACTION = 0.5  # image-guided facets must explain at least this much of the footprint
-# NOT SAFE TO RAISE AS A FIX: found in testing that any threshold high enough to catch the real
-# failure mode this is meant to guard against (a bad partition silently dropping a whole legitimate
-# wing of a multi-section building, while still clearing 50%) also rejects the one repeatedly-
-# verified genuine improvement this whole feature produced (a shallow hip roof whose real facets
-# only explain ~51% of its footprint, because the rest is a separate lower structure the wedge
-# partition was never meant to cover). A single scalar coverage threshold can't tell "genuinely
-# incomplete but correct" apart from "wrongly dropped real area" -- that needs the partition to
-# reconcile against what it *didn't* explain, not just total up what it did. Left low and this
-# function is NOT wired into the live pipeline (see README) rather than shipping on an
-# unconvincing safety net.
-# to be preferred over falling back to the RANSAC result
-
-
-def _segment_angle_deg(seg):
-    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
-    return np.degrees(np.arctan2(y2 - y1, x2 - x1)) % 180
-
-
-def _perp_distance_to_line(point_xy, seg):
-    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
-    dx, dy = x2 - x1, y2 - y1
-    norm = np.hypot(dx, dy)
-    if norm < 1e-9:
-        return seg.distance(Point(point_xy))
-    px, py = point_xy
-    return abs(dx * (y1 - py) - dy * (x1 - px)) / norm
-
-
-def _detect_interior_roof_lines(imagery_ds, building_geom):
-    """Returns candidate interior ridge/hip LineStrings (world CRS) from
-    Canny + Hough on the 0.1m RGB imagery, excluding anything that's just
-    tracing the building's own outline."""
-    pad = 2
-    minx, miny, maxx, maxy = building_geom.bounds
-    try:
-        window = rasterio.windows.from_bounds(minx - pad, miny - pad, maxx + pad, maxy + pad, imagery_ds.transform)
-        arr = imagery_ds.read([1, 2, 3], window=window)
-    except Exception:
-        return []
-    if arr.size == 0 or arr.shape[1] < 5 or arr.shape[2] < 5:
-        return []
-    rgb = np.moveaxis(arr, 0, -1).astype(np.uint8)
-    wt = imagery_ds.window_transform(window)
-
-    building_mask = rasterize([(building_geom, 1)], out_shape=rgb.shape[:2], transform=wt).astype(np.uint8)
-    building_mask = cv2.dilate(building_mask, np.ones((5, 5), np.uint8))
-
-    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    edges = cv2.Canny(gray, ROOFLINE_CANNY_LOW, ROOFLINE_CANNY_HIGH)
-    edges[building_mask == 0] = 0
-
-    lines = cv2.HoughLinesP(
-        edges, rho=1, theta=np.pi / 180, threshold=ROOFLINE_HOUGH_THRESHOLD,
-        minLineLength=ROOFLINE_HOUGH_MIN_LINE_LENGTH_PX, maxLineGap=ROOFLINE_HOUGH_MAX_LINE_GAP_PX,
-    )
-    if lines is None:
-        return []
-
-    boundary = building_geom.exterior
-    candidates = []
-    for x1, y1, x2, y2 in lines.reshape(-1, 4):
-        wx1, wy1 = wt * (x1, y1)
-        wx2, wy2 = wt * (x2, y2)
-        seg = LineString([(wx1, wy1), (wx2, wy2)])
-        if seg.length < 1.0:
-            continue
-        if (boundary.distance(Point(wx1, wy1)) < ROOFLINE_BOUNDARY_EXCLUSION_M
-                and boundary.distance(Point(wx2, wy2)) < ROOFLINE_BOUNDARY_EXCLUSION_M):
-            continue
-        candidates.append(seg)
-    return candidates
-
-
-def _cluster_lines(candidates):
-    """Dedupe near-duplicate detections of the same real ridge (Hough
-    often returns several overlapping segments along one true line) --
-    keep the longest in each angle+offset cluster."""
-    accepted = []
-    for seg in sorted(candidates, key=lambda s: -s.length):
-        ang = _segment_angle_deg(seg)
-        mid = seg.interpolate(0.5, normalized=True)
-        if any(
-            min(abs(ang - a_ang), 180 - abs(ang - a_ang)) < ROOFLINE_CLUSTER_ANGLE_DEG
-            and _perp_distance_to_line((mid.x, mid.y), a_seg) < ROOFLINE_CLUSTER_DIST_M
-            for a_seg, a_ang in accepted
-        ):
-            continue
-        accepted.append((seg, ang))
-    return [s for s, _ in accepted]
-
-
-def _extend_and_clip(seg, building_geom):
-    """Hough segments usually stop short of the true ridge's full extent
-    (wherever contrast happened to drop) -- extend along the detected
-    direction far past the building, then clip back to its true span."""
-    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
-    dx, dy = x2 - x1, y2 - y1
-    norm = np.hypot(dx, dy)
-    if norm < 1e-9:
-        return None
-    ux, uy = dx / norm, dy / norm
-    cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-    bminx, bminy, bmaxx, bmaxy = building_geom.bounds
-    diag = np.hypot(bmaxx - bminx, bmaxy - bminy) + 1
-    extended = LineString([(cx - ux * diag, cy - uy * diag), (cx + ux * diag, cy + uy * diag)])
-    clipped = extended.intersection(building_geom.buffer(0.01))
-    if clipped.is_empty:
-        return None
-    if clipped.geom_type == "MultiLineString":
-        clipped = max(clipped.geoms, key=lambda l: l.length)
-    if clipped.geom_type != "LineString" or clipped.length < ROOFLINE_MIN_INTERIOR_LENGTH_M:
-        return None
-    return clipped
-
-
-def _partition_by_lines(building_geom, lines):
-    merged = unary_union([building_geom.exterior, *lines])
-    polys = [p for p in polygonize(merged) if building_geom.buffer(0.05).contains(p.representative_point())]
-    return polys
-
-
-def _fit_wedge_facet(wedge_poly, points, rows, cols, window_shape, window_transform,
-                      building_id, building_geom, min_facet_area_m2):
-    wedge_mask = rasterize([(wedge_poly, 1)], out_shape=window_shape, transform=window_transform).astype(bool)
-    in_wedge = wedge_mask[rows, cols]
-    wedge_points = points[in_wedge]
-    if len(wedge_points) < ROOFLINE_WEDGE_MIN_POINTS:
-        return None
-    plane = fit_plane_lstsq(wedge_points)
-    rms = np.sqrt(np.mean(plane_residuals(wedge_points, plane) ** 2))
-    if rms > ROOFLINE_WEDGE_MAX_RMS_RESIDUAL_M:
-        return None
-    a, b, c = plane
-    slope_deg, aspect_deg = slope_aspect_from_plane(a, b)
-    if slope_deg > config.MAX_ROOF_SLOPE_DEG:
-        return None
-    clipped = wedge_poly.intersection(building_geom)
-    if clipped.is_empty:
-        return None
-    if clipped.geom_type == "MultiPolygon":
-        clipped = max(clipped.geoms, key=lambda p: p.area)
-    elif clipped.geom_type != "Polygon":
-        return None
-    if clipped.area < min_facet_area_m2:
-        return None
-    return {
-        "building_id": building_id,
-        "plane_a": a, "plane_b": b, "plane_c": c,
-        "slope_deg": slope_deg,
-        "aspect_deg": aspect_deg,
-        "area_m2": clipped.area,
-        "point_count": int(in_wedge.sum()),
-        "geometry": clipped,
-    }
-
-
-ROOFLINE_WEDGE_MIN_AREA_M2 = 30.0  # a kept wedge must be at least this big -- the plain
-# MIN_FACET_AREA_M2 floor (3.0m2, sized only for "can a panel fit") is far too permissive here: a
-# small dormer/gable-end detail can legitimately pass every other check (a real slope difference,
-# a clean per-side fit) and still not be worth its own facet. Tried this as a *fraction* of the
-# building's footprint first (0.08) -- wrong shape for the problem: on a large multi-wing building,
-# 8% of the total footprint is bigger than most of that building's own legitimately-small real
-# facets (55 facets averaging ~52m2 each on one real building), rejecting genuine wings, not just
-# dormer noise. Dormer/gable-end artifacts are small in *absolute* terms regardless of the
-# building's overall size, so an absolute floor is the right shape of gate; this filters those out
-# without needing to solve the harder problem of classifying "real major ridge" vs "real minor
-# architectural detail" directly. Value chosen empirically: swept 15/20/30/40/60 against two
-# buildings with confirmed false-ridge regressions (a plain gable and a zigzag-edged roof, both
-# repeatedly fragmented by earlier, looser validation attempts) and four with confirmed real
-# improvements -- 30 is the largest floor that still stabilises both bad cases while keeping the
-# one real improvement (a shallow hip roof) that survives at every floor tested; the other three
-# "improvements" turned out to only exist below this floor too, meaning they very likely shared the
-# same over-fragmentation problem rather than being genuine wins -- losing them here is the correct
-# outcome, not a regression.
-
-ROOFLINE_VALIDATION_MIN_SLOPE_DIFF_DEG = 4.0
-ROOFLINE_VALIDATION_MIN_ASPECT_DIFF_DEG = 15.0
-ROOFLINE_VALIDATION_MIN_SIDE_POINTS = 10
-# How far from the candidate line a point can be and still count towards
-# testing it. First version of this check split the *whole* building by
-# each line and compared the two halves -- too coarse: on a building with
-# other real 3D features (dormers, a chimney, a neighbouring wing at a
-# different pitch), each "half" bundles all of that together, so the
-# comparison can show a large difference that has nothing to do with
-# whether *this specific line* sits on a real ridge. Restricting to a
-# narrow corridor tests only what actually changes right at the line.
-ROOFLINE_VALIDATION_CORRIDOR_M = 3.0
-
-
-def _line_side_mask(points_xy, seg):
-    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
-    dx, dy = x2 - x1, y2 - y1
-    cross = dx * (points_xy[:, 1] - y1) - dy * (points_xy[:, 0] - x1)
-    return cross > 0
-
-
-def _perp_distances_to_line(points_xy, seg):
-    (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
-    dx, dy = x2 - x1, y2 - y1
-    norm = np.hypot(dx, dy)
-    if norm < 1e-9:
-        return np.full(len(points_xy), np.inf)
-    return np.abs(dx * (y1 - points_xy[:, 1]) - dy * (x1 - points_xy[:, 0])) / norm
-
-
-def _line_is_real_ridge(seg, points):
-    """Reject a candidate line unless the DSM itself shows a real slope or
-    aspect difference between its two sides, tested using only points in a
-    narrow corridor either side of the line -- found in testing that a
-    plausible-looking image edge is often a shadow line or a fine roofing
-    seam, not an actual change in pitch, and letting those through
-    fragmented genuinely-uniform roofs into disconnected slivers (a plain
-    gable house dropped from 73 correctly-packed panels to 30 scattered
-    ones; `merge_similar_facets` was supposed to catch this after the fact
-    by re-merging near-identical adjacent wedges, but small malformed
-    wedges from a bad split have too few points for a stable fit, so their
-    slope/aspect estimates scatter enough to dodge that check). An earlier
-    version of this function compared the *whole* building split in two by
-    each line, which was too coarse -- see ROOFLINE_VALIDATION_CORRIDOR_M."""
-    perp = _perp_distances_to_line(points[:, :2], seg)
-    near = perp <= ROOFLINE_VALIDATION_CORRIDOR_M
-    side = _line_side_mask(points[:, :2], seg)
-    pts_a, pts_b = points[near & side], points[near & ~side]
-    if len(pts_a) < ROOFLINE_VALIDATION_MIN_SIDE_POINTS or len(pts_b) < ROOFLINE_VALIDATION_MIN_SIDE_POINTS:
-        return False  # can't confidently test this line -- don't trust what can't be verified
-    slope_a, aspect_a = slope_aspect_from_plane(*fit_plane_lstsq(pts_a)[:2])
-    slope_b, aspect_b = slope_aspect_from_plane(*fit_plane_lstsq(pts_b)[:2])
-    # A "line" whose corridor produces an implausibly steep side (found in
-    # testing: 60+ deg, well past any real roof pitch) isn't dividing two
-    # roof planes at all -- it's the base of a small dormer/gable-end
-    # feature, where the corridor sample on that side is mostly the
-    # feature's own near-vertical wall, not a second roof surface. That's
-    # a real slope difference (the check below would happily pass it) but
-    # not a useful *facet* division. MAX_ROOF_SLOPE_DEG is the pipeline's
-    # own existing definition of "not roof" elsewhere in this file.
-    if slope_a > config.MAX_ROOF_SLOPE_DEG or slope_b > config.MAX_ROOF_SLOPE_DEG:
-        return False
-    if slope_a < MERGE_LOW_SLOPE_DEG and slope_b < MERGE_LOW_SLOPE_DEG:
-        return False  # both sides near-flat -- aspect is noise here, and there's no slope difference either
-    return (abs(slope_a - slope_b) >= ROOFLINE_VALIDATION_MIN_SLOPE_DIFF_DEG
-            or _circular_diff(aspect_a, aspect_b) >= ROOFLINE_VALIDATION_MIN_ASPECT_DIFF_DEG)
-
-
-def segment_building_image_guided(dsm_ds, imagery_ds, building_geom, building_id,
-                                   ransac_distance_threshold=None, min_facet_area_m2=None):
-    """Image-guided segmentation with a safe fallback to the pure-DSM
-    segment_building() -- see the module comment above `_segment_angle_deg`
-    for the rationale. imagery_ds=None always uses the fallback (so
-    existing callers that don't have imagery open keep working unchanged)."""
-    min_facet_area_m2 = MIN_FACET_AREA_M2 if min_facet_area_m2 is None else min_facet_area_m2
-
-    def fallback():
-        return segment_building(dsm_ds, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
-
-    if imagery_ds is None:
-        return fallback()
-
-    try:
-        window_array, window_transform = rasterio_mask(
-            dsm_ds, [building_geom], crop=True, nodata=dsm_ds.nodata, filled=True
-        )
-    except ValueError:
-        return fallback()
-    window_array = window_array[0]
-    points, rows, cols = points_from_window(window_array, window_transform, dsm_ds.nodata)
-    if len(points) < RANSAC_MIN_INLIERS:
-        return fallback()
-
-    raw_lines = _detect_interior_roof_lines(imagery_ds, building_geom)
-    clustered = _cluster_lines(raw_lines)
-    clipped_lines = [l for l in (_extend_and_clip(s, building_geom) for s in clustered) if l is not None]
-    validated_lines = [l for l in clipped_lines if _line_is_real_ridge(l, points)]
-    if not validated_lines:
-        return fallback()
-
-    wedges = _partition_by_lines(building_geom, validated_lines)
-    if len(wedges) < 2:
-        return fallback()
-
-    # Keep wedges whose own points fit a clean plane; drop the rest rather
-    # than distrusting the whole partition on one bad wedge -- found in
-    # testing that when the image detects only some of a roof's true ridge
-    # lines (e.g. 3 of 4 on a hip roof, one lost to noise/low contrast),
-    # the resulting partition has a mix of clean single-face wedges (which
-    # fit beautifully) and a few malformed slivers straddling the missing
-    # ridge (which correctly fail the fit check) -- rejecting everything
-    # over those slivers would throw away the good wedges too.
-    facets = [
-        f for f in (
-            _fit_wedge_facet(wedge, points, rows, cols, window_array.shape, window_transform,
-                              building_id, building_geom,
-                              max(min_facet_area_m2, ROOFLINE_WEDGE_MIN_AREA_M2))
-            for wedge in wedges
-        ) if f is not None
-    ]
-
-    if sum(f["area_m2"] for f in facets) < ROOFLINE_MIN_COVERAGE_FRACTION * building_geom.area:
-        return fallback()
-
-    return merge_similar_facets(facets)
+# Canny + Hough ridge lines from the 0.1 m imagery, the footprint partitioned
+# along them and each wedge fitted from the DSM, lived here unwired until
+# 24 Sep 2026 (segment_building_image_guided). It found real ridges, but
+# shadows and roofing seams make identical edges and no validation separated
+# the two reliably enough to ship. Code and measurements: git history,
+# commit b5c6648.
 
 
 # --- Point-native segmentation -----------------------------------------
@@ -880,194 +514,13 @@ POINTCLOUD_CLUSTER_RADIUS_M = 1.5  # two points this close (or connected via a c
 # gaps) count as the same physical patch of roof -- replaces the raster-grid adjacency
 # ndimage.label used to provide, needed here since there's no grid at all to be adjacent on.
 
-
-# --- Compromise-facet splitting via local surface normals ------------------
+# --- Tried and removed: compromise-facet splitting via local normals -------
 #
-# RANSAC_DISTANCE_THRESHOLD_M's own comment documents the residual failure
-# mode this targets: on a shallow multi-face roof, a plane correctly seeded
-# from one real face can still have its *inlier acceptance* (a global
-# residual test against every remaining point, with no idea which face a
-# point is actually on) reach across a real ridge and absorb points from an
-# adjacent, differently-facing plane -- because near the ridge, both faces'
-# true heights sit within the necessarily-loose vertical tolerance of a
-# single "compromise" plane. Two earlier fixes for this were tried and
-# reverted: a globally tighter/slope-proportional threshold measurably
-# fixed the reported case but caused real regressions elsewhere (one
-# building dropped from 978 to 719 panels) -- reverted rather than ship a
-# net-negative trade. Image-based ridge detection (segment_building_image_
-# guided, above) found real ridges from RGB Canny/Hough edges, but shadows
-# and roofing seams produce visually identical false edges, and repeated
-# validation attempts couldn't separate the two reliably enough to ship.
-#
-# This instead asks the *point cloud itself*, not one global fit or an
-# image, whether a facet's own points actually support a single plane:
-# fit each point its own small local plane from just its nearest few
-# neighbours, and look for a spatially coherent boundary between two
-# neighbourhoods of differing local slope/aspect -- a real ridge is exactly
-# that kind of boundary; a shadow or seam has no reason to line up with one
-# in the 3D geometry, since it's a lighting/material artifact, not a slope
-# change. This can still blur right at the ridge itself (a point's local
-# neighbourhood there straddles both faces), but confirming a split needs a
-# spatially *significant* cluster on each side, not a clean classification
-# of every single point, so a thin blurred seam along the ridge doesn't
-# defeat it as long as each face's bulk is far enough from the ridge to
-# read cleanly (checked directly: true on every reported failing case).
-
-LOCAL_NORMAL_K = 10  # neighbours for one point's local plane fit
-LOCAL_NORMAL_RADIUS_M = 2.0  # cap on how far a "local" neighbour can be -- kept close to
-# POINTCLOUD_CLUSTER_RADIUS_M/RANSAC_SAMPLE_RADIUS_M's own precedent for "still the same patch of
-# roof"; wider would blur the very ridge this is trying to detect, narrower risks too few points
-# per estimate on sparser parts of the point cloud
-LOCAL_NORMAL_MIN_NEIGHBOURS = 5  # fewer than this and a local plane fit is just noise
-SPLIT_MIN_POINTS = 20  # a facet needs enough points to support two independently-confident
-# sub-planes, not just one -- below this, not worth the analysis
-SPLIT_MIN_AREA_M2 = 15.0  # below this a facet can't plausibly hide a second real face of any
-# useful size (each side would need to individually clear MIN_FACET_AREA_M2 downstream anyway)
-SPLIT_CONNECT_RADIUS_M = LOCAL_NORMAL_RADIUS_M  # two points can only join the same sub-cluster
-# if they were also close enough to plausibly share a local normal estimate in the first place
-SPLIT_LOCAL_SLOPE_DIFF_DEG = 6.0
-SPLIT_LOCAL_ASPECT_DIFF_DEG = 25.0
-SPLIT_MIN_SUBCLUSTER_POINTS = RANSAC_MIN_INLIERS
-SPLIT_MIN_SUBCLUSTER_AREA_M2 = 20.0  # a point-count floor alone lets a real but spatially-tiny
-# texture artifact (a corrugated/ribbed roofing material's own alternating micro-facets, confirmed
-# directly: a densely-sampled patch can pack dozens of points into under a square metre) through as
-# "significant" -- an area floor this size is well above any single corrugation rib's own footprint
-# but still well under a real minor roof wing, so it screens out texture noise without needing to
-# tell texture and structure apart by any other means
-
-
-def _local_normals(points):
-    """Per-point local (slope_deg, aspect_deg) from a small least-squares
-    plane fit over each point's own nearest neighbours. Physically grounded
-    alternative to image-based ridge detection: local surface normals come
-    straight from the 3D geometry, so they can't be fooled by a shadow edge
-    or roofing seam the way Canny-on-RGB was (see the module comment
-    above). Returns (slope_deg[N], aspect_deg[N]); a point with too few
-    nearby neighbours gets NaN in both -- not enough local support to trust
-    a normal there, rather than guessing from a diluted/distant sample."""
-    n = len(points)
-    slopes = np.full(n, np.nan)
-    aspects = np.full(n, np.nan)
-    if n < LOCAL_NORMAL_MIN_NEIGHBOURS + 1:
-        return slopes, aspects
-    tree = cKDTree(points[:, :2])
-    k = min(LOCAL_NORMAL_K + 1, n)  # +1: a point's own nearest neighbour is itself, at distance 0
-    dists, idxs = tree.query(points[:, :2], k=k)
-    for i in range(n):
-        row_dists, row_idx = np.atleast_1d(dists[i]), np.atleast_1d(idxs[i])
-        mask = (row_dists <= LOCAL_NORMAL_RADIUS_M) & (row_idx != i)
-        neighbor_idx = row_idx[mask]
-        if len(neighbor_idx) < LOCAL_NORMAL_MIN_NEIGHBOURS:
-            continue
-        try:
-            a, b, _ = fit_plane_lstsq(points[neighbor_idx])
-        except np.linalg.LinAlgError:
-            continue
-        slopes[i], aspects[i] = slope_aspect_from_plane(a, b)
-    return slopes, aspects
-
-
-def _maybe_split_compromise_facet(comp_points, parent_plane):
-    """Given one spatially-connected component of a RANSAC plane's inlier
-    points (plus that plane's own (a,b,c)), check whether it's actually two
-    or more real roof faces wrongly merged into one compromise plane (see
-    the module comment above). Returns a list of (points_subset, plane)
-    pairs: the single input unchanged if no confident split is found, or
-    2+ freshly-refit groups otherwise.
-
-    Splits are only kept if the resulting groups' *global* refit slope/
-    aspect differ by more than merge_similar_facets' own thresholds would
-    still merge back together later in the same pipeline run -- using the
-    identical thresholds both directions on purpose, so a split can never
-    produce two facets the very next step would just undo, which would
-    otherwise waste the work and make the final boundary depend on
-    incidental split/merge ordering instead of a real, confirmed
-    difference."""
-    if len(comp_points) < SPLIT_MIN_POINTS:
-        return [(comp_points, parent_plane)]
-    if MultiPoint(comp_points[:, :2]).convex_hull.area < SPLIT_MIN_AREA_M2:
-        return [(comp_points, parent_plane)]
-
-    local_slope, local_aspect = _local_normals(comp_points)
-    valid_idx = np.where(~np.isnan(local_slope))[0]
-    if len(valid_idx) < SPLIT_MIN_POINTS:
-        return [(comp_points, parent_plane)]
-
-    vpts = comp_points[valid_idx]
-    vslope = local_slope[valid_idx]
-    vaspect = local_aspect[valid_idx]
-
-    tree = cKDTree(vpts[:, :2])
-    pairs = tree.query_pairs(SPLIT_CONNECT_RADIUS_M, output_type="ndarray")
-    if len(pairs) == 0:
-        return [(comp_points, parent_plane)]
-
-    both_flat = (vslope[pairs[:, 0]] < MERGE_LOW_SLOPE_DEG) & (vslope[pairs[:, 1]] < MERGE_LOW_SLOPE_DEG)
-    slope_close = np.abs(vslope[pairs[:, 0]] - vslope[pairs[:, 1]]) <= SPLIT_LOCAL_SLOPE_DIFF_DEG
-    araw = np.abs(vaspect[pairs[:, 0]] - vaspect[pairs[:, 1]]) % 360
-    aspect_diff = np.minimum(araw, 360 - araw)
-    aspect_close = both_flat | (aspect_diff <= SPLIT_LOCAL_ASPECT_DIFF_DEG)
-    pairs = pairs[slope_close & aspect_close]
-
-    n = len(vpts)
-    if len(pairs) == 0:
-        sub_components = [np.array([i]) for i in range(n)]
-    else:
-        row = np.concatenate([pairs[:, 0], pairs[:, 1]])
-        col = np.concatenate([pairs[:, 1], pairs[:, 0]])
-        graph = coo_matrix((np.ones(len(row)), (row, col)), shape=(n, n))
-        n_comp, labels = sparse_connected_components(graph, directed=False)
-        sub_components = [np.where(labels == i)[0] for i in range(n_comp)]
-
-    def _sub_area(c):
-        if len(c) < 3:
-            return 0.0
-        hull = MultiPoint(vpts[c, :2]).convex_hull
-        return hull.area if hull.geom_type == "Polygon" else 0.0
-
-    significant = [c for c in sub_components
-                   if len(c) >= SPLIT_MIN_SUBCLUSTER_POINTS and _sub_area(c) >= SPLIT_MIN_SUBCLUSTER_AREA_M2]
-    if len(significant) < 2:
-        return [(comp_points, parent_plane)]
-
-    # Map back to indices into comp_points, then fold any leftover points
-    # (too-small a cluster, or normal estimation failed) into whichever
-    # kept cluster is spatially nearest -- dropping them instead would
-    # silently shrink the split facets' own claimed area versus the
-    # original unsplit one.
-    sub_groups_local = [valid_idx[c] for c in significant]
-    assigned = np.full(len(comp_points), -1)
-    for gi, idxs in enumerate(sub_groups_local):
-        assigned[idxs] = gi
-    unassigned = np.where(assigned == -1)[0]
-    if len(unassigned):
-        centroids = np.array([comp_points[idxs, :2].mean(axis=0) for idxs in sub_groups_local])
-        for i in unassigned:
-            d = np.linalg.norm(centroids - comp_points[i, :2], axis=1)
-            assigned[i] = int(np.argmin(d))
-
-    candidate_groups = [comp_points[assigned == gi] for gi in range(len(sub_groups_local))]
-
-    refit_planes = []
-    for g in candidate_groups:
-        try:
-            refit_planes.append(fit_plane_lstsq(g))
-        except np.linalg.LinAlgError:
-            return [(comp_points, parent_plane)]
-
-    def _distinct(pi, pj):
-        si, ai = slope_aspect_from_plane(pi[0], pi[1])
-        sj, aj = slope_aspect_from_plane(pj[0], pj[1])
-        slope_close = abs(si - sj) <= MERGE_SLOPE_DIFF_DEG
-        both_flat = si < MERGE_LOW_SLOPE_DEG and sj < MERGE_LOW_SLOPE_DEG
-        aspect_close = both_flat or _circular_diff(ai, aj) <= MERGE_ASPECT_DIFF_DEG
-        return not (slope_close and aspect_close)
-
-    if not any(_distinct(refit_planes[i], refit_planes[j])
-               for i in range(len(refit_planes)) for j in range(i + 1, len(refit_planes))):
-        return [(comp_points, parent_plane)]
-
-    return list(zip(candidate_groups, refit_planes))
+# A splitter that fitted each point its own local plane and split a facet
+# where two coherent neighbourhoods disagreed in slope/aspect lived here,
+# unwired, until 24 Sep 2026. It and its measurements are in git history
+# (commit b5c6648, _maybe_split_compromise_facet); the approach that ships is
+# the one described at segment_points below.
 
 
 def _cluster_points_spatially(points_xy, radius):
@@ -1175,22 +628,6 @@ def segment_points(points, building_geom, building_id, ransac_distance_threshold
 
     facets = _dedupe_overlaps(facets, min_facet_area_m2)
     return merge_similar_facets(facets)
-
-
-def segment_building_points_native(dsm_ds, building_geom, building_id,
-                                    ransac_distance_threshold=None, min_facet_area_m2=None):
-    """segment_points, sourced from the DSM (same points_from_window
-    extraction segment_building uses) -- lets the point-native path be
-    validated against the existing DSM-based pipeline on equal terms
-    before pointing it at denser point-cloud data."""
-    try:
-        window_array, window_transform = rasterio_mask(
-            dsm_ds, [building_geom], crop=True, nodata=dsm_ds.nodata, filled=True
-        )
-    except ValueError:
-        return []
-    points, _, _ = points_from_window(window_array[0], window_transform, dsm_ds.nodata)
-    return segment_points(points, building_geom, building_id, ransac_distance_threshold, min_facet_area_m2)
 
 
 def segment_building_from_pointcloud_native(pc_source, building_geom, building_id, pad_m=2.0,
@@ -1939,8 +1376,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     # A roof that size is beyond tidy-partition aesthetics anyway.
     import os as _osc
     _skip_polish = _osc.environ.get("SOLAR_SKIP_FACET_POLISH", "0") == "1"
-    if _skip_polish:
-        machine = machine  # pre-coherence behaviour for pathological giants
+    # _skip_polish keeps the pre-coherence behaviour for pathological giants
     if len(machine) >= 2 and len(machine) <= 120 and not _skip_polish:
         from shapely.ops import unary_union as _uu
         machine.sort(key=lambda f: -f["geometry"].area)
@@ -1961,8 +1397,6 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                 continue
             # thinness: a remainder whose area is far below what its
             # perimeter could enclose is a corridor, not a face
-            if g.area < 0.09 * g.exterior.length ** 2 / 16.0:
-                pass  # square-ish enough
             if g.length > 1.0 and g.area / max(g.length, 1e-9) < 0.55:
                 continue
             f = dict(f, geometry=g, area_m2=float(g.area))
@@ -2021,7 +1455,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                             try:
                                 up = _facet_points(pc_source, u)
                                 if len(up) >= 30:
-                                    upl = fit_plane_lstsq_centered(up)
+                                    upl = fit_plane_lstsq(up)
                                     res = up[:, 2] - (upl[0] * up[:, 0]
                                                       + upl[1] * up[:, 1]
                                                       + upl[2])
@@ -2379,7 +1813,6 @@ def line_agreement(facets, segs):
     """Fraction of detected roof lines that lie along some facet edge."""
     if not facets or not segs:
         return None
-    from shapely.geometry import LineString
     from shapely.ops import unary_union
     try:
         edges = unary_union([f["geometry"].exterior for f in facets
@@ -2409,7 +1842,6 @@ LINES_LEAD_KEEP = __import__('os').environ.get('SOLAR_LINES_LEAD', '0') == '1'
 # How far behind the partition (points-explained) the skeleton reconstruction
 # may fall and still win on being constructible geometry. See _partition_facets.
 SKELETON_TIE_MARGIN = 0.05
-
 
 
 def _refit_planes(faces, pts, min_gain=0.15):
@@ -3330,7 +2762,7 @@ def segment_points_regiongrow(points, building_geom, building_id, min_facet_area
         # Final refit on the region's full membership (leftover pass may have
         # added ridge/edge points since the last incremental refit).
         try:
-            a, b, c = fit_plane_lstsq_centered(member_points)
+            a, b, c = fit_plane_lstsq(member_points)
         except np.linalg.LinAlgError:
             a, b, c = plane
         slope_deg, aspect_deg = slope_aspect_from_plane(a, b)

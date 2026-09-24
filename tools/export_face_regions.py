@@ -62,7 +62,6 @@ import numpy as np
 import rasterio
 import rasterio.windows
 import geopandas as gpd
-import shapely
 from PIL import Image, ImageDraw
 from scipy.ndimage import binary_erosion, gaussian_filter
 from scipy.spatial import cKDTree

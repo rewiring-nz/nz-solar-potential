@@ -128,7 +128,6 @@ def learned_faces(geom, img_ds, pts):
     """Face polygons in NZTM, read from the model. [] if unavailable."""
     from scipy import ndimage
     from shapely.geometry import Polygon
-    from shapely.ops import unary_union
     try:
         from skimage.segmentation import watershed
     except Exception:

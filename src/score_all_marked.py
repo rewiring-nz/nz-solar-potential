@@ -9,7 +9,7 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np, geopandas as gpd, rasterio, shapely
-from shapely.geometry import Polygon, box, Point
+from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 from src.region_build import area_paths
 from src.pointcloud_source import PointCloudSource

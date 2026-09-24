@@ -40,7 +40,7 @@ Map of this module (grep the function name, line numbers rot):
      precomputed SAM/line/LiDAR winner behind SOLAR_SELECTED_FACES=1,
      one-plane gate + RESIDUAL FILL so coverage is guaranteed),
      line_facets (vision-line polygonisation), partition_roof (old path)
-  4. Footprint hygiene: roof_outline, trim_to_roof (courtyards, decks)
+  4. Footprint hygiene: trim_to_roof (courtyards, decks)
 
 The precedence contract and per-rule history live in
 docs/developers/reviewers-guide.md.
@@ -329,7 +329,6 @@ def _score(poly, pts):
     return plane, _inlier_fraction(sub, plane)
 
 
-
 # A fold is not "many points off the plane" -- that test does not work, and the
 # numbers say so plainly. Measured on two roofs with opposite verdicts:
 #
@@ -405,7 +404,6 @@ def _fold_evidence(poly, pts, plane):
             continue
         return True
     return False
-
 
 
 # Where the ridge drops, the roof changes section, and that is a cut whether or
@@ -1154,9 +1152,8 @@ FLAT_ROOF_MAX_SLOPE_DEG = 5.0   # below this there is no fold to cut on
 DRAWN_MAX_SLOPE_DEG = 85.0    # a drawn face is roof unless it is a wall
 DRAWN_COVER_MIN = 0.50
 
-# A drawn face at or above this share of the outline, when other faces exist
-# alongside it, is the arrangement's enclosing face rather than a roof plane.
-OUTER_FACE_FRAC = 0.90        # kept: still referenced by the older skeleton path
+# A drawn face that, alongside other faces, spills past the outline or
+# encloses the rest is the arrangement's enclosing face, not a roof plane.
 OUTER_FACE_OVERSPILL = 1.02   # a face bigger than the building cannot be one of its planes
 OUTER_FACE_CONTAINS = 0.90    # ...nor can one that swallows every other face
 
@@ -1166,7 +1163,6 @@ OUTER_FACE_CONTAINS = 0.90    # ...nor can one that swallows every other face
 # case -- people stop drawing where the crease visually stops, not at the
 # boundary. 2.5 m (label_geometry's default) leaves most faces unclosed.
 LINE_SEAL_M = 6.0
-
 
 
 def _seal_network(segs, boundary, max_ext=None):
@@ -1250,8 +1246,6 @@ def _seal_network(segs, boundary, max_ext=None):
             nearest = min(cands, key=lambda c: Point(p).distance(c))
             out.append([p, (nearest.x, nearest.y)])
     return out
-
-
 
 
 # ------------------------------------------------- selected faces (imagery)
@@ -1753,7 +1747,7 @@ def facets_from_drawn_faces(building_id, footprint, pts):
     # the guard passes, and the building ships 31 tiny facets and 18 panels.
     # WHAT MAKES A FACE THE ARRANGEMENT'S OUTER FACE, rather than simply large.
     #
-    # The first version dropped any face covering >= OUTER_FACE_FRAC of the
+    # The first version dropped any face covering >= 90% (the old OUTER_FACE_FRAC) of the
     # footprint. That is true of the artefact and also of a roof drawn as
     # ONE plane, and the `len(faces) >= 2` guard did not save those: a roof
     # marked as one plane plus one small "no panels here" patch has two faces,
@@ -2009,7 +2003,7 @@ def line_facets(building_id, footprint, pts, segs):
     from shapely.ops import polygonize
 
     try:
-        from src.label_geometry import snap_endpoints, extend_dangling
+        from src.label_geometry import snap_endpoints
     except Exception:
         return []
     if not segs:
@@ -2078,33 +2072,6 @@ def line_facets(building_id, footprint, pts, segs):
             "from_lines": True,
         })
     return out
-
-
-def roof_line_segments(building_id, min_score=0.60):
-    """The best available roof-line segments for a building, in NZTM.
-
-    Drawn lines where a roof has been marked, the model's predictions
-    otherwise. Drawn lines supersede rather than merge: on a marked roof, a
-    prediction about the same roof is a worse description of it, and mixing
-    the two re-fragments the markup.
-
-    The model path is the one that matters at district scale -- 114 roofs are
-    labelled and ~15,000 are not.
-    """
-    try:
-        from src.roof_line_source import drawn_segments, model_lines
-    except Exception:
-        return [], "none"
-    drawn = drawn_segments(building_id)
-    if drawn:
-        return drawn, "drawn"
-    raw = model_lines(building_id, None) or []
-    segs = []
-    for t in raw:
-        # footprint=None yields (None, None, length, score, [x1,y1,x2,y2])
-        if len(t) == 5 and t[3] >= min_score:
-            segs.append(list(t[4]))
-    return segs, ("model" if segs else "none")
 
 
 def partition_by_planes(building_id, footprint, pts, seed=0, planes=None):
@@ -2214,7 +2181,9 @@ def partition_by_planes(building_id, footprint, pts, seed=0, planes=None):
 # Wakatipu by 81%, when the drawn roof outline is nearer 10% larger than the
 # footprint. Held to a typical eave, and needing the ring to be almost entirely
 # roof-height before it is accepted.
-# OFF pending better work -- see roof_outline. The FINDING is solid and matters:
+# OFF pending better work. (The per-edge attempt, roof_outline, and the
+# post-partition _extend_to_eave were removed on 24 Sep 2026; git history
+# has both.) The FINDING is solid and matters:
 # 6.6% to 18.8% of roof-height points fall outside the LINZ footprint, by up to
 # 2 m, so roof area is understated everywhere and every perimeter face is wrong
 # at its edge. But a uniform buffer is the wrong instrument. The true roof
@@ -2222,7 +2191,7 @@ def partition_by_planes(building_id, footprint, pts, seed=0, planes=None):
 # overhangs on one side and sits INSIDE it on another -- and growing uniformly
 # took that roof to 16 faces against its real 8. This needs per-edge treatment:
 # decide independently for each footprint edge how far the roof runs past it.
-# The eave is added AFTER partitioning, never before -- see _extend_to_eave.
+# The eave, if it comes back, is added AFTER partitioning, never before.
 # Partitioning a grown outline was tried and is wrong -- 6.6% to 18.8% of roof-height points
 # fall outside the LINZ footprint by up to 2 m, so roof area is understated
 # everywhere -- and per-edge measurement matches the drawn outlines exactly
@@ -2232,78 +2201,8 @@ def partition_by_planes(building_id, footprint, pts, seed=0, planes=None):
 # 10 -> 17 faces against its real 8 and 29 Edinburgh 4 -> 7 against 5, because
 # the eave strips are then sliced by the same lines into slivers. Fixing this
 # which is why the ring is now merged into the faces that already exist instead.
-EAVE_MAX_M = 2.0
 EAVE_MIN_EDGE_M = 1.5            # shorter edges are corner chamfers, not roof sides
-EAVE_MIN_BAND_POINTS = 3         # roof points needed in a strip to keep walking out
 EAVE_HEIGHT_SLACK_M = 0.4        # how far outside the roof's own height range still counts
-EAVE_CORNER_CLOSE_M = 0.3
-EAVE_STEP_M = 0.25
-EAVE_MIN_POINT_SHARE = 0.85
-
-
-def roof_outline(footprint, pts):
-    """Footprint pushed out to the real roof edge, ONE EDGE AT A TIME.
-
-    A uniform buffer cannot represent this and was tried first: drawn roof
-    outlines run past the footprint on some sides and sit inside it on
-    others, and growing evenly took 7 Anderson Heights to 16 faces against
-    its real 8, and 2/8 Wakatipu Heights up 33% in area. Measured per edge,
-    Anderson runs 1.25 m past one long edge and 0.0 past the opposite one, and
-    2.0 m past one end -- there is no single number.
-
-    Each edge is walked outward in short steps for as long as roof-height points
-    keep appearing, then the strip it gained is unioned on. Every edge stays a
-    straight line, so this cannot reintroduce the traced-boundary fuzz the whole
-    module exists to avoid."""
-    if len(pts) < MIN_POINTS or footprint.is_empty:
-        return footprint
-    inside = _points_in(footprint, pts)
-    if len(inside) < MIN_POINTS:
-        return footprint
-    lo, hi = np.percentile(inside[:, 2], [5, 95])
-    lo -= EAVE_HEIGHT_SLACK_M
-    hi += EAVE_HEIGHT_SLACK_M
-    at_roof = (pts[:, 2] >= lo) & (pts[:, 2] <= hi)
-    if at_roof.sum() < MIN_POINTS:
-        return footprint
-
-    coords = np.asarray(footprint.exterior.coords)
-    strips = []
-    for i in range(len(coords) - 1):
-        a, b = coords[i], coords[i + 1]
-        seg = b - a
-        length = float(np.hypot(*seg))
-        if length < EAVE_MIN_EDGE_M:
-            continue
-        d = seg / length
-        n = np.array([d[1], -d[0]])
-        if footprint.contains(Point(*((a + b) / 2 + n * 0.3))):
-            n = -n                      # make sure it points outward
-        reach = 0.0
-        for step in np.arange(EAVE_STEP_M, EAVE_MAX_M + 1e-9, EAVE_STEP_M):
-            band = Polygon([a + n * (step - EAVE_STEP_M), b + n * (step - EAVE_STEP_M),
-                            b + n * step, a + n * step])
-            if band.is_empty or not band.is_valid:
-                break
-            m = at_roof & shapely.contains_xy(band, pts[:, 0], pts[:, 1])
-            if int(m.sum()) < EAVE_MIN_BAND_POINTS:
-                break
-            reach = float(step)
-        if reach > 0:
-            strips.append(Polygon([a, b, b + n * reach, a + n * reach]))
-
-    if not strips:
-        return footprint
-    grown = unary_union([footprint] + strips)
-    if grown.geom_type == "MultiPolygon":
-        grown = max(grown.geoms, key=lambda q: q.area)
-    if grown.geom_type != "Polygon":
-        return footprint
-    # close the small notches left at corners where two strips meet
-    grown = grown.buffer(EAVE_CORNER_CLOSE_M).buffer(-EAVE_CORNER_CLOSE_M)
-    if grown.geom_type != "Polygon" or grown.is_empty:
-        return footprint
-    return Polygon(grown.exterior).simplify(0.05)
 
 
 # A strong imagery line is only cut if the roof actually CHANGES there.
@@ -2326,7 +2225,6 @@ def roof_outline(footprint, pts):
 LINE_MIN_TURN_DEG = 8.0       # plane orientation must change by this across the line
 LINE_MIN_STEP_M = 0.20        # ...or the two sides sit at different heights
 LINE_MIN_SIDE_POINTS = 30
-
 
 
 # How much of the chord a cut would make across a cell must actually be covered
@@ -2481,57 +2379,6 @@ def trim_to_roof(footprint, pts):
             or trimmed.area < 0.5 * footprint.area):
         return footprint                 # never lose half a building to this
     return Polygon(trimmed.exterior).simplify(0.05)
-
-
-def _extend_to_eave(faces, footprint, pts):
-    """Give each finished face the strip of roof that overhangs beside it.
-
-    The eave is real -- 6.6% to 18.8% of roof-height points fall outside the
-    LINZ footprint, by up to 2 m -- but partitioning a grown outline is the
-    wrong way to capture it. The imagery lines then slice the new strips into
-    slivers and the face count balloons: 7 Anderson Heights went 10 -> 17
-    against its real 8, 29 Edinburgh 4 -> 7 against 5.
-
-    Adding it here instead cannot create a face. The ring between footprint and
-    roof edge is cut up and each piece joins whichever finished face it already
-    touches, so the count is exactly what the partition decided and the roof
-    simply reaches its true edge."""
-    if not faces:
-        return faces
-    outline = roof_outline(footprint, pts)
-    ring = outline.difference(footprint)
-    if ring.is_empty or ring.area < 0.5:
-        return faces
-    pieces = list(ring.geoms) if ring.geom_type == "MultiPolygon" else [ring]
-    out = [(g, pl) for g, pl in faces]
-    for piece in pieces:
-        if piece.is_empty or piece.area < 0.05:
-            continue
-        # Which face this strip belongs to is decided by the strip's own points,
-        # not by which face happens to touch it most. Shared boundary alone
-        # attaches an overhang to whatever is beside it even when the roof there
-        # lies on a different plane: on 7 Anderson Heights that grew the upper
-        # slope from 64.6 m2 at 86.8% on-plane to 98 m2 at 78%, by gluing a strip
-        # of the hip onto it. Among the faces this strip actually touches, take
-        # the one whose plane the strip's own returns sit closest to.
-        touching = [k for k, (g, _pl) in enumerate(out)
-                    if g.buffer(0.05).intersection(piece).area > 0]
-        if not touching:
-            nearest = min(range(len(out)), key=lambda k: out[k][0].distance(piece))
-            touching = [nearest]
-        strip_pts = _points_in(piece, pts)
-        if len(strip_pts) >= 4:
-            best = max(touching, key=lambda k: _inlier_fraction(strip_pts, out[k][1]))
-        else:
-            best = max(touching,
-                       key=lambda k: out[k][0].buffer(0.05).intersection(piece).area)
-        g, pl = out[best]
-        merged = unary_union([g, piece])
-        if merged.geom_type != "Polygon":
-            continue
-        out[best] = (Polygon(merged.exterior, [r for r in merged.interiors]), pl)
-    return out
-
 
 
 # A recessed section -- a length of roof sitting BELOW the surface around it --
@@ -2939,7 +2786,7 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # model. It was also placing panels on air --
     # 45 Camp St showed panels overlapping the edge 'floating with nothing
     # underneath them', because a face grown past the footprint carries its
-    # panel grid with it. _extend_to_eave is kept for reference but not called.
+    # panel grid with it. (_extend_to_eave, removed 24 Sep 2026, is in git history.)
 
     out = []
     for poly, plane in faces:

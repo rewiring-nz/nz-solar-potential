@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.preflight import preflight
-from src.region_build import all_areas, area_paths, areas_from_argv, write_json_atomic
+from src.region_build import area_paths, areas_from_argv, write_json_atomic
 
 
 def patch_area(name):

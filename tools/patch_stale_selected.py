@@ -1,6 +1,6 @@
 """Rebuild every building the layouts were not built from.
 
-RESUME-SAFE BY CONSTRUCTION, which redo_aspect_fast is not: that driver
+RESUME-SAFE BY CONSTRUCTION, which redo_aspect_fast (deleted) was not: that driver
 fingerprints each building, predicts, and patches whatever changed. Restart
 it after a preemption and the already-predicted buildings fingerprint as
 UNCHANGED -- they were changed by the run that died -- so they are silently

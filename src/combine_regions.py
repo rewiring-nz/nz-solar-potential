@@ -33,7 +33,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.region_build import DATA_DIR, write_json_atomic
+from src.region_build import DATA_DIR
 from src.build_building_tiles import tile_bounds, CELL_BANDS, COVERAGE_STEPS
 from src.building_types import BTYPES
 

@@ -39,7 +39,6 @@ COL = {"ridge": (31, 255, 122), "valley": (53, 182, 255), "cliff": (255, 59, 48)
 
 def render(rgb, lines, bounds, outline):
     """One panel: the crop with lines over it, world coords -> pixels."""
-    import numpy as np
     from PIL import Image, ImageDraw
     h, w = rgb.shape[:2]
     im = Image.fromarray(rgb.astype("uint8")).resize((w * SCALE, h * SCALE),
@@ -86,7 +85,7 @@ def main():
     import train_line_model as T
     from predict_roof_lines import segments_from_mask
     from src.line_extract import (extract, clip_to, _line_mean, _bilinear,
-                                  _junction_cleanup, _colinear_merge, _refine)
+                                  _junction_cleanup)
 
     # THE ARCHETYPE PANEL. A clean hip roof the detector fumbled showed the
     # process was wrong for clear shapes -- and the residual small errors ("these small
@@ -332,7 +331,7 @@ def main():
             cliff_cands = []
             pts_top = None
             try:
-                from src.roof_partition import top_surface, _points_in
+                from src.roof_partition import top_surface
                 pts_all = ctx["pc"].points_in_bbox(minx - 1, miny - 1,
                                                    maxx + 1, maxy + 1,
                                                    building_only=True)
@@ -345,7 +344,6 @@ def main():
                     # cliff line was exactly a step the imagery barely
                     # shows. The geometry is already known: where the outline
                     # steps, the part cut runs along the break.
-                    from shapely.ops import unary_union
                     parts = _rect_parts(geom)
                     for i2 in range(len(parts)):
                         for j2 in range(i2 + 1, len(parts)):

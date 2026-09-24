@@ -45,7 +45,6 @@ Usage:
 
 import argparse
 import json
-import math
 import sys
 import time
 import urllib.parse
@@ -118,7 +117,7 @@ def main():
     ap.add_argument("--refresh", action="store_true")
     a = ap.parse_args()
 
-    from src.region_build import area_centroid_wgs84, all_areas
+    from src.region_build import area_centroid_wgs84
     site_names = a.sites or [n for n in (["pilot"] + list(config.REGIONS))][:1] or ["pilot"]
 
     pv = config.PV_ASSUMPTIONS

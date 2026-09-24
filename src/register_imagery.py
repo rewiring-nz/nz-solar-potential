@@ -35,7 +35,6 @@ Writes data/regions/<r>/image_shift.json: {building_id: [dx_east_m, dy_north_m, 
 Usage: python src/register_imagery.py <region>
 """
 
-import json
 import sys
 import time
 from pathlib import Path

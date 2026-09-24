@@ -8,7 +8,6 @@ Patches with --skip-tiles per region; rebuild tiles once afterwards.
     .venv/bin/python tools/patch_labelled.py --patch
 """
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -28,7 +27,6 @@ def main():
     ap.add_argument("--patch", action="store_true")
     ap.add_argument("--regions", nargs="*", default=None)
     a = ap.parse_args()
-    import config
     import geopandas as gpd
     from src.region_build import area_paths
     from src.roof_line_source import _labels, VOID_FLAGS
