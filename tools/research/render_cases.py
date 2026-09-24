@@ -7,7 +7,7 @@ costs a glance rather than a navigation.
 import json, sys, warnings
 warnings.filterwarnings("ignore")
 from pathlib import Path
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 import numpy as np, rasterio, rasterio.windows, geopandas as gpd, pyproj
 from PIL import Image, ImageDraw, ImageFont

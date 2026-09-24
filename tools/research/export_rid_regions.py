@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import binary_erosion, binary_dilation
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "data/rid2/case_study_roof_centered"
 OUT = ROOT / "data/face_regions_rid"
 SIZE = 256

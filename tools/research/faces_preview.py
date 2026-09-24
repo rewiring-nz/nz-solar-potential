@@ -25,7 +25,7 @@ import warnings
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 PAD_M = 4.0

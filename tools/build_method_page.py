@@ -96,11 +96,13 @@ def main():
                     sorted(steps_of.get(f, []), key=lambda t: t[0]), 1):
                 s = node[sid]
                 fp = s.get("filePath")
-                lr = s.get("lineRange") or []
                 where = ""
                 if fp:
-                    loc = f"{fp}:{lr[0]}" if lr and lr[0] else fp
-                    where = f'<span class="where">{esc(loc)}</span>'
+                    # The file, not file:line. Line numbers rot with every
+                    # edit above them -- by 24 Sep 2026 most of this page's
+                    # pointed at the wrong code -- and the page is not
+                    # rebuilt on every commit.
+                    where = f'<span class="where">{esc(fp)}</span>'
                 sec.append(
                     f'<li class="step"><p class="sname">{esc(s["name"])}</p>'
                     f'<p class="ssum">{esc(s.get("summary"))}</p>{where}</li>')

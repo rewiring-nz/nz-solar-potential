@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[1]
-FILES = [p for d in ("src", "tools", "tests") for p in (ROOT / d).glob("*.py")] + [ROOT / "config.py"]
+FILES = [p for d in ("src", "tools", "tools/research", "tests") for p in (ROOT / d).glob("*.py")] + [ROOT / "config.py"]
 
 
 def modpath(name):
@@ -27,6 +27,8 @@ def modpath(name):
         p = ROOT / "config.py"
     else:  # tools import each other by bare name via sys.path
         p = ROOT / "tools" / (name + ".py")
+        if not p.exists():
+            p = ROOT / "tools" / "research" / (name + ".py")
         if not p.exists():
             p = ROOT / "src" / (name + ".py")
     return p if p.exists() else None

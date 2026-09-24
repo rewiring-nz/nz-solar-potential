@@ -21,7 +21,7 @@
 # fallback if any of this fails.
 
 set -u
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/../.." || exit 1
 PY=.venv/bin/python
 LOG=data/build_logs/finish_rebuild.log
 mkdir -p data/build_logs

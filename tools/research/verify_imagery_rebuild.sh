@@ -15,7 +15,7 @@
 # but the flag is passed explicitly here so the intent is on the page.
 
 set -u
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/../.." || exit 1
 PY=.venv/bin/python
 BASE=data/triage/baseline_prerebuild_vm.json
 
@@ -51,7 +51,7 @@ echo
 echo "=============================================================="
 echo " 5. SANITY -- the standing rebuild checks"
 echo "=============================================================="
-$PY tools/verify_rebuild.py 2>/dev/null | tail -25 \
+$PY tools/research/verify_rebuild.py 2>/dev/null | tail -25 \
   || echo "  verify_rebuild unavailable"
 
 echo

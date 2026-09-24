@@ -39,11 +39,11 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.derive_solar_potential import _facet_area_m2
 from src.region_build import write_json_atomic
 
-DATA = Path(__file__).resolve().parents[1] / "data"
+DATA = Path(__file__).resolve().parents[2] / "data"
 
 
 def main():
