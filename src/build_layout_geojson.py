@@ -459,9 +459,14 @@ def _build_one_at(building_id, nudge_m):
             dsm_band, dsm_ds.transform, dsm_ds.nodata,
             facet_centroid.x, facet_centroid.y, model.hourly,
             own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
+        # The far-terrain factor depends on the facet only (slope, aspect and
+        # the building's profile), so it is computed once here and reused for
+        # every panel below instead of re-integrating 8,760 hours per panel.
+        far_factor = None
         if _bld_far is not None:
-            shading_factor *= _hz_facet_factor(_bld_far, model.horizon_profile,
-                                               f["slope_deg"], f["aspect_deg"], model.hourly)
+            far_factor = _hz_facet_factor(_bld_far, model.horizon_profile,
+                                          f["slope_deg"], f["aspect_deg"], model.hourly)
+            shading_factor *= far_factor
         facet_poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
         if not modelled:
             per_facet.append({"facet": f, "panels": [], "obstructions": [],
@@ -545,9 +550,8 @@ def _build_one_at(building_id, nudge_m):
             # valley still deserves
             if psf < DEEP_SHADE_FACTOR:
                 continue
-            if _bld_far is not None:
-                psf *= _hz_facet_factor(_bld_far, model.horizon_profile,
-                                        f["slope_deg"], f["aspect_deg"], model.hourly)
+            if far_factor is not None:
+                psf *= far_factor
             pnl["poa_kwh_m2_yr"] = facet_poa * psf
             pnl["shading_factor"] = psf
             kept_panels.append(pnl)

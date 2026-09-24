@@ -153,6 +153,7 @@ def ransac_planes(points, rng, distance_threshold=RANSAC_DISTANCE_THRESHOLD_M,
     while len(remaining_idx) >= min_inliers and len(planes) < max_planes:
         pts = points[remaining_idx]
         best_inlier_local = None
+        best_n = -1   # best_inlier_local.sum(), kept rather than recounted
 
         if len(pts) < 3:
             break
@@ -191,10 +192,11 @@ def ransac_planes(points, rng, distance_threshold=RANSAC_DISTANCE_THRESHOLD_M,
                 continue
             residuals = plane_residuals(pts, plane)
             inlier_local = residuals < distance_threshold
-            if best_inlier_local is None or inlier_local.sum() > best_inlier_local.sum():
-                best_inlier_local = inlier_local
+            n_in = int(inlier_local.sum())
+            if best_inlier_local is None or n_in > best_n:
+                best_inlier_local, best_n = inlier_local, n_in
 
-        if best_inlier_local is None or best_inlier_local.sum() < min_inliers:
+        if best_inlier_local is None or best_n < min_inliers:
             break
 
         # Refit on all inliers for a stabler plane, then recompute the
@@ -345,6 +347,20 @@ def merge_similar_facets(facets):
         if ri != rj:
             parent[rj] = ri
 
+    # Each facet's centroid and merge buffer, computed on first use rather
+    # than once per PAIR (the loop below is quadratic in facets).
+    _cent, _buf = {}, {}
+
+    def cent(i):
+        if i not in _cent:
+            _cent[i] = facets[i]["geometry"].centroid
+        return _cent[i]
+
+    def buf(i):
+        if i not in _buf:
+            _buf[i] = facets[i]["geometry"].buffer(MERGE_BUFFER_M)
+        return _buf[i]
+
     for i in range(n):
         for j in range(i + 1, n):
             fi, fj = facets[i], facets[j]
@@ -360,13 +376,13 @@ def merge_similar_facets(facets):
             # gap between them carved back out as a 10 m2 "obstruction").
             # Evaluate both planes at the midpoint between the two facets --
             # the same physical plane agrees there; a stepped pair does not.
-            ci, cj = fi["geometry"].centroid, fj["geometry"].centroid
+            ci, cj = cent(i), cent(j)
             mx, my = (ci.x + cj.x) / 2, (ci.y + cj.y) / 2
             zi = fi["plane_a"] * mx + fi["plane_b"] * my + fi["plane_c"]
             zj = fj["plane_a"] * mx + fj["plane_b"] * my + fj["plane_c"]
             if abs(zi - zj) > MERGE_MAX_HEIGHT_STEP_M:
                 continue
-            if fi["geometry"].buffer(MERGE_BUFFER_M).intersects(fj["geometry"].buffer(MERGE_BUFFER_M)):
+            if buf(i).intersects(buf(j)):
                 union(i, j)
 
     groups = {}
@@ -1820,13 +1836,16 @@ def line_agreement(facets, segs):
     except Exception:
         return None
     hit = tot = 0.0
+    band = None   # edges.buffer(LINE_MATCH_M), built once on first use
     for s in segs:
         try:
             ln = LineString([(s[0], s[1]), (s[2], s[3])])
             if ln.length <= 0:
                 continue
             tot += ln.length
-            hit += ln.intersection(edges.buffer(LINE_MATCH_M)).length
+            if band is None:
+                band = edges.buffer(LINE_MATCH_M)
+            hit += ln.intersection(band).length
         except Exception:
             continue
     return (hit / tot) if tot > 0 else None
@@ -2327,9 +2346,7 @@ def _generate_candidate_planes(points, rng, n_samples=GLOBAL_CANDIDATE_SAMPLES,
         if slope_deg > config.MAX_ROOF_SLOPE_DEG:
             continue
         is_dup = False
-        for kplane, _, _ in kept:
-            ka, kb, kc = kplane
-            kslope, kaspect = slope_aspect_from_plane(ka, kb)
+        for _, kslope, kaspect in kept:   # stored from the same call above
             slope_close = abs(slope_deg - kslope) <= MERGE_SLOPE_DIFF_DEG
             both_flat = slope_deg < MERGE_LOW_SLOPE_DEG and kslope < MERGE_LOW_SLOPE_DEG
             aspect_close = both_flat or _circular_diff(aspect_deg, kaspect) <= MERGE_ASPECT_DIFF_DEG
@@ -2383,10 +2400,10 @@ def _icm_assign_labels(points, candidate_planes, neighbor_radius=GLOBAL_NEIGHBOR
             if not nbr:
                 new_label = np.argmin(data_cost[i])
             else:
-                nbr_labels = labels[nbr]
-                smooth_cost = np.array([
-                    np.count_nonzero(nbr_labels != k) for k in range(n_labels)
-                ]) * smoothness_weight
+                # neighbours disagreeing with each label k: all of them minus
+                # those that carry k (one bincount instead of n_labels passes)
+                smooth_cost = (len(nbr) - np.bincount(labels[nbr], minlength=n_labels)) \
+                    * smoothness_weight
                 new_label = np.argmin(data_cost[i] + smooth_cost)
             if new_label != labels[i]:
                 labels[i] = new_label

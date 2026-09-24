@@ -33,7 +33,6 @@ import os
 import numpy as np
 from affine import Affine
 from rasterio.features import rasterize
-from scipy import ndimage
 from shapely.geometry import Polygon
 from shapely.strtree import STRtree
 from shapely.ops import transform as shapely_transform
@@ -713,11 +712,6 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
     transform = Affine(resolution, 0, u_min, 0, resolution, v_min)
     occupancy = rasterize([(p, 1) for p in parts], out_shape=(rows, cols), transform=transform,
                            fill=0, dtype=np.uint8).astype(bool)
-    # Distance (metres) from each usable cell to the nearest excluded one (an obstruction,
-    # a ridge/edge setback, the facet boundary) -- used below as a per-panel "confidence"
-    # score for the density slider: a panel comfortably in the middle of a big clean area
-    # scores higher than one hugging right up against an exclusion zone.
-    clearance = ndimage.distance_transform_edt(occupancy) * resolution
 
     # Portrait -- short edge to the ridge -- unless landscape wins by a real
     # margin. Picking whichever orientation fits one more panel is what put
@@ -780,11 +774,8 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
         if result:
             placed_o, wc, hc = result
             candidates.append((is_portrait, placed_o, wc, hc))
-        if lock and lock.get("search") and not is_portrait:
-            pass
 
     panels = []
-    extra_placed, gap_set = [], set()
     if candidates:
         by_orient = {c[0]: c for c in candidates}
         port, land = by_orient.get(True), by_orient.get(False)
@@ -800,22 +791,14 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             chosen = port or land
         _, placed, w_cells, h_cells = chosen
 
-        # Gap-fill pass: 100% should place every possible panel. One grid in
-        # one orientation leaves usable pockets --
-        # odd corners, strips beside obstructions -- that the other orientation
-        # or a shifted origin would take. Mask out what was placed and pack the
-        # residue with BOTH orientations, keeping the better; the extras are
-        # tagged gap_fill and surface only at 100% density.
-        occ2 = occupancy.copy()
-        for r0, c0, r1, c1 in list(placed) + list(extra_placed):
-            occ2[max(0, r0 - 1):r1 + 1, max(0, c0 - 1):c1 + 1] = False
-        extra_placed = []
-        for w2, h2 in ((panel_width, panel_height), (panel_height, panel_width)):
-            got = _pack_orientation(occ2, resolution, w2, h2)
-            if got and len(got[0]) > len(extra_placed):
-                extra_placed = got[0]
-        gap_set = set(map(tuple, extra_placed))
-
+        # NO GAP-FILL PASS. There was one, meant to pack the pockets one grid
+        # leaves (odd corners, strips beside obstructions) at 100% density. It
+        # packed the residue AFTER blanking every placed panel, then tagged a
+        # placed panel gap_fill only if the residue pack returned that same
+        # rectangle -- which it never can, since the residue has no free cell
+        # where a placed panel sits -- and its own panels were never emitted.
+        # So it placed nothing, ever, and cost ~60% of packing time (removed
+        # 24 Sep 2026). Filling the pockets is still a real, open improvement.
         for r0, c0, r1, c1 in placed:
             u0, v0 = u_min + c0 * resolution, v_min + r0 * resolution
             u1, v1 = u_min + c1 * resolution, v_min + r1 * resolution
@@ -824,13 +807,11 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             wx, wy = to_world(corners_u, corners_v)
             panel_poly = Polygon(zip(wx, wy))
             panels.append({
-                "gap_fill": (r0, c0, r1, c1) in gap_set,
                 "building_id": facet["building_id"],
                 "facet_aspect_deg": facet["aspect_deg"],
                 "facet_slope_deg": facet["slope_deg"],
                 "geometry": panel_poly,
                 "area_m2": panel_width * panel_height,  # true panel area, not plan-view (foreshortened) area
-                "clearance_m": float(clearance[r0:r1, c0:c1].min()),
                 # Placement sequence within this facet (row-major across parts) -- the density
                 # filter fills in this order so a partial layout is contiguous rows, like a real
                 # staged install, not a scatter of individually-scored panels. facet_key groups
@@ -1108,12 +1089,16 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     # "fill_order <= ceil(target_kW / panel_kW)", client-side, with no rebuild
     # needed to change the targets.
     ordered = main + extras
-    # The 100%-only band: confetti clusters and gap-fill singles appear when
-    # the slider says "everything", and only then.
-    tail = [p for p in ordered if p.get("confetti") or p.get("gap_fill")]
+    # The 100%-only band: confetti clusters appear when the slider says
+    # "everything", and only then.
+    tail = [p for p in ordered if p.get("confetti")]
     for p in tail:
         p["fill_rank"] = 100
-    ordered = [p for p in ordered if p not in tail] + tail
+    # By identity: `p not in tail` compared whole panel dicts (geometry
+    # included) against every tail panel. No two panels are equal -- each
+    # has its own (facet_key, order) -- so identity is the same test, in O(N).
+    tail_ids = {id(p) for p in tail}
+    ordered = [p for p in ordered if id(p) not in tail_ids] + tail
     for i, p in enumerate(ordered):
         p["fill_order"] = i + 1
     return panels

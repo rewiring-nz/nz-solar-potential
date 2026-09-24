@@ -69,9 +69,8 @@ echo "=== verifying ==="
 $SSH '
 for t in solar-map; do
   if [ -f ~/$t/src/panel_fitting.py ]; then
-    if grep -q gap_fill ~/$t/src/panel_fitting.py; then g=yes; else g=NO; fi
     if [ -f ~/$t/src/preflight.py ]; then p=yes; else p=NO; fi
-    echo "  $t: gap-fill=$g preflight=$p"
+    echo "  $t: preflight=$p"
   fi
 done' 2>/dev/null
 echo ""

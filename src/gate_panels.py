@@ -62,7 +62,6 @@ def panel_ok(poly, pc):
     pts_all = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=False)
     if len(pts_all) == 0:
         return True, "no_coverage_kept"
-    pts = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=True)
     inside_all = shapely.contains_xy(poly, pts_all[:, 0], pts_all[:, 1])
     n_all = int(inside_all.sum())
     if n_all < MIN_EVIDENCE_PTS:
@@ -76,18 +75,24 @@ def panel_ok(poly, pc):
     # has none nearby, fall back to the lowest returns around the panel.
     c = poly.centroid
     r = GROUND_SEARCH_RADIUS_M
-    around = pc.points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r, building_only=False)
+    # Each query below scans whole decoded tiles (millions of returns), so
+    # each is made only when its answer is needed: `around` only without
+    # enough ground returns, `pts` only once the cheap early exits are past.
+    # Same tiles as the queries before them, so the results are unchanged.
     ground_cls = pc.ground_points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r)
     if len(ground_cls) >= 20:
         local_ground = float(np.percentile(ground_cls[:, 2], 50))
-    elif len(around) >= 20:
-        local_ground = float(np.percentile(around[:, 2], 5))
     else:
-        return True, "no_ground_reference_kept"
+        around = pc.points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r, building_only=False)
+        if len(around) >= 20:
+            local_ground = float(np.percentile(around[:, 2], 5))
+        else:
+            return True, "no_ground_reference_kept"
     if (roof_z - local_ground) < MIN_HEIGHT_ABOVE_GROUND_M:
         # sits at ground level: carpark, yard, slab, or air over a gap where
         # the only returns are the ground below
         return False, "sparse"
+    pts = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=True)
     inside = shapely.contains_xy(poly, pts[:, 0], pts[:, 1]) if len(pts) else np.zeros(0, bool)
     pp = pts[inside] if len(pts) and inside.any() else all_in
     # NO height-above-DEM test. The wide DEM is 8m-resolution smoothed bare
