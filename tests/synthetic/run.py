@@ -104,7 +104,7 @@ def incremental_check(work, py, full_fp):
     r = subprocess.run([py, "tools/patch_stale_selected.py", "--regions", REGION, "--patch"],
                        cwd=work, env=env, capture_output=True, text=True)
     (work / "_incremental.log").write_text(r.stdout + r.stderr)
-    if r.returncode != 0 or "patch (1/8 stale)" not in r.stdout:
+    if r.returncode != 0 or "patch (1/9 stale)" not in r.stdout:
         return "patch step: " + (r.stdout + r.stderr).strip()[-300:]
     r = subprocess.run([py, "src/run_stage.py", "--force", "emit_region", REGION],
                        cwd=work, env=env, capture_output=True, text=True)
@@ -118,6 +118,36 @@ def incremental_check(work, py, full_fp):
     diff = [k for k in set(got["files"]) | set(full_fp["files"])
             if got["files"].get(k) != full_fp["files"].get(k)]
     return ("differs from the full build in " + ", ".join(sorted(diff))) if diff else None
+
+
+def pack_check(work, py, full_fp):
+    """Pack the region, delete its inputs, restore the pack, rebuild every
+    stage, and require every output byte-identical to the build from the full
+    survey. This is what makes deleting inputs after publishing safe for a
+    geometry layer that keeps changing (src/pack_region.py)."""
+    env = {**os.environ, "SOLAR_SELECTED_FACES": "1", "PYTHONHASHSEED": "0"}
+    r = subprocess.run([py, "src/pack_region.py", REGION], cwd=work, env=env,
+                       capture_output=True, text=True)
+    (work / "_pack.log").write_text(r.stdout + r.stderr)
+    if r.returncode != 0:
+        return "pack: " + (r.stdout + r.stderr).strip()[-300:]
+    for p in (work / "data/pointcloud").glob("*.laz"):
+        p.unlink()
+    for name in ("imagery_mosaic.tif", "dsm_mosaic.tif"):
+        (work / "data/regions" / REGION / name).unlink()
+    r = subprocess.run([py, "src/pack_region.py", REGION, "--restore"], cwd=work, env=env,
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return "restore: " + (r.stdout + r.stderr).strip()[-300:]
+    for s in STAGES:
+        r = subprocess.run([py, "src/run_stage.py", "--force", s, REGION], cwd=work, env=env,
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            return f"rebuild from pack, {s}: " + (r.stdout + r.stderr).strip()[-300:]
+    got = fingerprint(work, py)
+    diff = [k for k in set(got["files"]) | set(full_fp["files"])
+            if got["files"].get(k) != full_fp["files"].get(k)]
+    return ("rebuilt from the pack, differs in " + ", ".join(sorted(diff))) if diff else None
 
 
 def fingerprint(work, py):
@@ -158,6 +188,11 @@ def main():
             bad = incremental_check(work, py, fp)
             if bad:
                 print("  FAIL  incremental rebuild is not a full build: " + bad)
+                a.keep = True
+                return 1
+            bad = pack_check(work, py, fp)
+            if bad:
+                print("  FAIL  " + bad)
                 a.keep = True
                 return 1
         if a.record:

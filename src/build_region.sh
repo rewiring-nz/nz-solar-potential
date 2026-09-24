@@ -31,9 +31,19 @@ mkdir -p "data/regions/$REGION"
 gcloud storage cat "${SOLAR_BUCKET:-gs://rewiring-solar-data}/${SOLAR_BUILD_PREFIX:-build}/queue/$REGION.json" \
   > "data/regions/$REGION/task.json" 2>/dev/null || rm -f "data/regions/$REGION/task.json"
 
-log "fetch"
-$PY src/fetch_regions.py "$REGION" || { log "FATAL: fetch_regions rc=$?"; exit 1; }
-$PY src/fetch_pointcloud_regions.py "$REGION" || { log "FATAL: pointcloud rc=$?"; exit 1; }
+# A region built before keeps a PACK in the bucket: the points and pixels
+# near its buildings and its DSM (src/pack_region.py), enough to rebuild it
+# byte-identically. Restoring it is minutes and no LINZ or OpenTopography
+# traffic -- the difference between re-laying the country after a geometry
+# fix and re-downloading it. Only a region never built before fetches.
+if $PY src/pack_region.py "$REGION" --restore >>"$LOGDIR/$REGION.log" 2>&1; then
+  log "restored inputs from the region pack"
+  $PY src/fetch_regions.py "$REGION" || { log "FATAL: fetch_regions rc=$?"; exit 1; }
+else
+  log "fetch"
+  $PY src/fetch_regions.py "$REGION" || { log "FATAL: fetch_regions rc=$?"; exit 1; }
+  $PY src/fetch_pointcloud_regions.py "$REGION" || { log "FATAL: pointcloud rc=$?"; exit 1; }
+fi
 
 # Ownership. A region from the national planner is a grid cell that overlaps
 # nothing, so this is a no-op there; hand-drawn regions overlap and need it.

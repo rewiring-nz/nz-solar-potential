@@ -34,7 +34,8 @@ for root in roots:
         rel = str(p.relative_to(W))
         # inputs, and the build keys (which carry code hashes, so they change
         # with every commit by design)
-        if p.name in ("building_outlines.geojson", "task.json", "built_from.json"):
+        if p.name in ("building_outlines.geojson", "task.json", "built_from.json",
+                      "pointcloud_tiles.txt") or "pack" in p.relative_to(W).parts:
             continue
         b = p.read_bytes()
         if p.suffix == ".pmtiles":

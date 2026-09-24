@@ -1,6 +1,6 @@
 """Fabricate a small synthetic region so the real build stages can run end to
 end without LINZ data: point cloud (LAZ), 1 m DSM, RGB imagery, wide DEM and
-building outlines for eight roofs of known shape.
+building outlines for nine roofs of known shape.
 
 Usage: python make_region.py <repo_root>   (writes into <repo_root>/data)
 Called by tests/synthetic/run.py, which never points it at a real checkout.
@@ -26,7 +26,7 @@ RD.mkdir(parents=True, exist_ok=True)
 
 X0, Y0 = 1258400.0, 5003900.0   # inside the Queenstown pilot bbox
 G = 300.0                        # ground level
-EXT = (-25.0, -25.0, 115.0, 75.0)  # local extent (minx, miny, maxx, maxy)
+EXT = (-25.0, -25.0, 160.0, 75.0)  # local extent (minx, miny, maxx, maxy)
 rng = np.random.default_rng(12345)
 
 
@@ -72,6 +72,13 @@ B.append((990000005, box(35, 30, 55, 45), flat_ac))
 B.append((990000006, box(65, 30, 73, 42), lambda x, y: G + 4 + np.tan(np.radians(10)) * (42 - y)))
 B.append((990000007, box(80, 5, 83, 8), lambda x, y: np.full_like(x, G + 2.5)))
 B.append((990000008, box(80, 30, 92, 40), lambda x, y: G + 5 + gable_x(x, y, 30, 40, 0, 35)))
+# A survey corner where nothing was classified (class 1): its roof has no
+# building-class returns, so queries fall back to every class, and there is no
+# ground class either, so the gate falls back to the lowest returns round each
+# panel. The two cases where points AWAY from a roof change the answer --
+# which is what makes the pack test (src/pack_region.py) able to fail.
+B.append((990000009, box(125, 45, 133, 55), lambda x, y: G + 5 + gable_y(x, y, 125, 133, 0, 25)))
+UNCLASSIFIED = lambda x, y: x > 100   # >20 m of unclassified all round building 9
 TREE = (86.0, 46.0, 3.5, 12.0)   # x, y, radius, height -- north of building 8
 
 
@@ -91,6 +98,7 @@ def surface(x, y):
     t = d < tr
     z[t] = ground(x[t], y[t]) + th * np.sqrt(1 - (d[t] / tr) ** 2)
     cls[t] = 5
+    cls[UNCLASSIFIED(x, y)] = 1
     return z, cls
 
 

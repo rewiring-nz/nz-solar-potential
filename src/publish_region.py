@@ -5,12 +5,18 @@ today and terabytes nationally, and every byte is re-fetchable from LINZ.
 They go the moment the outputs are safe -- and not a moment before.
 
 ORDER, AND WHY IT IS THIS ORDER.
+  0. pack    data/regions/<region>/pack/  the points and pixels near
+             buildings, the DSM (src/pack_region.py). The inputs go; the
+             geometry layer keeps improving and needs them again. The pack
+             rebuilds the region byte-identically and is a fraction of the
+             survey.
   1. upload  data/out/<region>/       tiles, cells, detail, summary, the
                                       enriched region file
              data/regions/<region>/*.geojson   layouts and solar_potential
              data/selected_faces/<id>.json     this region's face readings,
                                       so a re-run with a new fitter does not
                                       re-predict
+             data/regions/<region>/pack/      the pack
   2. verify  list the bucket back and compare every size to the local file.
              A silently short upload followed by a delete is the one failure
              this stage must never produce.
@@ -80,8 +86,18 @@ def publish(region, delete=True, dry=False):
     rdir = paths["dir"]
     base = url("regions", region)
 
+    # 0. pack -- before anything is deleted, and uploaded and verified with
+    # the rest. A region packed earlier (its survey already gone) keeps the
+    # pack it has.
+    pack_dir = rdir / "pack"
+    if not (pack_dir / "pack.json").exists() and not dry:
+        from src.pack_region import pack as _pack
+        _pack(region)
+
     # 1. upload
     _rsync(out, base + "/out", dry)
+    if pack_dir.exists():
+        _rsync(pack_dir, base + "/pack", dry)
     geo = rdir / "_publish_geojson"
     geo.mkdir(exist_ok=True)
     for name in ("solar_potential.geojson", "panel_layouts.geojson",
@@ -113,7 +129,9 @@ def publish(region, delete=True, dry=False):
     # 2. verify, size for size
     if not dry:
         for local, remote in ((out, base + "/out"), (geo, base + "/region"),
-                              (readings, base + "/readings")):
+                              (readings, base + "/readings"), (pack_dir, base + "/pack")):
+            if not local.exists():
+                continue
             want = _sizes_local(local)
             if not want:
                 continue
@@ -137,6 +155,8 @@ def publish(region, delete=True, dry=False):
         "bucket": base, "git": summary.get("git"), "buildings": summary.get("n"),
         "panel_count": summary.get("panel_count"), "kwh": summary.get("kwh"),
         "readings_uploaded": n_readings,
+        "pack": (json.loads((pack_dir / "pack.json").read_text())
+                 if (pack_dir / "pack.json").exists() else None),
         "inputs_deleted": bool(delete and not dry),
     }
     try:
@@ -175,6 +195,13 @@ def publish(region, delete=True, dry=False):
                 freed += p.stat().st_size
                 if not dry:
                     p.unlink()
+        # the pack is in the bucket and verified; pack_region --restore
+        # fetches it back when the region is next rebuilt
+        if pack_dir.exists():
+            freed += sum(p.stat().st_size for p in pack_dir.rglob("*") if p.is_file())
+            if not dry:
+                import shutil
+                shutil.rmtree(pack_dir)
         # this region's own emitted output is in the bucket now too, but it
         # stays: combine_regions reads it, and it is a few MB
     print(f"[{region}] published to {base} in {time.time() - t0:.0f}s"

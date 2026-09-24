@@ -68,6 +68,16 @@ def tiles_for_bbox_wgs84(bbox, api_key):
 def download_tile(filename, store=None, retries=4):
     dest = POINTCLOUD_DIR / filename
     copc_variant = POINTCLOUD_DIR / filename.replace(".laz", ".copc.laz")
+    # A tile restored from a region pack (src/pack_region.py) carries the full
+    # tile's name but only the points near THAT region's buildings. Treating
+    # it as present would build a neighbouring region from a subset, silently.
+    # So a packed tile is re-fetched whole, which is a superset of the pack
+    # and builds the packed region identically too.
+    from src.pack_region import packed_tiles, forget_packed
+    if filename in packed_tiles():
+        dest.unlink(missing_ok=True)
+        copc_variant.unlink(missing_ok=True)
+        forget_packed(filename)
     if dest.exists() or copc_variant.exists():
         return "exists"
     part = dest.with_suffix(".part")
