@@ -285,17 +285,25 @@ def gate_area_parallel(name, jobs=None):
         print(f"{name}: no layouts, skipping")
         return
     d = json.loads(path.read_text())
-    kept, dropped, errors = [], Counter(), 0
-    todo = []
-    for f in d["features"]:
+    # Results land in their INPUT slot, not in completion order. Appending as
+    # futures finished put every gated panel after every facet and in a
+    # different order each run, so rerank_layouts (which numbers arrays and
+    # breaks fill_rank ties by input order) gave the same roof different
+    # array ids and fill orders from one run to the next. Slotting them back
+    # makes this exactly gate_area's output, as the docstring always claimed.
+    out = [None] * len(d["features"])
+    dropped, errors = Counter(), 0
+    todo, todo_slot = [], []
+    for i, f in enumerate(d["features"]):
         if f["properties"].get("kind") != "panel" or f["geometry"]["type"] != "Polygon":
-            kept.append(f)
+            out[i] = f
         elif f["properties"].get("building_id") in non_roof:
             dropped["sparse"] += 1
         elif _has_usable_markup(f["properties"].get("building_id")):
-            kept.append(f)   # drawn roofs skip the surface gates -- see gate_area
+            out[i] = f   # drawn roofs skip the surface gates -- see gate_area
         else:
             todo.append(json.dumps(f))
+            todo_slot.append(i)
     jobs = jobs or _gate_jobs()
     # Spawn, never fork. On Linux the default is fork, and forked children
     # inherit the parent's initialised GDAL/rasterio state -- workers segfault
@@ -317,24 +325,25 @@ def gate_area_parallel(name, jobs=None):
         batches = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)]
         futs = {ex.submit(_gate_batch, b): i for i, b in enumerate(batches)}
         for fut in as_completed(futs, timeout=None):
+            bi = futs[fut]
             try:
                 results = fut.result(timeout=600)
             except Exception as exc:
-                print(f"  {name}: batch {futs[fut]} failed ({exc!r}); "
+                print(f"  {name}: batch {bi} failed ({exc!r}); "
                       f"{BATCH} panels kept ungated", flush=True)
-                results = [(fj, True, "error-kept") for fj in batches[futs[fut]]]
-            for fj, ok, why in results:
+                results = [(fj, True, "error-kept") for fj in batches[bi]]
+            for j, (fj, ok, why) in enumerate(results):
                 done_n += 1
                 if done_n % 5000 == 0:
                     print(f"  {name}: {done_n}/{len(todo)} panels gated", flush=True)
                 if why == "error-kept":
                     errors += 1
                 if ok:
-                    kept.append(json.loads(fj))
+                    out[todo_slot[bi * BATCH + j]] = json.loads(fj)
                 else:
                     dropped[why] += 1
     n_dropped = sum(dropped.values())
-    d["features"] = kept
+    d["features"] = [f for f in out if f is not None]
     write_json_atomic(path, d)
     reasons = ", ".join(f"{k} {v}" for k, v in sorted(dropped.items())) or "none"
     msg = f"{name}: dropped {n_dropped} panels ({reasons}) [{jobs} workers]"

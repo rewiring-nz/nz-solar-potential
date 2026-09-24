@@ -38,7 +38,7 @@ import config
 from src.preflight import preflight
 import geopandas as gpd
 
-from src.roof_segmentation import segment_building_best, _area_weighted_inlier
+from src.roof_segmentation import segment_building_best, _area_weighted_inlier, _note_fallback
 from src.ridge_snap import snap_ridges_to_crest
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
