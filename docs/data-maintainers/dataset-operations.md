@@ -24,8 +24,8 @@ flowchart TB
   F -- yes --> H
   H --> I[[run_district_build.sh / run_stage.py]]
   I --> J[(per-area layouts and solar_potential)]
-  J --> K[[merge_regions.py and fan-in]]
-  K --> L[(merged GeoJSON, rasters, PMTiles)]
+  J --> K[[emit_region.py per region, combine_regions.py]]
+  K --> L[(served tiles, cells, detail, summaries)]
   L --> M[[Serve locally: preview.html / live_server.py]]
   M --> N{Validation passes?}
   N -- no: data or config issue --> B
@@ -34,14 +34,16 @@ flowchart TB
   N -- yes --> P[[Publish via netlify.toml]]
 ```
 
-`run_district_build.sh` is one resumable command covering the whole build and
-merge: per region it runs:
+`run_district_build.sh` is one resumable, incremental command covering the
+whole build: it plans each region from per-building build keys (clean, patch
+or full), and per region it runs:
 
-* `build_layout_geojson → gate_panels → rerank_layouts → derive_solar_potential → patch_roof_confidence → bake_building_horizons → build_heatmap_raster`, 
+* `build_layout_geojson → gate_panels → rerank_layouts → derive_solar_potential → patch_roof_confidence → bake_building_horizons → build_heatmap_raster → add_addresses → register_imagery → emit_region`,
 
-then fans in with:
-
-* `merge_regions → bake_density_deciles → build_terrain_masks → build_seasonal_curves → shrink_panels_for_tiles` and a Tippecanoe PMTiles build. 
+then joins the regions with `combine_regions.py`. The density deciles,
+terrain masks, panel shrink and tiling run inside `emit_region`, per region,
+at that region's own sun; seasonal curves are one file per latitude band, in
+the combine. 
 
 Fetching inputs is a separate, earlier step.
 
@@ -54,7 +56,7 @@ Fetching inputs is a separate, earlier step.
 | Check the wide DEM is present | District-scale bare-earth DEM, not built by this repo | maintained data environment | `data/dem_wide_mosaic.tif` |
 | Prepare | Assign overlapping outlines to one owning region | `region_build.py` | `data/regions/<area>/building_outlines_dedup.geojson` |
 | Build | Run per-area and district stages, resumable via markers | `run_district_build.sh` / `run_stage.py` | per-area outputs in `data/regions/<area>/`, markers in `data/build_state/` |
-| Merge | Combine per-area outputs into site-level datasets | `merge_regions.py` and the district fan-in | `data/*.geojson`, rasters, `data/panel_layouts.pmtiles` |
+| Emit and combine | Each region writes its own served files; the combine joins them | `emit_region.py`, `combine_regions.py` | `data/out/<area>/`, then `data/*.pmtiles`, `data/building_detail/`, `data/summaries/` |
 | Validate | Check logs, run audits, review the map visually | audit/render/validate scripts, local map | `data/build_logs/`, browser |
 | Decide: fix data/config or algorithm | A validation failure is either a coverage/config problem or a modelling problem | maintainer judgement | — |
 | Correct config or re-acquire | Adjust bbox, exclusions, or assumptions, or refetch | `config.py` | loops back to Build |
@@ -157,8 +159,8 @@ The script gets the area list from `config.REGIONS`, includes `pilot`, and
 records stage completion markers so an interrupted run can resume. Its per-area
 stages are layout generation, panel gating, reranking, solar-potential
 derivation, roof-confidence patching, horizon baking, and heatmap-raster
-generation. It then merges regions and runs the district-wide density,
-terrain-mask, seasonal-curve, layout-shrink, and PMTiles stages.
+generation, then addresses, image registration and the region's emit; then
+`combine_regions.py` joins every region's output.
 
 Each stage is run through `src/run_stage.py`. Preflight checks verify declared
 inputs before expensive work, and successful stages write markers under
@@ -167,17 +169,14 @@ its marker is newer than its declared inputs. Use `--force` to rebuild stages.
 
 Logs are written to `data/build_logs/<region>.log`. A failed area stops the
 district fan-in, preventing an incomplete set of regions from being presented
-as a complete district. The older `run_full_build.sh` remains a simpler
-region-loop script for targeted or legacy use; it is not the recommended
-district release workflow.
+as a complete district.
 
-For fast layout-only iteration, use `run_dev_loop.sh`. The parallel layout
-rerun scripts are specialized alternatives for gate-rule changes; read their
-resource notes before selecting `run_layouts_regate_par.sh`.
-
-The older `run_full_build.sh` does not use the current stage-marker and
-preflight orchestration. Use it only when a targeted legacy workflow is
-specifically required.
+For fast layout-only iteration, use `run_dev_loop.sh`. For a change to the
+solar model only (calibration, derate), `run_district_build.sh --yield-only`
+recomputes every kWh from the stored geometry without the LiDAR. The older
+merged-file scripts (`run_full_build.sh`, `run_layouts_regate*.sh`) were
+removed on 24 Sep 2026; they bypassed the stage markers and preflight and
+built the merged files nothing ships from.
 
 The district script calls `derive_solar_potential.py` and
 `bake_building_horizons.py` in the supported stage order. These scripts can

@@ -68,11 +68,18 @@ and Tippecanoe PMTiles generation.
 - `src/building_horizon.py` and `src/bake_building_horizons.py` compute
   per-building 72-bin horizon profiles (`horizon_b64`, `horizon_beam_pct`)
   combining wide bare-earth DEM terrain and near DSM obstacles.
-- `src/merge_regions.py` produces site-level artifacts. It is the boundary
-  between per-region processing and map-facing datasets.
-- `src/run_district_build.sh` is the current resumable release orchestrator.
-  `src/run_full_build.sh` is an older, simpler orchestration path and should
-  not be treated as the complete district architecture.
+- `src/emit_region.py` writes each region's own tiles, cells, detail,
+  heat-map tiles, addresses and summary; `src/combine_regions.py` joins
+  regions into the served set without reading the district into memory. That
+  is the boundary between per-region processing and map-facing data, and
+  `src/output_contract.py` freezes the names on the map side of it.
+  (`src/merge_regions.py` still exists as a debugging tool; nothing ships
+  from it.)
+- `src/run_district_build.sh` is the release orchestrator: incremental by
+  default from per-building build keys (`src/build_keys.py`), resumable from
+  code-aware stage markers. The older merged-file scripts
+  (`run_full_build.sh`, `run_layouts_regate*.sh`, `build_heatmap.py`) were
+  removed on 24 Sep 2026.
 - `src/render_building_debug.py` and `src/render_top_movers.py` generate visual
   debug cards and build-over-build diff reports for pre-release validation.
 - `preview.html` is the static map. `src/live_server.py` adds a local-only

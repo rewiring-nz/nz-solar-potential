@@ -12,10 +12,11 @@ Last verified: 2026-09-09
   returned empty results during prior validation.
 - Full regional builds isolate each area in its own Python process because
   decoded point-cloud tiles are retained in process memory.
-- `src/run_district_build.sh` is the current resumable district orchestrator.
-  It runs per-area layout, gating, reranking, derivation, confidence, horizon,
-  and raster stages, then merges and runs district-wide post-processing and
-  PMTiles generation. `src/run_full_build.sh` is an older simpler path.
+- `src/run_district_build.sh` is the district orchestrator. It plans each
+  region from per-building build keys (clean / patch / full), runs per-area
+  layout, gating, reranking, derivation, confidence, horizon and raster
+  stages, emits each region's tiles (`emit_region.py`) and combines them
+  (`combine_regions.py`). There is no merged-file path any more.
 - `src/region_build.py` treats `pilot` as a region-aware build area whose
   inputs and outputs resolve under `data/regions/pilot/`, while pilot source
   acquisition starts under `data/`. The repository comments state that pilot

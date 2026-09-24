@@ -18,10 +18,12 @@ documentation map (data maintainers, web-map users, ADRs).
 
 Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.md).
 Use `bash src/run_dev_loop.sh pilot` for a fast pilot-region check and
-`bash src/run_district_build.sh` for resumable district releases. Treat
-`bash src/run_full_build.sh` as a legacy or targeted workflow. There is no
-established automated test suite; add targeted tests under `tests/` when
-changing deterministic algorithms or data contracts.
+`bash src/run_district_build.sh` for builds: incremental by default (only
+stale buildings rebuild), `--force` for everything, `--yield-only` when only
+the solar model changed. `bash tests/run_all.sh` runs every check, including
+the whole build on a synthetic region (tests/synthetic); add targeted tests
+under `tests/` when changing deterministic algorithms or data contracts, and
+change `src/output_contract.py` deliberately when what the map reads changes.
 
 ## Conventions
 

@@ -11,8 +11,9 @@ several address points (units, flats) take the lowest street number and note
 the count. No address within range -> no "address" property; the frontend
 falls back to the outline id.
 
-Patches solar_potential.geojson in place -- re-run after any rebuild of that
-file (build_heatmap.py doesn't know about addresses).
+Patches solar_potential.geojson in place. derive_solar_potential carries the
+addresses over when it rebuilds that file, so this only has to re-run when the
+buildings or the address layer change.
 
 Usage: python src/add_addresses.py
 """

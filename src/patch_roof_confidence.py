@@ -7,11 +7,9 @@ computed during the layout build and written onto FACET features, so without
 this it never reaches the panel, and a roof whose layout was withheld reads
 0 kW with nothing explaining why.
 
-It cannot simply be written by build_heatmap.py, which is what produces
-solar_potential.geojson, because that stage runs BEFORE layouts and is not run
-at all by the layouts-only rebuild (run_layouts_regate_par.sh) -- the loop
-actually used for iteration. So this patches in place afterwards, the same
-shape as add_addresses.py.
+It is patched in place after derive_solar_potential rather than written by
+it, the same shape as add_addresses.py: roof_confidence is a property of the
+layout facets, and keeping it a separate stage lets it be re-run on its own.
 
 Idempotent: re-running overwrites the same field.
 
