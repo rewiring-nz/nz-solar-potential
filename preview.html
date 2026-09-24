@@ -2668,8 +2668,15 @@ map.on("load", async () => {
     const addrRow = ([addr, lng, lat, id]) => ({ addr, lower: addr.toLowerCase(), at: { lng, lat, id } });
     // Flat file where the build is small; shards by the first two characters
     // where it is not (combine_regions), fetched as they are typed.
+    // Each loaded shard is kept on its own and a keystroke scans only the
+    // shard its prefix names (plus the towns). They used to be concatenated
+    // into `searchable`, so every keystroke filtered every shard loaded so
+    // far -- twice (starts, then contains) -- and a national session that had
+    // typed a few different streets was scanning hundreds of thousands of
+    // rows per key. null = in flight.
     let addrShards = null;
-    const addrShardLoaded = new Set();
+    const addrShardRows = new Map();   // key -> rows | null
+    const ADDR_SHARD_CACHE_MAX = 32;
     fetch(`${DATA_BASE}data/addresses/index.json?v=${DATA_VERSION}`)
       .then(r => r.ok ? r.json() : null)
       .then(idx => {
@@ -2679,9 +2686,12 @@ map.on("load", async () => {
           .then(rows => { searchable = TOWNS.concat(rows.map(addrRow)); });
       })
       .catch(() => {});
+    // Must match combine_regions._addr_key, which keeps every character
+    // Python calls alphanumeric. [a-z0-9] dropped the macron vowels, so
+    // "Ōtāhuhu" asked for shard "th" while its rows were written to "ōt".
     const addrShardKey = q => {
-      const s2 = q.toLowerCase().replace(/[^a-z0-9]/g, "");
-      return s2.length >= 2 ? s2.slice(0, 2) : null;
+      const s2 = [...q.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")];
+      return s2.length >= 2 ? s2.slice(0, 2).join("") : null;
     };
     const input = document.getElementById("addr-input");
     const results = document.getElementById("addr-results");
@@ -2777,18 +2787,23 @@ map.on("load", async () => {
         results.style.display = "block";
         return;
       }
+      let pools = [searchable];
       if (addrShards) {
         const key = addrShardKey(q);
-        if (key && addrShards.has(key) && !addrShardLoaded.has(key)) {
-          addrShardLoaded.add(key);
-          fetch(`${DATA_BASE}data/addresses/${key}.json?v=${DATA_VERSION}`).then(r => r.json())
-            .then(rows => { searchable = searchable.concat(rows.map(addrRow));
-                            input.dispatchEvent(new Event("input")); })
-            .catch(() => { addrShardLoaded.delete(key); });
+        pools = [TOWNS];
+        if (key && addrShards.has(key)) {
+          lruTouch(addrShardRows, key, ADDR_SHARD_CACHE_MAX);
+          if (!addrShardRows.has(key)) {
+            addrShardRows.set(key, null);
+            fetch(`${DATA_BASE}data/addresses/${encodeURIComponent(key)}.json?v=${DATA_VERSION}`).then(r => r.json())
+              .then(rows => { addrShardRows.set(key, rows.map(addrRow));
+                              input.dispatchEvent(new Event("input")); })
+              .catch(() => { addrShardRows.delete(key); });
+          } else if (addrShardRows.get(key)) pools.push(addrShardRows.get(key));
         }
       }
-      const starts = searchable.filter(x => x.lower.startsWith(q));
-      const contains = searchable.filter(x => !x.lower.startsWith(q) && x.lower.includes(q));
+      const starts = pools.flatMap(p => p.filter(x => x.lower.startsWith(q)));
+      const contains = pools.flatMap(p => p.filter(x => !x.lower.startsWith(q) && x.lower.includes(q)));
       matches = starts.concat(contains).slice(0, 8);
       if (!matches.length) { results.style.display = "none"; return; }
       results.innerHTML = matches.map((x, i) => `<div data-i="${i}">${x.addr}</div>`).join("");
