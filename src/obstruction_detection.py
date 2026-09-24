@@ -840,7 +840,7 @@ def _sunken_regions(pc_source, facet_geom, plane):
 
 def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                                   z_threshold=None, boundary_erode_m=None,
-                                  residual_threshold_m=None, roof_geom=None):
+                                  residual_threshold_m=None, roof_geom=None, explain=None):
     """Runs both detectors and reconciles them per the module comment
     above: colour-based obstructions always kept; compact height-based
     obstructions always kept (colour structurally can't see a flush,
@@ -851,7 +851,10 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     shape, and the photo cross-check structurally fails on grey-equipment-
     on-grey-roof (confirmed on a real commercial roof where nearly all its
     extensive ducting was silently dropped by that check). Falls back to
-    colour-only if pc_source is None or has no coverage here."""
+    colour-only if pc_source is None or has no coverage here.
+
+    `explain`, a dict, is filled with each detector's shapes before they are
+    merged (tools/explain_obstructions.py); it changes nothing else."""
     # Rural gap regions have no 0.1m urban imagery (LINZ layer is urban-only),
     # so colour detection is unavailable there -- fall back to LiDAR height
     # evidence alone rather than skipping the area entirely. Documented
@@ -1052,6 +1055,10 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # rural facet with no imagery still gets its recessed deck carved.
     sunken = _sunken_regions(pc_source, facet_geom, plane)
     all_obs = color_obs + compact + confirmed_elongated + bright + sunken
+    if explain is not None:
+        explain.update(colour=list(color_obs), height=list(compact),
+                       height_confirmed=list(confirmed_elongated),
+                       bright=list(bright), sunken=list(sunken))
     if not all_obs:
         return []
     merged = unary_union(all_obs)

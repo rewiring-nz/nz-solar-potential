@@ -25,6 +25,22 @@ in git.
 
 ## Geometry
 
+- **Hips and valleys: faces overreach, and the overreach ships as
+  obstructions.** Reproduced with no LiDAR: the synthetic L roof
+  (#990000004, two plain gables, nothing on them) ships four obstructions,
+  25 m2. The north face swallows the main wing's ridge in the corner (a
+  12.6 m2 "object" 0.7 m above it) and the south face runs past the valley
+  onto the east slope (8.8 m2, 2.2 m below it). Same cause as "lines miss the
+  valleys" (1 Ballarat St) and, likely, "obstructions over clear roof"
+  (9 Marine Parade, 8 Sydney St). ridge_snap handles only opposite faces.
+  Tried 24 Sep: a pair-wise split on the plane intersection (the infinite
+  line cuts legitimate area far from the seam) and a whole-roof
+  `partition_by_planes` re-cut with the faces' own planes (mean residual
+  0.064 -> 0.16 m: its cells are too coarse). Neither shipped. Next: split
+  only within a band around the shared boundary, judged cell by cell. Check
+  real roofs first with `tools/explain_obstructions.py <id>` on the VM:
+  which detector drew each obstruction and how far its returns sit off
+  the plane.
 - **Ridge snap reverts: re-measure.** Plain hip roofs were ALWAYS reverted
   (the re-cut strip ran past the apex); fixed 24 Sep by sliding the vertices of
   a ridge whose ends are both interior. After the re-lay, run
