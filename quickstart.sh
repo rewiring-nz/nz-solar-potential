@@ -3,8 +3,10 @@
 # area of New Zealand, end to end, and inspect every step of the result.
 #
 #   1. cp my_area.example.json my_area.json   (edit name + bbox)
-#   2. export LINZ_API_KEY=...                (free key from data.linz.govt.nz,
-#                                              REST API scope enabled)
+#   2. export LINZ_API_KEY=...                (free key from data.linz.govt.nz;
+#                                              create it with ALL permissions ticked,
+#                                              export/download included -- they cannot
+#                                              be added to a key later)
 #   3. bash quickstart.sh <name>
 #
 # This is NOT a simplified re-implementation. Your area becomes a

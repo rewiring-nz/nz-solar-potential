@@ -3,9 +3,12 @@
  (Exports API) for the pilot from the LINZ Data Service, and save them under
  data/.
 
-Requires a LINZ_API_KEY with REST API scope enabled (Account -> API keys
--> edit the key -> enable "Search and Download"), not just the default
-OGC web-services scope -- the export job creation 401s otherwise.
+Requires a LINZ_API_KEY that may create EXPORTS, not only use the web
+services (WFS/WMS/tiles) -- export job creation 401s otherwise. A key's
+permissions are chosen when it is created and cannot be edited afterwards:
+make a NEW key (data.linz.govt.nz -> your account -> API keys -> Create API
+key) with all permissions ticked, the export/download one above all, and
+put it in .env.
 
 Usage: python src/fetch_data.py
 """
@@ -85,9 +88,11 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
     resp = requests.post("https://data.linz.govt.nz/services/api/v1/exports/", headers=headers, json=body, timeout=30)
     if resp.status_code == 401:
         raise SystemExit(
-            "401 from Exports API -- LINZ_API_KEY needs REST API scope "
-            "(Account -> API keys -> edit -> enable Search and Download), "
-            "not just the default OGC web-services scope."
+            "401 from the LINZ Exports API: this LINZ_API_KEY may use the web "
+            "services but not create exports. Permissions cannot be added to an "
+            "existing key -- create a NEW one (data.linz.govt.nz -> your account "
+            "-> API keys -> Create API key) with every permission ticked, "
+            "including export/download, and put it in .env as LINZ_API_KEY."
         )
     if resp.status_code >= 400:
         # LINZ returns a JSON body naming the exact problem (bad extent, wrong
