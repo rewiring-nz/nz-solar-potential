@@ -111,7 +111,14 @@ def building_frame(facets, building_polygon):
               math.degrees(math.atan2(cc[i + 1][1] - cc[i][1], cc[i + 1][0] - cc[i][0])))
              for i in range(2)]
         return max(e)[1] % 90.0
-    bld = axis_of(building_polygon) if building_polygon is not None else None
+    # The WALLS' direction, not the bounding rectangle's: on a stepped outline
+    # the rectangle lies along the diagonal (src/outline_axis.py).
+    from src.outline_axis import dominant_axis_deg
+    bld = dominant_axis_deg(building_polygon) if building_polygon is not None else None
+    if bld is None and building_polygon is not None:
+        bld = axis_of(building_polygon)
+    elif bld is not None:
+        bld %= 90.0
     # FAMILIES OF BEARINGS, NOT ONE BEARING. One bearing per building would
     # skew multi-angled roofs. Measured on four regions: 10-18% of pitched buildings have a
     # face more than 10 degrees off a single frame, 4-6% of pitched roof area
@@ -320,14 +327,24 @@ def _edge_aligned_axes(facet_polygon, aspect_deg, slope_deg=None, building_polyg
             reference = building_polygon
 
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            mrr = reference.minimum_rotated_rectangle
-        coords = list(mrr.exterior.coords)
-        if len(coords) < 4:
-            return fallback_u, fallback_v
-        edge1 = np.array(coords[1]) - np.array(coords[0])
-        edge2 = np.array(coords[2]) - np.array(coords[1])
+        ax = None
+        if reference is building_polygon:
+            # the building's walls, not its bounding rectangle (src/outline_axis.py)
+            from src.outline_axis import dominant_axis_deg
+            ax = dominant_axis_deg(building_polygon)
+        if ax is not None:
+            a = np.radians(ax)
+            edge1 = np.array([np.cos(a), np.sin(a)])
+            edge2 = np.array([-np.sin(a), np.cos(a)])
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                mrr = reference.minimum_rotated_rectangle
+            coords = list(mrr.exterior.coords)
+            if len(coords) < 4:
+                return fallback_u, fallback_v
+            edge1 = np.array(coords[1]) - np.array(coords[0])
+            edge2 = np.array(coords[2]) - np.array(coords[1])
     except Exception:
         return fallback_u, fallback_v
 

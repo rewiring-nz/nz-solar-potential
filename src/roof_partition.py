@@ -1295,9 +1295,12 @@ def _regularise_machine_face(poly, footprint):
     import shapely.affinity as _aff
     if poly.geom_type != "Polygon" or poly.is_empty:
         return None
-    mrr = footprint.minimum_rotated_rectangle
-    cc = list(mrr.exterior.coords)
-    ax = np.degrees(np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0]))
+    # the walls' direction, not the bounding rectangle's (src/outline_axis.py)
+    from src.outline_axis import face_axis_deg
+    ax = face_axis_deg(footprint, poly)
+    if ax is None:
+        cc = list(footprint.minimum_rotated_rectangle.exterior.coords)
+        ax = np.degrees(np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0]))
     rot = _aff.rotate(poly, -ax, origin=(0, 0))
     # THE VERTEX CAP SCALES WITH THE FACE. A flat 10-corner limit was right
     # for a house face and wrong for a commercial wing: 22 Earl Street's
@@ -2445,15 +2448,11 @@ def _recessed_region(footprint, pts, faces):
     cx = minx + (xs + 0.5) * RECESS_CELL_M
     cy = miny + (ys + 0.5) * RECESS_CELL_M
     # a rectangle in the roof's own frame: roofs are straight lines, not blobs
-    try:
-        rect = np.asarray(footprint.minimum_rotated_rectangle.exterior.coords)
-    except Exception:
+    from src.outline_axis import dominant_axis_deg
+    ax = dominant_axis_deg(footprint)   # the walls, not the bounding rectangle
+    if ax is None:
         return None
-    e = rect[1:] - rect[:-1]
-    L = np.hypot(e[:, 0], e[:, 1])
-    if len(L) == 0 or L.max() <= 0:
-        return None
-    u = e[int(np.argmax(L))] / L.max()
+    u = np.array([np.cos(np.radians(ax)), np.sin(np.radians(ax))])
     v = np.array([-u[1], u[0]])
     c = np.array(footprint.centroid.coords[0])
     xy = np.column_stack([cx, cy]) - c

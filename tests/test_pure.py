@@ -350,5 +350,29 @@ def test_address_shards_find_a_street_without_a_number():
         assert shard("go") == [rows[1]] and shard("5g") == [rows[1]]
 
 
+def test_building_axis_follows_the_walls_not_the_bounding_box():
+    """A stepped outline's minimum rectangle lies along the diagonal of the
+    steps; racking and roof lines must follow the walls (8 Sydney Street:
+    walls at 76 degrees, rectangle at 9, panels 21 degrees skew)."""
+    from shapely.geometry import box
+    from shapely import affinity
+    from src.outline_axis import dominant_axis_deg, wall_families_deg, face_axis_deg, _dev
+    from shapely.ops import unary_union
+    from src.outline_axis import _mrr_long_side_deg
+    # a diagonal band of stepped blocks, walls at 0 and 90, then turned 17
+    stair = affinity.rotate(unary_union([box(3 * i, 3 * i, 3 * i + 6, 3 * i + 3) for i in range(7)]),
+                            17, origin=(0, 0))
+    assert _dev(_mrr_long_side_deg(stair), 17.0) > 20   # the box lies on the diagonal
+    assert _dev(dominant_axis_deg(stair), 17.0) < 0.5
+    assert _dev(dominant_axis_deg(affinity.rotate(box(0, 0, 20, 8), 33, origin=(0, 0))), 33.0) < 1e-6
+    # a wing at 30 degrees is its own wall family, and its faces take it
+    fp = box(0, 0, 20, 10).union(affinity.rotate(box(18, 2, 30, 8), 30, origin=(18, 5)))
+    fams = wall_families_deg(fp)
+    assert len(fams) == 2 and min(_dev(f, 30.0) for f in fams) < 0.5
+    wing_face = affinity.rotate(box(21, 3, 28, 7), 30, origin=(18, 5))
+    assert _dev(face_axis_deg(fp, wing_face), 30.0) < 0.5
+    assert _dev(face_axis_deg(fp, box(2, 1, 15, 9)), 0.0) < 0.5
+
+
 if __name__ == "__main__":
     sys.exit(_main())

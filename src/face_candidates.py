@@ -225,7 +225,7 @@ def sam_faces(predictor, rgb, geom, bounds, pts):
         q = p2.buffer(0.15).buffer(-0.15)
         if q.geom_type != "Polygon" or q.is_empty:
             q = p2
-        out_faces.append(regularise(q, ax))
+        out_faces.append(regularise(q, face_axis(geom, q, ax)))
     return out_faces, obs
 
 
@@ -309,7 +309,7 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
         return [], pr
     facets = line_facets(building_id, geom, pts, segs) or []
     ax = building_axis(geom)
-    return [regularise(f["geometry"], ax) for f in facets], pr
+    return [regularise(f["geometry"], face_axis(geom, f["geometry"], ax)) for f in facets], pr
 
 
 # --------------------------------------------------------------- scorer
@@ -339,12 +339,36 @@ MIN_KEEP_FRAC = 0.7     # a snap that eats 30% of the face was not a jog
 
 
 def building_axis(geom):
-    """The angle of the building's long side, in radians."""
+    """The direction of the building's walls (the long-side one of the two),
+    in radians. From the walls, not the bounding rectangle, which lies along
+    the diagonal of a stepped outline (src/outline_axis.py)."""
+    from src.outline_axis import dominant_axis_deg
+    try:
+        ax = dominant_axis_deg(geom)
+    except Exception:
+        ax = None
+    if ax is not None:
+        return float(np.radians(ax))
     try:
         cc = list(geom.minimum_rotated_rectangle.exterior.coords)
         return float(np.arctan2(cc[1][1] - cc[0][1], cc[1][0] - cc[0][0]))
     except Exception:
         return 0.0
+
+
+def face_axis(geom, face, ax):
+    """The axis (radians) to straighten `face` to: the building's `ax`, or on a
+    building with a wing at another angle, the wall family that fits the face
+    (src/outline_axis.py). Anything unexpected keeps `ax`."""
+    from src.outline_axis import face_axis_deg, dominant_axis_deg, _dev
+    try:
+        d = face_axis_deg(geom, face)
+        dom = dominant_axis_deg(geom)
+    except Exception:
+        return ax
+    if d is None or dom is None or _dev(d, dom) < 1e-9:
+        return ax
+    return float(np.radians(d))
 
 
 def regularise(part, ax):
@@ -576,7 +600,7 @@ def lidar_faces(pts, geom):
         for part in parts:
             if part.geom_type != "Polygon" or part.area < 6.0:
                 continue
-            reg = regularise(part, ax)
+            reg = regularise(part, face_axis(geom, part, ax))
             if reg.geom_type == "Polygon" and reg.area >= 6.0:
                 faces.append(reg)
     return faces

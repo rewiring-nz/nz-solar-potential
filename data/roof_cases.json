@@ -638,6 +638,72 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4735274,
+   "region": null,
+   "first_flagged": "2026-09-24",
+   "defect": "11A Camp St: roof lines wonky, not straight along the ridges",
+   "quotes": [
+    "11A Camp St: roof lines wonky, not straight along the ridges"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4726056,
+   "region": null,
+   "first_flagged": "2026-09-24",
+   "defect": "17 Church St: flat roof with lots of plant shows no panels at all",
+   "quotes": [
+    "17 Church St: flat roof with lots of plant shows no panels at all"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5370328,
+   "region": null,
+   "first_flagged": "2026-09-24",
+   "defect": "9 Marine Parade: roof lines wrong; obstructions drawn over clear space",
+   "quotes": [
+    "9 Marine Parade: roof lines wrong; obstructions drawn over clear space"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5372604,
+   "region": null,
+   "first_flagged": "2026-09-24",
+   "defect": "1 Ballarat St: panels over obstructions the map does not mark; lines miss the ridges and v",
+   "quotes": [
+    "1 Ballarat St: panels over obstructions the map does not mark; lines miss the ridges and valleys"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4725580,
+   "region": null,
+   "first_flagged": "2026-09-24",
+   "defect": "12 Stanley St: complex pyramid roof, lines misaligned",
+   "quotes": [
+    "12 Stanley St: complex pyramid roof, lines misaligned"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371137,
+   "region": null,
+   "first_flagged": "2026-09-24",
+   "defect": "8 Sydney St: lines wrong, obstructions over clear areas, panels at an odd angle",
+   "quotes": [
+    "8 Sydney St: lines wrong, obstructions over clear areas, panels at an odd angle"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
