@@ -53,8 +53,11 @@ sync_tree() {
     [ -f "$local_dir/$f" ] && gcloud compute scp --project=$PROJECT --zone=$ZONE \
       --quiet "$local_dir/$f" "$VM:~/$name/$f" >/dev/null 2>&1
   done
+  # --recurse: without it scp skips subdirectories (tests/synthetic,
+  # tools/research) and the error went to /dev/null, so the VM's test suite
+  # was missing the synthetic-region build and nobody could tell.
   for d in tools tests; do
-    ls "$local_dir/$d"/* >/dev/null 2>&1 && gcloud compute scp \
+    ls "$local_dir/$d"/* >/dev/null 2>&1 && gcloud compute scp --recurse \
       --project=$PROJECT --zone=$ZONE --quiet \
       "$local_dir/$d"/* "$VM:~/$name/$d/" >/dev/null 2>&1
   done
