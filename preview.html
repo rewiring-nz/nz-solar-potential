@@ -1379,25 +1379,13 @@ const emptyBandTally = () => Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, 0])
 // The band a panel returning `ratio` times its share of the install falls in.
 const bandForRatio = ratio =>
   (PANEL_ECON_BANDS.find(b => ratio < b.max) || PANEL_ECON_BANDS[PANEL_ECON_BANDS.length - 1]).key;
-// "blended" spreads the building's average value over every panel, which is
-// the original specification. "marginal" asks the harder question -- is it worth
-// adding THIS panel -- and answers it at the export rate, because the
-// self-consumption a blended rate credits it with is already spoken for.
-// Back to blended by default. Marginal is still the sharper question for "is
-// one more panel worth it", but defaulting to it made the panel and the map
-// contradict each other: 17/60 Hallenstein showed every
-// panel red while the building itself reported $20,900 net profit.
-//
-// Both were right and that is the problem. The headline prices the
-// self-consumed slice at retail; the marginal test prices every panel at export
-// because the daytime load is already met by the panels before it. On that roof
-// break-even is 300 kWh/yr blended and 488 marginal, and the panels make ~460 --
-// so the same roof is entirely green or entirely red depending on which
-// question is being asked, with no way for a reader to tell.
-//
-// Blended reconciles with the figures beside it. Marginal stays one click away
-// and now says plainly what it is measuring.
-let panelEconBasis = "blended";
+// Merit order, not a single blended or marginal rate (see rebuildEconMatch).
+// "Blended" gave every panel the roof's average value and "marginal" priced
+// every panel at export; on 17/60 Hallenstein that made the same roof all
+// green or all red depending on which was asked. Merit order values the
+// panels that cover the site's own daytime use at retail and the rest at
+// export -- exactly the split the building's headline figures add up to --
+// so the colours, the chips and the building panel cannot disagree.
 // The break-even is computed at the END of updateFittedStats, from figures the
 // START of it already used. So the first pass after switching the mode on has
 // no break-even yet and falls back to the baked deciles. One guarded re-run
@@ -2296,16 +2284,14 @@ map.on("load", async () => {
       const cutoff = perPanelKwh > 0 ? Math.min(count, e.selfKwh / perPanelKwh) : 0;
       const costPerPanel = basis.cost / basisCount;
       merit.set(pr.building_id, {
-        cutoff,
+        cutoff, costPerPanel,
         // kWh/yr a panel must make to repay its own share, on each side.
         // Fixed for this roof; only which side of the cutoff a panel sits on
         // changes as the slider moves.
         retailBE: costPerPanel / Math.max(basis.retailLifetimePerKwhYr, 1e-9),
         exportBE: costPerPanel / Math.max(basis.exportLifetimePerKwhYr, 1e-9),
       });
-      const perKwh = panelEconBasis === "marginal"
-        ? basis.exportLifetimePerKwhYr
-        : basis.lifetime / Math.max(eFull ? fullKwh : kwhYear, 1e-9);
+      const perKwh = basis.lifetime / Math.max(eFull ? fullKwh : kwhYear, 1e-9);
       pairs.push(pr.building_id, costPerPanel / Math.max(perKwh, 1e-9));
     });
     panelEconMerit = merit;
@@ -4240,8 +4226,7 @@ map.on("load", async () => {
           if (!on || !isLayout || !(count > 0) || !(kwhYear > 0)) {
             panelEcon = null;
           } else {
-            const perKwh = panelEconBasis === "marginal"
-              ? e.exportLifetimePerKwhYr : e.lifetime / kwhYear;
+            const perKwh = e.lifetime / kwhYear;
             panelEcon = { buildingId,
                           breakEvenKwh: (e.cost / count) / Math.max(perKwh, 1e-9) };
           }
@@ -4258,6 +4243,9 @@ map.on("load", async () => {
             el("panel-econ-note").innerHTML = isLayout ? ""
               : "Only in Panel Layout \u2014 no panels are placed on the heat map.";
           } else {
+            // The thresholds the MAP is painted with, built before the chips
+            // count and the note reads them, so all three say the same thing.
+            rebuildEconMatch();
             // Counted from what is on the map, so a band reading zero says so
             // rather than being an absence of colour the reader has to notice.
             const tally = emptyBandTally();
@@ -4284,33 +4272,38 @@ map.on("load", async () => {
                 // savings, ROI and the generation curve all move together.
                 refreshDerived();
               }));
-            const be = Math.round(panelEcon.breakEvenKwh).toLocaleString();
-            el("panel-econ-note").innerHTML =
-              `Return over ${econ.life_years} years against each panel's ` +
-              `\u2248${fmtMoneyFull(e.cost / count)} share of the install. ` +
-              `1\u00d7 is ${be} kWh/yr. Tap a band to hide it.<br>` +
-              `Valued at <a href="#" id="econ-basis-swap" style="color:var(--accent)">` +
-              `${panelEconBasis === "marginal" ? "the export rate (one more panel)"
-                                               : "this roof's blended rate"}</a>.` +
-              (panelEconBasis === "marginal"
-                ? ` Asks whether ADDING a panel pays, so it prices every panel at ` +
-                  `export: the daytime load is already met by the ones before it. ` +
-                  `Stricter than the figures above, which price the self-consumed ` +
-                  `share at retail \u2014 a roof can show net profit while no extra ` +
-                  `panel pays for itself.`
-                : "");
-            const swap = el("econ-basis-swap");
-            if (swap) swap.addEventListener("click", ev => {
-              ev.preventDefault();
-              panelEconBasis = panelEconBasis === "marginal" ? "blended" : "marginal";
-              setPanelEcon(true);
-            });
+            // THE NOTE STATES THE MAP'S OWN THRESHOLDS. It used to quote a
+            // single "1x" from this panel's own sums -- a blended rate at the
+            // slider's system size -- while the map painted every panel by
+            // merit order: the first panels, which cover the power used on
+            // site, repay at the retail rate and the rest at export. So the
+            // note and the colours could disagree, and the "blended / export
+            // rate" switch under it changed the words but no colour at all.
+            // Merit order is also the split the headline figures add up to
+            // (self-used x retail + exported x buyback), so it stays, alone.
+            const m = panelEconMerit && panelEconMerit.get(buildingId);
+            const kwh = v => Math.round(v).toLocaleString();
+            if (m) {
+              const n = Math.floor(m.cutoff);
+              el("panel-econ-note").innerHTML =
+                `Return over ${econ.life_years} years against each panel's ` +
+                `\u2248${fmtMoneyFull(m.costPerPanel)} share of the install. ` +
+                (n > 0
+                  ? `The first ${n} panel${n === 1 ? "" : "s"} cover the power used on site and ` +
+                    `break even at ${kwh(m.retailBE)} kWh/yr; the rest are exported ` +
+                    `and need ${kwh(m.exportBE)} kWh/yr.`
+                  : `Every panel is exported and needs ${kwh(m.exportBE)} kWh/yr to break even.`) +
+                ` Tap a band to hide it.`;
+            } else {
+              el("panel-econ-note").innerHTML =
+                `1\u00d7 is ${kwh(breakEvenFor(buildingId))} kWh/yr. Tap a band to hide it.`;
+            }
           }
           // The district-wide half has to move too. Switching the mode on from a
           // building panel used to repaint only, leaving the per-building
           // thresholds unbuilt and the left-hand counts blank -- the same
           // disconnect as the curves, one layer up.
-          rebuildEconMatch();
+          if (!panelEcon) rebuildEconMatch();
           applyPanelDensityPaint();
           renderGlobalEconBands();
         };
