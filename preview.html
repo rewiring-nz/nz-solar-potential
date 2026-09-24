@@ -1529,7 +1529,23 @@ function applyPanelDensityPaint() {
   if (!map.getLayer("panels-fill")) return;
   map.setPaintProperty("panels-fill", "fill-opacity", densityOpacityExpr(PANEL_FILL_OPACITY));
   map.setPaintProperty("panels-outline", "line-opacity", densityOpacityExpr(PANEL_LINE_OPACITY));
-  map.setPaintProperty("panels-fill", "fill-color", panelColourExpr());
+  repaintPanelColours();
+}
+
+// The map's panel colours, from the thresholds as they stand NOW. Panning
+// rebuilds the per-building thresholds (rebuildEconMatch) for whatever came
+// into view, but only a click repainted, so a roof panned into view was
+// coloured against the 250 kWh fallback until it was clicked, then changed
+// colour under the reader's finger. Every rebuild now repaints; the string
+// compare skips the call when nothing moved.
+let _paintedPanelColour = null;
+function repaintPanelColours() {
+  if (!map.getLayer("panels-fill")) return;
+  const expr = panelColourExpr();
+  const sig = JSON.stringify(expr);
+  if (sig === _paintedPanelColour) return;
+  _paintedPanelColour = sig;
+  map.setPaintProperty("panels-fill", "fill-color", expr);
 }
 
 // setFilter re-evaluates and re-uploads the geometry of every loaded tile, so
@@ -2235,7 +2251,9 @@ map.on("load", async () => {
   // cost tiers, the home/business split and the declining export schedule rather
   // than re-deriving any of it.
   function rebuildEconMatch() {
-    if (!panelEcon || !panelEconGlobal) { panelEconMatch = null; panelEconMerit = null; return; }
+    if (!panelEcon || !panelEconGlobal) {
+      panelEconMatch = null; panelEconMerit = null; repaintPanelColours(); return;
+    }
     const pairs = [], merit = new Map();
     inViewBuildingProps().forEach(pr => {
       const count = Math.round(decileInterp(pr, "fill_panels", panelDensityPct));
@@ -2255,9 +2273,10 @@ map.on("load", async () => {
       const fullCount = Math.round(decileInterp(pr, "fill_panels", 100));
       const fullKwh = decileInterp(pr, "fill_kwh", 100) * bakedKwhScale();
       const fullKwp = fullCount * assumptions.panel_rated_power_w / 1000;
-      const eFull = (fullCount > 0) ? economicsFor(fullKwp, fullKwh, pr.facet_area_m2) : null;
+      const eFull = (fullCount > 0) ? economicsFor(fullKwp, fullKwh, pr.facet_area_m2,
+                                                     { zoneClass: pr.zone_class }) : null;
       const kwp = count * assumptions.panel_rated_power_w / 1000;
-      const e = economicsFor(kwp, kwhYear, pr.facet_area_m2);
+      const e = economicsFor(kwp, kwhYear, pr.facet_area_m2, { zoneClass: pr.zone_class });
       if (!e) return;
       const basis = eFull || e;
       const basisCount = eFull ? fullCount : count;
@@ -2293,6 +2312,7 @@ map.on("load", async () => {
     panelEconMatch = pairs.length
       ? ["match", ["get", "building_id"], ...pairs, PANEL_ECON_FALLBACK_KWH]
       : null;
+    repaintPanelColours();
   }
 
   // What the roof looks like once bands are switched off. Hiding the red
