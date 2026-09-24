@@ -791,15 +791,31 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             chosen = port or land
         _, placed, w_cells, h_cells = chosen
 
-        # NO GAP-FILL PASS. There was one, meant to pack the pockets one grid
-        # leaves (odd corners, strips beside obstructions) at 100% density. It
-        # packed the residue AFTER blanking every placed panel, then tagged a
-        # placed panel gap_fill only if the residue pack returned that same
-        # rectangle -- which it never can, since the residue has no free cell
-        # where a placed panel sits -- and its own panels were never emitted.
-        # So it placed nothing, ever, and cost ~60% of packing time (removed
-        # 24 Sep 2026). Filling the pockets is still a real, open improvement.
+        # POCKETS: 100% should place every panel that fits. One grid in one
+        # orientation leaves usable pockets -- odd corners, strips beside
+        # obstructions -- that the other orientation or a shifted origin
+        # would take. So the residue (every placed panel blanked, with a
+        # one-cell gap) is packed again, free, in both orientations, and the
+        # better result is emitted as extra panels tagged gap_fill, which
+        # assign_fill_ranks and rerank_layouts keep at fill_rank 100: they
+        # appear only at 100% density, never in a partial layout.
+        #
+        # A pass with this intent existed until 24 Sep 2026 and never placed
+        # anything: it tagged a PLACED panel gap_fill when the residue pack
+        # returned the same rectangle, which it cannot, and never emitted its
+        # own panels.
+        occ2 = occupancy.copy()
         for r0, c0, r1, c1 in placed:
+            occ2[max(0, r0 - 1):r1 + 1, max(0, c0 - 1):c1 + 1] = False
+        extra = []
+        if occ2.any():
+            for w2, h2 in ((panel_width, panel_height), (panel_height, panel_width)):
+                got = _pack_orientation(occ2, resolution, w2, h2)
+                if got and len(got[0]) > len(extra):
+                    extra = got[0]
+        gap_set = set(map(tuple, extra))
+
+        for r0, c0, r1, c1 in list(placed) + list(extra):
             u0, v0 = u_min + c0 * resolution, v_min + r0 * resolution
             u1, v1 = u_min + c1 * resolution, v_min + r1 * resolution
             corners_u = [u0, u1, u1, u0]
@@ -807,6 +823,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             wx, wy = to_world(corners_u, corners_v)
             panel_poly = Polygon(zip(wx, wy))
             panels.append({
+                **({"gap_fill": True} if (r0, c0, r1, c1) in gap_set else {}),
                 "building_id": facet["building_id"],
                 "facet_aspect_deg": facet["aspect_deg"],
                 "facet_slope_deg": facet["slope_deg"],
@@ -864,10 +881,13 @@ def drop_minor_arrays(facet_panels):
     # on a small residential roof, scattered 2-panel blocks ARE the install.
     if not facet_panels:
         return facet_panels
-    largest = max(len(panels) for panels in facet_panels)
+    # pocket panels (gap_fill, 100% only) are not counted: they must not
+    # decide which of the real arrays is a straggler
+    main_n = lambda panels: sum(1 for p in panels if not p.get("gap_fill"))
+    largest = max(main_n(panels) for panels in facet_panels)
     if largest >= MAIN_ARRAY_MIN_PANELS:
         for panels in facet_panels:
-            n = len(panels)
+            n = main_n(panels)
             if 0 < n < max(MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION * largest):
                 for panel in panels:
                     panel["straggler"] = True
@@ -1022,6 +1042,23 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     the density slider work on the static deployed site with no server."""
     if not panels:
         return panels
+    # POCKET PANELS (gap_fill) ARE RANKED APART, AFTER EVERYTHING ELSE. They
+    # exist for 100% only, and they sit beside the real arrays: grouped with
+    # them they would bridge arrays, change which count as confetti or
+    # stragglers, and so change what every partial layout shows. The real
+    # panels are ranked exactly as if the pockets did not exist.
+    pocket = [p for p in panels if p.get("gap_fill")]
+    if pocket:
+        rest = [p for p in panels if not p.get("gap_fill")]
+        assign_fill_ranks(rest, poa_key)
+        _assign_array_membership(pocket)
+        base_id = max((p.get("array_id", 0) for p in rest), default=0)
+        n_rest = len(rest)
+        for i, p in enumerate(sorted(pocket, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))):
+            p["array_id"] = p.get("array_id", 0) + base_id
+            p["fill_rank"] = 100
+            p["fill_order"] = n_rest + i + 1
+        return panels
     # Array membership is computed FIRST because the ordering below depends on
     # it. It used to run at the end, purely as metadata for the frontend, which
     # meant the pipeline had a correct notion of "one contiguous array" and
@@ -1089,9 +1126,9 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     # "fill_order <= ceil(target_kW / panel_kW)", client-side, with no rebuild
     # needed to change the targets.
     ordered = main + extras
-    # The 100%-only band: confetti clusters appear when the slider says
-    # "everything", and only then.
-    tail = [p for p in ordered if p.get("confetti")]
+    # The 100%-only band: confetti clusters and pocket panels appear when the
+    # slider says "everything", and only then.
+    tail = [p for p in ordered if p.get("confetti") or p.get("gap_fill")]
     for p in tail:
         p["fill_rank"] = 100
     # By identity: `p not in tail` compared whole panel dicts (geometry

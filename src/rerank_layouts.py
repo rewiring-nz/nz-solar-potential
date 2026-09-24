@@ -62,13 +62,20 @@ def rerank_area(name):
         # same fix and the reasoning: on a curved roof split into three
         # sections, every section is big enough to escape straggler banding
         # while holding a clean block plus a scatter of lone panels.
-        _assign_arrays(b["panels"])
+        #
+        # Pocket panels (gap fill, 100% only) are grouped on their own AFTER
+        # the main panels, so a pocket bridging two arrays cannot merge them
+        # and change what a partial layout shows.
+        rest = [pf for pf in b["panels"] if not pf["properties"].get("gap_fill")]
+        pocket = [pf for pf in b["panels"] if pf["properties"].get("gap_fill")]
+        n_arrays = _assign_arrays(rest)
+        _assign_arrays(pocket, start_id=n_arrays)
 
         groups = {}  # array id -> [panel feature]
-        for pf in b["panels"]:
+        for pf in rest:
             groups.setdefault(pf["properties"].get("array_id", 0), []).append(pf)
 
-        largest = max(len(g) for g in groups.values())
+        largest = max((len(g) for g in groups.values()), default=0)
         straggler_ids = set()
         if largest >= MAIN_ARRAY_MIN_PANELS:
             cutoff = min(MINOR_ARRAY_ALWAYS_KEEP_PANELS,
@@ -98,6 +105,11 @@ def rerank_area(name):
         for aid, g in groups.items():
             yield_of[aid] = (sum(pf["properties"].get("ac_kwh_year") or 0
                                  for pf in g) / len(g))
+        for pf in pocket:
+            aid = pf["properties"]["array_id"]
+            if aid not in yield_of:
+                g = [q for q in pocket if q["properties"]["array_id"] == aid]
+                yield_of[aid] = sum(q["properties"].get("ac_kwh_year") or 0 for q in g) / len(g)
         # fill_order breaks fill_rank ties. fill_rank is a banded percentile,
         # so several panels share one, and a tie fell back to their order in
         # the FILE -- which meant re-ranking an already-ranked layout (every
@@ -109,18 +121,22 @@ def rerank_area(name):
                           pf["properties"].get("array_id", 0),
                           pf["properties"].get("fill_rank", 100),
                           pf["properties"].get("fill_order", 0))
-        main = sorted((pf for pf in b["panels"] if id(pf) not in straggler_ids), key=key)
-        extras = sorted((pf for pf in b["panels"] if id(pf) in straggler_ids), key=key)
+        # Pocket panels exist for 100% only: ranked last, at 100.
+        pocket = sorted(pocket, key=key)
+        main = sorted((pf for pf in rest if id(pf) not in straggler_ids), key=key)
+        extras = sorted((pf for pf in rest if id(pf) in straggler_ids), key=key)
         for i, pf in enumerate(main):
             pf["properties"]["fill_rank"] = int(math.ceil((i + 1) / len(main) * STRAGGLER_RANK_FLOOR))
         for j, pf in enumerate(extras):
             pf["properties"]["fill_rank"] = STRAGGLER_RANK_FLOOR + int(
                 math.ceil((j + 1) / len(extras) * (100 - STRAGGLER_RANK_FLOOR)))
+        for pf in pocket:
+            pf["properties"]["fill_rank"] = 100
         n_stragglers += len(extras)
 
         # fill_order: the same sequence as an exact count, so the frontend can
         # ask for "the best 14 panels" (a 6kW system) instead of a percentage.
-        for i, pf in enumerate(main + extras):
+        for i, pf in enumerate(main + extras + pocket):
             pf["properties"]["fill_order"] = i + 1
 
     write_json_atomic(path, data)
@@ -138,13 +154,14 @@ ARRAY_TOUCH_TOL_M = 0.35
 _TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
 
 
-def _assign_arrays(panel_features):
-    """Contiguous-block id and size over the SURVIVING panels of one building."""
+def _assign_arrays(panel_features, start_id=0):
+    """Contiguous-block id and size over the SURVIVING panels of one building.
+    Ids continue from start_id; returns the last id used."""
     if not panel_features:
-        return
+        return start_id
     geoms = [shapely_transform(_TO_NZTM, shape(pf["geometry"])) for pf in panel_features]
     tree = STRtree(geoms)
-    seen, gid = {}, 0
+    seen, gid = {}, start_id
     for i in range(len(geoms)):
         if i in seen:
             continue
@@ -163,6 +180,7 @@ def _assign_arrays(panel_features):
         for k in members:
             panel_features[k]["properties"]["array_id"] = gid
             panel_features[k]["properties"]["array_size"] = len(members)
+    return gid
 
 
 def main():

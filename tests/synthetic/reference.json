@@ -1,8 +1,8 @@
 {
  "files": {
   "data/out/zz_harness/addresses.json": "4f53cda18c2baa0c",
-  "data/out/zz_harness/buildings.pmtiles": "6568e06854a59509",
-  "data/out/zz_harness/cells.json": "d370a3efee83de43",
+  "data/out/zz_harness/buildings.pmtiles": "b2fc9d4b4dfdf2bb",
+  "data/out/zz_harness/cells.json": "adcb5155ab202f22",
   "data/out/zz_harness/detail/13/7934/5246.json": "7c638b83e7112418",
   "data/out/zz_harness/heatmap/11/1983/1311.png": "afb6e398aeb328e7",
   "data/out/zz_harness/heatmap/12/3967/2623.png": "85913156122dd7e6",
@@ -11,44 +11,44 @@
   "data/out/zz_harness/heatmap/15/31736/20985.png": "f0787f8289ca26b4",
   "data/out/zz_harness/heatmap/16/63472/41970.png": "083a4c7b9af9f32e",
   "data/out/zz_harness/heatmap/17/126944/83940.png": "01139e636516b21a",
-  "data/out/zz_harness/panel_layouts.pmtiles": "289afc728f291c1a",
-  "data/out/zz_harness/solar_potential.geojson": "6934702a64e4f5d3",
-  "data/out/zz_harness/summary.json": "b162384b21953ecf",
+  "data/out/zz_harness/panel_layouts.pmtiles": "36a7a269e6afcd0d",
+  "data/out/zz_harness/solar_potential.geojson": "880f7b36c04851f5",
+  "data/out/zz_harness/summary.json": "1adbbc782b810782",
   "data/regions/zz_harness/heatmap_raster.json": "78a51eb26c23a0e9",
   "data/regions/zz_harness/heatmap_raster.png": "0f24cfd6187d51ef",
   "data/regions/zz_harness/image_shift.json": "64c17b97dd939101",
-  "data/regions/zz_harness/panel_layouts.geojson": "1aa51c8d701bead5",
-  "data/regions/zz_harness/solar_potential.geojson": "3947472ce0d5f08a"
+  "data/regions/zz_harness/panel_layouts.geojson": "87e5a206b359640c",
+  "data/regions/zz_harness/solar_potential.geojson": "5b17d86c2b733d0c"
  },
  "headline": {
-  "features": 557,
-  "kwh_total": 298420.0,
-  "panels": 532,
+  "features": 583,
+  "kwh_total": 312702.0,
+  "panels": 558,
   "per_building": {
    "990000001": [
-    50,
+    64,
     2,
-    27922.0
+    35682.0
    ],
    "990000002": [
-    70,
+    74,
     2,
-    38036.0
+    40210.0
    ],
    "990000003": [
-    70,
+    71,
     4,
-    39707.0
+    40275.0
    ],
    "990000004": [
-    101,
+    102,
     4,
-    55617.0
+    56176.0
    ],
    "990000005": [
-    117,
+    119,
     1,
-    68562.0
+    69734.0
    ],
    "990000006": [
     42,
@@ -61,9 +61,9 @@
     0.0
    ],
    "990000008": [
-    50,
+    54,
     2,
-    24925.0
+    26974.0
    ],
    "990000009": [
     32,

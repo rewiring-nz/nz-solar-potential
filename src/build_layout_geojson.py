@@ -605,6 +605,7 @@ def _build_one_at(building_id, nudge_m):
                     "array_id": pnl["array_id"],
                     "array_size": pnl["array_size"],
                     **({"low_conf_fit": 1} if pnl.get("low_conf_fit") else {}),
+                    **({"gap_fill": 1} if pnl.get("gap_fill") else {}),
                 },
             })
     return features
