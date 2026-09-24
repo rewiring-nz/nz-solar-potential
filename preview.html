@@ -1813,6 +1813,36 @@ function coverageSelectHtml(id) {
     `<option value="${p}" ${p === coveragePct ? "selected" : ""}>${p}%</option>`).join("") + `</select>`;
 }
 
+// Least-recently-used bound for the on-demand caches (building detail tiles,
+// latitude-band curve docs, address shards). They used to keep everything
+// ever fetched, which is harmless over one district and not over the
+// country: panning Northland to Southland touches thousands of z13 detail
+// tiles, each ~250 kB of parsed JSON that nothing ever freed.
+// Call it BEFORE reading or inserting `key`: it moves `key` to the fresh end
+// if present and drops the stalest other entries so that, once `key` is in,
+// there are at most `max`. Works on a Map or on a plain object with
+// non-numeric keys (both iterate in insertion order). Dropping an entry only
+// costs a refetch -- anything already holding the value keeps it.
+function lruTouch(cache, key, max) {
+  if (cache instanceof Map) {
+    if (cache.has(key)) { const v = cache.get(key); cache.delete(key); cache.set(key, v); }
+    const limit = cache.has(key) ? max : max - 1;
+    for (const k of [...cache.keys()]) {
+      if (cache.size <= limit) break;
+      if (k !== key) cache.delete(k);
+    }
+    return;
+  }
+  if (key in cache) { const v = cache[key]; delete cache[key]; cache[key] = v; }
+  const keys = Object.keys(cache);
+  let n = keys.length;
+  const limit = key in cache ? max : max - 1;
+  for (const k of keys) {
+    if (n <= limit) break;
+    if (k !== key) { delete cache[k]; n--; }
+  }
+}
+
 map.on("load", async () => {
   // Kick off everything that does NOT depend on the buildings file before
   // awaiting it. solar_potential.geojson is 19MB (4MB gzipped) and its parse
@@ -4289,6 +4319,9 @@ map.on("load", async () => {
   // band for the OPEN building's latitude is loaded on demand and swapped in.
   let curveBands = null;
   const curveBandDocs = {};
+  // One band is ~200 kB and spans a degree of latitude; NZ spans 13 of them,
+  // so 32 never evicts in practice -- the bound is a backstop (lruTouch).
+  const CURVE_BAND_CACHE_MAX = 32;
   fetch(`${DATA_BASE}data/seasonal_curves/index.json?v=${DATA_VERSION}`)
     .then(r => r.ok ? r.json() : null).then(d => { curveBands = d && d.bands ? d.bands : null; })
     .catch(() => {});
@@ -4296,6 +4329,7 @@ map.on("load", async () => {
     if (!curveBands || !Number.isFinite(lat)) return;
     const key = `m${Math.abs(Math.floor(lat))}`;
     if (!curveBands[key]) return;
+    lruTouch(curveBandDocs, key, CURVE_BAND_CACHE_MAX);
     if (curveBandDocs[key]) { seasonCurves = curveBandDocs[key]; return; }
     curveBandDocs[key] = true;   // in flight
     fetch(`${DATA_BASE}data/seasonal_curves/${key}.json?v=${DATA_VERSION}`).then(r => r.json())
@@ -4747,6 +4781,10 @@ map.on("load", async () => {
   const DETAIL_Z = 13;
   let detailIndex = null;          // null = not loaded yet, {} = unavailable
   const detailTiles = new Map();   // "x/y" -> Promise<object>
+  // A z13 tile is ~3.5 km across at NZ latitudes and ~250 kB of JSON: 256 of
+  // them (~60 MB) is a long browse, where unbounded was the whole country
+  // for anyone who kept clicking (lruTouch).
+  const DETAIL_TILE_CACHE_MAX = 256;
 
   function detailTileOf(lon, lat) {
     const n = 2 ** DETAIL_Z;
@@ -4779,6 +4817,7 @@ map.on("load", async () => {
     const [x, y] = detailTileOf(lon, lat);
     const key = `${x}/${y}`;
     if (!(key in idx.tiles)) return null;
+    lruTouch(detailTiles, key, DETAIL_TILE_CACHE_MAX);
     if (!detailTiles.has(key)) {
       detailTiles.set(key, fetch(
         `${DATA_BASE}data/building_detail/${idx.z}/${x}/${y}.json?v=${DATA_VERSION}`)
