@@ -18,7 +18,11 @@ replaces with the markup where there is one. Only roofs marked complete are
 scored, so a detection with no mark near it is a false one, not an unmarked
 object. Markup is generous -- one polygon often covers a cluster of vents --
 so area recall understates; the per-object numbers are the ones to move.
-Needs each region's point cloud and imagery.
+Needs each region's point cloud AND imagery: without imagery the colour
+detectors do not run, so the numbers would describe a different detector
+from the one that ships. Roofs in regions with no imagery on this machine
+are skipped and counted (on 25 Sep the laptop had imagery for 42 of the 98
+roofs; the build VM has it for all). --allow-no-imagery scores them anyway.
 """
 
 import argparse
@@ -97,6 +101,7 @@ def main():
     ap.add_argument("--ids", nargs="*", type=int)
     ap.add_argument("--save")
     ap.add_argument("--diff")
+    ap.add_argument("--allow-no-imagery", action="store_true")
     a = ap.parse_args()
     import src.build_layout_geojson as blg
     from src.region_build import area_centroid_wgs84
@@ -104,11 +109,18 @@ def main():
     from tools.cases import _find_region
     labs = json.loads((ROOT / "data" / "roof_labels.json").read_text())["buildings"]
     ids = a.ids or sorted(int(b) for b, v in labs.items() if v.get("obstructions") and v.get("complete"))
-    by_region = {}
+    from src.region_build import area_paths
+    by_region, no_imagery = {}, 0
     for b in ids:
         r = _find_region(b)
-        if r:
-            by_region.setdefault(r, []).append(b)
+        if not r:
+            continue
+        if not a.allow_no_imagery and not area_paths(r)["imagery"].exists():
+            no_imagery += 1
+            continue
+        by_region.setdefault(r, []).append(b)
+    if no_imagery:
+        print(f"skipped {no_imagery} roof(s) whose region has no imagery here (see docstring)")
     rows = []
     for region, bids in sorted(by_region.items()):
         c = area_centroid_wgs84(region)
