@@ -5,21 +5,44 @@ in git.
 
 ## Ship
 
-- **Full re-lay and deploy -- running.** Started on the VM 25 Sep 05:36 UTC
-  from b09eb642 (`~/chain.sh`, log `~/chain.log`): tests, goldens re-record,
-  full district build, invariants, `tools/cases.py check --render`,
-  `tools/explain_obstructions.py` on the case roofs, predeploy check. It
-  carries every geometry change since 23 Sep, including plane_seams,
-  outline_axis and lower roof levels (below). Then, from the laptop,
-  `tools/deploy_from_vm.sh`, and `--push` if the gate passes. The deploy also
-  carries the density heat map, corrected seasonal curves, and Kingston /
-  Wanaka / Albert Town / Hawea. First build with build keys: every region
-  plans as `full` once.
-- **Re-record goldens** (`tests/test_golden.py --record` on the VM). The
-  24 Sep geometry changes move real roofs on purpose; look at the render of
-  any golden whose count moved, and give the reason in the commit.
+- **Re-lay with the crash fix and photo-lean drawing -- next.** The 25 Sep
+  re-lay (from 8989d9fe) finished and the gate held it: 7 roofs zeroed. Five
+  were a crash (an empty face from the seam snap's sliver merge; a GEOS union
+  outside the level split's guard), fixed in cbafbeed -- on the VM those
+  roofs rebuild with 35-62 panels, as live. Two small roofs (11 and 6 panels
+  live) lose their faces to obstructions. The next run (`chain2.sh`) first
+  fetches each region's reference photo, then the same steps as before.
+  Then `tools/deploy_from_vm.sh`, `--push` if the gate passes, tell Josh.
+- **Look at the 13 BIG DROPs** in that gate (33-48% fewer panels). No single
+  new switch explains them (small objects give back 5-8 panels on some).
+  The pattern in renders is a jagged, pixel-stepped SUNKEN strip along an
+  edge or ridge: right on terraces (#4725197), wrong on real roof along a
+  ridge (#4730688, sunken median -0.18 / -0.76 m). The two moved "fixed"
+  cases (#4735099, #4725488) look right.
 - **Verify after the re-lay:** 13 Plantation Rd (#4727237), Kingston counts,
   and the cases awaiting a verdict (`tools/cases.py check`).
+
+## Imagery
+
+- **Drawings follow the photo's lean -- in the next build.** The map shows
+  LINZ Basemaps' aerial (2026 over Queenstown), orthorectified to the ground,
+  so roofs lean 0.5-1.5 m off the LiDAR; outlines, faces, panels, the heat
+  map and Josh's markup overlay looked misplaced (32 Frankton Rd, 10 Stanley
+  St). `src/register_imagery.py` measures the lean per building against the
+  LiDAR year's own photo (SURVEYS `reference_imagery_layer`), photo to photo;
+  pilot: 1,001 of 1,066 shifted, median 0.57 m, p90 1.28 m. Markup traced on
+  the map's own photo (every Queenstown region but pilot) is left where it
+  was drawn. `SOLAR_IMAGE_SHIFT=0` turns it off.
+- **Detect obstructions on the reference photo, not the map's.** Outside
+  pilot the colour detectors read the 2026 photo, whose roofs lean off the
+  LiDAR, so colour blobs land up to 1-2 m from the object. The reference
+  photo sits on the LiDAR. Measure with `tools/obstruction_bench.py`.
+- **Markup traced on a leaning photo sits off the LiDAR.** ~110 labelled
+  roofs outside pilot were drawn on the 2026 photo; their faces drive the
+  layout but are offset from the planes by the lean. Un-shifting them into
+  the LiDAR frame when read would fix both; measure against face-IoU first.
+- **One shift per building is not enough on big roofs.** 32 Frankton Rd
+  (4,000 m2) leans unevenly; its match was weak and it borrowed 0.4 m.
 
 ## Geometry
 

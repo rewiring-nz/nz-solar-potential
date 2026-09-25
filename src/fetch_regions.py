@@ -192,6 +192,14 @@ def main():
             # Never let that abort the run -- DSM+outlines are what the build
             # actually requires, and builds degrade gracefully without imagery.
             print(f"  WARNING: imagery unavailable for {name} ({type(e).__name__}) -- LiDAR-only build")
+        # The photo from the LiDAR's own year, when it is a different layer:
+        # register_imagery measures each building's lean against it.
+        ref = survey_for(bbox, name).get("reference_imagery_layer")
+        if ref and ref != survey_for(bbox, name)["imagery_layer"]:
+            try:
+                fetch_raster_chunked(bbox, api_key, ref, "reference_imagery", out_dir, "raster")
+            except Exception as e:
+                print(f"  WARNING: reference imagery unavailable for {name} ({type(e).__name__}) -- drawings not shifted")
 
     # Pass 3: the raw LiDAR point cloud. This is the pipeline's PRIMARY input --
     # segmentation, obstruction height evidence, panel gating and shading all

@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 
 KEYS = ("dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
-        "pointcloud_bulk_url", "pointcloud_tile_year")
+        "pointcloud_bulk_url", "pointcloud_tile_year", "reference_imagery_layer")
 
 # What a survey record falls back to for any key it does not set.
 _DEFAULT_FROM_CONFIG = {

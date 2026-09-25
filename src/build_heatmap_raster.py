@@ -26,6 +26,7 @@ Usage: python src/build_heatmap_raster.py
 """
 
 import json
+import os
 import sys
 import time
 import warnings
@@ -227,6 +228,17 @@ def main(area="pilot"):
         print(f"[{area}] WARNING: no usable data/dem_wide_mosaic.tif -- far-terrain "
               f"correction is OFF for this raster.", flush=True)
 
+    # Each roof's heat is drawn where the map's photo shows it: the per-
+    # building lean from register_imagery (see emit_region, which moves the
+    # rest of the drawing by the same amount). The kWh never move.
+    shifts = {}
+    sf = area_paths(area)["dir"] / "image_shift.json"
+    if sf.exists() and os.environ.get("SOLAR_IMAGE_SHIFT", "1") != "0":
+        try:
+            shifts = json.loads(sf.read_text())
+        except Exception:
+            shifts = {}
+
     for i, row in enumerate(gdf.itertuples()):
         bminx, bminy, bmaxx, bmaxy = row.geometry.bounds
         points = pc_source.points_in_bbox(bminx - 1, bminy - 1, bmaxx + 1, bmaxy + 1, building_only=True)
@@ -250,6 +262,10 @@ def main(area="pilot"):
         if result is None:
             continue
         poa, r0, c0 = result
+        sh = shifts.get(str(getattr(row, "building_id", row.Index)))
+        if sh:
+            c0 += int(round(sh[0] / HR_RES_M))
+            r0 -= int(round(sh[1] / HR_RES_M))   # north is up the raster
         rr0, cc0 = max(r0, 0), max(c0, 0)
         rr1 = min(r0 + poa.shape[0], height)
         cc1 = min(c0 + poa.shape[1], width)

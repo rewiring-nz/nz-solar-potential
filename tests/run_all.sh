@@ -59,6 +59,7 @@ run "ridge snap"            $PY tests/test_ridge_snap.py
 run "roof levels"           $PY tests/test_roof_levels.py
 run "small obstructions"    $PY tests/test_small_obstructions.py
 run "geometry stages"       $PY tests/test_geometry_stage.py
+run "image lean"            $PY tests/test_register_imagery.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "diagram vs code"       $PY tools/check_diagram.py

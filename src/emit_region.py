@@ -166,22 +166,19 @@ def emit(region, out_root=OUT_ROOT):
         t["kwh"] += p.get("ac_kwh_year") or 0.0
 
     # THE DRAWING FOLLOWS THE PHOTO. register_imagery measured, per building,
-    # how far the orthophoto sits from the LiDAR (relief displacement: 28% of
-    # pilot roofs 2 m or more, per building, no regional constant). Every
+    # how far the orthophoto sits from the LiDAR (relief displacement: on the
+    # town centre a median 0.57 m, p90 1.28 m, per building). Every
     # number was computed where the LiDAR is and stays there; the geometry
     # the map DRAWS -- outline, facets, panels, obstructions -- moves by the
     # shift so it lands on the roof people see in the image.
-    # OFF BY DEFAULT UNTIL IT IS VALIDATED. The stage's shifts were right on
-    # 42 Suburb Street and wrong at scale: on the first district run,
-    # neighbouring roofs (<40 m apart, same photo) agreed on direction only
-    # 38-49% of the time against 33% for pure chance, medians of 3.6-4.1 m
-    # with 8-14% at the search bound. That is edge-matching locking onto
-    # trees and shadows, not relief displacement. Set SOLAR_IMAGE_SHIFT=1 to
-    # apply what register_imagery measured; the measurement is kept on disk
-    # either way so a better gate can be tested against it.
+    # The shift is photo-to-photo (src/register_imagery.py): the map's photo
+    # against the LiDAR year's own photo. An earlier edge-matching version
+    # locked onto trees and shadows and stayed off; this one had 89% of
+    # neighbouring roofs leaning the same way. SOLAR_IMAGE_SHIFT=0 draws
+    # everything where the LiDAR is, for A/B.
     shifts = {}
     sf = paths["dir"] / "image_shift.json"
-    if sf.exists() and os.environ.get("SOLAR_IMAGE_SHIFT", "0") == "1":
+    if sf.exists() and os.environ.get("SOLAR_IMAGE_SHIFT", "1") != "0":
         try:
             shifts = json.loads(sf.read_text())
         except Exception:

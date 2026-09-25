@@ -24,9 +24,26 @@ VOID = {"absent", "not_building", "unclear"}
 OUT = ROOT / "data" / "markup_lines.geojson"
 
 
+def _image_shifts():
+    """Every region's per-building photo lean (src/register_imagery.py).
+    Roofs whose markup was traced on the map's own photo are not in these
+    files, so they stay where they were drawn."""
+    import os
+    if os.environ.get("SOLAR_IMAGE_SHIFT", "1") == "0":
+        return {}
+    out = {}
+    for f in (ROOT / "data" / "regions").glob("*/image_shift.json"):
+        try:
+            out.update(json.loads(f.read_text()))
+        except Exception:
+            pass
+    return out
+
+
 def main():
     import pyproj
     B = json.loads((ROOT / "data/roof_labels.json").read_text())["buildings"]
+    shifts = _image_shifts()
     to_wgs = pyproj.Transformer.from_crs(2193, 4326, always_xy=True).transform
     feats = []
     for k, v in B.items():
@@ -37,7 +54,8 @@ def main():
                                       if l.get("a") and l.get("b") else None)
             if not pts or len(pts) < 2:
                 continue
-            coords = [list(to_wgs(float(p[0]), float(p[1]))) for p in pts]
+            dx, dy = (shifts.get(k) or [0.0, 0.0])[:2]
+            coords = [list(to_wgs(float(p[0]) + dx, float(p[1]) + dy)) for p in pts]
             coords = [[round(x, 6), round(y, 6)] for x, y in coords]
             feats.append({
                 "type": "Feature",
