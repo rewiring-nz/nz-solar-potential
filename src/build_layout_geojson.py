@@ -303,6 +303,36 @@ def _no_estimate_feature(building_id, row_geom, to_wgs84, reason):
     }
 
 
+def _geometry_stage(building_id, stage, facets, *args, **kwargs):
+    """Run a stage that refines face geometry; it may improve a roof but
+    never lose one. A stage that raises leaves the faces as they were, and
+    faces it returns empty or invalid are repaired or dropped here -- an
+    empty face reaching the yield step crashed four roofs on 25 Sep that had
+    55 panels each on the live map."""
+    try:
+        out = stage(facets, *args, **kwargs)
+    except Exception as exc:
+        _note_fallback(stage.__name__, building_id, exc)
+        return facets
+    clean = []
+    for f in out:
+        g = f["geometry"]
+        if g is None or g.is_empty:
+            continue
+        if not g.is_valid:
+            g = shapely.make_valid(g)
+            parts = [p for p in getattr(g, "geoms", [g]) if p.geom_type == "Polygon" and not p.is_empty]
+            if not parts:
+                continue
+            g = max(parts, key=lambda p: p.area)
+            f = dict(f, geometry=g)
+            if "area_m2" in f:
+                f["area_m2"] = g.area
+        if g.area > 0:
+            clean.append(f)
+    return clean if clean else facets
+
+
 def _no_estimate_only(building_id, reason):
     """Keep the building on the map even when its build blew up."""
     try:
@@ -400,14 +430,14 @@ def _build_one_at(building_id, nudge_m):
     # Where two faces meet is decided by the crest the returns show, not by
     # where two noisy plane fits happen to cross -- see src/ridge_snap.py
     # (2 Preston Drive: a ridge 0.8 m off with a panel column astride it).
-    facets = snap_ridges_to_crest(facets, pc_source, dsm=_dsm_ev)
+    facets = _geometry_stage(building_id, snap_ridges_to_crest, facets, pc_source, dsm=_dsm_ev)
     # ...and roof a face took from its neighbour across a hip or valley goes
     # back, or obstruction detection marks the neighbour's slope as an object
     # over clear roof (src/plane_seams.py).
-    facets = snap_seams_to_plane_intersections(facets, pc_source, dsm=_dsm_ev)
+    facets = _geometry_stage(building_id, snap_seams_to_plane_intersections, facets, pc_source, dsm=_dsm_ev)
     # ...and a lower roof level spanned by one face gets a face of its own,
     # or the sunken detector carves clear roof as an object (src/roof_levels.py).
-    facets = split_lower_levels(facets, pc_source, dsm=_dsm_ev)
+    facets = _geometry_stage(building_id, split_lower_levels, facets, pc_source, dsm=_dsm_ev)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the

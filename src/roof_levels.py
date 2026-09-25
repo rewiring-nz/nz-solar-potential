@@ -96,9 +96,11 @@ def split_lower_levels(facets, pc_source, dsm=None):
     if any(k not in f for f in facets for k in need):
         return facets
     from src.obstruction_detection import _sunken_regions
-    footprint = unary_union([f["geometry"] for f in facets])
     out, changed = [], False
     try:
+        # inside the guard: GEOS rejects some face sets as a union
+        # (#5371034, 25 Sep, "unable to assign free hole to a shell")
+        footprint = unary_union([f["geometry"] for f in facets])
         for f in facets:
             plane = (f["plane_a"], f["plane_b"], f["plane_c"])
             host = f["geometry"]

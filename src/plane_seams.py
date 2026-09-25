@@ -188,7 +188,10 @@ def snap_seams_to_plane_intersections(facets, pc_source, dsm=None):
                    default=None)
         if host is not None:
             g = unary_union([host["geometry"], o["geometry"].buffer(0.02)]).buffer(-0.02)
-            if g.geom_type == "Polygon":
+            # an invalid host can collapse to an EMPTY polygon here, which is
+            # still a "Polygon"; shipping it crashed three roofs at the yield
+            # step on 25 Sep (#4727134, #4744148, #4733856)
+            if g.geom_type == "Polygon" and not g.is_empty and g.area >= 0.9 * host["geometry"].area:
                 host["geometry"] = g
     for o in big:
         if "area_m2" in o:
