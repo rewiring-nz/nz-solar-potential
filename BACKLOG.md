@@ -5,18 +5,16 @@ in git.
 
 ## Ship
 
-- **Full re-lay and deploy.** Every region needs rebuilding with the 23 Sep
-  fixes (ridge snap, frame bearing convention, per-face frame-loss bound,
-  one-plane gate on forced faces, balcony-rule majority guard, segmentation
-  setback decoupling) and the 24 Sep ones: skylights detected on clean faces,
-  pocket panels at 100%, hip ridges snapping, the gate's deterministic order,
-  rerank tie-breaks. Validated on Josh's cases, the 211 gate-flagged roofs
-  (-1.5% vs no frame) and a 120-roof sample (+16.7% panels, none losing
-  >30%); the 24 Sep changes on the synthetic region (tests/synthetic). Then
-  `tools/deploy_from_vm.sh --push` once `tools/predeploy_check.py` passes. The
-  deploy carries the density heat map, corrected seasonal curves, and
-  Kingston / Wanaka / Albert Town / Hawea. It is the first build with build
-  keys, so every region plans as `full` once.
+- **Full re-lay and deploy -- running.** Started on the VM 25 Sep 05:36 UTC
+  from b09eb642 (`~/chain.sh`, log `~/chain.log`): tests, goldens re-record,
+  full district build, invariants, `tools/cases.py check --render`,
+  `tools/explain_obstructions.py` on the case roofs, predeploy check. It
+  carries every geometry change since 23 Sep, including plane_seams,
+  outline_axis and lower roof levels (below). Then, from the laptop,
+  `tools/deploy_from_vm.sh`, and `--push` if the gate passes. The deploy also
+  carries the density heat map, corrected seasonal curves, and Kingston /
+  Wanaka / Albert Town / Hawea. First build with build keys: every region
+  plans as `full` once.
 - **Re-record goldens** (`tests/test_golden.py --record` on the VM). The
   24 Sep geometry changes move real roofs on purpose; look at the render of
   any golden whose count moved, and give the reason in the commit.
@@ -38,6 +36,17 @@ in git.
   +0.01 m), which is shading, not an object -- but a flush skylight looks the
   same to the LiDAR, so any fix must use the blob's shape or position on the
   fold, not its height.
+- **Lower roof levels -- fixed 25 Sep.** One face spanning two roof levels
+  had its lower level carved by the sunken detector (9 Marine Parade: 168 of
+  193 m2 of obstructions). `src/roof_levels.py` gives a wide, planar lower
+  level its own face; decks narrower than 4 m and clutter stay obstructions.
+- **Small obstructions (vents) -- measured, open.** Against the 98 complete
+  marked roofs: of 365 marked obstructions under 1 m2 the detector finds 72
+  (20%), and of its 454 detections under 1.2 m2 only 67 (15%) touch a marked
+  obstruction; by area, recall 28% and precision 26%. Colour-only blobs under
+  1.2 m2 are dropped by design (stains), which also drops real vents (1
+  Ballarat St: rows of small vents under panels). A fix has to raise recall
+  without adding stains, measured on this benchmark.
 - **Ridge snap reverts: re-measure.** Plain hip roofs were ALWAYS reverted
   (the re-cut strip ran past the apex); fixed 24 Sep by sliding the vertices of
   a ridge whose ends are both interior. After the re-lay, run
