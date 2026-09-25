@@ -41,6 +41,7 @@ import geopandas as gpd
 from src.roof_segmentation import segment_building_best, roof_confidence, _note_fallback
 from src.ridge_snap import snap_ridges_to_crest
 from src.plane_seams import snap_seams_to_plane_intersections
+from src.roof_levels import split_lower_levels
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
@@ -404,6 +405,9 @@ def _build_one_at(building_id, nudge_m):
     # back, or obstruction detection marks the neighbour's slope as an object
     # over clear roof (src/plane_seams.py).
     facets = snap_seams_to_plane_intersections(facets, pc_source, dsm=_dsm_ev)
+    # ...and a lower roof level spanned by one face gets a face of its own,
+    # or the sunken detector carves clear roof as an object (src/roof_levels.py).
+    facets = split_lower_levels(facets, pc_source, dsm=_dsm_ev)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
