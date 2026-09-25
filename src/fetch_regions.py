@@ -175,7 +175,14 @@ def main():
         # Which survey covers THIS region, not "the" DSM layer. See
         # src/surveys.py: a national build is a patchwork of captures and a
         # constant here is how Wellington got pointed at Otago's data.
-        sv = survey_for(bbox, name)
+        try:
+            sv = survey_for(bbox, name)
+        except LookupError as e:
+            # A region whose box pokes past every survey's box (arrowtown_east)
+            # must not stop the fetch for the rest; the build decides whether
+            # it has what it needs.
+            print(f"  WARNING: {e}")
+            continue
         print(f"[{name}] DSM (survey {sv.get('name', 'default')})...")
         fetch_raster_chunked(bbox, api_key, sv["dsm_layer"], "dsm", out_dir, "grid")
 
@@ -194,8 +201,12 @@ def main():
             print(f"  WARNING: imagery unavailable for {name} ({type(e).__name__}) -- LiDAR-only build")
         # The photo from the LiDAR's own year, when it is a different layer:
         # register_imagery measures each building's lean against it.
-        ref = survey_for(bbox, name).get("reference_imagery_layer")
-        if ref and ref != survey_for(bbox, name)["imagery_layer"]:
+        try:
+            sv = survey_for(bbox, name)
+        except LookupError:
+            continue
+        ref = sv.get("reference_imagery_layer")
+        if ref and ref != sv["imagery_layer"]:
             try:
                 fetch_raster_chunked(bbox, api_key, ref, "reference_imagery", out_dir, "raster")
             except Exception as e:
