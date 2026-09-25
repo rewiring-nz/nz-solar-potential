@@ -484,8 +484,12 @@ def _build_one_at(building_id, nudge_m):
             continue
         plane = (f["plane_a"], f["plane_b"], f["plane_c"])
         _keepouts = []
+        _edge_drops = []
+        _drawn_obs = []
         obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane,
-                                                    roof_geom=f.get("building_geometry"))
+                                                    roof_geom=f.get("building_geometry"),
+                                                    keepouts=(_edge_drops if os.environ.get(
+                                                        "SOLAR_EDGE_DROPS", "1") != "0" else None))
         try:
             from src.roof_line_source import drawn_obstruction_polys
             _drawn_obs = drawn_obstruction_polys(f.get("building_id"))
@@ -505,6 +509,10 @@ def _build_one_at(building_id, nudge_m):
                          if k.intersects(f["geometry"])]
         except Exception:
             pass
+        # edge drops the detector found stay panel-free, unless the markup
+        # governs this roof's obstructions
+        if not _drawn_obs:
+            _keepouts = list(_keepouts) + _edge_drops
         siblings = [other for other in facets if other is not f]
         # A FACE JOSH DREW IS NOT JUDGED ON ITS PLANE FIT, for the same reason
         # it is not withheld for low confidence: _facet_fit asks how well the

@@ -21,6 +21,7 @@
 #                caller passing four arguments to a two-argument function.
 #   ridge snap   the shared-ridge snap on synthetic gables and hips.
 #   roof levels  lower roof levels become faces; decks and clutter do not.
+#   small obj    vents read as crisp contrast, stains do not; edge-drop width.
 #   xref         every import of a repo name, including inside functions and
 #                in tools/, still resolves -- what a deletion breaks first.
 #   synthetic    the whole district build on a made-up eight-roof region,
@@ -56,6 +57,7 @@ run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
 run "roof levels"           $PY tests/test_roof_levels.py
+run "small obstructions"    $PY tests/test_small_obstructions.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "diagram vs code"       $PY tools/check_diagram.py
