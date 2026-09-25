@@ -45,6 +45,18 @@ The defaults in the example file cover the Queenstown Lakes district; for
 any other part of NZ, set your district's DSM/DEM/imagery layer ids (the
 example file says where to find them). Building outlines are national.
 
+### Primary outputs
+
+- **Pipeline run report (`report.md`):**
+  `data/quickstart_runs/<name>/<run-id>/report.md`
+  The primary audit record. Open this first to verify that all steps passed,
+  check durations, review any degraded inputs (such as missing point-cloud
+  tiles), and access links to detailed per-step logs (`step-NN-*.log`).
+- **Visual verification cards (`quickstart_report.html`):**
+  `data/regions/<name>/quickstart_report.html`
+  The visual report. Open in a browser to inspect aerial photos with overlaid
+  roof facets (white), obstructions (red), and placed panels (blue).
+
 ## Run artifacts and debugging
 
 Each invocation gets a unique, ignored run directory:
@@ -96,27 +108,33 @@ for every rule, is
 
 ## How to verify it
 
-1. **Facets against the photograph.** Open the report and compare white
+1. **Pipeline health in `report.md`.** Open
+   `data/quickstart_runs/<name>/<run-id>/report.md` (the run terminal prints the
+   exact path on completion). Confirm all steps completed (`PASS` or explainable
+   `DEGRADED`/`SKIPPED` status for optional vision/point-cloud steps). If any step
+   degraded or failed, click the linked `step-NN-*.log` to review raw stdout/stderr.
+2. **Facets against the photograph (`quickstart_report.html`).** Open
+   `data/regions/<name>/quickstart_report.html` in a browser and compare white
    boundaries to what you can see: ridges where ridges are, one facet per
    roof plane, boundaries straight. This is the single strongest check —
    it is the one performed on every change.
-2. **Panels against physics.** Panels are 1.134 × 1.961 m
+3. **Panels against physics.** Panels are 1.134 × 1.961 m
    (`config.PANEL_WIDTH_M/HEIGHT_M`, a real Trina module). Measure a roof
    you know: does the count fit the area, minus the 0.3 m edge setback
    and obstruction clearances?
-3. **Numbers against arithmetic.** For any building:
+4. **Numbers against arithmetic.** For any building:
    `panel_count × 0.5 kW = kwp`; annual kWh ÷ panel count should sit
    within NZ's plausible per-panel yield (roughly 550–800 kWh/panel/yr
    depending on tilt/aspect/shading). The derivation is
    `src/derive_solar_potential.py` — totals are sums over the panels you
    can see, by construction.
-4. **One building, fully.** `python src/refit_one.py <building_id>`
+5. **One building, fully.** `python src/refit_one.py <building_id>`
    rebuilds one roof with full diagnostics; compare its facet list to the
-   report card.
-5. **The assumptions.** Every displayed PV assumption lives in
+   report card in `quickstart_report.html`.
+6. **The assumptions.** Every displayed PV assumption lives in
    `config.PV_ASSUMPTIONS` with its justification inline. Losses,
    panel spec, and the irradiance model are all there to be argued with.
-6. **Your own roof.** If you live in a covered area, run your street and
+7. **Your own roof.** If you live in a covered area, run your street and
    check the building you know best. That is the test the project exists
    to pass.
 
