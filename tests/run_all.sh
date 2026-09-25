@@ -62,6 +62,7 @@ run "geometry stages"       $PY tests/test_geometry_stage.py
 run "image lean"            $PY tests/test_register_imagery.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
+run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py

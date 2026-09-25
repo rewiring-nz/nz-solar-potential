@@ -1,13 +1,12 @@
 # Quickstart: run the methodology on your own patch of NZ
 
 This project estimates rooftop solar potential for every building in a
-district. This quickstart lets you run the **identical methodology** on a
-small area you choose — your own street, if it's in a covered survey — and
-verify each step yourself. It is not a demo build: your area becomes a
-first-class region and flows through the same code, thresholds, and gates
-that produced the live Queenstown map. If the quickstart is wrong
-somewhere, the map is wrong the same way; that is what makes checking it
-meaningful.
+district. This quickstart lets you run the production roof/layout and yield
+stages on a small area you choose — your own street, if it is in a covered
+survey — and inspect the result. It uses the same stage implementations,
+thresholds, and gates as the regional build. It is a **verification build, not
+a complete map deployment**: it does not emit/combine PMTiles or make the new
+area appear in the normal web map.
 
 ## What you need
 
@@ -24,8 +23,8 @@ meaningful.
 - Environment set up per
   [data-maintainers/local-setup.md](data-maintainers/local-setup.md)
 - Optional, for the full vision chain: `pip install torch segment-anything`
-  (the quickstart downloads Meta's public SAM checkpoint, 358 MB; the
-  project's own roof-line detectors ship in `data/models/`)
+  (the quickstart downloads Meta's public SAM checkpoint, 358 MB; both
+  project roof-line model checkpoints must be present in `data/models/`)
 
 ## Run it
 
@@ -35,30 +34,61 @@ export LINZ_API_KEY=...
 bash quickstart.sh my_test_area
 ```
 
+The area name passed on the command line must exactly match `name` in
+`my_area.json`. The script validates this, the WGS84 bbox, the Python
+executable, and the presence (not the value) of `LINZ_API_KEY` before
+starting network work. Credentials are never copied into the report or logs.
+
 Keep the bbox small the first time (~0.005° × 0.005°, a few dozen
-buildings): the run finishes in minutes and the report stays readable.
+buildings): the run finishes in minutes and the reports stay readable.
 The defaults in the example file cover the Queenstown Lakes district; for
 any other part of NZ, set your district's DSM/DEM/imagery layer ids (the
 example file says where to find them). Building outlines are national.
 
-Output: `data/regions/<name>/quickstart_report.html` — one card per
-building with the aerial photo, the roof facets the pipeline built
-(white), detected obstructions (red), and placed panels (blue), plus the
-derived numbers and which geometry path produced each roof.
+## Run artifacts and debugging
+
+Each invocation gets a unique, ignored run directory:
+`data/quickstart_runs/<name>/<UTC-run-id>/`. It is separate from generated
+region data and is not published with the map. The terminal prints the exact
+paths when the run stops or finishes.
+
+- `report.md` is the incrementally updated run record. Its step numbers and
+  descriptions match the `[QS-NN]` prefixes in the terminal and logs. Each row
+  records inputs, expected outputs, status, exit code, duration, and the
+  failure consequence or degradation.
+- `run.log` is the complete ordered log with those same step prefixes.
+- `step-NN-*.log` contains the full stdout/stderr for that step. Start with
+  the first failed step in `report.md`, then inspect its matching log.
+- `run.json` is the machine-readable record, including run metadata, timestamps,
+  durations, exit codes, and statuses.
+
+`PASS` means the command succeeded and expected output checks passed.
+`DEGRADED` means the run continued with an optional source or method missing;
+read the consequence in the report before interpreting the results. `SKIPPED`
+is used for optional vision precomputation when prerequisites are absent.
+`FAIL` stops dependent work. Later steps are marked `NOT RUN`, not silently
+treated as successful. The report is written after every status change, so a
+failed or interrupted run still leaves a useful partial record.
+
+The separate visual output remains at
+`data/regions/<name>/quickstart_report.html` — one card per building with the
+aerial photo, roof facets (white), detected obstructions (red), placed panels
+(blue), derived numbers, and the geometry source.
 
 ## What actually ran (and where to read it)
 
-The stages, in order — each is the production stage, not a stand-in:
+The numbered executable steps, in order, are:
 
-| stage | code | what it claims |
-|---|---|---|
-| Fetch | `src/fetch_regions.py`, `src/fetch_pointcloud_regions.py` | LINZ outlines/DSM/DEM/imagery + LiDAR tiles for your bbox |
-| Vision precompute (optional) | `tools/predict_faces.py` | three candidate face readings per roof (SAM, line detector, LiDAR region-growing); an evidence scorer picks one |
-| Roof geometry | `src/build_layout_geojson.py` → `src/roof_segmentation.py`/`src/roof_partition.py` | facets as a planar partition; precedence markup > vision > LiDAR partition |
-| Obstructions | `src/obstruction_detection.py` | colour + height evidence, reconciled |
-| Panels | `src/panel_fitting.py` | real panel dimensions, edge/ridge setbacks, sunniest-first fill order |
-| Gates | `src/gate_panels.py` | drops panels on lumpy/sparse surfaces |
-| Aggregation | `src/derive_solar_potential.py` | building totals derived FROM the panels, never recomputed |
+| step | description (exact log/report label) | code | what it claims |
+|---|---|---|---|
+| 01 | Preflight: validate area and runtime | `tools/quickstart_run.py` | validate the area/environment; make the run record |
+| 02 | Fetch outlines, elevation, imagery, and point cloud | `src/fetch_regions.py` | LINZ outlines, DSM/DEM/imagery, and point-cloud fetch (this fetcher invokes point-cloud acquisition itself) |
+| 03 | Vision precompute (optional) | `tools/predict_faces.py` | candidate roof-face readings; skip/failure is recorded and geometry uses available readings and normal fallbacks |
+| 04 | Build roof geometry and layout | `src/run_stage.py build_layout_geojson` | roof facets; precedence markup > selected vision faces > normal partition path |
+| 05 | Gate panel layouts | `src/run_stage.py gate_panels` | applies panel surface gates |
+| 06 | Rerank panel layouts | `src/run_stage.py rerank_layouts` | ranks/fills gated panel layouts |
+| 07 | Derive building solar potential | `src/run_stage.py derive_solar_potential` | derives building totals from panel layouts |
+| 08 | Render building verification report | `tools/quickstart_report.py` | renders per-building visual verification cards |
 
 The methodology's rulebook, with the enforcement point and check command
 for every rule, is
@@ -93,13 +123,14 @@ for every rule, is
 ## Known limits of a quickstart run
 
 - If your survey has no public LiDAR point cloud on OpenTopography, the
-  run continues DSM-only: facet planes fit on the 1 m DSM raster instead
-  of raw returns, and the lumpy/sparse panel gates weaken. The report is
-  still meaningful; the production map for such an area would need the
-  point cloud.
-- Without torch/SAM, the vision precompute is skipped and every roof uses
-  the LiDAR partition — the same fallback production uses where the
-  vision chain declines. Roof shapes on complex houses are noticeably
-  better with the vision chain on.
-- Hand-drawn markup (`data/roof_labels.json`) only exists for Queenstown
-  benchmark roofs; your area's roofs will all be machine-read.
+  fetch report records absent/missing tiles and the build may rely on the
+  1 m DSM instead of raw returns. Evidence and surface gates may be weaker;
+  interpret this as degraded rather than equivalent data.
+- Without torch/SAM or either required roof-line checkpoint, vision
+  precomputation is explicitly marked `SKIPPED`. Geometry still follows its
+  normal selected-reading and fallback precedence; it is not accurate to say
+  every roof necessarily uses only one fallback method.
+- The quickstart does not run horizon/heatmap stages, regional tile emission,
+  or combination. Its successful output is **not map-ready**; the local web
+  map continues to read the existing map-facing files in `data/`. Do not
+  combine an isolated quickstart area into the normal map data directory.
