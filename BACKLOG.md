@@ -40,13 +40,14 @@ in git.
   had its lower level carved by the sunken detector (9 Marine Parade: 168 of
   193 m2 of obstructions). `src/roof_levels.py` gives a wide, planar lower
   level its own face; decks narrower than 4 m and clutter stay obstructions.
-- **Small obstructions (vents) -- measured, open.** Against the 98 complete
-  marked roofs: of 365 marked obstructions under 1 m2 the detector finds 72
-  (20%), and of its 454 detections under 1.2 m2 only 67 (15%) touch a marked
-  obstruction; by area, recall 28% and precision 26%. Colour-only blobs under
-  1.2 m2 are dropped by design (stains), which also drops real vents (1
-  Ballarat St: rows of small vents under panels). A fix has to raise recall
-  without adding stains, measured on this benchmark.
+- **Small obstructions (vents) and edge drops -- fixed 25 Sep.** Vents are
+  kept when crisp against the roof around them; narrow sunken strips at a
+  face's edge are keepouts, not obstructions. `tools/obstruction_bench.py`
+  (42 complete marked roofs with imagery): small marks found 47 -> 66 of 163,
+  small detections on a mark 15% -> 29%, area recall 0.281 -> 0.298,
+  precision 0.261 -> 0.295. Still open: 97 of 163 small marks missed (many
+  are invisible in the photo -- 54 have contrast under 5), and 254 small
+  detections touch no mark. Run the bench on the VM for all 98 roofs.
 - **Ridge snap reverts: re-measure.** Plain hip roofs were ALWAYS reverted
   (the re-cut strip ran past the apex); fixed 24 Sep by sliding the vertices of
   a ridge whose ends are both interior. After the re-lay, run
