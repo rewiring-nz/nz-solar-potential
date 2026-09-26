@@ -381,10 +381,10 @@ def main():
     ap.add_argument("--regions", nargs="*", default=None)
     ap.add_argument("--out-root", default=str(OUT_ROOT))
     ap.add_argument("--dest", default=str(DATA_DIR))
-        ap.add_argument("--skip-markup-lines", action="store_true",
-                help="do not regenerate the repository-wide markup overlay")
+    ap.add_argument("--skip-markup-lines", action="store_true",
+                    help="do not regenerate the repository-wide markup overlay")
     a = ap.parse_args()
-        combine(a.regions, a.out_root, a.dest,
+    combine(a.regions, a.out_root, a.dest,
             build_markup_lines=not a.skip_markup_lines)
     return 0
 
