@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.preflight import preflight
 from src.panel_fitting import (MAIN_ARRAY_MIN_PANELS, MINOR_ARRAY_MIN_FRACTION,
                                MINOR_ARRAY_MIN_PANELS, MINOR_ARRAY_ALWAYS_KEEP_PANELS,
-                               STRAGGLER_RANK_FLOOR)
+                               STRAGGLER_RANK_FLOOR, STRAGGLER_MAX_SHARE)
 from src.region_build import all_areas, area_paths, write_json_atomic
 
 
@@ -87,8 +87,18 @@ def rerank_area(name):
         # deleted (build_layout_geojson tags them low_conf_fit). This pass
         # recomputes bands from array sizes alone, so without this line a
         # 90-panel low-confidence array would climb back to default density.
-        straggler_ids.update(id(pf) for pf in b["panels"]
-                             if pf["properties"].get("low_conf_fit"))
+        # ...but, as in panel_fitting.assign_fill_ranks, a demotion cannot
+        # swallow the roof: when low-fit panels are more than
+        # STRAGGLER_MAX_SHARE of the building the tag is describing the roof
+        # (vents spoil a flat roof's fit), and they rank with everything else.
+        # This pass ran without that cap and undid it: 22 Earl St (a Josh
+        # case) kept 284 of 874 panels in the 81-100 band on top of its
+        # stragglers, so the 80% slider showed barely half of its roof.
+        low_fit = [pf for pf in rest if pf["properties"].get("low_conf_fit")
+                   and len(groups.get(pf["properties"].get("array_id", 0), [])) >= MINOR_ARRAY_MIN_PANELS]
+        if not (low_fit and len(low_fit) > STRAGGLER_MAX_SHARE * len(b["panels"])):
+            straggler_ids.update(id(pf) for pf in b["panels"]
+                                 if pf["properties"].get("low_conf_fit"))
 
         # Whole arrays in order of total yield, and within an array the
         # existing rank, which preserves the compact reverse-erosion order the
