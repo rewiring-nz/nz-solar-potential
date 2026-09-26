@@ -157,6 +157,23 @@ Do not manually combine a test area into the normal map dataset. The
 [output-contract test](../../tests/test_output_contract.py) describes the
 required regional PMTiles fields and support data.
 
+#### `IndentationError` in `src/combine_regions.py`
+
+If Step 15's log reports `IndentationError: unexpected indent` at the
+`--skip-markup-lines` argument, the combine command did not begin; this is a
+Python source indentation problem, not a data or Tippecanoe failure. Update the
+checkout to the corrected code, then verify it with:
+
+```sh
+.venv/bin/python -m py_compile src/combine_regions.py
+.venv/bin/python src/combine_regions.py --help
+```
+
+The help output should include `--skip-markup-lines`. Rerun the quickstart to
+produce a new run report; the old run remains a failure record. The CLI smoke
+test in [tests/test_quickstart_map.py](../../tests/test_quickstart_map.py)
+guards this parser path.
+
 ### Local preview or PMTiles range probe failed
 
 **Report symptom** (Step 18): `Could not start local map server`,

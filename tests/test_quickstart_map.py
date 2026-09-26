@@ -64,6 +64,16 @@ def test_brewfile_installs_tippecanoe_cli_suite():
     assert 'brew "tippecanoe"' in brewfile
 
 
+def test_combine_regions_cli_parses_options():
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "src/combine_regions.py", "--help"],
+        cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "--skip-markup-lines" in result.stdout
+
+
 def test_preview_bundle_isolated_data_base():
     with tempfile.TemporaryDirectory(prefix="quickstart-map-bundle-", dir=ROOT) as temp:
         run_dir = Path(temp) / "run"
@@ -82,6 +92,7 @@ def test_preview_bundle_isolated_data_base():
 if __name__ == "__main__":
     test_range_server_serves_static_and_partial_content()
     test_map_report_lists_new_steps_and_isolated_output_paths()
+    test_combine_regions_cli_parses_options()
     test_preview_bundle_isolated_data_base()
     test_brewfile_installs_tippecanoe_cli_suite()
     print("quickstart map tests passed")
