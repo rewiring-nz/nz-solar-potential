@@ -1142,6 +1142,16 @@ def drop_plant_decks(facets, pc_source):
                 and inl is not None and inl < PLANT_MAX_INLIER):
             continue
         kept.append(f)
+    # PLANT IS A MINORITY OF A ROOF, like balconies (drop_balcony_levels).
+    # The main band is the one holding the most face area, so one extra face
+    # at another height can hand it to the wrong level: on #4734932 a lower
+    # band won by a few m2 and the raised main roof -- cluttered, so under
+    # PLANT_MAX_INLIER -- went as "plant", 239 of 457 m2 and 118 -> 54 panels.
+    total = sum(f["geometry"].area for f in facets)
+    lost = total - sum(f["geometry"].area for f in kept)
+    if lost > BALCONY_STAIR_MAX_DROP_SHARE * max(total, 1e-9):
+        print(f"  plant-deck rule refused: it would drop {100 * lost / total:.0f}% of the roof", flush=True)
+        return facets
     return kept or facets
 
 
@@ -1471,6 +1481,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         kept = []
         for f in machine:
             g = f["geometry"]
+            g0 = g
             if claimed is not None:
                 try:
                     g = g.difference(claimed)
@@ -1482,9 +1493,15 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                 g = max(g.geoms, key=lambda q: q.area)
             if g.geom_type != "Polygon" or g.area < 4.0:
                 continue
-            # thinness: a remainder whose area is far below what its
-            # perimeter could enclose is a corridor, not a face
-            if g.length > 1.0 and g.area / max(g.length, 1e-9) < 0.55:
+            # thinness: a REMAINDER of clipping whose area is far below what
+            # its perimeter could enclose is a corridor, not a face. Only
+            # remainders: the test used to run on every face, and a stair-
+            # stepped boundary fails it at any width -- on 42 Suburb St
+            # (#4751260) it dropped both 21 m2 slopes of a wing nothing had
+            # clipped, leaving one face of four (80 -> 34 m2, 9 panels).
+            clipped = abs(g.area - g0.area) > 0.05 * g0.area
+            if (clipped or os.environ.get("SOLAR_CORRIDOR_WIDTH", "1") == "0") \
+                    and g.length > 1.0 and g.area / max(g.length, 1e-9) < 0.55:
                 continue
             f = dict(f, geometry=g, area_m2=float(g.area))
             kept.append(f)

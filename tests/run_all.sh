@@ -63,6 +63,7 @@ run "image lean"            $PY tests/test_register_imagery.py
 run "plane refresh"         $PY tests/test_plane_refresh.py
 run "sunken regions"        $PY tests/test_sunken.py
 run "staircases"            $PY tests/test_staircase.py
+run "plant decks"           $PY tests/test_plant_decks.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
