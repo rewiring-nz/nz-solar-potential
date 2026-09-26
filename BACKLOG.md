@@ -38,14 +38,19 @@ in git.
   pilot: 1,001 of 1,066 shifted, median 0.57 m, p90 1.28 m. Markup traced on
   the map's own photo (every Queenstown region but pilot) is left where it
   was drawn. `SOLAR_IMAGE_SHIFT=0` turns it off.
-- **Detect obstructions on the reference photo, not the map's.** Outside
-  pilot the colour detectors read the 2026 photo, whose roofs lean off the
-  LiDAR, so colour blobs land up to 1-2 m from the object. The reference
-  photo sits on the LiDAR. Measure with `tools/obstruction_bench.py`.
-- **Markup traced on a leaning photo sits off the LiDAR.** ~110 labelled
-  roofs outside pilot were drawn on the 2026 photo; their faces drive the
-  layout but are offset from the planes by the lean. Un-shifting them into
-  the LiDAR frame when read would fix both; measure against face-IoU first.
+- **LiDAR frame for markup and image steps -- measured, left off.** Bench
+  on all 98 complete marked roofs (26 Sep, VM):
+
+  | | area recall | area precision | small marks found |
+  |---|---|---|---|
+  | A: as shipped | 0.350 | 0.328 | 137/365 |
+  | B: markup moved onto the LiDAR (`SOLAR_MARKUP_FRAME=lidar`) | 0.350 | 0.325 | 134/365 |
+  | C: B + survey-year photo (`SOLAR_PIPELINE_PHOTO=reference`) | 0.350 | 0.335 | 111/365 |
+
+  C is more precise but loses a fifth of the small objects: the vent rule's
+  contrast threshold was tuned on pilot's photo, and the 2021 capture is
+  older than the markup. Worth retrying with the contrast re-tuned per photo.
+
 - **One shift per building is not enough on big roofs.** 32 Frankton Rd
   (4,000 m2) leans unevenly; its match was weak and it borrowed 0.4 m.
 
