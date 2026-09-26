@@ -12,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.quickstart_serve import RangeHandler
-from tools.quickstart_run import QuickstartRun, _prepare_preview_bundle
+from tools.pipeline_serve import RangeHandler
+from tools.pipeline import QuickstartRun, _prepare_preview_bundle
 
 
 def test_range_server_serves_static_and_partial_content():
@@ -52,7 +52,7 @@ def test_range_server_serves_static_and_partial_content():
 
 
 def test_map_report_lists_new_steps_and_isolated_output_paths():
-    from tools.quickstart_run import STEPS
+    from tools.pipeline import STEPS
     assert [step["number"] for step in STEPS] == list(range(1, 19))
     assert STEPS[13]["label"] == "Emit regional map tiles"
     assert STEPS[14]["label"] == "Combine isolated map dataset"

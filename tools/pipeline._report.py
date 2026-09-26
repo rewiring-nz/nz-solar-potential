@@ -6,7 +6,7 @@ which geometry path produced it (markup / selected vision faces / LiDAR
 partition). The point is that a stranger can hold the output against the
 photograph and against docs/quickstart.md's checks.
 
-    python tools/quickstart_report.py <area>
+    python tools/pipeline._report.py <region>
 """
 
 import json
@@ -116,7 +116,7 @@ def main():
             f"red = detected obstructions, blue = placed panels. Geometry "
             f"source per building is labelled (markup = a hand-drawn roof, "
             f"vision = the SAM/line/LiDAR selected reading, lidar = the "
-            f"LiDAR partition fallback). Verify with docs/quickstart.md."
+            f"LiDAR partition fallback). Verify with docs/data-maintainers/pipeline-reference.md."
             f"</div>"]
     for c in cards:
         html.append(

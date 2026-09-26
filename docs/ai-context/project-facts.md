@@ -29,15 +29,19 @@ Last verified: 2026-09-26
   build. It runs preflight checks, records completion markers under
   `data/build_state/`, and skips only stages whose declared inputs are older
   than their marker.
-- `quickstart.sh <area>` runs regional estimates, then emits and combines the
+- `tools/pipeline.py [region]` (also invoked by the `quickstart.sh` compatibility
+  wrapper) runs regional estimates, then emits and combines the
   map contract under the unique ignored directory
-  `data/quickstart_runs/<area>/<run-id>/`; it never combines into the normal
-  `data/` map dataset. `tools/quickstart_serve.py` serves a run-specific
+  `data/quickstart_runs/<region>/<run-id>/`; it never combines into the normal
+  `data/` map dataset. `tools/pipeline_serve.py` serves a run-specific
   preview with PMTiles byte-range support on loopback. The quickstart report
   records map validation and the preview URL. Optional 3D terrain tiles are
   generated into that same run's dataset. Verified in the quickstart runner,
   isolated `combine_regions --dest`, and local range-server test (2026-09-26).
-- Quickstart run failures are triaged from each run's `report.md`, then the
+- `config.PIPELINE_REGION` selects the default region for `tools/pipeline.py`;
+  the CLI can override it with any configured `config.REGIONS` name. The old
+  per-machine JSON area configuration has been removed.
+- Pipeline run failures are triaged from each run's `report.md`, then the
   matching numbered step log. `docs/data-maintainers/troubleshooting.md` is
   the indexed guide for those diagnostics, LINZ permissions, missing Python
   dependencies, map-build CLI prerequisites, and local preview failures.

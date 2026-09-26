@@ -1,4 +1,4 @@
-"""Run the user-facing quickstart with durable, numbered diagnostics.
+"""Run the configured regional solar pipeline with durable diagnostics.
 
 Each step's number and label are shared by terminal output, step logs,
 run.log, run.json, and report.md. The Markdown report is rewritten atomically
@@ -11,7 +11,6 @@ import argparse
 import contextlib
 import datetime as dt
 import io
-import importlib
 import json
 import os
 import re
@@ -36,7 +35,7 @@ STEPS = [
     {
         "number": 1,
         "label": "Preflight: validate area and runtime",
-        "inputs": "my_area.json; selected Python environment; LINZ_API_KEY presence",
+        "inputs": "config.py region; selected Python environment; LINZ_API_KEY presence",
         "outputs": "Run metadata; confirmed area name and WGS84 bbox",
     },
     {
@@ -256,7 +255,7 @@ class QuickstartRun:
         elif all(s["status"] == "PASS" for s in self.records):
             self.overall = "PASS"
         content = [
-            f"# Quickstart run: {self.area}",
+            f"# Pipeline run: {self.area}",
             "",
             f"- **Run ID:** `{self.run_dir.name}`",
             f"- **Started (UTC):** {self.started}",
@@ -386,26 +385,10 @@ def _key_available() -> bool:
 
 
 def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
-    config_path = ROOT / "my_area.json"
-    if not config_path.is_file():
-        return False, "my_area.json is missing; copy my_area.example.json and set name/bbox.", {}
-    try:
-        area_config = json.loads(config_path.read_text(encoding="utf-8"))
-        name = str(area_config["name"]).strip()
-        bbox = [float(v) for v in area_config["bbox"]]
-        if name != area:
-            raise ValueError(f"requested area {area!r} does not match my_area.json name {name!r}")
-        if len(bbox) != 4:
-            raise ValueError("bbox must contain [west, south, east, north]")
-        west, south, east, north = bbox
-        if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
-            raise ValueError("bbox is invalid or outside WGS84 coordinate limits")
-    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        return False, f"Invalid my_area.json: {exc}", {}
     if not py.is_file() or not os.access(py, os.X_OK):
-        return False, f"Selected Python executable is unavailable: {py}", {"name": name, "bbox": bbox}
+        return False, f"Selected Python executable is unavailable: {py}", {"name": area}
     if not _key_available():
-        return False, "LINZ_API_KEY is not set in the environment or .env (value was not recorded).", {"name": name, "bbox": bbox}
+        return False, "LINZ_API_KEY is not set in the environment or .env (value was not recorded).", {"name": area}
     dependency_probe = subprocess.run(
         [str(py), "-c", "import matplotlib.colors"], cwd=ROOT,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -414,19 +397,22 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
             f"Matplotlib is required for the map heatmap stage but cannot be imported by "
             f"the selected Python ({py}). Install project dependencies into this exact "
             f"environment with '{py} -m pip install -r requirements.txt', then verify "
-            f"with '{py} -c \\\"import matplotlib.colors; print(matplotlib.__version__)\\\"'. "
+            f"with '{py} -c \"import matplotlib.colors; print(matplotlib.__version__)\"'. "
             f"See docs/data-maintainers/troubleshooting.md#matplotlib-is-required-for-the-map-heatmap-stage."
-        ), {"name": name, "bbox": bbox}
+        ), {"name": area}
     missing_tools = [tool for tool in ("tippecanoe", "tile-join", "tippecanoe-decode")
                      if shutil.which(tool) is None]
     if missing_tools:
-        return False, "Map-ready output requires Tippecanoe's commands on PATH: " + ", ".join(missing_tools) + ". Install the Tippecanoe package (macOS: brew bundle --file=Brewfile; Ubuntu/WSL: follow docs/data-maintainers/env-setup-ubuntu.md) and reopen the terminal before retrying.", {"name": name, "bbox": bbox}
+        return False, "Map-ready output requires Tippecanoe's commands on PATH: " + ", ".join(missing_tools) + ". Install the Tippecanoe package (macOS: brew bundle --file=Brewfile; Ubuntu/WSL: follow docs/data-maintainers/env-setup-ubuntu.md) and reopen the terminal before retrying.", {"name": area}
     try:
         sys.path.insert(0, str(ROOT))
         with contextlib.redirect_stdout(io.StringIO()):
-            config = importlib.import_module("config")
+            import config
             from src.surveys import survey_for
-            survey = survey_for(bbox, name)
+            if area not in config.REGIONS:
+                raise KeyError(f"unknown configured region {area!r}; add its bbox to config.REGIONS")
+            bbox = [float(v) for v in config.REGIONS[area]]
+            survey = survey_for(bbox, area)
         if not survey.get("dsm_layer"):
             raise ValueError("the selected survey has no DSM layer configured")
         if survey.get("pointcloud_bulk_url") and not survey.get("lidar_tile_index_layer"):
@@ -436,17 +422,14 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
             "reference_imagery_layer", "lidar_tile_index_layer",
             "pointcloud_bulk_url", "pointcloud_tile_year")}
     except Exception as exc:
-        return False, f"No usable source survey for this bbox: {type(exc).__name__}: {exc}. Configure the survey coverage/layer IDs in my_area.json or config.SURVEYS before fetching.", {"name": name, "bbox": bbox}
+        return False, f"No usable configured region/survey: {type(exc).__name__}: {exc}. Configure the region bbox in config.REGIONS and source layers in config.SURVEYS.", {"name": area}
     free_gb = shutil.disk_usage(DATA).free / 1e9 if DATA.exists() else shutil.disk_usage(ROOT).free / 1e9
-    details = f"Area {name}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; free disk {free_gb:.1f} GB; LINZ key present (not recorded)."
+    details = f"Region {area}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; free disk {free_gb:.1f} GB; LINZ key present (not recorded)."
     if free_gb < 10:
         details += f" WARNING: only {free_gb:.1f} GB free; documentation recommends about 10 GB."
-    survey_keys = ("dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
-                   "pointcloud_bulk_url", "pointcloud_tile_year")
-    overrides = {key: area_config[key] for key in survey_keys if key in area_config}
     return True, details + f" Selected survey: {survey.get('name')}.", {
-        "name": name, "bbox": bbox, "free_disk_gb": round(free_gb, 1),
-        "survey_overrides": overrides, "survey_name": survey.get("name"),
+        "name": area, "bbox": bbox, "free_disk_gb": round(free_gb, 1),
+        "survey_overrides": {}, "survey_name": survey.get("name"),
         "survey_layers": survey_meta,
     }
 
@@ -543,7 +526,7 @@ def _start_preview_server(area: str, run: QuickstartRun, py: Path,
     port = _free_port(preferred_port)
     server_log = run.run_dir / "map-preview-server.log"
     pid_file = run.run_dir / "map-preview-server.pid"
-    command = [str(py), "tools/quickstart_serve.py", "--root", str(ROOT), "--port", str(port)]
+    command = [str(py), "tools/pipeline_serve.py", "--root", str(ROOT), "--port", str(port)]
     record = run.begin(18, command)
     preview_path = run.run_dir / "map-preview" / "preview.html"
     route = "/" + preview_path.relative_to(ROOT).as_posix()
@@ -601,8 +584,11 @@ def _start_preview_server(area: str, run: QuickstartRun, py: Path,
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run quickstart with persistent numbered logs and Markdown report.")
-    parser.add_argument("area", help="must match my_area.json name")
+    parser = argparse.ArgumentParser(description="Run the regional solar pipeline with persistent numbered logs.")
+    sys.path.insert(0, str(ROOT))
+    import config
+    parser.add_argument("region", nargs="?", default=config.PIPELINE_REGION,
+                        help=f"configured region to process (default: {config.PIPELINE_REGION})")
     parser.add_argument("--python", dest="python", default=sys.executable,
                         help="Python executable used for pipeline subprocesses (defaults to this interpreter)")
     parser.add_argument("--port", type=int, default=8765,
@@ -611,7 +597,7 @@ def main() -> int:
                         help="start the local preview server but do not open a browser tab")
     args = parser.parse_args()
     try:
-        area = _safe_area(args.area)
+        area = _safe_area(args.region)
     except ValueError as exc:
         parser.error(str(exc))
     py = Path(args.python).expanduser().resolve()
@@ -649,7 +635,7 @@ def main() -> int:
             s["status"] = "NOT RUN"
             s["comment"] = "Not run because preflight failed."
         run._save()
-        print(f"\nQuickstart stopped. Report: {run.report_path}\nLogs: {run.run_dir}", flush=True)
+        print(f"\nPipeline stopped. Report: {run.report_path}\nLogs: {run.run_dir}", flush=True)
         return 2
 
     env = os.environ.copy()
@@ -662,7 +648,7 @@ def main() -> int:
         [str(py), "src/run_stage.py", "gate_panels", area],
         [str(py), "src/run_stage.py", "rerank_layouts", area],
         [str(py), "src/run_stage.py", "derive_solar_potential", area],
-        [str(py), "tools/quickstart_report.py", area],
+        [str(py), "tools/pipeline._report.py", area],
         [str(py), "src/run_stage.py", "patch_roof_confidence", area],
         [str(py), "src/run_stage.py", "bake_building_horizons", area],
         [str(py), "src/run_stage.py", "register_imagery", area],
@@ -885,7 +871,7 @@ def main() -> int:
                 s["status"] = "NOT RUN"
                 s["comment"] = f"Not run because step {failed_at:02d} failed; dependent outputs are unavailable."
         run._save()
-    print(f"\nQuickstart report: {run.report_path}\nCombined log: {run.log_path}\nRun artifacts: {run.run_dir}", flush=True)
+    print(f"\nPipeline report: {run.report_path}\nCombined log: {run.log_path}\nRun artifacts: {run.run_dir}", flush=True)
     if run.metadata.get("map_preview_url"):
         print(f"Map preview: {run.metadata['map_preview_url']}", flush=True)
     return 1 if failed_at is not None else 0
@@ -895,5 +881,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        print("Quickstart interrupted; inspect the latest data/quickstart_runs/<area>/<run-id>/report.md", file=sys.stderr)
+        print("Pipeline interrupted; inspect the latest data/quickstart_runs/<region>/<run-id>/report.md", file=sys.stderr)
         raise SystemExit(130)

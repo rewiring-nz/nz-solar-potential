@@ -8,11 +8,12 @@ This directory documents only the `nz-solar-potential` project. The sibling
 | Audience | Document | Purpose | Update trigger |
 | --- | --- | --- | --- |
 | Web map users | [Using the web map](web-map-users.md) | Find a building and interpret an estimate. | Map interaction, metrics, or assumptions change. |
-| Anyone verifying the method | [Quickstart](quickstart.md) | Run the identical pipeline on your own small NZ area and check every stage. | Stage list, thresholds, or the my_area.json hook change. |
+| Anyone running the pipeline | [Pipeline](quickstart.md) | Run the full regional pipeline for a configured region and open its map preview. | Pipeline command or region configuration changes. |
 | Anyone checking the money | [Economics](economics.md) | How cost, savings, payback, plans and batteries are calculated, and what the model leaves out. | economics.js, its assumptions, or the plan/battery model change. |
 | Researchers / academic readers | [Why a building estimate can be trusted](theory/theory.md) | Explain the evidence chain, datasets, models, and limits behind per-building estimates. | Source provenance, model strategy, validation evidence, or uncertainty framing changes. |
 | Data maintainers | [Local setup](data-maintainers/local-setup.md) | Set up a supported workstation, Python environment, map-build tools, and credentials. | Dependencies, supported platforms, or credentials change. |
-| Data maintainers | [Troubleshooting](data-maintainers/troubleshooting.md) | Diagnose quickstart preflight, LINZ fetch, map-build, and local preview errors using run-report step numbers. | A recurring diagnostic or repair path changes. |
+| Data maintainers | [Troubleshooting](data-maintainers/troubleshooting.md) | Diagnose pipeline preflight, LINZ fetch, map-build, and local preview errors using run-report step numbers. | A recurring diagnostic or repair path changes. |
+| Data maintainers | [Pipeline reference](data-maintainers/pipeline-reference.md) | Explain region configuration, run artifacts, status interpretation, and clean-room limits. | Pipeline outputs or operating limits change. |
 | Data maintainers | [Dataset operations](data-maintainers/dataset-operations.md) | Fetch, build, validate, merge, and publish data. | Pipeline scripts, source datasets, outputs, or release checks change. |
 | Software contributors | [Architecture](developers/architecture.md) | Understand the code, data flow, boundaries, and development workflow. | Module boundaries, output contracts, or local workflow change. |
 | Reviewers | [Reviewer's guide](developers/reviewers-guide.md) | Verify the logic: rule-to-code map, per-stage check commands, glossary. | A rule's enforcement point or check command changes. |

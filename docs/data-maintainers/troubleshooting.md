@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Use this guide when a quickstart or local data build stops unexpectedly. Start
+Use this guide when a pipeline run or local data build stops unexpectedly. Start
 with that run's `report.md` at
 `data/quickstart_runs/<area>/<run-id>/report.md`. Find the first `FAIL`,
 `DEGRADED`, or unexpected `SKIPPED` step, then open its linked
@@ -15,21 +15,21 @@ caches. In particular, curated roof labels, benchmark/truth/verdict data,
 trained roof-line models, and the committed map dataset are not all
 regenerable from LINZ. Preserve `.env`/`LINZ_API_KEY` and `.venv` too.
 
-For a quickstart clean rebuild, target only the ignored area folder and, if
-needed, that area's ignored quickstart run folders. The configured fetch can
+For a pipeline clean rebuild, target only the ignored region folder and, if
+needed, that region's run folders. The configured fetch can
 reacquire that survey's outlines, DSM/imagery and available LiDAR; the shared
 wide DEM and point-cloud cache can also be reacquired, but at additional
 download cost and with impact on other builds. A single Queenstown test
 completed after regenerable caches were removed; it does not prove every
-survey is available or every tracked input disposable. See
-[Quickstart — rebuilding after removing local data](../quickstart.md#rebuilding-after-removing-local-data).
+survey is available or every tracked input disposable. See the
+[pipeline reference](pipeline-reference.md#clean-room-rebuild-limits).
 
-`FAIL` means the quickstart stopped before dependent steps. `DEGRADED` means
+`FAIL` means the pipeline stopped before dependent steps. `DEGRADED` means
 it continued, but the report records a missing source or reduced capability.
 A later `PASS` does not erase that degraded input—for example, successful roof
 geometry does not turn a DSM-only run into a full point-cloud run.
 
-## Quickstart preflight errors
+## Pipeline preflight errors
 
 ### Matplotlib is required for the map heatmap stage
 
@@ -41,7 +41,7 @@ The current preflight may also print a more specific message naming the
 selected interpreter and the exact command to repair it; use that Python path
 if it differs from the examples below. Older run reports use the quoted text.
 
-The quickstart uses the Python executable recorded in the report (normally the
+The pipeline uses the Python executable recorded in the report (normally the
 project's `.venv`). Installing Matplotlib into a different Python environment
 will not fix this error. From the project root, install the declared project
 requirements with the environment's interpreter:
@@ -53,7 +53,7 @@ requirements with the environment's interpreter:
 
 The import check should print a version. On Windows Git Bash, use
 `.venv/Scripts/python.exe` instead of `.venv/bin/python` in both commands. Then
-rerun the quickstart. Matplotlib is needed by `src/build_heatmap_raster.py`,
+rerun the pipeline. Matplotlib is needed by `src/build_heatmap_raster.py`,
 which creates the map's heatmap layer; it is included in `requirements.txt` and
 pinned in `requirements.lock.txt`.
 
@@ -70,22 +70,22 @@ scientific packages in the shared environment.
 > LINZ_API_KEY is not set in the environment or .env (value was not recorded).
 
 The runner checks that a key is present but never records its value. Either
-export `LINZ_API_KEY` in the shell that launches the quickstart, or put it in
+export `LINZ_API_KEY` in the shell that launches the pipeline, or put it in
 the project's ignored `.env` file as `LINZ_API_KEY=...`. The fetch scripts load
-`.env` themselves. Do not add the key to `my_area.json`, reports, logs, source
-control, or chat. See [Local setup — LINZ credentials](local-setup.md#linz-credentials).
+`.env` themselves. Do not add the key to configuration files, reports, logs,
+source control, or chat. See
+[Local setup — LINZ credentials](local-setup.md#linz-credentials).
 
 ### `No usable source survey for this bbox`
 
 **Report symptom** (Step 01): the bbox is not covered by a configured survey,
 or the selected survey has no DSM layer.
 
-The whole bbox must be covered by one survey entry. Check `bbox` is
-`[west, south, east, north]` in WGS84, then check the DSM layer and survey
-coverage in `my_area.json` or `config.SURVEYS`. If the bbox straddles survey
-boundaries, choose a smaller bbox inside one survey or split it into separate
-runs. Building outlines are national; the raster and point-cloud layers are
-not.
+The selected region must be listed in `config.REGIONS`, and its whole bbox
+must be covered by one survey entry in `config.SURVEYS`. Check the bbox is
+`[west, south, east, north]` in WGS84 and verify its DSM layer. If the bbox
+straddles survey boundaries, split it into separate regions. Building outlines
+are national; the raster and point-cloud layers are not.
 
 For a new survey, configure the correct DSM layer. Add the imagery and
 reference-imagery layer IDs only when they apply. A point-cloud bulk URL also
@@ -127,7 +127,7 @@ change the bbox or layer ID merely to silence the error.
 
 **Report symptom** (Step 02): `Fetch returned zero building outlines`.
 
-Check that the requested area name matches `my_area.json`, that the bbox is in
+Check that the requested region exists in `config.REGIONS`, its bbox is in
 WGS84 order `[west, south, east, north]`, and that it covers land/buildings in
 New Zealand. The runner stops here because there are no buildings to estimate.
 
@@ -153,10 +153,10 @@ make the tile count look complete. See the fetch details in
 
 > Map-ready output requires these commands on PATH: tippecanoe, tile-join, tippecanoe-decode.
 
-Install the listed map-build tools (`tippecanoe`, `tile-join`,
+Install the listed tools (`tippecanoe`, `tile-join`, and
 `tippecanoe-decode`) for your platform, then open a new terminal and verify
 they resolve with `command -v tippecanoe`, `command -v tile-join`, and
-`command -v tippecanoe-decode` (or the platform equivalent). The quickstart
+`command -v tippecanoe-decode` (or the platform equivalent). The pipeline
 checks these before starting large downloads. On macOS, install them with
 `brew bundle --file=Brewfile`; on Ubuntu or WSL, follow
 [Ubuntu environment setup](env-setup-ubuntu.md#install-tippecanoe-map-tools).
@@ -201,7 +201,7 @@ checkout to the corrected code, then verify it with:
 .venv/bin/python src/combine_regions.py --help
 ```
 
-The help output should include `--skip-markup-lines`. Rerun the quickstart to
+The help output should include `--skip-markup-lines`. Rerun the pipeline to
 produce a new run report; the old run remains a failure record. The CLI smoke
 test in [tests/test_quickstart_map.py](../../tests/test_quickstart_map.py)
 guards this parser path.
@@ -217,7 +217,6 @@ reported port is available. The server binds only to `127.0.0.1`; use the URL
 printed in the report on the same computer. A successful PMTiles check must
 return HTTP 206 for the requested byte range, not HTTP 200 for the whole file.
 The map also needs a browser connection to its public basemap tile providers.
-
 The runner records the server PID in `map-preview-server.pid`. Stop it after
 review with:
 
@@ -230,18 +229,18 @@ kill "$(cat data/quickstart_runs/<area>/<run-id>/map-preview-server.pid)"
 Check Step 12 in `report.md`. Its comment records how many buildings rendered
 from LiDAR and the output size. Zero rendered buildings means there was no
 usable point-cloud roof evidence; the base building/layout map can still work,
-but the raster heat layer may be empty. Check Step 02 for the tile coverage
-and confirm the survey publishes the point cloud configured for this bbox.
+but the raster heat layer may be empty. Check Step 02 for tile coverage and
+confirm that the survey publishes the configured point cloud.
 
 ### The map console shows 404s, but buildings and panels render
 
-Some local-preview 404s are expected and do not mean the quickstart output is
+Some local-preview 404s are expected and do not mean the pipeline output is
 invalid: the address search first probes `addresses/index.json` and falls back
 to the flat `addresses.json` file when the dataset is not sharded; the static
 preview has no `/api/refit` endpoint; and MapLibre may request heatmap tiles
 outside the generated tile footprint. Check the requested URLs and confirm
 that the relevant tiles return successfully in the area of interest. The
-quickstart validates the required data files and PMTiles range serving in
+pipeline validates the required data files and PMTiles range serving in
 Steps 17–18. A page stuck at zero buildings or without visible panels is a
 different problem; verify the initial location and select **Panel Layout**.
 

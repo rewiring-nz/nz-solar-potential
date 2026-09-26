@@ -26,6 +26,7 @@ DEM_WIDE_BBOX = [168.214585, -45.351447, 169.289392, -44.682770]
 # The pilot itself stays on its original top-level paths; each region here
 # gets its own data/regions/<name>/ tree.
 REGIONS = {
+    "pilot":               [168.655, -45.045, 168.675, -45.025],  # central Queenstown pilot
     # Kingston and Wanaka, added 22 Sep. Split to stay
     # inside the measured 3,000-building ceiling; each sits wholly inside its
     # own LiDAR survey's real extent (see SURVEYS below), which is why the
@@ -75,6 +76,9 @@ REGIONS = {
     "frankton_east_lake":  [168.7478, -45.0307, 168.7564, -45.0215],  # 24
     "kelvin_south":        [168.7528, -45.0519, 168.7718, -45.0405],  # 15
 }
+
+# Default region used by tools/pipeline.py when no region argument is given.
+PIPELINE_REGION = "pilot"
 
 # Buildings confirmed demolished/replaced since the 2021 capture (field
 # reports) -- excluded from every build until LINZ data catches up.
@@ -342,47 +346,3 @@ PV_ASSUMPTIONS = {
         "survey was flown -- tree growth in particular."
     ),
 }
-
-
-# ---------------------------------------------------------------- my area
-# QUICKSTART: an optional user-defined area for open-source verification.
-# Drop a my_area.json next to this file (see my_area.example.json) and every
-# tool in the repo -- fetching, the build stages, the previews -- treats it
-# exactly like a first-class region. Nothing about the methodology changes:
-# that is the point. The optional survey overrides exist because LINZ layer
-# ids are per-survey; the defaults above cover the Queenstown Lakes 2021
-# LiDAR + 2026 imagery captures.
-import json as _json
-import os as _os
-_MY_AREA = _os.path.join(_os.path.dirname(__file__), "my_area.json")
-if _os.path.exists(_MY_AREA):
-    try:
-        _ma = _json.load(open(_MY_AREA))
-        _name = str(_ma["name"]).strip()
-        _bbox = [float(v) for v in _ma["bbox"]]
-        assert len(_bbox) == 4 and _name and _name not in REGIONS
-        REGIONS[_name] = _bbox
-        for _key, _var in (("dsm_layer", "LINZ_DSM_LAYER"),
-                           ("dem_layer", "LINZ_DEM_LAYER"),
-                           ("imagery_layer", "LINZ_IMAGERY_LAYER"),
-                           ("lidar_tile_index_layer",
-                            "LINZ_LIDAR_TILE_INDEX_LAYER"),
-                           ("pointcloud_bulk_url", "POINTCLOUD_BULK_URL"),
-                           ("pointcloud_tile_year", "POINTCLOUD_TILE_YEAR")):
-            if _ma.get(_key):
-                globals()[_var] = _ma[_key]
-        # A user-defined bbox may lie outside every configured survey. When
-        # layer overrides are supplied, register that bbox as its own survey
-        # so survey_for() uses these IDs instead of inheriting Queenstown data.
-        _survey_keys = ("dsm_layer", "dem_layer", "imagery_layer",
-                        "reference_imagery_layer", "lidar_tile_index_layer",
-                        "pointcloud_bulk_url", "pointcloud_tile_year")
-        if any(_ma.get(k) is not None for k in _survey_keys):
-            _custom_survey = {k: _ma.get(k) for k in _survey_keys}
-            _custom_survey.update({"name": f"my-area-{_name}", "bbox": _bbox})
-            SURVEYS = [s for s in SURVEYS
-                       if s.get("name") != _custom_survey["name"]]
-            SURVEYS.append(_custom_survey)
-        print(f"[config] my_area.json loaded: region '{_name}' {_bbox}")
-    except Exception as _exc:
-        print(f"[config] my_area.json IGNORED ({_exc!r})")

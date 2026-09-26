@@ -102,5 +102,6 @@ in badly would be worse than leaving them visible as gaps.
 - Open any building, change a rate band, and watch the figures move.
 - `panel_count × 0.5 kW = kWp`, and annual kWh ÷ panels should land in
   550–800 kWh/panel/yr for New Zealand.
-- [`docs/quickstart.md`](quickstart.md) runs the entire pipeline, geometry
-  included, on a small area you choose.
+- [Pipeline](quickstart.md) runs the regional pipeline; see the
+  [pipeline reference](data-maintainers/pipeline-reference.md) for outputs and
+  verification guidance.

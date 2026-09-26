@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.quickstart_run import QuickstartRun, _safe_area
+from tools.pipeline import QuickstartRun, _safe_area
 
 
 def test_area_names_are_path_safe():
