@@ -33,5 +33,20 @@ def main():
     return 1 if bad else 0
 
 
+def test_no_estimate_layout_feature_is_valid():
+    from src.output_contract import validate_layout_feature
+
+    valid = {"kind": "no_estimate", "building_id": 123, "btype": "home"}
+    assert validate_layout_feature("layout", valid) is None
+    assert "missing ['building_id']" in validate_layout_feature(
+        "layout", {"kind": "no_estimate", "btype": "home"})
+    assert "extra ['unexpected']" in validate_layout_feature(
+        "layout", {**valid, "unexpected": 1})
+    assert "not in the layout contract" in validate_layout_feature(
+        "layout", {"kind": "mystery", "building_id": 123})
+    assert "layer 'wrong'" in validate_layout_feature("wrong", valid)
+
+
 if __name__ == "__main__":
+    test_no_estimate_layout_feature_is_valid()
     sys.exit(main())

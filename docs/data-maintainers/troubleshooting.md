@@ -157,6 +157,21 @@ Do not manually combine a test area into the normal map dataset. The
 [output-contract test](../../tests/test_output_contract.py) describes the
 required regional PMTiles fields and support data.
 
+#### `panel_layouts.pmtiles: kind 'no_estimate'`
+
+**Report symptom** (Step 17):
+
+> panel_layouts.pmtiles: kind 'no_estimate' extra [] missing []
+
+`no_estimate` is an intentional footprint feature emitted for a building whose
+roof could not be estimated. It is not a facet, panel, or obstruction; the
+building tile carries the explanation shown by the map. The validator used to
+reject this producer-emitted kind because it listed only the three drawable
+layout kinds. Update to the corrected output-contract validator and rerun the
+quickstart; do not remove these features or relabel them as panels. A regression
+test checks the accepted kind and its required fields in
+[tests/test_output_contract.py](../../tests/test_output_contract.py).
+
 #### `IndentationError` in `src/combine_regions.py`
 
 If Step 15's log reports `IndentationError: unexpected indent` at the

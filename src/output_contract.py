@@ -62,6 +62,11 @@ LAYOUT_REQUIRED = {
     "panel": ["kind", "building_id", "fill_rank", "fill_order", "array_id",
               "array_size", "ac_kwh_year", "btype"],
     "obstruction": ["kind", "building_id", "btype"],
+    # A building with no usable roof surface is retained as a footprint
+    # feature so its absence from the estimate is explicit. The map draws the
+    # building's no_estimate_reason from buildings.pmtiles; this layout copy
+    # remains in the region's layout stream and is not styled as a panel.
+    "no_estimate": ["kind", "building_id", "btype"],
 }
 
 # detail/13/x/y.json: {building_id: {...}}, fetched when a building is clicked.
@@ -81,6 +86,22 @@ SUMMARY_REQUIRED = ["region", "n", "n_est", "panel_count", "kwp", "kwh", "ladder
 ADDRESS_ROW_LEN = 4
 
 _MV = re.compile(r"^g(unknown|[0-9a-f]{6})-y(unknown|mixed|[0-9a-f]{6})$")
+
+
+def validate_layout_feature(layer, properties):
+    """Return a schema problem for one layout tile feature, else None."""
+    if layer != LAYOUT_LAYER:
+        return f"panel_layouts.pmtiles: layer {layer!r}"
+    kind = properties.get("kind")
+    required = LAYOUT_REQUIRED.get(kind)
+    if required is None:
+        return f"panel_layouts.pmtiles: kind {kind!r} is not in the layout contract"
+    extra = set(properties) - set(LAYOUT_ALLOWED)
+    missing = [key for key in required if key not in properties]
+    if extra or missing:
+        return (f"panel_layouts.pmtiles: kind {kind!r} extra {sorted(extra)} "
+                f"missing {missing}")
+    return None
 
 
 def _decode(pmtiles):
@@ -122,15 +143,9 @@ def validate_region(out_dir):
             break
 
     for layer, p in _decode(out_dir / "panel_layouts.pmtiles"):
-        if layer != LAYOUT_LAYER:
-            bad.append(f"panel_layouts.pmtiles: layer {layer!r}")
-            break
-        extra = set(p) - set(LAYOUT_ALLOWED)
-        req = LAYOUT_REQUIRED.get(p.get("kind"))
-        miss = [k for k in (req or []) if k not in p]
-        if extra or miss or req is None:
-            bad.append(f"panel_layouts.pmtiles: kind {p.get('kind')!r} extra {sorted(extra)} "
-                       f"missing {miss}")
+        problem = validate_layout_feature(layer, p)
+        if problem:
+            bad.append(problem)
             break
 
     for f in sorted((out_dir / "detail").rglob("*.json")):
