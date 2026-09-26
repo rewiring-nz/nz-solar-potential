@@ -5,14 +5,10 @@ in git.
 
 ## Ship
 
-- **Re-lay with the crash fix and photo-lean drawing -- next.** The 25 Sep
-  re-lay (from 8989d9fe) finished and the gate held it: 7 roofs zeroed. Five
-  were a crash (an empty face from the seam snap's sliver merge; a GEOS union
-  outside the level split's guard), fixed in cbafbeed -- on the VM those
-  roofs rebuild with 35-62 panels, as live. Two small roofs (11 and 6 panels
-  live) lose their faces to obstructions. The next run (`chain2.sh`) first
-  fetches each region's reference photo, then the same steps as before.
-  Then `tools/deploy_from_vm.sh`, `--push` if the gate passes, tell Josh.
+- **v40 deployed 26 Sep** past a gate that failed only on two small roofs
+  that were misread before and still are: #4728022 (a 7 m2 triangle face on
+  a large flat roof; 11 panels live) and #5372844 (two stray triangles; 6
+  live). Both are face-reading failures, not obstruction ones.
 - **Look at the 13 BIG DROPs** in that gate (33-48% fewer panels). No single
   new switch explains them (small objects give back 5-8 panels on some).
   The pattern in renders is a jagged, pixel-stepped SUNKEN strip along an
@@ -24,7 +20,7 @@ in git.
 
 ## Imagery
 
-- **Drawings follow the photo's lean -- in the next build.** The map shows
+- **Drawings follow the photo's lean -- live in v40.** The map shows
   LINZ Basemaps' aerial (2026 over Queenstown), orthorectified to the ground,
   so roofs lean 0.5-1.5 m off the LiDAR; outlines, faces, panels, the heat
   map and Josh's markup overlay looked misplaced (32 Frankton Rd, 10 Stanley
