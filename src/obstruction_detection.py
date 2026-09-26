@@ -797,6 +797,18 @@ EDGE_DROP_MAX_WIDTH_M = 2.0  # a sunken strip this narrow at the face's edge is 
 EDGE_DROP_TOUCH_M = 0.3
 SUNKEN_MAX_SHARE = 0.40      # more than this sunken = the facet itself is wrong;
                              # leave it to the confidence gate, not the carver
+# A CELL IS SUNKEN WHEN MOST OF ITS RETURNS ARE, NOT WHEN ONE IS. Flagging a
+# 0.75 m cell for a single low return (a gutter, a wall face, a return through
+# glass) and closing the grid built jagged strips of mostly good roof along
+# edges and ridges: on #4730688 the returns inside a 12.9 m2 strip sat a
+# median 0.18 m below the plane, and 13 roofs lost a third or more of their
+# panels once the detector ran on every face (adbcc978, 24 Sep). A region
+# must also be sunken as a whole: the median of its own returns this far
+# below the plane. The 2.4 m-deep terrace on #4725197 still is.
+SUNKEN_CELL_MIN_FRAC = 0.5
+SUNKEN_CELL_MIN_LOW = 2
+SUNKEN_CELL_GROW_FRAC = 0.25   # a neighbouring cell joins at this share (the step itself)
+SUNKEN_REGION_MEDIAN_M = 0.4
 
 
 def _min_width(poly):
@@ -826,11 +838,26 @@ def _sunken_regions(pc_source, facet_geom, plane):
     ny = max(2, int(np.ceil((maxy - miny) / SUNKEN_CELL_M)))
     if nx * ny > 200000:
         return []
-    grid = np.zeros((ny, nx), dtype=bool)
-    ix = np.clip(((low[:, 0] - minx) / SUNKEN_CELL_M).astype(int), 0, nx - 1)
-    iy = np.clip(((low[:, 1] - miny) / SUNKEN_CELL_M).astype(int), 0, ny - 1)
-    grid[iy, ix] = True
-    grid = ndimage.binary_closing(grid, structure=np.ones((3, 3), dtype=bool))
+    ax = np.clip(((bp[:, 0] - minx) / SUNKEN_CELL_M).astype(int), 0, nx - 1)
+    ay = np.clip(((bp[:, 1] - miny) / SUNKEN_CELL_M).astype(int), 0, ny - 1)
+    n_all = np.zeros((ny, nx), dtype=np.int32)
+    np.add.at(n_all, (ay, ax), 1)
+    is_low = res < -SUNKEN_MIN_DEPTH_M
+    n_low = np.zeros((ny, nx), dtype=np.int32)
+    np.add.at(n_low, (ay[is_low], ax[is_low]), 1)
+    strict = os.environ.get("SOLAR_SUNKEN_STRICT", "1") != "0"
+    sq = np.ones((3, 3), dtype=bool)
+    if strict:
+        grid = (n_low >= SUNKEN_CELL_MIN_LOW) & (n_low >= SUNKEN_CELL_MIN_FRAC * np.maximum(n_all, 1))
+        # ...then one cell out into cells a quarter low: a cell
+        # straddling the step is part of the region, a strip of stray low
+        # returns further on is not
+        grid = ndimage.binary_dilation(grid, structure=sq) & (n_low >= SUNKEN_CELL_GROW_FRAC * np.maximum(n_all, 1)) & (n_low > 0)
+    else:
+        grid = n_low > 0
+    # padded, or closing erodes every cell on the grid's edge (a 10 x 8 m
+    # level in the grid's corner lost its first row and column)
+    grid = ndimage.binary_closing(np.pad(grid, 2), structure=sq)[2:-2, 2:-2]
     labeled, n = ndimage.label(grid, structure=np.ones((3, 3), dtype=int))
     out = []
     for lab in range(1, n + 1):
@@ -841,8 +868,12 @@ def _sunken_regions(pc_source, facet_geom, plane):
                              minx + (x + 1) * SUNKEN_CELL_M, miny + (y + 1) * SUNKEN_CELL_M)
                  for y, x in zip(ys, xs)]
         reg = unary_union(cells).intersection(facet_geom)
-        if not reg.is_empty:
-            out.append(reg)
+        if reg.is_empty:
+            continue
+        own = shapely.contains_xy(reg, bp[:, 0], bp[:, 1])
+        if strict and own.sum() and np.median(res[own]) > -SUNKEN_REGION_MEDIAN_M:
+            continue
+        out.append(reg)
     total = sum(r.area for r in out)
     if total > SUNKEN_MAX_SHARE * facet_geom.area:
         return []

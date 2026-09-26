@@ -90,6 +90,31 @@ def test_switch_turns_it_off():
         del os.environ["SOLAR_LEVEL_SPLIT"]
 
 
+def _photo(strip_rgb):
+    """20 x 10 m at 0.1 m: grey roof, with x in [16, 19] painted strip_rgb."""
+    import numpy as np
+    from rasterio.io import MemoryFile
+    from rasterio.transform import from_origin
+    a = np.full((3, 100, 200), 150, dtype=np.uint8)
+    a[:, :, 160:190] = np.array(strip_rgb, dtype=np.uint8)[:, None, None]
+    mem = MemoryFile()
+    ds = mem.open(driver="GTiff", width=200, height=100, count=3, dtype="uint8",
+                  transform=from_origin(0, 10, 0.1, 0.1), crs="EPSG:2193")
+    ds.write(a)
+    ds.close()
+    return mem.open()
+
+
+def test_roof_coloured_strip_is_a_level_and_a_deck_is_not():
+    from shapely.geometry import box
+    from src import roof_levels as rl
+    host, strip = box(0, 0, 20, 10), box(16, 0, 19, 10)      # 3 m wide, 30 m2
+    assert rl._wide_enough(strip, host, _photo((150, 150, 150)))
+    assert not rl._wide_enough(strip, host, _photo((140, 90, 50)))   # timber
+    assert not rl._wide_enough(strip, host, None)                    # no photo: stay careful
+    assert not rl._wide_enough(box(18.5, 0, 20, 10), host, _photo((150, 150, 150)))  # too narrow for a row
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

@@ -21,8 +21,15 @@ before.
 WHY WIDTH SEPARATES A DECK. It is the rule drop_balcony_levels already
 uses: a balcony or deck is a strip along a facade, the storey below is not
 (roof_segmentation.BALCONY_MAX_DEPTH_M, 4 m). A region narrower than that
-stays an obstruction. Drawn roofs are not touched; the markup governs them.
-SOLAR_LEVEL_SPLIT=0 turns this off.
+stays an obstruction -- UNLESS IT LOOKS LIKE THE ROOF BESIDE IT. A deck is
+timber, tile or paving with furniture on it; a lower strip of roof is the
+same roofing as the face it drops from. #4721836 has a 54 m2 strip 0.8 m
+below its flat roof and #4728664 one of 29 m2 at 1.1 m, both roofing in the
+photo and both panelled by the 22 Sep build, both carved once the sunken
+detector ran on every face. A strip wide enough for a panel row, big enough
+to matter, on a clean plane, whose colour in the survey-year photo matches
+its host face's, is a level. Drawn roofs are not touched; the markup governs
+them. SOLAR_LEVEL_SPLIT=0 turns this off.
 """
 
 import os
@@ -34,6 +41,9 @@ MIN_LEVEL_M2 = 8.0          # smaller than ~4 panels is not worth its own face
 MIN_INLIER = 0.60           # share of the region's returns within INLIER_M of its own plane
 INLIER_M = 0.15
 MIN_POINTS = 30
+NARROW_MIN_WIDTH_M = 1.8    # a narrow level must still take a row of panels
+NARROW_MIN_M2 = 15.0
+NARROW_MAX_RGB_DIFF = 25.0  # median colour of strip vs host face, 0-255 per channel
 SLIVER_M2 = 1.0             # a leftover piece of the host smaller than this merges away
 STATS = {"roofs": 0, "levels": 0, "m2": 0.0}
 
@@ -50,13 +60,57 @@ def _width(poly):
     return min(e)
 
 
-def _level(region, host, pc_source, footprint):
+def _median_rgb(photo, poly):
+    """Median RGB of the photo inside `poly`, or None."""
+    try:
+        import rasterio.features
+        from rasterio.windows import from_bounds
+        w = from_bounds(*poly.bounds, photo.transform).round_offsets().round_lengths()
+        if w.width < 2 or w.height < 2:
+            return None
+        a = photo.read([1, 2, 3], window=w)
+        m = rasterio.features.geometry_mask([poly], out_shape=a.shape[1:],
+                                            transform=photo.window_transform(w), invert=True)
+        if m.sum() < 20:
+            return None
+        return np.median(a[:, m], axis=1).astype(float)
+    except Exception:
+        return None
+
+
+def _looks_like_host(region, host, photo):
+    """True when the strip's colour matches the host face around it."""
+    if photo is None:
+        return False
+    inner = region.buffer(-0.3)
+    near = host.difference(region.buffer(0.5)).intersection(region.buffer(4.0))
+    if inner.is_empty or near.is_empty:
+        return False
+    a, b = _median_rgb(photo, inner), _median_rgb(photo, near)
+    if a is None or b is None:
+        return False
+    return float(np.max(np.abs(a - b))) <= NARROW_MAX_RGB_DIFF
+
+
+def _wide_enough(poly, host, photo):
+    w = _width(poly)
+    if w > _balcony_depth():
+        return True
+    return (w >= NARROW_MIN_WIDTH_M and poly.area >= NARROW_MIN_M2
+            and _looks_like_host(poly, host, photo))
+
+
+def _balcony_depth():
+    from src.roof_segmentation import BALCONY_MAX_DEPTH_M
+    return BALCONY_MAX_DEPTH_M
+
+
+def _level(region, host, pc_source, footprint, photo=None):
     """(polygon, plane, slope, aspect) when `region` is a roof level, else None."""
     import shapely
     import config
-    from src.roof_segmentation import BALCONY_MAX_DEPTH_M
     from src.roof_partition import _fit_plane_robust, _slope_aspect, _regularise_machine_face
-    if region.area < MIN_LEVEL_M2 or _width(region) <= BALCONY_MAX_DEPTH_M:
+    if region.area < MIN_LEVEL_M2 or not _wide_enough(region, host, photo):
         return None
     pts = pc_source.points_in_bbox(*region.bounds, building_only=True)
     if pts is None or len(pts) < MIN_POINTS:
@@ -81,12 +135,12 @@ def _level(region, host, pc_source, footprint):
     if not parts:
         return None
     poly = max(parts, key=lambda p: p.area)
-    if poly.area < MIN_LEVEL_M2 or _width(poly) <= BALCONY_MAX_DEPTH_M:
+    if poly.area < MIN_LEVEL_M2 or not _wide_enough(poly, host, photo):
         return None
     return poly, plane, slope, aspect
 
 
-def split_lower_levels(facets, pc_source, dsm=None):
+def split_lower_levels(facets, pc_source, dsm=None, photo=None):
     """Return facets with each lower roof level cut out as its own face."""
     if os.environ.get("SOLAR_LEVEL_SPLIT", "1") == "0":
         return facets
@@ -107,7 +161,7 @@ def split_lower_levels(facets, pc_source, dsm=None):
             levels = []
             for region in _sunken_regions(pc_source, host, plane):
                 for part in _polys(region):
-                    lv = _level(part, host, pc_source, footprint)
+                    lv = _level(part, host, pc_source, footprint, photo)
                     if lv is None:
                         continue
                     poly, lp, slope, aspect = lv

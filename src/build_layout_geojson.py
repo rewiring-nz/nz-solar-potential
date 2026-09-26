@@ -42,6 +42,7 @@ from src.roof_segmentation import segment_building_best, roof_confidence, _note_
 from src.ridge_snap import snap_ridges_to_crest
 from src.plane_seams import snap_seams_to_plane_intersections
 from src.roof_levels import split_lower_levels
+from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
@@ -172,11 +173,22 @@ def _init_worker(area, model):
         "dsm_ds": dsm_ds,
         "dsm_band": dsm_ds.read(1),
         "imagery_ds": rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None,
+        # The photo that sits on the LiDAR (the survey year's own capture):
+        # anything that samples colour INSIDE a LiDAR-derived shape reads
+        # this one, or a 2-3 m strip samples the wall beside it through the
+        # map photo's lean (src/register_imagery.py).
+        "photo_ds": (rasterio.open(paths["reference_imagery"]) if paths["reference_imagery"].exists()
+                     else rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None),
         "pc_source": PointCloudSource(),
         "model": model,
         "to_wgs84": pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326",
                                                 always_xy=True).transform,
     })
+    # SOLAR_PIPELINE_PHOTO=reference: every image-derived step (colour and
+    # bright obstructions, imagery cuts) reads the photo that sits on the
+    # LiDAR instead of the map's leaning one. Off until measured.
+    if os.environ.get("SOLAR_PIPELINE_PHOTO", "map") == "reference" and _CTX.get("photo_ds") is not None:
+        _CTX["imagery_ds"] = _CTX["photo_ds"]
 
 
 # SIGALRM IS POSIX-ONLY. Windows has no alarm signal, so the per-building
@@ -430,6 +442,9 @@ def _build_one_at(building_id, nudge_m):
     # Where two faces meet is decided by the crest the returns show, not by
     # where two noisy plane fits happen to cross -- see src/ridge_snap.py
     # (2 Preston Drive: a ridge 0.8 m off with a panel column astride it).
+    # A face whose plane misfits its own returns misleads every stage below
+    # (src/plane_refresh.py: 17 Church St, 27% -> 83% of returns on plane).
+    facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
     facets = _geometry_stage(building_id, snap_ridges_to_crest, facets, pc_source, dsm=_dsm_ev)
     # ...and roof a face took from its neighbour across a hip or valley goes
     # back, or obstruction detection marks the neighbour's slope as an object
@@ -437,7 +452,10 @@ def _build_one_at(building_id, nudge_m):
     facets = _geometry_stage(building_id, snap_seams_to_plane_intersections, facets, pc_source, dsm=_dsm_ev)
     # ...and a lower roof level spanned by one face gets a face of its own,
     # or the sunken detector carves clear roof as an object (src/roof_levels.py).
-    facets = _geometry_stage(building_id, split_lower_levels, facets, pc_source, dsm=_dsm_ev)
+    # ...and again after the seams moved geometry under unchanged planes.
+    facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
+    facets = _geometry_stage(building_id, split_lower_levels, facets, pc_source, dsm=_dsm_ev,
+                             photo=_CTX.get("photo_ds"))
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
