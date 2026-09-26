@@ -9,12 +9,14 @@ in git.
   that were misread before and still are: #4728022 (a 7 m2 triangle face on
   a large flat roof; 11 panels live) and #5372844 (two stray triangles; 6
   live). Both are face-reading failures, not obstruction ones.
-- **Look at the 13 BIG DROPs** in that gate (33-48% fewer panels). No single
-  new switch explains them (small objects give back 5-8 panels on some).
-  The pattern in renders is a jagged, pixel-stepped SUNKEN strip along an
-  edge or ridge: right on terraces (#4725197), wrong on real roof along a
-  ridge (#4730688, sunken median -0.18 / -0.76 m). The two moved "fixed"
-  cases (#4735099, #4725488) look right.
+- **The 13 BIG DROPs -- fixed in 44979ac7, in the v41 build.** The sunken
+  detector had been dormant on clean faces until adbcc978 (24 Sep); once it
+  ran everywhere, single low returns built jagged strips. Now majority cells,
+  plane refresh, and roof-coloured lower strips as levels. Still carved, by
+  design: real terraces (#4725197) and darker lower roofing (#4728664).
+- **Balconies panelled on #4740503** (Josh's case) -- in v40 and before.
+  The terrace row along the south facade takes panels between the carved
+  pieces. Not fixed.
 - **Verify after the re-lay:** 13 Plantation Rd (#4727237), Kingston counts,
   and the cases awaiting a verdict (`tools/cases.py check`).
 
