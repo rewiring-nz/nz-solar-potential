@@ -105,6 +105,34 @@ finishes. Build inputs and intermediate region results still live under
 - `map-preview/preview.html` and its local script assets are the run-specific
   entry page. `map-preview-server.log` records the local static server output.
 
+### Rebuilding after removing local data
+
+The `data/` directory is a mixture of inputs, generated files, and committed
+site assets; it is not safe to delete as a whole. `git clean -fd` removes only
+untracked, non-ignored files, so it leaves ignored raw-data caches in place.
+The ignored region inputs and intermediate products can be fetched or rebuilt
+for a configured survey, but this is not true of all data in the directory.
+
+Keep the following before a clean-room rebuild:
+
+- `.env` (or the shell's `LINZ_API_KEY`) and `.venv`;
+- tracked hand-curated labels, truth/verdict and benchmark files, label queues,
+  and trained roof-line models under `data/`. These are project inputs and
+  evaluation assets, not LINZ downloads;
+- tracked map-facing outputs if you want the published map to keep working
+  while rebuilding. Full deletion removes them too; restore them from Git if
+  that was intentional.
+
+For a quickstart-only clean rebuild, remove only the ignored, area-specific
+inputs and outputs you intend to regenerate (for example,
+`data/regions/<area>/` and that area's `data/quickstart_runs/<area>/`). The
+fetcher can reacquire the configured source data; `data/dem_wide_mosaic.tif`
+and `data/pointcloud/` are also regenerable but shared across areas, so do not
+remove them unless the additional download and impact are intended. Then run
+the quickstart normally. Do not use `git clean -fdX` or `rm -rf data` as a
+general cleanup command. The clean-room test verified a rebuild for one small
+Queenstown area, not every survey, source service, or future environment.
+
 `PASS` means the command succeeded and expected output checks passed.
 `DEGRADED` means the run continued with an optional source or method missing;
 read the consequence in the report before interpreting the results. `SKIPPED`

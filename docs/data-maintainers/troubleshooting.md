@@ -7,6 +7,23 @@ with that run's `report.md` at
 `step-NN-*.log`. The same step number and label appear as `[QS-NN]` in the
 terminal and `run.log`.
 
+## Data removed during a clean-room test
+
+Do not treat all of `data/` as disposable. `git clean -fd` does not remove
+ignored files, while `rm -rf data` removes committed assets as well as local
+caches. In particular, curated roof labels, benchmark/truth/verdict data,
+trained roof-line models, and the committed map dataset are not all
+regenerable from LINZ. Preserve `.env`/`LINZ_API_KEY` and `.venv` too.
+
+For a quickstart clean rebuild, target only the ignored area folder and, if
+needed, that area's ignored quickstart run folders. The configured fetch can
+reacquire that survey's outlines, DSM/imagery and available LiDAR; the shared
+wide DEM and point-cloud cache can also be reacquired, but at additional
+download cost and with impact on other builds. A single Queenstown test
+completed after regenerable caches were removed; it does not prove every
+survey is available or every tracked input disposable. See
+[Quickstart — rebuilding after removing local data](../quickstart.md#rebuilding-after-removing-local-data).
+
 `FAIL` means the quickstart stopped before dependent steps. `DEGRADED` means
 it continued, but the report records a missing source or reduced capability.
 A later `PASS` does not erase that degraded input—for example, successful roof
@@ -215,6 +232,18 @@ from LiDAR and the output size. Zero rendered buildings means there was no
 usable point-cloud roof evidence; the base building/layout map can still work,
 but the raster heat layer may be empty. Check Step 02 for the tile coverage
 and confirm the survey publishes the point cloud configured for this bbox.
+
+### The map console shows 404s, but buildings and panels render
+
+Some local-preview 404s are expected and do not mean the quickstart output is
+invalid: the address search first probes `addresses/index.json` and falls back
+to the flat `addresses.json` file when the dataset is not sharded; the static
+preview has no `/api/refit` endpoint; and MapLibre may request heatmap tiles
+outside the generated tile footprint. Check the requested URLs and confirm
+that the relevant tiles return successfully in the area of interest. The
+quickstart validates the required data files and PMTiles range serving in
+Steps 17–18. A page stuck at zero buildings or without visible panels is a
+different problem; verify the initial location and select **Panel Layout**.
 
 ## Reporting a new failure
 

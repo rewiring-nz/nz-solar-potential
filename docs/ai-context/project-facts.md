@@ -41,6 +41,13 @@ Last verified: 2026-09-26
   matching numbered step log. `docs/data-maintainers/troubleshooting.md` is
   the indexed guide for those diagnostics, LINZ permissions, missing Python
   dependencies, map-build CLI prerequisites, and local preview failures.
+- `data/` is not wholly disposable: it contains tracked curated labels,
+  benchmark/truth/verdict assets, trained roof-line models, and map-facing site
+  outputs, alongside ignored regenerable raw inputs and intermediates.
+  `git clean -fd` leaves ignored files; `rm -rf data` removes tracked assets
+  too. A 2026-09-26 clean-room quickstart for a small Queenstown area completed
+  after regenerable caches were removed and tracked files restored. This
+  verifies that configured area only, not all surveys or inputs.
 - `tests/run_all.sh` is the repository's local automated check entry point. It
   includes pure Python, economics, deprecated-API, repository-sync,
   architecture-diagram, and optional golden-building checks. It is not a CI
