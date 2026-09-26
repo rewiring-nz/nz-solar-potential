@@ -71,6 +71,13 @@ def test_min_width():
     assert abs(od._min_width(box(0, 0, 1.2, 9)) - 1.2) < 1e-6
 
 
+def test_thin_by_thickness_not_bounding_box():
+    strip_round_a_corner = box(0, 0, 20, 1).union(box(0, 0, 1, 15))
+    assert od._is_thin(strip_round_a_corner)
+    assert not od._is_thin(box(0, 0, 5, 3))      # a deck at the edge stays an object
+    assert not od._is_thin(box(0, 0, 20, 2.5))
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

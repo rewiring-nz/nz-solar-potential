@@ -811,6 +811,18 @@ SUNKEN_CELL_GROW_FRAC = 0.25   # a neighbouring cell joins at this share (the st
 SUNKEN_REGION_MEDIAN_M = 0.4
 
 
+def _is_thin(poly):
+    """No wider than EDGE_DROP_MAX_WIDTH_M anywhere that matters. By
+    thickness, not the bounding rectangle: a 1 m strip bent round a corner of
+    the roof (22 Earl St, 25 of them) has a rectangle metres wide and was
+    drawn as an obstruction along the eaves."""
+    try:
+        core = poly.buffer(-EDGE_DROP_MAX_WIDTH_M / 2.0)
+        return core.is_empty or core.area < 0.1 * poly.area
+    except Exception:
+        return _min_width(poly) <= EDGE_DROP_MAX_WIDTH_M
+
+
 def _min_width(poly):
     with np.errstate(divide="ignore", invalid="ignore"):   # shapely's envelope on exact rectangles
         cs = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
@@ -1165,7 +1177,7 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                 if part.geom_type != "Polygon" or part.is_empty:
                     continue
                 touches = part.buffer(EDGE_DROP_TOUCH_M).intersects(facet_geom.exterior)
-                (edge if touches and _min_width(part) <= EDGE_DROP_MAX_WIDTH_M else rest).append(part)
+                (edge if touches and _is_thin(part) else rest).append(part)
         keepouts.extend(edge)
         sunken = rest
     all_obs = color_obs + compact + confirmed_elongated + bright + sunken
