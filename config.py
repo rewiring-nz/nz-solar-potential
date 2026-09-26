@@ -371,6 +371,18 @@ if _os.path.exists(_MY_AREA):
                            ("pointcloud_tile_year", "POINTCLOUD_TILE_YEAR")):
             if _ma.get(_key):
                 globals()[_var] = _ma[_key]
+        # A user-defined bbox may lie outside every configured survey. When
+        # layer overrides are supplied, register that bbox as its own survey
+        # so survey_for() uses these IDs instead of inheriting Queenstown data.
+        _survey_keys = ("dsm_layer", "dem_layer", "imagery_layer",
+                        "reference_imagery_layer", "lidar_tile_index_layer",
+                        "pointcloud_bulk_url", "pointcloud_tile_year")
+        if any(_ma.get(k) is not None for k in _survey_keys):
+            _custom_survey = {k: _ma.get(k) for k in _survey_keys}
+            _custom_survey.update({"name": f"my-area-{_name}", "bbox": _bbox})
+            SURVEYS = [s for s in SURVEYS
+                       if s.get("name") != _custom_survey["name"]]
+            SURVEYS.append(_custom_survey)
         print(f"[config] my_area.json loaded: region '{_name}' {_bbox}")
     except Exception as _exc:
         print(f"[config] my_area.json IGNORED ({_exc!r})")

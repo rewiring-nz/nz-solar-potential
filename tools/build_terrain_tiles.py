@@ -126,7 +126,7 @@ def encode(h):
     return rgb
 
 
-def build_all(regions, min_z, max_z, area_paths):
+def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
     """Tile by TILE, not region by region.
 
     Writing one region at a time meant a tile covered by two regions got
@@ -242,7 +242,7 @@ def build_all(regions, min_z, max_z, area_paths):
             if not np.isfinite(acc).any():
                 continue
             acc = despike(acc, span_m / TILE)
-            d = OUT / str(z) / str(x)
+            d = Path(out_dir) / str(z) / str(x)
             d.mkdir(parents=True, exist_ok=True)
             Image.fromarray(encode(acc)).save(d / f"{y}.png", optimize=True)
             written += 1
@@ -261,17 +261,19 @@ def main():
     # 1 m data is fully resolved by about z17 at this latitude (0.84 m/px);
     # asking for more just interpolates and multiplies the file count by four.
     ap.add_argument("--max-zoom", type=int, default=17)
+    ap.add_argument("--out", type=Path, default=OUT,
+                    help="tile output directory (defaults to data/terrain)")
     a = ap.parse_args()
     from src.region_build import area_paths
     d = ROOT / "data/regions"
     regions = a.regions or sorted(p.name for p in d.iterdir() if p.is_dir())
-    OUT.mkdir(parents=True, exist_ok=True)
-    total = build_all(regions, a.min_zoom, a.max_zoom, area_paths)
-    (OUT / "meta.json").write_text(json.dumps(
+    a.out.mkdir(parents=True, exist_ok=True)
+    total = build_all(regions, a.min_zoom, a.max_zoom, area_paths, a.out)
+    (a.out / "meta.json").write_text(json.dumps(
         {"encoding": "mapbox", "tileSize": TILE,
          "minzoom": a.min_zoom, "maxzoom": a.max_zoom,
          "source": "LINZ 1 m DSM (surface: ground, trees and roofs)"}, indent=1))
-    print(f"TOTAL {total} terrain tiles -> {OUT}")
+    print(f"TOTAL {total} terrain tiles -> {a.out}")
 
 
 if __name__ == "__main__":

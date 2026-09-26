@@ -2,3 +2,4 @@
 # Install with: brew bundle --file=Brewfile
 brew "git"
 brew "python"
+brew "tippecanoe"

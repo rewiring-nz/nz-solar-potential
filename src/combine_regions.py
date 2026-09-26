@@ -289,7 +289,8 @@ def _combine_curves(summaries, dest_tmp):
     return len(bands)
 
 
-def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR):
+def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
+            build_markup_lines=True):
     t0 = time.time()
     out_root, dest = Path(out_root), Path(dest)
     if regions is None:
@@ -362,7 +363,7 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR):
 
     # The drawn lines, as the overlay that shows them -- global and tiny.
     ml = ROOT / "tools" / "build_markup_lines.py"
-    if ml.exists():
+    if build_markup_lines and ml.exists():
         subprocess.run([sys.executable, str(ml)], cwd=ROOT)
 
     print(f"combined in {time.time() - t0:.0f}s: "
@@ -380,8 +381,11 @@ def main():
     ap.add_argument("--regions", nargs="*", default=None)
     ap.add_argument("--out-root", default=str(OUT_ROOT))
     ap.add_argument("--dest", default=str(DATA_DIR))
+        ap.add_argument("--skip-markup-lines", action="store_true",
+                help="do not regenerate the repository-wide markup overlay")
     a = ap.parse_args()
-    combine(a.regions, a.out_root, a.dest)
+        combine(a.regions, a.out_root, a.dest,
+            build_markup_lines=not a.skip_markup_lines)
     return 0
 
 

@@ -4,9 +4,10 @@ This project estimates rooftop solar potential for every building in a
 district. This quickstart lets you run the production roof/layout and yield
 stages on a small area you choose — your own street, if it is in a covered
 survey — and inspect the result. It uses the same stage implementations,
-thresholds, and gates as the regional build. It is a **verification build, not
-a complete map deployment**: it does not emit/combine PMTiles or make the new
-area appear in the normal web map.
+thresholds, and gates as the regional build. It also emits and validates the
+same map data contract into a run-isolated directory, then starts a local
+MapLibre preview pointed only at that data. It does not publish or replace
+the normal map dataset.
 
 ## What you need
 
@@ -22,6 +23,11 @@ area appear in the normal web map.
   **REST API** scope)
 - Environment set up per
   [data-maintainers/local-setup.md](data-maintainers/local-setup.md)
+- Map build tools `tippecanoe`, `tile-join`, and `tippecanoe-decode` available
+  on `PATH` (install per the [macOS](data-maintainers/env-setup-mac.md#install-project-tools),
+  [Ubuntu](data-maintainers/env-setup-ubuntu.md#install-tippecanoe-map-tools),
+  or [WSL](data-maintainers/env-setup-win.md#install-tippecanoe-map-tools)
+  setup guide). The quickstart checks these before fetching data.
 - Optional, for the full vision chain: `pip install torch segment-anything`
   (the quickstart downloads Meta's public SAM checkpoint, 358 MB; both
   project roof-line model checkpoints must be present in `data/models/`)
@@ -38,9 +44,14 @@ The area name passed on the command line must exactly match `name` in
 `my_area.json`. The script validates this, the WGS84 bbox, the Python
 executable, and the presence (not the value) of `LINZ_API_KEY` before
 starting network work. Credentials are never copied into the report or logs.
+The bbox must be contained by a configured survey, or the JSON must specify
+the new survey's DSM layer and any available imagery and point-cloud settings.
+For a point-cloud bulk URL, also provide its tile-index layer and tile year;
+use `null` when raw point-cloud data is not published.
 
 Keep the bbox small the first time (~0.005° × 0.005°, a few dozen
-buildings): the run finishes in minutes and the reports stay readable.
+buildings): the run and reports stay manageable. The time varies with source
+downloads, LiDAR coverage, geometry, and map tiling.
 The defaults in the example file cover the Queenstown Lakes district; for
 any other part of NZ, set your district's DSM/DEM/imagery layer ids (the
 example file says where to find them). Building outlines are national.
@@ -56,13 +67,29 @@ example file says where to find them). Building outlines are national.
   `data/regions/<name>/quickstart_report.html`
   The visual report. Open in a browser to inspect aerial photos with overlaid
   roof facets (white), obstructions (red), and placed panels (blue).
+- **Local interactive map:** the quickstart starts a loopback-only server and
+  opens the new-area preview in a browser when possible. The exact URL is
+  printed at the end and recorded in `report.md`. The preview uses this run's
+  data under `data/quickstart_runs/<name>/<run-id>/map-data/data/`; it does not
+  read or overwrite the normal map files under `data/`.
+
+Use `bash quickstart.sh my_test_area --no-open-browser` to suppress automatic
+browser opening; the server still starts and the report contains its URL. The
+local server's PID and log are recorded in the run directory. Stop it after
+review with `kill "$(cat data/quickstart_runs/<name>/<run-id>/map-preview-server.pid)"`.
 
 ## Run artifacts and debugging
 
+For common fixes, including Python dependency failures, LINZ key permissions,
+missing map-build tools, and preview-server errors, see
+[data-maintainers/troubleshooting.md](data-maintainers/troubleshooting.md).
+
 Each invocation gets a unique, ignored run directory:
-`data/quickstart_runs/<name>/<UTC-run-id>/`. It is separate from generated
-region data and is not published with the map. The terminal prints the exact
-paths when the run stops or finishes.
+`data/quickstart_runs/<name>/<UTC-run-id>/`. Logs and map outputs are separate
+from generated region data and are not published with the regular map. The
+terminal prints the exact report and preview paths when the run stops or
+finishes. Build inputs and intermediate region results still live under
+`data/regions/<name>/`.
 
 - `report.md` is the incrementally updated run record. Its step numbers and
   descriptions match the `[QS-NN]` prefixes in the terminal and logs. Each row
@@ -73,6 +100,10 @@ paths when the run stops or finishes.
   the first failed step in `report.md`, then inspect its matching log.
 - `run.json` is the machine-readable record, including run metadata, timestamps,
   durations, exit codes, and statuses.
+- `region-out/<name>/` contains the PMTiles and support files emitted for this
+  run; `map-data/data/` contains the combined dataset the local map reads.
+- `map-preview/preview.html` and its local script assets are the run-specific
+  entry page. `map-preview-server.log` records the local static server output.
 
 `PASS` means the command succeeded and expected output checks passed.
 `DEGRADED` means the run continued with an optional source or method missing;
@@ -81,6 +112,13 @@ is used for optional vision precomputation when prerequisites are absent.
 `FAIL` stops dependent work. Later steps are marked `NOT RUN`, not silently
 treated as successful. The report is written after every status change, so a
 failed or interrupted run still leaves a useful partial record.
+
+`PASS` for the final map step means the emitted contract was checked and the
+local preview page returned HTTP 200; a PMTiles byte-range probe also returned
+HTTP 206, which confirms the local server can deliver vector tiles. An
+optional vision, address, image-alignment, or terrain limitation is recorded
+as `SKIPPED` or `DEGRADED`, not hidden. This preview is static: the map's live
+parameter-refit controls still require the separate `/api/refit` service.
 
 The separate visual output remains at
 `data/regions/<name>/quickstart_report.html` — one card per building with the
@@ -101,6 +139,16 @@ The numbered executable steps, in order, are:
 | 06 | Rerank panel layouts | `src/run_stage.py rerank_layouts` | ranks/fills gated panel layouts |
 | 07 | Derive building solar potential | `src/run_stage.py derive_solar_potential` | derives building totals from panel layouts |
 | 08 | Render building verification report | `tools/quickstart_report.py` | renders per-building visual verification cards |
+| 09 | Patch roof confidence | `src/run_stage.py patch_roof_confidence` | carries layout confidence onto building records |
+| 10 | Bake per-building horizons | `src/run_stage.py bake_building_horizons` | adds per-building near/far horizon data for map detail |
+| 11 | Register imagery alignment (optional) | `src/run_stage.py register_imagery` | measures roof-to-photo shifts when a reference image is available |
+| 12 | Build per-pixel solar heatmap | `src/run_stage.py build_heatmap_raster` | creates the raster layer used by the map's default heatmap view |
+| 13 | Add building addresses (optional) | `src/run_stage.py add_addresses` | adds LINZ address labels; IDs remain usable if this optional fetch fails |
+| 14 | Emit regional map tiles | `src/emit_region.py` | writes this run's building/layout PMTiles and map support files |
+| 15 | Combine isolated map dataset | `src/combine_regions.py` | creates the map-facing contract from this run's one region without replacing `data/` outputs |
+| 16 | Build local 3D terrain tiles | `tools/build_terrain_tiles.py` | adds the optional 3D DSM surface to the isolated dataset |
+| 17 | Validate map contract and prepare preview | `tools/validate_quickstart_map.py` | checks output contract and writes a run-specific preview config/page |
+| 18 | Start local map preview | `tools/quickstart_serve.py` | serves the preview on loopback and verifies PMTiles byte-range responses |
 
 The methodology's rulebook, with the enforcement point and check command
 for every rule, is
@@ -148,7 +196,13 @@ for every rule, is
   precomputation is explicitly marked `SKIPPED`. Geometry still follows its
   normal selected-reading and fallback precedence; it is not accurate to say
   every roof necessarily uses only one fallback method.
-- The quickstart does not run horizon/heatmap stages, regional tile emission,
-  or combination. Its successful output is **not map-ready**; the local web
-  map continues to read the existing map-facing files in `data/`. Do not
-  combine an isolated quickstart area into the normal map data directory.
+- Imagery alignment, address labels, and 3D terrain are optional enhancements;
+  if unavailable, the report explains which map capability is reduced. The
+  2D building/layout map and its map data contract are still generated and
+  validated.
+- The local preview uses public basemap tiles and therefore needs a browser
+  connection to those services. Its generated solar/map data is local and
+  isolated; the quickstart does not publish it or replace the normal site.
+- The preview server binds only to `127.0.0.1`. It is a static map preview and
+  does not provide live parameter refitting (`/api/refit`). The report records
+  the server PID and log; stop the server after review.

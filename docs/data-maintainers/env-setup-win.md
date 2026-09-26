@@ -16,6 +16,8 @@ geospatial Python stack is generally more reliable in Linux.
   command style required by the project's build scripts.
 - **Git**, installed inside Ubuntu to retrieve the project and record changes.
 - **Python**, installed inside Ubuntu to run the data-processing scripts.
+- **Tippecanoe**, built inside Ubuntu to provide the map-tile commands
+  `tippecanoe`, `tile-join`, and `tippecanoe-decode`.
 
 ## Install WSL2 and Ubuntu
 
@@ -87,6 +89,19 @@ Confirm the installation:
 
 ```sh
 python3 --version
+```
+
+## Install Tippecanoe map tools
+
+The quickstart's map-output stages run inside WSL, so install Tippecanoe there
+(not in PowerShell or native Windows). Follow the
+[Ubuntu Tippecanoe setup](env-setup-ubuntu.md#install-tippecanoe-map-tools),
+then verify the three commands from the Ubuntu terminal:
+
+```sh
+tippecanoe --version
+command -v tile-join
+command -v tippecanoe-decode
 ```
 
 ## Keep the project inside Linux

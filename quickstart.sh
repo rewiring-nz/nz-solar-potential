@@ -25,4 +25,4 @@ fi
 if [ ! -x "$PY" ]; then
   echo "no .venv -- see docs/data-maintainers/local-setup.md first"; exit 2
 fi
-exec "$PY" tools/quickstart_run.py "$AREA" --python "$PY"
+exec "$PY" tools/quickstart_run.py "$@" --python "$PY"

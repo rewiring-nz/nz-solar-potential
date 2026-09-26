@@ -8,16 +8,22 @@ as the run progresses, so failures and interruptions leave a useful record.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import io
+import importlib
 import json
 import os
 import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
+import urllib.request
+import webbrowser
 from urllib.parse import quote, quote_plus
 from pathlib import Path
 from typing import Any
@@ -74,6 +80,66 @@ STEPS = [
         "label": "Render building verification report",
         "inputs": "Solar potential, panel layouts, optional aerial imagery",
         "outputs": "data/regions/<area>/quickstart_report.html",
+    },
+    {
+        "number": 9,
+        "label": "Patch roof confidence",
+        "inputs": "Solar potential and gated panel layouts",
+        "outputs": "Updated data/regions/<area>/solar_potential.geojson",
+    },
+    {
+        "number": 10,
+        "label": "Bake per-building horizons",
+        "inputs": "Outlines, DSM, wide DEM and solar potential",
+        "outputs": "solar_potential.geojson with building horizon fields",
+    },
+    {
+        "number": 11,
+        "label": "Register imagery alignment (optional)",
+        "inputs": "Area imagery and LINZ Basemaps reference-photo tiles",
+        "outputs": "data/regions/<area>/image_shift.json when measurable",
+    },
+    {
+        "number": 12,
+        "label": "Build per-pixel solar heatmap",
+        "inputs": "Outlines, DSM, point cloud (when available), wide DEM and image shifts",
+        "outputs": "data/regions/<area>/heatmap_raster.png and heatmap_raster.json",
+    },
+    {
+        "number": 13,
+        "label": "Add building addresses (optional)",
+        "inputs": "Building polygons and LINZ NZ Addresses WFS",
+        "outputs": "Address properties in solar_potential.geojson",
+    },
+    {
+        "number": 14,
+        "label": "Emit regional map tiles",
+        "inputs": "Region solar/layout GeoJSON, heatmap, outlines, build keys",
+        "outputs": "Run-isolated buildings/layout PMTiles, cells, detail, heatmap tiles and summary",
+    },
+    {
+        "number": 15,
+        "label": "Combine isolated map dataset",
+        "inputs": "This run's regional tile artifacts only",
+        "outputs": "data/quickstart_runs/<area>/<run-id>/map-data/data/ map contract",
+    },
+    {
+        "number": 16,
+        "label": "Build local 3D terrain tiles",
+        "inputs": "Area DSM and wide DEM",
+        "outputs": "Run-isolated map-data/data/terrain/ tiles (optional 3D view)",
+    },
+    {
+        "number": 17,
+        "label": "Validate map contract and prepare preview",
+        "inputs": "Emitted PMTiles, supporting JSON/PNG assets and preview page assets",
+        "outputs": "Contract-checked local map dataset and map-preview/preview.html",
+    },
+    {
+        "number": 18,
+        "label": "Start local map preview",
+        "inputs": "Validated preview bundle and PMTiles byte-range server",
+        "outputs": "Loopback preview URL and server PID/log",
     },
 ]
 
@@ -199,6 +265,9 @@ class QuickstartRun:
             f"- **Git commit:** `{self.metadata.get('git_commit', 'unknown')}`",
             f"- **WGS84 bbox:** `{self.metadata.get('bbox', 'not validated')}`",
             f"- **Survey overrides:** `{json.dumps(self.metadata.get('survey_overrides', {}), sort_keys=True)}`",
+                        f"- **Survey selected:** `{self.metadata.get('survey_name', 'not resolved')}`",
+                        *([f"- **Map preview:** [{self.metadata['map_preview_url']}]({self.metadata['map_preview_url']})"]
+                            if self.metadata.get("map_preview_url") else []),
             f"- **Combined log:** [`run.log`](run.log)",
             f"- **Machine-readable record:** [`run.json`](run.json)",
             "",
@@ -212,9 +281,13 @@ class QuickstartRun:
             "",
             "Open the matching `step-NN-*.log` for full stdout/stderr. Find the same `[QS-NN]` marker in `run.log` to see surrounding run context. A failed step stops dependent steps; later rows remain `NOT RUN` and explain why.",
             "",
-            "## Map-preview boundary",
+            "## Map preview",
             "",
-            "This quickstart currently builds per-region GeoJSON and the HTML roof-verification report. It does not emit/combine PMTiles or configure a local web-map preview; a `PASS` here is not a claim that the new area is visible in `preview.html`.",
+            (f"Map-ready local preview: [{self.metadata['map_preview_url']}]({self.metadata['map_preview_url']}). "
+             "The preview uses this run's isolated dataset; it does not replace or publish the normal map data. "
+             "Live parameter refitting still requires the separate `src/live_server.py` API and is not enabled by this static preview."
+             if self.metadata.get("map_preview_url") else
+             "The map-ready tile/preview steps have not completed. Earlier PASS statuses cover only the listed pipeline stages, not map readiness."),
             "",
         ]
         self.report_path.write_text("\n".join(content), encoding="utf-8")
@@ -333,6 +406,37 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
         return False, f"Selected Python executable is unavailable: {py}", {"name": name, "bbox": bbox}
     if not _key_available():
         return False, "LINZ_API_KEY is not set in the environment or .env (value was not recorded).", {"name": name, "bbox": bbox}
+    dependency_probe = subprocess.run(
+        [str(py), "-c", "import matplotlib.colors"], cwd=ROOT,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if dependency_probe.returncode:
+        return False, (
+            f"Matplotlib is required for the map heatmap stage but cannot be imported by "
+            f"the selected Python ({py}). Install project dependencies into this exact "
+            f"environment with '{py} -m pip install -r requirements.txt', then verify "
+            f"with '{py} -c \\\"import matplotlib.colors; print(matplotlib.__version__)\\\"'. "
+            f"See docs/data-maintainers/troubleshooting.md#matplotlib-is-required-for-the-map-heatmap-stage."
+        ), {"name": name, "bbox": bbox}
+    missing_tools = [tool for tool in ("tippecanoe", "tile-join", "tippecanoe-decode")
+                     if shutil.which(tool) is None]
+    if missing_tools:
+        return False, "Map-ready output requires Tippecanoe's commands on PATH: " + ", ".join(missing_tools) + ". Install the Tippecanoe package (macOS: brew bundle --file=Brewfile; Ubuntu/WSL: follow docs/data-maintainers/env-setup-ubuntu.md) and reopen the terminal before retrying.", {"name": name, "bbox": bbox}
+    try:
+        sys.path.insert(0, str(ROOT))
+        with contextlib.redirect_stdout(io.StringIO()):
+            config = importlib.import_module("config")
+            from src.surveys import survey_for
+            survey = survey_for(bbox, name)
+        if not survey.get("dsm_layer"):
+            raise ValueError("the selected survey has no DSM layer configured")
+        if survey.get("pointcloud_bulk_url") and not survey.get("lidar_tile_index_layer"):
+            raise ValueError("a point-cloud bulk store is configured without a tile-index layer")
+        survey_meta = {k: survey.get(k) for k in (
+            "name", "dsm_layer", "dem_layer", "imagery_layer",
+            "reference_imagery_layer", "lidar_tile_index_layer",
+            "pointcloud_bulk_url", "pointcloud_tile_year")}
+    except Exception as exc:
+        return False, f"No usable source survey for this bbox: {type(exc).__name__}: {exc}. Configure the survey coverage/layer IDs in my_area.json or config.SURVEYS before fetching.", {"name": name, "bbox": bbox}
     free_gb = shutil.disk_usage(DATA).free / 1e9 if DATA.exists() else shutil.disk_usage(ROOT).free / 1e9
     details = f"Area {name}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; free disk {free_gb:.1f} GB; LINZ key present (not recorded)."
     if free_gb < 10:
@@ -340,8 +444,11 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
     survey_keys = ("dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
                    "pointcloud_bulk_url", "pointcloud_tile_year")
     overrides = {key: area_config[key] for key in survey_keys if key in area_config}
-    return True, details, {"name": name, "bbox": bbox, "free_disk_gb": round(free_gb, 1),
-                          "survey_overrides": overrides}
+    return True, details + f" Selected survey: {survey.get('name')}.", {
+        "name": name, "bbox": bbox, "free_disk_gb": round(free_gb, 1),
+        "survey_overrides": overrides, "survey_name": survey.get("name"),
+        "survey_layers": survey_meta,
+    }
 
 
 def _pointcloud_summary(area_dir: Path) -> tuple[int, int, bool]:
@@ -396,11 +503,112 @@ def _evaluate_fetch(area_dir: Path, output: str) -> tuple[str, str]:
     return status, comment
 
 
+def _prepare_preview_bundle(area: str, run: QuickstartRun, map_package: Path) -> Path:
+    preview_dir = run.run_dir / "map-preview"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("preview.html", "economics.js", "panel_editor.js"):
+        shutil.copy2(ROOT / name, preview_dir / name)
+    bbox = run.metadata["bbox"]
+    center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
+    base_path = "/" + map_package.relative_to(ROOT).as_posix().rstrip("/") + "/"
+    site = {
+        "dataVersion": run.run_dir.name,
+        "dataBase": base_path,
+        "defaultView": {"center": center, "zoom": 15.5},
+        "towns": [],
+        "name": f"Quickstart: {area}",
+    }
+    (preview_dir / "site-config.js").write_text(
+        "window.SITE = " + json.dumps(site, separators=(",", ":")) + ";\n",
+        encoding="utf-8")
+    return preview_dir / "preview.html"
+
+
+def _free_port(preferred: int) -> int:
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        try:
+            probe.bind(("127.0.0.1", preferred))
+            return probe.getsockname()[1]
+        except OSError:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+    finally:
+        probe.close()
+
+
+def _start_preview_server(area: str, run: QuickstartRun, py: Path,
+                          map_package: Path, preferred_port: int,
+                          open_browser: bool) -> tuple[bool, str]:
+    port = _free_port(preferred_port)
+    server_log = run.run_dir / "map-preview-server.log"
+    pid_file = run.run_dir / "map-preview-server.pid"
+    command = [str(py), "tools/quickstart_serve.py", "--root", str(ROOT), "--port", str(port)]
+    record = run.begin(18, command)
+    preview_path = run.run_dir / "map-preview" / "preview.html"
+    route = "/" + preview_path.relative_to(ROOT).as_posix()
+    bbox = run.metadata["bbox"]
+    lat, lng = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
+    url = f"http://127.0.0.1:{port}{route}?lat={lat:.7f}&lng={lng:.7f}&z=15.5"
+    tile_path = "/" + (map_package / "data" / "buildings.pmtiles").relative_to(ROOT).as_posix()
+    try:
+        popen_options: dict[str, Any] = {}
+        if os.name == "nt":
+            popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_options["start_new_session"] = True
+        with server_log.open("ab") as log_file:
+            process = subprocess.Popen(command, cwd=ROOT, stdout=log_file,
+                                       stderr=subprocess.STDOUT, **popen_options)
+        pid_file.write_text(f"{process.pid}\n", encoding="ascii")
+        deadline = time.monotonic() + 10
+        last_error = "server did not become ready"
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                last_error = f"server exited with code {process.returncode}"
+                break
+            try:
+                with urllib.request.urlopen(url, timeout=1) as response:
+                    if response.status != 200:
+                        raise RuntimeError(f"preview page returned HTTP {response.status}")
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}{tile_path}", headers={"Range": "bytes=0-31"})
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    content_range = response.headers.get("Content-Range", "")
+                    if response.status != 206 or not content_range.startswith("bytes 0-31/"):
+                        raise RuntimeError(f"PMTiles byte-range probe returned HTTP {response.status}, {content_range!r}")
+                    if len(response.read()) != 32:
+                        raise RuntimeError("PMTiles byte-range probe returned the wrong payload length")
+                run.metadata.update({"map_preview_url": url,
+                                     "map_preview_server_pid": process.pid,
+                                     "map_preview_server_log": str(server_log.relative_to(ROOT))})
+                run._save()
+                if open_browser:
+                    with contextlib.suppress(Exception):
+                        webbrowser.open(url, new=2)
+                run.finish(18, "PASS", f"Local preview serves HTTP 200 and PMTiles byte ranges (206). Open {url}. Stop the local server with PID {process.pid} when finished; details: {server_log.relative_to(ROOT)}.", 0)
+                return True, url
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                time.sleep(0.2)
+        process.terminate()
+        process.wait(timeout=5)
+        run.finish(18, "FAIL", f"Could not verify local preview: {last_error}. See {server_log.relative_to(ROOT)}.", 1)
+        return False, ""
+    except Exception as exc:
+        run.finish(18, "FAIL", f"Could not start local map server: {type(exc).__name__}: {exc}.", 1)
+        return False, ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run quickstart with persistent numbered logs and Markdown report.")
     parser.add_argument("area", help="must match my_area.json name")
     parser.add_argument("--python", dest="python", default=sys.executable,
                         help="Python executable used for pipeline subprocesses (defaults to this interpreter)")
+    parser.add_argument("--port", type=int, default=8765,
+                        help="preferred local preview port (uses another free port if occupied)")
+    parser.add_argument("--no-open-browser", action="store_true",
+                        help="start the local preview server but do not open a browser tab")
     args = parser.parse_args()
     try:
         area = _safe_area(args.area)
@@ -419,6 +627,12 @@ def main() -> int:
     run = QuickstartRun(area, run_dir)
     area_dir = DATA / "regions" / area
     run.metadata = {"run_dir": str(run_dir.relative_to(ROOT))}
+    region_out_root = run_dir / "region-out"
+    region_out = region_out_root / area
+    map_package = run_dir / "map-data"
+    map_data = map_package / "data"
+    map_preview = run_dir / "map-preview"
+    map_data.mkdir(parents=True, exist_ok=True)
 
     run.begin(1)
     ok, details, area_meta = _preflight(area, py)
@@ -449,6 +663,17 @@ def main() -> int:
         [str(py), "src/run_stage.py", "rerank_layouts", area],
         [str(py), "src/run_stage.py", "derive_solar_potential", area],
         [str(py), "tools/quickstart_report.py", area],
+        [str(py), "src/run_stage.py", "patch_roof_confidence", area],
+        [str(py), "src/run_stage.py", "bake_building_horizons", area],
+        [str(py), "src/run_stage.py", "register_imagery", area],
+        [str(py), "src/run_stage.py", "build_heatmap_raster", area],
+        [str(py), "src/run_stage.py", "add_addresses", area],
+        [str(py), "src/emit_region.py", area, "--out", str(region_out_root)],
+        [str(py), "src/combine_regions.py", "--regions", area,
+         "--out-root", str(region_out_root), "--dest", str(map_data),
+         "--skip-markup-lines"],
+        [str(py), "tools/build_terrain_tiles.py", area, "--min-zoom", "11",
+         "--max-zoom", "17", "--out", str(map_data / "terrain")],
     ]
     failed_at: int | None = None
     for number, command in enumerate(commands, start=2):
@@ -506,7 +731,15 @@ def main() -> int:
         except KeyboardInterrupt:
             raise
         if code != 0:
-            run.finish(number, "FAIL", f"Command exited {code}; downstream steps were not run. See step log.", code)
+            if number in {11, 13, 16}:
+                note = {
+                    11: "Imagery alignment did not complete; the map can still display geometry at its LiDAR coordinates.",
+                    13: "Address enrichment did not complete; buildings remain clickable by building ID.",
+                    16: "3D terrain tiles are unavailable; the 2D map remains complete.",
+                }[number]
+                run.finish(number, "DEGRADED", f"Optional command exited {code}. {note} Inspect the step log.", code)
+                continue
+            run.finish(number, "FAIL", f"Command exited {code}; dependent outputs were not run. See step log.", code)
             failed_at = number
             break
         if number == 2:
@@ -523,12 +756,26 @@ def main() -> int:
                 6: area_dir / "panel_layouts.geojson",
                 7: area_dir / "solar_potential.geojson",
                 8: area_dir / "quickstart_report.html",
+                9: area_dir / "solar_potential.geojson",
+                10: area_dir / "solar_potential.geojson",
+                11: area_dir / "image_shift.json",
+                12: area_dir / "heatmap_raster.png",
+                13: area_dir / "solar_potential.geojson",
+                14: region_out / "summary.json",
+                15: map_data / "buildings.pmtiles",
+                16: map_data / "terrain" / "meta.json",
             }[number]
+            if number == 11 and not expected.is_file():
+                run.finish(number, "SKIPPED", "No image_shift.json was produced (for example, the survey has no reference imagery); map geometry will render at its source coordinates.", 0)
+                continue
+            if number in {11, 16} and (not expected.is_file() or expected.stat().st_size == 0):
+                run.finish(number, "DEGRADED", f"Optional output missing/empty: {expected.relative_to(ROOT)}. The 2D solar map remains available.", 0)
+                continue
             if not expected.is_file() or expected.stat().st_size == 0:
                 run.finish(number, "FAIL", f"Command returned success but expected output is missing/empty: {expected.relative_to(ROOT)}. See step log.", 0)
                 failed_at = number
                 break
-            if number in {4, 5, 6, 7}:
+            if number in {4, 5, 6, 7, 9, 10, 13}:
                 feature_count, validation_error = _geojson_feature_count(expected)
                 if validation_error:
                     run.finish(number, "FAIL", f"Expected GeoJSON is invalid: {validation_error} in {expected.relative_to(ROOT)}.", 0)
@@ -552,8 +799,85 @@ def main() -> int:
                     run.finish(number, "DEGRADED", comment + " No image cards rendered; verify imagery/facet availability.", 0)
                 else:
                     run.finish(number, "PASS", comment, 0)
+            elif number == 10:
+                doc = json.loads(expected.read_text(encoding="utf-8"))
+                n_horizon = sum("horizon_b64" in f.get("properties", {})
+                                for f in doc["features"])
+                run.finish(number, "PASS" if n_horizon else "DEGRADED",
+                           f"Horizon profiles available for {n_horizon}/{feature_count} buildings; map detail can display horizon data where present.", 0)
+            elif number == 11:
+                shifts = json.loads(expected.read_text(encoding="utf-8"))
+                run.finish(number, "PASS" if shifts else "SKIPPED",
+                           f"Image alignment shifts recorded for {len(shifts)} buildings." if shifts else "No image shifts were measurable; rendering remains in LiDAR coordinates.", 0)
+            elif number == 12:
+                sidecar = area_dir / "heatmap_raster.json"
+                if not sidecar.is_file() or sidecar.stat().st_size == 0:
+                    run.finish(number, "FAIL", "Heatmap sidecar is missing/empty; the emitted heatmap cannot be georeferenced.", 0)
+                    failed_at = number
+                    break
+                rendered = re.search(r"(\d+)/(\d+) buildings rendered", output)
+                n_rendered = int(rendered.group(1)) if rendered else None
+                total_buildings = int(rendered.group(2)) if rendered else None
+                comment = (f"Rendered LiDAR solar heat for {n_rendered}/{total_buildings} buildings; "
+                           f"wrote {expected.stat().st_size / 1e6:.1f} MB plus georeferencing sidecar.") \
+                    if rendered else f"Wrote {expected.stat().st_size / 1e6:.1f} MB plus georeferencing sidecar; rendered count was not reported."
+                run.finish(number, "DEGRADED" if n_rendered == 0 else "PASS", comment +
+                           (" No roofs had usable point-cloud coverage; the map's roof heat layer will be empty." if n_rendered == 0 else ""), 0)
+            elif number == 14:
+                for rel in ("buildings.pmtiles", "panel_layouts.pmtiles", "cells.json", "summary.json"):
+                    artifact = region_out / rel
+                    if not artifact.is_file() or artifact.stat().st_size == 0:
+                        run.finish(number, "FAIL", f"Regional emission omitted required map artifact: {artifact.relative_to(ROOT)}.", 0)
+                        failed_at = number
+                        break
+                if failed_at is not None:
+                    break
+                run.finish(number, "PASS", f"Emitted this run's tiles and support data under {region_out.relative_to(ROOT)}.", 0)
+            elif number == 15:
+                required = ("panel_layouts.pmtiles", "building_cells.pmtiles", "assumptions.json",
+                            "addresses.json", "building_detail/index.json", "heatmap_tiles/meta.json",
+                            "seasonal_curves/index.json", "build_summary.json")
+                missing = [rel for rel in required
+                           if not (map_data / rel).is_file() or (map_data / rel).stat().st_size == 0]
+                if missing:
+                    run.finish(number, "FAIL", "Isolated combine omitted required map files: " + ", ".join(missing), 0)
+                    failed_at = number
+                    break
+                (map_data / "markup_lines.geojson").write_text(
+                    json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8")
+                run.finish(number, "PASS", f"Combined one region into isolated map data at {map_data.relative_to(ROOT)}; repository-wide map data was not modified.", 0)
+            elif number == 16:
+                terrain_tiles = list((map_data / "terrain").rglob("*.png"))
+                run.finish(number, "PASS" if terrain_tiles else "DEGRADED",
+                           f"Wrote {len(terrain_tiles)} 3D terrain tiles." if terrain_tiles else "Terrain metadata exists but no DSM tiles were emitted; 3D view is unavailable.", 0)
             else:
                 run.finish(number, "PASS", f"Command succeeded; verified non-empty {expected.relative_to(ROOT)}{feature_note}.", 0)
+
+    if failed_at is None:
+        validator = [str(py), "tools/validate_quickstart_map.py",
+                     "--region-out", str(region_out), "--map-data", str(map_data)]
+        run.begin(17, ["prepare isolated preview bundle", "then", *validator])
+        try:
+            _prepare_preview_bundle(area, run, map_package)
+        except Exception as exc:
+            run.finish(17, "FAIL", f"Could not prepare local preview assets: {type(exc).__name__}: {exc}.", 1)
+            failed_at = 17
+        else:
+            try:
+                code, output = run.run_command(17, validator, env=env, begin=False)
+            except KeyboardInterrupt:
+                raise
+            if code != 0:
+                run.finish(17, "FAIL", "Map output contract validation failed. Review the step log before opening this dataset.", code)
+                failed_at = 17
+            else:
+                run.finish(17, "PASS", output.strip() or "Isolated preview bundle and map contract validated.", 0)
+
+    if failed_at is None:
+        ok, url = _start_preview_server(area, run, py, map_package,
+                                        args.port, not args.no_open_browser)
+        if not ok:
+            failed_at = 18
 
     if failed_at is not None:
         for s in run.records[failed_at:]:
@@ -562,6 +886,8 @@ def main() -> int:
                 s["comment"] = f"Not run because step {failed_at:02d} failed; dependent outputs are unavailable."
         run._save()
     print(f"\nQuickstart report: {run.report_path}\nCombined log: {run.log_path}\nRun artifacts: {run.run_dir}", flush=True)
+    if run.metadata.get("map_preview_url"):
+        print(f"Map preview: {run.metadata['map_preview_url']}", flush=True)
     return 1 if failed_at is not None else 0
 
 

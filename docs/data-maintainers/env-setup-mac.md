@@ -64,12 +64,25 @@ Run:
 brew bundle --file=Brewfile
 ```
 
-This installs Git, which retrieves and records project changes, and Python,
-which runs the data-processing scripts. Confirm both are available:
+This installs any Brewfile tools that are missing; it does not update every
+installed Homebrew package. Homebrew may finish by reporting that many
+formulae or casks are outdated. That is an informational count, not a failure
+and not a request to upgrade them for this project. Do not run `brew upgrade`
+just because this count appears. The command is successful if it exits with
+status 0 and returns to the shell prompt; investigate actual `Error:` messages
+or a nonzero exit status.
+
+This installs Git, which retrieves and records project changes, Python,
+which runs the data-processing scripts, and Tippecanoe, which provides the
+map-tile commands `tippecanoe`, `tile-join`, and `tippecanoe-decode`. Confirm
+the required commands are available:
 
 ```sh
 git --version
 python3 --version
+tippecanoe --version
+command -v tile-join
+command -v tippecanoe-decode
 ```
 
 ## Next step
@@ -82,5 +95,7 @@ to install the project's required Python packages and complete local setup.
 | Problem | First action |
 | --- | --- |
 | `brew: command not found` | Reopen Terminal and run the path command printed by the Homebrew installer. |
-| `brew bundle` reports an error | Confirm that Terminal is in the project directory and that `Brewfile` appears in `ls`. |
+| `brew bundle` says many formulae or casks are outdated | Informational only. If the command exits successfully, continue; do not upgrade unrelated packages just to clear the count. |
+| `brew bundle` exits nonzero or prints `Error:` | Confirm that Terminal is in the project directory and `Brewfile` is present (`ls Brewfile`). Follow the specific error; the outdated-package count alone is not the cause. |
+| `tippecanoe`, `tile-join`, or `tippecanoe-decode: command not found` | Run `brew bundle --file=Brewfile` from the project directory, then open a new Terminal and verify each command with `command -v`. |
 | `python3: command not found` | Run `brew bundle --file=Brewfile`, then close and reopen Terminal. |

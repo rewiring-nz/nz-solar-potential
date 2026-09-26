@@ -1,6 +1,6 @@
 # Project facts
 
-Last verified: 2026-09-09
+Last verified: 2026-09-26
 
 ## Verified facts
 
@@ -29,6 +29,18 @@ Last verified: 2026-09-09
   build. It runs preflight checks, records completion markers under
   `data/build_state/`, and skips only stages whose declared inputs are older
   than their marker.
+- `quickstart.sh <area>` runs regional estimates, then emits and combines the
+  map contract under the unique ignored directory
+  `data/quickstart_runs/<area>/<run-id>/`; it never combines into the normal
+  `data/` map dataset. `tools/quickstart_serve.py` serves a run-specific
+  preview with PMTiles byte-range support on loopback. The quickstart report
+  records map validation and the preview URL. Optional 3D terrain tiles are
+  generated into that same run's dataset. Verified in the quickstart runner,
+  isolated `combine_regions --dest`, and local range-server test (2026-09-26).
+- Quickstart run failures are triaged from each run's `report.md`, then the
+  matching numbered step log. `docs/data-maintainers/troubleshooting.md` is
+  the indexed guide for those diagnostics, LINZ permissions, missing Python
+  dependencies, map-build CLI prerequisites, and local preview failures.
 - `tests/run_all.sh` is the repository's local automated check entry point. It
   includes pure Python, economics, deprecated-API, repository-sync,
   architecture-diagram, and optional golden-building checks. It is not a CI
