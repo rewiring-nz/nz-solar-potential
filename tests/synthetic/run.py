@@ -43,11 +43,29 @@ STAGES = ["build_layout_geojson", "gate_panels", "rerank_layouts",
           "build_heatmap_raster", "emit_region"]
 
 
+def _tree_files():
+    """The repo's files: git's list, or -- on the build VM, whose tree is an
+    scp'd copy with no .git -- a walk that skips what git would ignore."""
+    r = subprocess.run(["git", "ls-files", "-co", "--exclude-standard"], cwd=ROOT,
+                       capture_output=True, text=True)
+    if r.returncode == 0:
+        return r.stdout.split("\n")
+    skip = (".git/", ".venv/", "logs/", "data/out/", "data/build_logs/", "data/preview/",
+            "data/regions/", "data/pointcloud/", "data/terrain/", "data/heatmap_tiles/",
+            "data/heatmaps/", "data/building_detail/", "data/summaries/", "data/addresses/")
+    out = []
+    for f in ROOT.rglob("*"):
+        rel = f.relative_to(ROOT).as_posix()
+        if f.is_file() and not rel.startswith(skip) and "__pycache__" not in rel \
+                and not rel.endswith((".pmtiles", ".tif", ".laz", ".zip")):
+            out.append(rel)
+    return out
+
+
 def build(work, py, log=print):
     """Copy the tracked tree into `work`, fabricate the region, run the stages.
     Returns the list of stages that failed."""
-    files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard"], cwd=ROOT,
-                           capture_output=True, text=True, check=True).stdout.split("\n")
+    files = _tree_files()
     for rel in filter(None, files):
         src = ROOT / rel
         # the served map's own tiles are big and no stage reads them

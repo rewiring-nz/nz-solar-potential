@@ -3,6 +3,8 @@
 #
 #   tools/deploy_from_vm.sh            # pull + compare + gate, then stop and show
 #   tools/deploy_from_vm.sh --push     # ...and commit + push if the gate passes
+#   tools/deploy_from_vm.sh --push-reviewed "why"   # push although the gate
+#       failed, after rendering what it listed; the reason goes in the commit
 #
 # The VM cannot publish (scp'd payload, no git). This is the one place the
 # laptop is in the ship path, and it does nothing but relay files the VM
@@ -11,7 +13,12 @@ set -u
 cd "$(dirname "$0")/.."
 VM=claude-doing-things; ZONE=australia-southeast1-b
 PY=.venv/bin/python
-PUSH=0; [ "${1:-}" = "--push" ] && PUSH=1
+PUSH=0; REVIEWED=""
+[ "${1:-}" = "--push" ] && PUSH=1
+if [ "${1:-}" = "--push-reviewed" ]; then
+  PUSH=1; REVIEWED="${2:-}"
+  [ -n "$REVIEWED" ] || { echo "--push-reviewed needs the reason the gate's list is acceptable"; exit 1; }
+fi
 
 echo "=== pull the served set ==="
 for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles addresses.json \
@@ -31,15 +38,22 @@ echo "=== what the VM built ==="
 $PY -c "import json; s=json.load(open('data/build_summary.json')); t=s['totals']; print(len(s['regions']), 'regions,', int(t['n']), 'buildings,', int(t['panel_count']), 'panels,', round(t['kwh']/1e6,1), 'GWh; by type:', {k:int(v['n']) for k,v in s['by_type'].items()})"
 
 echo "=== gate against live ==="
-$PY tools/predeploy_check.py || { echo "GATE FAILED -- not pushing"; exit 1; }
+if ! $PY tools/predeploy_check.py; then
+  if [ -z "$REVIEWED" ]; then echo "GATE FAILED -- not pushing"; exit 1; fi
+  echo "GATE FAILED -- pushing anyway, reviewed: $REVIEWED"
+fi
 
 if [ $PUSH -eq 1 ]; then
   # bump the data version so browsers refetch every tile
   v=$(grep -oE 'dataVersion: "[0-9]+"' site-config.js | grep -oE '[0-9]+'); nv=$((v+1))
   sed -i '' "s/dataVersion: \"$v\"/dataVersion: \"$nv\"/" site-config.js
   git add -A data site-config.js
-  git commit -q -m "District build: $($PY -c 'import json; s=json.load(open("data/build_summary.json")); t=s["totals"]; print(f"{len(s[\"regions\"])} regions, {int(t[\"panel_count\"]):,} panels, {t[\"kwh\"]/1e6:,.1f} GWh")')
-
+  summary=$($PY -c 'import json; s=json.load(open("data/build_summary.json")); t=s["totals"]; print("%d regions, %s panels, %.1f GWh" % (len(s["regions"]), format(int(t["panel_count"]), ","), t["kwh"] / 1e6))')
+  note=""; [ -n "$REVIEWED" ] && note="
+Gate failed and was reviewed: $REVIEWED
+"
+  git commit -q -m "District build: $summary
+$note
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>" && git push -q origin main && echo "PUSHED (data v$nv)"
 else
   echo "dry: re-run with --push to publish"
