@@ -231,13 +231,8 @@ def main(area="pilot"):
     # Each roof's heat is drawn where the map's photo shows it: the per-
     # building lean from register_imagery (see emit_region, which moves the
     # rest of the drawing by the same amount). The kWh never move.
-    shifts = {}
-    sf = area_paths(area)["dir"] / "image_shift.json"
-    if sf.exists() and os.environ.get("SOLAR_IMAGE_SHIFT", "1") != "0":
-        try:
-            shifts = json.loads(sf.read_text())
-        except Exception:
-            shifts = {}
+    from src.register_imagery import drawing_shifts
+    shifts = drawing_shifts(area_paths(area)["dir"])
 
     for i, row in enumerate(gdf.itertuples()):
         bminx, bminy, bmaxx, bmaxy = row.geometry.bounds

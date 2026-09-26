@@ -37,10 +37,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 REFERENCE = HERE / "reference.json"
 REGION = "zz_harness"
-STAGES = ["build_layout_geojson", "gate_panels", "rerank_layouts",
+STAGES = ["register_imagery", "build_layout_geojson", "gate_panels", "rerank_layouts",
           "derive_solar_potential", "patch_roof_confidence",
-          "bake_building_horizons", "register_imagery",
-          "build_heatmap_raster", "emit_region"]
+          "bake_building_horizons", "build_heatmap_raster", "emit_region"]
 
 
 def _tree_files():

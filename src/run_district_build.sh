@@ -65,11 +65,12 @@ if [ -z "$REGIONS" ]; then
 fi
 
 # Per-region stages, in dependency order.
-# register_imagery comes before the heat map: the heat map is drawn where
-# the map's photo shows each roof, and it never fails a build (on failure
-# the drawing stays where the LiDAR is).
-STAGES="build_layout_geojson gate_panels rerank_layouts derive_solar_potential
-        patch_roof_confidence bake_building_horizons register_imagery build_heatmap_raster"
+# register_imagery comes first: markup traced on the map's photo is moved by
+# each roof's lean as it is read (SOLAR_MARKUP_FRAME), and the heat map is
+# drawn where the map's photo shows each roof. It never fails a build (on
+# failure the drawing stays where the LiDAR is).
+STAGES="register_imagery build_layout_geojson gate_panels rerank_layouts derive_solar_potential
+        patch_roof_confidence bake_building_horizons build_heatmap_raster"
 # After addresses: the region's own tiles, cells, detail and summary. This
 # is what replaced the fan-in (docs/scale-architecture.md).
 EMIT="emit_region"

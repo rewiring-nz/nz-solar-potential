@@ -176,13 +176,8 @@ def emit(region, out_root=OUT_ROOT):
     # locked onto trees and shadows and stayed off; this one had 89% of
     # neighbouring roofs leaning the same way. SOLAR_IMAGE_SHIFT=0 draws
     # everything where the LiDAR is, for A/B.
-    shifts = {}
-    sf = paths["dir"] / "image_shift.json"
-    if sf.exists() and os.environ.get("SOLAR_IMAGE_SHIFT", "1") != "0":
-        try:
-            shifts = json.loads(sf.read_text())
-        except Exception:
-            shifts = {}
+    from src.register_imagery import drawing_shifts
+    shifts = drawing_shifts(paths["dir"])
     def _shift_geom(geom, bid):
         s = shifts.get(str(bid))
         if not s:

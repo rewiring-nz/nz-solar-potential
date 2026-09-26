@@ -39,6 +39,7 @@ Usage: python src/register_imagery.py <region>
 """
 
 import json
+import os
 import math
 import sys
 import time
@@ -202,6 +203,42 @@ def reconcile(raw):
     return out
 
 
+def markup_in_lidar_frame():
+    """True when markup traced on the map's photo is moved onto the LiDAR as
+    it is read. Off until measured (BACKLOG, Imagery)."""
+    return os.environ.get("SOLAR_MARKUP_FRAME", "map") == "lidar"
+
+
+def drawing_shifts(region_dir):
+    """{building_id: [dx, dy, q]} the drawing of a region moves by: every
+    measured lean, plus -- when markup is read in the LiDAR frame -- the
+    lean of the roofs whose markup was traced on the map's photo."""
+    region_dir = Path(region_dir)
+    if os.environ.get("SOLAR_IMAGE_SHIFT", "1") == "0":
+        return {}
+    out = {}
+    for name, use in (("image_shift.json", True), ("markup_shift.json", markup_in_lidar_frame())):
+        f = region_dir / name
+        if use and f.exists():
+            try:
+                out.update(json.loads(f.read_text()))
+            except Exception:
+                pass
+    return out
+
+
+def markup_shifts(data_dir):
+    """Every region's markup_shift.json, merged: the lean to take OFF markup
+    traced on the map's photo."""
+    out = {}
+    for f in Path(data_dir).glob("regions/*/markup_shift.json"):
+        try:
+            out.update(json.loads(f.read_text()))
+        except Exception:
+            pass
+    return out
+
+
 def _labelled_ids():
     f = Path(__file__).resolve().parents[1] / "data" / "roof_labels.json"
     try:
@@ -254,13 +291,17 @@ def register(region):
     # is not the reference (every Queenstown region but pilot, 2026 vs 2021),
     # a labelled roof's faces were traced on the leaned roof and shifting
     # them would double the lean. Those roofs keep their drawn position.
+    # markup_shift.json keeps their lean, so SOLAR_MARKUP_FRAME=lidar can move
+    # that markup back onto the LiDAR when it is read (roof_line_source) and
+    # the drawing forward again with everything else (drawing_shifts).
+    markup = {}
     if ref_path.resolve() != paths["imagery"].resolve():
         labelled = _labelled_ids()
-        dropped = [b for b in out if int(b) in labelled]
-        for b in dropped:
-            del out[b]
-        if dropped:
-            print(f"[{region}] {len(dropped)} labelled roofs left unshifted (drawn on the map's photo)")
+        for b in [b for b in out if int(b) in labelled]:
+            markup[b] = out.pop(b)
+        if markup:
+            print(f"[{region}] {len(markup)} labelled roofs left unshifted (drawn on the map's photo)")
+    write_json_atomic(paths["dir"] / "markup_shift.json", markup)
     write_json_atomic(out_path, out)
     mags = [math.hypot(v[0], v[1]) for v in out.values()]
     print(f"[{region}] image lean: {len(out)}/{len(gdf)} buildings shifted "

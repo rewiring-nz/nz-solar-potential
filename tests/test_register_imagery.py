@@ -75,6 +75,34 @@ def test_no_trusted_match_means_no_shift():
     assert ri.reconcile({1: (0.0, 0.0, 1.0, 1.0, 2.0)}) == {}
 
 
+def test_markup_traced_on_the_map_photo_moves_onto_the_lidar():
+    import os
+    import src.roof_line_source as rls
+    b = {"7": {"lines": [{"points": [[1266000.0, 5007000.0], [1266010.0, 5007000.0]]}],
+               "faces": [{"ring": [[1266000.0, 5007000.0], [1266001.0, 5007000.0], [1266000.0, 5007001.0]], "m2": 0.5}],
+               "area": 12.5},
+         "8": {"lines": [{"points": [[1266100.0, 5007100.0], [1266110.0, 5007100.0]]}]}}
+    real = ri.markup_shifts
+    ri.markup_shifts = lambda d: {"7": [0.6, -0.8, 7.0]}
+    os.environ["SOLAR_MARKUP_FRAME"] = "lidar"
+    try:
+        rls._to_lidar_frame(b)
+    finally:
+        ri.markup_shifts = real
+        del os.environ["SOLAR_MARKUP_FRAME"]
+    assert b["7"]["lines"][0]["points"][0] == [1265999.4, 5007000.8]
+    assert b["7"]["faces"][0]["ring"][1] == [1266000.4, 5007000.8]
+    assert b["7"]["area"] == 12.5 and b["7"]["faces"][0]["m2"] == 0.5
+    assert b["8"]["lines"][0]["points"][0] == [1266100.0, 5007100.0]
+
+
+def test_markup_frame_is_off_by_default():
+    import src.roof_line_source as rls
+    b = {"7": {"lines": [{"points": [[1266000.0, 5007000.0]]}]}}
+    rls._to_lidar_frame(b)
+    assert b["7"]["lines"][0]["points"][0] == [1266000.0, 5007000.0]
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

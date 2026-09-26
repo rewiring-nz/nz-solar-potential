@@ -244,7 +244,39 @@ def _labels():
                 LABELS_PATH.read_text()).get("buildings", {})
         except Exception:
             _LABELS_CACHE[0] = {}
+        _to_lidar_frame(_LABELS_CACHE[0])
     return _LABELS_CACHE[0]
+
+
+def _to_lidar_frame(buildings):
+    """Move markup traced on the map's leaning photo back onto the LiDAR.
+
+    Outside pilot the labelling tool showed the 2026 photo, whose roofs lean
+    0.5-1.5 m off the 2021 LiDAR, so faces, lines and obstructions drawn there
+    sit that far off the planes they are fitted to. register_imagery wrote
+    each such roof's lean to markup_shift.json; with SOLAR_MARKUP_FRAME=lidar
+    it is taken off here, once, as the labels are read."""
+    try:
+        from src.register_imagery import markup_in_lidar_frame, markup_shifts
+    except Exception:
+        return
+    if not markup_in_lidar_frame():
+        return
+    shifts = markup_shifts(DATA_DIR)
+
+    def mv(node, dx, dy):
+        if isinstance(node, list):
+            if len(node) >= 2 and all(isinstance(v, (int, float)) for v in node[:2]) \
+                    and abs(node[0]) > 1e5 and abs(node[1]) > 1e6:     # an NZTM point
+                return [node[0] - dx, node[1] - dy] + list(node[2:])
+            return [mv(n, dx, dy) for n in node]
+        if isinstance(node, dict):
+            return {k: mv(v, dx, dy) for k, v in node.items()}
+        return node
+
+    for b, s in shifts.items():
+        if b in buildings:
+            buildings[b] = mv(buildings[b], s[0], s[1])
 
 
 def drawn_segments(building_id):

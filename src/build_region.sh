@@ -65,8 +65,8 @@ else
 fi
 
 log "build"
-for s in build_layout_geojson gate_panels rerank_layouts derive_solar_potential \
-         patch_roof_confidence bake_building_horizons register_imagery build_heatmap_raster; do
+for s in register_imagery build_layout_geojson gate_panels rerank_layouts derive_solar_potential \
+         patch_roof_confidence bake_building_horizons build_heatmap_raster; do
   $PY src/run_stage.py --skip-done "$s" "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
     || { log "FATAL: $s failed (see $LOGDIR/$REGION.log)"; exit 1; }
 done
