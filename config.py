@@ -106,6 +106,10 @@ LINZ_BUILDING_OUTLINES_LAYER = 101290
 LINZ_DSM_LAYER = 105855  # "Otago - Queenstown LiDAR 1m DSM (2021)"
 LINZ_DEM_LAYER = 105898  # "Otago - Queenstown LiDAR 1m DEM (2021)" -- bare earth, for shading horizon
 LINZ_WIDE_DEM_LAYER = 51768  # "NZ 8m Digital Elevation Model (2012)" -- distant terrain context
+# What the live map shows at roof zooms: LINZ Basemaps' aerial tiles (the
+# public key the page itself uses). Drawings are shifted onto this photo.
+LINZ_BASEMAPS_KEY = "c01m0keqqjx0anrxjrt7grvtqxh"
+LINZ_BASEMAPS_LAYER = "aerial"
 LINZ_IMAGERY_LAYER = 124754  # "Queenstown 0.1m Urban Aerial Photos (2026)" -- captured 12 Feb-3 Mar
 # 2026, replacing the 2021 capture this pilot originally used. More current (new/changed rooftop
 # equipment, growth) at the cost of no longer matching the DSM/building-outline capture year exactly
@@ -143,6 +147,10 @@ SURVEYS = [
         "dsm_layer": LINZ_DSM_LAYER,
         "dem_layer": LINZ_DEM_LAYER,
         "imagery_layer": LINZ_IMAGERY_LAYER,
+        # The photo from the LiDAR's own year: it sits on the LiDAR, so its
+        # shift against the map's photo is each building's lean
+        # (src/register_imagery.py). "Queenstown 0.1m Urban Aerial Photos (2021)".
+        "reference_imagery_layer": 114745,
         "lidar_tile_index_layer": LINZ_LIDAR_TILE_INDEX_LAYER,
         "pointcloud_bulk_url": POINTCLOUD_BULK_URL,
         "pointcloud_tile_year": POINTCLOUD_TILE_YEAR,
@@ -157,6 +165,7 @@ SURVEYS = [
         # Queenstown Lakes 0.1m Urban Aerial Photos (2022-2023), whose extent
         # matches this survey's exactly.
         "imagery_layer": 112781,
+        "reference_imagery_layer": 112781,   # same survey period as the LiDAR
         # CONFIRMED by HEAD, not guessed: the Wanaka tile index gives
         # CA12_1000_5035, and CL2_CA12_2022_1000_5035.laz is 6.6 MB at this
         # store. Listing the bulk prefixes is forbidden, so every candidate
@@ -176,6 +185,7 @@ SURVEYS = [
         # Queenstown uses, so imagery-derived cuts will be weaker here; the
         # LiDAR does the load-bearing work either way.
         "imagery_layer": 106403,
+        "reference_imagery_layer": None,     # no photo from the LiDAR's year (2025)
         # NO RAW POINT CLOUD. The Kingston survey is 2025 and OpenTopography
         # has not published it -- every candidate store and year was probed
         # against a real tile name (CD11_1000_0326) and all 404. So this
@@ -361,6 +371,18 @@ if _os.path.exists(_MY_AREA):
                            ("pointcloud_tile_year", "POINTCLOUD_TILE_YEAR")):
             if _ma.get(_key):
                 globals()[_var] = _ma[_key]
+        # A user-defined bbox may lie outside every configured survey. When
+        # layer overrides are supplied, register that bbox as its own survey
+        # so survey_for() uses these IDs instead of inheriting Queenstown data.
+        _survey_keys = ("dsm_layer", "dem_layer", "imagery_layer",
+                        "reference_imagery_layer", "lidar_tile_index_layer",
+                        "pointcloud_bulk_url", "pointcloud_tile_year")
+        if any(_ma.get(k) is not None for k in _survey_keys):
+            _custom_survey = {k: _ma.get(k) for k in _survey_keys}
+            _custom_survey.update({"name": f"my-area-{_name}", "bbox": _bbox})
+            SURVEYS = [s for s in SURVEYS
+                       if s.get("name") != _custom_survey["name"]]
+            SURVEYS.append(_custom_survey)
         print(f"[config] my_area.json loaded: region '{_name}' {_bbox}")
     except Exception as _exc:
         print(f"[config] my_area.json IGNORED ({_exc!r})")

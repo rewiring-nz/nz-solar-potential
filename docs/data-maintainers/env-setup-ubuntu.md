@@ -13,6 +13,8 @@ needed to run the project locally.
 - **Git**, which downloads project changes and records changes you make.
 - **Python**, the programming language and runtime that runs the solar
   data-processing scripts.
+- **Tippecanoe**, a vector-tile builder that provides `tippecanoe`,
+  `tile-join`, and `tippecanoe-decode` for map output.
 - **apt**, Ubuntu's included package manager, which installs and updates Git
   and Python in the steps below.
 
@@ -62,6 +64,31 @@ Confirm the installation:
 
 ```sh
 python3 --version
+```
+
+## Install Tippecanoe map tools
+
+The quickstart needs Tippecanoe to generate and validate map tiles. The
+upstream project documents building from source on Ubuntu. Install its compiler
+and library prerequisites, then build and install it:
+
+```sh
+sudo apt update
+sudo apt install -y build-essential libsqlite3-dev zlib1g-dev
+git clone https://github.com/felt/tippecanoe.git /tmp/tippecanoe
+make -C /tmp/tippecanoe -j"$(nproc)"
+sudo make -C /tmp/tippecanoe install
+```
+
+The upstream instructions require a C++17-capable compiler. If compilation
+fails, follow the compiler guidance in the
+[Tippecanoe README](https://github.com/felt/tippecanoe#development). Verify
+that the commands are available:
+
+```sh
+tippecanoe --version
+command -v tile-join
+command -v tippecanoe-decode
 ```
 
 ## Open the project directory

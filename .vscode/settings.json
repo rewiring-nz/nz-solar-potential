@@ -14,5 +14,8 @@
     "**/.venv-sam/**": true,
     "**/validation/**": true,
     "**/__pycache__/**": true
+  },
+  "chat.tools.terminal.autoApprove": {
+    "command": true
   }
 }

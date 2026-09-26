@@ -92,6 +92,7 @@ def area_paths(name):
         "outlines": outlines,
         "dsm": d / "dsm_mosaic.tif",
         "imagery": d / "imagery_mosaic.tif",
+        "reference_imagery": d / "reference_imagery_mosaic.tif",
         "solar_potential": d / "solar_potential.geojson",
         "panel_layouts": d / "panel_layouts.geojson",
         "heatmap_png": d / "heatmap_raster.png",

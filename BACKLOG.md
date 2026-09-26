@@ -5,23 +5,44 @@ in git.
 
 ## Ship
 
-- **Full re-lay and deploy.** Every region needs rebuilding with the 23 Sep
-  fixes (ridge snap, frame bearing convention, per-face frame-loss bound,
-  one-plane gate on forced faces, balcony-rule majority guard, segmentation
-  setback decoupling) and the 24 Sep ones: skylights detected on clean faces,
-  pocket panels at 100%, hip ridges snapping, the gate's deterministic order,
-  rerank tie-breaks. Validated on Josh's cases, the 211 gate-flagged roofs
-  (-1.5% vs no frame) and a 120-roof sample (+16.7% panels, none losing
-  >30%); the 24 Sep changes on the synthetic region (tests/synthetic). Then
-  `tools/deploy_from_vm.sh --push` once `tools/predeploy_check.py` passes. The
-  deploy carries the density heat map, corrected seasonal curves, and
-  Kingston / Wanaka / Albert Town / Hawea. It is the first build with build
-  keys, so every region plans as `full` once.
-- **Re-record goldens** (`tests/test_golden.py --record` on the VM). The
-  24 Sep geometry changes move real roofs on purpose; look at the render of
-  any golden whose count moved, and give the reason in the commit.
+- **Re-lay with the crash fix and photo-lean drawing -- next.** The 25 Sep
+  re-lay (from 8989d9fe) finished and the gate held it: 7 roofs zeroed. Five
+  were a crash (an empty face from the seam snap's sliver merge; a GEOS union
+  outside the level split's guard), fixed in cbafbeed -- on the VM those
+  roofs rebuild with 35-62 panels, as live. Two small roofs (11 and 6 panels
+  live) lose their faces to obstructions. The next run (`chain2.sh`) first
+  fetches each region's reference photo, then the same steps as before.
+  Then `tools/deploy_from_vm.sh`, `--push` if the gate passes, tell Josh.
+- **Look at the 13 BIG DROPs** in that gate (33-48% fewer panels). No single
+  new switch explains them (small objects give back 5-8 panels on some).
+  The pattern in renders is a jagged, pixel-stepped SUNKEN strip along an
+  edge or ridge: right on terraces (#4725197), wrong on real roof along a
+  ridge (#4730688, sunken median -0.18 / -0.76 m). The two moved "fixed"
+  cases (#4735099, #4725488) look right.
 - **Verify after the re-lay:** 13 Plantation Rd (#4727237), Kingston counts,
   and the cases awaiting a verdict (`tools/cases.py check`).
+
+## Imagery
+
+- **Drawings follow the photo's lean -- in the next build.** The map shows
+  LINZ Basemaps' aerial (2026 over Queenstown), orthorectified to the ground,
+  so roofs lean 0.5-1.5 m off the LiDAR; outlines, faces, panels, the heat
+  map and Josh's markup overlay looked misplaced (32 Frankton Rd, 10 Stanley
+  St). `src/register_imagery.py` measures the lean per building against the
+  LiDAR year's own photo (SURVEYS `reference_imagery_layer`), photo to photo;
+  pilot: 1,001 of 1,066 shifted, median 0.57 m, p90 1.28 m. Markup traced on
+  the map's own photo (every Queenstown region but pilot) is left where it
+  was drawn. `SOLAR_IMAGE_SHIFT=0` turns it off.
+- **Detect obstructions on the reference photo, not the map's.** Outside
+  pilot the colour detectors read the 2026 photo, whose roofs lean off the
+  LiDAR, so colour blobs land up to 1-2 m from the object. The reference
+  photo sits on the LiDAR. Measure with `tools/obstruction_bench.py`.
+- **Markup traced on a leaning photo sits off the LiDAR.** ~110 labelled
+  roofs outside pilot were drawn on the 2026 photo; their faces drive the
+  layout but are offset from the planes by the lean. Un-shifting them into
+  the LiDAR frame when read would fix both; measure against face-IoU first.
+- **One shift per building is not enough on big roofs.** 32 Frankton Rd
+  (4,000 m2) leans unevenly; its match was weak and it borrowed 0.4 m.
 
 ## Geometry
 
@@ -38,6 +59,18 @@ in git.
   +0.01 m), which is shading, not an object -- but a flush skylight looks the
   same to the LiDAR, so any fix must use the blob's shape or position on the
   fold, not its height.
+- **Lower roof levels -- fixed 25 Sep.** One face spanning two roof levels
+  had its lower level carved by the sunken detector (9 Marine Parade: 168 of
+  193 m2 of obstructions). `src/roof_levels.py` gives a wide, planar lower
+  level its own face; decks narrower than 4 m and clutter stay obstructions.
+- **Small obstructions (vents) and edge drops -- fixed 25 Sep.** Vents are
+  kept when crisp against the roof around them; narrow sunken strips at a
+  face's edge are keepouts, not obstructions. `tools/obstruction_bench.py`
+  (42 complete marked roofs with imagery): small marks found 47 -> 66 of 163,
+  small detections on a mark 15% -> 29%, area recall 0.281 -> 0.298,
+  precision 0.261 -> 0.295. Still open: 97 of 163 small marks missed (many
+  are invisible in the photo -- 54 have contrast under 5), and 254 small
+  detections touch no mark. Run the bench on the VM for all 98 roofs.
 - **Ridge snap reverts: re-measure.** Plain hip roofs were ALWAYS reverted
   (the re-cut strip ran past the apex); fixed 24 Sep by sliding the vertices of
   a ridge whose ends are both interior. After the re-lay, run

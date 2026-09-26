@@ -50,6 +50,8 @@ instead of tuning morphology per-building to chase an exact outline.
 import sys
 from pathlib import Path
 
+import os
+
 import numpy as np
 import rasterio
 import shapely
@@ -791,8 +793,17 @@ def _lidar_signature(blob, pc_source, plane):
 SUNKEN_MIN_DEPTH_M = 0.6
 SUNKEN_CELL_M = 0.75
 SUNKEN_MIN_AREA_M2 = 1.5
+EDGE_DROP_MAX_WIDTH_M = 2.0  # a sunken strip this narrow at the face's edge is a drop, not an object
+EDGE_DROP_TOUCH_M = 0.3
 SUNKEN_MAX_SHARE = 0.40      # more than this sunken = the facet itself is wrong;
                              # leave it to the confidence gate, not the carver
+
+
+def _min_width(poly):
+    with np.errstate(divide="ignore", invalid="ignore"):   # shapely's envelope on exact rectangles
+        cs = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
+    return min(float(np.hypot(cs[(k + 1) % 4][0] - cs[k][0], cs[(k + 1) % 4][1] - cs[k][1]))
+               for k in range(2))
 
 
 def _sunken_regions(pc_source, facet_geom, plane):
@@ -838,9 +849,46 @@ def _sunken_regions(pc_source, facet_geom, plane):
     return out
 
 
+SMALL_OBJECT_MIN_M2 = 0.12
+SMALL_OBJECT_MAX_ELONGATION = 2.5
+SMALL_OBJECT_MIN_CONTRAST = 25.0    # luminance units (0-255) between the blob and its ring
+SMALL_OBJECT_RING_M = 0.5
+
+
+def _crisp_contrast(imagery_ds, poly, roof=None):
+    """|mean luminance inside - median luminance of the ROOF in a ring around it|, or 0.
+
+    The ring is clipped to `roof`: a patch at an eave corner otherwise gets
+    compared with the ground beyond the edge, and every roof corner reads as
+    a crisp object (the synthetic region's plain gable did exactly that)."""
+    if imagery_ds is None:
+        return 0.0
+    try:
+        ring = poly.buffer(SMALL_OBJECT_RING_M).difference(poly.buffer(0.1))
+        if roof is not None:
+            ring = ring.intersection(roof)
+            if ring.is_empty:
+                return 0.0
+        minx, miny, maxx, maxy = ring.bounds
+        window = rasterio.windows.from_bounds(minx, miny, maxx, maxy, imagery_ds.transform)
+        arr = imagery_ds.read([1, 2, 3], window=window).astype(float)
+        if arr.size == 0:
+            return 0.0
+        wt = imagery_ds.window_transform(window)
+        lum = arr.mean(axis=0)
+        inside = rasterize([(poly, 1)], out_shape=lum.shape, transform=wt).astype(bool)
+        around = rasterize([(ring, 1)], out_shape=lum.shape, transform=wt).astype(bool)
+        if inside.sum() < 4 or around.sum() < 12:
+            return 0.0
+        return float(abs(lum[inside].mean() - np.median(lum[around])))
+    except Exception:
+        return 0.0
+
+
 def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
                                   z_threshold=None, boundary_erode_m=None,
-                                  residual_threshold_m=None, roof_geom=None, explain=None):
+                                  residual_threshold_m=None, roof_geom=None, explain=None,
+                                  keepouts=None):
     """Runs both detectors and reconciles them per the module comment
     above: colour-based obstructions always kept; compact height-based
     obstructions always kept (colour structurally can't see a flush,
@@ -977,6 +1025,23 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
             # unaffected -- they come from detect_bright_objects, which joins
             # separately below.
             filtered_color.append(blob)
+        elif (os.environ.get("SOLAR_SMALL_OBJECTS", "1") != "0"
+              and SMALL_OBJECT_MIN_M2 <= blob.area < COLOUR_ONLY_MIN_AREA_M2
+              and _elongation_ratio(blob) <= SMALL_OBJECT_MAX_ELONGATION
+              and _crisp_contrast(imagery_ds, blob, roof=facet_geom) >= SMALL_OBJECT_MIN_CONTRAST):
+            # SMALL OBJECTS: vents, turbines, flues. Too small for the
+            # colour-only floor and too few returns for any LiDAR test, so
+            # every one was dropped -- 1 Ballarat St shipped panels over rows
+            # of them. But they are crisp: a compact patch much lighter or
+            # darker than the roof right around it, where stains and shading
+            # are soft smears. Against the complete marked roofs with imagery
+            # (tools/obstruction_bench.py, 25 Sep, with edge drops): small
+            # marks found 47 -> 66 of 163, small detections on a mark
+            # 15% -> 29%, area recall 0.281 -> 0.298, area precision
+            # 0.261 -> 0.295. Contrast 15/25/40 all improved both directions;
+            # 25 is the middle of that range. The contrast ring is clipped
+            # to the face, or every eave corner reads as an object.
+            filtered_color.append(blob)
     color_obs = filtered_color
 
     # NO EARLY RETURN WHEN THE HEIGHT PATH FINDS NOTHING. There was one, and it
@@ -1054,6 +1119,24 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
     # Sunken regions join unconditionally: they come from LiDAR alone, so a
     # rural facet with no imagery still gets its recessed deck carved.
     sunken = _sunken_regions(pc_source, facet_geom, plane)
+    # A NARROW DROP AT THE FACE'S EDGE IS NOT AN OBJECT. On the complete marked
+    # roofs (25 Sep), 309 of 341 sunken shapes touched their face's edge, and
+    # 253 of those were strips no wider than EDGE_DROP_MAX_WIDTH_M (median
+    # 1.2 m) of which 34 touched a marked obstruction. They are where the face
+    # runs past the roof edge or a step and its returns fall away -- what the
+    # markup calls a cliff line. Panels must still stay off them, so with a
+    # `keepouts` list they go there (the fitter treats them like drawn fold
+    # lines) instead of being drawn and counted as obstructions.
+    if keepouts is not None and sunken:
+        edge, rest = [], []
+        for reg in sunken:
+            for part in (reg.geoms if hasattr(reg, "geoms") else [reg]):
+                if part.geom_type != "Polygon" or part.is_empty:
+                    continue
+                touches = part.buffer(EDGE_DROP_TOUCH_M).intersects(facet_geom.exterior)
+                (edge if touches and _min_width(part) <= EDGE_DROP_MAX_WIDTH_M else rest).append(part)
+        keepouts.extend(edge)
+        sunken = rest
     all_obs = color_obs + compact + confirmed_elongated + bright + sunken
     if explain is not None:
         explain.update(colour=list(color_obs), height=list(compact),

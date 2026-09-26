@@ -65,8 +65,11 @@ if [ -z "$REGIONS" ]; then
 fi
 
 # Per-region stages, in dependency order.
+# register_imagery comes before the heat map: the heat map is drawn where
+# the map's photo shows each roof, and it never fails a build (on failure
+# the drawing stays where the LiDAR is).
 STAGES="build_layout_geojson gate_panels rerank_layouts derive_solar_potential
-        patch_roof_confidence bake_building_horizons build_heatmap_raster"
+        patch_roof_confidence bake_building_horizons register_imagery build_heatmap_raster"
 # After addresses: the region's own tiles, cells, detail and summary. This
 # is what replaced the fan-in (docs/scale-architecture.md).
 EMIT="emit_region"
@@ -182,10 +185,6 @@ for r in $REGIONS; do
   # later with: python src/run_stage.py add_addresses <region>
   $PY src/run_stage.py $SKIP add_addresses "$r" >>"$LOGDIR/$r.log" 2>&1 \
     || echo "  WARN: addresses failed for $r -- patch later"
-  # Where the photo sits relative to the LiDAR, per building; a failure here
-  # only means the drawing stays where the LiDAR is.
-  $PY src/run_stage.py $SKIP register_imagery "$r" >>"$LOGDIR/$r.log" 2>&1 \
-    || echo "  WARN: image registration failed for $r -- drawing unshifted"
   if ! $PY src/run_stage.py $SKIP $EMIT "$r" >>"$LOGDIR/$r.log" 2>&1; then
     echo "  FAILED: $EMIT for $r (see $LOGDIR/$r.log)"
     fail=1
