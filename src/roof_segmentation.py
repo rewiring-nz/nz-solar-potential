@@ -955,15 +955,83 @@ def _repair_one_facet(f, pc_source, depth=0):
     return out or [f]
 
 
-def repair_nonplanar_facets(facets, pc_source):
-    """Split any facet whose plane does not actually describe its points."""
-    repaired = []
+# A FACE THAT IS PLAINLY A STAIRCASE IS NOT ROOF IF NO STEP OF IT IS.
+# Real roof faces measure 85-99% on-plane and tilted sheets through storeys
+# 22-36% (see PLANARITY_MIN_INLIER_FRACTION). On #4740503 a 423 m2 face spans
+# three balcony floors 3 m apart, fitted as a 33-degree "roof" with 24% of
+# its returns on it. The repair finds the three floors but rejects each as
+# too narrow to be a roof level, and used to hand the tilted sheet back
+# whole: 24 panels on the terraces. A face below STAIRCASE_MAX_INLIER whose
+# height bands are all rejected is dropped instead. Selected faces keep their
+# boundaries and skip the repair, but not this test.
+STAIRCASE_MAX_INLIER = 0.35
+
+
+def _is_unrepairable_staircase(f, pc_source):
+    if os.environ.get("SOLAR_STAIRCASE_DROP", "1") == "0" or f.get("from_labels"):
+        return False
+    if any(k not in f for k in ("plane_a", "plane_b", "plane_c")):
+        return False
+    pts = _facet_points(pc_source, f["geometry"])
+    if len(pts) < PLANARITY_MIN_PART_POINTS * 2:
+        return False
+    r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+    if float((np.abs(r - np.median(r)) < PLANARITY_INLIER_BAND_M).mean()) >= STAIRCASE_MAX_INLIER:
+        return False
+    return len(_height_bands(pts[:, 2] - np.median(pts[:, 2]))) >= 2
+
+
+def _drop_staircases(facets, kept_flags):
+    """facets minus those flagged, unless that drops too much of the roof."""
+    if all(kept_flags):
+        return facets
+    total = sum(f["geometry"].area for f in facets)
+    lost = sum(f["geometry"].area for f, k in zip(facets, kept_flags) if not k)
+    if lost > BALCONY_STAIR_MAX_DROP_SHARE * max(total, 1e-9):
+        return facets
+    print(f"  staircase face dropped: {sum(1 for k in kept_flags if not k)} face(s), {lost:.0f} m2", flush=True)
+    return [f for f, k in zip(facets, kept_flags) if k]
+
+
+def repair_staircase_facets(facets, pc_source):
+    """For faces whose boundaries are kept: split or drop only plain
+    staircases (below STAIRCASE_MAX_INLIER); every other face is untouched."""
+    out, flags = [], []
     for f in facets:
         try:
-            repaired.extend(_repair_one_facet(f, pc_source))
+            if not _is_unrepairable_staircase(f, pc_source):
+                out.append(f)
+                flags.append(True)
+                continue
+            parts = _repair_one_facet(f, pc_source)
+            if parts == [f]:
+                out.append(f)
+                flags.append(False)
+            else:
+                out.extend(parts)
+                flags.extend([True] * len(parts))
+        except Exception:
+            out.append(f)
+            flags.append(True)
+    return _drop_staircases(out, flags)
+
+
+def repair_nonplanar_facets(facets, pc_source):
+    """Split any facet whose plane does not actually describe its points."""
+    repaired, flags = [], []
+    for f in facets:
+        try:
+            parts = _repair_one_facet(f, pc_source)
+            if parts == [f] and _is_unrepairable_staircase(f, pc_source):
+                repaired.append(f)
+                flags.append(False)
+                continue
+            repaired.extend(parts)
+            flags.extend([True] * len(parts))
         except Exception:
             repaired.append(f)   # never cost a building its segmentation
-    return repaired
+            flags.append(True)
+    return _drop_staircases(repaired, flags)
 
 
 # Applied to every segmenter's output or none: see merge_uneconomic_splits at
@@ -1327,6 +1395,9 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         if not keep_boundary:
             facets = repair_nonplanar_facets(facets, pc_source)
             __dbg_stage(facets, "repair_nonplanar_facets", building_id)
+        elif not authored:
+            facets = repair_staircase_facets(facets, pc_source)
+            __dbg_stage(facets, "repair_staircase_facets", building_id)
         # Whole-facet DROP tests still apply to CONSTRUCTED facets: a fitted
         # face can be a deck or a balcony and dropping one does not redraw the
         # others. They do NOT apply to drawn faces, because the markup has an
