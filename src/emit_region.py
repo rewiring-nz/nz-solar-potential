@@ -310,10 +310,24 @@ def emit(region, out_root=OUT_ROOT):
     # share and the joined z13 tiles came out 3x heavier (1.1 MB max, 191 kB
     # median against 368/66). A 200 kB per-region cap leaves a seam tile
     # touched by three regions at about the old ceiling.
-    _tippecanoe(tmp / "panel_layouts.pmtiles", "layout", lay_tmp, 13, 16,
+    #
+    # ...BUT NEVER AT THE DEEPEST ZOOM. The map overzooms z16 for every closer
+    # view, so a panel dropped there is never drawn: the v40 tiles held
+    # 1,217,694 of 1,278,998 panels, 2,278 buildings lost over a quarter of
+    # theirs, and the survivors read as staggered pairs with holes (13
+    # Douglas Ave: 26 of 53). The overview zooms keep the budget; z16 ships
+    # whole, and the two are joined.
+    props = [a for k in LAYOUT_PROPS for a in ("-y", k)]
+    _tippecanoe(tmp / "_layout_lo.pmtiles", "layout", lay_tmp, 13, 15,
                 ["--drop-densest-as-needed", "--detect-shared-borders",
-                 "--maximum-tile-bytes=200000",
-                 *[a for k in LAYOUT_PROPS for a in ("-y", k)]])
+                 "--maximum-tile-bytes=200000", *props])
+    _tippecanoe(tmp / "_layout_hi.pmtiles", "layout", lay_tmp, 16, 16,
+                ["--detect-shared-borders", "--no-feature-limit", "--no-tile-size-limit", *props])
+    subprocess.run(["tile-join", "-q", "-pk", "--force", "-o", str(tmp / "panel_layouts.pmtiles"),
+                    str(tmp / "_layout_lo.pmtiles"), str(tmp / "_layout_hi.pmtiles")],
+                   check=True, cwd=ROOT)
+    (tmp / "_layout_lo.pmtiles").unlink()
+    (tmp / "_layout_hi.pmtiles").unlink()
     lay_tmp.unlink()
 
     # 6. heat-map tiles
