@@ -14,9 +14,16 @@ in git.
   ran everywhere, single low returns built jagged strips. Now majority cells,
   plane refresh, and roof-coloured lower strips as levels. Still carved, by
   design: real terraces (#4725197) and darker lower roofing (#4728664).
-- **Balconies panelled on #4740503** (Josh's case) -- in v40 and before.
-  The terrace row along the south facade takes panels between the carved
-  pieces. Not fixed.
+- **Fixed 26 Sep for v41, each with an off switch, measured on pilot:**
+  staircase faces of narrow balcony floors dropped (#4740503: 550 -> 526,
+  west terraces clear; `SOLAR_STAIRCASE_DROP`); unclipped faces exempt from
+  the corridor test (42 Suburb St 9 -> 19; `SOLAR_CORRIDOR_WIDTH`);
+  plant-deck rule may not drop most of a roof (#4734932 kept, #4728022
+  0 -> 27); edge drops judged by thickness (22 Earl St's 25 red eave
+  strips gone). Pilot, laptop: +579 panels, none zeroed or down 30%.
+- **Still open from Josh's cases:** facade-top strips on #4740503's east
+  block; 4 Kent St reads as a 14.6-degree gable in the LiDAR (Josh: flat);
+  32 Frankton Rd layout order; 13 Plantation Rd (region not on the laptop).
 - **Verify after the re-lay:** 13 Plantation Rd (#4727237), Kingston counts,
   and the cases awaiting a verdict (`tools/cases.py check`).
 
