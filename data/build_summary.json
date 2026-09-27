@@ -1,5 +1,5 @@
 {
- "built_at": "2026-09-26T06:59:00Z",
+ "built_at": "2026-09-26T21:05:18Z",
  "regions": [
   "arrowtown_east",
   "arrowtown_hills",
@@ -33,40 +33,40 @@
  ],
  "totals": {
   "n": 26735.0,
-  "n_est": 25083.0,
-  "panel_count": 1278998.0,
-  "kwp": 639499.0,
-  "kwh": 713461639.0,
-  "from_selected_facets": 76110.0
+  "n_est": 25143.0,
+  "panel_count": 1307384.0,
+  "kwp": 653692.0,
+  "kwh": 729375053.0,
+  "from_selected_facets": 78290.0
  },
  "by_type": {
   "home": {
-   "n": 25588.0,
-   "n_est": 23941.0,
-   "panel_count": 1023806.0,
-   "kwp": 511903.0,
-   "kwh": 566663713.0
+   "n": 25558.0,
+   "n_est": 23970.0,
+   "panel_count": 1042844.0,
+   "kwp": 521422.0,
+   "kwh": 577231762.0
   },
   "business": {
-   "n": 1008.0,
-   "n_est": 1005.0,
-   "panel_count": 233725.0,
-   "kwp": 116862.5,
-   "kwh": 134093644.0
+   "n": 1038.0,
+   "n_est": 1036.0,
+   "panel_count": 242801.0,
+   "kwp": 121400.5,
+   "kwh": 139284293.0
   },
   "school": {
    "n": 134.0,
    "n_est": 132.0,
-   "panel_count": 18928.0,
-   "kwp": 9464.0,
-   "kwh": 11243658.0
+   "panel_count": 19181.0,
+   "kwp": 9590.5,
+   "kwh": 11387556.0
   },
   "hospital": {
    "n": 5.0,
    "n_est": 5.0,
-   "panel_count": 2539.0,
-   "kwp": 1269.5,
-   "kwh": 1460624.0
+   "panel_count": 2558.0,
+   "kwp": 1279.0,
+   "kwh": 1471442.0
   }
  },
  "btypes": [
@@ -91,7 +91,7 @@
    "Community"
   ]
  ],
- "cells": 1232,
+ "cells": 1237,
  "detail_tiles": 41,
  "heatmap_tiles": 3453,
  "addresses": 23339,
