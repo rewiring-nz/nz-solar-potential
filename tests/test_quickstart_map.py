@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tools.pipeline_serve import RangeHandler
-from tools.pipeline import QuickstartRun, _prepare_preview_bundle
+from tools.pipeline import PipelineRun, RUNS, QuickstartRun
 
 
 def test_range_server_serves_static_and_partial_content():
@@ -51,12 +51,15 @@ def test_range_server_serves_static_and_partial_content():
             thread.join(timeout=3)
 
 
-def test_map_report_lists_new_steps_and_isolated_output_paths():
+def test_map_report_lists_new_steps_and_output_paths():
     from tools.pipeline import STEPS
     assert [step["number"] for step in STEPS] == list(range(1, 19))
     assert STEPS[13]["label"] == "Emit regional map tiles"
-    assert STEPS[14]["label"] == "Combine isolated map dataset"
-    assert STEPS[16]["label"] == "Validate map contract and prepare preview"
+    assert STEPS[14]["label"] == "Combine map dataset"
+    assert STEPS[16]["label"] == "Validate map contract"
+    assert RUNS.name == "pipeline_runs"
+    assert STEPS[14]["outputs"].startswith("data/ map contract")
+    assert STEPS[15]["outputs"].startswith("data/terrain/")
 
 
 def test_brewfile_installs_tippecanoe_cli_suite():
@@ -74,25 +77,48 @@ def test_combine_regions_cli_parses_options():
     assert "--skip-markup-lines" in result.stdout
 
 
-def test_preview_bundle_isolated_data_base():
-    with tempfile.TemporaryDirectory(prefix="quickstart-map-bundle-", dir=ROOT) as temp:
+def test_pipeline_run_directory_structure():
+    with tempfile.TemporaryDirectory(prefix="pipeline-run-", dir=ROOT) as temp:
         run_dir = Path(temp) / "run"
         run = QuickstartRun("test_area", run_dir)
-        run.metadata = {"bbox": [168.6, -45.1, 168.7, -45.0]}
-        preview = _prepare_preview_bundle("test_area", run, run_dir / "map-data")
-        assert preview.is_file()
-        site = (run_dir / "map-preview" / "site-config.js").read_text(encoding="utf-8")
-        relative = (run_dir / "map-data").relative_to(ROOT).as_posix()
-        config = json.loads(site.removeprefix("window.SITE = ").removesuffix(";\n"))
-        assert config["dataBase"] == f"/{relative}/"
-        assert abs(config["defaultView"]["center"][0] - 168.65) < 1e-9
-        assert abs(config["defaultView"]["center"][1] + 45.05) < 1e-9
+        assert run.log_path.is_file()
+        assert run.report_path.is_file()
+        assert set(p.name for p in run_dir.iterdir()) == {"run.log", "report.md"}
+        assert not (run_dir / "run.json").exists()
+        assert not list(run_dir.glob("step-*.log"))
+
+
+def test_pipeline_preview_targets_shared_data_map():
+    from tools.pipeline import _start_preview_server
+
+    with tempfile.TemporaryDirectory(prefix="pipeline-preview-", dir=ROOT) as temp:
+        data_dir = Path(temp) / "data"
+        data_dir.mkdir()
+        (data_dir / "buildings.pmtiles").write_bytes(bytes(range(64)))
+        run = QuickstartRun("test_area", Path(temp) / "run")
+        run.metadata["bbox"] = [168.6, -45.1, 168.7, -45.0]
+        ok, url = _start_preview_server(
+            "test_area", run, Path(sys.executable), preferred_port=0, open_browser=False)
+        try:
+            assert ok
+            assert "/preview.html?lat=" in url
+            assert run.metadata["map_preview_url"] == url
+            assert (run.run_dir / "map-preview-server.pid").is_file()
+            assert (run.run_dir / "map-preview-server.log").is_file()
+            assert not (run.run_dir / "run.json").exists()
+            assert not list(run.run_dir.glob("step-*.log"))
+        finally:
+            pid = int((run.run_dir / "map-preview-server.pid").read_text())
+            import os
+            import signal
+            os.kill(pid, signal.SIGTERM)
 
 
 if __name__ == "__main__":
     test_range_server_serves_static_and_partial_content()
-    test_map_report_lists_new_steps_and_isolated_output_paths()
+    test_map_report_lists_new_steps_and_output_paths()
     test_combine_regions_cli_parses_options()
-    test_preview_bundle_isolated_data_base()
+    test_pipeline_run_directory_structure()
+    test_pipeline_preview_targets_shared_data_map()
     test_brewfile_installs_tippecanoe_cli_suite()
     print("quickstart map tests passed")

@@ -2,9 +2,9 @@
 
 Use this guide when a pipeline run or local data build stops unexpectedly. Start
 with that run's `report.md` at
-`data/quickstart_runs/<area>/<run-id>/report.md`. Find the first `FAIL`,
-`DEGRADED`, or unexpected `SKIPPED` step, then open its linked
-`step-NN-*.log`. The same step number and label appear as `[QS-NN]` in the
+`data/pipeline_runs/<run-id>/report.md`. Find the first `FAIL`,
+`DEGRADED`, or unexpected `SKIPPED` step, then inspect the matching `[QS-NN]`
+lines in `run.log`. The same step number and label appear as `[QS-NN]` in the
 terminal and `run.log`.
 
 ## Data removed during a clean-room test
@@ -60,7 +60,7 @@ pinned in `requirements.lock.txt`.
 If installation succeeds but the import still fails, verify that `python`
 and `pip` refer to the same environment by always invoking pip as
 `<environment-python> -m pip`. If the error remains, keep the import check's
-full output and the Python path from `run.json`; do not randomly upgrade
+full output and the Python path from `report.md`; do not randomly upgrade
 scientific packages in the shared environment.
 
 ### `LINZ_API_KEY is not set`
@@ -166,11 +166,10 @@ checks these before starting large downloads. On macOS, install them with
 **Report symptom** (Step 14 or 15): `FAIL`, a nonzero subprocess exit code, or
 missing PMTiles/support files in the step comment.
 
-Open the matching step log. Step 14 is the per-region output from
+Inspect the matching `[QS-NN]` section in `run.log`. Step 14 is the per-region output from
 `src/emit_region.py`; check that solar/layout GeoJSON, the heatmap raster and
-sidecar, and required build keys exist. Step 15 combines only this run's
-regional output into `map-data/data/`, not the site's normal `data/` folder.
-Do not manually combine a test area into the normal map dataset. The
+sidecar, and required build keys exist. Step 15 combines the selected region
+into `data/`, replacing the current combined map dataset. The
 [output-contract test](../../tests/test_output_contract.py) describes the
 required regional PMTiles fields and support data.
 
@@ -211,8 +210,8 @@ guards this parser path.
 **Report symptom** (Step 18): `Could not start local map server`,
 `Could not verify local preview`, or `PMTiles byte-range probe returned ...`.
 
-Check `map-preview-server.log` and the Step 18 log. Confirm the preview page
-and `map-data/data/buildings.pmtiles` exist and are non-empty, and that the
+Check `map-preview-server.log` and the Step 18 `[QS-18]` lines in `run.log`. Confirm the preview page
+and `data/buildings.pmtiles` exist and are non-empty, and that the
 reported port is available. The server binds only to `127.0.0.1`; use the URL
 printed in the report on the same computer. A successful PMTiles check must
 return HTTP 206 for the requested byte range, not HTTP 200 for the whole file.
@@ -221,7 +220,7 @@ The runner records the server PID in `map-preview-server.pid`. Stop it after
 review with:
 
 ```sh
-kill "$(cat data/quickstart_runs/<area>/<run-id>/map-preview-server.pid)"
+kill "$(cat data/pipeline_runs/<run-id>/map-preview-server.pid)"
 ```
 
 ### Map opens but has no roof heat layer
@@ -247,7 +246,7 @@ different problem; verify the initial location and select **Panel Layout**.
 ## Reporting a new failure
 
 When asking for help, share the first failing step's exact `[QS-NN]` error and
-its `step-NN-*.log`, plus the relevant non-secret parts of `run.json` (area,
+its `run.log` entries, plus the relevant non-secret parts of `report.md` (area,
 bbox, selected survey, statuses, and exit codes). Do **not** share `.env`, the
 LINZ key, or any shell transcript that contains it. Include your operating
 system and whether `.venv` or `.venv/Scripts` is the Python environment used.

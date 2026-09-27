@@ -1,7 +1,7 @@
 """Run the configured regional solar pipeline with durable diagnostics.
 
-Each step's number and label are shared by terminal output, step logs,
-run.log, run.json, and report.md. The Markdown report is rewritten atomically
+Each step's number and label are shared by terminal output,
+run.log, and report.md. The Markdown report is rewritten atomically
 as the run progresses, so failures and interruptions leave a useful record.
 """
 
@@ -29,7 +29,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-RUNS = DATA / "quickstart_runs"
+RUNS = DATA / "pipeline_runs"
 
 STEPS = [
     {
@@ -114,30 +114,30 @@ STEPS = [
         "number": 14,
         "label": "Emit regional map tiles",
         "inputs": "Region solar/layout GeoJSON, heatmap, outlines, build keys",
-        "outputs": "Run-isolated buildings/layout PMTiles, cells, detail, heatmap tiles and summary",
+        "outputs": "data/out/<area>/ tiles, cells, detail, heatmap tiles and summary",
     },
     {
         "number": 15,
-        "label": "Combine isolated map dataset",
-        "inputs": "This run's regional tile artifacts only",
-        "outputs": "data/quickstart_runs/<area>/<run-id>/map-data/data/ map contract",
+        "label": "Combine map dataset",
+        "inputs": "Regional tile artifacts",
+        "outputs": "data/ map contract (PMTiles, cells, detail, heatmap, summary)",
     },
     {
         "number": 16,
         "label": "Build local 3D terrain tiles",
         "inputs": "Area DSM and wide DEM",
-        "outputs": "Run-isolated map-data/data/terrain/ tiles (optional 3D view)",
+        "outputs": "data/terrain/ tiles (optional 3D view)",
     },
     {
         "number": 17,
-        "label": "Validate map contract and prepare preview",
-        "inputs": "Emitted PMTiles, supporting JSON/PNG assets and preview page assets",
-        "outputs": "Contract-checked local map dataset and map-preview/preview.html",
+        "label": "Validate map contract",
+        "inputs": "Emitted PMTiles and supporting JSON/PNG assets in data/",
+        "outputs": "Contract-checked local map dataset",
     },
     {
         "number": 18,
         "label": "Start local map preview",
-        "inputs": "Validated preview bundle and PMTiles byte-range server",
+        "inputs": "Validated map dataset and PMTiles byte-range server",
         "outputs": "Loopback preview URL and server PID/log",
     },
 ]
@@ -184,17 +184,16 @@ def _linz_key_value() -> str:
     return ""
 
 
-class QuickstartRun:
+class PipelineRun:
     def __init__(self, area: str, run_dir: Path):
         self.area = area
         self.run_dir = run_dir
         self.log_path = run_dir / "run.log"
         self.report_path = run_dir / "report.md"
-        self.state_path = run_dir / "run.json"
         self.started = _now()
         self.started_clock = time.monotonic()
         self.records = [dict(s, status="PENDING", comment="Not run yet", command="", exit_code=None,
-                             started=None, finished=None, seconds=None, log=None)
+                             started=None, finished=None, seconds=None)
                         for s in STEPS]
         self.step_clocks: dict[int, float] = {}
         self.metadata: dict[str, Any] = {}
@@ -202,7 +201,7 @@ class QuickstartRun:
         self.overall = "RUNNING"
         run_dir.mkdir(parents=True, exist_ok=False)
         self.log_path.touch()
-        self._save()
+        self._write_report()
 
     def _write_log(self, text: str) -> None:
         with self.log_path.open("a", encoding="utf-8") as f:
@@ -217,35 +216,17 @@ class QuickstartRun:
             self.overall = "DEGRADED"
         elif all(s["status"] == "PASS" for s in self.records):
             self.overall = "PASS"
-        state = {
-            "area": self.area,
-            "run_id": self.run_dir.name,
-            "started_utc": self.started,
-            "updated_utc": _now(),
-            "status": self.overall,
-            "python": sys.executable,
-            "metadata": self.metadata,
-            "steps": self.records,
-            "artifacts": {
-                "report": str(self.report_path.relative_to(ROOT)),
-                "log": str(self.log_path.relative_to(ROOT)),
-            },
-        }
-        tmp = self.state_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, self.state_path)
         self._write_report()
 
     def _write_report(self) -> None:
         rows = []
         for s in self.records:
-            log = f"[step log]({s['log']})" if s.get("log") else "—"
             timing = (f"exit {s['exit_code']}, {s['seconds']}s"
                       if s.get("exit_code") is not None else "—")
-            rows.append("| {number:02d} | {label} | {inputs} | {outputs} | **{status}** ({timing}) | {comment} | {log} |".format(
+            rows.append("| {number:02d} | {label} | {inputs} | {outputs} | **{status}** ({timing}) | {comment} |".format(
                 number=s["number"], label=_md(s["label"]), inputs=_md(s["inputs"]),
                 outputs=_md(s["outputs"]), status=_md(s["status"]),
-                timing=_md(timing), comment=_md(s.get("comment", "")), log=log))
+                timing=_md(timing), comment=_md(s.get("comment", ""))))
         failed = [s for s in self.records if s["status"] == "FAIL"]
         degraded = [s for s in self.records if s["status"] in {"DEGRADED", "SKIPPED", "INTERRUPTED"}]
         if failed:
@@ -264,32 +245,33 @@ class QuickstartRun:
             f"- **Git commit:** `{self.metadata.get('git_commit', 'unknown')}`",
             f"- **WGS84 bbox:** `{self.metadata.get('bbox', 'not validated')}`",
             f"- **Survey overrides:** `{json.dumps(self.metadata.get('survey_overrides', {}), sort_keys=True)}`",
-                        f"- **Survey selected:** `{self.metadata.get('survey_name', 'not resolved')}`",
-                        *([f"- **Map preview:** [{self.metadata['map_preview_url']}]({self.metadata['map_preview_url']})"]
-                            if self.metadata.get("map_preview_url") else []),
+            f"- **Survey selected:** `{self.metadata.get('survey_name', 'not resolved')}`",
+            *([f"- **Map preview:** [{self.metadata['map_preview_url']}]({self.metadata['map_preview_url']})"]
+                if self.metadata.get("map_preview_url") else []),
             f"- **Combined log:** [`run.log`](run.log)",
-            f"- **Machine-readable record:** [`run.json`](run.json)",
             "",
-            "Step numbers and labels below match the `[QS-NN]` prefixes in the terminal and logs.",
+            "Step numbers and labels below match the `[QS-NN]` prefixes in the terminal and `run.log`.",
             "",
-            "| Step | Description | Source data / inputs | Target data / outputs | Result | Comment / consequence | Log |",
-            "|---:|---|---|---|---|---|---|",
+            "| Step | Description | Source data / inputs | Target data / outputs | Result | Comment / consequence |",
+            "|---:|---|---|---|---|---|",
             *rows,
             "",
             "## Debugging",
             "",
-            "Open the matching `step-NN-*.log` for full stdout/stderr. Find the same `[QS-NN]` marker in `run.log` to see surrounding run context. A failed step stops dependent steps; later rows remain `NOT RUN` and explain why.",
+            "Find the matching `[QS-NN]` marker in `run.log` to see surrounding run context and full command stdout/stderr. A failed step stops dependent steps; later rows remain `NOT RUN` and explain why.",
             "",
             "## Map preview",
             "",
             (f"Map-ready local preview: [{self.metadata['map_preview_url']}]({self.metadata['map_preview_url']}). "
-             "The preview uses this run's isolated dataset; it does not replace or publish the normal map data. "
+             "The preview serves directly from `data/`. "
              "Live parameter refitting still requires the separate `src/live_server.py` API and is not enabled by this static preview."
              if self.metadata.get("map_preview_url") else
              "The map-ready tile/preview steps have not completed. Earlier PASS statuses cover only the listed pipeline stages, not map readiness."),
             "",
         ]
-        self.report_path.write_text("\n".join(content), encoding="utf-8")
+        tmp = self.report_path.with_suffix(".md.tmp")
+        tmp.write_text("\n".join(content), encoding="utf-8")
+        os.replace(tmp, self.report_path)
 
     def event(self, number: int, text: str) -> None:
         line = f"[QS-{number:02d}] {text}"
@@ -309,19 +291,16 @@ class QuickstartRun:
         self.step_clocks[number] = time.monotonic()
         record["command"] = self.redact(shlex.join(command)) if command else "internal validation"
         record["commands"] = [record["command"]]
-        record["log"] = f"step-{number:02d}-{re.sub(r'[^a-z0-9]+', '-', record['label'].lower()).strip('-')}.log"
         self._save()
         self.event(number, f"START {record['label']}")
         self.event(number, f"COMMAND {record['command']}")
-        with (self.run_dir / record["log"]).open("w", encoding="utf-8") as f:
-            f.write(f"[QS-{number:02d}] {record['label']}\n[QS-{number:02d}] COMMAND {record['command']}\n")
         return record
 
     def finish(self, number: int, status: str, comment: str, exit_code: int | None) -> None:
         record = self.records[number - 1]
         clock = self.step_clocks.pop(number, time.monotonic())
         record.update(status=status, comment=comment, exit_code=exit_code,
-                 finished=_now(), seconds=round(time.monotonic() - clock, 1))
+                      finished=_now(), seconds=round(time.monotonic() - clock, 1))
         self.event(number, f"{status} {record['label']} (exit={exit_code}, {record['seconds']}s): {comment}")
         self._save()
 
@@ -337,47 +316,44 @@ class QuickstartRun:
             self._save()
             command_line = f"[QS-{number:02d}] COMMAND {safe_command}"
             self.event(number, command_line.removeprefix(f"[QS-{number:02d}] "))
-            with (self.run_dir / record["log"]).open("a", encoding="utf-8") as f:
-                f.write(command_line + "\n")
         chunks: list[str] = []
-        step_log = self.run_dir / record["log"]
-        with step_log.open("a", encoding="utf-8") as f:
-            try:
-                proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
-                assert proc.stdout is not None
-                for raw in proc.stdout:
-                    message = self.redact(raw.rstrip("\r\n"))
-                    chunks.append(message)
-                    tagged = f"[QS-{number:02d}] {message}"
-                    print(tagged, flush=True)
-                    self._write_log(tagged)
-                    f.write(tagged + "\n")
-                code = proc.wait()
-            except KeyboardInterrupt:
-                if "proc" in locals() and proc.poll() is None:
-                    proc.send_signal(signal.SIGINT)
-                    try:
-                        proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
-                self.finish(number, "INTERRUPTED", "Interrupted by user; partial outputs may exist and require inspection before resuming.", None)
-                for pending in self.records[number:]:
-                    if pending["status"] == "PENDING":
-                        pending["status"] = "NOT RUN"
-                        pending["comment"] = f"Not run because step {number:02d} was interrupted."
-                self._save()
-                raise
-            except OSError as exc:
-                message = self.redact(f"could not start command: {type(exc).__name__}: {exc}")
+        try:
+            proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+            assert proc.stdout is not None
+            for raw in proc.stdout:
+                message = self.redact(raw.rstrip("\r\n"))
                 chunks.append(message)
                 tagged = f"[QS-{number:02d}] {message}"
                 print(tagged, flush=True)
                 self._write_log(tagged)
-                f.write(tagged + "\n")
-                code = 127
+            code = proc.wait()
+        except KeyboardInterrupt:
+            if "proc" in locals() and proc.poll() is None:
+                proc.send_signal(signal.SIGINT)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            self.finish(number, "INTERRUPTED", "Interrupted by user; partial outputs may exist and require inspection before resuming.", None)
+            for pending in self.records[number:]:
+                if pending["status"] == "PENDING":
+                    pending["status"] = "NOT RUN"
+                    pending["comment"] = f"Not run because step {number:02d} was interrupted."
+            self._save()
+            raise
+        except OSError as exc:
+            message = self.redact(f"could not start command: {type(exc).__name__}: {exc}")
+            chunks.append(message)
+            tagged = f"[QS-{number:02d}] {message}"
+            print(tagged, flush=True)
+            self._write_log(tagged)
+            code = 127
         return code, "\n".join(chunks)
+
+
+QuickstartRun = PipelineRun
 
 
 def _key_available() -> bool:
@@ -480,31 +456,10 @@ def _evaluate_fetch(area_dir: Path, output: str) -> tuple[str, str]:
     lower = output.lower()
     if "point cloud fetch failed" in lower or "tiles missing from the bulk store" in lower:
         if not notes:
-            notes.append("fetcher reported a point-cloud warning; inspect step log")
+            notes.append("fetcher reported a point-cloud warning; inspect run.log")
     status = "DEGRADED" if notes else "PASS"
     comment = "; ".join(notes) + "." if notes else f"{outlines_count} building outlines validated; required rasters exist; point cloud {found}/{total} tiles present."
     return status, comment
-
-
-def _prepare_preview_bundle(area: str, run: QuickstartRun, map_package: Path) -> Path:
-    preview_dir = run.run_dir / "map-preview"
-    preview_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("preview.html", "economics.js", "panel_editor.js"):
-        shutil.copy2(ROOT / name, preview_dir / name)
-    bbox = run.metadata["bbox"]
-    center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
-    base_path = "/" + map_package.relative_to(ROOT).as_posix().rstrip("/") + "/"
-    site = {
-        "dataVersion": run.run_dir.name,
-        "dataBase": base_path,
-        "defaultView": {"center": center, "zoom": 15.5},
-        "towns": [],
-        "name": f"Quickstart: {area}",
-    }
-    (preview_dir / "site-config.js").write_text(
-        "window.SITE = " + json.dumps(site, separators=(",", ":")) + ";\n",
-        encoding="utf-8")
-    return preview_dir / "preview.html"
 
 
 def _free_port(preferred: int) -> int:
@@ -520,20 +475,19 @@ def _free_port(preferred: int) -> int:
         probe.close()
 
 
-def _start_preview_server(area: str, run: QuickstartRun, py: Path,
-                          map_package: Path, preferred_port: int,
+def _start_preview_server(area: str, run: PipelineRun, py: Path,
+                          preferred_port: int,
                           open_browser: bool) -> tuple[bool, str]:
     port = _free_port(preferred_port)
     server_log = run.run_dir / "map-preview-server.log"
     pid_file = run.run_dir / "map-preview-server.pid"
     command = [str(py), "tools/pipeline_serve.py", "--root", str(ROOT), "--port", str(port)]
     record = run.begin(18, command)
-    preview_path = run.run_dir / "map-preview" / "preview.html"
-    route = "/" + preview_path.relative_to(ROOT).as_posix()
+    route = "/preview.html"
     bbox = run.metadata["bbox"]
     lat, lng = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
     url = f"http://127.0.0.1:{port}{route}?lat={lat:.7f}&lng={lng:.7f}&z=15.5"
-    tile_path = "/" + (map_package / "data" / "buildings.pmtiles").relative_to(ROOT).as_posix()
+    tile_path = "/data/buildings.pmtiles"
     try:
         popen_options: dict[str, Any] = {}
         if os.name == "nt":
@@ -602,23 +556,22 @@ def main() -> int:
         parser.error(str(exc))
     py = Path(args.python).expanduser().resolve()
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    base = RUNS / area
-    base.mkdir(parents=True, exist_ok=True)
-    run_dir = base / run_id
+    RUNS.mkdir(parents=True, exist_ok=True)
+    run_dir = RUNS / run_id
     # Timestamp collisions are rare but should never overwrite evidence.
     suffix = 1
     while run_dir.exists():
-        run_dir = base / f"{run_id}-{suffix:02d}"
+        run_dir = RUNS / f"{run_id}-{suffix:02d}"
         suffix += 1
-    run = QuickstartRun(area, run_dir)
+    run = PipelineRun(area, run_dir)
     area_dir = DATA / "regions" / area
     run.metadata = {"run_dir": str(run_dir.relative_to(ROOT))}
-    region_out_root = run_dir / "region-out"
+    region_out_root = DATA / "out"
     region_out = region_out_root / area
-    map_package = run_dir / "map-data"
-    map_data = map_package / "data"
-    map_preview = run_dir / "map-preview"
-    map_data.mkdir(parents=True, exist_ok=True)
+    region_out_root.mkdir(parents=True, exist_ok=True)
+    map_data = DATA
+    terrain_dir = DATA / "terrain"
+    terrain_stage_dir = region_out_root / f".terrain-{run_id}"
 
     run.begin(1)
     ok, details, area_meta = _preflight(area, py)
@@ -659,7 +612,7 @@ def main() -> int:
          "--out-root", str(region_out_root), "--dest", str(map_data),
          "--skip-markup-lines"],
         [str(py), "tools/build_terrain_tiles.py", area, "--min-zoom", "11",
-         "--max-zoom", "17", "--out", str(map_data / "terrain")],
+         "--max-zoom", "17", "--out", str(terrain_stage_dir)],
     ]
     failed_at: int | None = None
     for number, command in enumerate(commands, start=2):
@@ -708,7 +661,7 @@ def main() -> int:
                 count = sum(1 for p in selected.glob("*.json")) if selected.exists() else 0
                 run.finish(number, "PASS", f"Vision precompute completed; {count} selected-face files currently exist (including any from earlier runs).", code)
             else:
-                run.finish(number, "DEGRADED", f"Vision precompute failed (exit {code}); build will use any existing selected readings and fallback geometry. See step log.", code)
+                run.finish(number, "DEGRADED", f"Vision precompute failed (exit {code}); build will use any existing selected readings and fallback geometry. See run.log.", code)
             continue
 
         assert command is not None
@@ -716,6 +669,16 @@ def main() -> int:
             code, output = run.run_command(number, command, env=env)
         except KeyboardInterrupt:
             raise
+        if number == 2 and code == 0:
+            # Regional acquisition does not fetch the shared wide DEM. Fetch
+            # or refresh it explicitly before validating the combined inputs.
+            dem_command = [str(py), "src/fetch_dem_wide.py"]
+            try:
+                dem_code, dem_output = run.run_command(number, dem_command, env=env, begin=False)
+            except KeyboardInterrupt:
+                raise
+            output = "\n".join(part for part in (output, dem_output) if part)
+            code = dem_code
         if code != 0:
             if number in {11, 13, 16}:
                 note = {
@@ -723,9 +686,9 @@ def main() -> int:
                     13: "Address enrichment did not complete; buildings remain clickable by building ID.",
                     16: "3D terrain tiles are unavailable; the 2D map remains complete.",
                 }[number]
-                run.finish(number, "DEGRADED", f"Optional command exited {code}. {note} Inspect the step log.", code)
+                run.finish(number, "DEGRADED", f"Optional command exited {code}. {note} Inspect run.log.", code)
                 continue
-            run.finish(number, "FAIL", f"Command exited {code}; dependent outputs were not run. See step log.", code)
+            run.finish(number, "FAIL", f"Command exited {code}; dependent outputs were not run. See run.log.", code)
             failed_at = number
             break
         if number == 2:
@@ -749,7 +712,7 @@ def main() -> int:
                 13: area_dir / "solar_potential.geojson",
                 14: region_out / "summary.json",
                 15: map_data / "buildings.pmtiles",
-                16: map_data / "terrain" / "meta.json",
+                16: terrain_stage_dir / "meta.json",
             }[number]
             if number == 11 and not expected.is_file():
                 run.finish(number, "SKIPPED", "No image_shift.json was produced (for example, the survey has no reference imagery); map geometry will render at its source coordinates.", 0)
@@ -758,7 +721,7 @@ def main() -> int:
                 run.finish(number, "DEGRADED", f"Optional output missing/empty: {expected.relative_to(ROOT)}. The 2D solar map remains available.", 0)
                 continue
             if not expected.is_file() or expected.stat().st_size == 0:
-                run.finish(number, "FAIL", f"Command returned success but expected output is missing/empty: {expected.relative_to(ROOT)}. See step log.", 0)
+                run.finish(number, "FAIL", f"Command returned success but expected output is missing/empty: {expected.relative_to(ROOT)}. See run.log.", 0)
                 failed_at = number
                 break
             if number in {4, 5, 6, 7, 9, 10, 13}:
@@ -818,22 +781,26 @@ def main() -> int:
                         break
                 if failed_at is not None:
                     break
-                run.finish(number, "PASS", f"Emitted this run's tiles and support data under {region_out.relative_to(ROOT)}.", 0)
+                run.finish(number, "PASS", f"Emitted regional tiles and support data under {region_out.relative_to(ROOT)}.", 0)
             elif number == 15:
-                required = ("panel_layouts.pmtiles", "building_cells.pmtiles", "assumptions.json",
+                required = ("buildings.pmtiles", "panel_layouts.pmtiles", "building_cells.pmtiles", "assumptions.json",
                             "addresses.json", "building_detail/index.json", "heatmap_tiles/meta.json",
                             "seasonal_curves/index.json", "build_summary.json")
                 missing = [rel for rel in required
                            if not (map_data / rel).is_file() or (map_data / rel).stat().st_size == 0]
                 if missing:
-                    run.finish(number, "FAIL", "Isolated combine omitted required map files: " + ", ".join(missing), 0)
+                    run.finish(number, "FAIL", "Combine omitted required map files: " + ", ".join(missing), 0)
                     failed_at = number
                     break
-                (map_data / "markup_lines.geojson").write_text(
-                    json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8")
-                run.finish(number, "PASS", f"Combined one region into isolated map data at {map_data.relative_to(ROOT)}; repository-wide map data was not modified.", 0)
+                if not (map_data / "markup_lines.geojson").exists():
+                    (map_data / "markup_lines.geojson").write_text(
+                        json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8")
+                run.finish(number, "PASS", f"Combined region into map data at {map_data.relative_to(ROOT)}.", 0)
             elif number == 16:
-                terrain_tiles = list((map_data / "terrain").rglob("*.png"))
+                terrain_tiles = list(terrain_stage_dir.rglob("*.png"))
+                if terrain_dir.exists():
+                    shutil.rmtree(terrain_dir)
+                os.replace(terrain_stage_dir, terrain_dir)
                 run.finish(number, "PASS" if terrain_tiles else "DEGRADED",
                            f"Wrote {len(terrain_tiles)} 3D terrain tiles." if terrain_tiles else "Terrain metadata exists but no DSM tiles were emitted; 3D view is unavailable.", 0)
             else:
@@ -842,25 +809,19 @@ def main() -> int:
     if failed_at is None:
         validator = [str(py), "tools/validate_quickstart_map.py",
                      "--region-out", str(region_out), "--map-data", str(map_data)]
-        run.begin(17, ["prepare isolated preview bundle", "then", *validator])
+        run.begin(17, validator)
         try:
-            _prepare_preview_bundle(area, run, map_package)
-        except Exception as exc:
-            run.finish(17, "FAIL", f"Could not prepare local preview assets: {type(exc).__name__}: {exc}.", 1)
+            code, output = run.run_command(17, validator, env=env, begin=False)
+        except KeyboardInterrupt:
+            raise
+        if code != 0:
+            run.finish(17, "FAIL", "Map output contract validation failed. Review run.log before opening this dataset.", code)
             failed_at = 17
         else:
-            try:
-                code, output = run.run_command(17, validator, env=env, begin=False)
-            except KeyboardInterrupt:
-                raise
-            if code != 0:
-                run.finish(17, "FAIL", "Map output contract validation failed. Review the step log before opening this dataset.", code)
-                failed_at = 17
-            else:
-                run.finish(17, "PASS", output.strip() or "Isolated preview bundle and map contract validated.", 0)
+            run.finish(17, "PASS", output.strip() or "Map contract validated.", 0)
 
     if failed_at is None:
-        ok, url = _start_preview_server(area, run, py, map_package,
+        ok, url = _start_preview_server(area, run, py,
                                         args.port, not args.no_open_browser)
         if not ok:
             failed_at = 18
@@ -871,7 +832,7 @@ def main() -> int:
                 s["status"] = "NOT RUN"
                 s["comment"] = f"Not run because step {failed_at:02d} failed; dependent outputs are unavailable."
         run._save()
-    print(f"\nPipeline report: {run.report_path}\nCombined log: {run.log_path}\nRun artifacts: {run.run_dir}", flush=True)
+    print(f"\nPipeline report: {run.report_path}\nCombined log: {run.log_path}", flush=True)
     if run.metadata.get("map_preview_url"):
         print(f"Map preview: {run.metadata['map_preview_url']}", flush=True)
     return 1 if failed_at is not None else 0
@@ -881,5 +842,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        print("Pipeline interrupted; inspect the latest data/quickstart_runs/<region>/<run-id>/report.md", file=sys.stderr)
+        print("Pipeline interrupted; inspect the latest data/pipeline_runs/<run-id>/report.md", file=sys.stderr)
         raise SystemExit(130)

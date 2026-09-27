@@ -40,7 +40,8 @@ This will generate data for the default `PIPELINE_REGION` set in `nz-solar-poten
 
 # 5. Review status
 
-* Check `~/nz-solar-potential/data/quickstart_runs/<area>/<datestamp>/report.md for output status.
+* Check `~/nz-solar-potential/data/pipeline_runs/<datestamp>/report.md` for output status.
+* The pipeline combines the selected region directly into `data/`, replacing the current combined map dataset.
 * Check [Troubleshooting](data-maintainers/troubleshooting.md) for tips.
 * [Pipeline reference](data-maintainers/pipeline-reference.md) for run details.
 

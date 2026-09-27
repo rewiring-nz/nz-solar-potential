@@ -35,10 +35,11 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   default (only stale buildings rebuild), `--force` for everything, `--yield-only`
   when only the solar model changed.
 - `tools/pipeline.py [region]`: (Also invoked by `quickstart.sh`) Runs regional
-  estimates, then emits and combines the map contract under
-  `data/quickstart_runs/<region>/<run-id>/` without modifying the committed `data/`
-  map dataset. `tools/pipeline_serve.py` serves a run-specific preview with PMTiles
-  byte-range support on loopback.
+  estimates, then emits and combines the map contract directly under `data/`.
+  Diagnostic logs are recorded under `data/pipeline_runs/<run-id>/run.log` and
+  `report.md` (plus preview-server PID/log when the preview starts). Combining
+  replaces the current map contract with the selected region. `tools/pipeline_serve.py`
+  serves a preview with PMTiles byte-range support on loopback.
 - `bash tests/run_all.sh`: Local automated check entry point running pure Python,
   economics, deprecated-API, repository-sync, architecture-diagram, and synthetic
   region checks (`tests/synthetic`). Add targeted tests under `tests/` when changing

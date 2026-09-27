@@ -30,24 +30,29 @@ torch, segment-anything, the SAM checkpoint, and both roof-line models under
 
 ## Run artifacts
 
-Each run writes to `data/quickstart_runs/<region>/<UTC-run-id>/`, separate from
-the normal map dataset. The report path and preview URL are printed at the
-end. Start with `report.md`: it records stage statuses, timing, consequences,
-and links to individual logs. `run.log` is the ordered output, `step-NN-*.log`
-contains a stage's full output, and `run.json` is the machine-readable record.
+Each run writes diagnostics to `data/pipeline_runs/<UTC-run-id>/`. `run.log` is
+the combined chronological log with each step's stdout/stderr tagged by
+`[QS-NN]`; `report.md` records stage statuses, timing, and consequences. When
+the preview server starts, its PID and server log are also kept in that run
+directory. The report path and preview URL are printed at the end.
+
+The pipeline emits regional intermediates under `data/out/<region>/`, then
+combines the selected region directly into `data/`. **This replaces the
+currently served combined map dataset**; it does not preserve other regions in
+the combined map. Do not run it against shared/site data when that replacement
+is not intended. The preview serves the resulting `data/` map on loopback.
 
 The visual verification cards are at
-`data/regions/<region>/quickstart_report.html`. The isolated preview bundle is
-under `map-preview/`; the map reads the dataset under `map-data/data/`. The
-preview is static, serves only on loopback, and requires a browser connection
-to public basemap providers. Live parameter refitting requires the separate
-`src/live_server.py` `/api/refit` service.
+`data/regions/<region>/quickstart_report.html`. The preview serves directly from
+`data/` via loopback, and requires a browser connection to public basemap
+providers. Live parameter refitting requires the separate `src/live_server.py`
+`/api/refit` service.
 
 Stop the preview server after review using the PID file path shown in the run
 report:
 
 ```sh
-kill "$(cat data/quickstart_runs/<region>/<run-id>/map-preview-server.pid)"
+kill "$(cat data/pipeline_runs/<run-id>/map-preview-server.pid)"
 ```
 
 ## Stage statuses and interpretation
@@ -62,6 +67,9 @@ A successful pipeline does not imply every optional input was available.
 Missing LiDAR can weaken geometry evidence or leave the heatmap empty;
 unavailable vision, imagery alignment, addresses, or terrain reduce their
 respective capabilities. Inspect the report before interpreting a result.
+
+Step 02 runs `src/fetch_regions.py` and `src/fetch_dem_wide.py`; the latter
+ensures the shared wide DEM exists and covers the configured region extent.
 
 The numbered stage implementation and exact labels are in
 [tools/pipeline.py](../../tools/pipeline.py). The output contract is validated

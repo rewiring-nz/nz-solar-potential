@@ -1,5 +1,10 @@
 # NZ Solar Potential documentation
 
+This directory documents only the `nz-solar-potential` project. The sibling
+`solar-estimates` project is out of scope and has its own documentation needs.
+
+## Start here
+
 | Audience | Document | Purpose | Update trigger |
 | --- | --- | --- | --- |
 | Data maintainers | [Quickstart](quickstart.md) | Run the full regional pipeline for a configured region and open its map preview. | Pipeline command or region configuration changes. |
@@ -14,4 +19,18 @@
 | Software developers | [Reviewer's guide](developers/reviewers-guide.md) | Verify the logic: rule-to-code map, per-stage check commands, glossary. | A rule's enforcement point or check command changes. |
 | Project maintainers | [Scaling and iteration](scaling-and-iteration.md) | What blocks a national rollout, and why a fix takes hours. Measured. | Data volumes, build times, or the merge/tile architecture change. |
 | Web map users | [Using the web map](web-map-users.md) | Find a building and interpret an estimate. | Map interaction, metrics, or assumptions change. |
-| AI assistants / maintainers | [Agent instructions](../AGENTS.md) | Maintain concise, verified project context and instructions for AI-assisted work. | A durable decision, constraint, workflow, or unresolved issue changes. |
+| AI context maintainers | [AI context](ai-context/README.md) | Maintain concise, verified project context for AI-assisted work. | A durable decision, constraint, workflow, or unresolved issue changes. |
+
+## Documentation rules
+
+- Treat executable scripts, `config.py`, and committed data contracts as the
+  implementation source of truth. Link to them instead of copying volatile
+  details.
+- Mark future cloud work, unverified claims, and experiments clearly. Current
+  documented operations run locally.
+- Keep platform-specific setup in the data maintainer guides. macOS is the
+  primary platform; Ubuntu and Windows guidance is included where it differs.
+- Keep AI context factual, concise, and reviewable in Git. Remove duplicate or
+  superseded statements when adding new evidence.
+- Update the relevant guide in the same change as a changed command, input,
+  output, operating limit, or externally visible estimate.
