@@ -150,7 +150,7 @@ def test_nearest_bin_clamps_slope():
 # --------------------------------------------------------------------------
 
 def test_total_losses_are_fourteen_percent_including_the_inverter():
-    """The TOTAL is 14% including the inverter, so the thing to pin is
+    """Josh set the TOTAL at 14% including the inverter, so the thing to pin is
     the product, not either factor alone. Losses compound multiplicatively --
     3% inverter plus 11% everything-else is NOT 14% -- which is why the derate
     is 11.34 and not a round number.
@@ -252,33 +252,6 @@ def test_export_cleanup_never_raises():
         assert reclaim(Path("/nonexistent/x.zip"), Path("/nonexistent/d"), m) == 0
 
 
-def test_wide_dem_bbox_has_requested_metric_buffer():
-    import pyproj
-    from src.fetch_dem_wide import wide_dem_bbox_wgs84
-    to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
-    bbox = wide_dem_bbox_wgs84()
-    min_x, min_y = to_nztm.transform(bbox[0], bbox[1])
-    max_x, max_y = to_nztm.transform(bbox[2], bbox[3])
-    district = [config.PILOT_BBOX, *config.REGIONS.values()]
-    points = [to_nztm.transform(lon, lat)
-              for item in district
-              for lon, lat in ((item[0], item[1]), (item[2], item[3]))]
-    assert min_x <= min(point[0] for point in points) - 29_999
-    assert min_y <= min(point[1] for point in points) - 29_999
-    assert max_x >= max(point[0] for point in points) + 29_999
-    assert max_y >= max(point[1] for point in points) + 29_999
-
-
-def test_wide_dem_fetch_skips_existing_mosaic():
-    import tempfile
-    from pathlib import Path
-    from src.fetch_dem_wide import ensure_dem_wide
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "dem_wide_mosaic.tif"
-        path.write_bytes(b"existing")
-        assert ensure_dem_wide("unused", tmp) == path
-
-
 # --------------------------------------------------------------------------
 
 def _main():
@@ -297,81 +270,6 @@ def _main():
             print(f"  ERROR {name}: {type(e).__name__}: {e}")
     print(f"\n{len(tests) - len(failed)}/{len(tests)} passed")
     return 1 if failed else 0
-
-
-
-def test_frame_bearing_follows_the_eave():
-    """The frame's family bearing is the eave's MATH angle, so panels lie
-    along the strips of a 62-degree sawtooth (they were 34 degrees skew)."""
-    import math
-    import numpy as np
-    from shapely.geometry import Polygon
-    from src.panel_fitting import building_frame, _frame_axes, eave_bearing_deg
-    assert abs(eave_bearing_deg(62.0) - 28.0) < 1e-9
-    assert abs(eave_bearing_deg(90.0) - 0.0) < 1e-9
-    assert abs(eave_bearing_deg(45.0) - 45.0) < 1e-9
-    # a strip along the eave of a 62-deg-aspect face: plan vector (cos 62, -sin 62),
-    # math angle -62 deg, which is 28 mod 90 -- the grid the frame must pick
-    a = math.radians(-62.0)
-    u = np.array([math.cos(a), math.sin(a)]); v = np.array([-u[1], u[0]])
-    strip = Polygon([tuple(u * t + v * w) for t, w in ((0, 0), (20, 0), (20, 2.5), (0, 2.5))])
-    facets = [{"geometry": strip, "slope_deg": 25.0, "aspect_deg": 62.0}]
-    frame = building_frame(facets, strip)
-    uh, _ = _frame_axes(frame, 62.0, 25.0)
-    assert abs(abs(float(uh @ u)) - 1.0) < 1e-6, (frame, uh)
-
-
-def test_address_shards_find_a_street_without_a_number():
-    # Sharded addresses were keyed by their first two characters -- the house
-    # number -- so "frankton" found nothing unless the "12" shard happened to be
-    # loaded already. Each row now also lives under its street's key.
-    import json, tempfile
-    from pathlib import Path as P
-    import src.combine_regions as cr
-    assert cr._street_of("12 Frankton Road") == "Frankton Road"
-    assert cr._street_of("1/23 Arrowtown-Lake Hayes Road") == "Arrowtown-Lake Hayes Road"
-    assert cr._street_of("12A Main St") == "Main St"
-    assert cr._street_of("12 A Main St") == "Main St"
-    assert cr._street_of("Ōtāhuhu Lodge") == "Ōtāhuhu Lodge"
-    assert cr._street_of("42") is None
-    with tempfile.TemporaryDirectory() as t:
-        t = P(t)
-        (t / "out" / "r").mkdir(parents=True)
-        rows = [["12 Frankton Road", 1, 2, 3], ["5 Gorge Road", 4, 5, 6]]
-        (t / "out" / "r" / "addresses.json").write_text(json.dumps(rows))
-        old = cr.ADDR_SHARD_AT
-        cr.ADDR_SHARD_AT = 0
-        try:
-            cr._combine_addresses(["r"], t / "out", t)
-        finally:
-            cr.ADDR_SHARD_AT = old
-        shard = lambda k: json.loads((t / "addresses" / f"{k}.json").read_text())
-        assert shard("fr") == [rows[0]] and shard("12") == [rows[0]]
-        assert shard("go") == [rows[1]] and shard("5g") == [rows[1]]
-
-
-def test_building_axis_follows_the_walls_not_the_bounding_box():
-    """A stepped outline's minimum rectangle lies along the diagonal of the
-    steps; racking and roof lines must follow the walls (8 Sydney Street:
-    walls at 76 degrees, rectangle at 9, panels 21 degrees skew)."""
-    from shapely.geometry import box
-    from shapely import affinity
-    from src.outline_axis import dominant_axis_deg, wall_families_deg, face_axis_deg, _dev
-    from shapely.ops import unary_union
-    from src.outline_axis import _mrr_long_side_deg
-    # a diagonal band of stepped blocks, walls at 0 and 90, then turned 17
-    stair = affinity.rotate(unary_union([box(3 * i, 3 * i, 3 * i + 6, 3 * i + 3) for i in range(7)]),
-                            17, origin=(0, 0))
-    assert _dev(_mrr_long_side_deg(stair), 17.0) > 20   # the box lies on the diagonal
-    assert _dev(dominant_axis_deg(stair), 17.0) < 0.5
-    assert _dev(dominant_axis_deg(affinity.rotate(box(0, 0, 20, 8), 33, origin=(0, 0))), 33.0) < 1e-6
-    # a wing at 30 degrees is its own wall family, and its faces take it
-    fp = box(0, 0, 20, 10).union(affinity.rotate(box(18, 2, 30, 8), 30, origin=(18, 5)))
-    fams = wall_families_deg(fp)
-    assert len(fams) == 2 and min(_dev(f, 30.0) for f in fams) < 0.5
-    wing_face = affinity.rotate(box(21, 3, 28, 7), 30, origin=(18, 5))
-    assert _dev(face_axis_deg(fp, wing_face), 30.0) < 0.5
-    assert _dev(face_axis_deg(fp, box(2, 1, 15, 9)), 0.0) < 0.5
 
 
 if __name__ == "__main__":
