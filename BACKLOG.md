@@ -5,6 +5,15 @@ in git.
 
 ## Ship
 
+- **v41 live 27 Sep** (48d1991a): every 26 Sep fix plus full z16 panel
+  tiles. Gate: +15.6% panels on the buildings live had, none zeroed.
+- **panel_layouts.pmtiles is 50.2 MB** (GitHub warns past 50, refuses past
+  100). z16 now ships whole. Before the next region is added: serve tiles
+  from object storage, or split the layer per region.
+- **Over-carving left in v41:** colour blobs on a clean white flat roof
+  (#4725716, 32 -> 12) and a 19.5 m2 "height" obstruction only 0.15-0.23 m
+  proud (#4731172). Both detectors, not geometry.
+
 - **v40 deployed 26 Sep** past a gate that failed only on two small roofs
   that were misread before and still are: #4728022 (a 7 m2 triangle face on
   a large flat roof; 11 panels live) and #5372844 (two stray triangles; 6
