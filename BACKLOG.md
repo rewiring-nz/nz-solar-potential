@@ -5,6 +5,14 @@ in git.
 
 ## Ship
 
+- **Cromwell and Bannockburn -- building on the VM (29 Sep).** No LiDAR
+  reaches the Cromwell basin, so they build on a synthetic surface
+  (src/synthesize_dsm.py): 8 m DEM ground, hip roofs at 20 degrees under
+  400 m2, flat above; every building flagged `pitch_guessed` and labelled on
+  the map. Next for this path: tell gables from hips with the roof-line model
+  on the photo; pick the pitch per building type; add Pisa Moorings (~450
+  outlines north of Cromwell) if wanted.
+
 - **v41 live 27 Sep** (48d1991a): every 26 Sep fix plus full z16 panel
   tiles. Gate: +15.6% panels on the buildings live had, none zeroed.
 - **panel_layouts.pmtiles is 50.2 MB** (GitHub warns past 50, refuses past
