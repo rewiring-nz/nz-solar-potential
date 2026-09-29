@@ -5,7 +5,7 @@ in git.
 
 ## Ship
 
-- **Cromwell and Bannockburn -- building on the VM (29 Sep).** No LiDAR
+- **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
   reaches the Cromwell basin, so they build on a synthetic surface
   (src/synthesize_dsm.py): 8 m DEM ground, hip roofs at 20 degrees under
   400 m2, flat above; every building flagged `pitch_guessed` and labelled on
@@ -15,7 +15,7 @@ in git.
 
 - **v41 live 27 Sep** (48d1991a): every 26 Sep fix plus full z16 panel
   tiles. Gate: +15.6% panels on the buildings live had, none zeroed.
-- **panel_layouts.pmtiles is 50.2 MB** (GitHub warns past 50, refuses past
+- **panel_layouts.pmtiles is 58 MB (v42)** (GitHub warns past 50, refuses past
   100). z16 now ships whole. Before the next region is added: serve tiles
   from object storage, or split the layer per region.
 - **Over-carving left in v41:** colour blobs on a clean white flat roof
