@@ -30,6 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 from src.surveys import survey_for
 from src.fetch_data import fetch_building_outlines, fetch_raster
+from src.fetch_dem_wide import ensure_dem_wide
+from src.region_build import area_bbox_wgs84
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 REGIONS_DIR = DATA_DIR / "regions"
@@ -77,13 +79,43 @@ def fetch_raster_chunked(bbox_wgs84, api_key, layer_id, name, out_dir, format_ke
         return mosaic_path
     parts = split_bbox(bbox_wgs84, MAX_EXPORT_KM2)
     part_paths = []
+    outside = 0
     for i, part in enumerate(parts):
         part_name = name if len(parts) == 1 else f"{name}_part{i}"
         part_path = out_dir / f"{part_name}_mosaic.tif"
         if not part_path.exists():
             print(f"  exporting {part_name} ({bbox_area_km2(part):.1f} km2)...")
-            fetch_raster(part, api_key, layer_id, part_name, out_dir=out_dir, format_key=format_key)
+            try:
+                fetch_raster(part, api_key, layer_id, part_name,
+                             out_dir=out_dir, format_key=format_key)
+            except RuntimeError as exc:
+                # A CHUNK OUTSIDE THE SURVEY IS NOT A FAILURE, IT IS A FACT.
+                #
+                # A layer's published extent is a bounding box; the data
+                # inside it is a polygon with gaps and a ragged edge. Any
+                # region whose own box overhangs that edge has chunks with
+                # nothing in them, and LINZ answers those with
+                # 400 invalid_reasons ['outside-extent']. Albert Town hit it
+                # on its third chunk and aborted the whole expansion.
+                #
+                # Skip the empty chunk and keep the rest: buildings with no
+                # DSM under them already ship as "not estimated" with a
+                # reason, which is the honest outcome. Only a region where
+                # EVERY chunk is outside is a real error -- that means the
+                # region is in the wrong survey, which is worth stopping for.
+                if "outside-extent" not in str(exc):
+                    raise
+                print(f"  {part_name}: outside this survey's coverage, skipped")
+                outside += 1
+                continue
         part_paths.append(part_path)
+    if not part_paths:
+        raise RuntimeError(
+            f"{name}: every one of {len(parts)} chunks is outside layer "
+            f"{layer_id}'s coverage -- this region is assigned to the wrong "
+            f"survey, or its bbox is in the wrong place")
+    if outside:
+        print(f"  {name}: {outside} of {len(parts)} chunks had no data")
     if len(part_paths) == 1:
         if part_paths[0] != mosaic_path:
             part_paths[0].rename(mosaic_path)
@@ -109,14 +141,24 @@ def main():
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set")
 
+    print("[wide terrain] ensuring 8m DEM...")
+    ensure_dem_wide(api_key)
+
     wanted = sys.argv[1:] or list(config.REGIONS)
+    # Known = has a bbox from ANY source area_bbox_wgs84 accepts: task.json
+    # (a queued national region, in no config), config.REGIONS, or outlines
+    # on disk. Checking config.REGIONS alone refused every queued region, so
+    # build_region.sh could not fetch one -- the whole point of the queue.
     for name in wanted:
-        if name not in config.REGIONS:
-            raise SystemExit(f"unknown region {name!r} -- known: {list(config.REGIONS)}")
+        try:
+            area_bbox_wgs84(name)
+        except KeyError:
+            raise SystemExit(f"unknown region {name!r}: no task.json, no config entry, "
+                             f"no outlines on disk -- known in config: {list(config.REGIONS)}")
 
     # Pass 1: outlines + DSM for every region (small and fast).
     for name in wanted:
-        bbox = config.REGIONS[name]
+        bbox = area_bbox_wgs84(name)   # task.json, config, or the outlines on disk
         out_dir = REGIONS_DIR / name
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -133,13 +175,20 @@ def main():
         # Which survey covers THIS region, not "the" DSM layer. See
         # src/surveys.py: a national build is a patchwork of captures and a
         # constant here is how Wellington got pointed at Otago's data.
-        sv = survey_for(bbox, name)
+        try:
+            sv = survey_for(bbox, name)
+        except LookupError as e:
+            # A region whose box pokes past every survey's box (arrowtown_east)
+            # must not stop the fetch for the rest; the build decides whether
+            # it has what it needs.
+            print(f"  WARNING: {e}")
+            continue
         print(f"[{name}] DSM (survey {sv.get('name', 'default')})...")
         fetch_raster_chunked(bbox, api_key, sv["dsm_layer"], "dsm", out_dir, "grid")
 
     # Pass 2: imagery (the long pole), region by region.
     for name in wanted:
-        bbox = config.REGIONS[name]
+        bbox = area_bbox_wgs84(name)   # task.json, config, or the outlines on disk
         out_dir = REGIONS_DIR / name
         print(f"[{name}] imagery ({bbox_area_km2(bbox):.1f} km2)...")
         try:
@@ -150,13 +199,25 @@ def main():
             # Never let that abort the run -- DSM+outlines are what the build
             # actually requires, and builds degrade gracefully without imagery.
             print(f"  WARNING: imagery unavailable for {name} ({type(e).__name__}) -- LiDAR-only build")
+        # The photo from the LiDAR's own year, when it is a different layer:
+        # register_imagery measures each building's lean against it.
+        try:
+            sv = survey_for(bbox, name)
+        except LookupError:
+            continue
+        ref = sv.get("reference_imagery_layer")
+        if ref and ref != sv["imagery_layer"]:
+            try:
+                fetch_raster_chunked(bbox, api_key, ref, "reference_imagery", out_dir, "raster")
+            except Exception as e:
+                print(f"  WARNING: reference imagery unavailable for {name} ({type(e).__name__}) -- drawings not shifted")
 
     # Pass 3: the raw LiDAR point cloud. This is the pipeline's PRIMARY input --
     # segmentation, obstruction height evidence, panel gating and shading all
     # read it, and the Wellington survey carries 16 pts/m2 against the 1 m DSM's
     # single sample. Without it every building falls back to the DSM SILENTLY.
-    # It used to be a second script you had to remember to run. Josh, 31 Aug:
-    # "that should be part of the automatic process for all future regions."
+    # It used to be a second script you had to remember to run; it is part
+    # of the automatic process for every region.
     print(f"\n[point cloud] fetching LiDAR tiles for {len(wanted)} region(s)...")
     try:
         from src.fetch_pointcloud_regions import main as fetch_pointcloud
