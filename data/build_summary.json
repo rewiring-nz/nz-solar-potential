@@ -1,11 +1,14 @@
 {
- "built_at": "2026-09-26T21:05:18Z",
+ "built_at": "2026-09-29T08:32:32Z",
  "regions": [
   "arrowtown_east",
   "arrowtown_hills",
   "arrowtown_millbrook",
   "arthurs_point",
   "arthurs_point_east",
+  "bannockburn",
+  "cromwell_east",
+  "cromwell_west",
   "dalefield",
   "frankton_arm",
   "frankton_arm_lake",
@@ -32,34 +35,34 @@
   "wanaka_west"
  ],
  "totals": {
-  "n": 26735.0,
-  "n_est": 25143.0,
-  "panel_count": 1307384.0,
-  "kwp": 653692.0,
-  "kwh": 729375053.0,
+  "n": 32124.0,
+  "n_est": 30176.0,
+  "panel_count": 1582990.0,
+  "kwp": 791495.0,
+  "kwh": 890088266.0,
   "from_selected_facets": 78290.0
  },
  "by_type": {
   "home": {
-   "n": 25558.0,
-   "n_est": 23970.0,
-   "panel_count": 1042844.0,
-   "kwp": 521422.0,
-   "kwh": 577231762.0
+   "n": 30602.0,
+   "n_est": 28660.0,
+   "panel_count": 1221693.0,
+   "kwp": 610846.5,
+   "kwh": 680229683.0
   },
   "business": {
-   "n": 1038.0,
-   "n_est": 1036.0,
-   "panel_count": 242801.0,
-   "kwp": 121400.5,
-   "kwh": 139284293.0
+   "n": 1324.0,
+   "n_est": 1322.0,
+   "panel_count": 332609.0,
+   "kwp": 166304.5,
+   "kwh": 192890409.0
   },
   "school": {
-   "n": 134.0,
-   "n_est": 132.0,
-   "panel_count": 19181.0,
-   "kwp": 9590.5,
-   "kwh": 11387556.0
+   "n": 193.0,
+   "n_est": 189.0,
+   "panel_count": 26130.0,
+   "kwp": 13065.0,
+   "kwh": 15496732.0
   },
   "hospital": {
    "n": 5.0,
@@ -91,10 +94,10 @@
    "Community"
   ]
  ],
- "cells": 1237,
- "detail_tiles": 41,
- "heatmap_tiles": 3453,
- "addresses": 23339,
+ "cells": 1449,
+ "detail_tiles": 50,
+ "heatmap_tiles": 4114,
+ "addresses": 28224,
  "address_shards": 0,
  "curve_bands": 2
 }
