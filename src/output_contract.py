@@ -49,6 +49,9 @@ BUILDING_ALLOWED = [
     "sys_kwh_7", "sys_kwh_10", "sys_kwh_14", "sys_kwh_17", "sys_kwh_20",
     "sys_kwh_27", "sys_kwh_34", "sys_kwh_45", "sys_kwh_68",
     "btype", "use", "name", "img_dx", "img_dy",
+    # 1 where no LiDAR exists and the roof pitch was guessed
+    # (src/synthesize_dsm.py); absent everywhere else. Optional.
+    "pitch_guessed",
 ]
 
 # panel_layouts.pmtiles, layer "layout": facets, panels and obstructions.

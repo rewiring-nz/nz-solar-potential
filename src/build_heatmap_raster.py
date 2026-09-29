@@ -237,6 +237,14 @@ def main(area="pilot"):
     for i, row in enumerate(gdf.itertuples()):
         bminx, bminy, bmaxx, bmaxy = row.geometry.bounds
         points = pc_source.points_in_bbox(bminx - 1, bminy - 1, bmaxx + 1, bmaxy + 1, building_only=True)
+        if len(points) < 12:
+            # No point cloud here (Kingston's survey is unpublished; Cromwell
+            # has no LiDAR and a synthetic surface): the DSM's own cells, as
+            # every other stage already falls back to. Without this those
+            # regions had no heat map at all.
+            from src.roof_segmentation import _dsm_points_in
+            points = _dsm_points_in(row.geometry.buffer(1.0),
+                                    (dsm_band, dsm_ds.transform, dsm_ds.nodata))
         centroid = row.geometry.centroid
         shade_grid, shade_xs, shade_ys = shading_grid(
             dsm_band, dsm_ds.transform, dsm_ds.nodata, row.geometry, model.hourly,

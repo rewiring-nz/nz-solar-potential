@@ -26,6 +26,7 @@ the measurement that licensed it. The staged split of this file is
 tracked in docs/developers/reviewers-guide.md ("comprehension debt").
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -2190,6 +2191,42 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
     return snap_ridges_to_crest(facets, pc_source) if facets else facets
 
 
+def _synthetic_facets(building_geom, building_id):
+    """The modelled roof of a building with no LiDAR, from the face file
+    src/synthesize_dsm.py wrote, as constructed facets; [] for any building
+    whose faces came from anywhere else."""
+    if building_id is None:
+        return []
+    f = Path(__file__).resolve().parent.parent / "data" / "selected_faces" / f"{building_id}.json"
+    if not f.exists():
+        return []
+    try:
+        doc = json.loads(f.read_text())
+    except (OSError, ValueError):
+        return []
+    if doc.get("source") != "synthetic":
+        return []
+    from shapely.geometry import Polygon
+    from src.roof_partition import _slope_aspect
+    out = []
+    for ring, plane in zip(doc.get("faces") or [], doc.get("planes") or []):
+        try:
+            poly = Polygon(ring)
+        except Exception:
+            continue
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if poly.is_empty or poly.geom_type != "Polygon" or poly.area < 1.0:
+            continue
+        slope, aspect = _slope_aspect(plane)
+        out.append({"building_id": building_id, "geometry": poly,
+                    "plane_a": float(plane[0]), "plane_b": float(plane[1]),
+                    "plane_c": float(plane[2]), "slope_deg": slope, "aspect_deg": aspect,
+                    "area_m2": float(poly.area), "point_count": int(poly.area),
+                    "constructed": True, "synthetic": True})
+    return out
+
+
 def _segment_building_best_unsnapped(dsm_ds, pc_source, building_geom, building_id,
                                      ransac_distance_threshold=None, min_facet_area_m2=None,
                                      imagery_ds=_IMAGERY_UNSET):
@@ -2231,6 +2268,14 @@ def _segment_building_best_unsnapped(dsm_ds, pc_source, building_geom, building_
         raise TypeError(
             "segment_building_best: pass imagery_ds explicitly (None if the area "
             "has no imagery). Defaulting it silently changes which roof model runs.")
+
+    # NO LIDAR HERE: the roof was modelled, not surveyed (src/synthesize_dsm.py),
+    # and its faces and planes are known exactly. Reading them back off the
+    # 1 m synthetic surface flattened small hips (Bannockburn: houses of
+    # 80-200 m2 came out as two faces at 5 degrees for a 20-degree model).
+    facets_syn = _synthetic_facets(building_geom, building_id)
+    if facets_syn:
+        return _attach_building_geometry(facets_syn, building_geom, pc_source, building_id)
 
     if USE_PARTITION:
         facets_pt = _partition_facets(pc_source, building_geom, building_id, imagery_ds)

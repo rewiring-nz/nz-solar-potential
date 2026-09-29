@@ -3736,10 +3736,23 @@ map.on("load", async () => {
       </div>`;
     }
     const est = buildingEstimate(p, coveragePct);
+    // No LiDAR where this building is (src/synthesize_dsm.py): the roof is a
+    // guess from the outline, and the figures must not read like a survey.
+    const guessNote = p.pitch_guessed ? `
+        <div style="background:rgba(214,158,46,.14); border-left:3px solid #d69e2e;
+                    border-radius:3px; padding:8px 11px; margin:6px 0 10px;
+                    font-size:12.5px; line-height:1.45;">
+          <b>Rough estimate: no laser survey here.</b>
+          This area has no LiDAR yet, so the roof is modelled from its outline:
+          a hipped roof at one assumed pitch for houses, flat for large
+          buildings. The real pitch, gables, dormers and tree shade are not
+          known, so the figures can be well off for any one roof.
+        </div>` : "";
     return `
       <div class="popup">
         <h4 style="font-size:17px;">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
+        ${guessNote}
         <div class="est-section" id="est-heatmap" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">

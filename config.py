@@ -75,6 +75,13 @@ REGIONS = {
     "town_south_lake":     [168.6541, -45.0275, 168.6651, -45.0209],  # 56
     "frankton_east_lake":  [168.7478, -45.0307, 168.7564, -45.0215],  # 24
     "kelvin_south":        [168.7528, -45.0519, 168.7718, -45.0405],  # 15
+    # Cromwell and Bannockburn, 29 Sep: no LiDAR, so built on a synthetic
+    # surface (SURVEYS "otago-cromwell-no-lidar"). Boxes from the 2nd-98th
+    # percentile of LINZ outline centroids +150 m, Cromwell split at its
+    # median longitude to stay under the 3,000-building ceiling.
+    "cromwell_west":       [169.1549, -45.0694, 169.1983, -45.0190],  # 2,699
+    "cromwell_east":       [169.1931, -45.0527, 169.2196, -45.0274],  # 2,512
+    "bannockburn":         [169.1326, -45.1030, 169.1814, -45.0761],  # 481
 }
 
 # Default region used by tools/pipeline.py when no region argument is given.
@@ -200,7 +207,35 @@ SURVEYS = [
         "pointcloud_bulk_url": None,
         "pointcloud_tile_year": "2025",
     },
+    {
+        # Cromwell and Bannockburn: NO LIDAR. Every published Otago survey
+        # stops short of the Cromwell basin -- Central Otago 2022-23's nearest
+        # tile is 3 km from Bannockburn and 7.5 km from Cromwell, and neither
+        # Central Otago 2021 nor Otago 2016 reaches it (LINZ tile indexes and
+        # the nz-elevation store, 29 Sep 2026). The surface is synthesised from
+        # the outlines and the 8 m DEM with the roof pitch guessed
+        # (src/synthesize_dsm.py); every building says so on the map.
+        "name": "otago-cromwell-no-lidar",
+        "bbox": [169.12, -45.11, 169.23, -45.01],
+        "elevation": "synthetic",
+        "dsm_layer": None,
+        "dem_layer": None,
+        "lidar_tile_index_layer": None,
+        # Otago 0.1m Urban Aerial Photos (2023-2024): covers both towns'
+        # built-up areas (index tiles checked at each); edge buildings may
+        # have none, which only costs them photo-found obstructions.
+        "imagery_layer": 119455,
+        "reference_imagery_layer": None,     # no LiDAR frame to measure lean against
+        "pointcloud_bulk_url": None,
+        "pointcloud_tile_year": None,
+    },
 ]
+
+# Where no LiDAR exists (a survey with "elevation": "synthetic"): the one
+# pitch every house roof is assumed to have, and the footprint from which a
+# roof is taken to be flat and commercial. Guesses, shown on the map as such.
+PHOTO_ONLY_PITCH_DEG = 20.0
+PHOTO_ONLY_FLAT_MIN_M2 = 400.0
 
 
 # Trina Vertex S+ TSM-500NEG18R.25 -- the panel chosen as representative

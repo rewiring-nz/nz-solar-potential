@@ -183,6 +183,15 @@ def main():
             # it has what it needs.
             print(f"  WARNING: {e}")
             continue
+        if sv.get("elevation") == "synthetic":
+            # No LiDAR has been flown here: the surface is built from the
+            # outlines and the wide DEM, with the roof pitch guessed
+            # (src/synthesize_dsm.py). Rebuilt every fetch -- it takes
+            # seconds and must follow the outlines.
+            from src.synthesize_dsm import synthesize
+            print(f"[{name}] no LiDAR (survey {sv.get('name')}) -- synthetic surface")
+            synthesize(name)
+            continue
         print(f"[{name}] DSM (survey {sv.get('name', 'default')})...")
         fetch_raster_chunked(bbox, api_key, sv["dsm_layer"], "dsm", out_dir, "grid")
 

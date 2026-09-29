@@ -476,7 +476,14 @@ def _build_one_at(building_id, nudge_m):
     # that on the map in seconds, and the cause would have been a confidence
     # score about planes nobody fitted.
     from_labels = bool(facets) and any(f.get("from_labels") for f in facets)
-    modelled = from_labels or confidence >= MIN_ROOF_CONFIDENCE
+    # ...AND NOR IS A ROOF WE MODELLED OURSELVES where no LiDAR exists
+    # (src/synthesize_dsm.py). Its planes are the model; scoring them against
+    # the 1 m surface built from that same model measures rasterising, not
+    # the roof, and withheld 62 of Bannockburn's 489 buildings.
+    synthetic = bool(facets) and any(f.get("synthetic") for f in facets)
+    if synthetic:
+        confidence = 1.0      # not a survey measure: pitch_guessed carries the doubt
+    modelled = from_labels or synthetic or confidence >= MIN_ROOF_CONFIDENCE
 
     # On large commercial roofs, find the large clear areas to place panels
     # on rather than squeezing in every possible face, and ignore any clean

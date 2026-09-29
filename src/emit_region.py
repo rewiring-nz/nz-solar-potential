@@ -66,7 +66,7 @@ DEM_WIDE = DATA_DIR / "dem_wide_mosaic.tif"
 HEATMAP_ZMIN, HEATMAP_ZMAX = 9, 17
 
 # What the map's building layer carries, plus the type fields the toggle reads.
-SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy"]
+SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed"]
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
@@ -147,12 +147,18 @@ def emit(region, out_root=OUT_ROOT):
 
     # 3. building type, from LINZ use/name or size
     use = _use_by_id(paths)
+    # No LiDAR here: the roof was modelled at a guessed pitch
+    # (src/synthesize_dsm.py), and the map has to say so on every building.
+    from src.synthesize_dsm import is_synthetic
+    guessed = is_synthetic(region)
     by_type = defaultdict(lambda: {"n": 0, "n_est": 0, "panel_count": 0,
                                    "kwp": 0.0, "kwh": 0.0})
     for f in feats:
         p = f["properties"]
         u, nm = use.get(int(p["building_id"]), (None, None))
         p["btype"] = classify(u, nm, p.get("facet_area_m2"), p.get("kwp"))
+        if guessed:
+            p["pitch_guessed"] = 1
         if u and u != "Unknown":
             p["use"] = u
         if nm:
@@ -350,6 +356,8 @@ def emit(region, out_root=OUT_ROOT):
         "git": _git_sha(), "centroid": [round(lon, 5), round(lat, 5)],
         "n": len(feats), "n_est": sum(1 for f in feats if (f["properties"].get("panel_count") or 0) > 0),
         "n_matched_layout": matched,
+        # "synthetic" where no LiDAR exists and roofs were guessed
+        "elevation": "synthetic" if guessed else "lidar",
         "panel_count": sum(f["properties"].get("panel_count") or 0 for f in feats),
         "kwp": round(sum(f["properties"].get("kwp") or 0.0 for f in feats), 1),
         "kwh": round(sum(f["properties"].get("ac_kwh_year") or 0.0 for f in feats)),
