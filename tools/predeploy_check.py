@@ -99,6 +99,36 @@ def _ladder_consistent(props_by_id, label):
           "Re-run src/bake_density_deciles.py.")
 
 
+def _live_from_summaries(site):
+    """The LIVE build as the site serves it: its per-region summaries, found
+    through the site's own site-config.js dataBase (the tiles bucket since
+    30 Sep). None where the site has none.
+
+    THE GATE COMPARED AGAINST A FROZEN FILE. It read the site's
+    data/solar_potential.geojson, which the build stopped producing when it
+    went per-region -- so 'live' stayed the 21 Sep release (655,000 panels)
+    through v40, v41 and v42, and every drop was measured against v39."""
+    import re
+    with urllib.request.urlopen(site + "site-config.js", timeout=60) as r:
+        cfg = r.read().decode()
+    m = re.search(r'dataBase:\s*"([^"]+)"', cfg)
+    base = m.group(1) if m else site
+    try:
+        with urllib.request.urlopen(base + "data/build_summary.json", timeout=60) as r:
+            regions = json.loads(r.read().decode()).get("regions") or []
+    except Exception:
+        return None
+    live = {}
+    for name in regions:
+        with urllib.request.urlopen(f"{base}data/summaries/{name}.json", timeout=60) as r:
+            doc = json.loads(r.read().decode())
+        for b, (panels, kwh) in doc.get("ladder", {}).items():
+            live[int(b)] = {"panel_count": panels, "fill_panels_100": panels,
+                            "ac_kwh_year": kwh, "building_id": int(b)}
+    print(f"  live: {len(live):,} buildings from {len(regions)} region summaries at {base}")
+    return live or None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--live-url", default=LIVE_URL)
@@ -113,16 +143,18 @@ def main():
         return 2
     print(f"fetching the live build from {a.live_url.split('/data/')[0]} ...")
     try:
-        with urllib.request.urlopen(a.live_url, timeout=120) as r:
-            live_doc = json.loads(r.read().decode())
+        live = _live_from_summaries(a.live_url.split("/data/")[0] + "/")
+        if live is None:
+            with urllib.request.urlopen(a.live_url, timeout=120) as r:
+                live_doc = json.loads(r.read().decode())
+            live = {int(f["properties"]["building_id"]): f["properties"]
+                    for f in live_doc["features"]
+                    if f["properties"].get("building_id") is not None}
+            print("  (live read from the old merged file -- the site has no region summaries)")
     except Exception as e:
         print(f"could not fetch live: {type(e).__name__}: {e}")
         print("Refusing to pass a check that did not run.")
         return 2
-
-    live = {int(f["properties"]["building_id"]): f["properties"]
-            for f in live_doc["features"]
-            if f["properties"].get("building_id") is not None}
     # THE NEW BUILD IS PER-REGION SUMMARIES NOW (docs/scale-architecture.md).
     # Each carries a per-building [panel_count, kwh] ladder; that is what the
     # gate compares. The merged file is read only where a checkout still has
