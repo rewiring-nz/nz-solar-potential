@@ -15,9 +15,13 @@ in git.
 
 - **v41 live 27 Sep** (48d1991a): every 26 Sep fix plus full z16 panel
   tiles. Gate: +15.6% panels on the buildings live had, none zeroed.
-- **panel_layouts.pmtiles is 58 MB (v42)** (GitHub warns past 50, refuses past
-  100). z16 now ships whole. Before the next region is added: serve tiles
-  from object storage, or split the layer per region.
+- **Data hosting moved to Google Cloud (30 Sep).** The map reads
+  gs://rewiring-solar-tiles/v<N>/ (public, CORS, year-long cache);
+  deploy_from_vm.sh --push publishes there, keeps the newest three versions
+  and commits only site-config.js. Open: the git history still holds 2.3 GB
+  of old data (rewrite needs Josh and Cameron to agree, everyone re-clones);
+  the VM cannot upload (storage read-only scope), so publishing still goes
+  through the laptop.
 - **Over-carving left in v41:** colour blobs on a clean white flat roof
   (#4725716, 32 -> 12) and a 19.5 m2 "height" obstruction only 0.15-0.23 m
   proud (#4731172). Both detectors, not geometry.
