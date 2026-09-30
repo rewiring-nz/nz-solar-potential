@@ -4,35 +4,20 @@
 # committed so a static host (no Python backend) has something to serve.
 data/*
 !data/solar_potential.geojson
-!data/panel_layouts.pmtiles
-!data/heatmap_raster.png
-!data/heatmap_raster.json
-!data/seasonal_curves.json
 !data/marked_scores.json
 # the flagged roofs: tracked, never ignored
 # the drawn lines as a map overlay -- see tools/build_markup_lines.py
-!data/markup_lines.geojson
 !data/roof_cases.json
 # 3D terrain: the DSM as Mapbox terrain-RGB tiles, served straight off Pages
-!data/terrain/
-!data/terrain/**
 
 # Buildings are served as TILES now, not as one solar_potential.geojson
 # download (src/build_building_tiles.py, src/split_building_detail.py). These
 # are what the live map fetches, so they have to be deployed.
 # NOTE: a trailing comment on the same line as a pattern silently breaks it --
 # that has already cost this file once. Comments go on their own line.
-!data/buildings.pmtiles
-!data/building_cells.pmtiles
-!data/addresses.json
-!data/assumptions.json
-!data/building_detail/
-!data/building_detail/**
 
 # The heat map is raster tiles too (tools/build_heatmap_tiles.py), replacing
 # 24 whole-region PNGs the browser downloaded one of to see one street.
-!data/heatmap_tiles/
-!data/heatmap_tiles/**
 
 # The overview copies of the heat map. Dead since it became tiles -- 75 MB
 # across 48 files that nothing fetches, deployed on every push.
@@ -45,8 +30,6 @@ data/heatmaps/lod/
 data/label_set/*
 !data/label_set/queue.json
 !data/label_set/summary.json
-!data/heatmaps/
-!data/heatmaps/*
 tiles/
 .env
 *.laz
@@ -84,8 +67,10 @@ data/pipeline_runs/
 
 # SERVED with the map (docs/scale-architecture.md): per-region summaries for the
 # deploy gate, the build totals, and the per-latitude-band curves.
-!data/summaries/
-!data/summaries/*.json
-!data/build_summary.json
-!data/seasonal_curves/
-!data/seasonal_curves/*.json
+
+# THE MAP'S DATA IS NOT IN GIT (30 Sep 2026). Tiles, detail, heat map,
+# terrain, summaries and curves are published per release to
+# gs://rewiring-solar-tiles/v<N>/data/ (tools/publish_served.py, run by
+# tools/deploy_from_vm.sh) and the page reads them from there through
+# site-config.js dataBase. They stay in data/ locally for the tools; they are
+# no longer committed, so a release no longer adds 80-130 MB to the history.
