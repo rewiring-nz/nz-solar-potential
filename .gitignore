@@ -1,18 +1,15 @@
 .venv/
-# All of data/ is gitignored (raw LiDAR/imagery source, 3GB+) except the
-# small set of pre-built outputs the static frontend actually fetches --
-# committed so a static host (no Python backend) has something to serve.
+# Generated data and fetched source files stay local. Explicit exceptions below
+# are curated project assets that are intentionally versioned.
 data/*
-!data/solar_potential.geojson
 !data/marked_scores.json
 # the flagged roofs: tracked, never ignored
 # the drawn lines as a map overlay -- see tools/build_markup_lines.py
 !data/roof_cases.json
 # 3D terrain: the DSM as Mapbox terrain-RGB tiles, served straight off Pages
 
-# Buildings are served as TILES now, not as one solar_potential.geojson
-# download (src/build_building_tiles.py, src/split_building_detail.py). These
-# are what the live map fetches, so they have to be deployed.
+# The current pipeline publishes map data to the versioned tiles bucket, not
+# Git. The legacy merged data/solar_potential.geojson is a local build artifact.
 # NOTE: a trailing comment on the same line as a pattern silently breaks it --
 # that has already cost this file once. Comments go on their own line.
 

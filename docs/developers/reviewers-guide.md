@@ -64,14 +64,14 @@ nothing for that roof.
 | `data/selected_faces/<id>.json` | `tools/predict_faces.py` | `roof_partition.facets_from_selected_faces` |
 | `data/regions/<r>/panel_layouts.geojson` | `src/build_layout_geojson.py`, then `src/gate_panels.py` (drops), then `src/rerank_layouts.py` (fill_rank bands) | merge, preview tools |
 | `data/regions/<r>/solar_potential.geojson` | `src/derive_solar_potential.py` (+ `add_addresses` patch) | merge |
-| `data/panel_layouts.geojson` (503 MB, untracked) | `src/merge_regions.py` | tiles, deciles |
-| `data/solar_potential.geojson` (tracked, deployed) | `src/merge_regions.py` + `bake_density_deciles` | the live map's dashboard |
-| `data/panel_layouts.pmtiles` (tracked, deployed) | tippecanoe over shrunk layouts | the live map's panel rendering |
+| `data/out/<r>/` (region map output; ignored by Git) | `src/emit_region.py` | `src/combine_regions.py` |
+| combined files under `data/` (ignored by Git) | `src/combine_regions.py` | `tools/publish_served.py`, local preview |
+| `data/solar_potential.geojson` (legacy local output; ignored by Git) | `src/merge_regions.py` + `bake_density_deciles` | legacy/debug tools; not the current map release input |
 | `data/roof_labels.json` | the markup tool (`mark_roofs.html`, GitHub Pages) via `tools/ingest_labels.py` | training, benchmarks, authority rules |
 
-The deployed site IS this repository on GitHub Pages: pushing `main`
-deploys. `tools/predeploy_check.py` diffs a candidate build against the
-LIVE site before any push.
+The frontend is hosted on GitHub Pages; generated map data is published
+separately to the versioned tiles bucket. `tools/predeploy_check.py` compares a
+candidate build with the live site's regional summaries before release.
 
 ## The rule constitution — project rules → enforcement → check
 

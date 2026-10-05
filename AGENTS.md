@@ -53,9 +53,11 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   conversations); write the fact itself.
 - Processing CRS is EPSG:2193 (NZTM2000); web-map output is EPSG:4326. Don't
   mix them.
-- Generated datasets (`data/*.geojson`, rasters, PMTiles) are contracts consumed by the
-  frontend — preserve field names/assumptions unless updating producer and
-  consumer together.
+- Generated datasets are pipeline contracts. The current map build emits
+  per-region artifacts and map tiles; published map data is stored outside Git.
+  The legacy root-level `data/solar_potential.geojson` is ignored and is not a
+  current frontend input. Preserve active output fields and assumptions unless
+  updating producer and consumer together.
 - `config.PV_ASSUMPTIONS` is the single source of truth for PV model
   assumptions shown in the UI; don't hardcode assumption values elsewhere.
 - Update the matching doc in `docs/` in the same change as a command, output,
@@ -118,8 +120,9 @@ Last verified: 2026-09-26
   includes a 30 km EPSG:2193 buffer; LINZ describes that source as
   cartographic rather than suitable for precision terrain analysis.
 - `data/` is not wholly disposable: it contains tracked curated labels,
-  benchmark/truth/verdict assets, trained roof-line models, and map-facing site
-  outputs, alongside ignored regenerable raw inputs and intermediates.
+  benchmark/truth/verdict assets, and trained roof-line models, alongside
+  ignored regenerable raw inputs, local build outputs, and map artifacts
+  published outside Git.
   `git clean -fd` leaves ignored files; `rm -rf data` removes tracked assets
   too.
 

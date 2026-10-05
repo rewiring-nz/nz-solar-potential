@@ -22,24 +22,25 @@ flowchart TB
   F --> H[[region_build.py: dedupe outlines]]
   H --> I[[run_district_build.sh / run_stage.py]]
   I --> J[(per-area layouts and solar_potential)]
-  J --> K[[merge_regions.py and fan-in]]
-  K --> L[(merged GeoJSON, rasters, PMTiles)]
-  L --> M[[Serve locally: preview.html / live_server.py]]
+  J --> K[[emit_region.py and combine_regions.py]]
+  K --> L[(local map tiles, detail, heatmap and summaries)]
+  L --> M[[Preview locally: tools/pipeline_serve.py]]
   M --> N{Validation passes?}
   N -- no: data or config issue --> B
   N -- no: algorithm issue --> O[[Fix src logic]]
   O --> I
-  N -- yes --> P[[Publish via netlify.toml]]
+  N -- yes --> P[[Publish versioned map data to tiles bucket]]
 ```
 
-`run_district_build.sh` is one resumable command covering the whole build and
-merge: per region it runs:
+`run_district_build.sh` is the resumable district build. Per region it runs:
 
 * `build_layout_geojson → gate_panels → rerank_layouts → derive_solar_potential → patch_roof_confidence → bake_building_horizons → build_heatmap_raster`, 
 
-then fans in with:
-
-* `merge_regions → bake_density_deciles → build_terrain_masks → build_seasonal_curves → shrink_panels_for_tiles` and a Tippecanoe PMTiles build. 
+then `emit_region` writes the region's map artifacts and `combine_regions.py`
+combines them into the local map dataset. It does not generate the legacy
+root-level `data/solar_potential.geojson`; that file may remain locally from an
+older merge workflow and is ignored by Git. The current deployment publishes
+map data separately from the GitHub Pages frontend.
 
 Fetching inputs is a separate, earlier step.
 
