@@ -85,7 +85,7 @@ REGIONS = {
 }
 
 # Default region used by tools/pipeline.py when no region argument is given.
-PIPELINE_REGION = "pilot"
+PIPELINE_REGION = "town_gorge_north"
 
 # Buildings confirmed demolished/replaced since the 2021 capture (field
 # reports) -- excluded from every build until LINZ data catches up.
