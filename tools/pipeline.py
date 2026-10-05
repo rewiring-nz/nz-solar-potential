@@ -150,6 +150,10 @@ def _safe_area(area: str) -> str:
     return area
 
 
+def _python_executable(path: str) -> Path:
+    return Path(path).expanduser().absolute()
+
+
 def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
 
@@ -554,7 +558,7 @@ def main() -> int:
         area = _safe_area(args.region)
     except ValueError as exc:
         parser.error(str(exc))
-    py = Path(args.python).expanduser().resolve()
+    py = _python_executable(args.python)
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     RUNS.mkdir(parents=True, exist_ok=True)
     run_dir = RUNS / run_id

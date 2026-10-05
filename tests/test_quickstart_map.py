@@ -88,6 +88,21 @@ def test_pipeline_run_directory_structure():
         assert not list(run_dir.glob("step-*.log"))
 
 
+def test_pipeline_python_path_preserves_virtualenv_symlink():
+    if sys.platform == "win32":
+        return
+    from tools.pipeline import _python_executable
+
+    with tempfile.TemporaryDirectory(prefix="pipeline-python-") as temp:
+        target = Path(temp) / "target-python"
+        target.touch()
+        symlink = Path(temp) / "python"
+        symlink.symlink_to(target)
+        selected = _python_executable(str(symlink))
+        assert selected == symlink
+        assert selected != symlink.resolve()
+
+
 def test_pipeline_preview_targets_shared_data_map():
     from tools.pipeline import _start_preview_server
 
@@ -119,6 +134,7 @@ if __name__ == "__main__":
     test_map_report_lists_new_steps_and_output_paths()
     test_combine_regions_cli_parses_options()
     test_pipeline_run_directory_structure()
+    test_pipeline_python_path_preserves_virtualenv_symlink()
     test_pipeline_preview_targets_shared_data_map()
     test_brewfile_installs_tippecanoe_cli_suite()
     print("quickstart map tests passed")
