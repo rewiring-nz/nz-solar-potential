@@ -5,6 +5,13 @@ in git.
 
 ## Ship
 
+- **Glenorchy and Kinloch -- configured, not yet built (11 Oct).** No LiDAR
+  reaches the head of the lake, so both go on the synthetic-surface path like
+  Cromwell; imagery is Otago 0.3m Rural 2017-2019 (layer 104460), the only
+  current set that covers them. Next: run the fetch (it reports outline
+  counts, and refetches the wide DEM, now reaching 167.89 E), build
+  `glenorchy kinloch`, check bboxes catch every outline, deploy.
+
 - **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
   reaches the Cromwell basin, so they build on a synthetic surface
   (src/synthesize_dsm.py): 8 m DEM ground, hip roofs at 20 degrees under
@@ -117,7 +124,6 @@ in git.
   coherence of the shifts was near chance. Needs a roof-only edge mask and a
   coherence gate before it ships.
 - **arrowtown_hills** builds 50 buildings and estimates none.
-- **Glenorchy** has no LiDAR coverage; it cannot be built.
 - **Open-ended drawn lines:** nine marked roofs need patching for the
   line-extension rule (`tools/patch_labelled.py`).
 

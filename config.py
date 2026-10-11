@@ -67,8 +67,9 @@ REGIONS = {
     "gorge_road_corridor": [168.6599, -45.0018, 168.6822, -44.9757],  # 180
     "tucker_beach":        [168.7096, -44.9725, 168.7485, -44.9478],  # 134
     # sunshine_bay_west REMOVED: 138 buildings but ZERO LiDAR tiles -- outside
-    # the 2021 survey extent entirely (LINZ export: "outside-extent"), same
-    # category as Glenorchy/Kinloch. Cannot be modelled until a new capture.
+    # the 2021 survey extent entirely (LINZ export: "outside-extent"). Glenorchy
+    # and Kinloch were in the same category until the no-LiDAR path existed;
+    # they are built on it now (see below).
     "dalefield":           [168.7491, -44.9630, 168.7924, -44.9377],  # 119
     "arrowtown_hills":     [168.8595, -44.9877, 168.8910, -44.9624],  # 79
     "frankton_arm_lake":   [168.6725, -45.0379, 168.6815, -45.0305],  # 79
@@ -82,6 +83,13 @@ REGIONS = {
     "cromwell_west":       [169.1549, -45.0694, 169.1983, -45.0190],  # 2,699
     "cromwell_east":       [169.1931, -45.0527, 169.2196, -45.0274],  # 2,512
     "bannockburn":         [169.1326, -45.1030, 169.1814, -45.0761],  # 481
+    # Glenorchy and Kinloch, head of Lake Wakatipu: no LiDAR (every published
+    # Otago survey stops east of 168.57; nz-elevation STAC, 11 Oct 2026), so
+    # built on a synthetic surface like Cromwell. Boxes drawn round each
+    # settlement's street grid with ~150 m pad; outline counts not yet taken
+    # from LINZ (the fetch reports them).
+    "glenorchy":           [168.3720, -44.8620, 168.4020, -44.8380],
+    "kinloch":             [168.3380, -44.8480, 168.3620, -44.8300],
 }
 
 # Default region used by tools/pipeline.py when no region argument is given.
@@ -226,6 +234,27 @@ SURVEYS = [
         # have none, which only costs them photo-found obstructions.
         "imagery_layer": 119455,
         "reference_imagery_layer": None,     # no LiDAR frame to measure lean against
+        "pointcloud_bulk_url": None,
+        "pointcloud_tile_year": None,
+    },
+    {
+        # Glenorchy and Kinloch: NO LIDAR. The westernmost Otago survey
+        # (Queenstown 2016/2021) stops at 168.576; both settlements sit near
+        # 168.35-168.40 (nz-elevation STAC, 11 Oct 2026). Synthetic surface,
+        # as for Cromwell.
+        "name": "otago-glenorchy-no-lidar",
+        "bbox": [168.33, -44.87, 168.41, -44.82],
+        "elevation": "synthetic",
+        "dsm_layer": None,
+        "dem_layer": None,
+        "lidar_tile_index_layer": None,
+        # Otago 0.3m Rural Aerial Photos (2017-2019): the only current-era
+        # layer reaching the head of the lake. The 2019-2021 0.3 m set starts
+        # at 168.64, and no urban 0.1 m capture covers either settlement
+        # (nz-imagery STAC tile bboxes checked at both). Old and coarse, so
+        # photo-found obstructions will be weak; it costs nothing else.
+        "imagery_layer": 104460,
+        "reference_imagery_layer": None,
         "pointcloud_bulk_url": None,
         "pointcloud_tile_year": None,
     },

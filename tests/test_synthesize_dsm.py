@@ -41,6 +41,15 @@ def test_flat_roofs_are_level():
     assert np.allclose(z, 205.0)
 
 
+def test_no_lidar_towns_resolve_to_a_synthetic_survey():
+    # A no-LiDAR region that missed its survey box would warn and be skipped
+    # at fetch time, so it would never reach the map.
+    import config
+    from src.surveys import survey_for
+    for name in ("cromwell_west", "cromwell_east", "bannockburn", "glenorchy", "kinloch"):
+        assert survey_for(config.REGIONS[name], name).get("elevation") == "synthetic", name
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
