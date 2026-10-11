@@ -16,11 +16,20 @@
 #   ./tools/sync_vm.sh              # if the VM is idle
 #   ./tools/sync_vm.sh --force      # skip the busy check (know why)
 set -u
-cd "$(dirname "$0")/.."
-LOCAL_ROOT="$(pwd)"
-VM=claude-doing-things
-PROJECT=downloads-417521
-ZONE=australia-southeast1-b
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+LOCAL_ROOT="$REPO_ROOT"
+PY=.venv/bin/python
+. tools/cloud_profile.sh
+
+VM=${SYNC_VM:-claude-doing-things}
+PROJECT=${SYNC_PROJECT:-downloads-417521}
+ZONE=${SYNC_ZONE:-australia-southeast1-b}
+if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
+  VM=${SYNC_VM:-$(cloud_profile_value instance_name)} || exit 2
+  PROJECT=${SYNC_PROJECT:-$(cloud_profile_value project)} || exit 2
+  ZONE=${SYNC_ZONE:-$(cloud_profile_value zone)} || exit 2
+fi
 SSH="gcloud compute ssh $VM --project=$PROJECT --zone=$ZONE --command"
 
 FORCE=0

@@ -29,6 +29,9 @@ data/label_set/*
 !data/label_set/summary.json
 tiles/
 .env
+cloud-profiles.json
+cloud-profiles.local.json
+tools/cloud-profiles.local.json
 *.laz
 *.las
 *.tif

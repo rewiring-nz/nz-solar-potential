@@ -19,6 +19,17 @@ REGION="${1:?region name}"
 PUBLISH=1
 [ "${2:-}" = "--no-publish" ] && PUBLISH=0
 [ -f .env ] && { set -a; . ./.env; set +a; }
+. tools/cloud_profile.sh
+if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
+  PROFILE_BUCKET=$(cloud_profile_value bucket) || exit 2
+  PROFILE_PREFIX=$(cloud_profile_value build_prefix) || exit 2
+  if [ -z "$PROFILE_BUCKET" ] && [ -z "${SOLAR_BUCKET:-}" ]; then
+    echo "Cloud profile '$SOLAR_CLOUD_PROFILE' must define bucket for region publishing." >&2
+    exit 2
+  fi
+  export SOLAR_BUCKET="${SOLAR_BUCKET:-$PROFILE_BUCKET}"
+  export SOLAR_BUILD_PREFIX="${SOLAR_BUILD_PREFIX:-${PROFILE_PREFIX:-build}}"
+fi
 export SOLAR_SELECTED_FACES="${SOLAR_SELECTED_FACES:-1}"
 SHARDS="${SOLAR_PREDICT_SHARDS:-8}"
 LOGDIR=data/build_logs; mkdir -p "$LOGDIR"

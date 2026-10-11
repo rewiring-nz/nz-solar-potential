@@ -40,6 +40,10 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   `report.md` (plus preview-server PID/log when the preview starts). Combining
   replaces the current map contract with the selected region. `tools/pipeline_serve.py`
   serves a preview with PMTiles byte-range support on loopback.
+- `tools/cloud_quickstart.py --profile <name> <action>`: Experimental,
+  opt-in GCP single-VM provisioning, regional run, report collection, preview
+  tunnel, and owned-resource cleanup. It does not integrate cloud provisioning
+  into `tools/pipeline.py`; see [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
 - `bash tests/run_all.sh`: Local automated check entry point running pure Python,
   economics, deprecated-API, repository-sync, architecture-diagram, and synthetic
   region checks (`tests/synthetic`). Add targeted tests under `tests/` when changing
@@ -68,8 +72,9 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 - Treat executable scripts, `config.py`, and committed data contracts as the
   implementation source of truth. Link to them instead of copying volatile
   details.
-- Mark future cloud work, unverified claims, and experiments clearly. Current
-  documented operations run locally.
+- Mark the experimental GCP quickstart and other unverified cloud operations
+  clearly. The data-maintenance baseline runs locally; see
+  [docs/quickstart-cloud.md](docs/quickstart-cloud.md) for the separate cloud path.
 - Keep platform-specific setup in the data maintainer guides under
   [docs/data-maintainers/](docs/data-maintainers/). macOS is the primary
   platform; Ubuntu and Windows guidance is included where it differs.
@@ -80,7 +85,7 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 
 ## Verified project facts
 
-Last verified: 2026-09-26
+Last verified: 2026-10-11
 
 ### Pipeline execution and orchestration
 - Full regional builds isolate each area in its own Python process because
@@ -103,6 +108,10 @@ Last verified: 2026-09-26
 - `config.PIPELINE_REGION` selects the default region for `tools/pipeline.py`;
   the CLI can override it with any configured `config.REGIONS` name. Per-machine
   JSON area configuration has been removed.
+- The experimental GCP quickstart (`tools/cloud_quickstart.py`) provisions one
+  dedicated VM and a profile-scoped SSH firewall rule; profiles are local and
+  non-secret, and cloud provisioning remains outside `tools/pipeline.py`. See
+  [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
 - Pipeline run failures are triaged from each run's `report.md`, then the
   matching numbered step log. [docs/data-maintainers/troubleshooting.md](docs/data-maintainers/troubleshooting.md)
   is the indexed guide for those diagnostics, LINZ permissions, missing Python

@@ -24,6 +24,7 @@
 #   small obj    vents read as crisp contrast, stains do not; edge-drop width.
 #   xref         every import of a repo name, including inside functions and
 #                in tools/, still resolves -- what a deletion breaks first.
+#   cloud        profile validation, target confirmation, and profile routing.
 #   synthetic    the whole district build on a made-up eight-roof region,
 #                fingerprinted against tests/synthetic/reference.json. Runs
 #                anywhere (no LiDAR needed); about a minute.
@@ -55,6 +56,7 @@ else
 fi
 run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
+run "cloud profiles"        $PY tests/test_cloud_profiles.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
 run "roof levels"           $PY tests/test_roof_levels.py
 run "small obstructions"    $PY tests/test_small_obstructions.py

@@ -10,9 +10,18 @@
 # laptop is in the ship path, and it does nothing but relay files the VM
 # built: nothing here is computed on the laptop.
 set -u
-cd "$(dirname "$0")/.."
-VM=claude-doing-things; ZONE=australia-southeast1-b
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 PY=.venv/bin/python
+VM=${DEPLOY_VM:-claude-doing-things}
+PROJECT=${DEPLOY_PROJECT:-$(gcloud config get-value project 2>/dev/null)}
+ZONE=${DEPLOY_ZONE:-australia-southeast1-b}
+. tools/cloud_profile.sh
+if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
+  VM=${DEPLOY_VM:-$(cloud_profile_value instance_name)} || exit 2
+  PROJECT=${DEPLOY_PROJECT:-$(cloud_profile_value project)} || exit 2
+  ZONE=${DEPLOY_ZONE:-$(cloud_profile_value zone)} || exit 2
+fi
 PUSH=0; REVIEWED=""
 [ "${1:-}" = "--push" ] && PUSH=1
 if [ "${1:-}" = "--push-reviewed" ]; then
@@ -23,11 +32,11 @@ fi
 echo "=== pull the served set ==="
 for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles addresses.json \
          assumptions.json seasonal_curves.json build_summary.json markup_lines.geojson; do
-  gcloud compute scp --zone $ZONE --quiet $VM:"~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
+  gcloud compute scp --project="$PROJECT" --zone "$ZONE" --quiet "$VM:~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
 done
 for d in building_detail heatmap_tiles summaries seasonal_curves addresses; do
   rm -rf "data/$d.pull" && mkdir -p "data/$d.pull"
-  if gcloud compute scp --zone $ZONE --quiet --recurse $VM:"~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
+  if gcloud compute scp --project="$PROJECT" --zone "$ZONE" --quiet --recurse "$VM:~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
     rm -rf "data/$d" && mv "data/$d.pull/$d" "data/$d"
   fi
   rm -rf "data/$d.pull"

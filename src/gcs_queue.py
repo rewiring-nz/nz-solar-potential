@@ -30,9 +30,29 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-BUCKET = os.environ.get("SOLAR_BUCKET", "gs://rewiring-solar-data")
-PREFIX = os.environ.get("SOLAR_BUILD_PREFIX", "build")
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from cloud_profile import load_profile
+
+
+def _queue_location() -> tuple[str, str]:
+    bucket = os.environ.get("SOLAR_BUCKET")
+    prefix = os.environ.get("SOLAR_BUILD_PREFIX")
+    if os.environ.get("SOLAR_CLOUD_PROFILE"):
+        profile = load_profile()
+        bucket = bucket or profile.values.get("bucket")
+        prefix = prefix or profile.values.get("build_prefix")
+        if not bucket:
+            raise ValueError(
+                f"cloud profile {profile.name!r} has no bucket; set SOLAR_BUCKET or configure bucket"
+            )
+    return bucket or "gs://rewiring-solar-data", prefix or "build"
+
+
+BUCKET, PREFIX = _queue_location()
 STALE_AFTER_S = 45 * 60      # a claim not refreshed for this long is abandoned
 MAX_ATTEMPTS = 3
 

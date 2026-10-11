@@ -1,0 +1,23 @@
+{
+  "profiles": {
+    "external-poc": {
+      "project": "replace-with-your-project-id",
+      "region": "australia-southeast1",
+      "zone": "australia-southeast1-b",
+      "instance_name": "solar-quickstart",
+      "machine_type": "e2-standard-4",
+      "disk_gb": 100,
+      "image_project": "debian-cloud",
+      "image_family": "debian-12",
+      "service_account": null,
+      "network": "default",
+      "ssh_source_ranges": [
+        "203.0.113.10/32"
+      ],
+      "bucket": null,
+      "build_prefix": null,
+      "tiles_bucket": null,
+      "preview_port": 8765
+    }
+  }
+}

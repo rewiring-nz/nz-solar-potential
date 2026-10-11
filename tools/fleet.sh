@@ -18,33 +18,67 @@
 # fixed at creation, so it cannot publish. Workers are created with
 # storage-rw (to publish) and compute-rw (to delete themselves).
 set -u
-ZONE=${FLEET_ZONE:-australia-southeast1-a}
-SRC_VM=${FLEET_SOURCE_VM:-claude-doing-things}
-SRC_ZONE=${FLEET_SOURCE_ZONE:-australia-southeast1-b}
-IMAGE=${FLEET_IMAGE:-solar-worker}
-MACHINE=${FLEET_MACHINE:-c2d-standard-16}
-DISK_GB=${FLEET_DISK_GB:-400}
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+PY=.venv/bin/python
+. tools/cloud_profile.sh
+
+PROFILE_PROJECT=""
+PROFILE_ZONE=""
+PROFILE_SOURCE_VM=""
+PROFILE_SOURCE_ZONE=""
+PROFILE_IMAGE=""
+PROFILE_MACHINE=""
+PROFILE_DISK=""
+PROFILE_BUCKET=""
+PROFILE_PREFIX=""
+if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
+  PROFILE_PROJECT=$(cloud_profile_value project) || exit 2
+  PROFILE_ZONE=$(cloud_profile_value fleet_zone 2>/dev/null || cloud_profile_value zone) || exit 2
+  PROFILE_SOURCE_VM=$(cloud_profile_value source_vm 2>/dev/null || cloud_profile_value instance_name) || exit 2
+  PROFILE_SOURCE_ZONE=$(cloud_profile_value source_zone 2>/dev/null || cloud_profile_value zone) || exit 2
+  PROFILE_IMAGE=$(cloud_profile_value worker_image 2>/dev/null || echo solar-worker)
+  PROFILE_MACHINE=$(cloud_profile_value fleet_machine_type 2>/dev/null || cloud_profile_value machine_type) || exit 2
+  PROFILE_DISK=$(cloud_profile_value fleet_disk_gb 2>/dev/null || cloud_profile_value disk_gb) || exit 2
+  PROFILE_BUCKET=$(cloud_profile_value bucket 2>/dev/null || true)
+  PROFILE_PREFIX=$(cloud_profile_value build_prefix 2>/dev/null || true)
+  if [ -z "$PROFILE_BUCKET" ] && [ -z "${SOLAR_BUCKET:-}" ]; then
+    echo "Cloud profile '$SOLAR_CLOUD_PROFILE' must define bucket before running fleet tooling." >&2
+    exit 2
+  fi
+fi
+
+PROJECT=${FLEET_PROJECT:-${PROFILE_PROJECT:-$(gcloud config get-value project 2>/dev/null)}}
+ZONE=${FLEET_ZONE:-${PROFILE_ZONE:-australia-southeast1-a}}
+SRC_VM=${FLEET_SOURCE_VM:-${PROFILE_SOURCE_VM:-claude-doing-things}}
+SRC_ZONE=${FLEET_SOURCE_ZONE:-${PROFILE_SOURCE_ZONE:-australia-southeast1-b}}
+IMAGE=${FLEET_IMAGE:-${PROFILE_IMAGE:-solar-worker}}
+MACHINE=${FLEET_MACHINE:-${PROFILE_MACHINE:-c2d-standard-16}}
+DISK_GB=${FLEET_DISK_GB:-${PROFILE_DISK:-400}}
+BUCKET=${SOLAR_BUCKET:-${PROFILE_BUCKET:-gs://rewiring-solar-data}}
+BUILD_PREFIX=${SOLAR_BUILD_PREFIX:-${PROFILE_PREFIX:-build}}
+export SOLAR_BUCKET="$BUCKET" SOLAR_BUILD_PREFIX="$BUILD_PREFIX"
 PREFIX=solar-worker
-STARTUP=$(cat <<'EOS'
+STARTUP=$(cat <<EOS
 #!/bin/bash
 # runs as root at boot; the checkout and venv live in j's home on the image
-su - j -c 'cd ~/solar-map && git pull -q 2>/dev/null; SOLAR_SELF_DELETE=1 ./src/worker.sh' \
+su - j -c 'cd ~/solar-map && git pull -q 2>/dev/null; SOLAR_BUCKET="$BUCKET" SOLAR_BUILD_PREFIX="$BUILD_PREFIX" SOLAR_SELF_DELETE=1 ./src/worker.sh' \
   >> /var/log/solar-worker.log 2>&1
 EOS
 )
 
 case "${1:-}" in
   image)
-    echo "imaging $SRC_VM's disk as $IMAGE (the VM keeps running; --force allows that)"
-    gcloud compute images delete "$IMAGE" --quiet 2>/dev/null || true
+    echo "imaging $SRC_VM's disk as $IMAGE in project $PROJECT (the VM keeps running; --force allows that)"
+    gcloud compute images delete "$IMAGE" --project="$PROJECT" --quiet 2>/dev/null || true
     gcloud compute images create "$IMAGE" --source-disk "$SRC_VM" \
-      --source-disk-zone "$SRC_ZONE" --force --quiet
+      --project="$PROJECT" --source-disk-zone "$SRC_ZONE" --force --quiet
     ;;
   up)
     N=${2:?how many workers}
     for i in $(seq 1 "$N"); do
       NAME="$PREFIX-$(date -u +%m%d)-$i-$RANDOM"
-      gcloud compute instances create "$NAME" --zone "$ZONE" \
+      gcloud compute instances create "$NAME" --project="$PROJECT" --zone "$ZONE" \
         --machine-type "$MACHINE" --image "$IMAGE" \
         --boot-disk-size "${DISK_GB}GB" --boot-disk-type pd-balanced \
         --provisioning-model SPOT --instance-termination-action DELETE \
@@ -56,17 +90,17 @@ case "${1:-}" in
     ;;
   status)
     cd "$(dirname "$0")/.." && .venv/bin/python src/gcs_queue.py
-    echo "workers:"; gcloud compute instances list --filter="labels.role=solar-worker" \
+    echo "workers:"; gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-worker" \
       --format="table(name,zone.basename(),machineType.basename(),status,creationTimestamp.date('%H:%M'))"
     ;;
   list)
-    gcloud compute instances list --filter="labels.role=solar-worker"
+    gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-worker"
     ;;
   down)
-    NAMES=$(gcloud compute instances list --filter="labels.role=solar-worker" --format="value(name,zone.basename())")
+    NAMES=$(gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-worker" --format="value(name,zone.basename())")
     [ -n "$NAMES" ] || { echo "no workers"; exit 0; }
     echo "$NAMES" | while read -r name zone; do
-      gcloud compute instances delete "$name" --zone "$zone" --quiet &
+      gcloud compute instances delete "$name" --project="$PROJECT" --zone "$zone" --quiet &
     done; wait
     ;;
   *)

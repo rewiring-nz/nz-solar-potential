@@ -28,15 +28,38 @@ page stay on GitHub; the data lives here.
 """
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from cloud_profile import load_profile
+
 DATA = ROOT / "data"
-BUCKET = "gs://rewiring-solar-tiles"
-PUBLIC_BASE = "https://storage.googleapis.com/rewiring-solar-tiles"
+
+
+def _tiles_bucket() -> str:
+    configured = os.environ.get("SOLAR_TILES_BUCKET")
+    if configured:
+        return configured
+    if os.environ.get("SOLAR_CLOUD_PROFILE"):
+        profile = load_profile()
+        bucket = profile.values.get("tiles_bucket")
+        if not bucket:
+            raise ValueError(
+                f"cloud profile {profile.name!r} has no tiles_bucket; "
+                "set SOLAR_TILES_BUCKET or configure tiles_bucket"
+            )
+        return bucket
+    return "gs://rewiring-solar-tiles"
+
+
+BUCKET = _tiles_bucket()
+PUBLIC_BASE = f"https://storage.googleapis.com/{BUCKET.removeprefix('gs://')}"
 SERVED_FILES = ["panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles",
                 "addresses.json", "assumptions.json", "seasonal_curves.json",
                 "build_summary.json", "markup_lines.geojson"]
