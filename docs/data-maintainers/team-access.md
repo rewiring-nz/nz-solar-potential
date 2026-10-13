@@ -1,7 +1,8 @@
 # Team access
 
 **Status, October 2026: being set up.** Secret Manager holds `linz-api-key`;
-the Google Group and its roles are not created yet.
+the team's Google Group is `solarpotential@googlegroups.com`;
+its roles are being granted.
 
 Everything a contributor needs is reached with two accounts: a **GitHub**
 account (code, tasks, reviews) and a **Google** account (the cloud project).
@@ -18,7 +19,8 @@ accounts.google.com ("Use my current email address instead").
 | Build machine | VM `claude-doing-things`, australia-southeast1-b | the team's Google Group |
 | API keys | Google Secret Manager (`linz-api-key`) | read: the team's Google Group and the VM |
 
-Access is granted to one **Google Group**, not to individuals, so adding or
+Access is granted to one **Google Group** (`solarpotential@googlegroups.com`),
+not to individuals, so adding or
 removing a person is one change in the group. Billing and project ownership
 stay with the project owner.
 
