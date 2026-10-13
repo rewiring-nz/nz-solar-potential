@@ -19,7 +19,8 @@ and assign work.
   20.1 degrees. Where it could still matter: which face takes the panels
   first (north share error 12 vs 13 points) -- worth retesting on panel
   counts, not sunshine, if the no-LiDAR towns grow.
-- **Small no-LiDAR buildings now gabled (57a9eb49).** Under 60 m2, 1 roof
+- **Small no-LiDAR buildings now gabled (57a9eb49) -- live in v45 (13 Oct).**
+  Gate: +10,090 panels (+0.6%), none zeroed or down 30%. Under 60 m2, 1 roof
   in 141 is a hip in the LiDAR; gables leave faces big enough for panels.
   Rebuilding the six no-LiDAR regions for v45.
 - **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
