@@ -29,8 +29,9 @@ from pathlib import Path
 
 import numpy as np
 
-LIVE = Path(__file__).resolve().parents[2]
 TRIAL = Path(os.environ.get("NO_LIDAR_TRIAL_DIR", Path.home() / "trial-nolidar"))
+# The live checkout -- not this file's own tree, which inside the trial IS the trial.
+LIVE = Path(os.environ.get("SOLAR_LIVE_DIR", Path.home() / "solar-map"))
 RESULTS = TRIAL / "trial_results"
 
 
