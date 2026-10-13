@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT))
 from src import photo_shape as ps  # noqa: E402
 
 TEST_REGIONS = {"wanaka_town", "wanaka_west", "wanaka_albert_town", "hawea"}
-VAL_REGIONS = {"arrowtown_east"}
+VAL_REGIONS = {"kelvin_heights"}
 OUT = ROOT / "data" / "models" / "photo_shape_v1.pt"
 
 
