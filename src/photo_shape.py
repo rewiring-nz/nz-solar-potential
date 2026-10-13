@@ -31,7 +31,7 @@ OUT_CH = 4           # flat logit, dir east, dir north, slope logit
 MIN_FACE_M2 = 4.0
 
 
-def build_model(pretrained=True):
+def build_model(pretrained=True, out_ch=OUT_CH):
     import torch
     import torch.nn as nn
     from torchvision.models import ResNet18_Weights, resnet18
@@ -58,7 +58,7 @@ def build_model(pretrained=True):
             self.u2, self.c2 = nn.ConvTranspose2d(128, 64, 2, 2), block(128, 64)
             self.u1, self.c1 = nn.ConvTranspose2d(64, 64, 2, 2), block(128, 64)
             self.u0, self.c0 = nn.ConvTranspose2d(64, 32, 2, 2), block(32, 32)
-            self.out = nn.Conv2d(32, OUT_CH, 1)
+            self.out = nn.Conv2d(32, out_ch, 1)
 
         def forward(self, x):
             s = self.stem(x)
@@ -96,9 +96,9 @@ def decode(out):
     return flat, d[:, 0], d[:, 1], slope
 
 
-def load(path, device="cpu"):
+def load(path, device="cpu", out_ch=OUT_CH):
     import torch
-    m = build_model(pretrained=False)
+    m = build_model(pretrained=False, out_ch=out_ch)
     m.load_state_dict(torch.load(path, map_location=device)["state"])
     return m.eval().to(device)
 
