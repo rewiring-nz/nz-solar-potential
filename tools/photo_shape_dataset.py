@@ -149,7 +149,11 @@ def _facets_by_building(region):
 
 def _outlines(region):
     from shapely.geometry import shape
-    fc = json.loads((REGIONS_DIR / region / "building_outlines_dedup.geojson").read_text())
+    d = REGIONS_DIR / region
+    f = d / "building_outlines_dedup.geojson"
+    if not f.exists():          # no-LiDAR towns keep only the raw outlines
+        f = d / "building_outlines.geojson"
+    fc = json.loads(f.read_text())
     out = {}
     for f in fc["features"]:
         p = f["properties"]
