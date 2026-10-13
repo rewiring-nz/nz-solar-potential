@@ -267,6 +267,15 @@ def emit(region, out_root=OUT_ROOT):
             cell["panel_count"] += p.get("panel_count") or 0
             cell["fitted_kwp"] += p.get("kwp") or 0.0
             cell["fitted_kwh"] += p.get("ac_kwh_year") or 0.0
+            # THE DENSITY LADDER, SUMMED. Below the building zoom the map adds
+            # up cells, and with only fitted_kwp/kwh (every panel, 100%) the
+            # density slider could not move the total from orbit. A building's
+            # fill ladder is cumulative best-panels-first, so the cell's sum is
+            # the same ladder for the whole cell, and interpolating it is
+            # exactly the sum of its buildings' interpolations.
+            for d in range(10, 101, 10):
+                cell[f"fill_panels_{d}"] = cell.get(f"fill_panels_{d}", 0.0) + (p.get(f"fill_panels_{d}") or 0.0)
+                cell[f"fill_kwh_{d}"] = cell.get(f"fill_kwh_{d}", 0.0) + (p.get(f"fill_kwh_{d}") or 0.0)
             if per_pct:
                 cell["n_est"] += 1
                 for pct, kwp, kwh in per_pct:

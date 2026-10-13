@@ -2454,8 +2454,18 @@ map.on("load", async () => {
       n += c.properties.n || 0;
       kwp += lerpCell(c.properties, "kwp", coveragePct);
       kwhYear += lerpCell(c.properties, "kwh", coveragePct);
-      fittedKwp += c.properties.fitted_kwp || 0;
-      fittedKwh += c.properties.fitted_kwh || 0;
+      // The PLACED panels at the slider's density, from the cell's summed
+      // fill ladder -- the same interpolation each building gets at closer
+      // zooms. Cells from before the ladder existed carry only the 100%
+      // totals, which is what this used to show at every density.
+      if (c.properties.fill_panels_100 != null) {
+        fittedKwp += decileInterp(c.properties, "fill_panels", panelDensityPct)
+          * assumptions.panel_rated_power_w / 1000;
+        fittedKwh += decileInterp(c.properties, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      } else {
+        fittedKwp += c.properties.fitted_kwp || 0;
+        fittedKwh += c.properties.fitted_kwh || 0;
+      }
       for (const pct of COVERAGE_OPTION_STEPS) {
         ladder[pct].kwp += lerpCell(c.properties, "kwp", pct);
         ladder[pct].kwh += lerpCell(c.properties, "kwh", pct);
@@ -2485,8 +2495,8 @@ map.on("load", async () => {
     // This branch used to run only for the heat map; in Panel Layout the
     // code fell through to the per-building sum, found nothing loaded, and
     // the sidebar read "0.0 kW" over a whole town (Wanaka).
-    // Layout mode sums the cells' PLACED panels (fitted_kwp/fitted_kwh --
-    // every panel that fits, i.e. 100% density); the heat map sums the
+    // Layout mode sums the cells' PLACED panels at the slider's density (each
+    // cell's summed fill ladder; see cellSummary); the heat map sums the
     // coverage ladder at the chosen percentage, as before.
     if (map.getZoom() < BUILDING_MIN_Z) {
       const c = cellSummary();

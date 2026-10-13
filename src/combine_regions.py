@@ -104,6 +104,12 @@ def _combine_cells(regions, out_root, dest_tmp):
         for pct in COVERAGE_STEPS:
             props[f"kwp_{pct}"] = round(v.get(f"kwp_{pct}", 0.0), 1)
             props[f"kwh_{pct}"] = round(v.get(f"kwh_{pct}", 0.0), 0)
+        # the density ladder, so the slider moves the zoomed-out total
+        # (emit_region: "THE DENSITY LADDER, SUMMED")
+        for d in range(10, 101, 10):
+            if f"fill_panels_{d}" in v:
+                props[f"fill_panels_{d}"] = round(v[f"fill_panels_{d}"], 1)
+                props[f"fill_kwh_{d}"] = round(v[f"fill_kwh_{d}"], 0)
         feats.append({"type": "Feature", "properties": props,
                       "geometry": {"type": "Polygon", "coordinates": [[
                           [w, s], [e, s], [e, n], [w, n], [w, s]]]}})
