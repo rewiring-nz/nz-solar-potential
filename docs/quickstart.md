@@ -5,7 +5,8 @@ _This quickstart describes howto build rooftop spatial datasets from source, and
 
 ```sh
 cd ~
-git clone git@github.com:rewiring-nz/solar-estimates.git
+git clone https://github.com/rewiring-nz/nz-solar-potential.git
+cd nz-solar-potential
 ```
 
 ## 2. Setup Environment
@@ -36,7 +37,20 @@ Run the pipeline:
 bash quickstart.sh
 ```
 
-This will generate data for the default `PIPELINE_REGION` set in `nz-solar-potential/config.py`.
+This runs locally by default and generates data for `PIPELINE_REGION` in
+`config.py`. Pass a configured region name to select another area.
+
+To run the same pipeline on an already-created and bootstrapped cloud VM:
+
+```sh
+bash quickstart.sh --mode cloud --profile external-poc frankton_arm_lake
+```
+
+Cloud mode copies the VM's run report and log to local `data/pipeline_runs/`.
+It runs the VM's existing checkout, not local workstation changes; update that
+checkout to the intended commit before starting a cloud run.
+Start its map preview tunnel separately with
+`python3 tools/cloud_quickstart.py --profile external-poc preview`.
 
 # 5. Review status
 
@@ -49,6 +63,6 @@ This will generate data for the default `PIPELINE_REGION` set in `nz-solar-poten
 
 Try generating data for another region, as defined in the `REGIONS` in `nz-solar-potential/config.py`:
 
-```
+```sh
 bash quickstart.sh town_gorge_north
 ```

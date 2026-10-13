@@ -6,11 +6,18 @@ Run: .venv/bin/python tests/test_quickstart_reporting.py
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.pipeline import PipelineRun, _evaluate_fetch, _safe_area
+from tools.pipeline import (
+    PipelineRun,
+    _argument_parser,
+    _evaluate_fetch,
+    _run_cloud_mode,
+    _safe_area,
+)
 
 QuickstartRun = PipelineRun
 
@@ -90,9 +97,49 @@ def test_child_output_redacts_api_key_before_logging():
         assert "[REDACTED]" in run.log_path.read_text(encoding="utf-8")
 
 
+def test_pipeline_cli_defaults_to_local_and_keeps_default_region():
+    parser = _argument_parser("town_gorge_north")
+    args = parser.parse_args([])
+    assert args.mode == "local"
+    assert args.region == "town_gorge_north"
+    assert args.port is None
+
+
+def test_cloud_mode_dispatches_selected_region_and_profile():
+    with patch("tools.pipeline.subprocess.run") as run:
+        run.return_value.returncode = 0
+        assert _run_cloud_mode("external-poc", "frankton_arm_lake", 8765) == 0
+    command = run.call_args.args[0]
+    assert command[-6:] == [
+        "--profile", "external-poc", "run", "frankton_arm_lake", "--port", "8765",
+    ]
+    assert command[1].endswith("tools/cloud_quickstart.py")
+
+
+def test_cloud_remote_command_tracks_only_new_pipeline_runs():
+    from tools.cloud_quickstart import _remote_pipeline_command, _report_preview_port
+    import tempfile
+
+    command = _remote_pipeline_command("frankton_arm_lake", 8765)
+    assert "tools/pipeline.py frankton_arm_lake --port 8765 --no-open-browser" in command
+    assert "CLOUD_RUN_ID=%s" in command
+    assert "before=$(find data/pipeline_runs" in command
+    assert "data/pipeline_runs" in command
+    with tempfile.TemporaryDirectory(prefix="quickstart-cloud-report-", dir=ROOT) as tmp:
+        report = Path(tmp) / "report.md"
+        report.write_text(
+            "- **Map preview:** [http://127.0.0.1:9123/preview.html?lat=1&lng=2](url)\n",
+            encoding="utf-8",
+        )
+        assert _report_preview_port(report) == 9123
+
+
 if __name__ == "__main__":
     for test in (test_area_names_are_path_safe, test_report_and_logs_share_step_number_and_label,
                  test_failed_step_updates_report, test_fetch_requires_wide_dem_after_fetch_stage,
-                 test_child_output_redacts_api_key_before_logging):
+                 test_child_output_redacts_api_key_before_logging,
+                 test_pipeline_cli_defaults_to_local_and_keeps_default_region,
+                 test_cloud_mode_dispatches_selected_region_and_profile,
+                 test_cloud_remote_command_tracks_only_new_pipeline_runs):
         test()
     print("quickstart reporting tests passed")

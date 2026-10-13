@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -273,25 +274,116 @@ def _ssh(
     _run(args)
 
 
+def _ssh_stream(profile: CloudProfile, command: str) -> tuple[int, str]:
+    args = [
+        _gcloud(), "compute", "ssh", profile.values["instance_name"],
+        f"--project={profile.values['project']}", f"--zone={profile.values['zone']}",
+        f"--command={command}",
+    ]
+    try:
+        process = subprocess.Popen(
+            args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace", bufsize=1,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"could not start gcloud ssh: {type(exc).__name__}: {exc}") from exc
+    run_id = ""
+    assert process.stdout is not None
+    try:
+        for line in process.stdout:
+            stripped = line.rstrip("\r\n")
+            if stripped.startswith("CLOUD_RUN_ID="):
+                run_id = stripped.partition("=")[2]
+                continue
+            print(line, end="", flush=True)
+    except KeyboardInterrupt:
+        process.send_signal(signal.SIGINT)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            process.wait()
+        raise
+    returncode = process.wait()
+    if run_id and not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z(?:-[0-9]{2})?", run_id):
+        raise RuntimeError(f"remote pipeline returned an invalid run ID: {run_id!r}")
+    return returncode, run_id
+
+
 def _region_name(region: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", region):
         raise ValueError("region must be 1-64 letters, digits, '_' or '-', and start with a letter or digit")
     return region
 
 
-def _run_pipeline(profile: CloudProfile, region: str) -> None:
+def _collect_run(profile: CloudProfile, run_id: str) -> Path:
+    if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z(?:-[0-9]{2})?", run_id):
+        raise ValueError(f"invalid pipeline run ID: {run_id!r}")
+    runs = ROOT / "data" / "pipeline_runs"
+    local_run = runs / run_id
+    if local_run.exists():
+        raise RuntimeError(f"local pipeline run already exists; refusing to overwrite {local_run}")
+    runs.mkdir(parents=True, exist_ok=True)
+    _run([
+        _gcloud(), "compute", "scp", "--recurse",
+        f"--project={profile.values['project']}", f"--zone={profile.values['zone']}",
+        f"{profile.values['instance_name']}:~/nz-solar-potential/data/pipeline_runs/{run_id}",
+        str(runs),
+    ])
+    if not (local_run / "report.md").is_file() or not (local_run / "run.log").is_file():
+        raise RuntimeError(
+            f"remote run {run_id} was copied, but its report.md or run.log is missing"
+        )
+    return local_run
+
+
+def _report_preview_port(report: Path) -> int | None:
+    try:
+        content = report.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"could not read collected pipeline report {report}: {exc}") from exc
+    match = re.search(r"\*\*Map preview:\*\* \[http://127\.0\.0\.1:(\d+)/", content)
+    return int(match.group(1)) if match else None
+
+
+def _remote_pipeline_command(region: str, port: int) -> str:
     selected = _region_name(region)
-    port = profile.values["preview_port"]
-    remote = (
-        "set -Eeuo pipefail; cd \"$HOME/nz-solar-potential\"; "
-        "test -s .env || { echo 'Missing .env with LINZ_API_KEY; create it locally on this VM first.' >&2; exit 2; }; "
-        f".venv/bin/python -c 'import socket; s=socket.socket(); s.bind((\"127.0.0.1\", {port})); s.close()' "
-        "|| { echo 'Configured preview port is already in use; stop the old preview or change preview_port.' >&2; exit 2; }; "
-        f".venv/bin/python tools/pipeline.py {selected} --port {port} --no-open-browser"
+    if not 1024 <= port <= 65535:
+        raise ValueError("preview port must be between 1024 and 65535")
+    return (
+        "set -u; cd \"$HOME/nz-solar-potential\" || exit 2; "
+        "before=$(find data/pipeline_runs -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort); "
+        f".venv/bin/python tools/pipeline.py {selected} --port {port} --no-open-browser; "
+        "pipeline_status=$?; "
+        "after=$(find data/pipeline_runs -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort); "
+        "run_id=; "
+        "for candidate in $after; do "
+        "case \" $before \" in *\" $candidate \"*) ;; *) run_id=$candidate ;; esac; "
+        "done; "
+        "printf '\\nCLOUD_RUN_ID=%s\\n' \"$run_id\"; "
+        "exit \"$pipeline_status\""
     )
-    print(f"Running configured region {selected!r} on {profile.target}. The map preview binds to VM loopback.")
-    _ssh(profile, command=remote)
-    print(f"When complete, use `preview` and open http://127.0.0.1:{port}/")
+
+
+def _run_pipeline(profile: CloudProfile, region: str, port: int = 8765) -> int:
+    selected = _region_name(region)
+    print(f"Running configured region {selected!r} on {profile.target}.")
+    returncode, run_id = _ssh_stream(profile, _remote_pipeline_command(selected, port))
+    if not run_id:
+        if returncode:
+            raise RuntimeError(
+                f"remote pipeline exited with status {returncode} before returning a run ID; "
+                "inspect the VM's data/pipeline_runs and retry report collection"
+            )
+        raise RuntimeError("remote pipeline completed without returning a run ID")
+    local_run = _collect_run(profile, run_id)
+    print(f"Pipeline report: {local_run / 'report.md'}")
+    print(f"Combined log: {local_run / 'run.log'}")
+    actual_port = _report_preview_port(local_run / "report.md")
+    if actual_port is not None:
+        print("When complete, start the SSH preview tunnel with "
+              f"`python3 tools/cloud_quickstart.py --profile {profile.name} preview --port {actual_port}`.")
+    return returncode
 
 
 def _status(profile: CloudProfile) -> None:
@@ -360,8 +452,12 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("ssh", help="open an interactive SSH session")
     run = sub.add_parser("run", help="run the local quickstart pipeline on the VM")
     run.add_argument("region", help="configured region name, e.g. frankton_arm_lake")
+    run.add_argument("--port", type=int, default=None,
+                     help="preferred preview port (defaults to the profile setting)")
     sub.add_parser("collect", help="copy VM pipeline reports and logs into local data/cloud_runs/")
-    sub.add_parser("preview", help="open a loopback-only SSH tunnel for the map preview")
+    preview = sub.add_parser("preview", help="open a loopback-only SSH tunnel for the map preview")
+    preview.add_argument("--port", type=int, default=None,
+                         help="VM preview port (defaults to the profile setting)")
     sub.add_parser("status", help="show the selected VM state")
     delete = sub.add_parser("delete", help="delete only a VM labelled as quickstart-managed")
     delete.add_argument("--confirm", help="must exactly equal project/zone/instance_name")
@@ -381,11 +477,17 @@ def main(argv: list[str] | None = None) -> int:
         elif args.action == "ssh":
             _ssh(profile)
         elif args.action == "run":
-            _run_pipeline(profile, args.region)
+            result = _run_pipeline(
+                profile, args.region,
+                args.port if args.port is not None else profile.values["preview_port"],
+            )
+            return result
         elif args.action == "collect":
             _collect(profile)
         elif args.action == "preview":
-            port = profile.values["preview_port"]
+            port = args.port if args.port is not None else profile.values["preview_port"]
+            if not 1024 <= port <= 65535:
+                raise ValueError("preview port must be between 1024 and 65535")
             _ssh(profile, extra=["-N", "-L", f"{port}:127.0.0.1:{port}"])
         elif args.action == "status":
             _status(profile)

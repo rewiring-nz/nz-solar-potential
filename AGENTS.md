@@ -38,8 +38,10 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   estimates, then emits and combines the map contract directly under `data/`.
   Diagnostic logs are recorded under `data/pipeline_runs/<run-id>/run.log` and
   `report.md` (plus preview-server PID/log when the preview starts). Combining
-  replaces the current map contract with the selected region. `tools/pipeline_serve.py`
-  serves a preview with PMTiles byte-range support on loopback.
+  replaces the current map contract with the selected region. Runs locally by
+  default; `--mode cloud --profile <name>` runs the same pipeline on an
+  existing, bootstrapped GCP VM and collects its report/log locally.
+  `tools/pipeline_serve.py` serves a preview with PMTiles byte-range support on loopback.
 - `tools/cloud_quickstart.py --profile <name> <action>`: Experimental,
   opt-in GCP single-VM provisioning, regional run, report collection, preview
   tunnel, and owned-resource cleanup. It does not integrate cloud provisioning

@@ -1,8 +1,9 @@
 # Cloud quickstart (Google Cloud)
 
 Run one configured solar region on a Google Compute Engine VM using
-`tools/cloud_quickstart.py`. Cloud provisioning is separate from
-`tools/pipeline.py`.
+`bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Cloud VM
+provisioning and bootstrap remain explicit setup steps in
+`tools/cloud_quickstart.py`.
 
 The quickstart builds a whole configured region; it does not cap building
 count. `frankton_arm_lake` is currently listed at about 79 buildings in
@@ -67,8 +68,17 @@ for current prices. Disk charges continue while a VM is stopped.
    profile or repository. From your workstation:
 
    ```sh
-   python3 tools/cloud_quickstart.py --profile external-poc run frankton_arm_lake
+   bash quickstart.sh --mode cloud --profile external-poc frankton_arm_lake
    ```
+
+   The numbered report and combined run log are copied to local
+   `data/pipeline_runs/<run-id>/`, matching local-run output.
+   Cloud mode runs the checkout already on the VM; it does not upload local
+   changes. Before a run, connect with `ssh`, update the VM checkout to the
+   intended commit, and confirm the working tree is clean. Uncommitted
+   workstation changes are not included.
+   Cloud mode currently delegates VM operations to `tools/cloud_quickstart.py`;
+   that helper remains the explicit provisioning interface during this transition.
 
 7. Open the preview through an SSH tunnel:
 
@@ -125,3 +135,6 @@ region. The environment owner is responsible for shared-resource cleanup.
 This is a single-VM workflow. It does not start a fleet, publish map data,
 change bucket IAM, or integrate cloud provisioning into `tools/pipeline.py`.
 For run failures, see the [troubleshooting guide](data-maintainers/troubleshooting.md).
+Keep cloud selection behind the shared quickstart/pipeline interface as the
+cloud backend grows; retire the standalone helper only after its lifecycle
+operations have a tested replacement.

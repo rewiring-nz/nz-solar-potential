@@ -541,23 +541,56 @@ def _start_preview_server(area: str, run: PipelineRun, py: Path,
         return False, ""
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the regional solar pipeline with persistent numbered logs.")
-    sys.path.insert(0, str(ROOT))
-    import config
-    parser.add_argument("region", nargs="?", default=config.PIPELINE_REGION,
-                        help=f"configured region to process (default: {config.PIPELINE_REGION})")
+def _argument_parser(default_area: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the regional solar pipeline with persistent numbered logs.")
+    parser.add_argument("region", nargs="?", default=default_area,
+                        help=f"configured region to process (default: {default_area})")
+    parser.add_argument("--mode", choices=("local", "cloud"), default="local",
+                        help="where to run the pipeline (default: local)")
+    parser.add_argument("--profile",
+                        help="named local GCP profile; required with --mode cloud")
     parser.add_argument("--python", dest="python", default=sys.executable,
-                        help="Python executable used for pipeline subprocesses (defaults to this interpreter)")
-    parser.add_argument("--port", type=int, default=8765,
-                        help="preferred local preview port (uses another free port if occupied)")
+                        help="Python executable used for local pipeline subprocesses")
+    parser.add_argument("--port", type=int, default=None,
+                        help="preferred preview port (uses another free port if occupied)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="start the local preview server but do not open a browser tab")
+    return parser
+
+
+def _run_cloud_mode(profile: str, area: str, port: int | None) -> int:
+    command = [
+        sys.executable, str(ROOT / "tools" / "cloud_quickstart.py"),
+        "--profile", profile, "run", area,
+    ]
+    if port is not None:
+        command.extend(["--port", str(port)])
+    try:
+        result = subprocess.run(command, cwd=ROOT, check=False)
+    except OSError as exc:
+        print(f"Could not start cloud quickstart helper: {type(exc).__name__}: {exc}",
+              file=sys.stderr)
+        return 2
+    return result.returncode
+
+
+def main() -> int:
+    sys.path.insert(0, str(ROOT))
+    import config
+    parser = _argument_parser(config.PIPELINE_REGION)
     args = parser.parse_args()
     try:
         area = _safe_area(args.region)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.mode == "cloud":
+        profile = args.profile or os.environ.get("SOLAR_CLOUD_PROFILE")
+        if not profile:
+            parser.error("--profile is required with --mode cloud")
+        return _run_cloud_mode(profile, area, args.port)
+    if args.profile:
+        parser.error("--profile can only be used with --mode cloud")
     py = _python_executable(args.python)
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     RUNS.mkdir(parents=True, exist_ok=True)
@@ -826,7 +859,7 @@ def main() -> int:
 
     if failed_at is None:
         ok, url = _start_preview_server(area, run, py,
-                                        args.port, not args.no_open_browser)
+                                        args.port or 8765, not args.no_open_browser)
         if not ok:
             failed_at = 18
 

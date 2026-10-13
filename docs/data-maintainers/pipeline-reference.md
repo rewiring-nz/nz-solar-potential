@@ -15,6 +15,13 @@ central Queenstown pilot is available as `pilot`. To add a
 region, edit the configuration in `config.py`; the retired per-machine JSON
 area files are not loaded.
 
+Both entry points run locally by default. Use `--mode cloud --profile NAME` to
+run the same configured region on an existing, bootstrapped GCP VM. Cloud
+provisioning remains an explicit setup operation; cloud reports and logs are
+collected into local `data/pipeline_runs/`. Cloud execution uses the VM's
+checkout and does not synchronize workstation changes; update it to the
+intended commit before running.
+
 The pipeline requires Python 3.11+, a configured project environment, a LINZ
 API key, and `tippecanoe`, `tile-join`, and `tippecanoe-decode` on `PATH`. See
 [Local setup](local-setup.md) and the platform-specific tool setup for
