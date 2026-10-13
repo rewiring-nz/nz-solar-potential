@@ -5,12 +5,14 @@ in git.
 
 ## Ship
 
-- **Glenorchy and Kinloch -- configured, not yet built (11 Oct).** No LiDAR
-  reaches the head of the lake, so both go on the synthetic-surface path like
-  Cromwell; imagery is Otago 0.3m Rural 2017-2019 (layer 104460), the only
-  current set that covers them. Next: run the fetch (it reports outline
-  counts, and refetches the wide DEM, now reaching 167.89 E), build
-  `glenorchy kinloch`, check bboxes catch every outline, deploy.
+- **Glenorchy, Kinloch and the Rees Valley -- live in v43 (13 Oct).** No
+  LiDAR reaches the head of the lake: synthetic-surface path like Cromwell,
+  photos Otago 0.3m Rural 2017-2019 (layer 104460). Regions glenorchy (528
+  outlines), kinloch (30), glenorchy_north (142, Rees Valley / Paradise road).
+- **Small buildings on the no-LiDAR path are under-counted.** A shed or
+  garage modelled as a hip has faces too small for a panel (a 25 m2 Rees
+  Valley shed: four ~5 m2 faces, none fitted). A gable along the long axis
+  (or a mono-pitch) under ~60 m2 would read most of them better.
 
 - **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
   reaches the Cromwell basin, so they build on a synthetic surface
