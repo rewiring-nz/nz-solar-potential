@@ -164,6 +164,21 @@ def _md(value: Any) -> str:
 
 
 def _linz_key_value() -> str:
+    """The key from the environment, else .env, else Secret Manager."""
+    return _linz_key_local() or _linz_key_secret_manager()
+
+
+def _linz_key_secret_manager() -> str:
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    try:
+        from src.project_secrets import linz_api_key
+        return linz_api_key() or ""
+    except Exception:
+        return ""
+
+
+def _linz_key_local() -> str:
     key = os.environ.get("LINZ_API_KEY", "").strip()
     if key:
         return key
@@ -368,7 +383,7 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
     if not py.is_file() or not os.access(py, os.X_OK):
         return False, f"Selected Python executable is unavailable: {py}", {"name": area}
     if not _key_available():
-        return False, "LINZ_API_KEY is not set in the environment or .env (value was not recorded).", {"name": area}
+        return False, "LINZ_API_KEY is not in the environment, .env or Secret Manager (value was not recorded).", {"name": area}
     dependency_probe = subprocess.run(
         [str(py), "-c", "import matplotlib.colors"], cwd=ROOT,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
