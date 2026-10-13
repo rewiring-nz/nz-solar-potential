@@ -1,11 +1,10 @@
 #!/bin/bash
-# Ship the current local code to the build VM, safely.
+# Bring the build VM's code up to date from GitHub, safely.
 #
-# The VM's ~/solar-map is an scp'd payload copy, not a git
-# clone, so they do not update themselves and can silently fall behind. That
-# matters more than it sounds: on 31 Aug the Island Bay rebuild was staged
-# against a tree whose panel_fitting was missing the gap-fill pass, so the
-# rebuild would have reproduced the bug it was meant to fix.
+# The VM's ~/solar-map is a git checkout of rewiring-nz/nz-solar-potential
+# (since 14 Oct 2026; it used to be an scp'd copy that silently fell behind).
+# It builds whatever is pushed: commit and push first, then run this. Region
+# data, DEMs, point clouds and models are untracked and never touched.
 #
 # REFUSES TO RUN MID-BUILD. Each pipeline stage is a fresh process that reads
 # the files at import, so replacing them while a district build is running
@@ -13,18 +12,40 @@
 # build. That is unrecoverable without rebuilding, and undetectable afterwards.
 # Use --force only if you are certain nothing is building.
 #
-#   ./tools/sync_vm.sh              # if the VM is idle
-#   ./tools/sync_vm.sh --force      # skip the busy check (know why)
+# Builds rewrite a few tracked files (data/roof_cases.json gains check
+# history); --autostash carries those edits across the pull. If one conflicts
+# with an upstream change, the pull stops and says so; nothing is lost.
+#
+#   ./tools/sync_vm.sh                  # main, if the VM is idle
+#   ./tools/sync_vm.sh --ref my-branch  # a pushed branch, to build it on the VM
+#   ./tools/sync_vm.sh --force          # skip the busy check (know why)
 set -u
 cd "$(dirname "$0")/.."
-LOCAL_ROOT="$(pwd)"
 VM=claude-doing-things
 PROJECT=downloads-417521
 ZONE=australia-southeast1-b
 SSH="gcloud compute ssh --tunnel-through-iap $VM --project=$PROJECT --zone=$ZONE --command"
 
-FORCE=0
-[ "${1:-}" = "--force" ] && FORCE=1
+FORCE=0; REF=main
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --force) FORCE=1; shift ;;
+    --ref)   REF="$2"; shift 2 ;;
+    *) echo "unknown argument: $1"; exit 2 ;;
+  esac
+done
+
+# The VM gets what is on GitHub, not what is on this machine.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  git fetch -q origin "$REF" 2>/dev/null
+  if [ -n "$(git status --porcelain --untracked-files=no -- src tools tests config.py preview.html)" ]; then
+    echo "NOTE: uncommitted code changes here will NOT reach the VM -- commit and push them first."
+  fi
+  if [ "$(git rev-parse --abbrev-ref HEAD)" = "$REF" ] && \
+     [ -n "$(git log --oneline "origin/$REF..HEAD" 2>/dev/null)" ]; then
+    echo "NOTE: local commits on $REF are not pushed; the VM will not have them."
+  fi
+fi
 
 if [ $FORCE -eq 0 ]; then
   echo "checking whether the VM is mid-build..."
@@ -40,41 +61,15 @@ if [ $FORCE -eq 0 ]; then
   echo "  VM idle."
 fi
 
-sync_tree() {
-  local name="$1" local_dir="$2"
-  [ -d "$local_dir" ] || { echo "  no local $local_dir -- skipping $name"; return; }
-  echo "=== $name ==="
-  $SSH "mkdir -p ~/$name/src ~/$name/tools ~/$name/tests" >/dev/null 2>&1
-  gcloud compute scp --tunnel-through-iap --project=$PROJECT --zone=$ZONE --quiet \
-    "$local_dir"/src/*.py "$VM:~/$name/src/" >/dev/null || return 1
-  gcloud compute scp --tunnel-through-iap --project=$PROJECT --zone=$ZONE --quiet \
-    "$local_dir"/src/*.sh "$VM:~/$name/src/" >/dev/null 2>&1 || true
-  for f in config.py requirements.txt requirements.lock.txt preview.html; do
-    [ -f "$local_dir/$f" ] && gcloud compute scp --tunnel-through-iap --project=$PROJECT --zone=$ZONE \
-      --quiet "$local_dir/$f" "$VM:~/$name/$f" >/dev/null 2>&1
-  done
-  # --recurse: without it scp skips subdirectories (tests/synthetic,
-  # tools/research) and the error went to /dev/null, so the VM's test suite
-  # was missing the synthetic-region build and nobody could tell.
-  for d in tools tests; do
-    ls "$local_dir/$d"/* >/dev/null 2>&1 && gcloud compute scp --tunnel-through-iap --recurse \
-      --project=$PROJECT --zone=$ZONE --quiet \
-      "$local_dir/$d"/* "$VM:~/$name/$d/" >/dev/null 2>&1
-  done
-  echo "  synced"
-}
-
-sync_tree solar-map "$LOCAL_ROOT"
-
-# Confirm the tree landed.
-echo ""
-echo "=== verifying ==="
-$SSH '
-for t in solar-map; do
-  if [ -f ~/$t/src/panel_fitting.py ]; then
-    if [ -f ~/$t/src/preflight.py ]; then p=yes; else p=NO; fi
-    echo "  $t: preflight=$p"
-  fi
-done' 2>/dev/null
-echo ""
-echo "Done. Region data, DEMs and point clouds are NOT touched by this script."
+echo "=== pulling $REF on the VM ==="
+$SSH "set -e; cd ~/solar-map
+git config user.name >/dev/null || git config user.name 'build VM'
+git config user.email >/dev/null || git config user.email 'vm@claude-doing-things'
+git fetch -q origin '$REF'
+git checkout -q '$REF' 2>/dev/null || git checkout -q -b '$REF' 'origin/$REF'
+git pull -q --ff-only --autostash origin '$REF'
+echo \"  VM at \$(git log --oneline -1)\"
+d=\$(git status --porcelain --untracked-files=no | wc -l)
+[ \"\$d\" = 0 ] || echo \"  (\$d tracked file(s) carry local build edits)\"" 2>&1 \
+  | grep -v "^Warning\|^WARNING\|NumPy\|please see\|^$"
+exit "${PIPESTATUS[0]}"

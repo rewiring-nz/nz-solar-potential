@@ -83,7 +83,9 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   `src/run_district_build.sh --force --regions "<the rest>"`.
 - **Never change code on the VM while it is building.** Each stage is a fresh
   process, so a mid-build change mixes old and new code across regions
-  undetectably. `tools/sync_vm.sh` refuses when busy.
+  undetectably. The VM's `~/solar-map` is a git checkout of this repo:
+  push, then `tools/sync_vm.sh` (or `--ref <branch>`) pulls it there, and
+  refuses when the VM is busy.
 - **Publishing goes through the deploy gate.** `tools/deploy_from_vm.sh` pulls
   the VM's served set and runs `tools/predeploy_check.py` against the live
   build; `--push` publishes a new version folder to

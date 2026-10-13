@@ -6,9 +6,9 @@
 #   tools/deploy_from_vm.sh --push-reviewed "why"   # push although the gate
 #       failed, after rendering what it listed; the reason goes in the commit
 #
-# The VM cannot publish (scp'd payload, no git). This is the one place the
-# laptop is in the ship path, and it does nothing but relay files the VM
-# built: nothing here is computed on the laptop.
+# Relays files the VM built: nothing here is computed on the laptop. The VM
+# can now publish by itself (tools/remote_build.sh, the build-and-publish
+# GitHub Action); this laptop path remains for reviewing a build locally.
 set -u
 cd "$(dirname "$0")/.."
 VM=claude-doing-things; ZONE=australia-southeast1-b
