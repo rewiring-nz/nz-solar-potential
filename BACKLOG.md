@@ -22,7 +22,6 @@ and assign work.
 - **Small no-LiDAR buildings now gabled (57a9eb49) -- live in v45 (13 Oct).**
   Gate: +10,090 panels (+0.6%), none zeroed or down 30%. Under 60 m2, 1 roof
   in 141 is a hip in the LiDAR; gables leave faces big enough for panels.
-  Rebuilding the six no-LiDAR regions for v45.
 - **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
   reaches the Cromwell basin, so they build on a synthetic surface
   (src/synthesize_dsm.py): 8 m DEM ground, hip roofs at 20 degrees under
