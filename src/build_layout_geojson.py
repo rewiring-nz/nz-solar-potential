@@ -180,7 +180,6 @@ def _init_worker(area, model):
         "photo_ds": (rasterio.open(paths["reference_imagery"]) if paths["reference_imagery"].exists()
                      else rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None),
         "pc_source": PointCloudSource(),
-        "photo_obstructions": _photo_obstructions(paths["dir"]),
         "model": model,
         "to_wgs84": pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326",
                                                 always_xy=True).transform,
@@ -190,26 +189,6 @@ def _init_worker(area, model):
     # LiDAR instead of the map's leaning one. Off until measured.
     if os.environ.get("SOLAR_PIPELINE_PHOTO", "map") == "reference" and _CTX.get("photo_ds") is not None:
         _CTX["imagery_ds"] = _CTX["photo_ds"]
-
-
-def _photo_obstructions(region_dir):
-    """{building_id: [Polygon]} the photo obstruction model found on roofs
-    built without LiDAR (tools/predict_photo_shape.py), or {}."""
-    if os.environ.get("SOLAR_PHOTO_OBSTRUCTIONS", "1") == "0":
-        return {}
-    f = Path(region_dir) / "photo_roofs.json"
-    if not f.exists():
-        return {}
-    from shapely.geometry import Polygon
-    try:
-        doc = json.loads(f.read_text())
-    except ValueError:
-        return {}
-    out = {}
-    for bid, rings in (doc.get("obstructions") or {}).items():
-        polys = [Polygon(r).buffer(0) for r in rings if len(r) >= 4]
-        out[int(bid)] = [q for q in polys if not q.is_empty]
-    return out
 
 
 # SIGALRM IS POSIX-ONLY. Windows has no alarm signal, so the per-building
@@ -566,12 +545,6 @@ def _build_one_at(building_id, nudge_m):
                                                     roof_geom=f.get("building_geometry"),
                                                     keepouts=(_edge_drops if os.environ.get(
                                                         "SOLAR_EDGE_DROPS", "1") != "0" else None))
-        # A roof with no LiDAR has no height evidence; what the photo model
-        # learned to see from LiDAR-measured roofs stands in for it.
-        if f.get("synthetic"):
-            obstructions = list(obstructions) + [
-                o for o in _CTX.get("photo_obstructions", {}).get(int(building_id), [])
-                if o.intersects(f["geometry"])]
         try:
             from src.roof_line_source import drawn_obstruction_polys
             _drawn_obs = drawn_obstruction_polys(f.get("building_id"))
