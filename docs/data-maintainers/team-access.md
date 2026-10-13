@@ -48,6 +48,14 @@ local `.env` when present, and otherwise from Secret Manager as you
 gcloud compute ssh claude-doing-things --zone australia-southeast1-b --tunnel-through-iap
 ```
 
+## Claude Code cloud sessions
+
+A cloud environment on claude.ai/code needs `data.linz.govt.nz` under
+**Network access → Custom → Allowed domains**, and `LINZ_API_KEY` under
+**Environment variables** (copy it from Secret Manager, `linz-api-key`).
+Environment variables are readable by anyone using that environment, so keep
+it a personal environment, not a shared one.
+
 ## Tasks
 
 Open work is tracked as GitHub Issues on the
