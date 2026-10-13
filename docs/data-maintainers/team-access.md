@@ -65,4 +65,15 @@ Open work is tracked as GitHub Issues on the
 assign yourself, and link the pull request with `Fixes #N`. Every pull request
 runs the data-free tests (`.github/workflows/tests.yml`).
 
-Building and publishing: see the Operating rules in [AGENTS.md](../../AGENTS.md).
+## Building and publishing
+
+- **From GitHub (no setup):** Actions tab -> "Build and publish the map" ->
+  Run workflow. Name the regions (blank = every stale one), tick "Fetch" for a
+  new region, untick "Publish" to build and gate only. It starts the VM,
+  builds the pushed `main`, publishes only if the gate passes, and stops the
+  VM. Anyone with write access to the repository can run it.
+- **From a laptop:** `tools/remote_build.sh --regions "a b" [--publish]` does
+  the same with your own Google sign-in.
+
+Either way the VM builds what is pushed to GitHub, so push first. Rules: the
+Operating rules in [AGENTS.md](../../AGENTS.md).
