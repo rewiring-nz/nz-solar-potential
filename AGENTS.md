@@ -65,6 +65,10 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 
 ## Operating rules (builds, data, review)
 
+- Tasks: GitHub Issues on the project board
+  (https://github.com/orgs/rewiring-nz/projects/5). Link pull requests with
+  `Fixes #N`; record finished work in BACKLOG.md as well.
+
 - **District builds run on the build VM**, `claude-doing-things`
   (australia-southeast1-b, project downloads-417521), never on a laptop: the
   VM fetches LiDAR and imagery from LINZ. It is a spot VM and stops itself 16

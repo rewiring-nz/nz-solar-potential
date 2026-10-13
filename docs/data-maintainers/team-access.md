@@ -12,7 +12,7 @@ accounts.google.com ("Use my current email address instead").
 
 | Thing | Where | Who can change it |
 |---|---|---|
-| Code, the map page, tasks | GitHub `rewiring-nz/nz-solar-potential` (Issues, Projects) | repository collaborators |
+| Code, the map page, tasks | GitHub `rewiring-nz/nz-solar-potential`; board: github.com/orgs/rewiring-nz/projects/5 | repository collaborators |
 | Published map data | `gs://rewiring-solar-tiles/v<N>/` (public read) | the team's Google Group |
 | Build inputs and models | `gs://rewiring-solar-data` (private) | the team's Google Group |
 | Build machine | VM `claude-doing-things`, australia-southeast1-b | the team's Google Group |
@@ -48,7 +48,8 @@ gcloud compute ssh claude-doing-things --zone australia-southeast1-b --tunnel-th
 
 ## Tasks
 
-Open work is tracked as GitHub Issues, labelled by area: `geometry`, `model`,
+Open work is tracked as GitHub Issues on the
+[project board](https://github.com/orgs/rewiring-nz/projects/5), labelled by area: `geometry`, `model`,
 `scale`, `no-lidar`, `infra`, `roof-case` (one roof that renders wrong) and
 `needs-josh` (waiting on an owner decision or permission). Pick an issue,
 assign yourself, and link the pull request with `Fixes #N`. Every pull request
