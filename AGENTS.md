@@ -68,6 +68,10 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 - Tasks: GitHub Issues on the project board
   (https://github.com/orgs/rewiring-nz/projects/5). Link pull requests with
   `Fixes #N`; record finished work in BACKLOG.md as well.
+- Mark AI-written GitHub content. Issues, comments and pull requests an AI
+  agent writes carry the `ai-generated` label and open with a line saying
+  so ("Written by Claude (AI)"); commits carry a `Co-Authored-By:` trailer.
+  A person removes the label once they have checked it.
 
 - **District builds run on the build VM**, `claude-doing-things`
   (australia-southeast1-b, project downloads-417521), never on a laptop: the
