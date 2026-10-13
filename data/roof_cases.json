@@ -34,6 +34,13 @@
      "coverage": 1.0,
      "fingerprint": "4833c8ef144a",
      "at": "2026-09-19T11:07:31"
+    },
+    {
+     "facets": 5,
+     "panels": 188,
+     "coverage": 1.0,
+     "fingerprint": "30a4af047755",
+     "at": "2026-09-25T14:03:48"
     }
    ],
    "notes": [
@@ -56,9 +63,24 @@
    "quotes": [
     "Why are there no panels in the middle here? It's a flat section and also has no obstructions or lines covering it?"
    ],
-   "status": "open",
+   "status": "needs_verdict",
    "flagged_times": 1,
-   "history": []
+   "history": [
+    {
+     "facets": 7,
+     "panels": 119,
+     "coverage": 0.807,
+     "fingerprint": "c361792ac330",
+     "at": "2026-09-25T14:04:06"
+    },
+    {
+     "facets": 8,
+     "panels": 125,
+     "coverage": 0.807,
+     "fingerprint": "804ca8ff3cde",
+     "at": "2026-09-26T19:19:24"
+    }
+   ]
   },
   {
    "id": 4734913,
@@ -69,7 +91,7 @@
     "You've drawn a bunch of unnecessary inaccurate roof lines here",
     "Very wrong, way too many faces being created and in the wrong places with the wrong roof lines, basically a complete failure"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 1,
    "history": [
     {
@@ -85,6 +107,13 @@
      "coverage": 0.925,
      "fingerprint": "0eab09a6d9dc",
      "at": "2026-09-18T22:13:46"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -107,7 +136,7 @@
     "The valley lines are missing from the preview here on thr right",
     "Mostly good except missing two valley lines and a ridgeline that I clearly drew"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 1,
    "history": [
     {
@@ -120,6 +149,13 @@
      "drew": 7,
      "across": 0,
      "at": "2026-09-18T22:00:30"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -162,6 +198,13 @@
      "coverage": 0.75,
      "fingerprint": "5e036d510da8",
      "at": "2026-09-19T11:07:37"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -207,6 +250,13 @@
      "coverage": 0.853,
      "fingerprint": "4fa2939d2eee",
      "at": "2026-09-19T11:07:38"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -230,7 +280,7 @@
     "Close to good, though has some strange extra sections along the front edge where panels shouldn't be added",
     "Still kept one of the strange rectangle extensions along the front edge. Rest looks quite good though a few areas protruding into where apartment balconies are"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 1,
    "history": [
     {
@@ -246,6 +296,13 @@
      "coverage": 0.476,
      "fingerprint": "605858014514",
      "at": "2026-09-18T22:14:37"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -299,6 +356,13 @@
       "valley": 1
      },
      "at": "2026-09-19T11:08:28"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -344,6 +408,13 @@
      "lines_drawn": 12,
      "lines_found": 12,
      "at": "2026-09-19T11:08:28"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -363,7 +434,7 @@
     "Another simple roof clearly wrong",
     "This looks good"
    ],
-   "status": "fixed",
+   "status": "regressed",
    "flagged_times": 1,
    "history": [
     {
@@ -376,6 +447,13 @@
      "drew": 6,
      "across": 0,
      "at": "2026-09-18T22:01:13"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -396,7 +474,7 @@
     "This is clearly wrong, on a very clearly defined roof shape which should be obvious from the imagery",
     "Much better though missing an edge along the bottom"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 1,
    "history": [
     {
@@ -412,6 +490,13 @@
      "coverage": 0.839,
      "fingerprint": "53586108d4c4",
      "at": "2026-09-18T22:14:39"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -439,7 +524,7 @@
     "Clear empty space you are not filling",
     "This is missing two ridge lines that I drew"
    ],
-   "status": "wrong",
+   "status": "needs_verdict",
    "flagged_times": 1,
    "history": [
     {
@@ -452,6 +537,13 @@
      "drew": 4,
      "across": 0,
      "at": "2026-09-18T22:01:16"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:04:06"
     }
    ],
    "verdicts": [
@@ -473,9 +565,24 @@
    "quotes": [
     "(found by predeploy: 3,513 panels -> 0)"
    ],
-   "status": "open",
+   "status": "needs_verdict",
    "flagged_times": 2,
-   "history": []
+   "history": [
+    {
+     "facets": 50,
+     "panels": 3629,
+     "coverage": 0.819,
+     "fingerprint": "52fe76449e97",
+     "at": "2026-09-25T14:25:46"
+    },
+    {
+     "facets": 53,
+     "panels": 3645,
+     "coverage": 0.814,
+     "fingerprint": "c35795836193",
+     "at": "2026-09-26T19:40:34"
+    }
+   ]
   },
   {
    "id": 4725488,
@@ -486,7 +593,7 @@
     "(found by predeploy, not by Josh -- kept as a case because a fix broke it)",
     "This looks fine, a very messy complicated roof"
    ],
-   "status": "fixed",
+   "status": "regressed",
    "flagged_times": 1,
    "history": [
     {
@@ -530,6 +637,13 @@
      "lines_drawn": 252,
      "lines_found": 252,
      "at": "2026-09-19T11:10:58"
+    },
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:47"
     }
    ],
    "verdicts": [
@@ -549,7 +663,8 @@
     "22 Earl Street: missing a whole perfectly good section of roof (the raised NE wing, 1,100 m2). At 80% density almost none of the panels show, at 100% far more are added"
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 1,
+   "history": []
   },
   {
    "id": 4751260,
@@ -559,8 +674,17 @@
    "quotes": [
     "42 Suburb Street: far more panels could fit; the outline does not align with the actual roof (a common problem) and the panels follow the outline, not the image"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:47"
+    }
+   ]
   },
   {
    "id": 4746298,
@@ -570,8 +694,17 @@
    "quotes": [
     "13 Douglas Avenue: a good example of the alignment problem -- outline offset from the roof in the image, panels follow the outline and hang off the roof"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 2,
+     "panels": 53,
+     "coverage": 0.987,
+     "fingerprint": "936521f7ac3b",
+     "at": "2026-09-25T14:25:56"
+    }
+   ]
   },
   {
    "id": 4735304,
@@ -581,8 +714,17 @@
    "quotes": [
     "12/16 Kent Street: panels being added over an edge (left wing), and no panels on the right wing's empty flat area"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:56"
+    }
+   ]
   },
   {
    "id": 4735039,
@@ -592,8 +734,17 @@
    "quotes": [
     "4 Kent Street: an extra row could clearly be added down the middle of this flat roof and it is not being added"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:56"
+    }
+   ]
   },
   {
    "id": 4725584,
@@ -603,8 +754,17 @@
    "quotes": [
     "32 Frankton Road: a very disorganised layout. The underlying roof is simple and straight, it just has lots of obstructions; the way panels are laid out on it is clearly wrong"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:56"
+    }
+   ]
   },
   {
    "id": 5371141,
@@ -614,8 +774,17 @@
    "quotes": [
     "1/24 Frankton Road: lots of panels missing that could be added (west arm), and many added in the shade of a tree"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:56"
+    }
+   ]
   },
   {
    "id": 5371139,
@@ -625,85 +794,157 @@
    "quotes": [
     "14C Frankton Road: not a clean layout on this sawtooth roof; should be clean straight rows on each sawtooth. Fundamental fixes to how panels are laid out"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:25:56"
+    }
+   ]
   },
   {
    "id": 4727237,
-   "region": null,
+   "region": "wanaka_town",
    "first_flagged": "2026-09-23",
    "defect": "13 Plantation Road: lots of panels missing on this roof (the east half of the long wing an",
    "quotes": [
     "13 Plantation Road: lots of panels missing on this roof (the east half of the long wing and the lower section are empty)"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 4,
+     "panels": 180,
+     "coverage": 0.644,
+     "fingerprint": "0cca7d2b0a51",
+     "at": "2026-09-25T14:26:22"
+    }
+   ]
   },
   {
    "id": 4735274,
-   "region": null,
+   "region": "pilot",
    "first_flagged": "2026-09-24",
    "defect": "11A Camp St: roof lines wonky, not straight along the ridges",
    "quotes": [
     "11A Camp St: roof lines wonky, not straight along the ridges"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:26:23"
+    }
+   ]
   },
   {
    "id": 4726056,
-   "region": null,
+   "region": "pilot",
    "first_flagged": "2026-09-24",
    "defect": "17 Church St: flat roof with lots of plant shows no panels at all",
    "quotes": [
     "17 Church St: flat roof with lots of plant shows no panels at all"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:26:23"
+    }
+   ]
   },
   {
    "id": 5370328,
-   "region": null,
+   "region": "pilot",
    "first_flagged": "2026-09-24",
    "defect": "9 Marine Parade: roof lines wrong; obstructions drawn over clear space",
    "quotes": [
     "9 Marine Parade: roof lines wrong; obstructions drawn over clear space"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:26:23"
+    }
+   ]
   },
   {
    "id": 5372604,
-   "region": null,
+   "region": "pilot",
    "first_flagged": "2026-09-24",
    "defect": "1 Ballarat St: panels over obstructions the map does not mark; lines miss the ridges and v",
    "quotes": [
     "1 Ballarat St: panels over obstructions the map does not mark; lines miss the ridges and valleys"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:26:24"
+    }
+   ]
   },
   {
    "id": 4725580,
-   "region": null,
+   "region": "pilot",
    "first_flagged": "2026-09-24",
    "defect": "12 Stanley St: complex pyramid roof, lines misaligned",
    "quotes": [
     "12 Stanley St: complex pyramid roof, lines misaligned"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:26:24"
+    }
+   ]
   },
   {
    "id": 5371137,
-   "region": null,
+   "region": "pilot",
    "first_flagged": "2026-09-24",
    "defect": "8 Sydney St: lines wrong, obstructions over clear areas, panels at an odd angle",
    "quotes": [
     "8 Sydney St: lines wrong, obstructions over clear areas, panels at an odd angle"
    ],
-   "status": "open",
-   "flagged_times": 1
+   "status": "needs_verdict",
+   "flagged_times": 1,
+   "history": [
+    {
+     "facets": 0,
+     "panels": 0,
+     "coverage": 0.0,
+     "fingerprint": "d75171398898",
+     "at": "2026-09-25T14:26:25"
+    }
+   ]
   }
  ]
 }
