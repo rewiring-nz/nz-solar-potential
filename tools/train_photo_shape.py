@@ -154,7 +154,7 @@ def main():
             opt.step()
             sched.step()
             run += parts
-        m = evaluate(model, va)
+        m = {k: float(v) for k, v in evaluate(model, va).items()}
         m.update(epoch=ep + 1, train_flat=run[0] / nb, train_dir=run[1] / nb,
                  train_slope_l1=run[2] / nb, minutes=(time.time() - t0) / 60)
         history.append(m)

@@ -152,7 +152,7 @@ def main():
             loss.backward()
             opt.step()
             sched.step()
-        v = evaluate(model, va)
+        v = {k: (float(x) if isinstance(x, float) else int(x)) for k, x in evaluate(model, va).items()}
         f1 = 2 * v["recall"] * v["precision"] / max(v["recall"] + v["precision"], 1e-9)
         print(json.dumps({"epoch": ep + 1, **{k: round(x, 3) if isinstance(x, float) else x for k, x in v.items()},
                           "f1": round(f1, 3), "minutes": round((time.time() - t0) / 60, 1)}), flush=True)
