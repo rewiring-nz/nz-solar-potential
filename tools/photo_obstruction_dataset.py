@@ -3,7 +3,7 @@
     python tools/photo_obstruction_dataset.py [--data data/photo_shape] [--workers 14]
 
 For every roof in tools/photo_shape_dataset.py's samples whose faces were
-measured from LiDAR (data/selected_faces/<id>.json with planes), the point
+measured from LiDAR (data/selected_faces/<id>.json), the point
 cloud is asked what sits off each face's plane --
 src/obstruction_detection.detect_obstructions_from_height, the same test the
 build runs: chimneys, vents, flues, plant, skylight upstands, roof hatches.
@@ -68,21 +68,32 @@ def roof_obstructions(bid):
     f = SELECTED / f"{bid}.json"
     if not f.exists():
         return None
+    import shapely
     doc = json.loads(f.read_text())
-    if doc.get("source") == "synthetic" or not doc.get("planes"):
+    if doc.get("source") == "synthetic" or not doc.get("faces"):
         return None
-    out = []
-    for ring, plane in zip(doc["faces"], doc["planes"]):
+    out, measured = [], 0
+    for ring in doc["faces"]:
         q = Polygon(ring)
         if not q.is_valid:
             q = q.buffer(0)
         if q.is_empty or q.area < 2:
             continue
+        # The face files hold outlines only; the build fits each plane on the
+        # fly. A least-squares start is enough: the height test re-fits the
+        # face's dominant surface before measuring anything against it.
         try:
+            pts = _pc.points_in_bbox(*q.bounds, building_only=True)
+            pts = pts[shapely.contains_xy(q, pts[:, 0], pts[:, 1])]
+            if len(pts) < 12:
+                continue
+            A = np.c_[pts[:, 0], pts[:, 1], np.ones(len(pts))]
+            plane = np.linalg.lstsq(A, pts[:, 2], rcond=None)[0]
             out += detect_obstructions_from_height(_pc, q, tuple(plane))
+            measured += 1
         except Exception:
             continue
-    return out
+    return out if measured else None
 
 
 def one_shard(path):
