@@ -44,8 +44,7 @@ sys.path.insert(0, str(ROOT))
 import config  # noqa: E402
 
 REGIONS_DIR = ROOT / "data" / "regions"
-PHOTO_LAYER = 104460
-PHOTO_NAME = "photo03"          # data/regions/<r>/photo03_mosaic.tif
+PHOTO_NAME = "photo03"          # data/regions/<r>/photo03_mosaic.vrt
 SIDE_PX = 96
 SIDE_MIN_M = SIDE_PX * 0.3
 MAX_SLOPE_DEG = 45.0
@@ -71,18 +70,58 @@ def lidar_regions():
     return out
 
 
+S3_COLLECTION = ("https://nz-imagery.s3.ap-southeast-2.amazonaws.com/"
+                 "otago/otago_2017-2019_0.3m/rgb/2193/")
+TILES_DIR = ROOT / "data" / "photo03_tiles"
+
+
+def _tile_index():
+    """{tile id: (lon/lat bbox, tiff url)} for the 0.3 m photo, cached.
+
+    LINZ publishes every aerial survey as open cloud-optimised GeoTIFFs on
+    S3 (no API key, no export queue); this is layer 104460's copy.
+    """
+    import urllib.request
+    from concurrent.futures import ThreadPoolExecutor
+    cache = TILES_DIR / "index.json"
+    if cache.exists():
+        return json.loads(cache.read_text())
+    TILES_DIR.mkdir(parents=True, exist_ok=True)
+    coll = json.load(urllib.request.urlopen(S3_COLLECTION + "collection.json", timeout=60))
+    hrefs = [l["href"][2:] for l in coll["links"] if l["rel"] == "item"]
+
+    def item(h):
+        d = json.load(urllib.request.urlopen(S3_COLLECTION + h, timeout=60))
+        return d["id"], (d["bbox"], S3_COLLECTION + d["assets"]["visual"]["href"][2:])
+    with ThreadPoolExecutor(32) as ex:
+        idx = dict(ex.map(item, hrefs))
+    cache.write_text(json.dumps(idx))
+    return idx
+
+
 def cmd_fetch(regions):
-    from src.fetch_regions import fetch_raster_chunked
-    from src.project_secrets import linz_api_key
-    key = linz_api_key()
+    """Download the 0.3 m photo tiles under each region; a VRT per region."""
+    import subprocess
+    import urllib.request
+    from shapely.geometry import box
+    idx = _tile_index()
     for name in regions:
-        bbox = config.REGIONS[name]
-        out_dir = REGIONS_DIR / name
-        print(f"[{name}] 0.3 m photo (layer {PHOTO_LAYER})...", flush=True)
-        try:
-            fetch_raster_chunked(bbox, key, PHOTO_LAYER, PHOTO_NAME, out_dir, "raster")
-        except Exception as e:  # a region outside the layer is a fact, not a failure
-            print(f"  {name}: no 0.3 m photo ({type(e).__name__}: {str(e)[:120]})")
+        rb = box(*config.REGIONS[name])
+        tiles = [(tid, url) for tid, (bb, url) in idx.items() if box(*bb).intersects(rb)]
+        paths = []
+        for tid, url in tiles:
+            p = TILES_DIR / f"{tid}.tiff"
+            if not p.exists():
+                tmp = p.with_suffix(".part")
+                urllib.request.urlretrieve(url, tmp)
+                tmp.rename(p)
+            paths.append(str(p))
+        if not paths:
+            print(f"[{name}] no 0.3 m photo covers it")
+            continue
+        vrt = REGIONS_DIR / name / f"{PHOTO_NAME}_mosaic.vrt"
+        subprocess.run(["gdalbuildvrt", "-q", str(vrt), *paths], check=True)
+        print(f"[{name}] 0.3 m photo: {len(paths)} tiles -> {vrt.name}", flush=True)
 
 
 def _facets_by_building(region):
@@ -101,6 +140,8 @@ def _facets_by_building(region):
         if slope is None or aspect is None:
             continue
         g = transform(to_nztm, shape(f["geometry"]))
+        if not g.is_valid:
+            g = g.buffer(0)
         by.setdefault(int(p["building_id"]), []).append(
             (g, float(slope), float(aspect), float(p.get("roof_confidence") or 0.0)))
     return by
@@ -114,7 +155,10 @@ def _outlines(region):
         p = f["properties"]
         if p.get("building_id") is None:
             continue
-        out[int(p["building_id"])] = (shape(f["geometry"]), p.get("capture_source_from", ""))
+        g = shape(f["geometry"])
+        if not g.is_valid:
+            g = g.buffer(0)
+        out[int(p["building_id"])] = (g, p.get("capture_source_from", ""))
     return out
 
 
@@ -150,7 +194,7 @@ def export_region(region, out_dir, stats):
     outlines = _outlines(region)
     facets = _facets_by_building(region)
     photos = {}
-    for view, fname in (("p03", f"{PHOTO_NAME}_mosaic.tif"), ("p26", "imagery_mosaic.tif")):
+    for view, fname in (("p03", f"{PHOTO_NAME}_mosaic.vrt"), ("p26", "imagery_mosaic.tif")):
         p = REGIONS_DIR / region / fname
         if p.exists():
             photos[view] = rasterio.open(p)
