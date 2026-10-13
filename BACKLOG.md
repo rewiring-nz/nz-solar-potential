@@ -9,11 +9,18 @@ in git.
   LiDAR reaches the head of the lake: synthetic-surface path like Cromwell,
   photos Otago 0.3m Rural 2017-2019 (layer 104460). Regions glenorchy (528
   outlines), kinloch (30), glenorchy_north (142, Rees Valley / Paradise road).
-- **Small buildings on the no-LiDAR path are under-counted.** A shed or
-  garage modelled as a hip has faces too small for a panel (a 25 m2 Rees
-  Valley shed: four ~5 m2 faces, none fitted). A gable along the long axis
-  (or a mono-pitch) under ~60 m2 would read most of them better.
-
+- **Photo-only roof reading -- measured 13 Oct, not adopted for houses.**
+  tools/research/photo_only_roofs.py on 150 Queenstown houses with LiDAR:
+  sunshine per m2 of roof, median error -- hip 2.5%, photo gable/hip form
+  2.6%, SAM photo faces 3.9%, true layout at 20 degrees 2.0%. The photo form
+  names the roof right more often (61/100 vs 35/100; 59 at 0.3 m), but
+  whole-roof sunshine barely depends on it at 20 degrees. LiDAR pitch median
+  20.1 degrees. Where it could still matter: which face takes the panels
+  first (north share error 12 vs 13 points) -- worth retesting on panel
+  counts, not sunshine, if the no-LiDAR towns grow.
+- **Small no-LiDAR buildings now gabled (57a9eb49).** Under 60 m2, 1 roof
+  in 141 is a hip in the LiDAR; gables leave faces big enough for panels.
+  Rebuilding the six no-LiDAR regions for v45.
 - **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
   reaches the Cromwell basin, so they build on a synthetic surface
   (src/synthesize_dsm.py): 8 m DEM ground, hip roofs at 20 degrees under
