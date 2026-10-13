@@ -50,6 +50,22 @@ def test_no_lidar_towns_resolve_to_a_synthetic_survey():
         assert survey_for(config.REGIONS[name], name).get("elevation") == "synthetic", name
 
 
+def test_small_buildings_get_a_gable_along_their_long_axis():
+    assert sd.roof_model(40)[0] == "gable" and sd.roof_model(150)[0] == "hip"
+    shed = box(0, 0, 8, 4)                         # long axis east-west
+    faces = sd.gable_faces(sd.roof_outline(shed), 100.0, 3.0, 20.0)
+    assert len(faces) == 2
+    assert all(abs(q.area - 16) < 0.2 for q, _ in faces)
+    from src.roof_partition import _slope_aspect
+    aspects = sorted(round(_slope_aspect(pl)[1]) for _, pl in faces)
+    assert aspects == [0, 180], aspects            # one face north, one south
+    for _, pl in faces:
+        assert abs(_slope_aspect(pl)[0] - 20.0) < 0.1
+        # each plane is at eave height on its own long wall
+        z_wall = pl[0] * 4 + pl[1] * (0 if _slope_aspect(pl)[1] > 90 else 4) + pl[2]
+        assert abs(z_wall - 103.0) < 1e-6
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
