@@ -24,7 +24,9 @@ cd "$(dirname "$0")/.."
 VM=claude-doing-things
 PROJECT=downloads-417521
 ZONE=australia-southeast1-b
-SSH="gcloud compute ssh --tunnel-through-iap $VM --project=$PROJECT --zone=$ZONE --command"
+# The checkout lives in j's home; name the user so a runner or a teammate
+# lands in the same place.
+SSH="gcloud compute ssh --tunnel-through-iap ${VM_USER:-j}@$VM --project=$PROJECT --zone=$ZONE --command"
 
 FORCE=0; REF=main
 while [ $# -gt 0 ]; do
