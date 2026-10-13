@@ -43,6 +43,8 @@ def load(data_dir, keep):
     parts = {k: [] for k in ("photo", "mask", "slope", "dirx", "diry", "labelled",
                              "m_per_px", "bid", "view", "region")}
     for p in sorted(Path(data_dir).glob("*.npz")):
+        if p.name.startswith("obstruct_"):      # tools/photo_obstruction_dataset.py's, beside them
+            continue
         d = np.load(p)
         sel = np.array([keep(r) for r in d["region"]])
         if not sel.any():
