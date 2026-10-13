@@ -54,9 +54,15 @@ def setup(regions):
         if not (TRIAL / name).exists():
             (TRIAL / name).symlink_to(LIVE / name)
     data = TRIAL / "data"
-    for name in ("dem_wide_mosaic.tif", "models", "photo03_tiles"):
+    for name in ("dem_wide_mosaic.tif", "photo03_tiles"):
         if not (data / name).exists():
             (data / name).symlink_to(LIVE / "data" / name)
+    # data/models exists in the worktree (some models are tracked): link the
+    # untracked ones in one by one.
+    (data / "models").mkdir(exist_ok=True)
+    for m in (LIVE / "data" / "models").iterdir():
+        if not (data / "models" / m.name).exists():
+            (data / "models" / m.name).symlink_to(m)
     # A point cloud with no tile near the trial towns: the stages need the
     # directory to hold a tile, and must find no points under any roof.
     pc = data / "pointcloud"
