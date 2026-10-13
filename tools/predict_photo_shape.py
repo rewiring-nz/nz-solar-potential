@@ -156,19 +156,38 @@ def _write_lidar_town_faces(region, out, outlines):
     from src.synthesize_dsm import (EAVE_FLAT_M, EAVE_HOUSE_M, FLAT_MIN_M2, _write_faces,
                                     photo_roof)
     written = 0
-    with rasterio.open(REGIONS_DIR / region / "dsm_mosaic.tif") as dsm:
+    dsm_path = REGIONS_DIR / region / "dsm_mosaic.tif"
+    dsm = rasterio.open(dsm_path) if dsm_path.exists() else None
+    # Where the survey has no surface at all (a region outside its edge), the
+    # ground comes from the national 8 m DEM, as in the no-LiDAR towns.
+    dem = rasterio.open(ROOT / "data" / "dem_wide_mosaic.tif")
+    try:
         for bid, faces_doc in out.items():
             fp = outlines[int(bid)][0]
-            win = from_bounds(*fp.bounds, dsm.transform).round_offsets().round_lengths()
-            a = dsm.read(1, window=win, boundless=True, fill_value=dsm.nodata or -9999)
-            m = geometry_mask([fp], out_shape=a.shape, transform=dsm.window_transform(win), invert=True)
-            vals = a[m & (a > -1000)]
-            if not len(vals):
-                continue
+            vals = []
+            if dsm is not None:
+                win = from_bounds(*fp.bounds, dsm.transform).round_offsets().round_lengths()
+                a = dsm.read(1, window=win, boundless=True, fill_value=dsm.nodata or -9999)
+                m = geometry_mask([fp], out_shape=a.shape, transform=dsm.window_transform(win), invert=True)
+                vals = a[m & (a > -1000)]
+            if len(vals):
+                base = float(np.median(vals))
+            else:
+                from pyproj import Transformer
+                x, y = fp.centroid.x, fp.centroid.y
+                if dem.crs.to_epsg() != 2193:
+                    x, y = Transformer.from_crs(2193, dem.crs, always_xy=True).transform(x, y)
+                base = float(next(dem.sample([(x, y)]))[0])
+                if not np.isfinite(base) or base < -1000:
+                    continue
             eave = EAVE_FLAT_M if fp.area >= FLAT_MIN_M2 else EAVE_HOUSE_M
-            faces, planes = photo_roof(faces_doc, float(np.median(vals)), eave)
+            faces, planes = photo_roof(faces_doc, base, eave)
             if faces and _write_faces(int(bid), faces, planes):
                 written += 1
+    finally:
+        if dsm is not None:
+            dsm.close()
+        dem.close()
     print(f"[{region}] {written} roofs written for the layout stage")
 
 
