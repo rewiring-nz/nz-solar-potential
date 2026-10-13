@@ -117,7 +117,15 @@ def run(variant, regions):
         sh([py, "tools/predict_photo_shape.py", *names], env=env)
         for n in names:
             sh([py, "src/synthesize_dsm.py", n], env=env)
-    sh(["bash", "src/run_district_build.sh", "--force", "--regions", " ".join(names)], env=env)
+    # The build's last guard fails here by design: it demands some faces chosen
+    # from LiDAR, and this trial has no LiDAR at all. Every region is emitted
+    # before it, so the per-region results are checked instead.
+    try:
+        sh(["bash", "src/run_district_build.sh", "--force", "--regions", " ".join(names)], env=env)
+    except subprocess.CalledProcessError:
+        missing = [n for n in names if not (TRIAL / "data" / "regions" / n / "solar_potential.geojson").exists()]
+        if missing:
+            raise
     out = RESULTS / variant
     out.mkdir(parents=True, exist_ok=True)
     for n in names:
