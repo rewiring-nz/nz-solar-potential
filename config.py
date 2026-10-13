@@ -85,11 +85,15 @@ REGIONS = {
     "bannockburn":         [169.1326, -45.1030, 169.1814, -45.0761],  # 481
     # Glenorchy and Kinloch, head of Lake Wakatipu: no LiDAR (every published
     # Otago survey stops east of 168.57; nz-elevation STAC, 11 Oct 2026), so
-    # built on a synthetic surface like Cromwell. Boxes drawn round each
-    # settlement's street grid with ~150 m pad; outline counts not yet taken
-    # from LINZ (the fetch reports them).
-    "glenorchy":           [168.3720, -44.8620, 168.4020, -44.8380],
-    "kinloch":             [168.3380, -44.8480, 168.3620, -44.8300],
+    # built on a synthetic surface like Cromwell. Boxes from the 2nd-98th
+    # percentile of LINZ outline centroids +150 m (13 Oct): the first,
+    # street-grid boxes caught 479 and 19 of the 817 outlines at the head of
+    # the lake. glenorchy now takes the town's south edge and the houses just
+    # north; glenorchy_north is the Rees Valley / Paradise road group 4-6 km
+    # up the valley.
+    "glenorchy":           [168.3802, -44.8674, 168.4113, -44.8253],  # 528
+    "kinloch":             [168.3454, -44.8471, 168.3548, -44.8272],  # 30
+    "glenorchy_north":     [168.3906, -44.8087, 168.4189, -44.7775],  # 142
 }
 
 # Default region used by tools/pipeline.py when no region argument is given.
@@ -238,12 +242,13 @@ SURVEYS = [
         "pointcloud_tile_year": None,
     },
     {
-        # Glenorchy and Kinloch: NO LIDAR. The westernmost Otago survey
-        # (Queenstown 2016/2021) stops at 168.576; both settlements sit near
-        # 168.35-168.40 (nz-elevation STAC, 11 Oct 2026). Synthetic surface,
-        # as for Cromwell.
+        # Glenorchy, Kinloch and the Rees Valley: NO LIDAR. The westernmost
+        # Otago survey (Queenstown 2016/2021) stops at 168.576; these sit near
+        # 168.35-168.42 (nz-elevation STAC, 11 Oct 2026). Synthetic surface,
+        # as for Cromwell. Widened north to -44.77 on 13 Oct for
+        # glenorchy_north.
         "name": "otago-glenorchy-no-lidar",
-        "bbox": [168.33, -44.87, 168.41, -44.82],
+        "bbox": [168.33, -44.875, 168.425, -44.77],
         "elevation": "synthetic",
         "dsm_layer": None,
         "dem_layer": None,
@@ -251,7 +256,8 @@ SURVEYS = [
         # Otago 0.3m Rural Aerial Photos (2017-2019): the only current-era
         # layer reaching the head of the lake. The 2019-2021 0.3 m set starts
         # at 168.64, and no urban 0.1 m capture covers either settlement
-        # (nz-imagery STAC tile bboxes checked at both). Old and coarse, so
+        # (nz-imagery STAC tile bboxes checked at both; its index tiles,
+        # layer 103861, checked at all three regions' edges on 13 Oct). Old and coarse, so
         # photo-found obstructions will be weak; it costs nothing else.
         "imagery_layer": 104460,
         "reference_imagery_layer": None,
