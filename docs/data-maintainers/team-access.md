@@ -46,4 +46,12 @@ local `.env` when present, and otherwise from Secret Manager as you
 gcloud compute ssh claude-doing-things --zone australia-southeast1-b --tunnel-through-iap
 ```
 
+## Tasks
+
+Open work is tracked as GitHub Issues, labelled by area: `geometry`, `model`,
+`scale`, `no-lidar`, `infra`, `roof-case` (one roof that renders wrong) and
+`needs-josh` (waiting on an owner decision or permission). Pick an issue,
+assign yourself, and link the pull request with `Fixes #N`. Every pull request
+runs the data-free tests (`.github/workflows/tests.yml`).
+
 Building and publishing: see the Operating rules in [AGENTS.md](../../AGENTS.md).

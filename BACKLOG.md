@@ -1,7 +1,8 @@
 # Backlog
 
 Open work, in priority order. Each item names what it is based on. History is
-in git.
+in git. Open items are also GitHub Issues (#16-36), which is where to pick up
+and assign work.
 
 ## Ship
 
