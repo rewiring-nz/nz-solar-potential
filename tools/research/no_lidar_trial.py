@@ -3,6 +3,7 @@
     python tools/research/no_lidar_trial.py setup  hawea wanaka_albert_town wanaka_west
     python tools/research/no_lidar_trial.py run    guess  hawea wanaka_albert_town wanaka_west
     python tools/research/no_lidar_trial.py run    photo  hawea wanaka_albert_town wanaka_west
+    python tools/research/no_lidar_trial.py run    oracle hawea wanaka_albert_town wanaka_west   # true LiDAR faces: the ceiling
     python tools/research/no_lidar_trial.py compare hawea wanaka_albert_town wanaka_west
 
 The question for the photo roof-shape model is not whether it reads pixels
@@ -117,6 +118,12 @@ def run(variant, regions):
         sh([py, "tools/predict_photo_shape.py", *names], env=env)
         for n in names:
             sh([py, "src/synthesize_dsm.py", n], env=env)
+    elif variant == "oracle":
+        # The ceiling: the same no-LiDAR build, roofs from the TRUE LiDAR faces.
+        for r, n in zip(regions, names):
+            _write_oracle_roofs(r, n)
+            sh([py, "src/synthesize_dsm.py", n], env={"SOLAR_PHOTO_ROOFS": "1"})
+        env = {"SOLAR_PHOTO_ROOFS": "1"}
     # The build's last guard fails here by design: it demands some faces chosen
     # from LiDAR, and this trial has no LiDAR at all. Every region is emitted
     # before it, so the per-region results are checked instead.
@@ -133,6 +140,30 @@ def run(variant, regions):
     print("results in", out)
 
 
+def _write_oracle_roofs(region, trial_name):
+    """photo_roofs.json holding the LiDAR's own facets, in the photo format."""
+    from pyproj import Transformer
+    from shapely.geometry import shape
+    from shapely.ops import transform
+    to_nztm = Transformer.from_crs(4326, 2193, always_xy=True).transform
+    fc = json.loads((LIVE / "data" / "regions" / region / "panel_layouts.geojson").read_text())
+    out = {}
+    for f in fc["features"]:
+        p = f["properties"]
+        if p.get("kind") != "facet":
+            continue
+        g = transform(to_nztm, shape(f["geometry"])).buffer(0)
+        if g.geom_type != "Polygon" or g.area < 1:
+            continue
+        s = min(float(p.get("plane_slope_deg", p.get("slope_deg")) or 0), 45.0)
+        a = p.get("plane_aspect_deg", p.get("aspect_deg"))
+        out.setdefault(str(p["building_id"]), []).append(
+            {"ring": [[round(x, 2), round(y, 2)] for x, y in g.exterior.coords],
+             "slope": round(s, 1), "aspect": None if s < 5 or a is None else round(float(a), 1)})
+    (TRIAL / "data" / "regions" / trial_name / "photo_roofs.json").write_text(
+        json.dumps({"model": "lidar-oracle", "photo": None, "buildings": out}))
+
+
 def _per_building(path):
     fc = json.loads(Path(path).read_text())
     out = {}
@@ -147,7 +178,7 @@ def compare(regions):
     for r in regions:
         truth = _per_building(LIVE / "data" / "regions" / r / "solar_potential.geojson")
         row = {}
-        for variant in ("guess", "photo"):
+        for variant in ("guess", "photo", "oracle"):
             p = RESULTS / variant / f"{r}_nl.geojson"
             if not p.exists():
                 continue
