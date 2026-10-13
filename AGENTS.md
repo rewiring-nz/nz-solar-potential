@@ -63,13 +63,43 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 - Update the matching doc in `docs/` in the same change as a command, output,
   or operating-limit change.
 
+## Operating rules (builds, data, review)
+
+- **District builds run on the build VM**, `claude-doing-things`
+  (australia-southeast1-b, project downloads-417521), never on a laptop: the
+  VM fetches LiDAR and imagery from LINZ. It is a spot VM and stops itself 16
+  hours after starting; a cut-off build resumes with
+  `src/run_district_build.sh --force --regions "<the rest>"`.
+- **Never change code on the VM while it is building.** Each stage is a fresh
+  process, so a mid-build change mixes old and new code across regions
+  undetectably. `tools/sync_vm.sh` refuses when busy.
+- **Publishing goes through the deploy gate.** `tools/deploy_from_vm.sh` pulls
+  the VM's served set and runs `tools/predeploy_check.py` against the live
+  build; `--push` publishes a new version folder to
+  `gs://rewiring-solar-tiles/v<N>/`, keeps the newest three, and commits only
+  the `site-config.js` switch. `--push-reviewed "<why>"` publishes past a gate
+  whose list has been rendered and judged. Rollback: point `site-config.js`
+  `dataBase`/`dataVersion` at an older version folder.
+- **Keys** come from the environment or `.env`, else Google Secret Manager
+  (`src/project_secrets.py`; secret `linz-api-key`). Never commit or print a
+  key.
+- **Hand-drawn markup governs** the roofs it covers (`data/roof_labels.json`).
+  Geometry changes are judged by renders against the photo and measurement
+  against the markup, not by panel counts; no per-building special cases.
+- **Where no LiDAR exists**, a survey marked `"elevation": "synthetic"` builds
+  on a modelled surface (`src/synthesize_dsm.py`) and every building carries
+  `pitch_guessed`.
+
+Team access and setup: [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
+
 ## Documentation rules
 
 - Treat executable scripts, `config.py`, and committed data contracts as the
   implementation source of truth. Link to them instead of copying volatile
   details.
-- Mark future cloud work, unverified claims, and experiments clearly. Current
-  documented operations run locally.
+- Mark future cloud work, unverified claims, and experiments clearly. Quick
+  checks run locally; district builds run on the build VM and published data is
+  served from the Google Cloud tiles bucket (see Operating rules).
 - Keep platform-specific setup in the data maintainer guides under
   [docs/data-maintainers/](docs/data-maintainers/). macOS is the primary
   platform; Ubuntu and Windows guidance is included where it differs.

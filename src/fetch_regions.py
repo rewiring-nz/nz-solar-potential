@@ -137,7 +137,8 @@ def fetch_raster_chunked(bbox_wgs84, api_key, layer_id, name, out_dir, format_ke
 
 def main():
     load_dotenv()
-    api_key = os.environ.get("LINZ_API_KEY")
+    from src.project_secrets import linz_api_key
+    api_key = linz_api_key()
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set")
 

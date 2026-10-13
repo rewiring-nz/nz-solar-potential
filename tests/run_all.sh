@@ -65,6 +65,7 @@ run "sunken regions"        $PY tests/test_sunken.py
 run "staircases"            $PY tests/test_staircase.py
 run "plant decks"           $PY tests/test_plant_decks.py
 run "no-LiDAR surface"      $PY tests/test_synthesize_dsm.py
+run "project secrets"       $PY tests/test_project_secrets.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
