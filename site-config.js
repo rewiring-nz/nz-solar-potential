@@ -13,11 +13,11 @@ window.SITE = {
   // Bumped on every DEPLOY of this site's data: the ?v= param is the only
   // thing that makes a browser re-fetch solar_potential.geojson and the
   // pmtiles, whose URLs are otherwise identical across builds.
-  dataVersion: "42",
+  dataVersion: "43",
   // Where the data lives: one folder per release in the tiles bucket
   // (tools/publish_served.py). Rolling back is pointing this at an older
   // version folder that is still there (the newest three are kept).
-  dataBase: "https://storage.googleapis.com/rewiring-solar-tiles/v42/",
+  dataBase: "https://storage.googleapis.com/rewiring-solar-tiles/v43/",
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
   towns: [
