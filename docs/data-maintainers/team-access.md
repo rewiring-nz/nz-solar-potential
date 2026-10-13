@@ -1,8 +1,8 @@
 # Team access
 
-**Status, October 2026: being set up.** Secret Manager holds `linz-api-key`;
-the team's Google Group is `solarpotential@googlegroups.com`;
-its roles are being granted.
+**Status, 14 October 2026: in place.** Secret Manager holds `linz-api-key`,
+and the team's Google Group `solarpotential@googlegroups.com` holds the roles
+below. To give someone access, add them to the group.
 
 Everything a contributor needs is reached with two accounts: a **GitHub**
 account (code, tasks, reviews) and a **Google** account (the cloud project).
