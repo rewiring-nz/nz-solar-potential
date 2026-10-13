@@ -21,7 +21,7 @@ LOCAL_ROOT="$(pwd)"
 VM=claude-doing-things
 PROJECT=downloads-417521
 ZONE=australia-southeast1-b
-SSH="gcloud compute ssh $VM --project=$PROJECT --zone=$ZONE --command"
+SSH="gcloud compute ssh --tunnel-through-iap $VM --project=$PROJECT --zone=$ZONE --command"
 
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
@@ -45,19 +45,19 @@ sync_tree() {
   [ -d "$local_dir" ] || { echo "  no local $local_dir -- skipping $name"; return; }
   echo "=== $name ==="
   $SSH "mkdir -p ~/$name/src ~/$name/tools ~/$name/tests" >/dev/null 2>&1
-  gcloud compute scp --project=$PROJECT --zone=$ZONE --quiet \
+  gcloud compute scp --tunnel-through-iap --project=$PROJECT --zone=$ZONE --quiet \
     "$local_dir"/src/*.py "$VM:~/$name/src/" >/dev/null || return 1
-  gcloud compute scp --project=$PROJECT --zone=$ZONE --quiet \
+  gcloud compute scp --tunnel-through-iap --project=$PROJECT --zone=$ZONE --quiet \
     "$local_dir"/src/*.sh "$VM:~/$name/src/" >/dev/null 2>&1 || true
   for f in config.py requirements.txt requirements.lock.txt preview.html; do
-    [ -f "$local_dir/$f" ] && gcloud compute scp --project=$PROJECT --zone=$ZONE \
+    [ -f "$local_dir/$f" ] && gcloud compute scp --tunnel-through-iap --project=$PROJECT --zone=$ZONE \
       --quiet "$local_dir/$f" "$VM:~/$name/$f" >/dev/null 2>&1
   done
   # --recurse: without it scp skips subdirectories (tests/synthetic,
   # tools/research) and the error went to /dev/null, so the VM's test suite
   # was missing the synthetic-region build and nobody could tell.
   for d in tools tests; do
-    ls "$local_dir/$d"/* >/dev/null 2>&1 && gcloud compute scp --recurse \
+    ls "$local_dir/$d"/* >/dev/null 2>&1 && gcloud compute scp --tunnel-through-iap --recurse \
       --project=$PROJECT --zone=$ZONE --quiet \
       "$local_dir/$d"/* "$VM:~/$name/$d/" >/dev/null 2>&1
   done

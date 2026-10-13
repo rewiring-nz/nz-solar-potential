@@ -65,6 +65,9 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 
 ## Operating rules (builds, data, review)
 
+- The VM is reachable only through Identity-Aware Proxy: always pass
+  `--tunnel-through-iap` to `gcloud compute ssh` / `scp` (the tools/ scripts do).
+
 - Tasks: GitHub Issues on the project board
   (https://github.com/orgs/rewiring-nz/projects/5). Link pull requests with
   `Fixes #N`; record finished work in BACKLOG.md as well.

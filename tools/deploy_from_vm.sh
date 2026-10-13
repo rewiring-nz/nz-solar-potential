@@ -23,11 +23,11 @@ fi
 echo "=== pull the served set ==="
 for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles addresses.json \
          assumptions.json seasonal_curves.json build_summary.json markup_lines.geojson; do
-  gcloud compute scp --zone $ZONE --quiet $VM:"~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
+  gcloud compute scp --tunnel-through-iap --zone $ZONE --quiet $VM:"~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
 done
 for d in building_detail heatmap_tiles summaries seasonal_curves addresses; do
   rm -rf "data/$d.pull" && mkdir -p "data/$d.pull"
-  if gcloud compute scp --zone $ZONE --quiet --recurse $VM:"~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
+  if gcloud compute scp --tunnel-through-iap --zone $ZONE --quiet --recurse $VM:"~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
     rm -rf "data/$d" && mv "data/$d.pull/$d" "data/$d"
   fi
   rm -rf "data/$d.pull"
