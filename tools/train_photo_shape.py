@@ -7,8 +7,9 @@ conditions, so a random split would let the model pass its test by
 recognising a street it trained on. Whole regions are held out instead:
 TEST_REGIONS are never seen in training and are what tools/eval_photo_shape.py
 judges against the current hip-roof guess; VAL_REGIONS pick the checkpoint.
-Wanaka and Hawea are the test because, like Glenorchy, they are lakeside
-towns outside Queenstown with their own building stock.
+Hawea, Albert Town and Wanaka West are the test because, like Glenorchy,
+they are lakeside settlements outside Queenstown with their own building
+stock (Wanaka town itself, 8,000 roofs, is worth more as training).
 
 THE LOSS is on LiDAR-labelled roof pixels only: whether the roof is flat
 there, the downslope direction where it is not (1 - cosine), and the slope
@@ -33,7 +34,7 @@ sys.path.insert(0, str(ROOT))
 
 from src import photo_shape as ps  # noqa: E402
 
-TEST_REGIONS = {"wanaka_town", "wanaka_west", "wanaka_albert_town", "hawea"}
+TEST_REGIONS = {"wanaka_west", "wanaka_albert_town", "hawea"}
 VAL_REGIONS = {"kelvin_heights"}
 OUT = ROOT / "data" / "models" / "photo_shape_v1.pt"
 
