@@ -66,6 +66,20 @@ def test_small_buildings_get_a_gable_along_their_long_axis():
         assert abs(z_wall - 103.0) < 1e-6
 
 
+def test_photo_roof_planes_rise_from_each_face_eave():
+    import math
+    # A 10 x 6 m gable read from the photo: north half faces north, south half south.
+    north = {"ring": [[0, 3], [10, 3], [10, 6], [0, 6], [0, 3]], "slope": 30.0, "aspect": 0.0}
+    south = {"ring": [[0, 0], [10, 0], [10, 3], [0, 3], [0, 0]], "slope": 30.0, "aspect": 180.0}
+    flat = {"ring": [[20, 0], [24, 0], [24, 4], [20, 4], [20, 0]], "slope": 2.0, "aspect": None}
+    faces, planes = sd.photo_roof([north, south, flat], 100.0, 3.0)
+    z = lambda pl, x, y: pl[0] * x + pl[1] * y + pl[2]
+    rise = 3 * math.tan(math.radians(30))
+    assert abs(z(planes[0], 5, 6) - 103.0) < 1e-6 and abs(z(planes[0], 5, 3) - (103.0 + rise)) < 1e-6
+    assert abs(z(planes[1], 5, 0) - 103.0) < 1e-6 and abs(z(planes[1], 5, 3) - (103.0 + rise)) < 1e-6
+    assert planes[2] == [0.0, 0.0, 103.0]
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

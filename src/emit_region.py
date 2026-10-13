@@ -151,13 +151,17 @@ def emit(region, out_root=OUT_ROOT):
     # (src/synthesize_dsm.py), and the map has to say so on every building.
     from src.synthesize_dsm import is_synthetic
     guessed = is_synthetic(region)
+    # ...and so was any roof the photo model read in a LiDAR town: buildings
+    # newer than the survey, or in its gaps (tools/predict_photo_shape.py).
+    from src.synthesize_dsm import load_photo_roofs
+    photo_read = set(load_photo_roofs(region))
     by_type = defaultdict(lambda: {"n": 0, "n_est": 0, "panel_count": 0,
                                    "kwp": 0.0, "kwh": 0.0})
     for f in feats:
         p = f["properties"]
         u, nm = use.get(int(p["building_id"]), (None, None))
         p["btype"] = classify(u, nm, p.get("facet_area_m2"), p.get("kwp"))
-        if guessed:
+        if guessed or int(p["building_id"]) in photo_read:
             p["pitch_guessed"] = 1
         if u and u != "Unknown":
             p["use"] = u

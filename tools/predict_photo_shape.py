@@ -33,14 +33,14 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from src import photo_shape as ps  # noqa: E402
 from photo_shape_dataset import SIDE_MIN_M, _crop, _outlines, _rasterise  # noqa: E402
+from src.synthesize_dsm import is_synthetic  # noqa: E402
 
 REGIONS_DIR = ROOT / "data" / "regions"
 MODEL = ROOT / "data" / "models" / "photo_shape_v1.pt"
 
 
 def targets(region, outlines):
-    src = REGIONS_DIR / region / "elevation_source.json"
-    if src.exists() and json.loads(src.read_text()).get("source") == "synthetic":
+    if is_synthetic(region):
         return list(outlines)
     pl = REGIONS_DIR / region / "panel_layouts.geojson"
     if not pl.exists():
@@ -98,10 +98,37 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif"):
                 out[str(bid)] = keep
     doc = {"model": str(MODEL.name), "photo": photo_name, "buildings": out}
     (REGIONS_DIR / region / "photo_roofs.json").write_text(json.dumps(doc))
+    if not is_synthetic(region):
+        # A LiDAR town: the surface stays the survey's; the faces go where the
+        # layout stage reads them, on the ground the LiDAR does show.
+        _write_lidar_town_faces(region, out, outlines)
     slopes = [f["slope"] for fs in out.values() for f in fs]
     print(f"[{region}] {len(out)} of {len(want)} buildings read from the photo; "
           f"face slope median {np.median(slopes) if slopes else 0:.0f} deg, max {max(slopes) if slopes else 0:.0f}")
     return doc
+
+
+def _write_lidar_town_faces(region, out, outlines):
+    import rasterio
+    from rasterio.features import geometry_mask
+    from rasterio.windows import from_bounds
+    from src.synthesize_dsm import (EAVE_FLAT_M, EAVE_HOUSE_M, FLAT_MIN_M2, _write_faces,
+                                    photo_roof)
+    written = 0
+    with rasterio.open(REGIONS_DIR / region / "dsm_mosaic.tif") as dsm:
+        for bid, faces_doc in out.items():
+            fp = outlines[int(bid)][0]
+            win = from_bounds(*fp.bounds, dsm.transform).round_offsets().round_lengths()
+            a = dsm.read(1, window=win, boundless=True, fill_value=dsm.nodata or -9999)
+            m = geometry_mask([fp], out_shape=a.shape, transform=dsm.window_transform(win), invert=True)
+            vals = a[m & (a > -1000)]
+            if not len(vals):
+                continue
+            eave = EAVE_FLAT_M if fp.area >= FLAT_MIN_M2 else EAVE_HOUSE_M
+            faces, planes = photo_roof(faces_doc, float(np.median(vals)), eave)
+            if faces and _write_faces(int(bid), faces, planes):
+                written += 1
+    print(f"[{region}] {written} roofs written for the layout stage")
 
 
 def main():
