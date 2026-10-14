@@ -91,11 +91,14 @@ class Sun:
         return tot / max(w.sum(), 1e-9)
 
 
-def faces_maps(flat, dx, dy, s, mask, m_per_px):
-    from rasterio.transform import from_origin
+def faces_maps(flat, dx, dy, s, mask, m_per_px, fp):
+    """The faces that would ship (photo_shape.snap_faces), back on the grid."""
+    from rasterio.transform import from_bounds
     n = ps.SIDE_PX
-    t = from_origin(0, n * m_per_px, m_per_px, m_per_px)
-    faces = ps.faces_from_maps(flat, dx, dy, s, mask, t, m_per_px)
+    h = m_per_px * n / 2
+    cx, cy = fp.centroid.x, fp.centroid.y
+    t = from_bounds(cx - h, cy - h, cx + h, cy + h, n, n)
+    faces, _ = ps.snap_faces(flat, dx, dy, s, mask, t, m_per_px, fp)
     from rasterio.features import rasterize
     S = np.zeros((n, n)); X = np.zeros((n, n)); Y = np.zeros((n, n))
     for poly, slope, asp in faces:
@@ -139,7 +142,7 @@ def main():
             L = D["labelled"][i] > 0
             ts = D["slope"][i].astype(float); tx = D["dirx"][i].astype(float); ty = D["diry"][i].astype(float)
             gs, gx, gy, kind = guess_maps(fp, fp.centroid.x, fp.centroid.y, side_m)
-            fs, fx, fy, nf = faces_maps(F[j], X[j], Y[j], S[j], D["mask"][i], float(D["m_per_px"][i]))
+            fs, fx, fy, nf = faces_maps(F[j], X[j], Y[j], S[j], D["mask"][i], float(D["m_per_px"][i]), fp)
             mx, my = X[j].copy(), Y[j].copy()
             flat_m = (F[j] > 0.5) | (S[j] < ps.FLAT_DEG)
             ms = np.where(flat_m, np.minimum(S[j], ps.FLAT_DEG), S[j]); mx[flat_m] = 0; my[flat_m] = 0

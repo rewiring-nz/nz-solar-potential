@@ -116,7 +116,7 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
     finally:
         for src in sources:
             src.close()
-    out, obstructions = {}, {}
+    out, obstructions, forms = {}, {}, {}
     for i0 in range(0, len(rows), 128):
         chunk = rows[i0:i0 + 128]
         imgs, masks = np.stack([r[5] for r in chunk]), np.stack([r[6] for r in chunk])
@@ -126,7 +126,8 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
         for j, (bid, fp, cx, cy, side_m, _, mask) in enumerate(chunk):
             h = side_m / 2
             t = from_bounds(cx - h, cy - h, cx + h, cy + h, ps.SIDE_PX, ps.SIDE_PX)
-            faces = ps.faces_from_maps(F[j], X[j], Y[j], S[j], mask, t, side_m / ps.SIDE_PX)
+            faces, form = ps.snap_faces(F[j], X[j], Y[j], S[j], mask, t, side_m / ps.SIDE_PX, fp)
+            forms[form] = forms.get(form, 0) + 1
             keep = []
             for poly, slope, asp in faces:
                 g = poly.intersection(fp)
@@ -144,7 +145,7 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
                 rings = _obstruction_rings(P[j], obs_thr, mask, t, fp)
                 if rings:
                     obstructions[str(bid)] = rings
-    doc = {"model": str(MODEL.name), "photo": photo_name, "photos_used": used, "buildings": out,
+    doc = {"model": str(MODEL.name), "photo": photo_name, "photos_used": used, "forms": forms, "buildings": out,
            "obstruction_model": OBS_MODEL.name if obs_model is not None else None,
            "obstructions": obstructions}
     (REGIONS_DIR / region / "photo_roofs.json").write_text(json.dumps(doc))
@@ -156,7 +157,7 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
     print(f"[{region}] {len(out)} of {len(want)} buildings read from the photo, "
           f"{sum(len(v) for v in obstructions.values())} obstructions on {len(obstructions)}; "
           f"face slope median {np.median(slopes) if slopes else 0:.0f} deg, max {max(slopes) if slopes else 0:.0f}; "
-          f"photos {used}")
+          f"photos {used}; forms {forms}")
     return doc
 
 

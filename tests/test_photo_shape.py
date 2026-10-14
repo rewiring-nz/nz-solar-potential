@@ -49,8 +49,57 @@ def test_gable_reads_as_two_faces():
     assert abs(sum(p.area for p, _, _ in faces) - mask.sum() * 0.09) < 1
 
 
+def _grid(x0=1000.0, y0=2000.0, mpp=0.3):
+    from rasterio.transform import from_origin
+    n = ps.SIDE_PX
+    return from_origin(x0, y0 + n * mpp, mpp, mpp), n, mpp
+
+
+def _maps_for(fp, t, n, field):
+    """Rasterise footprint; field(x, y) -> (flat, dx, dy, slope) per pixel centre."""
+    from rasterio.features import rasterize
+    mask = rasterize([(fp, 1)], out_shape=(n, n), transform=t, fill=0, dtype=np.uint8)
+    rows, cols = np.mgrid[0:n, 0:n]
+    xs, ys = t * (cols + 0.5, rows + 0.5)
+    f, dx, dy, s = field(np.asarray(xs), np.asarray(ys))
+    return f, dx, dy, s, mask
+
+
+def test_snap_fanned_small_shed_to_one_plain_form():
+    from shapely.geometry import box
+    t, n, mpp = _grid()
+    fp = box(1010, 2010, 1017, 2016)                       # 42 m2
+    cx, cy = fp.centroid.x, fp.centroid.y
+    def fan(x, y):                                         # slopes away from the middle, every way
+        vx, vy = x - cx, y - cy
+        L = np.hypot(vx, vy) + 1e-6
+        return np.zeros_like(x), vx / L, vy / L, np.full_like(x, 15.0)
+    faces, form = ps.snap_faces(*_maps_for(fp, t, n, fan), t, mpp, fp)
+    assert form in ("hip", "gable", "gable_x"), form
+    assert len(faces) <= 4 and min(p.area for p, _, _ in faces) > 4
+
+
+def test_snap_reads_gable_and_flat():
+    from shapely.geometry import box
+    t, n, mpp = _grid()
+    fp = box(1005, 2008, 1020, 2016)                       # 15 x 8, long axis east-west
+    def gable(x, y):
+        north = y > fp.centroid.y
+        return np.zeros_like(x), np.zeros_like(x), np.where(north, 1.0, -1.0), np.full_like(x, 25.0)
+    faces, form = ps.snap_faces(*_maps_for(fp, t, n, gable), t, mpp, fp)
+    assert form == "gable", form
+    assert sorted(round(a) for _, _, a in faces) == [0, 180]
+    assert all(abs(s - 25) < 0.6 for _, s, _ in faces)
+    def flat(x, y):
+        return np.ones_like(x), np.zeros_like(x), np.zeros_like(x), np.full_like(x, 2.0)
+    faces, form = ps.snap_faces(*_maps_for(fp, t, n, flat), t, mpp, fp)
+    assert form == "flat" and len(faces) == 1 and faces[0][2] is None
+
+
 if __name__ == "__main__":
     test_rotation_moves_north_half_west()
     test_undo_inverts_every_symmetry()
     test_gable_reads_as_two_faces()
+    test_snap_fanned_small_shed_to_one_plain_form()
+    test_snap_reads_gable_and_flat()
     print("photo_shape: ok")

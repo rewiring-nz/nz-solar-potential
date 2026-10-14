@@ -19,6 +19,14 @@ answer with a wall.
 faces_from_maps() turns the maps into roof faces: pixels grouped by facing
 (flat, or one of 8 compass sectors), tidied, and each group given one slope
 and facing -- the shape src/synthesize_dsm.py builds a surface from.
+
+snap_faces() is what ships. Left free, an uncertain reading fans out from the
+middle of a roof -- a shed of 40 m2 came back as six slivers facing six ways,
+none big enough for a panel, and a 1,400 m2 shed as twenty. Real roofs are a
+few planes: each reading is scored against the plausible forms for its
+outline (flat; one slope, four ways; a gable, either way; a hip) and the best
+fit is kept. The free faces win only when they fit clearly better AND every
+face is big enough to carry panels.
 """
 
 import numpy as np
@@ -246,3 +254,141 @@ def faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px):
             poly = max(geoms, key=lambda g: g.area).buffer(0)
             faces.append((poly, round(s_out, 1), None if asp is None else round(asp, 1)))
     return faces
+
+
+SNAP_FREE_MARGIN = 0.08     # free faces must beat the best plain form by this
+SNAP_FREE_MIN_FACE_M2 = 12.0
+
+
+def _form_candidates(fp):
+    """[(name, [(polygon, aspect or None)])] for an NZTM footprint."""
+    import math
+    from shapely.geometry import Polygon
+    from src.synthesize_dsm import gable_faces, hip_faces, roof_outline, wall_plane
+    g = roof_outline(fp)
+    if g.geom_type != "Polygon":
+        g = max(getattr(g, "geoms", [g]), key=lambda q: q.area)
+    out = [("flat", [(g, None)])]
+    mrr = g.minimum_rotated_rectangle
+    xs, ys = mrr.exterior.coords.xy
+    e = [(xs[1] - xs[0], ys[1] - ys[0]), (xs[2] - xs[1], ys[2] - ys[1])]
+    for ex, ey in e:                       # the outline's two axes
+        L = math.hypot(ex, ey) or 1.0
+        nx, ny = -ey / L, ex / L
+        for sgn in (1, -1):
+            out.append((f"mono{len(out)}", [(g, (math.degrees(math.atan2(sgn * nx, sgn * ny)) + 360) % 360)]))
+
+    def aspect_of(plane):
+        a, b = plane[0], plane[1]
+        return (math.degrees(math.atan2(-a, -b)) + 360) % 360 if math.hypot(a, b) > 1e-9 else None
+    try:
+        gf = gable_faces(g, 0.0, 3.0, 20.0)
+        if gf:
+            out.append(("gable", [(q, aspect_of(pl)) for q, pl in gf]))
+        # the same gable with its ridge across the other axis
+        gx = _gable_cross_faces(g)
+        if gx:
+            out.append(("gable_x", gx))
+    except Exception:
+        pass
+    try:
+        hf = hip_faces(g)
+        if hf:
+            out.append(("hip", [(q, aspect_of(wall_plane(w, 0.0, 3.0, 20.0))) for q, w in hf]))
+    except Exception:
+        pass
+    return out
+
+
+def _gable_cross_faces(g):
+    """Two faces split along the outline's short axis, each facing away from
+    the split (a gable with its ridge across the building)."""
+    import math
+    from shapely.affinity import rotate
+    from shapely.geometry import LineString
+    from shapely.ops import split
+    mrr = g.minimum_rotated_rectangle
+    xs, ys = mrr.exterior.coords.xy
+    sides = [((xs[i], ys[i]), (xs[i + 1], ys[i + 1])) for i in range(4)]
+    lens = [math.dist(a, b) for a, b in sides]
+    i = lens.index(min(lens))
+    (ax, ay), (bx, by) = sides[i]
+    (cx, cy), (dx, dy) = sides[(i + 2) % 4]
+    m1 = ((ax + bx) / 2, (ay + by) / 2)
+    m2 = ((cx + dx) / 2, (cy + dy) / 2)
+    # the ridge runs between the long sides' midpoints, i.e. across the short axis
+    j = (i + 1) % 4
+    (px, py), (qx, qy) = sides[j]
+    (rx, ry), (sx, sy) = sides[(j + 2) % 4]
+    r1 = ((px + qx) / 2, (py + qy) / 2)
+    r2 = ((rx + sx) / 2, (ry + sy) / 2)
+    ridge = LineString([r1, r2])
+    far = rotate(ridge, 0).buffer(0)
+    ext = LineString([(r1[0] + (r1[0] - r2[0]) * 5, r1[1] + (r1[1] - r2[1]) * 5),
+                      (r2[0] + (r2[0] - r1[0]) * 5, r2[1] + (r2[1] - r1[1]) * 5)])
+    parts = [p for p in split(g, ext).geoms if p.area > 1]
+    if len(parts) != 2:
+        return []
+    out = []
+    for p in parts:
+        c = p.centroid
+        vx, vy = c.x - (r1[0] + r2[0]) / 2, c.y - (r1[1] + r2[1]) / 2
+        # downslope: away from the ridge, perpendicular to it
+        tx, ty = r2[0] - r1[0], r2[1] - r1[1]
+        L = math.hypot(tx, ty) or 1.0
+        nx, ny = -ty / L, tx / L
+        if nx * vx + ny * vy < 0:
+            nx, ny = -nx, -ny
+        out.append((p, (math.degrees(math.atan2(nx, ny)) + 360) % 360))
+    return out
+
+
+def snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
+    """Faces for one building: the plausible roof form that best matches the
+    maps (see the module notes). Returns (faces, form) with faces as
+    faces_from_maps returns them, in the transform's CRS."""
+    from rasterio.features import rasterize
+    n = mask.shape[0]
+    inside = mask > 0
+    if not inside.any():
+        return [], "none"
+    pf = np.clip(flat, 0, 1)
+    is_flat_px = (pf > 0.5) | (slope < FLAT_DEG)
+
+    def score(faces):
+        """Agreement in [0, 1] over the footprint, and per-face pixel masks."""
+        tot = np.zeros(mask.shape)
+        covered = np.zeros(mask.shape, bool)
+        sels = []
+        for poly, asp in faces:
+            sel = rasterize([(poly, 1)], out_shape=mask.shape, transform=transform,
+                            fill=0, dtype=np.uint8).astype(bool) & inside & ~covered
+            covered |= sel
+            sels.append(sel)
+            if asp is None:
+                tot[sel] = pf[sel]
+            else:
+                ux, uy = np.sin(np.radians(asp)), np.cos(np.radians(asp))
+                tot[sel] = (1 - pf[sel]) * np.clip(dirx[sel] * ux + diry[sel] * uy, 0, 1)
+        return float(tot[inside].mean()), sels
+
+    best = None
+    for name, faces in _form_candidates(footprint):
+        sc, sels = score(faces)
+        if best is None or sc > best[0]:
+            best = (sc, name, faces, sels)
+    free = faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px)
+    free_faces = [(p, a) for p, _, a in free]
+    if free_faces and min(p.area for p, _ in free_faces) >= SNAP_FREE_MIN_FACE_M2:
+        sc, _ = score(free_faces)
+        if sc > best[0] + SNAP_FREE_MARGIN:
+            return free, "free"
+    sc, name, faces, sels = best
+    out = []
+    for (poly, asp), sel in zip(faces, sels):
+        s = float(np.clip(np.median(slope[sel]) if sel.any() else 0.0, 0, MAX_SLOPE_DEG))
+        if asp is None or s < FLAT_DEG:
+            out.append((poly, round(min(s, FLAT_DEG), 1), None))
+        else:
+            out.append((poly, round(s, 1), round(float(asp), 1)))
+    return out, name
