@@ -98,7 +98,7 @@ def faces_maps(flat, dx, dy, s, mask, m_per_px, fp):
     h = m_per_px * n / 2
     cx, cy = fp.centroid.x, fp.centroid.y
     t = from_bounds(cx - h, cy - h, cx + h, cy + h, n, n)
-    faces, _ = ps.snap_faces(flat, dx, dy, s, mask, t, m_per_px, fp)
+    faces, _ = ps.roof_faces(flat, dx, dy, s, mask, t, m_per_px, fp)
     from rasterio.features import rasterize
     S = np.zeros((n, n)); X = np.zeros((n, n)); Y = np.zeros((n, n))
     for poly, slope, asp in faces:

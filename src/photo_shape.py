@@ -20,13 +20,15 @@ faces_from_maps() turns the maps into roof faces: pixels grouped by facing
 (flat, or one of 8 compass sectors), tidied, and each group given one slope
 and facing -- the shape src/synthesize_dsm.py builds a surface from.
 
-snap_faces() is what ships. Left free, an uncertain reading fans out from the
-middle of a roof -- a shed of 40 m2 came back as six slivers facing six ways,
-none big enough for a panel, and a 1,400 m2 shed as twenty. Real roofs are a
-few planes: each reading is scored against the plausible forms for its
-outline (flat; one slope, four ways; a gable, either way; a hip) and the best
-fit is kept. The free faces win only when they fit clearly better AND every
-face is big enough to carry panels.
+roof_faces() is what ships. Left free, an uncertain reading on a small roof
+fans out from its middle: 40 m2 sheds came back as six slivers facing six
+ways, none big enough for a panel. Snapping EVERY roof to a plain form
+(snap_faces) fixed that but cost accuracy on houses (held-out rebuild trial,
+14 Oct: Hawea kWh error 17% free -> 19% snapped, Albert Town 15% -> 21%), so:
+under 60 m2 a reading of more than two faces snaps to flat, one slope or a
+gable (sheds are almost never hipped: 1 in 141 measured); everything else
+keeps its free faces, slivers merged into a neighbour (8 m2, or 3% of a big
+roof).
 """
 
 import numpy as np
@@ -207,7 +209,7 @@ def _majority(lab, mask, passes=2):
     return lab
 
 
-def faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px):
+def faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px, min_face_m2=MIN_FACE_M2):
     """Roof faces from one building's maps.
 
     Returns [(shapely polygon in the transform's CRS, slope_deg, aspect_deg)],
@@ -218,7 +220,7 @@ def faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px):
     from shapely.geometry import shape
     lab = _majority(sector_labels(flat, dirx, diry, slope, mask), mask)
     px_m2 = m_per_px ** 2
-    min_px = max(1, int(MIN_FACE_M2 / px_m2))
+    min_px = max(1, int(min_face_m2 / px_m2))
     # Small islands take the label of the face around them.
     for _ in range(3):
         changed = False
@@ -343,7 +345,8 @@ def _gable_cross_faces(g):
     return out
 
 
-def snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
+def snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint,
+               forms=None, allow_free=True):
     """Faces for one building: the plausible roof form that best matches the
     maps (see the module notes). Returns (faces, form) with faces as
     faces_from_maps returns them, in the transform's CRS."""
@@ -374,10 +377,14 @@ def snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
 
     best = None
     for name, faces in _form_candidates(footprint):
+        if forms is not None and not any(name.startswith(f) for f in forms):
+            continue
+        if name == "gable_x" and forms is not None and "gable_x" not in forms:
+            continue
         sc, sels = score(faces)
         if best is None or sc > best[0]:
             best = (sc, name, faces, sels)
-    free = faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px)
+    free = faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px) if allow_free else []
     free_faces = [(p, a) for p, _, a in free]
     if free_faces and min(p.area for p, _ in free_faces) >= SNAP_FREE_MIN_FACE_M2:
         sc, _ = score(free_faces)
@@ -392,3 +399,20 @@ def snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
         else:
             out.append((poly, round(s, 1), round(float(asp), 1)))
     return out, name
+
+
+SMALL_ROOF_M2 = 60.0
+FREE_MIN_FACE_M2 = 8.0
+FREE_MIN_FACE_SHARE = 0.03
+
+
+def roof_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
+    """The faces that ship for one building (see the module notes):
+    (faces, form)."""
+    area = footprint.area
+    free = faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px,
+                           min_face_m2=max(FREE_MIN_FACE_M2, FREE_MIN_FACE_SHARE * area))
+    if area < SMALL_ROOF_M2 and len(free) > 2:
+        return snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint,
+                          forms=("flat", "mono", "gable", "gable_x"), allow_free=False)
+    return free, "free"

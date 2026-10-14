@@ -74,8 +74,8 @@ def test_snap_fanned_small_shed_to_one_plain_form():
         vx, vy = x - cx, y - cy
         L = np.hypot(vx, vy) + 1e-6
         return np.zeros_like(x), vx / L, vy / L, np.full_like(x, 15.0)
-    faces, form = ps.snap_faces(*_maps_for(fp, t, n, fan), t, mpp, fp)
-    assert form in ("hip", "gable", "gable_x"), form
+    faces, form = ps.roof_faces(*_maps_for(fp, t, n, fan), t, mpp, fp)
+    assert form in ("flat", "gable", "gable_x") or form.startswith("mono"), form
     assert len(faces) <= 4 and min(p.area for p, _, _ in faces) > 4
 
 

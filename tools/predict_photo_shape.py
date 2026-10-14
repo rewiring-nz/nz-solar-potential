@@ -126,7 +126,7 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
         for j, (bid, fp, cx, cy, side_m, _, mask) in enumerate(chunk):
             h = side_m / 2
             t = from_bounds(cx - h, cy - h, cx + h, cy + h, ps.SIDE_PX, ps.SIDE_PX)
-            faces, form = ps.snap_faces(F[j], X[j], Y[j], S[j], mask, t, side_m / ps.SIDE_PX, fp)
+            faces, form = ps.roof_faces(F[j], X[j], Y[j], S[j], mask, t, side_m / ps.SIDE_PX, fp)
             forms[form] = forms.get(form, 0) + 1
             keep = []
             for poly, slope, asp in faces:
