@@ -203,15 +203,22 @@ def wall_plane(wall, base, eave_m, pitch_deg):
     return [t * nx, t * ny, base + eave_m - t * (nx * x0 + ny * y0)]
 
 
-def _write_faces(building_id, faces, planes):
+def _write_faces(building_id, faces, planes, replace=False):
     """The roof's faces where build_layout_geojson reads a building's chosen
     faces (roof_partition.facets_from_selected_faces), which fits each one's
-    plane from this surface. Never over a reading that came from elsewhere."""
+    plane from this surface. Never over a reading that came from elsewhere --
+    unless `replace`: a building the LiDAR shows only as ground, whose photo
+    reading the build could not use. The reading replaced is kept in
+    data/selected_faces_replaced/."""
     f = SELECTED_DIR / f"{building_id}.json"
     if f.exists():
         try:
             if json.loads(f.read_text()).get("source") != "synthetic":
-                return False
+                if not replace:
+                    return False
+                keep = SELECTED_DIR.parent / "selected_faces_replaced"
+                keep.mkdir(parents=True, exist_ok=True)
+                (keep / f.name).write_text(f.read_text())
         except ValueError:
             pass
     SELECTED_DIR.mkdir(parents=True, exist_ok=True)

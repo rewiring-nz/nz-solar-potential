@@ -115,3 +115,13 @@ def vrt_of_tiles(collection_url, geom_wgs84, vrt_path, tile_dir):
     subprocess.run(["gdalbuildvrt", "-q", str(vrt_path), *paths], check=True)
     print(f"  {Path(vrt_path).name}: {len(paths)} tiles")
     return Path(vrt_path)
+
+
+def remote_vrt(collection_url, bbox_wgs84, vrt_path):
+    """A VRT over the remote tiles touching bbox, read on demand over HTTP
+    (nothing downloaded); None when no tile touches it."""
+    urls = tiles_touching(collection_url, bbox_wgs84)
+    if not urls:
+        return None
+    subprocess.run(["gdalbuildvrt", "-q", str(vrt_path), *[f"/vsicurl/{u}" for u in urls]], check=True)
+    return Path(vrt_path)

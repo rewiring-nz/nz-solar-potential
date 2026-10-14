@@ -40,6 +40,12 @@ REGIONS_DIR = ROOT / "data" / "regions"
 MODEL = ROOT / "data" / "models" / "photo_shape_v1.pt"
 OBS_MODEL = ROOT / "data" / "models" / "photo_obstruct_v1.pt"
 MIN_OBS_M2 = 0.2
+# When a building is off the region's own photo (a town's urban capture often
+# stops short of its edges), the newest open LINZ captures, in order.
+FALLBACK_PHOTOS = [
+    "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/otago/otago_2025-2026_0.15m/rgbnir/2193/",
+    "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/otago/otago_2025_0.2m/rgb/2193/",
+]
 
 
 def targets(region, outlines):
@@ -80,18 +86,36 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
     if not want or not photo.exists():
         print(f"[{region}] {len(want)} buildings to read; photo {'present' if photo.exists() else 'missing'} -- skipped")
         return None
-    rows = []
-    with rasterio.open(photo) as src:
+    import config
+    from src import s3_rasters
+    sources = [rasterio.open(photo)]
+    names = [photo_name]
+    bbox = config.REGIONS.get(region)
+    for i, coll in enumerate(FALLBACK_PHOTOS if bbox else []):
+        v = s3_rasters.remote_vrt(coll, bbox, REGIONS_DIR / region / f"photo_fallback{i}.vrt")
+        if v is not None:
+            sources.append(rasterio.open(v))
+            names.append(coll.split("amazonaws.com/")[-1])
+    rows, used = [], {}
+    try:
         for bid in want:
             fp = outlines[bid][0]
             minx, miny, maxx, maxy = fp.bounds
             side_m = max(SIDE_MIN_M, 1.15 * max(maxx - minx, maxy - miny))
             cx, cy = fp.centroid.x, fp.centroid.y
-            img = _crop(src, cx, cy, side_m)
+            img = None
+            for name, src in zip(names, sources):
+                img = _crop(src, cx, cy, side_m)
+                if img is not None:
+                    used[name] = used.get(name, 0) + 1
+                    break
             if img is None:
                 continue
             mask = _rasterise([(fp, 1)], cx, cy, side_m, 0, np.uint8)
             rows.append((bid, fp, cx, cy, side_m, img, mask))
+    finally:
+        for src in sources:
+            src.close()
     out, obstructions = {}, {}
     for i0 in range(0, len(rows), 128):
         chunk = rows[i0:i0 + 128]
@@ -120,7 +144,7 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
                 rings = _obstruction_rings(P[j], obs_thr, mask, t, fp)
                 if rings:
                     obstructions[str(bid)] = rings
-    doc = {"model": str(MODEL.name), "photo": photo_name, "buildings": out,
+    doc = {"model": str(MODEL.name), "photo": photo_name, "photos_used": used, "buildings": out,
            "obstruction_model": OBS_MODEL.name if obs_model is not None else None,
            "obstructions": obstructions}
     (REGIONS_DIR / region / "photo_roofs.json").write_text(json.dumps(doc))
@@ -131,7 +155,8 @@ def predict_region(region, model, photo_name="imagery_mosaic.tif", obs_model=Non
     slopes = [f["slope"] for fs in out.values() for f in fs]
     print(f"[{region}] {len(out)} of {len(want)} buildings read from the photo, "
           f"{sum(len(v) for v in obstructions.values())} obstructions on {len(obstructions)}; "
-          f"face slope median {np.median(slopes) if slopes else 0:.0f} deg, max {max(slopes) if slopes else 0:.0f}")
+          f"face slope median {np.median(slopes) if slopes else 0:.0f} deg, max {max(slopes) if slopes else 0:.0f}; "
+          f"photos {used}")
     return doc
 
 
@@ -182,7 +207,7 @@ def _write_lidar_town_faces(region, out, outlines):
                     continue
             eave = EAVE_FLAT_M if fp.area >= FLAT_MIN_M2 else EAVE_HOUSE_M
             faces, planes = photo_roof(faces_doc, base, eave)
-            if faces and _write_faces(int(bid), faces, planes):
+            if faces and _write_faces(int(bid), faces, planes, replace=True):
                 written += 1
     finally:
         if dsm is not None:
