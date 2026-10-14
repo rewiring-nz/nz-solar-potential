@@ -94,6 +94,14 @@ REGIONS = {
     "glenorchy":           [168.3802, -44.8674, 168.4113, -44.8253],  # 528
     "kinloch":             [168.3454, -44.8471, 168.3548, -44.8272],  # 30
     "glenorchy_north":     [168.3906, -44.8087, 168.4189, -44.7775],  # 142
+    # Mt Eden, Auckland (14 Oct): the suburb's 8,935 outlines (LINZ suburbs
+    # layer 113764), 2nd-98th percentile of centroids +150 m, split at the
+    # median into four boxes under the 3,000-building ceiling. Counts are
+    # every outline in each box, neighbours' included. Survey auckland-2024.
+    "akl_mt_eden_nw":      [174.7398, -36.8858, 174.7512, -36.8685],  # 2,884
+    "akl_mt_eden_ne":      [174.7512, -36.8856, 174.7647, -36.8683],  # 2,884
+    "akl_mt_eden_sw":      [174.7401, -36.9000, 174.7512, -36.8858],  # 2,884
+    "akl_mt_eden_se":      [174.7512, -36.8998, 174.7650, -36.8856],  # 2,884
 }
 
 # Default region used by tools/pipeline.py when no region argument is given.
@@ -240,6 +248,26 @@ SURVEYS = [
         "reference_imagery_layer": None,     # no LiDAR frame to measure lean against
         "pointcloud_bulk_url": None,
         "pointcloud_tile_year": None,
+    },
+    {
+        # Auckland Part 1 LiDAR (2024), Woolpert; covers the isthmus (Mt Eden,
+        # Epsom, Remuera). LINZ layers: DSM 121992, DEM 121990, index tiles
+        # 121993; photos Auckland 0.075m Urban (2024-2025) 121752, flown the
+        # same year as the LiDAR. Rasters come from LINZ's open S3 copies
+        # (src/s3_rasters.py), resampled to 0.1 m for the photo; the point
+        # cloud from OpenTopography, CONFIRMED by HEAD: index tile
+        # BA32_1000_4101 -> NZ24_Auckland/CL2_BA32_2024_1000_4101.laz, 32.8 MB.
+        "name": "auckland-2024",
+        "bbox": [174.3677505, -37.3346925, 175.0281809, -36.5514359],
+        "dsm_layer": 121992,
+        "dem_layer": 121990,
+        "lidar_tile_index_layer": 121993,
+        "imagery_layer": 121752,
+        "reference_imagery_layer": 121752,
+        "dsm_s3": "https://nz-elevation.s3.ap-southeast-2.amazonaws.com/auckland/auckland-part-1_2024/dsm_1m/2193/",
+        "imagery_s3": "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/auckland/auckland_2024_0.075m/rgb/2193/",
+        "pointcloud_bulk_url": "https://opentopography.s3.sdsc.edu/pc-bulk/NZ24_Auckland",
+        "pointcloud_tile_year": "2024",
     },
     {
         # Glenorchy, Kinloch and the Rees Valley: NO LIDAR. The westernmost

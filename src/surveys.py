@@ -39,7 +39,10 @@ KEYS = ("dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
         "pointcloud_bulk_url", "pointcloud_tile_year", "reference_imagery_layer",
         # "synthetic" where no LiDAR exists: src/synthesize_dsm.py builds the
         # surface instead of fetching one
-        "elevation")
+        "elevation",
+        # LINZ's open S3 STAC collections for the same products; when set, the
+        # fetch reads them (src/s3_rasters.py) instead of the Exports API
+        "dsm_s3", "imagery_s3", "reference_imagery_s3")
 
 # What a survey record falls back to for any key it does not set.
 _DEFAULT_FROM_CONFIG = {
