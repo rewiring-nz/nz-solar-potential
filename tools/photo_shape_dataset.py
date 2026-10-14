@@ -179,7 +179,11 @@ def _crop(src, cx, cy, side_m):
                  resampling=Resampling.average)
     if a.max() == 0 or (a.sum(axis=0) == 0).mean() > 0.05:
         return None
-    return a.astype(np.uint8)
+    if a.dtype == np.uint16:
+        # Newer LINZ captures (the 2025-26 Otago RGBNIR set) store 16-bit
+        # colour; cast straight to uint8 they wrap into noise.
+        a = a // 257
+    return np.clip(a, 0, 255).astype(np.uint8)
 
 
 def _rasterise(geoms_values, cx, cy, side_m, fill=0.0, dtype=np.float32):

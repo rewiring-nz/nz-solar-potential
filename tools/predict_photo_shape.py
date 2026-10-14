@@ -43,8 +43,8 @@ MIN_OBS_M2 = 0.2
 # When a building is off the region's own photo (a town's urban capture often
 # stops short of its edges), the newest open LINZ captures, in order.
 FALLBACK_PHOTOS = [
-    "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/otago/otago_2025-2026_0.15m/rgbnir/2193/",
     "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/otago/otago_2025_0.2m/rgb/2193/",
+    "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/otago/otago_2025-2026_0.15m/rgbnir/2193/",
 ]
 
 
@@ -59,7 +59,12 @@ def targets(region, outlines):
         p = f["properties"]
         if p.get("kind") == "no_estimate" and p.get("no_estimate_reason") == "no_lidar":
             out.append(int(p["building_id"]))
-    return [b for b in out if b in outlines]
+    # ...and every roof read from the photo before, so a better reading
+    # replaces an older one (the build no longer lists those as no_lidar).
+    prev = REGIONS_DIR / region / "photo_roofs.json"
+    if prev.exists():
+        out += [int(b) for b in json.loads(prev.read_text()).get("buildings", {})]
+    return sorted({b for b in out if b in outlines})
 
 
 def _obstruction_rings(prob, thr, mask, t, fp):
