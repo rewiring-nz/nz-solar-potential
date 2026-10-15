@@ -4020,7 +4020,7 @@ map.on("load", async () => {
             lat: (seasonCurves && seasonCurves.lat) || -41,
             roofM2: props.facet_area_m2 || 150,
             kwp: kwp,
-            panelKw: assumptions.panel_rated_power_w / 1000,
+            sizeControl: isLayout ? "panel density slider" : "roof coverage setting",
             gen: gen,
             prices: {
               home: { buy: econ.home_buy_c, sell: econ.home_sell_c, daily: 2.5 },

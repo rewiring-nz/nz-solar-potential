@@ -359,8 +359,9 @@ function btSaveState(bid, st) {
 }
 
 // box: an element to fill. ctx: { buildingId, isBusiness, lat, roofM2,
-// kwp (the roof's whole system), panelKw (one panel's kW), gen (the roof's
-// [season][24] kW, or null), prices: { home: {buy, sell, daily}, business } }
+// kwp (the system the map shows), sizeControl (the map control that sets
+// it, named in the note), gen (its [season][24] kW, or null),
+// prices: { home: {buy, sell, daily}, business } }
 function renderBillTool(box, ctx) {
   if (!document.getElementById("bt-css")) {
     const st = document.createElement("style");
@@ -374,7 +375,6 @@ function renderBillTool(box, ctx) {
     home: Object.assign({}, BT_DEFAULTS.home, saved.home || {}),
     business: Object.assign({}, BT_DEFAULTS.business, saved.business || {}),
     bills: Object.assign({ winter: null, summer: null }, saved.bills || {}),
-    size: Object.assign({ mode: "match", kw: null }, saved.size || {}),   // match | roof | custom
     prices: {
       home: Object.assign({}, ctx.prices.home, (saved.prices || {}).home || {}),
       business: Object.assign({}, ctx.prices.business, (saved.prices || {}).business || {}),
@@ -392,23 +392,13 @@ function renderBillTool(box, ctx) {
     const prof = Object.assign({ type: state.type }, isBiz ? state.business : state.home);
     const prices = isBiz ? state.prices.business : state.prices.home;
     const haveGen = ctx.gen && ctx.gen.length === 4 && ctx.kwp > 0;
-    // SYSTEM SIZE. The roof's whole capacity is rarely what a house would
-    // install (16 Aspen Grove: 39.7 kW of roof against 8,100 kWh a year of
-    // use). The default makes about what the building uses in a year,
-    // capped by the roof; "whole roof" and a slider are one tap away.
-    const roofKw = ctx.kwp;
-    const whole = haveGen ? btEvaluate({ lat: ctx.lat, roofM2: ctx.roofM2, kwp: roofKw, gen: ctx.gen },
-                                       prof, state.bills, prices) : null;
-    const perKw = whole && roofKw > 0 ? whole.genKwh / roofKw : 0;
-    const matchKw = perKw > 0 ? Math.min(roofKw, Math.max(Math.min(3, roofKw),
-                      Math.round(2 * whole.useKwh / perKw) / 2)) : roofKw;
-    const sizeKw = state.size.mode === "roof" ? roofKw
-      : state.size.mode === "custom" && state.size.kw ? Math.min(roofKw, Math.max(0.5, state.size.kw))
-      : matchKw;
-    const k = roofKw > 0 ? sizeKw / roofKw : 0;
-    const gen = haveGen ? ctx.gen.map(row => row.map(v => v * k)) : null;
-    const r = btEvaluate({ lat: ctx.lat, roofM2: ctx.roofM2, kwp: sizeKw, gen }, prof, state.bills, prices);
-    const panelsAt = kw => ctx.panelKw ? Math.round(kw / ctx.panelKw) : null;
+    // THE SYSTEM IS THE ONE ON THE ROOF: the panels the map shows at the
+    // current density (or the heat map's coverage). The tool has no size
+    // control of its own -- one that did not move the panels on the map
+    // priced a different system from the one drawn (removed 16 Oct).
+    const sizeKw = ctx.kwp;
+    const r = btEvaluate({ lat: ctx.lat, roofM2: ctx.roofM2, kwp: sizeKw, gen: haveGen ? ctx.gen : null },
+                         prof, state.bills, prices);
     const W = r.run.seasons.winter, S = r.run.seasons.summer;
     const withBatt = prof.battery > 0;
     // Only claim a match that holds. A bill below the plan's daily charge
@@ -457,15 +447,7 @@ function renderBillTool(box, ctx) {
         `<div class="bt-tile"><div class="k">Pays back in</div><div class="v">${paybackTxt}</div><div class="s">${haveGen ? (ret.net >= 0 ? btMoney(ret.net) + " ahead over " + ret.years + " yrs" : "costs more than it saves") : ""}</div></div>` +
         `<div class="bt-tile"><div class="k">Costs about</div><div class="v">${btMoney(cost)}</div><div class="s">${sizeKw.toFixed(1)} kW solar${withBatt ? " + " + prof.battery + " kWh battery" : ""}</div></div>` +
       `</div>` +
-      (haveGen ? `<div class="bt-sec">Solar size</div>` +
-        `<div class="bt-seg" data-key="sizemode">` +
-          `<button type="button" data-v="match" class="${state.size.mode === "match" ? "on" : ""}">Sized for your use &middot; ${matchKw.toFixed(1)} kW</button>` +
-          `<button type="button" data-v="roof" class="${state.size.mode === "roof" ? "on" : ""}">Whole roof &middot; ${roofKw.toFixed(1)} kW</button>` +
-        `</div>` +
-        `<div class="row"><input type="range" data-size="kw" min="0.5" max="${roofKw.toFixed(1)}" step="0.5" value="${sizeKw.toFixed(1)}" style="flex:1; width:auto" aria-label="Solar size in kW">` +
-        `<span style="min-width:120px;text-align:right">${sizeKw.toFixed(1)} kW${panelsAt(sizeKw) ? " &middot; " + panelsAt(sizeKw) + " panels" : ""}</span></div>` +
-        `<div class="note" style="margin-top:0">Makes ${Math.round(r.genKwh).toLocaleString()} kWh a year; this ${isBiz ? "business" : "home"} uses about ${Math.round(r.useKwh).toLocaleString()}.</div>`
-        : "") +
+      (haveGen ? `<div class="note" style="margin:-6px 0 10px">For the ${sizeKw.toFixed(1)} kW of panels on the map, making ${Math.round(r.genKwh).toLocaleString()} kWh a year; this ${isBiz ? "business" : "home"} uses about ${Math.round(r.useKwh).toLocaleString()}. ${ctx.sizeControl ? "Change it with the " + ctx.sizeControl + "." : ""}</div>` : "") +
       `<div class="bt-today">` +
         `<div class="bt-today-h">Your bills today?</div>` +
         `<div class="bt-today-row">` +
@@ -500,7 +482,6 @@ function renderBillTool(box, ctx) {
     box.querySelectorAll(".bt-seg").forEach(g => g.addEventListener("click", ev => {
       const b = ev.target.closest("button"); if (!b) return;
       const k = g.dataset.key, v = b.dataset.v;
-      if (k === "sizemode") { state.size.mode = v; state.size.kw = null; save(); draw(); return; }
       if (k === "type") state.type = v;
       else {
         const tgt = state.type === "business" ? state.business : state.home;
@@ -518,15 +499,6 @@ function renderBillTool(box, ctx) {
       const tgt = state.type === "business" ? state.business : state.home;
       tgt[c.dataset.tick] = c.checked; save(); draw();
     }));
-    box.querySelectorAll("input[data-size]").forEach(inp => {
-      inp.addEventListener("input", () => {
-        const lab = inp.nextElementSibling;
-        if (lab) lab.textContent = (+inp.value).toFixed(1) + " kW";
-      });
-      inp.addEventListener("change", () => {
-        state.size.mode = "custom"; state.size.kw = +inp.value; save(); draw();
-      });
-    });
     box.querySelectorAll("input[data-bill]").forEach(inp => inp.addEventListener("change", () => {
       const v = parseFloat(inp.value);
       state.bills[inp.dataset.bill] = v > 0 ? v : null; save(); draw();
