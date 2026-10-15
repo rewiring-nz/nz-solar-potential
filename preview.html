@@ -297,6 +297,16 @@
   /* Sections are separated by space first, a hairline only where the change of
      subject is real. */
   .est-section { border-top: 1px solid var(--line); margin-top: var(--s5); padding-top: var(--s3); }
+  /* Live view of the selected roof: the same panels the map shows, redrawn
+     whenever density, payback bands or a hand edit change them. */
+  .live-view { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 320px; overflow: hidden;
+    border-radius: 8px; background: #101317; margin: 6px 0 var(--s3); }
+  .live-view img { position: absolute; width: 256px; height: 256px; max-width: none; }
+  .live-view svg { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .live-badge { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.68); color: var(--ink);
+    border-radius: 11px; padding: 3px 9px; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .live-badge b { color: var(--accent); }
+  .live-badge .ed { color: #7fd18e; margin-left: 6px; }
   .est-title { font-size: var(--fs-meta); font-weight: 700; color: var(--ink-3);
     text-transform: uppercase; letter-spacing: 0.7px;
     display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
@@ -501,7 +511,7 @@
       font-size: 13px; font-weight: 700; margin-bottom: 4px; }
     .m-close { background: none; border: none; color: #aaa; font-size: 20px; line-height: 1; cursor: pointer; }
     /* Building detail sheet: no thumbnail on mobile (user request). */
-    .side-panel .tuning, .side-panel #layout-details { display: none; }
+    .side-panel .tuning, .side-panel #layout-details, .side-panel .live-view { display: none; }
     /* Keep MapLibre's own chrome clear of the mobile bars. */
     .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: 104px; }
     .maplibregl-ctrl-top-right { top: 150px; }
@@ -3618,6 +3628,26 @@ map.on("load", async () => {
   // slider-tuned, so experimenting never touches the shared bulk dataset
   // used for every other building. Empty until a slider is first moved.
   map.addSource("live-layout", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // Remember what the live-layout source holds (the panel editor's panels)
+  // and refresh the selected building's figures and live view when it
+  // changes -- once per frame, so dragging a panel stays smooth.
+  {
+    const src = map.getSource("live-layout");
+    const setData0 = src.setData.bind(src);
+    let pending = null;
+    src.setData = data => {
+      window.__liveLayoutData = data;
+      const out = setData0(data);
+      if (pending) cancelAnimationFrame(pending);
+      pending = requestAnimationFrame(() => {
+        pending = null;
+        if (selectedPanelBuildingId != null && selectedPanelBuildingId !== -1) {
+          updateFittedStats(selectedPanelBuildingId);
+        }
+      });
+      return out;
+    };
+  }
   map.addLayer({
     id: "live-facets-outline", type: "line", source: "live-layout",
     filter: ["==", ["get", "kind"], "facet"],
@@ -3765,6 +3795,7 @@ map.on("load", async () => {
         <h4 style="font-size:17px;">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
         ${guessNote}
+        <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
         <div class="est-section" id="est-heatmap" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">
@@ -3846,78 +3877,151 @@ map.on("load", async () => {
       </div>`;
   }
 
-  // Static thumbnail of the clicked roof: LINZ Basemaps tiles composed with
-  // plain absolutely-positioned <img>s (no canvas, so no CORS constraints),
-  // shifted so the click point sits at the container's center.
-  function buildThumbnail(container, lngLat, geom) {
-    // Square crop that always contains the WHOLE footprint: zoom chosen so
-    // the building's bbox (plus margin) fits the container, centred on the
-    // bbox centre rather than wherever the user happened to click.
-    const merc = (lng, lat, z) => {
-      const n = Math.pow(2, z);
-      const latRad = lat * Math.PI / 180;
-      return [(lng + 180) / 360 * n,
-              (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n];
-    };
-    let cLng = lngLat.lng, cLat = lngLat.lat, z = 20;
-    const sizeW = container.clientWidth || 348;
-    const sizeH = container.clientHeight || Math.round(sizeW * 3 / 4);
-    const size = Math.min(sizeW, sizeH);  // building must fit the SHORT side
-    if (geom) {
+  // LIVE VIEW of the selected roof (16 Oct, Josh: "a live view of that
+  // building's panel layout, which changes panel numbers when they are
+  // changed in the main view"). The photo is LINZ Basemaps tiles laid out as
+  // plain <img>s (no canvas, no second WebGL map); over it an SVG draws the
+  // SAME features the main map shows for this building -- roof faces,
+  // obstructions, and the panels visible at the current density and payback
+  // bands, or the hand-edited set while the editor owns the roof -- so the
+  // two can never disagree. Redrawn from updateFittedStats, which every
+  // density / band / mode / edit change already goes through.
+  const LIVE = { bid: null, w: 0, h: 0, proj: null };
+  const liveMerc = (lng, lat, z) => {
+    const n = Math.pow(2, z), latRad = lat * Math.PI / 180;
+    return [(lng + 180) / 360 * n,
+            (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n];
+  };
+  function liveFeatures(bid) {
+    const out = { facets: [], obstructions: [], panels: [], edited: false };
+    let raw = [];
+    try {
+      raw = map.querySourceFeatures("layout", { sourceLayer: "layout",
+        filter: ["==", ["get", "building_id"], bid] });
+    } catch (err) { raw = []; }
+    // Tiles clip features at their edges, so a panel crossing one arrives as
+    // two pieces with different first corners: draw every piece (together
+    // they are the panel) but COUNT a panel once, by its fill_order, which
+    // is unique per panel of a building. Counting pieces read 47 panels
+    // where the building has 44 (18 Aspen Grove, 16 Oct).
+    const seen = new Set(), counted = new Set();
+    raw.forEach(f => {
+      const g = f.geometry;
+      if (!g || g.type !== "Polygon") return;
+      const c = g.coordinates[0][0];
+      const key = f.properties.kind + ":" + c[0].toFixed(7) + "," + c[1].toFixed(7);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const q = f.properties;
+      if (q.kind === "facet") out.facets.push({ g, q });
+      else if (q.kind === "obstruction") out.obstructions.push({ g, q });
+      else if (q.kind === "panel" && panelVisible(q)) {
+        out.panels.push({ g, q });
+        counted.add(q.fill_order != null ? q.fill_order : key);
+      }
+    });
+    out.panelCount = counted.size;
+    // The editor (panel_editor.js) hides this building's tile panels and
+    // draws its own set on the live-layout source; show that set instead.
+    const live = window.__liveLayoutData;
+    if (layoutExcludedBuildingId === bid && live && live.features) {
+      out.panels = live.features.filter(f => f.properties && f.properties.kind === "panel"
+          && f.properties.building_id === bid && f.geometry && f.geometry.type === "Polygon")
+        .map(f => ({ g: f.geometry, q: f.properties }));
+      out.panelCount = out.panels.length;
+      out.edited = true;
+    }
+    return out;
+  }
+  function renderLiveView(bid) {
+    const box = document.getElementById("bldg-live");
+    if (!box || box.offsetParent === null) return;          // hidden (mobile sheet)
+    const geom = selectedGeomById && selectedGeomById[bid];
+    const w = box.clientWidth, h = box.clientHeight;
+    if (!geom || !w || !h) return;
+    // Photo tiles: once per building and size.
+    if (LIVE.bid !== bid || LIVE.w !== w || LIVE.h !== h || !box.querySelector("img")) {
+      box.innerHTML = "";
       const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flat();
       const pts = rings.flat();
       const lngs = pts.map(c => c[0]), lats = pts.map(c => c[1]);
       const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
       const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-      cLng = (minLng + maxLng) / 2; cLat = (minLat + maxLat) / 2;
-      for (z = 20; z > 15; z--) {
-        const [ax, ay] = merc(minLng, maxLat, z), [bx, by] = merc(maxLng, minLat, z);
-        const span = Math.max(bx - ax, by - ay) * 256;
-        if (span * 1.35 <= size) break;  // 1.35 = breathing room around the roof
+      const cLng = (minLng + maxLng) / 2, cLat = (minLat + maxLat) / 2;
+      let z = 21;
+      for (; z > 15; z--) {
+        const [ax, ay] = liveMerc(minLng, maxLat, z), [bx, by] = liveMerc(maxLng, minLat, z);
+        if ((bx - ax) * 256 * 1.3 <= w && (by - ay) * 256 * 1.3 <= h) break;
       }
-    }
-    const n = Math.pow(2, z);
-    const [xf, yf] = merc(cLng, cLat, z);
-    const cx = sizeW / 2, cy = sizeH / 2;
-    const xt = Math.floor(xf), yt = Math.floor(yf);
-    const baseLeft = cx - (xf - xt) * 256, baseTop = cy - (yf - yt) * 256;
-    const r = Math.ceil(Math.max(sizeW, sizeH) / 256) + 1;
-    for (let dx = -r; dx <= r; dx++) {
-      for (let dy = -r; dy <= r; dy++) {
-        const left = baseLeft + dx * 256, top = baseTop + dy * 256;
-        if (left > sizeW || top > sizeH || left + 256 < 0 || top + 256 < 0) continue;
+      const [xf, yf] = liveMerc(cLng, cLat, z);
+      const zt = Math.min(z, 20), sc = Math.pow(2, z - zt);       // tiles stop at 20
+      const [xft, yft] = liveMerc(cLng, cLat, zt);
+      const xt = Math.floor(xft), yt = Math.floor(yft), size = 256 * sc;
+      const baseLeft = w / 2 - (xft - xt) * size, baseTop = h / 2 - (yft - yt) * size;
+      const r = Math.ceil(Math.max(w, h) / size) + 1;
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+        const left = baseLeft + dx * size, top = baseTop + dy * size;
+        if (left > w || top > h || left + size < 0 || top + size < 0) continue;
         const img = document.createElement("img");
-        img.src = `https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/${z}/${xt + dx}/${yt + dy}.webp?api=c01m0keqqjx0anrxjrt7grvtqxh`;
-        img.style.left = left + "px";
-        img.style.top = top + "px";
+        img.src = `https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/${zt}/${xt + dx}/${yt + dy}.webp?api=c01m0keqqjx0anrxjrt7grvtqxh`;
+        img.style.cssText = `left:${left}px;top:${top}px;width:${size}px;height:${size}px`;
         img.alt = "";
-        container.appendChild(img);
+        box.appendChild(img);
       }
-    }
-    if (geom) {
-      // Dotted outline of the selected footprint so it's obvious which
-      // building the photo is about.
-      const toPx = c => {
-        const [px, py] = merc(c[0], c[1], z);
-        return `${(cx + (px - xf) * 256).toFixed(1)},${(cy + (py - yf) * 256).toFixed(1)}`;
-      };
-      const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flat();
-      const polys = rings.map(ring => `<polygon points="${ring.map(toPx).join(" ")}" fill="none" stroke="#ffe600" stroke-width="2.5" stroke-dasharray="6 4"/>`).join("");
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("width", sizeW); svg.setAttribute("height", sizeH);
-      svg.style.cssText = "position:absolute; left:0; top:0; pointer-events:none;";
-      svg.innerHTML = polys;
-      container.appendChild(svg);
+      svg.setAttribute("width", w); svg.setAttribute("height", h);
+      box.appendChild(svg);
+      const badge = document.createElement("div");
+      badge.className = "live-badge";
+      box.appendChild(badge);
+      Object.assign(LIVE, { bid, w, h, proj: { z, xf, yf } });
+    }
+    const { z, xf, yf } = LIVE.proj;
+    const px = c => { const [x, y] = liveMerc(c[0], c[1], z);
+      return (w / 2 + (x - xf) * 256).toFixed(1) + "," + (h / 2 + (y - yf) * 256).toFixed(1); };
+    const poly = (g, attrs) => `<polygon points="${g.coordinates[0].map(px).join(" ")}" ${attrs}/>`;
+    const F = liveFeatures(bid);
+    const isLayout = mode === "layout";
+    const sunCol = v => {   // the heat map's ramp, south/low -> north/high
+      const t = Math.max(0, Math.min(1, ((v || 0) - 600) / 700));
+      const stops = [[49, 18, 59], [140, 41, 129], [222, 73, 104], [254, 159, 109], [252, 253, 191]];
+      const i = Math.min(stops.length - 2, Math.floor(t * (stops.length - 1)));
+      const u = t * (stops.length - 1) - i, a = stops[i], b = stops[i + 1];
+      return `rgb(${a.map((v0, k) => Math.round(v0 + u * (b[k] - v0))).join(",")})`;
+    };
+    let body = "";
+    const fpRings = geom.type === "Polygon" ? [geom.coordinates[0]] : geom.coordinates.map(pg => pg[0]);
+    if (!isLayout) {
+      F.facets.forEach(f => { body += poly(f.g, `fill="${sunCol(f.q.poa_kwh_m2_yr)}" fill-opacity="0.78" stroke="rgba(0,0,0,.35)" stroke-width="0.6"`); });
+    } else {
+      F.facets.forEach(f => { body += poly(f.g, `fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.8" stroke-dasharray="3 2"`); });
+      F.obstructions.forEach(f => { body += poly(f.g, `fill="rgba(255,80,70,.45)" stroke="none"`); });
+      F.panels.forEach(f => { body += poly(f.g, `fill="#1c3f8f" fill-opacity="0.92" stroke="#8fb3ff" stroke-width="0.5"`); });
+    }
+    fpRings.forEach(ring => { body += `<polygon points="${ring.map(px).join(" ")}" fill="none" stroke="#ffe600" stroke-width="1.6" stroke-dasharray="6 4"/>`; });
+    box.querySelector("svg").innerHTML = body;
+    const kwEach = assumptions.panel_rated_power_w / 1000;
+    const badge = box.querySelector(".live-badge");
+    if (isLayout) {
+      const n = F.panelCount;
+      badge.innerHTML = `<b>${n.toLocaleString()}</b> panels &middot; ${(n * kwEach).toFixed(1)} kW` +
+        (F.edited ? `<span class="ed">edited</span>` : "");
+      badge.style.display = (n || F.facets.length) ? "" : "none";
+    } else {
+      const pw = document.getElementById("bldg-power");
+      badge.innerHTML = `Heat map &middot; ${pw ? pw.textContent : ""}`;
+      badge.style.display = F.facets.length ? "" : "none";
     }
   }
+  window.__renderLiveView = renderLiveView;
 
-  // "Proposed panel layout" stats, client-computed from the panel features at
-  // the current density -- the same filter the map layers use, so the numbers
-  // always match what's drawn.
   function updateFittedStats(buildingId) {
     const el = id => document.getElementById(id);
     const props = selectedBuildingProps;
     if (!props || props.building_id !== buildingId) return;
+    // the live view redraws after the figures (deferred so it sees the
+    // panel's freshly written numbers)
+    requestAnimationFrame(() => renderLiveView(buildingId));
     // Where the system size comes from depends on which map you are looking at
     // (the economics once failed to move when the coverage option changed). In
     // Panel Layout it is the fitted panels at the current density. In Heat Map
@@ -3932,6 +4036,17 @@ map.on("load", async () => {
       kwhYear = decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
       const kept = bandFilteredTotals(buildingId);
       if (kept) { count = kept.count; kwhYear = kept.kwhRaw * bakedKwhScale(); }
+      // While the panel editor owns this roof, the figures follow its panels,
+      // not the tiles it has hidden -- the live view above draws the edited
+      // set, and the numbers beside it must count the same panels. Energy
+      // scales with the count (the edited panels sit on the same roof).
+      const live = window.__liveLayoutData;
+      if (layoutExcludedBuildingId === buildingId && live && live.features) {
+        const n = live.features.filter(f => f.properties && f.properties.kind === "panel"
+                                         && f.properties.building_id === buildingId).length;
+        kwhYear = count > 0 ? kwhYear * n / count : 0;
+        count = n;
+      }
       kwp = count * assumptions.panel_rated_power_w / 1000;
     } else {
       ({ kwp, kwhYear } = buildingEstimate(props, coveragePct));
@@ -4360,7 +4475,12 @@ map.on("load", async () => {
       const geom = f.geometry;  // MapGeoJSONFeature exposes GeoJSON geometry directly
       if (!geom || geom.type !== "Polygon") return;
       const c = geom.coordinates[0][0];
-      const key = f.properties.kind + ":" + c[0].toFixed(7) + "," + c[1].toFixed(7);
+      // A panel split across a tile edge is two pieces with different first
+      // corners; its fill_order is unique per building, so key panels on that
+      // (a piece-key counted 47 kWp-panels where 18 Aspen Grove has 44).
+      const key = (f.properties.kind === "panel" && f.properties.fill_order != null)
+        ? "panel:" + f.properties.building_id + ":" + f.properties.fill_order
+        : f.properties.kind + ":" + c[0].toFixed(7) + "," + c[1].toFixed(7);
       if (seenKeys.has(key)) return;
       seenKeys.add(key);
       const q = f.properties;
@@ -4513,6 +4633,7 @@ map.on("load", async () => {
       kwp: totalKwp,
     };
     if (window.__billToolRedraw) window.__billToolRedraw();
+    renderLiveView(buildingId);
 
     // Width follows the panel, so expanding it actually makes the chart bigger
     // rather than leaving a 288px graphic marooned in a wide column.
