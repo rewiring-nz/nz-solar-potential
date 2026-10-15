@@ -59,6 +59,11 @@ def targets(region, outlines):
         p = f["properties"]
         if p.get("kind") == "no_estimate" and p.get("no_estimate_reason") == "no_lidar":
             out.append(int(p["building_id"]))
+    # ...buildings found in the photo where LINZ had no outline
+    # (tools/detect_new_buildings.py): the LiDAR predates them too...
+    for f in json.loads((REGIONS_DIR / region / "building_outlines.geojson").read_text())["features"]:
+        if f["properties"].get("source") == "photo_detected":
+            out.append(int(f["properties"]["building_id"]))
     # ...and every roof read from the photo before, so a better reading
     # replaces an older one (the build no longer lists those as no_lidar).
     prev = REGIONS_DIR / region / "photo_roofs.json"

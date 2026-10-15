@@ -33,6 +33,8 @@ sys.path.insert(0, str(ROOT))
 from src import photo_shape as ps  # noqa: E402
 
 DATA = ROOT / "data" / "footprints"
+TILE_PX_DEFAULT = 256        # tools/footprint_dataset.py TILE_PX
+RES_M_DEFAULT = 0.25         # ...and RES_M
 OUT = ROOT / "data" / "models" / "footprints_v1.pt"
 TEST_REGIONS = {"frankton_flats", "kelvin_heights", "arthurs_point"}
 VAL_REGIONS = {"lake_hayes_est_west"}
