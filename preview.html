@@ -11,6 +11,8 @@
 <script src="site-config.js"></script>
 <!-- Money maths, shared with tests/test_economics.mjs -->
 <script src="economics.js"></script>
+<!-- The per-building bill and battery tool (tests/test_bill_tool.mjs) -->
+<script src="bill_tool.js"></script>
 <!-- Hand-editing a roof's panels. Loads after economics.js and wires
      itself only once the map exists (see the _wire call after style load). -->
 <script src="panel_editor.js"></script>
@@ -3972,82 +3974,14 @@ map.on("load", async () => {
       // the band controls with it, so it stays and says so.
       be.style.display = (e || (panelEcon && isLayout)) ? "" : "none";
       if (e) {
-        // Four figures, each as a bold yellow label with a light-weight value
-        // under it. Net savings is what is left after the system has
-        // paid for itself, which is the number people actually mean when they
-        // ask what solar is worth -- lifetime savings on its own reads as
-        // profit and is not.
-        const item = (label, id, cls) =>
-          `<div class="econ-item"><div class="econ-label">${label}</div>` +
-          `<div class="econ-value${cls ? " " + cls : ""}" id="${id}"></div></div>`;
-        // Assumptions sit UNDER the figures and show only the side that
-        // applies to this building: a house has no business tariff, and
-        // showing both invites the reader to wonder which one they got.
-        const p = e.biz ? "biz_" : "home_";
-        const kind = e.biz ? "business" : "home";
+        // THE BILL TOOL (bill_tool.js) replaced the cost / lifetime / ROI
+        // figures and the kW-of-daytime-load inputs on 16 Oct: people know
+        // who lives there, how the water and rooms are heated, whether there
+        // is an EV, and what their winter bill was -- not their daytime kW.
         be.innerHTML =
-          item("Cost", "econ-v-cost") +
-          item("Yearly savings", "econ-v-annual") +
-          item("Lifetime savings", "econ-v-life") +
-          `<div class="econ-roi"><span>Lifetime ROI: <b id="econ-roi-life"></b></span>` +
-            `<span class="sep"></span>` +
-            `<span>Yearly ROI: <b id="econ-roi-year"></b></span></div>` +
-          `<div class="econ-basis" id="econ-method"></div>` +
-          `<div class="econ-basis" id="econ-basis"></div>` +
+          `<div id="bill-tool"></div>` +
           `<div class="econ-bands" id="econ-bands" style="display:none"></div>` +
-          `<div class="panel-econ-note" id="panel-econ-note"></div>` +
-          `<div class="econ-inputs">` +
-            `<div class="econ-assump-head">Assumptions &mdash; ${kind}</div>` +
-            `<label>Electricity price` +
-              `<span><input type="number" id="econ-buy" min="0" step="1" ` +
-              `value="${econ[p + "buy_c"]}"> c/kWh</span></label>` +
-            `<label>Export price` +
-              `<span><input type="number" id="econ-sell" min="0" step="0.5" ` +
-              `value="${econ[p + "sell_c"]}"> c/kWh</span></label>` +
-            `<label>Electricity use per year` +
-              `<span><input type="number" id="econ-use" min="0" step="500" ` +
-              `value="${Math.round(econ[p + "use_kwh"])}"> kWh</span></label>` +
-            `<label>Self consumption<span id="econ-self-val"></span></label>` +
-            `<input type="range" id="econ-self" min="0.2" max="${e.biz ? 30 : 6}" ` +
-              `step="${e.biz ? 0.5 : 0.1}" value="${econ[p + "daytime_kw"]}">` +
-            `<div class="econ-cap" id="econ-self-note"></div>` +
-            // RETAIL PLAN: a few example plans, each customisable. These
-            // are SHAPES of plan sold in New Zealand, not
-            // offers -- no retailer is named, and every rate stays editable
-            // above. A plan only changes the answer because the hourly
-            // engine prices each hour separately; on the annual model they
-            // would all be the same number.
-            `<label class="econ-plan-lab">Retail plan` +
-              `<select id="econ-plan">` +
-              RETAIL_PLANS.filter(pl => !!pl.biz === !!e.biz).map(pl =>
-                `<option value="${pl.id}">${pl.label}</option>`).join("") +
-              `</select></label>` +
-            `<div class="econ-cap" id="econ-plan-note"></div>` +
-            // WHAT YOU PAY, AND WHEN. Prices are transparent: the user sees
-            // each rate and the hours it applies to. A plan that only shows a name is the
-            // same opaque number the flat rate was. This draws the 24 hours
-            // with the price of each, marks the hours the roof actually
-            // generates, and lets every band be edited -- which is also
-            // what makes the plans "customisable" rather than five fixed
-            // options.
-            `<div id="econ-rate-strip"></div>` +
-            `<div id="econ-rate-bands"></div>` +
-            // BATTERY. Simulated, not approximated: the old model carried a
-            // battery as "a bigger daytime load", which credits it for
-            // energy it never stored.
-            `<label class="econ-batt-lab">` +
-              `<input type="checkbox" id="econ-batt"> Add a battery</label>` +
-            `<div id="econ-batt-box" style="display:none">` +
-              `<label>Battery size` +
-                `<span><input type="number" id="econ-batt-kwh" min="1" max="100" ` +
-                `step="1" value="${BATTERY_DEFAULTS.kwh}"> kWh</span></label>` +
-              `<label>Installed cost` +
-                `<span><input type="number" id="econ-batt-cost" min="0" step="100" ` +
-                `value="${BATTERY_DEFAULTS.cost_per_kwh}"> $/kWh</span></label>` +
-              `<div class="econ-cap" id="econ-batt-note"></div>` +
-            `</div>` +
-          `</div>` +
-          `<div class="panel-caveat">Indicative only &mdash; not a quote.</div>`;
+          `<div class="panel-econ-note" id="panel-econ-note"></div>`;
 
         // Redraw the NUMBERS in place, never the block. Rebuilding innerHTML on
         // every keystroke destroyed the field being typed into -- the old code
@@ -4055,201 +3989,48 @@ map.on("load", async () => {
         // Per-hour prices the reader can see and change. `rateOverride`
         // starts empty (the plan's own rates) and holds whatever has been
         // edited, so switching plan resets to that plan's shape.
-        let rateOverride = null;
-        const bandsOf = rates => {
-          const out = [];
-          for (let h = 0; h < 24; h++) {
-            const last = out[out.length - 1];
-            if (last && Math.abs(last.c - rates[h]) < 1e-9) last.to = h + 1;
-            else out.push({ from: h, to: h + 1, c: rates[h] });
-          }
-          // A band that wraps midnight reads as one period to a person, so
-          // join the ends when they price the same.
-          if (out.length > 1 && Math.abs(out[0].c - out[out.length - 1].c) < 1e-9) {
-            const first = out.shift();
-            out[out.length - 1].wrapTo = first.to;
-          }
-          return out;
-        };
-        const hh = h => String(h % 24).padStart(2, "0") + ":00";
-        const drawRates = (rates, genByHour) => {
-          const strip = el("econ-rate-strip");
-          if (!strip) return;
-          const lo = Math.min(...rates), hi = Math.max(...rates);
-          const gmax = genByHour ? Math.max(0.001, ...genByHour) : 0;
-          let cells = "";
-          for (let h = 0; h < 24; h++) {
-            // darker = dearer; the generation overlay is the pale bar, so a
-            // reader can see at a glance whether the roof produces during
-            // the expensive hours or the cheap ones.
-            const t = hi > lo ? (rates[h] - lo) / (hi - lo) : 0;
-            const g = genByHour ? genByHour[h] / gmax : 0;
-            cells += `<div class="rate-cell" title="${hh(h)} — ${rates[h].toFixed(0)}c` +
-              (genByHour ? `, ${genByHour[h].toFixed(1)} kW` : "") + `">` +
-              `<div class="rate-fill" style="background:rgba(255,210,74,${0.12 + 0.75 * t})"></div>` +
-              `<div class="rate-gen" style="height:${Math.round(g * 100)}%"></div></div>`;
-          }
-          strip.innerHTML = `<div class="rate-strip">${cells}</div>` +
-            `<div class="rate-axis"><span>00</span><span>06</span>` +
-            `<span>12</span><span>18</span><span>24</span></div>` +
-            `<div class="econ-cap">Shaded by price · pale bars are when this ` +
-            `roof generates</div>`;
-          const box = el("econ-rate-bands");
-          if (!box) return;
-          box.innerHTML = bandsOf(rates).map((b, i) =>
-            `<label class="rate-band"><span>${hh(b.from)}–${hh(b.wrapTo != null ? b.wrapTo : b.to)}</span>` +
-            `<span><input type="number" class="rate-input" data-from="${b.from}" ` +
-            `data-to="${b.to}" data-wrap="${b.wrapTo != null ? b.wrapTo : ""}" ` +
-            `min="0" step="1" value="${b.c.toFixed(0)}"> c/kWh</span></label>`).join("");
-          box.querySelectorAll(".rate-input").forEach(inp => {
-            inp.addEventListener("change", () => {
-              const next = (rateOverride || rates).slice();
-              const v = Math.max(0, +inp.value || 0);
-              const from = +inp.dataset.from, to = +inp.dataset.to;
-              for (let h = from; h < to; h++) next[h] = v;
-              if (inp.dataset.wrap !== "") {
-                for (let h = 0; h < +inp.dataset.wrap; h++) next[h] = v;
-              }
-              rateOverride = next;
-              refresh();
-            });
-          });
-        };
-
-        const bindRefresh = ids => ids.forEach(id => {
-          const n = el(id);
-          if (n) n.addEventListener("change", () => refresh());
-        });
         const refresh = () => {
-          // HOURLY WHERE WE CAN, annual where we cannot. The hourly engine
-          // needs the generation profile the chart publishes; before the
-          // curves load, or on a roof with no profile, the annual model
-          // still answers. A plan or a battery only has meaning in the
-          // hourly path, so the controls hide themselves in the other one.
           const gp = window.__genProfile;
-          const planSel = el("econ-plan");
-          const chosen = planSel && RETAIL_PLANS.find(pl => pl.id === planSel.value);
-          const batt = {
-            enabled: !!(el("econ-batt") && el("econ-batt").checked),
-            kwh: +(el("econ-batt-kwh") || {}).value || BATTERY_DEFAULTS.kwh,
-            cost_per_kwh: +(el("econ-batt-cost") || {}).value
-                          || BATTERY_DEFAULTS.cost_per_kwh,
-          };
-          // The chart sizes the array its own way (facet area x coverage)
-          // and the panel sizes it from the building's kwp, and the two
-          // legitimately differ by a few percent. What the hourly engine
-          // needs is the SHAPE of the day, so the profile is rescaled to
-          // whatever system is being priced rather than demanding the two
-          // agree -- requiring a match just silently fell back to the
-          // annual model on most buildings.
           const canHourly = gp && gp.gen && gp.kwp > 0;
-          const annual = economicsFor(kwp, kwhYear, props.facet_area_m2,
-                                      { zoneClass: props.zone_class });
+          // e still feeds the panel-economics colouring below (cost and
+          // lifetime per panel), priced hour by hour when the curve exists.
           if (canHourly) {
             const k = kwp / gp.kwp;
             const gen = gp.gen.map(row => row.map(v => v * k));
-            e = economicsHourlyFor(kwp, gen, gp.seasonDays,
-                                   props.facet_area_m2,
-                                   { plan: chosen, battery: batt,
-                                     buyRates: rateOverride || undefined,
-                                     zoneClass: props.zone_class });
-            drawRates(e.buyRates,
-                      gen.length ? gen[0].map((_, h) =>
-                        gen.reduce((t, row) => t + row[h], 0) / gen.length)
-                        : null);
-          } else {
-            e = annual;
+            e = economicsHourlyFor(kwp, gen, gp.seasonDays, props.facet_area_m2,
+                                   { zoneClass: props.zone_class }) || e;
           }
-          if (!e) return;
-          const bb = el("econ-batt-box");
-          if (bb) bb.style.display = batt.enabled ? "" : "none";
-          const pl = el("econ-plan-note");
-          if (pl) pl.textContent = canHourly
-            ? (chosen ? chosen.note : "")
-            : "Plan and battery need the generation profile — open the chart above.";
-          const bn = el("econ-batt-note");
-          if (bn && batt.enabled && e.hourly) {
-            bn.textContent =
-              `Stores ${Math.round(e.selfKwh).toLocaleString()} kWh/yr on site `
-              + `(${Math.round(e.selfPct)}% of what the roof makes), `
-              + `${Math.round(e.exportKwh).toLocaleString()} kWh exported. `
-              + `Replaced once inside the ${econ.life_years}-year life.`;
-          } else if (bn) { bn.textContent = ""; }
-          const net = e.lifetime - e.cost;
-          el("econ-v-cost").textContent = fmtMoneyFull(e.cost);
-          el("econ-v-annual").textContent = fmtMoneyFull(e.annual);
-          // Net carries the colour, because it is the one figure here that can
-          // go the wrong way -- green if the system is ahead over its life, red
-          // if it never gets there.
-          el("econ-v-life").innerHTML = fmtMoneyFull(e.lifetime) +
-            `<span class="econ-net-inline ${net >= 0 ? "econ-pos" : "econ-neg"}">` +
-            `(${net < 0 ? "-" : ""}${fmtMoneyFull(Math.abs(net))} ` +
-            `net ${net >= 0 ? "profit" : "loss"})</span>`;
-          // Lifetime ROI is the return on the money over the system's life --
-          // net of the install, so a system that only just pays for itself
-          // reads 0%, not 100%. Yearly is the simple annual rate.
-          el("econ-roi-life").textContent = e.cost > 0
-            ? Math.round(100 * net / e.cost) + "%" : "\u2014";
-          el("econ-roi-year").textContent = e.cost > 0
-            ? Math.round(100 * e.annual / e.cost) + "%" : "\u2014";
-          // The self-consumption slider describes the ANNUAL model's load
-          // ceiling. In the hourly path the load is a shape through the day
-          // and self-consumption is an output, so the figure shown is what
-          // actually happened rather than the input that caused it.
-          if (e.hourly) {
-            el("econ-self-val").textContent =
-              Math.round(e.selfPct) + "% of generation";
-            el("econ-self-note").innerHTML =
-              `${Math.round(e.selfKwh).toLocaleString()} kWh/yr used on site, ` +
-              `${Math.round(e.exportKwh).toLocaleString()} kWh exported, ` +
-              `priced hour by hour.`;
-          } else {
-            el("econ-self-val").textContent = e.daytimeKw.toFixed(1) + " kW";
-            el("econ-self-note").innerHTML = selfNote(e);
-          }
-          // Stated in full under the figure it produced, because every
-          // one of these moves the answer materially and a reader cannot check
-          // a number whose basis is invisible.
-          el("econ-method").innerHTML =
-            `Retail electricity rising ${econ.elec_inflation_pct}%/yr; export held at the ` +
-            `buyback schedule, not inflated. Future money discounted at ` +
-            `${econ.discount_rate_pct}%/yr. Panels degrading ` +
-            `${econ.degradation_pct}%/yr. Inverter replaced in year ` +
-            `${econ.inverter_replace_year} at ${econ.inverter_cost_pct}% of install ` +
-            `(${fmtMoneyFull(e.inverterCost)} discounted).`;
-          el("econ-basis").innerHTML =
-            `${e.payback ? e.payback.toFixed(1) + " year payback" : "does not pay back within its life"}` +
-            ` &middot; over ${econ.life_years} years &middot; priced as ${e.biz ? "a business" : "a home"}` +
-            `${(e.sellLater != null && e.sellLater < e.sellNow - 0.05) ? `, export falling ${econ.export_decline_pct}%/yr to ${e.sellLater.toFixed(1)}c by ${THIS_YEAR + econ.life_years}` : ""}`;
+          drawBillTool();
         };
-        refresh();
-        bindRefresh(["econ-batt", "econ-batt-kwh", "econ-batt-cost"]);
-        // Choosing a plan clears any hand-edited rates: they described the
-        // plan you were looking at, not this one.
-        if (el("econ-plan")) el("econ-plan").addEventListener("change", () => {
-          rateOverride = null;
-          refresh();
-        });
-
-        // These are the same assumptions the settings modal holds, so they
-        // write to it rather than to a per-building copy: two places showing
-        // different export prices would be worse than not showing them here.
-        const bindField = (id, key, parse, min) => {
-          const node = el(id);
-          if (!node) return;
-          node.addEventListener("input", () => {
-            const v = parse(node.value);
-            if (!isFinite(v) || v < min) return;
-            econ[key] = v;
-            refresh();
-            recomputeInViewSummary();
-            if (window.__applyEcon) window.__applyEcon({ silent: true });
+        const drawBillTool = () => {
+          const box = el("bill-tool");
+          if (!box) return;
+          const gp = window.__genProfile;
+          let gen = null;
+          if (gp && gp.gen && gp.kwp > 0 && seasonCurves) {
+            const k = kwp / gp.kwp;
+            gen = BT_SEASONS.map(name => {
+              const i = seasonCurves.seasons.indexOf(name);
+              return i >= 0 && gp.gen[i] ? gp.gen[i].map(v => v * k) : new Array(24).fill(0);
+            });
+          }
+          renderBillTool(box, {
+            buildingId: buildingId,
+            isBusiness: isBusiness(kwp, props.facet_area_m2, props.zone_class),
+            lat: (seasonCurves && seasonCurves.lat) || -41,
+            roofM2: props.facet_area_m2 || 150,
+            kwp: kwp,
+            panelKw: assumptions.panel_rated_power_w / 1000,
+            gen: gen,
+            prices: {
+              home: { buy: econ.home_buy_c, sell: econ.home_sell_c, daily: 2.5 },
+              business: { buy: econ.biz_buy_c, sell: econ.biz_sell_c, daily: 8.0 },
+            },
           });
         };
-        bindField("econ-buy", p + "buy_c", parseFloat, 0);
-        bindField("econ-sell", p + "sell_c", parseFloat, 0);
-        bindField("econ-use", p + "use_kwh", parseFloat, 0);
-        bindField("econ-self", p + "daytime_kw", parseFloat, 0.1);
+        // the chart publishes the roof's generation after this block is drawn
+        window.__billToolRedraw = refresh;
+        refresh();
 
         // Break-even generation for ONE panel on THIS building. Derived from
         // the building's own lifetime figure rather than re-deriving the
@@ -4731,6 +4512,7 @@ map.on("load", async () => {
       seasonDays: new Array(avg.length).fill(365 / avg.length),
       kwp: totalKwp,
     };
+    if (window.__billToolRedraw) window.__billToolRedraw();
 
     // Width follows the panel, so expanding it actually makes the chart bigger
     // rather than leaving a 288px graphic marooned in a wide column.
