@@ -255,7 +255,31 @@ def faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px, min_face
                 continue
             poly = max(geoms, key=lambda g: g.area).buffer(0)
             faces.append((poly, round(s_out, 1), None if asp is None else round(asp, 1)))
-    return faces
+    return _straighten(faces, m_per_px)
+
+
+STRAIGHTEN_PX = 2.0     # edge tolerance, in pixels of the reading
+
+
+def _straighten(faces, m_per_px):
+    """Faces traced from a pixel grid have staircase edges; panels lay
+    against a ragged edge badly. Simplified as a COVERAGE, so neighbouring
+    faces keep one shared boundary (no gaps, no overlaps)."""
+    import shapely
+    if len(faces) < 1:
+        return faces
+    polys = [p for p, _, _ in faces]
+    try:
+        simple = shapely.coverage_simplify(polys, STRAIGHTEN_PX * m_per_px)
+    except Exception:
+        return faces
+    out = []
+    for (p, s, a), q in zip(faces, simple):
+        q = q.buffer(0) if not q.is_valid else q
+        if q.is_empty or q.geom_type != "Polygon" or q.area < 0.5 * p.area:
+            q = p
+        out.append((q, s, a))
+    return out
 
 
 SNAP_FREE_MARGIN = 0.08     # free faces must beat the best plain form by this
@@ -416,3 +440,4 @@ def roof_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
         return snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint,
                           forms=("flat", "mono", "gable", "gable_x"), allow_free=False)
     return free, "free"
+
