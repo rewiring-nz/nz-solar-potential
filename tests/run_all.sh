@@ -66,6 +66,7 @@ run "staircases"            $PY tests/test_staircase.py
 run "plant decks"           $PY tests/test_plant_decks.py
 run "no-LiDAR surface"      $PY tests/test_synthesize_dsm.py
 run "photo roof shape"      $PY tests/test_photo_shape.py
+run "structured roofs"       $PY tests/test_structured_roof.py
 run "project secrets"       $PY tests/test_project_secrets.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
