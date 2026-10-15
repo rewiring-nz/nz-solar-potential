@@ -437,7 +437,46 @@ def roof_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint):
     free = faces_from_maps(flat, dirx, diry, slope, mask, transform, m_per_px,
                            min_face_m2=max(FREE_MIN_FACE_M2, FREE_MIN_FACE_SHARE * area))
     if area < SMALL_ROOF_M2 and len(free) > 2:
-        return snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint,
-                          forms=("flat", "mono", "gable", "gable_x"), allow_free=False)
-    return free, "free"
+        faces, form = snap_faces(flat, dirx, diry, slope, mask, transform, m_per_px, footprint,
+                                 forms=("flat", "mono", "gable", "gable_x"), allow_free=False)
+        return square_to_walls(faces, footprint), form
+    return square_to_walls(free, footprint), "free"
+
+
+ASPECT_WALL_SNAP_DEG = 25.0
+
+
+def square_to_walls(faces, footprint):
+    """Point each face straight off one of the building's walls.
+
+    The model reads a face's facing as a continuous angle, and a few degrees
+    of noise racked its panels skew to the house: 20% of Cromwell's panels
+    (all photo-read) sat more than 5 degrees off every main wall, against
+    about 2% in the LiDAR towns (15 Oct; 9 Sandford Terrace reported). On a
+    building whose walls run in a few directions, a roof face drains square
+    off one of them, so a facing within ASPECT_WALL_SNAP_DEG of a wall
+    normal takes it exactly. A wing at its own angle has its own walls, and
+    a facing far from every wall normal is left as read.
+    """
+    from src.outline_axis import wall_families_deg
+    walls = wall_families_deg(footprint)          # math convention, mod 90
+    if not walls:
+        return faces
+    out = []
+    for poly, s, asp in faces:
+        if asp is None:
+            out.append((poly, s, asp))
+            continue
+        m = (90.0 - asp) % 360.0                  # compass -> math
+        best, bd = None, None
+        for w in walls:
+            for k in range(4):
+                c = (w + 90.0 * k) % 360.0
+                d = abs((m - c + 180.0) % 360.0 - 180.0)
+                if bd is None or d < bd:
+                    best, bd = c, d
+        if bd is not None and bd <= ASPECT_WALL_SNAP_DEG:
+            asp = round((90.0 - best) % 360.0, 1)
+        out.append((poly, s, asp))
+    return out
 

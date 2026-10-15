@@ -96,10 +96,23 @@ def test_snap_reads_gable_and_flat():
     assert form == "flat" and len(faces) == 1 and faces[0][2] is None
 
 
+def test_square_to_walls_snaps_facing_to_a_wall_normal():
+    from shapely.geometry import Polygon
+    from shapely.affinity import rotate
+    house = rotate(Polygon([(0, 0), (12, 0), (12, 8), (0, 8)]), 30, origin=(0, 0))   # walls at 30/120 deg (math)
+    # walls at math 30 deg -> wall normals at math 120/300 -> compass 330/150 (and 60/240)
+    faces = [(house, 20.0, 338.0), (house, 20.0, 145.0), (house, 20.0, 100.0), (house, 3.0, None)]
+    out = ps.square_to_walls(faces, house)
+    assert abs(out[0][2] - 330.0) < 0.2 and abs(out[1][2] - 150.0) < 0.2
+    assert out[2][2] == 100.0            # 40 deg from every normal: left as read
+    assert out[3][2] is None
+
+
 if __name__ == "__main__":
     test_rotation_moves_north_half_west()
     test_undo_inverts_every_symmetry()
     test_gable_reads_as_two_faces()
     test_snap_fanned_small_shed_to_one_plain_form()
     test_snap_reads_gable_and_flat()
+    test_square_to_walls_snaps_facing_to_a_wall_normal()
     print("photo_shape: ok")

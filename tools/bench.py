@@ -127,7 +127,53 @@ def _panels_across_lines(roof):
     return n
 
 
-def score(rows, labels):
+def _panel_skew(rows, region):
+    """(panels more than SKEW_DEG off every main wall direction, panels).
+
+    An installer racks panels parallel to a wall. A grid rotated against
+    every wall is the "panels at 30 degrees on a square house" failure
+    (9 Sandford Terrace, #4731128, 15 Oct) -- invisible to every other
+    number here."""
+    import math
+    from shapely.geometry import Polygon, shape
+    from src.outline_axis import wall_families_deg
+    from src.region_build import area_paths
+    try:
+        fc = json.loads(area_paths(region)["outlines"].read_text())
+    except Exception:
+        return 0, 0
+    walls = {int(f["properties"]["building_id"]): wall_families_deg(shape(f["geometry"]))
+             for f in fc["features"]}
+
+    def bearing(ring):
+        p = Polygon(ring).minimum_rotated_rectangle
+        cc = list(p.exterior.coords)
+        e = [(math.hypot(cc[i + 1][0] - cc[i][0], cc[i + 1][1] - cc[i][1]),
+              math.degrees(math.atan2(cc[i + 1][1] - cc[i][1], cc[i + 1][0] - cc[i][0])) % 90) for i in range(2)]
+        return max(e)[1]
+
+    def dev(a, b):
+        d = abs(a - b) % 90
+        return min(d, 90 - d)
+    skew = n = 0
+    for r in rows:
+        fams = walls.get(int(r["id"])) or []
+        if not fams:
+            continue
+        for ring in r.get("panels") or []:
+            try:
+                b = bearing(ring)
+            except Exception:
+                continue
+            n += 1
+            skew += min(dev(b, w) for w in fams) > SKEW_DEG
+    return skew, n
+
+
+SKEW_DEG = 5.0
+
+
+def score(rows, labels, region=None):
     """Turn built roofs into the numbers worth watching."""
     from shapely.geometry import Polygon
 
@@ -197,6 +243,8 @@ def score(rows, labels):
         if ac is not None:
             out["panels_across"] += ac
             out["panels_on_labelled"] += len(r.get("panels") or [])
+    if region:
+        out["panels_skew"], out["panels_skew_n"] = _panel_skew(rows, region)
     return out
 
 
@@ -224,6 +272,11 @@ def show(cur, prev, note):
     line("facets per roof", fpr, pfpr)
     line("panels", cur["panels"], prev["panels"] if prev else None,
          fmt="{:.0f}", lower_better=False)
+    if cur.get("panels_skew_n"):
+        pct = 100 * cur["panels_skew"] / cur["panels_skew_n"]
+        ppct = (100 * prev["panels_skew"] / prev["panels_skew_n"]
+                if prev and prev.get("panels_skew_n") else None)
+        line("panels skew to the walls", pct, ppct, suffix="%")
 
     if cur["faces_total"]:
         pct = 100 * cur["faces_exact"] / cur["faces_total"]
@@ -300,7 +353,7 @@ def main():
                 rows.append(r)
     secs = time.time() - t0
 
-    cur = score(rows, labels)
+    cur = score(rows, labels, region)
     hist = json.loads(HIST_PATH.read_text()) if HIST_PATH.exists() else []
     prev = hist[-1]["score"] if hist else None
     show(cur, prev, a.note)
