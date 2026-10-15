@@ -69,7 +69,7 @@ import config
 
 MIN_BLOB_AREA_M2 = 0.09  # ~30x30cm -- smaller than this is more likely JPEG/compression noise
 MAX_BLOB_AREA_FRACTION = 0.4  # beyond this it's more likely a lighting gradient than a discrete object
-Z_THRESHOLD = 2.75  # local-contrast-from-neighbourhood std devs to count as anomalous
+Z_THRESHOLD = 3.25  # local-contrast-from-neighbourhood std devs to count as anomalous (2.75 until 15 Oct: 3.25 beat it on all four obstruction-bench numbers, 42 marked roofs)
 MIN_VALID_PIXELS = 20  # facets smaller than this in the imagery can't be usefully analysed
 BOUNDARY_ERODE_M = config.PANEL_EDGE_SETBACK_M  # keep the analysed region inside where panels could go anyway;
 # also keeps mixed/blended pixels right on the facet's own edge (real ridge/valley flashing, a sliver of a
