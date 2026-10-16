@@ -203,35 +203,34 @@ def dedupe_outlines(region_names=None):
     for name, gdf in frames.items():
         keep = gdf[gdf["building_id"].map(lambda b: owner[b][1] == name and b not in demolished)]
         out = REGIONS_DIR / name / "building_outlines_dedup.geojson"
-        keep.to_file(out, driver="GeoJSON")
-        print(f"{name}: {len(keep)}/{len(gdf)} buildings owned")
+        # Unchanged ownership leaves the file (and its mtime) alone, so
+        # combine re-emits only the regions whose buildings moved.
+        same = False
+        if out.exists():
+            try:
+                same = set(gpd.read_file(out)["building_id"]) == set(keep["building_id"])
+            except Exception:
+                pass
+        if not same:
+            keep.to_file(out, driver="GeoJSON")
+        print(f"{name}: {len(keep)}/{len(gdf)} buildings owned{'' if same else ' (changed)'}")
         total += len(keep)
     print(f"{total} unique buildings across {len(frames)} regions")
 
 
-def _overlaps(a, b):
-    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
-
-
 def dedupe_with_built(region):
-    """Dedupe one region together with every already-emitted region whose box
-    overlaps it. Deduping a region alone keeps every boundary building, and
-    hand-drawn regions overlap (Mt Eden's four boxes: 237 buildings owned
-    twice). Regions never emitted -- paused ones -- are not owners, so a
-    boundary building cannot go to a region the map does not serve.
-    combine_regions re-emits any neighbour whose ownership changed."""
-    box = area_bbox_nztm(region)
+    """Dedupe one region together with every already-emitted region. Deduping
+    a region alone keeps every boundary building, and hand-drawn regions
+    overlap (Mt Eden's four boxes: 237 buildings owned twice). All built
+    regions, not just the overlapping ones: a building in three regions needs
+    all three in one decision. Regions never emitted -- paused ones -- are not
+    owners, so a boundary building cannot go to a region the map does not
+    serve. combine_regions re-emits any region whose ownership changed."""
     out_root = DATA_DIR / "out"
-    names = [region]
-    for p in sorted(out_root.glob("*/summary.json")) if out_root.exists() else []:
-        n = p.parent.name
-        if n == region or not (REGIONS_DIR / n / "building_outlines.geojson").exists():
-            continue
-        try:
-            if _overlaps(box, area_bbox_nztm(n)):
-                names.append(n)
-        except KeyError:
-            continue
+    names = [region] + sorted(
+        p.parent.name for p in out_root.glob("*/summary.json")
+        if p.parent.name != region
+        and (REGIONS_DIR / p.parent.name / "building_outlines.geojson").exists())
     dedupe_outlines(names)
 
 
