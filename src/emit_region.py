@@ -107,6 +107,17 @@ def _use_by_id(paths):
     return out
 
 
+def _owned_ids(paths):
+    """The buildings this region owns now. A neighbour deduped after this
+    region was built can take boundary buildings from it (Mt Eden, 16 Oct:
+    237 buildings drawn and counted twice); its layouts still hold them, so
+    ownership is applied here, as merge_regions does."""
+    f = paths["dir"] / "building_outlines_dedup.geojson"
+    if not f.exists():
+        return None
+    return {int(ft["properties"]["building_id"]) for ft in json.loads(f.read_text())["features"]}
+
+
 def emit(region, out_root=OUT_ROOT):
     t0 = time.time()
     paths = area_paths(region)
@@ -122,6 +133,15 @@ def emit(region, out_root=OUT_ROOT):
 
     sp = json.loads(sp_path.read_text())
     layouts = json.loads(lay_path.read_text())
+    owned = _owned_ids(paths)
+    if owned is not None:
+        n0 = len(sp["features"])
+        sp["features"] = [f for f in sp["features"] if int(f["properties"]["building_id"]) in owned]
+        layouts["features"] = [f for f in layouts["features"]
+                               if f["properties"].get("building_id") is None
+                               or int(f["properties"]["building_id"]) in owned]
+        if len(sp["features"]) < n0:
+            print(f"[{region}] {n0 - len(sp['features'])} buildings now owned by a neighbour, left out")
     feats = sp["features"]
     print(f"[{region}] {len(feats)} buildings, {len(layouts['features'])} layout features")
 

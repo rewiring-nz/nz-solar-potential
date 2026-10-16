@@ -33,7 +33,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src.region_build import DATA_DIR
+from src.region_build import DATA_DIR, area_paths
 from src.build_building_tiles import tile_bounds, CELL_BANDS, COVERAGE_STEPS
 from src.building_types import BTYPES
 
@@ -304,6 +304,12 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
                          if (p / "summary.json").exists())
     if not regions:
         raise SystemExit(f"no emitted regions under {out_root}")
+    for r in regions:
+        dd = area_paths(r)["dir"] / "building_outlines_dedup.geojson"
+        if dd.exists() and dd.stat().st_mtime > (out_root / r / "summary.json").stat().st_mtime:
+            print(f"[{r}] ownership changed since it was emitted; re-emitting")
+            from src.emit_region import emit
+            emit(r, out_root)
     summaries = [json.loads((out_root / r / "summary.json").read_text()) for r in regions]
     print(f"combining {len(regions)} regions")
 

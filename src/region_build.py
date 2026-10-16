@@ -209,5 +209,34 @@ def dedupe_outlines(region_names=None):
     print(f"{total} unique buildings across {len(frames)} regions")
 
 
+def _overlaps(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def dedupe_with_built(region):
+    """Dedupe one region together with every already-emitted region whose box
+    overlaps it. Deduping a region alone keeps every boundary building, and
+    hand-drawn regions overlap (Mt Eden's four boxes: 237 buildings owned
+    twice). Regions never emitted -- paused ones -- are not owners, so a
+    boundary building cannot go to a region the map does not serve.
+    combine_regions re-emits any neighbour whose ownership changed."""
+    box = area_bbox_nztm(region)
+    out_root = DATA_DIR / "out"
+    names = [region]
+    for p in sorted(out_root.glob("*/summary.json")) if out_root.exists() else []:
+        n = p.parent.name
+        if n == region or not (REGIONS_DIR / n / "building_outlines.geojson").exists():
+            continue
+        try:
+            if _overlaps(box, area_bbox_nztm(n)):
+                names.append(n)
+        except KeyError:
+            continue
+    dedupe_outlines(names)
+
+
 if __name__ == "__main__":
-    dedupe_outlines(sys.argv[1:] or None)
+    if len(sys.argv) == 2:
+        dedupe_with_built(sys.argv[1])
+    else:
+        dedupe_outlines(sys.argv[1:] or None)
