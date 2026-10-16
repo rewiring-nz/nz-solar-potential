@@ -14,8 +14,10 @@ sys.path.insert(0, str(ROOT))
 from tools.pipeline import (
     PipelineRun,
     _argument_parser,
+    _dispatch_cloud_action,
     _evaluate_fetch,
-    _run_cloud_mode,
+    _remote_pipeline_command,
+    _report_preview_port,
     _safe_area,
 )
 
@@ -105,19 +107,31 @@ def test_pipeline_cli_defaults_to_local_and_keeps_default_region():
     assert args.port is None
 
 
-def test_cloud_mode_dispatches_selected_region_and_profile():
-    with patch("tools.pipeline.subprocess.run") as run:
-        run.return_value.returncode = 0
-        assert _run_cloud_mode("external-poc", "frankton_arm_lake", 8765) == 0
-    command = run.call_args.args[0]
-    assert command[-6:] == [
-        "--profile", "external-poc", "run", "frankton_arm_lake", "--port", "8765",
-    ]
-    assert command[1].endswith("tools/cloud_quickstart.py")
+def test_cloud_lifecycle_action_parses_through_pipeline_entry_point():
+    parser = _argument_parser("town_gorge_north")
+    args = parser.parse_args([
+        "--mode", "cloud", "--profile", "external-poc",
+        "--cloud", "create", "--confirm",
+        "solar-demo-12345/australia-southeast1-b/solar-quickstart",
+    ])
+    assert args.mode == "cloud"
+    assert args.profile == "external-poc"
+    assert args.cloud == "create"
+    assert args.confirm == "solar-demo-12345/australia-southeast1-b/solar-quickstart"
+
+
+def test_cloud_action_dispatches_selected_region_and_profile():
+    from cloud_profile import CloudProfile
+
+    profile = CloudProfile("external-poc", {"preview_port": 8765})
+    with patch("tools.pipeline._run_pipeline", return_value=0) as run:
+        assert _dispatch_cloud_action(
+            profile, "run", "frankton_arm_lake", 8765, None,
+        ) == 0
+    run.assert_called_once_with(profile, "frankton_arm_lake", 8765)
 
 
 def test_cloud_remote_command_tracks_only_new_pipeline_runs():
-    from tools.cloud_quickstart import _remote_pipeline_command, _report_preview_port
     import tempfile
 
     command = _remote_pipeline_command("frankton_arm_lake", 8765)
@@ -139,7 +153,8 @@ if __name__ == "__main__":
                  test_failed_step_updates_report, test_fetch_requires_wide_dem_after_fetch_stage,
                  test_child_output_redacts_api_key_before_logging,
                  test_pipeline_cli_defaults_to_local_and_keeps_default_region,
-                 test_cloud_mode_dispatches_selected_region_and_profile,
+                 test_cloud_lifecycle_action_parses_through_pipeline_entry_point,
+                 test_cloud_action_dispatches_selected_region_and_profile,
                  test_cloud_remote_command_tracks_only_new_pipeline_runs):
         test()
     print("quickstart reporting tests passed")

@@ -29,7 +29,7 @@ if [ "$MODE" = "cloud" ]; then
     PY=$(command -v python3 || true)
   fi
   if [ -z "$PY" ] || [ ! -x "$PY" ]; then
-    echo "cloud mode needs Python 3 to run the cloud helper"; exit 2
+    echo "cloud mode needs Python 3 to run the pipeline"; exit 2
   fi
   exec "$PY" tools/pipeline.py "$@"
 fi

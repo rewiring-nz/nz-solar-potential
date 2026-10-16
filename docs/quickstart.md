@@ -50,7 +50,7 @@ Cloud mode copies the VM's run report and log to local `data/pipeline_runs/`.
 It runs the VM's existing checkout, not local workstation changes; update that
 checkout to the intended commit before starting a cloud run.
 Start its map preview tunnel separately with
-`python3 tools/cloud_quickstart.py --profile external-poc preview`.
+`bash quickstart.sh --mode cloud --profile external-poc --cloud preview`.
 
 # 5. Review status
 

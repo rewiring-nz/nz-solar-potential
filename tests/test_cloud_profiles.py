@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import tools.cloud_quickstart as cloud_quickstart
+import tools.pipeline as cloud_pipeline
 from cloud_profile import load_profile
 
 
@@ -88,7 +88,7 @@ class CloudProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = self._write({"test": _profile_values()}, directory)
             profile = load_profile("test", path)
-        options = cloud_quickstart._profile_options(profile)
+        options = cloud_pipeline._profile_options(profile)
         self.assertIn("--no-service-account", options)
         self.assertIn("--boot-disk-auto-delete", options)
         self.assertNotIn("--scopes=https://www.googleapis.com/auth/cloud-platform", options)
@@ -98,25 +98,25 @@ class CloudProfileTests(unittest.TestCase):
             path = self._write({"test": _profile_values()}, directory)
             profile = load_profile("test", path)
         rule = {
-            "description": f"{cloud_quickstart.FIREWALL_MARKER}: test",
+            "description": f"{cloud_pipeline.FIREWALL_MARKER}: test",
             "direction": "INGRESS",
             "disabled": False,
             "network": "https://compute.googleapis.com/compute/v1/projects/solar-demo-12345/global/networks/default",
             "sourceRanges": ["192.0.2.40/32"],
-            "targetTags": [cloud_quickstart._target_tag(profile)],
+            "targetTags": [cloud_pipeline._target_tag(profile)],
             "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}],
         }
-        self.assertTrue(cloud_quickstart._firewall_matches_profile(profile, rule))
+        self.assertTrue(cloud_pipeline._firewall_matches_profile(profile, rule))
         rule["sourceRanges"] = ["0.0.0.0/0"]
-        self.assertFalse(cloud_quickstart._firewall_matches_profile(profile, rule))
+        self.assertFalse(cloud_pipeline._firewall_matches_profile(profile, rule))
 
     def test_wrong_confirmation_fails_before_cloud_calls(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = self._write({"test": _profile_values()}, directory)
             profile = load_profile("test", path)
-        with patch.object(cloud_quickstart, "_preflight") as preflight:
+        with patch.object(cloud_pipeline, "_cloud_preflight") as preflight:
             with self.assertRaisesRegex(RuntimeError, "requires --confirm"):
-                cloud_quickstart._create(profile, "another/project/vm")
+                cloud_pipeline._create(profile, "another/project/vm")
         preflight.assert_not_called()
 
     def test_cleanup_refuses_unowned_instance(self) -> None:
@@ -130,9 +130,9 @@ class CloudProfileTests(unittest.TestCase):
                 "cloud-profile": "another-profile",
             }
         }
-        with patch.object(cloud_quickstart, "_existing_instance", return_value=instance):
+        with patch.object(cloud_pipeline, "_existing_instance", return_value=instance):
             with self.assertRaisesRegex(RuntimeError, "refusing to delete"):
-                cloud_quickstart._delete(profile, profile.target)
+                cloud_pipeline._delete(profile, profile.target)
 
     def test_queue_and_publisher_use_selected_profile_buckets(self) -> None:
         values = _profile_values()

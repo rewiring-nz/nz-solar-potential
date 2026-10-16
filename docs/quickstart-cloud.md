@@ -1,9 +1,9 @@
 # Cloud quickstart (Google Cloud)
 
 Run one configured solar region on a Google Compute Engine VM using
-`bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Cloud VM
-provisioning and bootstrap remain explicit setup steps in
-`tools/cloud_quickstart.py`.
+`bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Provisioning,
+bootstrap, report collection, preview tunnelling, and cleanup are selected with
+`--cloud` through the `quickstart.sh` and `tools/pipeline.py` entry points.
 
 The quickstart builds a whole configured region; it does not cap building
 count. `frankton_arm_lake` is currently listed at about 79 buildings in
@@ -45,20 +45,20 @@ for current prices. Disk charges continue while a VM is stopped.
 5. Check the profile and create the VM:
 
    ```sh
-   python3 tools/cloud_quickstart.py --profile external-poc preflight
-   python3 tools/cloud_quickstart.py --profile external-poc create \
+   bash quickstart.sh --mode cloud --profile external-poc --cloud preflight
+   bash quickstart.sh --mode cloud --profile external-poc --cloud create \
      --confirm YOUR_PROJECT_ID/australia-southeast1-b/solar-quickstart
-   python3 tools/cloud_quickstart.py --profile external-poc bootstrap
+   bash quickstart.sh --mode cloud --profile external-poc --cloud bootstrap
    ```
 
-   Creation bills the project. The helper creates one VM and a profile-scoped
+   Creation bills the project. The pipeline creates one VM and a profile-scoped
    SSH rule limited to the configured CIDR. Use least-privilege Compute Engine
    and firewall permissions; the VM has no attached service account by default.
 
 6. Add your LINZ API key to the VM's ignored `.env` file, then run the region:
 
    ```sh
-   python3 tools/cloud_quickstart.py --profile external-poc ssh
+   bash quickstart.sh --mode cloud --profile external-poc --cloud ssh
    cd ~/nz-solar-potential
    umask 077
    nano .env
@@ -77,30 +77,30 @@ for current prices. Disk charges continue while a VM is stopped.
    changes. Before a run, connect with `ssh`, update the VM checkout to the
    intended commit, and confirm the working tree is clean. Uncommitted
    workstation changes are not included.
-   Cloud mode currently delegates VM operations to `tools/cloud_quickstart.py`;
-   that helper remains the explicit provisioning interface during this transition.
+   Cloud actions execute in `tools/pipeline.py`; `quickstart.sh` is the
+   supported command entry point.
 
 7. Open the preview through an SSH tunnel:
 
    ```sh
-   python3 tools/cloud_quickstart.py --profile external-poc preview
+   bash quickstart.sh --mode cloud --profile external-poc --cloud preview
    ```
 
    Browse to `http://127.0.0.1:8765/`; stop the tunnel with Ctrl-C. Copy run
    reports to your workstation before cleanup:
 
    ```sh
-   python3 tools/cloud_quickstart.py --profile external-poc collect
+   bash quickstart.sh --mode cloud --profile external-poc --cloud collect
    ```
 
-8. Delete the VM, its auto-delete boot disk, and the helper-owned SSH rule:
+8. Delete the VM, its auto-delete boot disk, and the profile-owned SSH rule:
 
    ```sh
-   python3 tools/cloud_quickstart.py --profile external-poc delete \
+   bash quickstart.sh --mode cloud --profile external-poc --cloud delete \
      --confirm YOUR_PROJECT_ID/australia-southeast1-b/solar-quickstart
    ```
 
-   The helper only deletes resources it can verify belong to this profile.
+   Cleanup only deletes resources it can verify belong to this profile.
 
 ## External developer: share the environment with an internal developer
 
@@ -109,7 +109,7 @@ for current prices. Disk charges continue while a VM is stopped.
    permissions needed for the agreed role: connect to the existing VM, or
    create/manage a separate VM. Do not grant project Owner or Editor access.
 3. Ensure their IP is allowed by the VM's SSH firewall rule. Add both
-   developers' IPs to `ssh_source_ranges` before creating the VM. The helper
+   developers' IPs to `ssh_source_ranges` before creating the VM. The pipeline
    will not silently change an existing firewall rule; if the VM already
    exists, agree on an authorized shared network with the project administrator.
 4. Send them the project ID, region, zone, VM name, and non-secret profile
@@ -123,18 +123,17 @@ Request the profile and project/VM details from the environment owner, along
 with confirmation of your IAM/SSH access, enabled APIs, available quota,
 billing contact, and whether you may create or delete resources. Install and
 authenticate with `gcloud`, save the non-secret profile locally, then run
-`preflight`.
+`bash quickstart.sh --mode cloud --profile PROFILE --cloud preflight`.
 
-For an existing VM, skip `create` and `bootstrap` unless authorized. Use `ssh`,
-`run`, `preview`, and `collect` as approved. Coordinate an exclusive run
+For an existing VM, skip `create` and `bootstrap` unless authorized. Use
+`--cloud ssh`, the default run action, `--cloud preview`, and
+`--cloud collect` as approved. Coordinate an exclusive run
 window: the pipeline replaces the VM's combined map data with the selected
 region. The environment owner is responsible for shared-resource cleanup.
 
 ## Scope
 
-This is a single-VM workflow. It does not start a fleet, publish map data,
-change bucket IAM, or integrate cloud provisioning into `tools/pipeline.py`.
+This is a single-VM workflow. It does not start a fleet, publish map data, or
+change bucket IAM. All single-VM quickstart actions are driven by
+`quickstart.sh` and `tools/pipeline.py`.
 For run failures, see the [troubleshooting guide](data-maintainers/troubleshooting.md).
-Keep cloud selection behind the shared quickstart/pipeline interface as the
-cloud backend grows; retire the standalone helper only after its lifecycle
-operations have a tested replacement.

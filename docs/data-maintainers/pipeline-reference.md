@@ -16,8 +16,9 @@ region, edit the configuration in `config.py`; the retired per-machine JSON
 area files are not loaded.
 
 Both entry points run locally by default. Use `--mode cloud --profile NAME` to
-run the same configured region on an existing, bootstrapped GCP VM. Cloud
-provisioning remains an explicit setup operation; cloud reports and logs are
+run the same configured region on a GCP VM. Cloud lifecycle actions, including
+provisioning and cleanup, use `--cloud`; see the
+[cloud quickstart](../quickstart-cloud.md). Cloud reports and logs are
 collected into local `data/pipeline_runs/`. Cloud execution uses the VM's
 checkout and does not synchronize workstation changes; update it to the
 intended commit before running.

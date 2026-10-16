@@ -9,7 +9,7 @@ This directory documents only the `nz-solar-potential` project. The sibling
 | --- | --- | --- | --- |
 | Data maintainers | [Quickstart](quickstart.md) | Run the full regional pipeline for a configured region and open its map preview. | Pipeline command or region configuration changes. |
 | Data maintainers | [Local setup](data-maintainers/local-setup.md) | Set up a supported workstation, Python environment, map-build tools, and credentials. | Dependencies, supported platforms, or credentials change. |
-| Software developers | [Cloud quickstart](quickstart-cloud.md) | Experimental Google Cloud single-VM setup for external and internal developers, with profile, cost, and cleanup requirements. | Cloud helper, profile contract, resource estimate, or onboarding changes. |
+| Software developers | [Cloud quickstart](quickstart-cloud.md) | Experimental Google Cloud single-VM setup for external and internal developers, with profile, cost, and cleanup requirements. | Cloud actions, profile contract, resource estimate, or onboarding changes. |
 | Data maintainers | [Troubleshooting](data-maintainers/troubleshooting.md) | Diagnose pipeline preflight, LINZ fetch, map-build, and local preview errors using run-report step numbers. | A recurring diagnostic or repair path changes. |
 | Data maintainers | [Pipeline reference](data-maintainers/pipeline-reference.md) | Explain region configuration, run artifacts, status interpretation, and clean-room limits. | Pipeline outputs or operating limits change. |
 | Data maintainers | [Dataset operations](data-maintainers/dataset-operations.md) | Fetch, build, validate, merge, and publish data. | Pipeline scripts, source datasets, outputs, or release checks change. |
