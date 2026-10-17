@@ -685,6 +685,14 @@ const BT_CSS = `
 .sx-use .key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 .sx-glance { margin-top: 10px; }
 .sx-glance.sx-cost { margin: 0 0 10px; }
+.sx-billrow { gap: 8px; }
+.sx-billrow .sx-field input { width: 52px; }
+.sx-arrow { color: var(--sx-ink-3); }
+.sx-billrow .after { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin-right: -6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sx-billrow .after:hover, .sx-billrow .after:focus-visible { background: rgba(255,255,255,.05); outline: none; }
+.sx-billrow .after b { color: var(--sx-good); font-weight: 650; }
+.sx-billrow .after small { color: var(--sx-ink-3); font-size: 11.5px; }
+.side-panel:not(.compact) .sx-glance-foot { display: none; }
 .sx-peak .lbl small { color: var(--sx-ink-2); font-variant-numeric: tabular-nums; }
 .sx-range { position: relative; width: 150px; height: 28px; flex: none; }
 .sx-range::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--sx-fill-2); }
@@ -803,6 +811,14 @@ function renderBillTool(box, ctx) {
       const mine = state.calib && !state.calib.total && state.calib[s] > 0;
       return field(`bill-${s}`, Math.round(S[s].nowMonth.value), `min="0" step="10" data-bill="${s}" aria-label="${s} bill today, dollars a month"`, "$", "", !mine);
     };
+    // the corner card's bill rows: today's bill is typed in right there;
+    // the with-solar bill opens how it is worked out
+    const billPair = (s, label, sub) => {
+      const mine = state.calib && !state.calib.total && state.calib[s] > 0;
+      return `<div class="sx-row sx-billrow"><span class="lbl">${label}<small>${sub}</small></span>` +
+        field(`billq-${s}`, Math.round(S[s].nowMonth.value), `min="0" step="10" data-bill="${s}" aria-label="${label} today, dollars a month"`, "$", "", !mine) +
+        `<span class="sx-arrow" aria-hidden="true">→</span>` + afterBill(s) + `</div>`;
+    };
     const afterBill = s => {
       const n = S[s][after];
       return `<span class="val after" data-wk="after-${s}" tabindex="0" role="button">` +
@@ -834,9 +850,10 @@ function renderBillTool(box, ctx) {
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
       `<div class="sx-group sx-glance">` +
-        (haveGen ? row("Winter bill", `<span class="val">${btMoney(S.winter.nowMonth.value)} → <b>${S.winter[after].value < -0.5 ? btMoney(-S.winter[after].value) + " credit" : btMoney(S.winter[after].value)}</b></span>`, { go: "after-winter", small: "a month, today → with solar" }) : "") +
-        (haveGen ? row("Summer bill", `<span class="val">${btMoney(S.summer.nowMonth.value)} → <b>${S.summer[after].value < -0.5 ? btMoney(-S.summer[after].value) + " credit" : btMoney(S.summer[after].value)}</b></span>`, { go: "after-summer" }) : "") +
+        (haveGen ? billPair("winter", "Winter bill", "highest month") : "") +
+        (haveGen ? billPair("summer", "Summer bill", "lowest month") : "") +
       `</div>` +
+      (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}. ${matchNote}</div>` : "") +
       `</div>` + SX_SPLIT + `<div class="sx sx-more">` +
 
       `<div class="sx-h">Assumptions</div>` +
