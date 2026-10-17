@@ -409,7 +409,10 @@ class CloudProfileTests(unittest.TestCase):
             args=["gh", "api", "user"], returncode=0, stdout="Alice\n", stderr="",
         )
         with (
-            patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/gh"),
+            patch.object(
+                cloud_pipeline.shutil, "which",
+                side_effect=[None, "/usr/bin/gh"],
+            ),
             patch.object(cloud_pipeline.subprocess, "run", return_value=completed) as run,
         ):
             self.assertEqual(cloud_pipeline._github_alias(), "alice")
@@ -417,9 +420,29 @@ class CloudProfileTests(unittest.TestCase):
             "/usr/bin/gh", "api", "user", "--jq", ".login",
         ])
 
-    def test_github_alias_requires_authenticated_cli(self) -> None:
+    def test_github_alias_uses_existing_ssh_authentication_without_cli(self) -> None:
+        completed = cloud_pipeline.subprocess.CompletedProcess(
+            args=["ssh", "-T", "git@github.com"],
+            returncode=1,
+            stdout="",
+            stderr="Hi Cameron-Shorter! You've successfully authenticated, but GitHub does not provide shell access.",
+        )
+        with (
+            patch.object(
+                cloud_pipeline.shutil, "which",
+                side_effect=["/usr/bin/ssh", None],
+            ),
+            patch.object(cloud_pipeline.subprocess, "run", return_value=completed) as run,
+        ):
+            self.assertEqual(cloud_pipeline._github_alias(), "cameron-shorter")
+        self.assertEqual(run.call_args.args[0], [
+            "/usr/bin/ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "git@github.com",
+        ])
+
+    def test_github_alias_reports_setup_when_ssh_and_cli_are_unavailable(self) -> None:
         with patch.object(cloud_pipeline.shutil, "which", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "GitHub CLI.*gh auth login"):
+            with self.assertRaisesRegex(RuntimeError, "Configure a GitHub SSH key"):
                 cloud_pipeline._github_alias()
 
     def test_unsupported_linux_gcloud_error_has_official_install_instructions(self) -> None:

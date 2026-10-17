@@ -10,10 +10,12 @@ bash quickstart.sh --mode cloud
 This starts the shared VM if needed, syncs the selected Git ref, builds the
 configured region, runs the deploy gate, publishes a passing result to the
 public developer-preview bucket, and opens the stable preview URL. The alias
-comes from the authenticated GitHub CLI account. Install the
-[GitHub CLI](https://cli.github.com/) and run `gh auth login` once before the
-first build. Default project, VM, zone, SSH user, region, Git ref, preview
-bucket, retention, and cost assumptions are stored in
+comes first from the GitHub greeting returned by the existing SSH
+authentication (`ssh -T git@github.com`); no extra CLI is needed when this
+checkout's SSH key is already linked to GitHub. If SSH authentication is not
+available, the quickstart can use the GitHub CLI if installed. Default project,
+VM, zone, SSH user, region, Git ref, preview bucket, retention, and cost
+assumptions are stored in
 [`config.py`](../config.py) under `CLOUD_SHARED_BUILD`. Pass a region name to
 override the configured region. Use `--cloud preflight` for the no-build,
 no-cost check; preflight does not require GitHub CLI authentication.
@@ -80,7 +82,9 @@ per-developer VM profile is stored outside the checkout by default at
 
 The default shared-VM command publishes a public preview after the build passes
 its gate; no extra preview or alias flags are needed. The alias is resolved
-with `gh api user --jq .login`, and the quickstart opens the stable URL:
+from the GitHub SSH authentication greeting, or from `gh api user --jq .login`
+when SSH authentication is unavailable and GitHub CLI is installed. The
+quickstart opens the stable URL:
 
 ```sh
 bash quickstart.sh --mode cloud

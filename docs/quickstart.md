@@ -50,11 +50,12 @@ Defaults for the project, VM, zone, SSH user, region, ref, and cost assumptions
 are held in `config.py` under `CLOUD_SHARED_BUILD`. After cost approval, the
 command builds and gates the region, publishes the passing result to a public,
 expiring developer preview, and opens the preview URL. It resolves the preview
-alias from the authenticated GitHub CLI account (`gh auth login`) and calculates
-the estimate from the VM, storage, retention, and expected-download assumptions
-in `CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md) for
-one-time preview-bucket setup, optional per-developer VM profiles, and
-preflight.
+alias from the GitHub SSH authentication greeting (using an existing SSH key;
+no extra CLI is needed when this checkout already authenticates to GitHub) and
+falls back to the GitHub CLI if available. It calculates the estimate from the
+VM, storage, retention, and expected-download assumptions in
+`CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md) for one-time
+preview-bucket setup, optional per-developer VM profiles, and preflight.
 
 # 5. Review status
 

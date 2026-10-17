@@ -42,8 +42,9 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   default; `--mode cloud` builds and gates the configured region on the shared
   VM, then publishes and opens a public developer preview after explicit
   approval of the calculated cost. It uses `config.CLOUD_SHARED_BUILD` for
-  defaults and requires the authenticated GitHub CLI to identify the preview
-  owner. `--mode cloud --profile <name>` selects per-developer cloud execution,
+  defaults and resolves the preview owner from the GitHub SSH identity,
+  falling back to GitHub CLI when available.
+  `--mode cloud --profile <name>` selects per-developer cloud execution,
   and `--cloud` selects a VM lifecycle action. See
   [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
   `tools/pipeline_serve.py` serves a preview with PMTiles byte-range support on loopback.
@@ -117,9 +118,9 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   quickstart publishes every passing gated build by default to the dedicated
   public bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`, under
   immutable `devel/<alias>/runs/` paths. It resolves the alias from the
-  authenticated GitHub CLI login, calculates a planning estimate from the
-  configured `preview_cost_model`, and updates only that alias's preview
-  pointer. The bucket lifecycle expires all `devel/` objects after
+  authenticated GitHub SSH identity (or the GitHub CLI fallback), calculates a
+  planning estimate from the configured `preview_cost_model`, and updates only
+  that alias's preview pointer. The bucket lifecycle expires all `devel/` objects after
   `preview_retention_days`. Never use the bucket for private inputs or
   production releases.
 - **Keys** come from the environment or `.env`, else Google Secret Manager

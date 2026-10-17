@@ -951,27 +951,57 @@ def _load_shared_cloud_config() -> dict[str, Any]:
 
 
 def _github_alias() -> str:
-    """Return the login for the authenticated GitHub CLI account."""
+    """Return the GitHub login authenticated for this checkout."""
+    ssh = shutil.which("ssh")
+    ssh_error = "OpenSSH is not installed or not on PATH."
+    if ssh:
+        try:
+            result = subprocess.run(
+                [
+                    ssh, "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                    "git@github.com",
+                ],
+                cwd=ROOT, check=False, text=True, capture_output=True, timeout=15,
+                stdin=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            ssh_error = str(exc)
+        else:
+            response = f"{result.stdout}\n{result.stderr}"
+            match = re.search(
+                r"\bHi ([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)!",
+                response,
+            )
+            if match:
+                return match.group(1).lower()
+            ssh_error = (
+                (result.stderr or result.stdout).strip()
+                or f"SSH authentication returned status {result.returncode}."
+            )
+
     gh = shutil.which("gh")
-    if not gh:
-        raise RuntimeError(
-            "GitHub CLI is required to publish a per-developer preview. Install it from "
-            "https://cli.github.com/ and authenticate once with `gh auth login`."
-        )
-    try:
-        result = subprocess.run(
-            [gh, "api", "user", "--jq", ".login"],
-            cwd=ROOT, check=True, text=True, capture_output=True, timeout=15,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError(
-            "could not resolve the authenticated GitHub alias; run `gh auth login` "
-            "and retry the cloud quickstart."
-        ) from exc
-    alias = result.stdout.strip()
-    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", alias):
-        raise RuntimeError("GitHub CLI returned an invalid account login for the preview alias.")
-    return alias.lower()
+    if gh:
+        try:
+            result = subprocess.run(
+                [gh, "api", "user", "--jq", ".login"],
+                cwd=ROOT, check=True, text=True, capture_output=True, timeout=15,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                "could not resolve the GitHub login using SSH "
+                f"({ssh_error}) or GitHub CLI; run `gh auth login` or configure a "
+                "GitHub SSH key, then retry."
+            ) from exc
+        alias = result.stdout.strip()
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", alias):
+            raise RuntimeError("GitHub CLI returned an invalid account login for the preview alias.")
+        return alias.lower()
+
+    raise RuntimeError(
+        "could not determine the GitHub login from SSH authentication "
+        f"({ssh_error}). Configure a GitHub SSH key for this checkout, or install "
+        "GitHub CLI from https://cli.github.com/ and authenticate with `gh auth login`."
+    )
 
 
 def _shared_cloud_preflight(config: dict[str, Any], gcloud: str) -> str:
