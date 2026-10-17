@@ -40,10 +40,11 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   `report.md` (plus preview-server PID/log when the preview starts). Combining
   replaces the current map contract with the selected region. Runs locally by
   default; `--mode cloud` builds and gates the configured region on the shared
-  VM without publishing, using `config.CLOUD_SHARED_BUILD` for defaults and
-  requiring explicit cost approval before VM use. `--mode cloud --profile <name>`
-  selects per-developer cloud execution, and `--cloud` selects a VM lifecycle
-  action. See
+  VM, then publishes and opens a public developer preview after explicit
+  approval of the calculated cost. It uses `config.CLOUD_SHARED_BUILD` for
+  defaults and requires the authenticated GitHub CLI to identify the preview
+  owner. `--mode cloud --profile <name>` selects per-developer cloud execution,
+  and `--cloud` selects a VM lifecycle action. See
   [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
   `tools/pipeline_serve.py` serves a preview with PMTiles byte-range support on loopback.
 - `bash tests/run_all.sh`: Local automated check entry point running pure Python,
@@ -112,6 +113,15 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   the `site-config.js` switch. `--push-reviewed "<why>"` publishes past a gate
   whose list has been rendered and judged. Rollback: point `site-config.js`
   `dataBase`/`dataVersion` at an older version folder.
+- **Developer previews are separate from production.** The shared cloud
+  quickstart publishes every passing gated build by default to the dedicated
+  public bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`, under
+  immutable `devel/<alias>/runs/` paths. It resolves the alias from the
+  authenticated GitHub CLI login, calculates a planning estimate from the
+  configured `preview_cost_model`, and updates only that alias's preview
+  pointer. The bucket lifecycle expires all `devel/` objects after
+  `preview_retention_days`. Never use the bucket for private inputs or
+  production releases.
 - **Keys** come from the environment or `.env`, else Google Secret Manager
   (`src/project_secrets.py`; secret `linz-api-key`). Never commit or print a
   key.

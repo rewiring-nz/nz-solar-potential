@@ -8,15 +8,15 @@ bash quickstart.sh --mode cloud
 ```
 
 This starts the shared VM if needed, syncs the selected Git ref, builds the
-region and runs the deploy gate without publishing. Default project, VM, zone,
-SSH user, region, Git ref, and cost estimate are stored in
+configured region, runs the deploy gate, publishes a passing result to the
+public developer-preview bucket, and opens the stable preview URL. The alias
+comes from the authenticated GitHub CLI account. Install the
+[GitHub CLI](https://cli.github.com/) and run `gh auth login` once before the
+first build. Default project, VM, zone, SSH user, region, Git ref, preview
+bucket, retention, and cost assumptions are stored in
 [`config.py`](../config.py) under `CLOUD_SHARED_BUILD`. Pass a region name to
-override the configured region, or use `--estimate-nzd AMOUNT` and
-optionally `--estimate-basis TEXT` to override the estimate and its assumptions.
-The estimate is scoped to `cost_estimate_regions` in `CLOUD_SHARED_BUILD`; by
-default the NZ$3 estimate covers only `frankton_arm_lake`. Provide your own
-`--estimate-nzd` value (or set `CLOUD_COST_ESTIMATE_NZD`) for another region or
-a multi-region run. Use `--cloud preflight` for the no-build, no-cost check.
+override the configured region. Use `--cloud preflight` for the no-build,
+no-cost check; preflight does not require GitHub CLI authentication.
 
 The separate per-developer VM lifecycle remains available with
 `bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Its provisioning,
@@ -48,26 +48,27 @@ count. `frankton_arm_lake` is currently listed at about 79 buildings in
 
 ## Indicative costs
 
-Indicative cost for an `e2-standard-4` VM in Sydney is **NZ$0.24 per running
-hour**. Indicative cost for a 100 GB `pd-balanced` disk is **NZ$24 per month**.
-An 8-hour run with the disk prorated is about **NZ$2.20**. The example profile
-uses **NZ$3.00** as a provisional planning estimate for a small region and up
-to 8 VM-hours. This is not verified against project billing, not a 90th
-percentile, and not a spending cap. Actual charges can be higher. These
-indicative estimates use October 2026 prices and an approximate USD/NZD
-conversion; check the
-[Google Cloud pricing calculator](https://cloud.google.com/products/calculator)
-for current prices. Disk charges continue while a VM is stopped.
+For the shared build, the quickstart calculates an estimate from the configured
+VM-hourly rate and runtime, prorated disk rate, expected preview storage and
+retention, and expected public downloads. The current planning assumptions are
+an 8-hour VM run, 100 GB disk, 1 GB preview storage retained for 14 days, and
+20 GB of public downloads. With the current indicative rates in `config.py`,
+the calculated total is NZ$5.00, rounded up to the next NZ$0.50. These
+usage and unit-price assumptions are indicative, are not verified against
+project billing, and are not spending caps. Actual charges can be higher,
+particularly if a build takes longer or the public page receives more
+downloads or you publish several runs during the 14-day retention period. Disk
+charges continue while a VM is stopped. Check current prices with the
+[Google Cloud pricing calculator](https://cloud.google.com/products/calculator).
 
 Before starting the shared VM or running a profile-based action that uses a
 billable VM, after the local installation and authentication checks, the
-quickstart displays the estimate and assumptions and requires the user to type
-`yes`; Enter, any other response, or non-interactive execution declines before
-VM readiness checks or other VM use. The shared workflow's estimate is in
-`config.py`; per-developer VM estimates are set in their optional profile.
-Either can be overridden with `--estimate-nzd AMOUNT`; optionally add
-`--estimate-basis TEXT` to describe its assumptions. Preflight, status, and
-cleanup do not require the cost prompt.
+quickstart displays the calculated estimate and assumptions and requires the
+user to type `yes`; Enter, any other response, or non-interactive execution
+declines before VM readiness checks or other VM use. Shared cost assumptions
+are in `config.py`; estimates for optional per-developer VM profiles are set in
+their profile. Estimate override command-line flags are not supported.
+Preflight, status, and cleanup do not require the cost prompt.
 
 `config.py` is the repository's source for shared, non-secret pipeline and
 cloud-build defaults. The root `.env` is a local ignored file for secrets such
@@ -75,8 +76,70 @@ as `LINZ_API_KEY`; start from `.env.example` and do not commit it. The optional
 per-developer VM profile is stored outside the checkout by default at
 `~/.config/nz-solar-potential/cloud-profiles.json`.
 
-The shared build is gated but does not publish. To publish, use the documented
-deploy workflow after reviewing the build results.
+### Developer preview
+
+The default shared-VM command publishes a public preview after the build passes
+its gate; no extra preview or alias flags are needed. The alias is resolved
+with `gh api user --jq .login`, and the quickstart opens the stable URL:
+
+```sh
+bash quickstart.sh --mode cloud
+```
+
+The shared VM syncs the Git ref configured in
+`config.CLOUD_SHARED_BUILD["ref"]`; commit and push the preview implementation
+to that ref before running the command.
+
+After the data and page are uploaded successfully, the quickstart prints and
+opens a stable URL:
+
+```text
+https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html
+```
+
+Each successful run uploads served data to a new immutable
+`devel/<alias>/runs/<run-id>/data/` prefix, then updates that alias's
+`site-config.js` pointer. The preview uses its own copy of `preview.html` and
+its companion JavaScript files; production `site-config.js` and the
+versioned production bucket are not changed. The bucket is public: anyone with
+the URL can view the served map data. Do not upload keys, raw inputs, build
+logs, or other private material.
+
+Before the first preview, create the dedicated bucket named in
+`config.CLOUD_SHARED_BUILD["preview_bucket"]` in the configured cloud project.
+It must use uniform bucket-level access and allow public access; do not reuse
+the private source-data bucket or production tiles bucket. From a checkout
+with the required Google Cloud permissions, create it in the configured region
+(creation and public storage may incur charges):
+
+```sh
+gcloud storage buckets create gs://rewiring-solar-previews \
+  --project=downloads-417521 --location=australia-southeast1 \
+  --uniform-bucket-level-access
+```
+
+The bucket name is globally unique; if that name is unavailable, change
+`preview_bucket` in `config.CLOUD_SHARED_BUILD` and use the same name here.
+Then configure its sharing, upload access, and expiry policy:
+
+```sh
+python3 tools/publish_preview.py --configure-bucket
+```
+
+This grants public object-read access, grants the shared VM's service account
+object read/write access so it can update the stable preview pointer, and adds
+a lifecycle rule that deletes objects under
+`devel/` after 14 days. The setup command preserves existing lifecycle rules;
+use it only on the dedicated preview bucket because the bucket-wide public
+read policy makes all its objects public. Public Access Prevention must not
+be enforced for this bucket. The page and its data share one HTTPS origin, so
+cross-origin CORS configuration is not required.
+
+Old immutable run data expires automatically. The stable preview page also
+expires after 14 days without a successful refresh. Bucket storage and public
+downloads can incur additional charges; both are included in the calculated
+planning estimate described above. Interactive `yes` confirmation is still
+required, and the estimate is not a spending cap.
 
 ## External developer (create an environment)
 

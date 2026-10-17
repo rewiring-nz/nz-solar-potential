@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import importlib
+import io
 import os
 import sys
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -53,6 +55,16 @@ class CloudProfileTests(unittest.TestCase):
             profile = load_profile("test", path)
         self.assertEqual(profile.target, "solar-demo-12345/australia-southeast1-b/solar-quickstart")
         self.assertEqual(profile.values["ssh_source_ranges"], ["192.0.2.40/32"])
+
+    def test_quickstart_has_no_manual_preview_identity_or_cost_flags(self) -> None:
+        for removed_option in (
+            "--estimate-nzd", "--estimate-basis", "--share-preview", "--preview-user",
+        ):
+            with patch.object(sys, "stderr", io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    cloud_pipeline._argument_parser("frankton_arm_lake").parse_args(
+                        [removed_option, "test"]
+                    )
 
     def test_rejects_zone_region_mismatch(self) -> None:
         values = _profile_values()
@@ -267,17 +279,11 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("[QS-02] installed", text)
 
     def test_cloud_mode_without_profile_uses_configured_shared_build_defaults(self) -> None:
-        defaults = {
-            "project": "downloads-417521",
-            "vm": "claude-doing-things",
-            "zone": "australia-southeast1-b",
-            "ssh_user": "j",
-            "regions": "frankton_arm_lake",
-            "ref": "main",
-            "cost_estimate_nzd": "3.00",
-            "cost_estimate_regions": "frankton_arm_lake",
-            "cost_estimate_basis": "small region estimate",
-        }
+        defaults = cloud_pipeline._load_shared_cloud_config()
+        preview_url = (
+            "https://storage.googleapis.com/rewiring-solar-previews/"
+            "devel/alice/preview.html"
+        )
         with tempfile.TemporaryDirectory() as log_dir:
             with (
                 patch.object(sys, "argv", ["pipeline.py", "--mode", "cloud"]),
@@ -288,23 +294,89 @@ class CloudProfileTests(unittest.TestCase):
                 patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
                 patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="target verified"),
                 patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
+                patch.object(cloud_pipeline, "_github_alias", return_value="alice"),
                 patch.object(
                     cloud_pipeline, "_run_shared_cloud_build",
-                    return_value="build and gate completed",
+                    return_value=("build and preview completed", preview_url),
                 ) as run_build,
                 patch.object(sys.stdin, "isatty", return_value=True),
                 patch("builtins.input", return_value="yes"),
+                patch.object(cloud_pipeline.webbrowser, "open", return_value=True) as open_browser,
             ):
                 self.assertEqual(cloud_pipeline.main(), 0)
             log = next(Path(log_dir).glob("*.log")).read_text(encoding="utf-8")
         run_args = run_build.call_args.args
-        self.assertEqual(run_args[:2], (defaults, "frankton_arm_lake"))
+        self.assertEqual(run_args[0]["project"], defaults["project"])
+        self.assertEqual(run_args[0]["preview_user"], "alice")
+        self.assertEqual(run_args[1], "frankton_arm_lake")
         self.assertIsInstance(run_args[2], cloud_pipeline.CloudQuickstartLog)
         self.assertIn("[QS-01] PASS Check local checkout and shared cloud defaults", log)
+        self.assertIn("preview alias alice", log)
         self.assertIn("[QS-04] PASS Confirm estimated cloud cost: Human approval received.", log)
-        self.assertIn("[QS-06] PASS Build and gate on the shared VM", log)
+        self.assertIn("[QS-06] PASS Build, gate, and publish developer preview", log)
+        open_browser.assert_called_once_with(preview_url)
 
-    def test_shared_cloud_config_has_expected_project_vm_and_cost_defaults(self) -> None:
+    def test_shared_build_publishes_and_opens_preview_by_default(self) -> None:
+        preview_url = (
+            "https://storage.googleapis.com/rewiring-solar-previews/"
+            "devel/alice/preview.html"
+        )
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    ["pipeline.py", "--mode", "cloud"],
+                ),
+                patch.dict(os.environ, {"SOLAR_CLOUD_PROFILE": ""}),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(
+                    cloud_pipeline, "_load_shared_cloud_config",
+                    return_value=cloud_pipeline._load_shared_cloud_config(),
+                ),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="verified"),
+                patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
+                patch.object(cloud_pipeline, "_github_alias", return_value="alice"),
+                patch.object(
+                    cloud_pipeline, "_run_shared_cloud_build",
+                    return_value=("build and preview completed", preview_url),
+                ) as run_build,
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value="yes"),
+                patch.object(cloud_pipeline.webbrowser, "open", return_value=True) as open_browser,
+            ):
+                self.assertEqual(cloud_pipeline.main(), 0)
+        self.assertEqual(run_build.call_args.args[0]["preview_user"], "alice")
+        open_browser.assert_called_once_with(preview_url)
+
+    def test_shared_build_passes_github_alias_to_remote_publisher(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
+        config["preview_user"] = "alice"
+        expected_url = (
+            "https://storage.googleapis.com/rewiring-solar-previews/"
+            "devel/alice/preview.html"
+        )
+        process = MagicMock()
+        process.stdout = io.StringIO(f"PREVIEW_URL={expected_url}\n")
+        process.wait.return_value = 0
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.subprocess, "Popen", return_value=process) as popen,
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                result = cloud_pipeline._run_shared_cloud_build(
+                    config, config["regions"], log,
+                )
+        command = popen.call_args.args[0]
+        self.assertIn("--preview-user", command)
+        self.assertEqual(command[command.index("--preview-user") + 1], "alice")
+        self.assertEqual(result[1], expected_url)
+        self.assertIn("preview was published", result[0])
+
+    def test_shared_cloud_config_has_expected_project_vm_and_calculated_cost(self) -> None:
         values = cloud_pipeline._load_shared_cloud_config()
         self.assertEqual(values["project"], "downloads-417521")
         self.assertEqual(values["vm"], "claude-doing-things")
@@ -312,45 +384,43 @@ class CloudProfileTests(unittest.TestCase):
         self.assertEqual(values["ssh_user"], "j")
         self.assertEqual(values["regions"], "frankton_arm_lake")
         self.assertEqual(values["ref"], "main")
-        self.assertEqual(values["cost_estimate_nzd"], "3.00")
-        self.assertEqual(values["cost_estimate_regions"], "frankton_arm_lake")
-        self.assertIn("not verified against project billing", values["cost_estimate_basis"])
+        estimate, basis = cloud_pipeline._shared_preview_cost(values)
+        self.assertEqual(estimate, Decimal("5.00"))
+        self.assertIn("compute NZD $1.92 (8 hours)", basis)
+        self.assertIn("estimated public downloads NZD $2.40 (20 GB)", basis)
 
-    def test_shared_cost_estimate_requires_override_for_non_default_region(self) -> None:
-        config = {
-            "regions": "another_region",
-            "cost_estimate_regions": "frankton_arm_lake",
-            "cost_estimate_nzd": "3.00",
-            "cost_estimate_basis": "default region estimate",
-        }
-        with tempfile.TemporaryDirectory() as log_dir:
-            log = cloud_pipeline.CloudQuickstartLog()
-            with (
-                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
-                patch.dict(os.environ, {"CLOUD_COST_ESTIMATE_NZD": ""}),
-            ):
-                with self.assertRaisesRegex(RuntimeError, "different or multi-region run"):
-                    cloud_pipeline._confirm_shared_cloud_cost(config, None, None, log)
-
-    def test_shared_cost_estimate_accepts_environment_override(self) -> None:
-        config = {
-            "regions": "another_region",
-            "cost_estimate_regions": "frankton_arm_lake",
-            "cost_estimate_nzd": "3.00",
-            "cost_estimate_basis": "default region estimate",
-        }
+    def test_shared_cost_confirmation_shows_calculated_estimate(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
         with tempfile.TemporaryDirectory() as log_dir:
             with (
                 patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
-                patch.dict(os.environ, {"CLOUD_COST_ESTIMATE_NZD": "8.50"}),
                 patch.object(sys.stdin, "isatty", return_value=True),
                 patch("builtins.input", return_value="yes"),
             ):
                 log = cloud_pipeline.CloudQuickstartLog()
-                cloud_pipeline._confirm_shared_cloud_cost(config, None, None, log)
+                cloud_pipeline._confirm_shared_cloud_cost(config, log)
             content = log.path.read_text(encoding="utf-8")
-        self.assertIn("Estimate: NZD $8.50", content)
-        self.assertIn("user-supplied planning estimate", content)
+        self.assertIn("Calculated estimate: NZD $5.00", content)
+        self.assertIn("publish a public preview", content)
+        self.assertIn("not a spending cap", content)
+
+    def test_github_alias_uses_authenticated_cli_login(self) -> None:
+        completed = cloud_pipeline.subprocess.CompletedProcess(
+            args=["gh", "api", "user"], returncode=0, stdout="Alice\n", stderr="",
+        )
+        with (
+            patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/gh"),
+            patch.object(cloud_pipeline.subprocess, "run", return_value=completed) as run,
+        ):
+            self.assertEqual(cloud_pipeline._github_alias(), "alice")
+        self.assertEqual(run.call_args.args[0], [
+            "/usr/bin/gh", "api", "user", "--jq", ".login",
+        ])
+
+    def test_github_alias_requires_authenticated_cli(self) -> None:
+        with patch.object(cloud_pipeline.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "GitHub CLI.*gh auth login"):
+                cloud_pipeline._github_alias()
 
     def test_unsupported_linux_gcloud_error_has_official_install_instructions(self) -> None:
         with (

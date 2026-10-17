@@ -6,6 +6,7 @@
 #   tools/remote_build.sh --fetch --regions "newtown" --publish    # fetch LiDAR/photos first
 #   tools/remote_build.sh --publish --reviewed "why"               # publish although the gate failed
 #   tools/remote_build.sh --yield-only --publish                   # the sun changed, not the roofs
+#   tools/remote_build.sh --regions frankton_arm_lake --preview-user alice
 #
 # No --regions: an incremental build of every region (stale ones only).
 #
@@ -58,7 +59,7 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main
+REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; PREVIEW_USER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --regions)      REGIONS="$2"; shift 2 ;;
@@ -69,11 +70,16 @@ while [ $# -gt 0 ]; do
     --force)        MODE="--force"; shift ;;
     --keep-running) KEEP=1; shift ;;
     --ref)          REF="$2"; shift 2 ;;
+    --preview-user) PREVIEW_USER="$2"; shift 2 ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
 [ $FETCH -eq 1 ] && [ -z "$REGIONS" ] && { echo "--fetch needs --regions"; exit 2; }
 [ $PUBLISH -eq 1 ] && [ "$REF" != main ] && { echo "only main is published; drop --publish to test a branch"; exit 2; }
+[ $PUBLISH -eq 1 ] && [ -n "$PREVIEW_USER" ] && { echo "developer preview and production publish are separate actions"; exit 2; }
+[ -n "$PREVIEW_USER" ] && ! printf '%s' "$PREVIEW_USER" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' && {
+  echo "--preview-user must be a 1-39 character alphanumeric/hyphen alias"; exit 2;
+}
 case "$REGIONS" in *[!a-z0-9_\ ]*) echo "region names are lower-case letters, digits and _"; exit 2 ;; esac
 
 STARTED=0
@@ -144,6 +150,23 @@ gate=$(grep '^GATE_RC=' /tmp/remote_gate.$$ | cut -d= -f2); rm -f /tmp/remote_ga
 if [ "$gate" != 0 ]; then
   [ -n "$REVIEWED" ] || { echo "GATE FAILED -- not publishing"; exit 1; }
   echo "GATE FAILED -- publishing anyway, reviewed: $REVIEWED"
+  [ -z "$PREVIEW_USER" ] || { echo "GATE FAILED -- developer previews require a passing gate"; exit 1; }
+fi
+
+if [ -n "$PREVIEW_USER" ]; then
+  echo "=== publish temporary developer preview ==="
+  preview_out=$(SSH "cd ~/solar-map && .venv/bin/python tools/publish_preview.py --user '$PREVIEW_USER' --regions '$REGIONS'") || {
+    echo "PREVIEW FAILED -- build and gate passed, but the public preview was not updated"
+    exit 1
+  }
+  printf '%s\n' "$preview_out"
+  preview_url=$(printf '%s\n' "$preview_out" | sed -n 's/^PREVIEW_URL=//p' | tail -1)
+  lower_user=$(printf '%s' "$PREVIEW_USER" | tr '[:upper:]' '[:lower:]')
+  case "$preview_url" in
+    https://storage.googleapis.com/*/devel/"$lower_user"/preview.html) ;;
+    *) echo "PREVIEW FAILED -- publisher returned an invalid preview URL"; exit 1 ;;
+  esac
+  echo "PREVIEW_URL=$preview_url"
 fi
 [ $PUBLISH -eq 1 ] || { echo "built and gated; re-run with --publish to publish"; exit 0; }
 

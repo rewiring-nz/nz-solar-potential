@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from cloud_profile import load_profile
+from tools.served_outputs import SERVED_DIRS, SERVED_FILES, STATIC_DIRS
 
 DATA = ROOT / "data"
 
@@ -60,13 +61,6 @@ def _tiles_bucket() -> str:
 
 BUCKET = _tiles_bucket()
 PUBLIC_BASE = f"https://storage.googleapis.com/{BUCKET.removeprefix('gs://')}"
-SERVED_FILES = ["panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles",
-                "addresses.json", "assumptions.json", "seasonal_curves.json",
-                "build_summary.json", "markup_lines.geojson"]
-SERVED_DIRS = ["building_detail", "heatmap_tiles", "addresses", "seasonal_curves", "summaries"]
-# The 3D terrain tiles do not change between builds: copied inside the bucket
-# from the previous version when it has them, uploaded only the first time.
-STATIC_DIRS = ["terrain"]
 CACHE = "public, max-age=31536000, immutable"
 
 

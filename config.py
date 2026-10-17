@@ -107,8 +107,9 @@ REGIONS = {
 # Default region used by tools/pipeline.py when no region argument is given.
 PIPELINE_REGION = "town_gorge_north"
 
-# Shared VM defaults for `bash quickstart.sh --mode cloud`. The cost estimate
-# applies only to cost_estimate_regions; other regions require a user estimate.
+# Shared VM defaults for `bash quickstart.sh --mode cloud`.
+# The preview cost model uses indicative rates and expected usage, then rounds
+# its estimate upward; it is not a spending cap.
 CLOUD_SHARED_BUILD = {
     "project": "downloads-417521",
     "vm": "claude-doing-things",
@@ -116,13 +117,19 @@ CLOUD_SHARED_BUILD = {
     "ssh_user": "j",
     "regions": "frankton_arm_lake",
     "ref": "main",
-    "cost_estimate_nzd": "3.00",
-    "cost_estimate_regions": "frankton_arm_lake",
-    "cost_estimate_basis": (
-        "provisional planning estimate for one small region (about 79 buildings), "
-        "informed by indicative VM pricing and a roughly 2.5-hour upper-region "
-        "build time; not verified against project billing"
-    ),
+    "preview_bucket": "gs://rewiring-solar-previews",
+    "preview_retention_days": 14,
+    "preview_cost_model": {
+        "vm_hourly_nzd": "0.24",
+        "vm_hours": "8",
+        "disk_monthly_per_gb_nzd": "0.24",
+        "disk_gb": "100",
+        "storage_gb": "1",
+        "storage_monthly_per_gb_nzd": "0.03",
+        "expected_download_gb": "20",
+        "egress_per_gb_nzd": "0.12",
+        "round_up_nzd": "0.50",
+    },
 }
 
 # Buildings confirmed demolished/replaced since the 2021 capture (field

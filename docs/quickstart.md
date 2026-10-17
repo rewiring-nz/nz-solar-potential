@@ -46,11 +46,15 @@ To build and gate the default region on the team's shared cloud build VM:
 bash quickstart.sh --mode cloud
 ```
 
-Defaults for the project, VM, zone, SSH user, region, ref, and cost estimate
-are held in `config.py` under `CLOUD_SHARED_BUILD`. The command asks for
-explicit cost approval before starting or using the VM, and it builds and gates
-without publishing. See [Cloud quickstart](quickstart-cloud.md) for optional
-per-developer VM profiles, preflight, and other options.
+Defaults for the project, VM, zone, SSH user, region, ref, and cost assumptions
+are held in `config.py` under `CLOUD_SHARED_BUILD`. After cost approval, the
+command builds and gates the region, publishes the passing result to a public,
+expiring developer preview, and opens the preview URL. It resolves the preview
+alias from the authenticated GitHub CLI account (`gh auth login`) and calculates
+the estimate from the VM, storage, retention, and expected-download assumptions
+in `CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md) for
+one-time preview-bucket setup, optional per-developer VM profiles, and
+preflight.
 
 # 5. Review status
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as dt
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import hashlib
 import io
 import json
@@ -795,21 +796,16 @@ sudo apt-get install -y google-cloud-cli"""
 def _confirm_cloud_cost(
     profile: CloudProfile,
     action: str,
-    estimate_nzd: str | None,
-    estimate_basis: str | None,
     log: CloudQuickstartLog | None = None,
 ) -> None:
     configured_estimate = profile.values.get("cost_estimate_nzd")
     configured_basis = profile.values.get("cost_estimate_basis")
-    estimate = estimate_nzd or configured_estimate
-    basis = estimate_basis or (
-        "user-supplied planning estimate" if estimate_nzd else configured_basis
-    )
+    estimate = configured_estimate
+    basis = configured_basis
     if not estimate or not basis:
         raise RuntimeError(
             "a cost estimate and assumptions are required before this cloud action. "
-            "Set cost_estimate_nzd and cost_estimate_basis in the profile, or pass "
-            "--estimate-nzd AMOUNT --estimate-basis TEXT."
+            "Set cost_estimate_nzd and cost_estimate_basis in the profile."
         )
     if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", estimate):
         raise ValueError("cost estimate must be a non-negative NZD amount with up to two decimals")
@@ -879,14 +875,11 @@ def _cloud_preflight(
     )
 
 
-def _load_shared_cloud_config() -> dict[str, str]:
+def _load_shared_cloud_config() -> dict[str, Any]:
     import config as project_config
 
     values = project_config.CLOUD_SHARED_BUILD
-    required = (
-        "project", "vm", "zone", "ssh_user", "regions", "ref",
-        "cost_estimate_nzd", "cost_estimate_regions", "cost_estimate_basis",
-    )
+    required = ("project", "vm", "zone", "ssh_user", "regions", "ref")
     if not isinstance(values, dict) or any(
         not isinstance(values.get(key), str) for key in required
     ):
@@ -895,6 +888,21 @@ def _load_shared_cloud_config() -> dict[str, str]:
             + ", ".join(required)
         )
     values = dict(values)
+    if not isinstance(values.get("preview_bucket"), str):
+        raise ValueError("config.CLOUD_SHARED_BUILD.preview_bucket must be a string")
+    if (
+        isinstance(values.get("preview_retention_days"), bool)
+        or not isinstance(values.get("preview_retention_days"), int)
+        or values["preview_retention_days"] < 1
+    ):
+        raise ValueError(
+            "config.CLOUD_SHARED_BUILD.preview_retention_days must be a positive integer"
+        )
+    if not re.fullmatch(
+        r"gs://[a-z0-9][a-z0-9-]{1,61}[a-z0-9]",
+        values["preview_bucket"] or "",
+    ):
+        raise ValueError("config.CLOUD_SHARED_BUILD.preview_bucket must be a valid gs:// bucket")
     if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", values["project"]):
         raise ValueError("CLOUD_SHARED_BUILD.project is not a valid Google Cloud project ID")
     if not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", values["vm"]):
@@ -903,20 +911,70 @@ def _load_shared_cloud_config() -> dict[str, str]:
         raise ValueError("CLOUD_SHARED_BUILD.zone must be a valid GCP zone")
     if not re.fullmatch(r"[a-z_][a-z0-9_ -]*", values["regions"]):
         raise ValueError("CLOUD_SHARED_BUILD.regions contains unsupported characters")
-    if not re.fullmatch(r"[a-z][a-z0-9_ -]*", values["cost_estimate_regions"]):
-        raise ValueError("CLOUD_SHARED_BUILD.cost_estimate_regions contains unsupported characters")
     if not values["ssh_user"] or not re.fullmatch(r"[a-z_][a-z0-9_-]*", values["ssh_user"]):
         raise ValueError("CLOUD_SHARED_BUILD.ssh_user must be a valid SSH username")
     if not values["ref"] or values["ref"].startswith("-") or "\n" in values["ref"]:
         raise ValueError("CLOUD_SHARED_BUILD.ref must be a non-empty Git ref")
-    if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", values["cost_estimate_nzd"]):
-        raise ValueError("CLOUD_SHARED_BUILD.cost_estimate_nzd must be a non-negative NZD amount")
-    if not values["cost_estimate_basis"].strip() or len(values["cost_estimate_basis"]) > 300:
-        raise ValueError("CLOUD_SHARED_BUILD.cost_estimate_basis must be 1-300 characters")
-    return values
+    cost_model = values.get("preview_cost_model")
+    cost_fields = (
+        "vm_hourly_nzd", "vm_hours", "disk_monthly_per_gb_nzd", "disk_gb",
+        "storage_gb", "storage_monthly_per_gb_nzd", "expected_download_gb",
+        "egress_per_gb_nzd", "round_up_nzd",
+    )
+    if not isinstance(cost_model, dict) or any(
+        not isinstance(cost_model.get(key), str) for key in cost_fields
+    ):
+        raise ValueError(
+            "CLOUD_SHARED_BUILD.preview_cost_model must define string values for: "
+            + ", ".join(cost_fields)
+        )
+    for key in cost_fields:
+        value = cost_model[key]
+        if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,4})?", value):
+            raise ValueError(f"CLOUD_SHARED_BUILD.preview_cost_model.{key} must be non-negative")
+        try:
+            amount = Decimal(value)
+        except InvalidOperation as exc:
+            raise ValueError(
+                f"CLOUD_SHARED_BUILD.preview_cost_model.{key} is not a decimal amount"
+            ) from exc
+        if not amount.is_finite():
+            raise ValueError(f"CLOUD_SHARED_BUILD.preview_cost_model.{key} must be finite")
+    if Decimal(cost_model["vm_hours"]) <= 0 or Decimal(cost_model["round_up_nzd"]) <= 0:
+        raise ValueError("preview cost model vm_hours and round_up_nzd must be positive")
+    return {
+        **{key: values[key] for key in required},
+        "preview_bucket": values["preview_bucket"],
+        "preview_retention_days": values["preview_retention_days"],
+        "preview_cost_model": dict(cost_model),
+    }
 
 
-def _shared_cloud_preflight(config: dict[str, str], gcloud: str) -> str:
+def _github_alias() -> str:
+    """Return the login for the authenticated GitHub CLI account."""
+    gh = shutil.which("gh")
+    if not gh:
+        raise RuntimeError(
+            "GitHub CLI is required to publish a per-developer preview. Install it from "
+            "https://cli.github.com/ and authenticate once with `gh auth login`."
+        )
+    try:
+        result = subprocess.run(
+            [gh, "api", "user", "--jq", ".login"],
+            cwd=ROOT, check=True, text=True, capture_output=True, timeout=15,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "could not resolve the authenticated GitHub alias; run `gh auth login` "
+            "and retry the cloud quickstart."
+        ) from exc
+    alias = result.stdout.strip()
+    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", alias):
+        raise RuntimeError("GitHub CLI returned an invalid account login for the preview alias.")
+    return alias.lower()
+
+
+def _shared_cloud_preflight(config: dict[str, Any], gcloud: str) -> str:
     auth = _cloud_run(
         [gcloud, "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
         capture=True,
@@ -944,7 +1002,7 @@ def _shared_cloud_preflight(config: dict[str, str], gcloud: str) -> str:
     )
 
 
-def _shared_vm_readiness(config: dict[str, str], gcloud: str) -> str:
+def _shared_vm_readiness(config: dict[str, Any], gcloud: str) -> str:
     result = _cloud_run([
         gcloud, "compute", "instances", "describe", config["vm"],
         f"--project={config['project']}", f"--zone={config['zone']}",
@@ -965,40 +1023,55 @@ def _shared_vm_readiness(config: dict[str, str], gcloud: str) -> str:
     return "Shared VM is RUNNING and IAP/SSH access is ready."
 
 
-def _confirm_shared_cloud_cost(
-    config: dict[str, str], estimate_nzd: str | None, estimate_basis: str | None,
-    log: CloudQuickstartLog,
-) -> None:
-    environment_estimate = os.environ.get("CLOUD_COST_ESTIMATE_NZD")
-    supplied_estimate = estimate_nzd or environment_estimate
-    estimate_regions = config["cost_estimate_regions"]
-    if config["regions"] != estimate_regions and not supplied_estimate:
-        raise RuntimeError(
-            f"the configured NZD ${config['cost_estimate_nzd']} estimate applies only to "
-            f"{estimate_regions}. "
-            "For a different or multi-region run, supply --estimate-nzd AMOUNT "
-            "(or CLOUD_COST_ESTIMATE_NZD)."
-        )
-    estimate = supplied_estimate or config["cost_estimate_nzd"]
-    basis = estimate_basis or (
-        "user-supplied planning estimate for the selected region(s)"
-        if supplied_estimate else config["cost_estimate_basis"]
+def _shared_preview_cost(config: dict[str, Any]) -> tuple[Decimal, str]:
+    """Estimate VM, disk, preview storage, and expected public egress costs."""
+    model = config["preview_cost_model"]
+    vm_hours = Decimal(model["vm_hours"])
+    disk_gb = Decimal(model["disk_gb"])
+    storage_gb = Decimal(model["storage_gb"])
+    download_gb = Decimal(model["expected_download_gb"])
+    retention_days = Decimal(config["preview_retention_days"])
+    vm_cost = Decimal(model["vm_hourly_nzd"]) * vm_hours
+    disk_cost = (
+        Decimal(model["disk_monthly_per_gb_nzd"]) * disk_gb * vm_hours / Decimal(720)
     )
-    if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", estimate):
-        raise ValueError("cost estimate must be a non-negative NZD amount with up to two decimals")
-    if not basis.strip() or len(basis) > 300:
-        raise ValueError("cost estimate assumptions must be 1-300 characters")
+    storage_cost = (
+        Decimal(model["storage_monthly_per_gb_nzd"]) * storage_gb
+        * retention_days / Decimal(30)
+    )
+    egress_cost = Decimal(model["egress_per_gb_nzd"]) * download_gb
+    quantum = Decimal(model["round_up_nzd"])
+    rounded_total = (
+        ((vm_cost + disk_cost + storage_cost + egress_cost) / quantum)
+        .to_integral_value(rounding=ROUND_CEILING) * quantum
+    )
+    basis = (
+        f"compute NZD ${vm_cost:.2f} ({vm_hours:g} hours); "
+        f"disk NZD ${disk_cost:.2f} ({disk_gb:g} GB for {vm_hours:g} hours); "
+        f"preview storage NZD ${storage_cost:.2f} ({storage_gb:g} GB for "
+        f"{retention_days:g} days); estimated public downloads NZD ${egress_cost:.2f} "
+        f"({download_gb:g} GB). Unit prices and usage are planning assumptions."
+    )
+    return rounded_total, basis
+
+
+def _confirm_shared_cloud_cost(
+    config: dict[str, Any], log: CloudQuickstartLog,
+) -> None:
+    estimate, basis = _shared_preview_cost(config)
+    estimate_text = f"{estimate:.2f}"
+    log.detail(
+        4,
+        f"This action will build and gate region(s) {config['regions']} on the shared VM, "
+        f"and publish a public preview. Calculated estimate: NZD ${estimate_text} "
+        f"({basis}). Actual charges can be higher, especially if runtime or public "
+        "downloads exceed these assumptions; this is not a spending cap.",
+    )
     if not sys.stdin.isatty():
         raise RuntimeError(
             "interactive cost confirmation is required before shared cloud work; "
             "no cloud action was started."
         )
-    log.detail(
-        4,
-        f"This action will build and gate region(s) {config['regions']} on the shared VM, "
-        f"which may result in financial costs. Estimate: NZD ${estimate} ({basis}). "
-        "This is not a spending cap; actual charges can be higher.",
-    )
     try:
         answer = input("[QS-04] Continue? (yes/NO) ")
     except EOFError:
@@ -1010,11 +1083,12 @@ def _confirm_shared_cloud_cost(
 
 
 def _run_shared_cloud_build(
-    config: dict[str, str], region: str, log: CloudQuickstartLog,
-) -> str:
+    config: dict[str, Any], region: str, log: CloudQuickstartLog,
+) -> tuple[str, str | None]:
     command = [
         "bash", str(ROOT / "tools" / "remote_build.sh"),
         "--regions", region, "--ref", config["ref"],
+        "--preview-user", config["preview_user"],
     ]
     env = os.environ.copy()
     env.update({
@@ -1031,14 +1105,30 @@ def _run_shared_cloud_build(
     except OSError as exc:
         raise RuntimeError(f"could not start shared cloud build: {exc}") from exc
     assert process.stdout is not None
+    preview_url: str | None = None
     for line in process.stdout:
-        log.detail(6, line.rstrip("\r\n"))
+        content = line.rstrip("\r\n")
+        if content.startswith("PREVIEW_URL="):
+            preview_url = content.partition("=")[2]
+        log.detail(6, content)
     status = process.wait()
     if status:
         raise RuntimeError(
             f"shared build workflow exited with status {status}; inspect the numbered log."
         )
-    return "Shared build and gate completed; the workflow does not publish by default."
+    expected_url = (
+        f"https://storage.googleapis.com/{config['preview_bucket'][5:]}/devel/"
+        f"{config['preview_user']}/preview.html"
+    )
+    if preview_url != expected_url:
+        raise RuntimeError(
+            "shared build completed without the expected developer preview URL; "
+            "verify that the remote preview publisher succeeded."
+        )
+    return (
+        "Shared build and gate completed; the developer preview was published.",
+        preview_url,
+    )
 
 
 def _existing_instance(profile: CloudProfile) -> dict[str, Any] | None:
@@ -1457,14 +1547,10 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
         choices=("preflight", "build", "create", "bootstrap", "ssh", "run", "collect",
                  "preview", "status", "delete"),
         dest="cloud",
-        help="cloud action (default: shared build without --profile; run with --profile)",
+        help="cloud action (default: shared build and preview without --profile; run with --profile)",
     )
     parser.add_argument("--confirm",
                         help="exact project/zone/VM target required by create and delete")
-    parser.add_argument("--estimate-nzd",
-                        help="override the profile's planning cost estimate for a cloud action")
-    parser.add_argument("--estimate-basis",
-                        help="optional assumptions for --estimate-nzd")
     parser.add_argument("--step-offset", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--python", dest="python", default=sys.executable,
                         help="Python executable used for local pipeline subprocesses")
@@ -1505,12 +1591,7 @@ def main() -> int:
         try:
             if args.confirm and action not in ("create", "delete"):
                 parser.error("--confirm can only be used with cloud actions create or delete")
-            if args.estimate_basis and not args.estimate_nzd:
-                parser.error("--estimate-basis requires --estimate-nzd")
             chargeable_actions = {"create", "bootstrap", "ssh", "run", "collect", "preview"}
-            if (args.estimate_nzd or args.estimate_basis) and action not in chargeable_actions:
-                if action != "build" or selected_profile_name:
-                    parser.error("cost estimate overrides are only valid for chargeable cloud actions")
 
             if not selected_profile_name:
                 if args.profiles_file:
@@ -1521,7 +1602,7 @@ def main() -> int:
                         "requires a named --profile; without a profile the shared VM is used."
                     )
 
-                def check_shared_checkout_and_config() -> dict[str, str]:
+                def check_shared_checkout_and_config() -> dict[str, Any]:
                     git = shutil.which("git")
                     if not git:
                         raise RuntimeError("Git is not installed or not on PATH.")
@@ -1537,12 +1618,16 @@ def main() -> int:
                         _safe_area(selected_region)
                     values = dict(values)
                     values["regions"] = regions
-                    log.detail(
-                        1,
+                    if action == "build":
+                        values["preview_user"] = _github_alias()
+                    description = (
                         f"Git checkout valid; shared VM "
                         f"{values['project']}/{values['zone']}/{values['vm']}; "
-                        f"regions {regions}; ref {values['ref']}.",
+                        f"regions {regions}; ref {values['ref']}"
                     )
+                    if action == "build":
+                        description += f"; preview alias {values['preview_user']}"
+                    log.detail(1, description + ".")
                     return values
 
                 shared = log.step(
@@ -1558,9 +1643,7 @@ def main() -> int:
 
                 def confirm_shared_cost() -> str:
                     if action == "build":
-                        _confirm_shared_cloud_cost(
-                            shared, args.estimate_nzd, args.estimate_basis, log,
-                        )
+                        _confirm_shared_cloud_cost(shared, log)
                         return "Human approval received."
                     return "Preflight only; no cloud work or cost approval required."
 
@@ -1576,13 +1659,23 @@ def main() -> int:
                         lambda: "No VM was started and no build was run.",
                     )
                 else:
-                    result = log.step(
-                        6, "Build and gate on the shared VM",
-                        lambda: _run_shared_cloud_build(
-                            shared, shared["regions"], log,
-                        ),
+                    build_result = log.step(
+                        6, "Build, gate, and publish developer preview",
+                        lambda: _run_shared_cloud_build(shared, shared["regions"], log),
                     )
+                    if build_result is None:
+                        result = None
+                        preview_url = None
+                    else:
+                        result, preview_url = build_result
                 print(f"Cloud quickstart log: {log.path}", flush=True)
+                if action == "build" and result is not None:
+                    if not preview_url:
+                        raise RuntimeError(
+                            "shared build succeeded without returning a developer preview URL."
+                        )
+                    print(f"Developer preview: {preview_url}", flush=True)
+                    webbrowser.open(preview_url)
                 return 0 if result is not None else 1
 
             def check_checkout_and_profile() -> CloudProfile:
@@ -1618,9 +1711,7 @@ def main() -> int:
 
             def confirm_cost() -> str:
                 if action in chargeable_actions:
-                    _confirm_cloud_cost(
-                        profile, action, args.estimate_nzd, args.estimate_basis, log,
-                    )
+                    _confirm_cloud_cost(profile, action, log)
                     return "Human approval received."
                 return "This action does not create or use a billable VM; no cost approval required."
 
@@ -1642,11 +1733,9 @@ def main() -> int:
         except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
             print(f"cloud quickstart error: {exc}\nDetails: {log.path}", file=sys.stderr)
             return 2
-    if (selected_profile_name or args.profiles_file or args.cloud or args.confirm
-            or args.estimate_nzd or args.estimate_basis):
+    if selected_profile_name or args.profiles_file or args.cloud or args.confirm:
         parser.error(
-            "--profile, --profiles-file, --cloud, --confirm, --estimate-nzd, and "
-            "--estimate-basis require --mode cloud"
+            "--profile, --profiles-file, --cloud, and --confirm require --mode cloud"
         )
     py = _python_executable(args.python)
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
