@@ -49,7 +49,9 @@ bash quickstart.sh --mode cloud
 Defaults for the project, VM, zone, SSH user, region, ref, and cost assumptions
 are held in `config.py` under `CLOUD_SHARED_BUILD`. After cost approval, the
 command builds and gates the region, publishes the passing result to a public,
-expiring developer preview, and opens the preview URL. It resolves the preview
+expiring developer preview, and opens the preview URL. The production gate is
+reported but does not block developer-preview publication; it still blocks
+production publishing. It resolves the preview
 alias from the GitHub SSH authentication greeting (using an existing SSH key;
 no extra CLI is needed when this checkout already authenticates to GitHub) and
 falls back to the GitHub CLI if available. It calculates the estimate from the

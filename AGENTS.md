@@ -40,10 +40,10 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   `report.md` (plus preview-server PID/log when the preview starts). Combining
   replaces the current map contract with the selected region. Runs locally by
   default; `--mode cloud` builds and gates the configured region on the shared
-  VM, then publishes and opens a public developer preview after explicit
-  approval of the calculated cost. It uses `config.CLOUD_SHARED_BUILD` for
-  defaults and resolves the preview owner from the GitHub SSH identity,
-  falling back to GitHub CLI when available.
+  VM, runs the production gate as a warning, then publishes and opens a public
+  developer preview after explicit approval of the calculated cost. It uses
+  `config.CLOUD_SHARED_BUILD` for defaults and resolves the preview owner from
+  the GitHub SSH identity, falling back to GitHub CLI when available.
   `--mode cloud --profile <name>` selects per-developer cloud execution,
   and `--cloud` selects a VM lifecycle action. See
   [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
@@ -149,14 +149,15 @@ is enforced by code, not by care:
   whose list has been rendered and judged. Rollback: point `site-config.js`
   `dataBase`/`dataVersion` at an older version folder.
 - **Developer previews are separate from production.** The shared cloud
-  quickstart publishes every passing gated build by default to the dedicated
-  public bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`, under
-  immutable `devel/<alias>/runs/` paths. It resolves the alias from the
-  authenticated GitHub SSH identity (or the GitHub CLI fallback), calculates a
-  planning estimate from the configured `preview_cost_model`, and updates only
-  that alias's preview pointer. The bucket lifecycle expires all `devel/` objects after
-  `preview_retention_days`. Never use the bucket for private inputs or
-  production releases.
+  quickstart requests publication by default using `--dev-publish <alias>` to
+  the dedicated public bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`,
+  under immutable `devel/<alias>/runs/` paths. The production gate is
+  informational for developer previews and remains mandatory for production
+  publishing. The command resolves the alias from the authenticated GitHub SSH
+  identity or GitHub CLI, calculates a planning estimate from the configured
+  `preview_cost_model`, and updates only that alias's preview pointer. The
+  bucket lifecycle expires all `devel/` objects after `preview_retention_days`.
+  Never use the bucket for private inputs or production releases.
 - **Keys** come from the environment or `.env`, else Google Secret Manager
   (`src/project_secrets.py`; secret `linz-api-key`). Never commit or print a
   key.

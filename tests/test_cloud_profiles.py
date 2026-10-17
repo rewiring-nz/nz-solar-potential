@@ -371,8 +371,9 @@ class CloudProfileTests(unittest.TestCase):
                     config, config["regions"], log,
                 )
         command = popen.call_args.args[0]
-        self.assertIn("--preview-user", command)
-        self.assertEqual(command[command.index("--preview-user") + 1], "alice")
+        self.assertIn("--dev-publish", command)
+        self.assertEqual(command[command.index("--dev-publish") + 1], "alice")
+        self.assertNotIn("--publish", command)
         self.assertEqual(result[1], expected_url)
         self.assertIn("preview was published", result[0])
 

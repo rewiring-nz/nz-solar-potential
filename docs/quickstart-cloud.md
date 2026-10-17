@@ -8,14 +8,16 @@ bash quickstart.sh --mode cloud
 ```
 
 This starts the shared VM if needed, syncs the selected Git ref, builds the
-configured region, runs the deploy gate, publishes a passing result to the
-public developer-preview bucket, and opens the stable preview URL. The alias
-comes first from the GitHub greeting returned by the existing SSH
-authentication (`ssh -T git@github.com`); no extra CLI is needed when this
-checkout's SSH key is already linked to GitHub. If SSH authentication is not
-available, the quickstart can use the GitHub CLI if installed. Default project,
-VM, zone, SSH user, region, Git ref, preview bucket, retention, and cost
-assumptions are stored in
+configured region, runs the production deploy gate for visibility, publishes
+the build to the developer-preview bucket, and opens the stable preview URL.
+The production gate does not block a developer preview; it remains mandatory
+for production publishing. The preview publisher still requires the build's
+core artifacts and frontend files. The alias comes first from the GitHub
+greeting returned by the existing SSH authentication
+(`ssh -T git@github.com`); no extra CLI is needed when this checkout's SSH key is
+already linked to GitHub. If SSH authentication is not available, the
+quickstart can use the GitHub CLI if installed. Default project, VM, zone, SSH
+user, region, Git ref, preview bucket, retention, and cost assumptions are stored in
 [`config.py`](../config.py) under `CLOUD_SHARED_BUILD`. Pass a region name to
 override the configured region. Use `--cloud preflight` for the no-build,
 no-cost check; preflight does not require GitHub CLI authentication.
@@ -80,8 +82,15 @@ per-developer VM profile is stored outside the checkout by default at
 
 ### Developer preview
 
-The default shared-VM command publishes a public preview after the build passes
-its gate; no extra preview or alias flags are needed. The alias is resolved
+The default shared-VM command requests a public developer preview using
+`tools/remote_build.sh --dev-publish GITHUB_ALIAS`; the
+`quickstart.sh --mode cloud` flow supplies that option automatically. This
+preview-only option does not invoke production publication. The production
+gate runs but is warning-only for the developer preview; it still blocks
+production publishing. Before upload, the selected region is checked with
+`tools/validate_quickstart_map.py`, and required preview artifacts must be
+present and upload successfully. No extra preview or alias flags are needed
+in the normal quickstart. The alias is resolved
 from the GitHub SSH authentication greeting, or from `gh api user --jq .login`
 when SSH authentication is unavailable and GitHub CLI is installed. The
 quickstart opens the stable URL:

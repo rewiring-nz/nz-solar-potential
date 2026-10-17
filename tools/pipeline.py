@@ -1118,7 +1118,7 @@ def _run_shared_cloud_build(
     command = [
         "bash", str(ROOT / "tools" / "remote_build.sh"),
         "--regions", region, "--ref", config["ref"],
-        "--preview-user", config["preview_user"],
+        "--dev-publish", config["preview_user"],
     ]
     env = os.environ.copy()
     env.update({
@@ -1156,7 +1156,8 @@ def _run_shared_cloud_build(
             "verify that the remote preview publisher succeeded."
         )
     return (
-        "Shared build and gate completed; the developer preview was published.",
+        "Shared build completed and the developer preview was published; "
+        "the production gate is informational for this target.",
         preview_url,
     )
 

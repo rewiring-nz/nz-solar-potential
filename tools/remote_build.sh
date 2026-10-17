@@ -1,21 +1,20 @@
 #!/bin/bash
-# Build on the VM and, if the gate passes, publish -- from anywhere gcloud runs.
+# Build on the VM, compare with production, then publish to the selected target.
 #
 #   tools/remote_build.sh --regions "glenorchy kinloch"            # build + gate, no publish
 #   tools/remote_build.sh --regions "glenorchy kinloch" --publish  # ...and publish if the gate passes
 #   tools/remote_build.sh --fetch --regions "newtown" --publish    # fetch LiDAR/photos first
 #   tools/remote_build.sh --publish --reviewed "why"               # publish although the gate failed
 #   tools/remote_build.sh --yield-only --publish                   # the sun changed, not the roofs
-#   tools/remote_build.sh --regions frankton_arm_lake --preview-user alice
+#   tools/remote_build.sh --regions frankton_arm_lake --dev-publish alice
 #
 # No --regions: an incremental build of every region (stale ones only).
 #
 # This is what the build-and-publish GitHub Action runs, and it works the same
 # from a laptop. Everything is computed on the VM: it pulls the pushed code
-# (tools/sync_vm.sh), builds (src/run_district_build.sh), gates against the
-# live site (tools/predeploy_check.py) and publishes the served set to a new
-# gs://rewiring-solar-tiles/v<N>/ itself (tools/publish_served.py). This
-# machine then switches site-config.js to it and pushes that one-line change.
+# (tools/sync_vm.sh), builds (src/run_district_build.sh), checks against the
+# live site (tools/predeploy_check.py), and publishes either a developer
+# preview or, after a passing/reviewed gate, a production release.
 #
 # The VM is started if it is stopped, and stopped again at the end if this
 # script started it (--keep-running to leave it up). A cut-off build resumes:
@@ -59,7 +58,7 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; PREVIEW_USER=""
+REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; DEV_PUBLISH_USER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --regions)      REGIONS="$2"; shift 2 ;;
@@ -70,15 +69,19 @@ while [ $# -gt 0 ]; do
     --force)        MODE="--force"; shift ;;
     --keep-running) KEEP=1; shift ;;
     --ref)          REF="$2"; shift 2 ;;
-    --preview-user) PREVIEW_USER="$2"; shift 2 ;;
+    --dev-publish)
+      [ $# -ge 2 ] || { echo "--dev-publish needs a GitHub alias"; exit 2; }
+      DEV_PUBLISH_USER="$2"; shift 2 ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
 [ $FETCH -eq 1 ] && [ -z "$REGIONS" ] && { echo "--fetch needs --regions"; exit 2; }
 [ $PUBLISH -eq 1 ] && [ "$REF" != main ] && { echo "only main is published; drop --publish to test a branch"; exit 2; }
-[ $PUBLISH -eq 1 ] && [ -n "$PREVIEW_USER" ] && { echo "developer preview and production publish are separate actions"; exit 2; }
-[ -n "$PREVIEW_USER" ] && ! printf '%s' "$PREVIEW_USER" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' && {
-  echo "--preview-user must be a 1-39 character alphanumeric/hyphen alias"; exit 2;
+[ -n "$DEV_PUBLISH_USER" ] && [ -z "$REGIONS" ] && { echo "--dev-publish needs --regions"; exit 2; }
+[ $PUBLISH -eq 1 ] && [ -n "$DEV_PUBLISH_USER" ] && { echo "developer preview and production publish are separate actions"; exit 2; }
+[ -n "$REVIEWED" ] && [ -n "$DEV_PUBLISH_USER" ] && { echo "--reviewed is only for production publication"; exit 2; }
+[ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$DEV_PUBLISH_USER" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' && {
+  echo "--dev-publish needs a 1-39 character alphanumeric/hyphen GitHub alias"; exit 2;
 }
 case "$REGIONS" in *[!a-z0-9_\ ]*) echo "region names are lower-case letters, digits and _"; exit 2 ;; esac
 
@@ -148,23 +151,35 @@ echo "=== gate against live ==="
 SSH "cd ~/solar-map && .venv/bin/python tools/predeploy_check.py; echo GATE_RC=\$?" | tee /tmp/remote_gate.$$
 gate=$(grep '^GATE_RC=' /tmp/remote_gate.$$ | cut -d= -f2); rm -f /tmp/remote_gate.$$
 if [ "$gate" != 0 ]; then
-  [ -n "$REVIEWED" ] || { echo "GATE FAILED -- not publishing"; exit 1; }
-  echo "GATE FAILED -- publishing anyway, reviewed: $REVIEWED"
-  [ -z "$PREVIEW_USER" ] || { echo "GATE FAILED -- developer previews require a passing gate"; exit 1; }
+  if [ -n "$DEV_PUBLISH_USER" ]; then
+    echo "PRODUCTION GATE FAILED (rc=${gate:-unknown}) -- continuing with developer preview only"
+  else
+    [ -n "$REVIEWED" ] || { echo "GATE FAILED -- not publishing"; exit 1; }
+    echo "GATE FAILED -- publishing anyway, reviewed: $REVIEWED"
+  fi
+elif [ -n "$DEV_PUBLISH_USER" ]; then
+  echo "PRODUCTION GATE PASSED"
 fi
 
-if [ -n "$PREVIEW_USER" ]; then
+if [ -n "$DEV_PUBLISH_USER" ]; then
+  echo "=== validate developer preview map contract ==="
+  for region in $REGIONS; do
+    SSH "cd ~/solar-map && .venv/bin/python tools/validate_quickstart_map.py --region-out 'data/out/$region' --map-data data" || {
+      echo "DEVELOPER PREVIEW FAILED -- map output contract validation failed for $region"
+      exit 1
+    }
+  done
   echo "=== publish temporary developer preview ==="
-  preview_out=$(SSH "cd ~/solar-map && .venv/bin/python tools/publish_preview.py --user '$PREVIEW_USER' --regions '$REGIONS'") || {
-    echo "PREVIEW FAILED -- build and gate passed, but the public preview was not updated"
+  preview_out=$(SSH "cd ~/solar-map && .venv/bin/python tools/publish_preview.py --user '$DEV_PUBLISH_USER' --regions '$REGIONS'") || {
+    echo "DEVELOPER PREVIEW FAILED -- the preview was not updated"
     exit 1
   }
   printf '%s\n' "$preview_out"
   preview_url=$(printf '%s\n' "$preview_out" | sed -n 's/^PREVIEW_URL=//p' | tail -1)
-  lower_user=$(printf '%s' "$PREVIEW_USER" | tr '[:upper:]' '[:lower:]')
+  lower_user=$(printf '%s' "$DEV_PUBLISH_USER" | tr '[:upper:]' '[:lower:]')
   case "$preview_url" in
     https://storage.googleapis.com/*/devel/"$lower_user"/preview.html) ;;
-    *) echo "PREVIEW FAILED -- publisher returned an invalid preview URL"; exit 1 ;;
+    *) echo "DEVELOPER PREVIEW FAILED -- publisher returned an invalid preview URL"; exit 1 ;;
   esac
   echo "PREVIEW_URL=$preview_url"
 fi
