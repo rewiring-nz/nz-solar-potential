@@ -652,6 +652,12 @@ const BT_CSS = `
 .sx-foot { font-size: 12px; color: var(--sx-ink-3); margin: 7px 4px 0; line-height: 1.45; }
 .sx-foot .ok { color: var(--sx-good); }
 .sx-foot .warn { color: #ff9f0a; }
+.sx-why > summary { cursor: pointer; color: var(--sx-ink-2); list-style: none; display: inline; }
+.sx-why > summary::-webkit-details-marker { display: none; }
+.sx-why > summary::after { content: " ›"; }
+.sx-why[open] > summary::after { content: " ⌄"; }
+.sx-why[open] { color: var(--sx-ink-2); }
+.sx-why.sx-inline { display: inline; }
 .sx-seg { display: inline-flex; background: var(--sx-fill-2); border-radius: 9px; padding: 2px; gap: 0; flex-wrap: wrap; justify-content: flex-end; }
 .sx-seg button { background: none; border: 0; color: var(--sx-ink); font: 500 13px/1 inherit; font-family: inherit; padding: 6px 10px; border-radius: 7px; cursor: pointer; }
 .sx-seg button.on { background: #636366; box-shadow: 0 1px 3px rgba(0,0,0,.35); font-weight: 600; }
@@ -692,7 +698,7 @@ const BT_CSS = `
 .sx-billrow .after:hover, .sx-billrow .after:focus-visible { background: rgba(255,255,255,.05); outline: none; }
 .sx-billrow .after b { color: var(--sx-good); font-weight: 650; }
 .sx-billrow .after small { color: var(--sx-ink-3); font-size: 11.5px; }
-.side-panel:not(.compact) .sx-glance-foot { display: none; }
+
 .sx-peak .lbl small { color: var(--sx-ink-2); font-variant-numeric: tabular-nums; }
 .sx-range { position: relative; width: 150px; height: 28px; flex: none; }
 .sx-range::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--sx-fill-2); }
@@ -703,7 +709,6 @@ const BT_CSS = `
 .sx-range input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 22px; height: 22px; margin-top: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); cursor: grab; }
 .sx-range input::-moz-range-thumb { pointer-events: auto; width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); cursor: grab; }
 .sx-range input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--sx-tint); }
-.side-panel:not(.compact) .sx-glance { display: none; }
 .sx-more .sx-h:first-child { margin-top: 22px; }
 @media (max-width: 1250px) { .sx-bills .sx-row { grid-template-columns: 1fr 96px 96px; } }
 @media (max-width: 420px) { .sx-summary { grid-template-columns: 1fr 1fr; } .sx-cell .v { font-size: 19px; } }
@@ -860,15 +865,16 @@ function renderBillTool(box, ctx) {
       (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
       `</div>` + SX_SPLIT + `<div class="sx sx-more">` +
 
-      `<div class="sx-h">Assumptions</div>` +
-      `<div class="sx-sub">Power bills</div>` +
-      `<div class="sx-group sx-bills">` +
-        `<div class="sx-row head"><span></span><span>Today</span><span>${withBatt ? "Solar + battery" : "With solar"}</span></div>` +
-        `<div class="sx-row"><span class="lbl">Summer<small>lowest month</small></span>${billIn("summer")}${haveGen ? afterBill("summer") : `<span class="val">–</span>`}</div>` +
-        `<div class="sx-row"><span class="lbl">Winter<small>highest month</small></span>${billIn("winter")}${haveGen ? afterBill("winter") : `<span class="val">–</span>`}</div>` +
+      `<div class="sx-h">Over the panels' life</div>` +
+      `<div class="sx-group">` +
+        row(`Savings over ${ret.years} years`, val(money(ret.nodes.lifetime)), { go: "lifetime", small: ret.real ? "in today's dollars" : "nominal" }) +
+        row("Replacements", val(btMoney(-ret.nodes.replacements.value)), { go: "repl", small: withBatt ? "inverter and battery" : "inverter" }) +
+        row("Cost", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost" }) +
+        row("Net savings", val(money(ret.nodes.net)), { go: "net", cls: "total" }) +
+        row("Pays back in", val(ret.payback == null ? "not within 60 years" : ret.payback.toFixed(1) + " years"), { go: "payback" }) +
+        row("Return per year", val(ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1)), { go: "irr", small: ret.real ? "after inflation" : "before inflation" }) +
       `</div>` +
-      (matchNote ? `<div class="sx-foot">${matchNote}</div>` : "") +
-
+      `<div class="sx-h">Assumptions</div>` +
       `<div class="sx-sub">Electricity prices</div>` +
       `<div class="sx-group">` +
         price("Peak", pfx + "_peak_c") +
@@ -896,7 +902,7 @@ function renderBillTool(box, ctx) {
           row("Panels lose output", field("deg", E.degradation_pct, `step="0.1" data-econ="degradation_pct"`, "", "%/yr")) +
           row("Show money in", seg("real", [["1", "Today's $"], ["0", "Nominal"]], E.real_prices ? "1" : "0", "Money in")) +
         `</div>` +
-        `<div class="sx-foot">Today's dollars take general inflation out of every future year; nominal shows the dollars of each year.</div>` +
+        `<details class="sx-why sx-foot"><summary>Today's dollars or nominal?</summary>Today's dollars take general inflation out of every future year, so a dollar in year 20 is worth what a dollar is now. Nominal shows the dollars of each year.</details>` +
       `</details>` +
 
       `<div class="sx-sub">Electricity use</div>` +
@@ -923,7 +929,7 @@ function renderBillTool(box, ctx) {
           row(isBiz ? "Electric vehicles" : "Electric cars", seg("evs", (isBiz ? [0, 1, 2, 4, 8] : [0, 1, 2, 3]).map(n => [n, String(n)]), P.evs, "Electric cars")) +
           (P.evs > 0 ? row(isBiz ? "Charge in the working day" : "Charge when it's sunny", `<label class="sx-switch"><input type="checkbox" data-tick="evOnSun" ${P.evOnSun ? "checked" : ""} aria-label="Charge when it's sunny"><i></i></label>`) : "") +
         `</div>` +
-        `<div class="sx-foot">These shape our estimate. Entering your bills or yearly use scales it to match.</div>` +
+        `<details class="sx-why sx-foot"><summary>How this is used</summary>These answers shape our estimate of when and how much power the home uses. If you enter your bills or yearly use, the estimate is scaled to match them.</details>` +
       `</details>` +
 
       `<div class="sx-sub">System cost</div>` +
@@ -937,7 +943,7 @@ function renderBillTool(box, ctx) {
           row("Battery", val(money(N.battCost)), { go: "battcost" }) : "") +
         row("Total", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost", cls: "total" }) +
       `</div>` +
-      `<div class="sx-foot">An estimate from the roof, the local climate and these assumptions, not a quote. Tap any result to see how it's worked out.</div>` +
+      `<div class="sx-foot">An estimate, not a quote. <details class="sx-why sx-inline"><summary>More</summary>Worked out from the roof, the local climate and the assumptions above. Tap any result to see how it was worked out, step by step.</details></div>` +
       `</div>`;
     const [top, more] = html.split(SX_SPLIT);
     const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
@@ -952,6 +958,7 @@ function renderBillTool(box, ctx) {
       "after-summer": () => S.summer[after], "after-winter": () => S.winter[after],
       daykw: () => N.dayKw, dayshare: () => N.dayShare, use: () => N.useYear,
       solarcost: () => N.solarCost, battcost: () => N.battCost, allcost: () => withBatt ? N.allCost : N.solarCost,
+      repl: () => ret.nodes.replacements, payback: () => ret.nodes.payback,
     };
     Object.keys(r.yearParts).forEach(k => { nodeFor["part-" + k] = () => N.parts[k]; });
     qa("[data-wk]").forEach(elx => {

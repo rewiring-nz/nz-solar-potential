@@ -190,6 +190,15 @@
   .econ-band:hover { filter: brightness(1.12); }
   .econ-band .cnt { color: #fff; font-weight: 700; font-size: 17px; line-height: 1.05;
     font-variant-numeric: tabular-nums; }
+  .pe-head { font-size: 13px; font-weight: 650; color: var(--ink); margin-top: 10px; }
+  .pe-sub { font-size: 11.5px; color: var(--ink-2, #b6bdc9); line-height: 1.35; margin-top: 2px; }
+  .pe-box { margin-top: 6px; }
+  .econ-band .nm { color: #fff; font-weight: 600; font-size: 11px; line-height: 1.15; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .pe-why { display: inline; }
+  .pe-why > summary { display: inline; cursor: pointer; list-style: none; color: var(--ink-2, #b6bdc9); }
+  .pe-why > summary::-webkit-details-marker { display: none; }
+  .pe-why > summary::after { content: " ›"; }
+  .pe-why[open] { display: block; margin-top: 4px; }
   .econ-band .roi { color: #fff; font-weight: 300; font-size: var(--fs-meta);
     opacity: 0.92; white-space: nowrap; }
   /* Hidden bands stay legible rather than vanishing -- they are still the
@@ -440,28 +449,51 @@
   /* Specific Building Analysis (17 Oct): wider by default, so the roof's
      live view takes the right half beside its figures. */
   .side-panel { width: clamp(384px, 37.5vw, 645px); transition: width .2s ease; }
-  /* COMPACT: the corner card a first click opens -- headline figures only,
-     sized to its content; the arrow opens the full panel. */
+  /* THE CARD (the compact corner panel) looks the same whether or not the
+     panel is expanded: it holds the most useful figures, so expanding
+     leaves it alone and opens a second column beside it with everything
+     else (Josh, 18 Oct: "opening up more space to show more information"). */
   @media (min-width: 701px) {
     .side-panel.compact { width: 380px; bottom: auto; max-height: calc(100% - 66px); }
     .side-panel.compact .sba-full-only, .side-panel.compact .sx-more { display: none !important; }
-    .side-panel.compact .sba-title { font-size: 16px; }
     .side-panel:not(.compact) .sba-compact-only { display: none !important; }
-    /* the corner card keeps the chart, small and plain: average day only */
-    .side-panel.compact .sba-h3 { font-size: 13px; font-weight: 600; color: rgba(235,235,245,.6); margin: 16px 2px 6px; letter-spacing: 0; }
-    .side-panel.compact #curve-toggle, .side-panel.compact .curve-sub, .side-panel.compact .sba-cap { display: none !important; }
-    .side-panel.compact #bldg-coverage-options { display: none !important; }
+    .side-panel:not(.compact) { width: min(900px, calc(100vw - 300px)); }
+    .side-panel:not(.compact) .popup { display: grid; grid-template-columns: minmax(0, 1fr) 380px;
+      column-gap: 28px; align-items: start; }
+    .side-panel:not(.compact) .popup > * { grid-column: 2; }
+    .side-panel:not(.compact) .popup > .sba-full-only { grid-column: 1; grid-row: 1 / span 40; min-width: 0; }
+    .side-panel .sba-title { font-size: 16px; }
+    .side-panel .sba-h3 { font-size: 13px; font-weight: 600; color: rgba(235,235,245,.6); margin: 16px 2px 6px; letter-spacing: 0; }
+    .side-panel #curve-toggle, .side-panel .sba-cap, .side-panel #bldg-coverage-options { display: none !important; }
+    .side-panel #season-curves .curve-sub { display: none; }
     /* one row of three: savings a year, net over the panels' life, return */
-    .side-panel.compact .sx-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .side-panel.compact .sx-cell[data-wk="lifetime"] { display: none; }
-    .side-panel.compact .sx-cell { padding: 9px 10px 8px; border-bottom: 0 !important; border-right: 0.5px solid rgba(255,255,255,.09) !important; }
-    .side-panel.compact .sx-cell[data-wk="irr"] { border-right: 0 !important; }
-    .side-panel.compact .sx-cell .l { font-size: 11.5px; }
-    .side-panel.compact .sx-cell .v { font-size: 17px; }
-    .side-panel.compact .sx-cell.hero .v { font-size: 19px; }
-    .side-panel.compact .sx-cell .s { font-size: 10.5px; }
+    .side-panel .sx-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .side-panel .sx-cell[data-wk="lifetime"] { display: none; }
+    .side-panel .sx-cell { padding: 9px 10px 8px; border-bottom: 0 !important; border-right: 0.5px solid rgba(255,255,255,.09) !important; }
+    .side-panel .sx-cell[data-wk="irr"] { border-right: 0 !important; }
+    .side-panel .sx-cell .l { font-size: 11.5px; }
+    .side-panel .sx-cell .v { font-size: 17px; }
+    .side-panel .sx-cell.hero .v { font-size: 19px; }
+    .side-panel .sx-cell .s { font-size: 10.5px; }
   }
-  @media (max-width: 700px) { .sba-compact-only, .side-panel .sx-glance { display: none !important; } }
+  @media (max-width: 700px) { .sba-compact-only { display: none !important; } }
+  #season-curves { cursor: zoom-in; border-radius: 8px; }
+  #season-curves:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #chart-lightbox { position: fixed; inset: 0; z-index: 4500; background: rgba(0,0,0,.62); display: flex;
+    align-items: center; justify-content: center; padding: 24px; }
+  #chart-lightbox[hidden] { display: none; }
+  .clb-card { width: min(1200px, 100%); max-height: 100%; overflow: auto; background: #1c1f26; border: 1px solid rgba(255,255,255,.1);
+    border-radius: 16px; padding: 18px 22px 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55); margin-top: 0 !important; }
+  .clb-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .clb-head h3 { flex: 1; margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.2px; }
+  .clb-x { background: rgba(118,118,128,.24); color: #fff; border: 0; width: 32px; height: 32px; border-radius: 16px; font-size: 20px; cursor: pointer; }
+  .clb-x:focus-visible { outline: 2px solid var(--accent); }
+  .clb-card h4 { font-size: 15px; font-weight: 650; margin: 22px 0 8px; }
+  .clb-info { margin-top: 6px; font-size: 13px; color: rgba(235,235,245,.62); line-height: 1.5; }
+  .clb-info summary { cursor: pointer; color: rgba(235,235,245,.8); }
+  .clb-info p { margin: 6px 0 0; max-width: 75ch; }
+  @media (prefers-reduced-motion: no-preference) { .clb-card { animation: clb-in .16s ease-out; } }
+  @keyframes clb-in { from { transform: scale(.98); opacity: .6; } to { transform: none; opacity: 1; } }
   .sba-expand { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin: 12px 0 2px;
     background: rgba(118,118,128,.20); color: var(--ink); border: 0; border-radius: 10px; padding: 10px 12px;
     font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; cursor: pointer; }
@@ -487,7 +519,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
   .side-panel .popup h4.sba-addr { font-size: 22px; font-weight: 700; letter-spacing: -.3px; color: var(--ink);
     margin: 0 0 2px; padding-right: 70px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
-  .side-panel.compact .popup h4.sba-addr { font-size: 18px; }
+  .side-panel .popup h4.sba-addr { font-size: 18px; }
   .sba-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s3);
     align-items: stretch; margin-top: var(--s3); }
   .sba-top .sba-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
@@ -705,6 +737,7 @@
           <div class="rsp-energy" id="inview-energy">&ndash;</div>
         </div>
         <div id="econ-bands-global" style="display:none">
+          <div id="econ-bands-all-head"></div>
           <div class="econ-bands" id="econ-bands-all"></div>
           <div class="panel-econ-note" id="econ-bands-all-note"></div>
         </div>
@@ -1461,12 +1494,22 @@ let panelEcon = null;   // null = off, else { buildingId, breakEvenKwh }
 // arrangement, which spelled the rule out in each of them, is exactly how the
 // seasonal curve came to describe panels that were no longer on the map.
 const PANEL_ECON_BANDS = [
-  { key: "poor", max: 0.9,      colour: "#c0392b", label: "under 0.9\u00d7" },
-  { key: "even", max: 1.1,      colour: "#e0b93a", label: "0.9\u00d7 \u2013 1.1\u00d7" },
-  { key: "good", max: 2.0,      colour: "#86d98d", label: "1.1\u00d7 \u2013 2\u00d7" },
-  { key: "best", max: Infinity, colour: "#12703f", label: "2\u00d7 and over" },
+  { key: "poor", max: 0.9,      colour: "#c0392b", name: "Won't pay back",       label: "under 0.9\u00d7" },
+  { key: "even", max: 1.1,      colour: "#e0b93a", name: "About breaks even",    label: "0.9\u00d7 \u2013 1.1\u00d7" },
+  { key: "good", max: 2.0,      colour: "#86d98d", name: "Pays back",            label: "1.1\u00d7 \u2013 2\u00d7" },
+  { key: "best", max: Infinity, colour: "#12703f", name: "Pays back 2\u00d7 or more", label: "2\u00d7 and over" },
 ];
 const PANEL_ECON_KEYS = PANEL_ECON_BANDS.map(b => b.key);
+// What the colours mean, said where they are shown (Josh, 18 Oct: the bare
+// colour chips needed a help video to understand).
+const PANEL_ECON_HEAD =
+  `<div class="pe-head">Individual panel economics</div>` +
+  `<div class="pe-sub">Each panel is coloured by what it earns over its life against its share of the cost.</div>`;
+function panelEconChip(b, n, on) {
+  return `<button class="econ-band${on ? "" : " off"}" data-band="${b.key}" style="background:${b.colour}" ` +
+    `title="${b.name} (${b.label}) -- tap to ${on ? "hide" : "show"} these panels">` +
+    `<span class="cnt">${n.toLocaleString()}</span><span class="nm">${b.name}</span><span class="roi">${b.label}</span></button>`;
+}
 let panelEconShow = Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, true]));
 const emptyBandTally = () => Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, 0]));
 // The band a panel returning `ratio` times its share of the install falls in.
@@ -1884,7 +1927,7 @@ const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
 // without touching the page: Pages caps a file at 100 MB and Auckland's
 // panel tiles alone are ~1.5 GB (docs/scale-architecture.md).
 const DATA_BASE = (window.SITE && window.SITE.dataBase) || "";
-let coveragePct = 100;
+let coveragePct = 25;   // Heat Map default (Josh, 18 Oct)
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 // Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between
 // them are interpolated; outside them, clamped.
@@ -2469,18 +2512,14 @@ map.on("load", async () => {
       tally[panelBandOf(pr)]++;
     });
     const bands = document.getElementById("econ-bands-all");
-    bands.innerHTML = PANEL_ECON_BANDS.map(b =>
-      `<button class="econ-band${panelEconShow[b.key] ? "" : " off"}" data-band="${b.key}" ` +
-      `style="background:${b.colour}">` +
-      `<span class="cnt">${tally[b.key].toLocaleString()}</span>` +
-      `<span class="roi">${b.label}</span></button>`).join("");
+    document.getElementById("econ-bands-all-head").innerHTML = PANEL_ECON_HEAD;
+    bands.innerHTML = PANEL_ECON_BANDS.map(b => panelEconChip(b, tally[b.key], panelEconShow[b.key])).join("");
     bands.querySelectorAll(".econ-band").forEach(btn =>
       btn.addEventListener("click", () => {
         if (!toggleBand(btn.dataset.band)) return;   // last band stays on
         refreshDerived();
       }));
-    document.getElementById("econ-bands-all-note").textContent =
-      "Individual panel return on investment";
+    document.getElementById("econ-bands-all-note").textContent = "Tap a colour to hide those panels.";
   }
 
   // ONE refresh for everything derived from the current state.
@@ -3910,7 +3949,6 @@ map.on("load", async () => {
       <div class="popup">
         <div class="sba-title">Specific Building Analysis</div>
         <h4 class="sba-addr">${title}</h4>
-        <div class="rsp-subtitle sba-full-only">${sub}</div>
         ${guessNote}
         <div class="sba-top">
         <div class="sba-left">
@@ -3944,6 +3982,7 @@ map.on("load", async () => {
         <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
           Assumptions and details <span aria-hidden="true">&#8964;</span></button>
         <div class="sba-full-only">
+        <div class="rsp-subtitle">${sub}</div>
         <div id="bill-more"></div>
         <details class="sba-more">
         <summary>Layout details</summary>
@@ -4339,7 +4378,7 @@ map.on("load", async () => {
         // is an EV, and what their winter bill was -- not their daytime kW.
         be.innerHTML =
           `<div id="bill-tool"></div>` +
-          `<div class="econ-bands" id="econ-bands" style="display:none"></div>` +
+          `<div class="pe-box" id="econ-bands" style="display:none"></div>` +
           `<div class="panel-econ-note" id="panel-econ-note"></div>`;
 
         // Redraw the NUMBERS in place, never the block. Rebuilding innerHTML on
@@ -4445,11 +4484,8 @@ map.on("load", async () => {
               });
             } catch (err) { /* tiles not ready; the chips just read zero */ }
             bandsBox.style.display = "";
-            bandsBox.innerHTML = PANEL_ECON_BANDS.map(b =>
-              `<button class="econ-band${panelEconShow[b.key] ? "" : " off"}" data-band="${b.key}" ` +
-              `style="background:${b.colour}">` +
-              `<span class="cnt">${tally[b.key]}</span>` +
-              `<span class="roi">${b.label}</span></button>`).join("");
+            bandsBox.innerHTML = PANEL_ECON_HEAD + `<div class="econ-bands">` +
+              PANEL_ECON_BANDS.map(b => panelEconChip(b, tally[b.key], panelEconShow[b.key])).join("") + `</div>`;
             bandsBox.querySelectorAll(".econ-band").forEach(btn =>
               btn.addEventListener("click", () => {
                 const k = btn.dataset.band;
@@ -4470,9 +4506,10 @@ map.on("load", async () => {
             // (self-used x retail + exported x buyback), so it stays, alone.
             const m = panelEconMerit && panelEconMerit.get(buildingId);
             const kwh = v => Math.round(v).toLocaleString();
+            const fold = more => `Tap a colour to hide those panels. <details class="pe-why"><summary>How this works</summary>${more}</details>`;
             if (m) {
               const n = Math.floor(m.cutoff);
-              el("panel-econ-note").innerHTML =
+              el("panel-econ-note").innerHTML = fold(
                 `Return over ${econ.life_years} years against each panel's ` +
                 `\u2248${fmtMoneyFull(m.costPerPanel)} share of the install. ` +
                 (n > 0
@@ -4480,10 +4517,10 @@ map.on("load", async () => {
                     `break even at ${kwh(m.retailBE)} kWh/yr; the rest are exported ` +
                     `and need ${kwh(m.exportBE)} kWh/yr.`
                   : `Every panel is exported and needs ${kwh(m.exportBE)} kWh/yr to break even.`) +
-                ` Tap a band to hide it.`;
+                ` 1\u00d7 means a panel earns back exactly its share of the cost.`);
             } else {
-              el("panel-econ-note").innerHTML =
-                `1\u00d7 is ${kwh(breakEvenFor(buildingId))} kWh/yr. Tap a band to hide it.`;
+              el("panel-econ-note").innerHTML = fold(
+                `1\u00d7 means a panel earns back exactly its share of the cost: ${kwh(breakEvenFor(buildingId))} kWh a year here.`);
             }
           }
           // The district-wide half has to move too. Switching the mode on from a
@@ -4636,7 +4673,9 @@ map.on("load", async () => {
     // through North (centre) to West (right).
     const azOfT = t => ((90 - t) + 360) % 360;   // t in [0,180]
     const avail = Math.max(240, (box.clientWidth || 288));
-    const W = Math.min(avail, 900), H = Math.round(Math.min(300, Math.max(170, W * 0.5)));
+    const bigHz = box.id === "clb-horizon";      // the lightbox: scaled up, labels grow with it
+    const W = bigHz ? Math.round(Math.min(avail, 1400) / 1.65) : Math.min(avail, 900);
+    const H = bigHz ? Math.round(W * 0.4) : Math.round(Math.min(300, Math.max(170, W * 0.5)));
     const L = 30, R = 6, T = 8, B = 16;
     const arcs = [
       { name: "summer", decl: -23.44 },
@@ -4697,10 +4736,12 @@ map.on("load", async () => {
       `grey = terrain, dark = trees &amp; buildings</div>`;
   }
 
-  function renderSeasonCurves(buildingId) {
-    const box = document.getElementById("season-curves");
+  // opts.box / opts.mode / opts.big: the lightbox draws the same chart,
+  // larger, without touching the panel (no profile publish, no redraws).
+  function renderSeasonCurves(buildingId, opts) {
+    const o = opts || {};
+    const box = o.box || document.getElementById("season-curves");
     if (!box || buildingId === undefined) return;
-    if (curveMode === "horizon") { renderHorizonChart(box); return; }
     if (!seasonCurves) return;
 
     // querySourceFeatures only sees tiles that are LOADED. Click a building
@@ -4902,20 +4943,26 @@ map.on("load", async () => {
                               : new Array(avg.length).fill(365 / avg.length),
       kwp: totalKwp,
     };
-    if (window.__billToolRedraw) window.__billToolRedraw();
-    renderLiveView(buildingId);
+    if (!o.box) {
+      if (window.__billToolRedraw) window.__billToolRedraw();
+      renderLiveView(buildingId);
+    }
 
     // Width follows the panel, so expanding it actually makes the chart bigger
     // rather than leaving a 288px graphic marooned in a wide column.
     const avail = Math.max(240, (box.clientWidth || 288));
-    const compactPanel = !!document.querySelector("#side-panel.compact");
-    const W = Math.min(avail, 900), H = compactPanel
-      ? Math.round(Math.min(130, Math.max(108, W * 0.32)))
-      : Math.round(Math.min(360, Math.max(210, W * 0.62)));
-    const L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
+    // The card's chart is small and the same in both panel modes; the
+    // lightbox's is large.
+    const tsh = (selectedBuildingProps && selectedBuildingProps.tshade) || null;
+    const stripsOn = !!(tsh && tsh.length === seasonCurves.seasons.length * 24);
+    // The large one is laid out at ~700 units and scaled up, so its labels
+    // grow with it instead of staying 8px on a 1,200px chart.
+    const W = o.big ? Math.round(Math.min(avail, 1400) / 1.65) : Math.min(avail, 900);
+    const H = (o.big ? Math.round(W * 0.46) : Math.round(Math.min(130, Math.max(108, W * 0.32)))) + (stripsOn ? 16 : 0);
+    const L = 30, R = 6, T = 8, B = 16 + (stripsOn ? 16 : 0), h0 = 5, h1 = 21;
     // Scale to whichever series is shown, so the chosen one fills the chart
     // instead of sitting squashed under the other one's peak.
-    const showPeak = curveMode === "peak";
+    const showPeak = (o.mode || "avg") === "peak";
     const shown = showPeak ? peak : avg;
     // NAMEPLATE: a kW peak line on the generation profile shows the
     // theoretical maximum, so low-sun and high-sun roofs read against the
@@ -5004,45 +5051,100 @@ map.on("load", async () => {
       `<text x="${x(h)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${h}</text>`).join("");
     const yLabels = `<text x="${L - 4}" y="${y(0) + 3}" fill="#888" font-size="8" text-anchor="end">0</text>` +
       `<text x="9" y="${(T + H - B) / 2}" fill="#888" font-size="8" text-anchor="middle" transform="rotate(-90 9 ${(T + H - B) / 2})">kW</text>`;
-    // THE HORIZON BEHIND THE CURVES (Josh, 18 Oct: one chart, not two). The
-    // hills, trees and buildings around this roof, drawn at the height they
-    // stand above the horizon in the direction the sun is at each hour (an
-    // equinox day, local clock), on a 0-45 degree scale up the chart. Where
-    // the curves fall away early or late, this shows what the sun went behind.
+    // WHEN THE SUN IS BEHIND THE HILLS: one thin strip per season under the
+    // curves, darker the more of that hour the terrain blocks it. This is
+    // the same terrain mask the curves are built from (tshade, baked from
+    // the DEM for this roof), so the strips and the curves cannot disagree.
+    // (A silhouette drawn behind the curves was replaced on 18 Oct: it was
+    // measured from the eaves at the building's centre, placed by an equinox
+    // sun path, and drawn on a degree scale unrelated to the kW axis -- it
+    // did not show when the panels actually lose the sun.)
     let hzBg = "", hzNote = "";
-    const hp = selectedBuildingProps;
-    if (hp && hp.horizon_b64) {
-      const comb = decodeHorizon(hp.horizon_b64);
-      const far = hp.horizon_far_b64 ? decodeHorizon(hp.horizon_far_b64) : null;
-      const latH = hp._sy !== undefined ? hp._sy : map.getCenter().lat;
-      const lonH = hp._sx !== undefined ? hp._sx : map.getCenter().lng;
-      const clockMinusSolar = 12 - lonH / 15;            // NZ standard time
-      const sl = Math.sin(latH * Math.PI / 180);
-      const azAt = hh => { const w = 15 * (hh - clockMinusSolar - 12) * Math.PI / 180;
-        return (Math.atan2(-Math.sin(w), -sl * Math.cos(w)) * 180 / Math.PI + 360) % 360; };
-      const EL_MAX = 45, yEl = el => T + (1 - Math.min(el, EL_MAX) / EL_MAX) * (H - T - B);
-      const shape = prof => {
-        let d = `M${x(h0)} ${y(0)}`;
-        for (let hh = h0; hh <= h1 + 1e-9; hh += 0.25) d += `L${x(hh).toFixed(1)} ${yEl(horizonAt(prof, azAt(hh))).toFixed(1)}`;
-        return d + `L${x(h1)} ${y(0)}Z`;
-      };
-      if (far) hzBg += `<path d="${shape(far)}" fill="rgba(150,158,172,0.16)"/>`;
-      hzBg += `<path d="${shape(comb)}" fill="rgba(150,158,172,0.22)"/>`;
-      hzBg += [15, 30, 45].map(el => `<text x="${W - R - 1}" y="${yEl(el) + 3}" fill="rgba(200,205,215,0.45)" font-size="7.5" text-anchor="end">${el}&deg;</text>`).join("");
-      hzNote = ` &nbsp;·&nbsp; <span style="color:#9aa3b1">grey: hills and buildings in the sun's direction</span>`;
+    if (stripsOn) {
+      const sh = 2.6, gap = 1.2, top0 = H - B + 4;
+      seasonCurves.seasons.forEach((name, s2) => {
+        const col = SEASON_COLORS[name] || "#fff";
+        const yy = top0 + s2 * (sh + gap);
+        hzBg += `<rect x="${x(h0)}" y="${yy}" width="${x(h1) - x(h0)}" height="${sh}" fill="rgba(255,255,255,0.06)" rx="1"/>`;
+        for (let hh = h0; hh <= h1; hh++) {
+          const up = (peak[s2] && peak[s2][hh] > 1e-3) || (avg[s2] && avg[s2][hh] > 1e-3);
+          const blocked = 1 - (+tsh[s2 * 24 + hh]) / 9;
+          if (!up || blocked < 0.05) continue;
+          const xa = Math.max(x(h0), x(hh - 0.5)), xb = Math.min(x(h1), x(hh + 0.5));
+          hzBg += `<rect x="${xa.toFixed(1)}" y="${yy}" width="${(xb - xa).toFixed(1)}" height="${sh}" fill="${col}" opacity="${(0.25 + 0.75 * blocked).toFixed(2)}" rx="1"/>`;
+        }
+      });
+      hzNote = ` &nbsp;·&nbsp; <span style="color:#9aa3b1">strips: hours the sun is behind the hills, by season</span>`;
     }
     const legend = seasonCurves.seasons.map(n =>
       `<span style="color:${SEASON_COLORS[n]}; font-weight:700;">${n}</span>`).join(" · ");
     box.innerHTML =
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
-      `<svg width="100%" viewBox="0 0 ${W} ${H}">${hzBg}${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}</svg></div>` +
+      `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${peakLine}${paths}${hzBg}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
       `<div class="curve-sub" style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
       `${showPeak ? "a clear day in each season (illustration, not in the totals)" : "an average day in each season"}` +
       ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}` +
-      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span id="curve-workings">how it adds up</span>` : "") + hzNote + `</div>`;
-    const cw = document.getElementById("curve-workings");
+      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span class="curve-workings" style="text-decoration:underline dotted;cursor:pointer">how it adds up</span>` : "") + hzNote + `</div>`;
+    const cw = box.querySelector("#curve-workings, .curve-workings");
     if (cw && typeof WkView !== "undefined") WkView.bind(cw, () => GEN && GEN.curve ? GEN.curve.node : null);
+    if (!o.box) {
+      box.setAttribute("role", "button");
+      box.setAttribute("tabindex", "0");
+      box.setAttribute("aria-label", "Open the generation chart large");
+      box.title = "Open large";
+      box.onclick = () => openChartLightbox(buildingId);
+      box.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openChartLightbox(buildingId); } };
+    }
+  }
+
+  // THE CHART, LARGE (Josh, 18 Oct): the same chart drawn big, with the
+  // average/sunny-day choice, and the horizon chart under it -- the roof's
+  // view of the hills with the sun's path through each season.
+  function openChartLightbox(buildingId) {
+    let lb = document.getElementById("chart-lightbox");
+    if (!lb) {
+      lb = document.createElement("div");
+      lb.id = "chart-lightbox";
+      lb.addEventListener("click", e => { if (e.target === lb) closeChartLightbox(); });
+      lb.addEventListener("keydown", e => { if (e.key === "Escape") closeChartLightbox(); });
+      document.body.appendChild(lb);
+    }
+    lb.__return = document.activeElement;
+    let mode = "avg";
+    const p = selectedBuildingProps || {};
+    lb.innerHTML =
+      `<div class="clb-card sx" role="dialog" aria-modal="true" aria-label="Solar through the day">` +
+        `<div class="clb-head"><h3>Solar through the day</h3>` +
+          `<div class="sx-seg" id="clb-mode"><button type="button" data-m="avg" class="on">Average day</button><button type="button" data-m="peak">Sunny day</button></div>` +
+          `<button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
+        `<div id="clb-chart"></div>` +
+        (p.horizon_b64 ? `<h4>The horizon from this roof</h4><div id="clb-horizon"></div>` +
+          `<details class="clb-info"><summary>What this shows</summary>` +
+          `<p>The hills (light grey) and nearby trees and buildings (darker grey) around the building, seen from its eaves at the middle of the roof, with the sun's path in summer, spring and autumn, and winter. Where a path dips behind the grey, the sun is hidden from that point.</p>` +
+          `<p>Panels sit higher than the eaves and spread across the roof, so they see more sky than this view; each panel's shading is measured separately in the figures. The strips under the chart above show the hours the hills hide the sun, which is what the curves use.</p></details>` : "") +
+      `</div>`;
+    lb.hidden = false;
+    document.body.classList.add("clb-open");
+    const draw = () => {
+      renderSeasonCurves(buildingId, { box: lb.querySelector("#clb-chart"), big: true, mode });
+      const hz = lb.querySelector("#clb-horizon");
+      if (hz) renderHorizonChart(hz);
+    };
+    lb.querySelectorAll("#clb-mode button").forEach(b => b.addEventListener("click", () => {
+      mode = b.dataset.m;
+      lb.querySelectorAll("#clb-mode button").forEach(x => x.classList.toggle("on", x === b));
+      draw();
+    }));
+    lb.querySelector(".clb-x").addEventListener("click", closeChartLightbox);
+    requestAnimationFrame(() => { draw(); lb.querySelector(".clb-x").focus(); });
+  }
+  function closeChartLightbox() {
+    const lb = document.getElementById("chart-lightbox");
+    if (!lb) return;
+    lb.hidden = true;
+    document.body.classList.remove("clb-open");
+    if (lb.__return && lb.__return.focus) lb.__return.focus();
   }
 
   // ----------------------------------------------- per-building detail
