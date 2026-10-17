@@ -295,10 +295,10 @@ const WkView = (() => {
       console.error("[workings] does not add up:", p.node.label, "expected", p.expected, "got", p.got, p.node);
       return `<div class="wk-check bad">⚠ Doesn't add up: "${esc(p.node.label)}" should be ${esc(Wk.fmt(p.expected, p.node.unit))} but shows ${esc(Wk.show(p.node))}. Please report this.</div>`;
     }
-    if (v.unchecked.length) {
-      return `<div class="wk-check part">✓ Every sum below checks out, except ${v.unchecked.length} step${v.unchecked.length > 1 ? "s" : ""} that can't be re-checked automatically.</div>`;
-    }
-    return `<div class="wk-check ok">✓ Every step below has been re-calculated and checks out.</div>`;
+    // Nothing is said when the sums add up: that they agree with each other
+    // does not make the inputs or the model right, and a green tick read as
+    // if it did (Josh, 18 Oct). Only a sum that does not add up is shown.
+    return "";
   }
 
   function tableHtml(n) {
