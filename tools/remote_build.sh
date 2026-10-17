@@ -28,9 +28,24 @@ VM=claude-doing-things; ZONE=australia-southeast1-b; PROJECT=downloads-417521
 # The checkout lives in j's home; name the user so a runner or a teammate
 # lands in the same place.
 TARGET="${VM_USER:-j}@$VM"
-SSH() { gcloud compute ssh --tunnel-through-iap "$TARGET" --project=$PROJECT --zone=$ZONE \
-          --ssh-flag="-o ConnectTimeout=60" --command "$1" 2>&1 \
-        | grep -v "^Warning\|^WARNING\|NumPy\|please see\|^Updating\|^Existing\|^$"; }
+SSH() {
+  local output rc
+  if output=$(gcloud compute ssh --tunnel-through-iap "$TARGET" --project="$PROJECT" --zone="$ZONE" \
+    --ssh-flag="-o ConnectTimeout=60" --command "$1" 2>&1); then
+    printf '%s\n' "$output" \
+      | grep -v "^Warning\|^WARNING\|NumPy\|please see\|^Updating\|^Existing\|^$" || true
+  else
+    rc=$?
+    printf '%s\n' "$output" \
+      | grep -v "^Warning\|^WARNING\|NumPy\|please see\|^Updating\|^Existing\|^$" >&2 || true
+    return "$rc"
+  fi
+}
+
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "ERROR: gcloud is not installed or not on PATH. Install the Google Cloud CLI, run 'gcloud auth login', then retry."
+  exit 1
+fi
 
 REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main
 while [ $# -gt 0 ]; do
@@ -60,12 +75,35 @@ finish() {
 trap finish EXIT
 
 echo "=== VM ==="
-status=$(gcloud compute instances describe $VM --zone $ZONE --project $PROJECT --format="value(status)")
+if ! status=$(gcloud compute instances describe "$VM" --zone "$ZONE" --project "$PROJECT" \
+  --format="value(status)" 2>&1); then
+  echo "ERROR: could not inspect VM $VM in project $PROJECT, zone $ZONE."
+  echo "$status"
+  echo "Check group membership and Compute Engine access, then retry."
+  exit 1
+fi
 if [ "$status" != RUNNING ]; then
-  gcloud compute instances start $VM --zone $ZONE --project $PROJECT -q >/dev/null || { echo "could not start the VM"; exit 1; }
+  echo "VM is $status; starting it may incur compute charges."
+  if ! gcloud compute instances start "$VM" --zone "$ZONE" --project "$PROJECT" -q; then
+    echo "ERROR: could not start VM $VM. Check Compute Instance Admin permissions and VM status."
+    exit 1
+  fi
   STARTED=1
 fi
-for i in $(seq 1 20); do SSH "echo up" | grep -q up && break; sleep 15; done
+READY=0
+for i in $(seq 1 20); do
+  if SSH "echo up" | grep -q up; then
+    READY=1
+    break
+  fi
+  echo "IAP/SSH is not ready yet (attempt $i/20); retrying in 15 seconds."
+  sleep 15
+done
+[ "$READY" -eq 1 ] || {
+  echo "ERROR: VM did not become reachable through IAP/SSH after 5 minutes."
+  echo "Check IAP tunnel and OS Login permissions, then retry."
+  exit 1
+}
 echo "  running"
 
 VM_USER="${VM_USER:-j}" tools/sync_vm.sh --ref "$REF" || exit 1

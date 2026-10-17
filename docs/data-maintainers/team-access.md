@@ -35,18 +35,46 @@ stay with the project owner.
 
 ## First-time setup for a contributor
 
+On macOS, install `gcloud` with Homebrew using the
+[cloud option in the macOS setup guide](env-setup-mac.md#option-for-cloud-instances).
+The cloud quickstart can offer to install it if Homebrew is available; it asks
+before installing. On other platforms, install the
+[Google Cloud CLI](https://cloud.google.com/sdk/docs/install) using Google's
+instructions. Then run `gcloud auth login`. The project is supplied explicitly
+by the cloud quickstart; changing the global `gcloud` project setting is not
+required.
+
 ```bash
-gcloud auth login
-gcloud config set project downloads-417521
+./quickstart-cloud.sh --check
 ```
 
-Keys need no setup: scripts read `LINZ_API_KEY` from the environment or a
-local `.env` when present, and otherwise from Secret Manager as you
-(`src/project_secrets.py`). To log in to the VM:
+The check verifies the local CLI, active Google authentication, VM access, and
+IAP/SSH access when the VM is already running. It does not start the VM. Fix
+the reported prerequisite and run it again. Logs are saved under
+`data/cloud_quickstart_runs/`.
 
-```bash
-gcloud compute ssh claude-doing-things --zone australia-southeast1-b --tunnel-through-iap
-```
+With no arguments, `quickstart-cloud.sh` repeats the checks and builds and
+gates the `frankton_arm_lake` region on the shared VM. Before any cloud checks
+or build, it asks for explicit confirmation; pressing Enter or entering
+anything except `yes` declines and starts no cloud action. The displayed
+NZD $3.00 is a provisional planning estimate for the default region (about
+79 buildings), informed by indicative VM pricing and a roughly 2.5-hour
+upper-region build time. It is not verified against project billing, is not a
+90th-percentile estimate or spending cap, and actual charges can be higher;
+disk, storage, or data-transfer charges may also apply. Revisit the estimate
+when a completed run and its billing data are available. If the VM is stopped,
+the build workflow starts it and stops it afterward.
+
+Use `--regions "region_name"` to select another configured region, `--fetch`
+when source data must first be acquired, or `--keep-running` to leave a VM
+started by the workflow running. A non-default or multi-region run requires a
+user-supplied estimate with `--estimate-nzd AMOUNT` (or
+`CLOUD_COST_ESTIMATE_NZD`); that estimate is also only a planning figure, not
+a cap.
+
+The pipeline reads `LINZ_API_KEY` from the environment or a local `.env` when
+present, and otherwise from Secret Manager as you
+([`src/project_secrets.py`](../../src/project_secrets.py)).
 
 ## Claude Code cloud sessions
 

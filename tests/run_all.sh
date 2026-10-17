@@ -72,6 +72,7 @@ run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
 run "quickstart map preview" $PY tests/test_quickstart_map.py
+run "cloud quickstart preflight" bash tests/test_cloud_quickstart.sh
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py

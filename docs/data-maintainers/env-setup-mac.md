@@ -90,6 +90,23 @@ command -v tippecanoe-decode
 Return to [Create the project Python environment](local-setup.md#create-the-project-python-environment)
 to install the project's required Python packages and complete local setup.
 
+### Option: For cloud instances
+
+The cloud quickstart uses the Google Cloud CLI (`gcloud`). Install it with
+Homebrew's `gcloud-cli` cask:
+
+```sh
+brew install --cask gcloud-cli
+gcloud --version
+gcloud auth login
+```
+
+The project Brewfile does not install `gcloud`; it is only needed for cloud
+access. The cloud quickstart can also offer to install this cask when it is
+missing and Homebrew is available. It asks for confirmation first. Homebrew
+itself must be installed and available on `PATH` before running the quickstart.
+See [Team access](team-access.md) for the cloud access check.
+
 ## Troubleshooting
 
 | Problem | First action |

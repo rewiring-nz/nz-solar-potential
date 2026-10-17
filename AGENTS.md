@@ -67,6 +67,16 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 
 - The VM is reachable only through Identity-Aware Proxy: always pass
   `--tunnel-through-iap` to `gcloud compute ssh` / `scp` (the tools/ scripts do).
+- **Confirm cloud cost before any chargeable action.** A cloud quickstart must
+  show a conservative, region-appropriate cost estimate and the assumptions
+  before making cloud calls that could start or use a billable VM. Clearly say
+  the estimate is not a spending cap and actual charges can be higher. Require
+  an explicit human `yes`; Enter, any other response, or a non-interactive
+  invocation must decline without starting cloud work. If no defensible default
+  estimate exists for the selected workload, require a user-supplied estimate.
+  Keep no-cost checks separate so they can run without this confirmation.
+  Current implementation: `quickstart-cloud.sh`; setup guidance:
+  [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
 
 - Tasks: GitHub Issues on the project board
   (https://github.com/orgs/rewiring-nz/projects/5). Link pull requests with
