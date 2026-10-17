@@ -59,14 +59,19 @@ _USE_RULES = [
 ]
 
 
-def classify(use=None, name=None, roof_m2=None, kwp=None):
-    """One of the BTYPES keys."""
+def classify(use=None, name=None, roof_m2=None, kwp=None, zone_class=None):
+    """One of the BTYPES keys. A named LINZ use wins; then the council's
+    district-plan zone (tools/fetch_zoning.py: a 300 m2 shop in the
+    Queenstown Town Centre was a "home" by size alone, 18 Oct); size decides
+    only where neither says, on the same line the economics use."""
     text = f"{use or ''} {name or ''}".lower()
     if text.strip() and "unknown" not in text.split():
         for btype, words in _USE_RULES:
             if any(w in text for w in words):
                 return btype
-    # No named use: size decides, on the same line the economics use.
+    if zone_class in ("business", "home"):
+        return zone_class
+    # No named use and no clear zone: size decides.
     if (roof_m2 or 0) >= BIZ_MIN_ROOF_M2 or (kwp or 0) >= BIZ_MIN_KW:
         return "business"
     return "home"

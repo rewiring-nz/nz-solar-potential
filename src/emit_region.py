@@ -92,6 +92,15 @@ def _tippecanoe(out, layer, src, zmin, zmax, extra):
     subprocess.run(cmd, check=True, cwd=ROOT)
 
 
+def _zones_by_id(paths):
+    """{building_id: zone_class} from tools/fetch_zoning.py, or {}."""
+    f = paths["dir"] / "building_zones.json"
+    try:
+        return {int(b): v[1] for b, v in json.loads(f.read_text())["zones"].items()}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
 def _use_by_id(paths):
     """LINZ `use` and `name` per building, from the outlines this region was
     built from. Read with json rather than geopandas: two string columns do
@@ -204,6 +213,7 @@ def emit(region, out_root=OUT_ROOT):
 
     # 3. building type, from LINZ use/name or size
     use = _use_by_id(paths)
+    zones = _zones_by_id(paths)
     # No LiDAR here: the roof was modelled at a guessed pitch
     # (src/synthesize_dsm.py), and the map has to say so on every building.
     from src.synthesize_dsm import is_synthetic
@@ -217,7 +227,8 @@ def emit(region, out_root=OUT_ROOT):
     for f in feats:
         p = f["properties"]
         u, nm = use.get(int(p["building_id"]), (None, None))
-        p["btype"] = classify(u, nm, p.get("facet_area_m2"), p.get("kwp"))
+        p["btype"] = classify(u, nm, p.get("facet_area_m2"), p.get("kwp"),
+                              zones.get(int(p["building_id"])))
         if guessed or int(p["building_id"]) in photo_read:
             p["pitch_guessed"] = 1
         if u and u != "Unknown":

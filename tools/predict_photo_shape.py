@@ -227,6 +227,29 @@ def _write_lidar_town_faces(region, out, outlines):
     print(f"[{region}] {written} roofs written for the layout stage")
 
 
+def _check_owned(region):
+    """Refuse when a building in the region's outlines is owned by no region
+    yet (the dedupe has not seen it)."""
+    ids = lambda f: {int(x["properties"]["building_id"]) for x in json.loads(f.read_text())["features"]}
+    d = REGIONS_DIR / region
+    raw, dd = d / "building_outlines.geojson", d / "building_outlines_dedup.geojson"
+    if not (raw.exists() and dd.exists()):
+        return
+    missing = ids(raw) - ids(dd)
+    if not missing:
+        return
+    for other in REGIONS_DIR.glob("*/building_outlines_dedup.geojson"):
+        if other != dd:
+            missing -= ids(other)
+            if not missing:
+                return
+    import config
+    missing -= set(getattr(config, "DEMOLISHED_BUILDING_IDS", set()))
+    if missing:
+        raise SystemExit(f"[{region}] {len(missing)} buildings in the outlines are owned by no region "
+                         f"yet -- run src/region_build.py over the built regions first")
+
+
 def main():
     import torch
     ap = argparse.ArgumentParser()
@@ -240,6 +263,12 @@ def main():
         obs_model = ps.load(OBS_MODEL, out_ch=1)
         obs_thr = float(torch.load(OBS_MODEL, map_location="cpu").get("threshold", 0.5))
     for r in a.regions:
+        # The buildings to read come from the deduplicated outlines. Outlines
+        # changed since the last dedupe (new buildings added by
+        # tools/detect_new_buildings.py --apply) are not in it yet, and
+        # reading the stale file skipped all 330 detected Arrowtown buildings
+        # (v50, 18 Oct). Dedupe first: src/region_build.py <built regions>.
+        _check_owned(r)
         predict_region(r, model, obs_model=obs_model, obs_thr=obs_thr)
 
 

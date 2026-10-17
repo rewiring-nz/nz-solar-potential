@@ -282,7 +282,7 @@ function btCalibration(load, calib, tariff, seasonDays) {
   if (calib.total > 0) {
     const days = s => btIn(`Days of ${s}`, seasonDays ? seasonDays[BT_SEASONS.indexOf(s)] : BT_SEASON_DAYS[s], "days");
     const est = Wk.sum("Our estimate of use a year", "kWh/yr",
-      BT_SEASONS.map(s => Wk.product(BT_CAP(s), "kWh/yr", [btModelledDay(load, s), days(s)])));
+      BT_SEASONS.map(s => Wk.product(`${BT_CAP(s)} (${days(s).value} days)`, "kWh", [btModelledDay(load, s), days(s)])));
     const k = Wk.clamp("Matching to your yearly use", "×", Wk.quotient("Your use ÷ our estimate", "×",
       btIn("Your electricity use a year", calib.total, "kWh/yr", { source: "You entered it." }), est, { dp: 3 }),
       0.2, 5, { dp: 3, note: "Every part of the estimated use is scaled by this, in every season." });
@@ -346,8 +346,9 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
       perSeason[s] = { L, G, solar, withB };
     });
   }
+  const seasonUnit = u => u === "$/yr" ? "$" : u === "kWh/yr" ? "kWh" : u;
   const yearOf = (label, unit, f) => Wk.sum(label, unit,
-    BT_SEASONS.map(s => Wk.product(BT_CAP(s), unit, [f(s), days[s]])));
+    BT_SEASONS.map(s => Wk.product(`${BT_CAP(s)} (${days[s].value} days)`, seasonUnit(unit), [f(s), days[s]])));
   const hourNote = "Hour by hour: the sun serves the home first; what's left is exported (and fills the battery first, " +
                    `if there is one). The rest comes from the grid. Peak hours (${btPeakText()}) use the peak prices.`;
   const S = {};
@@ -567,8 +568,10 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const yearParts = {}, partNodes = {};
   for (const part of Object.keys(load.nodes)) {
     partNodes[part] = Wk.sum(BT_PART_STYLE[part] ? BT_PART_STYLE[part].label : part, "kWh/yr",
-      BT_SEASONS.map(s => Wk.product(BT_CAP(s), "kWh/yr", [load.nodes[part][s], cal.nodes[s],
-        btIn(`Days of ${s}`, ctx.seasonDays ? ctx.seasonDays[BT_SEASONS.indexOf(s)] : BT_SEASON_DAYS[s], "days")])));
+      BT_SEASONS.map(s => {
+        const nd = ctx.seasonDays ? ctx.seasonDays[BT_SEASONS.indexOf(s)] : BT_SEASON_DAYS[s];
+        return Wk.product(`${BT_CAP(s)} (${nd} days)`, "kWh", [load.nodes[part][s], cal.nodes[s], btIn(`Days of ${s}`, nd, "days")]);
+      }));
     yearParts[part] = partNodes[part].value;
   }
   // the bill tool's year of sun must be the roof's own generation figure
@@ -826,7 +829,7 @@ function renderBillTool(box, ctx) {
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
       `<div class="sx-group sx-glance">` +
-        row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${Wk.show(N.kwp)}${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
+        row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${N.kwp.value.toFixed(1)} kW${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
         (haveGen ? row("Winter bill", `<span class="val">${btMoney(S.winter.nowMonth.value)} → <b>${S.winter[after].value < -0.5 ? btMoney(-S.winter[after].value) + " credit" : btMoney(S.winter[after].value)}</b></span>`, { go: "after-winter", small: "a month, today → with solar" }) : "") +
         (haveGen ? row("Summer bill", `<span class="val">${btMoney(S.summer.nowMonth.value)} → <b>${S.summer[after].value < -0.5 ? btMoney(-S.summer[after].value) + " credit" : btMoney(S.summer[after].value)}</b></span>`, { go: "after-summer" }) : "") +
       `</div>` +
@@ -902,7 +905,7 @@ function renderBillTool(box, ctx) {
       `<div class="sx-group">` +
         row("Solar price", field("solarrate", Math.round(N.solarRate.value), `min="0" step="50" data-sys="solarPerKw"`, "$", "/kW", !(state.sys.solarPerKw > 0)),
           { small: state.sys.solarPerKw > 0 ? "yours" : "typical for this size" }) +
-        row("Solar", val(money(N.solarCost)), { go: "solarcost", small: Wk.show(N.kwp) }) +
+        row("Solar", val(money(N.solarCost)), { go: "solarcost", small: N.kwp.value.toFixed(1) + " kW" }) +
         row("Battery", seg("battery", [[0, "None"], [5, "5"], [10, "10"], [13.5, "13.5"]].concat(isBiz ? [[30, "30"]] : []), P.battery, "Battery size, kWh"), { small: "kWh" }) +
         (withBatt ? row("Battery price", field("battrate", Math.round(N.battRate.value), `min="0" step="50" data-sys="battPerKwh"`, "$", "/kWh", !(state.sys.battPerKwh > 0)),
           { small: state.sys.battPerKwh > 0 ? "yours" : "typical" }) +

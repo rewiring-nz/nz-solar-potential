@@ -25,7 +25,8 @@ statement about what may legally be built there -- Queenstown Town Centre,
 General Industrial, Low Density Residential. That is the actual answer to
 the question, from the authority that decides it.
 
-Writes `zone` and `zone_class` onto every building in the region outlines.
+Writes data/regions/<r>/building_zones.json: {building_id: [zone, zone_class]}
+(beside the outlines, so the build does not see changed inputs).
 Other councils publish the same thing at different endpoints; ZONE_SOURCES
 is where a new district gets added.
 
@@ -165,7 +166,14 @@ def main(argv):
         g["zone"] = j["zone_name"].values
         g["zone_class"] = [classify(z) if isinstance(z, str) else "unknown"
                            for z in g["zone"]]
-        g.to_file(op, driver="GeoJSON")
+        # Beside the outlines, not in them: the outlines are an input every
+        # build stage checks, so rewriting them marks the whole region stale.
+        # emit_region reads this file to classify each building.
+        zones_out = op.parent / "building_zones.json"
+        zones_out.write_text(json.dumps({
+            "source": src["url"], "fetched": time.strftime("%Y-%m-%d"),
+            "zones": {str(int(b)): [z if isinstance(z, str) else None, c]
+                      for b, z, c in zip(g["building_id"], g["zone"], g["zone_class"])}}))
         from collections import Counter
         c = Counter(g["zone_class"])
         print(f"{region}: {dict(c)}", flush=True)
