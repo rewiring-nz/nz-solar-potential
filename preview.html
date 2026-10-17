@@ -439,15 +439,46 @@
   .side-panel.visible { display: block; }
   /* Specific Building Analysis (17 Oct): wider by default, so the roof's
      live view takes the right half beside its figures. */
-  .side-panel { width: clamp(384px, 37.5vw, 645px); }
-  .sba-title { font-size: 21px; font-weight: 800; letter-spacing: -0.3px; color: var(--ink);
-    padding-right: 70px; margin: 0 0 4px; line-height: 1.15; }
-  .side-panel .popup h4.sba-addr { font-size: 15px; font-weight: 650; color: var(--ink); margin: 0 0 2px; }
+  .side-panel { width: clamp(384px, 37.5vw, 645px); transition: width .2s ease; }
+  /* COMPACT: the corner card a first click opens -- headline figures only,
+     sized to its content; the arrow opens the full panel. */
+  @media (min-width: 701px) {
+    .side-panel.compact { width: 380px; bottom: auto; max-height: calc(100% - 66px); }
+    .side-panel.compact .sba-full-only, .side-panel.compact .sx-more { display: none !important; }
+    .side-panel.compact .sba-title { font-size: 16px; }
+    .side-panel:not(.compact) .sba-compact-only { display: none !important; }
+  }
+  @media (max-width: 700px) { .sba-compact-only, .side-panel .sx-glance { display: none !important; } }
+  .sba-expand { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin: 12px 0 2px;
+    background: rgba(118,118,128,.20); color: var(--ink); border: 0; border-radius: 10px; padding: 10px 12px;
+    font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; cursor: pointer; }
+  .sba-expand:hover { background: rgba(118,118,128,.30); }
+  .sba-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .sba-expand span { font-size: 16px; transform: translateY(-3px); }
+  .sba-cap { font-size: 12px; color: rgba(235,235,245,.6); margin-top: 7px; text-align: center; line-height: 1.4; }
+  .sba-cap select { font-size: 12px; }
+  .sba-h3 { font-size: 19px; font-weight: 650; letter-spacing: -.2px; margin: 26px 2px 10px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .sba-more { margin-top: 18px; }
+  .sba-gone { display: none !important; }
+  .sba-more > summary { cursor: pointer; font-size: 14.5px; font-weight: 600; padding: 11px 14px; border-radius: 12px;
+    background: rgba(255,255,255,.055); list-style: none; }
+  .sba-more > summary::-webkit-details-marker { display: none; }
+  .sba-more > summary::after { content: " ›"; color: rgba(235,235,245,.38); }
+  .sba-more[open] > summary::after { content: " ⌄"; }
+  .sba-title { font-size: 13px; font-weight: 600; letter-spacing: 0; color: rgba(235,235,245,.6);
+    padding-right: 70px; margin: 0 0 2px; line-height: 1.2;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .side-panel .popup h4.sba-addr { font-size: 22px; font-weight: 700; letter-spacing: -.3px; color: var(--ink);
+    margin: 0 0 2px; padding-right: 70px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .side-panel.compact .popup h4.sba-addr { font-size: 18px; }
   .sba-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s3);
     align-items: stretch; margin-top: var(--s3); }
   .sba-top .sba-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
   .sba-top .sba-left .est-section { margin-top: 0; padding-top: 0; border-top: none; }
-  .sba-top .live-view { aspect-ratio: 1 / 1; max-height: none; margin: 0; }
+  .sba-top .live-view { aspect-ratio: 1 / 1; max-height: none; margin: 0; border-radius: 12px; }
+  .sba-top .rsp-statbox { border-radius: 12px; padding: 12px 10px 10px; }
+  .sba-top .rsp-statbox .rsp-energy { font-size: 13px; font-weight: 600; }
   .sba-top .live-badge { font-size: 10.5px; padding: 2px 7px; left: 5px; bottom: 5px; max-width: calc(100% - 10px); }
   .sba-top .rsp-statbox .rsp-power, .sba-top .rsp-statbox .rsp-count { font-size: clamp(20px, 1.9vw, 30px); }
   @media (max-width: 900px) { .sba-top { grid-template-columns: 1fr; } }
@@ -670,8 +701,12 @@
         </div>
       </div>
       <div id="coverage-options" style="display:none;"></div>
+      <!-- Building-type filters hidden for now (Josh, 18 Oct); the code still
+           fills them, so showing this block again brings them back. -->
+      <div hidden>
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
       <div id="btype-toggles" class="btype-row"></div>
+      </div>
       <div id="layout-disclaimer" style="margin:10px 0 0;padding:8px 10px;background:rgba(255,80,80,0.10);
            border:1px solid rgba(255,110,110,0.25);border-radius:8px;font-size:10px;line-height:1.45;
            color:#f2c6c6;">
@@ -820,7 +855,7 @@
   </form>
 </div>
 <div class="side-panel" id="side-panel">
-  <button class="side-panel-close" id="side-panel-expand" style="right:42px;" title="Expand">&#11036;</button>
+  <button class="side-panel-close" id="side-panel-expand" style="right:42px;" title="Show all details" aria-label="Show all details" aria-expanded="false">&#8599;</button>
   <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
   <div id="side-panel-content"></div>
 </div>
@@ -3755,6 +3790,22 @@ map.on("load", async () => {
       </div>`;
   }
 
+  // Compact (the corner card) or full (every assumption).
+  function setPanelCompact(on) {
+    const panel = document.getElementById("side-panel");
+    const btn = document.getElementById("side-panel-expand");
+    panel.classList.toggle("compact", on);
+    panel.classList.remove("wide");
+    if (btn) {
+      btn.innerHTML = on ? "&#8599;" : "&#8601;";
+      btn.title = on ? "Show all details" : "Show less";
+      btn.setAttribute("aria-label", btn.title);
+      btn.setAttribute("aria-expanded", String(!on));
+    }
+    if (!on) panel.scrollTop = 0;
+  }
+  window.__setPanelCompact = setPanelCompact;
+
   function buildingPanelHtml(p) {
     const multi = p._multi && p._multi.length > 1;
     const title = multi
@@ -3819,49 +3870,45 @@ map.on("load", async () => {
       <div class="popup">
         <div class="sba-title">Specific Building Analysis</div>
         <h4 class="sba-addr">${title}</h4>
-        <div class="rsp-subtitle">${sub}</div>
+        <div class="rsp-subtitle sba-full-only">${sub}</div>
         ${guessNote}
         <div class="sba-top">
         <div class="sba-left">
-        <div class="est-section" id="est-heatmap" style="border-top:none; margin-top:0; padding-top:0;">
-          <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
-          <div class="rsp-row">
-            <div class="rsp-assumption">
-              Assuming
-              ${coverageSelectHtml("coverage-select-bldg")}
-              roof coverage from solar panels:
-            </div>
-            <div class="rsp-statbox">
-              <div class="rsp-power"><span id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</span></div>
-              <div class="rsp-energy" id="bldg-energy">${fmtEnergy(est.kwhYear)}</div>
-            </div>
+        <div class="est-section" id="est-heatmap">
+          <div class="rsp-statbox">
+            <div class="rsp-power"><span id="bldg-power" data-area="${p.facet_area_m2 || 0}" data-poa="${p.avg_poa_kwh_m2 || 0}">${fmtPower(est.kwp)}</span></div>
+            <div class="rsp-energy" id="bldg-energy">${fmtEnergy(est.kwhYear)}</div>
           </div>
+          <div class="sba-cap">Panels on ${coverageSelectHtml("coverage-select-bldg")} of the roof</div>
           <div id="bldg-coverage-options" style="display:none;"></div>
         </div>
-        <div class="est-section" id="est-panels" style="border-top:none;">
-          <div class="rsp-row">
-            <div class="rsp-assumption">At the current panel density (<span id="bldg-density-note">${panelDensityPct}%</span>, set with the left-hand slider):</div>
-            <div class="rsp-statbox">
-              <div class="rsp-power"><span id="bldg-fitted-power">&ndash;</span><span class="rsp-count" id="bldg-fitted-panels">&ndash;</span></div>
-              <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
-            </div>
-            <div class="rsp-assumption" id="bldg-unmodelled" style="display:none;"></div>
+        <div class="est-section" id="est-panels">
+          <div class="rsp-statbox">
+            <div class="rsp-power"><span id="bldg-fitted-power">&ndash;</span><span class="rsp-count" id="bldg-fitted-panels">&ndash;</span></div>
+            <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
           </div>
+          <div class="sba-cap">At <span id="bldg-density-note">${panelDensityPct}%</span> panel density &middot; change it with the slider</div>
+          <div class="rsp-assumption" id="bldg-unmodelled" style="display:none;"></div>
         </div>
         </div>
         <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
         </div>
         <div id="bldg-econ" style="display:none;"></div>
+        <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
+          Assumptions and details <span aria-hidden="true">&#8964;</span></button>
+        <div class="sba-full-only">
+        <div class="sba-h3">Solar through the day</div>
         <div class="curve-toggle" id="curve-toggle">
-          <button class="curve-btn active" data-curve="avg">Average</button>
+          <button class="curve-btn active" data-curve="avg">Average day</button>
           <button class="curve-btn" data-curve="peak">Sunny day</button>
-          <button class="curve-btn" data-curve="horizon" id="horizon-tab-btn">Horizon</button>
+          <span id="horizon-tab-btn" class="sba-gone"></span>
         </div>
         <div id="season-curves"></div>
+        <div id="bill-more"></div>
+        <details class="sba-more">
+        <summary>Layout details</summary>
         <div class="panel-cols">
         <div id="layout-details">
-        <div class="est-title" style="margin-top:var(--s5); padding-top:var(--s3);
-             border-top:1px solid var(--line);">Proposed panel layout</div>
         <table>
           <tr><td>Panels placed</td><td class="val" id="fitted-count">&ndash;</td></tr>
           <tr><td>kW peak (kWp)</td><td class="val" id="fitted-kwp">&ndash;</td></tr>
@@ -3871,7 +3918,7 @@ map.on("load", async () => {
         </div>
         </div>
         <details class="tuning">
-          <summary>How this works &amp; assumptions</summary>
+          <summary>How the layout works</summary>
           <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
             Sunniest roof faces fill first, row by row -- never over an obstruction,
             edge, or roof join. The default (80%) shows the main arrays an installer
@@ -3903,7 +3950,9 @@ map.on("load", async () => {
           <div class="tuning-summary" id="tuning-summary">Adjust a slider to try live values for this roof.</div>
           <button class="tuning-reset" id="tuning-reset">Reset to defaults</button>
         </details>
+        </details>
         ${multi ? "" : flagBlockHtml(p)}
+        </div>
       </div>`;
   }
 
@@ -4287,6 +4336,7 @@ map.on("load", async () => {
             lat: (GEN && GEN.curve && SUN_DOCS[props.sr] && SUN_DOCS[props.sr].lat) || (seasonCurves && seasonCurves.lat) || -41,
             roofM2: props.facet_area_m2 || 150,
             kwp: kwp, kwpNode: GEN.kwp, genNode: GEN.gen,
+            moreBox: el("bill-more"),
             gen: c ? c.gen : null, seasonDays: c ? c.seasonDays : null,
             // prices and money assumptions are the map's one set (econ)
             onEcon: () => window.__applyEcon ? window.__applyEcon() : refresh(),
@@ -4815,7 +4865,7 @@ map.on("load", async () => {
     // Width follows the panel, so expanding it actually makes the chart bigger
     // rather than leaving a 288px graphic marooned in a wide column.
     const avail = Math.max(240, (box.clientWidth || 288));
-    const W = Math.min(avail, 900), H = Math.round(Math.min(320, Math.max(170, W * 0.5)));
+    const W = Math.min(avail, 900), H = Math.round(Math.min(360, Math.max(210, W * 0.62)));
     const L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
     // Scale to whichever series is shown, so the chosen one fills the chart
     // instead of sitting squashed under the other one's peak.
@@ -4908,16 +4958,43 @@ map.on("load", async () => {
       `<text x="${x(h)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${h}</text>`).join("");
     const yLabels = `<text x="${L - 4}" y="${y(0) + 3}" fill="#888" font-size="8" text-anchor="end">0</text>` +
       `<text x="9" y="${(T + H - B) / 2}" fill="#888" font-size="8" text-anchor="middle" transform="rotate(-90 9 ${(T + H - B) / 2})">kW</text>`;
+    // THE HORIZON BEHIND THE CURVES (Josh, 18 Oct: one chart, not two). The
+    // hills, trees and buildings around this roof, drawn at the height they
+    // stand above the horizon in the direction the sun is at each hour (an
+    // equinox day, local clock), on a 0-45 degree scale up the chart. Where
+    // the curves fall away early or late, this shows what the sun went behind.
+    let hzBg = "", hzNote = "";
+    const hp = selectedBuildingProps;
+    if (hp && hp.horizon_b64) {
+      const comb = decodeHorizon(hp.horizon_b64);
+      const far = hp.horizon_far_b64 ? decodeHorizon(hp.horizon_far_b64) : null;
+      const latH = hp._sy !== undefined ? hp._sy : map.getCenter().lat;
+      const lonH = hp._sx !== undefined ? hp._sx : map.getCenter().lng;
+      const clockMinusSolar = 12 - lonH / 15;            // NZ standard time
+      const sl = Math.sin(latH * Math.PI / 180);
+      const azAt = hh => { const w = 15 * (hh - clockMinusSolar - 12) * Math.PI / 180;
+        return (Math.atan2(-Math.sin(w), -sl * Math.cos(w)) * 180 / Math.PI + 360) % 360; };
+      const EL_MAX = 45, yEl = el => T + (1 - Math.min(el, EL_MAX) / EL_MAX) * (H - T - B);
+      const shape = prof => {
+        let d = `M${x(h0)} ${y(0)}`;
+        for (let hh = h0; hh <= h1 + 1e-9; hh += 0.25) d += `L${x(hh).toFixed(1)} ${yEl(horizonAt(prof, azAt(hh))).toFixed(1)}`;
+        return d + `L${x(h1)} ${y(0)}Z`;
+      };
+      if (far) hzBg += `<path d="${shape(far)}" fill="rgba(150,158,172,0.16)"/>`;
+      hzBg += `<path d="${shape(comb)}" fill="rgba(150,158,172,0.22)"/>`;
+      hzBg += [15, 30, 45].map(el => `<text x="${W - R - 1}" y="${yEl(el) + 3}" fill="rgba(200,205,215,0.45)" font-size="7.5" text-anchor="end">${el}&deg;</text>`).join("");
+      hzNote = ` &nbsp;·&nbsp; <span style="color:#9aa3b1">grey: hills and buildings in the sun's direction</span>`;
+    }
     const legend = seasonCurves.seasons.map(n =>
       `<span style="color:${SEASON_COLORS[n]}; font-weight:700;">${n}</span>`).join(" · ");
     box.innerHTML =
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
-      `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}</svg></div>` +
+      `<svg width="100%" viewBox="0 0 ${W} ${H}">${hzBg}${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
       `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
       `${showPeak ? "a clear day in each season (illustration, not in the totals)" : "an average day in each season"}` +
       ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}` +
-      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span id="curve-workings">how it adds up</span>` : "") + `</div>`;
+      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span id="curve-workings">how it adds up</span>` : "") + hzNote + `</div>`;
     const cw = document.getElementById("curve-workings");
     if (cw && typeof WkView !== "undefined") WkView.bind(cw, () => GEN && GEN.curve ? GEN.curve.node : null);
   }
@@ -4995,6 +5072,10 @@ map.on("load", async () => {
       selectedGeomById = { [p.building_id]: Array.isArray(geom) ? geom[0] : geom };
     }
     document.getElementById("side-panel-content").innerHTML = buildingPanelHtml(p);
+    // A fresh selection opens COMPACT in the corner (Josh, 18 Oct): the
+    // headline figures only, until the reader asks for the detail. Once
+    // expanded it stays expanded until the panel is closed.
+    if (!panel.classList.contains("visible")) setPanelCompact(true);
     panel.classList.add("visible");
     wireCoverageSelect(panel.querySelector("#coverage-select-bldg"));
     selectedPanelBuildingId = p.building_id;
@@ -5087,9 +5168,7 @@ map.on("load", async () => {
   });
 
   document.getElementById("side-panel-expand").addEventListener("click", () => {
-    const panel = document.getElementById("side-panel");
-    const wide = panel.classList.toggle("wide");
-    document.getElementById("side-panel-expand").title = wide ? "Shrink" : "Expand";
+    setPanelCompact(!document.getElementById("side-panel").classList.contains("compact"));
     // The chart is sized from its container, so it has to be redrawn once the
     // panel has its new width.
     if (selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);

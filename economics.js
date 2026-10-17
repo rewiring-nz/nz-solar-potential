@@ -31,8 +31,9 @@ const ECON_DEFAULTS = {
   // average near the old flat 30c. Cents per kWh incl. GST; daily in $.
   home_peak_c: 34, home_offpeak_c: 26, home_peak_sell_c: 14, home_offpeak_sell_c: 14, home_daily: 2.5,
   biz_peak_c: 19,  biz_offpeak_c: 14,  biz_peak_sell_c: 14,  biz_offpeak_sell_c: 14,  biz_daily: 8.0,
-  // [from, to) hours of the day that are peak
-  peak_hours: [[7, 11], [17, 21]],
+  // [from, to) hours of the day that are peak: 7-10am and 6-9pm (Josh,
+  // 18 Oct); adjustable on the building panel's sliders
+  peak_hours: [[7, 10], [18, 21]],
   // Real or nominal money over the system's life. Real divides each future
   // year by general inflation (CPI), so every figure is in today's dollars.
   real_prices: true,

@@ -223,7 +223,7 @@ function btModelledDay(load, s) {
 }
 
 function btPeakHours() {
-  return (typeof econ !== "undefined" && econ.peak_hours) || [[7, 11], [17, 21]];
+  return (typeof econ !== "undefined" && econ.peak_hours) || [[7, 10], [18, 21]];
 }
 function btIsPeak(h) { return btPeakHours().some(([a, b]) => h >= a && h < b); }
 function btPeakText() { return btPeakHours().map(([a, b]) => `${a}:00–${b}:00`).join(" and "); }
@@ -601,54 +601,101 @@ if (typeof module !== "undefined" && module.exports) {
 // shown is a Workings node's value; nothing here does arithmetic of its own.
 
 const BT_CSS = `
-.sba-kpis { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; margin: 12px 0 4px; }
-.sba-kpi { background: var(--surface-2, rgba(255,255,255,.05)); border-radius: 9px; padding: 10px 10px 9px; min-width: 0; }
-.sba-kpi .k { font-size: 11px; color: var(--ink-2, #b6bdc9); line-height: 1.25; min-height: 2.5em; }
-.sba-kpi .v { font-size: 19px; font-weight: 760; color: var(--ink, #f2f4f7); font-variant-numeric: tabular-nums; margin-top: 3px; white-space: nowrap; }
-.sba-kpi .s { font-size: 10.5px; color: var(--ink-3, #7e8794); margin-top: 2px; }
-.sba-kpi.hero .v { color: var(--accent, #ffd24a); }
-.sba-h { font-size: 15px; font-weight: 750; color: var(--ink, #f2f4f7); margin: 18px 0 8px; letter-spacing: -.1px; }
-.sba-sub { font-size: 11.5px; font-weight: 700; color: var(--ink-2, #b6bdc9); text-transform: uppercase; letter-spacing: .07em; margin: 16px 0 7px; }
-.sba-ba { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.sba-col { display:grid; gap: 7px; align-content: start; }
-.sba-colh { font-size: 11.5px; font-weight: 700; color: var(--ink-2, #b6bdc9); text-transform: uppercase; letter-spacing: .07em; }
-.sba-box { background: var(--surface-2, rgba(255,255,255,.05)); border-radius: 8px; padding: 8px 10px; min-width: 0; }
-.sba-box .k { font-size: 11px; color: var(--ink-2, #b6bdc9); display:flex; justify-content: space-between; gap: 6px; }
-.sba-box .v { font-size: 17px; font-weight: 720; color: var(--ink, #f2f4f7); font-variant-numeric: tabular-nums; margin-top: 3px; }
-.sba-box.edit { border: 1px solid rgba(255,210,74,.28); }
-.sba-box .in { display:flex; align-items: baseline; gap: 4px; margin-top: 3px; color: var(--ink, #f2f4f7); font-size: 14px; }
-.sba-box input, .sba-box select { width: 100%; min-width: 0; background: #2a2f38; color: #fff; border: 1px solid #4a505c; border-radius: 6px;
-  padding: 5px 7px; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
-.sba-box select { text-align: left; font-size: 13px; }
-.sba-box input:focus-visible, .sba-box select:focus-visible { outline: 2px solid var(--accent, #ffd24a); outline-offset: 1px; }
-.sba-box .u { font-size: 11.5px; color: var(--ink-3, #7e8794); white-space: nowrap; }
-.sba-box .tag { font-size: 10px; color: var(--ink-3, #7e8794); }
-.sba-box .tag.yours { color: var(--good, #7fd18e); }
-.sba-how { font-size: 10.5px; color: var(--accent, #ffd24a); cursor: pointer; text-decoration: underline dotted; background: none; border: 0; padding: 0; }
-.sba-g5 { display:grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 7px; }
-.sba-g3 { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 7px; }
-.sba-g2 { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 7px; }
-.sba-note { font-size: 11px; color: var(--ink-3, #7e8794); margin-top: 6px; line-height: 1.45; }
-.sba-note .ok { color: var(--good, #7fd18e); }
-.sba-adv { margin-top: 8px; border-top: 1px solid var(--line, rgba(255,255,255,.09)); padding-top: 7px; }
-.sba-adv summary { cursor: pointer; font-size: 12px; color: var(--ink-2, #b6bdc9); font-weight: 650; }
-.sba-adv[open] summary { margin-bottom: 7px; }
-.sba-seg { display:flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.sba-seg button { background: rgba(255,255,255,.06); color: var(--ink, #f2f4f7); border: 1px solid rgba(255,255,255,.10);
-  border-radius: 14px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; }
-.sba-seg button.on { background: var(--accent, #ffd24a); color: #1a1a1a; border-color: var(--accent, #ffd24a); font-weight: 700; }
-.sba-seg button:focus-visible { outline: 2px solid var(--accent, #ffd24a); outline-offset: 1px; }
-.sba-q { display:grid; grid-template-columns: 110px 1fr; align-items:center; gap: 8px; margin: 6px 0; font-size: 12px; color: var(--ink-2, #b6bdc9); }
-.sba-tick { display:flex; align-items:center; gap: 7px; font-size: 12px; color: var(--ink-2,#b6bdc9); margin: 4px 0 4px 118px; cursor:pointer; }
-.sba-step { display:flex; align-items:center; gap: 6px; }
-.sba-step button { width: 26px; height: 26px; border-radius: 13px; background: rgba(255,255,255,.08); color: var(--ink,#fff); border: 1px solid rgba(255,255,255,.12); cursor:pointer; font-size: 14px; }
-.sba-use { display:flex; height: 9px; border-radius: 5px; overflow:hidden; background: rgba(255,255,255,.06); margin-top: 8px; }
-.sba-key { display:flex; flex-wrap:wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-3,#7e8794); margin-top: 5px; }
-.sba-key i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; }
-@media (max-width: 1500px) { .sba-g5 { grid-template-columns: repeat(3, minmax(0,1fr)); } }
-@media (max-width: 1250px) { .sba-kpis { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 720px) { .sba-kpis { grid-template-columns: 1fr 1fr; } .sba-g5 { grid-template-columns: repeat(3, minmax(0,1fr)); } }
-@media (max-width: 420px) { .sba-g5, .sba-g3 { grid-template-columns: 1fr 1fr; } .sba-q { grid-template-columns: 1fr; } .sba-tick { margin-left: 0; } }
+.sx { --sx-fill: rgba(255,255,255,.055); --sx-fill-2: rgba(118,118,128,.20); --sx-sep: rgba(255,255,255,.09);
+  --sx-ink: #f5f5f7; --sx-ink-2: rgba(235,235,245,.62); --sx-ink-3: rgba(235,235,245,.38);
+  --sx-tint: #ffd60a; --sx-good: #30d158;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--sx-ink); margin-top: 14px; }
+.sx .wk-num { text-decoration: none; }
+.sx-summary { display: grid; grid-template-columns: 1fr 1fr; background: var(--sx-fill); border-radius: 14px; overflow: hidden; }
+.sx-cell { padding: 13px 14px 12px; min-width: 0; cursor: pointer; transition: background .12s; }
+.sx-cell:nth-child(odd) { border-right: 0.5px solid var(--sx-sep); }
+.sx-cell:nth-child(-n+2) { border-bottom: 0.5px solid var(--sx-sep); }
+.sx-cell:hover, .sx-cell:focus-visible { background: rgba(255,255,255,.04); outline: none; }
+.sx-cell .l { font-size: 12.5px; color: var(--sx-ink-2); }
+.sx-cell .v { font-size: 22px; font-weight: 650; letter-spacing: -.3px; font-variant-numeric: tabular-nums; margin-top: 3px; white-space: nowrap; }
+.sx-cell .s { font-size: 11.5px; color: var(--sx-ink-3); margin-top: 1px; }
+.sx-cell.hero .v { color: var(--sx-good); font-size: 26px; }
+.sx-h { font-size: 19px; font-weight: 650; letter-spacing: -.2px; margin: 26px 2px 4px; }
+.sx-sub { font-size: 13px; font-weight: 600; color: var(--sx-ink-2); margin: 18px 4px 7px; }
+.sx-group { background: var(--sx-fill); border-radius: 12px; overflow: hidden; }
+.sx-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 14px; position: relative; font-size: 14.5px; }
+.sx-row + .sx-row::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; border-top: 0.5px solid var(--sx-sep); }
+.sx-row .lbl { flex: 1; min-width: 0; }
+.sx-row .lbl small { display: block; font-size: 12px; color: var(--sx-ink-3); margin-top: 1px; }
+.sx-row .val { font-variant-numeric: tabular-nums; color: var(--sx-ink-2); white-space: nowrap; }
+.sx-row .val b { color: var(--sx-ink); font-weight: 600; }
+.sx-row.go { cursor: pointer; }
+.sx-row.go:hover, .sx-row.go:focus-visible { background: rgba(255,255,255,.035); outline: none; }
+.sx-row.go::after { content: "›"; color: var(--sx-ink-3); font-size: 19px; line-height: 1; margin-left: 2px; }
+.sx-row.total .lbl, .sx-row.total .val b { font-weight: 650; }
+.sx-field { display: inline-flex; align-items: baseline; gap: 3px; background: var(--sx-fill-2); border-radius: 8px; padding: 5px 9px; color: var(--sx-ink-2); font-size: 13px; }
+.sx-field input { width: 64px; background: none; border: 0; color: var(--sx-ink); font: 600 15px/1.2 inherit; font-family: inherit;
+  text-align: right; font-variant-numeric: tabular-nums; padding: 0; -moz-appearance: textfield; }
+.sx-field input::-webkit-outer-spin-button, .sx-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sx-field:focus-within { box-shadow: 0 0 0 2px var(--sx-tint); }
+.sx-field input:focus { outline: none; }
+.sx-field.est input { color: var(--sx-ink-2); font-weight: 500; }
+.sx-info { background: none; border: 0; color: var(--sx-ink-3); font-size: 13px; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.sx-info:hover, .sx-info:focus-visible { color: var(--sx-tint); outline: none; }
+.sx-bills .sx-row { display: grid; grid-template-columns: 1fr 108px 108px; }
+.sx-bills .sx-row .val, .sx-bills .sx-row .sx-field { justify-self: end; }
+.sx-bills .head { min-height: 30px; font-size: 12px; color: var(--sx-ink-3); }
+.sx-bills .head span:not(:first-child) { justify-self: end; padding-right: 2px; }
+.sx-bills .after { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin-right: -6px; }
+.sx-bills .after:hover, .sx-bills .after:focus-visible { background: rgba(255,255,255,.05); outline: none; }
+.sx-bills .after b { color: var(--sx-good); font-weight: 650; font-size: 15px; }
+.sx-bills .after small { color: var(--sx-ink-3); font-size: 11.5px; }
+.sx-foot { font-size: 12px; color: var(--sx-ink-3); margin: 7px 4px 0; line-height: 1.45; }
+.sx-foot .ok { color: var(--sx-good); }
+.sx-foot .warn { color: #ff9f0a; }
+.sx-seg { display: inline-flex; background: var(--sx-fill-2); border-radius: 9px; padding: 2px; gap: 0; flex-wrap: wrap; justify-content: flex-end; }
+.sx-seg button { background: none; border: 0; color: var(--sx-ink); font: 500 13px/1 inherit; font-family: inherit; padding: 6px 10px; border-radius: 7px; cursor: pointer; }
+.sx-seg button.on { background: #636366; box-shadow: 0 1px 3px rgba(0,0,0,.35); font-weight: 600; }
+.sx-seg button:focus-visible { outline: 2px solid var(--sx-tint); outline-offset: 1px; }
+.sx-switch { position: relative; width: 44px; height: 27px; flex: none; }
+.sx-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.sx-switch i { position: absolute; inset: 0; background: var(--sx-fill-2); border-radius: 14px; transition: background .18s; pointer-events: none; }
+.sx-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 23px; height: 23px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: transform .18s; }
+.sx-switch input:checked + i { background: var(--sx-good); }
+.sx-switch input:checked + i::after { transform: translateX(17px); }
+.sx-switch input:focus-visible + i { box-shadow: 0 0 0 2px var(--sx-tint); }
+.sx-step { display: inline-flex; align-items: center; background: var(--sx-fill-2); border-radius: 9px; }
+.sx-step button { background: none; border: 0; color: var(--sx-ink); width: 34px; height: 30px; font-size: 17px; cursor: pointer; border-radius: 8px; }
+.sx-step button:focus-visible { outline: 2px solid var(--sx-tint); }
+.sx-step b { min-width: 22px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sx-dis { margin-top: 10px; }
+.sx-dis > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; background: var(--sx-fill);
+  border-radius: 12px; padding: 11px 14px; font-size: 14.5px; }
+.sx-dis > summary::-webkit-details-marker { display: none; }
+.sx-dis > summary .t { flex: 1; }
+.sx-dis > summary .sum { color: var(--sx-ink-3); font-size: 12.5px; text-align: right; }
+.sx-dis > summary::after { content: "›"; color: var(--sx-ink-3); font-size: 19px; line-height: 1; transition: transform .15s; }
+.sx-dis[open] > summary::after { transform: rotate(90deg); }
+.sx-dis[open] > summary { border-radius: 12px 12px 0 0; }
+.sx-dis[open] > .sx-group:first-of-type { border-radius: 0 0 12px 12px; }
+.sx-dis > summary:focus-visible { outline: 2px solid var(--sx-tint); outline-offset: 1px; }
+.sx-use { padding: 10px 14px 12px; }
+.sx-use .bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--sx-fill-2); }
+.sx-use .key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--sx-ink-2); margin-top: 8px; }
+.sx-use .key span { cursor: pointer; }
+.sx-use .key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.sx-glance { margin-top: 10px; }
+.sx-peak .lbl small { color: var(--sx-ink-2); font-variant-numeric: tabular-nums; }
+.sx-range { position: relative; width: 150px; height: 28px; flex: none; }
+.sx-range::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--sx-fill-2); }
+.sx-range::after { content: ""; position: absolute; left: var(--lo); right: calc(100% - var(--hi)); top: 12px; height: 4px; border-radius: 2px; background: var(--sx-tint); }
+.sx-range input { position: absolute; left: 0; top: 0; width: 100%; height: 28px; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; z-index: 1; }
+.sx-range input::-webkit-slider-runnable-track { background: none; height: 28px; }
+.sx-range input::-moz-range-track { background: none; }
+.sx-range input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 22px; height: 22px; margin-top: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); cursor: grab; }
+.sx-range input::-moz-range-thumb { pointer-events: auto; width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); cursor: grab; }
+.sx-range input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--sx-tint); }
+.side-panel:not(.compact) .sx-glance { display: none; }
+.sx-more .sx-h:first-child { margin-top: 22px; }
+@media (max-width: 1250px) { .sx-bills .sx-row { grid-template-columns: 1fr 96px 96px; } }
+@media (max-width: 420px) { .sx-summary { grid-template-columns: 1fr 1fr; } .sx-cell .v { font-size: 19px; } }
+@media (prefers-reduced-motion: reduce) { .sx * { transition: none !important; } }
 `;
 
 const BT_PART_STYLE = {
@@ -686,6 +733,13 @@ function btTariffFromEcon(isBiz) {
 // box: the element to fill. ctx: { buildingId, isBusiness, lat, roofM2,
 // kwp, kwpNode, genNode, gen ([season][24] kW, BT_SEASONS order),
 // seasonDays, onEcon (call after editing `econ`), onResult(r) }
+//
+// THE LOOK (18 Oct, Josh: "more intuitive and better looking ... like Apple
+// software"): one summary card with the yearly saving leading; then the
+// assumptions as grouped lists -- a label on the left, the value or an
+// editable field on the right, hairline separators -- with the rarely
+// touched settings folded away behind a one-line summary. Plain words, one
+// accent, tap any result to see its workings.
 function renderBillTool(box, ctx) {
   if (!document.getElementById("bt-css")) {
     const st = document.createElement("style");
@@ -701,10 +755,10 @@ function renderBillTool(box, ctx) {
     sys: Object.assign({ solarPerKw: null, battPerKwh: null }, saved.sys || {}),
   };
   const save = () => btSaveState(ctx.buildingId, state);
-  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const seg = (key, options, current) =>
-    `<div class="sba-seg" data-key="${key}">` + options.map(([v, l]) =>
-      `<button type="button" data-v="${v}" class="${String(v) === String(current) ? "on" : ""}">${l}</button>`).join("") + `</div>`;
+  const seg = (key, options, current, label) =>
+    `<div class="sx-seg" role="group" aria-label="${label || key}" data-key="${key}">` + options.map(([v, l]) =>
+      `<button type="button" data-v="${v}" class="${String(v) === String(current) ? "on" : ""}" aria-pressed="${String(v) === String(current)}">${l}</button>`).join("") + `</div>`;
+  const hours = ([a, b]) => { const f = h => h % 24 === 0 ? "midnight" : (h % 12 || 12) + (h < 12 ? "am" : "pm"); return `${f(a)}–${f(b)}`; };
 
   let last = null;
   const draw = () => {
@@ -724,180 +778,228 @@ function renderBillTool(box, ctx) {
     const E = typeof econ !== "undefined" ? econ : {};
     const pfx = isBiz ? "biz" : "home";
     const calibBy = r.cal.by;
-    // only claim a match that holds: a bill below the daily charge alone
-    // cannot be matched by any amount of use
+    const money = n => btMoney(n.value);
     const entered = state.calib && !state.calib.total
       ? [["summer", S.summer.nowMonth], ["winter", S.winter.nowMonth]].filter(([k]) => state.calib[k] > 0) : [];
     const off = entered.filter(([k, n]) => Math.abs(n.value - state.calib[k]) > 0.03 * state.calib[k]);
     const matchNote = calibBy === "total" ? `<span class="ok">Matched to your yearly use.</span>`
-      : !entered.length ? "These start as our estimate for this building. Change them to your own bills and everything below follows."
+      : !entered.length ? "Today's bills are our estimate for this building. Type in your own and everything updates."
       : !off.length ? `<span class="ok">Matched to your ${entered.map(([k]) => k).join(" and ")} bill${entered.length > 1 ? "s" : ""}.</span>`
-      : `Your ${off.map(([k]) => k).join(" and ")} bill is below what the daily charge alone comes to &mdash; check the prices.`;
-
-    const id = k => `bt-${k}`;
-    const kpi = (k, label, node, text, sub, hero) =>
-      `<div class="sba-kpi${hero ? " hero" : ""}"><div class="k">${label}</div>` +
-      `<div class="v" data-wk="${k}">${haveGen ? text : "–"}</div><div class="s">${sub || ""}</div></div>`;
-    const box2 = (k, label, text, sub) =>
-      `<div class="sba-box"><div class="k"><span>${label}</span>${sub || ""}</div><div class="v" data-wk="${k}">${text}</div></div>`;
-    const inBox = (k, label, value, unitL, unitR, attrs, tag, how) =>
-      `<div class="sba-box edit"><div class="k"><label for="${id(k)}">${label}</label>${how ? `<button type="button" class="sba-how" data-wk="${how}">how?</button>` : ""}</div>` +
-      `<div class="in">${unitL ? `<span class="u">${unitL}</span>` : ""}<input id="${id(k)}" type="number" ${attrs} value="${value}">` +
-      `${unitR ? `<span class="u">${unitR}</span>` : ""}</div>${tag ? `<div class="tag ${tag.cls || ""}">${tag.text}</div>` : ""}</div>`;
-    const money = n => btMoney(n.value);
-    // a bill below zero is money back: say so rather than print a minus
-    const bill = n => n.value < -0.5 ? btMoney(-n.value) + `<span class="u"> credit /month</span>`
-                                     : btMoney(n.value) + `<span class="u"> /month</span>`;
+      : `<span class="warn">Your ${off.map(([k]) => k).join(" and ")} bill is below the daily charge alone &mdash; check the prices.</span>`;
+    const P = isBiz ? state.business : state.home;
+    const field = (id, value, attrs, pre, post, est) =>
+      `<label class="sx-field${est ? " est" : ""}">${pre ? `<span>${pre}</span>` : ""}<input id="bt-${id}" type="number" inputmode="decimal" ${attrs} value="${value}">${post ? `<span>${post}</span>` : ""}</label>`;
+    const row = (label, right, opts) => {
+      const o = opts || {};
+      return `<div class="sx-row${o.go ? " go" : ""}${o.cls ? " " + o.cls : ""}"${o.go ? ` data-wk="${o.go}" tabindex="0" role="button"` : ""}>` +
+             `<span class="lbl">${label}${o.small ? `<small>${o.small}</small>` : ""}</span>${right}</div>`;
+    };
+    const val = (text, sub) => `<span class="val"><b>${text}</b>${sub ? ` ${sub}` : ""}</span>`;
     const billIn = s => {
       const mine = state.calib && !state.calib.total && state.calib[s] > 0;
-      return inBox(`bill-${s}`, s === "summer" ? "Summer minimum bill" : "Winter maximum bill",
-        Math.round(S[s].nowMonth.value), "$", "/month", `min="0" step="10" data-bill="${s}"`,
-        mine ? { cls: "yours", text: "yours" } : { text: calibBy === "total" ? "from your yearly use" : "our estimate" },
-        `now-${s}`);
+      return field(`bill-${s}`, Math.round(S[s].nowMonth.value), `min="0" step="10" data-bill="${s}" aria-label="${s} bill today, dollars a month"`, "$", "", !mine);
     };
-    const priceIn = (k, label, key) => inBox(k, label, +(E[key] || 0).toFixed(2), "", "c/kWh",
-      `min="0" step="0.5" data-econ="${key}"`);
-    const totalMine = calibBy === "total";
-    const P = isBiz ? state.business : state.home;
-    const q = (label, inner) => `<div class="sba-q"><span>${label}</span>${inner}</div>`;
-    const tick = (key, on, text) => `<label class="sba-tick"><input type="checkbox" data-tick="${key}" ${on ? "checked" : ""}> ${text}</label>`;
+    const afterBill = s => {
+      const n = S[s][after];
+      return `<span class="val after" data-wk="after-${s}" tabindex="0" role="button">` +
+        (n.value < -0.5 ? `<b>${btMoney(-n.value)}</b> <small>credit</small>` : `<b>${btMoney(n.value)}</b>`) + `</span>`;
+    };
+    const price = (label, key) => row(label, field(key, +(E[key] || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
-    const stack = Object.entries(r.yearParts).filter(([, v]) => v > 1).map(([k, v]) =>
-      `<div style="width:${(100 * v / totalUse).toFixed(1)}%;background:${BT_PART_STYLE[k].colour}" title="${BT_PART_STYLE[k].label}"></div>`).join("");
-    const key = Object.entries(r.yearParts).filter(([, v]) => v > 1).map(([k, v]) =>
-      `<span data-wk="part-${k}"><i style="background:${BT_PART_STYLE[k].colour}"></i>${BT_PART_STYLE[k].label} ${Math.round(v).toLocaleString()} kWh</span>`).join("");
-    const pbText = ret.payback == null ? `doesn't pay back in ${ret.years} yrs` : `pays back in ${ret.payback.toFixed(1)} yrs`;
+    const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
+    const pbText = ret.payback == null ? `doesn't pay back in ${ret.years} years` : `pays back in ${ret.payback.toFixed(1)} years`;
+    const priceSum = `${(E[pfx + "_peak_c"] || 0)}c peak · ${(E[pfx + "_offpeak_c"] || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
-    box.innerHTML =
-      `<div class="sba-kpis">` +
-        kpi("save", "Bill savings per year", save1, money(save1), withBatt ? "solar + battery" : "with solar", true) +
-        kpi("lifetime", "Savings over panel lifetime", ret.nodes.lifetime, money(ret.nodes.lifetime), `${ret.years} years`) +
-        kpi("net", "Net savings over lifetime", ret.nodes.net, money(ret.nodes.net), pbText) +
-        kpi("irr", "Return on investment per year", ret.nodes.irr, ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1), ret.real ? "real, after inflation" : "nominal") +
+    const SX_SPLIT = "<!--sx-split-->";
+    const html =
+      `<div class="sx">` +
+      `<div class="sx-summary">` +
+        `<div class="sx-cell hero" data-wk="save" tabindex="0" role="button"><div class="l">Bill savings</div>` +
+          `<div class="v">${haveGen ? money(save1) : "–"}</div><div class="s">a year${withBatt ? ", with the battery" : ""}</div></div>` +
+        `<div class="sx-cell" data-wk="lifetime" tabindex="0" role="button"><div class="l">Savings over ${ret.years} years</div>` +
+          `<div class="v">${haveGen ? money(ret.nodes.lifetime) : "–"}</div><div class="s">the panels' life</div></div>` +
+        `<div class="sx-cell" data-wk="net" tabindex="0" role="button"><div class="l">Net savings</div>` +
+          `<div class="v">${haveGen ? money(ret.nodes.net) : "–"}</div><div class="s">${haveGen ? pbText : ""}</div></div>` +
+        `<div class="sx-cell" data-wk="irr" tabindex="0" role="button"><div class="l">Return per year</div>` +
+          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">${ret.real ? "after inflation" : "before inflation"}</div></div>` +
       `</div>` +
-      (haveGen ? "" : `<div class="sba-note">Waiting for this roof's sun to load&hellip;</div>`) +
-      `<div class="sba-h">Assumptions</div>` +
-      `<div class="sba-ba">` +
-        `<div class="sba-col"><div class="sba-colh">Before</div>${billIn("summer")}${billIn("winter")}</div>` +
-        `<div class="sba-col"><div class="sba-colh">After ${withBatt ? "solar + battery" : "solar"}</div>` +
-          box2("after-summer", "Summer minimum bill", haveGen ? bill(S.summer[after]) : "–") +
-          box2("after-winter", "Winter maximum bill", haveGen ? bill(S.winter[after]) : "–") +
-        `</div>` +
+      (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
+      // the corner card's few key facts (shown only while compact)
+      `<div class="sx-group sx-glance">` +
+        row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${Wk.show(N.kwp)}${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
+        (haveGen ? row("Winter bill", `<span class="val">${btMoney(S.winter.nowMonth.value)} → <b>${S.winter[after].value < -0.5 ? btMoney(-S.winter[after].value) + " credit" : btMoney(S.winter[after].value)}</b></span>`, { go: "after-winter", small: "a month, today → with solar" }) : "") +
+        (haveGen ? row("Summer bill", `<span class="val">${btMoney(S.summer.nowMonth.value)} → <b>${S.summer[after].value < -0.5 ? btMoney(-S.summer[after].value) + " credit" : btMoney(S.summer[after].value)}</b></span>`, { go: "after-summer" }) : "") +
       `</div>` +
-      `<div class="sba-note">${matchNote}</div>` +
+      `</div>` + SX_SPLIT + `<div class="sx sx-more">` +
 
-      `<div class="sba-sub">Pricing</div>` +
-      `<div class="sba-g5">` +
-        priceIn("peak", "Peak price", pfx + "_peak_c") +
-        priceIn("offpeak", "Off-peak price", pfx + "_offpeak_c") +
-        priceIn("offsell", "Off-peak export price", pfx + "_offpeak_sell_c") +
-        priceIn("peaksell", "Peak export price", pfx + "_peak_sell_c") +
-        inBox("daily", "Daily charge", +(E[pfx + "_daily"] || 0).toFixed(2), "$", "/day", `min="0" step="0.1" data-econ="${pfx}_daily"`) +
+      `<div class="sx-h">Assumptions</div>` +
+      `<div class="sx-sub">Power bills</div>` +
+      `<div class="sx-group sx-bills">` +
+        `<div class="sx-row head"><span></span><span>Today</span><span>${withBatt ? "Solar + battery" : "With solar"}</span></div>` +
+        `<div class="sx-row"><span class="lbl">Summer<small>lowest month</small></span>${billIn("summer")}${haveGen ? afterBill("summer") : `<span class="val">–</span>`}</div>` +
+        `<div class="sx-row"><span class="lbl">Winter<small>highest month</small></span>${billIn("winter")}${haveGen ? afterBill("winter") : `<span class="val">–</span>`}</div>` +
       `</div>` +
-      `<div class="sba-note">Including GST. Peak hours: ${btPeakText()}. ${isBiz ? "Business" : "Home"} prices; they apply across the whole map.</div>` +
-      `<details class="sba-adv" id="bt-adv-price"><summary>Advanced pricing</summary>` +
-        `<div class="sba-g3">` +
-          inBox("infl", "Power prices rise", E.elec_inflation_pct, "", "%/yr", `step="0.5" data-econ="elec_inflation_pct"`) +
-          inBox("edec", "Export rates fall", E.export_decline_pct, "", "%/yr", `step="0.5" data-econ="export_decline_pct"`) +
-          inBox("cpi", "General inflation", E.cpi_pct, "", "%/yr", `step="0.5" data-econ="cpi_pct"`) +
-          inBox("life", "Panel lifetime", E.life_years, "", "years", `min="5" max="40" step="1" data-econ="life_years"`) +
-          inBox("deg", "Panels lose output", E.degradation_pct, "", "%/yr", `step="0.1" data-econ="degradation_pct"`) +
-          `<div class="sba-box"><div class="k"><span>Money in</span></div>` + seg("real", [["1", "Real (today's $)"], ["0", "Nominal"]], E.real_prices ? "1" : "0") + `</div>` +
+      `<div class="sx-foot">${matchNote}</div>` +
+
+      `<div class="sx-sub">Electricity prices</div>` +
+      `<div class="sx-group">` +
+        price("Peak", pfx + "_peak_c") +
+        price("Off-peak", pfx + "_offpeak_c") +
+        price("Export, off-peak", pfx + "_offpeak_sell_c") +
+        price("Export, peak", pfx + "_peak_sell_c") +
+        row("Daily charge", field("daily", +(E[pfx + "_daily"] || 0).toFixed(2), `min="0" step="0.1" data-econ="${pfx}_daily"`, "$", "/day")) +
+        btPeakHours().map(([a, b], i) => {
+          const lo = i === 0 ? 4 : 12, hi = i === 0 ? 13 : 24;
+          return `<div class="sx-row sx-peak"><span class="lbl">${i === 0 ? "Morning peak" : "Evening peak"}<small data-peak-label="${i}">${hours([a, b])}</small></span>` +
+            `<div class="sx-range" style="--lo:${(a - lo) / (hi - lo) * 100}%;--hi:${(b - lo) / (hi - lo) * 100}%">` +
+            `<input type="range" min="${lo}" max="${hi}" step="1" value="${a}" data-peak="${i}" data-end="0" aria-label="${i === 0 ? "Morning" : "Evening"} peak starts">` +
+            `<input type="range" min="${lo}" max="${hi}" step="1" value="${b}" data-peak="${i}" data-end="1" aria-label="${i === 0 ? "Morning" : "Evening"} peak ends">` +
+            `</div></div>`;
+        }).join("") +
+      `</div>` +
+      `<div class="sx-foot">Including GST. Peak prices apply ${btPeakHours().map(hours).join(" and ")}. ${isBiz ? "Business" : "Home"} prices, used across the map.</div>` +
+      `<details class="sx-dis" id="bt-adv-price"><summary><span class="t">Prices over the years</span>` +
+        `<span class="sum">${E.real_prices ? "today's dollars" : "nominal"} · power +${E.elec_inflation_pct}%/yr</span></summary>` +
+        `<div class="sx-group">` +
+          row("Power prices rise", field("infl", E.elec_inflation_pct, `step="0.5" data-econ="elec_inflation_pct"`, "", "%/yr")) +
+          row("Export rates fall", field("edec", E.export_decline_pct, `step="0.5" data-econ="export_decline_pct"`, "", "%/yr")) +
+          row("General inflation", field("cpi", E.cpi_pct, `step="0.5" data-econ="cpi_pct"`, "", "%/yr")) +
+          row("Panel life", field("life", E.life_years, `min="5" max="40" step="1" data-econ="life_years"`, "", "years")) +
+          row("Panels lose output", field("deg", E.degradation_pct, `step="0.1" data-econ="degradation_pct"`, "", "%/yr")) +
+          row("Show money in", seg("real", [["1", "Today's $"], ["0", "Nominal"]], E.real_prices ? "1" : "0", "Money in")) +
         `</div>` +
-        `<div class="sba-note">Real: every future year is divided by general inflation, so all figures are in today's dollars. Nominal: the dollars of each year.</div>` +
+        `<div class="sx-foot">Today's dollars take general inflation out of every future year; nominal shows the dollars of each year.</div>` +
       `</details>` +
 
-      `<div class="sba-sub">Consumption assumptions</div>` +
-      `<div class="sba-g3">` +
-        box2("daykw", "Daytime load (9am–5pm)", Wk.show(N.dayKw)) +
-        box2("dayshare", "Share of the day's use", Wk.show(N.dayShare) + `<span class="u"> of daily load</span>`) +
-        inBox("total", "Total electrical load", Math.round(N.useYear.value), "", "kWh/yr", `min="0" step="100" data-total="1"`,
-          totalMine ? { cls: "yours", text: "yours" } : { text: calibBy === "bills" ? "from your bills" : "our estimate" }, "use") +
+      `<div class="sx-sub">Electricity use</div>` +
+      `<div class="sx-group">` +
+        row("Use a year", `<button type="button" class="sx-info" data-wk="use" aria-label="How the yearly use is worked out">ⓘ</button>` +
+          field("total", Math.round(N.useYear.value), `min="0" step="100" data-total="1"`, "", "kWh", calibBy !== "total"),
+          { small: calibBy === "total" ? "yours" : calibBy === "bills" ? "from your bills" : "our estimate" }) +
+        row("Daytime use", val(Wk.show(N.dayKw)), { go: "daykw", small: "average, 9am–5pm" }) +
+        row("Used in the daytime", val(Wk.show(N.dayShare), "of the day"), { go: "dayshare" }) +
+        `<div class="sx-use"><div class="bar">` + parts.map(([k, v]) =>
+          `<div style="width:${(100 * v / totalUse).toFixed(1)}%;background:${BT_PART_STYLE[k].colour}"></div>`).join("") +
+        `</div><div class="key">` + parts.map(([k, v]) =>
+          `<span data-wk="part-${k}" tabindex="0" role="button"><i style="background:${BT_PART_STYLE[k].colour}"></i>${BT_PART_STYLE[k].label} ${Math.round(v).toLocaleString()} kWh</span>`).join("") +
+        `</div></div>` +
       `</div>` +
-      `<div class="sba-use">${stack}</div><div class="sba-key">${key}</div>` +
-      `<details class="sba-adv" id="bt-adv-home"><summary>About this ${isBiz ? "business" : "home"}</summary>` +
-        q("Building", seg("type", [["home", "Home"], ["business", "Business"]], state.type)) +
-        (isBiz ? "" : q("People", `<div class="sba-step" data-step="people"><button type="button" data-d="-1" aria-label="Fewer people">&minus;</button><b>${P.people}</b><button type="button" data-d="1" aria-label="More people">+</button></div>`)) +
-        (isBiz ? "" : q("Hot water", seg("water", [["electric", "Electric"], ["heatpump", "Heat pump"], ["gas", "Gas"]], P.water))) +
-        (isBiz || P.water === "gas" ? "" : tick("waterOnSun", P.waterOnSun, "Heat water while the sun's out (timer)")) +
-        q("Heating", seg("heating", [["heatpump", "Heat pumps"], ["electric", "Electric heaters"], ["gas", isBiz ? "Gas" : "Gas / wood"], ["none", "None"]], P.heating)) +
-        q(isBiz ? "Electric vehicles" : "Electric cars", seg("evs", (isBiz ? [0, 1, 2, 4, 8] : [0, 1, 2, 3]).map(n => [n, String(n)]), P.evs)) +
-        (P.evs > 0 ? tick("evOnSun", P.evOnSun, isBiz ? "Charge during the working day" : "Charge when it's sunny") : "") +
-        `<div class="sba-note">These shape the estimate. Entering your own bills or yearly use above scales it to match.</div>` +
+      `<details class="sx-dis" id="bt-adv-home"><summary><span class="t">About this ${isBiz ? "business" : "home"}</span>` +
+        `<span class="sum">${isBiz ? "Business" : `${P.people} ${P.people === 1 ? "person" : "people"}`} · ${({ heatpump: "heat pumps", electric: "electric heaters", gas: "gas heating", none: "no heating" })[P.heating]}${P.evs ? ` · ${P.evs} EV${P.evs > 1 ? "s" : ""}` : ""}</span></summary>` +
+        `<div class="sx-group">` +
+          row("Building", seg("type", [["home", "Home"], ["business", "Business"]], state.type, "Building")) +
+          (isBiz ? "" : row("People", `<div class="sx-step" data-step="people"><button type="button" data-d="-1" aria-label="Fewer people">−</button><b>${P.people}</b><button type="button" data-d="1" aria-label="More people">+</button></div>`)) +
+          (isBiz ? "" : row("Hot water", seg("water", [["electric", "Electric"], ["heatpump", "Heat pump"], ["gas", "Gas"]], P.water, "Hot water"))) +
+          (isBiz || P.water === "gas" ? "" : row("Heat water when it's sunny", `<label class="sx-switch"><input type="checkbox" data-tick="waterOnSun" ${P.waterOnSun ? "checked" : ""} aria-label="Heat water when it's sunny"><i></i></label>`, { small: "a timer on the cylinder" })) +
+          row("Heating", seg("heating", [["heatpump", "Heat pump"], ["electric", "Electric"], ["gas", "Gas"], ["none", "None"]], P.heating, "Heating")) +
+          row(isBiz ? "Electric vehicles" : "Electric cars", seg("evs", (isBiz ? [0, 1, 2, 4, 8] : [0, 1, 2, 3]).map(n => [n, String(n)]), P.evs, "Electric cars")) +
+          (P.evs > 0 ? row(isBiz ? "Charge in the working day" : "Charge when it's sunny", `<label class="sx-switch"><input type="checkbox" data-tick="evOnSun" ${P.evOnSun ? "checked" : ""} aria-label="Charge when it's sunny"><i></i></label>`) : "") +
+        `</div>` +
+        `<div class="sx-foot">These shape our estimate. Entering your bills or yearly use scales it to match.</div>` +
       `</details>` +
 
-      `<div class="sba-sub">System pricing</div>` +
-      `<div class="sba-g3">` +
-        inBox("solarrate", "Solar cost per kW", Math.round(N.solarRate.value), "$", "/kW", `min="0" step="50" data-sys="solarPerKw"`,
-          state.sys.solarPerKw > 0 ? { cls: "yours", text: "yours" } : { text: "typical for this size" }) +
-        box2("solarcost", "Solar total cost", money(N.solarCost), `<span class="u">${Wk.show(N.kwp)}</span>`) +
-        `<div class="sba-box"><div class="k"><span>Battery</span></div>` +
-          seg("battery", [[0, "None"], [5, "5 kWh"], [10, "10 kWh"], [13.5, "13.5"]].concat(isBiz ? [[30, "30"]] : []), P.battery) + `</div>` +
-        inBox("battrate", "Battery cost per kWh", Math.round(N.battRate.value), "$", "/kWh", `min="0" step="50" data-sys="battPerKwh"`,
-          state.sys.battPerKwh > 0 ? { cls: "yours", text: "yours" } : { text: "typical" }) +
-        box2("battcost", "Battery total cost", money(N.battCost)) +
-        box2("allcost", "Total cost", money(withBatt ? N.allCost : N.solarCost)) +
+      `<div class="sx-sub">System cost</div>` +
+      `<div class="sx-group">` +
+        row("Solar price", field("solarrate", Math.round(N.solarRate.value), `min="0" step="50" data-sys="solarPerKw"`, "$", "/kW", !(state.sys.solarPerKw > 0)),
+          { small: state.sys.solarPerKw > 0 ? "yours" : "typical for this size" }) +
+        row("Solar", val(money(N.solarCost)), { go: "solarcost", small: Wk.show(N.kwp) }) +
+        row("Battery", seg("battery", [[0, "None"], [5, "5"], [10, "10"], [13.5, "13.5"]].concat(isBiz ? [[30, "30"]] : []), P.battery, "Battery size, kWh"), { small: "kWh" }) +
+        (withBatt ? row("Battery price", field("battrate", Math.round(N.battRate.value), `min="0" step="50" data-sys="battPerKwh"`, "$", "/kWh", !(state.sys.battPerKwh > 0)),
+          { small: state.sys.battPerKwh > 0 ? "yours" : "typical" }) +
+          row("Battery", val(money(N.battCost)), { go: "battcost" }) : "") +
+        row("Total", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost", cls: "total" }) +
       `</div>` +
-      `<div class="sba-note">An estimate from the roof, the local climate and the assumptions above, not a quote. Tap any figure to see how it was worked out.</div>`;
+      `<div class="sx-foot">An estimate from the roof, the local climate and these assumptions, not a quote. Tap any result to see how it's worked out.</div>` +
+      `</div>`;
+    const [top, more] = html.split(SX_SPLIT);
+    const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
+    if (moreBox) { box.innerHTML = top; moreBox.innerHTML = more; } else box.innerHTML = top + more;
+    const roots = moreBox ? [box, moreBox] : [box];
+    const qa = sel => roots.flatMap(rt => [...rt.querySelectorAll(sel)]);
+    const q1 = sel => qa(sel)[0] || null;
 
     // every result opens its workings
     const nodeFor = {
       save: () => save1, lifetime: () => ret.nodes.lifetime, net: () => ret.nodes.net, irr: () => ret.nodes.irr,
-      "now-summer": () => S.summer.nowMonth, "now-winter": () => S.winter.nowMonth,
       "after-summer": () => S.summer[after], "after-winter": () => S.winter[after],
       daykw: () => N.dayKw, dayshare: () => N.dayShare, use: () => N.useYear,
       solarcost: () => N.solarCost, battcost: () => N.battCost, allcost: () => withBatt ? N.allCost : N.solarCost,
     };
     Object.keys(r.yearParts).forEach(k => { nodeFor["part-" + k] = () => N.parts[k]; });
-    box.querySelectorAll("[data-wk]").forEach(elx => {
+    qa("[data-wk]").forEach(elx => {
       const f = nodeFor[elx.dataset.wk];
       if (f && typeof WkView !== "undefined") WkView.bind(elx, f);
     });
 
     // wiring
-    const keepOpen = () => ["bt-adv-price", "bt-adv-home"].filter(i => { const d = box.querySelector("#" + i); return d && d.open; });
+    const keepOpen = () => ["bt-adv-price", "bt-adv-home"].filter(i => { const d = q1("#" + i); return d && d.open; });
     const redraw = (focusSel) => {
       const open = keepOpen();
       draw();
-      open.forEach(i => { const d = box.querySelector("#" + i); if (d) d.open = true; });
-      if (focusSel) { const f = box.querySelector(focusSel); if (f) f.focus(); }
+      const rq = sel => [box, ctx.moreBox].filter(Boolean).map(rt => rt.querySelector(sel)).find(Boolean);
+      open.forEach(i => { const d = rq("#" + i); if (d) d.open = true; });
+      if (focusSel) { const f = rq(focusSel); if (f) f.focus(); }
     };
-    box.querySelectorAll(".sba-seg").forEach(g => g.addEventListener("click", ev => {
+    qa(".sx-seg").forEach(g => g.addEventListener("click", ev => {
       const b = ev.target.closest("button"); if (!b) return;
       const k = g.dataset.key, v = b.dataset.v;
       if (k === "real") { econ.real_prices = v === "1"; if (ctx.onEcon) ctx.onEcon(); else redraw(); return; }
       if (k === "type") state.type = v;
       else (state.type === "business" ? state.business : state.home)[k] = (k === "evs" || k === "battery") ? +v : v;
-      save(); redraw(`.sba-seg[data-key="${k}"] button[data-v="${v}"]`);
+      save(); redraw(`.sx-seg[data-key="${k}"] button[data-v="${v}"]`);
     }));
-    box.querySelectorAll(".sba-step button").forEach(b => b.addEventListener("click", () => {
+    qa(".sx-step button").forEach(b => b.addEventListener("click", () => {
       state.home.people = Math.max(1, Math.min(8, state.home.people + (+b.dataset.d)));
-      save(); redraw();
+      save(); redraw(`.sx-step button[data-d="${b.dataset.d}"]`);
     }));
-    box.querySelectorAll("input[data-tick]").forEach(c => c.addEventListener("change", () => {
-      (state.type === "business" ? state.business : state.home)[c.dataset.tick] = c.checked; save(); redraw();
+    qa("input[data-tick]").forEach(c => c.addEventListener("change", () => {
+      (state.type === "business" ? state.business : state.home)[c.dataset.tick] = c.checked; save(); redraw(`input[data-tick="${c.dataset.tick}"]`);
     }));
-    box.querySelectorAll("input[data-bill]").forEach(inp => inp.addEventListener("change", () => {
+    qa("input[data-bill]").forEach(inp => inp.addEventListener("change", () => {
       const v = parseFloat(inp.value);
       const c = (state.calib && !state.calib.total) ? state.calib : {};
       c[inp.dataset.bill] = v > 0 ? v : null;
       state.calib = (c.winter > 0 || c.summer > 0) ? c : null;
       save(); redraw();
     }));
-    box.querySelectorAll("input[data-total]").forEach(inp => inp.addEventListener("change", () => {
+    qa("input[data-total]").forEach(inp => inp.addEventListener("change", () => {
       const v = parseFloat(inp.value);
       state.calib = v > 0 ? { total: v } : null;
       save(); redraw();
     }));
-    box.querySelectorAll("input[data-sys]").forEach(inp => inp.addEventListener("change", () => {
+    qa("input[data-sys]").forEach(inp => inp.addEventListener("change", () => {
       const v = parseFloat(inp.value);
       state.sys[inp.dataset.sys] = v > 0 ? v : null;
       save(); redraw();
     }));
-    box.querySelectorAll("input[data-econ]").forEach(inp => inp.addEventListener("change", () => {
+    // peak windows: the label follows the drag; the sums run when it is let go
+    qa("input[data-peak]").forEach(inp => {
+      const read = () => {
+        const i = +inp.dataset.peak;
+        const pair = qa(`input[data-peak="${i}"]`);
+        let a = +pair.find(x => x.dataset.end === "0").value, b = +pair.find(x => x.dataset.end === "1").value;
+        if (b <= a) { if (inp.dataset.end === "0") a = b - 1; else b = a + 1; }
+        return [i, a, b];
+      };
+      inp.addEventListener("input", () => {
+        const [i, a, b] = read();
+        const lab = q1(`[data-peak-label="${i}"]`); if (lab) lab.textContent = hours([a, b]);
+        const rg = inp.parentElement, lo = +inp.min, hi = +inp.max;
+        rg.style.setProperty("--lo", (a - lo) / (hi - lo) * 100 + "%");
+        rg.style.setProperty("--hi", (b - lo) / (hi - lo) * 100 + "%");
+      });
+      inp.addEventListener("change", () => {
+        const [i, a, b] = read();
+        const ph = btPeakHours().map(w => w.slice());
+        ph[i] = [a, b];
+        econ.peak_hours = ph;
+        if (ctx.onEcon) ctx.onEcon(); else redraw();
+      });
+    });
+    qa("input[data-econ]").forEach(inp => inp.addEventListener("change", () => {
       const v = parseFloat(inp.value);
-      if (!(v >= 0) && inp.dataset.econ !== "elec_inflation_pct" && inp.dataset.econ !== "cpi_pct") return;
       if (!Number.isFinite(v)) return;
+      if (v < 0 && inp.dataset.econ !== "elec_inflation_pct" && inp.dataset.econ !== "cpi_pct") return;
       econ[inp.dataset.econ] = v;
       if (ctx.onEcon) ctx.onEcon(); else redraw();
     }));
