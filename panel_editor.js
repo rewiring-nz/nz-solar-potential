@@ -152,8 +152,8 @@
       type: "FeatureCollection",
       features: S.panels.map((p, i) => ({
         type: "Feature",
-        properties: { kind: "panel", building_id: S.buildingId,
-                      _edit_index: i, _selected: S.selected.has(i) ? 1 : 0 },
+        properties: Object.assign({ kind: "panel", building_id: S.buildingId,
+                      _edit_index: i, _selected: S.selected.has(i) ? 1 : 0 }, p.sun || {}),
         geometry: { type: "Polygon",
                     coordinates: [p.ring.map(([x, y]) => toLngLat(x, y))
                                         .concat([toLngLat(p.ring[0][0], p.ring[0][1])])] },
@@ -294,8 +294,13 @@
                : S.origin || map.getCenter().toArray();
     setOrigin(seed[0], seed[1]);
     S.buildingId = buildingId;
+    // Each panel keeps its roof face's sunlight inputs (tilt/direction bin and
+    // shading) so the workings can still price it panel by panel; a panel
+    // added here has none and is priced at the roof's average (generation.js).
     S.panels = tiles.map(t => ({
       ring: t.lngLatRing.slice(0, -1).map(([lng, lat]) => toLocal(lng, lat)),
+      sun: (t.props && t.props.sb != null)
+        ? { sb: t.props.sb, ab: t.props.ab, sh: t.props.sh } : null,
     }));
     S.originalCount = S.panels.length;
     S.selected = new Set();

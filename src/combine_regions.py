@@ -334,6 +334,13 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
         assumptions["density_p95_kwh_km2_by_lod"] = getattr(_combine_cells, "density_p95_by_lod", {})
         (work / "assumptions.json").write_text(json.dumps(assumptions))
 
+        # each region's sunlight document, for the workings (src/workings_data.py)
+        sun_dir = work / "sun"
+        sun_dir.mkdir()
+        for r in regions:
+            if (out_root / r / "sun.json").exists():
+                shutil.copy2(out_root / r / "sun.json", sun_dir / f"{r}.json")
+
         # per-region summaries for the gate, and the totals
         sdir = work / "summaries"
         sdir.mkdir()
@@ -365,7 +372,7 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
             shutil.move(str(work / "addresses.json"), str(dest / "addresses.json"))
             if (dest / "addresses").exists():
                 shutil.rmtree(dest / "addresses")
-        for folder in ("building_detail", "heatmap_tiles", "addresses", "seasonal_curves", "summaries"):
+        for folder in ("building_detail", "heatmap_tiles", "addresses", "seasonal_curves", "summaries", "sun"):
             if (work / folder).exists():
                 if (dest / folder).exists():
                     shutil.rmtree(dest / folder)

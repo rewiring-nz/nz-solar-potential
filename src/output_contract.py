@@ -27,7 +27,7 @@ import re
 import subprocess
 from pathlib import Path
 
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2   # 2: the workings (sr; sb/ab/sh; summary.workings), 17 Oct
 
 # buildings.pmtiles, layer "buildings": what the map draws and the panel reads.
 BUILDING_LAYER = "buildings"
@@ -52,18 +52,22 @@ BUILDING_ALLOWED = [
     # 1 where no LiDAR exists and the roof pitch was guessed
     # (src/synthesize_dsm.py); absent everywhere else. Optional.
     "pitch_guessed",
+    # the region whose sunlight table (data/sun/<sr>.json) priced this roof
+    "sr",
 ]
 
 # panel_layouts.pmtiles, layer "layout": facets, panels and obstructions.
 LAYOUT_LAYER = "layout"
 LAYOUT_ALLOWED = ["kind", "building_id", "fill_rank", "fill_order", "array_id",
                   "array_size", "ac_kwh_year", "slope_deg", "aspect_deg",
-                  "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype"]
+                  "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype",
+                  # the workings: tilt/direction bin and shading (src/workings_data.py)
+                  "sb", "ab", "sh"]
 LAYOUT_REQUIRED = {
     "facet": ["kind", "building_id", "slope_deg", "aspect_deg", "poa_kwh_m2_yr",
               "panel_count", "btype"],
     "panel": ["kind", "building_id", "fill_rank", "fill_order", "array_id",
-              "array_size", "ac_kwh_year", "btype"],
+              "array_size", "ac_kwh_year", "btype", "sb", "ab", "sh"],
     "obstruction": ["kind", "building_id", "btype"],
     # A building with no usable roof surface is retained as a footprint
     # feature so its absence from the estimate is explicit. The map draws the
@@ -83,7 +87,7 @@ CELL_REQUIRED = ["n", "n_est", "panel_count", "fitted_kwp", "fitted_kwh", "area"
 
 # summary.json: what the deploy gate, status and combine read.
 SUMMARY_REQUIRED = ["region", "n", "n_est", "panel_count", "kwp", "kwh", "ladder",
-                    "by_type", "centroid", "assumptions", "model", "contract"]
+                    "by_type", "centroid", "assumptions", "model", "contract", "workings"]
 
 # addresses.json: [[label, lon, lat, building_id], ...]
 ADDRESS_ROW_LEN = 4

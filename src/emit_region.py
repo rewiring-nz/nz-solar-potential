@@ -66,13 +66,15 @@ DEM_WIDE = DATA_DIR / "dem_wide_mosaic.tif"
 HEATMAP_ZMIN, HEATMAP_ZMAX = 9, 17
 
 # What the map's building layer carries, plus the type fields the toggle reads.
-SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed"]
+SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed", "sr"]
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
 LAYOUT_PROPS = ["kind", "building_id", "fill_rank", "fill_order", "array_id",
                 "array_size", "ac_kwh_year", "slope_deg", "aspect_deg",
-                "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype"]
+                "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype",
+                # the workings: sunlight-table bin and shading (src/workings_data.py)
+                "sb", "ab", "sh"]
 
 
 def _git_sha():
@@ -147,6 +149,41 @@ def emit(region, out_root=OUT_ROOT):
 
     # 1. the ladders (deciles, coverage POA, system steps) -- per building
     matched = bake(sp, layouts)
+
+    # 1b. THE WORKINGS. The browser shows how every kWh was reached, from the
+    # same inputs the model used: this region's sunlight table and hourly
+    # days (captured from the model as it is built) and each panel's bin and
+    # shading. Every panel's kWh is re-derived from exactly what ships, and a
+    # mismatch stops the emit -- the map must never show workings that do
+    # not add up to its own numbers (src/workings_data.py).
+    from src import workings_data as WD
+    c0 = area_centroid_wgs84(region)
+    # built exactly as the layout stage builds it (None -> SolarModel())
+    sun_model, captured, sun_source = WD.build_model_and_capture(*(c0 or (None, None)))
+    slat, slon = sun_model.lat, sun_model.lon
+    checks = WD.tag_and_check_panels(layouts, sun_model)
+    used_bins, face_bad = set(), 0
+    for f in layouts["features"]:
+        fp = f["properties"]
+        if fp.get("kind") == "panel" and "sb" in fp:
+            used_bins.add((fp["sb"], fp["ab"]))
+        elif fp.get("kind") == "facet" and fp.get("plane_slope_deg") is not None:
+            fp["sb"], fp["ab"] = WD.bins_of(fp["plane_slope_deg"], fp["plane_aspect_deg"])
+            fp["sh"] = round(float(fp.get("shading_factor", 1.0)), WD.SHADE_DP)
+            used_bins.add((fp["sb"], fp["ab"]))
+            if fp.get("poa_kwh_m2_yr") is not None and abs(
+                    sun_model.lookup[(fp["sb"], fp["ab"])] * fp["sh"] - fp["poa_kwh_m2_yr"]) > WD.round_tol(
+                    sun_model.lookup[(fp["sb"], fp["ab"])]):
+                face_bad += 1
+    checks["faces_mismatched"] = face_bad
+    for f in feats:
+        f["properties"]["sr"] = region
+    print(f"[{region}] workings: {checks['panels']:,} panels re-derived, "
+          f"{checks['mismatched']} mismatched, {checks['missing_inputs']} without inputs, "
+          f"{face_bad} faces mismatched; sunlight from {sun_source}")
+    if checks["mismatched"] or checks["missing_inputs"] or face_bad:
+        raise SystemExit(f"[{region}] the shipped workings do not reproduce the model's kWh "
+                         f"({checks}) -- re-run apply_yield for this region, then emit again")
 
     # 2. terrain masks, at THIS region's sun, from the DEM window it reaches
     # area_centroid_wgs84 returns (lat, lon) -- SolarModel's order, not
@@ -406,6 +443,10 @@ def emit(region, out_root=OUT_ROOT):
         "contract": CONTRACT_VERSION,
         "ladder": ladder,
     }
+    summary["workings"] = checks
+    (tmp / "sun.json").write_text(json.dumps(
+        WD.sun_doc(region, slat, slon, sun_model, captured, sun_source, used_bins),
+        separators=(",", ":")))
     (tmp / "summary.json").write_text(json.dumps(summary, separators=(",", ":")))
 
     # Atomic swap: the region's output either is the previous complete set or

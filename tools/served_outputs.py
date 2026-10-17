@@ -16,5 +16,9 @@ SERVED_DIRS = [
     "addresses",
     "seasonal_curves",
     "summaries",
+    # each region's sunlight table, for the workings (src/workings_data.py)
+    "sun",
 ]
+# Fetched whole by the page, and compressible ~4x: stored gzip-encoded.
+GZIP_DIRS = {"sun"}
 STATIC_DIRS = ["terrain"]

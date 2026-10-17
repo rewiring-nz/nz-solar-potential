@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from cloud_profile import load_profile
-from tools.served_outputs import SERVED_DIRS, SERVED_FILES, STATIC_DIRS
+from tools.served_outputs import GZIP_DIRS, SERVED_DIRS, SERVED_FILES, STATIC_DIRS
 
 DATA = ROOT / "data"
 
@@ -88,6 +88,7 @@ def publish(version):
         p = DATA / d
         if p.is_dir():
             _run(["gcloud", "storage", "rsync", "-r", "-q", f"--cache-control={CACHE}",
+                  *(["--gzip-local-all"] if d in GZIP_DIRS else []),
                   str(p), f"{base}/{d}"])
     older = [v for v in versions() if v < int(version)]
     for d in STATIC_DIRS:

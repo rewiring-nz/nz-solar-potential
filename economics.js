@@ -26,6 +26,17 @@ const ECON_DEFAULTS = {
   // the same for both today.
   home_buy_c: 30, home_sell_c: 14,
   biz_buy_c: 17,  biz_sell_c: 14,
+  // TIME-OF-USE PRICES (the building panel, 17 Oct). Peak hours cost more;
+  // export can be paid differently at peak. Defaults keep a typical home's
+  // average near the old flat 30c. Cents per kWh incl. GST; daily in $.
+  home_peak_c: 34, home_offpeak_c: 26, home_peak_sell_c: 14, home_offpeak_sell_c: 14, home_daily: 2.5,
+  biz_peak_c: 19,  biz_offpeak_c: 14,  biz_peak_sell_c: 14,  biz_offpeak_sell_c: 14,  biz_daily: 8.0,
+  // [from, to) hours of the day that are peak
+  peak_hours: [[7, 11], [17, 21]],
+  // Real or nominal money over the system's life. Real divides each future
+  // year by general inflation (CPI), so every figure is in today's dollars.
+  real_prices: true,
+  cpi_pct: 2.0,
   // Which rate set a building gets.
   //
   // ROOF AREA is the real signal and does the work. System size is not an

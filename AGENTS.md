@@ -71,6 +71,40 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 - Update the matching doc in `docs/` in the same change as a command, output,
   or operating-limit change.
 
+## Every number is its own workings (consistency rules)
+
+Every figure the map shows must be traceable by the reader and must agree
+with every other figure that describes the same thing (Josh, 17 Oct). This
+is enforced by code, not by care:
+
+- **Show only Workings nodes.** A number on screen is `node.value` of a
+  `workings.js` node, and its breakdown is that node opened up. Do not
+  compute a displayed figure in view code and do not write a description
+  of a sum beside it; build the sum from `Wk.input/product/sum/...` so the
+  breakdown cannot drift. Non-arithmetic steps are `Wk.table` (with a
+  `rowCheck`) or `Wk.given` with a `check`.
+- **One generation calculation.** `generation.js` prices the panels drawn on
+  the roof from the build's own inputs (tile `sb`/`ab`/`sh`, data/sun/<region>.json
+  captured from `src/solar_model.py` by `src/workings_data.py`). The yellow
+  box, the curve chart, the bills and the savings all read the page's `GEN`.
+  The curve is scaled so its year equals the annual figure; never feed the
+  bills a curve with a different total.
+- **Four locks, all must pass:** (1) `emit_region` re-derives every panel's
+  kWh from the shipped inputs and refuses to emit on a mismatch; (2)
+  `predeploy_check` fails a release whose summaries lack that check or
+  disagree; (3) CI runs `tests/test_workings.mjs`, `tests/test_generation.mjs`
+  (JavaScript vs Python on real panels, tests/fixtures/workings_kinloch.json),
+  `test_bill_tool.mjs` and `test_economics.mjs`; (4) the page runs
+  `Wk.verify` on every breakdown it opens and marks a number that does not add
+  up in red.
+- **Changing the solar model or panel figures:** regenerate the fixture
+  (`tools/export_workings_fixture.py kinloch`) and re-emit every region.
+- **Known exception (to remove):** the payback colours of buildings OTHER
+  than the open one, and the left-hand in-view economics, still use the
+  simpler annual model in `economics.js` (`economicsFor`). The open
+  building's panel colours are priced from its own bill-model figures
+  (`panelEconOpen`), so they agree with the savings beside them.
+
 ## Operating rules (builds, data, review)
 
 - The VM is reachable only through Identity-Aware Proxy: always pass

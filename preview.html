@@ -12,6 +12,8 @@
 <!-- Money maths, shared with tests/test_economics.mjs -->
 <script src="economics.js"></script>
 <!-- The per-building bill and battery tool (tests/test_bill_tool.mjs) -->
+<script src="workings.js"></script>
+<script src="generation.js"></script>
 <script src="bill_tool.js"></script>
 <!-- Hand-editing a roof's panels. Loads after economics.js and wires
      itself only once the map exists (see the _wire call after style load). -->
@@ -435,9 +437,22 @@
     box-shadow: 0 8px 32px rgba(0,0,0,0.5); border: 1px solid var(--line);
   }
   .side-panel.visible { display: block; }
+  /* Specific Building Analysis (17 Oct): wider by default, so the roof's
+     live view takes the right half beside its figures. */
+  .side-panel { width: clamp(384px, 50vw, 860px); }
+  .sba-title { font-size: 21px; font-weight: 800; letter-spacing: -0.3px; color: var(--ink);
+    padding-right: 70px; margin: 0 0 4px; line-height: 1.15; }
+  .side-panel .popup h4.sba-addr { font-size: 15px; font-weight: 650; color: var(--ink); margin: 0 0 2px; }
+  .sba-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s4);
+    align-items: stretch; margin-top: var(--s3); }
+  .sba-top .sba-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+  .sba-top .sba-left .est-section { margin-top: 0; padding-top: 0; border-top: none; }
+  .sba-top .live-view { aspect-ratio: 1 / 1; max-height: none; margin: 0; }
+  .sba-top .rsp-statbox .rsp-power, .sba-top .rsp-statbox .rsp-count { font-size: clamp(22px, 2.4vw, 34px); }
+  @media (max-width: 900px) { .sba-top { grid-template-columns: 1fr; } }
   /* Expanded: wide enough for the chart to breathe and for the two stat blocks
      to sit side by side instead of stacking down a narrow column. */
-  .side-panel.wide { width: 45vw; min-width: 384px; max-width: 900px; }
+  .side-panel.wide { width: 70vw; min-width: 384px; max-width: 1240px; }
   .side-panel.wide .panel-cols { display: grid; grid-template-columns: 1fr 1fr;
     gap: 0 var(--s5); align-items: start; }
   .side-panel.wide .panel-cols > * { min-width: 0; }
@@ -2204,26 +2219,13 @@ map.on("load", async () => {
   // read it. So the estimate uses it here rather than gaining a second copy
   // of the same idea, and the fallback keeps a pre-bake release reading
   // exactly as it did.
-  function bestPoa(props, pct) {
-    const steps = COVERAGE_POA_STEPS.filter(c => props["cov_poa_" + c] != null);
-    if (!steps.length) return props.avg_poa_kwh_m2 || 0;
-    const p = Math.max(steps[0], Math.min(steps[steps.length - 1], pct));
-    for (let i = 0; i < steps.length; i++) {
-      if (p === steps[i]) return props["cov_poa_" + steps[i]];
-      if (p < steps[i]) {
-        const lo = steps[i - 1], hi = steps[i];
-        const vLo = props["cov_poa_" + lo], vHi = props["cov_poa_" + hi];
-        return vLo + (vHi - vLo) * (p - lo) / (hi - lo);
-      }
-    }
-    return props["cov_poa_" + steps[steps.length - 1]];
-  }
+  // One implementation, in generation.js, shared with the workings and the
+  // tests: the figure summed over the view and the one opened up in a
+  // building's breakdown are the same function.
+  function bestPoa(props, pct) { return genBestPoa(props, pct).value; }
 
   function buildingEstimate(props, pct) {
-    const kwp = (props.facet_area_m2 || 0) * (pct / 100) * panelDensityKw;
-    const kwhYear = kwp * bestPoa(props, pct)
-      * (assumptions.inverter_efficiency_pct / 100) * (1 - assumptions.system_derate_pct / 100);
-    return { kwp, kwhYear };
+    return genCoverageValues(props, pct, assumptions);
   }
   // Exposed so the estimate can be checked from the console or a browser test
   // without clicking through the UI. Pure functions, no state.
@@ -2258,6 +2260,7 @@ map.on("load", async () => {
   // One break-even per building on screen. Uses economicsFor so it inherits the
   // cost tiers, the home/business split and the declining export schedule rather
   // than re-deriving any of it.
+  let panelEconOpen = null;   // the open building's own pricing (set by the bill tool)
   function rebuildEconMatch() {
     if (!panelEcon || !panelEconGlobal) {
       panelEconMatch = null; panelEconMerit = null; repaintPanelColours(); return;
@@ -2314,6 +2317,14 @@ map.on("load", async () => {
       const perKwh = basis.lifetime / Math.max(eFull ? fullKwh : kwhYear, 1e-9);
       pairs.push(pr.building_id, costPerPanel / Math.max(perKwh, 1e-9));
     });
+    // The open building is priced by its own panel's figures (bill model),
+    // so its colours agree with the savings shown beside them.
+    if (panelEconOpen && merit.has(panelEconOpen.buildingId)) {
+      const o = panelEconOpen;
+      merit.set(o.buildingId, { cutoff: o.cutoff, costPerPanel: o.costPerPanel, retailBE: o.retailBE, exportBE: o.exportBE });
+      const i = pairs.indexOf(o.buildingId);
+      if (i >= 0 && i % 2 === 0) pairs[i + 1] = o.costPerPanel / Math.max(o.perKwh, 1e-9);
+    }
     panelEconMerit = merit;
     panelEconMatch = pairs.length
       ? ["match", ["get", "building_id"], ...pairs, PANEL_ECON_FALLBACK_KWH]
@@ -3322,16 +3333,25 @@ map.on("load", async () => {
   // heat-map estimate move too, not just the panel counts.
   {
     const el = id => document.getElementById(id);
+    // Only a slider the reader MOVES writes into the assumptions. Loading
+    // the build's values through the sliders snapped them to the 0.5 steps
+    // (11.34% losses became 11.5%, the 2.2238 m2 panel 2.22 m2), so every kWh
+    // on the map sat ~0.2% off the build's own figures -- found by the
+    // workings, 17 Oct.
     const applyAssumptions = () => {
       const w = +el("a-w").value, eff = +el("a-eff").value;
       assumptions.panel_rated_power_w = w;
       assumptions.panel_efficiency_pct = eff;
-      assumptions.panel_area_m2 = +(w / (eff / 100 * 1000)).toFixed(2);
+      assumptions.panel_area_m2 = w / (eff / 100 * 1000);
       assumptions.inverter_efficiency_pct = +el("a-inv").value;
       assumptions.system_derate_pct = +el("a-loss").value;
+      window.__assumptionsEdited = true;
+      afterAssumptions();
+    };
+    const afterAssumptions = () => {
       panelDensityKw = assumptions.panel_rated_power_w / assumptions.panel_area_m2 / 1000;
-      el("a-w-val").textContent = w + "W";
-      el("a-eff-val").textContent = eff + "%";
+      el("a-w-val").textContent = assumptions.panel_rated_power_w + "W";
+      el("a-eff-val").textContent = assumptions.panel_efficiency_pct + "%";
       el("a-inv-val").textContent = assumptions.inverter_efficiency_pct + "%";
       el("a-loss-val").textContent = assumptions.system_derate_pct + "%";
       recomputeInViewSummary();
@@ -3345,11 +3365,13 @@ map.on("load", async () => {
       el("a-eff").value = src.panel_efficiency_pct;
       el("a-inv").value = src.inverter_efficiency_pct;
       el("a-loss").value = src.system_derate_pct;
-      applyAssumptions();
+      for (const k of ["panel_rated_power_w", "panel_efficiency_pct", "panel_area_m2",
+                       "inverter_efficiency_pct", "system_derate_pct"]) assumptions[k] = src[k];
+      afterAssumptions();
     };
     ["a-w", "a-eff", "a-inv", "a-loss"].forEach(id =>
       el(id).addEventListener("input", applyAssumptions));
-    el("a-reset").addEventListener("click", () => loadInto(ASSUMPTION_DEFAULTS));
+    el("a-reset").addEventListener("click", () => { window.__assumptionsEdited = false; loadInto(ASSUMPTION_DEFAULTS); });
     loadInto(assumptions);
 
     // --- Settings dialog: tabs, economics controls -----------------------
@@ -3792,10 +3814,12 @@ map.on("load", async () => {
         </div>` : "";
     return `
       <div class="popup">
-        <h4 style="font-size:17px;">${title}</h4>
+        <div class="sba-title">Specific Building Analysis</div>
+        <h4 class="sba-addr">${title}</h4>
         <div class="rsp-subtitle">${sub}</div>
         ${guessNote}
-        <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
+        <div class="sba-top">
+        <div class="sba-left">
         <div class="est-section" id="est-heatmap" style="border-top:none; margin-top:0; padding-top:0;">
           <div class="est-title"><span>Heat map estimate</span><span class="legend-grad"></span></div>
           <div class="rsp-row">
@@ -3821,6 +3845,10 @@ map.on("load", async () => {
             <div class="rsp-assumption" id="bldg-unmodelled" style="display:none;"></div>
           </div>
         </div>
+        </div>
+        <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
+        </div>
+        <div id="bldg-econ" style="display:none;"></div>
         <div class="curve-toggle" id="curve-toggle">
           <button class="curve-btn active" data-curve="avg">Average</button>
           <button class="curve-btn" data-curve="peak">Sunny day</button>
@@ -3828,7 +3856,6 @@ map.on("load", async () => {
         </div>
         <div id="season-curves"></div>
         <div class="panel-cols">
-        <div id="bldg-econ" class="est-section" style="display:none;"></div>
         <div id="layout-details">
         <div class="est-title" style="margin-top:var(--s5); padding-top:var(--s3);
              border-top:1px solid var(--line);">Proposed panel layout</div>
@@ -3935,7 +3962,16 @@ map.on("load", async () => {
   }
   function renderLiveView(bid) {
     const box = document.getElementById("bldg-live");
-    if (!box || box.offsetParent === null) return;          // hidden (mobile sheet)
+    if (!box) return;
+    // The panel can open, widen or change layout after the first draw (and
+    // the first draw can happen before it has a size at all): redraw
+    // whenever the frame's size changes.
+    if (!box.__ro && typeof ResizeObserver !== "undefined") {
+      box.__ro = new ResizeObserver(() => { if (LIVE.bidWanted != null) renderLiveView(LIVE.bidWanted); });
+      box.__ro.observe(box);
+    }
+    LIVE.bidWanted = bid;
+    if (box.offsetParent === null) return;          // hidden (mobile sheet)
     const geom = selectedGeomById && selectedGeomById[bid];
     const w = box.clientWidth, h = box.clientHeight;
     if (!geom || !w || !h) return;
@@ -3948,13 +3984,14 @@ map.on("load", async () => {
       const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
       const minLat = Math.min(...lats), maxLat = Math.max(...lats);
       const cLng = (minLng + maxLng) / 2, cLat = (minLat + maxLat) / 2;
-      let z = 21;
-      for (; z > 15; z--) {
-        const [ax, ay] = liveMerc(minLng, maxLat, z), [bx, by] = liveMerc(maxLng, minLat, z);
-        if ((bx - ax) * 256 * 1.3 <= w && (by - ay) * 256 * 1.3 <= h) break;
-      }
+      // Zoomed to the roof: the building fills the frame with a thin margin
+      // (fractional zoom, so it is as close as the frame allows, not the
+      // nearest whole tile level below it).
+      const fit = (zz) => { const [ax, ay] = liveMerc(minLng, maxLat, zz), [bx, by] = liveMerc(maxLng, minLat, zz);
+                            return Math.max((bx - ax) * 256 * 1.12 / w, (by - ay) * 256 * 1.12 / h); };
+      let z = Math.min(22.5, Math.max(15, 20 - Math.log2(Math.max(1e-9, fit(20)))));
       const [xf, yf] = liveMerc(cLng, cLat, z);
-      const zt = Math.min(z, 20), sc = Math.pow(2, z - zt);       // tiles stop at 20
+      const zt = Math.min(Math.floor(z), 20), sc = Math.pow(2, z - zt);   // whole tile levels, stop at 20
       const [xft, yft] = liveMerc(cLng, cLat, zt);
       const xt = Math.floor(xft), yt = Math.floor(yft), size = 256 * sc;
       const baseLeft = w / 2 - (xft - xt) * size, baseTop = h / 2 - (yft - yt) * size;
@@ -4015,6 +4052,117 @@ map.on("load", async () => {
   }
   window.__renderLiveView = renderLiveView;
 
+  // ---- THE GENERATION OF THE OPEN SELECTION, WITH ITS WORKINGS ------------
+  // One calculation (generation.js) feeds everything that shows what the roof
+  // makes: the yellow box, the live view, the curve chart, the bills and the
+  // savings. It prices the panels drawn on the roof right now, each from its
+  // own tilt, direction and shading and this town's sunlight table
+  // (data/sun/<region>.json, captured from the model by the build), and its
+  // curve is scaled so the year under it is the same figure. Nothing else in
+  // the panel computes generation.
+  const SUN_DOCS = {};
+  function ensureSun(region) {
+    if (!region) return null;
+    const d = SUN_DOCS[region];
+    if (d && d !== true) return d;
+    if (d === true || d === false) return null;
+    SUN_DOCS[region] = true;
+    fetch(`${DATA_BASE}data/sun/${region}.json?v=${DATA_VERSION}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(doc => {
+        SUN_DOCS[region] = doc || false;
+        if (doc && selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+      })
+      .catch(() => { SUN_DOCS[region] = false; });
+    return null;
+  }
+  function assumptionsAsBuilt() {
+    const d = ASSUMPTION_DEFAULTS;
+    return ["panel_rated_power_w", "panel_area_m2", "inverter_efficiency_pct", "system_derate_pct"]
+      .every(k => assumptions[k] === d[k]);
+  }
+  let GEN = null;   // the open selection's generation: {ids, kwp, gen, count, curve, source}
+  function generationFor(bid, props) {
+    const m = generationForInner(bid, props);
+    // The page must price with the build's own assumptions unless the reader
+    // changed them: say so on the figure if it ever does not.
+    if (!assumptionsAsBuilt() && !window.__assumptionsEdited) {
+      m.gen.flags.push("The page's panel assumptions differ from the build's, and nobody changed them. Please report this.");
+      console.error("[workings] assumptions drifted from the build's", assumptions, ASSUMPTION_DEFAULTS);
+    }
+    return m;
+  }
+  function generationForInner(bid, props) {
+    const sun = ensureSun(props.sr);
+    const F = liveFeatures(bid);
+    if (mode === "layout") {
+      const uniq = new Map();
+      F.panels.forEach(p => {
+        const k = p.q.fill_order != null && !F.edited ? p.q.fill_order : (p.q._edit_index != null ? "e" + p.q._edit_index
+                : p.g.coordinates[0][0].join(","));
+        if (!uniq.has(k)) uniq.set(k, F.edited ? Object.assign({}, p.q, { ac_kwh_year: null }) : p.q);
+      });
+      const panels = [...uniq.values()];
+      if (sun && panels.length) {
+        const g = genFromPanels(panels, sun, assumptions, { asBuilt: assumptionsAsBuilt() });
+        if (g) {
+          if (F.edited) g.node.flags.push("Panels as edited by hand: moved panels keep their roof face's sunlight and shading.");
+          const curve = genCurve(sun, genWeightsFromPanels(g.perPanel, assumptions), g.node, props.tshade);
+          return { source: "panels", count: panels.length, kwp: g.kwp, gen: g.node, curve };
+        }
+      }
+      // Panel tiles not loaded (zoomed out) or data without the workings:
+      // the build's own per-building totals at this density.
+      const count = F.panels.length ? panels.length : Math.round(decileInterp(props, "fill_panels", panelDensityPct));
+      const kwh = F.panels.length
+        ? panels.reduce((t, q) => t + (q.ac_kwh_year || 0), 0) * bakedKwhScale()
+        : decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      const gen = Wk.given("Electricity generated a year", kwh, "kWh/yr", [], {
+        formula: "the build's own total for these panels",
+        note: sun === null && props.sr ? "This roof's sunlight table is still loading; the step-by-step workings appear when it arrives."
+              : "Zoom in to this roof to see the panel-by-panel workings.",
+        check: () => kwh });
+      const kwp = Wk.product("System size", "kW", [Wk.input("Panels", count, "panels"),
+        Wk.input("Rated power of one panel", assumptions.panel_rated_power_w / 1000, "kW", { dp: 3 })]);
+      return { source: "ladder", count, kwp, gen, curve: null };
+    }
+    const g = genFromCoverage(props, coveragePct, sun, assumptions);
+    let curve = null;
+    if (sun) {
+      const faces = F.facets.map(f => ({ sb: f.q.sb, ab: f.q.ab, sh: f.q.sh,
+        area: ringAreaM2Approx(f.g.coordinates[0]) }));
+      const w = genWeightsFromFaces(faces);
+      if (Object.keys(w).length) curve = genCurve(sun, w, g.node, props.tshade);
+    }
+    return { source: "coverage", count: null, kwp: g.kwp, gen: g.node, curve };
+  }
+  function ringAreaM2Approx(ring) {
+    const lat0 = ring[0][1] * Math.PI / 180, sx = Math.cos(lat0) * 111320.0, sy = 111132.0;
+    let a = 0;
+    for (let i = 0; i < ring.length - 1; i++) a += ring[i][0] * sx * ring[i + 1][1] * sy - ring[i + 1][0] * sx * ring[i][1] * sy;
+    return Math.abs(a) / 2;
+  }
+  // A multi-selection adds its buildings, each with its own sun and shading.
+  function generationModel(buildingId) {
+    const ids = selectedIds.length ? selectedIds.slice() : [buildingId];
+    const parts = ids.map(b => ({ b, m: generationFor(b, selectedPropsById[b] || selectedBuildingProps) }));
+    if (parts.length === 1) return Object.assign({ ids }, parts[0].m);
+    const gen = Wk.sum("Electricity generated a year, all selected", "kWh/yr", parts.map(x => {
+      x.m.gen.label = `Building #${x.b}`; return x.m.gen; }));
+    const kwp = Wk.sum("System size, all selected", "kW", parts.map(x => x.m.kwp));
+    let curve = null;
+    if (parts.every(x => x.m.curve)) {
+      const S = parts[0].m.curve.gen.length;
+      const g = Array.from({ length: S }, (_, s) => new Array(24).fill(0).map((_, h) =>
+        parts.reduce((t, x) => t + x.m.curve.gen[s][h], 0)));
+      curve = Object.assign({}, parts[0].m.curve, { gen: g,
+        node: Wk.sum("Spread over an average day, all selected", "kWh/yr", parts.map(x => x.m.curve.node)) });
+    }
+    const count = parts.every(x => x.m.count != null) ? parts.reduce((t, x) => t + x.m.count, 0) : null;
+    return { ids, source: parts.every(x => x.m.source === "panels") ? "panels" : "mixed", count, kwp, gen, curve };
+  }
+  window.__generation = () => GEN;
+
   function updateFittedStats(buildingId) {
     const el = id => document.getElementById(id);
     const props = selectedBuildingProps;
@@ -4030,31 +4178,25 @@ map.on("load", async () => {
     // yellow box and the coverage ladder are showing, or the panel contradicts
     // itself.
     const isLayout = mode === "layout";
-    let count = null, kwp, kwhYear;
-    if (isLayout) {
-      count = Math.round(decileInterp(props, "fill_panels", panelDensityPct));
-      kwhYear = decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
-      const kept = bandFilteredTotals(buildingId);
-      if (kept) { count = kept.count; kwhYear = kept.kwhRaw * bakedKwhScale(); }
-      // While the panel editor owns this roof, the figures follow its panels,
-      // not the tiles it has hidden -- the live view above draws the edited
-      // set, and the numbers beside it must count the same panels. Energy
-      // scales with the count (the edited panels sit on the same roof).
-      const live = window.__liveLayoutData;
-      if (layoutExcludedBuildingId === buildingId && live && live.features) {
-        const n = live.features.filter(f => f.properties && f.properties.kind === "panel"
-                                         && f.properties.building_id === buildingId).length;
-        kwhYear = count > 0 ? kwhYear * n / count : 0;
-        count = n;
-      }
-      kwp = count * assumptions.panel_rated_power_w / 1000;
-    } else {
-      ({ kwp, kwhYear } = buildingEstimate(props, coveragePct));
-    }
+    // THE ONE GENERATION CALCULATION for what is drawn (generationModel):
+    // the panels on the roof at this density, these payback bands and any
+    // hand edits -- or the coverage estimate in Heat Map. Every figure below
+    // is read from it, and each opens its workings.
+    GEN = generationModel(buildingId);
+    const count = GEN.count, kwp = GEN.kwp.value, kwhYear = GEN.gen.value;
+    [["bldg-fitted-power", () => GEN.kwp], ["bldg-fitted-energy", () => GEN.gen],
+     ["bldg-power", () => GEN.kwp], ["bldg-energy", () => GEN.gen],
+     ["fitted-kwp", () => GEN.kwp], ["fitted-kwh", () => GEN.gen]].forEach(([i, f]) => {
+      if (el(i) && typeof WkView !== "undefined") WkView.bind(el(i), f);
+    });
     if (isLayout && el("fitted-count")) {
       el("fitted-count").textContent = count;
       el("fitted-kwp").textContent = kwp.toFixed(2);
       el("fitted-kwh").textContent = Math.round(kwhYear).toLocaleString();
+    }
+    if (!isLayout && el("bldg-power")) {
+      el("bldg-power").textContent = fmtPower(kwp);
+      el("bldg-energy").textContent = fmtEnergy(kwhYear);
     }
     if (el("bldg-fitted-power")) {
       el("bldg-fitted-power").textContent = fmtPower(kwp);
@@ -4104,46 +4246,55 @@ map.on("load", async () => {
         // Per-hour prices the reader can see and change. `rateOverride`
         // starts empty (the plan's own rates) and holds whatever has been
         // edited, so switching plan resets to that plan's shape.
-        const refresh = () => {
-          const gp = window.__genProfile;
-          const canHourly = gp && gp.gen && gp.kwp > 0;
-          // e still feeds the panel-economics colouring below (cost and
-          // lifetime per panel), priced hour by hour when the curve exists.
-          if (canHourly) {
-            const k = kwp / gp.kwp;
-            const gen = gp.gen.map(row => row.map(v => v * k));
-            e = economicsHourlyFor(kwp, gen, gp.seasonDays, props.facet_area_m2,
-                                   { zoneClass: props.zone_class }) || e;
+        // The bills run on THE SAME generation as the yellow box: GEN's own
+        // curve, whose year is GEN's annual figure (generation.js). Where a
+        // data version has no sunlight table, the chart's older curve is
+        // used for the shape only, scaled to the same annual figure.
+        const curveForBills = () => {
+          if (GEN && GEN.curve) {
+            return { gen: BT_SEASONS.map(n => GEN.curve.gen[GEN.curve.seasons.indexOf(n)] || new Array(24).fill(0)),
+                     seasonDays: BT_SEASONS.map(n => GEN.curve.seasonDays[GEN.curve.seasons.indexOf(n)]) };
           }
-          drawBillTool();
+          const gp = window.__genProfile;
+          if (!(gp && gp.gen && seasonCurves)) return null;
+          const days = BT_SEASONS.map(n => BT_SEASON_DAYS[n]);
+          const shape = BT_SEASONS.map(n => { const i = seasonCurves.seasons.indexOf(n);
+            return i >= 0 && gp.gen[i] ? gp.gen[i] : new Array(24).fill(0); });
+          const yr = shape.reduce((t, row, i) => t + row.reduce((a2, b2) => a2 + b2, 0) * days[i], 0);
+          const k = yr > 0 ? kwhYear / yr : 0;
+          return { gen: shape.map(row => row.map(v => v * k)), seasonDays: days };
         };
-        const drawBillTool = () => {
+        const refresh = () => {
           const box = el("bill-tool");
           if (!box) return;
-          const gp = window.__genProfile;
-          let gen = null;
-          if (gp && gp.gen && gp.kwp > 0 && seasonCurves) {
-            const k = kwp / gp.kwp;
-            gen = BT_SEASONS.map(name => {
-              const i = seasonCurves.seasons.indexOf(name);
-              return i >= 0 && gp.gen[i] ? gp.gen[i].map(v => v * k) : new Array(24).fill(0);
-            });
-          }
+          const c = curveForBills();
           renderBillTool(box, {
             buildingId: buildingId,
             isBusiness: isBusiness(kwp, props.facet_area_m2, props.zone_class),
-            lat: (seasonCurves && seasonCurves.lat) || -41,
+            lat: (GEN && GEN.curve && SUN_DOCS[props.sr] && SUN_DOCS[props.sr].lat) || (seasonCurves && seasonCurves.lat) || -41,
             roofM2: props.facet_area_m2 || 150,
-            kwp: kwp,
-            sizeControl: isLayout ? "panel density slider" : "roof coverage setting",
-            gen: gen,
-            prices: {
-              home: { buy: econ.home_buy_c, sell: econ.home_sell_c, daily: 2.5 },
-              business: { buy: econ.biz_buy_c, sell: econ.biz_sell_c, daily: 8.0 },
+            kwp: kwp, kwpNode: GEN.kwp, genNode: GEN.gen,
+            gen: c ? c.gen : null, seasonDays: c ? c.seasonDays : null,
+            // prices and money assumptions are the map's one set (econ)
+            onEcon: () => window.__applyEcon ? window.__applyEcon() : refresh(),
+            // the per-panel payback colours price panels with these same figures
+            onResult: r => {
+              e = { cost: r.solarCost, lifetime: r.solarRet.lifetime };
+              // THIS roof's panel colours are priced from the same figures
+              // the panel shows: cost per panel from the system cost, and
+              // the lifetime value of a kWh used on site vs exported from
+              // the bill model's own lifetime split.
+              const Y = r.run.year, selfKwh = Y.gen - Y.solarExport;
+              if (isLayout && count > 0 && Y.gen > 0) {
+                panelEconOpen = { buildingId, costPerPanel: r.solarCost / count,
+                  cutoff: Math.min(count, selfKwh / (Y.gen / count)),
+                  retailBE: (r.solarCost / count) / Math.max(r.solarRet.lifeRetail / Math.max(selfKwh, 1e-9), 1e-9),
+                  exportBE: (r.solarCost / count) / Math.max(r.solarRet.lifeExport / Math.max(Y.solarExport, 1e-9), 1e-9),
+                  perKwh: r.solarRet.lifetime / Y.gen };
+              } else panelEconOpen = null;
             },
           });
         };
-        // the chart publishes the roof's generation after this block is drawn
         window.__billToolRedraw = refresh;
         refresh();
 
@@ -4627,9 +4778,22 @@ map.on("load", async () => {
     // battery, and the only defensible shape is the one the reader is
     // looking at -- publishing it here means the two can never disagree
     // about what the roof makes.
+    // THE AVERAGE DAY IS THE GENERATION MODEL'S OWN CURVE whenever the data
+    // carries the workings: the same panels, shading and sunlight as the
+    // yellow box, and its year is exactly that figure (generation.js). The
+    // "sunny day" line stays an illustration of a clear day and is not in
+    // any total.
+    const genCurveNow = GEN && GEN.curve && curveIds.every(b => GEN.ids.includes(b)) ? GEN.curve : null;
+    if (genCurveNow) {
+      seasonCurves.seasons.forEach((n, s2) => {
+        const i = genCurveNow.seasons.indexOf(n);
+        if (i >= 0) avg[s2] = genCurveNow.gen[i].slice();
+      });
+    }
     window.__genProfile = {
       gen: avg.map(row => row.slice()),
-      seasonDays: new Array(avg.length).fill(365 / avg.length),
+      seasonDays: genCurveNow ? seasonCurves.seasons.map(n => genCurveNow.seasonDays[genCurveNow.seasons.indexOf(n)])
+                              : new Array(avg.length).fill(365 / avg.length),
       kwp: totalKwp,
     };
     if (window.__billToolRedraw) window.__billToolRedraw();
@@ -4738,8 +4902,11 @@ map.on("load", async () => {
       `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
       `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
-      `${showPeak ? "a clear day in each season" : "an average day in each season"}` +
-      ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}</div>`;
+      `${showPeak ? "a clear day in each season (illustration, not in the totals)" : "an average day in each season"}` +
+      ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}` +
+      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span id="curve-workings">how it adds up</span>` : "") + `</div>`;
+    const cw = document.getElementById("curve-workings");
+    if (cw && typeof WkView !== "undefined") WkView.bind(cw, () => GEN && GEN.curve ? GEN.curve.node : null);
   }
 
   // ----------------------------------------------- per-building detail
@@ -4840,7 +5007,10 @@ map.on("load", async () => {
           if (!d || selectedPanelBuildingId !== p.building_id) return;
           Object.assign(p, d);
           if (p.horizon_b64) hzBtn.style.display = "";
-          renderSeasonCurves(p.building_id);   // tshade arrived with it
+          // tshade arrived with it: the roof's hours behind the hills shape
+          // its curve, and the curve feeds the bills -- so re-run the lot
+          // (updateFittedStats ends by redrawing the chart)
+          updateFittedStats(p.building_id);
         });
       }
     }

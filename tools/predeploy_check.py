@@ -159,7 +159,7 @@ def main():
     # Each carries a per-building [panel_count, kwh] ladder; that is what the
     # gate compares. The merged file is read only where a checkout still has
     # one and no summaries.
-    twice = {}
+    twice, unchecked = {}, []
     if summaries.is_dir() and any(summaries.glob("*.json")):
         new, owners = {}, {}
         for sp in summaries.glob("*.json"):
@@ -171,6 +171,19 @@ def main():
         # A building in two regions' summaries is drawn and counted twice on
         # the map (567 of them shipped in v47 before this check existed).
         twice = {b: r for b, r in owners.items() if len(r) > 1}
+        # THE WORKINGS MUST ADD UP. emit_region re-derives every panel's kWh
+        # from the inputs the browser is given and refuses to emit when they
+        # disagree; this is the second lock, so a region emitted by older
+        # code (no check) or without its sunlight file cannot ship.
+        sun = ROOT / "data" / "sun"
+        for sp in summaries.glob("*.json"):
+            w = json.loads(sp.read_text()).get("workings")
+            if not w:
+                unchecked.append(f"{sp.stem}: no workings check (emitted before it existed)")
+            elif w.get("mismatched") or w.get("missing_inputs") or w.get("faces_mismatched"):
+                unchecked.append(f"{sp.stem}: workings do not reproduce kWh {w}")
+            elif not (sun / f"{sp.stem}.json").exists():
+                unchecked.append(f"{sp.stem}: no sunlight file for the workings")
     else:
         new = {int(f["properties"]["building_id"]): f["properties"]
                for f in json.loads(newp.read_text())["features"]
@@ -255,7 +268,11 @@ def main():
         print("    Dedupe the built regions together (src/region_build.py with "
               "every built region) and re-run combine.")
 
-    bad = len(zeroed) + len(withheld) + len(twice)
+    print(f"\n  WORKINGS THAT DO NOT ADD UP: {len(unchecked)}")
+    for u in unchecked[:a.top]:
+        print("    " + u)
+
+    bad = len(zeroed) + len(withheld) + len(twice) + len(unchecked)
     print(f"\n  {'LOOK AT THESE BEFORE DEPLOYING' if bad else 'nothing zeroed or newly withheld'}")
     print("  A drop is not automatically wrong -- better geometry removes panels")
     print("  that were overlapping a ridge. This surfaces, it does not judge.")

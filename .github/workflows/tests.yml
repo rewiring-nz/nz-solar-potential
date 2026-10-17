@@ -35,7 +35,9 @@ jobs:
             python tests/test_$t.py
             echo "::endgroup::"
           done
-      - name: Money maths (economics.js, bill_tool.js)
+      - name: Money maths and workings (economics.js, bill_tool.js, generation.js, workings.js)
         run: |
+          node tests/test_workings.mjs
+          node tests/test_generation.mjs
           node tests/test_economics.mjs
           node tests/test_bill_tool.mjs

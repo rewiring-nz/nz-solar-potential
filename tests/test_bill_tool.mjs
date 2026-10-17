@@ -9,7 +9,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const E = require("../economics.js");
 // bill_tool.js reads these from the page's shared scope.
-Object.assign(globalThis, { simulateDay: E.simulateDay, systemCost: E.systemCost,
+globalThis.Wk = require("../workings.js").Wk;
+Object.assign(globalThis, { simulateDay: E.simulateDay, systemCost: E.systemCost, costPerKw: E.costPerKw,
                             BATTERY_DEFAULTS: E.BATTERY_DEFAULTS, econ: E.getEcon() });
 const B = require("../bill_tool.js");
 
@@ -108,6 +109,69 @@ check("one bill alone scales the whole year", () => {
   const r = B.btEvaluate(ctx, home(), { winter: 400 }, prices);
   near(r.run.seasons.winter.nowMonth, 400, 0.5, "winter");
   near(r.cal.scale.summer, r.cal.scale.winter, 1e-9, "same scale");
+});
+
+check("every figure the tool shows re-checks, step by step", () => {
+  const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: genFor(6) };
+  for (const bills of [null, { winter: 420 }, { winter: 420, summer: 190 }, { total: 9000 }]) {
+    const r = B.btEvaluate(ctx, home({ battery: 10, evs: 1 }), bills,
+                           { peak: 34, offpeak: 26, peakSell: 14, offpeakSell: 12, daily: 2.5 });
+    const nodes = [r.nodes.solarSave, r.nodes.battSave, r.nodes.useYear, r.nodes.genYear, r.nodes.solarCost,
+                   r.nodes.allCost, r.nodes.dayKw, r.nodes.dayShare,
+                   ...Object.values(r.nodes.parts),
+                   ...B.BT_SEASONS.flatMap(s => ["nowMonth", "solarMonth", "battMonth"].map(k => r.nodes.seasons[s][k])),
+                   ...Object.values(r.solarRet.nodes), ...Object.values(r.battRet.nodes)];
+    for (const n of nodes) {
+      const v = Wk.verify(n);
+      if (!v.ok) throw new Error(`${JSON.stringify(bills)}: ${v.problems[0].node.label}`);
+    }
+    // the legacy numbers are the nodes' values
+    near(r.solarSave, r.nodes.solarSave.value, 0, "solarSave");
+    near(r.useKwh, r.nodes.useYear.value, 0, "useKwh");
+    near(Object.values(r.yearParts).reduce((a, b) => a + b, 0), r.useKwh, 1e-6, "parts add to the year");
+  }
+});
+
+check("time-of-use: peak power costs more, and the bill knows when it is used", () => {
+  const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: null };
+  const flat = B.btEvaluate(ctx, home(), null, { peak: 30, offpeak: 30, peakSell: 14, offpeakSell: 14, daily: 2.5 });
+  const tou = B.btEvaluate(ctx, home(), null, { peak: 40, offpeak: 30, peakSell: 14, offpeakSell: 14, daily: 2.5 });
+  if (!(tou.run.seasons.winter.nowMonth > flat.run.seasons.winter.nowMonth)) throw new Error("peak not priced");
+});
+
+check("an entered bill is matched exactly under time-of-use prices", () => {
+  const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home(), { winter: 500, summer: 180 },
+                         { peak: 38, offpeak: 24, peakSell: 16, offpeakSell: 12, daily: 2.2 });
+  near(r.run.seasons.winter.nowMonth, 500, 1e-6, "winter");
+  near(r.run.seasons.summer.nowMonth, 180, 1e-6, "summer");
+});
+
+check("yearly use entered sets the year's use exactly", () => {
+  const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: null };
+  const r = B.btEvaluate(ctx, home(), { total: 8200 }, prices);
+  near(r.useKwh, 8200, 1e-6, "year");
+});
+
+check("real money is smaller than nominal over a long life", () => {
+  const save = 1500, exp = 400;
+  const keep = E.getEcon().real_prices;
+  E.getEcon().real_prices = true;  const real = B.btReturns(12000, save, exp);
+  E.getEcon().real_prices = false; const nom = B.btReturns(12000, save, exp);
+  E.getEcon().real_prices = keep;
+  if (!(real.lifetime < nom.lifetime)) throw new Error(`${real.lifetime} vs ${nom.lifetime}`);
+});
+
+check("the return per year makes cost and savings come out even", () => {
+  const r = B.btReturns(12000, 1500, 400);
+  if (!(r.irr > 0.05 && r.irr < 0.25)) throw new Error(`irr ${r.irr}`);
+  const v = Wk.verify(r.nodes.irr);
+  if (!v.ok) throw new Error("irr not re-checked");
+});
+
+check("lifetime savings split into power not bought + export income, exactly", () => {
+  const r = B.btReturns(12000, 1500, 400);
+  near(r.lifeRetail + r.lifeExport, r.lifetime, 1e-6, "split");
 });
 
 check("payback is cost over a growing saving, within reason", () => {
