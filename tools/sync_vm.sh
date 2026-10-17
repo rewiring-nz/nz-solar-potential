@@ -61,10 +61,12 @@ fi
 
 if [ $FORCE -eq 0 ]; then
   echo "checking whether the VM is mid-build..."
-  BUSY=$($SSH 'pgrep -f "src/[a-z_]*\.py" | wc -l' 2>/dev/null | tr -d " \r\n")
+  # The build SCRIPTS count too: between two stages no python stage is
+  # running, and a check that only looked for one passed mid-build.
+  BUSY=$($SSH 'pgrep -f "src/[a-z_]*\.(py|sh)" | wc -l' 2>/dev/null | tr -d " \r\n")
   if [ "${BUSY:-0}" != "0" ]; then
     echo "REFUSING TO SYNC: $BUSY pipeline process(es) running on the VM."
-    $SSH 'pgrep -af "src/[a-z_]*\.py" | head -3' 2>/dev/null
+    $SSH 'pgrep -af "src/[a-z_]*\.(py|sh)" | head -3' 2>/dev/null
     echo ""
     echo "Replacing code mid-build mixes old and new across regions and the"
     echo "result looks normal. Wait for it to finish, or pass --force."

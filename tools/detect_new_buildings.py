@@ -294,7 +294,34 @@ def screen(region):
     return out
 
 
+def _neighbour_outlines(region):
+    """Every outline (LINZ or already-detected) in the other regions whose
+    box overlaps this one. Detected ids are per region, so the same new house
+    found from two overlapping regions would get two ids and the id-based
+    dedupe could not see the duplicate; geometry can."""
+    from shapely.geometry import shape, box
+    import config
+    from pyproj import Transformer
+    t = Transformer.from_crs(4326, 2193, always_xy=True)
+    def nztm_box(b):
+        x0, y0 = t.transform(b[0], b[1]); x1, y1 = t.transform(b[2], b[3])
+        return box(x0, y0, x1, y1)
+    me = nztm_box(config.REGIONS[region])
+    out = []
+    for name, b in config.REGIONS.items():
+        if name == region or not nztm_box(b).intersects(me):
+            continue
+        f = REGIONS_DIR / name / "building_outlines.geojson"
+        if f.exists():
+            for ft in json.loads(f.read_text())["features"]:
+                g = shape(ft["geometry"])
+                out.append(g if g.is_valid else g.buffer(0))
+    return out
+
+
 def apply(region):
+    from shapely.geometry import shape
+    from shapely.strtree import STRtree
     d = REGIONS_DIR / region
     raw = d / "building_outlines.geojson"
     linz = d / "building_outlines.linz.geojson"
@@ -302,6 +329,18 @@ def apply(region):
         linz.write_text(raw.read_text())
     base = json.loads(linz.read_text())
     det = json.loads((d / "building_outlines_detected.geojson").read_text())
+    others = _neighbour_outlines(region)
+    tree = STRtree(others) if others else None
+    kept = []
+    for f in det["features"]:
+        g = shape(f["geometry"])
+        if tree is not None and any(others[i].intersection(g).area > OVERLAP_MAX * g.area
+                                    for i in tree.query(g)):
+            continue          # a neighbouring region already has this building
+        kept.append(f)
+    if len(kept) < len(det["features"]):
+        print(f"[{region}] {len(det['features']) - len(kept)} detected outlines already in a neighbouring region")
+    det["features"] = kept
     base["features"] = base["features"] + det["features"]
     raw.write_text(json.dumps(base))
     print(f"[{region}] outlines: {len(base['features']) - len(det['features'])} LINZ + {len(det['features'])} detected")
