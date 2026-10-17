@@ -68,6 +68,11 @@ FLAT_SCORE_MIN = 0.9
 # it, so precision wins over the last few real sheds.
 KEEP_SCORE_MIN = 0.75
 RAGGED_SOLIDITY_MAX = 0.6
+# pools: clearly bluer than any roof colour sold here
+BLUE_MARGIN = 20
+# lawns and bowling greens: bright and clearly green (green steel roofs are
+# dark, so brightness separates them)
+LAWN_MARGIN, LAWN_BRIGHT = 12, 95
 
 
 def detected_id(region, n):
@@ -124,7 +129,7 @@ def probability_map(model, src, bounds, tile_px=TILE_PX_DEFAULT, res=RES_M_DEFAU
     return np.where(cnt > 0, acc / np.maximum(cnt, 1), 0.0)
 
 
-SPLIT_THR = 0.8   # neighbouring houses merged at 0.5 separate at this confidence
+SPLIT_THR = 0.9   # neighbouring houses merged at 0.5 separate at this confidence
 
 
 def _blobs(prob, thr, tr):
@@ -139,10 +144,11 @@ def _blobs(prob, thr, tr):
     lab, n = ndimage.label(lo)
     hi_lab, _ = ndimage.label(prob > SPLIT_THR)
     px_m2 = abs(tr.a * tr.e)
+    boxes = ndimage.find_objects(lab)       # once: one box per blob
     out = []
     for g, v in shapes(lab.astype(np.int32), mask=lo, transform=tr):
         blob = int(v)
-        sl = ndimage.find_objects((lab == blob).astype(np.uint8))[0]
+        sl = boxes[blob - 1]
         sub = lab[sl] == blob
         cores = np.unique(hi_lab[sl][sub & (hi_lab[sl] > 0)])
         big = [c for c in cores if (hi_lab[sl] == c).sum() * px_m2 >= MIN_M2]
@@ -161,7 +167,7 @@ def _blobs(prob, thr, tr):
     return out
 
 
-def detect(region, model, thr=0.5):
+def detect(region, model, thr=0.5, recut=False):
     import rasterio
     from rasterio.features import shapes
     from rasterio.transform import from_origin
@@ -179,15 +185,19 @@ def detect(region, model, thr=0.5):
     b = config.REGIONS[region]
     t = Transformer.from_crs(4326, 2193, always_xy=True)
     x0, y0 = t.transform(b[0], b[1]); x1, y1 = t.transform(b[2], b[3])
-    with rasterio.open(d / "imagery_mosaic.tif") as src:
-        pb = src.bounds
-        bounds = (max(x0, pb.left), max(y0, pb.bottom), min(x1, pb.right), min(y1, pb.top))
-        prob = probability_map(model, src, bounds)
-    res = RES_M_DEFAULT
+    if recut:
+        z = np.load(d / "detect_probability.npz")
+        prob, bounds, res = z["prob"].astype(np.float32), tuple(z["bounds"]), float(z["res"])
+    else:
+        with rasterio.open(d / "imagery_mosaic.tif") as src:
+            pb = src.bounds
+            bounds = (max(x0, pb.left), max(y0, pb.bottom), min(x1, pb.right), min(y1, pb.top))
+            prob = probability_map(model, src, bounds)
+        res = RES_M_DEFAULT
+        # kept so the outlines can be re-cut without re-running the finder
+        np.savez_compressed(d / "detect_probability.npz", prob=prob.astype(np.float16),
+                            bounds=np.array(bounds), res=res)
     tr = from_origin(bounds[0], bounds[3], res, res)
-    # kept so the outlines can be re-cut without re-running the finder
-    np.savez_compressed(d / "detect_probability.npz", prob=prob.astype(np.float16),
-                        bounds=np.array(bounds), res=res)
     out = []
     for poly in _blobs(prob, thr, tr):
         if poly.is_empty or not (MIN_M2 <= poly.area <= MAX_M2):
@@ -261,6 +271,10 @@ def screen(region):
                 reason = "finder not sure"
             elif solidity < RAGGED_SOLIDITY_MAX:
                 reason = "ragged shape"
+            elif b - max(r, gr) >= BLUE_MARGIN:
+                reason = "water (pool)"
+            elif gr - max(r, b) >= LAWN_MARGIN and (r + gr + b) / 3 >= LAWN_BRIGHT:
+                reason = "lawn"
             elif gr - max(r, b) >= GREEN_MARGIN and (score < GREEN_SCORE_MIN or solidity < GREEN_SOLIDITY_MIN):
                 reason = "vegetation"
             elif spread < FLAT_STD_MAX and score < FLAT_SCORE_MIN:
@@ -301,11 +315,15 @@ def main():
     ap.add_argument("--threads", type=int, default=14)
     ap.add_argument("--screen-only", action="store_true",
                     help="re-screen the existing candidates without re-running the finder")
+    ap.add_argument("--recut", action="store_true",
+                    help="re-cut outlines from the saved probability map, then screen")
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
-    model = None if a.screen_only else ps.load(MODEL, out_ch=1, in_ch=3)
+    model = None if (a.screen_only or a.recut) else ps.load(MODEL, out_ch=1, in_ch=3)
     for r in a.regions:
-        if not a.screen_only:
+        if a.recut:
+            detect(r, None, recut=True)
+        elif not a.screen_only:
             detect(r, model)
         screen(r)
         if a.apply:
