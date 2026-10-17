@@ -450,6 +450,8 @@
   .sba-top .live-view { aspect-ratio: 1 / 1; max-height: none; margin: 0; }
   .sba-top .rsp-statbox .rsp-power, .sba-top .rsp-statbox .rsp-count { font-size: clamp(22px, 2.4vw, 34px); }
   @media (max-width: 900px) { .sba-top { grid-template-columns: 1fr; } }
+  /* the wide panel reaches under the centred AI notice: start below it */
+  @media (min-width: 701px) { body.has-ai-banner .side-panel { top: 54px; } }
   /* Expanded: wide enough for the chart to breathe and for the two stat blocks
      to sit side by side instead of stacking down a narrow column. */
   .side-panel.wide { width: 70vw; min-width: 384px; max-width: 1240px; }

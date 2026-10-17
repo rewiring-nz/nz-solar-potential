@@ -190,7 +190,9 @@ const Wk = (() => {
              ` added up over ${n.rows.length} rows = ${show(n)}`;
     }
     if (n.kind === "given") return n.formula ? `${n.formula} = ${show(n)}` : show(n);
-    const k = n.children.map(show);
+    // a multiplier inside a product reads "× 0.58", not "× × 0.58"
+    const k = n.children.map(c => (c.unit === "×" && (n.op === "product" || n.op === "quotient"))
+      ? fmt(c.value, "", c.dp != null ? c.dp : 3) : show(c));
     switch (n.op) {
       case "product": return `${k.join(" × ")} = ${show(n)}`;
       case "sum": return `${k.join(" + ")} = ${show(n)}`.replace(/\+ −/g, "− ");
