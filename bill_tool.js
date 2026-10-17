@@ -794,10 +794,14 @@ function renderBillTool(box, ctx) {
     const entered = state.calib && !state.calib.total
       ? [["summer", S.summer.nowMonth], ["winter", S.winter.nowMonth]].filter(([k]) => state.calib[k] > 0) : [];
     const off = entered.filter(([k, n]) => Math.abs(n.value - state.calib[k]) > 0.03 * state.calib[k]);
-    const matchNote = calibBy === "total" ? `<span class="ok">Matched to your yearly use.</span>`
-      : !entered.length ? "Today's bills are our estimate for this building. Type in your own and everything updates."
-      : !off.length ? `<span class="ok">Matched to your ${entered.map(([k]) => k).join(" and ")} bill${entered.length > 1 ? "s" : ""}.</span>`
-      : `<span class="warn">Your ${off.map(([k]) => k).join(" and ")} bill is below the daily charge alone &mdash; check the prices.</span>`;
+    // No "matched to your bill" note once a bill is entered: it was easy to
+    // forget and read as a stamp of accuracy (Josh, 18 Oct). Only the hint
+    // before anything is entered, and a warning when a bill cannot be matched.
+    const matchNote = off.length
+      ? `<span class="warn">Your ${off.map(([k]) => k).join(" and ")} bill is below the daily charge alone &mdash; check the prices.</span>`
+      : (!entered.length && calibBy !== "total")
+        ? "Today's bills are our estimate for this building. Type in your own and everything updates."
+        : "";
     const P = isBiz ? state.business : state.home;
     const field = (id, value, attrs, pre, post, est) =>
       `<label class="sx-field${est ? " est" : ""}">${pre ? `<span>${pre}</span>` : ""}<input id="bt-${id}" type="number" inputmode="decimal" ${attrs} value="${value}">${post ? `<span>${post}</span>` : ""}</label>`;
@@ -853,7 +857,7 @@ function renderBillTool(box, ctx) {
         (haveGen ? billPair("winter", "Winter bill", "highest month") : "") +
         (haveGen ? billPair("summer", "Summer bill", "lowest month") : "") +
       `</div>` +
-      (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}. ${matchNote}</div>` : "") +
+      (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
       `</div>` + SX_SPLIT + `<div class="sx sx-more">` +
 
       `<div class="sx-h">Assumptions</div>` +
@@ -863,7 +867,7 @@ function renderBillTool(box, ctx) {
         `<div class="sx-row"><span class="lbl">Summer<small>lowest month</small></span>${billIn("summer")}${haveGen ? afterBill("summer") : `<span class="val">–</span>`}</div>` +
         `<div class="sx-row"><span class="lbl">Winter<small>highest month</small></span>${billIn("winter")}${haveGen ? afterBill("winter") : `<span class="val">–</span>`}</div>` +
       `</div>` +
-      `<div class="sx-foot">${matchNote}</div>` +
+      (matchNote ? `<div class="sx-foot">${matchNote}</div>` : "") +
 
       `<div class="sx-sub">Electricity prices</div>` +
       `<div class="sx-group">` +
