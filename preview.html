@@ -447,6 +447,19 @@
     .side-panel.compact .sba-full-only, .side-panel.compact .sx-more { display: none !important; }
     .side-panel.compact .sba-title { font-size: 16px; }
     .side-panel:not(.compact) .sba-compact-only { display: none !important; }
+    /* the corner card keeps the chart, small and plain: average day only */
+    .side-panel.compact .sba-h3 { font-size: 13px; font-weight: 600; color: rgba(235,235,245,.6); margin: 16px 2px 6px; letter-spacing: 0; }
+    .side-panel.compact #curve-toggle, .side-panel.compact .curve-sub, .side-panel.compact .sba-cap { display: none !important; }
+    .side-panel.compact #bldg-coverage-options { display: none !important; }
+    /* one row of three: savings a year, net over the panels' life, return */
+    .side-panel.compact .sx-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .side-panel.compact .sx-cell[data-wk="lifetime"] { display: none; }
+    .side-panel.compact .sx-cell { padding: 9px 10px 8px; border-bottom: 0 !important; border-right: 0.5px solid rgba(255,255,255,.09) !important; }
+    .side-panel.compact .sx-cell[data-wk="irr"] { border-right: 0 !important; }
+    .side-panel.compact .sx-cell .l { font-size: 11.5px; }
+    .side-panel.compact .sx-cell .v { font-size: 17px; }
+    .side-panel.compact .sx-cell.hero .v { font-size: 19px; }
+    .side-panel.compact .sx-cell .s { font-size: 10.5px; }
   }
   @media (max-width: 700px) { .sba-compact-only, .side-panel .sx-glance { display: none !important; } }
   .sba-expand { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin: 12px 0 2px;
@@ -3823,6 +3836,13 @@ map.on("load", async () => {
       btn.setAttribute("aria-expanded", String(!on));
     }
     if (!on) panel.scrollTop = 0;
+    if (on && typeof curveMode !== "undefined") {
+      curveMode = "avg";   // the card shows the average day
+      document.querySelectorAll(".curve-btn").forEach(b => b.classList.toggle("active", b.dataset.curve === "avg"));
+    }
+    if (selectedPanelBuildingId !== -1 && typeof renderSeasonCurves === "function") {
+      requestAnimationFrame(() => renderSeasonCurves(selectedPanelBuildingId));
+    }
   }
   window.__setPanelCompact = setPanelCompact;
 
@@ -3914,9 +3934,6 @@ map.on("load", async () => {
         <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
         </div>
         <div id="bldg-econ" style="display:none;"></div>
-        <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
-          Assumptions and details <span aria-hidden="true">&#8964;</span></button>
-        <div class="sba-full-only">
         <div class="sba-h3">Solar through the day</div>
         <div class="curve-toggle" id="curve-toggle">
           <button class="curve-btn active" data-curve="avg">Average day</button>
@@ -3924,6 +3941,9 @@ map.on("load", async () => {
           <span id="horizon-tab-btn" class="sba-gone"></span>
         </div>
         <div id="season-curves"></div>
+        <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
+          Assumptions and details <span aria-hidden="true">&#8964;</span></button>
+        <div class="sba-full-only">
         <div id="bill-more"></div>
         <details class="sba-more">
         <summary>Layout details</summary>
@@ -4888,7 +4908,10 @@ map.on("load", async () => {
     // Width follows the panel, so expanding it actually makes the chart bigger
     // rather than leaving a 288px graphic marooned in a wide column.
     const avail = Math.max(240, (box.clientWidth || 288));
-    const W = Math.min(avail, 900), H = Math.round(Math.min(360, Math.max(210, W * 0.62)));
+    const compactPanel = !!document.querySelector("#side-panel.compact");
+    const W = Math.min(avail, 900), H = compactPanel
+      ? Math.round(Math.min(130, Math.max(108, W * 0.32)))
+      : Math.round(Math.min(360, Math.max(210, W * 0.62)));
     const L = 30, R = 6, T = 8, B = 16, h0 = 5, h1 = 21;
     // Scale to whichever series is shown, so the chosen one fills the chart
     // instead of sitting squashed under the other one's peak.
@@ -5014,7 +5037,7 @@ map.on("load", async () => {
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
       `<svg width="100%" viewBox="0 0 ${W} ${H}">${hzBg}${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
-      `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
+      `<div class="curve-sub" style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
       `${showPeak ? "a clear day in each season (illustration, not in the totals)" : "an average day in each season"}` +
       ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}` +
       (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span id="curve-workings">how it adds up</span>` : "") + hzNote + `</div>`;

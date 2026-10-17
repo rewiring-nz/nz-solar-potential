@@ -827,7 +827,7 @@ function renderBillTool(box, ctx) {
     const price = (label, key) => row(label, field(key, +(E[key] || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
     const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
-    const pbText = ret.payback == null ? `doesn't pay back in ${ret.years} years` : `pays back in ${ret.payback.toFixed(1)} years`;
+    const pbText = ret.payback == null ? `over ${ret.years} yrs · doesn't pay back` : `over ${ret.years} yrs · pays back in ${ret.payback.toFixed(1)}`;
     const priceSum = `${(E[pfx + "_peak_c"] || 0)}c peak · ${(E[pfx + "_offpeak_c"] || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
     const SX_SPLIT = "<!--sx-split-->";
