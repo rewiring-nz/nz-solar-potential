@@ -2,6 +2,7 @@
 
     python tools/detect_new_buildings.py arrowtown_east            # writes building_outlines_detected.geojson
     python tools/detect_new_buildings.py arrowtown_east --apply    # ...and adds them to the region's outlines
+    python tools/detect_new_buildings.py arrowtown_east --screen-only   # re-screen existing candidates
 
 A house built after LINZ traced its outlines has no outline, so nothing can
 be estimated for it (bug form, 8 Sep 2026). The building finder
@@ -45,6 +46,28 @@ MIN_SCORE = 0.6
 OVERLAP_MAX = 0.2
 RECT_FILL = 0.8
 DETECTED_ID_BASE = 900_000_000
+
+# SCREENING (17 Oct, from close-ups of 60 Arrowtown candidates: ~70% real
+# houses and sheds LINZ lacks; the rest fell into three kinds, each with a
+# plain signature in the photo):
+#   * slivers along the black edge of the photo     -> touches no-data
+#   * vineyards, gardens, trees, paddocks           -> green, and either the
+#     finder was unsure or the shape is ragged (green Colorsteel roofs are
+#     common here and are confident, regular shapes, so they stay)
+#   * ponds and lakes                               -> almost no texture
+#     inside, and the finder was not sure
+NODATA_MAX = 0.05          # share of pixels within 3 m that are pure black
+GREEN_MARGIN = 6           # green brighter than red and blue by this much
+GREEN_SCORE_MIN = 0.8      # ...needs at least this confidence
+GREEN_SOLIDITY_MIN = 0.75  # ...and this regular a shape (area / convex hull)
+FLAT_STD_MAX = 9           # mean per-band pixel spread inside: water is flat
+FLAT_SCORE_MIN = 0.9
+# What survived those still held ~20% junk (a pond with birds on it, scrub,
+# a garden path, play equipment), nearly all below 0.72 confidence, while
+# real houses sat mostly above 0.8. A detected outline gets panels drawn on
+# it, so precision wins over the last few real sheds.
+KEEP_SCORE_MIN = 0.75
+RAGGED_SOLIDITY_MAX = 0.6
 
 
 def detected_id(region, n):
@@ -101,6 +124,43 @@ def probability_map(model, src, bounds, tile_px=TILE_PX_DEFAULT, res=RES_M_DEFAU
     return np.where(cnt > 0, acc / np.maximum(cnt, 1), 0.0)
 
 
+SPLIT_THR = 0.8   # neighbouring houses merged at 0.5 separate at this confidence
+
+
+def _blobs(prob, thr, tr):
+    """Outlines of the confident areas. A blob that a stricter threshold
+    breaks into two or more building-sized parts was neighbouring houses
+    run together (a row of townhouses as one 650 m2 outline, Millbrook,
+    17 Oct): each part is grown back to the 0.5 edge within the blob."""
+    from rasterio.features import shapes, rasterize
+    from shapely.geometry import shape
+    from scipy import ndimage
+    lo = prob > thr
+    lab, n = ndimage.label(lo)
+    hi_lab, _ = ndimage.label(prob > SPLIT_THR)
+    px_m2 = abs(tr.a * tr.e)
+    out = []
+    for g, v in shapes(lab.astype(np.int32), mask=lo, transform=tr):
+        blob = int(v)
+        sl = ndimage.find_objects((lab == blob).astype(np.uint8))[0]
+        sub = lab[sl] == blob
+        cores = np.unique(hi_lab[sl][sub & (hi_lab[sl] > 0)])
+        big = [c for c in cores if (hi_lab[sl] == c).sum() * px_m2 >= MIN_M2]
+        if len(big) < 2:
+            out.append(shape(g).buffer(0))
+            continue
+        # grow each core back out to the blob's edge (nearest core wins)
+        seeds = np.zeros(sub.shape, np.int32)
+        for k, c in enumerate(big, 1):
+            seeds[hi_lab[sl] == c] = k
+        _, idx = ndimage.distance_transform_edt(seeds == 0, return_indices=True)
+        part = np.where(sub, seeds[idx[0], idx[1]], 0)
+        sub_tr = tr * tr.translation(sl[1].start, sl[0].start)
+        for g2, v2 in shapes(part.astype(np.int32), mask=part > 0, transform=sub_tr):
+            out.append(shape(g2).buffer(0))
+    return out
+
+
 def detect(region, model, thr=0.5):
     import rasterio
     from rasterio.features import shapes
@@ -125,9 +185,11 @@ def detect(region, model, thr=0.5):
         prob = probability_map(model, src, bounds)
     res = RES_M_DEFAULT
     tr = from_origin(bounds[0], bounds[3], res, res)
+    # kept so the outlines can be re-cut without re-running the finder
+    np.savez_compressed(d / "detect_probability.npz", prob=prob.astype(np.float16),
+                        bounds=np.array(bounds), res=res)
     out = []
-    for g, v in shapes((prob > thr).astype(np.uint8), mask=prob > thr, transform=tr):
-        poly = shape(g).buffer(0)
+    for poly in _blobs(prob, thr, tr):
         if poly.is_empty or not (MIN_M2 <= poly.area <= MAX_M2):
             continue
         hits = [linz[i] for i in tree.query(poly)]
@@ -152,10 +214,70 @@ def detect(region, model, thr=0.5):
                                      "use": "Unknown", "name": ""}})
     doc = {"type": "FeatureCollection",
            "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::2193"}}, "features": feats}
+    (d / "building_outlines_detected_raw.geojson").write_text(json.dumps(doc))
     (d / "building_outlines_detected.geojson").write_text(json.dumps(doc))
     print(f"[{region}] {len(feats)} buildings in the photo with no LINZ outline "
           f"(LINZ has {len(linz)}); median {np.median([f['properties']['area_m2'] for f in feats]) if feats else 0:.0f} m2")
     return doc
+
+
+def screen(region):
+    """Split the finder's candidates into likely buildings and rejects, by
+    what the photo shows inside each one (see SCREENING above). Reads the
+    raw candidates, so it can be re-run with new thresholds without
+    re-running the finder; rejects are kept, with their reason, for review."""
+    import rasterio
+    from rasterio.features import geometry_mask
+    from rasterio.windows import from_bounds
+    from shapely.geometry import shape
+    d = REGIONS_DIR / region
+    raw = d / "building_outlines_detected_raw.geojson"
+    if not raw.exists():
+        raw.write_text((d / "building_outlines_detected.geojson").read_text())
+    doc = json.loads(raw.read_text())
+    keep, rejects, why = [], [], {}
+    with rasterio.open(d / "imagery_mosaic.tif") as src:
+        for f in doc["features"]:
+            g = shape(f["geometry"])
+            score = f["properties"].get("detect_score", 0)
+            solidity = g.area / max(g.convex_hull.area, 1e-9)
+            ring = g.buffer(3)
+            win = from_bounds(*ring.bounds, src.transform)
+            img = src.read([1, 2, 3], window=win, boundless=True).astype(float)
+            if img.max() > 255:
+                img = img / 257
+            tr = src.window_transform(win)
+            near = geometry_mask([ring], out_shape=img.shape[1:], transform=tr, invert=True)
+            inside = geometry_mask([g], out_shape=img.shape[1:], transform=tr, invert=True)
+            px = img[:, near]
+            nodata = float((px.sum(0) == 0).mean()) if px.size else 1.0
+            pin = img[:, inside]
+            r, gr, b = pin.mean(1) if pin.size else (0, 0, 0)
+            spread = float(pin.std(1).mean()) if pin.size else 0.0
+            reason = None
+            if nodata > NODATA_MAX:
+                reason = "edge of the photo"
+            elif score < KEEP_SCORE_MIN:
+                reason = "finder not sure"
+            elif solidity < RAGGED_SOLIDITY_MAX:
+                reason = "ragged shape"
+            elif gr - max(r, b) >= GREEN_MARGIN and (score < GREEN_SCORE_MIN or solidity < GREEN_SOLIDITY_MIN):
+                reason = "vegetation"
+            elif spread < FLAT_STD_MAX and score < FLAT_SCORE_MIN:
+                reason = "flat (water or bare ground)"
+            f["properties"].update({"solidity": round(solidity, 2), "photo_spread": round(spread, 1)})
+            if reason:
+                f["properties"]["rejected"] = reason
+                rejects.append(f)
+                why[reason] = why.get(reason, 0) + 1
+            else:
+                keep.append(f)
+    out = dict(doc, features=keep)
+    (d / "building_outlines_detected.geojson").write_text(json.dumps(out))
+    (d / "building_outlines_detected_rejected.geojson").write_text(json.dumps(dict(doc, features=rejects)))
+    print(f"[{region}] screened {len(doc['features'])} candidates: {len(keep)} kept, "
+          f"{len(rejects)} rejected {why}")
+    return out
 
 
 def apply(region):
@@ -177,11 +299,15 @@ def main():
     ap.add_argument("regions", nargs="+")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--threads", type=int, default=14)
+    ap.add_argument("--screen-only", action="store_true",
+                    help="re-screen the existing candidates without re-running the finder")
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
-    model = ps.load(MODEL, out_ch=1, in_ch=3)
+    model = None if a.screen_only else ps.load(MODEL, out_ch=1, in_ch=3)
     for r in a.regions:
-        detect(r, model)
+        if not a.screen_only:
+            detect(r, model)
+        screen(r)
         if a.apply:
             apply(r)
 
