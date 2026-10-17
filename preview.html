@@ -439,16 +439,17 @@
   .side-panel.visible { display: block; }
   /* Specific Building Analysis (17 Oct): wider by default, so the roof's
      live view takes the right half beside its figures. */
-  .side-panel { width: clamp(384px, 50vw, 860px); }
+  .side-panel { width: clamp(384px, 37.5vw, 645px); }
   .sba-title { font-size: 21px; font-weight: 800; letter-spacing: -0.3px; color: var(--ink);
     padding-right: 70px; margin: 0 0 4px; line-height: 1.15; }
   .side-panel .popup h4.sba-addr { font-size: 15px; font-weight: 650; color: var(--ink); margin: 0 0 2px; }
-  .sba-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s4);
+  .sba-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s3);
     align-items: stretch; margin-top: var(--s3); }
   .sba-top .sba-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
   .sba-top .sba-left .est-section { margin-top: 0; padding-top: 0; border-top: none; }
   .sba-top .live-view { aspect-ratio: 1 / 1; max-height: none; margin: 0; }
-  .sba-top .rsp-statbox .rsp-power, .sba-top .rsp-statbox .rsp-count { font-size: clamp(22px, 2.4vw, 34px); }
+  .sba-top .live-badge { font-size: 10.5px; padding: 2px 7px; left: 5px; bottom: 5px; max-width: calc(100% - 10px); }
+  .sba-top .rsp-statbox .rsp-power, .sba-top .rsp-statbox .rsp-count { font-size: clamp(20px, 1.9vw, 30px); }
   @media (max-width: 900px) { .sba-top { grid-template-columns: 1fr; } }
   /* the wide panel reaches under the centred AI notice: start below it */
   @media (min-width: 701px) { body.has-ai-banner .side-panel { top: 54px; } }
@@ -3974,14 +3975,18 @@ map.on("load", async () => {
     }
     LIVE.bidWanted = bid;
     if (box.offsetParent === null) return;          // hidden (mobile sheet)
-    const geom = selectedGeomById && selectedGeomById[bid];
+    // A multi-selection is shown together: framed to all of its buildings,
+    // each drawn with its own panels (Josh, 18 Oct).
+    const ids = (selectedIds && selectedIds.length > 1 && selectedIds.includes(bid)) ? selectedIds.slice() : [bid];
+    const key = ids.join(",");
+    const geoms = ids.map(i => selectedGeomById && selectedGeomById[i]).filter(Boolean);
     const w = box.clientWidth, h = box.clientHeight;
-    if (!geom || !w || !h) return;
-    // Photo tiles: once per building and size.
-    if (LIVE.bid !== bid || LIVE.w !== w || LIVE.h !== h || !box.querySelector("img")) {
+    if (!geoms.length || !w || !h) return;
+    const ringsOf = g => g.type === "Polygon" ? g.coordinates : g.coordinates.flat();
+    // Photo tiles: once per selection and size.
+    if (LIVE.key !== key || LIVE.w !== w || LIVE.h !== h || !box.querySelector("img")) {
       box.innerHTML = "";
-      const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.flat();
-      const pts = rings.flat();
+      const pts = geoms.flatMap(ringsOf).flat();
       const lngs = pts.map(c => c[0]), lats = pts.map(c => c[1]);
       const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
       const minLat = Math.min(...lats), maxLat = Math.max(...lats);
@@ -4013,13 +4018,18 @@ map.on("load", async () => {
       const badge = document.createElement("div");
       badge.className = "live-badge";
       box.appendChild(badge);
-      Object.assign(LIVE, { bid, w, h, proj: { z, xf, yf } });
+      Object.assign(LIVE, { bid, key, w, h, proj: { z, xf, yf } });
     }
     const { z, xf, yf } = LIVE.proj;
     const px = c => { const [x, y] = liveMerc(c[0], c[1], z);
       return (w / 2 + (x - xf) * 256).toFixed(1) + "," + (h / 2 + (y - yf) * 256).toFixed(1); };
     const poly = (g, attrs) => `<polygon points="${g.coordinates[0].map(px).join(" ")}" ${attrs}/>`;
-    const F = liveFeatures(bid);
+    const F = { facets: [], obstructions: [], panels: [], panelCount: 0, edited: false };
+    ids.forEach(i => {
+      const f1 = liveFeatures(i);
+      F.facets.push(...f1.facets); F.obstructions.push(...f1.obstructions); F.panels.push(...f1.panels);
+      F.panelCount += f1.panelCount; F.edited = F.edited || f1.edited;
+    });
     const isLayout = mode === "layout";
     const sunCol = v => {   // the heat map's ramp, south/low -> north/high
       const t = Math.max(0, Math.min(1, ((v || 0) - 600) / 700));
@@ -4029,7 +4039,7 @@ map.on("load", async () => {
       return `rgb(${a.map((v0, k) => Math.round(v0 + u * (b[k] - v0))).join(",")})`;
     };
     let body = "";
-    const fpRings = geom.type === "Polygon" ? [geom.coordinates[0]] : geom.coordinates.map(pg => pg[0]);
+    const fpRings = geoms.flatMap(g => g.type === "Polygon" ? [g.coordinates[0]] : g.coordinates.map(pg => pg[0]));
     if (!isLayout) {
       F.facets.forEach(f => { body += poly(f.g, `fill="${sunCol(f.q.poa_kwh_m2_yr)}" fill-opacity="0.78" stroke="rgba(0,0,0,.35)" stroke-width="0.6"`); });
     } else {
@@ -4043,7 +4053,8 @@ map.on("load", async () => {
     const badge = box.querySelector(".live-badge");
     if (isLayout) {
       const n = F.panelCount;
-      badge.innerHTML = `<b>${n.toLocaleString()}</b> panels &middot; ${(n * kwEach).toFixed(1)} kW` +
+      badge.innerHTML = (ids.length > 1 ? `${ids.length} buildings &middot; ` : "") +
+        `<b>${n.toLocaleString()}</b> panels &middot; ${(n * kwEach).toFixed(1)} kW` +
         (F.edited ? `<span class="ed">edited</span>` : "");
       badge.style.display = (n || F.facets.length) ? "" : "none";
     } else {

@@ -645,6 +645,8 @@ const BT_CSS = `
 .sba-use { display:flex; height: 9px; border-radius: 5px; overflow:hidden; background: rgba(255,255,255,.06); margin-top: 8px; }
 .sba-key { display:flex; flex-wrap:wrap; gap: 4px 12px; font-size: 11px; color: var(--ink-3,#7e8794); margin-top: 5px; }
 .sba-key i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; }
+@media (max-width: 1500px) { .sba-g5 { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+@media (max-width: 1250px) { .sba-kpis { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 720px) { .sba-kpis { grid-template-columns: 1fr 1fr; } .sba-g5 { grid-template-columns: repeat(3, minmax(0,1fr)); } }
 @media (max-width: 420px) { .sba-g5, .sba-g3 { grid-template-columns: 1fr 1fr; } .sba-q { grid-template-columns: 1fr; } .sba-tick { margin-left: 0; } }
 `;
