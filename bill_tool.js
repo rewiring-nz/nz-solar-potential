@@ -684,6 +684,7 @@ const BT_CSS = `
 .sx-use .key span { cursor: pointer; }
 .sx-use .key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 .sx-glance { margin-top: 10px; }
+.sx-glance.sx-cost { margin: 0 0 10px; }
 .sx-peak .lbl small { color: var(--sx-ink-2); font-variant-numeric: tabular-nums; }
 .sx-range { position: relative; width: 150px; height: 28px; flex: none; }
 .sx-range::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--sx-fill-2); }
@@ -816,6 +817,10 @@ function renderBillTool(box, ctx) {
     const SX_SPLIT = "<!--sx-split-->";
     const html =
       `<div class="sx">` +
+      // the corner card leads with what it costs (Josh, 18 Oct)
+      `<div class="sx-group sx-glance sx-cost">` +
+        row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${N.kwp.value.toFixed(1)} kW${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
+      `</div>` +
       `<div class="sx-summary">` +
         `<div class="sx-cell hero" data-wk="save" tabindex="0" role="button"><div class="l">Bill savings</div>` +
           `<div class="v">${haveGen ? money(save1) : "–"}</div><div class="s">a year${withBatt ? ", with the battery" : ""}</div></div>` +
@@ -829,7 +834,6 @@ function renderBillTool(box, ctx) {
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
       `<div class="sx-group sx-glance">` +
-        row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${N.kwp.value.toFixed(1)} kW${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
         (haveGen ? row("Winter bill", `<span class="val">${btMoney(S.winter.nowMonth.value)} → <b>${S.winter[after].value < -0.5 ? btMoney(-S.winter[after].value) + " credit" : btMoney(S.winter[after].value)}</b></span>`, { go: "after-winter", small: "a month, today → with solar" }) : "") +
         (haveGen ? row("Summer bill", `<span class="val">${btMoney(S.summer.nowMonth.value)} → <b>${S.summer[after].value < -0.5 ? btMoney(-S.summer[after].value) + " credit" : btMoney(S.summer[after].value)}</b></span>`, { go: "after-summer" }) : "") +
       `</div>` +
