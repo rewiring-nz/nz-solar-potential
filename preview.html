@@ -21,7 +21,9 @@
 <link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
-  #map { position: absolute; inset: 0; }
+  /* dark under the map: a frame drawn before imagery or terrain arrives
+     shows as dark, not as a white flash (switching to 3D, 18 Oct) */
+  #map { position: absolute; inset: 0; background: #111418; }
   .legend {
     position: absolute; bottom: 24px; left: 12px; background: rgba(20,20,20,0.85);
     color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 13px; z-index: 1;
@@ -703,10 +705,8 @@
   <div class="addr-results" id="addr-results"></div>
 </div>
 <div id="corner-actions">
-  <button class="corner-btn" id="toggle-outlines"><span class="dot"></span>Building outlines</button>
-  <button class="corner-btn" id="toggle-markup"><span class="dot"></span>My roof markup</button>
-  <button class="corner-btn" id="toggle-obstructions"><span class="dot"></span>Avoided obstructions</button>
-  <button class="corner-btn" id="toggle-panel-econ"><span class="dot"></span>Panel economics</button>
+  <!-- one switch for outlines and obstructions; roof markup is on the M key -->
+  <button class="corner-btn" id="toggle-outlines" title="Building outlines, and the obstructions the panels avoid"><span class="dot"></span>Outlines &amp; obstructions</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
 </div>
@@ -786,6 +786,7 @@
 
     </div>
     <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch Video Explainer</button>
+    <button class="corner-btn" id="toggle-panel-econ" style="align-self:flex-start;" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
 </div>
 
   <!-- Settings: assumptions and pricing, tabbed. Everything here is editable
@@ -1090,53 +1091,86 @@ function maxPitchFor(zoom) {
 }
 
 
-function setTerrain3D(on) {
+// The height tiles for what is on screen, fetched before terrain is switched
+// on: turning terrain on with none decoded drew a blank frame (the white
+// flash) and left the camera nothing to stand on. Bounded in count and time,
+// so a slow connection waits a moment, not forever.
+function prefetchTerrainTiles(maxMs) {
+  const z = Math.max(13, Math.min(17, Math.round(map.getZoom())));
+  const b = map.getBounds(), n = Math.pow(2, z);
+  const tx = lng => Math.floor((lng + 180) / 360 * n);
+  const ty = lat => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n); };
+  const urls = [];
+  for (let x = tx(b.getWest()); x <= tx(b.getEast()); x++)
+    for (let y = ty(b.getNorth()); y <= ty(b.getSouth()); y++)
+      urls.push(`${DATA_BASE}data/terrain/${z}/${x}/${y}.png?v=${DATA_VERSION}`);
+  if (urls.length > 48) urls.length = 48;
+  const all = Promise.all(urls.map(u => fetch(u).then(r => r.ok ? r.blob() : null).catch(() => null)));
+  return Promise.race([all, new Promise(r => setTimeout(r, maxMs))]);
+}
+const ease3D = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+let terrainSwitching = 0;
+let switching3D = false;   // the switch-on sequence owns the camera until its tilt starts
+
+async function setTerrain3D(on) {
   terrain3d = on;
+  const ticket = ++terrainSwitching;
+  // the button answers at once; the view follows when it is ready
+  const b = document.getElementById("btn-3d");
+  if (b) b.classList.toggle("active", on);
+  const hint = document.getElementById("map-3d-hint");
+  if (hint) hint.style.display = on ? "" : "none";
   try {
-    if (on && !map.getSource("dsm-terrain")) {
+    if (!on) {
+      map.setMaxPitch(60);
+      map.easeTo({ pitch: 0, duration: 650, easing: ease3D });
+      // terrain off once the camera is flat, so the ground does not drop away mid-move
+      map.once("moveend", () => { if (!terrain3d && ticket === terrainSwitching) map.setTerrain(null); });
+      return;
+    }
+    switching3D = true;
+    if (!map.getSource("dsm-terrain")) {
       map.addSource("dsm-terrain", {
         type: "raster-dem", tiles: [`${DATA_BASE}data/terrain/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
         tileSize: 256, encoding: "mapbox", minzoom: 13, maxzoom: 17,
       });
     }
-    map.setTerrain(on ? { source: "dsm-terrain", exaggeration: 1 } : null);
-    const hint = document.getElementById("map-3d-hint");
-    if (hint) hint.style.display = on ? "" : "none";
-    // KEEP THE CAMERA ABOVE THE GROUND. With terrain on, a fly-to at high
-    // zoom and a steep pitch can put the camera inside the hillside and the
-    // screen goes blank -- which is what the address search did in 3D, the
-    // way anyone would navigate to their own house. A shallower ceiling and
-    // a re-frame after each move keeps it outside the terrain.
-    if (on) snapZoom3D();
+    // KEEP THE CAMERA ABOVE THE GROUND: flat, at a whole-number zoom (the
+    // DEM only resolves there -- see snapZoom3D), with the heights in hand.
+    const r = Math.round(map.getZoom());
+    const flat = (map.getPitch() > 0.5 || Math.abs(map.getZoom() - r) > 0.001)
+      ? new Promise(res => { map.once("moveend", res); map.easeTo({ zoom: r, pitch: 0, duration: 300, easing: ease3D }); })
+      : Promise.resolve();
+    await Promise.all([flat, prefetchTerrainTiles(1500)]);
+    if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }     // turned off meanwhile
+    map.setTerrain({ source: "dsm-terrain", exaggeration: 1 });
+    // Terrain on, MapLibre re-expresses the zoom to keep the camera's height
+    // (16 became 16.456): ease it back to a whole number, still flat, so the
+    // ground under the camera resolves before the tilt.
+    await new Promise(res => { let done = false; const go = () => { if (!done) { done = true; res(); } };
+                               map.once("idle", go); setTimeout(go, 700); });
+    if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }
+    const rz = Math.round(map.getZoom());
+    if (Math.abs(map.getZoom() - rz) > 0.001) {
+      await new Promise(res => { map.once("moveend", res); map.easeTo({ zoom: rz, duration: 380, easing: ease3D }); });
+    }
     const cap = maxPitchFor(map.getZoom());
-    map.setMaxPitch(on ? cap : 60);
-
-    // THE BUTTON BEFORE THE CAMERA. The terrain is already on by this point,
-    // so if a camera move throws -- and one has been reported doing exactly
-    // that, a null read inside jumpTo when no terrain tile has decoded yet --
-    // the old order left the button unlit while 3D was running, and the next
-    // click "turned on" a mode that was already on. State first, movement
-    // after, and the movement gets its own guard so it cannot take the state
-    // with it.
-    const b = document.getElementById("btn-3d");
-    if (b) b.classList.toggle("active", on);
-
+    map.setMaxPitch(cap);
+    if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }
     try {
-      if (on) {
-        // a frame flat, at a whole-number zoom, so the ground height resolves
-        // before the camera is tilted
-        map.jumpTo({ pitch: 0 });
-        setTimeout(() => { if (terrain3d) map.easeTo({ pitch: cap, duration: 700 }); }, 350);
-      } else {
-        map.easeTo({ pitch: 0, duration: 700 });
-      }
+      map.easeTo({ pitch: cap, duration: 1100, easing: ease3D });
+      map.once("moveend", () => { if (ticket === terrainSwitching) switching3D = false; });
     } catch (e) {
+      switching3D = false;
       // 3D itself is fine -- say what actually failed, because "3D
       // unavailable" sent someone looking for a missing terrain source.
       console.warn("3D is on; the camera move failed", e);
     }
   } catch (e) {
+    switching3D = false;
     console.warn("3D unavailable", e);
+  } finally {
+    if (!terrain3d) switching3D = false;
   }
 }
 // Say where the heat map went, rather than leaving a reader to wonder.
@@ -1163,7 +1197,7 @@ function setTerrain3D(on) {
 // So every move in 3D lands flat and the tilt is re-applied afterwards.
 let reseating = false;
 map.on("moveend", () => {
-  if (!terrain3d || reseating) return;
+  if (!terrain3d || reseating || switching3D) return;
   reseating = true;
   const z = map.getZoom();
   const r = Math.round(z);
@@ -1743,7 +1777,7 @@ function syncToggleButtons() {
   // here rather than only in their own click handlers, so anything else that
   // changes a layer is reflected too.
   const to = document.getElementById("toggle-outlines");
-  if (to) to.classList.toggle("active", outlinesOn);
+  if (to) to.classList.toggle("active", outlinesOn || obstructionsOn);
   const tb = document.getElementById("toggle-obstructions");
   if (tb) tb.classList.toggle("active", obstructionsOn);
   // Obstructions only mean anything in Panel Layout.
@@ -5377,28 +5411,29 @@ map.on("load", async () => {
       return true;
     } catch (e) { return false; }
   }
-  document.getElementById("toggle-markup").addEventListener("click", async () => {
-    const btn = document.getElementById("toggle-markup");
-    if (!markupOn && !(await ensureMarkupLayer())) {
-      btn.textContent = "No markup available";
-      return;
-    }
+  // Roof markup has no button now: the M key shows and hides it (it is a
+  // maintainers' check, not something a visitor needs).
+  async function toggleMarkup() {
+    if (!markupOn && !(await ensureMarkupLayer())) { console.warn("no roof markup available"); return; }
     markupOn = !markupOn;
-    btn.classList.toggle("active", markupOn);
     if (map.getLayer("markup-lines")) {
-      map.setLayoutProperty("markup-lines", "visibility",
-                            markupOn ? "visible" : "none");
+      map.setLayoutProperty("markup-lines", "visibility", markupOn ? "visible" : "none");
     }
+  }
+  window.__toggleMarkup = toggleMarkup;
+  document.addEventListener("keydown", e => {
+    if ((e.key !== "m" && e.key !== "M") || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    toggleMarkup();
   });
 
+  // ONE switch for both: the outlines and the obstructions the layout
+  // avoids are read together (Josh, 18 Oct).
   document.getElementById("toggle-outlines").addEventListener("click", () => {
-    outlinesOn = !outlinesOn;
-    document.getElementById("toggle-outlines").classList.toggle("active", outlinesOn);
-    applyToggles();
-  });
-  document.getElementById("toggle-obstructions").addEventListener("click", () => {
-    obstructionsOn = !obstructionsOn;
-    document.getElementById("toggle-obstructions").classList.toggle("active", obstructionsOn);
+    const on = !(outlinesOn || obstructionsOn);
+    outlinesOn = on; obstructionsOn = on;
+    document.getElementById("toggle-outlines").classList.toggle("active", on);
     applyToggles();
   });
 
@@ -5451,6 +5486,9 @@ map.on("load", async () => {
     if (inview && dash.previousElementSibling !== inview) {
       inview.insertAdjacentElement("afterend", dash);
     }
+    // ...with the panel economics switch straight under it (Josh, 18 Oct)
+    var pe = document.getElementById("toggle-panel-econ");
+    if (pe) dash.insertAdjacentElement("afterend", pe);
     dash.style.display = ""; dash.addEventListener("click", open);
   }
   function open() {
