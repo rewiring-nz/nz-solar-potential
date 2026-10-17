@@ -92,6 +92,143 @@ def despike(h, m_per_px, rise_m=8.0, window_m=9.0):
     return np.where(h - med > rise_m, med, h)
 
 
+OVERVIEW_MAX_Z = 14   # at and below this zoom the tiles are the district DEM alone
+FEATHER_M = 30.0      # the survey's edge fades into the DEM over this distance
+
+
+def _read_full(vrt, b):
+    """The whole tile from one source (NaN outside it), or None."""
+    win = from_bounds(*b, transform=vrt.transform)
+    if not _overlaps(win, vrt):
+        return None
+    try:
+        return vrt.read(1, window=win, out_shape=(TILE, TILE), boundless=True,
+                        fill_value=np.nan, resampling=Resampling.bilinear).astype("float32")
+    except Exception:
+        return None
+
+
+ROOF_RING_M = 2.5      # around a roof, nothing stands above its eaves
+EAVE_PCT = 10         # the eave height: this percentile of the roof's plane heights
+
+
+def clean_roofs(region, area_paths, tmp_dir):
+    """The DSM with every modelled roof replaced by its own planes, and the
+    strip around it held to the eaves. Returns the path of the cleaned
+    raster, or None to use the DSM as it is.
+
+    WHY. Panels are drawn ON this surface in 3D, and the raw DSM carries
+    whatever the laser hit: tree crowns overhanging a roof, and tree walls
+    right against its edge. Draped over that, rows of panels ran up into
+    the trees (29 Park Street, 18 Oct). Inside each roof face the surface is
+    now the face's own plane -- its tilt and direction from the layout, its
+    height the median fit to the LiDAR inside it, so overhanging branches
+    (a minority of the returns) do not move it. The rest of the footprint
+    is capped at the roof's top; a 2.5 m strip around it, at the eaves, so
+    nothing beside the roof rises over the panels. Trees further out, and
+    other buildings, are left as surveyed.
+    """
+    p = area_paths(region)
+    lay = Path(p["panel_layouts"]) if "panel_layouts" in p else None
+    if not lay or not lay.exists() or not Path(p["dsm"]).exists():
+        return None
+    import geopandas as gpd
+    from rasterio.features import rasterize
+    from shapely.geometry import shape
+    from shapely.ops import transform as shp_transform, unary_union
+    from pyproj import Transformer
+    to_nztm = Transformer.from_crs(4326, 2193, always_xy=True).transform
+    faces = {}
+    for f in json.loads(lay.read_text())["features"]:
+        q = f["properties"]
+        if q.get("kind") != "facet":
+            continue
+        try:
+            g = shp_transform(to_nztm, shape(f["geometry"]))
+        except Exception:
+            continue
+        faces.setdefault(int(q["building_id"]), []).append(
+            (g, float(q.get("plane_slope_deg", q.get("slope_deg", 0)) or 0),
+                float(q.get("plane_aspect_deg", q.get("aspect_deg", 0)) or 0)))
+    if not faces:
+        return None
+    outl = Path(p["outlines"])
+    if not outl.exists():
+        outl = Path(p["dir"]) / "building_outlines.geojson"
+    fp = gpd.read_file(outl).to_crs(2193)
+    fp = fp[fp["building_id"].isin(list(faces))].set_index("building_id")
+    with rasterio.open(p["dsm"]) as src:
+        z = src.read(1).astype("float32")
+        prof = src.profile
+        tr, nd = src.transform, src.nodata
+    if nd is not None:
+        z[z == nd] = np.nan
+    all_fp = list(fp.geometry)
+    from shapely.strtree import STRtree
+    tree = STRtree(all_fp) if all_fp else None
+    done = 0
+    for bid, flist in faces.items():
+        if bid not in fp.index:
+            continue
+        foot = fp.loc[bid].geometry
+        if isinstance(foot, gpd.GeoSeries):
+            foot = foot.iloc[0]
+        ring = foot.buffer(ROOF_RING_M)
+        minx, miny, maxx, maxy = ring.bounds
+        c0, r0 = ~tr * (minx, maxy)
+        c1, r1 = ~tr * (maxx, miny)
+        c0, r0 = max(0, int(c0)), max(0, int(r0))
+        c1, r1 = min(z.shape[1], int(c1) + 1), min(z.shape[0], int(r1) + 1)
+        if c1 <= c0 or r1 <= r0:
+            continue
+        sub = z[r0:r1, c0:c1]
+        wtr = tr * tr.translation(c0, r0)
+        cols, rows = np.meshgrid(np.arange(c0, c1) + 0.5, np.arange(r0, r1) + 0.5)
+        X = tr.c + cols * tr.a
+        Y = tr.f + rows * tr.e
+        out = sub.copy()
+        heights = []
+        for g, slope, aspect in flist:
+            m = rasterize([(g, 1)], out_shape=sub.shape, transform=wtr, fill=0, dtype="uint8").astype(bool)
+            if m.sum() < 4:
+                continue
+            t = math.tan(math.radians(min(slope, 60)))
+            gx, gy = -t * math.sin(math.radians(aspect)), -t * math.cos(math.radians(aspect))
+            base = gx * X + gy * Y
+            vals = sub[m] - base[m]
+            vals = vals[np.isfinite(vals)]
+            if vals.size < 4:
+                continue
+            z0 = float(np.median(vals))
+            out[m] = (base + z0)[m]
+            heights.append((base + z0)[m])
+        if not heights:
+            continue
+        h = np.concatenate(heights)
+        top, eave = float(np.max(h)), float(np.percentile(h, EAVE_PCT))
+        fm = rasterize([(foot, 1)], out_shape=sub.shape, transform=wtr, fill=0, dtype="uint8").astype(bool)
+        modelled = np.zeros_like(fm)
+        for g, _, _ in flist:
+            modelled |= rasterize([(g, 1)], out_shape=sub.shape, transform=wtr, fill=0, dtype="uint8").astype(bool)
+        rest = fm & ~modelled
+        out[rest] = np.fmin(sub[rest], top)
+        # the strip around the roof, but never over another building
+        others = [all_fp[i] for i in tree.query(ring)] if tree is not None else []
+        others = [o for o in others if not o.equals(foot)]
+        rm = rasterize([(ring, 1)], out_shape=sub.shape, transform=wtr, fill=0, dtype="uint8").astype(bool) & ~fm
+        if others:
+            rm &= ~rasterize([(unary_union(others), 1)], out_shape=sub.shape, transform=wtr, fill=0, dtype="uint8").astype(bool)
+        out[rm] = np.fmin(sub[rm], eave)
+        z[r0:r1, c0:c1] = out
+        done += 1
+    dst = Path(tmp_dir) / f"{region}_dsm_roofs.tif"
+    prof.update(dtype="float32", nodata=np.nan, compress="deflate", tiled=True)
+    with rasterio.open(dst, "w", **prof) as d:
+        d.write(z, 1)
+    print(f"  [{region}] {done:,} roofs set to their planes", flush=True)
+    return dst
+
+
 def _overlaps(win, vrt):
     return not (win.col_off + win.width <= 0 or win.row_off + win.height <= 0
                 or win.col_off >= vrt.width or win.row_off >= vrt.height)
@@ -126,7 +263,7 @@ def encode(h):
     return rgb
 
 
-def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
+def build_all(regions, min_z, max_z, area_paths, out_dir=OUT, clean=True):
     """Tile by TILE, not region by region.
 
     Writing one region at a time meant a tile covered by two regions got
@@ -137,6 +274,8 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
     is filled, so a gap is only ever filled when no survey has the answer.
     """
     srcs = []
+    import tempfile
+    tmp_dir = tempfile.mkdtemp(prefix="terrain_roofs_")
     for r in regions:
         try:
             p = area_paths(r)
@@ -144,7 +283,8 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
             continue
         if not Path(p["dsm"]).exists():
             continue
-        src = rasterio.open(p["dsm"])
+        cleaned = clean_roofs(r, area_paths, tmp_dir) if clean else None
+        src = rasterio.open(cleaned or p["dsm"])
         vrt = WarpedVRT(src, crs="EPSG:3857", resampling=Resampling.bilinear,
                         src_nodata=src.nodata, nodata=np.nan, dtype="float32")
         srcs.append((r, vrt))
@@ -181,10 +321,26 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
                     want.setdefault((x, y), []).append(vrt)
         span_m = 2 * ORIGIN / (2 ** z) * math.cos(math.radians(-45.03))
         m_per_px = span_m / TILE
+        # ZOOMED OUT, ONE SMOOTH SURFACE. Below z15 a tile used to mix the
+        # 1 m DSM patches with the 8 m district DEM, and every place one met
+        # the other was a step -- a "drop off in the lake" and a terrain that
+        # looked broken when the camera moved (18 Oct). At these zooms a tree
+        # or a roof is a few pixels anyway, so the DEM alone draws them.
+        dem_only = dem is not None and z <= OVERVIEW_MAX_Z
+        if dem_only:
+            want = {}
+            l, b0, r2, t = dem.bounds
+            for (_, vrt) in srcs:
+                vl, vb, vr, vt = vrt.bounds
+                x0, y0 = merc_to_tile(z, max(l, vl - 20000), min(t, vt + 20000))
+                x1, y1 = merc_to_tile(z, min(r2, vr + 20000), max(b0, vb - 20000))
+                for x in range(x0, x1 + 1):
+                    for y in range(y0, y1 + 1):
+                        want.setdefault((x, y), [])
         for (x, y), vrts in want.items():
             b = tile_bounds(z, x, y)
             acc = np.full((TILE, TILE), np.nan, "float32")
-            for vrt in vrts:
+            for vrt in ([] if dem_only else vrts):
                 win = from_bounds(*b, transform=vrt.transform)
                 if not _overlaps(win, vrt):
                     continue
@@ -219,6 +375,17 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
                 tgt = acc[oy:oy + oh, ox:ox + ow]
                 acc[oy:oy + oh, ox:ox + ow] = np.where(
                     np.isfinite(tgt), tgt, part[:oh, :ow])
+            if dem is not None and not dem_only and np.isfinite(acc).any() and not np.isfinite(acc).all():
+                # FEATHER THE EDGE OF THE SURVEY into the DEM over ~30 m, so
+                # where the 1 m data stops there is a slope, not a cliff
+                demt = _read_full(dem, b)
+                if demt is not None:
+                    from scipy.ndimage import distance_transform_edt
+                    fin = np.isfinite(acc)
+                    dist = distance_transform_edt(fin) * (span_m / TILE)
+                    w = np.clip(dist / FEATHER_M, 0.0, 1.0)
+                    blend = np.where(np.isfinite(demt), w * np.nan_to_num(acc) + (1 - w) * demt, acc)
+                    acc = np.where(fin, blend, demt)
             if dem is not None and not np.isfinite(acc).all():
                 win = from_bounds(*b, transform=dem.transform)
                 if _overlaps(win, dem):
@@ -257,7 +424,9 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("regions", nargs="*")
-    ap.add_argument("--min-zoom", type=int, default=11)
+    # overview zooms come from the district DEM alone (OVERVIEW_MAX_Z), so 3D
+    # works zoomed out as far as a whole district
+    ap.add_argument("--min-zoom", type=int, default=8)
     # 1 m data is fully resolved by about z17 at this latitude (0.84 m/px);
     # asking for more just interpolates and multiplies the file count by four.
     ap.add_argument("--max-zoom", type=int, default=17)

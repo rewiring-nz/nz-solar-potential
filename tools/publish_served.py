@@ -74,7 +74,7 @@ def versions():
     return sorted(int(m.group(1)) for m in re.finditer(r"/v(\d+)/", r.stdout))
 
 
-def publish(version):
+def publish(version, fresh_terrain=False):
     base = f"{BUCKET}/v{version}/data"
     missing = [f for f in ("panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles")
                if not (DATA / f).exists()]
@@ -96,7 +96,10 @@ def publish(version):
                       str(p), f"{base}/{d}"])
     older = [v for v in versions() if v < int(version)]
     for d in STATIC_DIRS:
-        if older:
+        if fresh_terrain and (DATA / d).is_dir():
+            _run(["gcloud", "storage", "rsync", "-r", "-q", f"--cache-control={CACHE}",
+                  str(DATA / d), f"{base}/{d}"])
+        elif older:
             _run(["gcloud", "storage", "rsync", "-r", "-q",
                   f"{BUCKET}/v{older[-1]}/data/{d}", f"{base}/{d}"])
         elif (DATA / d).is_dir():
@@ -125,13 +128,15 @@ def main():
     ap.add_argument("--protect", type=int, action="append", default=[],
                     help="a version --keep must not delete (the one live now)")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--fresh-terrain", action="store_true",
+                    help="upload data/terrain (a new build) instead of copying the previous version's")
     a = ap.parse_args()
     if a.list:
         print("versions in bucket:", ", ".join(f"v{v}" for v in versions()) or "none")
         return 0
     if not a.version:
         ap.error("version required")
-    url = publish(a.version)
+    url = publish(a.version, fresh_terrain=a.fresh_terrain)
     if a.public:
         _run(["gcloud", "storage", "buckets", "add-iam-policy-binding", BUCKET,
               "--member=allUsers", "--role=roles/storage.objectViewer", "-q"], capture_output=True)

@@ -1096,7 +1096,7 @@ function maxPitchFor(zoom) {
 // flash) and left the camera nothing to stand on. Bounded in count and time,
 // so a slow connection waits a moment, not forever.
 function prefetchTerrainTiles(maxMs) {
-  const z = Math.max(13, Math.min(17, Math.round(map.getZoom())));
+  const z = Math.max(8, Math.min(17, Math.round(map.getZoom())));
   const b = map.getBounds(), n = Math.pow(2, z);
   const tx = lng => Math.floor((lng + 180) / 360 * n);
   const ty = lat => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n); };
@@ -1130,14 +1130,23 @@ async function setTerrain3D(on) {
     }
     switching3D = true;
     if (!map.getSource("dsm-terrain")) {
-      map.addSource("dsm-terrain", {
-        type: "raster-dem", tiles: [`${DATA_BASE}data/terrain/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
-        tileSize: 256, encoding: "mapbox", minzoom: 13, maxzoom: 17,
-      });
+      // the zoom range the tiles were built for (data/terrain/meta.json), so
+      // 3D also works zoomed out wherever overview tiles exist
+      let meta = { minzoom: 12, maxzoom: 17 };
+      try {
+        const r = await fetch(`${DATA_BASE}data/terrain/meta.json?v=${DATA_VERSION}`);
+        if (r.ok) meta = Object.assign(meta, await r.json());
+      } catch (e) { /* keep the defaults */ }
+      if (!map.getSource("dsm-terrain")) {
+        map.addSource("dsm-terrain", {
+          type: "raster-dem", tiles: [`${DATA_BASE}data/terrain/{z}/{x}/{y}.png?v=${DATA_VERSION}`],
+          tileSize: 256, encoding: "mapbox", minzoom: meta.minzoom, maxzoom: meta.maxzoom,
+        });
+      }
     }
     // KEEP THE CAMERA ABOVE THE GROUND: flat, at a whole-number zoom (the
     // DEM only resolves there -- see snapZoom3D), with the heights in hand.
-    const r = Math.round(map.getZoom());
+    const r = map.getZoom() >= SNAP_FROM_ZOOM ? Math.round(map.getZoom()) : map.getZoom();
     const flat = (map.getPitch() > 0.5 || Math.abs(map.getZoom() - r) > 0.001)
       ? new Promise(res => { map.once("moveend", res); map.easeTo({ zoom: r, pitch: 0, duration: 300, easing: ease3D }); })
       : Promise.resolve();
@@ -1150,7 +1159,7 @@ async function setTerrain3D(on) {
     await new Promise(res => { let done = false; const go = () => { if (!done) { done = true; res(); } };
                                map.once("idle", go); setTimeout(go, 700); });
     if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }
-    const rz = Math.round(map.getZoom());
+    const rz = map.getZoom() >= SNAP_FROM_ZOOM ? Math.round(map.getZoom()) : map.getZoom();
     if (Math.abs(map.getZoom() - rz) > 0.001) {
       await new Promise(res => { map.once("moveend", res); map.easeTo({ zoom: rz, duration: 380, easing: ease3D }); });
     }
@@ -1196,11 +1205,14 @@ async function setTerrain3D(on) {
 // at pitch 0 to resolve the terrain under the camera before it is tilted.
 // So every move in 3D lands flat and the tilt is re-applied afterwards.
 let reseating = false;
+// Only close in: the whole-number zoom matters where a roof fills the view;
+// zoomed out the snap just made the camera jump after every move (18 Oct).
+const SNAP_FROM_ZOOM = 15;
 map.on("moveend", () => {
   if (!terrain3d || reseating || switching3D) return;
   reseating = true;
   const z = map.getZoom();
-  const r = Math.round(z);
+  const r = z >= SNAP_FROM_ZOOM ? Math.round(z) : z;
   // Snap first (the DEM only resolves at whole-number zooms), then tilt --
   // sequenced here rather than waiting for the snap's own moveend, which
   // this guard would swallow and leave the map flat.
