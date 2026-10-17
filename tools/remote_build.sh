@@ -24,10 +24,21 @@
 # (the team's Google Group can), and push access to the repo for --publish.
 set -u
 cd "$(dirname "$0")/.."
-VM=claude-doing-things; ZONE=australia-southeast1-b; PROJECT=downloads-417521
+if ! DEFAULTS=$(python3 -c '
+import config
+values = config.CLOUD_SHARED_BUILD
+print("\t".join(values[key] for key in ("project", "vm", "zone", "ssh_user")))
+'); then
+  echo "ERROR: could not read shared cloud defaults from config.py."
+  exit 1
+fi
+IFS=$'\t' read -r DEFAULT_PROJECT DEFAULT_VM DEFAULT_ZONE DEFAULT_VM_USER <<< "$DEFAULTS"
+VM="${CLOUD_VM:-$DEFAULT_VM}"
+ZONE="${CLOUD_ZONE:-$DEFAULT_ZONE}"
+PROJECT="${CLOUD_PROJECT:-$DEFAULT_PROJECT}"
 # The checkout lives in j's home; name the user so a runner or a teammate
 # lands in the same place.
-TARGET="${VM_USER:-j}@$VM"
+TARGET="${VM_USER:-$DEFAULT_VM_USER}@$VM"
 SSH() {
   local output rc
   if output=$(gcloud compute ssh --tunnel-through-iap "$TARGET" --project="$PROJECT" --zone="$ZONE" \
@@ -106,7 +117,8 @@ done
 }
 echo "  running"
 
-VM_USER="${VM_USER:-j}" tools/sync_vm.sh --ref "$REF" || exit 1
+VM_USER="${VM_USER:-j}" SYNC_VM="$VM" SYNC_ZONE="$ZONE" SYNC_PROJECT="$PROJECT" \
+  tools/sync_vm.sh --ref "$REF" || exit 1
 
 echo "=== build on the VM ==="
 steps="cd ~/solar-map"

@@ -59,7 +59,11 @@ Save the API Key locally:
 cp .env.example .env
 ```
 
-2. Copy the API key into `.env`:
+`.env` is a hidden file in the repository root, beside `config.py`. The
+checked-in `.env.example` shows its supported keys; actual credentials stay
+local and are ignored by Git.
+
+2. Copy the API key into the root `.env`:
 
 ```text
 LINZ_API_KEY=[your-key-here]

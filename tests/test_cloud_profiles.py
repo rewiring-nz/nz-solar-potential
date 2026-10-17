@@ -136,34 +136,233 @@ class CloudProfileTests(unittest.TestCase):
         preflight.assert_not_called()
 
     def test_cost_confirmation_decline_blocks_cloud_dispatch(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as log_dir:
             path = self._write({"test": _profile_values()}, directory)
             with (
                 patch.object(sys, "argv", [
                     "pipeline.py", "frankton_arm_lake", "--mode", "cloud",
                     "--profile", "test", "--profiles-file", str(path),
                 ]),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_cloud_preflight", return_value="verified"),
                 patch.object(sys.stdin, "isatty", return_value=True),
                 patch("builtins.input", return_value=""),
+                patch.object(cloud_pipeline, "_cloud_action_preflight") as action_preflight,
                 patch.object(cloud_pipeline, "_dispatch_cloud_action") as dispatch,
             ):
                 self.assertEqual(cloud_pipeline.main(), 2)
+            log = next(Path(log_dir).glob("*.log")).read_text(encoding="utf-8")
+        self.assertIn("[QS-01] PASS Check local checkout and cloud profile", log)
+        self.assertIn("[QS-02] PASS Check or install Google Cloud CLI", log)
+        self.assertIn("[QS-03] PASS Check Google authentication and cloud target", log)
+        self.assertIn("[QS-04] DECLINED Confirm estimated cloud cost", log)
+        action_preflight.assert_not_called()
         dispatch.assert_not_called()
 
     def test_cost_confirmation_approval_dispatches_cloud_action(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as log_dir:
             path = self._write({"test": _profile_values()}, directory)
             with (
                 patch.object(sys, "argv", [
                     "pipeline.py", "frankton_arm_lake", "--mode", "cloud",
                     "--profile", "test", "--profiles-file", str(path),
                 ]),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_cloud_preflight", return_value="verified"),
+                patch.object(cloud_pipeline, "_cloud_action_preflight", return_value="ready"),
                 patch.object(sys.stdin, "isatty", return_value=True),
                 patch("builtins.input", return_value="yes"),
                 patch.object(cloud_pipeline, "_dispatch_cloud_action", return_value=0) as dispatch,
             ):
                 self.assertEqual(cloud_pipeline.main(), 0)
+            log = next(Path(log_dir).glob("*.log")).read_text(encoding="utf-8")
+        self.assertIn("[QS-04] PASS Confirm estimated cloud cost", log)
+        self.assertIn("[QS-05] PASS Check VM state and SSH readiness", log)
+        self.assertIn("[QS-06] PASS Run cloud action: run", log)
         dispatch.assert_called_once()
+
+    def test_cloud_preflight_does_not_request_cost_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as log_dir:
+            path = self._write({"test": _profile_values()}, directory)
+            with (
+                patch.object(sys, "argv", [
+                    "pipeline.py", "frankton_arm_lake", "--mode", "cloud",
+                    "--profile", "test", "--profiles-file", str(path), "--cloud", "preflight",
+                ]),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_cloud_preflight", return_value="verified"),
+                patch.object(cloud_pipeline, "_confirm_cloud_cost") as confirm,
+                patch.object(cloud_pipeline, "_cloud_action_preflight", return_value="not needed"),
+                patch.object(cloud_pipeline, "_dispatch_cloud_action", return_value=0) as dispatch,
+            ):
+                self.assertEqual(cloud_pipeline.main(), 0)
+            log = next(Path(log_dir).glob("*.log")).read_text(encoding="utf-8")
+        confirm.assert_not_called()
+        dispatch.assert_called_once()
+        self.assertIn("[QS-04] PASS Confirm estimated cloud cost: This action does not", log)
+
+    def test_missing_gcloud_can_be_installed_from_homebrew(self) -> None:
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline.platform, "system", return_value="Darwin"),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", side_effect=[None, "/brew", "/gcloud"]),
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value="yes"),
+                patch.object(
+                    cloud_pipeline.subprocess,
+                    "run",
+                    return_value=cloud_pipeline.subprocess.CompletedProcess(
+                        args=["/brew", "install", "--cask", "gcloud-cli"],
+                        returncode=0, stdout="", stderr="",
+                    ),
+                ) as install,
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                self.assertEqual(cloud_pipeline._gcloud(log), "/gcloud")
+            install.assert_called_once_with(
+                ["/brew", "install", "--cask", "gcloud-cli"],
+                cwd=cloud_pipeline.ROOT,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            text = log.path.read_text(encoding="utf-8")
+        self.assertIn("[QS-02] gcloud is missing; supported package manager available (Homebrew", text)
+        self.assertIn("[QS-02] Installing Google Cloud CLI: Homebrew", text)
+
+    def test_missing_gcloud_can_be_installed_with_apt_in_wsl_ubuntu(self) -> None:
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline.platform, "system", return_value="Linux"),
+                patch.object(cloud_pipeline, "_linux_environment", return_value=("ubuntu", True)),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", side_effect=[None, "/usr/bin/apt-get", "/usr/bin/gcloud"]),
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value="yes"),
+                patch.object(
+                    cloud_pipeline.subprocess,
+                    "run",
+                    return_value=cloud_pipeline.subprocess.CompletedProcess(
+                        args=["bash", "-c", "installer"],
+                        returncode=0, stdout="installed", stderr="",
+                    ),
+                ) as install,
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                self.assertEqual(cloud_pipeline._gcloud(log), "/usr/bin/gcloud")
+            install_args = install.call_args.args[0]
+            self.assertEqual(install_args[:2], ["bash", "-c"])
+            self.assertIn("packages.cloud.google.com/apt", install_args[2])
+            self.assertIn("google-cloud-cli", install_args[2])
+            self.assertTrue(install_args[2].startswith("set -euo pipefail"))
+            text = log.path.read_text(encoding="utf-8")
+        self.assertIn("[QS-02] Installing Google Cloud CLI: Ubuntu in WSL", text)
+        self.assertIn("[QS-02] installed", text)
+
+    def test_cloud_mode_without_profile_uses_configured_shared_build_defaults(self) -> None:
+        defaults = {
+            "project": "downloads-417521",
+            "vm": "claude-doing-things",
+            "zone": "australia-southeast1-b",
+            "ssh_user": "j",
+            "regions": "frankton_arm_lake",
+            "ref": "main",
+            "cost_estimate_nzd": "3.00",
+            "cost_estimate_regions": "frankton_arm_lake",
+            "cost_estimate_basis": "small region estimate",
+        }
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(sys, "argv", ["pipeline.py", "--mode", "cloud"]),
+                patch.dict(os.environ, {"SOLAR_CLOUD_PROFILE": ""}),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(cloud_pipeline, "_load_shared_cloud_config", return_value=defaults),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="target verified"),
+                patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
+                patch.object(
+                    cloud_pipeline, "_run_shared_cloud_build",
+                    return_value="build and gate completed",
+                ) as run_build,
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value="yes"),
+            ):
+                self.assertEqual(cloud_pipeline.main(), 0)
+            log = next(Path(log_dir).glob("*.log")).read_text(encoding="utf-8")
+        run_args = run_build.call_args.args
+        self.assertEqual(run_args[:2], (defaults, "frankton_arm_lake"))
+        self.assertIsInstance(run_args[2], cloud_pipeline.CloudQuickstartLog)
+        self.assertIn("[QS-01] PASS Check local checkout and shared cloud defaults", log)
+        self.assertIn("[QS-04] PASS Confirm estimated cloud cost: Human approval received.", log)
+        self.assertIn("[QS-06] PASS Build and gate on the shared VM", log)
+
+    def test_shared_cloud_config_has_expected_project_vm_and_cost_defaults(self) -> None:
+        values = cloud_pipeline._load_shared_cloud_config()
+        self.assertEqual(values["project"], "downloads-417521")
+        self.assertEqual(values["vm"], "claude-doing-things")
+        self.assertEqual(values["zone"], "australia-southeast1-b")
+        self.assertEqual(values["ssh_user"], "j")
+        self.assertEqual(values["regions"], "frankton_arm_lake")
+        self.assertEqual(values["ref"], "main")
+        self.assertEqual(values["cost_estimate_nzd"], "3.00")
+        self.assertEqual(values["cost_estimate_regions"], "frankton_arm_lake")
+        self.assertIn("not verified against project billing", values["cost_estimate_basis"])
+
+    def test_shared_cost_estimate_requires_override_for_non_default_region(self) -> None:
+        config = {
+            "regions": "another_region",
+            "cost_estimate_regions": "frankton_arm_lake",
+            "cost_estimate_nzd": "3.00",
+            "cost_estimate_basis": "default region estimate",
+        }
+        with tempfile.TemporaryDirectory() as log_dir:
+            log = cloud_pipeline.CloudQuickstartLog()
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.dict(os.environ, {"CLOUD_COST_ESTIMATE_NZD": ""}),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "different or multi-region run"):
+                    cloud_pipeline._confirm_shared_cloud_cost(config, None, None, log)
+
+    def test_shared_cost_estimate_accepts_environment_override(self) -> None:
+        config = {
+            "regions": "another_region",
+            "cost_estimate_regions": "frankton_arm_lake",
+            "cost_estimate_nzd": "3.00",
+            "cost_estimate_basis": "default region estimate",
+        }
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.dict(os.environ, {"CLOUD_COST_ESTIMATE_NZD": "8.50"}),
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value="yes"),
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                cloud_pipeline._confirm_shared_cloud_cost(config, None, None, log)
+            content = log.path.read_text(encoding="utf-8")
+        self.assertIn("Estimate: NZD $8.50", content)
+        self.assertIn("user-supplied planning estimate", content)
+
+    def test_unsupported_linux_gcloud_error_has_official_install_instructions(self) -> None:
+        with (
+            patch.object(cloud_pipeline.platform, "system", return_value="Linux"),
+            patch.object(cloud_pipeline, "_linux_environment", return_value=("fedora", False)),
+            patch.object(cloud_pipeline.shutil, "which", side_effect=[None, None]),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Google Cloud CLI.*https://cloud.google.com/sdk/docs/install-sdk",
+            ):
+                cloud_pipeline._gcloud()
 
     def test_cleanup_refuses_unowned_instance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

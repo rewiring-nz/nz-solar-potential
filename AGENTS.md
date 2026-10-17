@@ -39,8 +39,11 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   Diagnostic logs are recorded under `data/pipeline_runs/<run-id>/run.log` and
   `report.md` (plus preview-server PID/log when the preview starts). Combining
   replaces the current map contract with the selected region. Runs locally by
-  default; `--mode cloud --profile <name>` selects cloud execution, and
-  `--cloud` selects a VM lifecycle action. See
+  default; `--mode cloud` builds and gates the configured region on the shared
+  VM without publishing, using `config.CLOUD_SHARED_BUILD` for defaults and
+  requiring explicit cost approval before VM use. `--mode cloud --profile <name>`
+  selects per-developer cloud execution, and `--cloud` selects a VM lifecycle
+  action. See
   [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
   `tools/pipeline_serve.py` serves a preview with PMTiles byte-range support on loopback.
 - `bash tests/run_all.sh`: Local automated check entry point running pure Python,
@@ -207,8 +210,11 @@ Last verified: 2026-10-11
 - Shading incorporates per-building 72-bin horizon profiles (`horizon_b64`,
   `horizon_beam_pct`) combining wide 8m DEM terrain and 1m DSM obstacles
   evaluated at eave height.
-- `config.PV_ASSUMPTIONS` is the intended single source for displayed PV model
-  assumptions and generated summary data.
+- `config.py` is the source of shared non-secret pipeline and cloud-build
+  defaults, including `config.CLOUD_SHARED_BUILD` and
+  `config.PV_ASSUMPTIONS`. The root `.env` is local and ignored, for secrets
+  such as `LINZ_API_KEY`; optional per-developer cloud profiles remain separate
+  under `~/.config/nz-solar-potential/cloud-profiles.json`.
 - `site-config.js` contains deployment-specific frontend settings, while
   `economics.js` contains the pure client-side cost, savings, and payback model
   used by the map and its Node test.

@@ -104,6 +104,23 @@ command -v tile-join
 command -v tippecanoe-decode
 ```
 
+## Option: For cloud instances
+
+Run cloud commands from the Ubuntu terminal inside WSL, not from PowerShell.
+The quickstart can offer to configure Google's apt repository and install
+`google-cloud-cli` when it detects Ubuntu in WSL. Confirm the installation and
+enter your Ubuntu administrator password if asked. Alternatively, follow
+Google's [Debian/Ubuntu instructions](https://docs.cloud.google.com/sdk/docs/install-sdk#deb).
+Then authenticate from the WSL terminal:
+
+```sh
+gcloud --version
+gcloud auth login
+```
+
+The quickstart does not install gcloud into Windows or modify the global
+`gcloud` project setting.
+
 ## Keep the project inside Linux
 
 Store the project and its large `data/` directory under your Ubuntu home

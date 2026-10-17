@@ -91,6 +91,23 @@ command -v tile-join
 command -v tippecanoe-decode
 ```
 
+## Option: For cloud instances
+
+Cloud commands need the Google Cloud CLI (`gcloud`). When you run the cloud
+quickstart, it can offer to configure Google's apt repository and install the
+`google-cloud-cli` package. The installation requires confirmation and may ask
+for your Ubuntu administrator password. You can also install it manually using
+Google's [Debian/Ubuntu instructions](https://docs.cloud.google.com/sdk/docs/install-sdk#deb).
+Then authenticate:
+
+```sh
+gcloud --version
+gcloud auth login
+```
+
+The quickstart does not change the global `gcloud` project setting; the selected
+cloud profile supplies the project.
+
 ## Open the project directory
 
 Obtain the project using the repository location supplied by the project

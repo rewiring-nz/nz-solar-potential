@@ -52,6 +52,17 @@ def test_report_and_logs_share_step_number_and_label():
         assert not (run.run_dir / "run.json").exists()
 
 
+def test_cloud_pipeline_step_offset_keeps_labels_sequential_after_prechecks():
+    with tempfile.TemporaryDirectory(prefix="quickstart-report-", dir=ROOT) as tmp:
+        run = PipelineRun("test_area", Path(tmp) / "run", step_offset=6)
+        run.begin(1)
+        run.finish(1, "PASS", "remote pipeline preflight", 0)
+        report = run.report_path.read_text(encoding="utf-8")
+        combined = run.log_path.read_text(encoding="utf-8")
+        assert "| 07 | Preflight: validate area and runtime |" in report
+        assert "[QS-07] START Preflight: validate area and runtime" in combined
+
+
 def test_failed_step_updates_report():
     with tempfile.TemporaryDirectory(prefix="quickstart-report-", dir=ROOT) as tmp:
         run = QuickstartRun("test_area", Path(tmp) / "run")
@@ -103,7 +114,7 @@ def test_pipeline_cli_defaults_to_local_and_keeps_default_region():
     parser = _argument_parser("town_gorge_north")
     args = parser.parse_args([])
     assert args.mode == "local"
-    assert args.region == "town_gorge_north"
+    assert args.region is None
     assert args.port is None
 
 
@@ -136,6 +147,7 @@ def test_cloud_remote_command_tracks_only_new_pipeline_runs():
 
     command = _remote_pipeline_command("frankton_arm_lake", 8765)
     assert "tools/pipeline.py frankton_arm_lake --port 8765 --no-open-browser" in command
+    assert "--step-offset 6" in command
     assert "CLOUD_RUN_ID=%s" in command
     assert "before=$(find data/pipeline_runs" in command
     assert "data/pipeline_runs" in command

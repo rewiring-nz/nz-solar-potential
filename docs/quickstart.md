@@ -40,17 +40,17 @@ bash quickstart.sh
 This runs locally by default and generates data for `PIPELINE_REGION` in
 `config.py`. Pass a configured region name to select another area.
 
-To run the same pipeline on an already-created and bootstrapped cloud VM:
+To build and gate the default region on the team's shared cloud build VM:
 
 ```sh
-bash quickstart.sh --mode cloud --profile external-poc frankton_arm_lake
+bash quickstart.sh --mode cloud
 ```
 
-Cloud mode copies the VM's run report and log to local `data/pipeline_runs/`.
-It runs the VM's existing checkout, not local workstation changes; update that
-checkout to the intended commit before starting a cloud run.
-Start its map preview tunnel separately with
-`bash quickstart.sh --mode cloud --profile external-poc --cloud preview`.
+Defaults for the project, VM, zone, SSH user, region, ref, and cost estimate
+are held in `config.py` under `CLOUD_SHARED_BUILD`. The command asks for
+explicit cost approval before starting or using the VM, and it builds and gates
+without publishing. See [Cloud quickstart](quickstart-cloud.md) for optional
+per-developer VM profiles, preflight, and other options.
 
 # 5. Review status
 

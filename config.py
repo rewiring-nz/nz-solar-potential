@@ -107,6 +107,24 @@ REGIONS = {
 # Default region used by tools/pipeline.py when no region argument is given.
 PIPELINE_REGION = "town_gorge_north"
 
+# Shared VM defaults for `bash quickstart.sh --mode cloud`. The cost estimate
+# applies only to cost_estimate_regions; other regions require a user estimate.
+CLOUD_SHARED_BUILD = {
+    "project": "downloads-417521",
+    "vm": "claude-doing-things",
+    "zone": "australia-southeast1-b",
+    "ssh_user": "j",
+    "regions": "frankton_arm_lake",
+    "ref": "main",
+    "cost_estimate_nzd": "3.00",
+    "cost_estimate_regions": "frankton_arm_lake",
+    "cost_estimate_basis": (
+        "provisional planning estimate for one small region (about 79 buildings), "
+        "informed by indicative VM pricing and a roughly 2.5-hour upper-region "
+        "build time; not verified against project billing"
+    ),
+}
+
 # Buildings confirmed demolished/replaced since the 2021 capture (field
 # reports) -- excluded from every build until LINZ data catches up.
 # Real buildings whose top surface is not a usable roof (rooftop car decks,

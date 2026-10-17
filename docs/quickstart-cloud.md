@@ -1,9 +1,46 @@
 # Cloud quickstart (Google Cloud)
 
-Run one configured solar region on a Google Compute Engine VM using
-`bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Provisioning,
-bootstrap, report collection, preview tunnelling, and cleanup are selected with
-`--cloud` through the `quickstart.sh` and `tools/pipeline.py` entry points.
+Run the configured default region on the team's shared Google Compute Engine
+build VM with:
+
+```sh
+bash quickstart.sh --mode cloud
+```
+
+This starts the shared VM if needed, syncs the selected Git ref, builds the
+region and runs the deploy gate without publishing. Default project, VM, zone,
+SSH user, region, Git ref, and cost estimate are stored in
+[`config.py`](../config.py) under `CLOUD_SHARED_BUILD`. Pass a region name to
+override the configured region, or use `--estimate-nzd AMOUNT` and
+optionally `--estimate-basis TEXT` to override the estimate and its assumptions.
+The estimate is scoped to `cost_estimate_regions` in `CLOUD_SHARED_BUILD`; by
+default the NZ$3 estimate covers only `frankton_arm_lake`. Provide your own
+`--estimate-nzd` value (or set `CLOUD_COST_ESTIMATE_NZD`) for another region or
+a multi-region run. Use `--cloud preflight` for the no-build, no-cost check.
+
+The separate per-developer VM lifecycle remains available with
+`bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Its provisioning,
+bootstrap, report collection, preview tunnelling, and cleanup are selected
+with `--cloud`.
+Cloud commands first verify the Git checkout and selected configuration, check
+or offer to install `gcloud`, verify the active Google account and configured
+cloud target, then ask for cost approval before checking SSH connectivity or
+using the VM.
+On macOS, a missing CLI can be installed through Homebrew; on Ubuntu, Debian,
+and Ubuntu under WSL, the quickstart can configure Google's apt repository and
+install `google-cloud-cli`. Each installation requires an explicit `yes` and
+may request the system administrator password. The quickstart does not install
+Homebrew or modify unsupported Linux distributions; use Google's
+[installation instructions](https://docs.cloud.google.com/sdk/docs/install-sdk)
+there.
+
+The numbered preflight and shared-build log is saved under
+`data/cloud_quickstart_runs/<run-id>.log`. Its `[QS-01]` through `[QS-06]`
+labels cover checkout/config, `gcloud`, account/target, cost approval, VM/SSH
+readiness, and the selected action. For a profile-based cloud region run, the remote
+pipeline continues numbering at `[QS-07]`; its `report.md` and `run.log` use
+the same numbers. Local runs retain their existing `[QS-01]` through
+`[QS-18]` sequence.
 
 The quickstart builds a whole configured region; it does not cap building
 count. `frankton_arm_lake` is currently listed at about 79 buildings in
@@ -22,12 +59,24 @@ conversion; check the
 [Google Cloud pricing calculator](https://cloud.google.com/products/calculator)
 for current prices. Disk charges continue while a VM is stopped.
 
-Before any action that creates or uses a billable VM, the quickstart displays
-the selected profile's estimate and assumptions and requires the user to type
-`yes`; Enter, any other response, or non-interactive execution declines. Set
-`cost_estimate_nzd` and `cost_estimate_basis` in the profile, or override both
-with `--estimate-nzd AMOUNT --estimate-basis TEXT`. Preflight, status, and
+Before starting the shared VM or running a profile-based action that uses a
+billable VM, after the local installation and authentication checks, the
+quickstart displays the estimate and assumptions and requires the user to type
+`yes`; Enter, any other response, or non-interactive execution declines before
+VM readiness checks or other VM use. The shared workflow's estimate is in
+`config.py`; per-developer VM estimates are set in their optional profile.
+Either can be overridden with `--estimate-nzd AMOUNT`; optionally add
+`--estimate-basis TEXT` to describe its assumptions. Preflight, status, and
 cleanup do not require the cost prompt.
+
+`config.py` is the repository's source for shared, non-secret pipeline and
+cloud-build defaults. The root `.env` is a local ignored file for secrets such
+as `LINZ_API_KEY`; start from `.env.example` and do not commit it. The optional
+per-developer VM profile is stored outside the checkout by default at
+`~/.config/nz-solar-potential/cloud-profiles.json`.
+
+The shared build is gated but does not publish. To publish, use the documented
+deploy workflow after reviewing the build results.
 
 ## External developer (create an environment)
 

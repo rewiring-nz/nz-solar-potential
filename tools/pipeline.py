@@ -14,6 +14,7 @@ import hashlib
 import io
 import json
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -26,11 +27,13 @@ import urllib.request
 import webbrowser
 from urllib.parse import quote, quote_plus
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 RUNS = DATA / "pipeline_runs"
+CLOUD_RUNS = DATA / "cloud_quickstart_runs"
+CLOUD_PIPELINE_STEP_OFFSET = 6
 
 REPOSITORY = "https://github.com/rewiring-nz/nz-solar-potential.git"
 FIREWALL_MARKER = "Managed by nz-solar-potential cloud quickstart"
@@ -233,9 +236,10 @@ def _linz_key_local() -> str:
 
 
 class PipelineRun:
-    def __init__(self, area: str, run_dir: Path):
+    def __init__(self, area: str, run_dir: Path, *, step_offset: int = 0):
         self.area = area
         self.run_dir = run_dir
+        self.step_offset = step_offset
         self.log_path = run_dir / "run.log"
         self.report_path = run_dir / "report.md"
         self.started = _now()
@@ -272,7 +276,7 @@ class PipelineRun:
             timing = (f"exit {s['exit_code']}, {s['seconds']}s"
                       if s.get("exit_code") is not None else "—")
             rows.append("| {number:02d} | {label} | {inputs} | {outputs} | **{status}** ({timing}) | {comment} |".format(
-                number=s["number"], label=_md(s["label"]), inputs=_md(s["inputs"]),
+                number=s["number"] + self.step_offset, label=_md(s["label"]), inputs=_md(s["inputs"]),
                 outputs=_md(s["outputs"]), status=_md(s["status"]),
                 timing=_md(timing), comment=_md(s.get("comment", ""))))
         failed = [s for s in self.records if s["status"] == "FAIL"]
@@ -322,7 +326,7 @@ class PipelineRun:
         os.replace(tmp, self.report_path)
 
     def event(self, number: int, text: str) -> None:
-        line = f"[QS-{number:02d}] {text}"
+        line = f"[QS-{number + self.step_offset:02d}] {text}"
         print(line, flush=True)
         self._write_log(line)
 
@@ -362,8 +366,7 @@ class PipelineRun:
             record.setdefault("commands", []).append(safe_command)
             record["command"] = "; then ".join(record["commands"])
             self._save()
-            command_line = f"[QS-{number:02d}] COMMAND {safe_command}"
-            self.event(number, command_line.removeprefix(f"[QS-{number:02d}] "))
+            self.event(number, f"COMMAND {safe_command}")
         chunks: list[str] = []
         try:
             proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
@@ -372,7 +375,7 @@ class PipelineRun:
             for raw in proc.stdout:
                 message = self.redact(raw.rstrip("\r\n"))
                 chunks.append(message)
-                tagged = f"[QS-{number:02d}] {message}"
+                tagged = f"[QS-{number + self.step_offset:02d}] {message}"
                 print(tagged, flush=True)
                 self._write_log(tagged)
             code = proc.wait()
@@ -388,13 +391,15 @@ class PipelineRun:
             for pending in self.records[number:]:
                 if pending["status"] == "PENDING":
                     pending["status"] = "NOT RUN"
-                    pending["comment"] = f"Not run because step {number:02d} was interrupted."
+                    pending["comment"] = (
+                        f"Not run because step {number + self.step_offset:02d} was interrupted."
+                    )
             self._save()
             raise
         except OSError as exc:
             message = self.redact(f"could not start command: {type(exc).__name__}: {exc}")
             chunks.append(message)
-            tagged = f"[QS-{number:02d}] {message}"
+            tagged = f"[QS-{number + self.step_offset:02d}] {message}"
             print(tagged, flush=True)
             self._write_log(tagged)
             code = 127
@@ -636,47 +641,154 @@ def _cloud_run(
         ) from exc
 
 
-def _gcloud() -> str:
+class CloudQuickstartDeclined(RuntimeError):
+    pass
+
+
+class CloudQuickstartLog:
+    def __init__(self) -> None:
+        CLOUD_RUNS.mkdir(parents=True, exist_ok=True)
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self.path = CLOUD_RUNS / f"{stamp}.log"
+        suffix = 1
+        while self.path.exists():
+            self.path = CLOUD_RUNS / f"{stamp}-{suffix:02d}.log"
+            suffix += 1
+        self.path.touch()
+        header = f"Cloud quickstart started: {_now()}"
+        print(header, flush=True)
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(header + "\n")
+
+    def event(self, number: int, text: str) -> None:
+        line = f"[QS-{number:02d}] {text}"
+        print(line, flush=True)
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(line + "\n")
+
+    def step(self, number: int, label: str, action: Callable[[], Any]) -> Any:
+        self.event(number, f"START {label}")
+        try:
+            result = action()
+        except CloudQuickstartDeclined as exc:
+            self.event(number, f"DECLINED {label}: {exc}")
+            raise
+        except Exception as exc:
+            self.event(number, f"FAIL {label}: {type(exc).__name__}: {exc}")
+            raise
+        detail = result if isinstance(result, str) and result else ""
+        self.event(number, f"PASS {label}" + (f": {detail}" if detail else ""))
+        return result
+
+    def detail(self, number: int, text: str) -> None:
+        self.event(number, text)
+
+
+def _linux_environment() -> tuple[str, bool]:
+    try:
+        release = Path("/etc/os-release").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        release = ""
+    distro = next(
+        (line.partition("=")[2].strip().strip('"').lower()
+         for line in release.splitlines() if line.startswith("ID=")),
+        "",
+    )
+    try:
+        wsl = "microsoft" in Path("/proc/version").read_text(
+            encoding="utf-8", errors="replace"
+        ).lower()
+    except OSError:
+        wsl = False
+    return distro, wsl
+
+
+def _install_gcloud(log: CloudQuickstartLog | None, command: list[str], description: str) -> None:
+    print(f"[QS-02] Installing Google Cloud CLI: {description}", flush=True)
+    result = subprocess.run(
+        command, cwd=ROOT, check=False, text=True, capture_output=True,
+    )
+    for output in (result.stdout, result.stderr):
+        for line in output.splitlines():
+            print(f"[QS-02] {line}", flush=True)
+            if log:
+                with log.path.open("a", encoding="utf-8") as stream:
+                    stream.write(f"[QS-02] {line}\n")
+    if result.returncode:
+        raise RuntimeError(
+            f"Google Cloud CLI installation failed (exit code {result.returncode}); "
+            "review the installer output above, correct the reported problem, and retry."
+        )
+
+
+def _gcloud(log: CloudQuickstartLog | None = None) -> str:
+    path = shutil.which("gcloud")
+    if path:
+        return path
+
+    brew = shutil.which("brew") if platform.system() == "Darwin" else None
+    distro, wsl = _linux_environment() if platform.system() == "Linux" else ("", False)
+    apt = shutil.which("apt-get") if platform.system() == "Linux" else None
+    if brew:
+        installer = [brew, "install", "--cask", "gcloud-cli"]
+        prompt = "Install it with Homebrew? (yes/NO) "
+        description = "Homebrew: brew install --cask gcloud-cli"
+        retry = "brew install --cask gcloud-cli"
+    elif distro in {"ubuntu", "debian"} and apt:
+        script = """set -euo pipefail
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -d -m 0755 /usr/share/keyrings
+curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor --yes -o /usr/share/keyrings/cloud.google.gpg
+echo 'deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main' | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list >/dev/null
+sudo apt-get update
+sudo apt-get install -y google-cloud-cli"""
+        installer = ["bash", "-c", script]
+        environment = "Ubuntu in WSL" if wsl and distro == "ubuntu" else distro.capitalize()
+        prompt = f"Install it from Google's apt repository in {environment}? (yes/NO) "
+        description = f"{environment}: configure Google's apt repository and install google-cloud-cli"
+        retry = (
+            "follow https://docs.cloud.google.com/sdk/docs/install-sdk#deb and install "
+            "the google-cloud-cli package with apt"
+        )
+    else:
+        if platform.system() == "Linux":
+            context = f"Linux distribution {distro or '(unknown)'}"
+            if wsl:
+                context = f"WSL running {distro or 'an unsupported distribution'}"
+        else:
+            context = platform.system() or "this operating system"
+        raise RuntimeError(
+            f"gcloud is missing on {context}. Install the Google Cloud CLI using Google's "
+            "instructions at https://cloud.google.com/sdk/docs/install-sdk, then rerun. "
+            "The quickstart offers automatic installation only for macOS with Homebrew "
+            "and Ubuntu/Debian with apt."
+        )
+
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            f"gcloud is missing and installation requires interactive confirmation. "
+            f"Install it with `{retry}`, then rerun."
+        )
+    if log:
+        log.detail(2, f"gcloud is missing; supported package manager available ({description}).")
+    try:
+        answer = input(f"[QS-02] Google Cloud CLI (gcloud) is missing. {prompt}")
+    except EOFError:
+        answer = ""
+    if answer.strip().casefold() != "yes":
+        raise CloudQuickstartDeclined(
+            f"gcloud installation declined; no package was installed. To install later, run `{retry}`."
+        )
+    if log:
+        log.detail(2, f"Installing Google Cloud CLI: {description}.")
+    _install_gcloud(log, installer, description)
     path = shutil.which("gcloud")
     if not path:
-        brew = shutil.which("brew")
-        if not brew:
-            raise RuntimeError(
-                "gcloud is missing. On macOS, install Homebrew from https://brew.sh, "
-                "open a new terminal, and retry. The quickstart does not install Homebrew. "
-                "On other platforms, install the Google Cloud CLI from "
-                "https://cloud.google.com/sdk/docs/install."
-            )
-        if not sys.stdin.isatty():
-            raise RuntimeError(
-                "gcloud is missing and package installation requires interactive "
-                "confirmation. Run `brew install --cask gcloud-cli`, then retry."
-            )
-        print("Google Cloud CLI (gcloud) is missing. Install it with Homebrew? (yes/NO) ",
-              end="", flush=True)
-        try:
-            answer = input()
-        except EOFError:
-            answer = ""
-        if answer.strip().casefold() != "yes":
-            raise RuntimeError(
-                "gcloud installation declined; no package was installed. To install later, "
-                "run `brew install --cask gcloud-cli`."
-            )
-        print("Installing Google Cloud CLI with Homebrew: brew install --cask gcloud-cli")
-        result = subprocess.run([brew, "install", "--cask", "gcloud-cli"], cwd=ROOT, check=False)
-        if result.returncode:
-            raise RuntimeError(
-                f"Homebrew could not install gcloud (exit code {result.returncode}); "
-                "review the installation error and retry."
-            )
-        path = shutil.which("gcloud")
-        if not path:
-            raise RuntimeError(
-                "Homebrew reported a successful gcloud installation, but gcloud is not on PATH. "
-                "Follow https://docs.cloud.google.com/sdk/docs/downloads-homebrew, reopen "
-                "the terminal, and retry."
-            )
+        raise RuntimeError(
+            "The installer completed, but gcloud is not on PATH. Start a new terminal, "
+            "check the platform setup instructions, and retry."
+        )
     return path
 
 
@@ -685,11 +797,14 @@ def _confirm_cloud_cost(
     action: str,
     estimate_nzd: str | None,
     estimate_basis: str | None,
+    log: CloudQuickstartLog | None = None,
 ) -> None:
     configured_estimate = profile.values.get("cost_estimate_nzd")
     configured_basis = profile.values.get("cost_estimate_basis")
     estimate = estimate_nzd or configured_estimate
-    basis = estimate_basis or configured_basis
+    basis = estimate_basis or (
+        "user-supplied planning estimate" if estimate_nzd else configured_basis
+    )
     if not estimate or not basis:
         raise RuntimeError(
             "a cost estimate and assumptions are required before this cloud action. "
@@ -713,23 +828,30 @@ def _confirm_cloud_cost(
         "collect": "access the configured VM to copy run reports",
         "preview": "keep the configured VM in use while the preview tunnel is open",
     }[action]
-    print(
-        f"This action will {action_text}, which may result in financial costs. "
-        f"Estimate: NZD ${estimate} ({basis}). This is not a spending cap; "
-        "actual charges can be higher. Continue? (yes/NO) ",
-        end="",
-        flush=True,
-    )
+    if log:
+        log.detail(
+            4,
+            f"This action will {action_text}, which may result in financial costs. "
+            f"Estimate: NZD ${estimate} ({basis}). This is not a spending cap; "
+            "actual charges can be higher.",
+        )
     try:
-        answer = input()
+        answer = input("[QS-04] Continue? (yes/NO) ")
     except EOFError:
         answer = ""
     if answer.strip().casefold() != "yes":
-        raise RuntimeError("human cost confirmation declined; no cloud action was started.")
+        raise CloudQuickstartDeclined(
+            "human cost confirmation declined; no cloud action was started."
+        )
 
 
-def _cloud_preflight(profile: CloudProfile, *, require_create_config: bool = False) -> None:
-    gcloud = _gcloud()
+def _cloud_preflight(
+    profile: CloudProfile,
+    *,
+    require_create_config: bool = False,
+    gcloud: str | None = None,
+) -> str:
+    gcloud = gcloud or _gcloud()
     auth = _cloud_run(
         [gcloud, "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
         capture=True,
@@ -750,13 +872,173 @@ def _cloud_preflight(profile: CloudProfile, *, require_create_config: bool = Fal
             "profile must set ssh_source_ranges to your public IP as a CIDR (usually x.x.x.x/32) "
             "before creating a VM"
         )
-    print(f"Profile: {profile.name}")
-    print(f"Target:  {profile.target}")
-    print(f"VM:      {values['machine_type']}, {values['disk_gb']} GB pd-balanced")
-    print(
-        f"SSH:     {', '.join(values['ssh_source_ranges']) or 'connect only through preconfigured network rules'}"
+    return (
+        f"Profile {profile.name}; target {profile.target}; "
+        f"{values['machine_type']} with {values['disk_gb']} GB pd-balanced disk; "
+        "active Google account and configured zone/machine type verified."
     )
-    print("Preflight passed. It did not create resources or enable APIs.")
+
+
+def _load_shared_cloud_config() -> dict[str, str]:
+    import config as project_config
+
+    values = project_config.CLOUD_SHARED_BUILD
+    required = (
+        "project", "vm", "zone", "ssh_user", "regions", "ref",
+        "cost_estimate_nzd", "cost_estimate_regions", "cost_estimate_basis",
+    )
+    if not isinstance(values, dict) or any(
+        not isinstance(values.get(key), str) for key in required
+    ):
+        raise ValueError(
+            "config.CLOUD_SHARED_BUILD must define string values for: "
+            + ", ".join(required)
+        )
+    values = dict(values)
+    if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", values["project"]):
+        raise ValueError("CLOUD_SHARED_BUILD.project is not a valid Google Cloud project ID")
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", values["vm"]):
+        raise ValueError("CLOUD_SHARED_BUILD.vm must be a valid VM name")
+    if not re.fullmatch(r"[a-z]+-[a-z]+[0-9]-[a-z]", values["zone"]):
+        raise ValueError("CLOUD_SHARED_BUILD.zone must be a valid GCP zone")
+    if not re.fullmatch(r"[a-z_][a-z0-9_ -]*", values["regions"]):
+        raise ValueError("CLOUD_SHARED_BUILD.regions contains unsupported characters")
+    if not re.fullmatch(r"[a-z][a-z0-9_ -]*", values["cost_estimate_regions"]):
+        raise ValueError("CLOUD_SHARED_BUILD.cost_estimate_regions contains unsupported characters")
+    if not values["ssh_user"] or not re.fullmatch(r"[a-z_][a-z0-9_-]*", values["ssh_user"]):
+        raise ValueError("CLOUD_SHARED_BUILD.ssh_user must be a valid SSH username")
+    if not values["ref"] or values["ref"].startswith("-") or "\n" in values["ref"]:
+        raise ValueError("CLOUD_SHARED_BUILD.ref must be a non-empty Git ref")
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", values["cost_estimate_nzd"]):
+        raise ValueError("CLOUD_SHARED_BUILD.cost_estimate_nzd must be a non-negative NZD amount")
+    if not values["cost_estimate_basis"].strip() or len(values["cost_estimate_basis"]) > 300:
+        raise ValueError("CLOUD_SHARED_BUILD.cost_estimate_basis must be 1-300 characters")
+    return values
+
+
+def _shared_cloud_preflight(config: dict[str, str], gcloud: str) -> str:
+    auth = _cloud_run(
+        [gcloud, "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
+        capture=True,
+    )
+    if not auth.stdout.strip():
+        raise RuntimeError("gcloud has no active account; run `gcloud auth login` first")
+    _cloud_run([
+        gcloud, "compute", "zones", "describe", config["zone"],
+        f"--project={config['project']}", "--format=value(name)",
+    ], capture=True)
+    result = _cloud_run([
+        gcloud, "compute", "instances", "describe", config["vm"],
+        f"--project={config['project']}", f"--zone={config['zone']}",
+        "--format=value(status)",
+    ], capture=True)
+    status = result.stdout.strip()
+    if status not in {"RUNNING", "TERMINATED", "STOPPED", "SUSPENDED"}:
+        raise RuntimeError(
+            f"could not confirm shared VM state (gcloud returned {status!r}); "
+            "check project access and VM configuration."
+        )
+    return (
+        f"Active Google account verified; target "
+        f"{config['project']}/{config['zone']}/{config['vm']} is {status}."
+    )
+
+
+def _shared_vm_readiness(config: dict[str, str], gcloud: str) -> str:
+    result = _cloud_run([
+        gcloud, "compute", "instances", "describe", config["vm"],
+        f"--project={config['project']}", f"--zone={config['zone']}",
+        "--format=value(status)",
+    ], capture=True)
+    status = result.stdout.strip()
+    if status in {"TERMINATED", "STOPPED"}:
+        return f"VM is {status}; the shared build workflow will start it after approval."
+    if status != "RUNNING":
+        raise RuntimeError(f"shared VM is {status or 'in an unknown state'}; no build was started.")
+    ssh = _cloud_run([
+        gcloud, "compute", "ssh", f"{config['ssh_user']}@{config['vm']}",
+        f"--project={config['project']}", f"--zone={config['zone']}",
+        "--tunnel-through-iap", "--command=printf CLOUD_QUICKSTART_SSH_OK",
+    ], capture=True)
+    if "CLOUD_QUICKSTART_SSH_OK" not in ssh.stdout:
+        raise RuntimeError("IAP/SSH probe did not return its success marker.")
+    return "Shared VM is RUNNING and IAP/SSH access is ready."
+
+
+def _confirm_shared_cloud_cost(
+    config: dict[str, str], estimate_nzd: str | None, estimate_basis: str | None,
+    log: CloudQuickstartLog,
+) -> None:
+    environment_estimate = os.environ.get("CLOUD_COST_ESTIMATE_NZD")
+    supplied_estimate = estimate_nzd or environment_estimate
+    estimate_regions = config["cost_estimate_regions"]
+    if config["regions"] != estimate_regions and not supplied_estimate:
+        raise RuntimeError(
+            f"the configured NZD ${config['cost_estimate_nzd']} estimate applies only to "
+            f"{estimate_regions}. "
+            "For a different or multi-region run, supply --estimate-nzd AMOUNT "
+            "(or CLOUD_COST_ESTIMATE_NZD)."
+        )
+    estimate = supplied_estimate or config["cost_estimate_nzd"]
+    basis = estimate_basis or (
+        "user-supplied planning estimate for the selected region(s)"
+        if supplied_estimate else config["cost_estimate_basis"]
+    )
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", estimate):
+        raise ValueError("cost estimate must be a non-negative NZD amount with up to two decimals")
+    if not basis.strip() or len(basis) > 300:
+        raise ValueError("cost estimate assumptions must be 1-300 characters")
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            "interactive cost confirmation is required before shared cloud work; "
+            "no cloud action was started."
+        )
+    log.detail(
+        4,
+        f"This action will build and gate region(s) {config['regions']} on the shared VM, "
+        f"which may result in financial costs. Estimate: NZD ${estimate} ({basis}). "
+        "This is not a spending cap; actual charges can be higher.",
+    )
+    try:
+        answer = input("[QS-04] Continue? (yes/NO) ")
+    except EOFError:
+        answer = ""
+    if answer.strip().casefold() != "yes":
+        raise CloudQuickstartDeclined(
+            "human cost confirmation declined; no cloud action was started."
+        )
+
+
+def _run_shared_cloud_build(
+    config: dict[str, str], region: str, log: CloudQuickstartLog,
+) -> str:
+    command = [
+        "bash", str(ROOT / "tools" / "remote_build.sh"),
+        "--regions", region, "--ref", config["ref"],
+    ]
+    env = os.environ.copy()
+    env.update({
+        "CLOUD_PROJECT": config["project"],
+        "CLOUD_VM": config["vm"],
+        "CLOUD_ZONE": config["zone"],
+        "VM_USER": config["ssh_user"],
+    })
+    try:
+        process = subprocess.Popen(
+            command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"could not start shared cloud build: {exc}") from exc
+    assert process.stdout is not None
+    for line in process.stdout:
+        log.detail(6, line.rstrip("\r\n"))
+    status = process.wait()
+    if status:
+        raise RuntimeError(
+            f"shared build workflow exited with status {status}; inspect the numbered log."
+        )
+    return "Shared build and gate completed; the workflow does not publish by default."
 
 
 def _existing_instance(profile: CloudProfile) -> dict[str, Any] | None:
@@ -777,6 +1059,47 @@ def _existing_instance(profile: CloudProfile) -> dict[str, Any] | None:
         return json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError("gcloud returned an invalid instance description") from exc
+
+
+def _cloud_action_preflight(
+    profile: CloudProfile, action: str, gcloud: str,
+) -> str:
+    if action == "create":
+        if not profile.values["ssh_source_ranges"]:
+            raise RuntimeError(
+                "profile must set ssh_source_ranges to your public IP as a CIDR "
+                "(usually x.x.x.x/32) before creating a VM"
+            )
+        if _existing_instance(profile):
+            raise RuntimeError(
+                f"VM {profile.target} already exists; refusing to adopt or replace it. "
+                "Use `status` or `ssh`."
+            )
+        return f"No existing VM found at {profile.target}."
+    if action not in {"bootstrap", "ssh", "run", "collect", "preview"}:
+        return "No billable VM connection check is needed for this action."
+    instance = _existing_instance(profile)
+    if instance is None:
+        raise RuntimeError(
+            f"VM not found: {profile.target}. Create it first with `--cloud create`."
+        )
+    status = instance.get("status", "")
+    if status != "RUNNING":
+        raise RuntimeError(
+            f"VM {profile.target} is {status or 'in an unknown state'}, not RUNNING. "
+            "Start it and retry; this preflight did not start the VM."
+        )
+    output = _cloud_run([
+        gcloud, "compute", "ssh", profile.values["instance_name"],
+        f"--project={profile.values['project']}", f"--zone={profile.values['zone']}",
+        "--command=printf CLOUD_QUICKSTART_SSH_OK",
+    ], capture=True)
+    if "CLOUD_QUICKSTART_SSH_OK" not in output.stdout:
+        raise RuntimeError(
+            "SSH connected without the expected success marker; inspect the gcloud output "
+            "before retrying."
+        )
+    return f"VM is RUNNING and SSH access is ready at {profile.target}."
 
 
 def _firewall_name(profile: CloudProfile) -> str:
@@ -872,7 +1195,6 @@ def _confirm_target(profile: CloudProfile, confirmation: str | None, verb: str) 
 
 def _create(profile: CloudProfile, confirmation: str | None) -> None:
     _confirm_target(profile, confirmation, "VM creation")
-    _cloud_preflight(profile, require_create_config=True)
     if _existing_instance(profile):
         raise RuntimeError(
             f"VM {profile.target} already exists; refusing to adopt or replace it. Use `status` or `ssh`."
@@ -991,7 +1313,8 @@ def _remote_pipeline_command(region: str, port: int) -> str:
     return (
         "set -u; cd \"$HOME/nz-solar-potential\" || exit 2; "
         "before=$(find data/pipeline_runs -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort); "
-        f".venv/bin/python tools/pipeline.py {selected} --port {port} --no-open-browser; "
+        f".venv/bin/python tools/pipeline.py {selected} --port {port} --no-open-browser "
+        f"--step-offset {CLOUD_PIPELINE_STEP_OFFSET}; "
         "pipeline_status=$?; "
         "after=$(find data/pipeline_runs -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort); "
         "run_id=; "
@@ -1095,7 +1418,7 @@ def _dispatch_cloud_action(
     confirmation: str | None,
 ) -> int:
     if action == "preflight":
-        _cloud_preflight(profile)
+        print("Preflight passed. It did not create resources or enable APIs.")
     elif action == "create":
         _create(profile, confirmation)
     elif action == "bootstrap":
@@ -1121,27 +1444,28 @@ def _dispatch_cloud_action(
 def _argument_parser(default_area: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the regional solar pipeline with persistent numbered logs.")
-    parser.add_argument("region", nargs="?", default=default_area,
+    parser.add_argument("region", nargs="?", default=None,
                         help=f"configured region to process (default: {default_area})")
     parser.add_argument("--mode", choices=("local", "cloud"), default="local",
                         help="where to run the pipeline (default: local)")
     parser.add_argument("--profile",
-                        help="named local GCP profile; required with --mode cloud")
+                        help="named GCP profile for a per-developer VM (omit to use shared VM defaults)")
     parser.add_argument("--profiles-file",
                         help="cloud profile JSON file (or SOLAR_CLOUD_PROFILES_FILE)")
     parser.add_argument(
         "--cloud",
-        choices=("preflight", "create", "bootstrap", "ssh", "run", "collect",
+        choices=("preflight", "build", "create", "bootstrap", "ssh", "run", "collect",
                  "preview", "status", "delete"),
         dest="cloud",
-        help="cloud VM action (default: run)",
+        help="cloud action (default: shared build without --profile; run with --profile)",
     )
     parser.add_argument("--confirm",
                         help="exact project/zone/VM target required by create and delete")
     parser.add_argument("--estimate-nzd",
                         help="override the profile's planning cost estimate for a cloud action")
     parser.add_argument("--estimate-basis",
-                        help="assumptions for --estimate-nzd (required with the override)")
+                        help="optional assumptions for --estimate-nzd")
+    parser.add_argument("--step-offset", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--python", dest="python", default=sys.executable,
                         help="Python executable used for local pipeline subprocesses")
     parser.add_argument("--port", type=int, default=None,
@@ -1158,32 +1482,167 @@ def main() -> int:
     import config
     parser = _argument_parser(config.PIPELINE_REGION)
     args = parser.parse_args()
+    selected_profile_name = (
+        args.profile or os.environ.get("SOLAR_CLOUD_PROFILE")
+        if args.mode == "cloud" else args.profile
+    )
     try:
-        area = _safe_area(args.region)
+        area = _safe_area(args.region or config.PIPELINE_REGION)
     except ValueError as exc:
         parser.error(str(exc))
     if args.mode == "cloud":
+        action = args.cloud or ("build" if not selected_profile_name else "run")
+        if selected_profile_name and action == "build":
+            parser.error("--cloud build uses the shared VM and cannot be combined with --profile")
         try:
-            profile = load_profile(args.profile, args.profiles_file)
-            action = args.cloud or "run"
+            log = CloudQuickstartLog()
+        except OSError as exc:
+            print(
+                f"cloud quickstart error: could not create the preflight log: {exc}",
+                file=sys.stderr,
+            )
+            return 2
+        try:
             if args.confirm and action not in ("create", "delete"):
                 parser.error("--confirm can only be used with cloud actions create or delete")
-            if bool(args.estimate_nzd) != bool(args.estimate_basis):
-                parser.error("--estimate-nzd and --estimate-basis must be supplied together")
+            if args.estimate_basis and not args.estimate_nzd:
+                parser.error("--estimate-basis requires --estimate-nzd")
             chargeable_actions = {"create", "bootstrap", "ssh", "run", "collect", "preview"}
             if (args.estimate_nzd or args.estimate_basis) and action not in chargeable_actions:
-                parser.error("cost estimate overrides are only valid for chargeable cloud actions")
-            if action in chargeable_actions:
-                if action == "create":
-                    _confirm_target(profile, args.confirm, "VM creation")
-                _confirm_cloud_cost(profile, action, args.estimate_nzd, args.estimate_basis)
-            return _dispatch_cloud_action(
-                profile, action, area, args.port, args.confirm,
+                if action != "build" or selected_profile_name:
+                    parser.error("cost estimate overrides are only valid for chargeable cloud actions")
+
+            if not selected_profile_name:
+                if args.profiles_file:
+                    parser.error("--profiles-file requires --profile or SOLAR_CLOUD_PROFILE")
+                if action not in {"build", "preflight"}:
+                    parser.error(
+                        "--cloud create/bootstrap/ssh/run/collect/preview/status/delete "
+                        "requires a named --profile; without a profile the shared VM is used."
+                    )
+
+                def check_shared_checkout_and_config() -> dict[str, str]:
+                    git = shutil.which("git")
+                    if not git:
+                        raise RuntimeError("Git is not installed or not on PATH.")
+                    checkout = subprocess.run(
+                        [git, "-C", str(ROOT), "rev-parse", "--show-toplevel"],
+                        cwd=ROOT, check=True, text=True, capture_output=True, timeout=5,
+                    ).stdout.strip()
+                    if Path(checkout).resolve() != ROOT.resolve():
+                        raise RuntimeError(f"Git checkout root {checkout!r} does not match {ROOT}.")
+                    values = _load_shared_cloud_config()
+                    regions = args.region or values["regions"]
+                    for selected_region in regions.split():
+                        _safe_area(selected_region)
+                    values = dict(values)
+                    values["regions"] = regions
+                    log.detail(
+                        1,
+                        f"Git checkout valid; shared VM "
+                        f"{values['project']}/{values['zone']}/{values['vm']}; "
+                        f"regions {regions}; ref {values['ref']}.",
+                    )
+                    return values
+
+                shared = log.step(
+                    1, "Check local checkout and shared cloud defaults",
+                    check_shared_checkout_and_config,
+                )
+                gcloud = log.step(2, "Check or install Google Cloud CLI", lambda: _gcloud(log))
+                log.step(
+                    3,
+                    "Check Google authentication and shared VM",
+                    lambda: _shared_cloud_preflight(shared, gcloud),
+                )
+
+                def confirm_shared_cost() -> str:
+                    if action == "build":
+                        _confirm_shared_cloud_cost(
+                            shared, args.estimate_nzd, args.estimate_basis, log,
+                        )
+                        return "Human approval received."
+                    return "Preflight only; no cloud work or cost approval required."
+
+                log.step(4, "Confirm estimated cloud cost", confirm_shared_cost)
+                log.step(
+                    5,
+                    "Check shared VM readiness",
+                    lambda: _shared_vm_readiness(shared, gcloud),
+                )
+                if action == "preflight":
+                    result = log.step(
+                        6, "Complete cloud preflight",
+                        lambda: "No VM was started and no build was run.",
+                    )
+                else:
+                    result = log.step(
+                        6, "Build and gate on the shared VM",
+                        lambda: _run_shared_cloud_build(
+                            shared, shared["regions"], log,
+                        ),
+                    )
+                print(f"Cloud quickstart log: {log.path}", flush=True)
+                return 0 if result is not None else 1
+
+            def check_checkout_and_profile() -> CloudProfile:
+                git = shutil.which("git")
+                if not git:
+                    raise RuntimeError("Git is not installed or not on PATH.")
+                checkout = subprocess.run(
+                    [git, "-C", str(ROOT), "rev-parse", "--show-toplevel"],
+                    cwd=ROOT, check=True, text=True, capture_output=True, timeout=5,
+                ).stdout.strip()
+                if Path(checkout).resolve() != ROOT.resolve():
+                    raise RuntimeError(f"Git checkout root {checkout!r} does not match {ROOT}.")
+                selected_profile = load_profile(selected_profile_name, args.profiles_file)
+                if action in {"create", "delete"}:
+                    _confirm_target(
+                        selected_profile, args.confirm,
+                        "VM creation" if action == "create" else "VM deletion",
+                    )
+                log.detail(1, f"Git checkout valid; profile {selected_profile.name} loaded.")
+                return selected_profile
+
+            profile = log.step(1, "Check local checkout and cloud profile", check_checkout_and_profile)
+            gcloud = log.step(2, "Check or install Google Cloud CLI", lambda: _gcloud(log))
+            log.step(
+                3,
+                "Check Google authentication and cloud target",
+                lambda: _cloud_preflight(
+                    profile,
+                    require_create_config=action == "create",
+                    gcloud=gcloud,
+                ),
             )
-        except (RuntimeError, ValueError) as exc:
-            print(f"cloud quickstart error: {exc}", file=sys.stderr)
+
+            def confirm_cost() -> str:
+                if action in chargeable_actions:
+                    _confirm_cloud_cost(
+                        profile, action, args.estimate_nzd, args.estimate_basis, log,
+                    )
+                    return "Human approval received."
+                return "This action does not create or use a billable VM; no cost approval required."
+
+            log.step(4, "Confirm estimated cloud cost", confirm_cost)
+            log.step(
+                5,
+                "Check VM state and SSH readiness",
+                lambda: _cloud_action_preflight(profile, action, gcloud),
+            )
+            result = log.step(
+                6,
+                f"Run cloud action: {action}",
+                lambda: _dispatch_cloud_action(
+                    profile, action, area, args.port, args.confirm,
+                ),
+            )
+            print(f"Cloud quickstart log: {log.path}", flush=True)
+            return result
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+            print(f"cloud quickstart error: {exc}\nDetails: {log.path}", file=sys.stderr)
             return 2
-    if (args.profile or args.profiles_file or args.cloud or args.confirm
+    if (selected_profile_name or args.profiles_file or args.cloud or args.confirm
             or args.estimate_nzd or args.estimate_basis):
         parser.error(
             "--profile, --profiles-file, --cloud, --confirm, --estimate-nzd, and "
@@ -1198,7 +1657,9 @@ def main() -> int:
     while run_dir.exists():
         run_dir = RUNS / f"{run_id}-{suffix:02d}"
         suffix += 1
-    run = PipelineRun(area, run_dir)
+    if args.step_offset < 0:
+        parser.error("--step-offset cannot be negative")
+    run = PipelineRun(area, run_dir, step_offset=args.step_offset)
     area_dir = DATA / "regions" / area
     run.metadata = {"run_dir": str(run_dir.relative_to(ROOT))}
     region_out_root = DATA / "out"
