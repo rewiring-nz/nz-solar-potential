@@ -1,0 +1,87 @@
+name: Build and publish the map
+
+# A button on the Actions tab: build on the VM, gate against the live site,
+# and publish if the gate passes. Runs tools/remote_build.sh -- the same
+# script a laptop runs -- signed in to Google Cloud through Workload Identity
+# Federation, so no cloud key is stored in GitHub.
+#
+# Only people with write access to the repository can run it, only from main,
+# and only one runs at a time (the VM is shared).
+
+on:
+  workflow_dispatch:
+    inputs:
+      regions:
+        description: "Regions to build, space-separated (blank = every region, stale ones only)"
+        required: false
+        default: ""
+      fetch:
+        description: "Fetch LiDAR and photos first (new regions)"
+        type: boolean
+        default: false
+      mode:
+        description: "Build mode"
+        type: choice
+        options: [normal, yield-only, force]
+        default: normal
+      publish:
+        description: "Publish if the gate passes (untick to build and gate only)"
+        type: boolean
+        default: true
+      reviewed:
+        description: "Publish even if the gate fails -- say why (leave blank otherwise)"
+        required: false
+        default: ""
+
+concurrency:
+  group: build-vm
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+      VM_USER: j
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/200991248703/locations/global/workloadIdentityPools/github/providers/nz-solar-potential
+          service_account: github-builder@downloads-417521.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: SSH key for the VM
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -b 3072 -N "" -q -f ~/.ssh/google_compute_engine
+
+      - name: Build, gate, publish
+        env:
+          REGIONS: ${{ inputs.regions }}
+          FETCH: ${{ inputs.fetch }}
+          MODE: ${{ inputs.mode }}
+          PUBLISH: ${{ inputs.publish }}
+          REVIEWED: ${{ inputs.reviewed }}
+          COMMIT_NOTE: "Run from GitHub Actions by @${{ github.actor }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          args=()
+          [ -n "$REGIONS" ] && args+=(--regions "$REGIONS")
+          [ "$FETCH" = true ] && args+=(--fetch)
+          [ "$MODE" = yield-only ] && args+=(--yield-only)
+          [ "$MODE" = force ] && args+=(--force)
+          [ "$PUBLISH" = true ] && args+=(--publish)
+          [ -n "$REVIEWED" ] && args+=(--reviewed "$REVIEWED")
+          tools/remote_build.sh "${args[@]}"

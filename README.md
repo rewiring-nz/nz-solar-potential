@@ -5,7 +5,8 @@ outlines, LiDAR and aerial imagery: how much sun each roof face gets, how many
 panels physically fit, what they would generate, and what that is worth.
 
 Live map: https://rewiring-nz.github.io/nz-solar-potential/ (Queenstown Lakes:
-Queenstown, Arrowtown, Frankton, Kingston, Wanaka, Albert Town, Hawea). This
+Queenstown, Arrowtown, Frankton, Kingston, Wanaka, Albert Town, Hawea,
+Cromwell, Bannockburn, Glenorchy, Kinloch). This
 is the one codebase that scales to the rest of the country; the separate
 Wellington copy was retired in September 2026.
 

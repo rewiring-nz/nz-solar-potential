@@ -13,10 +13,21 @@ count. `frankton_arm_lake` is currently listed at about 79 buildings in
 
 Indicative cost for an `e2-standard-4` VM in Sydney is **NZ$0.24 per running
 hour**. Indicative cost for a 100 GB `pd-balanced` disk is **NZ$24 per month**.
-An 8-hour run with the disk prorated is about **NZ$2.20**. These estimates use
-October 2026 prices and an approximate USD/NZD conversion; check the
+An 8-hour run with the disk prorated is about **NZ$2.20**. The example profile
+uses **NZ$3.00** as a provisional planning estimate for a small region and up
+to 8 VM-hours. This is not verified against project billing, not a 90th
+percentile, and not a spending cap. Actual charges can be higher. These
+indicative estimates use October 2026 prices and an approximate USD/NZD
+conversion; check the
 [Google Cloud pricing calculator](https://cloud.google.com/products/calculator)
 for current prices. Disk charges continue while a VM is stopped.
+
+Before any action that creates or uses a billable VM, the quickstart displays
+the selected profile's estimate and assumptions and requires the user to type
+`yes`; Enter, any other response, or non-interactive execution declines. Set
+`cost_estimate_nzd` and `cost_estimate_basis` in the profile, or override both
+with `--estimate-nzd AMOUNT --estimate-basis TEXT`. Preflight, status, and
+cleanup do not require the cost prompt.
 
 ## External developer (create an environment)
 
@@ -40,8 +51,9 @@ for current prices. Disk charges continue while a VM is stopped.
    ```
 
 4. Edit `cloud-profiles.json`: set your project ID and public IP as an SSH
-   CIDR (`x.x.x.x/32`). Profiles contain resource settings, not credentials.
-   The profile name is `external-poc`.
+   CIDR (`x.x.x.x/32`). Review the machine, disk, cost estimate, and estimate
+   assumptions against your intended workload. Profiles contain resource
+   settings, not credentials. The profile name is `external-poc`.
 5. Check the profile and create the VM:
 
    ```sh

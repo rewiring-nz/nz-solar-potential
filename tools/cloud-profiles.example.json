@@ -17,7 +17,9 @@
       "bucket": null,
       "build_prefix": null,
       "tiles_bucket": null,
-      "preview_port": 8765
+      "preview_port": 8765,
+      "cost_estimate_nzd": "3.00",
+      "cost_estimate_basis": "one small region and up to 8 VM-hours on e2-standard-4 with a 100 GB pd-balanced disk"
     }
   }
 }

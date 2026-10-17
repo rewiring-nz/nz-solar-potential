@@ -41,6 +41,45 @@ def test_flat_roofs_are_level():
     assert np.allclose(z, 205.0)
 
 
+def test_no_lidar_towns_resolve_to_a_synthetic_survey():
+    # A no-LiDAR region that missed its survey box would warn and be skipped
+    # at fetch time, so it would never reach the map.
+    import config
+    from src.surveys import survey_for
+    for name in ("cromwell_west", "cromwell_east", "bannockburn", "glenorchy", "kinloch"):
+        assert survey_for(config.REGIONS[name], name).get("elevation") == "synthetic", name
+
+
+def test_small_buildings_get_a_gable_along_their_long_axis():
+    assert sd.roof_model(40)[0] == "gable" and sd.roof_model(150)[0] == "hip"
+    shed = box(0, 0, 8, 4)                         # long axis east-west
+    faces = sd.gable_faces(sd.roof_outline(shed), 100.0, 3.0, 20.0)
+    assert len(faces) == 2
+    assert all(abs(q.area - 16) < 0.2 for q, _ in faces)
+    from src.roof_partition import _slope_aspect
+    aspects = sorted(round(_slope_aspect(pl)[1]) for _, pl in faces)
+    assert aspects == [0, 180], aspects            # one face north, one south
+    for _, pl in faces:
+        assert abs(_slope_aspect(pl)[0] - 20.0) < 0.1
+        # each plane is at eave height on its own long wall
+        z_wall = pl[0] * 4 + pl[1] * (0 if _slope_aspect(pl)[1] > 90 else 4) + pl[2]
+        assert abs(z_wall - 103.0) < 1e-6
+
+
+def test_photo_roof_planes_rise_from_each_face_eave():
+    import math
+    # A 10 x 6 m gable read from the photo: north half faces north, south half south.
+    north = {"ring": [[0, 3], [10, 3], [10, 6], [0, 6], [0, 3]], "slope": 30.0, "aspect": 0.0}
+    south = {"ring": [[0, 0], [10, 0], [10, 3], [0, 3], [0, 0]], "slope": 30.0, "aspect": 180.0}
+    flat = {"ring": [[20, 0], [24, 0], [24, 4], [20, 4], [20, 0]], "slope": 2.0, "aspect": None}
+    faces, planes = sd.photo_roof([north, south, flat], 100.0, 3.0)
+    z = lambda pl, x, y: pl[0] * x + pl[1] * y + pl[2]
+    rise = 3 * math.tan(math.radians(30))
+    assert abs(z(planes[0], 5, 6) - 103.0) < 1e-6 and abs(z(planes[0], 5, 3) - (103.0 + rise)) < 1e-6
+    assert abs(z(planes[1], 5, 0) - 103.0) < 1e-6 and abs(z(planes[1], 5, 3) - (103.0 + rise)) < 1e-6
+    assert planes[2] == [0.0, 0.0, 103.0]
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

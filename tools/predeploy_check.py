@@ -159,13 +159,18 @@ def main():
     # Each carries a per-building [panel_count, kwh] ladder; that is what the
     # gate compares. The merged file is read only where a checkout still has
     # one and no summaries.
+    twice = {}
     if summaries.is_dir() and any(summaries.glob("*.json")):
-        new = {}
+        new, owners = {}, {}
         for sp in summaries.glob("*.json"):
             for b, (panels, kwh) in json.loads(sp.read_text()).get("ladder", {}).items():
                 new[int(b)] = {"panel_count": panels, "fill_panels_100": panels,
                                "ac_kwh_year": kwh, "building_id": int(b)}
+                owners.setdefault(int(b), []).append(sp.stem)
         print(f"new build: {len(new):,} buildings from {len(list(summaries.glob('*.json')))} region summaries")
+        # A building in two regions' summaries is drawn and counted twice on
+        # the map (567 of them shipped in v47 before this check existed).
+        twice = {b: r for b, r in owners.items() if len(r) > 1}
     else:
         new = {int(f["properties"]["building_id"]): f["properties"]
                for f in json.loads(newp.read_text())["features"]
@@ -243,7 +248,14 @@ def main():
     except Exception as _exc:
         print(f"\n  (case register unavailable: {_exc!r})")
 
-    bad = len(zeroed) + len(withheld)
+    print(f"\n  IN TWO REGIONS (drawn and counted twice): {len(twice)}")
+    for b, r in list(twice.items())[:a.top]:
+        print(f"    #{b}  {', '.join(sorted(r))}")
+    if twice:
+        print("    Dedupe the built regions together (src/region_build.py with "
+              "every built region) and re-run combine.")
+
+    bad = len(zeroed) + len(withheld) + len(twice)
     print(f"\n  {'LOOK AT THESE BEFORE DEPLOYING' if bad else 'nothing zeroed or newly withheld'}")
     print("  A drop is not automatically wrong -- better geometry removes panels")
     print("  that were overlapping a ridge. This surfaces, it does not judge.")

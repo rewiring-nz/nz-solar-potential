@@ -1,0 +1,41 @@
+# Fast checks on every pull request and push to main: the unit tests that need
+# no LiDAR, imagery or build outputs. The synthetic region, the golden roofs and
+# full builds run on the build VM (tests/run_all.sh there), not here.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock.txt
+      - name: Install
+        run: pip install -r requirements.lock.txt
+      - name: Unit tests
+        run: |
+          set -e
+          for t in pure imports_and_arity no_deprecations output_contract xref \
+                   geometry_stage plane_refresh plant_decks project_secrets \
+                   register_imagery ridge_snap roof_levels small_obstructions \
+                   staircase sunken synthesize_dsm quickstart_reporting; do
+            echo "::group::$t"
+            python tests/test_$t.py
+            echo "::endgroup::"
+          done
+      - name: Money maths (economics.js, bill_tool.js)
+        run: |
+          node tests/test_economics.mjs
+          node tests/test_bill_tool.mjs

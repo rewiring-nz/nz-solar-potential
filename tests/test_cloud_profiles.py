@@ -36,6 +36,8 @@ def _profile_values() -> dict[str, object]:
         "build_prefix": None,
         "tiles_bucket": None,
         "preview_port": 8765,
+        "cost_estimate_nzd": "3.00",
+        "cost_estimate_basis": "small region, up to 8 VM-hours",
     }
 
 
@@ -84,6 +86,20 @@ class CloudProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unknown field"):
                 load_profile("test", path)
 
+    def test_cost_estimate_and_basis_must_be_valid_and_paired(self) -> None:
+        values = _profile_values()
+        values.pop("cost_estimate_basis")
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write({"test": values}, directory)
+            with self.assertRaisesRegex(ValueError, "must be set together"):
+                load_profile("test", path)
+        values = _profile_values()
+        values["cost_estimate_nzd"] = "-1"
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write({"test": values}, directory)
+            with self.assertRaisesRegex(ValueError, "non-negative amount"):
+                load_profile("test", path)
+
     def test_vm_creation_has_no_attached_service_account_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = self._write({"test": _profile_values()}, directory)
@@ -118,6 +134,36 @@ class CloudProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "requires --confirm"):
                 cloud_pipeline._create(profile, "another/project/vm")
         preflight.assert_not_called()
+
+    def test_cost_confirmation_decline_blocks_cloud_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write({"test": _profile_values()}, directory)
+            with (
+                patch.object(sys, "argv", [
+                    "pipeline.py", "frankton_arm_lake", "--mode", "cloud",
+                    "--profile", "test", "--profiles-file", str(path),
+                ]),
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value=""),
+                patch.object(cloud_pipeline, "_dispatch_cloud_action") as dispatch,
+            ):
+                self.assertEqual(cloud_pipeline.main(), 2)
+        dispatch.assert_not_called()
+
+    def test_cost_confirmation_approval_dispatches_cloud_action(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write({"test": _profile_values()}, directory)
+            with (
+                patch.object(sys, "argv", [
+                    "pipeline.py", "frankton_arm_lake", "--mode", "cloud",
+                    "--profile", "test", "--profiles-file", str(path),
+                ]),
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value="yes"),
+                patch.object(cloud_pipeline, "_dispatch_cloud_action", return_value=0) as dispatch,
+            ):
+                self.assertEqual(cloud_pipeline.main(), 0)
+        dispatch.assert_called_once()
 
     def test_cleanup_refuses_unowned_instance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

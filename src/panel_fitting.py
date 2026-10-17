@@ -66,6 +66,7 @@ SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least
 
 FRAME_SNAP_DEG = 7.0   # a family's bearing within this of the building axis takes the axis
 FAMILY_TOL_DEG = 10.0  # eaves within this of each other rack to one bearing
+WALL_SNAP_DEG = 20.0   # a family within this of a main wall direction racks to the wall
 
 
 def eave_bearing_deg(aspect_deg):
@@ -145,9 +146,23 @@ def building_frame(facets, building_polygon):
                 break
         else:
             families.append((e, a))
+    # RACK TO A WALL, NOT TO A FACE'S READING. A face's eave bearing comes
+    # from its fitted aspect, and a misread face (a hip cut in the wrong
+    # place, a plane fitted across two slopes) carries a bearing no wall of
+    # the building has -- and racked its panels 30 degrees across a square
+    # house (9 Sandford Terrace, #4731128, 15 Oct; about 2% of panels in the
+    # LiDAR towns sat more than 5 degrees off every main wall). Installers
+    # rack to walls. So a family within WALL_SNAP_DEG of one of the outline's
+    # wall families takes that wall's direction exactly; a wing at its own
+    # angle has its own walls and keeps them.
+    from src.outline_axis import wall_families_deg
+    walls = wall_families_deg(building_polygon) if building_polygon is not None else []
     angles = []
     for ang, _ in families:
-        if bld is not None and dev(ang, bld) <= FRAME_SNAP_DEG:
+        near = min(walls, key=lambda w: dev(ang, w)) if walls else None
+        if near is not None and dev(ang, near) <= WALL_SNAP_DEG:
+            ang = near
+        elif bld is not None and dev(ang, bld) <= FRAME_SNAP_DEG:
             ang = bld
         angles.append(float(ang))
     if not angles:

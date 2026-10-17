@@ -1,10 +1,28 @@
 # Backlog
 
 Open work, in priority order. Each item names what it is based on. History is
-in git.
+in git. Open items are also GitHub Issues (#16-36) on the project board
+(https://github.com/orgs/rewiring-nz/projects/5), which is where to pick up
+and assign work.
 
 ## Ship
 
+- **Glenorchy, Kinloch and the Rees Valley -- live in v43 (13 Oct).** No
+  LiDAR reaches the head of the lake: synthetic-surface path like Cromwell,
+  photos Otago 0.3m Rural 2017-2019 (layer 104460). Regions glenorchy (528
+  outlines), kinloch (30), glenorchy_north (142, Rees Valley / Paradise road).
+- **Photo-only roof reading -- measured 13 Oct, not adopted for houses.**
+  tools/research/photo_only_roofs.py on 150 Queenstown houses with LiDAR:
+  sunshine per m2 of roof, median error -- hip 2.5%, photo gable/hip form
+  2.6%, SAM photo faces 3.9%, true layout at 20 degrees 2.0%. The photo form
+  names the roof right more often (61/100 vs 35/100; 59 at 0.3 m), but
+  whole-roof sunshine barely depends on it at 20 degrees. LiDAR pitch median
+  20.1 degrees. Where it could still matter: which face takes the panels
+  first (north share error 12 vs 13 points) -- worth retesting on panel
+  counts, not sunshine, if the no-LiDAR towns grow.
+- **Small no-LiDAR buildings now gabled (57a9eb49) -- live in v45 (13 Oct).**
+  Gate: +10,090 panels (+0.6%), none zeroed or down 30%. Under 60 m2, 1 roof
+  in 141 is a hip in the LiDAR; gables leave faces big enough for panels.
 - **Cromwell and Bannockburn -- live in v42 (29 Sep).** No LiDAR
   reaches the Cromwell basin, so they build on a synthetic surface
   (src/synthesize_dsm.py): 8 m DEM ground, hip roofs at 20 degrees under
@@ -117,7 +135,6 @@ in git.
   coherence of the shifts was near chance. Needs a roof-only edge mask and a
   coherence gate before it ships.
 - **arrowtown_hills** builds 50 buildings and estimates none.
-- **Glenorchy** has no LiDAR coverage; it cannot be built.
 - **Open-ended drawn lines:** nine marked roofs need patching for the
   line-extension rule (`tools/patch_labelled.py`).
 

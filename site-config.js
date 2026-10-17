@@ -13,14 +13,15 @@ window.SITE = {
   // Bumped on every DEPLOY of this site's data: the ?v= param is the only
   // thing that makes a browser re-fetch solar_potential.geojson and the
   // pmtiles, whose URLs are otherwise identical across builds.
-  dataVersion: "42",
+  dataVersion: "48",
   // Where the data lives: one folder per release in the tiles bucket
   // (tools/publish_served.py). Rolling back is pointing this at an older
   // version folder that is still there (the newest three are kept).
-  dataBase: "https://storage.googleapis.com/rewiring-solar-tiles/v42/",
+  dataBase: "https://storage.googleapis.com/rewiring-solar-tiles/v48/",
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
   towns: [
+    ["Mt Eden", 174.7567, -36.8832, 14.5],
     ["Queenstown", 168.6626, -45.0312, 14.5], ["Frankton", 168.7380, -45.0230, 14.5],
     ["Fernhill", 168.6350, -45.0400, 15], ["Sunshine Bay", 168.6210, -45.0430, 15],
     ["Arthurs Point", 168.6960, -44.9820, 14.5], ["Arrowtown", 168.8110, -44.9430, 14.5],
@@ -31,7 +32,8 @@ window.SITE = {
     ["Lake Hayes Estate", 168.7610, -44.9880, 14.8], ["Queenstown Airport", 168.7390, -45.0210, 15],
     ["Kingston", 168.7180, -45.3380, 15], ["Wanaka", 169.1330, -44.7000, 14.5],
     ["Albert Town", 169.2100, -44.6820, 15], ["Hawea", 169.2550, -44.6150, 14.5],
-    ["Cromwell", 169.1970, -45.0400, 14.5], ["Bannockburn", 169.1580, -45.0880, 15]
+    ["Cromwell", 169.1970, -45.0400, 14.5], ["Bannockburn", 169.1580, -45.0880, 15],
+    ["Glenorchy", 168.3870, -44.8500, 15], ["Kinloch", 168.3500, -44.8390, 15.5]
   ],
   name: "Queenstown Lakes",
 };

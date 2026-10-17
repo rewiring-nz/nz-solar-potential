@@ -6,9 +6,9 @@
 #   tools/deploy_from_vm.sh --push-reviewed "why"   # push although the gate
 #       failed, after rendering what it listed; the reason goes in the commit
 #
-# The VM cannot publish (scp'd payload, no git). This is the one place the
-# laptop is in the ship path, and it does nothing but relay files the VM
-# built: nothing here is computed on the laptop.
+# Relays files the VM built: nothing here is computed on the laptop. The VM
+# can now publish by itself (tools/remote_build.sh, the build-and-publish
+# GitHub Action); this laptop path remains for reviewing a build locally.
 set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -32,11 +32,11 @@ fi
 echo "=== pull the served set ==="
 for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles addresses.json \
          assumptions.json seasonal_curves.json build_summary.json markup_lines.geojson; do
-  gcloud compute scp --project="$PROJECT" --zone "$ZONE" --quiet "$VM:~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
+  gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet "$VM:~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
 done
 for d in building_detail heatmap_tiles summaries seasonal_curves addresses; do
   rm -rf "data/$d.pull" && mkdir -p "data/$d.pull"
-  if gcloud compute scp --project="$PROJECT" --zone "$ZONE" --quiet --recurse "$VM:~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
+  if gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet --recurse "$VM:~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
     rm -rf "data/$d" && mv "data/$d.pull/$d" "data/$d"
   fi
   rm -rf "data/$d.pull"

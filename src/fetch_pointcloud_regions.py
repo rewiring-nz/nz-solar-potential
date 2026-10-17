@@ -107,7 +107,10 @@ def main(region_names=None):
     region pulls its point cloud automatically instead of relying on someone
     remembering a second script."""
     load_dotenv()
-    api_key = os.environ["LINZ_API_KEY"]
+    from src.project_secrets import linz_api_key
+    api_key = linz_api_key()
+    if not api_key:
+        raise SystemExit("LINZ_API_KEY not set and not readable from Secret Manager")
     POINTCLOUD_DIR.mkdir(parents=True, exist_ok=True)
     # "pilot" is a first-class area with its own bbox -- its exclusive CBD
     # tiles were silently never fetched by the regions-only default, which

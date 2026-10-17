@@ -46,7 +46,10 @@ def main(area="pilot"):
     preflight("add_addresses", area)
     from src.region_build import area_paths, area_bbox_wgs84, write_json_atomic
     load_dotenv()
-    api_key = os.environ["LINZ_API_KEY"]
+    from src.project_secrets import linz_api_key
+    api_key = linz_api_key()
+    if not api_key:
+        raise SystemExit("LINZ_API_KEY not set and not readable from Secret Manager")
 
     print(f"Fetching NZ Addresses for {area} bbox...")
     # WGS84 bbox, not NZTM: unlike the outlines layer, this layer's WFS default

@@ -129,8 +129,18 @@ def compute_horizon_profile(dem_path, observer_x, observer_y,
     8m DEM). Returns dict {azimuth_deg: horizon_elevation_angle_deg},
     azimuth_deg compass bearing (0=N, 90=E). Positive angle = terrain
     sits above flat-horizon in that direction; 0 = fully open."""
+    # Only the square the rays can reach. The wide DEM is a VRT spanning every
+    # region in the country (src/fetch_dem_wide.py); reading all of it per
+    # call would be billions of cells. Outside the raster reads as nodata,
+    # exactly as an out-of-bounds sample did before.
+    from rasterio.windows import from_bounds
+    r = max_distance_km * 1000 + 2 * sample_step_m
     with rasterio.open(dem_path) as ds:
-        return compute_horizon_profile_from_array(ds.read(1), ds.transform, ds.nodata,
+        nodata = ds.nodata if ds.nodata is not None else -32768.0
+        win = from_bounds(observer_x - r, observer_y - r, observer_x + r, observer_y + r,
+                          ds.transform).round_offsets().round_lengths()
+        band = ds.read(1, window=win, boundless=True, fill_value=nodata)
+        return compute_horizon_profile_from_array(band, ds.window_transform(win), nodata,
                                                     observer_x, observer_y, azimuth_step_deg,
                                                     max_distance_km, sample_step_m)
 

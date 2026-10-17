@@ -137,7 +137,8 @@ def fetch_raster_chunked(bbox_wgs84, api_key, layer_id, name, out_dir, format_ke
 
 def main():
     load_dotenv()
-    api_key = os.environ.get("LINZ_API_KEY")
+    from src.project_secrets import linz_api_key
+    api_key = linz_api_key()
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set")
 
@@ -193,7 +194,11 @@ def main():
             synthesize(name)
             continue
         print(f"[{name}] DSM (survey {sv.get('name', 'default')})...")
-        fetch_raster_chunked(bbox, api_key, sv["dsm_layer"], "dsm", out_dir, "grid")
+        if sv.get("dsm_s3"):
+            from src import s3_rasters
+            s3_rasters.fetch(sv["dsm_s3"], bbox, out_dir / "dsm_mosaic.tif")
+        else:
+            fetch_raster_chunked(bbox, api_key, sv["dsm_layer"], "dsm", out_dir, "grid")
 
     # Pass 2: imagery (the long pole), region by region.
     for name in wanted:
@@ -201,8 +206,14 @@ def main():
         out_dir = REGIONS_DIR / name
         print(f"[{name}] imagery ({bbox_area_km2(bbox):.1f} km2)...")
         try:
-            fetch_raster_chunked(bbox, api_key, survey_for(bbox, name)["imagery_layer"],
-                                 "imagery", out_dir, "raster")
+            sv0 = survey_for(bbox, name)
+            if sv0.get("imagery_s3"):
+                # Resampled to the 0.1 m every other region's photo has: the
+                # colour stages measure in pixels.
+                from src import s3_rasters
+                s3_rasters.fetch(sv0["imagery_s3"], bbox, out_dir / "imagery_mosaic.tif", res=0.1)
+            else:
+                fetch_raster_chunked(bbox, api_key, sv0["imagery_layer"], "imagery", out_dir, "raster")
         except Exception as e:
             # LINZ's 0.1m aerial layer is URBAN-only: rural regions 400 here.
             # Never let that abort the run -- DSM+outlines are what the build
@@ -215,7 +226,12 @@ def main():
         except LookupError:
             continue
         ref = sv.get("reference_imagery_layer")
-        if ref and ref != sv["imagery_layer"]:
+        if sv.get("reference_imagery_s3") and sv["reference_imagery_s3"] != sv.get("imagery_s3"):
+            from src import s3_rasters
+            s3_rasters.fetch(sv["reference_imagery_s3"], bbox, out_dir / "reference_imagery_mosaic.tif", res=0.1)
+        elif sv.get("imagery_s3"):
+            pass   # the photo is the LiDAR year's own: nothing to register against
+        elif ref and ref != sv["imagery_layer"]:
             try:
                 fetch_raster_chunked(bbox, api_key, ref, "reference_imagery", out_dir, "raster")
             except Exception as e:

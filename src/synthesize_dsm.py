@@ -57,11 +57,56 @@ EAVE_FLAT_M = 5.0           # a commercial or industrial shed
 NODATA = -9999.0
 
 
+# SMALL BUILDINGS ARE NOT HIPPED. Against the LiDAR of central Queenstown
+# (13 Oct, tools/research/photo_only_roofs.py), 1 of 141 roofs under 60 m2
+# was a hip; 52 were gables, 41 flat, 32 mono-pitch. Modelled as hips their
+# four small faces took no panels (a 25 m2 Rees Valley shed: four 5 m2
+# faces, none fitted). A gable along the long axis is the common form and
+# leaves two faces big enough to use. Houses keep the hip: there the form
+# varies by town and the hip's whole-roof sunshine was within 0.5 points of
+# the true layout's (same study).
+GABLE_MAX_M2 = 60.0
+
+
 def roof_model(area_m2):
     """(kind, pitch_deg, eave_m) guessed from the footprint alone."""
     if area_m2 >= FLAT_MIN_M2:
         return "flat", 0.0, EAVE_FLAT_M
+    if area_m2 < GABLE_MAX_M2:
+        return "gable", PITCH_DEG, EAVE_HOUSE_M
     return "hip", PITCH_DEG, EAVE_HOUSE_M
+
+
+def gable_faces(poly, base, eave_m, pitch_deg):
+    """A gable along the footprint's long axis: the two halves either side
+    of the ridge, each rising from its long side. Returns [(face, plane)]."""
+    from shapely.geometry import LineString
+    from shapely.geometry.polygon import orient
+    from shapely.ops import split
+    with np.errstate(divide="ignore", invalid="ignore"):   # shapely's envelope on exact rectangles
+        cs = np.array(list(poly.minimum_rotated_rectangle.exterior.coords)[:4])
+    e0, e1 = cs[1] - cs[0], cs[2] - cs[1]
+    if np.linalg.norm(e0) < np.linalg.norm(e1):          # make cs[0]->cs[1] a long side
+        cs = np.roll(cs, -1, axis=0)
+    rect = orient(type(poly)(cs), 1.0)                   # counter-clockwise
+    rc = np.array(list(rect.exterior.coords)[:4])
+    lens = [np.linalg.norm(rc[(i + 1) % 4] - rc[i]) for i in range(4)]
+    k = int(np.argmax(lens))
+    long_a = LineString([tuple(rc[k]), tuple(rc[(k + 1) % 4])])
+    long_b = LineString([tuple(rc[(k + 2) % 4]), tuple(rc[(k + 3) % 4])])
+    mid0 = (rc[(k + 3) % 4] + rc[k]) / 2
+    mid1 = (rc[(k + 1) % 4] + rc[(k + 2) % 4]) / 2
+    u = (mid1 - mid0) / (np.linalg.norm(mid1 - mid0) or 1.0)
+    ridge = LineString([tuple(mid0 - u * 1e3), tuple(mid1 + u * 1e3)])
+    try:
+        halves = [g for g in split(poly, ridge).geoms if g.geom_type == "Polygon" and g.area > 0.5]
+    except Exception:
+        return []
+    out = []
+    for h in halves:
+        wall = long_a if h.distance(long_a) <= h.distance(long_b) else long_b
+        out.append((h, wall_plane(wall, base, eave_m, pitch_deg)))
+    return out if len(out) == 2 else []
 
 
 def roof_heights(poly, xs, ys, base, kind, pitch_deg, eave_m):
@@ -158,15 +203,22 @@ def wall_plane(wall, base, eave_m, pitch_deg):
     return [t * nx, t * ny, base + eave_m - t * (nx * x0 + ny * y0)]
 
 
-def _write_faces(building_id, faces, planes):
+def _write_faces(building_id, faces, planes, replace=False):
     """The roof's faces where build_layout_geojson reads a building's chosen
     faces (roof_partition.facets_from_selected_faces), which fits each one's
-    plane from this surface. Never over a reading that came from elsewhere."""
+    plane from this surface. Never over a reading that came from elsewhere --
+    unless `replace`: a building the LiDAR shows only as ground, whose photo
+    reading the build could not use. The reading replaced is kept in
+    data/selected_faces_replaced/."""
     f = SELECTED_DIR / f"{building_id}.json"
     if f.exists():
         try:
             if json.loads(f.read_text()).get("source") != "synthetic":
-                return False
+                if not replace:
+                    return False
+                keep = SELECTED_DIR.parent / "selected_faces_replaced"
+                keep.mkdir(parents=True, exist_ok=True)
+                (keep / f.name).write_text(f.read_text())
         except ValueError:
             pass
     SELECTED_DIR.mkdir(parents=True, exist_ok=True)
@@ -174,6 +226,50 @@ def _write_faces(building_id, faces, planes):
     f.write_text(json.dumps({"source": "synthetic", "score": 1.0, "faces": rings,
                              "planes": [[round(v, 6) for v in pl] for pl in planes]}))
     return True
+
+
+PHOTO_ROOFS = __import__("os").environ.get("SOLAR_PHOTO_ROOFS", "1") != "0"
+
+
+def load_photo_roofs(region):
+    """{building_id: faces} read from the photo (tools/predict_photo_shape.py), or {}."""
+    if not PHOTO_ROOFS:
+        return {}
+    f = area_paths(region)["dir"] / "photo_roofs.json"
+    if not f.exists():
+        return {}
+    try:
+        return {int(k): v for k, v in json.loads(f.read_text())["buildings"].items()}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def photo_roof(faces_doc, base, eave_m):
+    """Faces and planes for a roof read from the photo.
+
+    Each face rises from its own lowest edge (the eave, at base + eave_m) at
+    the slope the photo model read, away from the direction it faces; a flat
+    face sits at eave height. Slopes arrive capped at 45 degrees.
+    """
+    from shapely.geometry import Polygon
+    faces, planes = [], []
+    for d in faces_doc:
+        q = Polygon(d["ring"])
+        if not q.is_valid:
+            q = q.buffer(0)
+        if q.is_empty or q.geom_type != "Polygon":
+            continue
+        s, asp = float(d["slope"]), d.get("aspect")
+        if asp is None or s < 1.0:
+            faces.append(q)
+            planes.append([0.0, 0.0, base + eave_m])
+            continue
+        ux, uy = math.sin(math.radians(asp)), math.cos(math.radians(asp))
+        t = math.tan(math.radians(min(s, 45.0)))
+        low = max(ux * x + uy * y for x, y in q.exterior.coords)
+        faces.append(q)
+        planes.append([-t * ux, -t * uy, base + eave_m + t * low])
+    return faces, planes
 
 
 def synthesize(region, dem_path=None):
@@ -207,7 +303,8 @@ def synthesize(region, dem_path=None):
     dsm = ground.copy()
 
     roofs = {}
-    counts = {"hip": 0, "flat": 0}
+    counts = {"hip": 0, "gable": 0, "flat": 0, "photo": 0}
+    photo = load_photo_roofs(region)
     for row in gdf.itertuples():
         g = row.geometry
         if g is None or g.is_empty:
@@ -231,15 +328,35 @@ def synthesize(region, dem_path=None):
         xs = x0 + (c0 + cc + 0.5) * RES_M
         ys = y1 - (r0 + rr + 0.5) * RES_M
         base = float(np.median(ground[r0 + rr, c0 + cc]))
-        hips = hip_faces(g) if kind == "hip" else []
-        if hips:
+        from_photo = photo_roof(photo[int(row.building_id)], base, eave) if int(row.building_id) in photo else ([], [])
+        hips = hip_faces(g) if kind == "hip" and not from_photo[0] else []
+        gab = gable_faces(g, base, eave, pitch) if kind == "gable" and not from_photo[0] else []
+        if from_photo[0]:
+            faces, planes = from_photo
+            areas = [q.area for q in faces]
+            pitch = round(float(np.average([math.degrees(math.atan(math.hypot(pl[0], pl[1])))
+                                            for pl in planes], weights=areas)), 1)
+            kind = "photo"
+        elif gab:
+            faces = [q for q, _ in gab]
+            planes = [pl for _, pl in gab]
+        elif hips:
             faces = [q for q, _ in hips]
             planes = [wall_plane(wall, base, eave, pitch) for _, wall in hips]
         else:
             faces, planes = [g], [[0.0, 0.0, base + eave]]
-            if kind == "hip":       # no usable walls: model it flat rather than guess
+            if kind in ("hip", "gable"):   # no usable walls: model it flat rather than guess
                 kind, pitch = "flat", 0.0
-        z = roof_heights(g, xs, ys, base, kind, pitch, eave)
+        if kind == "photo":   # each pixel on the plane of the face it lies in
+            import shapely
+            z = np.full(len(xs), base + eave, dtype=float)
+            for q, pl in zip(faces, planes):
+                on = shapely.contains_xy(q, xs, ys)
+                z[on] = pl[0] * xs[on] + pl[1] * ys[on] + pl[2]
+        elif gab:   # the roof is the lower of its two planes: the ridge where they meet
+            z = np.minimum.reduce([pl[0] * xs + pl[1] * ys + pl[2] for pl in planes])
+        else:
+            z = roof_heights(g, xs, ys, base, kind, pitch, eave)
         dsm[r0 + rr, c0 + cc] = np.maximum(dsm[r0 + rr, c0 + cc], z.astype(np.float32))
         _write_faces(int(row.building_id), faces, planes)
         roofs[str(int(row.building_id))] = {"roof": kind, "pitch_deg": pitch, "eave_m": eave,
@@ -258,13 +375,16 @@ def synthesize(region, dem_path=None):
         "source": "synthetic",
         "why": "no LiDAR survey covers this region",
         "ground": "NZ 8 m DEM, bilinear to 1 m",
-        "roofs": f"hip at {PITCH_DEG:g} degrees under {FLAT_MIN_M2:g} m2, flat at and above",
+        "roofs": ((f"{counts['photo']} read from the photo (tools/predict_photo_shape.py); the rest " if counts["photo"] else "")
+                  + f"gable under {GABLE_MAX_M2:g} m2, hip up to {FLAT_MIN_M2:g} m2, both at "
+                  f"{PITCH_DEG:g} degrees; flat at and above {FLAT_MIN_M2:g} m2"),
         "pitch_deg": PITCH_DEG,
         "flat_min_m2": FLAT_MIN_M2,
         "buildings": roofs,
     })
-    print(f"[{region}] synthetic surface: {counts['hip']} hip roofs at {PITCH_DEG:g} deg, "
-          f"{counts['flat']} flat, {w} x {h} m, in {time.time() - t0:.0f}s")
+    print(f"[{region}] synthetic surface: {counts['photo']} roofs read from the photo, "
+          f"{counts['hip']} hip and {counts['gable']} gable roofs "
+          f"at {PITCH_DEG:g} deg, {counts['flat']} flat, {w} x {h} m, in {time.time() - t0:.0f}s")
     return out
 
 

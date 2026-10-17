@@ -10,6 +10,7 @@ This directory documents only the `nz-solar-potential` project. The sibling
 | Data maintainers | [Quickstart](quickstart.md) | Run the full regional pipeline for a configured region and open its map preview. | Pipeline command or region configuration changes. |
 | Data maintainers | [Local setup](data-maintainers/local-setup.md) | Set up a supported workstation, Python environment, map-build tools, and credentials. | Dependencies, supported platforms, or credentials change. |
 | Software developers | [Cloud quickstart](quickstart-cloud.md) | Experimental Google Cloud single-VM setup for external and internal developers, with profile, cost, and cleanup requirements. | Cloud actions, profile contract, resource estimate, or onboarding changes. |
+| Data maintainers | [Team access](data-maintainers/team-access.md) | Set up Google Cloud access and run the shared-VM build workflow. | Cloud access, VM workflow, or permissions change. |
 | Data maintainers | [Troubleshooting](data-maintainers/troubleshooting.md) | Diagnose pipeline preflight, LINZ fetch, map-build, and local preview errors using run-report step numbers. | A recurring diagnostic or repair path changes. |
 | Data maintainers | [Pipeline reference](data-maintainers/pipeline-reference.md) | Explain region configuration, run artifacts, status interpretation, and clean-room limits. | Pipeline outputs or operating limits change. |
 | Data maintainers | [Dataset operations](data-maintainers/dataset-operations.md) | Fetch, build, validate, merge, and publish data. | Pipeline scripts, source datasets, outputs, or release checks change. |
@@ -27,9 +28,10 @@ This directory documents only the `nz-solar-potential` project. The sibling
 - Treat executable scripts, `config.py`, and committed data contracts as the
   implementation source of truth. Link to them instead of copying volatile
   details.
-- Mark unverified cloud operations and experiments clearly. The documented
-  data-maintenance baseline runs locally; see the experimental cloud guide for
-  its separate prerequisites and limitations.
+- Mark unverified cloud operations and experiments clearly. Quick checks run
+  locally; district builds run on the shared build VM. The profile-based
+  single-VM cloud quickstart remains experimental and documents its separate
+  prerequisites and limitations.
 - Keep platform-specific setup in the data maintainer guides. macOS is the
   primary platform; Ubuntu and Windows guidance is included where it differs.
 - Keep AI context factual, concise, and reviewable in Git. Remove duplicate or

@@ -29,7 +29,8 @@ _KNOWN_KEYS = {
     "image_project", "image_family", "service_account", "network", "subnetwork",
     "ssh_source_ranges", "bucket", "build_prefix", "tiles_bucket",
     "preview_port", "fleet_zone", "fleet_machine_type", "fleet_disk_gb",
-    "source_vm", "source_zone", "worker_image",
+    "source_vm", "source_zone", "worker_image", "cost_estimate_nzd",
+    "cost_estimate_basis",
 }
 
 
@@ -133,6 +134,26 @@ def _validate_values(name: str, raw: Any) -> dict[str, Any]:
         or not 30 <= values["fleet_disk_gb"] <= 2000
     ):
         raise ValueError(f"profile {name!r}: fleet_disk_gb must be an integer from 30 to 2000")
+    has_estimate = "cost_estimate_nzd" in values
+    has_basis = "cost_estimate_basis" in values
+    if has_estimate != has_basis:
+        raise ValueError(
+            f"profile {name!r}: cost_estimate_nzd and cost_estimate_basis must be set together"
+        )
+    if has_estimate:
+        estimate = values["cost_estimate_nzd"]
+        if not isinstance(estimate, str) or not re.fullmatch(
+            r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", estimate
+        ):
+            raise ValueError(
+                f"profile {name!r}: cost_estimate_nzd must be a non-negative amount "
+                "with up to two decimal places"
+            )
+        basis = values["cost_estimate_basis"]
+        if not isinstance(basis, str) or not basis.strip() or len(basis) > 300:
+            raise ValueError(
+                f"profile {name!r}: cost_estimate_basis must be 1-300 characters"
+            )
     for key in ("source_vm",):
         if key in values:
             _required_string(values, key, _NAME)

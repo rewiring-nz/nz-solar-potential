@@ -193,6 +193,21 @@ def _md(value: Any) -> str:
 
 
 def _linz_key_value() -> str:
+    """The key from the environment, else .env, else Secret Manager."""
+    return _linz_key_local() or _linz_key_secret_manager()
+
+
+def _linz_key_secret_manager() -> str:
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    try:
+        from src.project_secrets import linz_api_key
+        return linz_api_key() or ""
+    except Exception:
+        return ""
+
+
+def _linz_key_local() -> str:
     key = os.environ.get("LINZ_API_KEY", "").strip()
     if key:
         return key
@@ -397,7 +412,7 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
     if not py.is_file() or not os.access(py, os.X_OK):
         return False, f"Selected Python executable is unavailable: {py}", {"name": area}
     if not _key_available():
-        return False, "LINZ_API_KEY is not set in the environment or .env (value was not recorded).", {"name": area}
+        return False, "LINZ_API_KEY is not in the environment, .env or Secret Manager (value was not recorded).", {"name": area}
     dependency_probe = subprocess.run(
         [str(py), "-c", "import matplotlib.colors"], cwd=ROOT,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -624,10 +639,93 @@ def _cloud_run(
 def _gcloud() -> str:
     path = shutil.which("gcloud")
     if not path:
-        raise RuntimeError(
-            "gcloud is not installed or is not on PATH; install the Google Cloud CLI first"
-        )
+        brew = shutil.which("brew")
+        if not brew:
+            raise RuntimeError(
+                "gcloud is missing. On macOS, install Homebrew from https://brew.sh, "
+                "open a new terminal, and retry. The quickstart does not install Homebrew. "
+                "On other platforms, install the Google Cloud CLI from "
+                "https://cloud.google.com/sdk/docs/install."
+            )
+        if not sys.stdin.isatty():
+            raise RuntimeError(
+                "gcloud is missing and package installation requires interactive "
+                "confirmation. Run `brew install --cask gcloud-cli`, then retry."
+            )
+        print("Google Cloud CLI (gcloud) is missing. Install it with Homebrew? (yes/NO) ",
+              end="", flush=True)
+        try:
+            answer = input()
+        except EOFError:
+            answer = ""
+        if answer.strip().casefold() != "yes":
+            raise RuntimeError(
+                "gcloud installation declined; no package was installed. To install later, "
+                "run `brew install --cask gcloud-cli`."
+            )
+        print("Installing Google Cloud CLI with Homebrew: brew install --cask gcloud-cli")
+        result = subprocess.run([brew, "install", "--cask", "gcloud-cli"], cwd=ROOT, check=False)
+        if result.returncode:
+            raise RuntimeError(
+                f"Homebrew could not install gcloud (exit code {result.returncode}); "
+                "review the installation error and retry."
+            )
+        path = shutil.which("gcloud")
+        if not path:
+            raise RuntimeError(
+                "Homebrew reported a successful gcloud installation, but gcloud is not on PATH. "
+                "Follow https://docs.cloud.google.com/sdk/docs/downloads-homebrew, reopen "
+                "the terminal, and retry."
+            )
     return path
+
+
+def _confirm_cloud_cost(
+    profile: CloudProfile,
+    action: str,
+    estimate_nzd: str | None,
+    estimate_basis: str | None,
+) -> None:
+    configured_estimate = profile.values.get("cost_estimate_nzd")
+    configured_basis = profile.values.get("cost_estimate_basis")
+    estimate = estimate_nzd or configured_estimate
+    basis = estimate_basis or configured_basis
+    if not estimate or not basis:
+        raise RuntimeError(
+            "a cost estimate and assumptions are required before this cloud action. "
+            "Set cost_estimate_nzd and cost_estimate_basis in the profile, or pass "
+            "--estimate-nzd AMOUNT --estimate-basis TEXT."
+        )
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,2})?", estimate):
+        raise ValueError("cost estimate must be a non-negative NZD amount with up to two decimals")
+    if not basis.strip() or len(basis) > 300:
+        raise ValueError("cost estimate assumptions must be 1-300 characters")
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            "interactive cost confirmation is required before this cloud action; "
+            "no cloud action was started."
+        )
+    action_text = {
+        "create": "create the configured VM and its boot disk",
+        "bootstrap": "run setup commands on the configured VM",
+        "ssh": "connect to and use the configured VM",
+        "run": "run the selected region on the configured VM",
+        "collect": "access the configured VM to copy run reports",
+        "preview": "keep the configured VM in use while the preview tunnel is open",
+    }[action]
+    print(
+        f"This action will {action_text}, which may result in financial costs. "
+        f"Estimate: NZD ${estimate} ({basis}). This is not a spending cap; "
+        "actual charges can be higher. Continue? (yes/NO) ",
+        end="",
+        flush=True,
+    )
+    try:
+        answer = input()
+    except EOFError:
+        answer = ""
+    if answer.strip().casefold() != "yes":
+        raise RuntimeError("human cost confirmation declined; no cloud action was started.")
 
 
 def _cloud_preflight(profile: CloudProfile, *, require_create_config: bool = False) -> None:
@@ -1040,6 +1138,10 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
     )
     parser.add_argument("--confirm",
                         help="exact project/zone/VM target required by create and delete")
+    parser.add_argument("--estimate-nzd",
+                        help="override the profile's planning cost estimate for a cloud action")
+    parser.add_argument("--estimate-basis",
+                        help="assumptions for --estimate-nzd (required with the override)")
     parser.add_argument("--python", dest="python", default=sys.executable,
                         help="Python executable used for local pipeline subprocesses")
     parser.add_argument("--port", type=int, default=None,
@@ -1066,14 +1168,27 @@ def main() -> int:
             action = args.cloud or "run"
             if args.confirm and action not in ("create", "delete"):
                 parser.error("--confirm can only be used with cloud actions create or delete")
+            if bool(args.estimate_nzd) != bool(args.estimate_basis):
+                parser.error("--estimate-nzd and --estimate-basis must be supplied together")
+            chargeable_actions = {"create", "bootstrap", "ssh", "run", "collect", "preview"}
+            if (args.estimate_nzd or args.estimate_basis) and action not in chargeable_actions:
+                parser.error("cost estimate overrides are only valid for chargeable cloud actions")
+            if action in chargeable_actions:
+                if action == "create":
+                    _confirm_target(profile, args.confirm, "VM creation")
+                _confirm_cloud_cost(profile, action, args.estimate_nzd, args.estimate_basis)
             return _dispatch_cloud_action(
                 profile, action, area, args.port, args.confirm,
             )
         except (RuntimeError, ValueError) as exc:
             print(f"cloud quickstart error: {exc}", file=sys.stderr)
             return 2
-    if args.profile or args.profiles_file or args.cloud or args.confirm:
-        parser.error("--profile, --profiles-file, --cloud, and --confirm require --mode cloud")
+    if (args.profile or args.profiles_file or args.cloud or args.confirm
+            or args.estimate_nzd or args.estimate_basis):
+        parser.error(
+            "--profile, --profiles-file, --cloud, --confirm, --estimate-nzd, and "
+            "--estimate-basis require --mode cloud"
+        )
     py = _python_executable(args.python)
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     RUNS.mkdir(parents=True, exist_ok=True)

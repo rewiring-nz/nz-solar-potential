@@ -66,14 +66,71 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
 - Update the matching doc in `docs/` in the same change as a command, output,
   or operating-limit change.
 
+## Operating rules (builds, data, review)
+
+- The VM is reachable only through Identity-Aware Proxy: always pass
+  `--tunnel-through-iap` to `gcloud compute ssh` / `scp` (the tools/ scripts do).
+- **Confirm cloud cost before any chargeable action.** A cloud quickstart must
+  show a conservative, region-appropriate cost estimate and the assumptions
+  before making cloud calls that could start or use a billable VM. Clearly say
+  the estimate is not a spending cap and actual charges can be higher. Require
+  an explicit human `yes`; Enter, any other response, or a non-interactive
+  invocation must decline without starting cloud work. If no defensible default
+  estimate exists for the selected workload, require a user-supplied estimate.
+  Keep no-cost checks separate so they can run without this confirmation.
+  Profile-based single-VM lifecycle actions are implemented in
+  `tools/pipeline.py` and invoked through `quickstart.sh`; the shared-VM
+  build-and-publish workflow remains in `tools/remote_build.sh`. Setup guidance:
+  [docs/quickstart-cloud.md](docs/quickstart-cloud.md) and
+  [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
+
+- Tasks: GitHub Issues on the project board
+  (https://github.com/orgs/rewiring-nz/projects/5). Link pull requests with
+  `Fixes #N`; record finished work in BACKLOG.md as well.
+- Mark AI-written GitHub content. Issues, comments and pull requests an AI
+  agent writes carry the `ai-generated` label and open with a line saying
+  so ("Written by Claude (AI)"); commits carry a `Co-Authored-By:` trailer.
+  A person removes the label once they have checked it.
+
+- **District builds run on the build VM**, `claude-doing-things`
+  (australia-southeast1-b, project downloads-417521), never on a laptop: the
+  VM fetches LiDAR and imagery from LINZ. It is a spot VM and stops itself 16
+  hours after starting; a cut-off build resumes with
+  `src/run_district_build.sh --force --regions "<the rest>"`.
+- **Never change code on the VM while it is building.** Each stage is a fresh
+  process, so a mid-build change mixes old and new code across regions
+  undetectably. The VM's `~/solar-map` is a git checkout of this repo:
+  push, then `tools/sync_vm.sh` (or `--ref <branch>`) pulls it there, and
+  refuses when the VM is busy.
+- **Publishing goes through the deploy gate.** `tools/deploy_from_vm.sh` pulls
+  the VM's served set and runs `tools/predeploy_check.py` against the live
+  build; `--push` publishes a new version folder to
+  `gs://rewiring-solar-tiles/v<N>/`, keeps the newest three, and commits only
+  the `site-config.js` switch. `--push-reviewed "<why>"` publishes past a gate
+  whose list has been rendered and judged. Rollback: point `site-config.js`
+  `dataBase`/`dataVersion` at an older version folder.
+- **Keys** come from the environment or `.env`, else Google Secret Manager
+  (`src/project_secrets.py`; secret `linz-api-key`). Never commit or print a
+  key.
+- **Hand-drawn markup governs** the roofs it covers (`data/roof_labels.json`).
+  Geometry changes are judged by renders against the photo and measurement
+  against the markup, not by panel counts; no per-building special cases.
+- **Where no LiDAR exists**, a survey marked `"elevation": "synthetic"` builds
+  on a modelled surface (`src/synthesize_dsm.py`) and every building carries
+  `pitch_guessed`.
+
+Team access and setup: [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
+
 ## Documentation rules
 
 - Treat executable scripts, `config.py`, and committed data contracts as the
   implementation source of truth. Link to them instead of copying volatile
   details.
-- Mark the experimental GCP quickstart and other unverified cloud operations
-  clearly. The data-maintenance baseline runs locally; see
-  [docs/quickstart-cloud.md](docs/quickstart-cloud.md) for the cloud path.
+- Mark future cloud work, unverified claims, and experiments clearly. Quick
+  checks run locally; district builds run on the build VM and published data is
+  served from the Google Cloud tiles bucket (see Operating rules). The
+  profile-based single-VM workflow is experimental and documented separately
+  in [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
 - Keep platform-specific setup in the data maintainer guides under
   [docs/data-maintainers/](docs/data-maintainers/). macOS is the primary
   platform; Ubuntu and Windows guidance is included where it differs.

@@ -94,6 +94,41 @@ def mosaic_covers(mosaic_path, bbox):
             and have[2] >= bbox[2] and have[3] >= bbox[3])
 
 
+DEM_8M_S3 = ("https://nz-elevation.s3.ap-southeast-2.amazonaws.com/"
+             "new-zealand/new-zealand-contour/dem_8m/2193/")
+
+
+def wide_dem_area_wgs84():
+    """The area the wide DEM must cover as a SHAPE: each region buffered,
+    unioned. Once the district spans Otago and Auckland, its bounding box is
+    most of the country; the shape is two small patches."""
+    import pyproj
+    from shapely.geometry import box
+    from shapely.ops import transform, unary_union
+    fwd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
+    inv = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
+    boxes = [config.PILOT_BBOX, *config.REGIONS.values()]
+    return transform(inv, unary_union([transform(fwd, box(*b)).buffer(WIDE_DEM_BUFFER_M) for b in boxes]))
+
+
+def ensure_dem_wide_s3(out_dir=DATA_DIR):
+    """The wide DEM as a VRT over LINZ's open 8 m DEM tiles (the same NZ 8 m
+    DEM as layer 51768), only the tiles near a region. Written as
+    dem_wide_mosaic.vrt with dem_wide_mosaic.tif linked to it, so every
+    stage that opens the .tif reads it unchanged."""
+    from src import s3_rasters
+    out_dir = Path(out_dir)
+    vrt = out_dir / "dem_wide_mosaic.vrt"
+    s3_rasters.vrt_of_tiles(DEM_8M_S3, wide_dem_area_wgs84(), vrt, out_dir / "dem8m_tiles")
+    tif = out_dir / "dem_wide_mosaic.tif"
+    if tif.exists() and not tif.is_symlink():
+        tif.rename(out_dir / "dem_wide_mosaic.layer51768.tif")   # kept: what earlier builds read
+    if tif.is_symlink():
+        tif.unlink()
+    tif.symlink_to(vrt.name)
+    return tif
+
+
 def ensure_dem_wide(api_key, out_dir=DATA_DIR):
     """Fetch the wide DEM unless the one on disk already covers the district."""
     out_dir = Path(out_dir)
@@ -109,13 +144,17 @@ def ensure_dem_wide(api_key, out_dir=DATA_DIR):
         print(f"  {mosaic_path} does not cover {bbox} -- refetching. Horizons "
               f"baked against the old one are now stale.")
 
+    if os.environ.get("SOLAR_DEM_WIDE_SOURCE", "s3") == "s3":
+        print(f"Wide 8 m DEM from LINZ's open tiles, around every region...")
+        return ensure_dem_wide_s3(out_dir)
     print(f"Fetching 8m DEM layer {DEM_WIDE_LAYER} for bbox {bbox}...")
     return fetch_raster(bbox, api_key, DEM_WIDE_LAYER, "dem_wide", out_dir=out_dir)
 
 
 def main():
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-    api_key = os.environ.get("LINZ_API_KEY")
+    from src.project_secrets import linz_api_key
+    api_key = linz_api_key()
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set")
     DATA_DIR.mkdir(exist_ok=True)

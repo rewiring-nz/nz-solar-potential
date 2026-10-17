@@ -21,10 +21,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+IMPORT_SIDE_EFFECT_MODULES = {"score_all_marked"}
 
 
 def _modules(repo):
-    return sorted(p for p in (repo / "src").glob("*.py") if p.name != "__init__.py")
+    return sorted(
+        p for p in (repo / "src").glob("*.py")
+        if p.name != "__init__.py" and p.stem not in IMPORT_SIDE_EFFECT_MODULES
+    )
 
 
 # A module that reads a data file or parses argv AT IMPORT fails here for

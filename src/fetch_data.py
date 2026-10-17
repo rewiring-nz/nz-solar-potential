@@ -213,7 +213,8 @@ def reclaim_export_intermediates(zip_path, extract_dir, mosaic_path,
 
 def main():
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-    api_key = os.environ.get("LINZ_API_KEY")
+    from src.project_secrets import linz_api_key
+    api_key = linz_api_key()
     if not api_key:
         raise SystemExit("LINZ_API_KEY not set -- copy .env.example to .env and fill it in")
     if config.PILOT_BBOX is None:

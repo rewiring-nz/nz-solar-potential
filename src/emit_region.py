@@ -107,6 +107,17 @@ def _use_by_id(paths):
     return out
 
 
+def _owned_ids(paths):
+    """The buildings this region owns now. A neighbour deduped after this
+    region was built can take boundary buildings from it (Mt Eden, 16 Oct:
+    237 buildings drawn and counted twice); its layouts still hold them, so
+    ownership is applied here, as merge_regions does."""
+    f = paths["dir"] / "building_outlines_dedup.geojson"
+    if not f.exists():
+        return None
+    return {int(ft["properties"]["building_id"]) for ft in json.loads(f.read_text())["features"]}
+
+
 def emit(region, out_root=OUT_ROOT):
     t0 = time.time()
     paths = area_paths(region)
@@ -122,6 +133,15 @@ def emit(region, out_root=OUT_ROOT):
 
     sp = json.loads(sp_path.read_text())
     layouts = json.loads(lay_path.read_text())
+    owned = _owned_ids(paths)
+    if owned is not None:
+        n0 = len(sp["features"])
+        sp["features"] = [f for f in sp["features"] if int(f["properties"]["building_id"]) in owned]
+        layouts["features"] = [f for f in layouts["features"]
+                               if f["properties"].get("building_id") is None
+                               or int(f["properties"]["building_id"]) in owned]
+        if len(sp["features"]) < n0:
+            print(f"[{region}] {n0 - len(sp['features'])} buildings now owned by a neighbour, left out")
     feats = sp["features"]
     print(f"[{region}] {len(feats)} buildings, {len(layouts['features'])} layout features")
 
@@ -151,13 +171,17 @@ def emit(region, out_root=OUT_ROOT):
     # (src/synthesize_dsm.py), and the map has to say so on every building.
     from src.synthesize_dsm import is_synthetic
     guessed = is_synthetic(region)
+    # ...and so was any roof the photo model read in a LiDAR town: buildings
+    # newer than the survey, or in its gaps (tools/predict_photo_shape.py).
+    from src.synthesize_dsm import load_photo_roofs
+    photo_read = set(load_photo_roofs(region))
     by_type = defaultdict(lambda: {"n": 0, "n_est": 0, "panel_count": 0,
                                    "kwp": 0.0, "kwh": 0.0})
     for f in feats:
         p = f["properties"]
         u, nm = use.get(int(p["building_id"]), (None, None))
         p["btype"] = classify(u, nm, p.get("facet_area_m2"), p.get("kwp"))
-        if guessed:
+        if guessed or int(p["building_id"]) in photo_read:
             p["pitch_guessed"] = 1
         if u and u != "Unknown":
             p["use"] = u
@@ -267,6 +291,15 @@ def emit(region, out_root=OUT_ROOT):
             cell["panel_count"] += p.get("panel_count") or 0
             cell["fitted_kwp"] += p.get("kwp") or 0.0
             cell["fitted_kwh"] += p.get("ac_kwh_year") or 0.0
+            # THE DENSITY LADDER, SUMMED. Below the building zoom the map adds
+            # up cells, and with only fitted_kwp/kwh (every panel, 100%) the
+            # density slider could not move the total from orbit. A building's
+            # fill ladder is cumulative best-panels-first, so the cell's sum is
+            # the same ladder for the whole cell, and interpolating it is
+            # exactly the sum of its buildings' interpolations.
+            for d in range(10, 101, 10):
+                cell[f"fill_panels_{d}"] = cell.get(f"fill_panels_{d}", 0.0) + (p.get(f"fill_panels_{d}") or 0.0)
+                cell[f"fill_kwh_{d}"] = cell.get(f"fill_kwh_{d}", 0.0) + (p.get(f"fill_kwh_{d}") or 0.0)
             if per_pct:
                 cell["n_est"] += 1
                 for pct, kwp, kwh in per_pct:

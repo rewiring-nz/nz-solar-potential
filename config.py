@@ -67,8 +67,9 @@ REGIONS = {
     "gorge_road_corridor": [168.6599, -45.0018, 168.6822, -44.9757],  # 180
     "tucker_beach":        [168.7096, -44.9725, 168.7485, -44.9478],  # 134
     # sunshine_bay_west REMOVED: 138 buildings but ZERO LiDAR tiles -- outside
-    # the 2021 survey extent entirely (LINZ export: "outside-extent"), same
-    # category as Glenorchy/Kinloch. Cannot be modelled until a new capture.
+    # the 2021 survey extent entirely (LINZ export: "outside-extent"). Glenorchy
+    # and Kinloch were in the same category until the no-LiDAR path existed;
+    # they are built on it now (see below).
     "dalefield":           [168.7491, -44.9630, 168.7924, -44.9377],  # 119
     "arrowtown_hills":     [168.8595, -44.9877, 168.8910, -44.9624],  # 79
     "frankton_arm_lake":   [168.6725, -45.0379, 168.6815, -45.0305],  # 79
@@ -82,6 +83,25 @@ REGIONS = {
     "cromwell_west":       [169.1549, -45.0694, 169.1983, -45.0190],  # 2,699
     "cromwell_east":       [169.1931, -45.0527, 169.2196, -45.0274],  # 2,512
     "bannockburn":         [169.1326, -45.1030, 169.1814, -45.0761],  # 481
+    # Glenorchy and Kinloch, head of Lake Wakatipu: no LiDAR (every published
+    # Otago survey stops east of 168.57; nz-elevation STAC, 11 Oct 2026), so
+    # built on a synthetic surface like Cromwell. Boxes from the 2nd-98th
+    # percentile of LINZ outline centroids +150 m (13 Oct): the first,
+    # street-grid boxes caught 479 and 19 of the 817 outlines at the head of
+    # the lake. glenorchy now takes the town's south edge and the houses just
+    # north; glenorchy_north is the Rees Valley / Paradise road group 4-6 km
+    # up the valley.
+    "glenorchy":           [168.3802, -44.8674, 168.4113, -44.8253],  # 528
+    "kinloch":             [168.3454, -44.8471, 168.3548, -44.8272],  # 30
+    "glenorchy_north":     [168.3906, -44.8087, 168.4189, -44.7775],  # 142
+    # Mt Eden, Auckland (14 Oct): the suburb's 8,935 outlines (LINZ suburbs
+    # layer 113764), 2nd-98th percentile of centroids +150 m, split at the
+    # median into four boxes under the 3,000-building ceiling. Counts are
+    # every outline in each box, neighbours' included. Survey auckland-2024.
+    "akl_mt_eden_nw":      [174.7398, -36.8858, 174.7512, -36.8685],  # 2,884
+    "akl_mt_eden_ne":      [174.7512, -36.8856, 174.7647, -36.8683],  # 2,884
+    "akl_mt_eden_sw":      [174.7401, -36.9000, 174.7512, -36.8858],  # 2,884
+    "akl_mt_eden_se":      [174.7512, -36.8998, 174.7650, -36.8856],  # 2,884
 }
 
 # Default region used by tools/pipeline.py when no region argument is given.
@@ -226,6 +246,49 @@ SURVEYS = [
         # have none, which only costs them photo-found obstructions.
         "imagery_layer": 119455,
         "reference_imagery_layer": None,     # no LiDAR frame to measure lean against
+        "pointcloud_bulk_url": None,
+        "pointcloud_tile_year": None,
+    },
+    {
+        # Auckland Part 1 LiDAR (2024), Woolpert; covers the isthmus (Mt Eden,
+        # Epsom, Remuera). LINZ layers: DSM 121992, DEM 121990, index tiles
+        # 121993; photos Auckland 0.075m Urban (2024-2025) 121752, flown the
+        # same year as the LiDAR. Rasters come from LINZ's open S3 copies
+        # (src/s3_rasters.py), resampled to 0.1 m for the photo; the point
+        # cloud from OpenTopography, CONFIRMED by HEAD: index tile
+        # BA32_1000_4101 -> NZ24_Auckland/CL2_BA32_2024_1000_4101.laz, 32.8 MB.
+        "name": "auckland-2024",
+        "bbox": [174.3677505, -37.3346925, 175.0281809, -36.5514359],
+        "dsm_layer": 121992,
+        "dem_layer": 121990,
+        "lidar_tile_index_layer": 121993,
+        "imagery_layer": 121752,
+        "reference_imagery_layer": 121752,
+        "dsm_s3": "https://nz-elevation.s3.ap-southeast-2.amazonaws.com/auckland/auckland-part-1_2024/dsm_1m/2193/",
+        "imagery_s3": "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/auckland/auckland_2024_0.075m/rgb/2193/",
+        "pointcloud_bulk_url": "https://opentopography.s3.sdsc.edu/pc-bulk/NZ24_Auckland",
+        "pointcloud_tile_year": "2024",
+    },
+    {
+        # Glenorchy, Kinloch and the Rees Valley: NO LIDAR. The westernmost
+        # Otago survey (Queenstown 2016/2021) stops at 168.576; these sit near
+        # 168.35-168.42 (nz-elevation STAC, 11 Oct 2026). Synthetic surface,
+        # as for Cromwell. Widened north to -44.77 on 13 Oct for
+        # glenorchy_north.
+        "name": "otago-glenorchy-no-lidar",
+        "bbox": [168.33, -44.875, 168.425, -44.77],
+        "elevation": "synthetic",
+        "dsm_layer": None,
+        "dem_layer": None,
+        "lidar_tile_index_layer": None,
+        # Otago 0.3m Rural Aerial Photos (2017-2019): the only current-era
+        # layer reaching the head of the lake. The 2019-2021 0.3 m set starts
+        # at 168.64, and no urban 0.1 m capture covers either settlement
+        # (nz-imagery STAC tile bboxes checked at both; its index tiles,
+        # layer 103861, checked at all three regions' edges on 13 Oct). Old and coarse, so
+        # photo-found obstructions will be weak; it costs nothing else.
+        "imagery_layer": 104460,
+        "reference_imagery_layer": None,
         "pointcloud_bulk_url": None,
         "pointcloud_tile_year": None,
     },
