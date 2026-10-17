@@ -87,9 +87,13 @@ def publish(version):
     for d in SERVED_DIRS:
         p = DATA / d
         if p.is_dir():
-            _run(["gcloud", "storage", "rsync", "-r", "-q", f"--cache-control={CACHE}",
-                  *(["--gzip-local-all"] if d in GZIP_DIRS else []),
-                  str(p), f"{base}/{d}"])
+            if d in GZIP_DIRS:
+                # stored gzip-encoded (rsync can only compress in transit)
+                _run(["gcloud", "storage", "cp", "-r", "-q", f"--cache-control={CACHE}",
+                      "--gzip-local-all", f"{p}/*", f"{base}/{d}/"])
+            else:
+                _run(["gcloud", "storage", "rsync", "-r", "-q", f"--cache-control={CACHE}",
+                      str(p), f"{base}/{d}"])
     older = [v for v in versions() if v < int(version)]
     for d in STATIC_DIRS:
         if older:
