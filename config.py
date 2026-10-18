@@ -116,7 +116,7 @@ CLOUD_SHARED_BUILD = {
     "zone": "australia-southeast1-b",
     "ssh_user": "j",
     "regions": "frankton_arm_lake",
-    "ref": "main",
+    "default_git_branch": "main",
     "preview_bucket": "gs://rewiring-solar-previews",
     "preview_retention_days": 14,
     "preview_cost_model": {

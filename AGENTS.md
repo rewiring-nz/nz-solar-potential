@@ -41,9 +41,14 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   replaces the current map contract with the selected region. Runs locally by
   default; `--mode cloud` builds and gates the configured region on the shared
   VM, runs the production gate as a warning, then publishes and opens a public
-  developer preview after explicit approval of the calculated   cost. It uses
+  developer preview after explicit approval of the calculated cost. It uses
   `config.CLOUD_SHARED_BUILD` for defaults and resolves the preview owner from
   the GitHub SSH identity, falling back to GitHub CLI when available.
+  It builds the exact local commit when the clean current branch contains a
+  commit reachable from its matching `origin` branch; otherwise it displays
+  the configured `default_git_branch` tip and requires interactive confirmation
+  before falling back. The selected branch, SHA, and commit date are included
+  in cost approval and the public run dashboard.
   Developer jobs are owned by the VM supervisor (`tools/developer_runs.py`);
   the public run dashboard contains status and redacted log excerpts, while
   stop requests require authenticated GitHub Actions access. Per-developer
@@ -160,6 +165,10 @@ is enforced by code, not by care:
   and mutable state stay under that worktree's `data/`, never in the shared
   production checkout. Reusable source inputs are linked from the separate
   `~/solar-map-source-cache` after validation and atomic promotion. The
+  selected code is pinned to the pushed local commit when available; an
+  unpushed or detached checkout requires explicit confirmation to use
+  `config.CLOUD_SHARED_BUILD["default_git_branch"]`. The cost confirmation and
+  run dashboard identify the selected branch, SHA, and commit date. The
   production gate is informational for developer previews and remains
   mandatory for production publishing. The command resolves the alias from the
   authenticated GitHub SSH identity or GitHub CLI, calculates a planning

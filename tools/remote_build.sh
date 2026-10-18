@@ -6,8 +6,8 @@
 #   tools/remote_build.sh --fetch --regions "newtown" --publish    # fetch LiDAR/photos first
 #   tools/remote_build.sh --publish --reviewed "why"               # publish although the gate failed
 #   tools/remote_build.sh --yield-only --publish                   # the sun changed, not the roofs
-#   tools/remote_build.sh --regions frankton_arm_lake --dev-publish alice
-#   tools/remote_build.sh --regions frankton_arm_lake --dev-publish alice --parallel
+#   tools/remote_build.sh --regions frankton_arm_lake --git-branch feature --commit SHA --dev-publish alice
+#   tools/remote_build.sh --regions frankton_arm_lake --git-branch feature --commit SHA --dev-publish alice --parallel
 #
 # No --regions: an incremental build of every region (stale ones only).
 #
@@ -59,7 +59,8 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main
+REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""
+GIT_BRANCH=""; COMMIT=""; COMMIT_DATE=""
 DEV_PUBLISH_USER=""; PARALLEL=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -70,7 +71,9 @@ while [ $# -gt 0 ]; do
     --yield-only)   MODE="--yield-only"; shift ;;
     --force)        MODE="--force"; shift ;;
     --keep-running) KEEP=1; shift ;;
-    --ref)          REF="$2"; shift 2 ;;
+    --git-branch|--ref) GIT_BRANCH="$2"; shift 2 ;;
+    --commit)       COMMIT="$2"; shift 2 ;;
+    --commit-date)  COMMIT_DATE="$2"; shift 2 ;;
     --dev-publish)
       [ $# -ge 2 ] || { echo "--dev-publish needs a GitHub alias"; exit 2; }
       DEV_PUBLISH_USER="$2"; shift 2 ;;
@@ -78,16 +81,26 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
+[ -n "$GIT_BRANCH" ] || GIT_BRANCH=$(python3 -c 'import config; print(config.CLOUD_SHARED_BUILD["default_git_branch"])')
 [ $FETCH -eq 1 ] && [ -z "$REGIONS" ] && { echo "--fetch needs --regions"; exit 2; }
-[ $PUBLISH -eq 1 ] && [ "$REF" != main ] && { echo "only main is published; drop --publish to test a branch"; exit 2; }
+[ $PUBLISH -eq 1 ] && [ "$GIT_BRANCH" != main ] && { echo "only main is published; drop --publish to test a branch"; exit 2; }
 [ -n "$DEV_PUBLISH_USER" ] && [ -z "$REGIONS" ] && { echo "--dev-publish needs --regions"; exit 2; }
 [ $PUBLISH -eq 1 ] && [ -n "$DEV_PUBLISH_USER" ] && { echo "developer preview and production publish are separate actions"; exit 2; }
 [ -n "$REVIEWED" ] && [ -n "$DEV_PUBLISH_USER" ] && { echo "--reviewed is only for production publication"; exit 2; }
 [ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$DEV_PUBLISH_USER" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' && {
   echo "--dev-publish needs a 1-39 character alphanumeric/hyphen GitHub alias"; exit 2;
 }
-[ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$REF" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$' && {
-  echo "--dev-publish needs a simple branch name for --ref"; exit 2;
+[ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$GIT_BRANCH" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$' && {
+  echo "--dev-publish needs a simple branch name for --git-branch"; exit 2;
+}
+[ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' && {
+  echo "--dev-publish requires --commit with a full lowercase Git SHA"; exit 2;
+}
+[ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$COMMIT_DATE" | grep -Eq '^[0-9T:+-]+$' && {
+  echo "--dev-publish requires --commit-date in ISO timestamp format"; exit 2;
+}
+[ -n "$COMMIT_DATE" ] && ! printf '%s' "$COMMIT_DATE" | grep -Eq '^[0-9T:+-]+$' && {
+  echo "--commit-date contains unsupported characters"; exit 2;
 }
 case "$REGIONS" in *[!a-z0-9_\ ]*) echo "region names are lower-case letters, digits and _"; exit 2 ;; esac
 
@@ -161,8 +174,13 @@ if [ -n "$DEV_PUBLISH_USER" ]; then
 cd ~/solar-map
 run_id=\$(python3 -c 'import datetime,uuid; print(datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y%m%dT%H%M%SZ\")+\"-\"+uuid.uuid4().hex[:8])')
 snapshot_ref='refs/developer-workspaces/$DEV_PUBLISH_USER/'\"\$run_id\"
-git fetch -q --no-tags origin 'refs/heads/$REF:'\"\$snapshot_ref\"
-commit=\$(git rev-parse \"\$snapshot_ref\")
+git fetch -q --no-tags origin 'refs/heads/$GIT_BRANCH:'\"\$snapshot_ref\"
+commit='$COMMIT'
+git cat-file -e \"\$commit^{commit}\"
+git merge-base --is-ancestor \"\$commit\" \"\$snapshot_ref\" || {
+  echo 'selected commit is no longer reachable from the pushed source branch'
+  exit 1
+}
 helper_dir=\$HOME/.cache/nz-solar-potential
 mkdir -p \"\$helper_dir\"
 helper=\"\$helper_dir/developer_workspace_\$commit.py\"
@@ -170,7 +188,7 @@ git show \"\$commit:tools/developer_workspace.py\" > \"\$helper.\$run_id.tmp\"
 mv \"\$helper.\$run_id.tmp\" \"\$helper\"
 python3 \"\$helper\" create --repo \$HOME/solar-map \
   --base-root \$HOME/solar-map-developers --user '$DEV_PUBLISH_USER' \
-  --ref '$REF' --commit \"\$commit\" --run-id \"\$run_id\"") || {
+  --ref '$GIT_BRANCH' --commit \"\$commit\" --run-id \"\$run_id\"") || {
     echo "DEVELOPER WORKSPACE FAILED -- could not create a commit-pinned checkout"
     exit 1
   }
@@ -186,6 +204,7 @@ REMOTE_LOG="$RUN_ROOT/remote_build.log"
 echo "  developer: $DEV_PUBLISH_USER"
 echo "  run: $RUN_ID"
 echo "  commit: $COMMIT"
+echo "  commit date: $COMMIT_DATE"
 echo "  checkout: $BUILD_DIR"
 echo "  output: $BUILD_DIR/data"
 discard_new_workspace() {
@@ -251,7 +270,7 @@ for row in json.load(sys.stdin):
   fi
 else
   VM_USER="${VM_USER:-j}" SYNC_VM="$VM" SYNC_ZONE="$ZONE" SYNC_PROJECT="$PROJECT" \
-    tools/sync_vm.sh --ref "$REF" || exit 1
+    tools/sync_vm.sh --ref "$GIT_BRANCH" || exit 1
 fi
 
 echo "=== build on the VM ==="
@@ -259,7 +278,8 @@ if [ -n "$DEV_PUBLISH_USER" ]; then
   echo "=== start VM-owned developer run ==="
   SSH "cd '$BUILD_DIR' && .venv/bin/python tools/developer_runs.py start \
     --user '$DEV_PUBLISH_USER' --run-id '$RUN_ID' --regions '$REGIONS' \
-    --commit '$COMMIT' --checkout '$BUILD_DIR' --run-root '$RUN_ROOT' \
+    --git-branch '$GIT_BRANCH' --commit '$COMMIT' --commit-date '$COMMIT_DATE' \
+    --checkout '$BUILD_DIR' --run-root '$RUN_ROOT' \
     --source-data ~/solar-map/data $([ $FETCH -eq 1 ] && echo --fetch) \
     $([ -n "$MODE" ] && echo --mode "$MODE") $PARALLEL_ARG" || exit 1
   dashboard_url="https://storage.googleapis.com/${PREVIEW_BUCKET#gs://}/run-dashboard/index.html"

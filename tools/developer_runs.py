@@ -193,7 +193,8 @@ def _dashboard_snapshot(records: list[dict[str, Any]]) -> dict[str, Any]:
         rows.append({
             key: record.get(key)
             for key in (
-                "run_id", "user", "regions", "commit", "status", "stage",
+                "run_id", "user", "regions", "git_branch", "commit", "commit_date",
+                "status", "stage",
                 "started_at", "updated_at", "finished_at", "preview_url", "log_url",
             )
         })
@@ -519,6 +520,8 @@ def start(
     run_id: str,
     regions: str,
     commit: str,
+    git_branch: str,
+    commit_date: str,
     checkout: Path,
     run_root: Path,
     *,
@@ -527,8 +530,14 @@ def start(
     source_data: Path | None = None,
     parallel: bool = False,
 ) -> int:
-    if not _USER.fullmatch(user) or not _RUN_ID.fullmatch(run_id):
-        raise ValueError("invalid developer alias or run ID")
+    if (
+        not _USER.fullmatch(user)
+        or not _RUN_ID.fullmatch(run_id)
+        or not re.fullmatch(r"[0-9a-f]{40}", commit)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", git_branch)
+        or not re.fullmatch(r"[0-9T:+-]+", commit_date)
+    ):
+        raise ValueError("invalid developer alias, run ID, branch, commit, or commit date")
     active = _active_for_user(user)
     if active and not parallel:
         raise RuntimeError(
@@ -561,7 +570,9 @@ def start(
         "run_id": run_id,
         "user": user,
         "regions": regions,
+        "git_branch": git_branch,
         "commit": commit,
+        "commit_date": commit_date,
         "checkout": str(checkout.resolve()),
         "run_root": str(run_root.resolve()),
         "log_path": str(log_path.resolve()),
@@ -607,6 +618,8 @@ def start(
     _save_registry(lock, records)
     _try_publish_dashboard()
     print(f"RUN_ID={run_id}")
+    print(f"GIT_BRANCH={git_branch}")
+    print(f"COMMIT={commit}")
     print(f"STATUS=running")
     return 0
 
@@ -669,6 +682,8 @@ def _parser() -> argparse.ArgumentParser:
     starter.add_argument("--run-id", required=True)
     starter.add_argument("--regions", required=True)
     starter.add_argument("--commit", required=True)
+    starter.add_argument("--git-branch", required=True)
+    starter.add_argument("--commit-date", required=True)
     starter.add_argument("--checkout", type=Path, required=True)
     starter.add_argument("--run-root", type=Path, required=True)
     starter.add_argument("--mode", default="")
@@ -690,8 +705,9 @@ def main() -> int:
     try:
         if args.action == "start":
             return start(
-                args.user, args.run_id, args.regions, args.commit, args.checkout,
-                args.run_root, mode=args.mode, parallel=args.parallel,
+                args.user, args.run_id, args.regions, args.commit,
+                args.git_branch, args.commit_date, args.checkout, args.run_root,
+                mode=args.mode, parallel=args.parallel,
                 fetch=args.fetch, source_data=args.source_data,
             )
         if args.action == "worker":

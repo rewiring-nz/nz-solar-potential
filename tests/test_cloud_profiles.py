@@ -291,6 +291,15 @@ class CloudProfileTests(unittest.TestCase):
                 patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
                 patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
                 patch.object(cloud_pipeline, "_load_shared_cloud_config", return_value=defaults),
+                patch.object(
+                    cloud_pipeline, "_resolve_shared_build_source",
+                    return_value={
+                        "git_branch": "feature/test",
+                        "commit": "a" * 40,
+                        "commit_date": "2026-10-18T00:00:00+00:00",
+                        "source_kind": "local branch",
+                    },
+                ),
                 patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
                 patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="target verified"),
                 patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
@@ -335,6 +344,15 @@ class CloudProfileTests(unittest.TestCase):
                     cloud_pipeline, "_load_shared_cloud_config",
                     return_value=cloud_pipeline._load_shared_cloud_config(),
                 ),
+                patch.object(
+                    cloud_pipeline, "_resolve_shared_build_source",
+                    return_value={
+                        "git_branch": "feature/test",
+                        "commit": "a" * 40,
+                        "commit_date": "2026-10-18T00:00:00+00:00",
+                        "source_kind": "local branch",
+                    },
+                ),
                 patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
                 patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="verified"),
                 patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
@@ -354,6 +372,11 @@ class CloudProfileTests(unittest.TestCase):
     def test_shared_build_passes_github_alias_to_remote_publisher(self) -> None:
         config = cloud_pipeline._load_shared_cloud_config()
         config["preview_user"] = "alice"
+        config.update({
+            "git_branch": "feature/test",
+            "commit": "a" * 40,
+            "commit_date": "2026-10-18T00:00:00+00:00",
+        })
         expected_url = (
             "https://storage.googleapis.com/rewiring-solar-previews/"
             "devel/alice/preview.html"
@@ -373,6 +396,11 @@ class CloudProfileTests(unittest.TestCase):
         command = popen.call_args.args[0]
         self.assertIn("--dev-publish", command)
         self.assertEqual(command[command.index("--dev-publish") + 1], "alice")
+        self.assertEqual(command[command.index("--git-branch") + 1], "feature/test")
+        self.assertEqual(command[command.index("--commit") + 1], "a" * 40)
+        self.assertEqual(
+            command[command.index("--commit-date") + 1], "2026-10-18T00:00:00+00:00",
+        )
         self.assertNotIn("--publish", command)
         self.assertNotIn("--parallel", command)
         self.assertEqual(result[1], expected_url)
@@ -381,6 +409,11 @@ class CloudProfileTests(unittest.TestCase):
     def test_shared_build_passes_explicit_parallel_opt_in(self) -> None:
         config = cloud_pipeline._load_shared_cloud_config()
         config["preview_user"] = "alice"
+        config.update({
+            "git_branch": "feature/test",
+            "commit": "a" * 40,
+            "commit_date": "2026-10-18T00:00:00+00:00",
+        })
         expected_url = (
             "https://storage.googleapis.com/rewiring-solar-previews/"
             "devel/alice/preview.html"
@@ -406,14 +439,132 @@ class CloudProfileTests(unittest.TestCase):
         self.assertEqual(values["zone"], "australia-southeast1-b")
         self.assertEqual(values["ssh_user"], "j")
         self.assertEqual(values["regions"], "frankton_arm_lake")
-        self.assertEqual(values["ref"], "main")
+        self.assertEqual(values["default_git_branch"], "main")
         estimate, basis = cloud_pipeline._shared_preview_cost(values)
         self.assertEqual(estimate, Decimal("5.00"))
         self.assertIn("compute NZD $1.92 (8 hours)", basis)
         self.assertIn("estimated public downloads NZD $2.40 (20 GB)", basis)
 
+    def _source_git_mock(
+        self,
+        *,
+        local_commit: str,
+        default_commit: str,
+        local_pushed: bool,
+        dirty: str = "",
+    ) -> MagicMock:
+        fetched: dict[str, str] = {}
+
+        def run_git(args: list[str], *, check: bool = True):
+            command = ["git", *args]
+            returncode = 0
+            stdout = ""
+            if args[:3] == ["symbolic-ref", "--quiet", "--short"]:
+                stdout = "feature/test"
+            elif args[:2] == ["rev-parse", "HEAD^{commit}"]:
+                stdout = local_commit
+            elif args[:1] == ["status"]:
+                stdout = dirty
+            elif args[:1] == ["fetch"]:
+                refspec = args[-1]
+                branch, destination = refspec.removeprefix("+refs/heads/").split(":", 1)
+                if branch == "feature/test" and not local_pushed:
+                    returncode = 128
+                else:
+                    fetched[destination] = (
+                        local_commit if branch == "feature/test" else default_commit
+                    )
+            elif args[:1] == ["rev-parse"] and args[1].endswith("^{commit}"):
+                destination = args[1].removesuffix("^{commit}")
+                stdout = fetched[destination]
+            elif args[:1] == ["merge-base"]:
+                returncode = 0 if local_pushed else 1
+            elif args[:1] == ["show"]:
+                stdout = (
+                    "2026-10-18T00:00:00+00:00"
+                    if args[-1] == local_commit
+                    else "2026-10-17T00:00:00+00:00"
+                )
+            result = cloud_pipeline.subprocess.CompletedProcess(
+                command, returncode, stdout, "",
+            )
+            if check and returncode:
+                raise cloud_pipeline.subprocess.CalledProcessError(
+                    returncode, command, output=stdout, stderr="",
+                )
+            return result
+
+        return MagicMock(side_effect=run_git)
+
+    def test_shared_source_uses_exact_pushed_local_commit(self) -> None:
+        local_commit = "a" * 40
+        git_output = self._source_git_mock(
+            local_commit=local_commit, default_commit="b" * 40, local_pushed=True,
+        )
+        source = cloud_pipeline._resolve_shared_build_source(
+            {"default_git_branch": "main"}, git_output=git_output,
+        )
+        self.assertEqual(source, {
+            "git_branch": "feature/test",
+            "commit": local_commit,
+            "commit_date": "2026-10-18T00:00:00+00:00",
+            "source_kind": "local branch",
+        })
+
+    def test_unpushed_commit_requires_confirmation_before_using_default_branch(self) -> None:
+        local_commit = "a" * 40
+        default_commit = "b" * 40
+        git_output = self._source_git_mock(
+            local_commit=local_commit, default_commit=default_commit, local_pushed=False,
+        )
+        output = io.StringIO()
+        with (
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch("builtins.input", return_value="yes"),
+            patch("sys.stdout", output),
+        ):
+            source = cloud_pipeline._resolve_shared_build_source(
+                {"default_git_branch": "main"}, git_output=git_output,
+            )
+        self.assertEqual(source, {
+            "git_branch": "main",
+            "commit": default_commit,
+            "commit_date": "2026-10-17T00:00:00+00:00",
+            "source_kind": "configured fallback",
+        })
+        self.assertIn(f"feature/test @ {local_commit} (2026-10-18T00:00:00+00:00)", output.getvalue())
+        self.assertIn(f"main @ {default_commit} (2026-10-17T00:00:00+00:00)", output.getvalue())
+
+    def test_unpushed_commit_aborts_noninteractive_fallback(self) -> None:
+        git_output = self._source_git_mock(
+            local_commit="a" * 40, default_commit="b" * 40, local_pushed=False,
+        )
+        with (
+            patch.object(sys.stdin, "isatty", return_value=False),
+            self.assertRaisesRegex(RuntimeError, "fallback requires interactive confirmation"),
+        ):
+            cloud_pipeline._resolve_shared_build_source(
+                {"default_git_branch": "main"}, git_output=git_output,
+            )
+
+    def test_dirty_checkout_aborts_before_fetching_remote_branch(self) -> None:
+        git_output = self._source_git_mock(
+            local_commit="a" * 40, default_commit="b" * 40, local_pushed=True,
+            dirty="?? untracked.txt\n",
+        )
+        with self.assertRaisesRegex(RuntimeError, "uncommitted or untracked files"):
+            cloud_pipeline._resolve_shared_build_source(
+                {"default_git_branch": "main"}, git_output=git_output,
+            )
+        self.assertFalse(any(call.args[0][0] == "fetch" for call in git_output.call_args_list))
+
     def test_shared_cost_confirmation_shows_calculated_estimate(self) -> None:
         config = cloud_pipeline._load_shared_cloud_config()
+        config.update({
+            "git_branch": "feature/test",
+            "commit": "a" * 40,
+            "commit_date": "2026-10-18T00:00:00+00:00",
+        })
         with tempfile.TemporaryDirectory() as log_dir:
             with (
                 patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
@@ -424,6 +575,8 @@ class CloudProfileTests(unittest.TestCase):
                 cloud_pipeline._confirm_shared_cloud_cost(config, log)
             content = log.path.read_text(encoding="utf-8")
         self.assertIn("Calculated estimate: NZD $5.00", content)
+        self.assertIn("feature/test", content)
+        self.assertIn("a" * 40, content)
         self.assertIn("publish a public preview", content)
         self.assertIn("not a spending cap", content)
 

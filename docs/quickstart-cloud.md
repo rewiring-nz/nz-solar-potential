@@ -18,9 +18,10 @@ greeting returned by the existing SSH authentication
 (`ssh -T git@github.com`); no extra CLI is needed when this checkout's SSH key is
 already linked to GitHub. If SSH authentication is not available, the
 quickstart can use the GitHub CLI if installed. Default project, VM, zone, SSH
-user, region, Git ref, preview bucket, retention, and cost assumptions are stored in
-[`config.py`](../config.py) under `CLOUD_SHARED_BUILD`. Pass a region name to
-override the configured region. Use `--cloud preflight` for the no-build,
+user, region, fallback Git branch, preview bucket, retention, and cost
+assumptions are stored in [`config.py`](../config.py) under
+`CLOUD_SHARED_BUILD`. Pass a region name to override the configured region.
+Use `--cloud preflight` for the no-build,
 no-cost check; preflight does not require GitHub CLI authentication.
 
 The separate per-developer VM lifecycle remains available with
@@ -152,10 +153,18 @@ their survey-specific source filename.
 bash quickstart.sh --mode cloud
 ```
 
-Each run fetches the Git ref configured in
-`config.CLOUD_SHARED_BUILD["ref"]`, records its resolved commit, and builds
-from that commit. Commit and push the preview implementation to that ref before
-running the command.
+The quickstart checks that the local Git checkout is clean, then checks whether
+the current branch's exact `HEAD` commit is reachable from the matching branch
+on `origin`. When it is, that SHA is used for the build. When it is not pushed
+(or the checkout is detached), the quickstart displays the local commit and the
+configured fallback branch's current commit, then requires an interactive
+`yes` before continuing with that fallback. Non-interactive use never falls
+back silently. The fallback branch is
+`config.CLOUD_SHARED_BUILD["default_git_branch"]`. The selected branch, full
+SHA, and commit date are included in the cost confirmation and run dashboard;
+the remote build verifies the SHA is still reachable from that branch before
+building it. Commit and push the intended changes before running if the build
+should use the local branch.
 
 After the data and page are uploaded successfully, the quickstart prints and
 opens a stable URL:

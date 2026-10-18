@@ -24,6 +24,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 import urllib.request
 import webbrowser
 from urllib.parse import quote, quote_plus
@@ -879,7 +880,7 @@ def _load_shared_cloud_config() -> dict[str, Any]:
     import config as project_config
 
     values = project_config.CLOUD_SHARED_BUILD
-    required = ("project", "vm", "zone", "ssh_user", "regions", "ref")
+    required = ("project", "vm", "zone", "ssh_user", "regions", "default_git_branch")
     if not isinstance(values, dict) or any(
         not isinstance(values.get(key), str) for key in required
     ):
@@ -913,8 +914,12 @@ def _load_shared_cloud_config() -> dict[str, Any]:
         raise ValueError("CLOUD_SHARED_BUILD.regions contains unsupported characters")
     if not values["ssh_user"] or not re.fullmatch(r"[a-z_][a-z0-9_-]*", values["ssh_user"]):
         raise ValueError("CLOUD_SHARED_BUILD.ssh_user must be a valid SSH username")
-    if not values["ref"] or values["ref"].startswith("-") or "\n" in values["ref"]:
-        raise ValueError("CLOUD_SHARED_BUILD.ref must be a non-empty Git ref")
+    if (
+        not values["default_git_branch"]
+        or values["default_git_branch"].startswith("-")
+        or "\n" in values["default_git_branch"]
+    ):
+        raise ValueError("CLOUD_SHARED_BUILD.default_git_branch must be a non-empty branch name")
     cost_model = values.get("preview_cost_model")
     cost_fields = (
         "vm_hourly_nzd", "vm_hours", "disk_monthly_per_gb_nzd", "disk_gb",
@@ -947,6 +952,131 @@ def _load_shared_cloud_config() -> dict[str, Any]:
         "preview_bucket": values["preview_bucket"],
         "preview_retention_days": values["preview_retention_days"],
         "preview_cost_model": dict(cost_model),
+    }
+
+
+def _git_output(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("Git is not installed or not on PATH.")
+    return subprocess.run(
+        [git, "-C", str(ROOT), *args], check=check, text=True,
+        capture_output=True, timeout=60,
+    )
+
+
+def _remote_branch_tip(
+    branch: str,
+    destination: str,
+    *,
+    git_output: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> str:
+    run_git = git_output or _git_output
+    run_git(["check-ref-format", "--branch", branch])
+    run_git([
+        "fetch", "--quiet", "--no-tags", "origin",
+        f"+refs/heads/{branch}:{destination}",
+    ])
+    return run_git(["rev-parse", f"{destination}^{{commit}}"]).stdout.strip()
+
+
+def _confirm_default_branch(
+    local_branch: str,
+    local_commit: str,
+    local_date: str,
+    default_branch: str,
+    default_commit: str,
+    default_date: str,
+) -> None:
+    print(
+        "The current local commit is not available on origin; the remote build "
+        "cannot use it.\n"
+        f"  local:   {local_branch} @ {local_commit} ({local_date})\n"
+        f"  fallback: {default_branch} @ {default_commit} ({default_date})",
+        flush=True,
+    )
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            "the local commit is not pushed and fallback requires interactive "
+            "confirmation; no cloud work was started."
+        )
+    try:
+        answer = input(f"Use fallback {default_branch} at {default_commit}? Type yes to continue: ")
+    except EOFError:
+        answer = ""
+    if answer.strip().casefold() != "yes":
+        raise CloudQuickstartDeclined(
+            "default-branch fallback declined; no cloud work was started."
+        )
+
+
+def _resolve_shared_build_source(
+    config: dict[str, Any],
+    *,
+    git_output: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> dict[str, str]:
+    run_git = git_output or _git_output
+    branch_result = run_git(["symbolic-ref", "--quiet", "--short", "HEAD"], check=False)
+    local_branch = branch_result.stdout.strip() or "(detached HEAD)"
+    local_commit = run_git(["rev-parse", "HEAD^{commit}"]).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", local_commit):
+        raise RuntimeError("Git returned an invalid local commit SHA.")
+    local_date = run_git(
+        ["show", "-s", "--format=%cI", local_commit],
+    ).stdout.strip()
+    dirty = run_git(["status", "--porcelain", "--untracked-files=all"]).stdout
+    if dirty.strip():
+        raise RuntimeError(
+            "the local checkout has uncommitted or untracked files, which cannot be "
+            "included in a remote build. Commit and push the intended changes, then retry."
+        )
+    if local_branch == "(detached HEAD)":
+        pushed = False
+    else:
+        check_ref = f"refs/quickstart-source-check/{uuid.uuid4().hex}"
+        try:
+            remote_tip = _remote_branch_tip(
+                local_branch, check_ref, git_output=run_git,
+            )
+            pushed = run_git(
+                ["merge-base", "--is-ancestor", local_commit, remote_tip],
+                check=False,
+            ).returncode == 0
+        except subprocess.CalledProcessError:
+            pushed = False
+        finally:
+            run_git(["update-ref", "-d", check_ref], check=False)
+    if pushed:
+        return {
+            "git_branch": local_branch,
+            "commit": local_commit,
+            "commit_date": local_date,
+            "source_kind": "local branch",
+        }
+
+    default_branch = config["default_git_branch"]
+    check_ref = f"refs/quickstart-source-check/{uuid.uuid4().hex}"
+    try:
+        default_commit = _remote_branch_tip(
+            default_branch, check_ref, git_output=run_git,
+        )
+        default_date = run_git(
+            ["show", "-s", "--format=%cI", default_commit],
+        ).stdout.strip()
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"could not fetch configured fallback branch {default_branch!r} from origin."
+        ) from exc
+    finally:
+        run_git(["update-ref", "-d", check_ref], check=False)
+    _confirm_default_branch(
+        local_branch, local_commit, local_date, default_branch, default_commit, default_date,
+    )
+    return {
+        "git_branch": default_branch,
+        "commit": default_commit,
+        "commit_date": default_date,
+        "source_kind": "configured fallback",
     }
 
 
@@ -1092,7 +1222,8 @@ def _confirm_shared_cloud_cost(
     estimate_text = f"{estimate:.2f}"
     log.detail(
         4,
-        f"This action will build and gate region(s) {config['regions']} on the shared VM, "
+        f"This action will build {config['git_branch']} at {config['commit']} "
+        f"({config['commit_date']}) for region(s) {config['regions']} on the shared VM, "
         f"and publish a public preview. Calculated estimate: NZD ${estimate_text} "
         f"({basis}). Actual charges can be higher, especially if runtime or public "
         "downloads exceed these assumptions; this is not a spending cap.",
@@ -1117,7 +1248,8 @@ def _run_shared_cloud_build(
 ) -> tuple[str, str | None]:
     command = [
         "bash", str(ROOT / "tools" / "remote_build.sh"),
-        "--regions", region, "--ref", config["ref"],
+        "--regions", region, "--git-branch", config["git_branch"],
+        "--commit", config["commit"], "--commit-date", config["commit_date"],
         "--dev-publish", config["preview_user"],
     ]
     if parallel:
@@ -1666,14 +1798,20 @@ def main() -> int:
                     values = dict(values)
                     values["regions"] = regions
                     if action == "build":
+                        values.update(_resolve_shared_build_source(values))
                         values["preview_user"] = _github_alias()
                     description = (
                         f"Git checkout valid; shared VM "
                         f"{values['project']}/{values['zone']}/{values['vm']}; "
-                        f"regions {regions}; ref {values['ref']}"
+                        f"regions {regions}"
                     )
                     if action == "build":
-                        description += f"; preview alias {values['preview_user']}"
+                        description += (
+                            f"; source {values['source_kind']} "
+                            f"{values['git_branch']} @ {values['commit']} "
+                            f"({values['commit_date']}); preview alias "
+                            f"{values['preview_user']}"
+                        )
                     log.detail(1, description + ".")
                     return values
 

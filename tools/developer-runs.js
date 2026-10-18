@@ -33,7 +33,23 @@ async function refresh() {
       summary.append(id, document.createElement("br"));
       summary.append(document.createTextNode(run.regions || "—"));
       row.append(summary);
-      addCell(row, (run.commit || "").slice(0, 12));
+      addCell(row, run.git_branch);
+      const commitCell = document.createElement("td");
+      commitCell.className = "commit";
+      if (run.commit) {
+        addLink(
+          commitCell,
+          `https://github.com/rewiring-nz/nz-solar-potential/commit/${encodeURIComponent(run.commit)}`,
+          run.commit,
+        );
+        if (run.commit_date) {
+          commitCell.append(document.createElement("br"));
+          commitCell.append(document.createTextNode(run.commit_date));
+        }
+      } else {
+        commitCell.textContent = "—";
+      }
+      row.append(commitCell);
       const stale = activeStatuses.has(run.status) && run.updated_at &&
         Date.now() - Date.parse(run.updated_at) > 120000;
       addCell(row, [stale ? `${run.status} (heartbeat stale)` : run.status, run.stage]

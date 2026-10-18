@@ -46,18 +46,23 @@ To build and gate the default region on the team's shared cloud build VM:
 bash quickstart.sh --mode cloud
 ```
 
-Defaults for the project, VM, zone, SSH user, region, ref, and cost assumptions
-are held in `config.py` under `CLOUD_SHARED_BUILD`. After cost approval, the
-command creates a commit-pinned developer worktree, builds into its
-run-specific `data/` directory, reports the production gate, publishes to the
-public developer preview, and opens the preview URL. The production gate does
-not block a developer preview; it still blocks production publishing. Common
+Defaults for the project, VM, zone, SSH user, region, fallback Git branch, and
+cost assumptions are held in `config.py` under `CLOUD_SHARED_BUILD`. After
+cost approval, the command creates a commit-pinned developer worktree, builds
+into its run-specific `data/` directory, reports the production gate, publishes
+to the public developer preview, and opens the preview URL. The production gate
+does not block a developer preview; it still blocks production publishing. Common
 downloaded source inputs are reused from a validated cache, while generated
 outputs stay in the run worktree rather than the shared production checkout.
 The VM owns each developer run after it starts, so closing the local launcher
 does not cancel the build. The public run dashboard shows status and logs;
 stop requests go through an authenticated GitHub Actions workflow. Starting
 another run prompts how to handle active runs unless `--parallel` is selected.
+The current clean local branch and exact commit are used when that commit is
+available on `origin`; otherwise the quickstart displays the configured
+`default_git_branch` tip and requires explicit interactive confirmation before
+using it. The selected branch, SHA, and commit date are shown during cost
+approval and on the run dashboard.
 The alias is resolved from the GitHub SSH authentication greeting (using an
 existing SSH key; no extra CLI is needed when this checkout already
 authenticates to GitHub) and falls back to the GitHub CLI if available. It

@@ -40,7 +40,9 @@ class DeveloperRunTests(unittest.TestCase):
             "run_id": "20261018T010101Z-00000001",
             "user": "alice",
             "regions": "frankton_arm_lake",
+            "git_branch": "feature/test",
             "commit": "a" * 40,
+            "commit_date": "2026-10-18T00:00:00+00:00",
             "status": "running",
             "stage": "build",
             "started_at": "2026-10-18T01:01:01+00:00",
@@ -64,6 +66,9 @@ class DeveloperRunTests(unittest.TestCase):
         self.assertEqual(len(snapshot["runs"]), 1)
         row = snapshot["runs"][0]
         self.assertEqual(row["run_id"], record["run_id"])
+        self.assertEqual(row["git_branch"], "feature/test")
+        self.assertEqual(row["commit"], "a" * 40)
+        self.assertEqual(row["commit_date"], "2026-10-18T00:00:00+00:00")
         self.assertNotIn("checkout", row)
         self.assertNotIn("secret", row)
         self.assertNotIn("error", row)
@@ -137,7 +142,8 @@ class DeveloperRunTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "already has an active run"):
                 developer_runs.start(
                     "alice", "20261018T010102Z-00000002", "frankton_arm_lake",
-                    "b" * 40, self.root / "checkout-2", self.root / "run-2",
+                    "b" * 40, "feature/test", "2026-10-18T00:00:00+00:00",
+                    self.root / "checkout-2", self.root / "run-2",
                 )
 
     def test_parallel_opt_in_allows_second_run_and_registers_supervisor(self) -> None:
@@ -154,7 +160,8 @@ class DeveloperRunTests(unittest.TestCase):
         ):
             result = developer_runs.start(
                 "alice", "20261018T010102Z-00000002", "frankton_arm_lake",
-                "b" * 40, checkout, self.root / "run-2", parallel=True,
+                "b" * 40, "feature/test", "2026-10-18T00:00:00+00:00",
+                checkout, self.root / "run-2", parallel=True,
             )
         self.assertEqual(result, 0)
         records = json.loads(developer_runs._registry_path().read_text())
