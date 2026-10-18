@@ -1,0 +1,50 @@
+name: Manage developer run
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID shown on the public developer run dashboard"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: manage-developer-run-${{ inputs.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  cancel:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+      RUN_ID: ${{ inputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/200991248703/locations/global/workloadIdentityPools/github/providers/nz-solar-potential
+          service_account: github-builder@downloads-417521.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate run ID and connect to the build VM
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$ ]] || {
+            echo "Invalid developer run ID"
+            exit 2
+          }
+          mkdir -p ~/.ssh
+          ssh-keygen -t rsa -b 3072 -N "" -q -f ~/.ssh/google_compute_engine
+          gcloud compute ssh j@claude-doing-things \
+            --tunnel-through-iap \
+            --project=downloads-417521 \
+            --zone=australia-southeast1-b \
+            --ssh-flag="-o ConnectTimeout=60" \
+            --command "run_manager=\$(python3 -c 'import json,os,sys; rows=json.load(open(os.path.expanduser(\"~/solar-map-developer-runs/registry.json\"))); print(next((row[\"checkout\"]+\"/tools/developer_runs.py\" for row in rows if row.get(\"run_id\")==sys.argv[1]), \"\"))' '$RUN_ID'); test -n \"\$run_manager\" && test -f \"\$run_manager\" && python3 \"\$run_manager\" cancel --run-id '$RUN_ID' --wait-seconds 120"

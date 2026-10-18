@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Developer build runs</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+    body { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: .25rem; }
+    .muted { opacity: .7; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { padding: .65rem; border-bottom: 1px solid #8886; text-align: left; vertical-align: top; }
+    code { overflow-wrap: anywhere; }
+    .error { color: #d44; }
+    a { color: #2684ff; }
+  </style>
+</head>
+<body>
+  <h1>Developer build runs</h1>
+  <p class="muted">Public run status and logs. Stop controls require repository write access.</p>
+  <p id="updated" class="muted">Loading status…</p>
+  <p id="error" class="error" role="status"></p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Developer</th><th>Run / regions</th><th>Commit</th><th>Status</th><th>Started</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="runs"></tbody>
+    </table>
+  </div>
+  <script src="developer-runs.js"></script>
+</body>
+</html>
