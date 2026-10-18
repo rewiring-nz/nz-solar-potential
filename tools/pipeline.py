@@ -1113,13 +1113,15 @@ def _confirm_shared_cloud_cost(
 
 
 def _run_shared_cloud_build(
-    config: dict[str, Any], region: str, log: CloudQuickstartLog,
+    config: dict[str, Any], region: str, log: CloudQuickstartLog, *, parallel: bool = False,
 ) -> tuple[str, str | None]:
     command = [
         "bash", str(ROOT / "tools" / "remote_build.sh"),
         "--regions", region, "--ref", config["ref"],
         "--dev-publish", config["preview_user"],
     ]
+    if parallel:
+        command.append("--parallel")
     env = os.environ.copy()
     env.update({
         "CLOUD_PROJECT": config["project"],
@@ -1136,16 +1138,26 @@ def _run_shared_cloud_build(
         raise RuntimeError(f"could not start shared cloud build: {exc}") from exc
     assert process.stdout is not None
     preview_url: str | None = None
+    dashboard_url: str | None = None
+    run_not_started = False
     for line in process.stdout:
         content = line.rstrip("\r\n")
         if content.startswith("PREVIEW_URL="):
             preview_url = content.partition("=")[2]
+        elif content.startswith("RUN_DASHBOARD_URL="):
+            dashboard_url = content.partition("=")[2]
+        elif content == "RUN_NOT_STARTED=1":
+            run_not_started = True
         log.detail(6, content)
     status = process.wait()
     if status:
         raise RuntimeError(
             f"shared build workflow exited with status {status}; inspect the numbered log."
         )
+    if run_not_started:
+        if not dashboard_url:
+            raise RuntimeError("existing run was kept but no dashboard URL was returned.")
+        return "Existing run kept; no new run started.", dashboard_url
     expected_url = (
         f"https://storage.googleapis.com/{config['preview_bucket'][5:]}/devel/"
         f"{config['preview_user']}/preview.html"
@@ -1589,6 +1601,10 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
                         help="preferred preview port (uses another free port if occupied)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="start the local preview server but do not open a browser tab")
+    parser.add_argument(
+        "--parallel", action="store_true",
+        help="explicitly allow another developer cloud run to remain active",
+    )
     return parser
 
 
@@ -1692,7 +1708,9 @@ def main() -> int:
                 else:
                     build_result = log.step(
                         6, "Build, gate, and publish developer preview",
-                        lambda: _run_shared_cloud_build(shared, shared["regions"], log),
+                        lambda: _run_shared_cloud_build(
+                            shared, shared["regions"], log, parallel=args.parallel,
+                        ),
                     )
                     if build_result is None:
                         result = None
@@ -1705,7 +1723,10 @@ def main() -> int:
                         raise RuntimeError(
                             "shared build succeeded without returning a developer preview URL."
                         )
-                    print(f"Developer preview: {preview_url}", flush=True)
+                    if preview_url.endswith("/run-dashboard/index.html"):
+                        print(f"Developer run dashboard: {preview_url}", flush=True)
+                    else:
+                        print(f"Developer preview: {preview_url}", flush=True)
                     webbrowser.open(preview_url)
                 return 0 if result is not None else 1
 

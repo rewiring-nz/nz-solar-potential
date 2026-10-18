@@ -1,9 +1,19 @@
 # Backlog
 
 Open work, in priority order. Each item names what it is based on. History is
-in git. Open items are also GitHub Issues (#16-36) on the project board
+in git. Open items are also GitHub Issues on the project board
 (https://github.com/orgs/rewiring-nz/projects/5), which is where to pick up
 and assign work.
+
+## Cloud workflows
+
+- **Implemented isolated and managed developer cloud runs (#42); cloud rollout
+  is unverified.** Developer worktrees isolate per-run outputs and share
+  validated source inputs. A VM-owned supervisor keeps runs alive after laptop
+  disconnects; the public dashboard exposes status and log excerpts, and
+  authenticated GitHub Actions requests cancellation. Terminal worktrees are
+  cleaned after the configured retention period. See
+  [the cloud quickstart](docs/quickstart-cloud.md).
 
 ## Ship
 

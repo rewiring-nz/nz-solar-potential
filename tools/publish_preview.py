@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fcntl
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -22,7 +24,10 @@ import config
 from tools.served_outputs import SERVED_DIRS, SERVED_FILES, STATIC_DIRS
 
 DATA = ROOT / "data"
-FRONTEND_FILES = ("preview.html", "economics.js", "bill_tool.js", "panel_editor.js")
+FRONTEND_FILES = (
+    "preview.html", "economics.js", "workings.js", "generation.js",
+    "bill_tool.js", "panel_editor.js",
+)
 CORE_DATA_FILES = ("panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles")
 IMMUTABLE_CACHE = "public,max-age=31536000,immutable"
 REVALIDATE_CACHE = "public,no-cache,max-age=0"
@@ -79,12 +84,61 @@ def _replace_site_config(
     return source
 
 
+def _preview_html_for_run(source: str, run_prefix: str) -> str:
+    for name in FRONTEND_FILES:
+        if name == "preview.html":
+            continue
+        source, count = re.subn(
+            rf'(?<=src="){re.escape(name)}(?=")',
+            f"{run_prefix}/frontend/{name}",
+            source,
+        )
+        if count != 1:
+            raise ValueError(f"preview.html must reference {name!r} exactly once")
+    source, count = re.subn(
+        r'(?<=src=")site-config\.js(?=")',
+        f"{run_prefix}/site-config.js",
+        source,
+    )
+    if count != 1:
+        raise ValueError("preview.html must reference site-config.js exactly once")
+    return source
+
+
 def _gcloud_run(
     command: Sequence[str],
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
     runner(list(command), check=True, cwd=ROOT, text=True)
+
+
+def _publish_preview_pointer(
+    user: str,
+    run_id: str,
+    html_path: Path,
+    target: str,
+    *,
+    state_root: Path,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> bool:
+    user_root = state_root / user.lower()
+    user_root.mkdir(parents=True, exist_ok=True)
+    with (user_root / ".preview-pointer.lock").open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        latest_path = user_root / "latest-preview-run"
+        latest = latest_path.read_text(encoding="ascii").strip() if latest_path.exists() else ""
+        if latest and latest > run_id:
+            return False
+        _gcloud_run([
+            "gcloud", "storage", "cp", "-q",
+            f"--cache-control={REVALIDATE_CACHE}",
+            str(html_path), target,
+        ], runner=runner)
+        temporary = latest_path.with_suffix(".tmp")
+        temporary.write_text(run_id, encoding="ascii")
+        os.replace(temporary, latest_path)
+        return True
 
 
 def configure_bucket(
@@ -184,6 +238,10 @@ def publish(
     user_prefix = f"{bucket}/devel/{user.lower()}"
     run_prefix = f"{user_prefix}/runs/{selected_run_id}"
     run_data = f"{run_prefix}/data"
+    run_url = (
+        f"https://storage.googleapis.com/{bucket.removeprefix('gs://')}"
+        f"/devel/{user.lower()}/runs/{selected_run_id}"
+    )
     required = [data_dir / name for name in CORE_DATA_FILES]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
@@ -202,9 +260,12 @@ def publish(
     rendered_config = _replace_site_config(
         config_source.read_text(encoding="utf-8"), data_base, selected_run_id, regions,
     )
+    rendered_html = _preview_html_for_run(
+        (root / "preview.html").read_text(encoding="utf-8"), run_url,
+    )
 
-    # Upload the immutable dataset first. Only move the stable preview pointer
-    # after every data object and frontend asset has been written successfully.
+    # Upload the immutable data and frontend first. The stable HTML object is
+    # the only mutable pointer and is replaced only after its entire run exists.
     for name in SERVED_FILES:
         source = data_dir / name
         if source.is_file():
@@ -223,13 +284,15 @@ def publish(
             ], runner=runner)
 
     for name in FRONTEND_FILES:
+        if name == "preview.html":
+            continue
         source = root / name
         if not source.is_file():
             raise FileNotFoundError(f"preview frontend asset is missing: {source}")
         _gcloud_run([
             "gcloud", "storage", "cp", "-q",
-            f"--cache-control={REVALIDATE_CACHE}",
-            str(source), f"{user_prefix}/{name}",
+            f"--cache-control={IMMUTABLE_CACHE}",
+            str(source), f"{run_prefix}/frontend/{name}",
         ], runner=runner)
 
     with tempfile.NamedTemporaryFile(
@@ -240,11 +303,30 @@ def publish(
     try:
         _gcloud_run([
             "gcloud", "storage", "cp", "-q",
-            f"--cache-control={REVALIDATE_CACHE}",
-            str(config_path), f"{user_prefix}/site-config.js",
+            f"--cache-control={IMMUTABLE_CACHE}",
+            str(config_path), f"{run_prefix}/site-config.js",
         ], runner=runner)
     finally:
         config_path.unlink(missing_ok=True)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".html", delete=False,
+    ) as html_file:
+        html_path = Path(html_file.name)
+        html_file.write(rendered_html)
+    try:
+        state_root = Path(os.environ.get(
+            "SOLAR_DEVELOPER_WORKSPACES_ROOT",
+            str(data_dir.parent / ".developer-preview-state"),
+        )).expanduser()
+        pointer_updated = _publish_preview_pointer(
+            user, selected_run_id, html_path, f"{user_prefix}/preview.html",
+            state_root=state_root, runner=runner,
+        )
+        if not pointer_updated:
+            print("A newer developer run already owns the preview pointer.")
+    finally:
+        html_path.unlink(missing_ok=True)
 
     return f"https://storage.googleapis.com/{bucket.removeprefix('gs://')}/devel/{user.lower()}/preview.html"
 
@@ -258,10 +340,11 @@ def main() -> int:
         help="grant public read and set the configured preview-object expiry policy",
     )
     parser.add_argument("--regions", help="space-separated configured region names")
+    parser.add_argument("--run-id", help="immutable ID shared with the build workspace")
     args = parser.parse_args()
     if args.configure_bucket:
-        if args.regions:
-            parser.error("--regions cannot be used with --configure-bucket")
+        if args.regions or args.run_id:
+            parser.error("--regions and --run-id cannot be used with --configure-bucket")
         configure_bucket()
         print(
             f"Configured {_preview_bucket()} for public read and shared-VM uploads; "
@@ -271,7 +354,7 @@ def main() -> int:
         return 0
     if not args.regions:
         parser.error("--regions is required when publishing a preview")
-    url = publish(args.user, args.regions)
+    url = publish(args.user, args.regions, run_id=args.run_id)
     print(f"PREVIEW_URL={url}")
     return 0
 

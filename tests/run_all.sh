@@ -58,6 +58,8 @@ run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
 run "cloud profiles"        $PY tests/test_cloud_profiles.py
 run "cloud preview publishing" $PY tests/test_publish_preview.py
+run "developer workspace isolation" $PY tests/test_developer_workspace.py
+run "developer run management" $PY tests/test_developer_runs.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
 run "roof levels"           $PY tests/test_roof_levels.py
 run "small obstructions"    $PY tests/test_small_obstructions.py

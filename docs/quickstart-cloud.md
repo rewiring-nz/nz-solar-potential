@@ -7,12 +7,13 @@ build VM with:
 bash quickstart.sh --mode cloud
 ```
 
-This starts the shared VM if needed, syncs the selected Git ref, builds the
-configured region, runs the production deploy gate for visibility, publishes
-the build to the developer-preview bucket, and opens the stable preview URL.
-The production gate does not block a developer preview; it remains mandatory
-for production publishing. The preview publisher still requires the build's
-core artifacts and frontend files. The alias comes first from the GitHub
+This starts the shared VM if needed, creates or reuses your developer checkout,
+creates a commit-pinned run worktree, builds the configured region into that
+run's own `data/` directory, runs the production deploy gate for visibility,
+publishes to the developer-preview bucket, and opens the stable preview URL.
+It does not sync or build in the shared production checkout. The gate is
+warning-only for previews and remains mandatory for production publishing. The
+alias comes first from the GitHub
 greeting returned by the existing SSH authentication
 (`ssh -T git@github.com`); no extra CLI is needed when this checkout's SSH key is
 already linked to GitHub. If SSH authentication is not available, the
@@ -86,8 +87,8 @@ The default shared-VM command requests a public developer preview using
 `tools/remote_build.sh --dev-publish GITHUB_ALIAS`; the
 `quickstart.sh --mode cloud` flow supplies that option automatically. This
 preview-only option does not invoke production publication. The production
-gate runs but is warning-only for the developer preview; it still blocks
-production publishing. Before upload, the selected region is checked with
+acceptance gate runs for visibility but does not block a developer preview.
+Before upload, the selected region is checked with
 `tools/validate_quickstart_map.py`, and required preview artifacts must be
 present and upload successfully. No extra preview or alias flags are needed
 in the normal quickstart. The alias is resolved
@@ -95,13 +96,66 @@ from the GitHub SSH authentication greeting, or from `gh api user --jq .login`
 when SSH authentication is unavailable and GitHub CLI is installed. The
 quickstart opens the stable URL:
 
+Each developer has a checkout at
+`~/solar-map-developers/<alias>/checkout`. Every invocation creates an
+immutable, commit-pinned worktree and isolated output tree at
+`~/solar-map-developers/<alias>/runs/<run-id>/checkout`; build products and
+mutable state stay under that worktree's `data/`. Failed runs are retained for
+diagnosis and cannot replace the current preview pointer. These paths are
+separate from the shared production checkout and its outputs.
+Terminal run worktrees are removed on a later run after
+`preview_retention_days`; the local registry retains their status metadata.
+
+Developer runs are owned by a VM-side supervisor and recorded under
+`~/solar-map-developer-runs/registry.json`. The laptop launcher follows the
+remote status, but closing the laptop or interrupting the launcher does not
+cancel the build. By default, starting another run for the same developer
+prompts whether to keep one existing run, replace existing runs, or explicitly
+keep both. `--parallel` opts into concurrent runs without prompting:
+
+```sh
+bash quickstart.sh --mode cloud --parallel
+```
+
+The public run dashboard is
+`https://storage.googleapis.com/rewiring-solar-previews/run-dashboard/index.html`.
+It shows the latest 200 run records and links to the latest 250 lines of each
+public build log. The dashboard and status snapshot are public; do not place
+secrets, credentials, source datasets, or private information in run logs.
+The log upload redacts common API-key, token, and password assignments, but
+that filtering is not a substitute for keeping sensitive data out of logs.
+The preview bucket's 14-day lifecycle policy expires run logs.
+
+The dashboard's stop link opens the authenticated GitHub Actions workflow
+`Manage developer run`. A repository collaborator with permission to run
+workflows can submit the run ID shown on the dashboard. The workflow requests
+graceful cancellation and waits for confirmation; it never treats the public
+dashboard's read access as permission to control a build. The run is marked
+`cancelling` until its VM-side supervisor confirms that its active stage has
+stopped. If the supervisor disappears unexpectedly, a later registry read
+marks the run `interrupted`; inspect its retained log before starting a
+replacement.
+
+Raw outlines, DSMs, imagery, reference imagery, the wide DEM, and LiDAR tiles
+are reused through `~/solar-map-source-cache`. Cache entries are namespaced by
+region and source survey/coverage where applicable. Existing selected-face
+inputs are linked read-only from the shared checkout. The developer workspace
+exposes inputs as symlinks; generated region outputs remain regular files in
+the run tree. A downloaded source enters the cache only after validation and
+atomic promotion, with a completion marker. If
+`remote_build.sh --fetch` is used, newly fetched sources are promoted after the
+fetch finishes; cache operations use per-object locks so concurrent developers
+can safely converge on the same cached input. Point-cloud tiles are cached by
+their survey-specific source filename.
+
 ```sh
 bash quickstart.sh --mode cloud
 ```
 
-The shared VM syncs the Git ref configured in
-`config.CLOUD_SHARED_BUILD["ref"]`; commit and push the preview implementation
-to that ref before running the command.
+Each run fetches the Git ref configured in
+`config.CLOUD_SHARED_BUILD["ref"]`, records its resolved commit, and builds
+from that commit. Commit and push the preview implementation to that ref before
+running the command.
 
 After the data and page are uploaded successfully, the quickstart prints and
 opens a stable URL:
@@ -110,13 +164,15 @@ opens a stable URL:
 https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html
 ```
 
-Each successful run uploads served data to a new immutable
-`devel/<alias>/runs/<run-id>/data/` prefix, then updates that alias's
-`site-config.js` pointer. The preview uses its own copy of `preview.html` and
-its companion JavaScript files; production `site-config.js` and the
-versioned production bucket are not changed. The bucket is public: anyone with
-the URL can view the served map data. Do not upload keys, raw inputs, build
-logs, or other private material.
+Each successful run uploads served data, its rendered `site-config.js`, and
+its frontend JavaScript files under the immutable
+`devel/<alias>/runs/<run-id>/` prefix. It updates only the stable
+`devel/<alias>/preview.html` object after all those uploads succeed; that HTML
+loads assets from its own immutable run path. Concurrent runs therefore cannot
+mix frontend assets, and a failed upload leaves the last successful preview
+intact. Production `site-config.js` and the versioned production bucket are
+not changed. The bucket is public: anyone with the URL can view the served map
+data. Do not upload keys, raw inputs, build logs, or other private material.
 
 Before the first preview, create the dedicated bucket named in
 `config.CLOUD_SHARED_BUILD["preview_bucket"]` in the configured cloud project.

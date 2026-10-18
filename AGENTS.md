@@ -41,9 +41,13 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   replaces the current map contract with the selected region. Runs locally by
   default; `--mode cloud` builds and gates the configured region on the shared
   VM, runs the production gate as a warning, then publishes and opens a public
-  developer preview after explicit approval of the calculated cost. It uses
+  developer preview after explicit approval of the calculated   cost. It uses
   `config.CLOUD_SHARED_BUILD` for defaults and resolves the preview owner from
   the GitHub SSH identity, falling back to GitHub CLI when available.
+  Developer jobs are owned by the VM supervisor (`tools/developer_runs.py`);
+  the public run dashboard contains status and redacted log excerpts, while
+  stop requests require authenticated GitHub Actions access. Per-developer
+  concurrent jobs require explicit `--parallel`.
   `--mode cloud --profile <name>` selects per-developer cloud execution,
   and `--cloud` selects a VM lifecycle action. See
   [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
@@ -150,14 +154,22 @@ is enforced by code, not by care:
   `dataBase`/`dataVersion` at an older version folder.
 - **Developer previews are separate from production.** The shared cloud
   quickstart requests publication by default using `--dev-publish <alias>` to
-  the dedicated public bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`,
-  under immutable `devel/<alias>/runs/` paths. The production gate is
-  informational for developer previews and remains mandatory for production
-  publishing. The command resolves the alias from the authenticated GitHub SSH
-  identity or GitHub CLI, calculates a planning estimate from the configured
-  `preview_cost_model`, and updates only that alias's preview pointer. The
-  bucket lifecycle expires all `devel/` objects after `preview_retention_days`.
-  Never use the bucket for private inputs or production releases.
+  the dedicated public bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`.
+  Each run uses a commit-pinned worktree under
+  `~/solar-map-developers/<alias>/runs/<run-id>/checkout`; generated outputs
+  and mutable state stay under that worktree's `data/`, never in the shared
+  production checkout. Reusable source inputs are linked from the separate
+  `~/solar-map-source-cache` after validation and atomic promotion. The
+  production gate is informational for developer previews and remains
+  mandatory for production publishing. The command resolves the alias from the
+  authenticated GitHub SSH identity or GitHub CLI, calculates a planning
+  estimate from the configured `preview_cost_model`, and updates only that
+  alias's preview pointer. A per-developer pointer lock prevents an older run
+  from replacing a newer preview. Public run status is under `run-dashboard/`;
+  public run logs are under `devel/runs/` and expire with the bucket's
+  `preview_retention_days` lifecycle. Terminal run worktrees are cleaned on a
+  later run after the same retention period. Never use the bucket for private
+  inputs or production releases.
 - **Keys** come from the environment or `.env`, else Google Secret Manager
   (`src/project_secrets.py`; secret `linz-api-key`). Never commit or print a
   key.

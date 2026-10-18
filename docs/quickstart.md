@@ -48,16 +48,23 @@ bash quickstart.sh --mode cloud
 
 Defaults for the project, VM, zone, SSH user, region, ref, and cost assumptions
 are held in `config.py` under `CLOUD_SHARED_BUILD`. After cost approval, the
-command builds and gates the region, publishes the passing result to a public,
-expiring developer preview, and opens the preview URL. The production gate is
-reported but does not block developer-preview publication; it still blocks
-production publishing. It resolves the preview
-alias from the GitHub SSH authentication greeting (using an existing SSH key;
-no extra CLI is needed when this checkout already authenticates to GitHub) and
-falls back to the GitHub CLI if available. It calculates the estimate from the
-VM, storage, retention, and expected-download assumptions in
-`CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md) for one-time
-preview-bucket setup, optional per-developer VM profiles, and preflight.
+command creates a commit-pinned developer worktree, builds into its
+run-specific `data/` directory, reports the production gate, publishes to the
+public developer preview, and opens the preview URL. The production gate does
+not block a developer preview; it still blocks production publishing. Common
+downloaded source inputs are reused from a validated cache, while generated
+outputs stay in the run worktree rather than the shared production checkout.
+The VM owns each developer run after it starts, so closing the local launcher
+does not cancel the build. The public run dashboard shows status and logs;
+stop requests go through an authenticated GitHub Actions workflow. Starting
+another run prompts how to handle active runs unless `--parallel` is selected.
+The alias is resolved from the GitHub SSH authentication greeting (using an
+existing SSH key; no extra CLI is needed when this checkout already
+authenticates to GitHub) and falls back to the GitHub CLI if available. It
+calculates the estimate from the VM, storage, retention, and expected-download
+assumptions in `CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md)
+for workspace paths, cache behavior, one-time preview-bucket setup, optional
+per-developer VM profiles, and preflight.
 
 # 5. Review status
 

@@ -374,8 +374,30 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("--dev-publish", command)
         self.assertEqual(command[command.index("--dev-publish") + 1], "alice")
         self.assertNotIn("--publish", command)
+        self.assertNotIn("--parallel", command)
         self.assertEqual(result[1], expected_url)
         self.assertIn("preview was published", result[0])
+
+    def test_shared_build_passes_explicit_parallel_opt_in(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
+        config["preview_user"] = "alice"
+        expected_url = (
+            "https://storage.googleapis.com/rewiring-solar-previews/"
+            "devel/alice/preview.html"
+        )
+        process = MagicMock()
+        process.stdout = io.StringIO(f"PREVIEW_URL={expected_url}\n")
+        process.wait.return_value = 0
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.subprocess, "Popen", return_value=process) as popen,
+            ):
+                cloud_pipeline._run_shared_cloud_build(
+                    config, config["regions"], cloud_pipeline.CloudQuickstartLog(),
+                    parallel=True,
+                )
+        self.assertIn("--parallel", popen.call_args.args[0])
 
     def test_shared_cloud_config_has_expected_project_vm_and_calculated_cost(self) -> None:
         values = cloud_pipeline._load_shared_cloud_config()

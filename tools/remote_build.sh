@@ -7,6 +7,7 @@
 #   tools/remote_build.sh --publish --reviewed "why"               # publish although the gate failed
 #   tools/remote_build.sh --yield-only --publish                   # the sun changed, not the roofs
 #   tools/remote_build.sh --regions frankton_arm_lake --dev-publish alice
+#   tools/remote_build.sh --regions frankton_arm_lake --dev-publish alice --parallel
 #
 # No --regions: an incremental build of every region (stale ones only).
 #
@@ -27,12 +28,12 @@ cd "$(dirname "$0")/.."
 if ! DEFAULTS=$(python3 -c '
 import config
 values = config.CLOUD_SHARED_BUILD
-print("\t".join(values[key] for key in ("project", "vm", "zone", "ssh_user")))
+print("\t".join(values[key] for key in ("project", "vm", "zone", "ssh_user", "preview_bucket")))
 '); then
   echo "ERROR: could not read shared cloud defaults from config.py."
   exit 1
 fi
-IFS=$'\t' read -r DEFAULT_PROJECT DEFAULT_VM DEFAULT_ZONE DEFAULT_VM_USER <<< "$DEFAULTS"
+IFS=$'\t' read -r DEFAULT_PROJECT DEFAULT_VM DEFAULT_ZONE DEFAULT_VM_USER PREVIEW_BUCKET <<< "$DEFAULTS"
 VM="${CLOUD_VM:-$DEFAULT_VM}"
 ZONE="${CLOUD_ZONE:-$DEFAULT_ZONE}"
 PROJECT="${CLOUD_PROJECT:-$DEFAULT_PROJECT}"
@@ -58,7 +59,8 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; DEV_PUBLISH_USER=""
+REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main
+DEV_PUBLISH_USER=""; PARALLEL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --regions)      REGIONS="$2"; shift 2 ;;
@@ -72,6 +74,7 @@ while [ $# -gt 0 ]; do
     --dev-publish)
       [ $# -ge 2 ] || { echo "--dev-publish needs a GitHub alias"; exit 2; }
       DEV_PUBLISH_USER="$2"; shift 2 ;;
+    --parallel) PARALLEL=1; shift ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
@@ -83,13 +86,34 @@ done
 [ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$DEV_PUBLISH_USER" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' && {
   echo "--dev-publish needs a 1-39 character alphanumeric/hyphen GitHub alias"; exit 2;
 }
+[ -n "$DEV_PUBLISH_USER" ] && ! printf '%s' "$REF" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]*$' && {
+  echo "--dev-publish needs a simple branch name for --ref"; exit 2;
+}
 case "$REGIONS" in *[!a-z0-9_\ ]*) echo "region names are lower-case letters, digits and _"; exit 2 ;; esac
 
 STARTED=0
 finish() {
   if [ $STARTED -eq 1 ] && [ $KEEP -eq 0 ]; then
-    echo "=== stopping the VM ==="
-    gcloud compute instances stop $VM --zone $ZONE --project $PROJECT --async -q >/dev/null 2>&1
+    active=$(SSH "pgrep -af '[s]rc/[a-z_]*\\.(py|sh)' || true")
+    if ! runs_json=$(SSH "python3 ~/solar-map/tools/developer_runs.py list 2>/dev/null"); then
+      echo "=== leaving the VM running; could not verify the remote run registry ==="
+      return
+    fi
+    if ! registered=$(printf '%s' "$runs_json" | python3 -c '
+import json,sys
+rows=json.load(sys.stdin)
+print(sum(1 for r in rows if r.get("status") in {"queued","running","gating","validating","publishing","cancelling"}))
+'); then
+      echo "=== leaving the VM running; the remote run registry was unreadable ==="
+      return
+    fi
+    if [ -n "$active" ] || [ "$registered" -gt 0 ]; then
+      echo "=== leaving the VM running; an active pipeline run is registered ==="
+      [ -n "$active" ] && printf '%s\n' "$active"
+    else
+      echo "=== stopping the VM ==="
+      gcloud compute instances stop $VM --zone $ZONE --project $PROJECT --async -q >/dev/null 2>&1
+    fi
   fi
 }
 trap finish EXIT
@@ -126,29 +150,169 @@ done
 }
 echo "  running"
 
-VM_USER="${VM_USER:-j}" SYNC_VM="$VM" SYNC_ZONE="$ZONE" SYNC_PROJECT="$PROJECT" \
-  tools/sync_vm.sh --ref "$REF" || exit 1
+BUILD_DIR="~/solar-map"
+RUN_ROOT=""
+REMOTE_LOG="~/remote_build.log"
+PARALLEL_ARG=""
+[ "$PARALLEL" -eq 1 ] && PARALLEL_ARG="--parallel"
+if [ -n "$DEV_PUBLISH_USER" ]; then
+  echo "=== prepare isolated developer checkout and run ==="
+  workspace=$(SSH "set -e
+cd ~/solar-map
+run_id=\$(python3 -c 'import datetime,uuid; print(datetime.datetime.now(datetime.timezone.utc).strftime(\"%Y%m%dT%H%M%SZ\")+\"-\"+uuid.uuid4().hex[:8])')
+snapshot_ref='refs/developer-workspaces/$DEV_PUBLISH_USER/'\"\$run_id\"
+git fetch -q --no-tags origin 'refs/heads/$REF:'\"\$snapshot_ref\"
+commit=\$(git rev-parse \"\$snapshot_ref\")
+helper_dir=\$HOME/.cache/nz-solar-potential
+mkdir -p \"\$helper_dir\"
+helper=\"\$helper_dir/developer_workspace_\$commit.py\"
+git show \"\$commit:tools/developer_workspace.py\" > \"\$helper.\$run_id.tmp\"
+mv \"\$helper.\$run_id.tmp\" \"\$helper\"
+python3 \"\$helper\" create --repo \$HOME/solar-map \
+  --base-root \$HOME/solar-map-developers --user '$DEV_PUBLISH_USER' \
+  --ref '$REF' --commit \"\$commit\" --run-id \"\$run_id\"") || {
+    echo "DEVELOPER WORKSPACE FAILED -- could not create a commit-pinned checkout"
+    exit 1
+  }
+RUN_ID=$(printf '%s\n' "$workspace" | sed -n 's/^RUN_ID=//p' | tail -1)
+RUN_ROOT=$(printf '%s\n' "$workspace" | sed -n 's/^RUN_ROOT=//p' | tail -1)
+BUILD_DIR=$(printf '%s\n' "$workspace" | sed -n 's/^CHECKOUT=//p' | tail -1)
+COMMIT=$(printf '%s\n' "$workspace" | sed -n 's/^COMMIT=//p' | tail -1)
+[ -n "$RUN_ID" ] && [ -n "$RUN_ROOT" ] && [ -n "$BUILD_DIR" ] && [ -n "$COMMIT" ] || {
+  echo "DEVELOPER WORKSPACE FAILED -- workspace details were incomplete"
+  exit 1
+}
+REMOTE_LOG="$RUN_ROOT/remote_build.log"
+echo "  developer: $DEV_PUBLISH_USER"
+echo "  run: $RUN_ID"
+echo "  commit: $COMMIT"
+echo "  checkout: $BUILD_DIR"
+echo "  output: $BUILD_DIR/data"
+discard_new_workspace() {
+  SSH "git -C ~/solar-map worktree remove --force '$BUILD_DIR' && rmdir '$RUN_ROOT'"
+}
+  active_json=$(SSH "cd '$BUILD_DIR' && .venv/bin/python tools/developer_runs.py list --user '$DEV_PUBLISH_USER'") || {
+    echo "RUN REGISTRY FAILED -- could not inspect active developer runs"
+    discard_new_workspace || true
+    exit 1
+  }
+  active_rows=$(printf '%s' "$active_json" | python3 -c '
+import json, sys
+active = {"queued", "running", "gating", "validating", "publishing", "cancelling"}
+for row in json.load(sys.stdin):
+    if row.get("status") in active:
+        print("|".join(str(row.get(k, "")) for k in ("run_id", "status", "regions", "commit")))
+')
+  if [ -n "$active_rows" ] && [ "$PARALLEL" -eq 0 ]; then
+    echo "Active developer run(s):"
+    printf '%s\n' "$active_rows" | while IFS='|' read -r id state regions commit; do
+      echo "  $id  $state  regions=$regions  commit=${commit:0:12}"
+    done
+    if [ ! -t 0 ] || [ ! -r /dev/tty ]; then
+      echo "A run is already active. Use --parallel to explicitly keep it and start another."
+      discard_new_workspace || true
+      exit 1
+    fi
+    echo "Choose one: (1) keep one existing run only (enter its ID);"
+    echo "            (2) replace all existing runs with this run;"
+    echo "            (3) keep all existing runs and start this one;"
+    echo "            (q) cancel."
+    printf "Choice: "
+    IFS= read -r choice </dev/tty || { discard_new_workspace || true; exit 1; }
+    case "$choice" in
+      1)
+        printf "Existing run ID to keep: "
+        IFS= read -r kept </dev/tty || { discard_new_workspace || true; exit 1; }
+        printf '%s\n' "$active_rows" | grep -q "^$kept|" || {
+          echo "That run is not active for $DEV_PUBLISH_USER."
+          discard_new_workspace || true
+          exit 2
+        }
+        while IFS='|' read -r id state _; do
+          [ "$id" = "$kept" ] || SSH "cd '$BUILD_DIR' && .venv/bin/python tools/developer_runs.py cancel --run-id '$id' --wait-seconds 60" || exit 1
+        done <<< "$active_rows"
+        discard_new_workspace || true
+        echo "Kept $kept; no new run was started."
+        echo "RUN_NOT_STARTED=1"
+        echo "RUN_DASHBOARD_URL=https://storage.googleapis.com/${PREVIEW_BUCKET#gs://}/run-dashboard/index.html"
+        exit 0 ;;
+      2)
+        while IFS='|' read -r id _; do
+          SSH "cd '$BUILD_DIR' && .venv/bin/python tools/developer_runs.py cancel --run-id '$id' --wait-seconds 60" || exit 1
+        done <<< "$active_rows" ;;
+      3)
+        PARALLEL=1
+        PARALLEL_ARG="--parallel" ;;
+      *)
+        echo "No new run was started."
+        discard_new_workspace || true
+        exit 1 ;;
+    esac
+  fi
+else
+  VM_USER="${VM_USER:-j}" SYNC_VM="$VM" SYNC_ZONE="$ZONE" SYNC_PROJECT="$PROJECT" \
+    tools/sync_vm.sh --ref "$REF" || exit 1
+fi
 
 echo "=== build on the VM ==="
-steps="cd ~/solar-map"
+if [ -n "$DEV_PUBLISH_USER" ]; then
+  echo "=== start VM-owned developer run ==="
+  SSH "cd '$BUILD_DIR' && .venv/bin/python tools/developer_runs.py start \
+    --user '$DEV_PUBLISH_USER' --run-id '$RUN_ID' --regions '$REGIONS' \
+    --commit '$COMMIT' --checkout '$BUILD_DIR' --run-root '$RUN_ROOT' \
+    --source-data ~/solar-map/data $([ $FETCH -eq 1 ] && echo --fetch) \
+    $([ -n "$MODE" ] && echo --mode "$MODE") $PARALLEL_ARG" || exit 1
+  dashboard_url="https://storage.googleapis.com/${PREVIEW_BUCKET#gs://}/run-dashboard/index.html"
+  echo "Public run dashboard: $dashboard_url"
+  echo "RUN_DASHBOARD_URL=$dashboard_url"
+  echo "=== follow run status ==="
+  while :; do
+    sleep 15
+    status_json=$(SSH "cd '$BUILD_DIR' && .venv/bin/python tools/developer_runs.py list --user '$DEV_PUBLISH_USER'") || {
+      echo "Could not reach the VM; the remote run continues and can be checked from the public dashboard."
+      exit 1
+    }
+    details=$(printf '%s' "$status_json" | python3 -c '
+import json, sys
+rows=json.load(sys.stdin)
+run=next((r for r in rows if r.get("run_id") == sys.argv[1]), {})
+print("|".join(str(run.get(k) or "") for k in ("status","stage","preview_url","error")))
+' "$RUN_ID")
+    IFS='|' read -r run_status run_stage preview_url run_error <<EOF
+$details
+EOF
+    echo "  $run_status: $run_stage"
+    if [ "$run_status" = succeeded ] || [ "$run_status" = gate_failed ]; then
+      echo "PREVIEW_URL=$preview_url"
+      exit 0
+    fi
+    case "$run_status" in
+      failed|cancelled|interrupted)
+        echo "Developer run $run_status: $run_error"
+        exit 1 ;;
+    esac
+  done
+fi
+
+steps="cd $BUILD_DIR"
 [ $FETCH -eq 1 ] && steps="$steps && .venv/bin/python src/fetch_regions.py $REGIONS"
 steps="$steps && bash src/run_district_build.sh $MODE${REGIONS:+ --regions \"$REGIONS\"}"
-SSH "rm -f ~/remote_build.log; nohup bash -c '($steps) >> ~/remote_build.log 2>&1; echo REMOTE_BUILD_RC=\$? >> ~/remote_build.log' >/dev/null 2>&1 &"
+SSH "rm -f $REMOTE_LOG; nohup bash -c '($steps) >> $REMOTE_LOG 2>&1; echo REMOTE_BUILD_RC=\$? >> $REMOTE_LOG' >/dev/null 2>&1 &"
 echo "  started: $steps"
 seen=0
 while :; do
   sleep 120
   s=$(gcloud compute instances describe $VM --zone $ZONE --project $PROJECT --format="value(status)")
   [ "$s" = RUNNING ] || { echo "VM is $s -- preempted or stopped mid-build; run the same command again to resume"; exit 1; }
-  n=$(SSH "wc -l < ~/remote_build.log" | tr -dc 0-9); n=${n:-0}
-  if [ "$n" -gt "$seen" ]; then SSH "sed -n '$((seen+1)),${n}p' ~/remote_build.log" | cut -c1-220; seen=$n; fi
-  SSH "grep -q '^REMOTE_BUILD_RC=' ~/remote_build.log && echo done" | grep -q done && break
+  n=$(SSH "wc -l < $REMOTE_LOG" | tr -dc 0-9); n=${n:-0}
+  if [ "$n" -gt "$seen" ]; then SSH "sed -n '$((seen+1)),${n}p' $REMOTE_LOG" | cut -c1-220; seen=$n; fi
+  SSH "grep -q '^REMOTE_BUILD_RC=' $REMOTE_LOG && echo done" | grep -q done && break
 done
-rc=$(SSH "grep '^REMOTE_BUILD_RC=' ~/remote_build.log | tail -1 | cut -d= -f2" | tr -dc 0-9)
+rc=$(SSH "grep '^REMOTE_BUILD_RC=' $REMOTE_LOG | tail -1 | cut -d= -f2" | tr -dc 0-9)
 [ "${rc:-1}" = 0 ] || { echo "BUILD FAILED (rc=$rc) -- nothing published"; exit 1; }
 
 echo "=== gate against live ==="
-SSH "cd ~/solar-map && .venv/bin/python tools/predeploy_check.py; echo GATE_RC=\$?" | tee /tmp/remote_gate.$$
+SSH "cd $BUILD_DIR && .venv/bin/python tools/predeploy_check.py; echo GATE_RC=\$?" | tee /tmp/remote_gate.$$
 gate=$(grep '^GATE_RC=' /tmp/remote_gate.$$ | cut -d= -f2); rm -f /tmp/remote_gate.$$
 if [ "$gate" != 0 ]; then
   if [ -n "$DEV_PUBLISH_USER" ]; then
@@ -164,13 +328,13 @@ fi
 if [ -n "$DEV_PUBLISH_USER" ]; then
   echo "=== validate developer preview map contract ==="
   for region in $REGIONS; do
-    SSH "cd ~/solar-map && .venv/bin/python tools/validate_quickstart_map.py --region-out 'data/out/$region' --map-data data" || {
+    SSH "cd $BUILD_DIR && .venv/bin/python tools/validate_quickstart_map.py --region-out 'data/out/$region' --map-data data" || {
       echo "DEVELOPER PREVIEW FAILED -- map output contract validation failed for $region"
       exit 1
     }
   done
   echo "=== publish temporary developer preview ==="
-  preview_out=$(SSH "cd ~/solar-map && .venv/bin/python tools/publish_preview.py --user '$DEV_PUBLISH_USER' --regions '$REGIONS'") || {
+  preview_out=$(SSH "cd $BUILD_DIR && .venv/bin/python tools/publish_preview.py --user '$DEV_PUBLISH_USER' --regions '$REGIONS' --run-id '$RUN_ID'") || {
     echo "DEVELOPER PREVIEW FAILED -- the preview was not updated"
     exit 1
   }
