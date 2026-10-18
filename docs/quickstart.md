@@ -58,6 +58,10 @@ The VM owns each developer run after it starts, so closing the local launcher
 does not cancel the build. The public run dashboard shows status and logs;
 stop requests go through an authenticated GitHub Actions workflow. Starting
 another run prompts how to handle active runs unless `--parallel` is selected.
+The full-workflow cost confirmation covers public preview hosting and expected
+downloads. After approval, quickstart creates and configures the dedicated
+preview bucket if needed, then opens the published page; a run is not reported
+successful if the browser cannot accept the open request.
 The current clean local branch and exact commit are used when that commit is
 available on `origin`; otherwise the quickstart displays the configured
 `default_git_branch` tip and requires explicit interactive confirmation before
@@ -68,7 +72,8 @@ existing SSH key; no extra CLI is needed when this checkout already
 authenticates to GitHub) and falls back to the GitHub CLI if available. It
 calculates the estimate from the VM, storage, retention, and expected-download
 assumptions in `CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md)
-for workspace paths, cache behavior, one-time preview-bucket setup, optional
+for workspace paths, cache behavior, automatic preview-bucket setup and
+recovery, optional
 per-developer VM profiles, and preflight.
 
 # 5. Review status

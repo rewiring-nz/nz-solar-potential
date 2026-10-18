@@ -302,6 +302,10 @@ class CloudProfileTests(unittest.TestCase):
                 ),
                 patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
                 patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="target verified"),
+                patch.object(
+                    cloud_pipeline, "_ensure_shared_preview_bucket",
+                    return_value="bucket ready",
+                ) as prepare_bucket,
                 patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
                 patch.object(cloud_pipeline, "_github_alias", return_value="alice"),
                 patch.object(
@@ -322,7 +326,10 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("[QS-01] PASS Check local checkout and shared cloud defaults", log)
         self.assertIn("preview alias alice", log)
         self.assertIn("[QS-04] PASS Confirm estimated cloud cost: Human approval received.", log)
-        self.assertIn("[QS-06] PASS Build, gate, and publish developer preview", log)
+        self.assertIn("[QS-05] PASS Create and configure public preview hosting: bucket ready", log)
+        self.assertIn("[QS-07] PASS Build, gate, and publish developer preview", log)
+        self.assertIn("[QS-08] PASS Open published web page: Browser opened.", log)
+        prepare_bucket.assert_called_once()
         open_browser.assert_called_once_with(preview_url)
 
     def test_shared_build_publishes_and_opens_preview_by_default(self) -> None:
@@ -355,6 +362,10 @@ class CloudProfileTests(unittest.TestCase):
                 ),
                 patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
                 patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="verified"),
+                patch.object(
+                    cloud_pipeline, "_ensure_shared_preview_bucket",
+                    return_value="bucket ready",
+                ),
                 patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
                 patch.object(cloud_pipeline, "_github_alias", return_value="alice"),
                 patch.object(
@@ -368,6 +379,38 @@ class CloudProfileTests(unittest.TestCase):
                 self.assertEqual(cloud_pipeline.main(), 0)
         self.assertEqual(run_build.call_args.args[0]["preview_user"], "alice")
         open_browser.assert_called_once_with(preview_url)
+
+    def test_shared_build_decline_does_not_create_or_configure_preview_bucket(self) -> None:
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(sys, "argv", ["pipeline.py", "--mode", "cloud"]),
+                patch.dict(os.environ, {"SOLAR_CLOUD_PROFILE": ""}),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(cloud_pipeline, "_load_shared_cloud_config",
+                             return_value=cloud_pipeline._load_shared_cloud_config()),
+                patch.object(
+                    cloud_pipeline, "_resolve_shared_build_source",
+                    return_value={
+                        "git_branch": "feature/test",
+                        "commit": "a" * 40,
+                        "commit_date": "2026-10-18T00:00:00+00:00",
+                        "source_kind": "local branch",
+                    },
+                ),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="verified"),
+                patch.object(cloud_pipeline, "_github_alias", return_value="alice"),
+                patch.object(cloud_pipeline, "_ensure_shared_preview_bucket") as prepare_bucket,
+                patch.object(cloud_pipeline, "_shared_vm_readiness") as readiness,
+                patch.object(cloud_pipeline, "_run_shared_cloud_build") as run_build,
+                patch.object(sys.stdin, "isatty", return_value=True),
+                patch("builtins.input", return_value=""),
+            ):
+                self.assertEqual(cloud_pipeline.main(), 2)
+        prepare_bucket.assert_not_called()
+        readiness.assert_not_called()
+        run_build.assert_not_called()
 
     def test_shared_build_passes_github_alias_to_remote_publisher(self) -> None:
         config = cloud_pipeline._load_shared_cloud_config()
@@ -578,7 +621,64 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("feature/test", content)
         self.assertIn("a" * 40, content)
         self.assertIn("publish a public preview", content)
+        self.assertIn("preview bucket if needed", content)
+        self.assertIn("viewed in a browser", content)
         self.assertIn("not a spending cap", content)
+
+    def test_shared_preview_bucket_is_created_and_configured_after_approval(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
+        commands: list[list[str]] = []
+        missing = cloud_pipeline.subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="",
+            stderr="ERROR: gs://rewiring-solar-previews not found: 404",
+        )
+        bucket = {
+            "projectNumber": "12345",
+            "location": "australia-southeast1",
+            "iamConfiguration": {
+                "uniformBucketLevelAccess": {"enabled": True},
+                "publicAccessPrevention": "inherited",
+            },
+        }
+
+        def fake_cloud_run(args, *, check=True, capture=False):
+            commands.append(args)
+            if args[1:4] == ["storage", "buckets", "describe"]:
+                if len([cmd for cmd in commands if cmd[1:4] == ["storage", "buckets", "describe"]]) == 1:
+                    return missing
+                return cloud_pipeline.subprocess.CompletedProcess(
+                    args, 0, json.dumps(bucket), "",
+                )
+            if args[1:3] == ["projects", "describe"]:
+                return cloud_pipeline.subprocess.CompletedProcess(args, 0, "12345\n", "")
+            return cloud_pipeline.subprocess.CompletedProcess(args, 0, "", "")
+
+        with patch.object(cloud_pipeline, "_cloud_run", side_effect=fake_cloud_run):
+            result = cloud_pipeline._ensure_shared_preview_bucket(config, "/usr/bin/gcloud")
+
+        create_command = next(cmd for cmd in commands if cmd[1:4] == ["storage", "buckets", "create"])
+        self.assertIn("--project=downloads-417521", create_command)
+        self.assertIn("--location=australia-southeast1", create_command)
+        self.assertIn("--uniform-bucket-level-access", create_command)
+        self.assertTrue(any(cmd[-1] == "--configure-bucket" for cmd in commands))
+        self.assertIn("created and configured", result)
+
+    def test_shared_preview_bucket_refuses_permission_errors_without_creating(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
+        denied = cloud_pipeline.subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="",
+            stderr="ERROR: permission denied (403)",
+        )
+        with patch.object(cloud_pipeline, "_cloud_run", return_value=denied) as cloud_run:
+            with self.assertRaisesRegex(RuntimeError, "cannot inspect preview bucket"):
+                cloud_pipeline._ensure_shared_preview_bucket(config, "/usr/bin/gcloud")
+        self.assertEqual(cloud_run.call_count, 1)
+
+    def test_shared_build_fails_if_browser_does_not_open_preview(self) -> None:
+        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        with patch.object(cloud_pipeline.webbrowser, "open", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "preview is published but could not be opened"):
+                cloud_pipeline._open_preview_page(url)
 
     def test_github_alias_uses_authenticated_cli_login(self) -> None:
         completed = cloud_pipeline.subprocess.CompletedProcess(

@@ -24,6 +24,18 @@ assumptions are stored in [`config.py`](../config.py) under
 Use `--cloud preflight` for the no-build,
 no-cost check; preflight does not require GitHub CLI authentication.
 
+For a build, the cost confirmation covers the complete workflow, including
+expected preview storage and public downloads. It states that the preview
+bucket may be created/configured and that anyone can read published preview
+data. Only after explicit approval does quickstart create the dedicated bucket
+in the configured VM region if it is missing, verify that it belongs to the
+configured project, enable uniform bucket-level access, grant public read and
+the VM upload role, and apply the preview expiry policy. It then builds,
+publishes, and opens the page. No bucket creation or access-policy change
+happens before cost approval. Quickstart completion is reported only when the
+browser accepts the page-open request; if automatic opening fails, the
+published URL is printed for manual opening.
+
 The separate per-developer VM lifecycle remains available with
 `bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Its provisioning,
 bootstrap, report collection, preview tunnelling, and cleanup are selected
@@ -41,9 +53,11 @@ Homebrew or modify unsupported Linux distributions; use Google's
 there.
 
 The numbered preflight and shared-build log is saved under
-`data/cloud_quickstart_runs/<run-id>.log`. Its `[QS-01]` through `[QS-06]`
-labels cover checkout/config, `gcloud`, account/target, cost approval, VM/SSH
-readiness, and the selected action. For a profile-based cloud region run, the remote
+`data/cloud_quickstart_runs/<run-id>.log`. For shared builds, `[QS-01]` through
+`[QS-08]` cover checkout/config, `gcloud`, account/target, cost approval,
+preview hosting setup, VM/SSH readiness, build/publish, and opening the page.
+No-build preflight uses `[QS-01]` through `[QS-06]` and does not create or
+configure the preview bucket. For a profile-based cloud region run, the remote
 pipeline continues numbering at `[QS-07]`; its `report.md` and `run.log` use
 the same numbers. Local runs retain their existing `[QS-01]` through
 `[QS-18]` sequence.
@@ -183,12 +197,14 @@ intact. Production `site-config.js` and the versioned production bucket are
 not changed. The bucket is public: anyone with the URL can view the served map
 data. Do not upload keys, raw inputs, build logs, or other private material.
 
-Before the first preview, create the dedicated bucket named in
-`config.CLOUD_SHARED_BUILD["preview_bucket"]` in the configured cloud project.
-It must use uniform bucket-level access and allow public access; do not reuse
-the private source-data bucket or production tiles bucket. From a checkout
-with the required Google Cloud permissions, create it in the configured region
-(creation and public storage may incur charges):
+The build quickstart creates and configures the dedicated bucket named in
+`config.CLOUD_SHARED_BUILD["preview_bucket"]` after explicit cost approval.
+The bucket must be in the configured project and VM region; setup refuses to
+change access on a bucket owned by another project or a bucket with enforced
+Public Access Prevention. Do not reuse the private source-data bucket or
+production tiles bucket. If manual setup or recovery is needed, create the
+dedicated bucket with the required Google Cloud permissions (creation and
+public storage may incur charges):
 
 ```sh
 gcloud storage buckets create gs://rewiring-solar-previews \
@@ -216,8 +232,9 @@ cross-origin CORS configuration is not required.
 Old immutable run data expires automatically. The stable preview page also
 expires after 14 days without a successful refresh. Bucket storage and public
 downloads can incur additional charges; both are included in the calculated
-planning estimate described above. Interactive `yes` confirmation is still
-required, and the estimate is not a spending cap.
+planning estimate described above. The build quickstart performs setup
+automatically after interactive `yes` confirmation, and the estimate is not a
+spending cap.
 
 ## External developer (create an environment)
 

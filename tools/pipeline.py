@@ -1183,6 +1183,87 @@ def _shared_vm_readiness(config: dict[str, Any], gcloud: str) -> str:
     return "Shared VM is RUNNING and IAP/SSH access is ready."
 
 
+def _ensure_shared_preview_bucket(config: dict[str, Any], gcloud: str) -> str:
+    bucket = config["preview_bucket"]
+    region = config["zone"].rsplit("-", 1)[0]
+    describe = [
+        gcloud, "storage", "buckets", "describe", bucket, "--format=json",
+    ]
+    result = _cloud_run(describe, check=False, capture=True)
+    created = False
+    if result.returncode:
+        details = (result.stderr or result.stdout or "").strip()
+        lowered = details.casefold()
+        if "403" in lowered or "permission" in lowered or "forbidden" in lowered:
+            raise RuntimeError(
+                f"cannot inspect preview bucket {bucket}: "
+                f"{details or 'permission denied'}"
+            )
+        if "404" not in lowered and "not found" not in lowered and "does not exist" not in lowered:
+            raise RuntimeError(
+                f"could not determine whether preview bucket {bucket} exists: "
+                f"{details or f'gcloud exited {result.returncode}'}"
+            )
+        _cloud_run([
+            gcloud, "storage", "buckets", "create", bucket,
+            f"--project={config['project']}", f"--location={region}",
+            "--uniform-bucket-level-access",
+        ], capture=True)
+        created = True
+        result = _cloud_run(describe, capture=True)
+
+    try:
+        bucket_info = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"gcloud returned invalid details for preview bucket {bucket}"
+        ) from exc
+    if not isinstance(bucket_info, dict):
+        raise RuntimeError(f"gcloud returned invalid details for preview bucket {bucket}")
+
+    project_number = _cloud_run([
+        gcloud, "projects", "describe", config["project"],
+        "--format=value(projectNumber)",
+    ], capture=True).stdout.strip()
+    bucket_project = str(bucket_info.get("projectNumber", ""))
+    if not project_number or not bucket_project or bucket_project != project_number:
+        raise RuntimeError(
+            f"preview bucket {bucket} is not confirmed to belong to configured project "
+            f"{config['project']}; refusing to change its access policy"
+        )
+
+    location = bucket_info.get("location")
+    if not isinstance(location, str) or location.casefold() != region.casefold():
+        raise RuntimeError(
+            f"preview bucket {bucket} is in location {location!r}, expected {region}; "
+            "use a dedicated bucket in the configured VM region"
+        )
+    iam_configuration = bucket_info.get("iamConfiguration")
+    if not isinstance(iam_configuration, dict):
+        raise RuntimeError(f"preview bucket {bucket} has no readable IAM configuration")
+    if iam_configuration.get("publicAccessPrevention") == "enforced":
+        raise RuntimeError(
+            f"preview bucket {bucket} enforces Public Access Prevention, so its page "
+            "cannot be made publicly viewable"
+        )
+    uniform_access = iam_configuration.get("uniformBucketLevelAccess")
+    if not isinstance(uniform_access, dict) or uniform_access.get("enabled") is not True:
+        _cloud_run([
+            gcloud, "storage", "buckets", "update", bucket,
+            "--uniform-bucket-level-access",
+        ], capture=True)
+
+    _cloud_run([
+        sys.executable, str(ROOT / "tools" / "publish_preview.py"),
+        "--configure-bucket",
+    ], capture=True)
+    state = "created and configured" if created else "verified and configured"
+    return (
+        f"Public developer preview bucket {bucket} {state} in project "
+        f"{config['project']} ({region}); public page and data hosting are enabled."
+    )
+
+
 def _shared_preview_cost(config: dict[str, Any]) -> tuple[Decimal, str]:
     """Estimate VM, disk, preview storage, and expected public egress costs."""
     model = config["preview_cost_model"]
@@ -1224,7 +1305,8 @@ def _confirm_shared_cloud_cost(
         4,
         f"This action will build {config['git_branch']} at {config['commit']} "
         f"({config['commit_date']}) for region(s) {config['regions']} on the shared VM, "
-        f"and publish a public preview. Calculated estimate: NZD ${estimate_text} "
+        "create/configure the public preview bucket if needed, and publish a public "
+        f"preview intended to be viewed in a browser. Calculated estimate: NZD ${estimate_text} "
         f"({basis}). Actual charges can be higher, especially if runtime or public "
         "downloads exceed these assumptions; this is not a spending cap.",
     )
@@ -1241,6 +1323,15 @@ def _confirm_shared_cloud_cost(
         raise CloudQuickstartDeclined(
             "human cost confirmation declined; no cloud action was started."
         )
+
+
+def _open_preview_page(url: str) -> str:
+    if not webbrowser.open(url):
+        raise RuntimeError(
+            f"preview is published but could not be opened automatically; "
+            f"open {url} in a browser."
+        )
+    return "Browser opened."
 
 
 def _run_shared_cloud_build(
@@ -1833,19 +1924,29 @@ def main() -> int:
                     return "Preflight only; no cloud work or cost approval required."
 
                 log.step(4, "Confirm estimated cloud cost", confirm_shared_cost)
-                log.step(
-                    5,
-                    "Check shared VM readiness",
-                    lambda: _shared_vm_readiness(shared, gcloud),
-                )
                 if action == "preflight":
+                    log.step(
+                        5,
+                        "Check shared VM readiness",
+                        lambda: _shared_vm_readiness(shared, gcloud),
+                    )
                     result = log.step(
                         6, "Complete cloud preflight",
                         lambda: "No VM was started and no build was run.",
                     )
                 else:
+                    log.step(
+                        5,
+                        "Create and configure public preview hosting",
+                        lambda: _ensure_shared_preview_bucket(shared, gcloud),
+                    )
+                    log.step(
+                        6,
+                        "Check shared VM readiness",
+                        lambda: _shared_vm_readiness(shared, gcloud),
+                    )
                     build_result = log.step(
-                        6, "Build, gate, and publish developer preview",
+                        7, "Build, gate, and publish developer preview",
                         lambda: _run_shared_cloud_build(
                             shared, shared["regions"], log, parallel=args.parallel,
                         ),
@@ -1865,7 +1966,10 @@ def main() -> int:
                         print(f"Developer run dashboard: {preview_url}", flush=True)
                     else:
                         print(f"Developer preview: {preview_url}", flush=True)
-                    webbrowser.open(preview_url)
+                    log.step(
+                        8, "Open published web page",
+                        lambda: _open_preview_page(preview_url),
+                    )
                 return 0 if result is not None else 1
 
             def check_checkout_and_profile() -> CloudProfile:

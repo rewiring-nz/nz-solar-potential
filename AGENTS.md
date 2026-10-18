@@ -49,6 +49,11 @@ Set up per [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-se
   the configured `default_git_branch` tip and requires interactive confirmation
   before falling back. The selected branch, SHA, and commit date are included
   in cost approval and the public run dashboard.
+  Cost approval covers public preview storage and expected downloads. After
+  approval, the quickstart creates the configured dedicated preview bucket if
+  needed, configures public read, VM upload access, and expiry, then opens the
+  published page; quickstart succeeds only when the browser accepts the open
+  request.
   Developer jobs are owned by the VM supervisor (`tools/developer_runs.py`);
   the public run dashboard contains status and redacted log excerpts, while
   stop requests require authenticated GitHub Actions access. Per-developer
@@ -169,7 +174,10 @@ is enforced by code, not by care:
   unpushed or detached checkout requires explicit confirmation to use
   `config.CLOUD_SHARED_BUILD["default_git_branch"]`. The cost confirmation and
   run dashboard identify the selected branch, SHA, and commit date. The
-  production gate is informational for developer previews and remains
+  complete workflow estimate includes preview storage and expected public
+  downloads. The quickstart creates/configures the dedicated public preview
+  bucket only after cost approval and opens the published page before success.
+  The production gate is informational for developer previews and remains
   mandatory for production publishing. The command resolves the alias from the
   authenticated GitHub SSH identity or GitHub CLI, calculates a planning
   estimate from the configured `preview_cost_model`, and updates only that
