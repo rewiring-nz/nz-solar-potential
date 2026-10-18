@@ -171,6 +171,19 @@ def main():
         # A building in two regions' summaries is drawn and counted twice on
         # the map (567 of them shipped in v47 before this check existed).
         twice = {b: r for b, r in owners.items() if len(r) > 1}
+        # WHY A ROOF HAS NO PANELS. The summaries carry only panels and kWh,
+        # so since the build went per-region NEWLY WITHHELD could never fire:
+        # v50 withheld a Wanaka shed that had 30 panels and the gate said 0.
+        # The reason lives in each region's own solar_potential.
+        for r in {x for rs in owners.values() for x in rs}:
+            sp = ROOT / "data" / "regions" / r / "solar_potential.geojson"
+            if not sp.exists():
+                continue
+            for f in json.loads(sp.read_text())["features"]:
+                pr = f["properties"]
+                b = pr.get("building_id")
+                if pr.get("no_estimate_reason") and b is not None and int(b) in new:
+                    new[int(b)]["no_estimate_reason"] = pr["no_estimate_reason"]
         # THE WORKINGS MUST ADD UP. emit_region re-derives every panel's kWh
         # from the inputs the browser is given and refuses to emit when they
         # disagree; this is the second lock, so a region emitted by older

@@ -26,6 +26,9 @@ _TO_NZTM = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
 
 # Kept here rather than imported from build_layout_geojson so derive can run
 # without pulling in the whole layout stack.
+# No panel fitted and no face this big: the roof has no room, not an unread shape.
+SMALL_FACE_M2 = 10.0
+
 _REASON_TEXT = {
     "too_steep": f"Roof is steeper than we model "
                  f"(over {config.MAX_ROOF_SLOPE_DEG}\u00b0)",
@@ -76,6 +79,7 @@ def derive(region):
             a["facet_count"] += 1
             area = _facet_area_m2(f)
             a["facet_area_m2"] += area
+            a["max_facet_m2"] = max(a.get("max_facet_m2", 0.0), area)
             a["poa_w"] += area * (p.get("poa_kwh_m2_yr") or 0.0)
         elif k == "obstruction":
             a["obstruction_count"] += 1
@@ -113,7 +117,10 @@ def derive(region):
                 elif a["facet_area_m2"] and \
                         a["obstructed_m2"] / a["facet_area_m2"] > 0.6:
                     reason = "all_obstructed"
-                elif a["facet_area_m2"] < 6:
+                elif a["facet_area_m2"] < 6 or a.get("max_facet_m2", 0.0) < SMALL_FACE_M2:
+                    # a garden shed's hip faces are 5-9 m2 triangles: the roof
+                    # was read fine, there is just no room for a panel on any
+                    # face. Calling that low confidence was untrue.
                     reason = "too_small"
                 else:
                     reason = "low_confidence"
