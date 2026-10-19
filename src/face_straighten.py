@@ -32,9 +32,10 @@ faces were not wobbly but bent -- 85% of them, Arrowtown and the CBD,
 whose seams wander across it, each piece notched where the other bites in.
 segment_building_best merges such pairs, but the stages after it re-split
 roofs, so the pass is repeated last. Two neighbours merge when they share
-an edge of at least MERGE_MIN_SHARED_M, match on slope and (unless both
-are near flat) direction, and their planes agree to MERGE_MAX_STEP_M all
-along that edge -- a valley or a step between storeys does not. The larger
+an edge of at least MERGE_MIN_SHARED_M, their surfaces point within
+MERGE_NORMAL_DEG of each other, and each plane passes within
+MERGE_MAX_STEP_M of the other face's centre and of every point of the
+shared edge -- a ridge, a valley or a step between storeys does not. The larger
 face's plane is kept; the planes differ by less than the step anyway.
 SOLAR_MERGE_COPLANAR=0 turns it off.
 
@@ -183,9 +184,7 @@ def straighten_faces(facets, *_, **__):
 
 
 MERGE_MIN_SHARED_M = 1.0
-MERGE_SLOPE_DEG = 3.0
-MERGE_ASPECT_DEG = 15.0
-MERGE_FLAT_DEG = 5.0
+MERGE_NORMAL_DEG = 2.5
 MERGE_MAX_STEP_M = 0.15
 
 
@@ -193,19 +192,33 @@ def _z(f, x, y):
     return f["plane_a"] * x + f["plane_b"] * y + f["plane_c"]
 
 
+def _normal_angle(f, g):
+    import math
+    nf = (-f["plane_a"], -f["plane_b"], 1.0)
+    ng = (-g["plane_a"], -g["plane_b"], 1.0)
+    dot = sum(a * b for a, b in zip(nf, ng))
+    c = dot / (math.sqrt(sum(a * a for a in nf)) * math.sqrt(sum(b * b for b in ng)))
+    return math.degrees(math.acos(max(-1.0, min(1.0, c))))
+
+
 def _same_plane(f, g):
+    """One plane: the surfaces point the same way, and each plane passes
+    through the other face. Agreeing along the shared edge is NOT enough --
+    two halves of a gable always meet at their ridge. The first version asked
+    only that, and on low-pitched commercial roofs (2-5 degrees each way) it
+    merged the halves into one face; the other half then read as one big
+    obstruction (4749386 in Frankton: 750 -> 454 panels; v51 gate, 20 Oct)."""
     if f.get("plane_a") is None or g.get("plane_a") is None:
         return False
-    sf, sg = f.get("slope_deg", 90.0), g.get("slope_deg", 90.0)
-    if abs(sf - sg) > MERGE_SLOPE_DEG:
+    if _normal_angle(f, g) > MERGE_NORMAL_DEG:
         return False
-    if not (sf < MERGE_FLAT_DEG and sg < MERGE_FLAT_DEG):
-        d = abs(f.get("aspect_deg", 0.0) - g.get("aspect_deg", 0.0)) % 360
-        if min(d, 360 - d) > MERGE_ASPECT_DEG:
-            return False
     shared = f["geometry"].boundary.intersection(g["geometry"].buffer(0.05))
     if shared.is_empty or shared.length < MERGE_MIN_SHARED_M:
         return False
+    for a, b in ((f, g), (g, f)):
+        c = b["geometry"].representative_point()
+        if abs(_z(a, c.x, c.y) - _z(b, c.x, c.y)) > MERGE_MAX_STEP_M:
+            return False
     n = max(2, int(shared.length / 0.5))
     for k in range(n + 1):
         p = shared.interpolate(k / n, normalized=True)

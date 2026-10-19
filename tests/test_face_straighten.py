@@ -33,6 +33,15 @@ def test_gable_halves_stay_apart():
     assert len(fs.merge_coplanar_faces([n, s])) == 2
 
 
+def test_low_pitch_gable_halves_stay_apart():
+    # 3 degrees each way, meeting at a ridge at y = 10: they agree ALONG the
+    # seam (they cross there) but they are two planes
+    t = math.tan(math.radians(3))
+    s_ = _face(box(0, 0, 30, 10), 3, 180, c=100.0)                 # rises north to the ridge
+    n_ = _face(box(0, 10, 30, 20), 3, 0, c=100.0 + 20 * t)         # falls north from it
+    assert len(fs.merge_coplanar_faces([s_, n_])) == 2
+
+
 def test_a_step_between_storeys_stays_apart():
     low, high = _face(box(0, 0, 6, 8), 2, 0, c=100.0), _face(box(6, 0, 12, 8), 2, 0, c=100.6)
     assert len(fs.merge_coplanar_faces([low, high])) == 2
