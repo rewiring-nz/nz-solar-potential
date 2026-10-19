@@ -101,7 +101,7 @@ def as_coverage(polys):
     closed = unary_union(polys).buffer(GAP_FILL_M, join_style="mitre").buffer(-GAP_FILL_M, join_style="mitre")
     cells = list(polygonize(unary_union([p.boundary for p in polys] + [closed.boundary])))
     parts = [[] for _ in polys]
-    ceded = [0.0 for _ in polys]     # area each face gave to a smaller PEER (not nested in it)
+    ceded = [0.0 for _ in polys]     # area each face gave to a smaller face NESTED in it (a cut-out)
     gaps = []
     for c in cells:
         if c.area <= 0:
@@ -116,7 +116,7 @@ def as_coverage(polys):
             win = min(hits, key=lambda i: polys[i].area)
             parts[win].append(c)
             for i in hits:
-                if i != win and not _nested(polys[win], polys[i]):
+                if i != win and _nested(polys[win], polys[i]):
                     ceded[i] += c.area     # only a NESTED face's area is a cut-out
         elif c.buffer(-GAP_FILL_M / 2).is_empty:
             gaps.append(c)
@@ -135,11 +135,14 @@ def as_coverage(polys):
         if not ps:
             return _refuse("a face lost every piece")
         u = unary_union(ps)
+        # NEVER keep the bigger piece and drop the rest. A small face across
+        # a narrow neck split 12/16 Kent Street's roof in two and the 230 m2
+        # right wing vanished (v51 build, 20 Oct); 7 Panorama Terrace lost
+        # its middle section the same way.
         if u.geom_type != "Polygon":
-            u = max(getattr(u, "geoms", [u]), key=lambda g: g.area)
-        # a nested face's area is allowed to go; anything else must be a hairline
-        nested_lost = (p.area - u.area) - lost
-        if abs(u.area - p.area) - max(nested_lost, 0.0) > REPAIR_MAX_AREA_CHANGE * p.area:
+            return _refuse("a face would split in two")
+        # a nested face's area may go (it is a cut-out); anything else must be a hairline
+        if abs(u.area - (p.area - lost)) > REPAIR_MAX_AREA_CHANGE * p.area:
             return _refuse("area changed more than a hairline")
         out.append(u)
     try:
