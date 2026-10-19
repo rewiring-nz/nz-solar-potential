@@ -46,7 +46,8 @@ function genAnnual(sun, sb, ab) {
 
 function genAssumptionNodes(A) {
   const ratedKw = Wk.input("Rated power of one panel", A.panel_rated_power_w / 1000, "kW",
-    { dp: 3, source: `Panel spec: ${A.panel_rated_power_w} W at standard test conditions (1,000 W/m² of sunlight, 25 °C).` });
+    { dp: 3, source: `Panel spec: ${A.panel_rated_power_w} W at standard test conditions (1,000 W/m² of sunlight, 25 °C).`,
+      edit: { key: "gen:panel_rated_power_w", scale: 1000, unit: "W", step: 5, dp: 0 } });
   const areaEach = Wk.input("Size of one panel", A.panel_area_m2, "m²",
     { dp: 3, source: "Panel spec: 1.134 m × 1.961 m, a typical modern residential panel." });
   const stc = Wk.input("Standard test sunlight", 1, "kW/m²",
@@ -54,10 +55,12 @@ function genAssumptionNodes(A) {
   const eff = Wk.quotient("Panel efficiency", "share", ratedKw,
     Wk.product("Sunlight on one panel at test conditions", "kW", [areaEach, stc], { dp: 3 }), { dp: 2 });
   const inv = Wk.input("Inverter efficiency", A.inverter_efficiency_pct / 100, "share",
-    { source: "Typical string inverter (the inverter turns the panels' DC into household AC)." });
+    { source: "Typical string inverter (the inverter turns the panels' DC into household AC).",
+      edit: { key: "gen:inverter_efficiency_pct", scale: 100, unit: "%", step: 0.5, dp: 2 } });
   const loss = Wk.input("Other system losses", A.system_derate_pct / 100, "share",
     { dp: 2, source: "PVWatts convention: cell temperature, dirt, wiring, mismatch, panel tolerance and downtime.",
-      note: "Shading is not in this number: it is measured per panel from the laser scan, above." });
+      note: "Shading is not in this number: it is measured per panel from the laser scan, above.",
+      edit: { key: "gen:system_derate_pct", scale: 100, unit: "%", step: 0.1, dp: 2 } });
   const kept = Wk.complement("Kept after other losses", loss, { dp: 2 });
   return { ratedKw, areaEach, eff, inv, kept };
 }

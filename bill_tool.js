@@ -110,6 +110,9 @@ function btHdd(lat) {
 // off the nodes for the code that only needs numbers.
 const BT_CAP = s => s[0].toUpperCase() + s.slice(1);
 const btIn = (label, value, unit, o) => Wk.input(label, value, unit, o);
+// An assumption the reader can change in the workings sheet (WkView): the
+// key says which of the map's settings it is (the page applies it).
+const pctEd = k => ({ key: `econ:${k}`, scale: 100, unit: "%", step: 0.5, dp: 2 });
 const btZero = (label, why) => Wk.input(label, 0, "kWh/day", { note: why });
 
 // Daily kWh of each part, per season, and the hourly shapes they follow.
@@ -238,14 +241,16 @@ function btTariff(t) {
 }
 
 function btPriceNodes(tariff) {
+  const ed = k => (t && t.pfx ? { key: `econ:${t.pfx}_${k}`, scale: 100, unit: "c/kWh", step: 0.5, dp: 2 } : null);
   const t = btTariff(tariff);
   const src = `Your plan (Prices), including GST. Peak hours: ${btPeakText()}.`;
   const P = {
-    peak: btIn("Peak price", t.peak / 100, "$/kWh", { dp: 3, source: src }),
-    off: btIn("Off-peak price", t.offpeak / 100, "$/kWh", { dp: 3, source: src }),
-    peakSell: btIn("Peak export price", t.peakSell / 100, "$/kWh", { dp: 3, source: src }),
-    offSell: btIn("Off-peak export price", t.offpeakSell / 100, "$/kWh", { dp: 3, source: src }),
-    daily: btIn("Daily charge", t.daily, "$/day", { source: "Your plan (Prices), including GST." }),
+    peak: btIn("Peak price", t.peak / 100, "$/kWh", { dp: 3, source: src, edit: ed("peak_c") }),
+    off: btIn("Off-peak price", t.offpeak / 100, "$/kWh", { dp: 3, source: src, edit: ed("offpeak_c") }),
+    peakSell: btIn("Peak export price", t.peakSell / 100, "$/kWh", { dp: 3, source: src, edit: ed("peak_sell_c") }),
+    offSell: btIn("Off-peak export price", t.offpeakSell / 100, "$/kWh", { dp: 3, source: src, edit: ed("offpeak_sell_c") }),
+    daily: btIn("Daily charge", t.daily, "$/day", { source: "Your plan (Prices), including GST.",
+      edit: t.pfx ? { key: `econ:${t.pfx}_daily`, scale: 1, unit: "$/day", step: 0.1, dp: 2 } : null }),
     month: btIn("Days in a typical month", BT_MONTH_DAYS, "days", { dp: 1, note: "365 ÷ 12." }),
   };
   P.buyAt = h => btIsPeak(h) ? P.peak.value : P.off.value;
@@ -466,9 +471,9 @@ function btReturns(cost, save, exportD, opts) {
   }
   const money = real ? "today's dollars" : "dollars of the day (nominal)";
   const rates = [
-    btIn("Power prices rise", E.elec_inflation_pct / 100, "share", { dp: 1, source: "Advanced pricing." }),
-    btIn("Export rates fall", E.export_decline_pct / 100, "share", { dp: 1, source: "Advanced pricing." }),
-    btIn("Panels lose output", E.degradation_pct / 100, "share", { dp: 1, source: "A typical panel warranty." }),
+    btIn("Power prices rise", E.elec_inflation_pct / 100, "share", { dp: 1, source: "Advanced pricing.", edit: pctEd("elec_inflation_pct") }),
+    btIn("Export rates fall", E.export_decline_pct / 100, "share", { dp: 1, source: "Advanced pricing.", edit: pctEd("export_decline_pct") }),
+    btIn("Panels lose output", E.degradation_pct / 100, "share", { dp: 1, source: "A typical panel warranty.", edit: pctEd("degradation_pct") }),
   ].concat(real ? [btIn("General inflation (to today's dollars)", E.cpi_pct / 100, "share",
     { dp: 1, source: "Advanced pricing (real prices). RBNZ targets 1–3%." })] : []);
   const note = `Each year: the power you no longer buy at prices rising ${E.elec_inflation_pct}% a year, plus export income ` +
@@ -543,7 +548,8 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const E = typeof econ !== "undefined" ? econ : { life_years: 30, inverter_replace_year: 15, inverter_cost_pct: 18 };
   const kwpN = ctx.kwpNode || btIn("System size", ctx.kwp || 0, "kW", { source: "The panels on the map." });
   const rate = sy.solarPerKw > 0
-    ? btIn("Solar cost per kW", sy.solarPerKw, "$/kW", { source: "You entered it (System pricing)." })
+    ? btIn("Solar cost per kW", sy.solarPerKw, "$/kW", { source: "You entered it (System pricing).",
+        edit: { key: "sys:solarPerKw", scale: 1, unit: "$/kW", step: 50, dp: 0 } })
     : Wk.given("Solar cost per kW, for a system this size", typeof costPerKw === "function" ? costPerKw(kwpN.value) : 2000, "$/kW",
       [kwpN], { formula: typeof econ !== "undefined"
         ? econ.cost_tiers.map(t => `${t.label}: $${t.rate.toLocaleString()}/kW`).join("; ") : "flat $2,000/kW",
@@ -558,7 +564,7 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const allCostN = Wk.sum("Solar and battery cost", "$", [solarCostN, battCostN]);
   const inverter = { year: E.inverter_replace_year, label: "Inverter",
     node: Wk.product(`Inverter replaced in year ${E.inverter_replace_year + 1}`, "$", [solarCostN,
-      btIn("Inverter, as a share of the solar cost", E.inverter_cost_pct / 100, "share", { source: "Assumptions & pricing." })]) };
+      btIn("Inverter, as a share of the solar cost", E.inverter_cost_pct / 100, "share", { source: "Assumptions & pricing.", edit: pctEd("inverter_cost_pct") })]) };
   const battery = { year: battDef.life_years, label: "Battery",
     node: Wk.product(`Battery replaced in year ${battDef.life_years + 1}`, "$", [battCostN, btIn("Once", 1, "")]) };
   const solarRet = btReturns(solarCostN, N.solarSave, N.solarExportDollars, { replacements: [inverter] });
@@ -750,7 +756,7 @@ function btTariffFromEcon(isBiz) {
   const E = typeof econ !== "undefined" ? econ : {};
   const p = isBiz ? "biz" : "home";
   return { peak: E[p + "_peak_c"], offpeak: E[p + "_offpeak_c"], peakSell: E[p + "_peak_sell_c"],
-           offpeakSell: E[p + "_offpeak_sell_c"], daily: E[p + "_daily"] };
+           offpeakSell: E[p + "_offpeak_sell_c"], daily: E[p + "_daily"], pfx: p };
 }
 
 // box: the element to fill. ctx: { buildingId, isBusiness, lat, roofM2,
@@ -763,6 +769,9 @@ function btTariffFromEcon(isBiz) {
 // editable field on the right, hairline separators -- with the rarely
 // touched settings folded away behind a one-line summary. Plain words, one
 // accent, tap any result to see its workings.
+// The latest panel's workings, so a sheet left open while an assumption is
+// changed re-works from the new calculation.
+const BT_LATEST = { nodeFor: {} };
 function renderBillTool(box, ctx) {
   if (!document.getElementById("bt-css")) {
     const st = document.createElement("style");
@@ -967,9 +976,14 @@ function renderBillTool(box, ctx) {
       repl: () => ret.nodes.replacements, payback: () => ret.nodes.payback,
     };
     Object.keys(r.yearParts).forEach(k => { nodeFor["part-" + k] = () => N.parts[k]; });
+    // the getter reads the LATEST calculation: a sheet left open while an
+    // assumption is changed in it re-works from the new figures, not from
+    // the draw it was opened from
+    // (shared across re-renders: a change rebuilds the whole panel)
+    BT_LATEST.nodeFor = nodeFor;
     qa("[data-wk]").forEach(elx => {
-      const f = nodeFor[elx.dataset.wk];
-      if (f && typeof WkView !== "undefined") WkView.bind(elx, f);
+      const k = elx.dataset.wk, f = nodeFor[k];
+      if (f && typeof WkView !== "undefined") WkView.bind(elx, () => (BT_LATEST.nodeFor[k] || f)());
     });
 
     // wiring
@@ -1008,6 +1022,8 @@ function renderBillTool(box, ctx) {
       state.calib = v > 0 ? { total: v } : null;
       save(); redraw();
     }));
+    // the workings sheet changes the system prices through the same state
+    window.__billToolSys = (k, v) => { state.sys[k] = v > 0 ? v : null; save(); redraw(); };
     qa("input[data-sys]").forEach(inp => inp.addEventListener("change", () => {
       const v = parseFloat(inp.value);
       state.sys[inp.dataset.sys] = v > 0 ? v : null;

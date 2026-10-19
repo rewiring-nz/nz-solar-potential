@@ -3569,10 +3569,55 @@ map.on("load", async () => {
                        "inverter_efficiency_pct", "system_derate_pct"]) assumptions[k] = src[k];
       afterAssumptions();
     };
+    // YOUR ASSUMPTIONS, KEPT (Josh, 20 Oct: change a number where you see it
+    // and it updates your assumptions). Generation settings and prices are
+    // saved in this browser and come back on the next visit; only what you
+    // changed is stored, so a later default moves with the map.
+    const USER_KEY = "solar:user-assumptions:v1";
+    const GEN_KEYS = ["panel_rated_power_w", "panel_efficiency_pct", "panel_area_m2",
+                      "inverter_efficiency_pct", "system_derate_pct"];
+    const saveUser = () => {
+      try {
+        const econKeys = Object.keys(ECON_DEFAULTS)
+          .filter(k => JSON.stringify(econ[k]) !== JSON.stringify(ECON_DEFAULTS[k]));
+        localStorage.setItem(USER_KEY, JSON.stringify({
+          gen: window.__assumptionsEdited ? Object.fromEntries(GEN_KEYS.map(k => [k, assumptions[k]])) : null,
+          econ: Object.fromEntries(econKeys.map(k => [k, econ[k]])) }));
+      } catch (e) { /* private window: changes last this visit */ }
+    };
+    window.__saveUserAssumptions = saveUser;
+    try {
+      const saved = JSON.parse(localStorage.getItem(USER_KEY) || "null");
+      if (saved && saved.gen) { Object.assign(assumptions, saved.gen); window.__assumptionsEdited = true; }
+      window.__savedEcon = (saved && saved.econ) || {};   // applied when the prices load, below
+    } catch (e) { /* nothing saved */ }
     ["a-w", "a-eff", "a-inv", "a-loss"].forEach(id =>
-      el(id).addEventListener("input", applyAssumptions));
-    el("a-reset").addEventListener("click", () => { window.__assumptionsEdited = false; loadInto(ASSUMPTION_DEFAULTS); });
+      el(id).addEventListener("input", () => { applyAssumptions(); saveUser(); }));
+    el("a-reset").addEventListener("click", () => { window.__assumptionsEdited = false; loadInto(ASSUMPTION_DEFAULTS); saveUser(); });
     loadInto(assumptions);
+    // An assumption changed in a workings sheet: set it exactly (the sliders
+    // snap to their step -- 11.34% became 11.5% once), redraw, save.
+    const GEN_SLIDER = { panel_rated_power_w: "a-w", panel_efficiency_pct: "a-eff",
+                         inverter_efficiency_pct: "a-inv", system_derate_pct: "a-loss" };
+    if (typeof WkView !== "undefined") WkView.setEditHandler((key, v) => {
+      const [kind, k] = key.split(":");
+      if (kind === "gen" && GEN_SLIDER[k]) {
+        assumptions[k] = v;
+        if (k === "panel_rated_power_w" || k === "panel_efficiency_pct") {
+          assumptions.panel_area_m2 = assumptions.panel_rated_power_w / (assumptions.panel_efficiency_pct / 100 * 1000);
+        }
+        window.__assumptionsEdited = true;
+        el(GEN_SLIDER[k]).value = v;
+        afterAssumptions();
+        saveUser();
+      } else if (kind === "econ") {
+        econ[k] = v;
+        if (window.__applyEcon) window.__applyEcon();
+        saveUser();
+      } else if (kind === "sys" && window.__billToolSys) {
+        window.__billToolSys(k, v);
+      }
+    });
 
     // --- Settings dialog: tabs, economics controls -----------------------
     const overlay = el("settings-overlay"), modal = el("settings-modal");
@@ -3641,7 +3686,7 @@ map.on("load", async () => {
       recomputeInViewSummary();
       if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
     }
-    window.__applyEcon = applyEcon;
+    window.__applyEcon = (...a) => { applyEcon(...a); if (window.__saveUserAssumptions) window.__saveUserAssumptions(); };
     const bindEcon = (id, key, parse) => el(id).addEventListener("input", e => {
       econ[key] = parse(e.target.value);
       // Any hand-edit of the load numbers means the named profile no longer
@@ -3699,7 +3744,8 @@ map.on("load", async () => {
       renderTiers(); applyEcon();
     }
     el("e-reset").addEventListener("click", () => loadEcon(ECON_DEFAULTS));
-    loadEcon(ECON_DEFAULTS);
+    // the defaults, with what this visitor changed last time on top
+    loadEcon(Object.assign(JSON.parse(JSON.stringify(ECON_DEFAULTS)), window.__savedEcon || {}));
   }
 
   // Advanced tuning only works against the local live server (src/live_server.py),
