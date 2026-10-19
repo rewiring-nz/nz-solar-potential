@@ -28,6 +28,17 @@ and assign work.
   not following the ridges"; it needs planes in the layout output to become
   a health check (not there yet). Wanaka, Hawea, Cromwell, Glenorchy and
   Auckland stay on v50 layouts until Josh has seen Queenstown.
+  The first full build was NOT published; the gate and a face-area check
+  caught three bugs the 400-roof samples never hit: (1) tidying split a face
+  at a narrow neck and kept the bigger piece -- 12/16 Kent St lost its
+  230 m2 wing, 7 Panorama Tce its middle; (2) "coplanar" was tested only
+  along the shared edge, where gable halves always agree, so low-pitched
+  commercial roofs merged their halves and the other half became one huge
+  obstruction (4749386: 750 -> 454 panels); (3) seams moved between poorly
+  fitted planes against the LiDAR (two plain houses withheld). Fixed in
+  5b98e986, dfacd0de and the seam-evidence commits; rebuilt as v51c. Lesson:
+  check face area per building between builds (~/ab/facearea_regions.py;
+  belongs in the gate).
 
 - **Glenorchy, Kinloch and the Rees Valley -- live in v43 (13 Oct).** No
   LiDAR reaches the head of the lake: synthetic-surface path like Cromwell,
