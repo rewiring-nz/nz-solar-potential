@@ -46,6 +46,7 @@ from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
+from src.obstruction_planarity import drop_roof_like
 from src.solar_model import SolarModel
 from src.face_straighten import merge_coplanar_faces, seams_to_plane_lines, straighten_faces
 from src.building_shading import building_shading_factor
@@ -570,6 +571,10 @@ def _build_one_at(building_id, nudge_m):
                          if k.intersects(f["geometry"])]
         except Exception:
             pass
+        # ...and a detected patch whose returns lie on a roof plane is roof
+        # (src/obstruction_planarity.py); his markup is never second-guessed
+        if not _drawn_obs:
+            obstructions = drop_roof_like(obstructions, f, facets, pc_source)
         # edge drops the detector found stay panel-free, unless the markup
         # governs this roof's obstructions
         if not _drawn_obs:
