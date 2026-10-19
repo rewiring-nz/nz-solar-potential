@@ -95,7 +95,7 @@ EXPERIMENTAL = False
 PANEL_CHECKS = ["off_building", "across_edge", "on_obstruction", "overlap"]
 # Racking (Josh, 20 Oct): one orientation per face, arrays of 4+ panels.
 ARRAY_MIN = 4
-ARRAY_TOUCH_M = 0.30
+ARRAY_TOUCH_M = 1.10            # same as src/panel_fitting.py: a rail runs on past a vent
 ROOF_CHECKS = ["mixed_orientation", "small_array", "disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
                "outline_over_ground", "poor_fit", "roof_beyond_outline"]
 # reported for comparison with runs before 19 Oct, not scored

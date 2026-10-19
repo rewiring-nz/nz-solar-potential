@@ -426,7 +426,11 @@ FRAME_MAX_LOSS = 0.25        # a face leaves the building frame if the locked gr
 #     than ARRAY_MIN_PANELS, at every density.
 RACKING = os.environ.get("SOLAR_RACKING", "1") != "0"
 ARRAY_MIN_PANELS = 4
-ARRAY_TOUCH_M = 0.30          # panels this close are on the same rack (rack gaps are ~2 cm)
+# Panels within this of each other are one array: rack gaps are ~2 cm, and a
+# rail runs on past a vent or skylight, so a row broken by a small obstruction
+# is still one array (a first cut at 0.3 m dropped those halves as "small
+# arrays": 4719600's flat roof went from 58 panels to 18).
+ARRAY_TOUCH_M = 1.10
 ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fits more than
 # max(1, this fraction) fewer panels than the free per-row scan -- real installers rack rows
 # with columns lined up, so a small capacity cost buys a much more realistic layout, but a
@@ -822,6 +826,14 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             locked_n = len(result[0]) if result else 0
             if best_free and len(best_free[0]) * (1.0 - FRAME_MAX_LOSS) > locked_n:
                 result, is_portrait = best_free, free_portrait
+            # A FACE THAT CANNOT HOLD AN ARRAY IN THE BUILDING'S ORIENTATION
+            # may turn the other way -- the whole face, never part of it
+            # (racks run either way; mixing on one rack is what never happens).
+            if RACKING and (len(result[0]) if result else 0) < ARRAY_MIN_PANELS:
+                ow, oh = (panel_height, panel_width) if is_portrait else (panel_width, panel_height)
+                alt = _pack_orientation(occupancy, resolution, ow, oh)
+                if alt and len(alt[0]) >= ARRAY_MIN_PANELS:
+                    result, is_portrait = alt, not is_portrait
         if result:
             placed_o, wc, hc = result
             candidates.append((is_portrait, placed_o, wc, hc))
