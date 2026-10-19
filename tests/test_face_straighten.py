@@ -58,6 +58,14 @@ def test_zigzag_seam_straightens_and_neighbours_still_meet():
         abs(l.union(r).symmetric_difference(box(0, 0, 12, 8)).area) < 1e-6   # outline kept
 
 
+def test_hairline_gaps_and_overlaps_are_tidied_first():
+    # built faces do not tile exactly: a 3 cm gap on one seam, a 2 cm overlap on another
+    a, b, c = box(0, 0, 5.985, 8), box(6.015, 0, 9.01, 8), box(9.0, 0, 12, 8)
+    cov = fs.as_coverage([a, b, c])
+    assert cov is not None and shapely.coverage_is_valid(cov, gap_width=0.0)
+    assert sum(g.area for g in cov) > 95.9
+
+
 def test_faces_that_overlap_are_left_as_they_were():
     faces = [_face(box(0, 0, 7, 8), 20, 270), _face(box(6, 0, 12, 8), 20, 90)]
     assert fs.straighten_faces(faces) is faces

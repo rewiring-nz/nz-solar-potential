@@ -37,12 +37,75 @@ are near flat) direction, and their planes agree to MERGE_MAX_STEP_M all
 along that edge -- a valley or a step between storeys does not. The larger
 face's plane is kept; the planes differ by less than the step anyway.
 SOLAR_MERGE_COPLANAR=0 turns it off.
+
+FIRST, A CLEAN TILING (as_coverage). Neither step can work on faces that do
+not tile: built by subtracting one face from another and refitting, the
+faces overlap by a few cm2 here and leave hairline gaps there, so every roof
+failed the coverage check and both steps silently stood aside (the first
+A/B run, 19 Oct: identical to the decimal). The faces are rebuilt from one
+noded set of edges: each piece goes to the face that covers it (the larger,
+where two do), and a hairline gap (narrower than GAP_FILL_M) goes to the
+neighbour it shares most edge with. Real gaps -- a cut-out, a part of the
+outline no face claimed -- stay gaps.
 """
 
 import os
 
 STRAIGHTEN_M = float(os.environ.get("SOLAR_STRAIGHTEN_M", "1.0"))
 STRAIGHTEN_MAX_AREA_CHANGE = 0.15
+GAP_FILL_M = 0.10
+SNAP_GRID_M = 0.01
+REPAIR_MAX_AREA_CHANGE = 0.03   # tidying hairlines, not deciding who owns a real overlap
+
+
+def as_coverage(polys):
+    """The same faces as a clean coverage, or None if that cannot be made."""
+    import shapely
+    from shapely.ops import polygonize, unary_union
+    polys = [shapely.set_precision(p, SNAP_GRID_M) for p in polys]
+    if any(p.is_empty for p in polys):
+        return None
+    # the faces' outer edge, hairline notches closed, so a gap that runs out
+    # to the roof edge is a closed piece too
+    closed = unary_union(polys).buffer(GAP_FILL_M, join_style="mitre").buffer(-GAP_FILL_M, join_style="mitre")
+    cells = list(polygonize(unary_union([p.boundary for p in polys] + [closed.boundary])))
+    parts = [[] for _ in polys]
+    gaps = []
+    for c in cells:
+        if c.area <= 0:
+            continue
+        pt = c.representative_point()
+        hits = [i for i, p in enumerate(polys) if p.covers(pt)]
+        if hits:
+            parts[max(hits, key=lambda i: polys[i].area)].append(c)
+        elif c.buffer(-GAP_FILL_M / 2).is_empty:
+            gaps.append(c)
+    for c in gaps:
+        best, edge = None, 0.0
+        for i, ps in enumerate(parts):
+            if not ps:
+                continue
+            e = c.boundary.intersection(unary_union(ps).boundary).length
+            if e > edge:
+                best, edge = i, e
+        if best is not None:
+            parts[best].append(c)
+    out = []
+    for p, ps in zip(polys, parts):
+        if not ps:
+            return None
+        u = unary_union(ps)
+        if u.geom_type != "Polygon":
+            u = max(getattr(u, "geoms", [u]), key=lambda g: g.area)
+        if abs(u.area - p.area) > REPAIR_MAX_AREA_CHANGE * p.area:
+            return None
+        out.append(u)
+    try:
+        if not shapely.coverage_is_valid(out, gap_width=0.0):
+            return None
+    except Exception:
+        return None
+    return out
 
 
 def straighten_faces(facets, *_, **__):
@@ -54,10 +117,11 @@ def straighten_faces(facets, *_, **__):
     polys = [f["geometry"] for f in facets]
     if any(p is None or p.geom_type != "Polygon" or not p.is_valid for p in polys):
         return facets
+    cov = as_coverage(polys)
+    if cov is None:
+        return facets
     try:
-        if not shapely.coverage_is_valid(polys, gap_width=0.0):
-            return facets
-        simple = shapely.coverage_simplify(polys, STRAIGHTEN_M, simplify_boundary=False)
+        simple = shapely.coverage_simplify(cov, STRAIGHTEN_M, simplify_boundary=False)
     except Exception:
         return facets
     out = []
@@ -111,7 +175,10 @@ def merge_coplanar_faces(facets, *_, **__):
     if any(f.get("from_labels") for f in facets):
         return facets
     from shapely.ops import unary_union
-    faces = list(facets)
+    cov = as_coverage([f["geometry"] for f in facets])
+    if cov is None:
+        return facets
+    faces = [dict(f, geometry=g) for f, g in zip(facets, cov)]
     merged = True
     while merged:
         merged = False
