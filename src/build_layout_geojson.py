@@ -47,6 +47,7 @@ from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
 from src.obstruction_detection import detect_obstructions_combined
 from src.solar_model import SolarModel
+from src.face_straighten import straighten_faces
 from src.building_shading import building_shading_factor
 from src.building_horizon import (far_profile as _hz_far_profile,
                                   facet_horizon_factor as _hz_facet_factor,
@@ -456,6 +457,9 @@ def _build_one_at(building_id, nudge_m):
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
     facets = _geometry_stage(building_id, split_lower_levels, facets, pc_source, dsm=_dsm_ev,
                              photo=_CTX.get("photo_ds"))
+    # ...and last, the edges between faces straightened together, so a ridge
+    # is a line rather than the zig-zag the returns left (src/face_straighten.py).
+    facets = _geometry_stage(building_id, straighten_faces, facets)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the

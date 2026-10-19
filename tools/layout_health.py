@@ -121,7 +121,9 @@ def _spread(angles):
     return float(np.percentile(np.abs(d), 90))
 
 
-def check_region(region):
+def check_region(region, features=None):
+    """Every roof in a region's built layout -- or in `features`, layout
+    features built in memory (tools/layout_ab.py) for some of its roofs."""
     import geopandas as gpd
     from shapely.geometry import shape
     from shapely.ops import transform as shp_transform
@@ -130,11 +132,13 @@ def check_region(region):
     from src.region_build import area_paths
     p = area_paths(region)
     lay = Path(p["panel_layouts"])
-    if not lay.exists():
-        return None
+    if features is None:
+        if not lay.exists():
+            return None
+        features = json.loads(lay.read_text())["features"]
     to_m = Transformer.from_crs(4326, 2193, always_xy=True).transform
     by = defaultdict(lambda: {"facet": [], "panel": [], "obstruction": []})
-    for f in json.loads(lay.read_text())["features"]:
+    for f in features:
         q = f["properties"]
         k = q.get("kind")
         if k not in ("facet", "panel", "obstruction") or q.get("building_id") is None:
