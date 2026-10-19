@@ -7,6 +7,23 @@ and assign work.
 
 ## Ship
 
+- **v52 in progress: panels in clean racked arrays (Josh's verdicts on v51,
+  20 Oct: 0 fixed, 12 better, 13 still wrong).** His rule: panels go on racks
+  -- rows along the eave, portrait up the slope, clear arrays, never a
+  landscape panel beside a portrait one on a rack, never a lone panel; 100%
+  density = every clean array, not a clean array plus a rotated edge strip.
+  Measured on 400 sample roofs (tools/layout_ab.py, new health checks
+  mixed_orientation and small_array): 70-74% of roofs mixed orientations on a
+  face, 71% had a group under 4 panels. Causes in src/panel_fitting.py: the
+  "pockets" pass (either orientation, free grid), faces leaving the building
+  grid in the other orientation, and small groups kept on purpose.
+  SOLAR_RACKING (branch racking): first strict cut fixed both checks but cost
+  ~20% of panels and left 12-14% of good faces empty (rows split by vents,
+  narrow faces); tuned so a row broken by a small obstruction stays one array
+  and a face that cannot hold a portrait array turns landscape, whole.
+  Roof lines next: all nine "lines wrong" roofs run on offline face readings
+  scored 0.32-0.56 (some photo-based, shadow-prone).
+
 - **v51, Queenstown first -- LIVE 20 Oct 10:05** (built at dfacd0de as v51c; gate: +13,080 panels, 0 big drops, 1 borderline roof withheld -- #4720962, confidence on the 0.45 line in v50 too; face-area check: 0 buildings lost area; panels +0.6..+2.6% in 23 of 25 Wakatipu regions, clean share flat). Four layout
   changes, each judged with tools/layout_ab.py on 200 Arrowtown and 200 CBD
   roofs (half the worst on the health check, half random) and by
