@@ -75,6 +75,14 @@ RAGGED_M_PER_VERTEX = 1.0
 # into this one: a seam that wanders across the roof. Only those count
 # (19 Oct: most faces the solidity rule flagged in Arrowtown were flat and
 # single-slope roofs on L- and U-shaped buildings, drawn correctly).
+# "Lines not following the ridges", measured: two pitched faces meet where
+# their planes cross, so a seam's distance from that crossing is how far the
+# drawn line is off the real ridge, hip or valley. Seams whose planes do not
+# cross near them (a step between storeys) are not seams of that kind and
+# are skipped. Needs the "plane" the layout stage writes (from v52).
+SEAM_MIN_SLOPE = 10.0
+SEAM_MIN_LEN_M = 2.0
+SEAM_OFF_M = 0.5
 NOTCH_MIN_M2 = 1.0
 NOTCH_MIN_DEPTH_M = 0.5
 NOTCH_INSIDE_SHARE = 0.5
@@ -94,18 +102,53 @@ EXPERIMENTAL = False
 
 PANEL_CHECKS = ["off_building", "across_edge", "on_obstruction", "overlap"]
 ROOF_CHECKS = ["disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
-               "outline_over_ground", "poor_fit", "roof_beyond_outline"]
+               "outline_over_ground", "poor_fit", "roof_beyond_outline", "seam_off_ridge"]
 # reported for comparison with runs before 19 Oct, not scored
 INFO_CHECKS = ["concave_face_any"]
 WEIGHT = {"off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
           "disorderly_rows": 4, "ragged_face": 2, "sliver_faces": 1, "empty_good_face": 4,
-          "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6}
+          "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6,
+          "seam_off_ridge": 4}
 LABEL = {"off_building": "off the building", "across_edge": "across a face edge",
          "on_obstruction": "on an obstruction", "overlap": "panels overlap",
          "disorderly_rows": "disorderly rows", "ragged_face": "ragged face",
          "sliver_faces": "sliver faces", "empty_good_face": "empty good face",
          "outline_over_ground": "outline over ground", "poor_fit": "poor LiDAR fit",
-         "roof_beyond_outline": "roof beyond outline"}
+         "roof_beyond_outline": "roof beyond outline", "seam_off_ridge": "seam off the ridge"}
+
+
+def _seam_offsets(faces):
+    """[(length m, median offset m)] for each pitched seam whose planes cross near it.
+    faces: [(polygon, properties)] in NZTM, properties carrying "plane"."""
+    import math
+    out = []
+    for i in range(len(faces)):
+        for j in range(i + 1, len(faces)):
+            (gi, qi), (gj, qj) = faces[i], faces[j]
+            pi, pj = qi.get("plane"), qj.get("plane")
+            if not pi or not pj:
+                continue
+            if min(qi.get("slope_deg") or 0, qj.get("slope_deg") or 0) < SEAM_MIN_SLOPE:
+                continue
+            seam = gi.boundary.intersection(gj.buffer(0.05))
+            if seam.is_empty or seam.length < SEAM_MIN_LEN_M:
+                continue
+            A, B = pi[0] - pj[0], pi[1] - pj[1]
+            grad = math.hypot(A, B)
+            if grad < 0.05:
+                continue
+            offs = []
+            for k in range(11):
+                p = seam.interpolate(k / 10, normalized=True)
+                dz = (pi[0] * p.x + pi[1] * p.y + pi[2]) - (pj[0] * p.x + pj[1] * p.y + pj[2])
+                offs.append(abs(dz) / grad)
+            offs.sort()
+            med = offs[5]
+            # a crossing further off than the faces are wide is a step, not a ridge
+            if med > 0.5 * math.sqrt(min(gi.area, gj.area)):
+                continue
+            out.append((seam.length, med))
+    return out
 
 
 def _inner_notch(face, foot):
@@ -321,6 +364,11 @@ def check_region(region, features=None):
                     extra = 0.0
                 if extra > max(BEYOND_M2, BEYOND_SHARE * foot.area):
                     hits["roof_beyond_outline"] += 1
+        seams = _seam_offsets(d["facet"])
+        totals["seams_measured"] += len(seams)
+        off = sum(1 for _, m in seams if m > SEAM_OFF_M)
+        if off:
+            hits["seam_off_ridge"] += off
         conf = d["facet"][0][1].get("roof_confidence")
         if conf is not None and conf < POOR_FIT:
             hits["poor_fit"] += 1
@@ -333,6 +381,9 @@ def check_region(region, features=None):
     roofs.sort(key=lambda r: -r["score"])
     n_flagged = sum(1 for r in roofs if r["score"])
     rates = {k: round(1000 * totals[k] / max(n_panels, 1), 2) for k in PANEL_CHECKS}
+    # of the pitched seams that could be measured (layouts with planes), the share off the ridge
+    rates["seams_off_share"] = (round(100 * totals["seam_off_ridge"] / totals["seams_measured"], 1)
+                                if totals["seams_measured"] else None)
     rates.update({k: round(100 * sum(1 for r in roofs if r["hits"].get(k)) / max(n_roofs, 1), 2) for k in ROOF_CHECKS + INFO_CHECKS})
     clean = n_roofs - n_flagged
     return {"region": region, "roofs": n_roofs, "panels": n_panels, "clean_roofs": clean,
