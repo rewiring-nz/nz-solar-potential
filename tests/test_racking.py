@@ -1,4 +1,4 @@
-"""Racking: clean arrays only -- no lone panel, at least four on a face; blocks
+"""Racking: clean arrays only -- no lone panel, at least three on a face; blocks
 split by a skylight on one face stay (Josh, 20 Oct)."""
 import os
 import sys
@@ -22,9 +22,10 @@ def test_lone_panel_goes_blocks_on_the_face_stay():
     assert len(kept) == 6 and all(p in block + pair for p in kept)
 
 
-def test_face_with_under_four_goes():
-    assert pf.enforce_arrays(_row(0, 0, 3)) == []
+def test_face_with_under_three_goes_a_row_of_three_stays():
+    assert pf.enforce_arrays(_row(0, 0, 2)) == []
     assert pf.enforce_arrays(_row(0, 0, 2) + _row(10, 0, 1)) == []
+    assert len(pf.enforce_arrays(_row(0, 0, 3))) == 3
 
 
 def test_two_blocks_of_three_split_by_a_skylight_stay():

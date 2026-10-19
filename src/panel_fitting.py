@@ -422,10 +422,13 @@ FRAME_MAX_LOSS = 0.25        # a face leaves the building frame if the locked gr
 #     (only its row/column phase is freed), never the other one;
 #   - the "pockets" pass, which packed leftover strips in EITHER orientation
 #     on a free grid, is off;
-#   - enforce_arrays drops any group of touching panels on a face smaller
-#     than ARRAY_MIN_PANELS, at every density.
+#   - enforce_arrays drops a lone panel, and a face left with fewer than
+#     ARRAY_MIN_PANELS, at every density (blocks on one face share its grid,
+#     so 3 + 3 split by a skylight stays).
 RACKING = os.environ.get("SOLAR_RACKING", "1") != "0"
-ARRAY_MIN_PANELS = 4   # per face, in all
+ARRAY_MIN_PANELS = 3   # per face, in all: a clean block of 3 is a real install on a small
+# section (Josh: only 2-panel arrays are "very rare"); at 4, 16 faces in the 400-roof sample
+# went empty that hold one tidy row of 3
 ARRAY_MIN_GROUP = 2    # touching panels in one block: never a lone panel
 # Panels within this of each other are one array: rack gaps are ~2 cm, and a
 # rail runs on past a vent or skylight, so a row broken by a small obstruction
@@ -1284,12 +1287,12 @@ def apply_panel_density(panels, density_pct, poa_key="poa_kwh_m2_yr"):
 
 
 def enforce_arrays(panels, min_panels=None):
-    """One face's panels: no lone panel, and at least ARRAY_MIN_PANELS in all.
+    """One face's panels: no lone panel, and at least ARRAY_MIN_PANELS (3) in all.
     A lone panel or a pair stuck in a corner is not an install (Josh's
     verdicts, 20 Oct: "single panels in strange places" on six of his 25
     roofs). The face's panels share one grid (one frame, one orientation), so
     blocks split by a skylight or chimney are still one install on aligned
-    rails: two blocks of 3, or 2 + 2 along a row, stay. Requiring 4 *touching*
+    rails: two blocks of 3, or 2 + 2 along a row, stay; a pair alone goes. Requiring 4 *touching*
     panels emptied 40 good faces in the 400-roof sample (4747521, 5370837)."""
     if not RACKING or not panels:
         return panels
