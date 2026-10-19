@@ -640,7 +640,7 @@ def _build_one_at(building_id, nudge_m):
             kept_panels.append(pnl)
         # clean arrays only: after the shade veto, which can leave fragments
         # (src/panel_fitting.py RACKING)
-        kept_panels = enforce_arrays(kept_panels)
+        kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
         per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
                           "poa": facet_poa * shading_factor, "shading_factor": shading_factor})
 

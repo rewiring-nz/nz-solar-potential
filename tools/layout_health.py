@@ -95,6 +95,7 @@ EXPERIMENTAL = False
 PANEL_CHECKS = ["off_building", "across_edge", "on_obstruction", "overlap"]
 # Racking (Josh, 20 Oct): one orientation per face, arrays of 4+ panels.
 ARRAY_MIN = 3   # same as src/panel_fitting.py ARRAY_MIN_PANELS
+ARRAY_PAIR_FACE_M2 = 12.0       # same as src/panel_fitting.py
 ARRAY_TOUCH_M = 1.30            # same as src/panel_fitting.py: a rail runs on past a one-panel gap (vent)
 ROOF_CHECKS = ["mixed_orientation", "small_array", "disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
                "outline_over_ground", "poor_fit", "roof_beyond_outline"]
@@ -103,7 +104,7 @@ INFO_CHECKS = ["concave_face_any"]
 WEIGHT = {"mixed_orientation": 4, "small_array": 3, "off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
           "disorderly_rows": 4, "ragged_face": 2, "sliver_faces": 1, "empty_good_face": 4,
           "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6}
-LABEL = {"mixed_orientation": "portrait and landscape mixed on a face", "small_array": "lone panel, or under 3 on a face",
+LABEL = {"mixed_orientation": "portrait and landscape mixed on a face", "small_array": "lone panel, or under 3 on a face (2 on a small face)",
          "off_building": "off the building", "across_edge": "across a face edge",
          "on_obstruction": "on an obstruction", "overlap": "panels overlap",
          "disorderly_rows": "disorderly rows", "ragged_face": "ragged face",
@@ -320,8 +321,10 @@ def check_region(region, features=None):
             for a in range(len(ps)):
                 sizes[fd(a)] = sizes.get(fd(a), 0) + 1
             # same rule as src/panel_fitting.py enforce_arrays: no lone panel,
-            # at least ARRAY_MIN on the face
-            if len(ps) < ARRAY_MIN or any(n < 2 for n in sizes.values()):
+            # at least ARRAY_MIN on the face (a clean pair on a face under
+            # ARRAY_PAIR_FACE_M2)
+            need = 2 if faces[j].area < ARRAY_PAIR_FACE_M2 else ARRAY_MIN
+            if len(ps) < need or any(n < 2 for n in sizes.values()):
                 hits["small_array"] += 1
         for (g, q) in d["facet"]:
             if g.is_empty or g.area <= 0:

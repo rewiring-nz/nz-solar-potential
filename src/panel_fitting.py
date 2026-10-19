@@ -430,6 +430,10 @@ ARRAY_MIN_PANELS = 3   # per face, in all: a clean block of 3 is a real install 
 # section (Josh: only 2-panel arrays are "very rare"); at 4, 16 faces in the 400-roof sample
 # went empty that hold one tidy row of 3
 ARRAY_MIN_GROUP = 2    # touching panels in one block: never a lone panel
+ARRAY_PAIR_FACE_M2 = 12.0  # a face smaller than this (plan) may hold just a clean pair:
+# Josh's "two panel arrays on small roof sections (like for very angular rooftops)".
+# Without it a roof of small triangular faces (4725488) went 138 -> 12 panels and a
+# small gable of two 8.7 m2 faces (4746517) went 4 -> 0.
 # Panels within this of each other are one array: rack gaps are ~2 cm, and a
 # rail runs on past a vent or skylight, so a row broken by a small obstruction
 # is still one array (a first cut at 0.3 m dropped those halves as "small
@@ -1286,18 +1290,21 @@ def apply_panel_density(panels, density_pct, poa_key="poa_kwh_m2_yr"):
     return ranked[:keep_n]
 
 
-def enforce_arrays(panels, min_panels=None):
+def enforce_arrays(panels, min_panels=None, face_area=None):
     """One face's panels: no lone panel, and at least ARRAY_MIN_PANELS (3) in all.
     A lone panel or a pair stuck in a corner is not an install (Josh's
     verdicts, 20 Oct: "single panels in strange places" on six of his 25
     roofs). The face's panels share one grid (one frame, one orientation), so
     blocks split by a skylight or chimney are still one install on aligned
-    rails: two blocks of 3, or 2 + 2 along a row, stay; a pair alone goes. Requiring 4 *touching*
+    rails: two blocks of 3, or 2 + 2 along a row, stay; a pair alone goes,
+    except on a face under ARRAY_PAIR_FACE_M2 (pass face_area, plan m2). Requiring 4 *touching*
     panels emptied 40 good faces in the 400-roof sample (4747521, 5370837)."""
     if not RACKING or not panels:
         return panels
     from shapely.strtree import STRtree
     k = ARRAY_MIN_PANELS if min_panels is None else min_panels
+    if face_area is not None and face_area < ARRAY_PAIR_FACE_M2:
+        k = min(k, ARRAY_MIN_GROUP)
     geoms = [p["geometry"] if isinstance(p, dict) else p for p in panels]
     tree = STRtree(geoms)
     parent = list(range(len(geoms)))

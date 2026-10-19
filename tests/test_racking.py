@@ -28,6 +28,13 @@ def test_face_with_under_three_goes_a_row_of_three_stays():
     assert len(pf.enforce_arrays(_row(0, 0, 3))) == 3
 
 
+def test_pair_stays_only_on_a_small_face():
+    pair = _row(0, 0, 2)
+    assert pf.enforce_arrays(pair, face_area=8.7) == pair      # 4746517's gable halves
+    assert pf.enforce_arrays(pair, face_area=30.0) == []
+    assert pf.enforce_arrays(_row(0, 0, 1), face_area=8.7) == []
+
+
 def test_two_blocks_of_three_split_by_a_skylight_stay():
     # 4747521: 3 + 3 on one face, 2 m apart, used to be dropped whole
     assert len(pf.enforce_arrays(_row(0, 0, 3) + _row(0, 3.7, 3))) == 6
