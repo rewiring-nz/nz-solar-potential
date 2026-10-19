@@ -1,5 +1,5 @@
-"""Racking: clean arrays only -- a lone panel or a pair is dropped, a block of
-four touching panels stays (Josh, 20 Oct)."""
+"""Racking: clean arrays only -- no lone panel, at least four on a face; blocks
+split by a skylight on one face stay (Josh, 20 Oct)."""
 import os
 import sys
 from pathlib import Path
@@ -14,12 +14,22 @@ def _row(x0, y0, n, w=1.0, h=1.7, gap=0.02):
     return [{"geometry": box(x0 + k * (w + gap), y0, x0 + k * (w + gap) + w, y0 + h)} for k in range(n)]
 
 
-def test_block_of_four_stays_and_strays_go():
+def test_lone_panel_goes_blocks_on_the_face_stay():
     block = _row(0, 0, 4)
     lone = _row(10, 0, 1)
     pair = _row(0, 5, 2)
     kept = pf.enforce_arrays(block + lone + pair)
-    assert len(kept) == 4 and all(p in block for p in kept)
+    assert len(kept) == 6 and all(p in block + pair for p in kept)
+
+
+def test_face_with_under_four_goes():
+    assert pf.enforce_arrays(_row(0, 0, 3)) == []
+    assert pf.enforce_arrays(_row(0, 0, 2) + _row(10, 0, 1)) == []
+
+
+def test_two_blocks_of_three_split_by_a_skylight_stay():
+    # 4747521: 3 + 3 on one face, 2 m apart, used to be dropped whole
+    assert len(pf.enforce_arrays(_row(0, 0, 3) + _row(0, 3.7, 3))) == 6
 
 
 def test_two_rows_touching_are_one_array():

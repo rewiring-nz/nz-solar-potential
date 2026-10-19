@@ -425,7 +425,8 @@ FRAME_MAX_LOSS = 0.25        # a face leaves the building frame if the locked gr
 #   - enforce_arrays drops any group of touching panels on a face smaller
 #     than ARRAY_MIN_PANELS, at every density.
 RACKING = os.environ.get("SOLAR_RACKING", "1") != "0"
-ARRAY_MIN_PANELS = 4
+ARRAY_MIN_PANELS = 4   # per face, in all
+ARRAY_MIN_GROUP = 2    # touching panels in one block: never a lone panel
 # Panels within this of each other are one array: rack gaps are ~2 cm, and a
 # rail runs on past a vent or skylight, so a row broken by a small obstruction
 # is still one array (a first cut at 0.3 m dropped those halves as "small
@@ -1283,10 +1284,13 @@ def apply_panel_density(panels, density_pct, poa_key="poa_kwh_m2_yr"):
 
 
 def enforce_arrays(panels, min_panels=None):
-    """Panels on one face, keeping only groups of at least ARRAY_MIN_PANELS
-    touching panels (one rack). A lone panel or a pair stuck in a corner is
-    not an install (Josh's verdicts, 20 Oct: "single panels in strange
-    places" on six of his 25 roofs)."""
+    """One face's panels: no lone panel, and at least ARRAY_MIN_PANELS in all.
+    A lone panel or a pair stuck in a corner is not an install (Josh's
+    verdicts, 20 Oct: "single panels in strange places" on six of his 25
+    roofs). The face's panels share one grid (one frame, one orientation), so
+    blocks split by a skylight or chimney are still one install on aligned
+    rails: two blocks of 3, or 2 + 2 along a row, stay. Requiring 4 *touching*
+    panels emptied 40 good faces in the 400-roof sample (4747521, 5370837)."""
     if not RACKING or not panels:
         return panels
     from shapely.strtree import STRtree
@@ -1308,4 +1312,5 @@ def enforce_arrays(panels, min_panels=None):
     size = {}
     for i in range(len(geoms)):
         size[find(i)] = size.get(find(i), 0) + 1
-    return [p for i, p in enumerate(panels) if size[find(i)] >= k]
+    kept = [p for i, p in enumerate(panels) if size[find(i)] >= ARRAY_MIN_GROUP]
+    return kept if len(kept) >= k else []

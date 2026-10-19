@@ -95,7 +95,7 @@ EXPERIMENTAL = False
 PANEL_CHECKS = ["off_building", "across_edge", "on_obstruction", "overlap"]
 # Racking (Josh, 20 Oct): one orientation per face, arrays of 4+ panels.
 ARRAY_MIN = 4
-ARRAY_TOUCH_M = 1.10            # same as src/panel_fitting.py: a rail runs on past a vent
+ARRAY_TOUCH_M = 1.30            # same as src/panel_fitting.py: a rail runs on past a one-panel gap (vent)
 ROOF_CHECKS = ["mixed_orientation", "small_array", "disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
                "outline_over_ground", "poor_fit", "roof_beyond_outline"]
 # reported for comparison with runs before 19 Oct, not scored
@@ -103,7 +103,7 @@ INFO_CHECKS = ["concave_face_any"]
 WEIGHT = {"mixed_orientation": 4, "small_array": 3, "off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
           "disorderly_rows": 4, "ragged_face": 2, "sliver_faces": 1, "empty_good_face": 4,
           "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6}
-LABEL = {"mixed_orientation": "portrait and landscape mixed on a face", "small_array": "panel group smaller than 4",
+LABEL = {"mixed_orientation": "portrait and landscape mixed on a face", "small_array": "lone panel, or under 4 on a face",
          "off_building": "off the building", "across_edge": "across a face edge",
          "on_obstruction": "on an obstruction", "overlap": "panels overlap",
          "disorderly_rows": "disorderly rows", "ragged_face": "ragged face",
@@ -319,7 +319,10 @@ def check_region(region, features=None):
             sizes = {}
             for a in range(len(ps)):
                 sizes[fd(a)] = sizes.get(fd(a), 0) + 1
-            hits["small_array"] += sum(1 for n in sizes.values() if n < ARRAY_MIN)
+            # same rule as src/panel_fitting.py enforce_arrays: no lone panel,
+            # at least ARRAY_MIN on the face
+            if len(ps) < ARRAY_MIN or any(n < 2 for n in sizes.values()):
+                hits["small_array"] += 1
         for (g, q) in d["facet"]:
             if g.is_empty or g.area <= 0:
                 continue
