@@ -461,7 +461,7 @@ def _build_one_at(building_id, nudge_m):
     # ...and last, the edges between faces straightened together, so a ridge
     # is a line rather than the zig-zag the returns left (src/face_straighten.py).
     facets = _geometry_stage(building_id, merge_coplanar_faces, facets)
-    facets = _geometry_stage(building_id, seams_to_plane_lines, facets)
+    facets = _geometry_stage(building_id, seams_to_plane_lines, facets, pc_source)
     facets = _geometry_stage(building_id, straighten_faces, facets)
 
     # Do not propose panels on a roof we have not understood -- see

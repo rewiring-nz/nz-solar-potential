@@ -69,6 +69,40 @@ def test_seam_drawn_off_the_ridge_moves_onto_it():
     assert abs(s_new.area + out[1]["geometry"].area - 80) < 1e-6
 
 
+class _Points:
+    def __init__(self, pts):
+        self.pts = pts
+
+    def points_in_bbox(self, x0, y0, x1, y1, building_only=True):
+        import numpy as np
+        p = self.pts
+        return p[(p[:, 0] >= x0) & (p[:, 0] <= x1) & (p[:, 1] >= y0) & (p[:, 1] <= y1)]
+
+
+def _gable_returns(ridge_y, t, step=0.3):
+    import numpy as np
+    xs, ys = np.meshgrid(np.arange(0.15, 10, step), np.arange(0.15, 8, step))
+    z = np.where(ys <= ridge_y, 100.0 + t * ys, 100.0 + t * ridge_y + t * (ridge_y - ys))
+    return _Points(np.c_[xs.ravel(), ys.ravel(), z.ravel()])
+
+
+def test_seam_moves_when_the_returns_agree():
+    t = math.tan(math.radians(30))
+    south = _face(box(0, 0, 10, 4.6), 30, 180, c=100.0)
+    north = _face(box(0, 4.6, 10, 8), 30, 0, c=100.0 + 8 * t)
+    out = fs.seams_to_plane_lines([south, north], _gable_returns(4.0, t))
+    assert abs(out[0]["geometry"].bounds[3] - 4.0) < 0.05
+
+
+def test_seam_stays_when_the_returns_say_the_planes_are_wrong():
+    # the fitted planes cross at y = 4, but the real ridge (the returns) is at y = 4.6
+    t = math.tan(math.radians(30))
+    south = _face(box(0, 0, 10, 4.6), 30, 180, c=100.0)
+    north = _face(box(0, 4.6, 10, 8), 30, 0, c=100.0 + 8 * t)
+    faces = [south, north]
+    assert fs.seams_to_plane_lines(faces, _gable_returns(4.6, t)) is faces
+
+
 def test_valley_seam_moves_the_other_way():
     # the same two planes upside down (a valley at y = 4), seam drawn at y = 4.6
     t = math.tan(math.radians(30))

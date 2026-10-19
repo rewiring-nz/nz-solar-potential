@@ -47,7 +47,12 @@ crossing by more than SEAM_MIN_OFF_M, the two faces are re-cut along the
 crossing -- only within a band around the seam (SEAM_BAND_M at most: the
 crossing line runs on for ever, and only the stretch near the drawn seam is
 vouched for; src/plane_seams.py learned that). Kept only if both faces stay
-whole and the seam ends up nearer the crossing. SOLAR_SEAM_PLANES=0 off.
+whole, the seam ends up nearer the crossing, AND the strip that changes hands
+has the LiDAR on its side: its returns must sit nearer the receiving face's
+plane than the giving face's. Without that last test a seam between two
+poorly fitted planes moved the wrong way -- 4721266 (Arrowtown, v51 build)
+lost seven panels and grew an obstruction where its face now ran up the
+neighbour's slope. SOLAR_SEAM_PLANES=0 off.
 
 FIRST, A CLEAN TILING (as_coverage). Neither step can work on faces that do
 not tile: built by subtracting one face from another and refitting, the
@@ -265,7 +270,31 @@ def _half(f, g, bounds, positive):
     return _side(f, g, bounds, positive)
 
 
-def seams_to_plane_lines(facets, *_, **__):
+SEAM_MIN_POINTS = 8
+
+
+def _returns_agree(strip, giver, taker, pc_source):
+    """True when the returns in `strip` sit nearer taker's plane than giver's
+    (or there are too few to say, in which case the geometry alone decides
+    only when no point cloud was given at all)."""
+    if pc_source is None:
+        return True
+    if strip.is_empty or strip.area < 0.05:
+        return True
+    import numpy as np
+    from src.roof_segmentation import _facet_points
+    try:
+        pts = _facet_points(pc_source, strip)
+    except Exception:
+        return False
+    if len(pts) < SEAM_MIN_POINTS:
+        return False
+    rg = np.abs(pts[:, 2] - (giver["plane_a"] * pts[:, 0] + giver["plane_b"] * pts[:, 1] + giver["plane_c"]))
+    rt = np.abs(pts[:, 2] - (taker["plane_a"] * pts[:, 0] + taker["plane_b"] * pts[:, 1] + taker["plane_c"]))
+    return float(np.median(rt)) < float(np.median(rg))
+
+
+def seams_to_plane_lines(facets, pc_source=None, *_, **__):
     import math
     if os.environ.get("SOLAR_SEAM_PLANES", "1") == "0" or len(facets) < 2:
         return facets
@@ -311,6 +340,10 @@ def seams_to_plane_lines(facets, *_, **__):
             if new_seam.is_empty or new_seam.length < 0.5 * seam.length:
                 continue
             if _seam_offset(f, g, new_seam) >= off:
+                continue
+            # the LiDAR must agree with each strip that changes hands
+            if not (_returns_agree(ni.difference(Fi), g, f, pc_source)
+                    and _returns_agree(nj.difference(Fj), f, g, pc_source)):
                 continue
             faces[i] = dict(f, geometry=ni)
             faces[j] = dict(g, geometry=nj)
