@@ -664,6 +664,12 @@ def _build_one_at(building_id, nudge_m):
                 "poa_kwh_m2_yr": round(pf["poa"], 0),
                 "panel_count": len(panels),
                 "roof_confidence": round(confidence, 2),
+                # the face's plane, z = a x + b y + c in NZTM metres, unrounded
+                # (a 1e-6 error in a is a metre of height at NZTM x). Not
+                # shipped (output_contract); tools/layout_health.py measures
+                # how far each seam sits from where its two planes cross.
+                **({"plane": [float(f["plane_a"]), float(f["plane_b"]), float(f["plane_c"])]}
+                   if f.get("plane_a") is not None else {}),
                 **_yield_inputs(f, pf["shading_factor"]),
             },
         })
