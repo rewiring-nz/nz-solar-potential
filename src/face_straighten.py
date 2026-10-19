@@ -69,13 +69,21 @@ SNAP_GRID_M = 0.01
 REPAIR_MAX_AREA_CHANGE = 0.03   # tidying hairlines, not deciding who owns a real overlap
 
 
+REFUSED = {}   # why as_coverage gave up, counted per process (tools/layout_ab.py diagnostics)
+
+
+def _refuse(why):
+    REFUSED[why] = REFUSED.get(why, 0) + 1
+    return None
+
+
 def as_coverage(polys):
     """The same faces as a clean coverage, or None if that cannot be made."""
     import shapely
     from shapely.ops import polygonize, unary_union
     polys = [shapely.set_precision(p, SNAP_GRID_M) for p in polys]
     if any(p.is_empty for p in polys):
-        return None
+        return _refuse("empty after snapping")
     # the faces' outer edge, hairline notches closed, so a gap that runs out
     # to the roof edge is a closed piece too
     closed = unary_union(polys).buffer(GAP_FILL_M, join_style="mitre").buffer(-GAP_FILL_M, join_style="mitre")
@@ -104,18 +112,18 @@ def as_coverage(polys):
     out = []
     for p, ps in zip(polys, parts):
         if not ps:
-            return None
+            return _refuse("a face lost every piece")
         u = unary_union(ps)
         if u.geom_type != "Polygon":
             u = max(getattr(u, "geoms", [u]), key=lambda g: g.area)
         if abs(u.area - p.area) > REPAIR_MAX_AREA_CHANGE * p.area:
-            return None
+            return _refuse("area changed more than a hairline")
         out.append(u)
     try:
         if not shapely.coverage_is_valid(out, gap_width=0.0):
-            return None
+            return _refuse("still not a coverage")
     except Exception:
-        return None
+        return _refuse("coverage check raised")
     return out
 
 
