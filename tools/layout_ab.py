@@ -62,12 +62,21 @@ def main():
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--jobs", type=int, default=12)
     ap.add_argument("--out")
+    ap.add_argument("--sample-file", help="reuse (or save) the sample, so an A/B pair scores the same roofs")
     a = ap.parse_args()
     import layout_health as LH
     import src.build_layout_geojson as B
     from src.region_build import area_centroid_wgs84
     from src.solar_model import SolarModel
-    ids, shipped = (a.ids, None) if a.ids else _sample(a.region, a.n)
+    sf = Path(a.sample_file) if a.sample_file else None
+    if a.ids:
+        ids = a.ids
+    elif sf and sf.exists():
+        ids = json.loads(sf.read_text())
+    else:
+        ids, _ = _sample(a.region, a.n)
+        if sf:
+            sf.write_text(json.dumps(ids))
     c = area_centroid_wgs84(a.region)
     model = SolarModel() if c is None else SolarModel(*c)
     feats, errs, t0 = [], [], time.time()
