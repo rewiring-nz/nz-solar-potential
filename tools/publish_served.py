@@ -1,11 +1,11 @@
 """Push the combined, served data set to the tiles bucket, under a version.
 
-    python tools/publish_served.py 42              # -> gs://rewiring-solar-tiles/v42/data/
+    python tools/publish_served.py 42              # -> gs://solar-potential-map-tiles/v42/data/
     python tools/publish_served.py 42 --public     # ...and grant public read (idempotent)
     python tools/publish_served.py 42 --keep 3     # ...and delete all but the newest 3 versions
     python tools/publish_served.py --list          # what the bucket holds
 
-Then in site-config.js:  dataBase: "https://storage.googleapis.com/rewiring-solar-tiles/v42/",
+Then in site-config.js:  dataBase: "https://storage.googleapis.com/solar-potential-map-tiles/v42/",
 and dataVersion: "42". The page prefixes every data URL with dataBase
 (preview.html, DATA_BASE), so nothing else changes. tools/deploy_from_vm.sh
 does all of this.
@@ -17,8 +17,8 @@ A new version is a new folder, never changed after upload -- so its files are
 served with a year-long cache -- and rolling back is pointing site-config.js
 at an older folder. --keep holds the newest N for exactly that.
 
-WHY A SEPARATE BUCKET. gs://rewiring-solar-data holds models and build inputs
-and must stay private. gs://rewiring-solar-tiles holds only what the page
+WHY A SEPARATE BUCKET. gs://solar-potential-map-data holds models and build inputs
+and must stay private. gs://solar-potential-map-tiles holds only what the page
 serves, has CORS for Range requests, and is the one that is made public.
 
 WHY NOT GITHUB. The repository reached 2.3 GB with 42 copies of the panel
@@ -56,7 +56,7 @@ def _tiles_bucket() -> str:
                 "set SOLAR_TILES_BUCKET or configure tiles_bucket"
             )
         return bucket
-    return "gs://rewiring-solar-tiles"
+    return "gs://solar-potential-map-tiles"
 
 
 BUCKET = _tiles_bucket()

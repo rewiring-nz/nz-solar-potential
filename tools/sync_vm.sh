@@ -27,7 +27,7 @@ PY=.venv/bin/python
 . tools/cloud_profile.sh
 
 VM=${SYNC_VM:-claude-doing-things}
-PROJECT=${SYNC_PROJECT:-downloads-417521}
+PROJECT=${SYNC_PROJECT:-solar-potential-map-512020}
 ZONE=${SYNC_ZONE:-australia-southeast1-b}
 if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
   VM=${SYNC_VM:-$(cloud_profile_value instance_name)} || exit 2

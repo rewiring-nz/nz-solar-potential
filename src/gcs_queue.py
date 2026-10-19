@@ -49,7 +49,7 @@ def _queue_location() -> tuple[str, str]:
             raise ValueError(
                 f"cloud profile {profile.name!r} has no bucket; set SOLAR_BUCKET or configure bucket"
             )
-    return bucket or "gs://rewiring-solar-data", prefix or "build"
+    return bucket or "gs://solar-potential-map-data", prefix or "build"
 
 
 BUCKET, PREFIX = _queue_location()

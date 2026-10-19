@@ -109,27 +109,21 @@ versioned production bucket are not changed. The bucket is public: anyone with
 the URL can view the served map data. Do not upload keys, raw inputs, build
 logs, or other private material.
 
-Before the first preview, create the dedicated bucket named in
-`config.CLOUD_SHARED_BUILD["preview_bucket"]` in the configured cloud project.
-It must use uniform bucket-level access and allow public access; do not reuse
-the private source-data bucket or production tiles bucket. From a checkout
-with the required Google Cloud permissions, create it in the configured region
-(creation and public storage may incur charges):
+The preview bucket, `gs://rewiring-solar-previews`, already exists in the
+project and is set up (public read, `devel/` deleted after 14 days).
+Contributors do not create or configure it: creating buckets and changing
+who can read them is the project owner's job. To recreate it (project owner
+only; creation and public storage may incur charges):
 
 ```sh
 gcloud storage buckets create gs://rewiring-solar-previews \
-  --project=downloads-417521 --location=australia-southeast1 \
+  --project=solar-potential-map-512020 --location=australia-southeast1 \
   --uniform-bucket-level-access
+python3 tools/publish_preview.py --configure-bucket
 ```
 
 The bucket name is globally unique; if that name is unavailable, change
 `preview_bucket` in `config.CLOUD_SHARED_BUILD` and use the same name here.
-Then configure its sharing, upload access, and expiry policy:
-
-```sh
-python3 tools/publish_preview.py --configure-bucket
-```
-
 This grants public object-read access, grants the shared VM's service account
 object read/write access so it can update the stable preview pointer, and adds
 a lifecycle rule that deletes objects under

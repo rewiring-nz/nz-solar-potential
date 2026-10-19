@@ -378,7 +378,7 @@ class CloudProfileTests(unittest.TestCase):
 
     def test_shared_cloud_config_has_expected_project_vm_and_calculated_cost(self) -> None:
         values = cloud_pipeline._load_shared_cloud_config()
-        self.assertEqual(values["project"], "downloads-417521")
+        self.assertEqual(values["project"], "solar-potential-map-512020")
         self.assertEqual(values["vm"], "claude-doing-things")
         self.assertEqual(values["zone"], "australia-southeast1-b")
         self.assertEqual(values["ssh_user"], "j")

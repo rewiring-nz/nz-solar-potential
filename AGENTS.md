@@ -132,7 +132,7 @@ is enforced by code, not by care:
   A person removes the label once they have checked it.
 
 - **District builds run on the build VM**, `claude-doing-things`
-  (australia-southeast1-b, project downloads-417521), never on a laptop: the
+  (australia-southeast1-b, project solar-potential-map-512020), never on a laptop: the
   VM fetches LiDAR and imagery from LINZ. It is a spot VM and stops itself 16
   hours after starting; a cut-off build resumes with
   `src/run_district_build.sh --force --regions "<the rest>"`.
@@ -144,7 +144,7 @@ is enforced by code, not by care:
 - **Publishing goes through the deploy gate.** `tools/deploy_from_vm.sh` pulls
   the VM's served set and runs `tools/predeploy_check.py` against the live
   build; `--push` publishes a new version folder to
-  `gs://rewiring-solar-tiles/v<N>/`, keeps the newest three, and commits only
+  `gs://solar-potential-map-tiles/v<N>/`, keeps the newest three, and commits only
   the `site-config.js` switch. `--push-reviewed "<why>"` publishes past a gate
   whose list has been rendered and judged. Rollback: point `site-config.js`
   `dataBase`/`dataVersion` at an older version folder.

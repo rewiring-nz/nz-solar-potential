@@ -111,7 +111,7 @@ PIPELINE_REGION = "town_gorge_north"
 # The preview cost model uses indicative rates and expected usage, then rounds
 # its estimate upward; it is not a spending cap.
 CLOUD_SHARED_BUILD = {
-    "project": "downloads-417521",
+    "project": "solar-potential-map-512020",
     "vm": "claude-doing-things",
     "zone": "australia-southeast1-b",
     "ssh_user": "j",

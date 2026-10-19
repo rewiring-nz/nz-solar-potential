@@ -39,7 +39,7 @@ log() { echo "[$REGION] $(date -u +%H:%M:%S) $*"; }
 # The task file from the queue carries the region's bbox, so a worker whose
 # config does not list this region can still build it.
 mkdir -p "data/regions/$REGION"
-gcloud storage cat "${SOLAR_BUCKET:-gs://rewiring-solar-data}/${SOLAR_BUILD_PREFIX:-build}/queue/$REGION.json" \
+gcloud storage cat "${SOLAR_BUCKET:-gs://solar-potential-map-data}/${SOLAR_BUILD_PREFIX:-build}/queue/$REGION.json" \
   > "data/regions/$REGION/task.json" 2>/dev/null || rm -f "data/regions/$REGION/task.json"
 
 # A region built before keeps a PACK in the bucket: the points and pixels

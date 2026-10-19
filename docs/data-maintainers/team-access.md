@@ -11,11 +11,17 @@ accounts.google.com ("Use my current email address instead").
 
 ## What lives where
 
+Everything in the cloud is in one Google Cloud project, **Solar Potential
+Map** (`solar-potential-map-512020`), since 19 October 2026. Before that it
+shared a personal project (`downloads-417521`) with unrelated things; nothing
+should still point there.
+
 | Thing | Where | Who can change it |
 |---|---|---|
 | Code, the map page, tasks | GitHub `rewiring-nz/nz-solar-potential`; board: github.com/orgs/rewiring-nz/projects/5 | repository collaborators |
-| Published map data | `gs://rewiring-solar-tiles/v<N>/` (public read) | the team's Google Group |
-| Build inputs and models | `gs://rewiring-solar-data` (private) | the team's Google Group |
+| Published map data | `gs://solar-potential-map-tiles/v<N>/` (public read) | the team's Google Group |
+| Developer previews | `gs://rewiring-solar-previews` (public read; `devel/` deleted after 14 days) | the team's Google Group |
+| Build inputs and models | `gs://solar-potential-map-data` (private) | the team's Google Group |
 | Build machine | VM `claude-doing-things`, australia-southeast1-b | the team's Google Group |
 | API keys | Google Secret Manager (`linz-api-key`) | read: the team's Google Group and the VM |
 
@@ -28,7 +34,7 @@ stay with the project owner.
 
 | Role | On | For |
 |---|---|---|
-| Storage Object Admin | `rewiring-solar-tiles`, `rewiring-solar-data` | publishing and reading build data |
+| Storage Object Admin | the project's buckets | publishing, previews and reading build data |
 | Secret Manager Secret Accessor | the project's secrets | reading `linz-api-key` |
 | Compute Instance Admin (v1) + Service Account User | the project | starting, stopping and using the VM |
 | OS Login + IAP-secured Tunnel User | the project | logging in to the VM as yourself |

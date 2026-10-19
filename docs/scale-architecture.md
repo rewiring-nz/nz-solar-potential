@@ -60,7 +60,7 @@ file.
 
 GitHub Pages caps a file at 100 MB. Queenstown's tiles are 60 MB; Auckland's
 would be about 1.5 GB. So tiles are published to a bucket of
-their own -- `gs://rewiring-solar-tiles/v<version>/data/`, created 22 Sep
+their own -- `gs://solar-potential-map-tiles/v<version>/data/`, created 22 Sep
 with CORS for Range requests and still private until there is something to
 serve (`tools/publish_served.py <version> --public` grants public read) --
 and the site points at them through `site-config.js` (`dataBase`). The data

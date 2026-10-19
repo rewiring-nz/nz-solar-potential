@@ -14,7 +14,7 @@
 # from a laptop. Everything is computed on the VM: it pulls the pushed code
 # (tools/sync_vm.sh), builds (src/run_district_build.sh), gates against the
 # live site (tools/predeploy_check.py) and publishes the served set to a new
-# gs://rewiring-solar-tiles/v<N>/ itself (tools/publish_served.py). This
+# gs://solar-potential-map-tiles/v<N>/ itself (tools/publish_served.py). This
 # machine then switches site-config.js to it and pushes that one-line change.
 #
 # The VM is started if it is stopped, and stopped again at the end if this
@@ -176,14 +176,14 @@ v=$(grep -oE 'dataVersion: "[0-9]+"' site-config.js | grep -oE '[0-9]+'); nv=$((
 out=$(SSH "cd ~/solar-map && .venv/bin/python tools/publish_served.py $nv --keep 3 --protect $v && echo PUBLISHED_OK")
 echo "$out" | grep -v "^Removing\|^Copying\|^\.*$" | tail -5
 echo "$out" | grep -q PUBLISHED_OK || { echo "PUBLISH FAILED -- site unchanged"; exit 1; }
-perl -pi -e "s/dataVersion: \"$v\"/dataVersion: \"$nv\"/; s#(dataBase: \"https://storage.googleapis.com/rewiring-solar-tiles/)v[0-9]+/#\${1}v$nv/#" site-config.js
-grep -q "rewiring-solar-tiles/v$nv/" site-config.js || { echo "site-config.js has no dataBase to switch -- set it by hand"; exit 1; }
+perl -pi -e "s/dataVersion: \"$v\"/dataVersion: \"$nv\"/; s#(dataBase: \"https://storage.googleapis.com/solar-potential-map-tiles/)v[0-9]+/#\${1}v$nv/#" site-config.js
+grep -q "solar-potential-map-tiles/v$nv/" site-config.js || { echo "site-config.js has no dataBase to switch -- set it by hand"; exit 1; }
 summary=$(SSH "cd ~/solar-map && .venv/bin/python -c 'import json; s=json.load(open(\"data/build_summary.json\")); t=s[\"totals\"]; print(\"%d regions, %s panels, %.1f GWh\" % (len(s[\"regions\"]), format(int(t[\"panel_count\"]), \",\"), t[\"kwh\"] / 1e6))'" | tail -1)
 note=""; [ -n "$REVIEWED" ] && note="
 Gate failed and was reviewed: $REVIEWED"
 git add site-config.js
 git commit -q -m "District build v$nv: $summary
 
-Data at https://storage.googleapis.com/rewiring-solar-tiles/v$nv/
+Data at https://storage.googleapis.com/solar-potential-map-tiles/v$nv/
 Built on the VM by tools/remote_build.sh${REGIONS:+ (regions: $REGIONS)}.${COMMIT_NOTE:+
 $COMMIT_NOTE}$note" && git push -q origin main && echo "PUSHED (data v$nv)"

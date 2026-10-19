@@ -2,7 +2,7 @@
 
     python tools/status.py
 
-The same numbers are the object counts under gs://rewiring-solar-data/build/
+The same numbers are the object counts under gs://solar-potential-map-data/build/
 {done,claims,queue,failed}/ -- open the bucket in the console for the same
 picture without a terminal.
 """

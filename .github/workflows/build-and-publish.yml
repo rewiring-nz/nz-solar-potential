@@ -56,8 +56,8 @@ jobs:
 
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/200991248703/locations/global/workloadIdentityPools/github/providers/nz-solar-potential
-          service_account: github-builder@downloads-417521.iam.gserviceaccount.com
+          workload_identity_provider: projects/65402120014/locations/global/workloadIdentityPools/github/providers/nz-solar-potential
+          service_account: github-builder@solar-potential-map-512020.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
 

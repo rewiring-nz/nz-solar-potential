@@ -4,7 +4,7 @@ Order, first hit wins:
   1. the process environment (LINZ_API_KEY), which is also where a local
      .env lands once python-dotenv has loaded it;
   2. Google Secret Manager, secret `linz-api-key` in project
-     downloads-417521, read with the gcloud CLI as whoever is signed in --
+     solar-potential-map-512020, read with the gcloud CLI as whoever is signed in --
      the build VM's service account, or a team member's Google account.
 
 So nobody needs a copy of the key on their machine: anyone the team's Google
@@ -19,7 +19,7 @@ library module of that name for every package that imports it.
 import os
 import subprocess
 
-PROJECT = "downloads-417521"
+PROJECT = "solar-potential-map-512020"
 SECRETS = {"LINZ_API_KEY": "linz-api-key"}
 
 

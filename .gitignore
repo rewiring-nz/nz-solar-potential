@@ -70,7 +70,7 @@ data/pipeline_runs/
 
 # THE MAP'S DATA IS NOT IN GIT (30 Sep 2026). Tiles, detail, heat map,
 # terrain, summaries and curves are published per release to
-# gs://rewiring-solar-tiles/v<N>/data/ (tools/publish_served.py, run by
+# gs://solar-potential-map-tiles/v<N>/data/ (tools/publish_served.py, run by
 # tools/deploy_from_vm.sh) and the page reads them from there through
 # site-config.js dataBase. They stay in data/ locally for the tools; they are
 # no longer committed, so a release no longer adds 80-130 MB to the history.

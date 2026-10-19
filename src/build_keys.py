@@ -25,6 +25,7 @@ reads as stale once -- correctly: nothing says which code built it.
 
 import ast
 import hashlib
+import re
 import json
 import os
 from pathlib import Path
@@ -88,8 +89,22 @@ def stage_code_hash(stage):
     for extra in (ROOT / "config.py", ROOT / "requirements.lock.txt"):
         if extra.exists():
             h.update(extra.name.encode())
-            h.update(extra.read_bytes())
+            h.update(_hashed_bytes(extra))
     return h.hexdigest()[:12]
+
+
+# WHERE THE BUILD RUNS IS NOT WHAT IT BUILDS. config.CLOUD_SHARED_BUILD names
+# the cloud project, VM and preview bucket; no output depends on it. Hashed
+# with the rest of config.py, moving the map to its own project (19 Oct 2026)
+# would have marked all 39 regions stale for a 16-hour rebuild that changes
+# nothing. The block is left out of the hash.
+_CLOUD_BLOCK = re.compile(r"^CLOUD_SHARED_BUILD = \{\n.*?^\}\n", re.S | re.M)
+
+
+def _hashed_bytes(path):
+    if path.name != "config.py":
+        return path.read_bytes()
+    return _CLOUD_BLOCK.sub("", path.read_text(encoding="utf-8"), count=1).encode("utf-8")
 
 
 def reading_hash(building_id):
