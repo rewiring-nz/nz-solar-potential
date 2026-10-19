@@ -133,8 +133,8 @@ is enforced by code, not by care:
 
 - **District builds run on the build VM**, `claude-doing-things`
   (australia-southeast1-b, project solar-potential-map-512020), never on a laptop: the
-  VM fetches LiDAR and imagery from LINZ. It is a spot VM and stops itself 16
-  hours after starting; a cut-off build resumes with
+  VM fetches LiDAR and imagery from LINZ. It is a spot VM and stops itself 40
+  hours after starting (max-run-duration 144000 s); a cut-off build resumes with
   `src/run_district_build.sh --force --regions "<the rest>"`.
 - **Never change code on the VM while it is building.** Each stage is a fresh
   process, so a mid-build change mixes old and new code across regions
@@ -157,6 +157,22 @@ is enforced by code, not by care:
   that alias's preview pointer. The bucket lifecycle expires all `devel/` objects after
   `preview_retention_days`. Never use the bucket for private inputs or
   production releases.
+- **Judging a layout change, before any build.** Run the build's own
+  per-building code on a sample with the change off and on:
+  `tools/layout_ab.py <region> --n 200 --sample-file s.json --out on.json`
+  (each change has a `SOLAR_*` switch), score both with
+  `tools/layout_health.py`, and render side by side against the photo.
+  Samples miss rare failures, so after a build also run
+  `tools/face_area_check.py` against the layouts saved before it (a building
+  should not lose roof-face area) as well as the deploy gate, and render every
+  roof either flags. v51's first build was held back on exactly these checks.
+- **Stop VM jobs by session, and check for orphans.** Launch long jobs with
+  `setsid nohup`; stop them with `pkill -s <session>`. Killing a python
+  parent by PID leaves its multiprocessing workers alive (~1.8 GB each): 38 of
+  them starved the first v51 build into out-of-memory kills. Before a build:
+  `ps -eo pid=,ppid=,args= | awk '$2==1 && /multiprocessing\.spawn/'` should
+  print nothing. Never `pkill -f` a pattern that also appears in your own ssh
+  command line.
 - **Keys** come from the environment or `.env`, else Google Secret Manager
   (`src/project_secrets.py`; secret `linz-api-key`). Never commit or print a
   key.
@@ -186,6 +202,10 @@ Team access and setup: [docs/data-maintainers/team-access.md](docs/data-maintain
   or superseded statements when adding new evidence.
 - Update the matching doc or guide in [docs/](docs/) in the same change as a
   changed command, input, output, operating limit, or externally visible estimate.
+- Keep status current at every milestone (build launched, failed or finished,
+  gate result, publish, infrastructure change, bug found): BACKLOG.md, the
+  owner's status dashboard, and any doc or comment the change makes wrong. A
+  stale statement found later is fixed on sight, in the same change.
 
 ## Verified project facts
 
