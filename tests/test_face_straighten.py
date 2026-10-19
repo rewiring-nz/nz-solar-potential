@@ -100,6 +100,16 @@ def test_a_face_inside_another_is_cut_out_of_it():
     assert cov[0].intersection(cov[1]).area < 1e-9
 
 
+def test_a_face_is_never_split_and_half_dropped():
+    # an L-ish roof: main block and a wing joined by a 1 m neck; a small lower
+    # face lies across the neck. Tidying must not keep the main block and lose the wing.
+    from shapely.ops import unary_union
+    main = unary_union([box(0, 0, 10, 10), box(10, 4, 11, 5), box(11, 0, 20, 10)])
+    lower = box(9.5, 3, 11.5, 6)
+    cov = fs.as_coverage([main, lower])
+    assert cov is None or cov[0].area > 0.95 * main.difference(lower).area
+
+
 def test_faces_that_overlap_are_left_as_they_were():
     faces = [_face(box(0, 0, 7, 8), 20, 270), _face(box(6, 0, 12, 8), 20, 90)]
     assert fs.straighten_faces(faces) is faces
