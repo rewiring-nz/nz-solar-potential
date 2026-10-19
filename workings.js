@@ -39,8 +39,11 @@ const Wk = (() => {
     return n;
   }
   const opt = o => o || {};
+  // edit: {key, scale, unit, step} -- an assumption the reader may change in
+  // place (WkView shows it as a field; the page decides what the key means)
   const meta = o => ({ source: opt(o).source, note: opt(o).note, dp: opt(o).dp,
-                       flags: (opt(o).flags || []).slice() });
+                       flags: (opt(o).flags || []).slice(),
+                       ...(opt(o).edit ? { edit: opt(o).edit } : {}) });
 
   // ---- leaves -------------------------------------------------------------
   // A number from outside the calculation: an assumption, a measurement, a
@@ -232,6 +235,14 @@ if (typeof module !== "undefined" && module.exports) module.exports = { Wk };
 // ---------------------------------------------------------------------------
 
 const WK_CSS = `
+.wk-editwrap { display: inline-flex; align-items: baseline; gap: 4px; }
+.wk-edit { width: 6.5em; background: rgba(255,255,255,.08); border: 1px solid rgba(255,210,74,.55); color: #fff;
+  border-radius: 6px; padding: 3px 6px; font: inherit; text-align: right; font-variant-numeric: tabular-nums; }
+.wk-edit:focus { outline: 2px solid #ffd24a; outline-offset: 1px; }
+.wk-editwrap.big .wk-edit { font-size: 22px; width: 5.5em; padding: 4px 8px; }
+.wk-editwrap .u { color: #aaa; font-size: .9em; }
+.wk-hint { font-size: 12px; color: #aab; margin: 4px 0 8px; }
+
 .wk-num { cursor: pointer; text-decoration: underline dotted rgba(255,210,74,.65); text-underline-offset: 3px; }
 .wk-num:hover, .wk-num:focus-visible { text-decoration-color: var(--accent, #ffd24a); outline: none; }
 .wk-num:focus-visible { box-shadow: 0 0 0 2px rgba(255,210,74,.6); border-radius: 3px; }
@@ -273,6 +284,18 @@ const WK_CSS = `
 
 const WkView = (() => {
   let sheet = null, stack = [], lastFocus = null;
+  // CHANGE AN ASSUMPTION WHERE YOU SEE IT (Josh, 20 Oct): a number tagged
+  // `edit` shows as a field; a change goes to the page's handler, which
+  // updates the user's assumptions everywhere, and the sheet is re-worked
+  // from the fresh calculation along the same path.
+  let onEdit = null, rootGet = null, path = [];
+  function setEditHandler(fn) { onEdit = fn; }
+  const canEdit = c => !!(onEdit && c && c.edit && c.edit.key);
+  const shown = c => {
+    const sc = c.edit.scale || 1, v = c.value * sc;
+    const dp = c.edit.dp != null ? c.edit.dp : (Math.abs(v) >= 100 ? 0 : 2);
+    return +v.toFixed(dp);
+  };
 
   function css() {
     if (typeof document === "undefined" || document.getElementById("wk-css")) return;
@@ -313,6 +336,25 @@ const WkView = (() => {
     return `<div class="wk-tab"><table>${head}${body}</table></div>`;
   }
 
+  function field(c, big) {
+    return `<span class="wk-editwrap${big ? " big" : ""}"><input class="wk-edit" type="number" inputmode="decimal" ` +
+      `step="${esc(c.edit.step || "any")}" data-k="${esc(c.edit.key)}" value="${shown(c)}" aria-label="${esc(c.label)}">` +
+      `<span class="u">${esc(c.edit.unit || c.unit || "")}</span></span>`;
+  }
+
+  function refresh(focusKey) {
+    if (!rootGet || !sheet) return;
+    let n = rootGet();
+    if (!n) return;
+    const st = [n];
+    for (const i of path) { n = n.children && n.children[i]; if (!n) break; st.push(n); }
+    stack = st.length === path.length + 1 ? st : [st[0]];
+    if (stack.length === 1) path = [];
+    draw();
+    const f = focusKey && sheet.querySelector(`.wk-edit[data-k="${focusKey}"]`);
+    if (f) f.focus();
+  }
+
   function draw() {
     const n = stack[stack.length - 1];
     const crumbs = stack.map(s => esc(s.label)).join(" › ");
@@ -325,7 +367,8 @@ const WkView = (() => {
       `</div>` +
       `<div class="wk-body">` +
         `<div class="wk-title">${esc(n.label)}</div>` +
-        `<div class="wk-value">${esc(Wk.show(n))}</div>` +
+        `<div class="wk-value">${canEdit(n) ? field(n, true) : esc(Wk.show(n))}</div>` +
+        (canEdit(n) || n.children.some(canEdit) ? `<div class="wk-hint">Change a number in a box and every figure is worked out again with it. It is kept for your next visit.</div>` : "") +
         (f ? `<div class="wk-formula">${esc(f)}</div>` : "") +
         (stack.length === 1 ? checkLine(n) : "") +
         n.flags.map(fl => `<div class="wk-flag">${esc(fl)}</div>`).join("") +
@@ -335,7 +378,7 @@ const WkView = (() => {
         (n.children.length ? `<ul class="wk-steps">` + n.children.map((c, i) => {
           const go = c.children.length || c.kind === "table" || c.source || c.note || c.flags.length;
           return `<li class="wk-step${go ? " go" : ""}" ${go ? `tabindex="0" role="button" data-i="${i}"` : ""}>` +
-                 `<span class="l">${esc(c.label)}</span><span class="v">${esc(Wk.show(c))}</span>` +
+                 `<span class="l">${esc(c.label)}</span><span class="v">${canEdit(c) ? field(c) : esc(Wk.show(c))}</span>` +
                  (c.source ? `<span class="s">Source: ${esc(c.source)}</span>` : "") +
                  (c.flags.length ? `<span class="s" style="color:#ffb38f">⚠ ${esc(c.flags[0])}</span>` : "") +
                  `</li>`;
@@ -343,16 +386,27 @@ const WkView = (() => {
         `<div class="wk-copy">Numbers are rounded for display; the sums use the full figures.</div>` +
       `</div>`;
     sheet.querySelectorAll("[data-act=close]").forEach(b => b.addEventListener("click", close));
-    sheet.querySelectorAll("[data-act=back]").forEach(b => b.addEventListener("click", () => { stack.pop(); draw(); }));
+    sheet.querySelectorAll("[data-act=back]").forEach(b => b.addEventListener("click", () => { stack.pop(); path.pop(); draw(); }));
+    sheet.querySelectorAll(".wk-edit").forEach(inp => {
+      ["click", "keydown"].forEach(ev => inp.addEventListener(ev, e => e.stopPropagation()));
+      inp.addEventListener("change", () => {
+        const v = parseFloat(inp.value);
+        if (!Number.isFinite(v) || !onEdit) return;
+        onEdit(inp.dataset.k, v);
+        setTimeout(() => refresh(inp.dataset.k), 30);
+      });
+    });
     sheet.querySelectorAll(".wk-step.go").forEach(li => {
-      const go = () => { stack.push(n.children[+li.dataset.i]); draw(); const b = sheet.querySelector("[data-act=back]"); if (b) b.focus(); };
+      const go = () => { stack.push(n.children[+li.dataset.i]); path.push(+li.dataset.i); draw(); const b = sheet.querySelector("[data-act=back]"); if (b) b.focus(); };
       li.addEventListener("click", go);
       li.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
     });
   }
 
-  function open(root) {
+  function open(root, getter) {
     if (!root) return;
+    rootGet = getter || null;
+    path = [];
     css();
     lastFocus = document.activeElement;
     if (!sheet) {
@@ -381,14 +435,14 @@ const WkView = (() => {
     el.__wkGet = getNode;
     if (el.__wkBound) return;
     el.__wkBound = true;
-    const go = e => { e.preventDefault(); e.stopPropagation(); open(el.__wkGet()); };
+    const go = e => { e.preventDefault(); e.stopPropagation(); open(el.__wkGet(), el.__wkGet); };
     el.addEventListener("click", go);
     el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") go(e); });
     // a number whose workings do not add up is marked where it is shown
     try { const n = getNode(); if (n && !Wk.verify(n).ok) el.classList.add("wk-bad"); } catch (e) { /* drawn later */ }
   }
 
-  return { open, close, bind };
+  return { open, close, bind, setEditHandler };
 })();
 
 if (typeof window !== "undefined") { window.Wk = Wk; window.WkView = WkView; }
