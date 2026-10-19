@@ -59,6 +59,14 @@ def test_neighbours_slope_read_as_an_object_is_dropped():
     assert op.drop_roof_like([strip], face, [face, nxt], pc) == []
 
 
+def test_low_box_on_part_of_the_patch_stays():
+    # a 3 x 2 m patch, a third of it a plant box standing 0.6 m proud
+    patch = box(2, 2, 5, 4)
+    pts = [p for p in _pc().pts if not (2 <= p[0] <= 3 and 2 <= p[1] <= 4)]
+    box_top = _grid(2, 2, 3, 4, lambda x, y: 100.0 + 0.4 * y + 0.6)
+    assert op.drop_roof_like([patch], FACE, [FACE], Points(np.vstack([pts, box_top]))) == [patch]
+
+
 def test_small_patches_and_patches_without_returns_stay():
     vent = box(1, 1, 2, 1.8)                      # 0.8 m2: left to the detector
     blind = box(20, 20, 23, 23)                   # no returns there at all
