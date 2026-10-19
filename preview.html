@@ -127,7 +127,15 @@
   /* One series at a time: eight lines at once was a lot to read, and the
      comparison people want is between seasons, not between a typical and a
      sunny day of the same season. */
-  .curve-toggle { display: flex; gap: var(--s1); margin-top: var(--s4); }
+  .curve-toggle { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    gap: 6px; margin: 2px 0 6px; }
+  .curve-seg { display: inline-flex; background: rgba(255,255,255,.06); border-radius: 8px; padding: 2px; gap: 2px; }
+  .curve-seg .curve-btn, .curve-seg .season-btn { border: 0; background: none; color: rgba(235,235,245,.7);
+    font: 600 11.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    padding: 6px 8px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .curve-seg .curve-btn.active, .curve-seg .season-btn.on { background: rgba(255,255,255,.14); color: #fff; }
+  .curve-seg .curve-btn:focus-visible, .curve-seg .season-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .season-btn i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
   .curve-btn { flex: none; padding: 4px 11px; font-size: var(--fs-label); font-weight: 650;
     font-family: inherit; cursor: pointer; border-radius: 6px;
     background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
@@ -484,7 +492,7 @@
     }
     .side-panel .sba-title { font-size: 16px; }
     .side-panel .sba-h3 { font-size: 13px; font-weight: 600; color: rgba(235,235,245,.6); margin: 16px 2px 6px; letter-spacing: 0; }
-    .side-panel #curve-toggle, .side-panel .sba-cap, .side-panel #bldg-coverage-options { display: none !important; }
+    .side-panel .sba-cap, .side-panel #bldg-coverage-options { display: none !important; }
     .side-panel #season-curves .curve-sub { display: none; }
     /* one row of three: savings a year, net over the panels' life, return */
     .side-panel .sx-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -504,7 +512,7 @@
   #chart-lightbox[hidden] { display: none; }
   .clb-card { width: min(1200px, 100%); max-height: 100%; overflow: auto; background: #1c1f26; border: 1px solid rgba(255,255,255,.1);
     border-radius: 16px; padding: 18px 22px 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55); margin-top: 0 !important; }
-  .clb-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .clb-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
   .clb-head h3 { flex: 1; margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.2px; }
   .clb-x { background: rgba(118,118,128,.24); color: #fff; border: 0; width: 32px; height: 32px; border-radius: 16px; font-size: 20px; cursor: pointer; }
   .clb-x:focus-visible { outline: 2px solid var(--accent); }
@@ -542,7 +550,11 @@
   .side-panel .popup h4.sba-addr { font-size: 18px; }
   .sba-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s3);
     align-items: stretch; margin-top: var(--s3); }
-  .sba-top .sba-left { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+  /* The yellow box is exactly as tall as the live view beside it (Josh, 20 Oct:
+     two boxes of different heights side by side looked unfinished). */
+  .sba-top .sba-left { display: flex; flex-direction: column; justify-content: stretch; min-width: 0; }
+  .sba-top .sba-left .est-section:not([style*="display: none"]):not([style*="display:none"]) { flex: 1; display: flex; flex-direction: column; }
+  .sba-top .sba-left .rsp-statbox { flex: 1; display: flex; flex-direction: column; justify-content: center; }
   .sba-top .sba-left .est-section { margin-top: 0; padding-top: 0; border-top: none; }
   .sba-top .live-view { aspect-ratio: 1 / 1; max-height: none; margin: 0; border-radius: 12px; }
   .sba-top .rsp-statbox { border-radius: 12px; padding: 12px 10px 10px; container-type: inline-size; overflow: hidden; }
@@ -4032,15 +4044,23 @@ map.on("load", async () => {
         <div id="bldg-econ" style="display:none;"></div>
         <div class="sba-h3">Solar through the day</div>
         <div class="curve-toggle" id="curve-toggle">
-          <button class="curve-btn active" data-curve="avg">Average day</button>
-          <button class="curve-btn" data-curve="peak">Sunny day</button>
+          <div class="curve-seg" role="group" aria-label="Which day">
+            <button type="button" class="curve-btn active" data-curve="avg">Average day</button>
+            <button type="button" class="curve-btn" data-curve="peak">Sunny day</button>
+          </div>
+          <div class="curve-seg season-seg" role="group" aria-label="Season, with its horizon behind">
+            <button type="button" class="season-btn on" data-season="all">All</button>
+            <button type="button" class="season-btn" data-season="summer"><i style="background:#ff7a00"></i>Sum</button>
+            <button type="button" class="season-btn" data-season="autumn"><i style="background:#7dff5e"></i>Aut</button>
+            <button type="button" class="season-btn" data-season="winter"><i style="background:#00c8ff"></i>Win</button>
+            <button type="button" class="season-btn" data-season="spring"><i style="background:#ffe600"></i>Spr</button>
+          </div>
           <span id="horizon-tab-btn" class="sba-gone"></span>
         </div>
         <div id="season-curves"></div>
         <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
           Assumptions and details <span aria-hidden="true">&#8964;</span></button>
         <div class="sba-full-only">
-        <div class="rsp-subtitle">${sub}</div>
         <div id="bill-more"></div>
         <details class="sba-more">
         <summary>Layout details</summary>
@@ -4524,8 +4544,7 @@ map.on("load", async () => {
           const bandsBox = el("econ-bands");
           if (!panelEcon) {
             bandsBox.style.display = "none";
-            el("panel-econ-note").innerHTML = isLayout ? ""
-              : "Only in Panel Layout \u2014 no panels are placed on the heat map.";
+            el("panel-econ-note").innerHTML = "";
           } else {
             // The thresholds the MAP is painted with, built before the chips
             // count and the note reads them, so all three say the same thing.
@@ -4676,6 +4695,8 @@ map.on("load", async () => {
   // that answers "what will this actually make", where the clear-day line
   // answers "what is the best it will ever do".
   let curveMode = "avg";
+  // Which season's horizon sits behind the curves ("all": each season's, faintly)
+  let curveSeason = "all";
   // Per-building overrides for the two economics inputs a reader is most
   // likely to know better than we do. Reset from the defaults each time a
   // building is opened, so one house's numbers never leak into the next.
@@ -5011,16 +5032,19 @@ map.on("load", async () => {
     const avail = Math.max(240, (box.clientWidth || 288));
     // The card's chart is small and the same in both panel modes; the
     // lightbox's is large.
-    const tsh = (selectedBuildingProps && selectedBuildingProps.tshade) || null;
-    const stripsOn = !!(tsh && tsh.length === seasonCurves.seasons.length * 24);
+    const hp = selectedBuildingProps || {};
+    const hzOn = !!hp.horizon_b64;
+    const focus = o.season || curveSeason || "all";
     // The large one is laid out at ~700 units and scaled up, so its labels
-    // grow with it instead of staying 8px on a 1,200px chart.
+    // grow with it instead of staying 8px on a 1,200px chart. The card's is
+    // taller than it was (Josh, 20 Oct: easier to read).
     const W = o.big ? Math.round(Math.min(avail, 1400) / 1.65) : Math.min(avail, 900);
-    const H = (o.big ? Math.round(W * 0.46) : Math.round(Math.min(130, Math.max(108, W * 0.32)))) + (stripsOn ? 16 : 0);
-    const L = 30, R = 6, T = 8, B = 16 + (stripsOn ? 16 : 0), h0 = 5, h1 = 21;
+    const H = o.big ? Math.round(W * 0.5) : Math.round(Math.min(220, Math.max(170, W * 0.42)));
+    const L = 30, R = hzOn ? 26 : 6, T = 8, B = 16, h0 = 5, h1 = 21;
     // Scale to whichever series is shown, so the chosen one fills the chart
-    // instead of sitting squashed under the other one's peak.
-    const showPeak = (o.mode || "avg") === "peak";
+    // instead of sitting squashed under the other one's peak. The card used
+    // to ignore its own Average/Sunny toggle (it was hidden, so nobody saw).
+    const showPeak = (o.mode || curveMode || "avg") === "peak";
     const shown = showPeak ? peak : avg;
     // NAMEPLATE: a kW peak line on the generation profile shows the
     // theoretical maximum, so low-sun and high-sun roofs read against the
@@ -5051,11 +5075,12 @@ map.on("load", async () => {
     };
     seasonCurves.seasons.forEach((name, s) => {
       const col = SEASON_COLORS[name] || "#fff";
-      paths += `<path d="${line(shown[s])}" fill="none" stroke="${col}" stroke-width="2"` +
-              (showPeak ? ` stroke-dasharray="4 3"` : ``) + `/>`;
+      const dim = focus !== "all" && name !== focus;
+      paths += `<path d="${line(shown[s])}" fill="none" stroke="${col}" stroke-width="${dim ? 1.3 : (focus === name ? 2.6 : 2)}"` +
+              ` opacity="${dim ? 0.28 : 1}"` + (showPeak ? ` stroke-dasharray="4 3"` : ``) + `/>`;
       const fmt = v => v >= 20 ? Math.round(v) : v.toFixed(1);
       const ap = apexOf(shown[s]);
-      if (name !== "summer") {  // summer's values live on the reference lines
+      if (!dim && (name !== "summer" || focus === "summer")) {  // summer's values live on the reference lines
         if (ap.v > 0) apexLabels.push({ x: x(ap.h), y: y(ap.v) - 4, text: fmt(ap.v) + " kW", col, op: 1 });
       }
     });
@@ -5109,41 +5134,93 @@ map.on("load", async () => {
       `<text x="${x(h)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${h}</text>`).join("");
     const yLabels = `<text x="${L - 4}" y="${y(0) + 3}" fill="#888" font-size="8" text-anchor="end">0</text>` +
       `<text x="9" y="${(T + H - B) / 2}" fill="#888" font-size="8" text-anchor="middle" transform="rotate(-90 9 ${(T + H - B) / 2})">kW</text>`;
-    // WHEN THE SUN IS BEHIND THE HILLS: one thin strip per season under the
-    // curves, darker the more of that hour the terrain blocks it. This is
-    // the same terrain mask the curves are built from (tshade, baked from
-    // the DEM for this roof), so the strips and the curves cannot disagree.
-    // (A silhouette drawn behind the curves was replaced on 18 Oct: it was
-    // measured from the eaves at the building's centre, placed by an equinox
-    // sun path, and drawn on a degree scale unrelated to the kW axis -- it
-    // did not show when the panels actually lose the sun.)
-    let hzBg = "", hzNote = "";
-    if (stripsOn) {
-      const sh = 2.6, gap = 1.2, top0 = H - B + 4;
-      seasonCurves.seasons.forEach((name, s2) => {
-        const col = SEASON_COLORS[name] || "#fff";
-        const yy = top0 + s2 * (sh + gap);
-        hzBg += `<rect x="${x(h0)}" y="${yy}" width="${x(h1) - x(h0)}" height="${sh}" fill="rgba(255,255,255,0.06)" rx="1"/>`;
-        for (let hh = h0; hh <= h1; hh++) {
-          const up = (peak[s2] && peak[s2][hh] > 1e-3) || (avg[s2] && avg[s2][hh] > 1e-3);
-          const blocked = 1 - (+tsh[s2 * 24 + hh]) / 9;
-          if (!up || blocked < 0.05) continue;
-          const xa = Math.max(x(h0), x(hh - 0.5)), xb = Math.min(x(h1), x(hh + 0.5));
-          hzBg += `<rect x="${xa.toFixed(1)}" y="${yy}" width="${(xb - xa).toFixed(1)}" height="${sh}" fill="${col}" opacity="${(0.25 + 0.75 * blocked).toFixed(2)}" rx="1"/>`;
+    // THE HORIZON BEHIND THE CURVES (Josh, 20 Oct). The chart runs by hour;
+    // the horizon runs by compass direction, and at a given hour the sun is in
+    // a different direction in each season. So each season's horizon is
+    // redrawn ALONG THAT SEASON'S SUN PATH: at every moment of its day, how
+    // high the hills and trees are in the direction the sun is then. It sits
+    // on its own scale (degrees above level, right-hand axis), and with it
+    // the sun's own height, dashed: where the dashed line goes behind the
+    // grey, the curve above drops to diffuse light at the same moment.
+    // Season days: the middle of each three-month season (declination).
+    // Solar noon for each season comes from the curves themselves (midpoint
+    // of the hours with any output), so the hills line up with the curves in
+    // whatever clock the curves are in (daylight saving included).
+    // ONLY THE DISTANT HILLS are drawn: they are what shapes the curves hour
+    // by hour (the terrain mask, tshade). Nearby trees and buildings are
+    // counted panel by panel, from each panel's own position, as a yearly
+    // factor; drawn here from the eaves at the roof's middle they rose above
+    // the winter sun all day on 11 Hobart St while the curve, rightly, still
+    // showed 2.1 kW -- a picture that contradicts its own numbers.
+    let hzBg = "", hzAxis = "", hzNote = "";
+    if (hzOn) {
+      const hills = decodeHorizon(hp.horizon_far_b64 || hp.horizon_b64);
+      const lat = hp._sy !== undefined ? hp._sy : map.getCenter().lat;
+      const DECL = { summer: -20.5, autumn: 9.0, winter: 21.0, spring: -9.0 };
+      const sunAt = (declDeg, Hdeg) => {
+        const la = lat * Math.PI / 180, de = declDeg * Math.PI / 180, ha = Hdeg * Math.PI / 180;
+        const el = Math.asin(Math.sin(la) * Math.sin(de) + Math.cos(la) * Math.cos(de) * Math.cos(ha));
+        let az = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(la) - Math.tan(de) * Math.cos(la));
+        return { az: (az * 180 / Math.PI + 180 + 360) % 360, el: el * 180 / Math.PI };
+      };
+      const drawSeasons = seasonCurves.seasons.filter(n => focus === "all" || n === focus);
+      const tracks = [];
+      let maxDeg = 20;
+      drawSeasons.forEach(name => {
+        const si2 = seasonCurves.seasons.indexOf(name);
+        const ref = peak[si2] || avg[si2];
+        let first = -1, last = -1;
+        for (let hh = 0; hh < 24; hh++) if (ref[hh] > 1e-3) { if (first < 0) first = hh; last = hh; }
+        if (first < 0) return;
+        const noon = (first + last) / 2, pts = [];
+        for (let hh = Math.max(h0, first - 1); hh <= Math.min(h1, last + 1) + 1e-9; hh += 0.25) {
+          const sp = sunAt(DECL[name] || 0, 15 * (hh - noon));
+          if (sp.el < -1) continue;            // only while the sun is up
+          const hz = horizonAt(hills, sp.az);
+          pts.push({ h: hh, sun: sp.el, hz });
+          maxDeg = Math.max(maxDeg, sp.el, hz);
+        }
+        tracks.push({ name, pts });
+      });
+      maxDeg = Math.min(90, Math.ceil(maxDeg / 10) * 10);
+      const yd = el => T + (1 - Math.max(0, el) / maxDeg) * (H - T - B);
+      const area = (pts, key) => {
+        if (!pts.length) return "";
+        let d = `M${x(pts[0].h).toFixed(1)} ${yd(0).toFixed(1)}`;
+        pts.forEach(q => { d += `L${x(q.h).toFixed(1)} ${yd(q[key]).toFixed(1)}`; });
+        return d + `L${x(pts[pts.length - 1].h).toFixed(1)} ${yd(0).toFixed(1)}Z`;
+      };
+      tracks.forEach(t => {
+        const col = SEASON_COLORS[t.name] || "#fff";
+        if (focus === "all") {
+          hzBg += `<path d="${area(t.pts, "hz")}" fill="rgba(140,150,166,0.16)"/>`;
+        } else {
+          hzBg += `<path d="${area(t.pts, "hz")}" fill="rgba(120,130,148,0.50)"/>`;
+          let d = "", pen = false;
+          t.pts.forEach(q => {
+            if (q.sun < 0) { pen = false; return; }
+            d += (pen ? "L" : "M") + x(q.h).toFixed(1) + " " + yd(q.sun).toFixed(1); pen = true;
+          });
+          hzBg += `<path d="${d}" fill="none" stroke="${col}" stroke-opacity="0.6" stroke-width="1.2" stroke-dasharray="3 3"/>`;
         }
       });
-      hzNote = ` &nbsp;·&nbsp; <span style="color:#9aa3b1">strips: hours the sun is behind the hills, by season</span>`;
+      [0, maxDeg / 2, maxDeg].forEach(el => {
+        hzAxis += `<text x="${W - R + 3}" y="${yd(el) + 3}" fill="#7d8796" font-size="8">${Math.round(el)}&deg;</text>`;
+      });
+      hzNote = focus === "all"
+        ? `<div class="curve-hz" style="font-size:9.5px; color:#9aa3b1; text-align:center; margin-bottom:8px;">grey: the hills along each season&rsquo;s sun path (height in the sky, right-hand axis) &middot; pick a season to see it with the sun</div>`
+        : `<div class="curve-hz" style="font-size:9.5px; color:#9aa3b1; text-align:center; margin-bottom:8px;">grey: the hills in the sun&rsquo;s direction through a ${focus} day (right-hand axis) &middot; dashed: the sun &middot; behind the hills the panels get only diffuse light &middot; nearby trees and buildings are counted panel by panel</div>`;
     }
     const legend = seasonCurves.seasons.map(n =>
       `<span style="color:${SEASON_COLORS[n]}; font-weight:700;">${n}</span>`).join(" · ");
     box.innerHTML =
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
-      `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${peakLine}${paths}${hzBg}${hourTicks}${yLabels}</svg></div>` +
+      `<svg width="100%" viewBox="0 0 ${W} ${H}">${hzBg}${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}${hzAxis}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
       `<div class="curve-sub" style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
       `${showPeak ? "a clear day in each season (illustration, not in the totals)" : "an average day in each season"}` +
       ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}` +
-      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span class="curve-workings" style="text-decoration:underline dotted;cursor:pointer">how it adds up</span>` : "") + hzNote + `</div>`;
+      (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span class="curve-workings" style="text-decoration:underline dotted;cursor:pointer">how it adds up</span>` : "") + `</div>` + hzNote;
     const cw = box.querySelector("#curve-workings, .curve-workings");
     if (cw && typeof WkView !== "undefined") WkView.bind(cw, () => GEN && GEN.curve ? GEN.curve.node : null);
     if (!o.box) {
@@ -5169,29 +5246,36 @@ map.on("load", async () => {
       document.body.appendChild(lb);
     }
     lb.__return = document.activeElement;
-    let mode = "avg";
+    let mode = curveMode === "peak" ? "peak" : "avg", season = curveSeason;
     const p = selectedBuildingProps || {};
     lb.innerHTML =
       `<div class="clb-card sx" role="dialog" aria-modal="true" aria-label="Solar through the day">` +
         `<div class="clb-head"><h3>Solar through the day</h3>` +
-          `<div class="sx-seg" id="clb-mode"><button type="button" data-m="avg" class="on">Average day</button><button type="button" data-m="peak">Sunny day</button></div>` +
+          `<div class="sx-seg" id="clb-mode"><button type="button" data-m="avg"${mode === "avg" ? ' class="on"' : ""}>Average day</button><button type="button" data-m="peak"${mode === "peak" ? ' class="on"' : ""}>Sunny day</button></div>` +
+          `<div class="sx-seg" id="clb-season">` + ["all", "summer", "autumn", "winter", "spring"].map(n =>
+            `<button type="button" data-s="${n}"${season === n ? ' class="on"' : ""}>${n === "all" ? "All seasons" : n[0].toUpperCase() + n.slice(1)}</button>`).join("") + `</div>` +
           `<button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
         `<div id="clb-chart"></div>` +
-        (p.horizon_b64 ? `<h4>The horizon from this roof</h4><div id="clb-horizon"></div>` +
+        (p.horizon_b64 ? `<h4>The same horizon, all the way round</h4><div id="clb-horizon"></div>` +
           `<details class="clb-info"><summary>What this shows</summary>` +
           `<p>The hills (light grey) and nearby trees and buildings (darker grey) around the building, seen from its eaves at the middle of the roof, with the sun's path in summer, spring and autumn, and winter. Where a path dips behind the grey, the sun is hidden from that point.</p>` +
-          `<p>Panels sit higher than the eaves and spread across the roof, so they see more sky than this view; each panel's shading is measured separately in the figures. The strips under the chart above show the hours the hills hide the sun, which is what the curves use.</p></details>` : "") +
+          `<p>Panels sit higher than the eaves and spread across the roof, so they see more sky than this view; each panel's shading is measured separately in the figures. In the chart above, the same hills are drawn behind each season's curve along that season's sun path, so you can see the curve drop as the sun goes behind them.</p></details>` : "") +
       `</div>`;
     lb.hidden = false;
     document.body.classList.add("clb-open");
     const draw = () => {
-      renderSeasonCurves(buildingId, { box: lb.querySelector("#clb-chart"), big: true, mode });
+      renderSeasonCurves(buildingId, { box: lb.querySelector("#clb-chart"), big: true, mode, season });
       const hz = lb.querySelector("#clb-horizon");
       if (hz) renderHorizonChart(hz);
     };
     lb.querySelectorAll("#clb-mode button").forEach(b => b.addEventListener("click", () => {
       mode = b.dataset.m;
       lb.querySelectorAll("#clb-mode button").forEach(x => x.classList.toggle("on", x === b));
+      draw();
+    }));
+    lb.querySelectorAll("#clb-season button").forEach(b => b.addEventListener("click", () => {
+      season = b.dataset.s;
+      lb.querySelectorAll("#clb-season button").forEach(x => x.classList.toggle("on", x === b));
       draw();
     }));
     lb.querySelector(".clb-x").addEventListener("click", closeChartLightbox);
@@ -5316,10 +5400,20 @@ map.on("load", async () => {
     }
     panel.querySelectorAll(".curve-btn").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.curve === curveMode);
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
         curveMode = btn.dataset.curve;
         panel.querySelectorAll(".curve-btn").forEach(b =>
           b.classList.toggle("active", b.dataset.curve === curveMode));
+        renderSeasonCurves(p.building_id);
+      });
+    });
+    panel.querySelectorAll(".season-btn").forEach(btn => {
+      btn.classList.toggle("on", btn.dataset.season === curveSeason);
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        curveSeason = btn.dataset.season;
+        panel.querySelectorAll(".season-btn").forEach(b => b.classList.toggle("on", b.dataset.season === curveSeason));
         renderSeasonCurves(p.building_id);
       });
     });
