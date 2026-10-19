@@ -58,6 +58,32 @@ def test_zigzag_seam_straightens_and_neighbours_still_meet():
         abs(l.union(r).symmetric_difference(box(0, 0, 12, 8)).area) < 1e-6   # outline kept
 
 
+def test_seam_drawn_off_the_ridge_moves_onto_it():
+    # gable 10 x 8, ridge truly at y = 4; the partition drew the seam at y = 4.6
+    t = math.tan(math.radians(30))
+    south = _face(box(0, 0, 10, 4.6), 30, 180, c=100.0)          # z = 100 + t y
+    north = _face(box(0, 4.6, 10, 8), 30, 0, c=100.0 + 8 * t)    # z = 100 + t (8 - y)
+    out = fs.seams_to_plane_lines([south, north])
+    s_new = out[0]["geometry"]
+    assert abs(s_new.bounds[3] - 4.0) < 0.05, s_new.bounds
+    assert abs(s_new.area + out[1]["geometry"].area - 80) < 1e-6
+
+
+def test_valley_seam_moves_the_other_way():
+    # the same two planes upside down (a valley at y = 4), seam drawn at y = 4.6
+    t = math.tan(math.radians(30))
+    south = _face(box(0, 0, 10, 4.6), 30, 0, c=100.0 + 4 * t)    # z = 100 + 4t - t y : falls to the valley
+    north = _face(box(0, 4.6, 10, 8), 30, 180, c=100.0 - 4 * t)  # z = 100 - 4t + t y
+    out = fs.seams_to_plane_lines([south, north])
+    assert abs(out[0]["geometry"].bounds[3] - 4.0) < 0.05, out[0]["geometry"].bounds
+
+
+def test_seam_already_on_the_ridge_is_left():
+    t = math.tan(math.radians(30))
+    faces = [_face(box(0, 0, 10, 4), 30, 180, c=100.0), _face(box(0, 4, 10, 8), 30, 0, c=100.0 + 8 * t)]
+    assert fs.seams_to_plane_lines(faces) is faces
+
+
 def test_hairline_gaps_and_overlaps_are_tidied_first():
     # built faces do not tile exactly: a 3 cm gap on one seam, a 2 cm overlap on another
     a, b, c = box(0, 0, 5.985, 8), box(6.015, 0, 9.01, 8), box(9.0, 0, 12, 8)

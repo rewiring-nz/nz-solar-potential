@@ -38,6 +38,17 @@ along that edge -- a valley or a step between storeys does not. The larger
 face's plane is kept; the planes differ by less than the step anyway.
 SOLAR_MERGE_COPLANAR=0 turns it off.
 
+SEAMS WHERE THE PLANES MEET (seams_to_plane_lines). Two pitched faces meet
+where their planes cross: at a ridge or hip the roof is the lower of the two
+planes, at a valley the higher. A seam drawn elsewhere is "lines not
+following the ridges" (11A Camp St, 1 Ballarat St), and puts panels astride
+the real ridge. For each pitched pair whose shared seam is off the planes'
+crossing by more than SEAM_MIN_OFF_M, the two faces are re-cut along the
+crossing -- only within a band around the seam (SEAM_BAND_M at most: the
+crossing line runs on for ever, and only the stretch near the drawn seam is
+vouched for; src/plane_seams.py learned that). Kept only if both faces stay
+whole and the seam ends up nearer the crossing. SOLAR_SEAM_PLANES=0 off.
+
 FIRST, A CLEAN TILING (as_coverage). Neither step can work on faces that do
 not tile: built by subtracting one face from another and refitting, the
 faces overlap by a few cm2 here and leave hairline gaps there, so every roof
@@ -202,3 +213,91 @@ def merge_coplanar_faces(facets, *_, **__):
             if merged:
                 break
     return faces
+
+
+SEAM_MIN_SLOPE_DEG = 10.0
+SEAM_MIN_SHARED_M = 1.5
+SEAM_MIN_OFF_M = 0.15
+SEAM_BAND_M = 1.5
+SEAM_MIN_GRAD = 0.05          # planes this near parallel have no crossing worth trusting
+SEAM_MAX_AREA_CHANGE = 0.25
+
+
+def _seam_offset(f, g, seam):
+    """Median distance (m, in plan) from the seam to where the planes cross."""
+    import math
+    A, B = f["plane_a"] - g["plane_a"], f["plane_b"] - g["plane_b"]
+    grad = math.hypot(A, B)
+    pts = [seam.interpolate(t / 10, normalized=True) for t in range(11)]
+    d = sorted(abs(_z(f, p.x, p.y) - _z(g, p.x, p.y)) / grad for p in pts)
+    return d[len(d) // 2]
+
+
+def _half(f, g, bounds, positive):
+    """Where f's plane is above (positive) or below g's, as a big polygon."""
+    from src.plane_seams import _side
+    return _side(f, g, bounds, positive)
+
+
+def seams_to_plane_lines(facets, *_, **__):
+    import math
+    if os.environ.get("SOLAR_SEAM_PLANES", "1") == "0" or len(facets) < 2:
+        return facets
+    if any(f.get("from_labels") for f in facets):
+        return facets
+    cov = as_coverage([f["geometry"] for f in facets])
+    if cov is None:
+        return facets
+    faces = [dict(f, geometry=g) for f, g in zip(facets, cov)]
+    moved = False
+    for i in range(len(faces)):
+        for j in range(i + 1, len(faces)):
+            f, g = faces[i], faces[j]
+            if f.get("plane_a") is None or g.get("plane_a") is None:
+                continue
+            if min(f.get("slope_deg", 0.0), g.get("slope_deg", 0.0)) < SEAM_MIN_SLOPE_DEG:
+                continue
+            if math.hypot(f["plane_a"] - g["plane_a"], f["plane_b"] - g["plane_b"]) < SEAM_MIN_GRAD:
+                continue
+            Fi, Fj = f["geometry"], g["geometry"]
+            seam = Fi.boundary.intersection(Fj.buffer(0.02))
+            if seam.is_empty or seam.length < SEAM_MIN_SHARED_M:
+                continue
+            off = _seam_offset(f, g, seam)
+            if off < SEAM_MIN_OFF_M:
+                continue
+            both = Fi.union(Fj)
+            band = seam.buffer(min(SEAM_BAND_M, 2 * off + 0.3)).intersection(both)
+            above = _half(f, g, both.bounds, True)
+            below = _half(f, g, both.bounds, False)
+            if above is None or below is None:
+                continue
+            # ridge or hip: f is the roof where it is the LOWER plane; valley: the higher
+            ridge = Fi.intersection(band).intersection(below).area >= Fi.intersection(band).intersection(above).area
+            side_f, side_g = (below, above) if ridge else (above, below)
+            ni = Fi.difference(band).union(band.intersection(side_f))
+            nj = Fj.difference(band).union(band.intersection(side_g))
+            if ni.geom_type != "Polygon" or nj.geom_type != "Polygon" or not (ni.is_valid and nj.is_valid):
+                continue
+            if abs(ni.area - Fi.area) > SEAM_MAX_AREA_CHANGE * Fi.area or abs(nj.area - Fj.area) > SEAM_MAX_AREA_CHANGE * Fj.area:
+                continue
+            new_seam = ni.boundary.intersection(nj.buffer(0.02))
+            if new_seam.is_empty or new_seam.length < 0.5 * seam.length:
+                continue
+            if _seam_offset(f, g, new_seam) >= off:
+                continue
+            faces[i] = dict(f, geometry=ni)
+            faces[j] = dict(g, geometry=nj)
+            moved = True
+    if not moved:
+        return facets
+    cov = as_coverage([f["geometry"] for f in faces])
+    if cov is None:
+        return facets
+    out = []
+    for f, g in zip(faces, cov):
+        h = dict(f, geometry=g)
+        if "area_m2" in h:
+            h["area_m2"] = g.area
+        out.append(h)
+    return out
