@@ -55,6 +55,15 @@ poorly fitted planes moved the wrong way -- 4721266 (Arrowtown, v51 build)
 lost seven panels and grew an obstruction where its face now ran up the
 neighbour's slope. SOLAR_SEAM_PLANES=0 off.
 
+WINGS MEET AT VALLEYS, NOT STRAIGHT CUTS. Faces read offline per wing
+(src/face_candidates.py rect_parts) are glued along a straight cut at the
+reflex corner; a real L or T roof meets there along diagonal valleys and
+hips, metres from the cut -- too far for the band above. So each pitched pair
+is also re-cut across its WHOLE area along the planes' crossing, both ways
+round (ridge: lower plane wins; valley: higher), and the cut is kept only
+when it explains at least JUNCTION_MIN_GAIN more of the pair's LiDAR returns
+than the faces it replaces. Evidence decides; the geometry only proposes.
+
 FIRST, A CLEAN TILING (as_coverage). Neither step can work on faces that do
 not tile: built by subtracting one face from another and refitting, the
 faces overlap by a few cm2 here and leave hairline gaps there, so every roof
@@ -310,6 +319,101 @@ def _returns_agree(strip, giver, taker, pc_source):
     return float(np.median(rt)) < float(np.median(rg))
 
 
+JUNCTION_MIN_GAIN = 0.05
+JUNCTION_INLIER_M = 0.20
+JUNCTION_MIN_POINTS = 30
+
+
+def _pair_share(pi, fi, pj, fj, pts):
+    """Share of the returns in pi+pj within JUNCTION_INLIER_M of their face's plane."""
+    import numpy as np
+    import shapely
+    ok = n = 0
+    for poly, f in ((pi, fi), (pj, fj)):
+        on = shapely.contains_xy(poly, pts[:, 0], pts[:, 1])
+        r = pts[on, 2] - (f["plane_a"] * pts[on, 0] + f["plane_b"] * pts[on, 1] + f["plane_c"])
+        ok += int((np.abs(r) <= JUNCTION_INLIER_M).sum())
+        n += int(on.sum())
+    return ok / n if n else 0.0
+
+
+SLIVER_DROP_M2 = 0.05
+
+
+def _whole(poly):
+    """The polygon, rid of floating-point slivers a cut leaves -- or None if
+    the cut genuinely made two pieces (never keep one and lose the other)."""
+    if poly.geom_type == "Polygon":
+        return poly if poly.is_valid else None
+    parts = sorted((q for q in getattr(poly, "geoms", []) if q.geom_type == "Polygon"),
+                   key=lambda q: -q.area)
+    if not parts or sum(q.area for q in parts[1:]) > SLIVER_DROP_M2:
+        return None
+    return parts[0] if parts[0].is_valid else None
+
+
+def _junction_region(seam, f, g, both):
+    """The area between the drawn seam and the stretch of the planes' crossing
+    that starts at it -- the crossing line runs on for ever, and beyond the
+    junction it is meaningless (an L's other wing face lies across it)."""
+    import math
+    from shapely.geometry import LineString, MultiPoint
+    A = f["plane_a"] - g["plane_a"]
+    B = f["plane_b"] - g["plane_b"]
+    C = f["plane_c"] - g["plane_c"]
+    n = math.hypot(A, B)
+    if n < 1e-6:
+        return None
+    minx, miny, maxx, maxy = both.bounds
+    span = 4 * max(maxx - minx, maxy - miny, 1.0)
+    cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
+    d = (A * cx + B * cy + C) / n
+    px, py = cx - A / n * d, cy - B / n * d
+    tx, ty = -B / n, A / n
+    line = LineString([(px - tx * span, py - ty * span), (px + tx * span, py + ty * span)])
+    inside = line.intersection(both)
+    parts = [q for q in getattr(inside, "geoms", [inside]) if q.geom_type == "LineString" and q.length > 0.5]
+    if not parts:
+        return None
+    comp = min(parts, key=lambda q: q.distance(seam))
+    if comp.distance(seam) > 0.5:
+        return None
+    pts = list(comp.coords) + [c for g2 in getattr(seam, "geoms", [seam]) for c in g2.coords]
+    region = MultiPoint(pts).convex_hull.intersection(both)
+    return region if region.area > 0.5 else None
+
+
+def _junction_recut(Fi, f, Fj, g, both, above, below, pc_source):
+    """(ni, nj) re-cut between the seam and the crossing if the returns clearly prefer it, else None."""
+    import shapely
+    from src.roof_segmentation import _facet_points
+    try:
+        pts = _facet_points(pc_source, both)
+    except Exception:
+        return None
+    if len(pts) < JUNCTION_MIN_POINTS:
+        return None
+    seam = Fi.boundary.intersection(Fj.buffer(0.02))
+    region = _junction_region(seam, f, g, both)
+    if region is None:
+        return None
+    current = _pair_share(Fi, f, Fj, g, pts)
+    best = None
+    for side_f, side_g in ((below, above), (above, below)):
+        wi = _whole(Fi.difference(region).union(region.intersection(side_f)))
+        wj = _whole(Fj.difference(region).union(region.intersection(side_g)))
+        if wi is None or wj is None:
+            continue
+        if min(wi.area, wj.area) < 0.25 * min(Fi.area, Fj.area):
+            continue
+        share = _pair_share(wi, f, wj, g, pts)
+        if best is None or share > best[0]:
+            best = (share, wi, wj)
+    if best is None or best[0] < current + JUNCTION_MIN_GAIN:
+        return None
+    return best[1], best[2]
+
+
 def seams_to_plane_lines(facets, pc_source=None, *_, **__):
     import math
     if os.environ.get("SOLAR_SEAM_PLANES", "1") == "0" or len(facets) < 2:
@@ -343,6 +447,13 @@ def seams_to_plane_lines(facets, pc_source=None, *_, **__):
             below = _half(f, g, both.bounds, False)
             if above is None or below is None:
                 continue
+            if pc_source is not None and os.environ.get("SOLAR_JUNCTIONS", "1") != "0":
+                rc = _junction_recut(Fi, f, Fj, g, both, above, below, pc_source)
+                if rc is not None:
+                    faces[i] = dict(f, geometry=rc[0])
+                    faces[j] = dict(g, geometry=rc[1])
+                    moved = True
+                    continue
             # ridge or hip: f is the roof where it is the LOWER plane; valley: the higher
             ridge = Fi.intersection(band).intersection(below).area >= Fi.intersection(band).intersection(above).area
             side_f, side_g = (below, above) if ridge else (above, below)

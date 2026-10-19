@@ -112,6 +112,30 @@ def test_seam_stays_when_the_returns_say_the_planes_are_wrong():
     assert fs.seams_to_plane_lines(faces, _gable_returns(4.6, t)) is faces
 
 
+def test_wings_meet_at_the_valley_not_the_straight_cut():
+    # an L: wing A (x 0-12, y 0-6) gabled along x, ridge y=3; wing B (x 6-12, y 0-14)
+    # gabled along y, ridge x=9. Read per wing, the faces meet along the straight
+    # cut y=6; the returns say they meet along the valley/hip where the planes cross.
+    import numpy as np
+    t = math.tan(math.radians(30))
+    zA = lambda x, y: 100 + t * (3 - abs(y - 3))          # wing A gable
+    zB = lambda x, y: 100 + t * (3 - abs(x - 9))          # wing B gable
+    xs, ys = np.meshgrid(np.arange(0.15, 12, 0.3), np.arange(0.15, 14, 0.3))
+    xs, ys = xs.ravel(), ys.ravel()
+    inA = ys <= 6
+    inB = (xs >= 6) & (ys > 0)
+    keep = inA | inB
+    z = np.where(inA & inB, np.maximum(zA(xs, ys), zB(xs, ys)), np.where(inA, zA(xs, ys), zB(xs, ys)))
+    pts = _Points(np.c_[xs[keep], ys[keep], z[keep]])
+    # wing A's north face (y 3-6, falls north) and wing B's west face (x 6-9, falls west)
+    a_north = _face(box(0, 3, 12, 6), 30, 0, c=100 + 6 * t)       # z = 100 + t (6 - y) ... at y=3 -> 100+3t
+    b_west = _face(box(6, 6, 9, 14), 30, 270, c=100 - 6 * t)      # z = 100 + t (x - 6)
+    out = fs.seams_to_plane_lines([a_north, b_west], pts)
+    assert out is not None and len(out) == 2
+    moved = out[0]["geometry"].symmetric_difference(a_north["geometry"]).area
+    assert moved > 1.0, moved
+
+
 def test_valley_seam_moves_the_other_way():
     # the same two planes upside down (a valley at y = 4), seam drawn at y = 4.6
     t = math.tan(math.radians(30))
