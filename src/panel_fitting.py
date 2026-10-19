@@ -842,6 +842,12 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
     if candidates:
         by_orient = {c[0]: c for c in candidates}
         port, land = by_orient.get(True), by_orient.get(False)
+        if RACKING:
+            # an orientation that cannot hold one real array does not count:
+            # portrait winning with 2 panels that the array rule then drops
+            # left whole clear faces empty (5370794, racking A/B, 20 Oct)
+            port = port if port and len(port[1]) >= ARRAY_MIN_PANELS else (None if land and len(land[1]) >= ARRAY_MIN_PANELS else port)
+            land = land if land and len(land[1]) >= ARRAY_MIN_PANELS else (None if port and len(port[1]) >= ARRAY_MIN_PANELS else land)
         if _has_twin(facet, sibling_facets):
             # Symmetric pair: no contest. Portrait on both sides, exactly as an
             # installer would rack a gable, unless portrait fits nothing here.
