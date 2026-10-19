@@ -7,6 +7,28 @@ and assign work.
 
 ## Ship
 
+- **v51, Queenstown first (built overnight 19-20 Oct).** Four layout
+  changes, each judged with tools/layout_ab.py on 200 Arrowtown and 200 CBD
+  roofs (half the worst on the health check, half random) and by
+  side-by-side renders:
+  - faces rebuilt as a clean tiling first (src/face_straighten.py
+    as_coverage): faces overlapped by cm2 and left hairline gaps, so every
+    tidy-up step silently stood aside -- the first A/B was identical to the
+    decimal;
+  - coplanar neighbours merged, seams moved to where their two planes cross
+    (pitched seams more than 15 cm off: 68.5% -> 56.9%), remaining edges
+    straightened (coverage_simplify tolerance is a VW area, not a distance);
+  - an "obstruction" whose returns lie on this face's or a neighbour's plane
+    is roof (src/obstruction_planarity.py): pitched faces more than 10%
+    "obstructed" 24% -> 19% (Arrowtown), 18% -> 14% (CBD); panels +2.4% /
+    +1.4%; clean roofs 34.5% -> 39.5% / 38.5%.
+  The health check's "ragged face" rule barely moves and is the wrong
+  measure: most faces it flags are flat roofs on L-shaped buildings, drawn
+  right. Seam offset from the plane crossing is the honest measure of "lines
+  not following the ridges"; it needs planes in the layout output to become
+  a health check (not there yet). Wanaka, Hawea, Cromwell, Glenorchy and
+  Auckland stay on v50 layouts until Josh has seen Queenstown.
+
 - **Glenorchy, Kinloch and the Rees Valley -- live in v43 (13 Oct).** No
   LiDAR reaches the head of the lake: synthetic-surface path like Cromwell,
   photos Otago 0.3m Rural 2017-2019 (layer 104460). Regions glenorchy (528
