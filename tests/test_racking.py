@@ -27,6 +27,14 @@ def test_two_rows_touching_are_one_array():
     assert len(pf.enforce_arrays(rows)) == 4
 
 
+def test_row_with_one_skipped_panel_is_one_array():
+    # 2 + (vent) + 3 along one rail; 5370794 lost a whole face to this split
+    w, gap = 1.13, 0.02
+    row = _row(0, 0, 6, w=w, gap=gap)
+    del row[2]
+    assert len(pf.enforce_arrays(row)) == 5
+
+
 def test_off_switch_keeps_everything():
     pf.RACKING = False
     try:

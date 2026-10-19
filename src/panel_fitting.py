@@ -430,7 +430,9 @@ ARRAY_MIN_PANELS = 4
 # rail runs on past a vent or skylight, so a row broken by a small obstruction
 # is still one array (a first cut at 0.3 m dropped those halves as "small
 # arrays": 4719600's flat roof went from 58 panels to 18).
-ARRAY_TOUCH_M = 1.10
+ARRAY_TOUCH_M = 1.30  # one skipped panel (a vent in the row) plus slack: rails span it.
+# At 1.10 a row of 2 + gap + 3 on 5370794 (gap ~1.1 m edge to edge) split into two
+# "small arrays" and the whole clear face went empty.
 ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fits more than
 # max(1, this fraction) fewer panels than the free per-row scan -- real installers rack rows
 # with columns lined up, so a small capacity cost buys a much more realistic layout, but a
