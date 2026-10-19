@@ -459,15 +459,29 @@
      panel is expanded: it holds the most useful figures, so expanding
      leaves it alone and opens a second column beside it with everything
      else (Josh, 18 Oct: "opening up more space to show more information"). */
+  /* Sizes (Josh, 20 Oct): the card 20% wider than its first 380 px, the
+     detail 40% narrower than its first ~448 px (card 426 -> 511 px outside, padding included) -- it is reading text, not
+     figures. The detail opens on the RIGHT of the card; the panel is pinned
+     to the map's right edge, so as it widens the card slides left. */
+  :root { --card-w: 465px; --more-w: 270px; --more-gap: 28px; }
   @media (min-width: 701px) {
-    .side-panel.compact { width: 380px; bottom: auto; max-height: calc(100% - 66px); }
+    .side-panel { transition: width .32s cubic-bezier(.2,.8,.2,1); }
+    .side-panel.compact { width: var(--card-w); bottom: auto; max-height: calc(100% - 66px); }
     .side-panel.compact .sba-full-only, .side-panel.compact .sx-more { display: none !important; }
     .side-panel:not(.compact) .sba-compact-only { display: none !important; }
-    .side-panel:not(.compact) { width: min(900px, calc(100vw - 300px)); }
-    .side-panel:not(.compact) .popup { display: grid; grid-template-columns: minmax(0, 1fr) 380px;
-      column-gap: 28px; align-items: start; }
-    .side-panel:not(.compact) .popup > * { grid-column: 2; }
-    .side-panel:not(.compact) .popup > .sba-full-only { grid-column: 1; grid-row: 1 / span 40; min-width: 0; }
+    /* content-box: the panel's own padding is outside this width */
+    .side-panel:not(.compact) { width: min(calc(var(--card-w) + var(--more-gap) + var(--more-w)),
+                                          calc(100vw - 344px)); }
+    .side-panel:not(.compact) .popup { display: grid; grid-template-columns: var(--card-w) minmax(0, 1fr);
+      column-gap: var(--more-gap); align-items: start; }
+    .side-panel:not(.compact) .popup > * { grid-column: 1; }
+    .side-panel:not(.compact) .popup > .sba-full-only { grid-column: 2; grid-row: 1 / span 40; min-width: 0;
+      animation: more-in .32s cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes more-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .side-panel { transition: none; }
+      .side-panel:not(.compact) .popup > .sba-full-only { animation: none; }
+    }
     .side-panel .sba-title { font-size: 16px; }
     .side-panel .sba-h3 { font-size: 13px; font-weight: 600; color: rgba(235,235,245,.6); margin: 16px 2px 6px; letter-spacing: 0; }
     .side-panel #curve-toggle, .side-panel .sba-cap, .side-panel #bldg-coverage-options { display: none !important; }
