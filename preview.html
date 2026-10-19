@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>NZ rooftop solar potential — pilot preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4/dist/pmtiles.js"></script>
 <!-- Per-deployment settings (which town this site opens on). Local, synchronous
      and deliberately NOT shared between the two repos -- see site-config.js. -->
@@ -18,7 +18,7 @@
 <!-- Hand-editing a roof's panels. Loads after economics.js and wires
      itself only once the map exists (see the _wire call after style load). -->
 <script src="panel_editor.js"></script>
-<link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
   /* dark under the map: a frame drawn before imagery or terrain arrives
@@ -1134,6 +1134,40 @@ function prefetchTerrainTiles(maxMs) {
 }
 const ease3D = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 let terrainSwitching = 0;
+// ONE MOVE, NOT FIVE (Josh, 20 Oct: "the transition to 3D is still glitchy").
+// Switching terrain on at full height made MapLibre keep the camera's
+// altitude while the ground rose 300+ m under it: the view lurched ~37%
+// closer (zoom 16 -> 16.46), paused, eased back out, and only then tilted.
+// Instead the terrain goes on at (almost) zero height and rises while the
+// camera tilts, the zoom held where it was every frame, in one animation;
+// switching off does the same in reverse before the terrain is removed.
+function setExaggeration(e) {
+  if (map.terrain && typeof map.terrain.exaggeration === "number") {
+    map.terrain.exaggeration = e;
+    map.triggerRepaint();
+  } else {
+    map.setTerrain({ source: "dsm-terrain", exaggeration: e });
+  }
+}
+// The clock advances at most one smooth frame per frame: measured, turning
+// terrain on blocked the map for ~1 s, and a wall-clock animation then
+// jumped straight to 58 of 60 degrees -- a stall must slow the move, not skip it.
+function animate3D(pitchTo, exagFrom, exagTo, ms, zoomHold, ticket) {
+  const pitchFrom = map.getPitch();
+  let elapsed = 0, last = null;
+  return new Promise(res => {
+    const step = now => {
+      if (ticket !== terrainSwitching) return res(false);
+      elapsed += last === null ? 0 : Math.min(now - last, 34);
+      last = now;
+      const k = Math.min(1, elapsed / ms), e = ease3D(k);
+      setExaggeration(exagFrom + (exagTo - exagFrom) * e);
+      map.jumpTo({ pitch: pitchFrom + (pitchTo - pitchFrom) * e, zoom: zoomHold });
+      if (k < 1) requestAnimationFrame(step); else res(true);
+    };
+    requestAnimationFrame(step);
+  });
+}
 let switching3D = false;   // the switch-on sequence owns the camera until its tilt starts
 
 async function setTerrain3D(on) {
@@ -1147,9 +1181,11 @@ async function setTerrain3D(on) {
   try {
     if (!on) {
       map.setMaxPitch(60);
-      map.easeTo({ pitch: 0, duration: 650, easing: ease3D });
-      // terrain off once the camera is flat, so the ground does not drop away mid-move
-      map.once("moveend", () => { if (!terrain3d && ticket === terrainSwitching) map.setTerrain(null); });
+      if (!map.getTerrain()) { map.easeTo({ pitch: 0, duration: 400, easing: ease3D }); return; }
+      // flatten the ground while the camera levels, then remove it (no drop)
+      const z = map.getZoom();
+      const done = await animate3D(0, 1, 0.0001, 700, z, ticket);
+      if (done && !terrain3d && ticket === terrainSwitching) { map.setTerrain(null); map.jumpTo({ zoom: z }); }
       return;
     }
     switching3D = true;
@@ -1176,23 +1212,21 @@ async function setTerrain3D(on) {
       : Promise.resolve();
     await Promise.all([flat, prefetchTerrainTiles(1500)]);
     if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }     // turned off meanwhile
-    map.setTerrain({ source: "dsm-terrain", exaggeration: 1 });
-    // Terrain on, MapLibre re-expresses the zoom to keep the camera's height
-    // (16 became 16.456): ease it back to a whole number, still flat, so the
-    // ground under the camera resolves before the tilt.
+    // terrain on at zero height (no lurch), then the ground rises as the
+    // camera tilts, the zoom held at the whole number it is on
+    const z = map.getZoom();
+    map.setTerrain({ source: "dsm-terrain", exaggeration: 0.0001 });
+    map.jumpTo({ zoom: z });
+    // let the terrain finish setting up while it is still flat and invisible
     await new Promise(res => { let done = false; const go = () => { if (!done) { done = true; res(); } };
-                               map.once("idle", go); setTimeout(go, 700); });
+                               map.once("idle", go); setTimeout(go, 1500); });
     if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }
-    const rz = map.getZoom() >= SNAP_FROM_ZOOM ? Math.round(map.getZoom()) : map.getZoom();
-    if (Math.abs(map.getZoom() - rz) > 0.001) {
-      await new Promise(res => { map.once("moveend", res); map.easeTo({ zoom: rz, duration: 380, easing: ease3D }); });
-    }
-    const cap = maxPitchFor(map.getZoom());
+    map.jumpTo({ zoom: z });
+    const cap = maxPitchFor(z);
     map.setMaxPitch(cap);
-    if (!terrain3d || ticket !== terrainSwitching) { if (ticket === terrainSwitching) switching3D = false; return; }
     try {
-      map.easeTo({ pitch: cap, duration: 1100, easing: ease3D });
-      map.once("moveend", () => { if (ticket === terrainSwitching) switching3D = false; });
+      await animate3D(cap, 0.0001, 1, 1300, z, ticket);
+      if (ticket === terrainSwitching) switching3D = false;
     } catch (e) {
       switching3D = false;
       // 3D itself is fine -- say what actually failed, because "3D
