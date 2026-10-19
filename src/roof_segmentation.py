@@ -2190,7 +2190,7 @@ def segment_building_best(dsm_ds, pc_source, building_geom, building_id,
                                               imagery_ds)
     facets = snap_ridges_to_crest(facets, pc_source) if facets else facets
     # A plain roof form the returns fit as well replaces a ragged partition
-    # (src/structured_roof.py; SOLAR_STRUCTURED_ROOFS=1, off by default).
+    # (src/structured_roof.py; on by default, SOLAR_STRUCTURED_ROOFS=0 turns it off).
     from src.structured_roof import maybe_structured
     return maybe_structured(facets, building_geom, pc_source, building_id)
 
