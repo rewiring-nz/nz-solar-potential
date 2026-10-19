@@ -54,8 +54,8 @@ not tile: built by subtracting one face from another and refitting, the
 faces overlap by a few cm2 here and leave hairline gaps there, so every roof
 failed the coverage check and both steps silently stood aside (the first
 A/B run, 19 Oct: identical to the decimal). The faces are rebuilt from one
-noded set of edges: each piece goes to the face that covers it (the larger,
-where two do), and a hairline gap (narrower than GAP_FILL_M) goes to the
+noded set of edges: each piece goes to the face that covers it (the smaller,
+where two do -- a face inside another is that face's cut-out), and a hairline gap (narrower than GAP_FILL_M) goes to the
 neighbour it shares most edge with. Real gaps -- a cut-out, a part of the
 outline no face claimed -- stay gaps.
 """
@@ -77,6 +77,13 @@ def _refuse(why):
     return None
 
 
+NESTED_SHARE = 0.9
+
+
+def _nested(inner, outer):
+    return inner.intersection(outer).area >= NESTED_SHARE * inner.area
+
+
 def as_coverage(polys):
     """The same faces as a clean coverage, or None if that cannot be made."""
     import shapely
@@ -89,6 +96,7 @@ def as_coverage(polys):
     closed = unary_union(polys).buffer(GAP_FILL_M, join_style="mitre").buffer(-GAP_FILL_M, join_style="mitre")
     cells = list(polygonize(unary_union([p.boundary for p in polys] + [closed.boundary])))
     parts = [[] for _ in polys]
+    ceded = [0.0 for _ in polys]     # area each face gave to a smaller PEER (not nested in it)
     gaps = []
     for c in cells:
         if c.area <= 0:
@@ -96,7 +104,15 @@ def as_coverage(polys):
         pt = c.representative_point()
         hits = [i for i, p in enumerate(polys) if p.covers(pt)]
         if hits:
-            parts[max(hits, key=lambda i: polys[i].area)].append(c)
+            # where two faces claim a piece, the SMALLER keeps it: a face
+            # lying inside another (a lower level, a dormer) is a cut-out
+            # the bigger face should have lost (36 of 36 refusals on an
+            # Arrowtown sample, 19 Oct, went the other way)
+            win = min(hits, key=lambda i: polys[i].area)
+            parts[win].append(c)
+            for i in hits:
+                if i != win and not _nested(polys[win], polys[i]):
+                    ceded[i] += c.area     # only a NESTED face's area is a cut-out
         elif c.buffer(-GAP_FILL_M / 2).is_empty:
             gaps.append(c)
     for c in gaps:
@@ -110,13 +126,15 @@ def as_coverage(polys):
         if best is not None:
             parts[best].append(c)
     out = []
-    for p, ps in zip(polys, parts):
+    for p, ps, lost in zip(polys, parts, ceded):
         if not ps:
             return _refuse("a face lost every piece")
         u = unary_union(ps)
         if u.geom_type != "Polygon":
             u = max(getattr(u, "geoms", [u]), key=lambda g: g.area)
-        if abs(u.area - p.area) > REPAIR_MAX_AREA_CHANGE * p.area:
+        # a nested face's area is allowed to go; anything else must be a hairline
+        nested_lost = (p.area - u.area) - lost
+        if abs(u.area - p.area) - max(nested_lost, 0.0) > REPAIR_MAX_AREA_CHANGE * p.area:
             return _refuse("area changed more than a hairline")
         out.append(u)
     try:

@@ -92,6 +92,14 @@ def test_hairline_gaps_and_overlaps_are_tidied_first():
     assert sum(g.area for g in cov) > 95.9
 
 
+def test_a_face_inside_another_is_cut_out_of_it():
+    big, inner = box(0, 0, 12, 8), box(4, 3, 7, 5)        # a lower level drawn inside the main face
+    cov = fs.as_coverage([big, inner])
+    assert cov is not None
+    assert abs(cov[1].area - 6) < 1e-6 and abs(cov[0].area - 90) < 1e-6
+    assert cov[0].intersection(cov[1]).area < 1e-9
+
+
 def test_faces_that_overlap_are_left_as_they_were():
     faces = [_face(box(0, 0, 7, 8), 20, 270), _face(box(6, 0, 12, 8), 20, 90)]
     assert fs.straighten_faces(faces) is faces
