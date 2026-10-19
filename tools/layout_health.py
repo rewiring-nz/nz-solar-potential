@@ -69,6 +69,15 @@ OVERLAP_SHARE = 0.05
 ROW_SPREAD_DEG = 3.0
 RAGGED_SOLIDITY = 0.75
 RAGGED_M_PER_VERTEX = 1.0
+# A face is bent where its convex hull leaves a notch. A notch OUTSIDE the
+# building is the building's shape -- a flat roof over an L-shaped house is
+# an L -- and is fine. A notch INSIDE the building is another face biting
+# into this one: a seam that wanders across the roof. Only those count
+# (19 Oct: most faces the solidity rule flagged in Arrowtown were flat and
+# single-slope roofs on L- and U-shaped buildings, drawn correctly).
+NOTCH_MIN_M2 = 1.0
+NOTCH_MIN_DEPTH_M = 0.5
+NOTCH_INSIDE_SHARE = 0.5
 SLIVER_M2 = 4.0
 EMPTY_FACE_M2 = 25.0
 EMPTY_MAX_SLOPE = 40.0
@@ -86,6 +95,8 @@ EXPERIMENTAL = False
 PANEL_CHECKS = ["off_building", "across_edge", "on_obstruction", "overlap"]
 ROOF_CHECKS = ["disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
                "outline_over_ground", "poor_fit", "roof_beyond_outline"]
+# reported for comparison with runs before 19 Oct, not scored
+INFO_CHECKS = ["concave_face_any"]
 WEIGHT = {"off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
           "disorderly_rows": 4, "ragged_face": 2, "sliver_faces": 1, "empty_good_face": 4,
           "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6}
@@ -95,6 +106,25 @@ LABEL = {"off_building": "off the building", "across_edge": "across a face edge"
          "sliver_faces": "sliver faces", "empty_good_face": "empty good face",
          "outline_over_ground": "outline over ground", "poor_fit": "poor LiDAR fit",
          "roof_beyond_outline": "roof beyond outline"}
+
+
+def _inner_notch(face, foot):
+    """True when the face has a real notch that lies inside the building."""
+    from shapely.geometry import Point
+    hull = face.convex_hull
+    gap = hull.difference(face)
+    for n in getattr(gap, "geoms", [gap]):
+        if n.geom_type != "Polygon" or n.area < NOTCH_MIN_M2:
+            continue
+        if n.exterior.distance(hull.exterior) > 0:   # not a notch, a hole
+            continue
+        depth = max(hull.exterior.distance(Point(c)) for c in n.exterior.coords)
+        if depth < NOTCH_MIN_DEPTH_M:
+            continue
+        inside = n.intersection(foot).area / n.area if foot is not None else 1.0
+        if inside >= NOTCH_INSIDE_SHARE:
+            return True
+    return False
 
 
 def _angle(poly):
@@ -266,7 +296,9 @@ def check_region(region, features=None):
             hull = g.convex_hull.area or 1e-9
             ext = g.exterior if g.geom_type == "Polygon" else max(g.geoms, key=lambda x: x.area).exterior
             per_vertex = ext.length / max(len(ext.coords) - 1, 1)
-            if g.area / hull < RAGGED_SOLIDITY or per_vertex < RAGGED_M_PER_VERTEX:
+            if g.area / hull < RAGGED_SOLIDITY:
+                hits["concave_face_any"] += 1
+            if per_vertex < RAGGED_M_PER_VERTEX or (g.area / hull < RAGGED_SOLIDITY and _inner_notch(g, foot)):
                 hits["ragged_face"] += 1
             if g.area < SLIVER_M2:
                 hits["sliver_faces"] += 1
@@ -294,17 +326,18 @@ def check_region(region, features=None):
             hits["poor_fit"] += 1
         for k, v in hits.items():
             totals[k] += v
-        score = sum(WEIGHT[k] * min(v, 10) for k, v in hits.items())
-        if score:
+        score = sum(WEIGHT.get(k, 0) * min(v, 10) for k, v in hits.items())
+        if hits:
             roofs.append({"id": bid, "region": region, "score": score, "panels": len(panels),
                           "faces": len(faces), "hits": dict(hits)})
     roofs.sort(key=lambda r: -r["score"])
+    n_flagged = sum(1 for r in roofs if r["score"])
     rates = {k: round(1000 * totals[k] / max(n_panels, 1), 2) for k in PANEL_CHECKS}
-    rates.update({k: round(100 * sum(1 for r in roofs if r["hits"].get(k)) / max(n_roofs, 1), 2) for k in ROOF_CHECKS})
-    clean = n_roofs - len(roofs)
+    rates.update({k: round(100 * sum(1 for r in roofs if r["hits"].get(k)) / max(n_roofs, 1), 2) for k in ROOF_CHECKS + INFO_CHECKS})
+    clean = n_roofs - n_flagged
     return {"region": region, "roofs": n_roofs, "panels": n_panels, "clean_roofs": clean,
             "clean_share": round(clean / max(n_roofs, 1), 4), "counts": dict(totals),
-            "rates": rates, "worst": roofs[:300]}
+            "rates": rates, "worst": [r for r in roofs if r["score"]][:300]}
 
 
 def main():
