@@ -19,6 +19,7 @@ runs see the same roofs).
 
 import argparse
 import json
+import multiprocessing as mp
 import random
 import sys
 import time
@@ -70,7 +71,10 @@ def main():
     c = area_centroid_wgs84(a.region)
     model = SolarModel() if c is None else SolarModel(*c)
     feats, errs, t0 = [], [], time.time()
-    with ProcessPoolExecutor(a.jobs, initializer=B._init_worker, initargs=(a.region, model)) as ex:
+    # spawn, as the build does: forking after GDAL has opened the rasters
+    # left every worker idle on a lock.
+    with ProcessPoolExecutor(a.jobs, mp_context=mp.get_context("spawn"),
+                             initializer=B._init_worker, initargs=(a.region, model)) as ex:
         for fut in as_completed([ex.submit(_one, b) for b in ids]):
             bid, fs, dt = fut.result()
             if isinstance(dt, str):
