@@ -658,7 +658,13 @@ const BT_CSS = `
 .sx-why[open] > summary::after { content: " ⌄"; }
 .sx-why[open] { color: var(--sx-ink-2); }
 .sx-why.sx-inline { display: inline; }
-.sx-seg { display: inline-flex; background: var(--sx-fill-2); border-radius: 9px; padding: 2px; gap: 0; flex-wrap: wrap; justify-content: flex-end; }
+.sx-seg { display: inline-flex; background: var(--sx-fill-2); border-radius: 9px; padding: 2px; gap: 0; flex-wrap: nowrap; justify-content: flex-end; flex: none; }
+/* A choice never breaks inside itself: in a narrow column the whole group
+   drops under its label, right-aligned (it had wrapped "None" onto a second
+   line and squeezed "Hot water" into two, 20 Oct). */
+.sx-row:has(> .sx-seg) { flex-wrap: wrap; row-gap: 6px; }
+.sx-row:has(> .sx-seg) > .lbl { min-width: max-content; }
+.sx-row > .sx-seg { margin-left: auto; }
 .sx-seg button { background: none; border: 0; color: var(--sx-ink); font: 500 13px/1 inherit; font-family: inherit; padding: 6px 10px; border-radius: 7px; cursor: pointer; }
 .sx-seg button.on { background: #636366; box-shadow: 0 1px 3px rgba(0,0,0,.35); font-weight: 600; }
 .sx-seg button:focus-visible { outline: 2px solid var(--sx-tint); outline-offset: 1px; }
@@ -677,8 +683,8 @@ const BT_CSS = `
 .sx-dis > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; background: var(--sx-fill);
   border-radius: 12px; padding: 11px 14px; font-size: 14.5px; }
 .sx-dis > summary::-webkit-details-marker { display: none; }
-.sx-dis > summary .t { flex: 1; }
-.sx-dis > summary .sum { color: var(--sx-ink-3); font-size: 12.5px; text-align: right; }
+.sx-dis > summary .t { flex: 1 0 auto; white-space: nowrap; }
+.sx-dis > summary .sum { color: var(--sx-ink-3); font-size: 12.5px; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sx-dis > summary::after { content: "›"; color: var(--sx-ink-3); font-size: 19px; line-height: 1; transition: transform .15s; }
 .sx-dis[open] > summary::after { transform: rotate(90deg); }
 .sx-dis[open] > summary { border-radius: 12px 12px 0 0; }
