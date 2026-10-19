@@ -7,7 +7,7 @@ and assign work.
 
 ## Ship
 
-- **v51, Queenstown first (built overnight 19-20 Oct).** Four layout
+- **v51, Queenstown first -- LIVE 20 Oct 10:05** (built at dfacd0de as v51c; gate: +13,080 panels, 0 big drops, 1 borderline roof withheld -- #4720962, confidence on the 0.45 line in v50 too; face-area check: 0 buildings lost area; panels +0.6..+2.6% in 23 of 25 Wakatipu regions, clean share flat). Four layout
   changes, each judged with tools/layout_ab.py on 200 Arrowtown and 200 CBD
   roofs (half the worst on the health check, half random) and by
   side-by-side renders:
