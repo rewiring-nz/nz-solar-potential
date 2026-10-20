@@ -7,22 +7,43 @@ and assign work.
 
 ## Ship
 
-- **v52 in progress: panels in clean racked arrays (Josh's verdicts on v51,
-  20 Oct: 0 fixed, 12 better, 13 still wrong).** His rule: panels go on racks
-  -- rows along the eave, portrait up the slope, clear arrays, never a
-  landscape panel beside a portrait one on a rack, never a lone panel; 100%
-  density = every clean array, not a clean array plus a rotated edge strip.
-  Measured on 400 sample roofs (tools/layout_ab.py, new health checks
-  mixed_orientation and small_array): 70-74% of roofs mixed orientations on a
-  face, 71% had a group under 4 panels. Causes in src/panel_fitting.py: the
-  "pockets" pass (either orientation, free grid), faces leaving the building
-  grid in the other orientation, and small groups kept on purpose.
-  SOLAR_RACKING (branch racking): first strict cut fixed both checks but cost
-  ~20% of panels and left 12-14% of good faces empty (rows split by vents,
-  narrow faces); tuned so a row broken by a small obstruction stays one array
-  and a face that cannot hold a portrait array turns landscape, whole.
+- **v52 BUILDING (started 20 Oct 13:47 NZT on the VM, ~/v52.sh at 8ecf0ab1):
+  panels in clean racked arrays** (Josh's verdicts on v51, 20 Oct: 0 fixed,
+  12 better, 13 still wrong). His rule: panels go on racks -- rows along the
+  eave, portrait up the slope, clear arrays, never a landscape panel beside a
+  portrait one, never a lone panel; 100% density = every clean array, not a
+  clean array plus a rotated edge strip. Rules now (src/panel_fitting.py
+  RACKING, enforce_arrays): one orientation per face, no mixed-orientation
+  "pockets", no lone panel, 3+ panels on a face, a clean pair only on a face
+  under 12 m2 (small, angular sections); blocks split by a vent or skylight on
+  one face count together (rails span a gap of up to 1.3 m). Measured on 400
+  sample roofs (tools/layout_ab.py; health checks mixed_orientation and
+  small_array use the same rule) against racking off: mixed orientation
+  70-74% -> 0% of roofs, lone/small groups 71% -> 0-0.5%, panels -10.8%
+  (Arrowtown) / -10.3% (CBD), empty good faces 2% -> 5% / 7%. Renders: the
+  losses are scattered fill on cluttered roofs and rotated edge strips
+  (4735172 went from portrait block + landscape strip to one clean 2x2).
+  Getting there: the first strict cut (4 touching panels) cost 20% and
+  emptied 12-14% of good faces; every newly empty face traced to the array
+  rule (a row 2 + gap + 3 split at a 1.1 m join; 3 + 3 around a skylight; a
+  roof of small triangular faces 138 -> 12), fixed one by one. Also in v52:
+  each face's plane in the layouts, and the health check's seam_off_ridge.
+  Goldens re-recorded (were from v41). Next: gate, face-area check vs
+  ~/v51_layouts, publish, refresh Josh's verdict pairs.
   Roof lines next: all nine "lines wrong" roofs run on offline face readings
   scored 0.32-0.56 (some photo-based, shadow-prone).
+
+- **Front end, 20 Oct (live):** a building opens with its economic system --
+  the panels that pay for themselves (merit order, priced by the bill model
+  at the full system), at most 14 kW for a home, no cap for a business -- and
+  a System size slider on the card (map and live view follow; "Back to the
+  economic size" restores it). Four money figures: Bill savings, Total bill
+  savings, Net savings, Return on investment. The all-buildings dashboard
+  starts collapsed to the Heat Map / Panel Layout buttons (hidden on phones).
+  Sun simulation (sun_shadows.js): shadows cast from the LiDAR surface for
+  any date and time, in workers; hills outside the survey cast none; needs
+  Safari 16.4+ for the worker path. Known: cutting the fill order at the
+  economic count can leave a short part-row; round to whole arrays next.
 
 - **v51, Queenstown first -- LIVE 20 Oct 10:05** (built at dfacd0de as v51c; gate: +13,080 panels, 0 big drops, 1 borderline roof withheld -- #4720962, confidence on the 0.45 line in v50 too; face-area check: 0 buildings lost area; panels +0.6..+2.6% in 23 of 25 Wakatipu regions, clean share flat). Four layout
   changes, each judged with tools/layout_ab.py on 200 Arrowtown and 200 CBD
