@@ -146,6 +146,12 @@ def maybe_structured(facets, footprint, pc_source, building_id=None):
             best = (share, "wings:" + "+".join(kinds), cf)
     if best is None or best[0] < current - STRUCTURED_TOL:
         return facets
+    # The near-tie allowance is for a SIMPLER roof. A form with more faces than
+    # the reading it replaces must explain the returns at least as well: v54's
+    # straighter hips let an 8-face hip take over 2-4 face gables and flat roofs
+    # it explained slightly worse (4746263, 4719229, 4730948; 21 Oct).
+    if len(best[2]) > len(facets) and best[0] < current:
+        return facets
     share, name, fitted = best
     STATS["replaced"] += 1
     template = facets[0]
