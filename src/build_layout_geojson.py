@@ -44,7 +44,7 @@ from src.plane_seams import snap_seams_to_plane_intersections
 from src.roof_levels import split_lower_levels
 from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
-from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame
+from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame, enforce_arrays
 from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_roof_like
 from src.solar_model import SolarModel
@@ -638,6 +638,9 @@ def _build_one_at(building_id, nudge_m):
             pnl["poa_kwh_m2_yr"] = facet_poa * psf
             pnl["shading_factor"] = psf
             kept_panels.append(pnl)
+        # clean arrays only: after the shade veto, which can leave fragments
+        # (src/panel_fitting.py RACKING)
+        kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
         per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
                           "poa": facet_poa * shading_factor, "shading_factor": shading_factor})
 

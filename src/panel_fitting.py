@@ -411,6 +411,36 @@ def _surface_transform(u_hat, v_hat, slope_deg, origin):
 
 
 FRAME_MAX_LOSS = 0.25        # a face leaves the building frame if the locked grid costs it more than this
+
+# RACKS, NOT PANELS (Josh, 20 Oct). Panels go on racks: rows run across a
+# face along its eave, the panels portrait up the slope, in clear arrays. An
+# install never puts a landscape panel beside a portrait one on the same
+# rack, never leaves one panel on its own, and 100% density means every
+# clean array that fits -- not a clean array plus a strip of rotated panels
+# along its edge (his screenshot, 20 Oct). With SOLAR_RACKING on:
+#   - a face that leaves the building grid keeps the building's orientation
+#     (only its row/column phase is freed), never the other one;
+#   - the "pockets" pass, which packed leftover strips in EITHER orientation
+#     on a free grid, is off;
+#   - enforce_arrays drops a lone panel, and a face left with fewer than
+#     ARRAY_MIN_PANELS, at every density (blocks on one face share its grid,
+#     so 3 + 3 split by a skylight stays).
+RACKING = os.environ.get("SOLAR_RACKING", "1") != "0"
+ARRAY_MIN_PANELS = 3   # per face, in all: a clean block of 3 is a real install on a small
+# section (Josh: only 2-panel arrays are "very rare"); at 4, 16 faces in the 400-roof sample
+# went empty that hold one tidy row of 3
+ARRAY_MIN_GROUP = 2    # touching panels in one block: never a lone panel
+ARRAY_PAIR_FACE_M2 = 12.0  # a face smaller than this (plan) may hold just a clean pair:
+# Josh's "two panel arrays on small roof sections (like for very angular rooftops)".
+# Without it a roof of small triangular faces (4725488) went 138 -> 12 panels and a
+# small gable of two 8.7 m2 faces (4746517) went 4 -> 0.
+# Panels within this of each other are one array: rack gaps are ~2 cm, and a
+# rail runs on past a vent or skylight, so a row broken by a small obstruction
+# is still one array (a first cut at 0.3 m dropped those halves as "small
+# arrays": 4719600's flat roof went from 58 panels to 18).
+ARRAY_TOUCH_M = 1.30  # one skipped panel (a vent in the row) plus slack: rails span it.
+# At 1.10 a row of 2 + gap + 3 on 5370794 (gap ~1.1 m edge to edge) split into two
+# "small arrays" and the whole clear face went empty.
 ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fits more than
 # max(1, this fraction) fewer panels than the free per-row scan -- real installers rack rows
 # with columns lined up, so a small capacity cost buys a much more realistic layout, but a
@@ -796,13 +826,24 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             # face leaves the frame: alignment where it is cheap, count where
             # alignment is not.
             best_free, free_portrait = None, is_portrait
-            for fp, (fw, fh) in ((True, (panel_width, panel_height)), (False, (panel_height, panel_width))):
+            free_orients = ((True, (panel_width, panel_height)), (False, (panel_height, panel_width)))
+            if RACKING:
+                free_orients = tuple(o for o in free_orients if o[0] == is_portrait)
+            for fp, (fw, fh) in free_orients:
                 fr = _pack_orientation(occupancy, resolution, fw, fh)
                 if fr and (best_free is None or len(fr[0]) > len(best_free[0]) * (1.0 + LANDSCAPE_WIN_MARGIN if not fp else 1.0)):
                     best_free, free_portrait = fr, fp
             locked_n = len(result[0]) if result else 0
             if best_free and len(best_free[0]) * (1.0 - FRAME_MAX_LOSS) > locked_n:
                 result, is_portrait = best_free, free_portrait
+            # A FACE THAT CANNOT HOLD AN ARRAY IN THE BUILDING'S ORIENTATION
+            # may turn the other way -- the whole face, never part of it
+            # (racks run either way; mixing on one rack is what never happens).
+            if RACKING and (len(result[0]) if result else 0) < ARRAY_MIN_PANELS:
+                ow, oh = (panel_height, panel_width) if is_portrait else (panel_width, panel_height)
+                alt = _pack_orientation(occupancy, resolution, ow, oh)
+                if alt and len(alt[0]) >= ARRAY_MIN_PANELS:
+                    result, is_portrait = alt, not is_portrait
         if result:
             placed_o, wc, hc = result
             candidates.append((is_portrait, placed_o, wc, hc))
@@ -811,6 +852,12 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
     if candidates:
         by_orient = {c[0]: c for c in candidates}
         port, land = by_orient.get(True), by_orient.get(False)
+        if RACKING:
+            # an orientation that cannot hold one real array does not count:
+            # portrait winning with 2 panels that the array rule then drops
+            # left whole clear faces empty (5370794, racking A/B, 20 Oct)
+            port = port if port and len(port[1]) >= ARRAY_MIN_PANELS else (None if land and len(land[1]) >= ARRAY_MIN_PANELS else port)
+            land = land if land and len(land[1]) >= ARRAY_MIN_PANELS else (None if port and len(port[1]) >= ARRAY_MIN_PANELS else land)
         if _has_twin(facet, sibling_facets):
             # Symmetric pair: no contest. Portrait on both sides, exactly as an
             # installer would rack a gable, unless portrait fits nothing here.
@@ -840,7 +887,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
         for r0, c0, r1, c1 in placed:
             occ2[max(0, r0 - 1):r1 + 1, max(0, c0 - 1):c1 + 1] = False
         extra = []
-        if occ2.any():
+        if occ2.any() and not RACKING:
             for w2, h2 in ((panel_width, panel_height), (panel_height, panel_width)):
                 got = _pack_orientation(occ2, resolution, w2, h2)
                 if got and len(got[0]) > len(extra):
@@ -1241,3 +1288,39 @@ def apply_panel_density(panels, density_pct, poa_key="poa_kwh_m2_yr"):
     ranked = sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
     keep_n = int(round(len(ranked) * density_pct / 100))
     return ranked[:keep_n]
+
+
+def enforce_arrays(panels, min_panels=None, face_area=None):
+    """One face's panels: no lone panel, and at least ARRAY_MIN_PANELS (3) in all.
+    A lone panel or a pair stuck in a corner is not an install (Josh's
+    verdicts, 20 Oct: "single panels in strange places" on six of his 25
+    roofs). The face's panels share one grid (one frame, one orientation), so
+    blocks split by a skylight or chimney are still one install on aligned
+    rails: two blocks of 3, or 2 + 2 along a row, stay; a pair alone goes,
+    except on a face under ARRAY_PAIR_FACE_M2 (pass face_area, plan m2). Requiring 4 *touching*
+    panels emptied 40 good faces in the 400-roof sample (4747521, 5370837)."""
+    if not RACKING or not panels:
+        return panels
+    from shapely.strtree import STRtree
+    k = ARRAY_MIN_PANELS if min_panels is None else min_panels
+    if face_area is not None and face_area < ARRAY_PAIR_FACE_M2:
+        k = min(k, ARRAY_MIN_GROUP)
+    geoms = [p["geometry"] if isinstance(p, dict) else p for p in panels]
+    tree = STRtree(geoms)
+    parent = list(range(len(geoms)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i, g in enumerate(geoms):
+        for j in tree.query(g.buffer(ARRAY_TOUCH_M)):
+            j = int(j)
+            if j > i and g.distance(geoms[j]) <= ARRAY_TOUCH_M:
+                parent[find(j)] = find(i)
+    size = {}
+    for i in range(len(geoms)):
+        size[find(i)] = size.get(find(i), 0) + 1
+    kept = [p for i, p in enumerate(panels) if size[find(i)] >= ARRAY_MIN_GROUP]
+    return kept if len(kept) >= k else []

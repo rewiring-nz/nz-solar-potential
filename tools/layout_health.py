@@ -101,15 +101,20 @@ GROW_REACH_M = 12.0
 EXPERIMENTAL = False
 
 PANEL_CHECKS = ["off_building", "across_edge", "on_obstruction", "overlap"]
-ROOF_CHECKS = ["disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
+# Racking (Josh, 20 Oct): one orientation per face, no lone panel, 3+ on a face (a pair on a small face).
+ARRAY_MIN = 3   # same as src/panel_fitting.py ARRAY_MIN_PANELS
+ARRAY_PAIR_FACE_M2 = 12.0       # same as src/panel_fitting.py
+ARRAY_TOUCH_M = 1.30            # same as src/panel_fitting.py: a rail runs on past a one-panel gap (vent)
+ROOF_CHECKS = ["mixed_orientation", "small_array", "disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
                "outline_over_ground", "poor_fit", "roof_beyond_outline", "seam_off_ridge"]
 # reported for comparison with runs before 19 Oct, not scored
 INFO_CHECKS = ["concave_face_any"]
-WEIGHT = {"off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
+WEIGHT = {"mixed_orientation": 4, "small_array": 3, "off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
           "disorderly_rows": 4, "ragged_face": 2, "sliver_faces": 1, "empty_good_face": 4,
           "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6,
           "seam_off_ridge": 4}
-LABEL = {"off_building": "off the building", "across_edge": "across a face edge",
+LABEL = {"mixed_orientation": "portrait and landscape mixed on a face", "small_array": "lone panel, or under 3 on a face (2 on a small face)",
+         "off_building": "off the building", "across_edge": "across a face edge",
          "on_obstruction": "on an obstruction", "overlap": "panels overlap",
          "disorderly_rows": "disorderly rows", "ragged_face": "ragged face",
          "sliver_faces": "sliver faces", "empty_good_face": "empty good face",
@@ -333,6 +338,37 @@ def check_region(region, features=None):
         for j, ps in on_face.items():
             if _spread([_angle(pg) for pg in ps]) > ROW_SPREAD_DEG:
                 hits["disorderly_rows"] += 1
+            # orientation: a panel's long side relative to the others on its face
+            longs = []
+            for pg in ps:
+                cc = list(pg.exterior.coords)
+                e1 = math.hypot(cc[1][0] - cc[0][0], cc[1][1] - cc[0][1])
+                e2 = math.hypot(cc[2][0] - cc[1][0], cc[2][1] - cc[1][1])
+                a, b = (cc[0], cc[1]) if e1 >= e2 else (cc[1], cc[2])
+                longs.append(math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0)
+            if longs:
+                ref = longs[0]
+                if any(min(abs(x - ref) % 180, 180 - abs(x - ref) % 180) > 45 for x in longs):
+                    hits["mixed_orientation"] += 1
+            # arrays: groups of touching panels on this face
+            par = list(range(len(ps)))
+            def fd(i):
+                while par[i] != i:
+                    par[i] = par[par[i]]; i = par[i]
+                return i
+            for a in range(len(ps)):
+                for b in range(a + 1, len(ps)):
+                    if ps[a].distance(ps[b]) <= ARRAY_TOUCH_M:
+                        par[fd(b)] = fd(a)
+            sizes = {}
+            for a in range(len(ps)):
+                sizes[fd(a)] = sizes.get(fd(a), 0) + 1
+            # same rule as src/panel_fitting.py enforce_arrays: no lone panel,
+            # at least ARRAY_MIN on the face (a clean pair on a face under
+            # ARRAY_PAIR_FACE_M2)
+            need = 2 if faces[j].area < ARRAY_PAIR_FACE_M2 else ARRAY_MIN
+            if len(ps) < need or any(n < 2 for n in sizes.values()):
+                hits["small_array"] += 1
         for (g, q) in d["facet"]:
             if g.is_empty or g.area <= 0:
                 continue
