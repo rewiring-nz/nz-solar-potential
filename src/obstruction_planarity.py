@@ -43,11 +43,14 @@ NEIGHBOUR_M = 3.0
 # 0.6 m up. A real object is small or ragged; a level is big and lies on a
 # plane of its own. So a patch of at least LEVEL_MIN_M2 whose own fitted
 # plane holds LEVEL_ON_PLANE_SHARE of its returns within ON_PLANE_M, tilted
-# within LEVEL_MAX_TILT_DEG of the face, is roof (SOLAR_OBS_LEVEL_CHECK=0 off).
+# within LEVEL_MAX_TILT_DEG of the face, is roof -- or two or three such levels
+# (see _is_level; SOLAR_OBS_LEVEL_CHECK=0 off).
 LEVEL_MIN_M2 = 15.0
 LEVEL_MIN_POINTS = 60
 LEVEL_ON_PLANE_SHARE = 0.80
 LEVEL_MAX_TILT_DEG = 10.0
+LEVEL_MAX_PLANES = 3
+LEVEL_RANSAC_TRIES = 300
 
 
 def _normal(a, b):
@@ -55,21 +58,45 @@ def _normal(a, b):
     return n / np.linalg.norm(n)
 
 
-def _is_level(pts, f):
-    # An outline drawn round a level also takes in a strip of the roof below
-    # it (4735304: 79% up, 17% down), so the level's plane is fitted to the
-    # raised returns when they are the clear majority.
-    r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
-    if float((r > RAISED_M).mean()) >= 0.6:
-        pts = pts[r > RAISED_M]
-    if len(pts) < LEVEL_MIN_POINTS:
-        return False
-    A = np.c_[pts[:, 0], pts[:, 1], np.ones(len(pts))]
-    (a, b, c), *_ = np.linalg.lstsq(A, pts[:, 2], rcond=None)
-    if float((np.abs(pts[:, 2] - A @ np.array([a, b, c])) < ON_PLANE_M).mean()) < LEVEL_ON_PLANE_SHARE:
-        return False
+def _parallel(a, b, f):
     cosang = float(np.clip(_normal(a, b) @ _normal(f["plane_a"], f["plane_b"]), -1.0, 1.0))
     return math.degrees(math.acos(cosang)) <= LEVEL_MAX_TILT_DEG
+
+
+def _is_level(pts, f):
+    """True when up to LEVEL_MAX_PLANES planes parallel to the face hold
+    LEVEL_ON_PLANE_SHARE of the patch's returns between them: one raised level
+    or a few (4735304's 160 m2 "obstruction" is two flat levels at the face's
+    5 degrees, 50% and 37% of its returns, 0.4 m apart). Plant and ducts sit at
+    every height and no few planes hold them."""
+    if len(pts) < LEVEL_MIN_POINTS:
+        return False
+    rng = np.random.default_rng(0)
+    left = np.ones(len(pts), dtype=bool)
+    held = 0
+    for _k in range(LEVEL_MAX_PLANES):
+        idx = np.nonzero(left)[0]
+        if len(idx) < max(12, int(0.1 * len(pts))):
+            break
+        best = None
+        for _ in range(LEVEL_RANSAC_TRIES):
+            s = pts[rng.choice(idx, 3, replace=False)]
+            try:
+                a, b, c = np.linalg.solve(np.c_[s[:, 0], s[:, 1], np.ones(3)], s[:, 2])
+            except np.linalg.LinAlgError:
+                continue
+            if not _parallel(a, b, f):
+                continue
+            inl = idx[np.abs(pts[idx, 2] - (a * pts[idx, 0] + b * pts[idx, 1] + c)) < ON_PLANE_M]
+            if best is None or len(inl) > len(best):
+                best = inl
+        if best is None or len(best) < 0.1 * len(pts):
+            break
+        held += len(best)
+        left[best] = False
+        if held >= LEVEL_ON_PLANE_SHARE * len(pts):
+            return True
+    return False
 
 
 def _is_roof(pts, f):

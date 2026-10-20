@@ -86,6 +86,15 @@ def test_raised_level_outline_overlapping_the_roof_below_is_roof():
     assert op.drop_roof_like([level], FACE, [FACE], pc) == []
 
 
+def test_two_raised_levels_are_roof():
+    # 4735304: a patch that is two flat levels at the face's pitch, 0.4 m apart
+    patch = box(1, 1, 7, 5)
+    def two(x, y):
+        return 100.0 + 0.4 * y + np.where(x < 4, 0.5, 0.9)
+    pc = _replace(1, 1, 7, 5, two)
+    assert op.drop_roof_like([patch], FACE, [FACE], pc) == []
+
+
 def test_big_ragged_plant_area_stays():
     # 20 m2 of plant and ducts at all heights: big, but on no plane of its own
     plant = box(1, 1, 6, 5)
