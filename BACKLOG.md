@@ -33,6 +33,24 @@ and assign work.
   Roof lines next: all nine "lines wrong" roofs run on offline face readings
   scored 0.32-0.56 (some photo-based, shadow-prone).
 
+- **Roof lines: weak face readings (testing, branch selected-gate).** Josh,
+  20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly bad". All three run
+  on precomputed face readings (data/selected_faces) that explain 32-36% of
+  their LiDAR returns; the pipeline trusted any reading over 0.30, and half
+  of all 47,302 score under 0.54. Racking alone cannot rescue a wrong face
+  (3 Rees 31 -> 29 scattered panels). On 213 CBD roofs (Josh's verdict roofs
+  + 34 Ballarat + the CBD sample), a hard bar at 0.60: panels +2.6%, clean
+  roofs 35.2% -> 41.8%, ragged faces 55.9% -> 41.3%, empty good faces 7.5% ->
+  5.6%; 3 Rees 29 -> 55 panels in rows, 34 Ballarat 19 -> 37 in three clean
+  rows, 4725584 ragged faces 24 -> 4. But it lost good low-scored readings
+  (4735292's pyramid hips), so the rule being tested now: a reading under
+  0.60 competes with the LiDAR partition and loses only when that explains
+  over 5 points more of the returns. Also measured: of 2,124 obstructions on
+  those roofs, 28% stand up out of the roof in the LiDAR, 22% are flat on it
+  (skylights are flat and real, so not droppable on height alone), 50% have
+  too few returns to judge. Next: installer rows (SOLAR_RECT_ARRAYS: a panel
+  alone in its row goes, steps stay), then a photo check on obstructions.
+
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
   at the full system), at most 14 kW for a home, no cap for a business -- and
