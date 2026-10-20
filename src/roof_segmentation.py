@@ -2089,7 +2089,8 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
             # A weakly scored reading competes with the LiDAR partition
             # (SELECTED_TRUST in roof_partition); the better explanation of
             # the returns wins, the reading keeping ties.
-            from src.roof_partition import selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN, SELECTED_MIN_COVER
+            from src.roof_partition import (selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN,
+                                            SELECTED_MIN_COVER, SELECTED_ALT_MIN_AREA)
             _ss = selected_score(building_id)
             if _ss is not None and _ss < SELECTED_TRUST:
                 # The rival is the WHOLE LiDAR path -- partition, then the
@@ -2115,7 +2116,19 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
                     print(f"[partition {building_id}] selected reading {_ss:.2f}: {len(faces)} faces explain {score:.2f}, "
                           f"own cover {_own / _all:.2f}; LiDAR path: {len(alt)} faces explain {alt_score:.2f} "
                           f"-> {'LiDAR' if alt and (better or patchy or simpler) else 'reading'}")
-                if alt and (better or patchy or simpler):
+                # ...and never at the cost of roof. The first full build with
+                # this rule (v53) had 586 roofs lose more than 8% of their face
+                # area -- 4725177's 1,667 m2 flat roof, 5371650's upper block --
+                # because a partition that drops a whole section can still
+                # explain its share of points. The 213-roof sample never had a
+                # face-area check, so it never saw it.
+                _att = _attach_building_geometry(faces, building_geom, pc_source, building_id)
+                _att_area = sum(f["geometry"].area for f in _att) or 1.0
+                _alt_area = sum(f["geometry"].area for f in alt) if alt else 0.0
+                covers = _alt_area >= SELECTED_ALT_MIN_AREA * _att_area
+                if os.environ.get("SOLAR_FACE_DEBUG"):
+                    print(f"[partition {building_id}] LiDAR path covers {_alt_area:.0f} of the reading's {_att_area:.0f} m2")
+                if alt and covers and (better or patchy or simpler):
                     return alt
         if faces and any(f.get("from_selected") for f in faces):
             # THROUGH the attach stage, unlike drawn faces: its whole-

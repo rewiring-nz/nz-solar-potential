@@ -1280,6 +1280,7 @@ SELECTED_MIN_SCORE = float(os.environ.get("SOLAR_SELECTED_MIN_SCORE", "0.30"))
 SELECTED_TRUST = float(os.environ.get("SOLAR_SELECTED_TRUST", "0.60"))
 SELECTED_COMPETE_MARGIN = float(os.environ.get("SOLAR_SELECTED_COMPETE_MARGIN", "0.05"))
 SELECTED_MIN_COVER = float(os.environ.get("SOLAR_SELECTED_MIN_COVER", "0.85"))  # see _partition_facets
+SELECTED_ALT_MIN_AREA = float(os.environ.get("SOLAR_SELECTED_ALT_MIN_AREA", "0.92"))  # the LiDAR path must keep the roof
 
 
 def selected_score(building_id):
