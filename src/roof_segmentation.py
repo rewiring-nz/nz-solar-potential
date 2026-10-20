@@ -2122,9 +2122,16 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
                 # because a partition that drops a whole section can still
                 # explain its share of points. The 213-roof sample never had a
                 # face-area check, so it never saw it.
+                # Compared AFTER the attach stage, on both sides: the LiDAR
+                # path's faces face every downstream gate the reading's skip
+                # (4725177: 2,264 m2 at the partition, 251 m2 once its
+                # 1,250 m2 face failed the quality gate the reading is exempt
+                # from).
                 _att = _attach_building_geometry(faces, building_geom, pc_source, building_id)
                 _att_area = sum(f["geometry"].area for f in _att) or 1.0
-                _alt_area = sum(f["geometry"].area for f in alt) if alt else 0.0
+                _alt_att = (_attach_building_geometry(alt, building_geom, pc_source, building_id)
+                            if alt else [])
+                _alt_area = sum(f["geometry"].area for f in _alt_att)
                 covers = _alt_area >= SELECTED_ALT_MIN_AREA * _att_area
                 if os.environ.get("SOLAR_FACE_DEBUG"):
                     print(f"[partition {building_id}] LiDAR path covers {_alt_area:.0f} of the reading's {_att_area:.0f} m2")
