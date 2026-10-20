@@ -125,8 +125,10 @@ and assign work.
   its wings, each hip/gable/mono/flat, joined as solids with straight
   valleys; overlapping wings; faces refitted on the returns they win) beats
   the current faces on some worst houses (4726934 0.62 -> 0.83 of returns)
-  but loses the referee to a many-faced whole-outline hip on most: OFF
-  (SOLAR_COMPOSITE_ROOFS=1 on) until the referee weighs simplicity.
+  but on 139 Shotover houses it explains a median 51 points FEWER returns
+  than the current faces (within 0.03 on 6 of 82) -- the wing fits are wrong,
+  not the referee; no face-count weighting changes the outcome. OFF
+  (SOLAR_COMPOSITE_ROOFS=1 on); needs proper wing fitting before it can help.
 
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
