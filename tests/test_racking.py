@@ -76,6 +76,20 @@ def test_installer_rows_drop_a_bump_keep_steps_and_an_l():
         pf.RECT_ARRAYS = True
 
 
+def test_a_partial_system_is_whole_rows_in_one_block():
+    # 12 Brunswick St: half the system came out as scattered singles. With
+    # shading noise only, the first 40 of a 6 x 20 array are two whole rows
+    import numpy as np
+    rng = np.random.default_rng(1)
+    arr = []
+    for r in range(6):
+        for c in range(20):
+            arr.append({"geometry": box(c * 1.15, r * 2.0, c * 1.15 + 1.13, r * 2.0 + 1.96),
+                        "poa_kwh_m2_yr": 1500 + rng.normal(0, 15), "facet_key": 0, "order": r * 20 + c})
+    rows = sorted({int(round(p["geometry"].bounds[1] / 2.0)) for p in pf._block_order(arr, "poa_kwh_m2_yr")[:40]})
+    assert len(rows) == 2 and rows[1] - rows[0] == 1
+
+
 def test_off_switch_keeps_everything():
     pf.RACKING = False
     try:

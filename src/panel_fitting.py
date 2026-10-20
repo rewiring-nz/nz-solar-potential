@@ -1112,8 +1112,65 @@ def _order_by_array(panels, poa_key):
                      key=lambda g: (-sum(q[poa_key] for q in g) / len(g), -len(g)))
     out = []
     for g in ordered:
-        out.extend(_erosion_order(g, poa_key))
+        out.extend(_block_order(g, poa_key) if BLOCK_ORDER else _erosion_order(g, poa_key))
     return out
+
+
+# FILL ORDER BUILDS AN ARRAY (Josh, 21 Oct: a partial system on 12 Brunswick
+# St was "all separated ... random groups of panels or single ones" -- "it
+# would be clean arrays all attached to each other"). The erosion order above
+# ranks by each panel's own yield, normalised to the array's full range: on a
+# big open roof the differences are shading noise, stretched to 0..1, so the
+# first N panels were scattered. Now a panel goes earlier only if it is
+# meaningfully sunnier (SUN_BAND share of the array's mean), and within that
+# the array fills row by row along its rails, outward from its best row -- so
+# any partial size is whole rows joined into one block. SOLAR_BLOCK_ORDER=0
+# restores the erosion order.
+BLOCK_ORDER = os.environ.get("SOLAR_BLOCK_ORDER", "1") == "1"
+SUN_BAND = 0.03
+
+
+def _row_axes(panels):
+    """Unit vectors along the rails (u) and across them (v) for one array, and
+    a panel's extent across the rails."""
+    q = panels[0]
+    cs = np.asarray(q["geometry"].minimum_rotated_rectangle.exterior.coords)[:3]
+    e1, e2 = cs[1] - cs[0], cs[2] - cs[1]
+    a, sl = q.get("facet_aspect_deg"), q.get("facet_slope_deg") or 0.0
+    if a is not None and sl > 3.0:
+        u = np.array([math.cos(math.radians(a)), -math.sin(math.radians(a))])   # along the eave
+    else:
+        pts = np.array([[p["geometry"].centroid.x, p["geometry"].centroid.y] for p in panels])
+        if len(pts) >= 3 and np.ptp(pts, axis=0).max() > 0:
+            w, vecs = np.linalg.eigh(np.cov((pts - pts.mean(axis=0)).T))
+            u = vecs[:, int(np.argmax(w))]                                  # the array's long way
+        else:
+            u = e1 / (np.linalg.norm(e1) or 1.0)
+    u = u / (np.linalg.norm(u) or 1.0)
+    v = np.array([-u[1], u[0]])
+    ring = np.asarray(q["geometry"].exterior.coords)
+    across = float(np.ptp(ring @ v)) or 1.0
+    return u, v, across
+
+
+def _block_order(panels, poa_key):
+    if len(panels) <= 2:
+        return sorted(panels, key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    u, v, across = _row_axes(panels)
+    cen = np.array([[p["geometry"].centroid.x, p["geometry"].centroid.y] for p in panels])
+    pu, pv = cen @ u, cen @ v
+    row = np.round((pv - pv.min()) / across).astype(int)
+    poa = np.array([p[poa_key] for p in panels], dtype=float)
+    step = SUN_BAND * (poa.mean() or 1.0)
+    rows = {r: poa[row == r].mean() for r in np.unique(row)}
+    top = max(rows.values())
+    rband = {r: int((top - m) // step) for r, m in rows.items()}      # 0 = best band
+    best = min(rband.values())
+    seed = min((r for r in rows if rband[r] == best), key=lambda r: (-rows[r], r))
+    pband = np.floor((poa.max() - poa) / step).astype(int)
+    key = [(rband[row[i]], abs(int(row[i]) - seed), int(row[i]), int(pband[i]), float(pu[i]))
+           for i in range(len(panels))]
+    return [panels[i] for i in sorted(range(len(panels)), key=lambda i: key[i])]
 
 
 def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
