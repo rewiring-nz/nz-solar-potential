@@ -140,6 +140,23 @@ and assign work.
   not the referee; no face-count weighting changes the outcome. OFF
   (SOLAR_COMPOSITE_ROOFS=1 on); needs proper wing fitting before it can help.
 
+- **3D buildings (branch buildings-3d, not merged or deployed):** the 3D
+  button shows each building as a solid (buildings3d.js, three.js as a
+  MapLibre custom layer) instead of draping the map over the DSM, which
+  turned every roof edge into a smeared slope with the panels hanging down
+  it. Flat ground; walls vertical; each roof face drawn on the tilt the
+  tiles carry (slope_deg/aspect_deg) at the height the DSM gives it (median
+  inside the face, outliers rejected); panels on their face, filtered by the
+  page's own panelVisible; heat-map mode colours the faces by annual sun.
+  Checked on 603 Fernhill faces: the tile tilt and a free least-squares fit
+  of the DSM agree (median 4 deg aspect, 2.2 deg slope; median residual
+  0.13 m vs 0.12 m). About 1 ms per building, time-sliced; three.js loads on
+  the first switch to 3D, so the 2D page is unchanged (pixel-identical after
+  a 3D on/off cycle). The DSM terrain stays as the fallback. Open: the
+  ground is flat, so a hillside house stands on the 25th-percentile height
+  of a ring 2-5 m outside it; trees are not drawn; the sun simulation
+  shades the ground, not the meshes.
+
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
   at the full system), at most 14 kW for a home, no cap for a business -- and

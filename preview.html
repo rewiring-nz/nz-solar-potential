@@ -19,6 +19,7 @@
      itself only once the map exists (see the _wire call after style load). -->
 <script src="panel_editor.js"></script>
 <script src="sun_shadows.js"></script>
+<script src="buildings3d.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
@@ -1098,7 +1099,14 @@ window.__map = map;
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
 
 // ---- 3D -----------------------------------------------------------------
-// A 3D view of terrain, trees and the building.
+// The 3D button shows the buildings as solids: buildings3d.js, flat ground
+// and a mesh per building (vertical walls, each roof face on its fitted
+// plane, the panels lying on it). Draping the map over the surface model,
+// below, made every roof edge a smeared slope with the panels hanging down
+// it; that terrain view is kept only as the fallback where three.js cannot
+// run, and everything from here to ThreeDControl serves it.
+//
+// THE FALLBACK: a 3D view of terrain, trees and the building.
 //
 // All three come from ONE surface. The terrain tiles encode the DSM -- the
 // top of whatever the LiDAR hit, so ground where there is ground, canopy
@@ -1206,6 +1214,13 @@ async function setTerrain3D(on) {
   if (b) b.classList.toggle("active", on);
   const hint = document.getElementById("map-3d-hint");
   if (hint) hint.style.display = on ? "" : "none";
+  // 3D BUILDINGS FIRST (buildings3d.js): flat ground and a mesh per building,
+  // walls vertical and panels on the roof planes. The DSM terrain below
+  // stays as the fallback where that cannot run.
+  if (window.Buildings3D && !map.getTerrain()) {
+    if (await Buildings3D.setActive(on)) return;
+    if (ticket !== terrainSwitching) return;
+  }
   try {
     if (!on) {
       map.setMaxPitch(60);
@@ -1296,6 +1311,7 @@ let reseating = false;
 const SNAP_FROM_ZOOM = 15;
 map.on("moveend", () => {
   if (!terrain3d || reseating || switching3D) return;
+  if (window.Buildings3D && Buildings3D.active) return;   // flat ground: nothing to re-seat
   reseating = true;
   const z = map.getZoom();
   const r = z >= SNAP_FROM_ZOOM ? Math.round(z) : z;
@@ -1317,7 +1333,7 @@ class ThreeDControl {
   onAdd() {
     const d = document.createElement("div");
     d.className = "maplibregl-ctrl maplibregl-ctrl-group";
-    d.innerHTML = `<button id="btn-3d" type="button" title="3D view — terrain, trees and roofs from the LiDAR surface">3D</button>`;
+    d.innerHTML = `<button id="btn-3d" type="button" title="3D view — buildings from the LiDAR roof planes">3D</button>`;
     d.addEventListener("click", e => { e.preventDefault(); setTerrain3D(!terrain3d); });
     this._c = d;
     return d;
@@ -1958,6 +1974,7 @@ function applyToggles() {
   // layer). Removed: nothing visual depended on it.
   syncToggleButtons();
   if (window.__refreshModeUI) window.__refreshModeUI();
+  if (window.Buildings3D) Buildings3D.onToggles();
 }
 
 function selectBuilding(id) {
@@ -2144,6 +2161,7 @@ function lruTouch(cache, key, max) {
 
 map.on("load", async () => {
   if (window.SunShadows) SunShadows.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+  if (window.Buildings3D) Buildings3D.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
   // Kick off everything that does NOT depend on the buildings file before
   // awaiting it. solar_potential.geojson is 19MB (4MB gzipped) and its parse
   // is the gate on first paint; the panel tiles and the heat-map manifest
@@ -3035,7 +3053,7 @@ map.on("load", async () => {
     // terrain under it before tilting), and simply omit pitch otherwise.
     const flyToPlace = (lng, lat, zoom, duration) => {
       const o = { center: [lng, lat], zoom, duration };
-      if (terrain3d) o.pitch = 0;
+      if (terrain3d && map.getTerrain()) o.pitch = 0;
       map.flyTo(o);
     };
     const openResult = (item) => {
