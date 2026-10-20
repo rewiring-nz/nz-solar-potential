@@ -71,20 +71,23 @@ and assign work.
   roof in the LiDAR, 22% are flat on it (skylights are flat and real), 50%
   have too few returns to judge -- next, a photo check.
 
-- **Panels "over the edge" are mostly the photo, not the geometry (measured
-  20 Oct).** Josh's edge complaints (13 Douglas Ave 4746298, 42 Suburb St,
-  12/16 Kent St): their outlines sit 98-100% on the LiDAR roof and no shift
-  improves that, so faces and panels are where the survey says. What is off
-  is the map photo's lean (src/register_imagery.py moves the drawing to the
-  photo per building). 24-34% of buildings BORROW their lean from neighbours
-  because their own photo match was weak (arrowtown_millbrook 827 of 2,455,
-  pilot 260 of 1,001; median lean 0.5-0.6 m); 13 Douglas Ave is one, its
-  borrowed 0.8 m north leaves the array ~1 m south-east of the roof in the
-  photo. Next: a better match for weak cases (e.g. the building's own drawn
-  outline as the template against the map photo, judged against trusted
-  neighbours). Also confirmed on v52: per-face orientation is right -- the
-  pyramid (4735292) racks portrait up every face (Josh's v51 complaint was the
-  mixed pockets racking removed).
+- **v54 (on main, builds after v53): panels "over the edge" -- the photo's lean.**
+  Josh's edge complaints (13 Douglas Ave 4746298, 42 Suburb St, 12/16 Kent
+  St): their outlines sit 98-100% on the LiDAR roof and no shift improves
+  that, so faces and panels are where the survey says; what is off is the
+  map photo's lean, which src/register_imagery.py measures per building and
+  moves the drawing by. Its neighbour check overrode correct answers: a
+  taller roof leans further than the houses round it, so 13 Douglas Ave's
+  sharp 1.6 m match (steady at every window size) shipped its neighbours'
+  0.8 m -- panels a metre off the roof in the photo. Now a match that would be
+  replaced gets a second look over a 12 m window; steady (within 0.3 m) at a
+  trusted sharpness, it keeps its own answer, unless that is over 2.5 m from
+  the neighbours. On 300 Arrowtown roofs the wide window reproduced trusted
+  matches within 0.5 m 97% of the time. Dry run on arrowtown_millbrook: 275
+  second looks kept, 74 roofs move more than 0.5 m; rendered on the photo, 10
+  of the 12 biggest moves sit visibly better (one jumped 3.9 m -- hence the
+  2.5 m cap). Also confirmed on v52: per-face orientation is right -- the
+  pyramid (4735292) racks portrait up every face.
 
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
