@@ -28,6 +28,7 @@ from pathlib import Path
 
 import warnings
 
+import math
 import os
 
 import numpy as np
@@ -1324,3 +1325,59 @@ def enforce_arrays(panels, min_panels=None, face_area=None):
         size[find(i)] = size.get(find(i), 0) + 1
     kept = [p for i, p in enumerate(panels) if size[find(i)] >= ARRAY_MIN_GROUP]
     return kept if len(kept) >= k else []
+
+
+# INSTALLER-SHAPED ARRAYS (SOLAR_RECT_ARRAYS=1; off until measured). Josh, 20
+# Oct: layouts must "look like how real installs would be laid out". An
+# installer racks a face in rows: each row a continuous run on its rails,
+# rows stepped where the face narrows. A single panel on its own in a row --
+# a bump on top of a block, a stray in a corner -- is not on any rail run, so
+# it goes, unless the whole array is one column (portrait panels stacked up a
+# narrow face). Steps stay: rows of 6, 5, 4 on a hip face are a real install;
+# a plain rectangle cover cut them to a 3 x 4 block.
+RECT_ARRAYS = os.environ.get("SOLAR_RECT_ARRAYS", "0") == "1"
+
+
+def shape_arrays(panels, face_area=None):
+    """One face's panels as installer rows (see RECT_ARRAYS)."""
+    if not (RACKING and RECT_ARRAYS) or len(panels) < 3:
+        return panels
+    geoms = [p["geometry"] if isinstance(p, dict) else p for p in panels]
+    cs = np.asarray(geoms[0].minimum_rotated_rectangle.exterior.coords)[:3]
+    e1, e2 = cs[1] - cs[0], cs[2] - cs[1]
+    # rows run along the eave: horizontal, square to the face's aspect, snapped
+    # to the panel edge nearest that; on a flat face (or without an aspect)
+    # along the panel's short side -- portrait, the default racking
+    q = panels[0] if isinstance(panels[0], dict) else {}
+    a, sl = q.get("facet_aspect_deg"), q.get("facet_slope_deg") or 0.0
+    if a is not None and sl > 3.0:
+        eave = np.array([math.cos(math.radians(a)), -math.sin(math.radians(a))])
+        along = e1 if abs(e1 @ eave) / (np.linalg.norm(e1) or 1.0) >= abs(e2 @ eave) / (np.linalg.norm(e2) or 1.0) else e2
+    else:
+        along = e1 if np.linalg.norm(e1) <= np.linalg.norm(e2) else e2
+    across = e2 if along is e1 else e1
+    u = along / (np.linalg.norm(along) or 1.0)
+    v = np.array([-u[1], u[0]])
+    wu, hv = float(np.linalg.norm(along)) or 1.0, float(np.linalg.norm(across)) or 1.0
+    cen = np.array([[g.centroid.x, g.centroid.y] for g in geoms])
+    pu, pv = cen @ u, cen @ v
+    row = np.round((pv - pv.min()) / hv).astype(int)
+    # runs along each row: neighbours closer than one panel width plus a small gap
+    keep = np.ones(len(panels), dtype=bool)
+    runs = []
+    for r in np.unique(row):
+        idx = np.where(row == r)[0]
+        idx = idx[np.argsort(pu[idx])]
+        run = [idx[0]]
+        for a, b in zip(idx[:-1], idx[1:]):
+            if pu[b] - pu[a] <= wu * 1.25:
+                run.append(b)
+            else:
+                runs.append(run); run = [b]
+        runs.append(run)
+    if any(len(r) >= 2 for r in runs):
+        for r in runs:
+            if len(r) == 1:
+                keep[r[0]] = False
+    kept = [p for i, p in enumerate(panels) if keep[i]]
+    return enforce_arrays(kept, face_area=face_area) if len(kept) < len(panels) else kept
