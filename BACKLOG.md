@@ -113,9 +113,20 @@ and assign work.
   off) -- an equal-armed L test house's two valley faces went 39.5 / 52.1 m2
   to 47.0 / 47.0. On 150 Shotover/Lake Hayes houses: ragged faces 47.3% ->
   45.3%, sliver faces 2.0% -> 1.3%, clean 26.7% -> 27.3%, no face area lost;
-  Arrowtown unchanged (few roofs there take a plain form). Being measured:
-  why the hip form loses on the rest (tiny skeleton faces with too few
-  returns reject the whole form on many-cornered outlines).
+  Arrowtown unchanged (few roofs there take a plain form). (3) A hip built on
+  every shallow wall step fanned into slivers (4726934: 16 faces); hips are
+  now built on the outline with steps under 1 m straightened, their faces
+  still covering the real outline (a notched house: 8 -> 4 faces). On the 40
+  worst houses against v52 (renders): 4747647's web of crooked lines became a
+  clean hip, 4730928 / 4722969 / 4728389 / 4719781 / 4726934 cleaner, none
+  worse. Why plain forms reach few houses (150 Shotover houses): the hip form
+  is rejected on 86 because a face fits at an impossible pitch -- most houses
+  are several wings, not one hip. Prototype src/composite_roof.py (a house as
+  its wings, each hip/gable/mono/flat, joined as solids with straight
+  valleys; overlapping wings; faces refitted on the returns they win) beats
+  the current faces on some worst houses (4726934 0.62 -> 0.83 of returns)
+  but loses the referee to a many-faced whole-outline hip on most: OFF
+  (SOLAR_COMPOSITE_ROOFS=1 on) until the referee weighs simplicity.
 
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
