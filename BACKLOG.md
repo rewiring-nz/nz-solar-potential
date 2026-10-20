@@ -42,8 +42,14 @@ and assign work.
   4746337, 4735304's blob); judged by Josh's verdicts before any rule
   changes. Verdicts page refreshed: v51 (as judged) beside v53, 27 roofs,
   previous verdicts shown, new verdicts saved separately (verdicts_v53).
-- **v54 BUILDING (started 21 Oct 06:44 NZT): plain forms keep their lines,
-  straight hip valleys, jog-free hips** (see below).
+- **v54 BUILT 21 Oct, NOT PUBLISHED.** The VM stopped at its 40 h spot limit
+  mid-build (resumed with --force for the last 7 regions). Gate passed (panels
+  -336, 0 zeroed, 12 roofs lost face area, each under 75 m2) but the 9 big
+  drops rendered badly: the straighter, jog-free hips made an 8-face hip
+  viable on 8-corner gables and near-flat roofs, and it replaced 2-4 face
+  readings it explained slightly WORSE, inside the near-tie allowance
+  (4746263 0.75 -> 0.73, 4719229, 4730948). Fixed (16da3be4): a form with
+  more faces than the reading must explain at least as well. Ships in v55.
 - (history) **v53 built 21 Oct, NOT PUBLISHED (face-area check: 586 roofs lost more
   than 8% of their face area; 4725177 1,918 -> 252 m2, 563 -> 61 panels; 51
   big drops).** Cause: a weak reading that lost the face competition was
