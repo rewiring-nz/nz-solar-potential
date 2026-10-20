@@ -73,7 +73,7 @@ def test_installer_rows_drop_a_bump_keep_steps_and_an_l():
         narrow = [(0, 0), (0, 1), (1, 0), (2, 0)]         # tidying would leave 2: keep the face as it was
         assert len(pf.shape_arrays(_grid(narrow))) == 4
     finally:
-        pf.RECT_ARRAYS = False
+        pf.RECT_ARRAYS = True
 
 
 def test_off_switch_keeps_everything():

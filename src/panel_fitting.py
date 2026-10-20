@@ -1327,7 +1327,7 @@ def enforce_arrays(panels, min_panels=None, face_area=None):
     return kept if len(kept) >= k else []
 
 
-# INSTALLER-SHAPED ARRAYS (SOLAR_RECT_ARRAYS=1; off until measured). Josh, 20
+# INSTALLER-SHAPED ARRAYS (on; SOLAR_RECT_ARRAYS=0 turns it off). Josh, 20
 # Oct: layouts must "look like how real installs would be laid out". An
 # installer racks a face in rows: each row a continuous run on its rails,
 # rows stepped where the face narrows. A single panel on its own in a row --
@@ -1335,7 +1335,7 @@ def enforce_arrays(panels, min_panels=None, face_area=None):
 # it goes, unless the whole array is one column (portrait panels stacked up a
 # narrow face). Steps stay: rows of 6, 5, 4 on a hip face are a real install;
 # a plain rectangle cover cut them to a 3 x 4 block.
-RECT_ARRAYS = os.environ.get("SOLAR_RECT_ARRAYS", "0") == "1"
+RECT_ARRAYS = os.environ.get("SOLAR_RECT_ARRAYS", "1") == "1"
 
 
 def shape_arrays(panels, face_area=None):
