@@ -1,6 +1,7 @@
 """A house roof as its wings: each wing a plain roof, joined the way roofs are built.
 
-    SOLAR_COMPOSITE_ROOFS=0   turns it off
+    SOLAR_COMPOSITE_ROOFS=1   turns it on (off until it is judged: it loses to a
+                              many-faced whole-outline hip on most houses tried)
 
 WHY. A suburban house is a few rectangles -- a main block and a wing or two --
 each roofed as a hip, a gable, a mono-pitch or flat, and the valleys are
@@ -46,7 +47,7 @@ REFIT_ROUNDS = 3
 
 
 def enabled():
-    return os.environ.get("SOLAR_COMPOSITE_ROOFS", "1") == "1"
+    return os.environ.get("SOLAR_COMPOSITE_ROOFS", "0") == "1"
 
 
 def _fit(p):
