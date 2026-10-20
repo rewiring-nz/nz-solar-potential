@@ -446,23 +446,32 @@ def _build_one_at(building_id, nudge_m):
     # (2 Preston Drive: a ridge 0.8 m off with a panel column astride it).
     # A face whose plane misfits its own returns misleads every stage below
     # (src/plane_refresh.py: 17 Church St, 27% -> 83% of returns on plane).
+    # A PLAIN FORM IS EXACT (src/structured_roof.py): its ridges, hips and
+    # valleys are the straight skeleton of the walls. The stages below move
+    # lines to where noisy planes cross, and on a form they only damage it --
+    # 4718459's T-shaped hip came out with a doubled ridge and curved seams at
+    # the junction (20 Oct). Its planes are still refreshed; its lines stay.
+    # SOLAR_KEEP_FORMS=0 runs every stage as before.
+    _form = (os.environ.get("SOLAR_KEEP_FORMS", "1") != "0"
+             and bool(facets) and all(f.get("structured") for f in facets))
+    _reshape = (lambda stage, *a, **k: facets) if _form else \
+        (lambda stage, *a, **k: _geometry_stage(building_id, stage, facets, *a, **k))
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
-    facets = _geometry_stage(building_id, snap_ridges_to_crest, facets, pc_source, dsm=_dsm_ev)
+    facets = _reshape(snap_ridges_to_crest, pc_source, dsm=_dsm_ev)
     # ...and roof a face took from its neighbour across a hip or valley goes
     # back, or obstruction detection marks the neighbour's slope as an object
     # over clear roof (src/plane_seams.py).
-    facets = _geometry_stage(building_id, snap_seams_to_plane_intersections, facets, pc_source, dsm=_dsm_ev)
+    facets = _reshape(snap_seams_to_plane_intersections, pc_source, dsm=_dsm_ev)
     # ...and a lower roof level spanned by one face gets a face of its own,
     # or the sunken detector carves clear roof as an object (src/roof_levels.py).
     # ...and again after the seams moved geometry under unchanged planes.
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
-    facets = _geometry_stage(building_id, split_lower_levels, facets, pc_source, dsm=_dsm_ev,
-                             photo=_CTX.get("photo_ds"))
+    facets = _reshape(split_lower_levels, pc_source, dsm=_dsm_ev, photo=_CTX.get("photo_ds"))
     # ...and last, the edges between faces straightened together, so a ridge
     # is a line rather than the zig-zag the returns left (src/face_straighten.py).
-    facets = _geometry_stage(building_id, merge_coplanar_faces, facets)
-    facets = _geometry_stage(building_id, seams_to_plane_lines, facets, pc_source)
-    facets = _geometry_stage(building_id, straighten_faces, facets)
+    facets = _reshape(merge_coplanar_faces)
+    facets = _reshape(seams_to_plane_lines, pc_source)
+    facets = _reshape(straighten_faces)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
