@@ -2047,7 +2047,7 @@ def _arrangement_facets(pts, building_geom, building_id):
                                  labels, planes)
 
 
-def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
+def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, use_selected=True):
     """roof_partition in the shape segment_building_best returns. [] on
     anything unexpected, so the caller falls back rather than failing a whole
     area's build for one awkward roof."""
@@ -2066,7 +2066,8 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         pts = top_surface(pts)
         if len(pts) < RECONSTRUCT_MIN_POINTS:
             return []
-        faces = partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds)
+        faces = partition_roof(building_id, building_geom.buffer(0), pts, imagery_ds=imagery_ds,
+                               use_selected=use_selected)
         score = explained_fraction(faces, pts) if faces else 0.0
 
         # DRAWN GEOMETRY IS NOT A CANDIDATE. If partition_roof returned
@@ -2084,6 +2085,38 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         # hip network it has misread while the correct geometry scores lower.
         if faces and any(f.get("from_labels") for f in faces):
             return faces
+        if faces and any(f.get("from_selected") for f in faces):
+            # A weakly scored reading competes with the LiDAR partition
+            # (SELECTED_TRUST in roof_partition); the better explanation of
+            # the returns wins, the reading keeping ties.
+            from src.roof_partition import selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN, SELECTED_MIN_COVER
+            _ss = selected_score(building_id)
+            if _ss is not None and _ss < SELECTED_TRUST:
+                # The rival is the WHOLE LiDAR path -- partition, then the
+                # skeleton and plain-roof competitors it falls back to -- not
+                # the bare partition: on 4725584 the partition alone explained
+                # 0.53 while the path's winner was the clean result.
+                alt = _partition_facets(pc_source, building_geom, building_id, imagery_ds,
+                                        use_selected=False)
+                alt_score = explained_fraction(alt, pts) if alt else 0.0
+                # Points explained alone cannot tell them apart: 34 Ballarat
+                # St's two-strip reading, padded out with leftover pieces,
+                # explained 0.63 against 0.67. Two things give a bad reading
+                # away: how little of the roof its own faces cover (the rest is
+                # residual fill), and how many more pieces it needs to explain
+                # the same returns (4725584: 148 faces).
+                _own = sum(f["geometry"].area for f in faces if f.get("from_selected"))
+                _all = sum(f["geometry"].area for f in faces) or 1.0
+                m = SELECTED_COMPETE_MARGIN
+                better = alt_score > score + m
+                patchy = _own / _all < SELECTED_MIN_COVER and alt_score >= score - m
+                simpler = alt_score >= score - 2 * m and len(alt) <= 0.6 * len(faces)
+                if os.environ.get("SOLAR_FACE_DEBUG"):
+                    print(f"[partition {building_id}] selected reading {_ss:.2f}: {len(faces)} faces explain {score:.2f}, "
+                          f"own cover {_own / _all:.2f}; LiDAR path: {len(alt)} faces explain {alt_score:.2f} "
+                          f"-> {'LiDAR' if alt and (better or patchy or simpler) else 'reading'}")
+                if alt and (better or patchy or simpler):
+                    return alt
         if faces and any(f.get("from_selected") for f in faces):
             # THROUGH the attach stage, unlike drawn faces: its whole-
             # facet drops (balcony staircase, plant decks) must run on

@@ -67,6 +67,32 @@ def test_low_box_on_part_of_the_patch_stays():
     assert op.drop_roof_like([patch], FACE, [FACE], Points(np.vstack([pts, box_top]))) == [patch]
 
 
+def _replace(x0, y0, x1, y1, top):
+    pts = [p for p in _pc().pts if not (x0 <= p[0] <= x1 and y0 <= p[1] <= y1)]
+    return Points(np.vstack([pts, _grid(x0, y0, x1, y1, top)]))
+
+
+def test_raised_roof_level_is_roof():
+    # 4735304: a 20 m2 section a steady 0.6 m up, parallel to the face
+    level = box(1, 1, 6, 5)
+    pc = _replace(1, 1, 6, 5, lambda x, y: 100.0 + 0.4 * y + 0.6)
+    assert op.drop_roof_like([level], FACE, [FACE], pc) == []
+
+
+def test_raised_level_outline_overlapping_the_roof_below_is_roof():
+    # the outline takes in a 1 m strip of the face beside the level
+    level = box(1, 1, 7, 5)
+    pc = _replace(1, 1, 6, 5, lambda x, y: 100.0 + 0.4 * y + 0.6)
+    assert op.drop_roof_like([level], FACE, [FACE], pc) == []
+
+
+def test_big_ragged_plant_area_stays():
+    # 20 m2 of plant and ducts at all heights: big, but on no plane of its own
+    plant = box(1, 1, 6, 5)
+    pc = _replace(1, 1, 6, 5, lambda x, y: 100.0 + 0.4 * y + rng.uniform(0.3, 1.8, len(x)))
+    assert op.drop_roof_like([plant], FACE, [FACE], pc) == [plant]
+
+
 def test_small_patches_and_patches_without_returns_stay():
     vent = box(1, 1, 2, 1.8)                      # 0.8 m2: left to the detector
     blind = box(20, 20, 23, 23)                   # no returns there at all

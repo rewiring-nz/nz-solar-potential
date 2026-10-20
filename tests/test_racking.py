@@ -53,6 +53,29 @@ def test_row_with_one_skipped_panel_is_one_array():
     assert len(pf.enforce_arrays(row)) == 5
 
 
+def _grid(cells, w=1.0, h=1.7, gap=0.02):
+    return [{"geometry": box(c * (w + gap), r * (h + gap), c * (w + gap) + w, r * (h + gap) + h)}
+            for r, c in cells]
+
+
+def test_installer_rows_drop_a_bump_keep_steps_and_an_l():
+    pf.RECT_ARRAYS = True
+    try:
+        block = [(r, c) for r in range(2) for c in range(4)]
+        bump = [(2, 1)]                                   # one panel stuck on top
+        assert len(pf.shape_arrays(_grid(block + bump))) == 8
+        ell = block + [(2, 0), (3, 0), (2, 1), (3, 1)]    # 2x4 plus a 2x2 on one end
+        assert len(pf.shape_arrays(_grid(ell))) == 12
+        hip = [(0, c) for c in range(6)] + [(1, c) for c in range(5)] + [(2, c) for c in range(4)]
+        assert len(pf.shape_arrays(_grid(hip))) == 15     # stepped rows stay as steps
+        column = [(r, 0) for r in range(4)]               # one portrait column up a narrow face
+        assert len(pf.shape_arrays(_grid(column))) == 4
+        narrow = [(0, 0), (0, 1), (1, 0), (2, 0)]         # tidying would leave 2: keep the face as it was
+        assert len(pf.shape_arrays(_grid(narrow))) == 4
+    finally:
+        pf.RECT_ARRAYS = True
+
+
 def test_off_switch_keeps_everything():
     pf.RACKING = False
     try:

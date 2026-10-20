@@ -25,6 +25,7 @@ detector; a patch with too few returns to judge stays; drawn obstructions
 and edge drops are never touched. SOLAR_OBS_PLANE_CHECK=0 turns it off.
 """
 
+import math
 import os
 
 import numpy as np
@@ -36,6 +37,39 @@ RAISED_M = 0.25
 RAISED_MAX_SHARE = 0.10
 MIN_POINTS = 15
 NEIGHBOUR_M = 3.0
+# A RAISED LEVEL IS ROOF TOO. Where two flat roof levels share one face, the
+# upper level stands clear of the face's plane and the detector marks the
+# whole of it: 4735304 lost a 160 m2 section whose 921 returns sit a steady
+# 0.6 m up. A real object is small or ragged; a level is big and lies on a
+# plane of its own. So a patch of at least LEVEL_MIN_M2 whose own fitted
+# plane holds LEVEL_ON_PLANE_SHARE of its returns within ON_PLANE_M, tilted
+# within LEVEL_MAX_TILT_DEG of the face, is roof (SOLAR_OBS_LEVEL_CHECK=0 off).
+LEVEL_MIN_M2 = 15.0
+LEVEL_MIN_POINTS = 60
+LEVEL_ON_PLANE_SHARE = 0.80
+LEVEL_MAX_TILT_DEG = 10.0
+
+
+def _normal(a, b):
+    n = np.array([-a, -b, 1.0])
+    return n / np.linalg.norm(n)
+
+
+def _is_level(pts, f):
+    # An outline drawn round a level also takes in a strip of the roof below
+    # it (4735304: 79% up, 17% down), so the level's plane is fitted to the
+    # raised returns when they are the clear majority.
+    r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+    if float((r > RAISED_M).mean()) >= 0.6:
+        pts = pts[r > RAISED_M]
+    if len(pts) < LEVEL_MIN_POINTS:
+        return False
+    A = np.c_[pts[:, 0], pts[:, 1], np.ones(len(pts))]
+    (a, b, c), *_ = np.linalg.lstsq(A, pts[:, 2], rcond=None)
+    if float((np.abs(pts[:, 2] - A @ np.array([a, b, c])) < ON_PLANE_M).mean()) < LEVEL_ON_PLANE_SHARE:
+        return False
+    cosang = float(np.clip(_normal(a, b) @ _normal(f["plane_a"], f["plane_b"]), -1.0, 1.0))
+    return math.degrees(math.acos(cosang)) <= LEVEL_MAX_TILT_DEG
 
 
 def _is_roof(pts, f):
@@ -66,6 +100,9 @@ def drop_roof_like(obstructions, face, facets, pc_source):
             keep.append(o)
             continue
         if any(_is_roof(pts, f) for f in near):
+            continue
+        if (o.area >= LEVEL_MIN_M2 and os.environ.get("SOLAR_OBS_LEVEL_CHECK", "1") != "0"
+                and _is_level(pts, face)):
             continue
         keep.append(o)
     return keep

@@ -1267,7 +1267,28 @@ SELECTED_FACES_DIR = (Path(__file__).resolve().parent.parent
 # with production is a trap, not a safety net; opt OUT with
 # SOLAR_SELECTED_FACES=0 to build the old path deliberately.
 USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "1") == "1"
-SELECTED_MIN_SCORE = 0.30
+# Below this share of the roof's LiDAR returns explained, a precomputed
+# reading is not trusted and the LiDAR partition decides (SOLAR_SELECTED_MIN_SCORE
+# to experiment). 34 Ballarat St ran on a 2-face "line" reading at 0.36.
+SELECTED_MIN_SCORE = float(os.environ.get("SOLAR_SELECTED_MIN_SCORE", "0.30"))
+# A reading scored under SELECTED_TRUST must COMPETE: the LiDAR partition is
+# also run, and replaces the reading when it explains clearly more of the
+# returns (SELECTED_COMPETE_MARGIN). A hard bar at 0.60 instead fixed 34
+# Ballarat St (0.36, two strips) and 3 Rees St (0.32, jagged photo faces:
+# LiDAR partition explained 0.74) but threw away good readings that merely
+# scored low -- the clean pyramid on 4735292 lost its hips.
+SELECTED_TRUST = float(os.environ.get("SOLAR_SELECTED_TRUST", "0.60"))
+SELECTED_COMPETE_MARGIN = float(os.environ.get("SOLAR_SELECTED_COMPETE_MARGIN", "0.05"))
+SELECTED_MIN_COVER = float(os.environ.get("SOLAR_SELECTED_MIN_COVER", "0.85"))  # see _partition_facets
+
+
+def selected_score(building_id):
+    """The precomputed reading's own score, or None when there is none."""
+    fp = SELECTED_FACES_DIR / f"{building_id}.json"
+    try:
+        return float(json.loads(fp.read_text()).get("score", 0.0))
+    except (OSError, ValueError, TypeError):
+        return None
 SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 
 
@@ -2498,7 +2519,7 @@ def _vision_cuts_available(building_id):
         return False
 
 
-def partition_roof(building_id, footprint, pts, imagery_ds=None):
+def partition_roof(building_id, footprint, pts, imagery_ds=None, use_selected=True):
     """Surveyed footprint + point cloud -> straight-edged, plane-backed facets.
 
     Strong imagery lines, if imagery is supplied, are cut FIRST and without the
@@ -2595,7 +2616,7 @@ def partition_roof(building_id, footprint, pts, imagery_ds=None):
     # the selector's winner ranks below the manual markup and above everything
     # fitted here -- same construction, weaker author
     try:
-        _sf = facets_from_selected_faces(building_id, footprint, pts)
+        _sf = facets_from_selected_faces(building_id, footprint, pts) if use_selected else []
     except Exception as exc:
         print(f"  roof_partition: selected faces unavailable ({exc!r})",
               flush=True)
