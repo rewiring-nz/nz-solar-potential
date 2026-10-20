@@ -1462,6 +1462,11 @@ let panelDensityPct = 80;
 //   settled: the default has been worked out at the current prices
 let bldgSys = null;   // { buildingId, orders, ranks, kwh, k, auto, settled, sig, econK, capK }
 const HOME_SYSTEM_CAP_KW = 14;
+// The household cap is for ONE household. A residential building with more
+// roof than this is a block of units (or bigger) -- 12 Brunswick St, 562
+// panels, was capped at 14 kW because its land use says "home" (Josh, 21 Oct:
+// "clearly a business ... you are sizing the economic size to household size").
+const HOME_CAP_MAX_ROOF_M2 = 350;
 function bldgSysMaxOrder() { return bldgSys && bldgSys.k > 0 ? bldgSys.orders[bldgSys.k - 1] : -Infinity; }
 // Whether a panel is within the system being shown: the open building's own
 // size, else the density slider.
@@ -4609,7 +4614,7 @@ map.on("load", async () => {
   // colours use, panelBandOf). Homes stop at HOME_SYSTEM_CAP_KW; businesses
   // have no cap. Worked out again whenever the prices or the household change
   // (sig), until someone moves the slider.
-  function settleBldgSys(buildingId, o, isBiz) {
+  function settleBldgSys(buildingId, o, isBiz, roofM2) {
     const S = bldgSys;
     if (!S || S.buildingId !== buildingId || !S.auto) return;
     const sig = JSON.stringify([typeof btLoadState === "function" ? btLoadState(buildingId) : null, econ,
@@ -4624,8 +4629,9 @@ map.on("load", async () => {
     if (S.k !== S.orders.length || !o) return;          // not the full system yet
     let econK = 0;
     S.kwh.forEach((kwh, i) => { if (kwh >= (i < o.cutoff ? o.retailBE : o.exportBE)) econK++; });
-    const capK = isBiz ? Infinity : Math.floor(HOME_SYSTEM_CAP_KW * 1000 / assumptions.panel_rated_power_w);
-    Object.assign(S, { settled: true, sig, econK, capK, isBiz, k: wholeArrays(S, Math.min(econK, capK)) });
+    const oneHome = !isBiz && (roofM2 || 0) < HOME_CAP_MAX_ROOF_M2;
+    const capK = oneHome ? Math.floor(HOME_SYSTEM_CAP_KW * 1000 / assumptions.panel_rated_power_w) : Infinity;
+    Object.assign(S, { settled: true, sig, econK, capK, isBiz, oneHome, k: wholeArrays(S, Math.min(econK, capK)) });
     if (S.k !== S.orders.length) {
       applyPanelDensityPaint();
       setTimeout(() => updateFittedStats(buildingId), 0);
@@ -4655,7 +4661,7 @@ map.on("load", async () => {
     sl.style.setProperty("--fill", S.orders.length ? (100 * S.k / S.orders.length) : 0);
     document.getElementById("bldg-sys-val").textContent =
       `${S.k.toLocaleString()} of ${S.orders.length.toLocaleString()} panels`;
-    const capText = S.isBiz ? "" : ` up to ${HOME_SYSTEM_CAP_KW} kW for a home`;
+    const capText = S.oneHome ? ` up to ${HOME_SYSTEM_CAP_KW} kW for a home` : "";
     let note;
     const rounded = S.auto && S.settled && S.k < Math.min(S.econK, S.capK)
       ? " Rounded down to whole arrays, so no row is left half built." : "";
@@ -4810,7 +4816,8 @@ map.on("load", async () => {
               // home or business as the bill tool has it (the reader can switch it there)
               const btType = (btLoadState(buildingId) || {}).type;
               settleBldgSys(buildingId, panelEconOpen, btType ? btType === "business"
-                : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)));
+                : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)),
+                props.facet_area_m2);
             },
           });
         };
