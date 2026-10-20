@@ -34,7 +34,17 @@ and assign work.
   Roof lines next: all nine "lines wrong" roofs run on offline face readings
   scored 0.32-0.56 (some photo-based, shadow-prone).
 
-- **v53 BUILT 21 Oct, NOT PUBLISHED (face-area check: 586 roofs lost more
+- **v53 LIVE 21 Oct 06:40 NZT (built as v53b).** Gate reviewed: panels
+  2,008,902 -> 2,010,966 (+0.1%); 12 roofs lost >8% face area, each 35 m2 or
+  less; 14 big drops rendered -- on most the LiDAR faces explain clearly more
+  of the returns than the reading they replaced (4733741 0.77 -> 0.97), but
+  narrower faces and new obstructions cost panels (4741996, 4733741,
+  4746337, 4735304's blob); judged by Josh's verdicts before any rule
+  changes. Verdicts page refreshed: v51 (as judged) beside v53, 27 roofs,
+  previous verdicts shown, new verdicts saved separately (verdicts_v53).
+- **v54 BUILDING (started 21 Oct 06:44 NZT): plain forms keep their lines,
+  straight hip valleys, jog-free hips** (see below).
+- (history) **v53 built 21 Oct, NOT PUBLISHED (face-area check: 586 roofs lost more
   than 8% of their face area; 4725177 1,918 -> 252 m2, 563 -> 61 panels; 51
   big drops).** Cause: a weak reading that lost the face competition was
   replaced by the LiDAR path, whose faces then failed downstream gates the
@@ -79,7 +89,7 @@ and assign work.
   roof in the LiDAR, 22% are flat on it (skylights are flat and real), 50%
   have too few returns to judge -- next, a photo check.
 
-- **v54 (on main, builds after v53): panels "over the edge" -- the photo's lean.**
+- **In v53 (live): panels "over the edge" -- the photo's lean.**
   Josh's edge complaints (13 Douglas Ave 4746298, 42 Suburb St, 12/16 Kent
   St): their outlines sit 98-100% on the LiDAR roof and no shift improves
   that, so faces and panels are where the survey says; what is off is the
@@ -97,8 +107,8 @@ and assign work.
   2.5 m cap). Also confirmed on v52: per-face orientation is right -- the
   pyramid (4735292) racks portrait up every face.
 
-- **Next build after v53b (on main): plain-form roofs keep their lines; hips
-  with straight valleys.** Ranking every roof in live v52 by the health
+- **v54 (building): plain-form roofs keep their lines; hips with straight
+  valleys.** Ranking every roof in live v52 by the health
   checks: the worst 40 big roofs and the worst 40 houses are almost all roof
   lines (seams off the ridge 39/40, ragged faces 39/40 and 34/40); panel-level
   faults no longer top the list. Two causes found on the worst houses:
