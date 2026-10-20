@@ -7,8 +7,10 @@ and assign work.
 
 ## Ship
 
-- **v52 BUILDING (started 20 Oct 13:47 NZT on the VM, ~/v52.sh at 8ecf0ab1):
-  panels in clean racked arrays** (Josh's verdicts on v51, 20 Oct: 0 fixed,
+- **v52 LIVE 20 Oct 18:45 NZT: panels in clean racked arrays** (gate reviewed:
+  panels 2,067,057 -> 2,008,902, -2.8%; no roof lost face area; the five big
+  drops rendered -- scattered and mixed-orientation panels gone, clean arrays
+  kept; four tiny roofs with garbage layouts withheld). (Josh's verdicts on v51, 20 Oct: 0 fixed,
   12 better, 13 still wrong). His rule: panels go on racks -- rows along the
   eave, portrait up the slope, clear arrays, never a landscape panel beside a
   portrait one, never a lone panel; 100% density = every clean array, not a
@@ -28,13 +30,12 @@ and assign work.
   rule (a row 2 + gap + 3 split at a 1.1 m join; 3 + 3 around a skylight; a
   roof of small triangular faces 138 -> 12), fixed one by one. Also in v52:
   each face's plane in the layouts, and the health check's seam_off_ridge.
-  Goldens re-recorded (were from v41). Next: gate, face-area check vs
-  ~/v51_layouts, publish, refresh Josh's verdict pairs.
+  Goldens re-recorded (were from v41).
   Roof lines next: all nine "lines wrong" roofs run on offline face readings
   scored 0.32-0.56 (some photo-based, shadow-prone).
 
-- **v53 NEXT (merged to main, builds after v52): roof lines and installer
-  rows.** Josh, 20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly
+- **v53 BUILDING (started 20 Oct 18:47 NZT, ~/v53.sh at c5758d8b): roof lines
+  and installer rows.** Josh, 20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly
   bad". All three ran on precomputed face readings (data/selected_faces)
   explaining 32-36% of their LiDAR returns; the pipeline trusted any reading
   over 0.30 (half of all 47,302 score under 0.54), and racking cannot rescue
