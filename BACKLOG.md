@@ -34,8 +34,16 @@ and assign work.
   Roof lines next: all nine "lines wrong" roofs run on offline face readings
   scored 0.32-0.56 (some photo-based, shadow-prone).
 
-- **v53 BUILDING (started 20 Oct 18:47 NZT, ~/v53.sh at c5758d8b): roof lines
-  and installer rows.** Josh, 20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly
+- **v53 BUILT 21 Oct, NOT PUBLISHED (face-area check: 586 roofs lost more
+  than 8% of their face area; 4725177 1,918 -> 252 m2, 563 -> 61 panels; 51
+  big drops).** Cause: a weak reading that lost the face competition was
+  replaced by the LiDAR path, whose faces then failed downstream gates the
+  reading's faces are exempt from (4725177's 1,250 m2 face at "authored +
+  kept"). The 213-roof sample had no face-area check, so it never showed.
+  Fix (195ca155): the competition compares roof area AFTER the attach stage
+  on both sides and the LiDAR path must keep 92% of it; every A/B now runs
+  ~/ab/facecmp.py against the live layouts. Rebuilding as v53b, together
+  with the v54 photo-lean fix. What v53 was meant to ship: Josh, 20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly
   bad". All three ran on precomputed face readings (data/selected_faces)
   explaining 32-36% of their LiDAR returns; the pipeline trusted any reading
   over 0.30 (half of all 47,302 score under 0.54), and racking cannot rescue
