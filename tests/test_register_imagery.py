@@ -90,6 +90,13 @@ def test_an_unsteady_outlier_still_borrows():
     assert out["6"][:2] == [0.0, 0.8] and out["6"][2] == 0.0
 
 
+def test_a_second_look_onto_the_next_roof_is_not_believed():
+    raw = {i: (10.0 * i, 0.0, 0.0, 0.8, 9.0) for i in range(6)}
+    raw[6] = (35.0, 5.0, -3.0, 3.9, 9.0)
+    out = ri.reconcile(raw, lambda b: (-3.0, 3.9, 9.0))
+    assert out["6"][:2] == [0.0, 0.8]
+
+
 def test_no_trusted_match_means_no_shift():
     assert ri.reconcile({1: (0.0, 0.0, 1.0, 1.0, 2.0)}) == {}
 

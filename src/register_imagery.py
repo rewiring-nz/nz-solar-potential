@@ -72,6 +72,10 @@ MIN_AREA_M2 = 20.0
 # matches within 0.5 m 97% of the time and made 24% of weak ones trustworthy.
 WIDE_PAD_M = 12.0
 ROBUST_M = 0.3
+# ...and never far: rendered on the photo, 10 of the 12 biggest second-look
+# moves in Arrowtown sat visibly better, but one jumped 3.9 m onto the next
+# roof. A second look further than this from its neighbours is not believed.
+SECOND_LOOK_MAX_M = 2.5
 TILE_Z = 20
 STATS = {"measured": 0, "trusted": 0, "borrowed": 0}
 
@@ -207,7 +211,8 @@ def reconcile(raw, second_look=None):
         if second_look is not None and not (trusted[i] and (med is None or np.hypot(*(V[i] - med)) <= AGREE_MAX_M)):
             wide = second_look(b)
         robust = (wide is not None and wide[2] >= SHARP_MIN
-                  and (not trusted[i] or np.hypot(V[i][0] - wide[0], V[i][1] - wide[1]) <= ROBUST_M))
+                  and (not trusted[i] or np.hypot(V[i][0] - wide[0], V[i][1] - wide[1]) <= ROBUST_M)
+                  and (med is None or np.hypot(wide[0] - med[0], wide[1] - med[1]) <= SECOND_LOOK_MAX_M))
         if trusted[i] and (med is None or np.hypot(*(V[i] - med)) <= AGREE_MAX_M):
             dx, dy, q = V[i][0], V[i][1], raw[b][4]
             STATS["trusted"] += 1
