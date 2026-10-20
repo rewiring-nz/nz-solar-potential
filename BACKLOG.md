@@ -140,6 +140,22 @@ and assign work.
   not the referee; no face-count weighting changes the outcome. OFF
   (SOLAR_COMPOSITE_ROOFS=1 on); needs proper wing fitting before it can help.
 
+- **Next build after v54 (on main), also:** (1) partial systems are whole
+  rows in one block -- the fill order ranked panels by their own yield
+  stretched to the array's range (shading noise on an open roof), so 284 of
+  12 Brunswick St's 562 panels were a blob full of holes; now coarse sun
+  bands (3%), then rows outward from the best row (panel_fitting
+  _block_order; SOLAR_BLOCK_ORDER=0 off); (2) roofs changed since the 2021
+  survey are flagged (photo_changed) and the card says so -- survey photo
+  vs map photo inside the outline, brightness change > 60 and edge
+  correlation < 0.25; 35 Brecon St was a deck under construction in 2021
+  and has rooftop plant now; CBD top ten all rebuilt/demolished, Arrowtown
+  ~8/12 (rest re-roofed), so a note, not a withheld layout; (3) portrait
+  first: live layouts are 36-51% landscape on pitched roofs (a 10% margin
+  and one orientation lock per building); margin being measured
+  (SOLAR_LANDSCAPE_MARGIN). Live already: the 14 kW household cap only for
+  one house (a residential roof over 350 m2 is uncapped; 12 Brunswick St
+  was capped at 14 kW).
 - **Next build after v54 (on main): obstruction "blobs" that are roof
   levels.** 12/16 Kent St (4735304, Josh: "no panels on the right wing's
   empty flat area") had a 160 m2 obstruction whose returns are two flat
