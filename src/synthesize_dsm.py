@@ -37,6 +37,7 @@ Usage: python src/synthesize_dsm.py <region>
 
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -159,6 +160,43 @@ def _edge_groups(poly):
     return groups
 
 
+def _wave_labels(groups, x, y, fallback):
+    """Which wall's slope reaches each point first, as the straight skeleton
+    has it: a wall's slope arrives at its LINE distance, inside the zone its
+    wavefront sweeps -- between the bisectors at its two ends. Distance to the
+    wall SEGMENT (the old rule) is a circle round an inside corner, so a
+    T or L house had curved valleys (4718459, 20 Oct); the bisector makes
+    them straight, which is what a builder frames. Ignores the skeleton's
+    later events, so it is exact on the common house shapes and close
+    elsewhere; a point no zone covers keeps the nearest-wall answer."""
+    n = len(groups)
+    A = np.array([g.coords[0] for g in groups], dtype=float)
+    B = np.array([g.coords[-1] for g in groups], dtype=float)
+    U = B - A
+    U /= np.maximum(np.linalg.norm(U, axis=1, keepdims=True), 1e-12)
+    N = np.stack([-U[:, 1], U[:, 0]], axis=1)             # inward (left) normals
+    key = lambda c: (round(c[0], 6), round(c[1], 6))
+    ends = {key(B[i]): i for i in range(n)}
+    starts = {key(A[i]): i for i in range(n)}
+    best = np.full(len(x), np.inf)
+    lab = fallback.copy()
+    for i in range(n):
+        p_i, n_i = ends.get(key(A[i])), starts.get(key(B[i]))
+        if p_i is None or n_i is None:
+            continue
+        bA, bB = N[p_i] + N[i], N[i] + N[n_i]
+        if np.linalg.norm(bA) < 1e-9 or np.linalg.norm(bB) < 1e-9:
+            continue
+        dx, dy = x - A[i, 0], y - A[i, 1]
+        t = dx * N[i, 0] + dy * N[i, 1]                    # line distance, inward
+        ok = (t >= -1e-9) & (bA[0] * dy - bA[1] * dx <= 1e-9) & \
+             (bB[0] * (y - B[i, 1]) - bB[1] * (x - B[i, 0]) >= -1e-9)
+        win = ok & (t < best)
+        best[win] = t[win]
+        lab[win] = i
+    return lab
+
+
 def hip_faces(poly):
     """A hip roof's faces: the part of the footprint nearest each wall.
     Exactly the straight skeleton on a rectangle; its nearest-wall stand-in
@@ -168,6 +206,8 @@ def hip_faces(poly):
     from rasterio.transform import from_origin
     from shapely.geometry import shape as _shape
     from shapely.ops import unary_union
+    from shapely.geometry.polygon import orient
+    poly = orient(poly, 1.0)          # walls with the inside on their left
     groups = _edge_groups(poly)
     if len(groups) < 2:
         return []
@@ -179,7 +219,10 @@ def hip_faces(poly):
     pts = shapely.points(gx.ravel(), gy.ravel())
     inside = shapely.contains(poly, pts)
     d = np.stack([shapely.distance(pts, g) for g in groups])
-    label = np.where(inside, d.argmin(axis=0), -1).reshape(h, w).astype(np.int32)
+    near = d.argmin(axis=0)
+    if os.environ.get("SOLAR_HIP_BISECTORS", "1") != "0":
+        near = _wave_labels(groups, gx.ravel(), gy.ravel(), near)
+    label = np.where(inside, near, -1).reshape(h, w).astype(np.int32)
     t = from_origin(minx, maxy, FACE_GRID_M, FACE_GRID_M)
     parts = {}
     for geom, v in shapes(label, mask=label >= 0, transform=t):

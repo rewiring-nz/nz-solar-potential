@@ -80,6 +80,19 @@ def test_photo_roof_planes_rise_from_each_face_eave():
     assert planes[2] == [0.0, 0.0, 103.0]
 
 
+def test_an_l_house_has_a_straight_valley():
+    # equal arms: the two faces meeting at the inside corner mirror each other,
+    # and the valley between them is a straight line, not the arc the
+    # nearest-wall rule drew (4718459, 20 Oct)
+    from shapely.geometry import Polygon
+    from src.synthesize_dsm import hip_faces
+    L = Polygon([(0, 0), (20, 0), (20, 8), (8, 8), (8, 20), (0, 20)])
+    faces = sorted(f.area for f, _ in hip_faces(L))
+    assert len(faces) == 6
+    inner = [a for a in faces if 40 < a < 55]
+    assert len(inner) == 2 and abs(inner[0] - inner[1]) < 0.02 * inner[0], faces
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
