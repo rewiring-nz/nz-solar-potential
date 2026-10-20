@@ -2085,6 +2085,21 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
         if faces and any(f.get("from_labels") for f in faces):
             return faces
         if faces and any(f.get("from_selected") for f in faces):
+            # A weakly scored reading competes with the LiDAR partition
+            # (SELECTED_TRUST in roof_partition); the better explanation of
+            # the returns wins, the reading keeping ties.
+            from src.roof_partition import selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN
+            _ss = selected_score(building_id)
+            if _ss is not None and _ss < SELECTED_TRUST:
+                alt = partition_roof(building_id, building_geom.buffer(0), pts,
+                                     imagery_ds=imagery_ds, use_selected=False)
+                alt_score = explained_fraction(alt, pts) if alt else 0.0
+                if os.environ.get("SOLAR_FACE_DEBUG"):
+                    print(f"[partition {building_id}] selected reading {_ss:.2f} explains {score:.2f}; "
+                          f"LiDAR partition explains {alt_score:.2f}")
+                if alt and alt_score > score + SELECTED_COMPETE_MARGIN:
+                    faces, score = alt, alt_score
+        if faces and any(f.get("from_selected") for f in faces):
             # THROUGH the attach stage, unlike drawn faces: its whole-
             # facet drops (balcony staircase, plant decks) must run on
             # machine-chosen faces -- #4740503 shipped 850 panels over
