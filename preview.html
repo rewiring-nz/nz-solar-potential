@@ -18,6 +18,7 @@
 <!-- Hand-editing a roof's panels. Loads after economics.js and wires
      itself only once the map exists (see the _wire call after style load). -->
 <script src="panel_editor.js"></script>
+<script src="sun_shadows.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
@@ -762,6 +763,7 @@
 <div id="corner-actions">
   <!-- one switch for outlines and obstructions; roof markup is on the M key -->
   <button class="corner-btn" id="toggle-outlines" title="Building outlines, and the obstructions the panels avoid"><span class="dot"></span>Outlines &amp; obstructions</button>
+  <button class="corner-btn" id="toggle-sun" title="Cast shadows for a chosen date and time"><span class="dot"></span>Sun simulation</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
 </div>
@@ -2141,6 +2143,7 @@ function lruTouch(cache, key, max) {
 }
 
 map.on("load", async () => {
+  if (window.SunShadows) SunShadows.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
   // Kick off everything that does NOT depend on the buildings file before
   // awaiting it. solar_potential.geojson is 19MB (4MB gzipped) and its parse
   // is the gate on first paint; the panel tiles and the heat-map manifest
