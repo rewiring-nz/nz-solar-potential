@@ -33,35 +33,53 @@ and assign work.
   Roof lines next: all nine "lines wrong" roofs run on offline face readings
   scored 0.32-0.56 (some photo-based, shadow-prone).
 
-- **Roof lines: weak face readings (testing, branch selected-gate).** Josh,
-  20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly bad". All three run
-  on precomputed face readings (data/selected_faces) that explain 32-36% of
-  their LiDAR returns; the pipeline trusted any reading over 0.30, and half
-  of all 47,302 score under 0.54. Racking alone cannot rescue a wrong face
-  (3 Rees 31 -> 29 scattered panels). On 213 CBD roofs (Josh's verdict roofs
-  + 34 Ballarat + the CBD sample), a hard bar at 0.60: panels +2.6%, clean
-  roofs 35.2% -> 41.8%, ragged faces 55.9% -> 41.3%, empty good faces 7.5% ->
-  5.6%; 3 Rees 29 -> 55 panels in rows, 34 Ballarat 19 -> 37 in three clean
-  rows, 4725584 ragged faces 24 -> 4. But it lost good low-scored readings
-  (4735292's pyramid hips), so the rule being tested now: a reading under
-  0.60 competes with the LiDAR partition and loses only when that explains
-  over 5 points more of the returns. Also measured: of 2,124 obstructions on
-  those roofs, 28% stand up out of the roof in the LiDAR, 22% are flat on it
-  (skylights are flat and real, so not droppable on height alone), 50% have
-  too few returns to judge. Next: installer rows (SOLAR_RECT_ARRAYS: a panel
-  alone in its row goes, steps stay), then a photo check on obstructions.
+- **v53 NEXT (merged to main, builds after v52): roof lines and installer
+  rows.** Josh, 20 Oct: 34 and 14 Ballarat St, 3 Rees St "astonishingly
+  bad". All three ran on precomputed face readings (data/selected_faces)
+  explaining 32-36% of their LiDAR returns; the pipeline trusted any reading
+  over 0.30 (half of all 47,302 score under 0.54), and racking cannot rescue
+  a wrong face. What ships:
+  - a reading scored under 0.60 COMPETES with the whole LiDAR path
+    (partition, then skeleton / plain-roof competitors) and loses when that
+    explains 5+ points more of the returns, or explains as much while the
+    reading's own faces cover under 85% of the roof (the rest residual
+    fill), or nearly as much with 40% fewer faces (src/roof_segmentation.py
+    _partition_facets; SELECTED_TRUST etc. in roof_partition.py). A hard bar
+    at 0.60 was tried first: it fixed the bad roofs but threw away good
+    low-scored readings (4735292's pyramid hips) and moved seams off the
+    ridges (31% -> 33%); points-explained alone could not referee (34
+    Ballarat's padded two-strip reading 0.63 vs 0.67);
+  - installer rows (panel_fitting.shape_arrays, SOLAR_RECT_ARRAYS=0 off):
+    each row a continuous run, a panel alone in its row goes, steps on hip
+    faces stay, and a face is never emptied to tidy it (that first cut took
+    empty good faces 5.6% -> 8.0%);
+  - a raised roof level marked as an obstruction is roof when its returns
+    lie on a plane of their own parallel to the face (obstruction_planarity).
+    Tested; it did not fire on the case that prompted it (4735304's blob is
+    rough, 0.30 m median off any plane -- likely a real deck).
+  Measured against v52's rules: 213 CBD roofs -- panels 17,394 -> 17,408,
+  clean roofs 35.2% -> 41.8%, ragged faces 55.9% -> 42.3%, empty good faces
+  7.5% -> 5.6%, seams off the ridge unchanged at 31.0%; 200 Arrowtown roofs
+  -- panels -1.6%, ragged faces 58% -> 46%, empty good faces 5.0% -> 3.5%.
+  Renders: 3 Rees 29 -> 55 panels in rows, 34 Ballarat 19 -> 37 in three
+  clean rows, 4725580's triangle patchwork -> clean faces (31 -> 68),
+  4735371 43 -> 97, 5371072's townhouse rows clean. Still wrong: 14
+  Ballarat (flat roof cut by skylight strips), 4725584 (keeps its 148-piece
+  reading: 0.85 vs the LiDAR path's 0.64), big obstruction blobs on some
+  flat roofs. Obstructions: of 2,124 on those roofs 28% stand up out of the
+  roof in the LiDAR, 22% are flat on it (skylights are flat and real), 50%
+  have too few returns to judge -- next, a photo check.
 
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
   at the full system), at most 14 kW for a home, no cap for a business -- and
   a System size slider on the card (map and live view follow; "Back to the
-  economic size" restores it). Four money figures: Bill savings, Total bill
+  economic size" restores it; the default rounds down to whole arrays). Four money figures: Bill savings, Total bill
   savings, Net savings, Return on investment. The all-buildings dashboard
   starts collapsed to the Heat Map / Panel Layout buttons (hidden on phones).
   Sun simulation (sun_shadows.js): shadows cast from the LiDAR surface for
   any date and time, in workers; hills outside the survey cast none; needs
-  Safari 16.4+ for the worker path. Known: cutting the fill order at the
-  economic count can leave a short part-row; round to whole arrays next.
+  Safari 16.4+ for the worker path.
 
 - **v51, Queenstown first -- LIVE 20 Oct 10:05** (built at dfacd0de as v51c; gate: +13,080 panels, 0 big drops, 1 borderline roof withheld -- #4720962, confidence on the 0.45 line in v50 too; face-area check: 0 buildings lost area; panels +0.6..+2.6% in 23 of 25 Wakatipu regions, clean share flat). Four layout
   changes, each judged with tools/layout_ab.py on 200 Arrowtown and 200 CBD
