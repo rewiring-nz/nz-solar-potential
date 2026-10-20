@@ -140,6 +140,23 @@ and assign work.
   not the referee; no face-count weighting changes the outcome. OFF
   (SOLAR_COMPOSITE_ROOFS=1 on); needs proper wing fitting before it can help.
 
+- **Next build after v54 (on main): obstruction "blobs" that are roof
+  levels.** 12/16 Kent St (4735304, Josh: "no panels on the right wing's
+  empty flat area") had a 160 m2 obstruction whose returns are two flat
+  levels at the face's pitch (50% and 37%, 0.4 m apart) -- one 961 m2 face
+  spans two wings. obstruction_planarity now calls a big patch roof when up
+  to three planes parallel to the face hold 80% of its returns (plant and
+  ducts sit at every height and do not). 7 flat-roof cases 722 -> 812
+  panels (4735304 285 -> 358, right wing filled); 213 CBD roofs +1% panels,
+  no face area lost. Watch: 4735290 now places panels over dark rectangles
+  that were inside its blob (skylights or existing panels).
+- **Front end, 21 Oct:** sun simulation cross-fades between frames and
+  follows a drag at most ~7 times a second (Josh: "glitchy when dragging").
+  3D: the DSM-as-terrain view drapes panels down smeared walls (Josh: "looks
+  very bad"); crisp 3D buildings (vertical walls, roof planes fitted to the
+  DSM, panels on them; three.js custom layer, buildings3d.js) being built on
+  branch buildings-3d.
+
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
   at the full system), at most 14 kW for a home, no cap for a business -- and
