@@ -76,6 +76,19 @@ ROBUST_M = 0.3
 # moves in Arrowtown sat visibly better, but one jumped 3.9 m onto the next
 # roof. A second look further than this from its neighbours is not believed.
 SECOND_LOOK_MAX_M = 2.5
+# CHANGED SINCE THE SURVEY. The LiDAR and the survey-year photo are 2021; the
+# map's photo is 2026. Where a building was rebuilt in between, every layout
+# stage worked on a roof that is gone -- 35 Brecon St was a bare deck under
+# construction in 2021 and has rooftop plant now, which the panels cover
+# (Josh, 21 Oct). Inside the roof outline the two photos are compared: a
+# brightness change of more than CHANGE_LUM and an edge structure that no
+# longer matches (gradient correlation under CHANGE_STRUCT) flags it. On the
+# CBD the top ten flagged were all rebuilt or demolished; in Arrowtown about
+# 8 of 12 sampled were, the rest re-roofed in a new colour -- so the flag
+# writes a note on the building, it does not withhold the layout.
+CHANGE_LUM = 60.0
+CHANGE_STRUCT = 0.25
+CHANGE_ERODE_M = 0.8
 TILE_Z = 20
 STATS = {"measured": 0, "trusted": 0, "borrowed": 0}
 
@@ -183,6 +196,35 @@ def measure(geom, reference_ds, tiles):
     # so the map photo shows the roof -dc pixels east and +dr pixels north of
     # where the reference (and the LiDAR) has it. The drawing moves there.
     return -dc * RES_M, dr * RES_M, sharp
+
+
+def roof_change(geom, reference_ds, tiles, shift):
+    """(brightness change, edge correlation) inside the roof outline between
+    the survey-year photo and the map's photo, or None."""
+    from rasterio.features import geometry_mask
+    from rasterio.transform import from_origin
+    from rasterio.windows import from_bounds
+    inner = geom.buffer(-CHANGE_ERODE_M)
+    if inner.is_empty:
+        return None
+    b = geom.bounds
+    h, w = int((b[3] - b[1]) / RES_M), int((b[2] - b[0]) / RES_M)
+    if h < 20 or w < 20:
+        return None
+    try:
+        A = reference_ds.read([1, 2, 3], window=from_bounds(*b, reference_ds.transform), out_shape=(3, h, w))
+        dx, dy = shift[0], shift[1]
+        Bm = tiles.window((b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy), h, w)
+    except Exception:
+        return None
+    m = geometry_mask([inner], out_shape=(h, w), transform=from_origin(b[0], b[3], RES_M, RES_M), invert=True)
+    if m.sum() < 100:
+        return None
+    la, lb = A.astype(float).mean(axis=0)[m], Bm.astype(float).mean(axis=0)[m]
+    ga, gb = _gradient(A)[m], _gradient(Bm)[m]
+    if ga.std() < 1e-6 or gb.std() < 1e-6:
+        return None
+    return float(abs(la.mean() - lb.mean())), float(np.corrcoef(ga, gb)[0, 1])
 
 
 def reconcile(raw, second_look=None):
@@ -340,6 +382,17 @@ def register(region):
             print(f"[{region}] {len(markup)} labelled roofs left unshifted (drawn on the map's photo)")
     write_json_atomic(paths["dir"] / "markup_shift.json", markup)
     write_json_atomic(out_path, out)
+    # roofs whose photo has changed since the survey (see CHANGE_LUM)
+    changed = {}
+    for bid, g in geoms.items():
+        if bid >= 900_000_000:          # read from the current photo already
+            continue
+        s = out.get(str(bid)) or markup.get(str(bid)) or [0.0, 0.0, 0.0]
+        rc = roof_change(g, ref_ds, tiles, s)
+        if rc and rc[0] > CHANGE_LUM and rc[1] < CHANGE_STRUCT:
+            changed[str(bid)] = [round(rc[0]), round(rc[1], 2)]
+    write_json_atomic(paths["dir"] / "image_change.json", changed)
+    print(f"[{region}] {len(changed)} roofs look changed since the survey photo", flush=True)
     mags = [math.hypot(v[0], v[1]) for v in out.values()]
     print(f"[{region}] image lean: {len(out)}/{len(gdf)} buildings shifted "
           f"(median {np.median(mags) if mags else 0:.2f} m, p90 {np.percentile(mags, 90) if mags else 0:.2f} m; "

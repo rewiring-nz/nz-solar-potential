@@ -66,7 +66,7 @@ DEM_WIDE = DATA_DIR / "dem_wide_mosaic.tif"
 HEATMAP_ZMIN, HEATMAP_ZMAX = 9, 17
 
 # What the map's building layer carries, plus the type fields the toggle reads.
-SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed", "sr"]
+SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed", "photo_changed", "sr"]
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
@@ -222,6 +222,11 @@ def emit(region, out_root=OUT_ROOT):
     # newer than the survey, or in its gaps (tools/predict_photo_shape.py).
     from src.synthesize_dsm import load_photo_roofs
     photo_read = set(load_photo_roofs(region))
+    # ...and roofs whose photo has changed since the survey (register_imagery)
+    try:
+        changed = {int(k) for k in json.loads((paths["dir"] / "image_change.json").read_text())}
+    except Exception:
+        changed = set()
     by_type = defaultdict(lambda: {"n": 0, "n_est": 0, "panel_count": 0,
                                    "kwp": 0.0, "kwh": 0.0})
     for f in feats:
@@ -231,6 +236,8 @@ def emit(region, out_root=OUT_ROOT):
                               zones.get(int(p["building_id"])))
         if guessed or int(p["building_id"]) in photo_read:
             p["pitch_guessed"] = 1
+        if int(p["building_id"]) in changed:
+            p["photo_changed"] = 1
         if u and u != "Unknown":
             p["use"] = u
         if nm:

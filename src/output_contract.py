@@ -52,6 +52,9 @@ BUILDING_ALLOWED = [
     # 1 where no LiDAR exists and the roof pitch was guessed
     # (src/synthesize_dsm.py); absent everywhere else. Optional.
     "pitch_guessed",
+    # 1 where today's photo of the roof differs from the survey's (rebuilt or
+    # re-roofed since 2021; src/register_imagery.py roof_change). Optional.
+    "photo_changed",
     # the region whose sunlight table (data/sun/<sr>.json) priced this roof
     "sr",
 ]

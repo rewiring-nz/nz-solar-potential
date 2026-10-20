@@ -4203,11 +4203,22 @@ map.on("load", async () => {
           buildings. The real pitch, gables, dormers and tree shade are not
           known, so the figures can be well off for any one roof.
         </div>` : "";
+    // Today's photo differs from the 2021 survey's (src/register_imagery.py):
+    // likely rebuilt or re-roofed, so the layout may describe the old roof.
+    const changedNote = p.photo_changed ? `
+        <div style="background:rgba(214,158,46,.14); border-left:3px solid #d69e2e;
+                    border-radius:3px; padding:8px 11px; margin:6px 0 10px;
+                    font-size:12.5px; line-height:1.45;">
+          <b>This roof may have changed since the 2021 survey.</b>
+          Today's photo looks different from the one taken with the laser
+          survey, so the building may have been rebuilt or re-roofed. The roof
+          faces, obstructions and panels here follow the 2021 roof.
+        </div>` : "";
     return `
       <div class="popup">
         <div class="sba-title">Specific Building Analysis</div>
         <h4 class="sba-addr">${title}</h4>
-        ${guessNote}
+        ${guessNote}${changedNote}
         <div class="sba-top">
         <div class="sba-left">
         <div class="est-section" id="est-heatmap">
