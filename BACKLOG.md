@@ -97,6 +97,26 @@ and assign work.
   2.5 m cap). Also confirmed on v52: per-face orientation is right -- the
   pyramid (4735292) racks portrait up every face.
 
+- **Next build after v53b (on main): plain-form roofs keep their lines; hips
+  with straight valleys.** Ranking every roof in live v52 by the health
+  checks: the worst 40 big roofs and the worst 40 houses are almost all roof
+  lines (seams off the ridge 39/40, ragged faces 39/40 and 34/40); panel-level
+  faults no longer top the list. Two causes found on the worst houses:
+  (1) where a plain hip form wins (src/structured_roof.py), the later stages
+  (ridge snap, seams to plane lines, straightening) moved its exact lines
+  onto noisy plane crossings -- 4718459's T-shaped hip came out with a
+  doubled ridge and curved seams; those stages now skip a plain-form roof
+  (SOLAR_KEEP_FORMS=0 off); (2) the hip form itself (synthesize_dsm.hip_faces)
+  labelled each point with its nearest wall SEGMENT, a circle round every
+  inside corner, so T and L houses had curved valleys; it now uses each
+  wall's swept zone between the bisectors at its ends (SOLAR_HIP_BISECTORS=0
+  off) -- an equal-armed L test house's two valley faces went 39.5 / 52.1 m2
+  to 47.0 / 47.0. On 150 Shotover/Lake Hayes houses: ragged faces 47.3% ->
+  45.3%, sliver faces 2.0% -> 1.3%, clean 26.7% -> 27.3%, no face area lost;
+  Arrowtown unchanged (few roofs there take a plain form). Being measured:
+  why the hip form loses on the rest (tiny skeleton faces with too few
+  returns reject the whole form on many-cornered outlines).
+
 - **Front end, 20 Oct (live):** a building opens with its economic system --
   the panels that pay for themselves (merit order, priced by the bill model
   at the full system), at most 14 kW for a home, no cap for a business -- and
