@@ -71,6 +71,25 @@ def test_outlier_and_weak_matches_borrow():
     assert out["0"] == [0.6, -0.8, 9.0]
 
 
+def test_a_robust_match_keeps_its_own_lean():
+    # 13 Douglas Ave: sharp, the same at a wider window, but further than its
+    # neighbours (a taller roof leans more) -- its own answer stands
+    raw = {i: (10.0 * i, 0.0, 0.0, 0.8, 9.0) for i in range(6)}
+    raw[6] = (35.0, 5.0, -0.2, 1.6, 8.2)
+    raw[7] = (25.0, 5.0, -2.0, 2.0, 1.5)     # weak; the wider look is sharp
+    looks = {6: (-0.3, 1.7, 6.8), 7: (0.1, 1.0, 6.0)}
+    out = ri.reconcile(raw, lambda b: looks.get(b))
+    assert out["6"] == [-0.2, 1.6, 8.2]
+    assert out["7"] == [0.1, 1.0, 6.0]
+
+
+def test_an_unsteady_outlier_still_borrows():
+    raw = {i: (10.0 * i, 0.0, 0.0, 0.8, 9.0) for i in range(6)}
+    raw[6] = (35.0, 5.0, 3.5, 3.5, 9.0)      # wider window says something else
+    out = ri.reconcile(raw, lambda b: (0.2, 0.9, 7.0))
+    assert out["6"][:2] == [0.0, 0.8] and out["6"][2] == 0.0
+
+
 def test_no_trusted_match_means_no_shift():
     assert ri.reconcile({1: (0.0, 0.0, 1.0, 1.0, 2.0)}) == {}
 

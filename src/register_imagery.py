@@ -60,6 +60,18 @@ NEIGHBOUR_M = 150.0
 NEIGHBOUR_K = 8
 MIN_NEIGHBOURS = 2
 MIN_AREA_M2 = 20.0
+# A SECOND LOOK, WIDER. The neighbour check above overrode correct answers: a
+# taller roof leans further than the houses round it, so its own sharp match
+# "disagreed" and was replaced -- 13 Douglas Avenue (4746298) matched 1.6 m
+# north at sharpness 8.2, steady at every window size, and shipped its
+# neighbours' 0.8 m, leaving the panels a metre off the roof Josh sees. So a
+# match that is out of line with its neighbours, or too weak to trust, is
+# measured again over a WIDE_PAD_M window. Agreeing with itself within
+# ROBUST_M at a trusted sharpness makes it robust: kept whatever the
+# neighbours say. On 300 Arrowtown roofs the wide window reproduced trusted
+# matches within 0.5 m 97% of the time and made 24% of weak ones trustworthy.
+WIDE_PAD_M = 12.0
+ROBUST_M = 0.3
 TILE_Z = 20
 STATS = {"measured": 0, "trusted": 0, "borrowed": 0}
 
@@ -169,9 +181,11 @@ def measure(geom, reference_ds, tiles):
     return -dc * RES_M, dr * RES_M, sharp
 
 
-def reconcile(raw):
+def reconcile(raw, second_look=None):
     """raw: {bid: (x, y, dx, dy, sharp)} -> {bid: [dx, dy, quality]} with weak or
-    outlying matches replaced by their trusted neighbours' median."""
+    outlying matches replaced by their trusted neighbours' median.
+    second_look(bid) -> (dx, dy, sharp) or None: the wide-window measurement,
+    asked only of matches that would otherwise be replaced (see WIDE_PAD_M)."""
     from scipy.spatial import cKDTree
     bids = list(raw)
     if not bids:
@@ -189,9 +203,17 @@ def reconcile(raw):
         d, j = np.atleast_1d(d), np.atleast_1d(j)
         nb = [tidx[k] for k, dd in zip(j, d) if dd <= NEIGHBOUR_M and tidx[k] != i]
         med = np.median(V[nb], axis=0) if len(nb) >= MIN_NEIGHBOURS else None
+        wide = None
+        if second_look is not None and not (trusted[i] and (med is None or np.hypot(*(V[i] - med)) <= AGREE_MAX_M)):
+            wide = second_look(b)
+        robust = (wide is not None and wide[2] >= SHARP_MIN
+                  and (not trusted[i] or np.hypot(V[i][0] - wide[0], V[i][1] - wide[1]) <= ROBUST_M))
         if trusted[i] and (med is None or np.hypot(*(V[i] - med)) <= AGREE_MAX_M):
             dx, dy, q = V[i][0], V[i][1], raw[b][4]
             STATS["trusted"] += 1
+        elif robust:
+            dx, dy, q = (V[i][0], V[i][1], raw[b][4]) if trusted[i] else (wide[0], wide[1], wide[2])
+            STATS["second_look"] = STATS.get("second_look", 0) + 1
         elif med is not None:
             dx, dy, q = med[0], med[1], 0.0
             STATS["borrowed"] += 1
@@ -274,7 +296,7 @@ def register(region):
     gdf = gpd.read_file(dd if dd.exists() else paths["outlines"]).to_crs("EPSG:2193")
     ref_ds = rasterio.open(ref_path)
     tiles = _Tiles(paths["dir"] / "display_tiles")
-    raw = {}
+    raw, geoms = {}, {}
     for row in gdf.itertuples():
         g = row.geometry
         if g is None or g.is_empty or g.area < MIN_AREA_M2:
@@ -285,7 +307,17 @@ def register(region):
         STATS["measured"] += 1
         c = g.centroid
         raw[int(row.building_id)] = (c.x, c.y, m[0], m[1], m[2])
-    out = reconcile(raw)
+        geoms[int(row.building_id)] = g
+
+    def second_look(bid):
+        global PAD_M
+        keep = PAD_M
+        try:
+            PAD_M = WIDE_PAD_M
+            return measure(geoms[bid], ref_ds, tiles)
+        finally:
+            PAD_M = keep
+    out = reconcile(raw, second_look)
     # MARKUP DRAWN ON THE LEANING PHOTO ALREADY SITS WHERE THE MAP SHOWS THE
     # ROOF. The labelling tool shows the region's pipeline photo; where that
     # is not the reference (every Queenstown region but pilot, 2026 vs 2021),
@@ -306,7 +338,8 @@ def register(region):
     mags = [math.hypot(v[0], v[1]) for v in out.values()]
     print(f"[{region}] image lean: {len(out)}/{len(gdf)} buildings shifted "
           f"(median {np.median(mags) if mags else 0:.2f} m, p90 {np.percentile(mags, 90) if mags else 0:.2f} m; "
-          f"{STATS['trusted']} own, {STATS['borrowed']} from neighbours) in {time.time() - t0:.0f}s")
+          f"{STATS['trusted']} own, {STATS.get('second_look', 0)} on a second look, "
+          f"{STATS['borrowed']} from neighbours) in {time.time() - t0:.0f}s")
     return out
 
 
