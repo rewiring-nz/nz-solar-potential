@@ -70,6 +70,8 @@ def test_installer_rows_drop_a_bump_keep_steps_and_an_l():
         assert len(pf.shape_arrays(_grid(hip))) == 15     # stepped rows stay as steps
         column = [(r, 0) for r in range(4)]               # one portrait column up a narrow face
         assert len(pf.shape_arrays(_grid(column))) == 4
+        narrow = [(0, 0), (0, 1), (1, 0), (2, 0)]         # tidying would leave 2: keep the face as it was
+        assert len(pf.shape_arrays(_grid(narrow))) == 4
     finally:
         pf.RECT_ARRAYS = False
 

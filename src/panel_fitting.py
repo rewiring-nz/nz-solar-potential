@@ -1380,4 +1380,11 @@ def shape_arrays(panels, face_area=None):
             if len(r) == 1:
                 keep[r[0]] = False
     kept = [p for i, p in enumerate(panels) if keep[i]]
-    return enforce_arrays(kept, face_area=face_area) if len(kept) < len(panels) else kept
+    if len(kept) == len(panels):
+        return kept
+    # Never empty a face to tidy it: on a narrow face the singles can be most
+    # of the layout (empty good faces 5.6% -> 8.0% on 213 CBD roofs when they
+    # were dropped regardless), and a face with no panels is a worse answer
+    # than one with a stepped column.
+    shaped = enforce_arrays(kept, face_area=face_area)
+    return shaped if shaped else panels
