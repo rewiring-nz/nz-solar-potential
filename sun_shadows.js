@@ -417,6 +417,11 @@
   // shadows (setTiles on a single source clears it first).
   // ------------------------------------------------------------------
   const SHADE_OPACITY = 0.55, MIN_Z = 11, MAX_Z = 17;
+  // A swap cross-fades over FADE_MS instead of flipping in one frame: during
+  // a drag the frames came 70 ms apart and every flip read as a flicker
+  // (Josh, 21 Oct: "a bit glitchy when dragging").
+  const FADE_MS = 140;
+  const hideTimers = {};
   const IDS = ["sun-shade-a", "sun-shade-b"];
   let gen = 0, nextUrl = null;
   let map = null, front = 0, backUrl = null, frontUrl = null, swapTimer = null, swapWait = null;
@@ -437,6 +442,7 @@
           id, type: "raster", source: id, minzoom: MIN_Z,
           layout: { visibility: id === IDS[front] ? "visible" : "none" },
           paint: { "raster-opacity": id === IDS[front] ? SHADE_OPACITY : 0, "raster-fade-duration": 0,
+                   "raster-opacity-transition": { duration: FADE_MS, delay: 0 },
                    "raster-resampling": "linear" },
         }, beforeId());
       }
@@ -447,6 +453,8 @@
   function removeLayers() {
     gen++;
     clearSwap();
+    if (typeof shadeTimer !== "undefined" && shadeTimer) { clearTimeout(shadeTimer); shadeTimer = null; }
+    for (const k of Object.keys(hideTimers)) { if (hideTimers[k]) clearTimeout(hideTimers[k]); hideTimers[k] = null; }
     for (const id of IDS) { if (map.getLayer(id)) map.removeLayer(id); if (map.getSource(id)) map.removeSource(id); }
     layersAdded = false; frontUrl = null; backUrl = null; nextUrl = null;
   }
@@ -470,6 +478,7 @@
     // a listener already queued in the current event dispatch can still
     // run after clearSwap; the generation stops it swapping twice
     const my = ++gen;
+    if (hideTimers[backId]) { clearTimeout(hideTimers[backId]); hideTimers[backId] = null; }
     map.getSource(backId).setTiles([url]);
     map.setPaintProperty(backId, "raster-opacity", 0);
     map.setLayoutProperty(backId, "visibility", "visible");
@@ -481,7 +490,13 @@
       front = 1 - front;
       map.setPaintProperty(IDS[front], "raster-opacity", SHADE_OPACITY);
       map.setPaintProperty(oldFront, "raster-opacity", 0);
-      map.setLayoutProperty(oldFront, "visibility", "none");
+      // hidden once it has faded out, unless it is reused before then
+      hideTimers[oldFront] = setTimeout(() => {
+        hideTimers[oldFront] = null;
+        if (IDS[front] !== oldFront && map.getLayer(oldFront) && backUrl === null) {
+          map.setLayoutProperty(oldFront, "visibility", "none");
+        }
+      }, FADE_MS + 40);
       frontUrl = backUrl; backUrl = null;
       map.triggerRepaint();
       if (nextUrl) { const u = nextUrl; nextUrl = null; showUrl(u); }
@@ -550,7 +565,22 @@
       : `<b>Sun is down</b> &middot; up ${clockLabel(info.rise)}&ndash;${clockLabel(info.set)}`;
     ui.play.innerHTML = state.playing ? "&#10074;&#10074;" : "&#9654;";
     ui.play.setAttribute("aria-label", state.playing ? "Pause" : "Play through the day");
-    if (state.on && map) showUrl(tileUrl(sun));
+    if (state.on && map) shadeSoon(tileUrl(sun));
+  }
+  // While the slider is dragged the shadows follow at most every SHADE_EVERY_MS
+  // (the labels follow every step); the last position always lands.
+  const SHADE_EVERY_MS = 140;
+  let lastShade = 0, shadeTimer = null, shadeUrl = null;
+  function shadeSoon(url, now) {
+    shadeUrl = url;
+    const wait = now ? 0 : SHADE_EVERY_MS - (performance.now() - lastShade);
+    if (wait <= 0) {
+      if (shadeTimer) { clearTimeout(shadeTimer); shadeTimer = null; }
+      lastShade = performance.now();
+      showUrl(shadeUrl);
+    } else if (!shadeTimer) {
+      shadeTimer = setTimeout(() => { shadeTimer = null; lastShade = performance.now(); showUrl(shadeUrl); }, wait);
+    }
   }
 
   function setPlaying(on) {
@@ -666,6 +696,8 @@
       quick: Array.from(p.querySelectorAll(".sun-dates button")), meta: p.querySelector(".sun-meta"),
     };
     ui.slider.addEventListener("input", () => { state.minutes = +ui.slider.value; refresh(); });
+    // on release, the exact time at once
+    ui.slider.addEventListener("change", () => { if (state.on && map && lastSun) shadeSoon(tileUrl(lastSun), true); });
     ui.play.addEventListener("click", () => setPlaying(!state.playing));
     ui.quick.forEach(b => b.addEventListener("click", () => {
       state.date = state.date.slice(0, 4) + "-" + b.dataset.md; refresh();
