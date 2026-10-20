@@ -122,6 +122,7 @@ def roof_heights(poly, xs, ys, base, kind, pitch_deg, eave_m):
 SIMPLIFY_M = 0.3            # outline jogs finer than this are not roof edges
 MERGE_DEG = 15.0            # consecutive walls within this bearing are one roof edge
 FACE_GRID_M = 0.25          # resolution the hip faces are labelled at
+JOG_M = 1.0                 # wall steps shallower than this are one wall to a hip
 SELECTED_DIR = DATA_DIR / "selected_faces"
 
 
@@ -197,10 +198,28 @@ def _wave_labels(groups, x, y, fallback):
     return lab
 
 
-def hip_faces(poly):
+def without_jogs(poly, jog_m=None):
+    """The outline with wall steps shallower than jog_m straightened out
+    (simplify): a roof carries one plane over a small step in the wall, and a
+    hip built on every step is a fan of slivers (4726934: a 16-face hip, 20
+    Oct). Depth is what matters -- a 1 m step along a 3 m run is still one
+    wall to a roofer."""
+    j = JOG_M if jog_m is None else jog_m
+    try:
+        q = poly.simplify(j, preserve_topology=True)
+    except Exception:
+        return poly
+    if q.is_empty or q.geom_type != "Polygon" or q.area < 0.85 * poly.area:
+        return poly
+    return q
+
+
+def hip_faces(poly, mask=None):
     """A hip roof's faces: the part of the footprint nearest each wall.
     Exactly the straight skeleton on a rectangle; its nearest-wall stand-in
-    elsewhere. Returns [(polygon, wall LineString)]."""
+    elsewhere. Returns [(polygon, wall LineString)]. With `mask`, the walls
+    are poly's but the faces cover mask (the real outline) -- so a hip can
+    be built on the jog-free outline and still roof the whole building."""
     import shapely
     from rasterio.features import shapes
     from rasterio.transform import from_origin
@@ -211,13 +230,14 @@ def hip_faces(poly):
     groups = _edge_groups(poly)
     if len(groups) < 2:
         return []
-    minx, miny, maxx, maxy = poly.bounds
+    cover = poly if mask is None else mask
+    minx, miny, maxx, maxy = cover.union(poly).bounds
     w = max(int(math.ceil((maxx - minx) / FACE_GRID_M)), 1)
     h = max(int(math.ceil((maxy - miny) / FACE_GRID_M)), 1)
     gx, gy = np.meshgrid(minx + (np.arange(w) + 0.5) * FACE_GRID_M,
                          maxy - (np.arange(h) + 0.5) * FACE_GRID_M)
     pts = shapely.points(gx.ravel(), gy.ravel())
-    inside = shapely.contains(poly, pts)
+    inside = shapely.contains(cover, pts)
     d = np.stack([shapely.distance(pts, g) for g in groups])
     near = d.argmin(axis=0)
     if os.environ.get("SOLAR_HIP_BISECTORS", "1") != "0":
@@ -229,7 +249,7 @@ def hip_faces(poly):
         parts.setdefault(int(v), []).append(_shape(geom))
     faces = []
     for v, ps in parts.items():
-        f = unary_union(ps).simplify(FACE_GRID_M, preserve_topology=True).intersection(poly)
+        f = unary_union(ps).simplify(FACE_GRID_M, preserve_topology=True).intersection(cover)
         for q in ([f] if f.geom_type == "Polygon" else getattr(f, "geoms", [])):
             if q.geom_type == "Polygon" and q.area >= 1.0:
                 faces.append((q, groups[v]))

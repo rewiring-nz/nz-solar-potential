@@ -93,6 +93,16 @@ def test_an_l_house_has_a_straight_valley():
     assert len(inner) == 2 and abs(inner[0] - inner[1]) < 0.02 * inner[0], faces
 
 
+def test_a_shallow_wall_step_does_not_fan_the_hip():
+    # a 1 m notch in the front wall: still a four-face hip, still roofing the whole house
+    from shapely.geometry import Polygon
+    from src.synthesize_dsm import hip_faces, without_jogs
+    p = Polygon([(0, 0), (8, 0), (8, 1), (11, 1), (11, 0), (20, 0), (20, 10), (0, 10)])
+    faces = hip_faces(without_jogs(p), mask=p)
+    assert len(faces) == 4
+    assert sum(f.area for f, _ in faces) > 0.97 * p.area
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

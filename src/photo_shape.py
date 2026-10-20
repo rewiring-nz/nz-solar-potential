@@ -317,7 +317,8 @@ def _form_candidates(fp):
     except Exception:
         pass
     try:
-        hf = hip_faces(g)
+        from src.synthesize_dsm import without_jogs
+        hf = hip_faces(without_jogs(g), mask=g)
         if hf:
             out.append(("hip", [(q, aspect_of(wall_plane(w, 0.0, 3.0, 20.0))) for q, w in hf]))
     except Exception:
