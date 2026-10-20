@@ -1267,7 +1267,10 @@ SELECTED_FACES_DIR = (Path(__file__).resolve().parent.parent
 # with production is a trap, not a safety net; opt OUT with
 # SOLAR_SELECTED_FACES=0 to build the old path deliberately.
 USE_SELECTED_FACES = os.environ.get("SOLAR_SELECTED_FACES", "1") == "1"
-SELECTED_MIN_SCORE = 0.30
+# Below this share of the roof's LiDAR returns explained, a precomputed
+# reading is not trusted and the LiDAR partition decides (SOLAR_SELECTED_MIN_SCORE
+# to experiment). 34 Ballarat St ran on a 2-face "line" reading at 0.36.
+SELECTED_MIN_SCORE = float(os.environ.get("SOLAR_SELECTED_MIN_SCORE", "0.30"))
 SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 
 
