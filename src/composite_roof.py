@@ -42,6 +42,7 @@ MIN_FACE_POINTS = 10
 MIN_SLOPE_DEG, MAX_SLOPE_DEG = 8.0, 55.0
 FLAT_MAX_DEG = 5.0
 WING_TIE = 0.03            # a simpler wing form wins within this much
+REFIT_ROUNDS = 3
 
 
 def enabled():
@@ -76,6 +77,27 @@ def _largest_rect(grid):
     return best
 
 
+def _extend(grid, r0, r1, c0, c1):
+    """Grow a rectangle one row / column at a time while it stays all-roof,
+    preferring the longer growth -- a stub becomes the wing it belongs to."""
+    rows, cols = grid.shape
+    def grow_rows():
+        a, b = r0, r1
+        while a > 0 and grid[a - 1, c0:c1].all(): a -= 1
+        while b < rows and grid[b, c0:c1].all(): b += 1
+        return a, b
+    def grow_cols():
+        a, b = c0, c1
+        while a > 0 and grid[r0:r1, a - 1].all(): a -= 1
+        while b < cols and grid[r0:r1, b].all(): b += 1
+        return a, b
+    ra, rb = grow_rows()
+    ca, cb = grow_cols()
+    if (rb - ra) * (c1 - c0) >= (r1 - r0) * (cb - ca):
+        return ra, rb, c0, c1
+    return r0, r1, ca, cb
+
+
 def _axes(footprint):
     mrr = footprint.minimum_rotated_rectangle
     xs, ys = mrr.exterior.coords.xy
@@ -103,6 +125,11 @@ def wings(footprint):
         area, r0, r1, c0, c1 = _largest_rect(work)
         if area * GRID_M * GRID_M < WING_MIN_M2:
             break
+        if out:
+            # A wing runs INTO the block it joins (a T's stem under its bar):
+            # grow the leftover rectangle along whichever axis it can, over
+            # cells already covered, while every cell stays on the roof.
+            r0, r1, c0, c1 = _extend(grid, r0, r1, c0, c1)
         rect = box(minx + c0 * GRID_M, miny + r0 * GRID_M, minx + c1 * GRID_M, miny + r1 * GRID_M)
         out.append(affinity.rotate(rect, ang, origin=c, use_radians=True))
         covered[r0:r1, c0:c1] = True
@@ -222,6 +249,21 @@ def composite_faces(footprint, pts):
         if best is None:
             return None
         chosen.append((best[1], best[2], best[3]))
+    # Refit: once joined, each face is refitted on the returns it actually
+    # wins, and the roof joined again -- the junction returns a wing's own
+    # fit had to share go to the right face.
+    for _round in range(REFIT_ROUNDS):
+        fid_pts = _envelope(pts[:, 0], pts[:, 1], ws, chosen)
+        k = 0
+        new = []
+        for name, pls, lab in chosen:
+            npl = []
+            for p in pls:
+                m = fid_pts == k
+                npl.append(_fit(pts[m]) if m.sum() >= MIN_FACE_POINTS else p)
+                k += 1
+            new.append((name, npl, lab))
+        chosen = new
     planes = [p for _n, pls, _l in chosen for p in pls]
     minx, miny, maxx, maxy = footprint.bounds
     w = max(int(math.ceil((maxx - minx) / GRID_M)), 1)
