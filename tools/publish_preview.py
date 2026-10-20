@@ -22,7 +22,8 @@ import config
 from tools.served_outputs import SERVED_DIRS, SERVED_FILES, STATIC_DIRS
 
 DATA = ROOT / "data"
-FRONTEND_FILES = ("preview.html", "economics.js", "bill_tool.js", "panel_editor.js")
+FRONTEND_FILES = ("preview.html", "economics.js", "bill_tool.js", "panel_editor.js", "workings.js",
+                  "generation.js", "sun_shadows.js", "buildings3d.js")
 CORE_DATA_FILES = ("panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles")
 IMMUTABLE_CACHE = "public,max-age=31536000,immutable"
 REVALIDATE_CACHE = "public,no-cache,max-age=0"
