@@ -49,9 +49,11 @@ TWIN_AREA_RATIO = 0.55       # generous on purpose: 1 Gorge Rd's symmetric gable
 # partitions 66 vs 39 m2 because the outline is rotated against the roof, and a
 # tight ratio let exactly the roofs that need this rule escape it. Opposed
 # aspect plus matching slope already identifies "two sides of one ridge".
-LANDSCAPE_WIN_MARGIN = 0.10  # landscape must fit >10% more panels than portrait to be
-# chosen. Below that the tidier, conventional orientation is worth more than the extra panel,
-# and -- more importantly -- two near-identical halves of one roof then agree with each other.
+LANDSCAPE_WIN_MARGIN = float(os.environ.get("SOLAR_LANDSCAPE_MARGIN", "0.10"))  # landscape must
+# fit this much more than portrait to be chosen. Below that the tidier, conventional orientation is
+# worth more than the extra panel, and two near-identical halves of one roof then agree. Josh, 21 Oct:
+# arrays are portrait -- long side up the slope, two rails across the panels' top and bottom along
+# the array -- and at 0.10 the live layouts were 36-51% landscape on pitched roofs.
 OFFSET_STEPS = 10  # vertical row-start offsets tried per orientation (columns are scanned exhaustively, see _pack_orientation)
 
 
