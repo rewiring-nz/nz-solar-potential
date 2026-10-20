@@ -151,9 +151,10 @@ and assign work.
   correlation < 0.25; 35 Brecon St was a deck under construction in 2021
   and has rooftop plant now; CBD top ten all rebuilt/demolished, Arrowtown
   ~8/12 (rest re-roofed), so a note, not a withheld layout; (3) portrait
-  first: live layouts are 36-51% landscape on pitched roofs (a 10% margin
-  and one orientation lock per building); margin being measured
-  (SOLAR_LANDSCAPE_MARGIN). Live already: the 14 kW household cap only for
+  first: live layouts were 36-51% landscape on pitched roofs (a 10% margin
+  and one orientation lock per building); landscape must now fit 40% more
+  (SOLAR_LANDSCAPE_MARGIN): on 200 Arrowtown roofs landscape 47% -> 7% of
+  pitched panels, panels -4.7%, empty good faces 4% -> 5%. Live already: the 14 kW household cap only for
   one house (a residential roof over 350 m2 is uncapped; 12 Brunswick St
   was capped at 14 kW).
 - **Next build after v54 (on main): obstruction "blobs" that are roof
