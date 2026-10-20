@@ -4566,7 +4566,7 @@ map.on("load", async () => {
     raw.forEach(f => {
       const q = f.properties;
       if (q.fill_order == null || by.has(q.fill_order)) return;
-      by.set(q.fill_order, { order: q.fill_order, rank: q.fill_rank, kwh: q.ac_kwh_year || 0 });
+      by.set(q.fill_order, { order: q.fill_order, rank: q.fill_rank, kwh: q.ac_kwh_year || 0, arr: q.array_id });
     });
     return [...by.values()].sort((a, b) => a.order - b.order);
   }
@@ -4581,7 +4581,7 @@ map.on("load", async () => {
     const all = allPanelsOf(bid);
     if (!all.length) { if (bldgSys) { bldgSys = null; applyPanelDensityPaint(); } return; }
     bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks: all.map(q => q.rank),
-                kwh: all.map(q => q.kwh), k: all.length, auto: true, settled: false, sig: null };
+                kwh: all.map(q => q.kwh), arrs: all.map(q => q.arr), k: all.length, auto: true, settled: false, sig: null };
     applyPanelDensityPaint();
   }
   // The economic default, from the bill model's own pricing of the FULL
@@ -4607,11 +4607,22 @@ map.on("load", async () => {
     let econK = 0;
     S.kwh.forEach((kwh, i) => { if (kwh >= (i < o.cutoff ? o.retailBE : o.exportBE)) econK++; });
     const capK = isBiz ? Infinity : Math.floor(HOME_SYSTEM_CAP_KW * 1000 / assumptions.panel_rated_power_w);
-    Object.assign(S, { settled: true, sig, econK, capK, isBiz, k: Math.min(econK, capK) });
+    Object.assign(S, { settled: true, sig, econK, capK, isBiz, k: wholeArrays(S, Math.min(econK, capK)) });
     if (S.k !== S.orders.length) {
       applyPanelDensityPaint();
       setTimeout(() => updateFittedStats(buildingId), 0);
     }
+  }
+  // Cutting the fill order at an exact count can leave a part of a row on the
+  // roof. Round down to the last whole array when that keeps at least 75% of
+  // the size; otherwise the exact count stands (a single big array cut by the
+  // home cap). The slider itself still moves panel by panel.
+  function wholeArrays(S, k) {
+    if (!S.arrs || k <= 0 || k >= S.orders.length || S.arrs[k - 1] == null) return k;
+    if (S.arrs[k] !== S.arrs[k - 1]) return k;            // already at a boundary
+    let j = k - 1;
+    while (j > 0 && S.arrs[j - 1] === S.arrs[k - 1]) j--;  // start of the cut array
+    return j >= 0.75 * k ? j : k;
   }
   // The card's slider and note for the open roof's system size.
   function renderBldgSys(buildingId, count) {
@@ -4628,6 +4639,8 @@ map.on("load", async () => {
       `${S.k.toLocaleString()} of ${S.orders.length.toLocaleString()} panels`;
     const capText = S.isBiz ? "" : ` up to ${HOME_SYSTEM_CAP_KW} kW for a home`;
     let note;
+    const rounded = S.auto && S.settled && S.k < Math.min(S.econK, S.capK)
+      ? " Rounded down to whole arrays, so no row is left half built." : "";
     if (S.auto && !S.settled) note = "Working out which panels pay for themselves&hellip;";
     else if (S.auto) {
       note = S.econK === 0
@@ -4638,6 +4651,7 @@ map.on("load", async () => {
     } else {
       note = `Set by hand. <button type="button" class="sys-reset" id="bldg-sys-reset">Back to the economic size</button>`;
     }
+    note += rounded;
     document.getElementById("bldg-sys-note").innerHTML = note;
   }
 
