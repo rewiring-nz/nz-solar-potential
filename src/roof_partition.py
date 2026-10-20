@@ -1279,6 +1279,7 @@ SELECTED_MIN_SCORE = float(os.environ.get("SOLAR_SELECTED_MIN_SCORE", "0.30"))
 # scored low -- the clean pyramid on 4735292 lost its hips.
 SELECTED_TRUST = float(os.environ.get("SOLAR_SELECTED_TRUST", "0.60"))
 SELECTED_COMPETE_MARGIN = float(os.environ.get("SOLAR_SELECTED_COMPETE_MARGIN", "0.05"))
+SELECTED_MIN_COVER = float(os.environ.get("SOLAR_SELECTED_MIN_COVER", "0.85"))  # see _partition_facets
 
 
 def selected_score(building_id):

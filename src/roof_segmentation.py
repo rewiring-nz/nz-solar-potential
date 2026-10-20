@@ -2088,7 +2088,7 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
             # A weakly scored reading competes with the LiDAR partition
             # (SELECTED_TRUST in roof_partition); the better explanation of
             # the returns wins, the reading keeping ties.
-            from src.roof_partition import selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN
+            from src.roof_partition import selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN, SELECTED_MIN_COVER
             _ss = selected_score(building_id)
             if _ss is not None and _ss < SELECTED_TRUST:
                 alt = partition_roof(building_id, building_geom.buffer(0), pts,
@@ -2097,7 +2097,18 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None):
                 if os.environ.get("SOLAR_FACE_DEBUG"):
                     print(f"[partition {building_id}] selected reading {_ss:.2f} explains {score:.2f}; "
                           f"LiDAR partition explains {alt_score:.2f}")
-                if alt and alt_score > score + SELECTED_COMPETE_MARGIN:
+                # Points explained alone cannot tell them apart: 34 Ballarat
+                # St's two-strip reading, padded out with leftover pieces,
+                # explained 0.63 against the LiDAR partition's 0.67. What
+                # gives a bad reading away is how little of the roof its own
+                # faces cover -- the rest is residual fill.
+                _own = sum(f["geometry"].area for f in faces if f.get("from_selected"))
+                _all = sum(f["geometry"].area for f in faces) or 1.0
+                if os.environ.get("SOLAR_FACE_DEBUG"):
+                    print(f"[partition {building_id}] reading's own faces cover {_own / _all:.2f} of the roof")
+                if alt and (alt_score > score + SELECTED_COMPETE_MARGIN
+                            or (_own / _all < SELECTED_MIN_COVER
+                                and alt_score >= score - SELECTED_COMPETE_MARGIN)):
                     faces, score = alt, alt_score
         if faces and any(f.get("from_selected") for f in faces):
             # THROUGH the attach stage, unlike drawn faces: its whole-
