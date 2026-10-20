@@ -56,6 +56,12 @@ def _normal(a, b):
 
 
 def _is_level(pts, f):
+    # An outline drawn round a level also takes in a strip of the roof below
+    # it (4735304: 79% up, 17% down), so the level's plane is fitted to the
+    # raised returns when they are the clear majority.
+    r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+    if float((r > RAISED_M).mean()) >= 0.6:
+        pts = pts[r > RAISED_M]
     if len(pts) < LEVEL_MIN_POINTS:
         return False
     A = np.c_[pts[:, 0], pts[:, 1], np.ones(len(pts))]

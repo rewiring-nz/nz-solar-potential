@@ -79,6 +79,13 @@ def test_raised_roof_level_is_roof():
     assert op.drop_roof_like([level], FACE, [FACE], pc) == []
 
 
+def test_raised_level_outline_overlapping_the_roof_below_is_roof():
+    # the outline takes in a 1 m strip of the face beside the level
+    level = box(1, 1, 7, 5)
+    pc = _replace(1, 1, 6, 5, lambda x, y: 100.0 + 0.4 * y + 0.6)
+    assert op.drop_roof_like([level], FACE, [FACE], pc) == []
+
+
 def test_big_ragged_plant_area_stays():
     # 20 m2 of plant and ducts at all heights: big, but on no plane of its own
     plant = box(1, 1, 6, 5)
