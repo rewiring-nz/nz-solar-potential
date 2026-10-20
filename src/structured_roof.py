@@ -129,6 +129,21 @@ def maybe_structured(facets, footprint, pc_source, building_id=None):
         share, _ = _inlier_share([(p, pl) for p, pl, _ in fitted], pts)
         if best is None or share > best[0] or (abs(share - best[0]) < 1e-9 and len(fitted) < len(best[2])):
             best = (share, name, fitted)
+    # ...and the house as its wings, each a plain roof (src/composite_roof.py)
+    try:
+        from src import composite_roof as CR
+        comp = CR.composite_faces(footprint, pts) if CR.enabled() else None
+    except Exception:
+        comp = None
+    if comp:
+        cfaces, kinds = comp
+        cf = []
+        for poly, plane in cfaces:
+            on = shapely.contains_xy(poly, pts[:, 0], pts[:, 1])
+            cf.append((poly, plane, int(on.sum())))
+        share, _ = _inlier_share([(p, pl) for p, pl, _ in cf], pts)
+        if best is None or share > best[0] + 1e-9:
+            best = (share, "wings:" + "+".join(kinds), cf)
     if best is None or best[0] < current - STRUCTURED_TOL:
         return facets
     share, name, fitted = best
