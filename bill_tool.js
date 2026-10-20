@@ -510,7 +510,7 @@ function btReturns(cost, save, exportD, opts) {
     return (lo + hi) / 2;
   };
   const r = solve();
-  const irr = Wk.given("Return per year", r, "share", [costN, lifetime, replN], {
+  const irr = Wk.given("Return on investment, a year", r, "share", [costN, lifetime, replN], {
     dp: 1,
     formula: r == null ? "no rate makes it come out even" :
       `the interest rate at which ${Wk.fmt(costN.value, "$")} paid now and each year's savings received come out even`,
@@ -864,12 +864,12 @@ function renderBillTool(box, ctx) {
       `<div class="sx-summary">` +
         `<div class="sx-cell hero" data-wk="save" tabindex="0" role="button"><div class="l">Bill savings</div>` +
           `<div class="v">${haveGen ? money(save1) : "–"}</div><div class="s">a year${withBatt ? ", with the battery" : ""}</div></div>` +
-        `<div class="sx-cell" data-wk="lifetime" tabindex="0" role="button"><div class="l">Savings over ${ret.years} years</div>` +
-          `<div class="v">${haveGen ? money(ret.nodes.lifetime) : "–"}</div><div class="s">the panels' life</div></div>` +
+        `<div class="sx-cell" data-wk="lifetime" tabindex="0" role="button"><div class="l">Total bill savings</div>` +
+          `<div class="v">${haveGen ? money(ret.nodes.lifetime) : "–"}</div><div class="s">over ${ret.years} years</div></div>` +
         `<div class="sx-cell" data-wk="net" tabindex="0" role="button"><div class="l">Net savings</div>` +
           `<div class="v">${haveGen ? money(ret.nodes.net) : "–"}</div><div class="s">${haveGen ? pbText : ""}</div></div>` +
-        `<div class="sx-cell" data-wk="irr" tabindex="0" role="button"><div class="l">Return per year</div>` +
-          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">${ret.real ? "after inflation" : "before inflation"}</div></div>` +
+        `<div class="sx-cell" data-wk="irr" tabindex="0" role="button"><div class="l">Return on investment</div>` +
+          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">a year, ${ret.real ? "after inflation" : "before inflation"}</div></div>` +
       `</div>` +
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
@@ -882,12 +882,12 @@ function renderBillTool(box, ctx) {
 
       `<div class="sx-h">Over the panels' life</div>` +
       `<div class="sx-group">` +
-        row(`Savings over ${ret.years} years`, val(money(ret.nodes.lifetime)), { go: "lifetime", small: ret.real ? "in today's dollars" : "nominal" }) +
+        row("Total bill savings", val(money(ret.nodes.lifetime)), { go: "lifetime", small: `over ${ret.years} years, ` + (ret.real ? "in today's dollars" : "nominal") }) +
         row("Replacements", val(btMoney(-ret.nodes.replacements.value)), { go: "repl", small: withBatt ? "inverter and battery" : "inverter" }) +
         row("Cost", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost" }) +
         row("Net savings", val(money(ret.nodes.net)), { go: "net", cls: "total" }) +
         row("Pays back in", val(ret.payback == null ? "not within 60 years" : ret.payback.toFixed(1) + " years"), { go: "payback" }) +
-        row("Return per year", val(ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1)), { go: "irr", small: ret.real ? "after inflation" : "before inflation" }) +
+        row("Return on investment", val(ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1)), { go: "irr", small: "a year, " + (ret.real ? "after inflation" : "before inflation") }) +
       `</div>` +
       `<div class="sx-h">Assumptions</div>` +
       `<div class="sx-sub">Electricity prices</div>` +

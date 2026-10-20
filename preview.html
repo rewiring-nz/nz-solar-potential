@@ -281,7 +281,13 @@
   }
   .collapse-btn:hover { color: #fff; }
   .dashboard-body { overflow: hidden; }
-  .dashboard-inview.collapsed .dashboard-body { display: none; }
+  /* Collapsed (the default, Josh 20 Oct): only the Heat Map / Panel Layout
+     buttons show; the totals for everything in view open on request. */
+  .dashboard-inview.collapsed .dashboard-body > :not(.toggle-row):not(#inview-expand) { display: none; }
+  .dashboard-inview:not(.collapsed) #inview-expand { display: none; }
+  #inview-expand { display: block; width: 100%; margin-top: 8px; background: none; border: none; padding: 2px 0;
+    color: var(--ink-2, #bbb); font: inherit; font-size: var(--fs-label, 11px); text-align: left; cursor: pointer; }
+  #inview-expand:hover, #inview-expand:focus-visible { color: #fff; }
   .rsp-heading { font-size: 19px; font-weight: 800; letter-spacing: 0.2px;
     background: linear-gradient(90deg, #ffe600, #ff8c00);
     -webkit-background-clip: text; background-clip: text;
@@ -429,6 +435,22 @@
     border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
   #vslider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff;
     border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,0.5); cursor: pointer; }
+  /* The building card's own system size: how many of this roof's panels. */
+  .sys-size { margin: 10px 0 2px; padding: 10px 12px 9px; background: rgba(255,255,255,.05); border-radius: 12px; }
+  .sys-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    font-size: 13px; color: rgba(235,235,245,.75); margin-bottom: 7px; }
+  .sys-head label { font-weight: 600; color: #f2f2f7; }
+  #bldg-sys-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #bldg-sys-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; border-radius: 4px;
+    background: linear-gradient(to right, #ffb000 0 calc(var(--fill, 50) * 1%), rgba(255,255,255,.16) calc(var(--fill, 50) * 1%) 100%);
+    outline: none; cursor: pointer; margin: 0; }
+  #bldg-sys-slider:focus-visible { outline: 2px solid #ffb000; outline-offset: 3px; }
+  #bldg-sys-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  #bldg-sys-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .sys-note { font-size: 11.5px; line-height: 1.4; color: rgba(235,235,245,.55); margin-top: 7px; }
+  .sys-reset { background: none; border: 0; padding: 0; font: inherit; color: #ffb000; cursor: pointer; text-decoration: underline; }
   /* Leader lines from just inside each end of the track, so the two extremes
      of the slider say what they actually mean rather than leaving "0-100%" to
      be interpreted. Set in a tiny bit from the true ends so the line does not
@@ -493,15 +515,15 @@
     .side-panel .sba-h3 { font-size: 13px; font-weight: 600; color: rgba(235,235,245,.6); margin: 16px 2px 6px; letter-spacing: 0; }
     .side-panel .sba-cap, .side-panel #bldg-coverage-options { display: none !important; }
     .side-panel #season-curves .curve-sub { display: none; }
-    /* one row of three: savings a year, net over the panels' life, return */
-    .side-panel .sx-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .side-panel .sx-cell[data-wk="lifetime"] { display: none; }
-    .side-panel .sx-cell { padding: 9px 10px 8px; border-bottom: 0 !important; border-right: 0.5px solid rgba(255,255,255,.09) !important; }
+    /* one row of four (Josh, 20 Oct): bill savings a year, total bill
+       savings over the panels' life, net of the cost, return on investment */
+    .side-panel .sx-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .side-panel .sx-cell { padding: 9px 8px 8px; border-bottom: 0 !important; border-right: 0.5px solid rgba(255,255,255,.09) !important; }
     .side-panel .sx-cell[data-wk="irr"] { border-right: 0 !important; }
-    .side-panel .sx-cell .l { font-size: 11.5px; }
-    .side-panel .sx-cell .v { font-size: 17px; }
-    .side-panel .sx-cell.hero .v { font-size: 19px; }
-    .side-panel .sx-cell .s { font-size: 10.5px; }
+    .side-panel .sx-cell .l { font-size: 11px; line-height: 1.25; }
+    .side-panel .sx-cell .v { font-size: 15.5px; }
+    .side-panel .sx-cell.hero .v { font-size: 17px; }
+    .side-panel .sx-cell .s { font-size: 10px; line-height: 1.3; }
   }
   @media (max-width: 700px) { .sba-compact-only { display: none !important; } }
   #season-curves { cursor: zoom-in; border-radius: 8px; }
@@ -610,6 +632,10 @@
        than sitting underneath it. */
     .ai-banner { top: 8px; left: 8px; right: 8px; transform: none; max-width: none; }
     body.has-ai-banner #m-top { top: 56px; }
+    /* The whole-view totals stay out of the way on a phone too (Josh, 20 Oct:
+       the region dashboard should not show by default; the Heat Map / Panel
+       Layout buttons along the bottom do). */
+    #m-box-all { display: none; }
     .m-box {
       background: rgba(0,0,0,0.62); border: 2px solid #ffe600; border-radius: 10px;
       padding: 6px 10px; text-align: center; color: #ffe600;
@@ -740,16 +766,17 @@
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
 </div>
 <div class="dashboard-stack">
-  <div class="dashboard dashboard-inview" id="dashboard-inview">
+  <div class="dashboard dashboard-inview collapsed" id="dashboard-inview">
     <div class="dashboard-title">
       <span class="rsp-heading">Rooftop Solar Potential</span>
-      <button class="collapse-btn" id="inview-collapse-btn" title="Collapse">&#9650;</button>
+      <button class="collapse-btn" id="inview-collapse-btn" title="Expand" aria-expanded="false">&#9660;</button>
     </div>
     <div class="dashboard-body">
       <div class="toggle-row">
         <button class="toggle-btn" id="toggle-heatmap-dash">Heat Map</button>
         <button class="toggle-btn" id="toggle-layout-dash">Panel Layout</button>
       </div>
+      <button type="button" id="inview-expand">Totals for all buildings in view &#9662;</button>
       
       <div class="rsp-row">
         <div class="rsp-assumption" id="inview-assumption">
@@ -1408,6 +1435,29 @@ const LAYOUT_KIND_FILTER = {
 // installer would quote; 81-100 are straggler blocks (only banded when a
 // big main array exists). Default shows arrays only; 100% shows everything.
 let panelDensityPct = 80;
+// THE OPEN BUILDING'S OWN SYSTEM SIZE (Josh, 20 Oct: "default to economic
+// panels, up to a certain size on buildings (around 14 kW for residential,
+// and no limit for business)", with a panel slider on the building card).
+// The first k panels in the roof's fill order (sunniest faces first, row by
+// row). null = the roof follows the density slider like every other roof.
+//   auto: still the economic default (nobody has moved its slider)
+//   settled: the default has been worked out at the current prices
+let bldgSys = null;   // { buildingId, orders, ranks, kwh, k, auto, settled, sig, econK, capK }
+const HOME_SYSTEM_CAP_KW = 14;
+function bldgSysMaxOrder() { return bldgSys && bldgSys.k > 0 ? bldgSys.orders[bldgSys.k - 1] : -Infinity; }
+// Whether a panel is within the system being shown: the open building's own
+// size, else the density slider.
+// Moving the density slider with a roof open moves that roof too: its size
+// becomes the panels at that density, set by hand.
+function bldgSysFollowDensity(pct) {
+  if (!bldgSys) return;
+  bldgSys.k = bldgSys.ranks.filter(r => r == null || r <= pct).length;
+  bldgSys.auto = false;
+}
+function withinSize(q) {
+  if (bldgSys && q.building_id === bldgSys.buildingId && q.fill_order != null) return q.fill_order <= bldgSysMaxOrder();
+  return !(q.fill_rank != null && q.fill_rank > panelDensityPct);
+}
 // Mirrors MIN_ROOF_CONFIDENCE in src/build_layout_geojson.py. Kept as a literal
 // rather than read from the data because it has to be known even for buildings
 // whose tiles predate the field.
@@ -1560,8 +1610,11 @@ let selectedBuildingProps = null;  // buildings-source props of the open panel (
 // with the whole town tiled that made the density slider crawl. A paint
 // change only rebinds shader properties, so dragging is smooth at any zoom.
 function densityOpacityExpr(baseOpacity) {
-  const dense = ["any", ["!", ["has", "fill_rank"]],
+  let dense = ["any", ["!", ["has", "fill_rank"]],
                  ["<=", ["get", "fill_rank"], panelDensityPct]];
+  // the open building shows its own system size (bldgSys), not the density
+  if (bldgSys) dense = ["case", ["all", ["==", ["get", "building_id"], bldgSys.buildingId], ["has", "fill_order"]],
+                        ["<=", ["get", "fill_order"], bldgSys.k > 0 ? bldgSysMaxOrder() : -1], dense];
   if (!panelEcon) return ["case", dense, baseOpacity, 0];
   // Filtering by band rides on OPACITY, not setFilter: setFilter re-evaluates
   // and re-uploads the geometry of every loaded tile, which is far too heavy
@@ -1706,7 +1759,7 @@ function toggleBand(key) {
 }
 
 function panelVisible(props) {
-  if (props.fill_rank != null && props.fill_rank > panelDensityPct) return false;
+  if (!withinSize(props)) return false;
   if (!panelEcon) return true;
   if (!panelEconGlobal && props.building_id !== panelEcon.buildingId) return true;
   return panelEconShow[panelBandOf(props)];
@@ -1927,6 +1980,7 @@ function clearSelection() {
   // the "selected" building kept working on the old one.
   selectedPanelBuildingId = -1;
   selectedBuildingProps = null;
+  if (bldgSys) { bldgSys = null; try { applyPanelDensityPaint(); } catch (err) { /* map not ready */ } }
   // Clear the spotlight FIRST. Anything below can fail; a stranded full-screen
   // overlay with no way to dismiss it is the worst outcome available here, so
   // it must not depend on the rest of this function completing.
@@ -2575,7 +2629,7 @@ map.on("load", async () => {
     feats.forEach(f => {
       const pr = f.properties;
       if (wanted.indexOf(pr.building_id) === -1) return;
-      if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+      if (!withinSize(pr)) return;
       total++;
       if (!panelEconShow[panelBandOf(pr)]) return;
       count++; kwh += pr.ac_kwh_year || 0;
@@ -2611,7 +2665,7 @@ map.on("load", async () => {
     }
     feats.forEach(f => {
       const pr = f.properties;
-      if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+      if (!withinSize(pr)) return;
       tally[panelBandOf(pr)]++;
     });
     const bands = document.getElementById("econ-bands-all");
@@ -2885,11 +2939,38 @@ map.on("load", async () => {
   // (Per-building kW/kWh map labels removed -- the info lives in the click
   // panel; on-map text cluttered the heat map.)
 
-  document.getElementById("inview-collapse-btn").addEventListener("click", (e) => {
+  function setInviewCollapsed(collapsed) {
     const panel = document.getElementById("dashboard-inview");
-    const collapsed = panel.classList.toggle("collapsed");
-    e.target.innerHTML = collapsed ? "&#9660;" : "&#9650;";
-    e.target.title = collapsed ? "Expand" : "Collapse";
+    const btn = document.getElementById("inview-collapse-btn");
+    panel.classList.toggle("collapsed", collapsed);
+    btn.innerHTML = collapsed ? "&#9660;" : "&#9650;";
+    btn.title = collapsed ? "Expand" : "Collapse";
+    btn.setAttribute("aria-expanded", String(!collapsed));
+  }
+  document.getElementById("inview-collapse-btn").addEventListener("click", () =>
+    setInviewCollapsed(!document.getElementById("dashboard-inview").classList.contains("collapsed")));
+  document.getElementById("inview-expand").addEventListener("click", () => setInviewCollapsed(false));
+  // The building card's system-size slider (the card is re-rendered per
+  // selection, so listen on the document).
+  let bldgSysTimer = null;
+  document.addEventListener("input", e => {
+    if (e.target.id !== "bldg-sys-slider" || !bldgSys) return;
+    bldgSys.k = parseInt(e.target.value, 10) || 0;
+    bldgSys.auto = false;
+    e.target.style.setProperty("--fill", bldgSys.orders.length ? 100 * bldgSys.k / bldgSys.orders.length : 0);
+    document.getElementById("bldg-sys-val").textContent =
+      `${bldgSys.k.toLocaleString()} of ${bldgSys.orders.length.toLocaleString()} panels`;
+    applyPanelDensityPaint();            // the map follows at once
+    clearTimeout(bldgSysTimer);
+    bldgSysTimer = setTimeout(() => {
+      if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+    }, 120);
+  });
+  document.addEventListener("click", e => {
+    if (!e.target || e.target.id !== "bldg-sys-reset" || !bldgSys) return;
+    Object.assign(bldgSys, { auto: true, settled: false, k: bldgSys.orders.length });
+    applyPanelDensityPaint();
+    if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
   });
   // --- Address search: client-side autocomplete over the buildings the map
   // actually knows (no external geocoder). Picking a result flies to the
@@ -3317,6 +3398,7 @@ map.on("load", async () => {
     document.getElementById("vslider-value").textContent = v + "%";
     if (mode === "layout") {
       panelDensityPct = v;
+        bldgSysFollowDensity(v);
       applyPanelDensityPaint();          // immediate, cheap: no tile re-upload
       clearTimeout(window.__densityTimer);
       window.__densityTimer = setTimeout(() => {
@@ -3477,6 +3559,7 @@ map.on("load", async () => {
       document.getElementById("m-slider-value").textContent = v + "%";
       if (mode === "layout") {
         panelDensityPct = v;
+        bldgSysFollowDensity(v);
         applyPanelDensityPaint();      // immediate, cheap: no tile re-upload
         clearTimeout(window.__densityTimer);
         window.__densityTimer = setTimeout(() => {
@@ -4120,6 +4203,11 @@ map.on("load", async () => {
         </div>
         <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
         </div>
+        <div class="sys-size" id="bldg-sys" hidden>
+          <div class="sys-head"><label for="bldg-sys-slider">System size</label><span id="bldg-sys-val"></span></div>
+          <input type="range" id="bldg-sys-slider" min="0" max="1" step="1" value="1">
+          <div class="sys-note" id="bldg-sys-note"></div>
+        </div>
         <div id="bldg-econ" style="display:none;"></div>
         <div class="sba-h3">Solar through the day</div>
         <div class="curve-toggle" id="curve-toggle">
@@ -4463,10 +4551,98 @@ map.on("load", async () => {
   }
   window.__generation = () => GEN;
 
+  // Every panel the build placed on a roof (100% density), once each, in fill
+  // order: what the building's own system size counts along.
+  function allPanelsOf(bid) {
+    let raw = [];
+    try {
+      raw = map.querySourceFeatures("layout", { sourceLayer: "layout",
+        filter: ["all", ["==", ["get", "building_id"], bid], ["==", ["get", "kind"], "panel"]] });
+    } catch (err) { raw = []; }
+    const by = new Map();
+    raw.forEach(f => {
+      const q = f.properties;
+      if (q.fill_order == null || by.has(q.fill_order)) return;
+      by.set(q.fill_order, { order: q.fill_order, rank: q.fill_rank, kwh: q.ac_kwh_year || 0 });
+    });
+    return [...by.values()].sort((a, b) => a.order - b.order);
+  }
+  // The open roof gets its own system size once its panel tiles are loaded
+  // (until then it follows the density slider). It starts as every panel, so
+  // the first pricing is the full system's -- the same convention the panel
+  // colours use (rebuildEconMatch) -- and settleBldgSys then cuts it to the
+  // panels that pay for themselves.
+  function ensureBldgSys(bid) {
+    if (mode !== "layout" || selectedIds.length > 1 || layoutExcludedBuildingId === bid) return;
+    if (bldgSys && bldgSys.buildingId === bid) return;
+    const all = allPanelsOf(bid);
+    if (!all.length) { if (bldgSys) { bldgSys = null; applyPanelDensityPaint(); } return; }
+    bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks: all.map(q => q.rank),
+                kwh: all.map(q => q.kwh), k: all.length, auto: true, settled: false, sig: null };
+    applyPanelDensityPaint();
+  }
+  // The economic default, from the bill model's own pricing of the FULL
+  // system: a panel pays for itself when its yearly output clears its share of
+  // the cost at the rate it earns -- retail for the panels that cover the
+  // power used on site, export for the rest (the same merit order the panel
+  // colours use, panelBandOf). Homes stop at HOME_SYSTEM_CAP_KW; businesses
+  // have no cap. Worked out again whenever the prices or the household change
+  // (sig), until someone moves the slider.
+  function settleBldgSys(buildingId, o, isBiz) {
+    const S = bldgSys;
+    if (!S || S.buildingId !== buildingId || !S.auto) return;
+    const sig = JSON.stringify([typeof btLoadState === "function" ? btLoadState(buildingId) : null, econ,
+                                assumptions.panel_rated_power_w]);
+    if (S.settled) {
+      if (sig === S.sig) return;
+      S.settled = false; S.k = S.orders.length;        // re-price at the full system
+      applyPanelDensityPaint();
+      setTimeout(() => updateFittedStats(buildingId), 0);
+      return;
+    }
+    if (S.k !== S.orders.length || !o) return;          // not the full system yet
+    let econK = 0;
+    S.kwh.forEach((kwh, i) => { if (kwh >= (i < o.cutoff ? o.retailBE : o.exportBE)) econK++; });
+    const capK = isBiz ? Infinity : Math.floor(HOME_SYSTEM_CAP_KW * 1000 / assumptions.panel_rated_power_w);
+    Object.assign(S, { settled: true, sig, econK, capK, isBiz, k: Math.min(econK, capK) });
+    if (S.k !== S.orders.length) {
+      applyPanelDensityPaint();
+      setTimeout(() => updateFittedStats(buildingId), 0);
+    }
+  }
+  // The card's slider and note for the open roof's system size.
+  function renderBldgSys(buildingId, count) {
+    const box = document.getElementById("bldg-sys");
+    if (!box) return;
+    const S = bldgSys;
+    const on = !!(S && S.buildingId === buildingId && mode === "layout");
+    box.hidden = !on;
+    if (!on) return;
+    const sl = document.getElementById("bldg-sys-slider");
+    sl.max = S.orders.length; sl.value = S.k;
+    sl.style.setProperty("--fill", S.orders.length ? (100 * S.k / S.orders.length) : 0);
+    document.getElementById("bldg-sys-val").textContent =
+      `${S.k.toLocaleString()} of ${S.orders.length.toLocaleString()} panels`;
+    const capText = S.isBiz ? "" : ` up to ${HOME_SYSTEM_CAP_KW} kW for a home`;
+    let note;
+    if (S.auto && !S.settled) note = "Working out which panels pay for themselves&hellip;";
+    else if (S.auto) {
+      note = S.econK === 0
+        ? "No panel here pays for itself at these prices. Slide to add panels anyway."
+        : S.econK > S.capK
+          ? `The panels that pay for themselves, ${HOME_SYSTEM_CAP_KW} kW at most for a home (${S.econK.toLocaleString()} would).`
+          : `The panels that pay for themselves${S.econK === S.orders.length ? " (all of them)" : ""}${S.capK < Infinity ? `,${capText}` : ""}.`;
+    } else {
+      note = `Set by hand. <button type="button" class="sys-reset" id="bldg-sys-reset">Back to the economic size</button>`;
+    }
+    document.getElementById("bldg-sys-note").innerHTML = note;
+  }
+
   function updateFittedStats(buildingId) {
     const el = id => document.getElementById(id);
     const props = selectedBuildingProps;
     if (!props || props.building_id !== buildingId) return;
+    ensureBldgSys(buildingId);
     // the live view redraws after the figures (deferred so it sees the
     // panel's freshly written numbers)
     requestAnimationFrame(() => renderLiveView(buildingId));
@@ -4596,6 +4772,10 @@ map.on("load", async () => {
                   exportBE: (r.solarCost / count) / Math.max(r.solarRet.lifeExport / Math.max(Y.solarExport, 1e-9), 1e-9),
                   perKwh: r.solarRet.lifetime / Y.gen };
               } else panelEconOpen = null;
+              // home or business as the bill tool has it (the reader can switch it there)
+              const btType = (btLoadState(buildingId) || {}).type;
+              settleBldgSys(buildingId, panelEconOpen, btType ? btType === "business"
+                : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)));
             },
           });
         };
@@ -4637,7 +4817,7 @@ map.on("load", async () => {
               map.queryRenderedFeatures({ layers: ["panels-fill"] }).forEach(f => {
                 const pr = f.properties;
                 if (pr.building_id !== buildingId) return;
-                if (pr.fill_rank != null && pr.fill_rank > panelDensityPct) return;
+                if (!withinSize(pr)) return;
                 tally[panelBandOf(pr)]++;
               });
             } catch (err) { /* tiles not ready; the chips just read zero */ }
@@ -4700,6 +4880,7 @@ map.on("load", async () => {
       }
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
+    renderBldgSys(buildingId, count);
     // Mirror into the mobile "Selected building" box: show whichever estimate
     // matches the active map mode, same as the desktop panel does.
     const msv = el("m-sel-vals");
