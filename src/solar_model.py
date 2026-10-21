@@ -62,6 +62,7 @@ actually matters here sits many km away, where a building's position
 within the ~2km pilot bbox barely changes the angle to it.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -347,10 +348,12 @@ def solarview_calibrated_monthly_factors(lat, lon, clearsky_daily_mean_horizon_a
     # The argument is ignored on purpose -- see _solarview_denominator. It is
     # kept so the call site reads as it always did.
     denom = _solarview_denominator()
-    return {
+    out = {
         month: SOLARVIEW_MEASURED_GHI_KWH_M2_DAY[month] * 1000.0 / denom[month]
         for month in MONTH_NAMES
     }
+    r = era5_spatial_ratio(lat, lon, *SOLARVIEW_CAL_LOCATION)
+    return {k: v * r[k] for k, v in out.items()} if r else out
 
 
 # --- NIWA measured station normals (national calibration) --------------------
@@ -413,6 +416,80 @@ NIWA_MEASURED_GHI_STATIONS = [
 ]
 
 
+# --- ERA5 spatial adjustment (finer than one calibration per basin) ---------
+# The calibrations above are POINTS: SolarView at the pilot centre, NIWA
+# stations up to 150 km away. Their cloud factor was then used unchanged
+# across everything they reach -- one sky for Kingston, Glenorchy and Hawea
+# alike (Josh, 22 Oct: "I want it to be more granular"). ERA5's daily
+# radiation (climate/era5, ~25 km cells, 1991-2020) measures how much sunnier
+# or duller each cell is than the calibration point's cell, month by month,
+# and that ratio scales the factor. ERA5's own level is NOT used (it reads
+# 2-28% above the measured record); only its differences between places.
+# Within the Queenstown district the cells differ by -6% to +6%.
+# SOLAR_ERA5_SPATIAL=0 turns it off. Ratios held to ERA5_RATIO_RANGE.
+ERA5_DIR = Path(__file__).resolve().parents[1] / "climate" / "era5"
+ERA5_RATIO_RANGE = (0.85, 1.15)
+_ERA5_CLIM = {}
+
+
+ERA5_MAX_CELL_ELEV_M = 800    # a 25 km cell averaging more than this is mountains, not
+# the town in it: Glenorchy's nearest cell averages 1,775 m and read +12% June sun
+
+
+def _era5_cell(name):
+    import base64, datetime, json
+    if name in _ERA5_CLIM:
+        return _ERA5_CLIM[name]
+    f = ERA5_DIR / f"{name}.json"
+    out = None
+    if f.exists():
+        d = json.loads(f.read_text())
+        b = base64.b64decode(d["v"])
+        t0 = datetime.date.fromisoformat(d["start"])
+        sums, cnts = [0.0] * 12, [0] * 12
+        for i, x in enumerate(b):
+            day = t0 + datetime.timedelta(days=i)
+            if x == 255 or not (1991 <= day.year <= 2020):
+                continue
+            sums[day.month - 1] += x / d["q"]; cnts[day.month - 1] += 1
+        if all(cnts):
+            out = (d["lat"], d["lon"], d.get("elev"), [s_ / c for s_, c in zip(sums, cnts)])
+    _ERA5_CLIM[name] = out
+    return out
+
+
+def _era5_monthly(lat, lon):
+    """Mean daily MJ/m2 per month, 1991-2020, at (lat, lon): inverse-distance
+    weighted over the surrounding ERA5 cells that are valley-level (under
+    ERA5_MAX_CELL_ELEV_M), or None when none is within 0.3 degrees."""
+    import math
+    base_la, base_lo = math.floor(lat * 4) / 4, math.floor(lon * 4) / 4
+    got = []
+    for dla in (-0.25, 0, 0.25, 0.5):
+        for dlo in (-0.25, 0, 0.25, 0.5):
+            c = _era5_cell(f"{base_la + dla:.2f}_{base_lo + dlo:.2f}")
+            if not c or (c[2] is not None and c[2] > ERA5_MAX_CELL_ELEV_M):
+                continue
+            dist = math.hypot(c[0] - lat, c[1] - lon)
+            if dist <= 0.3:
+                got.append((max(dist, 0.02), c[3]))
+    if not got:
+        return None
+    w = [1 / d ** 2 for d, _ in got]
+    return [sum(wi * m[i] for wi, (_, m) in zip(w, got)) / sum(w) for i in range(12)]
+
+
+def era5_spatial_ratio(lat, lon, ref_lat, ref_lon):
+    """{month: ERA5 sunlight here / ERA5 sunlight at the reference}, or None."""
+    if os.environ.get("SOLAR_ERA5_SPATIAL", "1") == "0":
+        return None
+    here, ref = _era5_monthly(lat, lon), _era5_monthly(ref_lat, ref_lon)
+    if here is None or ref is None:
+        return None
+    lo, hi = ERA5_RATIO_RANGE
+    return {MONTH_NAMES[i]: min(hi, max(lo, here[i] / ref[i])) for i in range(12)}
+
+
 def niwa_station_measured_monthly_factors(lat, lon, clearsky_daily_mean):
     """Factors from the NEAREST measured-radiation station, or None if none is
     within NIWA_STATION_MAX_DIST_DEG.
@@ -430,8 +507,11 @@ def niwa_station_measured_monthly_factors(lat, lon, clearsky_daily_mean):
     if best is None or best_d > NIWA_STATION_MAX_DIST_DEG:
         return None
     name, monthly = best
-    return {MONTH_NAMES[i]: monthly[i] * 1000.0 / clearsky_daily_mean[MONTH_NAMES[i]]
-            for i in range(12)}
+    out = {MONTH_NAMES[i]: monthly[i] * 1000.0 / clearsky_daily_mean[MONTH_NAMES[i]]
+           for i in range(12)}
+    slat, slon = next((a, b) for n, a, b, _ in NIWA_MEASURED_GHI_STATIONS if n == name)
+    r = era5_spatial_ratio(lat, lon, slat, slon)
+    return {k: v * r[k] for k, v in out.items()} if r else out
 
 
 def build_poa_lookup_table(lat, lon, tz="Pacific/Auckland", year=2023, horizon_profile=None):

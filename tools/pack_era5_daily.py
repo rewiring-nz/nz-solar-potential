@@ -33,9 +33,9 @@ def main():
         if any(i["name"] == name for i in index):
             continue
         (OUT / f"{name}.json").write_text(json.dumps({
-            "lat": lat, "lon": lon, "start": d["daily"]["time"][0], "q": Q, "days": len(b),
+            "lat": lat, "lon": lon, "elev": d.get("elevation"), "start": d["daily"]["time"][0], "q": Q, "days": len(b),
             "v": base64.b64encode(b).decode()}, separators=(",", ":")))
-        index.append({"name": name, "lat": lat, "lon": lon})
+        index.append({"name": name, "lat": lat, "lon": lon, "elev": d.get("elevation")})
     (OUT / "index.json").write_text(json.dumps({
         "source": "ERA5 reanalysis (Copernicus Climate Change Service) via Open-Meteo, CC BY 4.0",
         "cells": index}, separators=(",", ":")))

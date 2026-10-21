@@ -34,9 +34,13 @@ const LowSolar = (() => {
   async function getCell(lat, lng) {
     const ix = await getIndex();
     if (!ix || !ix.cells || !ix.cells.length) return null;
-    const c = ix.cells.reduce((a, b) =>
+    // the nearest VALLEY-LEVEL cell: a 25 km cell averaging over 800 m is
+    // mountains, not the town in it (src/solar_model.py ERA5_MAX_CELL_ELEV_M)
+    const valley = ix.cells.filter(c => c.elev == null || c.elev <= 800);
+    const pool = valley.length ? valley : ix.cells;
+    const c = pool.reduce((a, b) =>
       Math.hypot(b.lat - lat, b.lon - lng) < Math.hypot(a.lat - lat, a.lon - lng) ? b : a);
-    if (Math.hypot(c.lat - lat, c.lon - lng) > 0.3) return null;     // no cell near this roof
+    if (Math.hypot(c.lat - lat, c.lon - lng) > 0.4) return null;     // no cell near this roof
     if (!cells[c.name]) {
       cells[c.name] = fetch(BASE + c.name + ".json").then(r => r.ok ? r.json() : null).then(d => {
         if (!d) return null;
