@@ -4246,6 +4246,15 @@ map.on("load", async () => {
           <div class="sys-note" id="bldg-sys-note"></div>
         </div>
         <div id="bldg-econ" style="display:none;"></div>
+        <div id="card-horizon-wrap" hidden>
+          <div class="sba-h3">The horizon from this roof</div>
+          <div id="card-horizon"></div>
+        </div>
+        <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
+          Assumptions and details <span aria-hidden="true">&#8964;</span></button>
+        <div class="sba-full-only">
+        <!-- The generation chart lives in the expanded column; the corner card
+             shows the horizon (Josh, 21 Oct). -->
         <div class="sba-h3">Solar through the day</div>
         <div class="curve-toggle" id="curve-toggle">
           <div class="curve-seg" role="group" aria-label="Which day">
@@ -4255,13 +4264,6 @@ map.on("load", async () => {
           <span id="horizon-tab-btn" class="sba-gone"></span>
         </div>
         <div id="season-curves"></div>
-        <div id="card-horizon-wrap" hidden>
-          <div class="sba-h3">The horizon from this roof</div>
-          <div id="card-horizon"></div>
-        </div>
-        <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
-          Assumptions and details <span aria-hidden="true">&#8964;</span></button>
-        <div class="sba-full-only">
         <div id="bill-more"></div>
         <details class="sba-more">
         <summary>Layout details</summary>
