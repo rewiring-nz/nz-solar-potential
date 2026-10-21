@@ -1,4 +1,18 @@
 """
+WHAT CALIBRATES THE SUNLIGHT TODAY (22 Oct 2026; the method notes below are
+the history and still describe the clear-sky, horizon and lookup steps):
+  1. NIWA SolarView measured GHI at the Queenstown pilot centre, for every
+     region within 0.30 deg (the whole Wakatipu basin, Kingston, Glenorchy);
+  2. else the nearest NIWA measured-radiation station within 1.5 deg
+     (NIWA_MEASURED_GHI_STATIONS: Wanaka/Hawea use Queenstown Aero, Mt Eden
+     Auckland);
+  3. only beyond those, the sunshine-hours inference, then NASA POWER --
+     neither is used by any region built today.
+  Each is then scaled by ERA5's difference between the region and the
+  calibration point (era5_spatial_ratio; climate/era5, ~25 km, valley-level
+  cells). ERA5's daily record also drives the card's low-solar runs
+  (low_solar.js).
+
 Annual/daily kWh per roof facet, from slope + aspect + latitude via pvlib,
 bias-corrected against NASA POWER's actual (cloud-adjusted) irradiance so
 the estimate reflects real Queenstown weather, not idealised clear-sky

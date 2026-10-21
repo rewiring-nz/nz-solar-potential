@@ -42,6 +42,23 @@ and assign work.
   4746337, 4735304's blob); judged by Josh's verdicts before any rule
   changes. Verdicts page refreshed: v51 (as judged) beside v53, 27 roofs,
   previous verdicts shown, new verdicts saved separately (verdicts_v53).
+- **Sunlight data, 22 Oct (Josh: "more granular"; low-solar runs for battery
+  resilience).** Live: low-solar runs on every building card (low_solar.js)
+  -- longest run of days under X% of the roof's average day (X = 20,
+  editable), the once-a-decade run (90th percentile of yearly longest) and a
+  typical year's (median), with frequencies, from ERA5 daily radiation
+  1940-2025 (Copernicus via Open-Meteo, CC BY 4.0, packed in climate/era5 by
+  tools/pack_era5_daily.py) scaled to each roof's own seasonal curve. At
+  20%: north roofs in Queenstown max 3 days (Apr 1953), typical 1; south
+  roofs "low" all winter (said on the card). On main, ships next build:
+  ERA5 differences between places scale the NIWA calibrations
+  (era5_spatial_ratio) -- Wakatipu basin within 0.3% (one sky at 25 km),
+  Wanaka +2.0%, Hawea +1.8%, Glenorchy -2.7%. ERA5 checked against SolarView
+  (1391 vs 1365 kWh/m2/yr, months within 10%). Needs Josh: NIWA CliFlo
+  daily radiation (Queenstown Aero, Auckland) to check how much reanalysis
+  smooths the darkest days; optionally an NREL API key for Himawari 2 km
+  satellite solar (2016-2020) -- the only route to suburb-level cloud.
+
 - **v55 LIVE 21 Oct 18:45 NZT:** portrait first, whole-row partial systems,
   clean hips (with the fewer-faces rule), two-level flat roofs, roof-change
   notes (photo_changed; 45 roofs in pilot). Gate reviewed: panels
