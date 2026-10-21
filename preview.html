@@ -20,6 +20,7 @@
 <script src="panel_editor.js"></script>
 <script src="sun_shadows.js"></script>
 <script src="buildings3d.js"></script>
+<script src="low_solar.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
@@ -529,6 +530,17 @@
   }
   @media (max-width: 700px) { .sba-compact-only { display: none !important; } }
   #season-curves { cursor: zoom-in; border-radius: 8px; }
+  .sba-h3-sub { font-weight: 400; opacity: .6; font-size: .9em; }
+  .ls-note { font-size: 11.5px; line-height: 1.45; color: rgba(235,235,245,.55); margin: 6px 2px 0; }
+  .ls { display: grid; gap: 8px; }
+  .ls-fig { background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+  .ls-fig:hover, .ls-fig:focus-visible { background: rgba(255,255,255,.09); outline: none; }
+  .ls-v { font-size: 20px; font-weight: 650; color: #f2f2f7; font-variant-numeric: tabular-nums; }
+  .ls-l { font-size: 12.5px; color: rgba(235,235,245,.8); margin-top: 1px; }
+  .ls-s { font-size: 11px; color: rgba(235,235,245,.5); margin-top: 1px; }
+  .ls-thr { font-size: 11.5px; color: rgba(235,235,245,.6); line-height: 1.5; }
+  .ls-thr input { width: 3.2em; background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.15);
+    border-radius: 6px; padding: 1px 4px; font: inherit; text-align: right; }
   #season-curves:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #chart-lightbox { position: fixed; inset: 0; z-index: 4500; background: rgba(0,0,0,.62); display: flex;
     align-items: center; justify-content: center; padding: 24px; }
@@ -4266,6 +4278,9 @@ map.on("load", async () => {
           <span id="horizon-tab-btn" class="sba-gone"></span>
         </div>
         <div id="season-curves"></div>
+        <!-- Days in a row of low sun, from 86 years of daily records (low_solar.js) -->
+        <div class="sba-h3">Low-solar runs <span class="sba-h3-sub">for battery sizing</span></div>
+        <div id="low-solar"></div>
         <div id="bill-more"></div>
         <details class="sba-more">
         <summary>Layout details</summary>
@@ -5482,6 +5497,17 @@ map.on("load", async () => {
       const hasHz = !!(selectedBuildingProps && selectedBuildingProps.horizon_b64);
       if (hw) hw.hidden = !hasHz;
       if (hb && hasHz) renderHorizonChart(hb);
+      // the low-solar runs follow the same generation curve
+      if (typeof LowSolar !== "undefined" && GEN && GEN.curve) {
+        const p = selectedBuildingProps || {};
+        const c = map.getCenter();
+        const key = buildingId + "|" + GEN.curve.gen.map(r => r.reduce((a, b) => a + b, 0).toFixed(2)).join(",");
+        const ls = document.getElementById("low-solar");
+        if (ls && ls.dataset.key !== key) {
+          ls.dataset.key = key;
+          LowSolar.render(ls, { curve: GEN.curve, lat: p._sy != null ? p._sy : c.lat, lng: p._sx != null ? p._sx : c.lng });
+        }
+      }
       box.setAttribute("role", "button");
       box.setAttribute("tabindex", "0");
       box.setAttribute("aria-label", "Open the generation chart large");
