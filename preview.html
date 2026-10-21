@@ -1453,14 +1453,16 @@ const LAYOUT_KIND_FILTER = {
 // installer would quote; 81-100 are straggler blocks (only banded when a
 // big main array exists). Default shows arrays only; 100% shows everything.
 let panelDensityPct = 80;
-// THE OPEN BUILDING'S OWN SYSTEM SIZE (Josh, 20 Oct: "default to economic
-// panels, up to a certain size on buildings (around 14 kW for residential,
-// and no limit for business)", with a panel slider on the building card).
-// The first k panels in the roof's fill order (sunniest faces first, row by
-// row). null = the roof follows the density slider like every other roof.
-//   auto: still the economic default (nobody has moved its slider)
-//   settled: the default has been worked out at the current prices
-let bldgSys = null;   // { buildingId, orders, ranks, kwh, k, auto, settled, sig, econK, capK }
+// THE OPEN BUILDING'S OWN SYSTEM SIZE: the first k panels in the roof's fill
+// order, set on the building card's slider. It opens showing exactly what the
+// map showed (Josh, 22 Oct: clicking a fully covered roof and seeing it drop
+// to 14 kW "makes no sense"); the economic size -- panels that pay for
+// themselves, at most 14 kW for one house -- is worked out alongside and
+// offered with one tap (Josh, 20 Oct asked for it as the default; 22 Oct
+// reversed that).
+//   mode: "map" (the density slider), "econ" (the economic size), "hand"
+//   settled: the economic size has been worked out at the current prices
+let bldgSys = null;   // { buildingId, orders, ranks, kwh, k, mode, settled, sig, econK, capK, econSize }
 const HOME_SYSTEM_CAP_KW = 14;
 // The household cap is for ONE household. A residential building with more
 // roof than this is a block of units (or bigger) -- 12 Brunswick St, 562
@@ -1475,7 +1477,7 @@ function bldgSysMaxOrder() { return bldgSys && bldgSys.k > 0 ? bldgSys.orders[bl
 function bldgSysFollowDensity(pct) {
   if (!bldgSys) return;
   bldgSys.k = bldgSys.ranks.filter(r => r == null || r <= pct).length;
-  bldgSys.auto = false;
+  bldgSys.mode = "map";
 }
 function withinSize(q) {
   if (bldgSys && q.building_id === bldgSys.buildingId && q.fill_order != null) return q.fill_order <= bldgSysMaxOrder();
@@ -2982,7 +2984,7 @@ map.on("load", async () => {
   document.addEventListener("input", e => {
     if (e.target.id !== "bldg-sys-slider" || !bldgSys) return;
     bldgSys.k = parseInt(e.target.value, 10) || 0;
-    bldgSys.auto = false;
+    bldgSys.mode = "hand";
     e.target.style.setProperty("--fill", bldgSys.orders.length ? 100 * bldgSys.k / bldgSys.orders.length : 0);
     document.getElementById("bldg-sys-val").textContent =
       `${bldgSys.k.toLocaleString()} of ${bldgSys.orders.length.toLocaleString()} panels`;
@@ -2994,7 +2996,7 @@ map.on("load", async () => {
   });
   document.addEventListener("click", e => {
     if (!e.target || e.target.id !== "bldg-sys-reset" || !bldgSys) return;
-    Object.assign(bldgSys, { auto: true, settled: false, k: bldgSys.orders.length });
+    Object.assign(bldgSys, { mode: "econ", k: bldgSys.econSize != null ? bldgSys.econSize : bldgSys.k });
     applyPanelDensityPaint();
     if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
   });
@@ -4616,8 +4618,14 @@ map.on("load", async () => {
     if (bldgSys && bldgSys.buildingId === bid) return;
     const all = allPanelsOf(bid);
     if (!all.length) { if (bldgSys) { bldgSys = null; applyPanelDensityPaint(); } return; }
-    bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks: all.map(q => q.rank),
-                kwh: all.map(q => q.kwh), arrs: all.map(q => q.arr), k: all.length, auto: true, settled: false, sig: null };
+    // A roof opens showing exactly what the map showed (Josh, 22 Oct:
+    // "what it shows should stay as what it shows when clicked"); the
+    // economic size is worked out alongside and offered, not applied.
+    const ranks = all.map(q => q.rank);
+    bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks,
+                kwh: all.map(q => q.kwh), arrs: all.map(q => q.arr),
+                k: ranks.filter(r => r == null || r <= panelDensityPct).length,
+                mode: "map", settled: false, sig: null };
     applyPanelDensityPaint();
   }
   // The economic default, from the bill model's own pricing of the FULL
@@ -4629,25 +4637,22 @@ map.on("load", async () => {
   // (sig), until someone moves the slider.
   function settleBldgSys(buildingId, o, isBiz, roofM2) {
     const S = bldgSys;
-    if (!S || S.buildingId !== buildingId || !S.auto) return;
+    if (!S || S.buildingId !== buildingId || !o) return;
     const sig = JSON.stringify([typeof btLoadState === "function" ? btLoadState(buildingId) : null, econ,
-                                assumptions.panel_rated_power_w]);
-    if (S.settled) {
-      if (sig === S.sig) return;
-      S.settled = false; S.k = S.orders.length;        // re-price at the full system
-      applyPanelDensityPaint();
-      setTimeout(() => updateFittedStats(buildingId), 0);
-      return;
-    }
-    if (S.k !== S.orders.length || !o) return;          // not the full system yet
+                                assumptions.panel_rated_power_w, S.k]);
+    if (S.settled && sig === S.sig) return;
     let econK = 0;
     S.kwh.forEach((kwh, i) => { if (kwh >= (i < o.cutoff ? o.retailBE : o.exportBE)) econK++; });
     const oneHome = !isBiz && (roofM2 || 0) < HOME_CAP_MAX_ROOF_M2;
     const capK = oneHome ? Math.floor(HOME_SYSTEM_CAP_KW * 1000 / assumptions.panel_rated_power_w) : Infinity;
-    Object.assign(S, { settled: true, sig, econK, capK, isBiz, oneHome, k: wholeArrays(S, Math.min(econK, capK)) });
-    if (S.k !== S.orders.length) {
+    const wasEcon = S.mode === "econ";
+    Object.assign(S, { settled: true, sig, econK, capK, isBiz, oneHome, econSize: wholeArrays(S, Math.min(econK, capK)) });
+    if (wasEcon && S.k !== S.econSize) {             // keep following it once chosen
+      S.k = S.econSize; S.sig = null;
       applyPanelDensityPaint();
       setTimeout(() => updateFittedStats(buildingId), 0);
+    } else {
+      renderBldgSys(buildingId);
     }
   }
   // Cutting the fill order at an exact count can leave a part of a row on the
@@ -4674,21 +4679,18 @@ map.on("load", async () => {
     sl.style.setProperty("--fill", S.orders.length ? (100 * S.k / S.orders.length) : 0);
     document.getElementById("bldg-sys-val").textContent =
       `${S.k.toLocaleString()} of ${S.orders.length.toLocaleString()} panels`;
-    const capText = S.oneHome ? ` up to ${HOME_SYSTEM_CAP_KW} kW for a home` : "";
-    let note;
-    const rounded = S.auto && S.settled && S.k < Math.min(S.econK, S.capK)
-      ? " Rounded down to whole arrays, so no row is left half built." : "";
-    if (S.auto && !S.settled) note = "Working out which panels pay for themselves&hellip;";
-    else if (S.auto) {
-      note = S.econK === 0
-        ? "No panel here pays for itself at these prices. Slide to add panels anyway."
-        : S.econK > S.capK
-          ? `The panels that pay for themselves, ${HOME_SYSTEM_CAP_KW} kW at most for a home (${S.econK.toLocaleString()} would).`
-          : `The panels that pay for themselves${S.econK === S.orders.length ? " (all of them)" : ""}${S.capK < Infinity ? `,${capText}` : ""}.`;
-    } else {
-      note = `Set by hand. <button type="button" class="sys-reset" id="bldg-sys-reset">Back to the economic size</button>`;
-    }
-    note += rounded;
+    const kw = n => (n * assumptions.panel_rated_power_w / 1000).toFixed(1) + " kW";
+    let econText = "";
+    if (S.settled) {
+      econText = S.econK === 0 ? "No panel here pays for itself at these prices."
+        : `Economic size: ${S.econSize.toLocaleString()} panels (${kw(S.econSize)})` +
+          (S.econK > S.capK ? `, ${HOME_SYSTEM_CAP_KW} kW at most for a home` : S.econK === S.orders.length ? ", all of them pay for themselves" : "") + ".";
+    } else econText = "Working out which panels pay for themselves&hellip;";
+    const which = S.mode === "econ" ? "Showing the economic size."
+      : S.mode === "hand" ? "Set by hand." : `Showing the map's ${panelDensityPct}% panel density.`;
+    const btn = S.settled && S.econK > 0 && !(S.mode === "econ")
+      ? ` <button type="button" class="sys-reset" id="bldg-sys-reset">Use the economic size</button>` : "";
+    let note = `${which} ${econText}${btn}`;
     document.getElementById("bldg-sys-note").innerHTML = note;
   }
 
