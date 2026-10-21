@@ -42,6 +42,14 @@ and assign work.
   4746337, 4735304's blob); judged by Josh's verdicts before any rule
   changes. Verdicts page refreshed: v51 (as judged) beside v53, 27 roofs,
   previous verdicts shown, new verdicts saved separately (verdicts_v53).
+- **v55 LIVE 21 Oct 18:45 NZT:** portrait first, whole-row partial systems,
+  clean hips (with the fewer-faces rule), two-level flat roofs, roof-change
+  notes (photo_changed; 45 roofs in pilot). Gate reviewed: panels
+  2,010,966 -> 1,988,394 (-1.1%, mostly portrait); 16 roofs lost >8% face
+  area (each under 75 m2); 16 big drops rendered -- portrait rows on about
+  half, hip readings that fit the LiDAR better on the rest (5372095,
+  4727160 crooked). 12/16 Kent St 294 -> 347. Verdicts page refreshed
+  (v51 vs v55, 29 roofs, saved as verdicts_v55); Josh emailed.
 - **v54 BUILT 21 Oct, NOT PUBLISHED.** The VM stopped at its 40 h spot limit
   mid-build (resumed with --force for the last 7 regions). Gate passed (panels
   -336, 0 zeroed, 12 roofs lost face area, each under 75 m2) but the 9 big
@@ -146,7 +154,7 @@ and assign work.
   not the referee; no face-count weighting changes the outcome. OFF
   (SOLAR_COMPOSITE_ROOFS=1 on); needs proper wing fitting before it can help.
 
-- **Next build after v54 (on main), also:** (1) partial systems are whole
+- **In v55 (live), also:** (1) partial systems are whole
   rows in one block -- the fill order ranked panels by their own yield
   stretched to the array's range (shading noise on an open roof), so 284 of
   12 Brunswick St's 562 panels were a blob full of holes; now coarse sun
@@ -163,8 +171,7 @@ and assign work.
   pitched panels, panels -4.7%, empty good faces 4% -> 5%. Live already: the 14 kW household cap only for
   one house (a residential roof over 350 m2 is uncapped; 12 Brunswick St
   was capped at 14 kW).
-- **Next build after v54 (on main): obstruction "blobs" that are roof
-  levels.** 12/16 Kent St (4735304, Josh: "no panels on the right wing's
+- **In v55 (live): obstruction "blobs" that are roof levels.** 12/16 Kent St (4735304, Josh: "no panels on the right wing's
   empty flat area") had a 160 m2 obstruction whose returns are two flat
   levels at the face's pitch (50% and 37%, 0.4 m apart) -- one 961 m2 face
   spans two wings. obstruction_planarity now calls a big patch roof when up
