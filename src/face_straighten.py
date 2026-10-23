@@ -262,6 +262,105 @@ def merge_coplanar_faces(facets, *_, **__):
     return faces
 
 
+# A STRIP ON A SLOPE IS THE SLOPE. Where a pitched face runs up to a step or
+# a flat section, the returns along the step pull a plane of their own out of
+# the slope: a strip a metre or so wide, a few degrees steeper, that cannot
+# hold a portrait row -- so it takes landscape panels or none, and the slope
+# beside it loses that row. 29 York Street (Josh, 24 Oct: "horizontal rather
+# than vertical panels on a face"): its sunny slope is one 24 degree plane in
+# the LiDAR, drawn as 24, 31 and 35 degree strips. A face narrower than
+# SLIVER_W_M across its slope is folded into a neighbour facing within
+# SLIVER_ASPECT_DEG when at least SLIVER_ON_PLANE of its returns lie within
+# SLIVER_TOL_M of that neighbour's plane (and more of them than lie on its
+# own). The neighbour's plane is kept. SOLAR_ABSORB_SLIVERS=0 turns it off.
+SLIVER_W_M = 2.0
+SLIVER_MAX_M2 = 30.0
+SLIVER_ASPECT_DEG = 25.0
+SLIVER_TOL_M = 0.15
+SLIVER_ON_PLANE = 0.6
+
+
+def _strip_width(face):
+    """Width across the face's slope, on the roof surface (m)."""
+    import math
+    import numpy as np
+    g = face["geometry"]
+    a = math.radians(face.get("aspect_deg") or 0.0)
+    down = np.array([math.sin(a), math.cos(a)])
+    xy = np.asarray(g.exterior.coords)
+    plan = float(np.ptp(xy @ down))
+    # a ragged outline overstates the extent: the area over the length along
+    # the eave is the mean width
+    along = float(np.ptp(xy @ np.array([down[1], -down[0]]))) or 1.0
+    plan = min(plan, g.area / along)
+    return plan / max(math.cos(math.radians(face.get("slope_deg") or 0.0)), 0.2)
+
+
+def _on_plane(face, pts):
+    import numpy as np
+    if len(pts) == 0:
+        return 0.0
+    z = face["plane_a"] * pts[:, 0] + face["plane_b"] * pts[:, 1] + face["plane_c"]
+    return float(np.mean(np.abs(pts[:, 2] - z) <= SLIVER_TOL_M))
+
+
+def absorb_slivers(facets, pc_source=None, *_, **__):
+    if os.environ.get("SOLAR_ABSORB_SLIVERS", "1") == "0" or len(facets) < 2 or pc_source is None:
+        return facets
+    if any(f.get("from_labels") for f in facets):
+        return facets
+    import shapely
+    from shapely.ops import unary_union
+    faces = list(facets)
+    changed = True
+    while changed:
+        changed = False
+        for i, f in enumerate(sorted(faces, key=lambda f: f["geometry"].area)):
+            if (f.get("plane_a") is None or (f.get("slope_deg") or 0) < 4
+                    or f["geometry"].area > SLIVER_MAX_M2 or f["geometry"].geom_type != "Polygon"
+                    or _strip_width(f) >= SLIVER_W_M):
+                continue
+            inner = f["geometry"].buffer(-0.15)
+            if inner.is_empty:
+                continue
+            b = f["geometry"].bounds
+            pts = pc_source.points_in_bbox(b[0], b[1], b[2], b[3], building_only=True)
+            if len(pts) == 0:
+                continue
+            pts = pts[shapely.contains_xy(inner, pts[:, 0], pts[:, 1])]
+            if len(pts) < 8:
+                continue
+            own = _on_plane(f, pts)
+            best = None
+            for g in faces:
+                if g is f or g.get("plane_a") is None or g["geometry"].area <= f["geometry"].area:
+                    continue
+                da = abs(((f.get("aspect_deg") or 0) - (g.get("aspect_deg") or 0) + 180) % 360 - 180)
+                if da > SLIVER_ASPECT_DEG:
+                    continue
+                shared = f["geometry"].boundary.intersection(g["geometry"].buffer(0.05))
+                if shared.is_empty or shared.length < MERGE_MIN_SHARED_M:
+                    continue
+                on = _on_plane(g, pts)
+                if on >= SLIVER_ON_PLANE and on > own and (best is None or on > best[0]):
+                    best = (on, g)
+            if best is None:
+                continue
+            g = best[1]
+            u = unary_union([g["geometry"], f["geometry"].buffer(0.02)]).buffer(-0.02)
+            if u.geom_type != "Polygon" or not u.is_valid:
+                continue
+            m = dict(g, geometry=u)
+            if "area_m2" in m:
+                m["area_m2"] = u.area
+            if "point_count" in f and "point_count" in g:
+                m["point_count"] = f["point_count"] + g["point_count"]
+            faces = [x for x in faces if x is not f and x is not g] + [m]
+            changed = True
+            break
+    return faces
+
+
 SEAM_MIN_SLOPE_DEG = 10.0
 SEAM_MIN_SHARED_M = 1.5
 SEAM_MIN_OFF_M = 0.15

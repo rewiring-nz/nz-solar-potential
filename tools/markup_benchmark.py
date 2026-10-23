@@ -15,6 +15,8 @@ tools/layout_ab.py, and `score` compares what came out with what he drew:
   line precision  share of built lines with one of his within LINE_TOL_M
   line F        2PR/(P+R): one number for "the roof lines are right"
   obstruction precision  share of built obstruction area on or near one he drew
+  obstruction recall     share of his drawn obstruction area the build marks too
+                (both on roofs he marked complete)
   panels        blind count beside the count the drawn roof gets (live layout)
 
 A change to the roof pipeline is judged by these numbers before renders and
@@ -166,6 +168,12 @@ def score(a):
                 except Exception:
                     pass
             gobs = unary_union(built[bid]["obstruction"]) if built[bid]["obstruction"] else None
+            # recall: how much of what he drew the build also marks (complete roofs)
+            dsum = unary_union(dobs) if dobs else None
+            orec_hit = orec_all = 0.0
+            if v.get("complete") and dsum is not None and dsum.area > 0.1:
+                orec_all = dsum.area
+                orec_hit = dsum.intersection(gobs.buffer(0.5)).area if gobs is not None else 0.0
             if gobs is None or gobs.area < 0.1 or not v.get("complete"):
                 oprec = None   # only roofs he marked complete have every obstruction drawn
             else:
@@ -176,6 +184,7 @@ def score(a):
                          "line_precision": round(prec, 3), "line_f": round(lf1, 3),
                          "obstruction_precision": None if oprec is None else round(oprec, 3),
                          "obstruction_m2_built": round(gobs.area, 1) if gobs is not None else 0.0,
+                         "obstruction_m2_drawn": round(orec_all, 1), "obstruction_m2_found": round(orec_hit, 1),
                          "panels_blind": built[bid]["panel"], "panels_drawn": live.get(bid)})
     if not rows:
         print("nothing to score -- run first"); return
@@ -188,6 +197,8 @@ def score(a):
     summary = {"roofs": n, "outline_iou": round(mean("outline_iou"), 3), "face_iou": round(mean("face_iou"), 3), "line_recall": round(mean("line_recall"), 3),
                "line_precision": round(mean("line_precision"), 3), "line_f": round(mean("line_f"), 3),
                "obstruction_precision_by_area": round(obs_good / obs_area, 3) if obs_area else None,
+               "obstruction_recall_by_area": round(sum(r["obstruction_m2_found"] for r in rows)
+                                                   / max(sum(r["obstruction_m2_drawn"] for r in rows), 1e-9), 3),
                "panels_blind_vs_drawn": f"{pb_matched} vs {pd}" if pd else None,
                "roofs_lines_right(F>=0.7)": sum(1 for r in rows if r["line_f"] >= 0.7),
                "roofs_faces_right(IoU>=0.8)": sum(1 for r in rows if r["face_iou"] >= 0.8)}

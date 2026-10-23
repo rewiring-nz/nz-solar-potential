@@ -46,9 +46,9 @@ from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays
 from src.obstruction_detection import detect_obstructions_combined
-from src.obstruction_planarity import drop_roof_like
+from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
-from src.face_straighten import merge_coplanar_faces, seams_to_plane_lines, straighten_faces
+from src.face_straighten import absorb_slivers, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
 from src.building_shading import building_shading_factor
 from src.building_horizon import (far_profile as _hz_far_profile,
                                   facet_horizon_factor as _hz_facet_factor,
@@ -470,6 +470,7 @@ def _build_one_at(building_id, nudge_m):
     # ...and last, the edges between faces straightened together, so a ridge
     # is a line rather than the zig-zag the returns left (src/face_straighten.py).
     facets = _reshape(merge_coplanar_faces)
+    facets = _reshape(absorb_slivers, pc_source)
     facets = _reshape(seams_to_plane_lines, pc_source)
     facets = _reshape(straighten_faces)
 
@@ -533,6 +534,9 @@ def _build_one_at(building_id, nudge_m):
             _frame = register_frame(_frame, facets)
         except Exception as exc:
             _note_fallback("register_frame", building_id, exc)
+    # the building's sunniest real face, for the sunny-side rule (SUN_SIDE_REL)
+    _sunniest = max([sun_share(model, f["slope_deg"], f["aspect_deg"]) for f in facets
+                     if not f.get("no_panel") and f["geometry"].area >= SUN_SIDE_MIN_FACE_M2] or [1.0])
     for f in facets:
         facet_centroid = f["geometry"].centroid
         shading_factor = building_shading_factor(
@@ -584,6 +588,7 @@ def _build_one_at(building_id, nudge_m):
         # (src/obstruction_planarity.py); his markup is never second-guessed
         if not _drawn_obs:
             obstructions = drop_roof_like(obstructions, f, facets, pc_source)
+            obstructions = drop_edge_hugging(obstructions, f, pc_source)
         # edge drops the detector found stay panel-free, unless the markup
         # governs this roof's obstructions
         if not _drawn_obs:
@@ -615,6 +620,8 @@ def _build_one_at(building_id, nudge_m):
             # This face is marked "no panels here". It exists as
             # geometry -- the drawn lines are the roof's lines -- and takes
             # nothing. See facets_from_drawn_faces.
+            panels = []
+        elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
             panels = []
         else:
             panels = fit_panels_on_facet(f, obstructions=obstructions,
@@ -711,6 +718,51 @@ def _build_one_at(building_id, nudge_m):
                 },
             })
     return features
+
+
+# THE SUNNY SIDE ONLY. Installers rack the faces that point at the sun: north,
+# east and west, and any roof shallow enough that its direction hardly matters.
+# Where a roof has a sunny side, the side turned away from the sun is left bare
+# even when the roof is "full" -- Josh, 24 Oct, on 29 York Street: "Panels
+# being placed on the shady side of this roof, not the sunny side".
+#
+# Installers think in directions: north, east and west faces are used; a face
+# turned south -- more than SUN_SIDE_SECTOR_DEG off north, south-east through
+# south-west -- is left bare when the same roof has a sunnier side (its sun
+# share under SUN_SIDE_REL of the building's sunniest face). Sunshine here is
+# by direction and pitch only, as a share of the best direction at this site
+# (shade has its own veto). Below SUN_SIDE_ABS no face takes panels, whatever
+# its direction. At Queenstown: 29 York St's south-west face (24 degrees, 0.72
+# beside a 0.96 sunny side) goes; a steep west face (44 degrees, ~0.76) stays
+# -- a pure share threshold took those too (5370578, Arrowtown: 75 -> 9); a
+# house whose only roof faces south at 15 degrees (0.76; 4751212 on the hill)
+# keeps its panels, as an installer would; a south face at 30 degrees (0.63)
+# never takes any.
+SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.80"))
+SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.70"))
+SUN_SIDE_SECTOR_DEG = 112.5   # off north: south-east through south-west
+SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny side
+
+
+def sun_share(model, slope_deg, aspect_deg):
+    """This direction and pitch's sunshine over the best at this site."""
+    best = getattr(model, "_best_poa", None)
+    if best is None:
+        best = max(model.annual_poa_kwh_per_m2(s, 0.0) for s in range(0, 61, 2))
+        model._best_poa = best
+    return model.annual_poa_kwh_per_m2(slope_deg, aspect_deg) / best
+
+
+def away_from_sun(model, slope_deg, aspect_deg, building_best=1.0):
+    """True for a face an installer would leave bare: building_best is the
+    sun_share of the building's sunniest face (see SUN_SIDE_REL)."""
+    if os.environ.get("SOLAR_SUN_SIDE", "1") == "0":
+        return False
+    share = sun_share(model, slope_deg, aspect_deg)
+    if share < SUN_SIDE_ABS:
+        return True
+    off_north = abs((aspect_deg + 180.0) % 360.0 - 180.0)
+    return off_north > SUN_SIDE_SECTOR_DEG and share < SUN_SIDE_REL * building_best
 
 
 def _yield_inputs(facet, shading_factor):

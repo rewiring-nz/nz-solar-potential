@@ -81,7 +81,7 @@ def panel_ok(poly, pc):
     # Same tiles as the queries before them, so the results are unchanged.
     ground_cls = pc.ground_points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r)
     if len(ground_cls) >= 20:
-        local_ground = float(np.percentile(ground_cls[:, 2], 50))
+        local_ground = _ground_at(ground_cls, c.x, c.y)
     else:
         around = pc.points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r, building_only=False)
         if len(around) >= 20:
@@ -139,6 +139,66 @@ def panel_ok(poly, pc):
     return True, "ok"
 
 
+def _ground_at(ground, x, y):
+    """Ground height under (x, y): the terrain's plane through the nearby
+    ground returns, not their median. On a hillside the median is the
+    neighbourhood's middle height, so the uphill half of a roof cut into the
+    slope read as standing under 2 m above it and was deleted as ground: 29
+    York Street lost 10 of the 11 panels on its sunny face, and the gate's
+    1,262 "sparse" drops in central Queenstown were mostly this (Josh, 24
+    Oct). A carpark is still at ground level on a sloping plane."""
+    med = float(np.percentile(ground[:, 2], 50))
+    if np.ptp(ground[:, 0]) < 5 or np.ptp(ground[:, 1]) < 5:
+        return med
+    A = np.column_stack([ground[:, 0] - x, ground[:, 1] - y, np.ones(len(ground))])
+    keep = np.ones(len(ground), bool)
+    for _ in range(2):  # refit without walls, steps and retaining-wall tops
+        coef, *_ = np.linalg.lstsq(A[keep], ground[keep, 2], rcond=None)
+        res = np.abs(A @ coef - ground[:, 2])
+        nk = res < max(1.0, 2.5 * float(np.median(res)))
+        if nk.sum() < 20:
+            break
+        keep = nk
+    z = float(coef[2])
+    # the plane is ground near (x, y): never above the highest or below the
+    # lowest return it was fitted to
+    return min(max(z, float(ground[keep, 2].min())), float(ground[keep, 2].max()))
+
+
+def rerack(features):
+    """After the gate, each face's panels are racked again: a panel the gate
+    took out of an array can leave a lone panel or a stray pair behind (54,505
+    panels in central Queenstown shipped with 105 lone and 904 in pairs), and
+    the fitter's array rules ran before the gate. Only faces that lost panels
+    are touched. Returns (features, panels removed)."""
+    from collections import defaultdict
+    from src.panel_fitting import enforce_arrays, shape_arrays
+    key = lambda q: (q.get("building_id"), round(float(q.get("plane_aspect_deg") or 0), 4),
+                     round(float(q.get("plane_slope_deg") or 0), 4))
+    face_area, face_n, groups = {}, {}, defaultdict(list)
+    for i, f in enumerate(features):
+        q = f["properties"]
+        if q.get("kind") == "facet" and q.get("plane_aspect_deg") is not None:
+            face_n[key(q)] = q.get("panel_count")
+            try:
+                face_area[key(q)] = shp_transform(TO_NZTM, shape(f["geometry"])).area
+            except Exception:
+                pass
+        elif q.get("kind") == "panel" and q.get("plane_aspect_deg") is not None:
+            groups[key(q)].append(i)
+    drop = set()
+    for k, idx in groups.items():
+        fa = face_area.get(k)
+        if face_n.get(k) is not None and face_n[k] <= len(idx):
+            continue   # the gate took nothing from this face
+        pan = [{"geometry": shp_transform(TO_NZTM, shape(features[i]["geometry"])),
+                "facet_aspect_deg": k[1], "facet_slope_deg": k[2], "_i": i} for i in idx]
+        kept = shape_arrays(enforce_arrays(pan, face_area=fa), face_area=fa)
+        alive = {p["_i"] for p in kept}
+        drop.update(i for i in idx if i not in alive)
+    return [f for i, f in enumerate(features) if i not in drop], len(drop)
+
+
 def _has_usable_markup(building_id):
     """A drawn roof is not second-guessed by the surface gates, for the
     same reason a drawn face skips the plane-fit judgment: lumpy/sparse ask
@@ -187,6 +247,9 @@ def gate_area(name, pc, only_ids=None):
             kept.append(f)
         else:
             dropped[why] += 1
+    kept, n_rerack = rerack(kept)
+    if n_rerack:
+        dropped["rerack"] += n_rerack
     n_dropped = sum(dropped.values())
     d["features"] = kept
     write_json_atomic(path, d)
@@ -364,8 +427,11 @@ def gate_area_parallel(name, jobs=None):
                     out[todo_slot[bi * BATCH + j]] = json.loads(fj)
                 else:
                     dropped[why] += 1
+    feats, n_rerack = rerack([f for f in out if f is not None])
+    if n_rerack:
+        dropped["rerack"] += n_rerack
     n_dropped = sum(dropped.values())
-    d["features"] = [f for f in out if f is not None]
+    d["features"] = feats
     write_json_atomic(path, d)
     reasons = ", ".join(f"{k} {v}" for k, v in sorted(dropped.items())) or "none"
     msg = f"{name}: dropped {n_dropped} panels ({reasons}) [{jobs} workers]"

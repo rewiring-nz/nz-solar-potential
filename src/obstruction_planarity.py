@@ -133,3 +133,47 @@ def drop_roof_like(obstructions, face, facets, pc_source):
             continue
         keep.append(o)
     return keep
+
+
+# AN EDGE IS NOT AN OBSTRUCTION. Built blind on Josh's 119 roofs marked
+# complete (tools/markup_benchmark.py, 24 Oct), 1,749 of the 2,987 m2 of
+# detected obstruction was nowhere near anything he drew -- and rendered, the
+# false blobs hug the face's edges: the gutter line, the wall or ground seen
+# past the eave, the shadow along a hip, the jagged band where one roof level
+# steps down to the next. His obstructions sit inside faces: skylights, vents,
+# plant. A blob with EDGE_SHARE of its area within EDGE_BAND_M of its face's
+# boundary goes, unless the returns under it stand up off the plane (its
+# EDGE_RAISED_Q quantile more than EDGE_RAISED_M above): a chimney on a ridge
+# or a parapet at an eave stays. SOLAR_OBS_EDGE_CHECK=0 turns it off.
+EDGE_BAND_M = 0.5
+EDGE_SHARE = 0.6
+EDGE_RAISED_M = 0.25
+EDGE_RAISED_Q = 75
+
+
+def drop_edge_hugging(obstructions, face, pc_source):
+    if os.environ.get("SOLAR_OBS_EDGE_CHECK", "1") == "0" or not obstructions:
+        return obstructions
+    if face.get("plane_a") is None:
+        return obstructions
+    g = face["geometry"]
+    band = g.boundary.buffer(EDGE_BAND_M)
+    keep = []
+    for o in obstructions:
+        if o is None or o.is_empty or o.area <= 0:
+            continue
+        if o.intersection(band).area < EDGE_SHARE * o.area:
+            keep.append(o)
+            continue
+        pts = None
+        if pc_source is not None:
+            try:
+                from src.roof_segmentation import _facet_points
+                pts = _facet_points(pc_source, o)
+            except Exception:
+                pts = None
+        if pts is not None and len(pts) >= 5:
+            r = pts[:, 2] - (face["plane_a"] * pts[:, 0] + face["plane_b"] * pts[:, 1] + face["plane_c"])
+            if float(np.percentile(r, EDGE_RAISED_Q)) > EDGE_RAISED_M:
+                keep.append(o)
+    return keep
