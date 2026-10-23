@@ -238,6 +238,11 @@ VOID_FLAGS = {"absent", "not_building", "unclear"}
 
 
 def _labels():
+    # SOLAR_HIDE_LABELS=1: build as if nobody had drawn any roof -- the
+    # markup benchmark (tools/markup_benchmark.py) scores the pipeline's own
+    # reading of Josh's 144 hand-drawn roofs against what he drew.
+    if os.environ.get("SOLAR_HIDE_LABELS") == "1":
+        return {}
     if _LABELS_CACHE[0] is None:
         try:
             _LABELS_CACHE[0] = json.loads(
