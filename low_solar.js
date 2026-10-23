@@ -170,6 +170,89 @@ const LowSolar = (() => {
     });
   }
 
-  return { render, analyse, roofMonthly };
+  // THE RESILIENCE LIGHTBOX (Josh, 24 Oct): the same record, in full -- each
+  // year's longest run, when in the year low days fall, the worst runs with
+  // their dates, and the roof's average and darkest days month by month.
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function bars(values, o) {
+    const W = o.w || 720, H = o.h || 150, pad = { l: 34, r: 8, t: 10, b: 22 };
+    const max = Math.max(1, ...values, o.line || 0);
+    const bw = (W - pad.l - pad.r) / values.length;
+    const y = v => pad.t + (H - pad.t - pad.b) * (1 - v / max);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${o.label || ""}">`;
+    const step = max <= 6 ? 1 : max <= 15 ? 3 : max <= 40 ? 10 : max <= 100 ? 25 : 50;
+    for (let v = 0; v <= max; v += step) {
+      svg += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.08)"/>` +
+             `<text x="${pad.l - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="rgba(235,235,245,.5)">${v}${o.unit || ""}</text>`;
+    }
+    values.forEach((v, i) => {
+      const hi = o.highlight && o.highlight(i);
+      svg += `<rect x="${pad.l + i * bw + bw * 0.12}" y="${y(v)}" width="${Math.max(1, bw * 0.76)}" height="${H - pad.b - y(v)}" fill="${hi ? "#ffb000" : o.colour || "#5b8def"}"><title>${o.tip ? o.tip(i, v) : v}</title></rect>`;
+    });
+    if (o.line) svg += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(o.line)}" y2="${y(o.line)}" stroke="#ffb000" stroke-dasharray="4 3"/>` +
+      `<text x="${W - pad.r}" y="${y(o.line) - 4}" text-anchor="end" font-size="10" fill="#ffb000">${o.lineLabel || ""}</text>`;
+    (o.ticks || []).forEach(([i, t]) => {
+      svg += `<text x="${pad.l + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="rgba(235,235,245,.5)">${t}</text>`;
+    });
+    return svg + `</svg>`;
+  }
+
+  async function renderFull(box, o) {
+    if (!box) return;
+    box.innerHTML = `<div class="ls-note">Loading 86 years of daily sunlight&hellip;</div>`;
+    const cell = o.curve ? await getCell(o.lat, o.lng) : null;
+    if (!cell) { box.innerHTML = `<div class="ls-note">No long-term daily sunlight record for this roof.</div>`; return; }
+    const r = analyse(cell, o.curve, threshold);
+    const pct = Math.round(threshold * 100);
+    // low days by month, as a share of that month's days
+    const lowM = new Array(12).fill(0), allM = new Array(12).fill(0), darkM = new Array(12).fill(Infinity);
+    const n = cell.mj.length;
+    for (let i = 0; i < n; i++) {
+      const m = cell.month[i], v = Number.isNaN(cell.mj[i]) ? r.sunMonth[m] : cell.mj[i];
+      const g = r.roof[m] * v / r.sunMonth[m];
+      allM[m]++; if (g < r.cut) lowM[m]++;
+      if (g < darkM[m]) darkM[m] = g;
+    }
+    const worst = r.runs.slice().sort((a, b) => b.len - a.len || a.start - b.start).slice(0, 8);
+    const years = Array.from({ length: r.years }, (_, k) => r.y0 + k);
+    const structural = r.lowShare > 0.15;
+    box.innerHTML =
+      `<div class="rs-figs">` +
+        `<div class="rs-fig"><div class="ls-v">${days(r.longest.len)}</div><div class="ls-l">Max low-solar days in a row</div><div class="ls-s">${r.longest.len ? "from " + fmtDate(cell, r.longest.start) : "none on record"}</div></div>` +
+        `<div class="rs-fig"><div class="ls-v">${days(r.decade)}</div><div class="ls-l">Once a decade</div><div class="ls-s">${r.decade ? "runs this long: " + times(r.decadePerDecade, "decade") : "rare"}</div></div>` +
+        `<div class="rs-fig"><div class="ls-v">${days(r.typical)}</div><div class="ls-l">Common low-solar days in a row</div><div class="ls-s">${r.typical ? "in a normal year; " + times(r.typicalPerYear, "year") : "most years have none"}</div></div>` +
+      `</div>` +
+      `<label class="ls-thr rs-thr">A low-solar day makes under <input id="rs-thr" type="number" min="5" max="90" step="5" value="${pct}">% ` +
+        `of this roof's average day (${r.mean.toFixed(1)} kWh, i.e. under ${r.cut.toFixed(1)} kWh) &middot; ${(r.lowShare * 100).toFixed(1)}% of all days, ${r.y0}&ndash;${r.y1}</label>` +
+      (structural ? `<div class="ls-note"><b>Most of winter is "low" on this roof:</b> it faces away from the winter sun or is shaded, so its longest runs are the season itself, not a run of bad weather. A battery sized on these runs would be sized for winter.</div>` : "") +
+      `<h4>Longest run of low-solar days, each year</h4>` +
+      bars(years.map((_, k) => r.amax[k]), {
+        label: "Each year's longest run", line: r.decade, lineLabel: `once a decade: ${days(r.decade)}`,
+        highlight: k => r.longest.len && r.y0 + k === cell.year[r.longest.start],
+        tip: (k, v) => `${r.y0 + k}: ${days(v)}`,
+        ticks: years.map((y, k) => [k, y]).filter(([, y]) => y % 10 === 0) }) +
+      `<h4>When low-solar days happen</h4>` +
+      bars(lowM.map((v, m) => 100 * v / allM[m]), { label: "Share of low-solar days by month", h: 130, colour: "#7aa2f7", unit: "%",
+        tip: (m, v) => `${MON[m]}: ${v.toFixed(1)}% of days`, ticks: MON.map((t, m) => [m, t]) }) +
+      `<div class="ls-note">Share of each month's days, over ${r.years} years, below the low-solar line.</div>` +
+      `<div class="rs-two">` +
+        `<div><h4>The longest runs on record</h4><table class="rs-tab"><tr><th>Days</th><th>Starting</th></tr>` +
+          worst.map(w => `<tr><td>${w.len}</td><td>${fmtDate(cell, w.start)}</td></tr>`).join("") + `</table></div>` +
+        `<div><h4>This roof, month by month</h4><table class="rs-tab"><tr><th></th><th>Average day</th><th>Darkest day</th></tr>` +
+          MON.map((t, m) => `<tr><td>${t}</td><td>${r.roof[m].toFixed(1)} kWh</td><td>${darkM[m].toFixed(1)} kWh</td></tr>`).join("") + `</table></div>` +
+      `</div>` +
+      `<details class="clb-info"><summary>How this is worked out</summary>` +
+        `<p>Daily sunlight for every day from ${r.y0} to ${r.y1} comes from the ERA5 reanalysis (Copernicus Climate Change Service, via Open-Meteo, CC BY 4.0) for the ~25 km grid cell at ${cell.lat}, ${cell.lon}. Each day is scaled to this roof: its own average day in that month (from its tilt, direction, panels, and the shading of hills, trees and buildings) times that day's sunlight over the month's average.</p>` +
+        `<p>A low-solar day makes under ${pct}% of the roof's average day across the year. A run is consecutive low-solar days. The once-a-decade run is the length only one year in ten exceeds; the common run is the middle year's longest.</p>` +
+        `<p>Reanalysis smooths the very darkest days a little, so real runs can be somewhat longer. It is being checked against NIWA station records.</p></details>`;
+    const inp = box.querySelector("#rs-thr");
+    if (inp) inp.addEventListener("change", () => {
+      threshold = Math.max(5, Math.min(90, +inp.value || 20)) / 100;
+      renderFull(box, o);
+      if (o.onThreshold) o.onThreshold();
+    });
+  }
+
+  return { render, renderFull, analyse, roofMonthly };
 })();
 if (typeof module !== "undefined") module.exports = LowSolar;

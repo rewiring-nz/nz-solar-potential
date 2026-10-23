@@ -531,6 +531,23 @@
   @media (max-width: 700px) { .sba-compact-only { display: none !important; } }
   #season-curves { cursor: zoom-in; border-radius: 8px; }
   .sba-h3-sub { font-weight: 400; opacity: .6; font-size: .9em; }
+  .sba-resilience { display: flex; align-items: center; gap: 10px; width: 100%; margin: 10px 0 2px; padding: 10px 12px;
+    background: rgba(255,176,0,.10); border: 1px solid rgba(255,176,0,.28); border-radius: 12px; color: #f2f2f7;
+    font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+  .sba-resilience:hover, .sba-resilience:focus-visible { background: rgba(255,176,0,.16); outline: none; }
+  .sba-resilience > span:nth-child(2) { flex: 1; }
+  .sba-resilience small { display: block; font-weight: 400; font-size: 11.5px; color: rgba(235,235,245,.6); margin-top: 1px; }
+  .rs-ic { color: #ffb000; font-size: 18px; }
+  .rs-card { width: min(900px, 100%); }
+  .rs-addr { font-weight: 400; color: rgba(235,235,245,.6); font-size: 15px; margin-left: 6px; }
+  .rs-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 10px 0; }
+  .rs-fig { background: rgba(255,255,255,.05); border-radius: 12px; padding: 12px 14px; }
+  .rs-fig .ls-v { font-size: 26px; }
+  .rs-thr { display: block; margin: 4px 0 6px; }
+  .rs-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 24px; }
+  .rs-tab { border-collapse: collapse; font-size: 12.5px; width: 100%; font-variant-numeric: tabular-nums; }
+  .rs-tab th { text-align: left; font-weight: 500; color: rgba(235,235,245,.55); padding: 3px 8px 3px 0; }
+  .rs-tab td { padding: 3px 8px 3px 0; border-top: 1px solid rgba(255,255,255,.06); }
   .ls-note { font-size: 11.5px; line-height: 1.45; color: rgba(235,235,245,.55); margin: 6px 2px 0; }
   .ls { display: grid; gap: 8px; }
   .ls-fig { background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
@@ -4264,6 +4281,9 @@ map.on("load", async () => {
           <div class="sba-h3">The horizon from this roof</div>
           <div id="card-horizon"></div>
         </div>
+        <button type="button" class="sba-resilience" onclick="window.__openResilience && window.__openResilience()">
+          <span class="rs-ic" aria-hidden="true">&#9728;&#xFE0E;</span><span>Resilience<small>Low-solar runs, shading and 86 years of sunlight</small></span>
+          <span aria-hidden="true">&rsaquo;</span></button>
         <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
           Assumptions and details <span aria-hidden="true">&#8964;</span></button>
         <div class="sba-full-only">
@@ -5560,6 +5580,43 @@ map.on("load", async () => {
     lb.querySelector(".clb-x").addEventListener("click", closeChartLightbox);
     requestAnimationFrame(() => { draw(); lb.querySelector(".clb-x").focus(); });
   }
+  // RESILIENCE (Josh, 24 Oct): the building's sunlight and shading records in
+  // one place -- low-solar runs over 86 years (low_solar.js) and the horizon.
+  function openResilience() {
+    const bid = selectedPanelBuildingId;
+    if (bid === -1 || !GEN || !GEN.curve) return;
+    let lb = document.getElementById("chart-lightbox");
+    if (!lb) {
+      lb = document.createElement("div");
+      lb.id = "chart-lightbox";
+      lb.addEventListener("click", e => { if (e.target === lb) closeChartLightbox(); });
+      lb.addEventListener("keydown", e => { if (e.key === "Escape") closeChartLightbox(); });
+      document.body.appendChild(lb);
+    }
+    lb.__return = document.activeElement;
+    const p = selectedBuildingProps || {};
+    const title = p.address || (p.building_id ? `Building #${p.building_id}` : "This building");
+    const shade = GEN.shadeLossPct != null ? `Hills, trees and buildings take ${GEN.shadeLossPct.toFixed(1)}% of these panels' sunlight over a year.` : "";
+    lb.innerHTML =
+      `<div class="clb-card sx rs-card" role="dialog" aria-modal="true" aria-label="Resilience">` +
+        `<div class="clb-head"><h3>Resilience <span class="rs-addr">${title}</span></h3>` +
+          `<button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
+        `<div class="ls-note" style="margin-top:-6px">How long this roof can go without good sun, from every day since 1940 &mdash; for sizing a battery to ride through it. For the system shown: ${GEN.kwp ? GEN.kwp.value.toFixed(1) + " kW" : ""}.</div>` +
+        `<div id="rs-body"></div>` +
+        (p.horizon_b64 ? `<h4>Shading: the horizon from this roof</h4>${shade ? `<div class="ls-note">${shade}</div>` : ""}<div id="rs-horizon"></div>` : "") +
+      `</div>`;
+    lb.hidden = false;
+    document.body.classList.add("clb-open");
+    const c = map.getCenter();
+    LowSolar.renderFull(lb.querySelector("#rs-body"), { curve: GEN.curve,
+      lat: p._sy != null ? p._sy : c.lat, lng: p._sx != null ? p._sx : c.lng,
+      onThreshold: () => { const ls = document.getElementById("low-solar"); if (ls) { ls.dataset.key = ""; renderSeasonCurves(bid); } } });
+    const hz = lb.querySelector("#rs-horizon");
+    if (hz) requestAnimationFrame(() => renderHorizonChart(hz));
+    lb.querySelector(".clb-x").addEventListener("click", closeChartLightbox);
+    requestAnimationFrame(() => lb.querySelector(".clb-x").focus());
+  }
+  window.__openResilience = openResilience;
   function closeChartLightbox() {
     const lb = document.getElementById("chart-lightbox");
     if (!lb) return;
