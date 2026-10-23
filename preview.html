@@ -538,16 +538,36 @@
   .sba-resilience > span:nth-child(2) { flex: 1; }
   .sba-resilience small { display: block; font-weight: 400; font-size: 11.5px; color: rgba(235,235,245,.6); margin-top: 1px; }
   .rs-ic { color: #ffb000; font-size: 18px; }
-  .rs-card { width: min(900px, 100%); }
-  .rs-addr { font-weight: 400; color: rgba(235,235,245,.6); font-size: 15px; margin-left: 6px; }
-  .rs-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 10px 0; }
-  .rs-fig { background: rgba(255,255,255,.05); border-radius: 12px; padding: 12px 14px; }
-  .rs-fig .ls-v { font-size: 26px; }
-  .rs-thr { display: block; margin: 4px 0 6px; }
-  .rs-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 24px; }
-  .rs-tab { border-collapse: collapse; font-size: 12.5px; width: 100%; font-variant-numeric: tabular-nums; }
-  .rs-tab th { text-align: left; font-weight: 500; color: rgba(235,235,245,.55); padding: 3px 8px 3px 0; }
-  .rs-tab td { padding: 3px 8px 3px 0; border-top: 1px solid rgba(255,255,255,.06); }
+  /* The Resilience lightbox fits the window (Josh, 24 Oct: "it is huge on the
+     screen"): compact figures, two columns -- charts left, tables right. */
+  .rs-card { width: min(1060px, 100%); max-height: calc(100vh - 24px); padding: 14px 18px 14px !important; }
+  #chart-lightbox:has(.rs-card) { padding: 12px; }
+  .rs-card .clb-head { margin-bottom: 4px; }
+  .rs-card .clb-head h3 { font-size: 17px; }
+  .rs-card h4 { font-size: 12.5px !important; font-weight: 600; margin: 10px 0 3px !important; color: rgba(235,235,245,.85); }
+  .rs-addr { font-weight: 400; color: rgba(235,235,245,.6); font-size: 13.5px; margin-left: 6px; }
+  .rs-sub { font-weight: 400; color: rgba(235,235,245,.45); font-size: 11px; margin-left: 4px; }
+  .rs-key { font-weight: 400; color: rgba(235,235,245,.55); font-size: 11px; margin-left: 6px; white-space: nowrap; }
+  .rs-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: #ff8a65; margin-right: 4px; vertical-align: -1px; }
+  .rs-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 6px 0 4px; }
+  .rs-fig { background: rgba(255,255,255,.05); border-radius: 10px; padding: 7px 11px; }
+  .rs-fig .ls-v { font-size: 19px; }
+  .rs-fig .ls-l { font-size: 12px; }
+  .rs-thr { display: block; margin: 2px 0 0; font-size: 11.5px; }
+  .rs-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 0 22px; align-items: start; }
+  .rs-col svg { display: block; }
+  .rs-two { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr); gap: 0 16px; }
+  .rs-tab { border-collapse: collapse; font-size: 11.5px; width: 100%; font-variant-numeric: tabular-nums; }
+  .rs-tab th { text-align: left; font-weight: 500; color: rgba(235,235,245,.55); padding: 1px 6px 1px 0; }
+  .rs-tab td { padding: 1.5px 6px 1.5px 0; border-top: 1px solid rgba(255,255,255,.06); }
+  .rs-tab .rs-unit { color: rgba(235,235,245,.45); font-size: 10.5px; border-top: 0; }
+  .rs-card .clb-info { font-size: 12px; margin-top: 10px; }
+  .rs-card .ls-note { margin-top: 2px; }
+  .rs-hz-slot .ls-note { margin: 0 0 2px; }
+  @media (max-width: 760px) {
+    .rs-grid, .rs-figs { grid-template-columns: 1fr; }
+    .rs-card { max-height: 100%; }
+  }
   .ls-note { font-size: 11.5px; line-height: 1.45; color: rgba(235,235,245,.55); margin: 6px 2px 0; }
   .ls { display: grid; gap: 8px; }
   .ls-fig { background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
@@ -5107,7 +5127,9 @@ map.on("load", async () => {
     const avail = Math.max(240, (box.clientWidth || 288));
     const bigHz = box.id === "clb-horizon";      // the lightbox: scaled up, labels grow with it
     const W = bigHz ? Math.round(Math.min(avail, 1400) / 1.65) : Math.min(avail, 900);
-    const H = bigHz ? Math.round(W * 0.4) : Math.round(Math.min(300, Math.max(170, W * 0.5)));
+    const H = bigHz ? Math.round(W * 0.4)
+      : box.id === "rs-horizon" ? Math.round(Math.max(150, W * 0.3))     // the Resilience box: fits the window
+      : Math.round(Math.min(300, Math.max(170, W * 0.5)));
     const L = 30, R = 6, T = 8, B = 16;
     const arcs = [
       { name: "summer", decl: -23.44 },
@@ -5320,6 +5342,10 @@ map.on("load", async () => {
     // was baked for. Applying one building's mask to a whole selection would
     // smear a shaded valley roof's early winter cut-off onto its neighbours.
     let totalKwp = 0;
+    // the diffuse share of each season's average day, after shading: the
+    // low-solar runs scale beam and diffuse apart (low_solar.js)
+    const difSum = new Array(S).fill(0), avSum = new Array(S).fill(0);
+    let difOk = true;
     entries.forEach(([bid, entry]) => {
       const binKwp = binKwpFor(entry.facets, entry.panels);
       for (const v of Object.values(binKwp)) totalKwp += v;
@@ -5360,6 +5386,7 @@ map.on("load", async () => {
         }
         avg[s2][h] += av;
         peak[s2][h] += pk;
+        if (haveAvgDif) { difSum[s2] += Math.min(ad[s2][h], av); avSum[s2] += av; } else difOk = false;
       }
     });
 
@@ -5385,6 +5412,7 @@ map.on("load", async () => {
       seasonDays: genCurveNow ? seasonCurves.seasons.map(n => genCurveNow.seasonDays[genCurveNow.seasons.indexOf(n)])
                               : new Array(avg.length).fill(365 / avg.length),
       kwp: totalKwp,
+      difShare: difOk ? Object.fromEntries(seasonCurves.seasons.map((n, s2) => [n, avSum[s2] > 0 ? difSum[s2] / avSum[s2] : null])) : null,
     };
     if (!o.box) {
       if (window.__billToolRedraw) window.__billToolRedraw();
@@ -5525,7 +5553,8 @@ map.on("load", async () => {
         const ls = document.getElementById("low-solar");
         if (ls && ls.dataset.key !== key) {
           ls.dataset.key = key;
-          LowSolar.render(ls, { curve: GEN.curve, lat: p._sy != null ? p._sy : c.lat, lng: p._sx != null ? p._sx : c.lng });
+          LowSolar.render(ls, { curve: GEN.curve, difShare: lowSolarDifShare(),
+                               lat: p._sy != null ? p._sy : c.lat, lng: p._sx != null ? p._sx : c.lng });
         }
       }
       box.setAttribute("role", "button");
@@ -5580,6 +5609,13 @@ map.on("load", async () => {
     lb.querySelector(".clb-x").addEventListener("click", closeChartLightbox);
     requestAnimationFrame(() => { draw(); lb.querySelector(".clb-x").focus(); });
   }
+  // The chart's diffuse share per season, in GEN.curve's season order.
+  function lowSolarDifShare() {
+    const d = window.__genProfile && window.__genProfile.difShare;
+    if (!d || !GEN || !GEN.curve) return null;
+    const out = GEN.curve.seasons.map(n => d[n]);
+    return out.every(x => x != null && x >= 0) ? out : null;
+  }
   // RESILIENCE (Josh, 24 Oct): the building's sunlight and shading records in
   // one place -- low-solar runs over 86 years (low_solar.js) and the horizon.
   function openResilience() {
@@ -5603,16 +5639,23 @@ map.on("load", async () => {
           `<button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
         `<div class="ls-note" style="margin-top:-6px">How long this roof can go without good sun, from every day since 1940 &mdash; for sizing a battery to ride through it. For the system shown: ${GEN.kwp ? GEN.kwp.value.toFixed(1) + " kW" : ""}.</div>` +
         `<div id="rs-body"></div>` +
-        (p.horizon_b64 ? `<h4>Shading: the horizon from this roof</h4>${shade ? `<div class="ls-note">${shade}</div>` : ""}<div id="rs-horizon"></div>` : "") +
       `</div>`;
+    // the horizon sits in the chart column, under the month chart
+    const hzWrap = document.createElement("div");
+    if (p.horizon_b64) hzWrap.innerHTML = `<h4>Shading: the horizon from this roof</h4>${shade ? `<div class="ls-note">${shade}</div>` : ""}<div id="rs-horizon"></div>`;
     lb.hidden = false;
     document.body.classList.add("clb-open");
     const c = map.getCenter();
-    LowSolar.renderFull(lb.querySelector("#rs-body"), { curve: GEN.curve,
+    LowSolar.renderFull(lb.querySelector("#rs-body"), { curve: GEN.curve, difShare: lowSolarDifShare(),
       lat: p._sy != null ? p._sy : c.lat, lng: p._sx != null ? p._sx : c.lng,
-      onThreshold: () => { const ls = document.getElementById("low-solar"); if (ls) { ls.dataset.key = ""; renderSeasonCurves(bid); } } });
-    const hz = lb.querySelector("#rs-horizon");
-    if (hz) requestAnimationFrame(() => renderHorizonChart(hz));
+      onThreshold: () => { const ls = document.getElementById("low-solar"); if (ls) { ls.dataset.key = ""; renderSeasonCurves(bid); } },
+      afterRender: body => {
+        const slot = body.querySelector(".rs-hz-slot");
+        if (!slot || !p.horizon_b64) return;
+        slot.appendChild(hzWrap);
+        const hz = hzWrap.querySelector("#rs-horizon");
+        if (hz) requestAnimationFrame(() => renderHorizonChart(hz));
+      } });
     lb.querySelector(".clb-x").addEventListener("click", closeChartLightbox);
     requestAnimationFrame(() => lb.querySelector(".clb-x").focus());
   }
