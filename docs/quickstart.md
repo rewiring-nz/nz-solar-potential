@@ -16,6 +16,13 @@ cd nz-solar-potential
   * [Setup Ubuntu Environment](data-maintainers/env-setup-ubuntu.md)
   * [Setup Windows Environment](data-maintainers/env-setup-win.md)
 
+The local pipeline checks native GDAL tools and LERC raster decoding before
+downloading source data, automatically trying the available TIFF readers. A
+failure explains how to repair the environment; see
+[LERC dependency checks](data-maintainers/troubleshooting.md#lerc-raster-dependency-check).
+Python requirements do not configure codecs in system GDAL, and no native
+packages are installed automatically by this check.
+
 ## 3. LINZ credentials
 
 You need an API Key to download datasets from LINZ (Land Information New Zealand).

@@ -91,6 +91,19 @@ command -v tile-join
 command -v tippecanoe-decode
 ```
 
+## GDAL raster dependencies
+
+Local raster acquisition also requires GDAL:
+
+```sh
+sudo apt install -y gdal-bin
+```
+
+After creating the Python environment, run the
+[offline LERC check](troubleshooting.md#lerc-raster-dependency-check).
+Ubuntu/WSL codec support is not yet validated for this project; a successful
+package installation alone does not prove the required reader works.
+
 ## Option: For cloud instances
 
 Cloud commands need the Google Cloud CLI (`gcloud`). When you run the cloud

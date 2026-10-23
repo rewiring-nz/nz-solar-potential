@@ -7,6 +7,12 @@ and assign work.
 
 ## Ship
 
+- **#44: LERC dependency checks and automatic reader selection.** Local pipeline
+  preflight tests actual decoding before acquisition and reports repair guidance.
+  The default automatically selects `GTiff` or `LIBERTIFF` without requiring a
+  per-run environment setting. S3 mosaics use strict, atomic VRT creation;
+  offline tests cover decoding, crop/resampling, and preservation after failed inputs.
+
 - **v52 LIVE 20 Oct 18:45 NZT: panels in clean racked arrays** (gate reviewed:
   panels 2,067,057 -> 2,008,902, -2.8%; no roof lost face area; the five big
   drops rendered -- scattered and mixed-orientation panels gone, clean arrays

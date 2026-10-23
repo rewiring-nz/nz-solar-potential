@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 BOOTSTRAP = r"""set -Eeuo pipefail
 sudo DEBIAN_FRONTEND=noninteractive apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  build-essential git libsqlite3-dev nano python3 python3-pip python3-venv zlib1g-dev
+  build-essential gdal-bin git libsqlite3-dev nano python3 python3-pip python3-venv zlib1g-dev
 if ! command -v tippecanoe >/dev/null || ! command -v tile-join >/dev/null || ! command -v tippecanoe-decode >/dev/null; then
   work="$(mktemp -d)"
   git clone --depth 1 https://github.com/felt/tippecanoe.git "$work/tippecanoe"
@@ -68,8 +68,8 @@ STEPS = [
     {
         "number": 1,
         "label": "Preflight: validate area and runtime",
-        "inputs": "config.py region; selected Python environment; LINZ_API_KEY presence",
-        "outputs": "Run metadata; confirmed area name and WGS84 bbox",
+        "inputs": "config.py region; selected Python environment; GDAL/Rasterio LERC decoding; LINZ_API_KEY presence",
+        "outputs": "Run metadata; confirmed raster dependencies, area name and WGS84 bbox",
     },
     {
         "number": 2,
@@ -417,6 +417,19 @@ def _key_available() -> bool:
 def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
     if not py.is_file() or not os.access(py, os.X_OK):
         return False, f"Selected Python executable is unavailable: {py}", {"name": area}
+    raster_probe = subprocess.run(
+        [str(py), "-c", (
+            "import sys\n"
+            "from src.s3_rasters import require_raster_support\n"
+            "try:\n"
+            "    print(require_raster_support())\n"
+            "except RuntimeError as exc:\n"
+            "    sys.exit(str(exc))\n"
+        )],
+        cwd=ROOT, capture_output=True, text=True)
+    if raster_probe.returncode:
+        return False, raster_probe.stderr.strip(), {"name": area}
+    raster_reader = raster_probe.stdout.strip()
     if not _key_available():
         return False, "LINZ_API_KEY is not in the environment, .env or Secret Manager (value was not recorded).", {"name": area}
     dependency_probe = subprocess.run(
@@ -454,7 +467,11 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
     except Exception as exc:
         return False, f"No usable configured region/survey: {type(exc).__name__}: {exc}. Configure the region bbox in config.REGIONS and source layers in config.SURVEYS.", {"name": area}
     free_gb = shutil.disk_usage(DATA).free / 1e9 if DATA.exists() else shutil.disk_usage(ROOT).free / 1e9
-    details = f"Region {area}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; free disk {free_gb:.1f} GB; LINZ key present (not recorded)."
+    details = (
+        f"Region {area}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; "
+        f"GDAL/Rasterio LERC decoding verified (GDAL reader {raster_reader}); "
+        f"free disk {free_gb:.1f} GB; LINZ key present (not recorded)."
+    )
     if free_gb < 10:
         details += f" WARNING: only {free_gb:.1f} GB free; documentation recommends about 10 GB."
     return True, details + f" Selected survey: {survey.get('name')}.", {

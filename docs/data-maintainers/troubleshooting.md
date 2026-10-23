@@ -31,6 +31,54 @@ geometry does not turn a DSM-only run into a full point-cloud run.
 
 ## Pipeline preflight errors
 
+### LERC raster dependency check
+
+Quickstart and `tools/pipeline.py` decode a small offline LERC TIFF before
+acquisition. Both the selected Python's Rasterio and the system GDAL reader
+must work. Direct S3 raster fetches repeat the check before downloading tiles.
+
+`Cannot decode required LERC terrain tiles` means the native GDAL TIFF reader
+is missing codec support, even if `liblerc` is installed. Python packages do
+not enable codecs in a separate system GDAL installation.
+
+On macOS, install the declared command-line tools when ready:
+
+```sh
+brew bundle --file=Brewfile
+```
+
+On Ubuntu/WSL, install `gdal-bin` with the system package manager. Installation
+alone does not prove LERC support; run the offline check with the project Python:
+
+```sh
+.venv/bin/python -c 'from src.s3_rasters import require_raster_support; require_raster_support()'
+```
+
+The dependency check automatically tries `GTiff`, then `LIBERTIFF` if the
+first reader cannot decode LERC. No reader setting is needed for normal
+quickstart runs. To diagnose or override selection, set:
+
+```sh
+SOLAR_TIFF_READER=GTiff bash quickstart.sh
+# Or force the alternative reader:
+SOLAR_TIFF_READER=LIBERTIFF bash quickstart.sh
+```
+
+Auto selection and both readers have been validated on macOS with GDAL 3.13.3
+and Rasterio 1.5.2. Ubuntu/WSL guidance remains unverified; the same offline
+probe must pass there. Explicit override values are `auto`, `GTiff`, or
+`LIBERTIFF`.
+Do not export `GDAL_SKIP=GTiff` globally: it disables normal TIFF writing.
+The pipeline scopes reader selection to VRT construction and uses the validated
+Rasterio decoder for cropped TIFF output in alternative-reader mode.
+
+If Rasterio fails, install `requirements.txt` into the selected interpreter
+and use a Rasterio distribution with LERC-enabled GDAL. A system GDAL upgrade
+does not necessarily change Rasterio's bundled libraries, and vice versa.
+No dependency installation happens automatically. Failures appear in Step 01,
+`run.log`, and `report.md`. Strict, atomic VRT construction preserves the
+previous mosaic when a required tile cannot be opened.
+
 ### Matplotlib is required for the map heatmap stage
 
 **Report symptom** (Step 01):

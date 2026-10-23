@@ -247,6 +247,12 @@ Last verified: 2026-10-11
   `maxFeatures`. WFS 2.0.0 returned empty results during prior validation.
 - Missing aerial imagery does not block builds: the regional fetcher logs a
   warning and the build runs without imagery-based obstruction detection.
+- `src/s3_rasters.py` probes actual LERC decoding with system GDAL and Rasterio;
+  local pipeline preflight runs the probe in the selected interpreter before
+  acquisition and automatically falls back from `GTiff` to `LIBERTIFF`.
+  `SOLAR_TIFF_READER` can override selection for diagnostics. Cropped TIFFs
+  selected through `LIBERTIFF` use Rasterio. Native GDAL tools are declared
+  in `Brewfile`, not installed by Python requirements. See troubleshooting.
 - `data/dem_wide_mosaic.tif` is a required root-level input for several current
   stages, including building horizons and terrain masks. `src/fetch_dem_wide.py`
   fetches LINZ layer `51768` over the configured `config.DEM_WIDE_BBOX`, which

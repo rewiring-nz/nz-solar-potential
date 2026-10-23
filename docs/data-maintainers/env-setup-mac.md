@@ -72,18 +72,26 @@ just because this count appears. The command is successful if it exits with
 status 0 and returns to the shell prompt; investigate actual `Error:` messages
 or a nonzero exit status.
 
-This installs Git, which retrieves and records project changes, Python,
-which runs the data-processing scripts, and Tippecanoe, which provides the
+This installs Git, which retrieves and records project changes, GDAL for
+raster acquisition, Python, which runs the data-processing scripts, and
+Tippecanoe, which provides the
 map-tile commands `tippecanoe`, `tile-join`, and `tippecanoe-decode`. Confirm
 the required commands are available:
 
 ```sh
 git --version
 python3 --version
+command -v gdalbuildvrt
+command -v gdal_translate
 tippecanoe --version
 command -v tile-join
 command -v tippecanoe-decode
 ```
+
+After creating the Python environment, quickstart checks actual LERC decoding
+and automatically selects a working GDAL TIFF reader. Installing or upgrading
+a package alone does not establish codec support. See
+[LERC dependency checks](troubleshooting.md#lerc-raster-dependency-check).
 
 ### Option: For cloud instances
 

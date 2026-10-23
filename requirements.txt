@@ -1,4 +1,5 @@
 geopandas>=1.0
+# Rasterio wheels bundle GDAL; system GDAL CLI codecs are checked separately.
 rasterio>=1.3
 shapely>=2.1  # coverage_simplify(simplify_boundary=) -- src/face_straighten.py
 pyproj>=3.6

@@ -14,6 +14,12 @@ All setups need sufficient local storage for source rasters, point clouds,
 intermediate region data, and generated outputs. High-resolution imagery can
 be multiple gigabytes per region.
 
+Raster acquisition also needs system GDAL commands (`gdalbuildvrt` and
+`gdal_translate`) and working LERC decoding in both the CLI reader and Rasterio.
+These are checked before quickstart acquisition. Python requirements alone
+do not configure native system codecs. See
+[LERC dependency checks and reader selection](troubleshooting.md#lerc-raster-dependency-check).
+
 ## Create the project Python environment
 
 After completing the guide for your computer, run these commands from the
