@@ -20,7 +20,10 @@ import os
 import subprocess
 
 PROJECT = "solar-potential-map-512020"
-SECRETS = {"LINZ_API_KEY": "linz-api-key"}
+SECRETS = {"LINZ_API_KEY": "linz-api-key",
+           # the roof-reading referee (tools/vision_referee.py); readable by
+           # the build VM only, in a workspace with a monthly spend limit
+           "ANTHROPIC_API_KEY": "anthropic-api-key"}
 
 
 def get(name):
@@ -51,3 +54,7 @@ def get(name):
 
 def linz_api_key():
     return get("LINZ_API_KEY")
+
+
+def anthropic_api_key():
+    return get("ANTHROPIC_API_KEY")
