@@ -65,6 +65,18 @@ and assign work.
   smooths the darkest days; optionally an NREL API key for Himawari 2 km
   satellite solar (2016-2020) -- the only route to suburb-level cloud.
 
+- **Roof lines: the pick, not the drawings (25 Oct).** Every candidate reading
+  scored against Josh's 131 drawn roofs (labels hidden; ~/ab/oracle.py):
+  the pipeline's pick line F 0.537 (48 roofs right), the best candidate it
+  already drew 0.688 (77). On the 36 benchmark roofs held out of the face
+  model's training: pick 0.517 (16), the precomputed photo/SAM reading alone
+  0.641 (23), best 0.664 (23) -- the competition rules added 20 Oct throw the
+  better reading away. Vision referee (tools/vision_referee.py; Claude Sonnet
+  5.5 on photo + LiDAR relief, ~$0.01 a roof, key Claude-API): 0.574 (58) on
+  130 roofs, 0.531 (17) held out -- better than the pick, worse than trusting
+  the photo reading. Testing: SOLAR_SELECTED_TRUST=0 (and MIN_SCORE=0) on the
+  markup benchmark. Josh's v55 verdicts (29): 1 fixed, 8 better, 5 same,
+  2 worse, 13 wrong; nearly all about roof lines.
 - **v58 BUILT 25 Oct, NOT PUBLISHED; v59 building.** Gate: panels -10.1%,
   zeroed 211 -> 15 (all low-confidence withholds, 7 in Wanaka). Renders of the
   big drops: 15-degree south-east faces of big commercial gables bare
