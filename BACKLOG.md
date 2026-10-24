@@ -95,7 +95,13 @@ and assign work.
   elsewhere. Colour-only blobs (no height overlap, passing _lidar_signature)
   switched off: precision 0.47 -> 0.51, recall 0.36 -> 0.32, panels +2% --
   a trade, not a win; kept. The detector needs a better test of what an
-  object looks like, not a threshold. Roof lines: a
+  object looks like, not a threshold. NEXT (after v57): the trained photo
+  obstruction model (data/models/photo_obstruct_v1.pt) is only used in towns
+  without LiDAR, yet on held-out towns it scores object recall 0.68 /
+  precision 0.36 against the colour detector's 0.30 / 0.30. Josh's markup is
+  in its training labels, so retrain with the benchmark roofs held out, then
+  try it as the photo path in LiDAR towns (in place of, or as referee for,
+  colour blobs) and judge on tools/markup_benchmark.py. Roof lines: a
   vision-model referee needs Josh's decision on an API key.
 - **Resilience audited and fixed (live 24 Oct).** Days were scaled by total
   sunlight, so a tilted roof's overcast days came out ~2x too bright; beam and
