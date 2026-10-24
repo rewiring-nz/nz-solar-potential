@@ -89,7 +89,10 @@ and assign work.
   131 roofs: outline IoU 0.91, face IoU 0.63 (32 at 0.8+), roof-line F 0.54
   (48 at 0.7+), obstruction precision 0.41 / recall 0.39 on roofs marked
   complete, panels 12% under the drawn. The colour detector draws 2/3 of the
-  false obstruction area (1,170 of 1,749 m2): next target. Roof lines: a
+  false obstruction area (1,170 of 1,749 m2): next target. Tried: keeping a
+  corroborated colour blob whole only up to 4 m2 (was 15) -- precision 0.468
+  -> 0.470, recall 0.361 -> 0.358: not the source; the false colour area is
+  elsewhere (colour-only blobs passing _lidar_signature are the next suspect). Roof lines: a
   vision-model referee needs Josh's decision on an API key.
 - **Resilience audited and fixed (live 24 Oct).** Days were scaled by total
   sunlight, so a tilted roof's overcast days came out ~2x too bright; beam and
