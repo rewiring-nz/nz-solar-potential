@@ -92,7 +92,10 @@ and assign work.
   false obstruction area (1,170 of 1,749 m2): next target. Tried: keeping a
   corroborated colour blob whole only up to 4 m2 (was 15) -- precision 0.468
   -> 0.470, recall 0.361 -> 0.358: not the source; the false colour area is
-  elsewhere (colour-only blobs passing _lidar_signature are the next suspect). Roof lines: a
+  elsewhere. Colour-only blobs (no height overlap, passing _lidar_signature)
+  switched off: precision 0.47 -> 0.51, recall 0.36 -> 0.32, panels +2% --
+  a trade, not a win; kept. The detector needs a better test of what an
+  object looks like, not a threshold. Roof lines: a
   vision-model referee needs Josh's decision on an API key.
 - **Resilience audited and fixed (live 24 Oct).** Days were scaled by total
   sunlight, so a tilted roof's overcast days came out ~2x too bright; beam and
