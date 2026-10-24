@@ -79,10 +79,8 @@ def panel_ok(poly, pc):
     # each is made only when its answer is needed: `around` only without
     # enough ground returns, `pts` only once the cheap early exits are past.
     # Same tiles as the queries before them, so the results are unchanged.
-    ground_cls = pc.ground_points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r)
-    if len(ground_cls) >= 20:
-        local_ground = _ground_at(ground_cls, c.x, c.y)
-    else:
+    local_ground = _ground_beside(pc, c.x, c.y)
+    if local_ground is None:
         around = pc.points_in_bbox(c.x - r, c.y - r, c.x + r, c.y + r, building_only=False)
         if len(around) >= 20:
             local_ground = float(np.percentile(around[:, 2], 5))
@@ -139,30 +137,32 @@ def panel_ok(poly, pc):
     return True, "ok"
 
 
-def _ground_at(ground, x, y):
-    """Ground height under (x, y): the terrain's plane through the nearby
-    ground returns, not their median. On a hillside the median is the
-    neighbourhood's middle height, so the uphill half of a roof cut into the
-    slope read as standing under 2 m above it and was deleted as ground: 29
-    York Street lost 10 of the 11 panels on its sunny face, and the gate's
-    1,262 "sparse" drops in central Queenstown were mostly this (Josh, 24
-    Oct). A carpark is still at ground level on a sloping plane."""
-    med = float(np.percentile(ground[:, 2], 50))
-    if np.ptp(ground[:, 0]) < 5 or np.ptp(ground[:, 1]) < 5:
-        return med
-    A = np.column_stack([ground[:, 0] - x, ground[:, 1] - y, np.ones(len(ground))])
-    keep = np.ones(len(ground), bool)
-    for _ in range(2):  # refit without walls, steps and retaining-wall tops
-        coef, *_ = np.linalg.lstsq(A[keep], ground[keep, 2], rcond=None)
-        res = np.abs(A @ coef - ground[:, 2])
-        nk = res < max(1.0, 2.5 * float(np.median(res)))
-        if nk.sum() < 20:
-            break
-        keep = nk
-    z = float(coef[2])
-    # the plane is ground near (x, y): never above the highest or below the
-    # lowest return it was fitted to
-    return min(max(z, float(ground[keep, 2].min())), float(ground[keep, 2].max()))
+GROUND_NEAR_M = 8.0      # ground returns this close to the panel first...
+GROUND_NEAR_Q = 20       # ...their low end: the ground beside the building
+GROUND_FAR_Q = 25        # failing that, the low quarter of the 20 m box
+
+
+def _ground_beside(pc, x, y):
+    """Ground height beside the panel: the low end of the ground returns
+    within GROUND_NEAR_M, else of the 20 m box.
+
+    The old test took the MEDIAN of the 20 m box. On a hillside that is the
+    neighbourhood's middle height, so the uphill half of a real roof read as
+    standing under 2 m above it and was deleted as ground: 29 York Street lost
+    10 of the 11 panels on its sunny face (Josh, 24 Oct). A plane through the
+    20 m of terrain fixed York but failed worse on houses cut into a slope --
+    the plane runs above the building's platform (4721951, Frankton Arm, a
+    200-panel roof zeroed in the v57 build). The ground right beside the
+    building, at its low end, is what the roof stands above in both cases; a
+    carpark or slab is still level with the ground around it. On 200-roof
+    samples, sparse drops: central Queenstown 336 (median) -> 73, Wanaka 177
+    -> 33, Arrowtown 446 -> 421 (there almost all on buildings newer than the
+    survey, which the LiDAR sees as bare ground)."""
+    for r, q in ((GROUND_NEAR_M, GROUND_NEAR_Q), (GROUND_SEARCH_RADIUS_M, GROUND_FAR_Q)):
+        g = pc.ground_points_in_bbox(x - r, y - r, x + r, y + r)
+        if len(g) >= 20:
+            return float(np.percentile(g[:, 2], q))
+    return None
 
 
 def rerack(features):

@@ -53,20 +53,28 @@ def test_a_roof_with_no_sunny_side_keeps_its_low_south_faces():
     best = 0.77                                    # 4751212: only south faces, ~15 degrees
     assert not away_from_sun(m, 15, 202, best)
     assert not away_from_sun(m, 14, 173, best)
-    assert away_from_sun(m, 30, 180, best)         # but never a steep south face
+    assert away_from_sun(m, 32, 180, best)         # but never a steep south face
 
 
-def test_hillside_ground_is_the_terrain_under_the_panel():
-    # ground rising 0.3 m per metre to the north; the roof at y=0 sits 3 m
-    # above the ground directly beneath it but below the neighbourhood median
-    rng = np.random.default_rng(1)
-    x, y = rng.uniform(-20, 20, 400), rng.uniform(-20, 20, 400)
-    ground = np.column_stack([x, y, 100 + 0.3 * y + rng.normal(0, 0.05, 400)])
-    ground[:200, 1] = np.abs(ground[:200, 1])                  # more uphill samples
-    ground[:200, 2] = 100 + 0.3 * ground[:200, 1]
-    z = gp._ground_at(ground, 0.0, 0.0)
-    assert abs(z - 100.0) < 0.3
-    assert np.percentile(ground[:, 2], 50) > 101.0             # the old reading
+def test_ground_is_beside_the_building_on_a_hillside_and_a_cut_in_slope():
+    class G:
+        def __init__(self, pts):
+            self.p = np.asarray(pts, float)
+
+        def ground_points_in_bbox(self, x0, y0, x1, y1):
+            m = (self.p[:, 0] >= x0) & (self.p[:, 0] <= x1) & (self.p[:, 1] >= y0) & (self.p[:, 1] <= y1)
+            return self.p[m]
+    xs, ys = np.meshgrid(np.arange(-20, 20.5, 1.0), np.arange(-20, 20.5, 1.0))
+    xs, ys = xs.ravel(), ys.ravel()
+    # hillside rising 0.5 m per metre to the north: the median of the box is
+    # the panel's own height, the ground beside the house is below it
+    hill = G(np.column_stack([xs, ys, 100 + 0.5 * ys]))
+    assert gp._ground_beside(hill, 0, 0) < 98.5
+    # a house cut into that slope: a level platform at 100 around it, out to 6 m
+    plat = np.where(np.hypot(xs, ys) < 6, 100.0, 100 + 0.5 * ys)
+    assert gp._ground_beside(G(np.column_stack([xs, ys, plat])), 0, 0) <= 100.0
+    # a carpark: level ground all round, at the "roof's" own height
+    assert abs(gp._ground_beside(G(np.column_stack([xs, ys, np.full(len(xs), 50.0)])), 0, 0) - 50.0) < 1e-9
 
 
 def _feat(geom_nztm, **props):

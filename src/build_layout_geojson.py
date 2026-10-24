@@ -537,129 +537,142 @@ def _build_one_at(building_id, nudge_m):
     # the building's sunniest real face, for the sunny-side rule (SUN_SIDE_REL)
     _sunniest = max([sun_share(model, f["slope_deg"], f["aspect_deg"]) for f in facets
                      if not f.get("no_panel") and f["geometry"].area >= SUN_SIDE_MIN_FACE_M2] or [1.0])
-    for f in facets:
-        facet_centroid = f["geometry"].centroid
-        shading_factor = building_shading_factor(
-            dsm_band, dsm_ds.transform, dsm_ds.nodata,
-            facet_centroid.x, facet_centroid.y, model.hourly,
-            own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
-        # The far-terrain factor depends on the facet only (slope, aspect and
-        # the building's profile), so it is computed once here and reused for
-        # every panel below instead of re-integrating 8,760 hours per panel.
-        far_factor = None
-        if _bld_far is not None:
-            far_factor = _hz_facet_factor(_bld_far, model.horizon_profile,
-                                          f["slope_deg"], f["aspect_deg"], model.hourly)
-            shading_factor *= far_factor
-        facet_poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
-        if not modelled:
-            per_facet.append({"facet": f, "panels": [], "obstructions": [],
-                              "poa": facet_poa * shading_factor,
-                              "shading_factor": shading_factor})
-            continue
-        plane = (f["plane_a"], f["plane_b"], f["plane_c"])
-        _keepouts = []
-        _edge_drops = []
-        _drawn_obs = []
-        obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane,
-                                                    roof_geom=f.get("building_geometry"),
-                                                    keepouts=(_edge_drops if os.environ.get(
-                                                        "SOLAR_EDGE_DROPS", "1") != "0" else None))
-        try:
-            from src.roof_line_source import drawn_obstruction_polys
-            _drawn_obs = drawn_obstruction_polys(f.get("building_id"))
-            if _drawn_obs:
-                # This roof's obstructions are marked in detail; the auto
-                # detector was hallucinating 140 m2 of phantom blockage on a
-                # bright membrane where the markup totals 17 m2 (#5372565,
-                # clear empty space left unfilled). Where the markup speaks,
-                # only it speaks.
-                obstructions = [o for o in _drawn_obs
-                                if o.intersects(f["geometry"])]
-            from src.roof_line_source import drawn_line_keepouts
-            # His fold lines are no-panel strips even where the partition
-            # did not split on them (#4735237: 264/450 panels crossed drawn
-            # lines inside two big derived faces). Keepouts, not verdicts.
-            _keepouts = [k for k in drawn_line_keepouts(f.get("building_id"))
-                         if k.intersects(f["geometry"])]
-        except Exception:
-            pass
-        # ...and a detected patch whose returns lie on a roof plane is roof
-        # (src/obstruction_planarity.py); his markup is never second-guessed
-        if not _drawn_obs:
-            obstructions = drop_roof_like(obstructions, f, facets, pc_source)
-            obstructions = drop_edge_hugging(obstructions, f, pc_source)
-        # edge drops the detector found stay panel-free, unless the markup
-        # governs this roof's obstructions
-        if not _drawn_obs:
-            _keepouts = list(_keepouts) + _edge_drops
-        siblings = [other for other in facets if other is not f]
-        # A FACE JOSH DREW IS NOT JUDGED ON ITS PLANE FIT, for the same reason
-        # it is not withheld for low confidence: _facet_fit asks how well the
-        # points sit on a plane WE fitted, and on a face he drew that question
-        # is upside down. A 713 m2 flat roof has camber and ponding well beyond
-        # the 15 cm tolerance, so it scores badly while being exactly one roof
-        # plane.
-        #
-        # This is the same filter that took 32 Frankton Road to 18 panels. It
-        # is measured to be at risk on 11 of his labelled roofs, all of them
-        # over 1,000 m2 and all of them the big commercial buildings that
-        # carry the most capacity: #5372239 (7,568 m2), #5372232 (5,526),
-        # #4725584 (4,032), and 1 Memorial Street, one of the two roofs he
-        # first showed me as wrong.
-        drawn = f.get("from_labels")
-        # A low plane-fit big-roof facet used to get NO panels at all. 100%
-        # panel density must fill every possible area -- and
-        # #4735613 shipped its 372 and 337 m2 facets EMPTY through this skip
-        # (382 panels refit vs 107 shipped). The facet still fits, but its
-        # panels are DEMOTED to the straggler band: hidden at default density,
-        # present at 100%. Deleting is a verdict; demotion is a ranking.
-        low_fit = (big_roof and not drawn
-                   and _facet_fit(f, pc_source) < BIG_ROOF_FACET_MIN_FIT)
-        if f.get("no_panel"):
-            # This face is marked "no panels here". It exists as
-            # geometry -- the drawn lines are the roof's lines -- and takes
-            # nothing. See facets_from_drawn_faces.
-            panels = []
-        elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
-            panels = []
-        else:
-            panels = fit_panels_on_facet(f, obstructions=obstructions,
-                                         sibling_facets=siblings,
-                                         fold_keepouts=_keepouts,
-                                         frame=_frame)
-        if low_fit:
-            for pnl in panels:
-                pnl["straggler"] = True
-                pnl["low_conf_fit"] = True
-        # Same exemption: "this face is too small to bother racking" is a
-        # judgement about a face the pipeline guessed at. He drew this one.
-        if big_roof and not drawn and len(panels) < BIG_ROOF_MIN_PANELS:
-            for pnl in panels:
-                pnl["straggler"] = True
-                pnl["low_conf_fit"] = True
-        kept_panels = []
-        for pnl in panels:
-            cpt = pnl["geometry"].centroid
-            psf = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
-                                          cpt.x, cpt.y, model.hourly, own_geom=f["geometry"],
-                                          terrain_horizon_profile=model.horizon_profile)
-            # deep-shade veto stays a NEAR-FIELD test on purpose: the far
-            # terrain correction lowers yield but must not delete panels a
-            # valley still deserves
-            if psf < DEEP_SHADE_FACTOR:
+    # ...unless the roof has nothing on its sunny side after all (obstructions,
+    # shade, a face too narrow to rack): then, as an installer would, its
+    # next-best side is used, still above SUN_SIDE_ABS. A second pass, only
+    # for such roofs.
+    for _pass in (0, 1):
+        per_facet = []
+        _rel_skipped = False
+        for f in facets:
+            facet_centroid = f["geometry"].centroid
+            shading_factor = building_shading_factor(
+                dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                facet_centroid.x, facet_centroid.y, model.hourly,
+                own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
+            # The far-terrain factor depends on the facet only (slope, aspect and
+            # the building's profile), so it is computed once here and reused for
+            # every panel below instead of re-integrating 8,760 hours per panel.
+            far_factor = None
+            if _bld_far is not None:
+                far_factor = _hz_facet_factor(_bld_far, model.horizon_profile,
+                                              f["slope_deg"], f["aspect_deg"], model.hourly)
+                shading_factor *= far_factor
+            facet_poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
+            if not modelled:
+                per_facet.append({"facet": f, "panels": [], "obstructions": [],
+                                  "poa": facet_poa * shading_factor,
+                                  "shading_factor": shading_factor})
                 continue
-            if far_factor is not None:
-                psf *= far_factor
-            pnl["poa_kwh_m2_yr"] = facet_poa * psf
-            pnl["shading_factor"] = psf
-            kept_panels.append(pnl)
-        # clean arrays only: after the shade veto, which can leave fragments
-        # (src/panel_fitting.py RACKING)
-        kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
-        kept_panels = shape_arrays(kept_panels, face_area=f["geometry"].area)
-        per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
-                          "poa": facet_poa * shading_factor, "shading_factor": shading_factor})
+            plane = (f["plane_a"], f["plane_b"], f["plane_c"])
+            _keepouts = []
+            _edge_drops = []
+            _drawn_obs = []
+            obstructions = detect_obstructions_combined(imagery_ds, pc_source, f["geometry"], plane,
+                                                        roof_geom=f.get("building_geometry"),
+                                                        keepouts=(_edge_drops if os.environ.get(
+                                                            "SOLAR_EDGE_DROPS", "1") != "0" else None))
+            try:
+                from src.roof_line_source import drawn_obstruction_polys
+                _drawn_obs = drawn_obstruction_polys(f.get("building_id"))
+                if _drawn_obs:
+                    # This roof's obstructions are marked in detail; the auto
+                    # detector was hallucinating 140 m2 of phantom blockage on a
+                    # bright membrane where the markup totals 17 m2 (#5372565,
+                    # clear empty space left unfilled). Where the markup speaks,
+                    # only it speaks.
+                    obstructions = [o for o in _drawn_obs
+                                    if o.intersects(f["geometry"])]
+                from src.roof_line_source import drawn_line_keepouts
+                # His fold lines are no-panel strips even where the partition
+                # did not split on them (#4735237: 264/450 panels crossed drawn
+                # lines inside two big derived faces). Keepouts, not verdicts.
+                _keepouts = [k for k in drawn_line_keepouts(f.get("building_id"))
+                             if k.intersects(f["geometry"])]
+            except Exception:
+                pass
+            # ...and a detected patch whose returns lie on a roof plane is roof
+            # (src/obstruction_planarity.py); his markup is never second-guessed
+            if not _drawn_obs:
+                obstructions = drop_roof_like(obstructions, f, facets, pc_source)
+                obstructions = drop_edge_hugging(obstructions, f, pc_source)
+            # edge drops the detector found stay panel-free, unless the markup
+            # governs this roof's obstructions
+            if not _drawn_obs:
+                _keepouts = list(_keepouts) + _edge_drops
+            siblings = [other for other in facets if other is not f]
+            # A FACE JOSH DREW IS NOT JUDGED ON ITS PLANE FIT, for the same reason
+            # it is not withheld for low confidence: _facet_fit asks how well the
+            # points sit on a plane WE fitted, and on a face he drew that question
+            # is upside down. A 713 m2 flat roof has camber and ponding well beyond
+            # the 15 cm tolerance, so it scores badly while being exactly one roof
+            # plane.
+            #
+            # This is the same filter that took 32 Frankton Road to 18 panels. It
+            # is measured to be at risk on 11 of his labelled roofs, all of them
+            # over 1,000 m2 and all of them the big commercial buildings that
+            # carry the most capacity: #5372239 (7,568 m2), #5372232 (5,526),
+            # #4725584 (4,032), and 1 Memorial Street, one of the two roofs he
+            # first showed me as wrong.
+            drawn = f.get("from_labels")
+            # A low plane-fit big-roof facet used to get NO panels at all. 100%
+            # panel density must fill every possible area -- and
+            # #4735613 shipped its 372 and 337 m2 facets EMPTY through this skip
+            # (382 panels refit vs 107 shipped). The facet still fits, but its
+            # panels are DEMOTED to the straggler band: hidden at default density,
+            # present at 100%. Deleting is a verdict; demotion is a ranking.
+            low_fit = (big_roof and not drawn
+                       and _facet_fit(f, pc_source) < BIG_ROOF_FACET_MIN_FIT)
+            if f.get("no_panel"):
+                # This face is marked "no panels here". It exists as
+                # geometry -- the drawn lines are the roof's lines -- and takes
+                # nothing. See facets_from_drawn_faces.
+                panels = []
+            elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
+                panels = []
+                _rel_skipped = _rel_skipped or not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0)
+            else:
+                panels = fit_panels_on_facet(f, obstructions=obstructions,
+                                             sibling_facets=siblings,
+                                             fold_keepouts=_keepouts,
+                                             frame=_frame)
+            if low_fit:
+                for pnl in panels:
+                    pnl["straggler"] = True
+                    pnl["low_conf_fit"] = True
+            # Same exemption: "this face is too small to bother racking" is a
+            # judgement about a face the pipeline guessed at. He drew this one.
+            if big_roof and not drawn and len(panels) < BIG_ROOF_MIN_PANELS:
+                for pnl in panels:
+                    pnl["straggler"] = True
+                    pnl["low_conf_fit"] = True
+            kept_panels = []
+            for pnl in panels:
+                cpt = pnl["geometry"].centroid
+                psf = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                                              cpt.x, cpt.y, model.hourly, own_geom=f["geometry"],
+                                              terrain_horizon_profile=model.horizon_profile)
+                # deep-shade veto stays a NEAR-FIELD test on purpose: the far
+                # terrain correction lowers yield but must not delete panels a
+                # valley still deserves
+                if psf < DEEP_SHADE_FACTOR:
+                    continue
+                if far_factor is not None:
+                    psf *= far_factor
+                pnl["poa_kwh_m2_yr"] = facet_poa * psf
+                pnl["shading_factor"] = psf
+                kept_panels.append(pnl)
+            # clean arrays only: after the shade veto, which can leave fragments
+            # (src/panel_fitting.py RACKING)
+            kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
+            kept_panels = shape_arrays(kept_panels, face_area=f["geometry"].area)
+            per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
+                              "poa": facet_poa * shading_factor, "shading_factor": shading_factor})
+        if (_pass == 0 and _rel_skipped
+                and not any(pf["panels"] for pf in per_facet)):
+            _sunniest = 0.0
+            continue
+        break
 
     kept_panel_lists = drop_minor_arrays([pf["panels"] for pf in per_facet])
     all_kept = [pnl for panels in kept_panel_lists for pnl in panels]
@@ -737,9 +750,11 @@ def _build_one_at(building_id, nudge_m):
 # -- a pure share threshold took those too (5370578, Arrowtown: 75 -> 9); a
 # house whose only roof faces south at 15 degrees (0.76; 4751212 on the hill)
 # keeps its panels, as an installer would; a south face at 30 degrees (0.63)
-# never takes any.
+# never takes any. A roof whose sunny side ends up empty uses its next-best
+# side (the second pass below).
 SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.80"))
-SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.70"))
+SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.65"))  # 0.70 zeroed 88
+# all-south houses in v57 (one 24-29 degree face, 0.66-0.70); 0.65 keeps a south roof up to ~27 degrees
 SUN_SIDE_SECTOR_DEG = 112.5   # off north: south-east through south-west
 SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny side
 

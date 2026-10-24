@@ -65,6 +65,17 @@ and assign work.
   smooths the darkest days; optionally an NREL API key for Himawari 2 km
   satellite solar (2016-2020) -- the only route to suburb-level cloud.
 
+- **v57 BUILT 24 Oct, NOT PUBLISHED; v58 building.** Gate: panels -11.1%
+  (sunny side, as intended) but 211 roofs zeroed. Causes: the panel gate's
+  terrain-plane ground ran above the platform of houses cut into a slope
+  (4721951, 200 -> 0) -- now the low end of the ground beside the panel
+  (gate_panels._ground_beside; samples: sparse drops CBD 336 -> 73, Wanaka
+  177 -> 33); all-south houses under the 0.70 sun floor (88 roofs) -- floor
+  0.65; roofs whose sunny side ended up empty -- a second pass uses the
+  next-best side. Also found: buildings newer than the 2021 LiDAR (ids
+  9269...) lose ~90% of fitted panels at the gate (the survey shows bare
+  ground there); old behaviour, needs its own rule (photo-read roofs should
+  skip the LiDAR surface tests).
 - **24 Oct: installer layouts, ready for v57 (Josh: 29 York St "panels on the
   shady side", a lone panel, landscape on a face; 40 Youghal St landscape).**
   Committed, judged on 400 sample roofs (tools/layout_ab.py) and the markup
