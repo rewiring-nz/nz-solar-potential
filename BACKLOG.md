@@ -65,6 +65,40 @@ and assign work.
   smooths the darkest days; optionally an NREL API key for Himawari 2 km
   satellite solar (2016-2020) -- the only route to suburb-level cloud.
 
+- **24 Oct: installer layouts, ready for v57 (Josh: 29 York St "panels on the
+  shady side", a lone panel, landscape on a face; 40 Youghal St landscape).**
+  Committed, judged on 400 sample roofs (tools/layout_ab.py) and the markup
+  benchmark: (1) sunny side only -- a face more than 112.5 deg off north is
+  bare when the roof has a sunnier side (under 80% of its sunniest face's
+  sun share); under 70% of the site's best no face takes panels
+  (build_layout_geojson.away_from_sun); panels -16% central Queenstown, -23%
+  Arrowtown, the south halves of gables; (2) the panel gate's ground test uses
+  the terrain plane, not the 20 m median (hillside roofs read as ground: York
+  lost 10 of 11 sunny-face panels; 1,262 "sparse" drops in pilot); (3) the gate
+  re-racks each face it touched (105 lone panels and 904 pairs shipped in
+  pilot); (4) strips narrower than a portrait row whose returns lie on the
+  neighbouring slope's plane join it (face_straighten.absorb_slivers); (5) a
+  detected obstruction hugging a face edge goes unless its returns stand up
+  (obstruction_planarity.drop_edge_hugging): precision 0.41 -> 0.47, recall
+  0.39 -> 0.36; (6) FLAT_SLOPE_DEG 10 -> 5: 40 Youghal St's 9.9 deg gable was
+  racked as flat (rows along the building, landscape); landscape on 5-10 deg
+  faces 63% -> 1% Wanaka, 49% -> 2% CBD, 65% -> 8% Arrowtown, panels +0.2-0.4%.
+  Goldens need re-recording at the v57 build.
+- **Markup benchmark (tools/markup_benchmark.py, 24 Oct).** Josh's drawn roofs
+  built blind (SOLAR_HIDE_LABELS=1) and scored against his drawing. Baseline,
+  131 roofs: outline IoU 0.91, face IoU 0.63 (32 at 0.8+), roof-line F 0.54
+  (48 at 0.7+), obstruction precision 0.41 / recall 0.39 on roofs marked
+  complete, panels 12% under the drawn. The colour detector draws 2/3 of the
+  false obstruction area (1,170 of 1,749 m2): next target. Roof lines: a
+  vision-model referee needs Josh's decision on an API key.
+- **Resilience audited and fixed (live 24 Oct).** Days were scaled by total
+  sunlight, so a tilted roof's overcast days came out ~2x too bright; beam and
+  diffuse now scale apart (Erbs daily diffuse fraction; the roof's own diffuse
+  share from the chart). ERA5 checked: homogeneous across decades, r 0.94 with
+  NASA POWER daily (same mean), about half POWER's very dark winter days
+  (POWER's early record has artefacts, e.g. 18-24 Jul 1984 near zero). Needs
+  Josh: NIWA CliFlo daily radiation (Queenstown Aero, Auckland) for a station
+  check. Lightbox redrawn to fit the window; darker blue, red-orange highlight.
 - **v55 LIVE 21 Oct 18:45 NZT:** portrait first, whole-row partial systems,
   clean hips (with the fewer-faces rule), two-level flat roofs, roof-change
   notes (photo_changed; 45 roofs in pilot). Gate reviewed: panels

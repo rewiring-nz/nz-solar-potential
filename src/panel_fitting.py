@@ -59,7 +59,11 @@ LANDSCAPE_WIN_MARGIN = float(os.environ.get("SOLAR_LANDSCAPE_MARGIN", "0.40"))  
 OFFSET_STEPS = 10  # vertical row-start offsets tried per orientation (columns are scanned exhaustively, see _pack_orientation)
 
 
-FLAT_SLOPE_DEG = 10.0        # below this, slope direction barely constrains racking
+FLAT_SLOPE_DEG = float(os.environ.get("SOLAR_FLAT_SLOPE_DEG", "5.0"))  # below this, slope direction
+# barely constrains racking. It was 10: 40 Youghal St, Wanaka (Josh, 24 Oct) is a plain gable at
+# 9.9 degrees each side, and both faces were racked as flat -- rows along the building axis, panels
+# landscape across the slope. Above 5 degrees a LiDAR face's slope direction is real (half a metre
+# of fall over 6 m), and installers rack it as pitched: rails along the eave, portrait up the slope.
 FACET_RECTANGULARITY_MIN = 0.7  # facet area / its own bounding rectangle's area
 SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least this many more
 # panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
