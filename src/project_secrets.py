@@ -23,7 +23,7 @@ PROJECT = "solar-potential-map-512020"
 SECRETS = {"LINZ_API_KEY": "linz-api-key",
            # the roof-reading referee (tools/vision_referee.py); readable by
            # the build VM only, in a workspace with a monthly spend limit
-           "ANTHROPIC_API_KEY": "anthropic-api-key"}
+           "ANTHROPIC_API_KEY": "Claude-API"}
 
 
 def get(name):
