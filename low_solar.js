@@ -29,8 +29,10 @@
 //     how often runs that long happen,
 //   a typical year's longest run (median of each year's longest) and how
 //     often runs that long happen in a year.
-// Reanalysis smooths the darkest days a little, so real runs may be somewhat
-// longer; checking against NIWA station records is in BACKLOG.
+// Reanalysis smooths the darkest days: Queenstown Airport's pyranometer
+// records very dark winter days five times as often as ERA5 (1991-2026), so in
+// the Wakatipu each day's share of its month is quantile-mapped onto the
+// station's (tools/station_qmap.py; climate/era5/index.json "qmaps").
 
 const LowSolar = (() => {
   const BASE = "climate/era5/";
@@ -64,10 +66,21 @@ const LowSolar = (() => {
           const dt = new Date(t0 + i * 86400000);
           month[i] = dt.getUTCMonth(); year[i] = dt.getUTCFullYear();
         }
-        return { name: c.name, lat: c.lat, lon: c.lon, t0, mj, month, year };
+        const qmap = (ix.qmaps || []).find(q => (q.cells || []).includes(c.name)) || null;
+        return { name: c.name, lat: c.lat, lon: c.lon, t0, mj, month, year, qmap };
       }).catch(() => null);
     }
     return cells[c.name];
+  }
+
+  // piecewise-linear lookup, held at the ends
+  function interp(x, xs, ys) {
+    if (x <= xs[0]) return ys[0];
+    for (let k = 1; k < xs.length; k++) if (x <= xs[k]) {
+      const span = xs[k] - xs[k - 1];
+      return span > 0 ? ys[k - 1] + (ys[k] - ys[k - 1]) * (x - xs[k - 1]) / span : ys[k];
+    }
+    return ys[ys.length - 1] + (x - xs[xs.length - 1]);
   }
 
   // Daily sunlight above the atmosphere on a level surface (MJ/m2), and the
@@ -120,9 +133,16 @@ const LowSolar = (() => {
     const sb = new Float64Array(12), sd = new Float64Array(12), sum = new Float64Array(12), cnt = new Float64Array(12);
     const fill = new Float64Array(12), fillN = new Float64Array(12);
     for (let i = 0; i < n; i++) if (!Number.isNaN(cell.mj[i])) { fill[cell.month[i]] += cell.mj[i]; fillN[cell.month[i]]++; }
+    const monthMean = Array.from(fill, (s, m) => s / Math.max(fillN[m], 1));
+    const qm = cell.qmap && cell.qmap.months && cell.qmap.months.length === 12 ? cell.qmap.months : null;
     for (let i = 0; i < n; i++) {
       const m = cell.month[i];
-      const v = Number.isNaN(cell.mj[i]) ? fill[m] / Math.max(fillN[m], 1) : cell.mj[i];
+      let v = Number.isNaN(cell.mj[i]) ? monthMean[m] : cell.mj[i];
+      // THE STATION'S DARK DAYS (tools/station_qmap.py): the day's share of
+      // its month's average moved from its place in ERA5's distribution to
+      // the same place in Queenstown Airport's
+      // (and at the station's brightness, which only sets the day's clearness)
+      if (qm) v = monthMean[m] * (qm[m].level || 1) * interp(v / monthMean[m], qm[m].era5, qm[m].station);
       const doy = Math.floor((cell.t0 + i * 86400000 - Date.UTC(cell.year[i], 0, 1)) / 86400000) + 1;
       const x = h0(lat, doy);
       const kt = x.h > 0 ? Math.min(v / x.h, 0.9) : 0;
@@ -314,7 +334,9 @@ const LowSolar = (() => {
         `<details class="clb-info"><summary>How this is worked out</summary>` +
           `<p>Daily sunlight for every day from ${r.y0} to ${r.y1} comes from the ERA5 reanalysis (Copernicus Climate Change Service, via Open-Meteo, CC BY 4.0) for the ~25 km grid cell at ${cell.lat}, ${cell.lon}. Each day is split into direct sun and grey-sky light by how clear it was, and each part is scaled to this roof: its own average day in that month (from its tilt, direction, panels and the shading of hills, trees and buildings), split the same way. A tilted roof gains from direct sun, not from an overcast sky, so a dull day is dull on every roof.</p>` +
           `<p>A low-solar day makes under ${pct}% of the roof's average day across the whole year. Winter's average day is well under the year's, so in practice these are dark winter days. A run is consecutive low-solar days. The once-a-decade run is the length only one year in ten exceeds; the common run is the middle year's longest.</p>` +
-          `<p>Checked against NASA's satellite record (POWER, 1984&ndash;2024): the same average sunlight and a day-by-day correlation of 0.94, but the satellite has about twice as many very dark winter days (1% against 0.5%). Reanalysis smooths the darkest days, so real runs can be somewhat longer. A check against NIWA station records is next.</p></details>` +
+          (cell.qmap
+            ? `<p>Checked against Queenstown Airport's pyranometer (Earth Sciences NZ / NIWA, daily, 1991&ndash;2026): ERA5 follows it day by day (correlation 0.92) but smooths the darkest days &mdash; the station records very dark winter days five times as often. So each day's sunlight, as a share of its month's average, is mapped onto the station's distribution: ERA5's 86-year sequence of weather, with the station's dark days. Over the years both cover, the runs this gives match the station's own to within a day.</p>`
+            : `<p>Checked against NASA's satellite record (POWER, 1984&ndash;2024): the same average sunlight and a day-by-day correlation of 0.94. In the Wakatipu, where a station record has been checked, ERA5 smooths the darkest days; here no station correction is applied yet, so real runs can be somewhat longer.</p>`) + `</details>` +
       `</div></div>`;
     if (o.afterRender) o.afterRender(box);
     const inp = box.querySelector("#rs-thr");

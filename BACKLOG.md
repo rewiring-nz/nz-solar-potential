@@ -108,9 +108,17 @@ and assign work.
   diffuse now scale apart (Erbs daily diffuse fraction; the roof's own diffuse
   share from the chart). ERA5 checked: homogeneous across decades, r 0.94 with
   NASA POWER daily (same mean), about half POWER's very dark winter days
-  (POWER's early record has artefacts, e.g. 18-24 Jul 1984 near zero). Needs
-  Josh: NIWA CliFlo daily radiation (Queenstown Aero, Auckland) for a station
-  check. Lightbox redrawn to fit the window; darker blue, red-orange highlight.
+  (POWER's early record has artefacts, e.g. 18-24 Jul 1984 near zero).
+  Lightbox redrawn to fit the window; darker blue, red-orange highlight.
+  STATION CALIBRATION (live 24 Oct): Queenstown Aero AWS daily radiation
+  (agent 5451, 1991-2026, Josh downloaded from DataHub): r 0.92 with ERA5,
+  same persistence, but very dark winter days (Kt < 0.15) 2.7% vs ERA5's 0.5%.
+  tools/station_qmap.py quantile-maps each day's share of its month onto the
+  station's, per month, for the Wakatipu cells (Queenstown, Glenorchy,
+  Kingston); low_solar.js applies it. Over 1992-2025 the mapped runs match the
+  station's own (low days within 0.3 pts; south roofs at 40%: ERA5 decade/
+  typical 23/20 days -> station 13/7, mapped 11/8). Wanaka, Cromwell and
+  Auckland not mapped (Queenstown first).
 - **v55 LIVE 21 Oct 18:45 NZT:** portrait first, whole-row partial systems,
   clean hips (with the fewer-faces rule), two-level flat roofs, roof-change
   notes (photo_changed; 45 roofs in pilot). Gate reviewed: panels
