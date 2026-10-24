@@ -65,7 +65,13 @@ and assign work.
   smooths the darkest days; optionally an NREL API key for Himawari 2 km
   satellite solar (2016-2020) -- the only route to suburb-level cloud.
 
-- **v57 BUILT 24 Oct, NOT PUBLISHED; v58 building.** Gate: panels -11.1%
+- **v58 BUILT 25 Oct, NOT PUBLISHED; v59 building.** Gate: panels -10.1%,
+  zeroed 211 -> 15 (all low-confidence withholds, 7 in Wanaka). Renders of the
+  big drops: 15-degree south-east faces of big commercial gables bare
+  (4749452 Frankton 234 -> 120, 4729246 Wanaka) -- 0.79 of their north face,
+  just under the 0.80 cut-off. SUN_SIDE_REL 0.80 -> 0.78 (York's south-west
+  face is 0.767); the share is now judged under an open sky, as documented.
+- **v57 BUILT 24 Oct, NOT PUBLISHED.** Gate: panels -11.1%
   (sunny side, as intended) but 211 roofs zeroed. Causes: the panel gate's
   terrain-plane ground ran above the platform of houses cut into a slope
   (4721951, 200 -> 0) -- now the low end of the ground beside the panel

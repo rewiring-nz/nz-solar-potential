@@ -752,7 +752,9 @@ def _build_one_at(building_id, nudge_m):
 # keeps its panels, as an installer would; a south face at 30 degrees (0.63)
 # never takes any. A roof whose sunny side ends up empty uses its next-best
 # side (the second pass below).
-SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.80"))
+SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.78"))  # 0.80 in v58 took the
+# shady side of 15-degree commercial gables (4749452 Frankton, 4729246 Wanaka: 0.79 of their north
+# faces), where installers use both sides; 29 York St's south-west face is 0.767 of its sunny side
 SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.65"))  # 0.70 zeroed 88
 # all-south houses in v57 (one 24-29 degree face, 0.66-0.70); 0.65 keeps a south roof up to ~27 degrees
 SUN_SIDE_SECTOR_DEG = 112.5   # off north: south-east through south-west
@@ -760,12 +762,23 @@ SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny s
 
 
 def sun_share(model, slope_deg, aspect_deg):
-    """This direction and pitch's sunshine over the best at this site."""
-    best = getattr(model, "_best_poa", None)
-    if best is None:
-        best = max(model.annual_poa_kwh_per_m2(s, 0.0) for s in range(0, 61, 2))
-        model._best_poa = best
-    return model.annual_poa_kwh_per_m2(slope_deg, aspect_deg) / best
+    """This direction and pitch's sunshine over the best at this site, under
+    an OPEN sky: the rule judges direction and pitch, and the model's own
+    table also carries the area's mountain horizon. Mountains are shade, and
+    shade has its own checks."""
+    open_poa = getattr(model, "_open_poa", None)
+    if open_poa is None:
+        if getattr(model, "lat", None) is not None and hasattr(model, "lookup"):
+            from src.solar_model import build_poa_lookup_table, _nearest_bin, SLOPE_BIN_DEG, ASPECT_BIN_DEG
+            table = build_poa_lookup_table(model.lat, model.lon)[0]
+            def open_poa(sl, asp):
+                return table[(_nearest_bin(sl, SLOPE_BIN_DEG, max_value=config.MAX_ROOF_SLOPE_DEG),
+                              _nearest_bin(asp, ASPECT_BIN_DEG))]
+        else:
+            open_poa = model.annual_poa_kwh_per_m2
+        model._open_poa = open_poa
+        model._best_open = max(open_poa(sl, 0.0) for sl in range(0, 61, 2))
+    return open_poa(slope_deg, aspect_deg) / model._best_open
 
 
 def away_from_sun(model, slope_deg, aspect_deg, building_best=1.0):
