@@ -44,11 +44,11 @@ from src.plane_seams import snap_seams_to_plane_intersections
 from src.roof_levels import split_lower_levels
 from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
-from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays
+from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays, centre_panels
 from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
-from src.face_straighten import absorb_slivers, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
+from src.face_straighten import absorb_slivers, fit_seams, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
 from src.building_shading import building_shading_factor
 from src.building_horizon import (far_profile as _hz_far_profile,
                                   facet_horizon_factor as _hz_facet_factor,
@@ -472,6 +472,7 @@ def _build_one_at(building_id, nudge_m):
     facets = _reshape(merge_coplanar_faces)
     facets = _reshape(absorb_slivers, pc_source)
     facets = _reshape(seams_to_plane_lines, pc_source)
+    facets = _reshape(fit_seams)
     facets = _reshape(straighten_faces)
 
     # Do not propose panels on a roof we have not understood -- see
@@ -666,6 +667,8 @@ def _build_one_at(building_id, nudge_m):
             # (src/panel_fitting.py RACKING)
             kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
             kept_panels = shape_arrays(kept_panels, face_area=f["geometry"].area)
+            kept_panels = centre_panels(kept_panels, f["geometry"],
+                                        [o.buffer(0.3) for o in obstructions if o is not None] + list(_keepouts))
             per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
                               "poa": facet_poa * shading_factor, "shading_factor": shading_factor})
         if (_pass == 0 and _rel_skipped

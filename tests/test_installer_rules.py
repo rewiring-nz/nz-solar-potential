@@ -143,3 +143,36 @@ def test_a_strip_on_the_slope_joins_the_slope():
     out = absorb_slivers([slope, strip], C())
     assert len(out) == 1 and abs(out[0]["geometry"].area - 72.0) < 0.5
     assert out[0]["plane_b"] == -0.4
+
+
+def test_an_array_is_centred_on_its_face():
+    from src.panel_fitting import centre_panels
+    face = box(0, 0, 12, 4)
+    # three panels hard against the left of the face
+    pans = [{"geometry": box(0.3 + k * 1.05, 0.3, 1.3 + k * 1.05, 2.0)} for k in range(3)]
+    out = centre_panels(pans, face)
+    xs = [p["geometry"].bounds for p in out]
+    left, right = xs[0][0], 12 - xs[-1][2]
+    assert abs(left - right) < 0.25, (left, right)
+    assert len(out) == 3
+    # an obstruction on the right keeps them out of it
+    out2 = centre_panels(pans, face, [box(8, 0, 12, 4)])
+    assert max(p["geometry"].bounds[2] for p in out2) <= 8.0 + 1e-6
+
+
+def test_a_zigzag_ridge_is_cut_straight_where_it_lies():
+    import os
+    os.environ["SOLAR_FIT_SEAMS"] = "1"
+    try:
+        from shapely.geometry import Polygon
+        from src.face_straighten import fit_seams, _seam_line
+        # a 20 x 8 gable whose ridge (y ~ 4) zigzags by +-0.6 m
+        zig = [(0, 4), (4, 4.6), (8, 3.4), (12, 4.6), (16, 3.4), (20, 4)]
+        a = {"geometry": Polygon([(0, 0), (20, 0)] + zig[::-1]), "slope_deg": 25, "aspect_deg": 180}
+        b = {"geometry": Polygon(zig + [(20, 8), (0, 8)]), "slope_deg": 25, "aspect_deg": 0}
+        out = fit_seams([a, b])
+        dev = _seam_line(out[0], out[1])[3]
+        assert dev < 0.1, dev
+        assert abs(out[0]["geometry"].area - 80) < 2 and abs(out[1]["geometry"].area - 80) < 2
+    finally:
+        os.environ.pop("SOLAR_FIT_SEAMS", None)

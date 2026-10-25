@@ -1453,3 +1453,60 @@ def shape_arrays(panels, face_area=None):
     # than one with a stepped column.
     shaped = enforce_arrays(kept, face_area=face_area)
     return shaped if shaped else panels
+
+
+# CENTRED ARRAYS (Josh, v55 verdicts, 4 Kent St: "panels should be more
+# centered"). The packer anchors each face's grid to the building frame, so a
+# face's block of panels sits hard against one side of the face with the
+# spare space all on the other. Installers centre an array on its face. After
+# packing, the face's panels move together -- along the rows and up the slope,
+# never rotated, never fewer -- to where they stand furthest from the face's
+# edges, obstructions and no-panel strips, never closer to any of them than
+# they were. SOLAR_CENTRE_ARRAYS=0 turns it off.
+CENTRE_ARRAYS = os.environ.get("SOLAR_CENTRE_ARRAYS", "1") == "1"
+CENTRE_MAX_M = 20.0   # how far the search reaches each way (m)
+CENTRE_STEP_M = 0.1
+
+
+def centre_panels(panels, face_geom, blocked=()):
+    """panels: one face's panel dicts (plan geometry). Returns them moved as a
+    block to the middle of the run they can slide along, along the rows and
+    then up the slope (each axis on its own, so a tight eave never stops the
+    block centring along the face)."""
+    if not CENTRE_ARRAYS or not panels or face_geom is None or face_geom.is_empty:
+        return panels
+    from shapely.affinity import translate
+    from shapely.prepared import prep
+    geoms = [p["geometry"] for p in panels]
+    allowed = face_geom
+    for b in blocked or ():
+        try:
+            allowed = allowed.difference(b)
+        except Exception:
+            pass
+    if allowed.is_empty:
+        return panels
+    room = prep(allowed.buffer(1e-6))
+    block = unary_union(geoms)
+    if not room.contains(block):
+        return panels            # it does not sit clear now: leave it to the packer's judgement
+    cs = np.asarray(geoms[0].minimum_rotated_rectangle.exterior.coords)[:3]
+    e1, e2 = cs[1] - cs[0], cs[2] - cs[1]
+    axes = [e / (np.linalg.norm(e) or 1.0) for e in (e1, e2)]
+    total = np.zeros(2)
+    for ax in axes:
+        reach = []
+        for sgn in (1, -1):
+            d = 0.0
+            while d + CENTRE_STEP_M <= CENTRE_MAX_M:
+                dx, dy = total + ax * sgn * (d + CENTRE_STEP_M)
+                if not room.contains(translate(block, dx, dy)):
+                    break
+                d += CENTRE_STEP_M
+            reach.append(d)
+        shift = (reach[0] - reach[1]) / 2.0
+        if abs(shift) >= CENTRE_STEP_M:
+            total = total + ax * shift
+    if not total.any():
+        return panels
+    return [dict(p, geometry=translate(p["geometry"], total[0], total[1])) for p in panels]

@@ -361,6 +361,95 @@ def absorb_slivers(facets, pc_source=None, *_, **__):
     return faces
 
 
+# A RIDGE IS STRAIGHT WHERE IT ALREADY IS. The steps that moved seams onto
+# the planes' crossing are off (25 Oct: fitted planes on shallow roofs cross
+# metres from the real ridge), which leaves seams as the partition traced
+# them -- a zigzag across a gable (4 Kent St, 11A Camp St in Josh's
+# verdicts), and coverage simplification at 1-3 m changed nothing on his 131
+# drawn roofs because it gives up on any roof where a face changes much. A
+# seam between two faces that zigzags by FIT_MIN_DEV_M to FIT_MAX_DEV_M about
+# its own best straight line is recut along that line, inside a band around
+# the seam only, so the rest of both faces stays as it was. Kept only if both
+# faces stay single polygons changing by under FIT_MAX_AREA_CHANGE.
+# SOLAR_FIT_SEAMS=1 turns it on.
+FIT_MIN_SEAM_M = 2.5
+FIT_MIN_DEV_M = 0.25
+FIT_MAX_DEV_M = 2.5
+FIT_MAX_AREA_CHANGE = 0.25
+
+
+def _seam_line(f, g):
+    """(points along the shared seam, centre, unit direction, max deviation)"""
+    import numpy as np
+    shared = f["geometry"].boundary.intersection(g["geometry"].buffer(0.05))
+    if shared.is_empty or shared.length < FIT_MIN_SEAM_M:
+        return None
+    n = max(8, int(shared.length / 0.25))
+    pts = np.array([shared.interpolate(k / n, normalized=True).coords[0] for k in range(n + 1)])
+    c = pts.mean(axis=0)
+    _, _, vt = np.linalg.svd(pts - c, full_matrices=False)
+    d = vt[0]
+    dev = np.abs((pts - c) @ np.array([-d[1], d[0]]))
+    along = (pts - c) @ d
+    return shared, c, d, float(dev.max()), float(along.min()), float(along.max())
+
+
+def fit_seams(facets, *_, **__):
+    if os.environ.get("SOLAR_FIT_SEAMS", "0") != "1" or len(facets) < 2:
+        return facets
+    if any(f.get("from_labels") for f in facets):
+        return facets
+    from shapely.geometry import LineString
+    from shapely.ops import split, unary_union
+    faces = [dict(f) for f in facets]
+    for i in range(len(faces)):
+        for j in range(i + 1, len(faces)):
+            f, g = faces[i], faces[j]
+            if f["geometry"].geom_type != "Polygon" or g["geometry"].geom_type != "Polygon":
+                continue
+            if f["geometry"].distance(g["geometry"]) > 0.1:
+                continue
+            sl = _seam_line(f, g)
+            if sl is None:
+                continue
+            shared, c, d, dev, a0, a1 = sl
+            if not (FIT_MIN_DEV_M <= dev <= FIT_MAX_DEV_M):
+                continue
+            band = shared.buffer(dev + 0.5)
+            ext = max(a1 - a0, 1.0)
+            line = LineString([tuple(c + d * (a0 - ext)), tuple(c + d * (a1 + ext))])
+            try:
+                u = unary_union([f["geometry"], g["geometry"]]).buffer(0.02).buffer(-0.02)
+                inband = u.intersection(band)
+                pieces = list(split(inband, line).geoms)
+            except Exception:
+                continue
+            if len(pieces) < 2:
+                continue
+            # which side of the line each face mostly lies on, inside the band
+            side = lambda geom: float(((geom.representative_point().x - c[0]) * -d[1]
+                                       + (geom.representative_point().y - c[1]) * d[0]))
+            fs = side(f["geometry"].intersection(band)) if not f["geometry"].intersection(band).is_empty else 0
+            gs = side(g["geometry"].intersection(band)) if not g["geometry"].intersection(band).is_empty else 0
+            if fs == 0 or gs == 0 or (fs > 0) == (gs > 0):
+                continue
+            fp = unary_union([q for q in pieces if (side(q) > 0) == (fs > 0)])
+            gp = unary_union([q for q in pieces if (side(q) > 0) == (gs > 0)])
+            try:
+                nf = unary_union([f["geometry"].difference(band), fp]).buffer(0.01).buffer(-0.01)
+                ng = unary_union([g["geometry"].difference(band), gp]).buffer(0.01).buffer(-0.01)
+            except Exception:
+                continue
+            if nf.geom_type != "Polygon" or ng.geom_type != "Polygon" or not nf.is_valid or not ng.is_valid:
+                continue
+            if (abs(nf.area - f["geometry"].area) > FIT_MAX_AREA_CHANGE * f["geometry"].area
+                    or abs(ng.area - g["geometry"].area) > FIT_MAX_AREA_CHANGE * g["geometry"].area):
+                continue
+            faces[i] = dict(f, geometry=nf, **({"area_m2": nf.area} if "area_m2" in f else {}))
+            faces[j] = dict(g, geometry=ng, **({"area_m2": ng.area} if "area_m2" in g else {}))
+    return faces
+
+
 SEAM_MIN_SLOPE_DEG = 10.0
 SEAM_MIN_SHARED_M = 1.5
 SEAM_MIN_OFF_M = 0.15
