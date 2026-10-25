@@ -199,6 +199,21 @@ def rerack(features):
     return [f for i, f in enumerate(features) if i not in drop], len(drop)
 
 
+def _photo_read(name):
+    """Buildings whose roof was read from the photo because the LiDAR has
+    nothing there -- houses built after the 2021 survey, or in its gaps
+    (tools/predict_photo_shape.py, photo_roofs.json). The surface tests ask
+    the LiDAR whether a panel sits on roof; there it sees the bare ground the
+    house was built on, so they deleted ~90% of these buildings' panels
+    (Arrowtown Millbrook, v55: 12,206 fitted, 1,456 shipped). Like a drawn
+    roof, they skip the surface gates."""
+    try:
+        from src.synthesize_dsm import load_photo_roofs
+        return {int(b) for b in load_photo_roofs(name)}
+    except Exception:
+        return set()
+
+
 def _has_usable_markup(building_id):
     """A drawn roof is not second-guessed by the surface gates, for the
     same reason a drawn face skips the plane-fit judgment: lumpy/sparse ask
@@ -222,6 +237,7 @@ def gate_area(name, pc, only_ids=None):
         print(f"{name}: no layouts, skipping")
         return
     d = json.loads(path.read_text())
+    photo_read = _photo_read(name)
     # Counter, not a fixed dict: adding a new veto reason to panel_ok() should
     # show up in the summary, never KeyError halfway through an area.
     kept, dropped = [], Counter()
@@ -237,8 +253,9 @@ def gate_area(name, pc, only_ids=None):
         if f["properties"].get("building_id") in non_roof:
             dropped["sparse"] += 1
             continue
-        if _has_usable_markup(f["properties"].get("building_id")):
-            kept.append(f)   # drawn roofs skip the surface gates
+        if _has_usable_markup(f["properties"].get("building_id")) \
+                or f["properties"].get("building_id") in photo_read:
+            kept.append(f)   # drawn and photo-read roofs skip the surface gates
             continue
         ok, why = _gate_feature(f, pc)
         if why == "error-kept":
@@ -378,14 +395,16 @@ def gate_area_parallel(name, jobs=None):
     # makes this exactly gate_area's output, as the docstring always claimed.
     out = [None] * len(d["features"])
     dropped, errors = Counter(), 0
+    photo_read = _photo_read(name)
     todo, todo_slot = [], []
     for i, f in enumerate(d["features"]):
         if f["properties"].get("kind") != "panel" or f["geometry"]["type"] != "Polygon":
             out[i] = f
         elif f["properties"].get("building_id") in non_roof:
             dropped["sparse"] += 1
-        elif _has_usable_markup(f["properties"].get("building_id")):
-            out[i] = f   # drawn roofs skip the surface gates -- see gate_area
+        elif _has_usable_markup(f["properties"].get("building_id")) \
+                or f["properties"].get("building_id") in photo_read:
+            out[i] = f   # drawn and photo-read roofs skip the surface gates -- see gate_area
         else:
             todo.append(json.dumps(f))
             todo_slot.append(i)

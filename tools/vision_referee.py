@@ -85,6 +85,12 @@ def pick_candidates(cands):
     at most MAX_CANDS."""
     order = ["final", "lidar_partition", "selected_reading"] + sorted(
         k for k in cands if k.startswith("form:") and k != "form:flat")
+    others = [k for k in cands if k not in order and not k.startswith("form:")]
+    if others:
+        # a pairwise run (e.g. two whole-pipeline variants): every reading, in
+        # an order fixed per roof but not by name, so neither always shows as A
+        order = sorted([k for k in cands if not k.startswith("form:")],
+                       key=lambda k: (sum(map(ord, k)) * 7 + len(cands[k]) * 13) % 997)
     out = []
     for k in order:
         if k in cands and len(cands[k]) and not any(_same(cands[k], cands[o]) for o in out):
@@ -243,7 +249,7 @@ def cmd_run(a):
     files = sorted(Path(a.cands).glob("*.json"))
     for f in files:
         bid, region, cands = _load_cands(f)
-        out = CACHE / f"{a.model}_{bid}.json"
+        out = CACHE / f"{a.tag}{a.model}_{bid}.json"
         if out.exists():
             continue
         names = pick_candidates(cands)
@@ -275,18 +281,19 @@ def cmd_score(a):
     rows = {r["id"]: r for r in json.loads(Path(a.oracle).read_text())}
     picked, final, best, n = [], [], [], 0
     by_conf = []
-    for f in sorted(CACHE.glob(f"{a.model}_*.json")):
+    for f in sorted(CACHE.glob(f"{a.tag}{a.model}_*.json")):
         d = json.loads(f.read_text())
         r = rows.get(d["id"])
         if not r or not d.get("choice_name"):
             continue
         sc = r["scores"]
-        if d["choice_name"] not in sc or "final" not in sc:
+        base = "final" if "final" in sc else sorted(sc)[0]
+        if d["choice_name"] not in sc:
             continue
         n += 1
-        picked.append(sc[d["choice_name"]]["f"]); final.append(sc["final"]["f"])
+        picked.append(sc[d["choice_name"]]["f"]); final.append(sc[base]["f"])
         best.append(max(sc[k]["f"] for k in d["names"] if k in sc))
-        by_conf.append((float((d.get("answer") or {}).get("confidence") or 1.0), sc[d["choice_name"]]["f"], sc["final"]["f"]))
+        by_conf.append((float((d.get("answer") or {}).get("confidence") or 1.0), sc[d["choice_name"]]["f"], sc[base]["f"]))
     if not n:
         print("nothing scored"); return
     m = lambda v: sum(v) / len(v)
@@ -304,9 +311,11 @@ def main():
     r = sub.add_parser("render"); r.add_argument("building_id"); r.add_argument("region")
     r.add_argument("--cands", default=str(CANDS)); r.add_argument("--out", default=str(Path.home() / "ab"))
     u = sub.add_parser("run"); u.add_argument("--cands", default=str(CANDS))
+    u.add_argument("--tag", default="", help="cache name prefix, to keep runs apart")
     u.add_argument("--max-usd", type=float, default=5.0); u.add_argument("--model", default="claude-sonnet-5-5")
     s = sub.add_parser("score"); s.add_argument("--cands", default=str(CANDS))
     s.add_argument("--oracle", default=str(Path.home() / "ab" / "oracle2.json")); s.add_argument("--model", default="claude-sonnet-5-5")
+    s.add_argument("--tag", default="")
     a = ap.parse_args()
     {"render": cmd_render, "run": cmd_run, "score": cmd_score}[a.cmd](a)
 
