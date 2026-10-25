@@ -102,7 +102,14 @@ and assign work.
   Switches for A/B: SOLAR_SELECTED_TRUST/MIN_SCORE, SOLAR_FACET_COHERENCE
   (1/clip/0), SOLAR_STRICT_LIKE_PLANE, SOLAR_PLANT_DECKS, SOLAR_BALCONY_LEVELS. Josh's v55 verdicts (29): 1 fixed, 8 better, 5 same,
   2 worse, 13 wrong; nearly all about roof lines.
-- **v58 BUILT 25 Oct, NOT PUBLISHED; v59 building.** Gate: panels -10.1%,
+- **v60 LIVE 25 Oct ~22:45 NZT:** installer layouts (sunny side, hillside gate,
+  no orphans, strips, edge streaks, portrait on 5-10 deg, 15 deg commercial
+  gables keep both sides) + roof lines (seam movers and plant decks off: Josh's
+  roofs 48 -> 61 right). Gate reviewed: panels 1,988,394 -> 1,816,599 (-8.6%,
+  south faces), 49 newly withheld (older low-confidence rule; 7 in Wanaka),
+  8 roofs lost face area; big drops rendered (hotel, 11A Camp St, townhouse
+  row): only south/SE/SW faces lost. v59 stopped part-way (superseded).
+- **v58 BUILT 25 Oct, NOT PUBLISHED.** Gate: panels -10.1%,
   zeroed 211 -> 15 (all low-confidence withholds, 7 in Wanaka). Renders of the
   big drops: 15-degree south-east faces of big commercial gables bare
   (4749452 Frankton 234 -> 120, 4729246 Wanaka) -- 0.79 of their north face,
