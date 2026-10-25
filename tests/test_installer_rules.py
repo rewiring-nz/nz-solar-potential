@@ -162,7 +162,6 @@ def test_an_array_is_centred_on_its_face():
 
 def test_a_zigzag_ridge_is_cut_straight_where_it_lies():
     import os
-    os.environ["SOLAR_FIT_SEAMS"] = "1"
     try:
         from shapely.geometry import Polygon
         from src.face_straighten import fit_seams, _seam_line
@@ -175,4 +174,4 @@ def test_a_zigzag_ridge_is_cut_straight_where_it_lies():
         assert dev < 0.1, dev
         assert abs(out[0]["geometry"].area - 80) < 2 and abs(out[1]["geometry"].area - 80) < 2
     finally:
-        os.environ.pop("SOLAR_FIT_SEAMS", None)
+        pass

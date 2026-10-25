@@ -371,7 +371,11 @@ def absorb_slivers(facets, pc_source=None, *_, **__):
 # its own best straight line is recut along that line, inside a band around
 # the seam only, so the rest of both faces stays as it was. Kept only if both
 # faces stay single polygons changing by under FIT_MAX_AREA_CHANGE.
-# SOLAR_FIT_SEAMS=1 turns it on.
+# On by default since 25 Oct (SOLAR_FIT_SEAMS=0 turns it off): on Josh's 131
+# drawn roofs line F unchanged (0.579), panels -0.5%, one roof notably worse
+# (5372592), two better; rendered, the zigzag ridges he flagged come out
+# straight -- 4 Kent St 43 -> 64 panels (rows fit a straight ridge), 11A Camp
+# St's squiggles gone. The benchmark's 0.75 m tolerance cannot see a zigzag.
 FIT_MIN_SEAM_M = 2.5
 FIT_MIN_DEV_M = 0.25
 FIT_MAX_DEV_M = 2.5
@@ -395,7 +399,7 @@ def _seam_line(f, g):
 
 
 def fit_seams(facets, *_, **__):
-    if os.environ.get("SOLAR_FIT_SEAMS", "0") != "1" or len(facets) < 2:
+    if os.environ.get("SOLAR_FIT_SEAMS", "1") == "0" or len(facets) < 2:
         return facets
     if any(f.get("from_labels") for f in facets):
         return facets
