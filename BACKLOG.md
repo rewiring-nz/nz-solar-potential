@@ -7,6 +7,12 @@ and assign work.
 
 ## Ship
 
+- **Mt Eden off the map (Josh, 26 Oct: get Queenstown working really well
+  first).** config.SERVED_EXCLUDE leaves the four akl_mt_eden regions (and
+  akl_epsom_01) out of src/combine_regions.py; their builds stay on disk.
+  Removed from the search box. The served set loses them from v62 (re-combined
+  without them after its build).
+
 - **#44: LERC dependency checks and automatic reader selection.** Local pipeline
   preflight tests actual decoding before acquisition and reports repair guidance.
   The default automatically selects `GTiff` or `LIBERTIFF` without requiring a

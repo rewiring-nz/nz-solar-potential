@@ -21,7 +21,6 @@ window.SITE = {
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
   towns: [
-    ["Mt Eden", 174.7567, -36.8832, 14.5],
     ["Queenstown", 168.6626, -45.0312, 14.5], ["Frankton", 168.7380, -45.0230, 14.5],
     ["Fernhill", 168.6350, -45.0400, 15], ["Sunshine Bay", 168.6210, -45.0430, 15],
     ["Arthurs Point", 168.6960, -44.9820, 14.5], ["Arrowtown", 168.8110, -44.9430, 14.5],

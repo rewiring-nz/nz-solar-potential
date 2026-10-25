@@ -300,8 +300,10 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
     t0 = time.time()
     out_root, dest = Path(out_root), Path(dest)
     if regions is None:
+        import config
+        skip = getattr(config, "SERVED_EXCLUDE", set())
         regions = sorted(p.name for p in out_root.iterdir()
-                         if (p / "summary.json").exists())
+                         if (p / "summary.json").exists() and p.name not in skip)
     if not regions:
         raise SystemExit(f"no emitted regions under {out_root}")
     for r in regions:

@@ -25,6 +25,12 @@ DEM_WIDE_BBOX = [168.214585, -45.351447, 169.289392, -44.682770]
 # (verified counts per box, Aug 2026) + 1,270 in the existing pilot bbox.
 # The pilot itself stays on its original top-level paths; each region here
 # gets its own data/regions/<name>/ tree.
+# Built but NOT SERVED: regions src/combine_regions.py leaves out of the map.
+# Josh, 26 Oct: "Remove mt eden from the map for now, lets get Queenstown
+# working really well". Their builds stay on disk; take a name out to serve it.
+SERVED_EXCLUDE = {"akl_mt_eden_ne", "akl_mt_eden_nw", "akl_mt_eden_se", "akl_mt_eden_sw",
+                  "akl_epsom_01"}
+
 REGIONS = {
     "pilot":               [168.655, -45.045, 168.675, -45.025],  # central Queenstown pilot
     # Kingston and Wanaka, added 22 Sep. Split to stay
