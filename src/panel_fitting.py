@@ -1173,8 +1173,30 @@ def _block_order(panels, poa_key):
     rband = {r: int((top - m) // step) for r, m in rows.items()}      # 0 = best band
     best = min(rband.values())
     seed = min((r for r in rows if rband[r] == best), key=lambda r: (-rows[r], r))
-    pband = np.floor((poa.max() - poa) / step).astype(int)
-    key = [(rband[row[i]], abs(int(row[i]) - seed), int(row[i]), int(pband[i]), float(pu[i]))
+    # WITHIN A ROW, ONE CONTINUOUS RUN (Josh, 26 Oct, 39 Panorama Tce: "it
+    # should not leave standalone panels in the middle of an array ...
+    # installers would make the array shorter, not split it"). Each panel's
+    # own sun used to come before its place in the row, so a slightly shaded
+    # panel mid-row was the first to go and left a hole. Now a row grows from
+    # its sunniest panel one neighbour at a time, always to the sunnier side:
+    # every partial row is one unbroken run, shortened from its shadier end.
+    within = np.zeros(len(panels), dtype=int)
+    for r in np.unique(row):
+        idx = [int(i) for i in np.where(row == r)[0]]
+        idx.sort(key=lambda i: pu[i])
+        k = max(range(len(idx)), key=lambda j: (poa[idx[j]], -abs(j - (len(idx) - 1) / 2)))
+        lo = hi = k
+        within[idx[k]] = 0
+        n = 1
+        while n < len(idx):
+            left = poa[idx[lo - 1]] if lo > 0 else -np.inf
+            right = poa[idx[hi + 1]] if hi < len(idx) - 1 else -np.inf
+            if right >= left:
+                hi += 1; within[idx[hi]] = n
+            else:
+                lo -= 1; within[idx[lo]] = n
+            n += 1
+    key = [(rband[row[i]], abs(int(row[i]) - seed), int(row[i]), int(within[i]))
            for i in range(len(panels))]
     return [panels[i] for i in sorted(range(len(panels)), key=lambda i: key[i])]
 

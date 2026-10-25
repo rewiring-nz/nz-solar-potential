@@ -175,3 +175,20 @@ def test_a_zigzag_ridge_is_cut_straight_where_it_lies():
         assert abs(out[0]["geometry"].area - 80) < 2 and abs(out[1]["geometry"].area - 80) < 2
     finally:
         pass
+
+
+def test_a_partial_row_is_one_run_shortened_from_its_shady_end():
+    from src.panel_fitting import _block_order
+    # one row of eight portrait panels along the eave; panel 3 is a little
+    # shaded (a vent), panel 7 at the east end more so
+    pans = []
+    for k in range(8):
+        poa = 1400.0 - (60 if k == 3 else 0) - (200 if k == 7 else 0)
+        pans.append({"geometry": box(k * 1.05, 0, k * 1.05 + 1.0, 1.7), "poa_kwh_m2_yr": poa,
+                     "facet_aspect_deg": 0.0, "facet_slope_deg": 25.0, "facet_key": 0, "order": k})
+    out = _block_order(pans, "poa_kwh_m2_yr")
+    pos = [p["order"] for p in out]
+    for n in range(1, 9):
+        first = sorted(pos[:n])
+        assert first == list(range(first[0], first[0] + n)), (n, first)   # unbroken
+    assert pos[-1] == 7                                                    # the shady end goes first
