@@ -65,7 +65,12 @@ and assign work.
   smooths the darkest days; optionally an NREL API key for Himawari 2 km
   satellite solar (2016-2020) -- the only route to suburb-level cloud.
 
-- **Ready for v61 (after v60), 25 Oct:** houses built after the 2021 LiDAR
+- **v61 LIVE 26 Oct:** panels 1,816,599 -> 1,823,353 (+0.4%); 2 roofs zeroed
+  (low confidence), 2 big drops, no face area lost. Renders: 4 Kent St 43 -> 64.
+  Regressions from fit_seams to fix in v62: 5375675 (Wanaka H block: a bent
+  seam recut diagonally, 120 -> 81), 4746225 (reshaped faces picked up
+  obstructions, 60 -> 39), 5374702 (6-degree faces recut, confidence below
+  0.45, withheld). Contents: houses built after the 2021 LiDAR
   keep their panels (photo-read roofs skip the surface gates; ~11k panels in
   Arrowtown Millbrook); arrays centred on their face (panel_fitting.
   centre_panels; benchmark neutral); a zigzag ridge recut straight where it
