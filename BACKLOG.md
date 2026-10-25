@@ -65,6 +65,13 @@ and assign work.
   smooths the darkest days; optionally an NREL API key for Himawari 2 km
   satellite solar (2016-2020) -- the only route to suburb-level cloud.
 
+- **Ready for v61 (after v60), 25 Oct:** houses built after the 2021 LiDAR
+  keep their panels (photo-read roofs skip the surface gates; ~11k panels in
+  Arrowtown Millbrook); arrays centred on their face (panel_fitting.
+  centre_panels; benchmark neutral); a zigzag ridge recut straight where it
+  lies (face_straighten.fit_seams; benchmark line F unchanged, 4 Kent St
+  43 -> 64 panels, 11A Camp St straight). The VM's 40 h spot limit falls
+  after v60: restart it and build v61.
 - **Roof lines: the pick, not the drawings (25 Oct).** Every candidate reading
   scored against Josh's 131 drawn roofs (labels hidden; ~/ab/oracle.py):
   the pipeline's pick line F 0.537 (48 roofs right), the best candidate it
