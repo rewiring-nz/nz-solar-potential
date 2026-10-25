@@ -19,6 +19,7 @@ Usage: python src/rerank_layouts.py [region ...]   (default: all areas)
 """
 
 import json
+import os
 import math
 import sys
 from pathlib import Path
@@ -127,8 +128,32 @@ def rerank_area(name):
         # fresh build would not: 18 of 508 synthetic panels on first test.
         # fill_order is the exact sequence the fit (or the last rerank)
         # produced, consistent with fill_rank, so ties now follow the fit.
+        # Within an array, the fitter's own row order (panel_fitting.
+        # _block_order): each row one unbroken run from its sunniest panel,
+        # shortened from the shady end (Josh, 26 Oct: a smaller system must
+        # not leave holes mid-array). Recomputed here so a re-rank applies it
+        # to layouts built before it existed; SOLAR_RERANK_ROWS=0 keeps the
+        # order the file carries.
+        inarr = {}
+        if os.environ.get("SOLAR_RERANK_ROWS", "1") != "0":
+            from src.panel_fitting import _block_order
+            for aid, g in groups.items():
+                if len(g) < 2:
+                    continue
+                try:
+                    ds = [{"geometry": shapely_transform(_TO_NZTM, shape(pf["geometry"])),
+                           "poa": float(pf["properties"].get("ac_kwh_year") or 0),
+                           "facet_aspect_deg": pf["properties"].get("plane_aspect_deg"),
+                           "facet_slope_deg": pf["properties"].get("plane_slope_deg"),
+                           "facet_key": 0, "order": pf["properties"].get("fill_order", 0), "_id": id(pf)}
+                          for pf in g]
+                    for k, d in enumerate(_block_order(ds, "poa")):
+                        inarr[d["_id"]] = k
+                except Exception:
+                    pass
         key = lambda pf: (-yield_of.get(pf["properties"].get("array_id", 0), 0),
                           pf["properties"].get("array_id", 0),
+                          inarr.get(id(pf), pf["properties"].get("fill_rank", 100)),
                           pf["properties"].get("fill_rank", 100),
                           pf["properties"].get("fill_order", 0))
         # Pocket panels exist for 100% only: ranked last, at 100.
