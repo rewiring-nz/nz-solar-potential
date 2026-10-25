@@ -852,7 +852,7 @@
         <div class="hslider-wrap" id="vslider-wrap">
           <div class="hslider-head">
             <span id="vslider-label">Panel density</span>
-            <span id="vslider-value">80%</span>
+            <span id="vslider-value">Auto</span>
           </div>
           <input type="range" id="vslider" min="0" max="100" step="1" value="80">
           <div class="hslider-notes">
@@ -1502,6 +1502,37 @@ const LAYOUT_KIND_FILTER = {
 // installer would quote; 81-100 are straggler blocks (only banded when a
 // big main array exists). Default shows arrays only; 100% shows everything.
 let panelDensityPct = 80;
+// DEFAULT SIZES (Josh, 26 Oct): "Households should size down to 14kW, but
+// businesses should default to all the panels that fit." Until the density
+// slider is moved, every roof shows its default system: one household (a home
+// under HOME_CAP_MAX_ROOF_M2 of roof) its best panels up to HOME_SYSTEM_CAP_KW
+// in fill order, anything else every panel that fits. Moving the slider sets
+// one density for every roof, as before. One rule, pctForBuilding, feeds the
+// map, the building card and the totals, so they cannot disagree.
+let sizingDefault = true;
+let bigHomeIds = [];   // homes with a block-of-units roof: not capped (see onViewChanged)
+function homeCapPanels() {
+  const w = (window.__assumptions && window.__assumptions.panel_rated_power_w) || 500;
+  return Math.floor(14 * 1000 / w);
+}
+function cappedHome(pr) {
+  return !!pr && (pr.btype || "home") === "home" && (pr.facet_area_m2 || 0) < 350;
+}
+// The density (0-100) whose fill ladder gives this building its default
+// system: 100, or for a capped home the point where its ladder reaches the cap.
+function defaultPctFor(pr) {
+  if (!cappedHome(pr)) return 100;
+  const cap = homeCapPanels();
+  if ((pr.fill_panels_100 || 0) <= cap) return 100;
+  let prev = 0;
+  for (let step = 10; step <= 100; step += 10) {
+    const cur = pr[`fill_panels_${step}`] || 0;
+    if (cur >= cap) return cur > prev ? (step - 10) + 10 * (cap - prev) / (cur - prev) : step;
+    prev = cur;
+  }
+  return 100;
+}
+function pctForBuilding(pr) { return sizingDefault ? defaultPctFor(pr) : panelDensityPct; }
 // THE OPEN BUILDING'S OWN SYSTEM SIZE: the first k panels in the roof's fill
 // order, set on the building card's slider. It opens showing exactly what the
 // map showed (Josh, 22 Oct: clicking a fully covered roof and seeing it drop
@@ -1684,8 +1715,13 @@ let selectedBuildingProps = null;  // buildings-source props of the open panel (
 // with the whole town tiled that made the density slider crawl. A paint
 // change only rebinds shader properties, so dragging is smooth at any zoom.
 function densityOpacityExpr(baseOpacity) {
-  let dense = ["any", ["!", ["has", "fill_rank"]],
-                 ["<=", ["get", "fill_rank"], panelDensityPct]];
+  let dense = sizingDefault
+    ? ["any", ["!", ["has", "fill_order"]],
+              ["!=", ["coalesce", ["get", "btype"], "home"], "home"],
+              ["in", ["get", "building_id"], ["literal", bigHomeIds]],
+              ["<=", ["get", "fill_order"], homeCapPanels()]]
+    : ["any", ["!", ["has", "fill_rank"]],
+              ["<=", ["get", "fill_rank"], panelDensityPct]];
   // the open building shows its own system size (bldgSys), not the density
   if (bldgSys) dense = ["case", ["all", ["==", ["get", "building_id"], bldgSys.buildingId], ["has", "fill_order"]],
                         ["<=", ["get", "fill_order"], bldgSys.k > 0 ? bldgSysMaxOrder() : -1], dense];
@@ -2289,6 +2325,7 @@ map.on("load", async () => {
 
   const assumptions = await fetch(`${DATA_BASE}data/assumptions.json?v=${DATA_VERSION}`)
     .then(r => r.json());
+  window.__assumptions = assumptions;   // the household cap's panel count (homeCapPanels)
 
   // BUILDINGS ARE TILES, AND THE TOTALS COME FROM SOMEWHERE ELSE.
   //
@@ -2602,9 +2639,9 @@ map.on("load", async () => {
     }
     const pairs = [], merit = new Map();
     inViewBuildingProps().forEach(pr => {
-      const count = Math.round(decileInterp(pr, "fill_panels", panelDensityPct));
+      const count = Math.round(decileInterp(pr, "fill_panels", pctForBuilding(pr)));
       if (!(count > 0)) return;
-      const kwhYear = decileInterp(pr, "fill_kwh", panelDensityPct) * bakedKwhScale();
+      const kwhYear = decileInterp(pr, "fill_kwh", pctForBuilding(pr)) * bakedKwhScale();
       // A panel's own economics must not move when the density slider does
       // -- other than the self-consumption share, the number of panels must
       // not change other panels' ROIs; ROI is per panel.
@@ -2813,9 +2850,20 @@ map.on("load", async () => {
       // zooms. Cells from before the ladder existed carry only the 100%
       // totals, which is what this used to show at every density.
       if (c.properties.fill_panels_100 != null) {
-        fittedKwp += decileInterp(c.properties, "fill_panels", panelDensityPct)
+        // default sizes: a business cell at 100%; a home cell capped at its
+        // homes x the household cap, on its own ladder (zoomed out only; a
+        // cell does not carry each home's ladder, so homes smaller than the
+        // cap make this an upper bound)
+        let cpct = panelDensityPct;
+        if (sizingDefault) {
+          cpct = (c.properties.btype || "home") === "home"
+            ? defaultPctFor({ btype: "home", facet_area_m2: 0,
+                              ...Object.fromEntries([10,20,30,40,50,60,70,80,90,100].map(k => [`fill_panels_${k}`, c.properties[`fill_panels_${k}`] / Math.max(1, (c.properties.n_est || c.properties.n || 1))])) })
+            : 100;
+        }
+        fittedKwp += decileInterp(c.properties, "fill_panels", cpct)
           * assumptions.panel_rated_power_w / 1000;
-        fittedKwh += decileInterp(c.properties, "fill_kwh", panelDensityPct) * bakedKwhScale();
+        fittedKwh += decileInterp(c.properties, "fill_kwh", cpct) * bakedKwhScale();
       } else {
         fittedKwp += c.properties.fitted_kwp || 0;
         fittedKwh += c.properties.fitted_kwh || 0;
@@ -3258,6 +3306,13 @@ map.on("load", async () => {
     viewTimer = setTimeout(() => {
       invalidateInView();
       recomputeInViewSummary();
+      // homes whose roof is a block of units are not held to the household
+      // cap on the map either (the card's rule, cappedHome)
+      const big = inViewBuildingProps().filter(pr => (pr.btype || "home") === "home" && !cappedHome(pr))
+        .map(pr => pr.building_id).sort((a, b) => a - b);
+      if (sizingDefault && JSON.stringify(big) !== JSON.stringify(bigHomeIds)) {
+        bigHomeIds = big; applyPanelDensityPaint();
+      }
     }, 140);
   };
   // TILES ARRIVE AFTER THE VIEW SETTLES, so the view is not the only thing
@@ -3401,12 +3456,13 @@ map.on("load", async () => {
     let panels = 0, kwh = 0;
     const banded = !!panelEcon && !PANEL_ECON_KEYS.every(k => panelEconShow[k]);
     propsList.forEach(pr => {
+      const pct = pctForBuilding(pr);
       if (banded) {
-        const b = bandSplitFor(pr, panelDensityPct);
+        const b = bandSplitFor(pr, pct);
         panels += b.panels; kwh += b.kwh;
       } else {
-        panels += decileInterp(pr, "fill_panels", panelDensityPct);
-        kwh += decileInterp(pr, "fill_kwh", panelDensityPct);
+        panels += decileInterp(pr, "fill_panels", pct);
+        kwh += decileInterp(pr, "fill_kwh", pct);
       }
     });
     return { kwp: panels * assumptions.panel_rated_power_w / 1000,
@@ -3431,7 +3487,7 @@ map.on("load", async () => {
     if (isLayout) {
       document.getElementById("vslider-label").textContent = "Panel density";
       s.min = 0; s.step = 1; s.value = panelDensityPct;
-      document.getElementById("vslider-value").textContent = panelDensityPct + "%";
+      document.getElementById("vslider-value").textContent = sizingDefault ? "Auto" : panelDensityPct + "%";
     } else {
       document.getElementById("vslider-label").textContent = "Roof coverage";
       s.min = 5; s.step = 5; s.value = coveragePct;
@@ -3475,6 +3531,7 @@ map.on("load", async () => {
     document.getElementById("vslider-value").textContent = v + "%";
     if (mode === "layout") {
       panelDensityPct = v;
+      sizingDefault = false;
         bldgSysFollowDensity(v);
       applyPanelDensityPaint();          // immediate, cheap: no tile re-upload
       clearTimeout(window.__densityTimer);
@@ -3636,6 +3693,7 @@ map.on("load", async () => {
       document.getElementById("m-slider-value").textContent = v + "%";
       if (mode === "layout") {
         panelDensityPct = v;
+        sizingDefault = false;
         bldgSysFollowDensity(v);
         applyPanelDensityPaint();      // immediate, cheap: no tile re-upload
         clearTimeout(window.__densityTimer);
@@ -4677,10 +4735,13 @@ map.on("load", async () => {
     // "what it shows should stay as what it shows when clicked"); the
     // economic size is worked out alongside and offered, not applied.
     const ranks = all.map(q => q.rank);
+    const pr0 = selectedBuildingProps && selectedBuildingProps.building_id === bid ? selectedBuildingProps : null;
+    const k0 = sizingDefault
+      ? (cappedHome(pr0) ? Math.min(all.length, homeCapPanels()) : all.length)
+      : ranks.filter(r => r == null || r <= panelDensityPct).length;
     bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks,
                 kwh: all.map(q => q.kwh), arrs: all.map(q => q.arr),
-                k: ranks.filter(r => r == null || r <= panelDensityPct).length,
-                mode: "map", settled: false, sig: null };
+                k: k0, mode: sizingDefault ? "default" : "map", settled: false, sig: null };
     applyPanelDensityPaint();
   }
   // The economic default, from the bill model's own pricing of the FULL
@@ -4742,7 +4803,11 @@ map.on("load", async () => {
           (S.econK > S.capK ? `, ${HOME_SYSTEM_CAP_KW} kW at most for a home` : S.econK === S.orders.length ? ", all of them pay for themselves" : "") + ".";
     } else econText = "Working out which panels pay for themselves&hellip;";
     const which = S.mode === "econ" ? "Showing the economic size."
-      : S.mode === "hand" ? "Set by hand." : `Showing the map's ${panelDensityPct}% panel density.`;
+      : S.mode === "hand" ? "Set by hand."
+      : S.mode === "default" ? (S.k < S.orders.length && cappedHome(selectedBuildingProps)
+          ? `Showing the household size: the best panels up to ${HOME_SYSTEM_CAP_KW} kW.`
+          : "Showing every panel that fits.")
+      : `Showing the map's ${panelDensityPct}% panel density.`;
     const btn = S.settled && S.econK > 0 && !(S.mode === "econ")
       ? ` <button type="button" class="sys-reset" id="bldg-sys-reset">Use the economic size</button>` : "";
     let note = `${which} ${econText}${btn}`;
