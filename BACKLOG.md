@@ -86,6 +86,12 @@ and assign work.
   overlap-clip-only coherence (M) 64 / 0.601 / 0.642 / 17,353 but renders show
   jagged photo readings on complex commercial roofs (12 Stanley St, 42 Suburb
   St, 4734994, 5372596) -- needs a guard on messy readings before it ships.
+  Guard tried: trust the reading only at selected score >= 0.5 (N): benchmark
+  65 roofs / 0.608 / face 0.645, but the same verdict roofs still break
+  (12 Stanley St 62 -> 32 panels, 4734913 72 -> 43, 42 Suburb St 30 -> 17) --
+  their messy readings score high. No shape statistic separated good from bad
+  readings either. Next idea: the vision referee only where the photo reading
+  and the LiDAR reading disagree (a few hundred roofs, a few dollars).
   Switches for A/B: SOLAR_SELECTED_TRUST/MIN_SCORE, SOLAR_FACET_COHERENCE
   (1/clip/0), SOLAR_STRICT_LIKE_PLANE, SOLAR_PLANT_DECKS, SOLAR_BALCONY_LEVELS. Josh's v55 verdicts (29): 1 fixed, 8 better, 5 same,
   2 worse, 13 wrong; nearly all about roof lines.
