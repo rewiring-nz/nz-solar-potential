@@ -378,8 +378,17 @@ def absorb_slivers(facets, pc_source=None, *_, **__):
 # St's squiggles gone. The benchmark's 0.75 m tolerance cannot see a zigzag.
 FIT_MIN_SEAM_M = 2.5
 FIT_MIN_DEV_M = 0.25
-FIT_MAX_DEV_M = 2.5
+FIT_MAX_DEV_M = 1.5
 FIT_MAX_AREA_CHANGE = 0.25
+# v61 guards (three roofs got worse in its build): both faces pitched, the
+# seam mostly straight already (an L-shaped seam is two seams, not a zigzag:
+# 5375675 was cut diagonally), and the cut must fit the returns at least as
+# well as the old seam (a 6-degree roof recut fell under the confidence bar,
+# 5374702)
+FIT_MIN_SLOPE_DEG = 10.0
+FIT_NEAR_M = 0.5
+FIT_NEAR_SHARE = 0.75
+FIT_ON_PLANE_M = 0.15
 
 
 def _seam_line(f, g):
@@ -395,10 +404,26 @@ def _seam_line(f, g):
     d = vt[0]
     dev = np.abs((pts - c) @ np.array([-d[1], d[0]]))
     along = (pts - c) @ d
-    return shared, c, d, float(dev.max()), float(along.min()), float(along.max())
+    return shared, c, d, float(dev.max()), float(along.min()), float(along.max()), float((dev <= FIT_NEAR_M).mean())
 
 
-def fit_seams(facets, *_, **__):
+def _on_plane_share(face, geom, pc_source):
+    import numpy as np
+    import shapely
+    if pc_source is None or face.get("plane_a") is None:
+        return None
+    b = geom.bounds
+    pts = pc_source.points_in_bbox(b[0], b[1], b[2], b[3], building_only=True)
+    if len(pts) == 0:
+        return None
+    pts = pts[shapely.contains_xy(geom, pts[:, 0], pts[:, 1])]
+    if len(pts) < 10:
+        return None
+    z = face["plane_a"] * pts[:, 0] + face["plane_b"] * pts[:, 1] + face["plane_c"]
+    return float((np.abs(pts[:, 2] - z) <= FIT_ON_PLANE_M).mean())
+
+
+def fit_seams(facets, pc_source=None, *_, **__):
     if os.environ.get("SOLAR_FIT_SEAMS", "1") == "0" or len(facets) < 2:
         return facets
     if any(f.get("from_labels") for f in facets):
@@ -413,11 +438,13 @@ def fit_seams(facets, *_, **__):
                 continue
             if f["geometry"].distance(g["geometry"]) > 0.1:
                 continue
+            if min(f.get("slope_deg") or 0, g.get("slope_deg") or 0) < FIT_MIN_SLOPE_DEG:
+                continue
             sl = _seam_line(f, g)
             if sl is None:
                 continue
-            shared, c, d, dev, a0, a1 = sl
-            if not (FIT_MIN_DEV_M <= dev <= FIT_MAX_DEV_M):
+            shared, c, d, dev, a0, a1, near = sl
+            if not (FIT_MIN_DEV_M <= dev <= FIT_MAX_DEV_M) or near < FIT_NEAR_SHARE:
                 continue
             band = shared.buffer(dev + 0.5)
             ext = max(a1 - a0, 1.0)
@@ -449,6 +476,12 @@ def fit_seams(facets, *_, **__):
             if (abs(nf.area - f["geometry"].area) > FIT_MAX_AREA_CHANGE * f["geometry"].area
                     or abs(ng.area - g["geometry"].area) > FIT_MAX_AREA_CHANGE * g["geometry"].area):
                 continue
+            # the returns must sit on their planes at least as well as before
+            if pc_source is not None:
+                before = [_on_plane_share(f, f["geometry"], pc_source), _on_plane_share(g, g["geometry"], pc_source)]
+                after = [_on_plane_share(f, nf, pc_source), _on_plane_share(g, ng, pc_source)]
+                if any(b is not None and (a is None or a < b - 0.01) for b, a in zip(before, after)):
+                    continue
             faces[i] = dict(f, geometry=nf, **({"area_m2": nf.area} if "area_m2" in f else {}))
             faces[j] = dict(g, geometry=ng, **({"area_m2": ng.area} if "area_m2" in g else {}))
     return faces

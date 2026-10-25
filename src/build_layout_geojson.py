@@ -472,7 +472,7 @@ def _build_one_at(building_id, nudge_m):
     facets = _reshape(merge_coplanar_faces)
     facets = _reshape(absorb_slivers, pc_source)
     facets = _reshape(seams_to_plane_lines, pc_source)
-    facets = _reshape(fit_seams)
+    facets = _reshape(fit_seams, pc_source)
     facets = _reshape(straighten_faces)
 
     # Do not propose panels on a roof we have not understood -- see

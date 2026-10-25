@@ -70,7 +70,10 @@ and assign work.
   Regressions from fit_seams to fix in v62: 5375675 (Wanaka H block: a bent
   seam recut diagonally, 120 -> 81), 4746225 (reshaped faces picked up
   obstructions, 60 -> 39), 5374702 (6-degree faces recut, confidence below
-  0.45, withheld). Contents: houses built after the 2021 LiDAR
+  0.45, withheld). Guards added for v62 (pitched faces only, a seam 75%
+  straight already, the cut must fit the returns as well as before): those
+  three come out as before (120, 50, 60 panels); 4 Kent St still 43 -> 64,
+  11A Camp St 134 -> 139. Contents: houses built after the 2021 LiDAR
   keep their panels (photo-read roofs skip the surface gates; ~11k panels in
   Arrowtown Millbrook); arrays centred on their face (panel_fitting.
   centre_panels; benchmark neutral); a zigzag ridge recut straight where it
