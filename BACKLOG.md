@@ -74,8 +74,20 @@ and assign work.
   better reading away. Vision referee (tools/vision_referee.py; Claude Sonnet
   5.5 on photo + LiDAR relief, ~$0.01 a roof, key Claude-API): 0.574 (58) on
   130 roofs, 0.531 (17) held out -- better than the pick, worse than trusting
-  the photo reading. Testing: SOLAR_SELECTED_TRUST=0 (and MIN_SCORE=0) on the
-  markup benchmark. Josh's v55 verdicts (29): 1 fixed, 8 better, 5 same,
+  the photo reading. Trusting it end to end did NOT help (0.522): traced roof
+  by roof (photo + LiDAR relief renders), the pipeline damages good readings
+  after the pick -- the seam movers (ridge_snap, plane_seams, seams_to_plane_
+  lines) put correct ridges 1-2 m off the relief's plane boundary; the
+  plant-deck rule deletes real faces; the coherence pass merges/clips correct
+  faces. Benchmark (131 roofs, roof lines right / line F / face IoU / panels):
+  today 48 / 0.538 / 0.627 / 17,203; seam movers + plant decks off (G) 61 /
+  0.579 / 0.642 / 17,647 -- SHIPPED as the default (renders of Josh's 12
+  verdict roofs: none worse, several cleaner); + photo reading trusted +
+  overlap-clip-only coherence (M) 64 / 0.601 / 0.642 / 17,353 but renders show
+  jagged photo readings on complex commercial roofs (12 Stanley St, 42 Suburb
+  St, 4734994, 5372596) -- needs a guard on messy readings before it ships.
+  Switches for A/B: SOLAR_SELECTED_TRUST/MIN_SCORE, SOLAR_FACET_COHERENCE
+  (1/clip/0), SOLAR_STRICT_LIKE_PLANE, SOLAR_PLANT_DECKS, SOLAR_BALCONY_LEVELS. Josh's v55 verdicts (29): 1 fixed, 8 better, 5 same,
   2 worse, 13 wrong; nearly all about roof lines.
 - **v58 BUILT 25 Oct, NOT PUBLISHED; v59 building.** Gate: panels -10.1%,
   zeroed 211 -> 15 (all low-confidence withholds, 7 in Wanaka). Renders of the

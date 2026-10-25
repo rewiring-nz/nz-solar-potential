@@ -1,4 +1,6 @@
 """Ridge snap on a synthetic gable: the crest is where the returns say."""
+import os
+os.environ.setdefault("SOLAR_RIDGE_SNAP", "1")   # the step is off in builds since 25 Oct; these tests check its mechanics
 import sys
 from pathlib import Path
 

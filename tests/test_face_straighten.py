@@ -1,6 +1,8 @@
 """face_straighten: one plane is one face; the edges between faces are
 straight lines shared by both neighbours; a valley, a step or Josh's
 markup is left alone."""
+import os
+os.environ.setdefault("SOLAR_SEAM_PLANES", "1")   # the step is off in builds since 25 Oct; these tests check its mechanics
 import math
 import sys
 from pathlib import Path

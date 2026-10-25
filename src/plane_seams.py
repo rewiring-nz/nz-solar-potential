@@ -146,7 +146,11 @@ def _one_pass(facets, pts):
 
 def snap_seams_to_plane_intersections(facets, pc_source, dsm=None):
     """Return facets with neighbours' roof handed back across hips and valleys."""
-    if os.environ.get("SOLAR_PLANE_SEAMS", "1") == "0":
+    # off by default since 25 Oct: on Josh's 131 drawn roofs, built blind, the seam-moving steps put
+    # correct ridges 1-2 m off the LiDAR plane boundary (fitted planes on shallow roofs cross metres
+    # away); with them and the plant-deck rule off, roof lines right 48 -> 61, line F 0.538 -> 0.579,
+    # face IoU 0.627 -> 0.642, panels +2.6%; renders of Josh's 12 verdict roofs: none worse.
+    if os.environ.get("SOLAR_PLANE_SEAMS", "0") == "0":
         return facets
     if not facets or len(facets) < 2 or any(f.get("from_labels") for f in facets):
         return facets

@@ -375,7 +375,11 @@ def snap_ridges_to_crest(facets, pc_source, dsm=None):
     """Return facets with each shared ridge moved onto the measured crest.
     SOLAR_RIDGE_SNAP=0 in the environment turns the pass off, so a golden or
     bench run can show exactly what it moved."""
-    if os.environ.get("SOLAR_RIDGE_SNAP", "1") == "0":
+    # off by default since 25 Oct: on Josh's 131 drawn roofs, built blind, the seam-moving steps put
+    # correct ridges 1-2 m off the LiDAR plane boundary (fitted planes on shallow roofs cross metres
+    # away); with them and the plant-deck rule off, roof lines right 48 -> 61, line F 0.538 -> 0.579,
+    # face IoU 0.627 -> 0.642, panels +2.6%; renders of Josh's 12 verdict roofs: none worse.
+    if os.environ.get("SOLAR_RIDGE_SNAP", "0") == "0":
         return facets
     if not facets or any(f.get("from_labels") for f in facets):
         return facets

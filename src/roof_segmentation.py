@@ -1360,6 +1360,16 @@ def __dbg_stage(facets, label, building_id):
             print(f"[attach {building_id}] after {label}: {len(facets)} faces")
 
 
+# The like-plane merge at the end of _attach_building_geometry took any two
+# adjacent faces under 6 degrees as one plane, and its "still one plane"
+# check passed 55% of points within 18 cm -- a step between two flat levels
+# passes that. On Josh's 131 drawn roofs it merged correct photo readings
+# away (10 Memorial St, #4734678: three drawn faces, read exactly, merged into
+# one). SOLAR_STRICT_LIKE_PLANE=1: merge only faces on one plane in the
+# face_straighten sense (normals within 2.5 degrees, no step over 0.15 m).
+STRICT_LIKE_PLANE = os.environ.get("SOLAR_STRICT_LIKE_PLANE", "0") == "1"
+
+
 def _attach_building_geometry(facets, building_geom, pc_source=None, building_id=None):
     """Panel packing needs the building outline to align rows on flat roofs
     (a facet's own hull has no reliable orientation there). Attached once
@@ -1419,10 +1429,14 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         # (#4740503, panels on every balcony), and no one authored those
         # faces. Authored geometry is exempt; machine geometry is not.
         if not authored:
-            facets = drop_balcony_levels(facets, pc_source)
-            __dbg_stage(facets, "drop_balcony_levels", building_id)
-            facets = drop_plant_decks(facets, pc_source)
-            __dbg_stage(facets, "drop_plant_decks", building_id)
+            if os.environ.get("SOLAR_BALCONY_LEVELS", "1") != "0":
+                facets = drop_balcony_levels(facets, pc_source)
+                __dbg_stage(facets, "drop_balcony_levels", building_id)
+            # the plant-deck rule deleted real roof faces (4734696: 4 of 9, 53 of 138 m2); off by
+            # default since 25 Oct, see src/ridge_snap.py. SOLAR_PLANT_DECKS=1 turns it back on.
+            if os.environ.get("SOLAR_PLANT_DECKS", "0") != "0":
+                facets = drop_plant_decks(facets, pc_source)
+                __dbg_stage(facets, "drop_plant_decks", building_id)
         if not keep_boundary:
             facets = drop_roof_features(facets, pc_source)
             __dbg_stage(facets, "drop_roof_features", building_id)
@@ -1475,7 +1489,14 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     import os as _osc
     _skip_polish = _osc.environ.get("SOLAR_SKIP_FACET_POLISH", "0") == "1"
     # _skip_polish keeps the pre-coherence behaviour for pathological giants
-    if len(machine) >= 2 and len(machine) <= 120 and not _skip_polish:
+    # SOLAR_FACET_COHERENCE: "1" the full pass below (overlaps clipped,
+    # slivers and corridors dropped, like-plane neighbours merged); "clip"
+    # overlaps clipped only, a remainder kept unless under 1 m2; "0" none of
+    # it. The boundary simplification after it runs in every mode.
+    _cmode = _osc.environ.get("SOLAR_FACET_COHERENCE", "1")
+    _coherence = _cmode != "0"
+    _clip_only = _cmode == "clip"
+    if len(machine) >= 2 and len(machine) <= 120 and not _skip_polish and _coherence:
         from shapely.ops import unary_union as _uu
         machine.sort(key=lambda f: -f["geometry"].area)
         claimed = None
@@ -1492,7 +1513,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                 continue
             if g.geom_type == "MultiPolygon":
                 g = max(g.geoms, key=lambda q: q.area)
-            if g.geom_type != "Polygon" or g.area < 4.0:
+            if g.geom_type != "Polygon" or g.area < (1.0 if _clip_only else 4.0):
                 continue
             # thinness: a REMAINDER of clipping whose area is far below what
             # its perimeter could enclose is a corridor, not a face. Only
@@ -1501,7 +1522,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
             # (#4751260) it dropped both 21 m2 slopes of a wing nothing had
             # clipped, leaving one face of four (80 -> 34 m2, 9 panels).
             clipped = abs(g.area - g0.area) > 0.05 * g0.area
-            if (clipped or os.environ.get("SOLAR_CORRIDOR_WIDTH", "1") == "0") \
+            if not _clip_only and (clipped or os.environ.get("SOLAR_CORRIDOR_WIDTH", "1") == "0") \
                     and g.length > 1.0 and g.area / max(g.length, 1e-9) < 0.55:
                 continue
             f = dict(f, geometry=g, area_m2=float(g.area))
@@ -1527,7 +1548,7 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
         # Three sweeps catch transitive merges on every roof that matters;
         # a roof with >80 machine facets skips the merge entirely (it has
         # bigger problems than one extra internal line).
-        if len(kept) <= 80:
+        if len(kept) <= 80 and not _clip_only:
             for _sweep in range(3):
                 did = False
                 i = 0
@@ -1538,6 +1559,14 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
                         if not _agree(a, b):
                             j += 1
                             continue
+                        if STRICT_LIKE_PLANE:
+                            # one plane means one plane: the same tilt AND no
+                            # step between them (face_straighten._same_plane),
+                            # not just two near-flat faces side by side
+                            from src.face_straighten import _same_plane
+                            if not _same_plane(a, b):
+                                j += 1
+                                continue
                         try:
                             if a["geometry"].distance(b["geometry"]) > 0.3:
                                 j += 1
