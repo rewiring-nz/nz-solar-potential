@@ -7,6 +7,33 @@ and assign work.
 
 ## Ship
 
+- **Panels square to the walls (Josh, 27 Oct: "make sure panels are generally
+  square/perpendicular with the edges of rooftops").** tools/panel_alignment.py
+  on v63: 1.3% of panels more than 3 degrees off every wall of their building,
+  nearly all on square-cornered outlines whose low (6-13 degree) face was
+  misread 21-46 degrees across the walls -- the 20-degree WALL_SNAP let the
+  reading set the rows (4738191 Tucker Beach 31 deg, 926940252 Arrowtown
+  Millbrook 46, 4735740 Wanaka 22, 5371901 Speargrass 21, 5370974 pilot 24).
+  src/panel_fitting.building_frame now racks every face to its nearest wall
+  on an outline whose walls are WALL_CLEAN_COVER (0.8) square
+  (outline_axis.wall_cover); curved or angled-wing outlines keep the 20-degree
+  rule. A/B on the 1,944 affected buildings running; ships with the next build.
+  The face reading's direction itself (used for sun) is unchanged -- a
+  follow-up: the same misread faces likely carry the wrong aspect for yield
+  and the sunny-side rule. (The "off face" figure, 8.1%, is mostly the
+  measure reading hip triangles as 45-degree faces, not real skew.)
+- **Resilience battery LIVE 27 Oct (front end):** homes get the battery to
+  run on roof and battery alone through each year's hardest low-solar run
+  (normal year / once a decade / record), from the bill tool's household
+  hour by hour (winter heating included). A roof short of the home's use on
+  an average winter day has that season's shortfall stated apart -- sizing to
+  cover it gave 1,600 kWh at 4A Weaver St. low_solar.js battery();
+  tests/test_low_solar_battery.mjs.
+- **NREL key optional:** the NSRDB Himawari files are public on AWS
+  (nrel-pds-nsrdb/himawari/himawari8, 2015-2020, 2-3 TB HDF5 a year); range
+  reads of the Queenstown pixels may make the API key unnecessary -- try that
+  first.
+
 - **v63 LIVE 26 Oct:** v62 (guarded ridge straightening) + a yields-and-ranks
   pass with the hole-free row order (39 Panorama Tce holes 2 -> 0 at 43/49)
   and Mt Eden off the map: 32,838 buildings, 35 regions, 1,421,935 panels

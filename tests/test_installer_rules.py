@@ -192,3 +192,23 @@ def test_a_partial_row_is_one_run_shortened_from_its_shady_end():
         first = sorted(pos[:n])
         assert first == list(range(first[0], first[0] + n)), (n, first)   # unbroken
     assert pos[-1] == 7                                                    # the shady end goes first
+
+
+def test_a_square_house_racks_to_its_walls_whatever_the_face_reading():
+    from shapely.geometry import box
+    from src.panel_fitting import building_frame
+    # a rectangle with walls along x and y; its one low face misread as
+    # draining 31 degrees across it (4738191, Tucker Beach)
+    house = box(0, 0, 20, 10)
+    face = {"geometry": house, "slope_deg": 11.0, "aspect_deg": 149.0}
+    fr = building_frame([face], house)
+    assert all(min(a % 90, 90 - a % 90) < 1e-6 for a in fr["angles"]), fr["angles"]
+    # an outline with a real wing at 30 degrees keeps the 20-degree rule:
+    # a face draining along the wing keeps the wing's bearing
+    from shapely import affinity
+    from shapely.ops import unary_union
+    wing = affinity.rotate(box(18, 0, 30, 6), 30, origin=(18, 0))
+    bld = unary_union([house, wing])
+    wf = {"geometry": wing, "slope_deg": 20.0, "aspect_deg": (180 - 30) % 360}
+    fr2 = building_frame([face, wf], bld)
+    assert any(abs(((a - 30) + 45) % 90 - 45) < 3 for a in fr2["angles"]), fr2["angles"]

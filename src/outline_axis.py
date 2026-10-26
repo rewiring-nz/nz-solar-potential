@@ -109,6 +109,18 @@ def wall_families_deg(geom):
     return fams
 
 
+def wall_cover(geom, fams=None):
+    """Share of the outline's length running along one of its wall families
+    (within MODE_TOL_DEG, mod 90): 1.0 for a rectangle or any square-cornered
+    outline, lower for curves, bays and odd angles."""
+    edges = list(_edges(geom)) if geom is not None and not geom.is_empty else []
+    total = sum(L for L, _ in edges)
+    if total <= 0:
+        return 0.0
+    fams = wall_families_deg(geom) if fams is None else fams
+    return sum(L for L, a in edges if any(_dev(a, f) <= MODE_TOL_DEG for f in fams)) / total
+
+
 def face_axis_deg(footprint, face):
     """The wall direction a roof face should be straightened to: the
     building's dominant axis, or -- on a building with more than one wall

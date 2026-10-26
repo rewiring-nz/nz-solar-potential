@@ -76,6 +76,10 @@ SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least
 FRAME_SNAP_DEG = 7.0   # a family's bearing within this of the building axis takes the axis
 FAMILY_TOL_DEG = 10.0  # eaves within this of each other rack to one bearing
 WALL_SNAP_DEG = 20.0   # a family within this of a main wall direction racks to the wall
+WALL_CLEAN_COVER = float(os.environ.get("SOLAR_WALL_CLEAN_COVER", "0.8"))  # an outline this
+# square racks every face to its walls, however far off the face's own reading
+WING_WALL_M = 3.0        # ...unless a wall at least this long runs the face's way
+WING_WALL_TOL_DEG = 7.0
 
 
 def eave_bearing_deg(aspect_deg):
@@ -164,12 +168,32 @@ def building_frame(facets, building_polygon):
     # rack to walls. So a family within WALL_SNAP_DEG of one of the outline's
     # wall families takes that wall's direction exactly; a wing at its own
     # angle has its own walls and keeps them.
-    from src.outline_axis import wall_families_deg
+    #
+    # AND ON A SQUARE BUILDING, ALWAYS (Josh, 27 Oct: "make sure panels are
+    # generally square/perpendicular with the edges of rooftops"). The 20
+    # degrees let a misread face through whenever its reading was further off
+    # than that, and on low pitches it often is: a 6-13 degree face's fitted
+    # direction can swing 20-45 degrees. Measured on v63: 1.3% of panels more
+    # than 3 degrees off every wall, nearly all on outlines that are entirely
+    # square-cornered (one wall family covering the whole perimeter) -- a
+    # Tucker Beach house racked 31 degrees across its rectangle, an Arrowtown
+    # Millbrook flat-topped block at 46, Wanaka and Speargrass roofs at 21-22.
+    # Where every wall runs one of the outline's wall directions
+    # (WALL_CLEAN_COVER of its length), no face of the roof has an eave at
+    # another angle, so every family takes its nearest wall. An outline with
+    # curves, bays or a wing at its own angle keeps the 20-degree rule. And a
+    # face whose direction some real wall shares (WING_WALL_M or longer) is a
+    # wing too small to be a wall family -- the angled wing on 4729648,
+    # Speargrass Flat, lost 13 panels racked across its eave -- and keeps it.
+    from src.outline_axis import wall_families_deg, wall_cover, _edges
     walls = wall_families_deg(building_polygon) if building_polygon is not None else []
+    square = bool(walls) and wall_cover(building_polygon, walls) >= WALL_CLEAN_COVER
+    edges = list(_edges(building_polygon)) if square else []
     angles = []
     for ang, _ in families:
         near = min(walls, key=lambda w: dev(ang, w)) if walls else None
-        if near is not None and dev(ang, near) <= WALL_SNAP_DEG:
+        wing = any(L >= WING_WALL_M and dev(a, ang) <= WING_WALL_TOL_DEG for L, a in edges)
+        if near is not None and ((square and not wing) or dev(ang, near) <= WALL_SNAP_DEG):
             ang = near
         elif bld is not None and dev(ang, bld) <= FRAME_SNAP_DEG:
             ang = bld
