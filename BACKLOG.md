@@ -7,6 +7,10 @@ and assign work.
 
 ## Ship
 
+- **v63 LIVE 26 Oct:** v62 (guarded ridge straightening) + a yields-and-ranks
+  pass with the hole-free row order (39 Panorama Tce holes 2 -> 0 at 43/49)
+  and Mt Eden off the map: 32,838 buildings, 35 regions, 1,421,935 panels
+  (+0.4% on the shared buildings vs v61; 2 newly withheld, 1 big drop).
 - **Mt Eden off the map (Josh, 26 Oct: get Queenstown working really well
   first).** config.SERVED_EXCLUDE leaves the four akl_mt_eden regions (and
   akl_epsom_01) out of src/combine_regions.py; their builds stay on disk.
