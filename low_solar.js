@@ -103,8 +103,11 @@ const LowSolar = (() => {
   // interpolated around the year between the seasons' middle days.
   // `share` (per season, optional) takes that share of each seasonal day.
   function roofMonthly(curve, share) {
-    const pts = curve.seasons.map((s, i) => [SEASON_DOY[s],
-      curve.gen[i].reduce((a, b) => a + b, 0) * (share ? share[i] : 1)])
+    return monthly(curve.seasons, curve.gen.map((g, i) => g.reduce((a, b) => a + b, 0) * (share ? share[i] : 1)));
+  }
+  // Any per-season value as each month's average day.
+  function monthly(seasons, vals) {
+    const pts = seasons.map((s, i) => [SEASON_DOY[s], vals[i]])
       .filter(p => p[0] != null && !Number.isNaN(p[1])).sort((a, b) => a[0] - b[0]);
     const at = doy => {
       for (let k = 0; k < pts.length; k++) {
@@ -199,6 +202,77 @@ const LowSolar = (() => {
              decadePerDecade: count(decade) / years * 10 };
   }
 
+  // BATTERY TO RIDE THROUGH (Josh, 27 Oct: "how much battery storage is
+  // needed to get through the longest cumulative low solar days ... based off
+  // household energy consumption, and account for higher consumption in
+  // winter"). For every run of low-solar days above: the battery starts full
+  // at the last hour of surplus the evening before, and carries the home
+  // hour by hour -- its use that hour (the bill tool's household, with its own
+  // hour-of-day shape and season: heating in winter) against the roof's
+  // output that hour (the day's output from dailyGen, in that month's hourly
+  // shape) -- until the first hour of surplus after the run, or the next
+  // midday at the latest. What it needs is
+  // the deepest it is drawn below full (any surplus mid-run refills it).
+  // Reported like the runs: each year's deepest, the middle year, the year in
+  // ten, and the record.
+  //
+  // Not the whole winter's shortfall: in Queenstown many roofs make less
+  // than the home uses on an AVERAGE winter day, so a battery sized to never
+  // touch the grid holds months of shortfall (1,600 kWh on a 14 kW roof at 4A
+  // Weaver St) -- seasonal storage no home battery is. That is reported
+  // separately, as the season's shortfall the grid covers.
+  const BATT_ETA = 0.95;          // each way: ~90% round trip, a lithium home battery
+  const HOME_BATT_KWH = 13.5;     // a common home battery's usable size
+  function battery(cell, r, curve, loadBySeason) {
+    const seasons = curve.seasons;
+    const L = seasons.map(s => loadBySeason && loadBySeason[s]);
+    if (L.some(row => !row || row.length !== 24)) return null;
+    const lh = Array.from({ length: 24 }, (_, h) => monthly(seasons, L.map(row => row[h])));
+    const gh = Array.from({ length: 24 }, (_, h) => monthly(seasons, curve.gen.map(row => row[h] || 0)));
+    const loadM = [], shape = [], useDay = [];
+    for (let m = 0; m < 12; m++) {
+      loadM.push(lh.map(v => v[m]));
+      useDay.push(loadM[m].reduce((a, b) => a + b, 0));
+      const t = gh.reduce((a, v) => a + v[m], 0);
+      shape.push(gh.map(v => t > 0 ? v[m] / t : 1 / 24));
+    }
+    const n = r.gen.length;
+    const net = (i, h) => loadM[cell.month[i]][h] - r.gen[i] * shape[cell.month[i]][h];
+    const runs = r.runs.map(run => {
+      const e = run.start + run.len;
+      let i = run.start - 1, h = 0;
+      // a grey eve with no surplus: from its evening
+      if (i >= 0) { let last = -1; for (let k = 0; k < 24; k++) if (net(i, k) < 0) last = k; h = last >= 0 ? last + 1 : 17; }
+      else i = 0;
+      let K = 0, deep = 0;
+      for (;;) {
+        if (h === 24) { h = 0; i++; }
+        if (i >= n) break;
+        const x = net(i, h);
+        // the first hour of surplus after the run, and the next midday at the
+        // latest: on a roof short all winter an ordinary grey day after it
+        // never refills, and that is the season's shortfall, not the run's
+        if (i >= e && (x < 0 || h >= 12)) break;
+        K = x > 0 ? K + x / BATT_ETA : Math.max(0, K + x * BATT_ETA);
+        if (K > deep) deep = K;
+        h++;
+      }
+      return { kwh: deep, start: run.start, len: run.len };
+    });
+    const best = new Array(r.years).fill(null);
+    for (const x of runs) { const y = cell.year[x.start] - r.y0; if (!best[y] || x.kwh > best[y].kwh) best[y] = x; }
+    const none = { kwh: 0, start: -1, len: 0 };
+    const yearly = best.map(x => x || none).sort((a, b) => a.kwh - b.kwh);
+    const q = p => yearly[Math.min(yearly.length - 1, Math.floor(p * yearly.length))];
+    // months whose average day makes less than the home uses, and that
+    // shortfall over an average year
+    const short = [];
+    let shortKwh = 0;
+    for (let m = 0; m < 12; m++) if (r.roof[m] < useDay[m]) { short.push(m); shortKwh += (useDay[m] - r.roof[m]) * MONTH_DAYS[m]; }
+    return { typical: q(0.5), decade: q(0.9), record: yearly[yearly.length - 1], useDay, short, shortKwh,
+             runs: runs.length, eta: BATT_ETA, homeBatt: HOME_BATT_KWH };
+  }
+
   const fmtDate = (cell, i) => new Date(cell.t0 + i * 86400000)
     .toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   const days = n => n === 1 ? "1 day" : `${n} days`;
@@ -284,6 +358,59 @@ const LowSolar = (() => {
     return svg + `</svg>`;
   }
 
+  const kwh = v => v >= 10 ? Math.round(v).toLocaleString("en-NZ") : v.toFixed(1);
+  const span = ms => {
+    if (!ms.length) return "";
+    if (ms.length === 12) return "every month";
+    // the run of months, wrapping over the new year
+    let s0 = ms.find(m => !ms.includes((m + 11) % 12));
+    if (s0 == null) s0 = ms[0];
+    let e = s0; while (ms.includes((e + 1) % 12) && (e + 1) % 12 !== s0) e = (e + 1) % 12;
+    return ms.length === 1 ? MON[s0] : (ms.length === (((e - s0) + 12) % 12) + 1 ? `${MON[s0]}&ndash;${MON[e]}` : ms.map(m => MON[m]).join(", "));
+  };
+  function batteryHtml(cell, b, hh) {
+    const homes = v => {
+      const k = Math.max(1, Math.ceil(v / b.homeBatt - 0.05));
+      return v < 0.5 ? "no run that year" : k > 6 ? "more than any home battery" : `${k} home batter${k === 1 ? "y" : "ies"} (${b.homeBatt} kWh each)`;
+    };
+    const fig = (key, label, x, sub) =>
+      `<div class="rs-fig rs-bfig" data-rsb="${key}" tabindex="0" role="button"><div class="ls-v">${kwh(x.kwh)} <small>kWh</small></div>` +
+      `<div class="ls-l">${label}</div><div class="ls-s">${sub}</div></div>`;
+    const w = Math.max(...b.useDay), su = Math.min(...b.useDay);
+    return `<div class="rs-batt"><h4>Battery to get through the low-solar days <span class="rs-sub">this home uses ${kwh(su)}&ndash;${kwh(w)} kWh a day, most in winter</span></h4>` +
+      `<div class="rs-bfigs">` +
+        fig("typical", "A normal year", b.typical, homes(b.typical.kwh)) +
+        fig("decade", "Once a decade", b.decade, homes(b.decade.kwh)) +
+        fig("record", "Worst on record", b.record, b.record.start >= 0
+          ? `${days(b.record.len)} from ${fmtDate(cell, b.record.start)}` : "no low-solar run") +
+      `</div>` +
+      `<div class="ls-note">Usable storage to run the home on roof and battery alone through each year's hardest low-solar run: full the sunny evening before, empty by the next day's sun. ~90% round trip.</div>` +
+      (b.short.length
+        ? `<div class="ls-note"><b>In ${span(b.short)} this roof makes less than the home uses even on an average day</b> &mdash; ${kwh(b.shortKwh)} kWh short over a normal year, which the grid covers. No home battery holds a season.</div>`
+        : "") +
+      `<div class="ls-note">Home: the bill tool's household${hh.desc ? ` (${hh.desc})` : ""} &mdash; change it there.</div>` +
+      `</div>`;
+  }
+  function batteryNode(cell, r, b, hh, key) {
+    if (typeof Wk === "undefined") return null;
+    const x = b[key];
+    const label = { typical: "Battery for a normal year", decade: "Battery for a once-a-decade year", record: "Battery for the worst on record" }[key];
+    const winter = Math.max(...b.useDay), summer = Math.min(...b.useDay);
+    const what = { typical: "each year's hardest run, ranked: the middle year",
+                   decade: "each year's hardest run, ranked: the one only one year in ten exceeds",
+                   record: `the hardest of the ${b.runs} runs in ${r.y0}-${r.y1}` }[key];
+    return Wk.given(label, x.kwh, "kWh", [
+      Wk.input("A low day: under this share of the roof's average day", threshold, "share", { dp: 2 }),
+      Wk.input("Home's use, a winter day", winter, "kWh", { dp: 1, source: "The bill tool's household, with its winter heating, lighting and hot water" }),
+      Wk.input("Home's use, a summer day", summer, "kWh", { dp: 1, source: "The bill tool's household" }),
+      Wk.input("The roof's average day", r.mean, "kWh", { dp: 1, source: "This roof's generation curve, spread over 86 years of daily sunlight" }),
+      Wk.input("Battery efficiency, each way", b.eta, "share", { dp: 2, note: "About 90% round trip" }),
+      Wk.input("Years of daily sunlight", r.years, "yrs", { source: `ERA5 reanalysis ${r.y0}-${r.y1}, ~25 km cell at ${cell.lat}, ${cell.lon}` })], {
+        formula: `for each run of low-solar days: full at the last hour of surplus the evening before, then hour by hour the home's use minus the roof's output comes out of the battery (a surplus refills it) until the first hour of surplus after the run (the next midday at the latest); the battery needed is the deepest it falls below full. This figure is ${what}` +
+          (x.start >= 0 ? ` (${days(x.len)} from ${fmtDate(cell, x.start)})` : ""),
+        check: () => x.kwh });
+  }
+
   async function renderFull(box, o) {
     if (!box) return;
     box.innerHTML = `<div class="ls-note">Loading 86 years of daily sunlight&hellip;</div>`;
@@ -303,6 +430,8 @@ const LowSolar = (() => {
     const years = Array.from({ length: r.years }, (_, k) => r.y0 + k);
     const structural = r.lowShare > 0.15;
     const hiYear = r.longest.len ? cell.year[r.longest.start] : null;
+    const hh = o.household || null;
+    const b = hh ? battery(cell, r, o.curve, hh.bySeason) : null;
     box.innerHTML =
       `<div class="rs-figs">` +
         `<div class="rs-fig"><div class="ls-v">${days(r.longest.len)}</div><div class="ls-l">Max low-solar days in a row</div><div class="ls-s">${r.longest.len ? "from " + fmtDate(cell, r.longest.start) : "none on record"}</div></div>` +
@@ -327,10 +456,11 @@ const LowSolar = (() => {
         `<div class="rs-two">` +
           `<div><h4>Longest runs on record</h4><table class="rs-tab"><tr><th>Days</th><th>Starting</th></tr>` +
             worst.map(w => `<tr><td>${w.len}</td><td>${fmtDate(cell, w.start)}</td></tr>`).join("") + `</table></div>` +
-          `<div><h4>This roof, by month</h4><table class="rs-tab"><tr><th></th><th>Average</th><th>Darkest</th></tr>` +
-            MON.map((t, m) => `<tr><td>${t}</td><td>${r.roof[m].toFixed(1)}</td><td>${darkM[m].toFixed(1)}</td></tr>`).join("") +
-            `<tr><td></td><td colspan="2" class="rs-unit">kWh a day</td></tr></table></div>` +
+          `<div><h4>This roof, by month</h4><table class="rs-tab"><tr><th></th><th>Average</th><th>Darkest</th>${b ? "<th>Home uses</th>" : ""}</tr>` +
+            MON.map((t, m) => `<tr><td>${t}</td><td>${r.roof[m].toFixed(1)}</td><td>${darkM[m].toFixed(1)}</td>${b ? `<td>${b.useDay[m].toFixed(1)}</td>` : ""}</tr>`).join("") +
+            `<tr><td></td><td colspan="${b ? 3 : 2}" class="rs-unit">kWh a day</td></tr></table></div>` +
         `</div>` +
+        (b ? batteryHtml(cell, b, hh) : "") +
         `<details class="clb-info"><summary>How this is worked out</summary>` +
           `<p>Daily sunlight for every day from ${r.y0} to ${r.y1} comes from the ERA5 reanalysis (Copernicus Climate Change Service, via Open-Meteo, CC BY 4.0) for the ~25 km grid cell at ${cell.lat}, ${cell.lon}. Each day is split into direct sun and grey-sky light by how clear it was, and each part is scaled to this roof: its own average day in that month (from its tilt, direction, panels and the shading of hills, trees and buildings), split the same way. A tilted roof gains from direct sun, not from an overcast sky, so a dull day is dull on every roof.</p>` +
           `<p>A low-solar day makes under ${pct}% of the roof's average day across the whole year. Winter's average day is well under the year's, so in practice these are dark winter days. A run is consecutive low-solar days. The once-a-decade run is the length only one year in ten exceeds; the common run is the middle year's longest.</p>` +
@@ -338,6 +468,8 @@ const LowSolar = (() => {
             ? `<p>Checked against Queenstown Airport's pyranometer (Earth Sciences NZ / NIWA, daily, 1991&ndash;2026): ERA5 follows it day by day (correlation 0.92) but smooths the darkest days &mdash; the station records very dark winter days five times as often. So each day's sunlight, as a share of its month's average, is mapped onto the station's distribution: ERA5's 86-year sequence of weather, with the station's dark days. Over the years both cover, the runs this gives match the station's own to within a day.</p>`
             : `<p>Checked against NASA's satellite record (POWER, 1984&ndash;2024): the same average sunlight and a day-by-day correlation of 0.94. In the Wakatipu, where a station record has been checked, ERA5 smooths the darkest days; here no station correction is applied yet, so real runs can be somewhat longer.</p>`) + `</details>` +
       `</div></div>`;
+    if (b && typeof WkView !== "undefined") box.querySelectorAll("[data-rsb]").forEach(el =>
+      WkView.bind(el, () => batteryNode(cell, r, b, hh, el.dataset.rsb)));
     if (o.afterRender) o.afterRender(box);
     const inp = box.querySelector("#rs-thr");
     if (inp) inp.addEventListener("change", () => {
@@ -347,6 +479,6 @@ const LowSolar = (() => {
     });
   }
 
-  return { render, renderFull, analyse, roofMonthly, dailyGen, h0, diffuseFraction };
+  return { render, renderFull, analyse, battery, roofMonthly, monthly, dailyGen, h0, diffuseFraction };
 })();
 if (typeof module !== "undefined") module.exports = LowSolar;

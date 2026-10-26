@@ -556,11 +556,17 @@
   .rs-thr { display: block; margin: 2px 0 0; font-size: 11.5px; }
   .rs-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 0 22px; align-items: start; }
   .rs-col svg { display: block; }
-  .rs-two { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr); gap: 0 16px; }
+  .rs-two { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.15fr); gap: 0 14px; }
   .rs-tab { border-collapse: collapse; font-size: 11.5px; width: 100%; font-variant-numeric: tabular-nums; }
   .rs-tab th { text-align: left; font-weight: 500; color: rgba(235,235,245,.55); padding: 1px 6px 1px 0; }
   .rs-tab td { padding: 1.5px 6px 1.5px 0; border-top: 1px solid rgba(255,255,255,.06); }
   .rs-tab .rs-unit { color: rgba(235,235,245,.45); font-size: 10.5px; border-top: 0; }
+  .rs-bfigs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .rs-bfig { padding: 6px 9px; cursor: pointer; }
+  .rs-bfig .ls-v { font-size: 16px; }
+  .rs-bfig .ls-v small { font-size: 11px; font-weight: 500; opacity: .7; }
+  .rs-bfig .ls-l { font-size: 11.5px; }
+  .rs-bfig .ls-s { font-size: 10.5px; }
   .rs-card .clb-info { font-size: 12px; margin-top: 10px; }
   .rs-card .ls-note { margin-top: 2px; }
   .rs-hz-slot .ls-note { margin: 0 0 2px; }
@@ -4950,6 +4956,8 @@ map.on("load", async () => {
               } else panelEconOpen = null;
               // home or business as the bill tool has it (the reader can switch it there)
               const btType = (btLoadState(buildingId) || {}).type;
+              // the household the bills describe, for Resilience's battery
+              window.__billLoad = { buildingId, cal: r.cal, load: r.load };
               settleBldgSys(buildingId, panelEconOpen, btType ? btType === "business"
                 : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)),
                 props.facet_area_m2);
@@ -5683,6 +5691,30 @@ map.on("load", async () => {
   }
   // RESILIENCE (Josh, 24 Oct): the building's sunlight and shading records in
   // one place -- low-solar runs over 86 years (low_solar.js) and the horizon.
+  // The household's hourly use in each season, for Resilience's battery
+  // sizing: the bill tool's own load (its household, matched to any bills
+  // entered), or the default household when the bill tool hasn't run. Homes
+  // only (Josh, 27 Oct).
+  function householdFor(bid, p) {
+    if (typeof btBuildLoad === "undefined") return null;
+    const saved = btLoadState(bid) || {};
+    const home = saved.type ? saved.type === "home" : (p.btype ? p.btype === "home" : !isBusiness(GEN && GEN.kwp ? GEN.kwp.value : 0, p.facet_area_m2, p.zone_class));
+    if (!home) return null;
+    const prof = Object.assign({ type: "home" }, BT_DEFAULTS.home, saved.home || {});
+    const bl = window.__billLoad;
+    let load, cal;
+    if (bl && bl.buildingId === bid) { load = bl.load; cal = bl.cal; }
+    else {
+      const lat = (seasonCurves && seasonCurves.lat) || -45;
+      load = btBuildLoad(prof, { lat, roofM2: p.facet_area_m2 || 150 });
+      cal = btCalibration(load, saved.calib || null, btTariffFromEcon(false), null);
+    }
+    const heat = { heatpump: "heat pump", electric: "electric heaters", gas: "gas heating", none: "no heating" }[prof.heating] || prof.heating;
+    const water = { electric: "electric hot water", heatpump: "heat-pump hot water", gas: "gas hot water" }[prof.water] || prof.water;
+    const desc = `${prof.people} ${prof.people === 1 ? "person" : "people"}, ${heat}, ${water}` +
+      (prof.evs ? `, ${prof.evs} EV${prof.evs > 1 ? "s" : ""}` : "") + (cal && cal.matched ? ", matched to your bills" : "");
+    return { bySeason: Object.fromEntries(BT_SEASONS.map(s => [s, btSeasonLoad(load, s, cal ? cal.scale[s] : 1)])), desc };
+  }
   function openResilience() {
     const bid = selectedPanelBuildingId;
     if (bid === -1 || !GEN || !GEN.curve) return;
@@ -5712,6 +5744,7 @@ map.on("load", async () => {
     document.body.classList.add("clb-open");
     const c = map.getCenter();
     LowSolar.renderFull(lb.querySelector("#rs-body"), { curve: GEN.curve, difShare: lowSolarDifShare(),
+      household: householdFor(bid, p),
       lat: p._sy != null ? p._sy : c.lat, lng: p._sx != null ? p._sx : c.lng,
       onThreshold: () => { const ls = document.getElementById("low-solar"); if (ls) { ls.dataset.key = ""; renderSeasonCurves(bid); } },
       afterRender: body => {
