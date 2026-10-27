@@ -42,7 +42,9 @@ const LowSolar = (() => {
   const cells = {};
 
   async function getIndex() {
-    if (!index) index = fetch(BASE + "index.json").then(r => r.ok ? r.json() : null).catch(() => null);
+    // a failed fetch is not kept: the next roof opened tries again
+    if (!index) index = fetch(BASE + "index.json").then(r => r.ok ? r.json() : null).catch(() => null)
+      .then(d => { if (!d) index = null; return d; });
     return index;
   }
   async function getCell(lat, lng) {
@@ -68,12 +70,12 @@ const LowSolar = (() => {
         }
         const qmap = (ix.qmaps || []).find(q => (q.cells || []).includes(c.name)) || null;
         return { name: c.name, lat: c.lat, lon: c.lon, t0, mj, month, year, qmap };
-      }).catch(() => null);
+      }).catch(() => null).then(d => { if (!d) delete cells[c.name]; return d; });
     }
     return cells[c.name];
   }
 
-  // piecewise-linear lookup, held at the ends
+  // piecewise-linear lookup, held at the bottom end, slope 1 past the top
   function interp(x, xs, ys) {
     if (x <= xs[0]) return ys[0];
     for (let k = 1; k < xs.length; k++) if (x <= xs[k]) {
@@ -285,7 +287,9 @@ const LowSolar = (() => {
     if (!box) return;
     if (!o.curve || !o.curve.gen) { box.innerHTML = ""; return; }
     box.innerHTML = `<div class="ls-note">Loading 86 years of daily sunlight&hellip;</div>`;
+    const tok = box.__lsTok = {};             // a later roof opened meanwhile wins
     const cell = await getCell(o.lat, o.lng);
+    if (box.__lsTok !== tok) return;
     if (!cell) { box.innerHTML = `<div class="ls-note">No long-term daily sunlight record for this area yet.</div>`; return; }
     const r = analyse(cell, o.curve, threshold, o.difShare);
     const node = (label, value, unit, formula) => (typeof Wk !== "undefined")
@@ -414,7 +418,9 @@ const LowSolar = (() => {
   async function renderFull(box, o) {
     if (!box) return;
     box.innerHTML = `<div class="ls-note">Loading 86 years of daily sunlight&hellip;</div>`;
+    const tok = box.__lsTok = {};
     const cell = o.curve ? await getCell(o.lat, o.lng) : null;
+    if (box.__lsTok !== tok) return;
     if (!cell) { box.innerHTML = `<div class="ls-note">No long-term daily sunlight record for this roof.</div>`; return; }
     const r = analyse(cell, o.curve, threshold, o.difShare);
     const pct = Math.round(threshold * 100);

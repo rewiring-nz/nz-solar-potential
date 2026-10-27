@@ -817,8 +817,15 @@ function renderBillTool(box, ctx) {
     // No "matched to your bill" note once a bill is entered: it was easy to
     // forget and read as a stamp of accuracy (Josh, 18 Oct). Only the hint
     // before anything is entered, and a warning when a bill cannot be matched.
+    // which way it missed: a bill under the model's floor (the daily charge
+    // and a minimum of use) or over its ceiling
+    const low = off.filter(([k, n]) => state.calib[k] < n.value).map(([k]) => k);
+    const high = off.filter(([k, n]) => state.calib[k] > n.value).map(([k]) => k);
     const matchNote = off.length
-      ? `<span class="warn">Your ${off.map(([k]) => k).join(" and ")} bill is below the daily charge alone &mdash; check the prices.</span>`
+      ? `<span class="warn">${[
+          low.length ? `Your ${low.join(" and ")} bill is lower than this building can match &mdash; check the prices and daily charge.` : "",
+          high.length ? `Your ${high.join(" and ")} bill is higher than this building can match &mdash; check the prices.` : ""
+        ].filter(Boolean).join(" ")}</span>`
       : (!entered.length && calibBy !== "total")
         ? "Today's bills are our estimate for this building. Type in your own and everything updates."
         : "";
@@ -851,7 +858,8 @@ function renderBillTool(box, ctx) {
     const price = (label, key) => row(label, field(key, +(E[key] || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
     const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
-    const pbText = ret.payback == null ? `over ${ret.years} yrs · doesn't pay back` : `over ${ret.years} yrs · pays back in ${ret.payback.toFixed(1)}`;
+    // a payback after the panels' life is no payback
+    const pbText = ret.payback == null || ret.payback > ret.years ? `over ${ret.years} yrs · doesn't pay back` : `over ${ret.years} yrs · pays back in ${ret.payback.toFixed(1)}`;
     const priceSum = `${(E[pfx + "_peak_c"] || 0)}c peak · ${(E[pfx + "_offpeak_c"] || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
     const SX_SPLIT = "<!--sx-split-->";
@@ -886,7 +894,7 @@ function renderBillTool(box, ctx) {
         row("Replacements", val(btMoney(-ret.nodes.replacements.value)), { go: "repl", small: withBatt ? "inverter and battery" : "inverter" }) +
         row("Cost", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost" }) +
         row("Net savings", val(money(ret.nodes.net)), { go: "net", cls: "total" }) +
-        row("Pays back in", val(ret.payback == null ? "not within 60 years" : ret.payback.toFixed(1) + " years"), { go: "payback" }) +
+        row("Pays back in", val(ret.payback == null ? "not within 60 years" : ret.payback > ret.years ? `${ret.payback.toFixed(1)} years, after its ${ret.years}-year life` : ret.payback.toFixed(1) + " years"), { go: "payback" }) +
         row("Return on investment", val(ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1)), { go: "irr", small: "a year, " + (ret.real ? "after inflation" : "before inflation") }) +
       `</div>` +
       `<div class="sx-h">Assumptions</div>` +
