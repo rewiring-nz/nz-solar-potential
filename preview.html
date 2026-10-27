@@ -1272,7 +1272,8 @@ async function setTerrain3D(on) {
   // 3D BUILDINGS FIRST (buildings3d.js): flat ground and a mesh per building,
   // walls vertical and panels on the roof planes. The DSM terrain below
   // stays as the fallback where that cannot run.
-  if (window.Buildings3D && !map.getTerrain()) {
+  // (the ground under the solids is terrain too: Buildings3D owns it)
+  if (window.Buildings3D && (Buildings3D.active || !map.getTerrain() || map.getTerrain().source === "ground-terrain")) {
     if (await Buildings3D.setActive(on)) return;
     if (ticket !== terrainSwitching) return;
   }

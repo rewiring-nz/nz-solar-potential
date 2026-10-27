@@ -229,6 +229,85 @@ def clean_roofs(region, area_paths, tmp_dir):
     return dst
 
 
+FLAT_PAD_M = 1.0       # past the outline: the DSM's roof edge spills ~1 m over it
+GROUND_RING_M = (2.0, 5.0)
+GROUND_Q = 25          # as buildings3d.js GROUND_Q: skips hedges, cars, neighbours
+
+
+def flatten_buildings(region, area_paths, tmp_dir):
+    """The DSM with every building pressed flat to the ground beside it, for
+    the 3D view's terrain UNDER its solid buildings. Returns the raster's
+    path, or None.
+
+    WHY (Josh, 27 Oct: "You have removed trees from the 3D view ... we need
+    the other 3D terrain back"). The solid buildings (buildings3d.js, 21 Oct)
+    replaced the draped surface model, and with it went the hills, the trees
+    and their shade. The surface comes back as the ground the solids stand
+    on: everything the laser hit -- hills, trees, hedges -- except the
+    buildings, whose footprints (plus FLAT_PAD_M, where the DSM's roof edge
+    spills over the outline) are set to the ground beside them: the
+    GROUND_Q percentile of the DSM GROUND_RING_M outside the outline, other
+    buildings excluded -- the same rule buildings3d.js stands each solid on,
+    so a building and the ground under it agree.
+    """
+    p = area_paths(region)
+    if not Path(p["dsm"]).exists():
+        return None
+    import geopandas as gpd
+    from rasterio.features import rasterize
+    from shapely.ops import unary_union
+    from shapely.strtree import STRtree
+    outl = Path(p["outlines"])
+    if not outl.exists():
+        outl = Path(p["dir"]) / "building_outlines.geojson"
+    if not outl.exists():
+        return None
+    fp = [g for g in gpd.read_file(outl).to_crs(2193).geometry if g is not None and not g.is_empty]
+    if not fp:
+        return None
+    with rasterio.open(p["dsm"]) as src:
+        z = src.read(1).astype("float32")
+        prof = src.profile
+        tr, nd = src.transform, src.nodata
+    if nd is not None:
+        z[z == nd] = np.nan
+    orig = z.copy()
+    tree = STRtree(fp)
+    done = 0
+    for foot in fp:
+        pad = foot.buffer(FLAT_PAD_M)
+        ring = foot.buffer(GROUND_RING_M[1]).difference(foot.buffer(GROUND_RING_M[0]))
+        near = [fp[i] for i in tree.query(ring)]
+        near = [o for o in near if not o.equals(foot)]
+        if near:
+            ring = ring.difference(unary_union(near).buffer(FLAT_PAD_M))
+        minx, miny, maxx, maxy = foot.buffer(GROUND_RING_M[1]).bounds
+        c0, r0 = ~tr * (minx, maxy)
+        c1, r1 = ~tr * (maxx, miny)
+        c0, r0 = max(0, int(c0)), max(0, int(r0))
+        c1, r1 = min(z.shape[1], int(c1) + 1), min(z.shape[0], int(r1) + 1)
+        if c1 <= c0 or r1 <= r0 or ring.is_empty:
+            continue
+        wtr = tr * tr.translation(c0, r0)
+        shp = (r1 - r0, c1 - c0)
+        rm = rasterize([(ring, 1)], out_shape=shp, transform=wtr, fill=0, dtype="uint8").astype(bool)
+        vals = orig[r0:r1, c0:c1][rm]
+        vals = vals[np.isfinite(vals)]
+        if vals.size < 4:
+            continue
+        g = float(np.percentile(vals, GROUND_Q))
+        fm = rasterize([(pad, 1)], out_shape=shp, transform=wtr, fill=0, dtype="uint8").astype(bool)
+        sub = z[r0:r1, c0:c1]
+        sub[fm] = g
+        done += 1
+    dst = Path(tmp_dir) / f"{region}_dsm_ground.tif"
+    prof.update(dtype="float32", nodata=np.nan, compress="deflate", tiled=True)
+    with rasterio.open(dst, "w", **prof) as d:
+        d.write(z, 1)
+    print(f"  [{region}] {done:,} buildings pressed to the ground", flush=True)
+    return dst
+
+
 def _overlaps(win, vrt):
     return not (win.col_off + win.width <= 0 or win.row_off + win.height <= 0
                 or win.col_off >= vrt.width or win.row_off >= vrt.height)
@@ -263,7 +342,7 @@ def encode(h):
     return rgb
 
 
-def build_all(regions, min_z, max_z, area_paths, out_dir=OUT, clean=True):
+def build_all(regions, min_z, max_z, area_paths, out_dir=OUT, clean=True, ground=False):
     """Tile by TILE, not region by region.
 
     Writing one region at a time meant a tile covered by two regions got
@@ -283,7 +362,8 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT, clean=True):
             continue
         if not Path(p["dsm"]).exists():
             continue
-        cleaned = clean_roofs(r, area_paths, tmp_dir) if clean else None
+        cleaned = (flatten_buildings(r, area_paths, tmp_dir) if ground
+                   else clean_roofs(r, area_paths, tmp_dir) if clean else None)
         src = rasterio.open(cleaned or p["dsm"])
         vrt = WarpedVRT(src, crs="EPSG:3857", resampling=Resampling.bilinear,
                         src_nodata=src.nodata, nodata=np.nan, dtype="float32")
@@ -430,18 +510,23 @@ def main():
     # 1 m data is fully resolved by about z17 at this latitude (0.84 m/px);
     # asking for more just interpolates and multiplies the file count by four.
     ap.add_argument("--max-zoom", type=int, default=17)
-    ap.add_argument("--out", type=Path, default=OUT,
-                    help="tile output directory (defaults to data/terrain)")
+    ap.add_argument("--out", type=Path, default=None,
+                    help="tile output directory (defaults to data/terrain, or data/terrain_ground with --ground)")
+    ap.add_argument("--ground", action="store_true",
+                    help="buildings pressed flat to the ground beside them: the terrain under the 3D view's solid buildings")
     a = ap.parse_args()
+    if a.out is None:
+        a.out = OUT.parent / "terrain_ground" if a.ground else OUT
     from src.region_build import area_paths
     d = ROOT / "data/regions"
     regions = a.regions or sorted(p.name for p in d.iterdir() if p.is_dir())
     a.out.mkdir(parents=True, exist_ok=True)
-    total = build_all(regions, a.min_zoom, a.max_zoom, area_paths, a.out)
+    total = build_all(regions, a.min_zoom, a.max_zoom, area_paths, a.out, ground=a.ground)
     (a.out / "meta.json").write_text(json.dumps(
         {"encoding": "mapbox", "tileSize": TILE,
          "minzoom": a.min_zoom, "maxzoom": a.max_zoom,
-         "source": "LINZ 1 m DSM (surface: ground, trees and roofs)"}, indent=1))
+         "source": ("LINZ 1 m DSM, buildings pressed to the ground beside them (ground and trees)" if a.ground
+                    else "LINZ 1 m DSM (surface: ground, trees and roofs)")}, indent=1))
     print(f"TOTAL {total} terrain tiles -> {a.out}")
 
 

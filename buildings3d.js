@@ -28,9 +28,17 @@
 //
 // GROUND. Each building stands on the 25th percentile of the DSM sampled 2
 // to 5 m outside its footprint -- low enough to skip parked cars, hedges
-// and neighbouring roofs (see GROUND_Q for why not lower). The map itself is
-// flat in 3D, so every height is RELATIVE to the building's own ground: on
-// a hillside the drawn walls are between the uphill and downhill heights.
+// and neighbouring roofs (see GROUND_Q for why not lower).
+//
+// THE LAND AND THE TREES (Josh, 27 Oct: "You have removed trees from the 3D
+// view ... we need the other 3D terrain back"). Under the solids the map is
+// draped over data/terrain_ground: the same LiDAR surface with every
+// building pressed flat to that same ground beside it
+// (tools/build_terrain_tiles.py --ground), so hills, trees and hedges stand
+// as surveyed and each solid sits on a level pad at its own ground height.
+// Heights are built relative to the building's ground and lifted by it when
+// drawn (gOf). Where a data version has no ground tiles the map stays flat
+// and every building stands at zero, as before.
 //
 // THE SOLID. A building is the union of: its footprint extruded up to the
 // roof (the footprint is filled on a grid whose heights follow the LOWER
@@ -111,6 +119,8 @@
     queue: [], queued: new Set(), waiting: new Map(), fresh: [], drawn: new Set(), heat: undefined,
     sig: null, selSig: "", modeSig: "",
     layerAdded: false, ticket: 0,
+    abs: false,         // buildings at their real ground height, on the terrain
+    gt: null,           // the ground terrain's availability (a promise)
     stats: { built: 0, failed: 0, buildMs: 0, mergeMs: 0, tris: 0, panels: 0 },
   };
   let THREE = null, threeLoading = null;
@@ -950,6 +960,12 @@
     R.batches = [];
     S.drawn = new Set();
   }
+  // the height a record is lifted by: its ground, where the land is drawn
+  const gOf = r => (S.abs ? r.ground : 0);
+  function liftInto(dst, off, src, g) {
+    dst.set(src, off);
+    if (g) for (let i = off + 2; i < off + src.length; i += 3) dst[i] += g;
+  }
   function uploadBatch(b) {
     const heat = S.heat;
     let nt = 0, nl = 0;
@@ -958,8 +974,8 @@
     const lp = new Float32Array(nl), lc = new Float32Array(nl);
     let ot = 0, ol = 0;
     for (const r of b.recs) {
-      tp.set(r.tp, ot); tc.set(heat ? r.tcH : r.tcG, ot); ot += r.tp.length;
-      lp.set(r.lp, ol); lc.set(r.lc, ol); ol += r.lp.length;
+      liftInto(tp, ot, r.tp, gOf(r)); tc.set(heat ? r.tcH : r.tcG, ot); ot += r.tp.length;
+      liftInto(lp, ol, r.lp, gOf(r)); lc.set(r.lc, ol); ol += r.lp.length;
     }
     setGeom(b.mesh, tp, tc);
     setGeom(b.lines, lp, lc);
@@ -1024,16 +1040,16 @@
     const lists = [];
     let nf = 0, ne = 0, np = 0;
     if (v.overlay && v.mode === "layout") {
-      for (const r of b.recs) for (const p of panelList(r)) { lists.push(p); nf += p.pos.length; ne += p.edge.length; np++; }
+      for (const r of b.recs) for (const p of panelList(r)) { lists.push([p, gOf(r)]); nf += p.pos.length; ne += p.edge.length; np++; }
     }
     const pp = new Float32Array(nf), pc = new Float32Array(nf), pl = new Float32Array(ne);
     let of = 0, oe = 0;
-    for (const p of lists) {
+    for (const [p, lift] of lists) {
       const col = panelColour(p.q), r = col[0] * p.sh, g = col[1] * p.sh, bl = col[2] * p.sh;
-      pp.set(p.pos, of);
+      liftInto(pp, of, p.pos, lift);
       for (let i = 0; i < p.pos.length; i += 3) { pc[of + i] = r; pc[of + i + 1] = g; pc[of + i + 2] = bl; }
       of += p.pos.length;
-      pl.set(p.edge, oe); oe += p.edge.length;
+      liftInto(pl, oe, p.edge, lift); oe += p.edge.length;
     }
     setGeom(b.panels, pp, pc);
     setGeom(b.panelLines, pl, null);
@@ -1054,10 +1070,11 @@
     const tp = [], tc = [], sp = [];
     for (const r of recs) {
       if (!sel.has(r.bid)) continue;
-      for (let i = 0; i < r.top.length; i++) sp.push(r.top[i]);
+      const g = gOf(r);
+      for (let i = 0; i < r.top.length; i++) sp.push(r.top[i] + (i % 3 === 2 ? g : 0));
       if (S.heat) continue;
       const src = r.tcG;
-      for (let i = 0; i < r.tp.length; i++) tp.push(r.tp[i]);
+      for (let i = 0; i < r.tp.length; i++) tp.push(r.tp[i] + (i % 3 === 2 ? g : 0));
       for (let i = 0; i < src.length; i += 3) {
         tc.push(src[i] * 0.72 + C.select[0] * 0.28, src[i + 1] * 0.72 + C.select[1] * 0.28, src[i + 2] * 0.72 + C.select[2] * 0.28);
       }
@@ -1178,8 +1195,8 @@
     const nx = px / c.clientWidth * 2 - 1, ny = 1 - py / c.clientHeight * 2;
     const inv = R.mvp.clone().invert();
     const a = new THREE.Vector4(nx, ny, -1, 1).applyMatrix4(inv), b = new THREE.Vector4(nx, ny, 1, 1).applyMatrix4(inv);
-    const o = [a.x / a.w, a.y / a.w, a.z / a.w], e = [b.x / b.w, b.y / b.w, b.z / b.w];
-    const d = [e[0] - o[0], e[1] - o[1], e[2] - o[2]];
+    const oW = [a.x / a.w, a.y / a.w, a.z / a.w], e = [b.x / b.w, b.y / b.w, b.z / b.w];
+    const d = [e[0] - oW[0], e[1] - oW[1], e[2] - oW[2]];
     let best = Infinity, hit = null;
     const seen = new Set();
     for (const bid of S.inRange) {
@@ -1187,6 +1204,7 @@
       seen.add(bid);
       const r = S.cache.get(bid);
       if (!r) continue;
+      const o = [oW[0], oW[1], oW[2] - gOf(r)];
       // slab test against the building's box
       let t0 = 0, t1 = best;
       const lo = [r.bb[0], r.bb[1], 0], hi = [r.bb[2], r.bb[3], r.zmax + 0.1];
@@ -1270,17 +1288,44 @@
       try { applyToggles(); } catch (e) { HIDE_2D.forEach(id => m.getLayer(id) && m.setLayoutProperty(id, "visibility", "visible")); }
     }
   }
-  const HINT_ON = "3D — each roof face is its measured plane, standing on the ground beside the building (LiDAR). Ground and trees are shown flat.";
+  const HINT_ON = "3D — each roof face is its measured plane, standing on the ground beside the building; the land and trees are the LiDAR survey.";
+  const HINT_FLAT = "3D — each roof face is its measured plane, standing on the ground beside the building (LiDAR). Ground and trees are shown flat.";
   const HINT_ZOOM = "3D — zoom in to see the buildings.";
   function updateHint() {
     const d = document.getElementById("map-3d-hint");
     if (!d || !S.on) return;
-    const t = S.map.getZoom() < BUILD_MIN_ZOOM && !S.inRange.length ? HINT_ZOOM : HINT_ON;
+    const t = S.map.getZoom() < BUILD_MIN_ZOOM && !S.inRange.length ? HINT_ZOOM : S.abs ? HINT_ON : HINT_FLAT;
     if (d.textContent !== t) d.textContent = t;
   }
   const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const GT = "ground-terrain";
+  // The ground tiles for this data version: added as a terrain source once,
+  // false where the version has none (the map then stays flat).
+  function groundTerrain() {
+    if (S.gt) return S.gt;
+    const m = S.map;
+    S.gt = fetch(`${S.base}data/terrain_ground/meta.json?v=${S.ver}`).then(r => (r.ok ? r.json() : null)).then(meta => {
+      if (!meta) return false;
+      if (!m.getSource(GT)) m.addSource(GT, {
+        type: "raster-dem", tiles: [`${S.base}data/terrain_ground/{z}/{x}/{y}.png?v=${S.ver}`],
+        tileSize: meta.tileSize || 256, encoding: meta.encoding || "mapbox",
+        minzoom: meta.minzoom != null ? meta.minzoom : 8, maxzoom: meta.maxzoom != null ? meta.maxzoom : 17 });
+      return true;
+    }).catch(() => false);
+    return S.gt;
+  }
+  // The land rises with the buildings: its height scale is k, so a building
+  // lifted by its ground meets the ground drawn under it at every frame.
+  function setLand(k) {
+    const m = S.map;
+    if (!S.abs) return;
+    const e = Math.max(k, 0.0001);
+    if (m.terrain && typeof m.terrain.exaggeration === "number" && m.getTerrain() && m.getTerrain().source === GT) {
+      m.terrain.exaggeration = e; m.triggerRepaint();
+    } else m.setTerrain({ source: GT, exaggeration: e });
+  }
   function animate(kTo, pitchTo, ms, ticket) {
-    const m = S.map, kFrom = S.k, pFrom = m.getPitch();
+    const m = S.map, kFrom = S.k, pFrom = m.getPitch(), z0 = m.getZoom();
     let elapsed = 0, last = null;
     return new Promise(res => {
       const step = now => {
@@ -1289,7 +1334,11 @@
         last = now;
         const u = Math.min(1, elapsed / ms), e = ease(u);
         S.k = kFrom + (kTo - kFrom) * e;
-        if (pitchTo != null) m.jumpTo({ pitch: pFrom + (pitchTo - pFrom) * e });
+        setLand(S.k);
+        // the zoom held every frame: the land rising under the camera
+        // would otherwise pull it in (preview.html, "ONE MOVE, NOT FIVE")
+        if (pitchTo != null) m.jumpTo(S.abs ? { pitch: pFrom + (pitchTo - pFrom) * e, zoom: z0 } : { pitch: pFrom + (pitchTo - pFrom) * e });
+        else if (S.abs) m.jumpTo({ zoom: z0 });
         else m.triggerRepaint();
         if (u < 1) requestAnimationFrame(step); else res(true);
       };
@@ -1321,7 +1370,13 @@
       }
       if (ticket !== S.ticket) return true;
       S.on = true;
-      if (m.getTerrain && m.getTerrain()) m.setTerrain(null);
+      // the fallback's draped DSM off; the ground under the solids on
+      const tr = m.getTerrain && m.getTerrain();
+      if (tr && tr.source !== GT) m.setTerrain(null);
+      const abs = await groundTerrain();
+      if (ticket !== S.ticket) return true;
+      if (abs !== S.abs) { S.abs = abs; S.cache.clear(); S.feat.clear(); if (R) dropBatches(); }
+      setLand(S.k);
       S.meshes = m.getZoom() >= BUILD_MIN_ZOOM - 1;
       if (S.meshes) hide2D(true);
       S.sig = panelSig(); S.selSig = selection().join(",");
@@ -1338,6 +1393,8 @@
     const done = await animate(0, opts.keepPitch ? null : 0, 650, ticket);
     if (done && ticket === S.ticket) {
       if (m.getLayer(LAYER_ID)) m.removeLayer(LAYER_ID);
+      const tr = m.getTerrain && m.getTerrain();
+      if (tr && tr.source === GT) { const z = m.getZoom(); m.setTerrain(null); m.jumpTo({ zoom: z }); }
       S.meshes = false;
       hide2D(false);
     }

@@ -21,4 +21,5 @@ SERVED_DIRS = [
 ]
 # Fetched whole by the page, and compressible ~4x: stored gzip-encoded.
 GZIP_DIRS = {"sun"}
-STATIC_DIRS = ["terrain"]
+# terrain_ground: the DSM with buildings pressed flat, under the 3D solids
+STATIC_DIRS = ["terrain", "terrain_ground"]
