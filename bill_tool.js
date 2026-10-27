@@ -526,6 +526,26 @@ function btReturns(cost, save, exportD, opts) {
            lifeRetail, lifeExport,
            nodes: { payback: pb, lifetime, replacements: replN, net, irr, first: saveN } };
 }
+// One panel's economics from a bill-model result (btEvaluate): its share of
+// the cost, how many panels the site's own use absorbs (sunniest first), and
+// the kWh/yr a panel must make to repay its share on each side of that
+// cutoff -- retail if it covers power used on site, export if not. The map's
+// panel colours for EVERY roof come from here, the open one included, so a
+// roof keeps its colours when clicked (audit, 28 Oct: the other roofs were
+// priced by economics.js's older flat-price, discounted model).
+function btPanelEcon(r, count) {
+  const Y = r.run.year, selfKwh = Y.gen - Y.solarExport;
+  if (!(count > 0) || !(Y.gen > 0)) return null;
+  const costPerPanel = r.solarCost / count;
+  return {
+    costPerPanel,
+    cutoff: Math.min(count, selfKwh / (Y.gen / count)),
+    retailBE: costPerPanel / Math.max(r.solarRet.lifeRetail / Math.max(selfKwh, 1e-9), 1e-9),
+    exportBE: costPerPanel / Math.max(r.solarRet.lifeExport / Math.max(Y.solarExport, 1e-9), 1e-9),
+    perKwh: r.solarRet.lifetime / Y.gen,
+  };
+}
+
 function crossMark(rows, payback) {
   if (payback == null) return false;
   const r = rows[Math.ceil(payback) - 1];
@@ -596,7 +616,7 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
-                     btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay };
+                     btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -757,6 +777,17 @@ function btTariffFromEcon(isBiz) {
   const p = isBiz ? "biz" : "home";
   return { peak: E[p + "_peak_c"], offpeak: E[p + "_offpeak_c"], peakSell: E[p + "_peak_sell_c"],
            offpeakSell: E[p + "_offpeak_sell_c"], daily: E[p + "_daily"], pfx: p };
+}
+
+// The bill model for a roof that isn't open: the household its reader saved
+// on its card, if any, else the defaults for its type -- the same inputs the
+// card itself would start from (renderBillTool).
+function btEvaluateFor(bid, isBizDefault, ctx) {
+  const saved = btLoadState(bid) || {};
+  const type = saved.type || (isBizDefault ? "business" : "home");
+  const prof = Object.assign({ type }, BT_DEFAULTS[type], saved[type] || {});
+  const sys = Object.assign({ solarPerKw: null, battPerKwh: null }, saved.sys || {});
+  return btEvaluate(ctx, prof, saved.calib || null, btTariffFromEcon(type === "business"), sys);
 }
 
 // box: the element to fill. ctx: { buildingId, isBusiness, lat, roofM2,

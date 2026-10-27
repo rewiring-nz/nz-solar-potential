@@ -943,24 +943,27 @@
       <div style="font-size:10.5px; color:#999; margin-bottom:8px;">$ per kW installed. The rate for
         a system is set by the band its own size falls in.</div>
       <div id="cost-tiers"></div>
-      <div style="font-weight:700; margin:14px 0 6px;">Electricity pricing &mdash; homes</div>
-      <div class="slider-row"><label><span>Retail price paid</span><span id="e-hbuy-val"></span></label>
-        <input type="range" id="e-hbuy" min="10" max="60" step="1"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Electricity prices &mdash; homes</div>
+      <div class="slider-row"><label><span>Peak</span><span id="e-hpeak-val"></span></label>
+        <input type="range" id="e-hpeak" min="10" max="60" step="0.5"></div>
+      <div class="slider-row"><label><span>Off-peak</span><span id="e-hoff-val"></span></label>
+        <input type="range" id="e-hoff" min="10" max="60" step="0.5"></div>
       <div class="slider-row"><label><span>Export / buyback</span><span id="e-hsell-val"></span></label>
         <input type="range" id="e-hsell" min="0" max="30" step="0.5"></div>
-      <div style="font-weight:700; margin:14px 0 6px;">Electricity pricing &mdash; businesses</div>
-      <div class="slider-row"><label><span>Retail price paid</span><span id="e-bbuy-val"></span></label>
-        <input type="range" id="e-bbuy" min="5" max="60" step="1"></div>
+      <div class="slider-row"><label><span>Daily charge</span><span id="e-hdaily-val"></span></label>
+        <input type="range" id="e-hdaily" min="0" max="5" step="0.1"></div>
+      <div style="font-weight:700; margin:14px 0 6px;">Electricity prices &mdash; businesses</div>
+      <div class="slider-row"><label><span>Peak</span><span id="e-bpeak-val"></span></label>
+        <input type="range" id="e-bpeak" min="5" max="60" step="0.5"></div>
+      <div class="slider-row"><label><span>Off-peak</span><span id="e-boff-val"></span></label>
+        <input type="range" id="e-boff" min="5" max="60" step="0.5"></div>
       <div class="slider-row"><label><span>Export / buyback</span><span id="e-bsell-val"></span></label>
         <input type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
-      <div style="font-size:10.5px; color:#999; margin:6px 0 0;">A building counts as a business if
-        its roof or its system is commercial-scale &mdash; either one is enough. Roof area is the
-        real test; the system-size backstop sits high on purpose, because system size follows
-        the coverage setting and a home should not become a business when you slide it up.</div>
-      <div class="slider-row"><label><span>Business if roof over</span><span id="e-broof-val"></span></label>
-        <input type="range" id="e-broof" min="100" max="1500" step="25"></div>
-      <div class="slider-row"><label><span>...or system over</span><span id="e-bkw-val"></span></label>
-        <input type="range" id="e-bkw" min="10" max="250" step="5"></div>
+      <div class="slider-row"><label><span>Daily charge</span><span id="e-bdaily-val"></span></label>
+        <input type="range" id="e-bdaily" min="0" max="15" step="0.1"></div>
+      <div style="font-size:10.5px; color:#999; margin:6px 0 0;">Including GST. Peak hours and
+        export at peak are set on a building's own card. Whether a building is a home or a
+        business comes from its type; switch it on its card.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
       <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback is expected to fall.
         Payback and lifetime value follow this year by year, they are not a flat figure.</div>
@@ -968,16 +971,10 @@
         <input type="range" id="e-edec" min="0" max="8" step="0.1"></div>
       <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;" id="e-edec-preview"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Set by the site's daytime load,
-        not by a share of output: a bigger array does not make the building use more. Whatever the
-        load cannot absorb is exported, so the self-consumed share falls as systems grow.</div>
-      <select id="e-profile" class="coverage-select" style="width:100%; margin-bottom:8px;"></select>
-      <div class="slider-row"><label><span>Daytime load &mdash; homes</span><span id="e-self-val"></span></label>
-        <input type="range" id="e-self" min="0.2" max="6" step="0.1"></div>
-      <div class="slider-row"><label><span>Daytime load &mdash; businesses</span><span id="e-bself-val"></span></label>
-        <input type="range" id="e-bself" min="0.5" max="30" step="0.5"></div>
-      <div class="slider-row"><label><span>Daylight hours it runs for</span><span id="e-dayh-val"></span></label>
-        <input type="range" id="e-dayh" min="3" max="12" step="0.1"></div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Worked out hour by hour from each
+        building's household &mdash; who lives there, how the water and rooms are heated, any
+        electric cars &mdash; described on its own card. Roofs nobody has opened use the defaults
+        for their type.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
       <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
         <input type="range" id="e-life" min="10" max="35" step="1"></div>
@@ -985,8 +982,10 @@
         <input type="range" id="e-deg" min="0" max="1.5" step="0.05"></div>
       <div class="slider-row"><label><span>Retail electricity inflation</span><span id="e-infl-val"></span></label>
         <input type="range" id="e-infl" min="0" max="10" step="0.5"></div>
-      <div class="slider-row"><label><span>Discount rate</span><span id="e-disc-val"></span></label>
-        <input type="range" id="e-disc" min="0" max="10" step="0.5"></div>
+      <div class="slider-row"><label><span>General inflation</span><span id="e-cpi-val"></span></label>
+        <input type="range" id="e-cpi" min="0" max="6" step="0.1"></div>
+      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Every future year is divided by
+        general inflation, so all figures are in today's dollars.</div>
       <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Export is deliberately not
         inflated &mdash; the buyback schedule above already sets it year by year.</div>
       <div class="slider-row"><label><span>Inverter replaced in year</span><span id="e-invy-val"></span></label>
@@ -2651,10 +2650,57 @@ map.on("load", async () => {
     return out;
   }
 
-  // One break-even per building on screen. Uses economicsFor so it inherits the
-  // cost tiers, the home/business split and the declining export schedule rather
-  // than re-deriving any of it.
+  // One break-even per building on screen, from THE BILL MODEL (bill_tool.js
+  // btEvaluateFor + btPanelEcon): the same household, time-of-use prices,
+  // real dollars and home/business type the building's own card uses, so a
+  // roof keeps its colours when it is opened. Until 28 Oct these came from
+  // economics.js's economicsFor -- flat prices, a 3% discount rate and its
+  // own home/business rule -- and a roof could change colour when clicked.
+  //
+  // The one thing a closed roof lacks is its own hourly curve (that needs its
+  // panel-by-panel sunlight, built when it is opened), so its day has the
+  // shape of a sunny-side roof in this area, scaled to its own yearly kWh.
   let panelEconOpen = null;   // the open building's own pricing (set by the bill tool)
+  const econCache = new Map();
+  let econCacheSig = null, econShapeDoc = null, econShapeRows = null;
+  function econShape() {
+    if (!seasonCurves || !seasonCurves.curves) return null;
+    if (econShapeDoc === seasonCurves) return econShapeRows;
+    // north-ish faces, 10-30 degrees: where the panels go (sunny side only)
+    const keys = Object.keys(seasonCurves.curves).filter(k => {
+      const [sb, ab] = k.split("_").map(Number);
+      return sb >= 10 && sb <= 30 && (ab <= 60 || ab >= 300);
+    });
+    const rows = BT_SEASONS.map(n => {
+      const i = seasonCurves.seasons.indexOf(n), row = new Array(24).fill(0);
+      if (i >= 0) keys.forEach(k => seasonCurves.curves[k].avg[i].forEach((v, h) => { row[h] += v; }));
+      return row;
+    });
+    const yr = rows.reduce((t, row, i) => t + row.reduce((x, y) => x + y, 0) * BT_SEASON_DAYS[BT_SEASONS[i]], 0);
+    econShapeDoc = seasonCurves;
+    econShapeRows = yr > 0 ? rows.map(row => row.map(v => v / yr)) : null;
+    return econShapeRows;
+  }
+  function billEconFor(pr, count, kwhYear) {
+    const shape = econShape();
+    if (!shape) return null;
+    const sig = JSON.stringify([econ, assumptions.panel_rated_power_w]);
+    if (sig !== econCacheSig) { econCache.clear(); econCacheSig = sig; }
+    let saved = null;
+    try { saved = localStorage.getItem(btStoreKey(pr.building_id)); } catch (err) { saved = null; }
+    const key = `${pr.building_id}|${count}|${Math.round(kwhYear)}|${saved || ""}`;
+    if (econCache.has(key)) return econCache.get(key);
+    const kwp = count * assumptions.panel_rated_power_w / 1000;
+    const sun = SUN_DOCS[pr.sr];
+    const r = btEvaluateFor(pr.building_id, (pr.btype || "home") !== "home", {
+      lat: (sun && sun !== true && sun.lat) || seasonCurves.lat || -41,
+      roofM2: pr.facet_area_m2 || 150, kwp,
+      gen: shape.map(row => row.map(v => v * kwhYear)), seasonDays: null });
+    const out = btPanelEcon(r, count);
+    if (econCache.size > 20000) econCache.clear();
+    econCache.set(key, out);
+    return out;
+  }
   function rebuildEconMatch() {
     if (!panelEcon || !panelEconGlobal) {
       panelEconMatch = null; panelEconMerit = null; repaintPanelColours(); return;
@@ -2664,52 +2710,14 @@ map.on("load", async () => {
       const count = Math.round(decileInterp(pr, "fill_panels", pctForBuilding(pr)));
       if (!(count > 0)) return;
       const kwhYear = decileInterp(pr, "fill_kwh", pctForBuilding(pr)) * bakedKwhScale();
-      // A panel's own economics must not move when the density slider does
-      // -- other than the self-consumption share, the number of panels must
-      // not change other panels' ROIs; ROI is per panel.
-      //
-      // The cost tiers were doing exactly that. cost/count is
-      // costPerKw(kwp) x panel watts, and kwp follows the slider, so crossing a
-      // tier boundary -- 1,800 to 1,500 $/kW is a 17% step -- reprices every
-      // panel on the roof and recolours the lot. So the per-panel cost and the
-      // lifetime rates are taken from the FULL system: the tier you would
-      // actually be quoted for this roof, not for whatever fraction is on
-      // screen.
-      const fullCount = Math.round(decileInterp(pr, "fill_panels", 100));
-      const fullKwh = decileInterp(pr, "fill_kwh", 100) * bakedKwhScale();
-      const fullKwp = fullCount * assumptions.panel_rated_power_w / 1000;
-      const eFull = (fullCount > 0) ? economicsFor(fullKwp, fullKwh, pr.facet_area_m2,
-                                                     { zoneClass: pr.zone_class }) : null;
-      const kwp = count * assumptions.panel_rated_power_w / 1000;
-      const e = economicsFor(kwp, kwhYear, pr.facet_area_m2, { zoneClass: pr.zone_class });
-      if (!e) return;
-      const basis = eFull || e;
-      const basisCount = eFull ? fullCount : count;
-      // Merit order: panels are laid sunniest-first, and the site's
-      // daytime load is met by the ones that come first. So the earliest panels
-      // sell into RETAIL and everything after them exports -- two panels of
-      // identical output on the same face are worth different amounts purely by
-      // position, and only a certain number stack up economically.
-      //
-      // fill_order is already on every panel in the tiles, so the cutoff is one
-      // number per building: how many panels it takes to cover the self-consumed
-      // kWh. Below it, retail; above it, export.
-      // The cutoff DOES still follow the slider, and should: how many panels the
-      // site's daytime load can absorb genuinely depends on how many are there.
-      // That is the one legitimate dependence.
-      const perPanelKwh = kwhYear / count;
-      const cutoff = perPanelKwh > 0 ? Math.min(count, e.selfKwh / perPanelKwh) : 0;
-      const costPerPanel = basis.cost / basisCount;
-      merit.set(pr.building_id, {
-        cutoff, costPerPanel,
-        // kWh/yr a panel must make to repay its own share, on each side.
-        // Fixed for this roof; only which side of the cutoff a panel sits on
-        // changes as the slider moves.
-        retailBE: costPerPanel / Math.max(basis.retailLifetimePerKwhYr, 1e-9),
-        exportBE: costPerPanel / Math.max(basis.exportLifetimePerKwhYr, 1e-9),
-      });
-      const perKwh = basis.lifetime / Math.max(eFull ? fullKwh : kwhYear, 1e-9);
-      pairs.push(pr.building_id, costPerPanel / Math.max(perKwh, 1e-9));
+      if (!(kwhYear > 0)) return;
+      // Merit order: panels are laid sunniest-first and the site's own use is
+      // met by the first ones, so those earn the retail price and the rest
+      // export -- one cutoff per building, against fill_order on every panel.
+      const o = billEconFor(pr, count, kwhYear);
+      if (!o) return;
+      merit.set(pr.building_id, { cutoff: o.cutoff, costPerPanel: o.costPerPanel, retailBE: o.retailBE, exportBE: o.exportBE });
+      pairs.push(pr.building_id, o.costPerPanel / Math.max(o.perKwh, 1e-9));
     });
     // The open building is priced by its own panel's figures (bill model),
     // so its colours agree with the savings shown beside them.
@@ -3889,21 +3897,22 @@ map.on("load", async () => {
           if (isFinite(v) && v >= 0) { econ.cost_tiers[+inp.dataset.i].rate = v; applyEcon(); }
         }));
     }
-    const profSel = el("e-profile");
-    profSel.innerHTML = SELF_PROFILES.map(p =>
-      `<option value="${p.id}">${p.label}${p.kw !== null ? ` (${p.kw} kW)` : ""}</option>`).join("");
-
+    // [element suffix, econ prefix]: the bill tool's prices (bill_tool.js
+    // btTariffFromEcon), the one set every roof is priced with
+    const WHO = [["h", "home"], ["b", "biz"]];
+    const cents = v => v.toFixed(1) + "c/kWh";
     function applyEcon(opts) {
-      el("e-hbuy-val").textContent = econ.home_buy_c.toFixed(0) + "c/kWh";
-      el("e-hsell-val").textContent = econ.home_sell_c.toFixed(1) + "c/kWh";
-      el("e-bbuy-val").textContent = econ.biz_buy_c.toFixed(0) + "c/kWh";
-      el("e-bsell-val").textContent = econ.biz_sell_c.toFixed(1) + "c/kWh";
-      el("e-broof-val").textContent = econ.biz_min_roof_m2 + " m\u00b2";
-      el("e-bkw-val").textContent = econ.biz_min_kw + " kW";
-      el("e-self-val").textContent = econ.home_daytime_kw.toFixed(1) + " kW";
-      el("e-bself-val").textContent = econ.biz_daytime_kw.toFixed(1) + " kW";
-      el("e-dayh-val").textContent = econ.daytime_hours.toFixed(1) + " h/day \u00b7 " +
-        Math.round(econ.home_daytime_kw * econ.daytime_hours) + " kWh/day for a home";
+      WHO.forEach(([k, p]) => {
+        el(`e-${k}peak-val`).textContent = cents(econ[p + "_peak_c"]);
+        el(`e-${k}off-val`).textContent = cents(econ[p + "_offpeak_c"]);
+        el(`e-${k}sell-val`).textContent = econ[p + "_peak_sell_c"] === econ[p + "_offpeak_sell_c"]
+          ? cents(econ[p + "_offpeak_sell_c"])
+          : `${cents(econ[p + "_offpeak_sell_c"])} (${econ[p + "_peak_sell_c"].toFixed(1)}c at peak)`;
+        el(`e-${k}daily-val`).textContent = "$" + econ[p + "_daily"].toFixed(2) + "/day";
+        // keep the inputs on the values too: the building card edits the same prices
+        el(`e-${k}peak`).value = econ[p + "_peak_c"]; el(`e-${k}off`).value = econ[p + "_offpeak_c"];
+        el(`e-${k}sell`).value = econ[p + "_offpeak_sell_c"]; el(`e-${k}daily`).value = econ[p + "_daily"];
+      });
       el("e-life-val").textContent = econ.life_years + " years";
       el("e-deg-val").textContent = econ.degradation_pct.toFixed(2) + "%/yr";
       el("e-edec-val").textContent = econ.export_decline_pct.toFixed(1) + "%/yr";
@@ -3911,77 +3920,45 @@ map.on("load", async () => {
       // everybody can judge what a kWh sells for in 2040.
       el("e-edec-preview").textContent =
         [2030, 2035, 2040].map(y =>
-          `${y}: ${sellRate(y, econ.home_sell_c).toFixed(1)}c`).join("   ");
+          `${y}: ${sellRate(y, econ.home_offpeak_sell_c).toFixed(1)}c`).join("   ");
       el("e-infl-val").textContent = econ.elec_inflation_pct.toFixed(1) + "%/yr";
-      el("e-disc-val").textContent = econ.discount_rate_pct === 0
-        ? "none" : econ.discount_rate_pct.toFixed(1) + "%/yr";
+      el("e-cpi-val").textContent = econ.cpi_pct.toFixed(1) + "%/yr";
       el("e-invy-val").textContent = econ.inverter_replace_year >= econ.life_years
         ? "never" : "year " + econ.inverter_replace_year;
       el("e-invc-val").textContent = econ.inverter_cost_pct + "% of install";
-      // Keep the modal's own inputs on the values, not just its labels, so a
-      // change made on the building panel is already there when it is opened.
-      el("e-hbuy").value = econ.home_buy_c; el("e-hsell").value = econ.home_sell_c;
-      el("e-bbuy").value = econ.biz_buy_c;  el("e-bsell").value = econ.biz_sell_c;
-      el("e-self").value = econ.home_daytime_kw; el("e-bself").value = econ.biz_daytime_kw;
       if (opts && opts.silent) return;
       recomputeInViewSummary();
       if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
     }
     window.__applyEcon = (...a) => { applyEcon(...a); if (window.__saveUserAssumptions) window.__saveUserAssumptions(); };
-    const bindEcon = (id, key, parse) => el(id).addEventListener("input", e => {
-      econ[key] = parse(e.target.value);
-      // Any hand-edit of the load numbers means the named profile no longer
-      // describes what is set -- including the business slider and the hours,
-      // which the dropdown also speaks for.
-      if (id === "e-self" || id === "e-bself" || id === "e-dayh") {
-        econ.profile = "custom"; profSel.value = "custom";
-      }
+    const bindEcon = (id, keys, parse) => el(id).addEventListener("input", e => {
+      const v = parse(e.target.value);
+      [].concat(keys).forEach(k => { econ[k] = v; });
       applyEcon();
     });
-    bindEcon("e-hbuy", "home_buy_c", parseFloat);
-    bindEcon("e-hsell", "home_sell_c", parseFloat);
-    bindEcon("e-bbuy", "biz_buy_c", parseFloat);
-    bindEcon("e-bsell", "biz_sell_c", parseFloat);
-    bindEcon("e-broof", "biz_min_roof_m2", v => parseInt(v, 10));
-    bindEcon("e-bkw", "biz_min_kw", v => parseInt(v, 10));
-    bindEcon("e-self", "home_daytime_kw", parseFloat);
-    bindEcon("e-bself", "biz_daytime_kw", parseFloat);
-    bindEcon("e-dayh", "daytime_hours", parseFloat);
+    WHO.forEach(([k, p]) => {
+      bindEcon(`e-${k}peak`, p + "_peak_c", parseFloat);
+      bindEcon(`e-${k}off`, p + "_offpeak_c", parseFloat);
+      bindEcon(`e-${k}sell`, [p + "_peak_sell_c", p + "_offpeak_sell_c"], parseFloat);
+      bindEcon(`e-${k}daily`, p + "_daily", parseFloat);
+    });
     bindEcon("e-life", "life_years", v => parseInt(v, 10));
     bindEcon("e-deg", "degradation_pct", parseFloat);
     bindEcon("e-edec", "export_decline_pct", parseFloat);
     bindEcon("e-infl", "elec_inflation_pct", parseFloat);
-    bindEcon("e-disc", "discount_rate_pct", parseFloat);
+    bindEcon("e-cpi", "cpi_pct", parseFloat);
     bindEcon("e-invy", "inverter_replace_year", v => parseInt(v, 10));
     bindEcon("e-invc", "inverter_cost_pct", v => parseInt(v, 10));
-    profSel.addEventListener("change", () => {
-      const p = SELF_PROFILES.find(x => x.id === profSel.value);
-      econ.profile = profSel.value;
-      if (p && p.kw !== null) {
-        // A business preset should move the business slider, not the home one.
-        const key = p.id === "business" ? "biz_daytime_kw" : "home_daytime_kw";
-        econ[key] = p.kw;
-        el(p.id === "business" ? "e-bself" : "e-self").value = p.kw;
-      }
-      applyEcon();
-    });
     function loadEcon(src) {
       econ = JSON.parse(JSON.stringify(src));
       econ.cost_tiers[econ.cost_tiers.length - 1].max_kw = Infinity;
-      el("e-hbuy").value = econ.home_buy_c; el("e-hsell").value = econ.home_sell_c;
-      el("e-bbuy").value = econ.biz_buy_c;  el("e-bsell").value = econ.biz_sell_c;
-      el("e-broof").value = econ.biz_min_roof_m2; el("e-bkw").value = econ.biz_min_kw;
-      el("e-self").value = econ.home_daytime_kw; el("e-bself").value = econ.biz_daytime_kw;
-      el("e-dayh").value = econ.daytime_hours;
       el("e-life").value = econ.life_years;
-      el("e-deg").value = econ.degradation_pct; profSel.value = econ.profile;
+      el("e-deg").value = econ.degradation_pct;
       el("e-edec").value = econ.export_decline_pct;
       el("e-infl").value = econ.elec_inflation_pct;
-      el("e-disc").value = econ.discount_rate_pct;
+      el("e-cpi").value = econ.cpi_pct;
       el("e-invy").value = econ.inverter_replace_year;
       el("e-invc").value = econ.inverter_cost_pct;
-      const pr = SELF_PROFILES.find(x => x.id === econ.profile);
-      if (pr && pr.kw !== null) { econ.home_daytime_kw = pr.kw; el("e-self").value = pr.kw; }
       renderTiers(); applyEcon();
     }
     el("e-reset").addEventListener("click", () => loadEcon(ECON_DEFAULTS));
@@ -4903,7 +4880,8 @@ map.on("load", async () => {
     }
     const be = el("bldg-econ");
     if (be) {
-      let e = economicsFor(kwp, kwhYear, props.facet_area_m2);
+      // replaced by the bill tool's own figures as soon as it draws (onResult)
+      let e = (kwp > 0 && kwhYear > 0) ? { cost: systemCost(kwp), lifetime: 0 } : null;
       // A selection can legitimately come to zero panels -- keeping only "under
       // 1x" on a roof where none are. Hiding the block in that case would take
       // the band controls with it, so it stays and says so.
@@ -4966,14 +4944,8 @@ map.on("load", async () => {
               // the panel shows: cost per panel from the system cost, and
               // the lifetime value of a kWh used on site vs exported from
               // the bill model's own lifetime split.
-              const Y = r.run.year, selfKwh = Y.gen - Y.solarExport;
-              if (isLayout && count > 0 && Y.gen > 0) {
-                panelEconOpen = { buildingId, costPerPanel: r.solarCost / count,
-                  cutoff: Math.min(count, selfKwh / (Y.gen / count)),
-                  retailBE: (r.solarCost / count) / Math.max(r.solarRet.lifeRetail / Math.max(selfKwh, 1e-9), 1e-9),
-                  exportBE: (r.solarCost / count) / Math.max(r.solarRet.lifeExport / Math.max(Y.solarExport, 1e-9), 1e-9),
-                  perKwh: r.solarRet.lifetime / Y.gen };
-              } else panelEconOpen = null;
+              const pe = isLayout ? btPanelEcon(r, count) : null;
+              panelEconOpen = pe ? Object.assign({ buildingId }, pe) : null;
               // home or business as the bill tool has it (the reader can switch it there)
               const btType = (btLoadState(buildingId) || {}).type;
               // the household the bills describe, for Resilience's battery

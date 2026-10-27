@@ -165,6 +165,9 @@ function sellRate(year, startCents) {
   return startCents * Math.pow(1 - econ.export_decline_pct / 100, yrs);
 }
 
+// NOT WHAT THE MAP SHOWS since 28 Oct: every roof's panel colours and the
+// building card are priced by bill_tool.js (btEvaluate, btPanelEcon). This
+// flat-price, discounted model is kept for tests/test_economics.mjs.
 function economicsFor(kwp, kwhYear, roofM2, override) {
   if (!(kwp > 0) || !(kwhYear > 0)) return null;
   const biz = (override && override.biz != null)
