@@ -7,6 +7,39 @@ and assign work.
 
 ## Ship
 
+- **Audit 28 Oct: pipeline fixes for one rebuild + A/B.** Each was checked
+  against the code with a small synthetic test.
+  - Near and far shading factors are fractions of direct beam
+    (`building_shading.py`), but they multiply all plane-of-array light
+    (`solar_model.py` facet kWh). Beam is ~43% of a north 30 deg roof's year,
+    so shading is overstated 2-3x, and the deep-shade veto drops panels that
+    keep ~76% of their sun. Fix: `poa = diffuse + factor * beam`.
+  - Nearest NIWA station is chosen by distance in raw degrees
+    (`solar_model.py:518`): Wanaka and Hawea land on Clyde (a 9% step at the
+    wanaka_town border). The hard 0.30 deg SolarView switch puts Kingston,
+    Glenorchy and Kinloch ~7% above the basin. Fix: km distance, blended.
+  - Terrain is counted twice: the near (1 m DSM, 100 m) and far (8 m DEM)
+    scans are multiplied; `genCurve`'s tshade cuts beam the sun.json table
+    already cut; and the region horizon floors every building.
+  - Coverage kWp uses plan area x kW/m2: low by cos(slope).
+  - A nodata observer cell gives a 90 deg horizon (`terrain_horizon.py:83`),
+    and that face's panels are deleted silently.
+  - Panels are packed on the 0.1 m grid as 1.10 x 2.00 m
+    (`panel_fitting.py:499`).
+  - Plane-intersection and reflex cuts drift after the first cut
+    (`roof_partition.py:1066, 2134`; needs `_reanchor`).
+  - Frame rules: a wing under 20 deg gets snapped anyway; `frame_group`
+    reassigns faces; `register_frame` votes with faces that stay empty;
+    `centre_panels` breaks the shared grid.
+- **Audit: docs.** method.html (constants, merge, pricing), README data sources
+  and licences, economics.md, dataset-operations (Netlify -> Pages + bucket).
+  Untrack the frozen `data/solar_potential.geojson`; delete `netlify.toml`.
+  Decisions for Josh are on the status page.
+- **Audit: one pricing model.** Map colours for every roof but the open one
+  come from `economicsFor` (flat prices, 3% discount rate). The open roof uses
+  the bill tool. Install cost also falls at each tier boundary
+  (`economics.js:124`).
+
 - **3D land and trees LIVE 27 Oct (Josh: "You have removed trees from the 3D
   view ... we need the other 3D terrain back").** The solid buildings (21 Oct)
   had replaced the draped DSM, taking hills, trees and their shade with it.
