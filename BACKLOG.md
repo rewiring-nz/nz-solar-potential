@@ -7,6 +7,19 @@ and assign work.
 
 ## Ship
 
+- **3D land and trees LIVE 27 Oct (Josh: "You have removed trees from the 3D
+  view ... we need the other 3D terrain back").** The solid buildings (21 Oct)
+  had replaced the draped DSM, taking hills, trees and their shade with it.
+  Now the map drapes over data/terrain_ground -- the DSM with every building
+  pressed flat to the ground beside it (tools/build_terrain_tiles.py
+  --ground; 12,783 tiles, 385 MB, uploaded beside v63 and carried forward by
+  publish_served's STATIC_DIRS) -- and each solid is lifted by its own ground
+  height (buildings3d.js gOf). Checked headless: Queenstown at z17 and z18.4
+  (fractional zoom fine), panels on the lifted roofs, picking, switching off.
+  Known: the solids are composited over the map, so a hill or tree between
+  the camera and a building does not hide it; cars in the DSM stand as
+  blobs, as they did before 21 Oct.
+
 - **Panels square to the walls (Josh, 27 Oct: "make sure panels are generally
   square/perpendicular with the edges of rooftops").** tools/panel_alignment.py
   on v63: 1.3% of panels more than 3 degrees off every wall of their building,
