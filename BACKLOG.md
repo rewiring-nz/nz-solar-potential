@@ -30,7 +30,9 @@ and assign work.
   src/panel_fitting.building_frame now racks every face to its nearest wall
   on an outline whose walls are WALL_CLEAN_COVER (0.8) square
   (outline_axis.wall_cover); curved or angled-wing outlines keep the 20-degree
-  rule. A/B on the 1,944 affected buildings running; ships with the next build.
+  rule. A/B on the 1,944 affected buildings: skew panels 16,183 -> 3,154,
+  panels +3.1%, none zeroed. **v64 LIVE 28 Oct:** off walls 1.3% -> 0.3% on
+  the rebuilt regions; 1,424,084 panels, 832.8 GWh; gate clean.
   The face reading's direction itself (used for sun) is unchanged -- a
   follow-up: the same misread faces likely carry the wrong aspect for yield
   and the sunny-side rule. (The "off face" figure, 8.1%, is mostly the
