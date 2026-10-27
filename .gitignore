@@ -55,8 +55,6 @@ data/training_faces/
 # The code map (tools/build_code_graph.sh). Regenerable in ~40 s, 3 MB, and
 # it has no business on the public site.
 
-# Understand-Anything working data (tools/build_method_page.py reads it).
-.ua/
 
 # per-region emitted outputs and combine scratch (docs/scale-architecture.md)
 data/out/
@@ -74,3 +72,6 @@ data/pipeline_runs/
 # tools/deploy_from_vm.sh) and the page reads them from there through
 # site-config.js dataBase. They stay in data/ locally for the tools; they are
 # no longer committed, so a release no longer adds 80-130 MB to the history.
+
+# Local working data from the old method-page generator (removed 28 Oct).
+.ua/
