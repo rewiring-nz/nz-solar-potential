@@ -212,3 +212,10 @@ def test_a_square_house_racks_to_its_walls_whatever_the_face_reading():
     wf = {"geometry": wing, "slope_deg": 20.0, "aspect_deg": (180 - 30) % 360}
     fr2 = building_frame([face, wf], bld)
     assert any(abs(((a - 30) + 45) % 90 - 45) < 3 for a in fr2["angles"]), fr2["angles"]
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+            print("  pass ", name)

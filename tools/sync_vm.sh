@@ -64,7 +64,8 @@ if [ $FORCE -eq 0 ]; then
   # The build SCRIPTS count too: between two stages no python stage is
   # running, and a check that only looked for one passed mid-build.
   BUSY=$($SSH 'pgrep -f "src/[a-z_]*\.(py|sh)" | wc -l' 2>/dev/null | tr -d " \r\n")
-  if [ "${BUSY:-0}" != "0" ]; then
+  # no answer (ssh failed) counts as busy, not idle
+  if [ "${BUSY:-unknown}" != "0" ]; then
     echo "REFUSING TO SYNC: $BUSY pipeline process(es) running on the VM."
     $SSH 'pgrep -af "src/[a-z_]*\.(py|sh)" | head -3' 2>/dev/null
     echo ""

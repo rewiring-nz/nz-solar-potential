@@ -38,6 +38,10 @@ for d in building_detail heatmap_tiles summaries seasonal_curves addresses; do
   rm -rf "data/$d.pull" && mkdir -p "data/$d.pull"
   if gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet --recurse "$VM:~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
     rm -rf "data/$d" && mv "data/$d.pull/$d" "data/$d"
+  else
+    # the gate reads summaries, the page reads detail: stale copies of either
+    # would ship last build's data under this build's tiles
+    case $d in summaries|building_detail) echo "FATAL: could not pull $d"; rm -rf "data/$d.pull"; exit 1 ;; esac
   fi
   rm -rf "data/$d.pull"
 done

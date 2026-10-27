@@ -70,7 +70,8 @@ def _run(cmd, **kw):
 
 def versions():
     """Version numbers present in the bucket, ascending."""
-    r = subprocess.run(["gcloud", "storage", "ls", f"{BUCKET}/"], capture_output=True, text=True)
+    # check=True: a failed listing must not read as an empty bucket
+    r = subprocess.run(["gcloud", "storage", "ls", f"{BUCKET}/"], capture_output=True, text=True, check=True)
     return sorted(int(m.group(1)) for m in re.finditer(r"/v(\d+)/", r.stdout))
 
 
@@ -80,6 +81,12 @@ def publish(version, fresh_terrain=False):
                if not (DATA / f).exists()]
     if missing:
         raise SystemExit(f"not a combined build: missing {missing} -- run src/combine_regions.py first")
+    # A version folder is written once. Publishing into one that exists (after
+    # a rollback, or two publishers at once) mixes two builds under year-long
+    # immutable caching.
+    have = versions()
+    if int(version) in have:
+        raise SystemExit(f"v{version} already exists in {BUCKET} -- publish as v{max(have) + 1}")
     for f in SERVED_FILES:
         p = DATA / f
         if p.exists():
@@ -105,11 +112,27 @@ def publish(version, fresh_terrain=False):
         elif (DATA / d).is_dir():
             _run(["gcloud", "storage", "rsync", "-r", "-q", f"--cache-control={CACHE}",
                   str(DATA / d), f"{base}/{d}"])
+        else:
+            raise SystemExit(f"no {d} to publish: no older version to copy it from and none in data/")
     return f"{PUBLIC_BASE}/v{version}/"
 
 
+def site_versions():
+    """The versions site-config.js points at: dataVersion AND dataBase's folder.
+    A rollback points dataBase at an older folder and leaves dataVersion, so
+    protecting dataVersion alone could delete the folder being served."""
+    try:
+        cfg = (ROOT / "site-config.js").read_text()
+    except OSError:
+        return set()
+    return {int(v) for v in re.findall(r'dataVersion:\s*"(\d+)"', cfg)
+            + re.findall(r'dataBase:\s*"[^"]*/v(\d+)/', cfg)}
+
+
 def prune(keep, protect=()):
-    """Delete all but the newest `keep` versions, never one in `protect`."""
+    """Delete all but the newest `keep` versions, never one in `protect` or
+    one site-config.js points at."""
+    protect = set(protect) | site_versions()
     vs = versions()
     for v in vs[:-keep] if keep > 0 else []:
         if v in protect:

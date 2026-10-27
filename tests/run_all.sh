@@ -50,7 +50,9 @@ run() {
 
 run "pure functions"        $PY tests/test_pure.py
 if command -v node >/dev/null 2>&1; then
-  run "economics"           node tests/test_economics.mjs
+  for t in economics workings generation bill_tool low_solar_battery; do
+    run "$t (js)"           node tests/test_$t.mjs
+  done
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
 fi
@@ -68,6 +70,7 @@ run "sunken regions"        $PY tests/test_sunken.py
 run "staircases"            $PY tests/test_staircase.py
 run "plant decks"           $PY tests/test_plant_decks.py
 run "no-LiDAR surface"      $PY tests/test_synthesize_dsm.py
+run "installer rules"       $PY tests/test_installer_rules.py
 run "photo roof shape"      $PY tests/test_photo_shape.py
 run "structured roofs"       $PY tests/test_structured_roof.py
 run "face straighten"        $PY tests/test_face_straighten.py

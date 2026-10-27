@@ -57,6 +57,8 @@ NEW = ROOT / "data" / "solar_potential.geojson"
 ZERO_MIN = 5        # ignore a building that only ever had a panel or two
 DROP_FRAC = 0.30    # lost this share of its panels...
 DROP_MIN = 20       # ...and at least this many
+GONE_MAX = 25       # buildings with panels live may vanish from the new build
+TOTAL_DROP_FRAC = 0.05  # a fall in the district's panels past this fails
 
 
 def _panels(p):
@@ -126,6 +128,7 @@ def _live_from_summaries(site):
             live[int(b)] = {"panel_count": panels, "fill_panels_100": panels,
                             "ac_kwh_year": kwh, "building_id": int(b)}
     print(f"  live: {len(live):,} buildings from {len(regions)} region summaries at {base}")
+    _live_from_summaries.regions = list(regions)
     return live or None
 
 
@@ -143,14 +146,12 @@ def main():
         return 2
     print(f"fetching the live build from {a.live_url.split('/data/')[0]} ...")
     try:
+        # NO FALLBACK to the site's old merged file: it is frozen at the 21
+        # Sep release, so a blip fetching the summaries made the gate compare
+        # against a months-old baseline and say so in one easily missed line.
         live = _live_from_summaries(a.live_url.split("/data/")[0] + "/")
         if live is None:
-            with urllib.request.urlopen(a.live_url, timeout=120) as r:
-                live_doc = json.loads(r.read().decode())
-            live = {int(f["properties"]["building_id"]): f["properties"]
-                    for f in live_doc["features"]
-                    if f["properties"].get("building_id") is not None}
-            print("  (live read from the old merged file -- the site has no region summaries)")
+            raise RuntimeError("the live site's build_summary.json or region summaries could not be read")
     except Exception as e:
         print(f"could not fetch live: {type(e).__name__}: {e}")
         print("Refusing to pass a check that did not run.")
@@ -204,6 +205,14 @@ def main():
     _ladder_consistent(live, "LIVE")
     _ladder_consistent(new, "NEW")
 
+    # VANISHED. Comparing only the buildings in both builds let a missing
+    # region (its data/out pruned, a fresh checkout) drop thousands of roofs
+    # from the map with the gate at 0.
+    gone = sorted(b for b in set(live) - set(new) if _panels(live[b]) >= ZERO_MIN)
+    live_regions = set(getattr(_live_from_summaries, "regions", []) or [])
+    new_regions = {sp.stem for sp in summaries.glob("*.json")} if summaries.is_dir() else set()
+    lost_regions = sorted(live_regions - new_regions) if new_regions else []
+
     common = sorted(set(live) & set(new))
     if not common:
         print("no buildings in common -- is this the same district?")
@@ -236,6 +245,13 @@ def main():
          lambda r: f"#{r[0]}  {r[1]} -> 0")
     show(f"BIG DROP (>{100*DROP_FRAC:.0f}% and >{DROP_MIN} panels)", dropped,
          lambda r: f"#{r[0]}  {r[1]} -> {r[2]}  ({100*(r[2]-r[1])/r[1]:+.0f}%)")
+    show(f"VANISHED (had panels live, not in the new build; more than {GONE_MAX} fails)", [(b, _panels(live[b])) for b in gone],
+         lambda r: f"#{r[0]}  had {r[1]} panels")
+    if lost_regions:
+        print(f"\n  REGIONS LIVE BUT NOT IN THIS BUILD: {', '.join(lost_regions)}")
+    total_drop = tot_live > 0 and (tot_live - tot_new) / tot_live > TOTAL_DROP_FRAC
+    if total_drop:
+        print(f"\n  DISTRICT PANELS FELL MORE THAN {100 * TOTAL_DROP_FRAC:.0f}%")
     show("NEWLY WITHHELD", withheld,
          lambda r: f"#{r[0]}  had {r[1]} panels, now: {r[2]}")
 
@@ -248,7 +264,7 @@ def main():
         from pathlib import Path as _P
         reg = _json.loads((_P(__file__).resolve().parents[1]
                            / "data/roof_cases.json").read_text())
-        moved, regressed = [], []
+        moved, regressed = [], []   # a moved FIXED roof fails the gate
         for c in reg["cases"]:
             b = int(c["id"])
             if b not in new or b not in live:
@@ -272,6 +288,7 @@ def main():
                    if c.get("status") in ("open", "wrong", "needs_verdict")]
         print(f"    {len(pending)} still unfixed or awaiting a verdict")
     except Exception as _exc:
+        regressed = []
         print(f"\n  (case register unavailable: {_exc!r})")
 
     print(f"\n  IN TWO REGIONS (drawn and counted twice): {len(twice)}")
@@ -285,7 +302,8 @@ def main():
     for u in unchecked[:a.top]:
         print("    " + u)
 
-    bad = len(zeroed) + len(withheld) + len(twice) + len(unchecked)
+    bad = (len(zeroed) + len(withheld) + len(twice) + len(unchecked) + len(lost_regions) + len(regressed)
+           + (len(gone) > GONE_MAX) + bool(total_drop))
     print(f"\n  {'LOOK AT THESE BEFORE DEPLOYING' if bad else 'nothing zeroed or newly withheld'}")
     print("  A drop is not automatically wrong -- better geometry removes panels")
     print("  that were overlapping a ridge. This surfaces, it does not judge.")

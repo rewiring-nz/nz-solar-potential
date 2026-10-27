@@ -162,6 +162,7 @@ def test_cloud_remote_command_tracks_only_new_pipeline_runs():
 
 if __name__ == "__main__":
     for test in (test_area_names_are_path_safe, test_report_and_logs_share_step_number_and_label,
+                 test_cloud_pipeline_step_offset_keeps_labels_sequential_after_prechecks,
                  test_failed_step_updates_report, test_fetch_requires_wide_dem_after_fetch_stage,
                  test_child_output_redacts_api_key_before_logging,
                  test_pipeline_cli_defaults_to_local_and_keeps_default_region,

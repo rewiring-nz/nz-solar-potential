@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import http.server
 import re
+import urllib.parse
 from pathlib import Path
 
 
@@ -19,7 +20,24 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         super().end_headers()
 
+    def _refused(self) -> bool:
+        """Dotfiles and dot-directories (.env holds the LINZ key, .git the
+        history) are never served, and only a localhost Host header is
+        answered, so a page elsewhere cannot rebind its name onto this port."""
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
+        parts = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).split("/")
+        if host not in ("127.0.0.1", "localhost", "::1") or any(p.startswith(".") for p in parts if p):
+            self.send_error(404)
+            return True
+        return False
+
+    def do_HEAD(self) -> None:
+        if not self._refused():
+            super().do_HEAD()
+
     def do_GET(self) -> None:
+        if self._refused():
+            return
         range_header = self.headers.get("Range")
         if not range_header:
             return super().do_GET()
