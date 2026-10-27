@@ -35,10 +35,10 @@ and assign work.
   and licences, economics.md, dataset-operations (Netlify -> Pages + bucket).
   Untrack the frozen `data/solar_potential.geojson`; delete `netlify.toml`.
   Decisions for Josh are on the status page.
-- **Audit: one pricing model.** Map colours for every roof but the open one
-  come from `economicsFor` (flat prices, 3% discount rate). The open roof uses
-  the bill tool. Install cost also falls at each tier boundary
-  (`economics.js:124`).
+- **Install cost falls at each size tier** (`economics.js:124`): 7.99 kW costs
+  more than 8.0 kW. Needs a pricing call (marginal tiers raise every quote;
+  interpolated rates keep the levels). Map colours now use the bill tool for
+  every roof (LIVE 28 Oct).
 
 - **3D land and trees LIVE 27 Oct (Josh: "You have removed trees from the 3D
   view ... we need the other 3D terrain back").** The solid buildings (21 Oct)
