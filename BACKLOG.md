@@ -10,13 +10,6 @@ panels, 832.8 GWh a year.
 
 ## Ship
 
-- **v65 building (28 Oct): shade, hills and stations.** Shade now cuts direct
-  sun only (diffuse by the open sky), near and far hills count once, stations
-  by real distance with SolarView blended to the stations, the sunny-side
-  rule judged in one reference climate, scan holes no longer zero a face,
-  and the day curves no longer take hills out twice. A/B: same panels in
-  Queenstown/Fernhill, +2% kWh; Hawea +6%. Publish when the gate passes, then
-  update method.html's sunlight steps.
 - **Audit: still to do in the pipeline.**
   - Panels are packed on the 0.1 m grid as 1.10 x 2.00 m
     (`panel_fitting.py:499`); the real panel is 1.134 x 1.961.
