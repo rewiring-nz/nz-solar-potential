@@ -58,7 +58,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 REG = ROOT / "data" / "roof_cases.json"
-LIVE = "https://rewiring-nz.github.io/nz-solar-potential/data/solar_potential.geojson"
+LIVE = "https://rewiring-nz.github.io/nz-solar-potential/"
 
 
 def load():
@@ -365,12 +365,11 @@ def cmd_add(a):
 
 def cmd_live(a):
     """Is the fix actually ON THE MAP? The pilot-skip class of failure."""
-    import urllib.request
     d = load()
     print("fetching live build...")
-    live = json.loads(urllib.request.urlopen(LIVE).read())
-    lp = {str(f["properties"].get("building_id")): f["properties"].get("panel_count")
-          for f in live["features"]}
+    from tools.predeploy_check import _live_from_summaries
+    live = _live_from_summaries(LIVE) or {}
+    lp = {str(b): p["panel_count"] for b, p in live.items()}
     ctx = {}
     bad = 0
     for c in d["cases"]:

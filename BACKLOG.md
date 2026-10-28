@@ -21,8 +21,6 @@ panels, 832.8 GWh a year.
   - Coverage kWp uses plan area x kW/m2: low by cos(slope).
   - The region-centre horizon is still a floor under every building's beam
     (the lookup table is built with it).
-- **Audit: clean-up.** Untrack the frozen `data/solar_potential.geojson`;
-  delete `netlify.toml`. Decisions for Josh are on the status page.
 - **Install cost falls at each size tier** (`economics.js:124`): 7.99 kW
   costs more than 8.0 kW. Needs a pricing call: marginal tiers raise every
   quote; interpolated rates keep the levels.

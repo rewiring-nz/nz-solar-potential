@@ -50,7 +50,7 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   them.
 - Generated datasets are contracts. Each region emits its own artefacts and
   tiles; published data lives outside Git. The root
-  `data/solar_potential.geojson` is legacy, ignored, and not read by the map.
+  `data/solar_potential.geojson` is a local build file, not tracked and not read by the map.
   Change producer and consumer together.
 - `config.PV_ASSUMPTIONS` is the one source for PV assumptions shown in the
   UI. Don't hardcode them elsewhere.
@@ -202,7 +202,7 @@ figure for the same thing. Code enforces this:
   `git clean -fd` keeps ignored files; `rm -rf data` deletes tracked ones.
 - Published data is a version folder in the tiles bucket; the site on
   GitHub Pages reads it through `site-config.js` (`dataBase`,
-  `dataVersion`). `netlify.toml` is unused.
+  `dataVersion`).
 
 ### Geometry, sunlight and front end
 - Roof precedence: hand-drawn markup > selected faces > LiDAR fallback.
