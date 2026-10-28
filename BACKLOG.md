@@ -10,30 +10,24 @@ panels, 832.8 GWh a year.
 
 ## Ship
 
-- **Audit 28 Oct: pipeline fixes for one rebuild + A/B.** Each was checked
-  against the code with a small synthetic test.
-  - Near and far shading factors are fractions of direct beam
-    (`building_shading.py`), but they multiply all plane-of-array light
-    (`solar_model.py` facet kWh). Beam is ~43% of a north 30° roof's year,
-    so shading is overstated 2–3x, and the deep-shade veto drops panels that
-    keep ~76% of their sun. Fix: `poa = diffuse + factor * beam`.
-  - Nearest NIWA station is chosen by distance in raw degrees
-    (`solar_model.py:518`): Wanaka and Hawea land on Clyde (a 9% step at the
-    wanaka_town border). The hard 0.30° SolarView switch puts Kingston,
-    Glenorchy and Kinloch ~7% above the basin. Fix: km distance, blended.
-  - Terrain is counted twice: the near (1 m DSM, 100 m) and far (8 m DEM)
-    scans are multiplied; `genCurve`'s tshade cuts beam the sun.json table
-    already cut; and the region horizon floors every building.
-  - Coverage kWp uses plan area × kW/m²: low by cos(slope).
-  - A nodata observer cell gives a 90° horizon (`terrain_horizon.py:83`),
-    and that face's panels are deleted silently.
-  - Panels are packed on the 0.1 m grid as 1.10 × 2.00 m
-    (`panel_fitting.py:499`).
+- **v65 building (28 Oct): shade, hills and stations.** Shade now cuts direct
+  sun only (diffuse by the open sky), near and far hills count once, stations
+  by real distance with SolarView blended to the stations, the sunny-side
+  rule judged in one reference climate, scan holes no longer zero a face,
+  and the day curves no longer take hills out twice. A/B: same panels in
+  Queenstown/Fernhill, +2% kWh; Hawea +6%. Publish when the gate passes, then
+  update method.html's sunlight steps.
+- **Audit: still to do in the pipeline.**
+  - Panels are packed on the 0.1 m grid as 1.10 x 2.00 m
+    (`panel_fitting.py:499`); the real panel is 1.134 x 1.961.
   - Plane-intersection and reflex cuts drift after the first cut
     (`roof_partition.py:1066, 2134`; needs `_reanchor`).
-  - Frame rules: a wing under 20° gets snapped anyway; `frame_group`
+  - Frame rules: a wing under 20 deg gets snapped anyway; `frame_group`
     reassigns faces; `register_frame` votes with faces that stay empty;
     `centre_panels` breaks the shared grid.
+  - Coverage kWp uses plan area x kW/m2: low by cos(slope).
+  - The region-centre horizon is still a floor under every building's beam
+    (the lookup table is built with it).
 - **Audit: clean-up.** Untrack the frozen `data/solar_potential.geojson`;
   delete `netlify.toml`. Decisions for Josh are on the status page.
 - **Install cost falls at each size tier** (`economics.js:124`): 7.99 kW
