@@ -111,6 +111,15 @@ def build_model_and_capture(lat, lon):
         raise RuntimeError("could not tell which sunlight calibration the model used")
     # The recorded source must be the one whose factors the model holds.
     got = next(out for k, out in calls if k == used)
+    # Between SOLARVIEW_BLEND_DEG the model mixes SolarView with the nearest
+    # measuring station, weighted by distance.
+    station = next((out for k, out in calls if k == "niwa_radiation" and out is not None), None)
+    if used == "solarview" and station is not None:
+        lo, hi = SM.SOLARVIEW_BLEND_DEG
+        d = SM._deg_dist(model.lat, model.lon, *SM.SOLARVIEW_CAL_LOCATION)
+        w = min(1.0, (hi - d) / (hi - lo))
+        got = {m: w * got[m] + (1 - w) * station[m] for m in got}
+        used = "blend"
     if any(abs(got[m] - model.monthly_factor[m]) > 1e-12 for m in SM.MONTH_NAMES):
         raise RuntimeError("recorded calibration does not match the model's factors")
     return model, captured, used
@@ -123,9 +132,18 @@ def _source_text(kind, lat, lon):
         return {"kind": kind, "name": "SolarView, Queenstown", "km": km(lat - slat, lon - slon),
                 "text": "Measured monthly sunlight from the SolarView record in Queenstown, "
                         "applied to a clear-sky model of this town's sun (pvlib, Ineichen)."}
+    if kind == "blend":
+        lo, hi = SM.SOLARVIEW_BLEND_DEG
+        w = min(1.0, (hi - SM._deg_dist(lat, lon, *SM.SOLARVIEW_CAL_LOCATION)) / (hi - lo))
+        sv, st = _source_text("solarview", lat, lon), _source_text("niwa_radiation", lat, lon)
+        return {"kind": kind, "name": f"SolarView and {st['name']}", "km": sv["km"],
+                "text": f"A mix of two measured records, weighted by distance: "
+                        f"{round(w * 100)}% SolarView in Queenstown ({sv['km']} km away) and "
+                        f"{round((1 - w) * 100)}% {st['name']} ({st['km']} km away). "
+                        f"Applied to a clear-sky model of this town's sun (pvlib, Ineichen)."}
     if kind == "niwa_radiation":
         name, slat, slon, _ = min(SM.NIWA_MEASURED_GHI_STATIONS,
-                                  key=lambda s: math.hypot(lat - s[1], lon - s[2]))
+                                  key=lambda s: SM._deg_dist(lat, lon, s[1], s[2]))
         d = km(lat - slat, lon - slon)
         return {"kind": kind, "name": f"NIWA {name}", "km": d,
                 "text": f"NIWA measured solar radiation at {name} (about {d} km away), monthly "
