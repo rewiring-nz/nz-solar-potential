@@ -49,7 +49,7 @@ from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
 from src.face_straighten import absorb_slivers, fit_seams, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
-from src.building_shading import building_shading_factor
+from src.building_shading import building_shading_factor, facet_sun, facet_sun_context
 from src.building_horizon import (far_profile as _hz_far_profile,
                                   facet_horizon_factor as _hz_facet_factor,
                                   eave_height as _hz_eave_height,
@@ -547,18 +547,17 @@ def _build_one_at(building_id, nudge_m):
         _rel_skipped = False
         for f in facets:
             facet_centroid = f["geometry"].centroid
-            shading_factor = building_shading_factor(
-                dsm_band, dsm_ds.transform, dsm_ds.nodata,
-                facet_centroid.x, facet_centroid.y, model.hourly,
-                own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
-            # The far-terrain factor depends on the facet only (slope, aspect and
-            # the building's profile), so it is computed once here and reused for
-            # every panel below instead of re-integrating 8,760 hours per panel.
-            far_factor = None
-            if _bld_far is not None:
-                far_factor = _hz_facet_factor(_bld_far, model.horizon_profile,
-                                              f["slope_deg"], f["aspect_deg"], model.hourly)
-                shading_factor *= far_factor
+            # Shading: the direct sun that clears the near (1 m DSM) and far
+            # (8 m DEM) horizons together scales the direct part of the
+            # sunlight, the open sky the diffuse part (building_shading.facet_sun,
+            # SolarModel.kept_sun). The per-facet sun arrays are built once
+            # and reused for every panel below.
+            _sctx = facet_sun_context(model.hourly, f["slope_deg"], f["aspect_deg"],
+                                      model.horizon_profile, _bld_far)
+            _fs = facet_sun(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                            facet_centroid.x, facet_centroid.y, model.hourly, _sctx,
+                            own_geom=f["geometry"], terrain_horizon_profile=model.horizon_profile)
+            shading_factor = model.kept_sun(f["slope_deg"], f["aspect_deg"], _fs["beam"], _fs["sky"])
             facet_poa = model.annual_poa_kwh_per_m2(f["slope_deg"], f["aspect_deg"])
             if not modelled:
                 per_facet.append({"facet": f, "panels": [], "obstructions": [],
@@ -650,16 +649,15 @@ def _build_one_at(building_id, nudge_m):
             kept_panels = []
             for pnl in panels:
                 cpt = pnl["geometry"].centroid
-                psf = building_shading_factor(dsm_band, dsm_ds.transform, dsm_ds.nodata,
-                                              cpt.x, cpt.y, model.hourly, own_geom=f["geometry"],
-                                              terrain_horizon_profile=model.horizon_profile)
-                # deep-shade veto stays a NEAR-FIELD test on purpose: the far
-                # terrain correction lowers yield but must not delete panels a
-                # valley still deserves
-                if psf < DEEP_SHADE_FACTOR:
+                _ps = facet_sun(dsm_band, dsm_ds.transform, dsm_ds.nodata,
+                                cpt.x, cpt.y, model.hourly, _sctx, own_geom=f["geometry"],
+                                terrain_horizon_profile=model.horizon_profile)
+                # deep-shade veto stays a NEAR-FIELD direct-sun test: the far
+                # terrain lowers yield but must not delete panels a valley
+                # still deserves
+                if _ps["near"] < DEEP_SHADE_FACTOR:
                     continue
-                if far_factor is not None:
-                    psf *= far_factor
+                psf = model.kept_sun(f["slope_deg"], f["aspect_deg"], _ps["beam"], _ps["sky"])
                 pnl["poa_kwh_m2_yr"] = facet_poa * psf
                 pnl["shading_factor"] = psf
                 kept_panels.append(pnl)
@@ -772,8 +770,19 @@ def sun_share(model, slope_deg, aspect_deg):
     open_poa = getattr(model, "_open_poa", None)
     if open_poa is None:
         if getattr(model, "lat", None) is not None and hasattr(model, "lookup"):
-            from src.solar_model import build_poa_lookup_table, _nearest_bin, SLOPE_BIN_DEG, ASPECT_BIN_DEG
-            table = build_poa_lookup_table(model.lat, model.lon)[0]
+            from src.solar_model import (build_poa_lookup_table, _nearest_bin, SLOPE_BIN_DEG, ASPECT_BIN_DEG,
+                                         solarview_calibrated_monthly_factors, SOLARVIEW_CAL_LOCATION,
+                                         era5_spatial_ratio)
+            # This site's sun, under ONE reference climate (the basin's, where
+            # SUN_SIDE_REL was tuned): a 14 deg south face is 0.76-0.79 of its
+            # north face depending on which station calibrates the town, and
+            # the rule must not flip faces on and off with the station.
+            # Basin regions get exactly the factors they always had; others the
+            # basin's, moved by ERA5's smooth spatial ratio, never by a station.
+            ref = solarview_calibrated_monthly_factors(*SOLARVIEW_CAL_LOCATION, None)
+            r5 = era5_spatial_ratio(model.lat, model.lon, *SOLARVIEW_CAL_LOCATION)
+            ref = {m: v * r5[m] for m, v in ref.items()} if r5 else ref
+            table = build_poa_lookup_table(model.lat, model.lon, monthly_factor=ref)[0]
             def open_poa(sl, asp):
                 return table[(_nearest_bin(sl, SLOPE_BIN_DEG, max_value=config.MAX_ROOF_SLOPE_DEG),
                               _nearest_bin(asp, ASPECT_BIN_DEG))]

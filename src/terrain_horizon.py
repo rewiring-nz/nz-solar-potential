@@ -81,6 +81,17 @@ def compute_horizon_profile_from_array(band, transform, nodata, observer_x, obse
         # height, which on a bare-earth DEM the cell cannot know; callers
         # doing per-building work pass observer_z explicitly.
         observer_z = float(band[row0, col0])
+    if not np.isfinite(observer_z) or (nodata is not None and observer_z == nodata):
+        # A hole in the scan under the observer. Read as height 0 it put the
+        # observer in a pit with a ~90 deg horizon all round, and that face's
+        # panels were deleted as deep shade. Use the median of the valid
+        # cells within 3 m instead; with none, the point has no horizon.
+        r0, c0 = max(0, row0 - 3), max(0, col0 - 3)
+        win = band[r0:row0 + 4, c0:col0 + 4].astype(float)
+        ok = np.isfinite(win) & ((win != nodata) if nodata is not None else True)
+        if not ok.any():
+            raise ValueError("No valid surface at the observer point")
+        observer_z = float(np.median(win[ok]))
 
     distances = np.arange(sample_step_m, max_distance_km * 1000, sample_step_m)
     azimuths = np.arange(0, 360, azimuth_step_deg)

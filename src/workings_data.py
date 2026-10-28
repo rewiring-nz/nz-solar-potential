@@ -88,6 +88,24 @@ def build_model_and_capture(lat, lon):
         pvlib.irradiance.get_total_irradiance = orig_tot
         for name, fn in origs.items():
             setattr(SM, name, fn)
+    # The same table with an OPEN horizon, for the shape of each day only:
+    # the browser takes the area's hills out per building with its own
+    # tshade mask (generation.js genCurve), so a day already cut by the
+    # area's horizon had them taken out twice.
+    if model.horizon_profile is not None:
+        open_cap = {}
+
+        def spy_open(*args, **kw):
+            r = orig_tot(*args, **kw)
+            open_cap[(int(kw["surface_tilt"]), int(kw["surface_azimuth"]))] = (
+                r["poa_global"].copy(), r["poa_diffuse"].copy())
+            return r
+        pvlib.irradiance.get_total_irradiance = spy_open
+        try:
+            SM.build_poa_lookup_table(model.lat, model.lon, horizon_profile=None)
+        finally:
+            pvlib.irradiance.get_total_irradiance = orig_tot
+        captured = {k: v + open_cap[k] for k, v in captured.items()}
     used = next((k for k, out in calls if out is not None), None)
     if used is None:
         raise RuntimeError("could not tell which sunlight calibration the model used")
@@ -133,15 +151,16 @@ def sun_doc(region, lat, lon, model, captured, source_kind, used_bins):
     for s in slopes:
         arow = []
         for a in aspects:
-            glob, dif = captured[(s, a)]
+            glob, dif = captured[(s, a)][:2]
+            shape_glob, shape_dif = captured[(s, a)][2:] or (glob, dif)
             year = float(glob.sum()) / 1000.0
             if abs(year - model.lookup[(s, a)]) > 1e-6 * max(1.0, year):
                 raise RuntimeError(f"[{region}] captured hours for bin {s}/{a} do not add up "
                                    f"to the model's annual table ({year} vs {model.lookup[(s, a)]})")
             arow.append(model.lookup[(s, a)])
             if (s, a) in used_bins:
-                curves[f"{s}_{a}"] = _season_days(glob)
-                diffuse[f"{s}_{a}"] = _season_days(dif)
+                curves[f"{s}_{a}"] = _season_days(shape_glob)
+                diffuse[f"{s}_{a}"] = _season_days(shape_dif)
         annual.append(arow)
     days = _days_per_season(next(iter(captured.values()))[0].index)
     return {
@@ -157,6 +176,8 @@ def sun_doc(region, lat, lon, model, captured, source_kind, used_bins):
         # annual_kwh_m2 exactly; the rounding only shapes the day.
         "day_wh_m2": curves, "day_diffuse_wh_m2": diffuse,
         "terrain_horizon": model.horizon_profile is not None,
+        # the days above are open-horizon shapes; tshade adds each roof's hills
+        "day_open_horizon": True,
     }
 
 

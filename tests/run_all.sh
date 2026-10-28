@@ -71,6 +71,7 @@ run "staircases"            $PY tests/test_staircase.py
 run "plant decks"           $PY tests/test_plant_decks.py
 run "no-LiDAR surface"      $PY tests/test_synthesize_dsm.py
 run "installer rules"       $PY tests/test_installer_rules.py
+run "shading split"         $PY tests/test_shading_split.py
 run "photo roof shape"      $PY tests/test_photo_shape.py
 run "structured roofs"       $PY tests/test_structured_roof.py
 run "face straighten"        $PY tests/test_face_straighten.py

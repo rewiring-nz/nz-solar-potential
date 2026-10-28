@@ -1,11 +1,11 @@
 """
-WHAT CALIBRATES THE SUNLIGHT TODAY (22 Oct 2026; the method notes below are
-the history and still describe the clear-sky, horizon and lookup steps):
-  1. NIWA SolarView measured GHI at the Queenstown pilot centre, for every
-     region within 0.30 deg (the whole Wakatipu basin, Kingston, Glenorchy);
+WHAT CALIBRATES THE SUNLIGHT (28 Oct 2026; the notes below are history and
+still describe the clear-sky, horizon and lookup steps):
+  1. NIWA SolarView measured GHI at the Queenstown pilot centre, within
+     0.25 deg (distances in latitude degrees, longitude scaled by cos lat);
   2. else the nearest NIWA measured-radiation station within 1.5 deg
-     (NIWA_MEASURED_GHI_STATIONS: Wanaka/Hawea use Queenstown Aero, Mt Eden
-     Auckland);
+     (Wanaka, Hawea, Kingston: Queenstown Aero; Mt Eden: Auckland), blended
+     with SolarView between 0.25 and 0.40 deg so there is no step;
   3. only beyond those, the sunshine-hours inference, then NASA POWER --
      neither is used by any region built today.
   Each is then scaled by ERA5's difference between the region and the
@@ -176,10 +176,17 @@ MONTH_REP_DAY = [17, 47, 75, 105, 135, 162, 198, 228, 258, 288, 318, 344]  # Duf
 GLOVER_MCCULLOCH_B = 0.52
 
 
+def _deg_dist(lat1, lon1, lat2, lon2):
+    """Distance in degrees of latitude (~111 km each). Longitude degrees are
+    shorter by cos(latitude): about 0.7 at 45 S. Measuring both alike sent
+    Wanaka and Hawea to Clyde instead of Queenstown Aero, which is nearer."""
+    return float(np.hypot(lat1 - lat2, (lon1 - lon2) * np.cos(np.radians((lat1 + lat2) / 2))))
+
+
 def _nearest_niwa_station(lat, lon):
     best, best_dist = None, None
     for station in NIWA_STATIONS.values():
-        dist = np.hypot(station["lat"] - lat, station["lon"] - lon)
+        dist = _deg_dist(station["lat"], station["lon"], lat, lon)
         if best_dist is None or dist < best_dist:
             best, best_dist = station, dist
     if best is not None and best_dist <= NIWA_MATCH_RADIUS_DEG:
@@ -262,7 +269,11 @@ SOLARVIEW_CAL_LOCATION = (-45.03, 168.66)
 # 0.30 covers the whole Queenstown district (furthest region 0.222 deg) with
 # margin, and comes nowhere near Wellington at 7.1 deg -- that repo shares this
 # file and must keep falling through to its own calibration.
-SOLARVIEW_CAL_MAX_DIST_DEG = 0.30
+SOLARVIEW_CAL_MAX_DIST_DEG = 0.40
+# Between these distances the SolarView and nearest-station calibrations are
+# blended linearly, so towns either side of the edge (Kingston, Glenorchy,
+# Kinloch) don't step ~7% apart (build_poa_lookup_table).
+SOLARVIEW_BLEND_DEG = (0.25, 0.40)
 SOLARVIEW_MEASURED_GHI_KWH_M2_DAY = {
     "JAN": 6.29, "FEB": 5.22, "MAR": 3.78, "APR": 2.31, "MAY": 1.38, "JUN": 1.09,
     "JUL": 1.41, "AUG": 2.26, "SEP": 3.56, "OCT": 4.98, "NOV": 6.11, "DEC": 6.49,
@@ -356,7 +367,7 @@ def solarview_calibrated_monthly_factors(lat, lon, clearsky_daily_mean_horizon_a
     behind them), and our pipeline separately zeroes horizon-blocked DNI -- a
     factor computed against the unblocked clear sky would count the mountains
     twice, landing ~5-8% under the measured record it was calibrated to."""
-    dist = np.hypot(lat - SOLARVIEW_CAL_LOCATION[0], lon - SOLARVIEW_CAL_LOCATION[1])
+    dist = _deg_dist(lat, lon, *SOLARVIEW_CAL_LOCATION)
     if dist > SOLARVIEW_CAL_MAX_DIST_DEG:
         return None
     # The argument is ignored on purpose -- see _solarview_denominator. It is
@@ -484,7 +495,7 @@ def _era5_monthly(lat, lon):
             c = _era5_cell(f"{base_la + dla:.2f}_{base_lo + dlo:.2f}")
             if not c or (c[2] is not None and c[2] > ERA5_MAX_CELL_ELEV_M):
                 continue
-            dist = math.hypot(c[0] - lat, c[1] - lon)
+            dist = _deg_dist(c[0], c[1], lat, lon)
             if dist <= 0.3:
                 got.append((max(dist, 0.02), c[3]))
     if not got:
@@ -515,7 +526,7 @@ def niwa_station_measured_monthly_factors(lat, lon, clearsky_daily_mean):
     is why the adjusted series would double-count it here."""
     best, best_d = None, None
     for name, slat, slon, monthly in NIWA_MEASURED_GHI_STATIONS:
-        d = np.hypot(lat - slat, lon - slon)
+        d = _deg_dist(lat, lon, slat, slon)
         if best_d is None or d < best_d:
             best, best_d = (name, monthly), d
     if best is None or best_d > NIWA_STATION_MAX_DIST_DEG:
@@ -528,7 +539,8 @@ def niwa_station_measured_monthly_factors(lat, lon, clearsky_daily_mean):
     return {k: v * r[k] for k, v in out.items()} if r else out
 
 
-def build_poa_lookup_table(lat, lon, tz="Pacific/Auckland", year=2023, horizon_profile=None):
+def build_poa_lookup_table(lat, lon, tz="Pacific/Auckland", year=2023, horizon_profile=None,
+                           monthly_factor=None):
     """Returns dict {(slope_bin_deg, aspect_bin_deg): annual_poa_kwh_per_m2}.
     horizon_profile: optional dict from terrain_horizon.compute_horizon_profile
     -- when given, hours where the sun's actual position sits below the
@@ -565,7 +577,18 @@ def build_poa_lookup_table(lat, lon, tz="Pacific/Auckland", year=2023, horizon_p
     # Factor priority: measured-radiation calibration (pilot-local) >
     # sunshine-hours inference (any NZ location near a NIWA station) >
     # NASA POWER (portable global fallback).
-    monthly_factor = solarview_calibrated_monthly_factors(lat, lon, clearsky_daily_mean_adj)
+    # monthly_factor given: use it as is (a fixed reference climate, e.g. for
+    # the sunny-side rule, which judges direction and pitch, not cloud)
+    given = monthly_factor is not None
+    if not given:
+        monthly_factor = solarview_calibrated_monthly_factors(lat, lon, clearsky_daily_mean_adj)
+    d_sv = _deg_dist(lat, lon, *SOLARVIEW_CAL_LOCATION)
+    lo, hi = SOLARVIEW_BLEND_DEG
+    if not given and monthly_factor is not None and d_sv > lo:
+        station = niwa_station_measured_monthly_factors(lat, lon, clearsky_daily_mean)
+        if station is not None:
+            w = min(1.0, (hi - d_sv) / (hi - lo))      # 1 at the inner edge, 0 at the outer
+            monthly_factor = {m: w * monthly_factor[m] + (1 - w) * station[m] for m in monthly_factor}
     if monthly_factor is None:
         # Measured station radiation before inferred-from-sunshine-hours: the
         # inference is documented above as ~14% low and the PVGIS check found
@@ -624,7 +647,7 @@ def build_poa_lookup_table(lat, lon, tz="Pacific/Auckland", year=2023, horizon_p
     dni_extra = pvlib.irradiance.get_extra_radiation(times)
     airmass = location.get_airmass(times, solar_position=solpos)["airmass_relative"]
 
-    lookup = {}
+    lookup, beam_lookup = {}, {}
     for slope_bin in range(0, config.MAX_ROOF_SLOPE_DEG + SLOPE_BIN_DEG, SLOPE_BIN_DEG):
         for aspect_bin in range(0, 360, ASPECT_BIN_DEG):
             poa = pvlib.irradiance.get_total_irradiance(
@@ -637,12 +660,22 @@ def build_poa_lookup_table(lat, lon, tz="Pacific/Auckland", year=2023, horizon_p
             )
             annual_kwh_per_m2 = poa["poa_global"].sum() / 1000  # Wh -> kWh (hourly W values summed = Wh)
             lookup[(slope_bin, aspect_bin)] = annual_kwh_per_m2
+            # The part that comes straight from the sun's disc: the beam plus
+            # Perez's circumsolar ring, which a roof loses with the sun when
+            # something blocks it. The rest (sky and ground) is diffuse.
+            comp = pvlib.irradiance.perez(
+                slope_bin, aspect_bin, dhi, dni, dni_extra,
+                solpos["apparent_zenith"], solpos["azimuth"], airmass,
+                return_components=True)
+            circ = comp["poa_circumsolar" if "poa_circumsolar" in comp else "circumsolar"].fillna(0.0)
+            beam_lookup[(slope_bin, aspect_bin)] = (poa["poa_direct"].fillna(0.0) + circ).sum() / 1000
 
     # dni/solpos (after the terrain-horizon and cloud corrections above) are also handed back for
     # src/building_shading.py to reuse directly -- computing this hourly series is most of this
     # function's own cost, and building-level near-field shading needs the exact same series to
     # test each building's own horizon against, not a re-derived approximation of it.
-    hourly = {"dni": dni, "solar_azimuth": solpos["azimuth"], "solar_elevation": solpos["apparent_elevation"]}
+    hourly = {"dni": dni, "solar_azimuth": solpos["azimuth"], "solar_elevation": solpos["apparent_elevation"],
+              "beam_lookup": beam_lookup}
     return lookup, monthly_factor, hourly
 
 
@@ -687,6 +720,20 @@ class SolarModel:
         slope_bin = _nearest_bin(slope_deg, SLOPE_BIN_DEG, max_value=config.MAX_ROOF_SLOPE_DEG)
         aspect_bin = _nearest_bin(aspect_deg, ASPECT_BIN_DEG)
         return self.lookup[(slope_bin, aspect_bin)]
+
+    def beam_share(self, slope_deg, aspect_deg):
+        """Share of a plane's yearly sunlight that comes from the sun's disc."""
+        slope_bin = _nearest_bin(slope_deg, SLOPE_BIN_DEG, max_value=config.MAX_ROOF_SLOPE_DEG)
+        aspect_bin = _nearest_bin(aspect_deg, ASPECT_BIN_DEG)
+        tot = self.lookup[(slope_bin, aspect_bin)]
+        return min(1.0, self.hourly["beam_lookup"][(slope_bin, aspect_bin)] / tot) if tot > 0 else 0.0
+
+    def kept_sun(self, slope_deg, aspect_deg, beam, sky):
+        """Share of a plane's yearly sunlight it keeps: the direct part times
+        the direct sun that gets through, plus the diffuse part times the sky
+        left open. This is the shading_factor the yield and the workings use."""
+        b = self.beam_share(slope_deg, aspect_deg)
+        return b * beam + (1.0 - b) * sky
 
     def facet_yield(self, facet, n_panels, shading_factor=1.0):
         """Returns dict with kwp, dc_kwh_year, ac_kwh_year, ac_kwh_day_avg for

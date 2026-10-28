@@ -117,6 +117,15 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
     polygon (in the DSM's CRS) -- ray samples falling inside it (buffered
     by OWN_ROOF_MARGIN_M) are excluded per-ray so the facet's own roof
     isn't mistaken for a neighbour; omitting it disables that exclusion."""
+    profile = _near_profile(dsm_band, dsm_transform, dsm_nodata, x, y, own_geom)
+    if profile is None:
+        return 1.0  # observer point outside the DSM extent -- degrade to unshaded rather than crash
+    return _near_factor(profile, hourly, terrain_horizon_profile)
+
+
+def _near_profile(dsm_band, dsm_transform, dsm_nodata, x, y, own_geom):
+    """The near-field horizon (azimuth -> elevation, degrees) at (x, y), or
+    None if the point is outside the DSM."""
     exclude_geom = _own_buffer(own_geom) if own_geom is not None else None
     # Mask the observer's own roof, but NOT anything towering over it: tree
     # canopy overhanging a roof used to be skipped as "own building" and so
@@ -144,8 +153,11 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
             exclude_max_z=exclude_max_z,
         )
     except ValueError:
-        return 1.0  # observer point outside the DSM extent -- degrade to unshaded rather than crash
+        return None
+    return profile
 
+
+def _near_factor(profile, hourly, terrain_horizon_profile):
     if not any(v > 0.5 for v in profile.values()):
         return 1.0  # nothing nearby taller than half a degree in any direction -- not worth the rest of this
 
@@ -157,3 +169,51 @@ def building_shading_factor(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, o
 
     still_visible = baseline_visible & (sun_el > building_horizon_at_sun_az)
     return float(dni[still_visible].sum() / baseline_dni)
+
+
+def facet_sun_context(hourly, slope_deg, aspect_deg, terrain_horizon_profile=None, far_profile=None):
+    """Per-facet arrays for facet_sun: the beam on this plane each hour
+    (cosine of incidence), the hours the sun clears the area's horizon, and
+    the building's far-terrain horizon at the sun's azimuth."""
+    import numpy as np
+    sun_az, sun_el, dni, baseline_visible, _ = _sun_baseline(hourly, terrain_horizon_profile)
+    tilt, az = np.radians(slope_deg), np.radians(aspect_deg)
+    el, a = np.radians(sun_el), np.radians(sun_az)
+    cos_inc = np.sin(el) * np.cos(tilt) + np.cos(el) * np.sin(tilt) * np.cos(a - az)
+    beam = dni * np.clip(cos_inc, 0, None)
+    far_h = (horizon_angle_at(far_profile, sun_az) if far_profile is not None
+             else np.full(sun_el.shape, -90.0))
+    return {"beam": beam, "base": baseline_visible, "far_h": far_h,
+            "denom": float(beam[baseline_visible].sum())}
+
+
+def facet_sun(dsm_band, dsm_transform, dsm_nodata, x, y, hourly, ctx, own_geom=None,
+              terrain_horizon_profile=None):
+    """What a point on a facet keeps, as {near, beam, sky}:
+
+      near  the old near-field DNI factor (building_shading_factor), kept for
+            the deep-shade veto so layouts don't move;
+      beam  share of the facet's direct sun that clears BOTH the near (1 m
+            DSM) and far (8 m DEM) horizons, taking the higher of the two in
+            each direction, so terrain seen by both scans counts once;
+      sky   share of the sky the near horizon leaves open (mean of cos^2 of
+            the horizon elevation), for the diffuse light.
+
+    The yield uses beam for the direct part of the sunlight and sky for the
+    diffuse part (SolarModel.kept_sun). Until 28 Oct one DNI factor scaled
+    all of it, which overstated shade 2-3x and multiplied the near and far
+    terrain together."""
+    import numpy as np
+    profile = _near_profile(dsm_band, dsm_transform, dsm_nodata, x, y, own_geom)
+    sun_az, sun_el = _sun_baseline(hourly, terrain_horizon_profile)[:2]
+    if profile is None:
+        near, near_h, sky = 1.0, np.full(sun_el.shape, -90.0), 1.0
+    else:
+        near = _near_factor(profile, hourly, terrain_horizon_profile)
+        near_h = horizon_angle_at(profile, sun_az)
+        h = np.radians(np.clip(np.fromiter(profile.values(), float), 0.0, 90.0))
+        sky = float(np.mean(np.cos(h) ** 2))
+    if ctx["denom"] <= 0:
+        return {"near": near, "beam": 1.0, "sky": sky}
+    vis = ctx["base"] & (sun_el > np.maximum(near_h, ctx["far_h"]))
+    return {"near": near, "beam": float(min(ctx["beam"][vis].sum() / ctx["denom"], 1.0)), "sky": sky}
