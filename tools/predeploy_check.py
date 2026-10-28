@@ -137,6 +137,8 @@ def main():
     ap.add_argument("--live-url", default=LIVE_URL)
     ap.add_argument("--new", default=str(NEW))
     ap.add_argument("--top", type=int, default=15)
+    ap.add_argument("--accept-drop", metavar="REASON",
+                    help="let a district-wide fall past TOTAL_DROP_FRAC through, saying why")
     a = ap.parse_args()
 
     newp = Path(a.new)
@@ -252,6 +254,9 @@ def main():
     total_drop = tot_live > 0 and (tot_live - tot_new) / tot_live > TOTAL_DROP_FRAC
     if total_drop:
         print(f"\n  DISTRICT PANELS FELL MORE THAN {100 * TOTAL_DROP_FRAC:.0f}%")
+        if a.accept_drop:
+            print(f"  accepted: {a.accept_drop}")
+            total_drop = False
     show("NEWLY WITHHELD", withheld,
          lambda r: f"#{r[0]}  had {r[1]} panels, now: {r[2]}")
 
