@@ -346,7 +346,7 @@
         ${delta ? `<span class="pe-delta">${delta > 0 ? "+" : ""}${delta}</span>` : ""}
       </div>
       <div class="pe-hint">Double-click a panel to select &middot; shift-double-click to add more
-        &middot; drag to move &middot; <b>Esc</b> deselects</div>
+        &middot; drag to move &middot; <b>Esc</b> to deselect</div>
       <div class="pe-actions">
         <button id="pe-add" class="${S.addMode ? "on" : ""}">${S.addMode ? "Click the roof…" : "+ New panel"}</button>
         <button id="pe-reset">Reset</button>

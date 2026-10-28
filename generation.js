@@ -51,15 +51,15 @@ function genAssumptionNodes(A) {
   const areaEach = Wk.input("Size of one panel", A.panel_area_m2, "m²",
     { dp: 3, source: "Panel spec: 1.134 m × 1.961 m, a typical modern residential panel." });
   const stc = Wk.input("Standard test sunlight", 1, "kW/m²",
-    { dp: 0, note: "Panels are rated under 1,000 W of sunlight per m², so rated power ÷ (area × 1 kW/m²) is the panel's efficiency." });
+    { dp: 0, note: "Panels are rated at 1,000 W of sunlight per m². Rated power ÷ (area × 1 kW/m²) gives the panel's efficiency." });
   const eff = Wk.quotient("Panel efficiency", "share", ratedKw,
     Wk.product("Sunlight on one panel at test conditions", "kW", [areaEach, stc], { dp: 3 }), { dp: 2 });
   const inv = Wk.input("Inverter efficiency", A.inverter_efficiency_pct / 100, "share",
-    { source: "Typical string inverter (the inverter turns the panels' DC into household AC).",
+    { source: "Typical string inverter. It turns the panels' DC into household AC.",
       edit: { key: "gen:inverter_efficiency_pct", scale: 100, unit: "%", step: 0.5, dp: 2 } });
   const loss = Wk.input("Other system losses", A.system_derate_pct / 100, "share",
     { dp: 2, source: "PVWatts convention: cell temperature, dirt, wiring, mismatch, panel tolerance and downtime.",
-      note: "Shading is not in this number: it is measured per panel from the laser scan, above.",
+      note: "Shading is not in this number. It is measured for each panel from the laser scan.",
       edit: { key: "gen:system_derate_pct", scale: 100, unit: "%", step: 0.1, dp: 2 } });
   const kept = Wk.complement("Kept after other losses", loss, { dp: 2 });
   return { ratedKw, areaEach, eff, inv, kept };
@@ -68,16 +68,16 @@ function genAssumptionNodes(A) {
 function genGroundNode(sun) {
   const g = Wk.input("Sunlight on flat ground", genAnnual(sun, 0, 0), "kWh/m²/yr", {
     source: sun.source && sun.source.text,
-    note: "An average year at this town, hour by hour: clear-sky sun from its latitude and height, " +
-          "scaled month by month to the measured record" +
-          (sun.terrain_horizon ? ", with the sun cut off when it is behind the surrounding hills." : "."),
+    note: "An average year in this town, hour by hour. Clear-sky sun from its latitude and height, " +
+          "scaled each month to measured sunlight" +
+          (sun.terrain_horizon ? ", with the sun cut off behind the surrounding hills." : "."),
   });
   if (sun.monthly_factor) {
     const months = Object.keys(sun.monthly_factor);
     g.children.push(Wk.table("How much of the clear-sky sun gets through the cloud, by month", "share",
       [{ key: "m", label: "Month" }, { key: "f", label: "Share of clear-sky sun", unit: "share", dp: 0 }],
       months.map(m => ({ m: m[0] + m.slice(1).toLowerCase(), f: sun.monthly_factor[m] })), "f",
-      { note: "Measured sunlight ÷ clear-sky sunlight, month by month. Shown for reference; the yearly figure above already includes it." }));
+      { note: "Measured sunlight ÷ clear-sky sunlight, by month. For reference only: the yearly figure already includes it." }));
   }
   return g;
 }
@@ -135,8 +135,8 @@ function genFromPanels(panels, sun, A, opts) {
      { key: "open", label: "Sunlight", unit: "kWh/m²/yr" }],
     rows, "open", { weightCol: "share",
       note: "Each tilt and direction gets its own yearly sunlight from the same hour-by-hour model " +
-            "(sunlight split into direct and diffuse, then onto the slope with the Perez sky model). " +
-            "Tilts are taken to the nearest 5° and directions to the nearest 10°. Averaged over the panels." });
+            "(direct and diffuse light, put onto the slope with the Perez sky model). " +
+            "Tilts are rounded to 5° and directions to 10°. Averaged over the panels." });
   const tilt = Wk.quotient("Gain from the panels' tilt and direction", "×", openMean, ground, { dp: 3 });
   const shadedMean = Wk.table("Sunlight after shading", "kWh/m²/yr",
     [{ key: "face", label: "Roof face" }, { key: "share", label: "Share of panels", unit: "share", dp: 0 },
@@ -146,8 +146,8 @@ function genFromPanels(panels, sun, A, opts) {
     rows, "shaded", { weightCol: "share" });
   const shade = Wk.quotient("Kept after shading", "share", shadedMean, openMean, {
     dp: 1,
-    note: "Measured for every panel from the laser scan: neighbouring buildings and trees within 100 m, " +
-          "and the hills out to 20 km as seen from this roof. It is the share of the direct sun the panel still gets.",
+    note: "Measured for each panel from the laser scan: nearby buildings and trees within 100 m, " +
+          "and hills out to 20 km. It is the share of direct sun the panel still gets.",
   });
   if (missing) shade.flags.push(`${missing} panel${missing > 1 ? "s were" : " was"} added in the editor and use${missing > 1 ? "" : "s"} this roof's average sunlight and shading.`);
   const perM2 = Wk.product("Sunlight on each m² of panel", "kWh/m²/yr", [ground, tilt, shade]);
@@ -159,7 +159,7 @@ function genFromPanels(panels, sun, A, opts) {
   const dc = Wk.product("Electricity from the panels (DC)", "kWh/yr", [onPanels, a.eff]);
   const exactNode = Wk.product("Electricity after the inverter and losses", "kWh/yr", [dc, a.inv, a.kept]);
   const kwp = Wk.product("System size", "kW", [count, a.ratedKw], {
-    note: "Panels × rated power: the most the panels make in full test sunlight. Real output is lower most of the time." });
+    note: "Panels × rated power: the most the panels make in full test sunlight. Real output is usually lower." });
 
   // The pipeline rounds every panel to a whole kWh, and the map's totals add
   // those up. Shown as its own step, so the final figure is the map's figure.
@@ -230,7 +230,7 @@ function genFromCoverage(props, pct, sun, A) {
   const poa = Wk.given(`Sunlight on the sunniest ${pct}% of the roof, after shading`, b.value, "kWh/m²/yr", kids, {
     formula: b.lo == null ? "the roof's average" : b.lo === b.hi ? `the sunniest ${b.lo}%`
       : `between the sunniest ${b.lo}% and ${b.hi}%, ${pct}% of the way`,
-    note: "Each roof face's sunlight for its own tilt and direction, after shading measured from the laser scan, averaged over the sunniest faces first.",
+    note: "Each roof face's sunlight for its tilt and direction, after shading from the laser scan. Sunniest faces are used first.",
     check: () => genBestPoa(props, pct).value,
   });
   let perM2 = poa;
@@ -294,19 +294,19 @@ function genCurve(sun, weights, total, tshade) {
     total,
     Wk.table("Average day, kW in each hour", "kW",
       [{ key: "h", label: "Hour" }].concat(sun.seasons.map(s => ({ key: s, label: s[0].toUpperCase() + s.slice(1), unit: "kW", dp: 2 }))),
-      rows, sun.seasons[0], { note: "Shown for reference: the year adds each season's day × its days." }),
+      rows, sun.seasons[0], { note: "For reference: the year adds each season's day × its days." }),
   ], {
     dp: 0,
     formula: `each season's day × its days (${sun.seasons.map((s, i) => `${s} ${days[i]}`).join(", ")}), added up`,
-    note: "Each panel's hourly sunlight for its own tilt and direction, from the same model run that made the yearly figure" +
-          (tshade ? ", with this roof's hours behind the hills taken from its own horizon" : "") +
-          `. Then scaled by ${Wk.fmt(scale, "×", 4)} so the year under the curve is exactly the yearly figure.`,
+    note: "Each panel's hourly sunlight for its tilt and direction, from the same model run as the yearly figure" +
+          (tshade ? ", with hours behind the hills taken from this roof's own horizon" : "") +
+          `. Then scaled by ${Wk.fmt(scale, "×", 4)} so the year under the curve matches the yearly figure.`,
     check: () => { let y = 0; for (let s = 0; s < S; s++) for (let h = 0; h < 24; h++) y += gen[s][h] * days[s]; return y; },
   });
   if (Math.abs(scale - 1) > 0.15 && year > 0) {
-    node.flags.push(`The hourly shape had to be scaled by ${Wk.fmt(scale, "×", 3)} to match the yearly figure: the two differ more than they should.`);
+    node.flags.push(`The hourly shape was scaled by ${Wk.fmt(scale, "×", 3)} to match the yearly figure. The two differ more than they should.`);
   }
-  if (gaps > 0) node.flags.push("Part of the roof faces a direction with no hourly curve on file; the rest of the roof's shape is used for it.");
+  if (gaps > 0) node.flags.push("Part of the roof faces a direction with no hourly curve on file. It uses the shape of the rest of the roof.");
   return { gen, seasonDays: days.slice(), seasons: sun.seasons.slice(), node, scale };
 }
 

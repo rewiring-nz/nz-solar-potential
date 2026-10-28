@@ -123,22 +123,22 @@ function btBuildLoad(p, opts) {
   const shapes = {};
   const hdd = Wk.given("Heating degree-days a year", btHdd(lat), "°C·days",
     [btIn("Latitude", Math.abs(lat || 41), "°", { dp: 2, source: "This building's town." })], {
-      formula: "1,200 at Auckland (36.9°S) rising to 3,200 at Queenstown (45.0°S) in a straight line, held beyond",
-      note: "How cold the year is: degrees below 18 °C, added up over every day of the year. Coarse, from latitude.",
+      formula: "a straight line from 1,200 at Auckland (36.9°S) to 3,200 at Queenstown (45.0°S), held beyond",
+      note: "How cold the year is (degrees below 18 °C, summed over the year). Estimated from latitude.",
       check: () => btHdd(lat) });
   const seasonal = (part, s, what) => btIn(`${BT_CAP(s)} adjustment`, BT_SEASONAL[part][s], "×",
     { dp: 2, note: what });
   const roof = btIn("Roof area", roofM2, "m²", { source: "Measured from the laser scan." });
   const perKwhHdd = btIn("Heat pump electricity per degree-day", D.heat_kwh_per_hdd, "kWh/°C·day",
-    { source: "Calibrated to EECA: about 5 kWh a winter day in Auckland and 13 in Queenstown for a typical home." });
+    { source: "Set so a typical home uses about 5 kWh a winter day in Auckland and 13 in Queenstown (EECA)." });
   const resistive = btIn("Plug-in heaters vs a heat pump", D.resistive_vs_heatpump, "×",
-    { dp: 1, source: "A heat pump delivers about 2.5 units of heat per unit of electricity; a plug-in heater 1." });
+    { dp: 1, source: "A heat pump gives about 2.5 units of heat per unit of electricity. A plug-in heater gives 1." });
   let heatWinter;
   if (p.type === "business") {
-    const year = Wk.maxOf("Electricity for the business a year (before heating and cars)", "kWh/yr", [
+    const year = Wk.maxOf("Business electricity a year, before heating and cars", "kWh/yr", [
       btIn("Smallest business", D.biz_min_kwh, "kWh/yr"),
       Wk.product("By floor area", "kWh/yr", [btIn("Electricity per m²", D.biz_kwh_per_m2, "kWh/m²",
-        { dp: 0, source: "Typical NZ commercial use per m² of floor, before space heating." }), roof])]);
+        { dp: 0, source: "Typical NZ commercial use per m² of floor, before heating." }), roof])]);
     const day = Wk.quotient("A typical day", "kWh/day", year, btIn("Days in a year", 365, "days"));
     for (const s of BT_SEASONS) nodes.appliance[s] = Wk.product(`Business use, ${s}`, "kWh/day",
       [day, seasonal("appliance", s, "Lighting is used more in the darker months.")]);
@@ -156,7 +156,7 @@ function btBuildLoad(p, opts) {
     const people = btIn("People", Math.max(1, Math.min(8, p.people || 1)), "people", { source: "Your answer." });
     const app = Wk.sum("Appliances, lights and cooking, a typical day", "kWh/day", [
       btIn("Base (fridge, standby, lights)", D.appliance_base_kwh, "kWh/day",
-        { source: "Sized so a 3-person home lands near MBIE's ~7,000 kWh a year average." }),
+        { source: "Set so a 3-person home uses about 7,000 kWh a year, the NZ average (MBIE)." }),
       Wk.product("For the people", "kWh/day", [btIn("Each person", D.appliance_per_person_kwh, "kWh/day"), people])]);
     const cyl = Wk.sum("Electric cylinder, a typical day", "kWh/day", [
       btIn("Standing losses", D.water_base_kwh, "kWh/day", { source: "EECA: a cylinder loses heat all day." }),
@@ -185,7 +185,7 @@ function btBuildLoad(p, opts) {
   }
   for (const s of BT_SEASONS) {
     nodes.heat[s] = heatWinter ? Wk.product(`Heating, ${s}`, "kWh/day",
-      [heatWinter, seasonal("heat", s, "Share of the coldest days' heating needed in this season.")])
+      [heatWinter, seasonal("heat", s, "Share of the coldest days' heating used in this season.")])
       : btZero(`Heating, ${s}`, p.heating === "none" ? "No heating." : "Heated with gas or wood: no electricity.");
   }
   const evs = btIn(p.type === "business" ? "Electric vehicles" : "Electric cars", p.evs || 0, "", { dp: 0, source: "Your answer." });
@@ -279,7 +279,7 @@ function btAveragePrice(load, s, P) {
 function btCalibration(load, calib, tariff, seasonDays) {
   const scale = { summer: 1, autumn: 1, winter: 1, spring: 1 };
   const P = btPriceNodes(tariff);
-  const one = s => btIn(`Matching to your bills, ${s}`, 1, "×", { dp: 2, note: "Nothing entered: our estimate as it is." });
+  const one = s => btIn(`Matching to your bills, ${s}`, 1, "×", { dp: 2, note: "Nothing entered, so our estimate is used as is." });
   const nodes = {};
   BT_SEASONS.forEach(s => { nodes[s] = one(s); });
   const done = (matched, by) => { BT_SEASONS.forEach(s => { scale[s] = nodes[s].value; }); return { scale, matched, by, nodes }; };
@@ -290,7 +290,7 @@ function btCalibration(load, calib, tariff, seasonDays) {
       BT_SEASONS.map(s => Wk.product(`${BT_CAP(s)} (${days(s).value} days)`, "kWh", [btModelledDay(load, s), days(s)])));
     const k = Wk.clamp("Matching to your yearly use", "×", Wk.quotient("Your use ÷ our estimate", "×",
       btIn("Your electricity use a year", calib.total, "kWh/yr", { source: "You entered it." }), est, { dp: 3 }),
-      0.2, 5, { dp: 3, note: "Every part of the estimated use is scaled by this, in every season." });
+      0.2, 5, { dp: 3, note: "Every part of our estimate is scaled by this, in every season." });
     BT_SEASONS.forEach(s => { nodes[s] = k; });
     return done(true, "total");
   }
@@ -304,7 +304,7 @@ function btCalibration(load, calib, tariff, seasonDays) {
         Wk.quotient("Bill a day", "$/day", entered, P.month), P.daily), btAveragePrice(load, s, P));
     return Wk.clamp(`Matching to your bills, ${s}`, "×",
       Wk.quotient("Your use ÷ our estimate", "×", kwh, model, { dp: 3 }), 0.2, 5, { dp: 3,
-        note: "Every part of the estimated use is scaled by this, so the estimate's bill equals yours." });
+        note: "Every part of our estimate is scaled by this, so its bill matches yours." });
   };
   const w = fromBill(calib.winter, "winter");
   const su = fromBill(calib.summer, "summer");
@@ -354,8 +354,8 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   const seasonUnit = u => u === "$/yr" ? "$" : u === "kWh/yr" ? "kWh" : u;
   const yearOf = (label, unit, f) => Wk.sum(label, unit,
     BT_SEASONS.map(s => Wk.product(`${BT_CAP(s)} (${days[s].value} days)`, seasonUnit(unit), [f(s), days[s]])));
-  const hourNote = "Hour by hour: the sun serves the home first; what's left is exported (and fills the battery first, " +
-                   `if there is one). The rest comes from the grid. Peak hours (${btPeakText()}) use the peak prices.`;
+  const hourNote = "Each hour, solar powers the home first. Any spare charges the battery (if there is one), then is exported. " +
+                   `The rest comes from the grid. Peak prices apply ${btPeakText()}.`;
   const S = {};
   for (const s of BT_SEASONS) {
     const { L, G, solar, withB } = perSeason[s];
@@ -432,7 +432,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   N.avgDay = Wk.table("Average day's use, across the year", "kWh/day", cols, avgRows, "use");
   N.dayKwh = Wk.table("Used in the daytime, 9am–5pm", "kWh/day", cols, avgRows, "dayUse");
   N.dayKw = Wk.quotient("Average daytime load", "kW", N.dayKwh, btIn("Daytime hours", 8, "h"), { dp: 2,
-    note: "The home's average draw while the sun is highest: the load solar can serve directly." });
+    note: "The home's average use in the middle of the day. Solar can power this directly." });
   N.dayShare = Wk.quotient("Share of the day's use in the daytime", "share", N.dayKwh, N.avgDay, { dp: 0 });
   res.year = { nowKwh: N.useYear.value, nowBill: N.nowBill.value, solarImport: N.solarImport.value,
                solarExport: N.solarExport.value, solarBill: N.solarBill.value, battImport: N.battImport.value,
@@ -469,25 +469,24 @@ function btReturns(cost, save, exportD, opts) {
     rows.push({ year: y + 1, retailY, exportY, saving, out: -out, net: saving - out, cum, life: y < E.life_years ? 1 : 0 });
     if (payback === null && cum >= costN.value) payback = y + 1 - (cum - costN.value) / Math.max(saving, 1e-9);
   }
-  const money = real ? "today's dollars" : "dollars of the day (nominal)";
   const rates = [
     btIn("Power prices rise", E.elec_inflation_pct / 100, "share", { dp: 1, source: "Advanced pricing.", edit: pctEd("elec_inflation_pct") }),
     btIn("Export rates fall", E.export_decline_pct / 100, "share", { dp: 1, source: "Advanced pricing.", edit: pctEd("export_decline_pct") }),
     btIn("Panels lose output", E.degradation_pct / 100, "share", { dp: 1, source: "A typical panel warranty.", edit: pctEd("degradation_pct") }),
   ].concat(real ? [btIn("General inflation (to today's dollars)", E.cpi_pct / 100, "share",
-    { dp: 1, source: "Advanced pricing (real prices). RBNZ targets 1–3%." })] : []);
-  const note = `Each year: the power you no longer buy at prices rising ${E.elec_inflation_pct}% a year, plus export income ` +
-               `at rates falling ${E.export_decline_pct}% a year, both shrinking ${E.degradation_pct}% a year as the panels age` +
-               (real ? `, then divided by ${E.cpi_pct}% a year of general inflation, so it is in today's dollars.` : ", in the dollars of each year.");
+    { dp: 1, source: "Advanced pricing. The Reserve Bank targets 1–3%." })] : []);
+  const note = `Each year: power you no longer buy (prices rise ${E.elec_inflation_pct}% a year) plus export income ` +
+               `(rates fall ${E.export_decline_pct}% a year). Both drop ${E.degradation_pct}% a year as the panels age.` +
+               (real ? ` Inflation of ${E.cpi_pct}% a year is taken out, to give today's dollars.` : " In the dollars of each year.");
   const cols = [{ key: "year", label: "Year" }, { key: "saving", label: "Bill savings", unit: "$" },
                 { key: "out", label: "Replacements", unit: "$" }, { key: "cum", label: "Running total", unit: "$" }];
   const lifeRows = rows.slice(0, E.life_years);
   const kids = [saveN, expN].concat(rates);
   const lifetime = Wk.table(`Savings over the panels' ${E.life_years}-year life`, "$", cols, lifeRows, "saving",
-    { children: kids, note: note + ` In ${money}.` });
+    { children: kids, note });
   const replN = Wk.table("Replacements over the panels' life", "$",
     cols, lifeRows, "out", { children: repl.map(r => r.node),
-      note: "Parts that wear out before the panels: the inverter, and a battery if there is one. " +
+      note: "Parts that wear out before the panels: the inverter, and the battery if there is one. " +
             (real ? "Priced in today's dollars." : `Priced at today's cost rising ${E.cpi_pct}% a year.`) });
   const net = Wk.sum(`Net savings over ${E.life_years} years`, "$", [
     lifetime, replN, Wk.product("Less the cost", "$", [costN, btIn("", -1, "")])]);
@@ -512,11 +511,11 @@ function btReturns(cost, save, exportD, opts) {
   const r = solve();
   const irr = Wk.given("Return on investment, a year", r, "share", [costN, lifetime, replN], {
     dp: 1,
-    formula: r == null ? "no rate makes it come out even" :
-      `the interest rate at which ${Wk.fmt(costN.value, "$")} paid now and each year's savings received come out even`,
-    note: `Like a savings account paying this rate each year for ${E.life_years} years, ` +
-          (real ? "on top of inflation (real)." : "before inflation (nominal).") +
-          (r == null ? "" : ` Check: at ${Wk.fmt(r, "share", 2)} the savings, each discounted back to today, add up to the cost (${Wk.fmt(npv(r) + costN.value, "$")} vs ${Wk.fmt(costN.value, "$")}).`),
+    formula: r == null ? "no rate breaks even" :
+      `the yearly rate at which paying ${Wk.fmt(costN.value, "$")} now breaks even with the savings that follow`,
+    note: `Like a savings account paying this rate for ${E.life_years} years, ` +
+          (real ? "after inflation." : "before inflation.") +
+          (r == null ? "" : ` Check: at ${Wk.fmt(r, "share", 2)}, the savings discounted to today add up to the cost (${Wk.fmt(npv(r) + costN.value, "$")} vs ${Wk.fmt(costN.value, "$")}).`),
     check: () => solve() });
   // the two halves of the lifetime savings, for pricing single panels: one
   // that covers power used on site earns the first, one that exports the second
@@ -573,12 +572,12 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
     : Wk.given("Solar cost per kW, for a system this size", typeof costPerKw === "function" ? costPerKw(kwpN.value) : 2000, "$/kW",
       [kwpN], { formula: typeof econ !== "undefined"
         ? econ.cost_tiers.map(t => `${t.label}: $${t.rate.toLocaleString()}/kW`).join("; ") : "flat $2,000/kW",
-        source: "Indicative NZ installed prices including GST.",
+        source: "Typical NZ installed prices, including GST.",
         check: v => typeof costPerKw === "function" ? costPerKw(v[0]) : 2000 });
   const solarCostN = Wk.product("Solar costs", "$", [kwpN, rate]);
   const battDef = (typeof BATTERY_DEFAULTS !== "undefined") ? BATTERY_DEFAULTS : { cost_per_kwh: 1000, life_years: 15 };
   const battRate = btIn("Battery cost per kWh", sy.battPerKwh > 0 ? sy.battPerKwh : battDef.cost_per_kwh, "$/kWh",
-    { source: sy.battPerKwh > 0 ? "You entered it (System pricing)." : "Indicative NZ installed price including GST." });
+    { source: sy.battPerKwh > 0 ? "You entered it (System pricing)." : "Typical NZ installed price, including GST." });
   const battCostN = Wk.product("Battery costs", "$", [
     btIn("Battery size", prof.battery || 0, "kWh", { dp: 1, source: "Your choice." }), battRate]);
   const allCostN = Wk.sum("Solar and battery cost", "$", [solarCostN, battCostN]);
@@ -854,8 +853,8 @@ function renderBillTool(box, ctx) {
     const high = off.filter(([k, n]) => state.calib[k] > n.value).map(([k]) => k);
     const matchNote = off.length
       ? `<span class="warn">${[
-          low.length ? `Your ${low.join(" and ")} bill is lower than this building can match &mdash; check the prices and daily charge.` : "",
-          high.length ? `Your ${high.join(" and ")} bill is higher than this building can match &mdash; check the prices.` : ""
+          low.length ? `Your ${low.join(" and ")} bill is lower than we can match for this building. Check the prices and daily charge.` : "",
+          high.length ? `Your ${high.join(" and ")} bill is higher than we can match for this building. Check the prices.` : ""
         ].filter(Boolean).join(" ")}</span>`
       : (!entered.length && calibBy !== "total")
         ? "Today's bills are our estimate for this building. Type in your own and everything updates."
@@ -956,7 +955,7 @@ function renderBillTool(box, ctx) {
           row("Panels lose output", field("deg", E.degradation_pct, `step="0.1" data-econ="degradation_pct"`, "", "%/yr")) +
           row("Show money in", seg("real", [["1", "Today's $"], ["0", "Nominal"]], E.real_prices ? "1" : "0", "Money in")) +
         `</div>` +
-        `<details class="sx-why sx-foot"><summary>Today's dollars or nominal?</summary>Today's dollars take general inflation out of every future year, so a dollar in year 20 is worth what a dollar is now. Nominal shows the dollars of each year.</details>` +
+        `<details class="sx-why sx-foot"><summary>Today's dollars or nominal?</summary>Today's dollars take inflation out, so a dollar in year 20 buys what a dollar buys now. Nominal shows each year's actual dollars.</details>` +
       `</details>` +
 
       `<div class="sx-sub">Electricity use</div>` +
@@ -983,7 +982,7 @@ function renderBillTool(box, ctx) {
           row(isBiz ? "Electric vehicles" : "Electric cars", seg("evs", (isBiz ? [0, 1, 2, 4, 8] : [0, 1, 2, 3]).map(n => [n, String(n)]), P.evs, "Electric cars")) +
           (P.evs > 0 ? row(isBiz ? "Charge in the working day" : "Charge when it's sunny", `<label class="sx-switch"><input type="checkbox" data-tick="evOnSun" ${P.evOnSun ? "checked" : ""} aria-label="Charge when it's sunny"><i></i></label>`) : "") +
         `</div>` +
-        `<details class="sx-why sx-foot"><summary>How this is used</summary>These answers shape our estimate of when and how much power the home uses. If you enter your bills or yearly use, the estimate is scaled to match them.</details>` +
+        `<details class="sx-why sx-foot"><summary>How this is used</summary>These answers set how much power the home uses, and when. If you enter your bills or yearly use, we scale the estimate to match.</details>` +
       `</details>` +
 
       `<div class="sx-sub">System cost</div>` +
@@ -997,7 +996,7 @@ function renderBillTool(box, ctx) {
           row("Battery", val(money(N.battCost)), { go: "battcost" }) : "") +
         row("Total", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost", cls: "total" }) +
       `</div>` +
-      `<div class="sx-foot">An estimate, not a quote. <details class="sx-why sx-inline"><summary>More</summary>Worked out from the roof, the local climate and the assumptions above. Tap any result to see how it was worked out, step by step.</details></div>` +
+      `<div class="sx-foot">An estimate, not a quote. <details class="sx-why sx-inline"><summary>More</summary>Based on the roof, the local climate and the assumptions above. Tap any result to see the working.</details></div>` +
       `</div>`;
     const [top, more] = html.split(SX_SPLIT);
     const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;

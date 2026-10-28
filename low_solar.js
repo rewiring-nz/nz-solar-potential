@@ -290,7 +290,7 @@ const LowSolar = (() => {
     const tok = box.__lsTok = {};             // a later roof opened meanwhile wins
     const cell = await getCell(o.lat, o.lng);
     if (box.__lsTok !== tok) return;
-    if (!cell) { box.innerHTML = `<div class="ls-note">No long-term daily sunlight record for this area yet.</div>`; return; }
+    if (!cell) { box.innerHTML = `<div class="ls-note">No long-term daily sunlight record for this area.</div>`; return; }
     const r = analyse(cell, o.curve, threshold, o.difShare);
     const node = (label, value, unit, formula) => (typeof Wk !== "undefined")
       ? Wk.given(label, value, unit, [
@@ -314,13 +314,13 @@ const LowSolar = (() => {
         `<label class="ls-thr">A low day is under <input id="ls-thr" type="number" min="5" max="90" step="5" value="${Math.round(threshold * 100)}">% ` +
           `of this roof's average day (${r.mean.toFixed(1)} kWh) &middot; ${(r.lowShare * 100).toFixed(1)}% of days</label>` +
       `</div>` +
-      (structural ? `<div class="ls-note"><b>Most of winter is "low" on this roof:</b> it faces away from the winter sun or is shaded, so its longest runs are the season itself, not a run of bad weather.</div>` : "") +
+      (structural ? `<div class="ls-note"><b>Most of winter is "low" on this roof.</b> It faces away from the winter sun or is shaded, so its longest runs are the season itself, not bad weather.</div>` : "") +
       `<div class="ls-note">From ${r.years} years of daily sunlight (ERA5 reanalysis, ~25 km grid), scaled to this roof's own seasons. ` +
-      `Reanalysis smooths the very darkest days, so real runs can be a little longer.</div>`;
+      `ERA5 smooths out the darkest days, so real runs can be a little longer.</div>`;
     const nodes = {
       longest: () => node("Max low-solar days in a row", r.longest.len, "days", `the longest run of consecutive days under ${Math.round(threshold * 100)}% of the roof's average day, ${r.y0}-${r.y1}${r.longest.len ? `, starting ${fmtDate(cell, r.longest.start)}` : ""}`),
-      decade: () => node("Once-a-decade run", r.decade, "days", `each year's longest run, ranked: the length only one year in ten exceeds; runs at least this long happened ${r.runs.filter(x => x.len >= r.decade).length} times in ${r.years} years`),
-      typical: () => node("Common low-solar days in a row", r.typical, "days", `each year's longest run, ranked: the middle year; runs at least this long happened ${r.runs.filter(x => x.len >= r.typical).length} times in ${r.years} years`),
+      decade: () => node("Once-a-decade run", r.decade, "days", `each year's longest run, ranked: the length only one year in ten beats. Runs this long or longer happened ${r.runs.filter(x => x.len >= r.decade).length} times in ${r.years} years`),
+      typical: () => node("Common low-solar days in a row", r.typical, "days", `each year's longest run, ranked: the middle year. Runs this long or longer happened ${r.runs.filter(x => x.len >= r.typical).length} times in ${r.years} years`),
     };
     box.querySelectorAll("[data-ls]").forEach(el => {
       if (typeof WkView !== "undefined") WkView.bind(el, nodes[el.dataset.ls]);
@@ -388,11 +388,11 @@ const LowSolar = (() => {
         fig("record", "Worst on record", b.record, b.record.start >= 0
           ? `${days(b.record.len)} from ${fmtDate(cell, b.record.start)}` : "no low-solar run") +
       `</div>` +
-      `<div class="ls-note">Usable storage to run the home on roof and battery alone through each year's hardest low-solar run: full the sunny evening before, empty by the next day's sun. ~90% round trip.</div>` +
+      `<div class="ls-note">Usable storage to run the home on solar and battery alone through each year's worst low-solar run. Full the sunny evening before, empty by the next day's sun. About 90% round trip.</div>` +
       (b.short.length
-        ? `<div class="ls-note"><b>In ${span(b.short)} this roof makes less than the home uses even on an average day</b> &mdash; ${kwh(b.shortKwh)} kWh short over a normal year, which the grid covers. No home battery holds a season.</div>`
+        ? `<div class="ls-note"><b>In ${span(b.short)} this roof makes less than the home uses, even on an average day.</b> That is ${kwh(b.shortKwh)} kWh short in a normal year, which the grid covers. No home battery can hold a season.</div>`
         : "") +
-      `<div class="ls-note">Home: the bill tool's household${hh.desc ? ` (${hh.desc})` : ""} &mdash; change it there.</div>` +
+      `<div class="ls-note">Home: the household from the bill tool${hh.desc ? ` (${hh.desc})` : ""}. Change it there.</div>` +
       `</div>`;
   }
   function batteryNode(cell, r, b, hh, key) {
@@ -401,16 +401,16 @@ const LowSolar = (() => {
     const label = { typical: "Battery for a normal year", decade: "Battery for a once-a-decade year", record: "Battery for the worst on record" }[key];
     const winter = Math.max(...b.useDay), summer = Math.min(...b.useDay);
     const what = { typical: "each year's hardest run, ranked: the middle year",
-                   decade: "each year's hardest run, ranked: the one only one year in ten exceeds",
+                   decade: "each year's hardest run, ranked: the one only one year in ten beats",
                    record: `the hardest of the ${b.runs} runs in ${r.y0}-${r.y1}` }[key];
     return Wk.given(label, x.kwh, "kWh", [
       Wk.input("A low day: under this share of the roof's average day", threshold, "share", { dp: 2 }),
-      Wk.input("Home's use, a winter day", winter, "kWh", { dp: 1, source: "The bill tool's household, with its winter heating, lighting and hot water" }),
-      Wk.input("Home's use, a summer day", summer, "kWh", { dp: 1, source: "The bill tool's household" }),
+      Wk.input("Home's use, a winter day", winter, "kWh", { dp: 1, source: "The household from the bill tool, with winter heating, lighting and hot water" }),
+      Wk.input("Home's use, a summer day", summer, "kWh", { dp: 1, source: "The household from the bill tool" }),
       Wk.input("The roof's average day", r.mean, "kWh", { dp: 1, source: "This roof's generation curve, spread over 86 years of daily sunlight" }),
       Wk.input("Battery efficiency, each way", b.eta, "share", { dp: 2, note: "About 90% round trip" }),
       Wk.input("Years of daily sunlight", r.years, "yrs", { source: `ERA5 reanalysis ${r.y0}-${r.y1}, ~25 km cell at ${cell.lat}, ${cell.lon}` })], {
-        formula: `for each run of low-solar days: full at the last hour of surplus the evening before, then hour by hour the home's use minus the roof's output comes out of the battery (a surplus refills it) until the first hour of surplus after the run (the next midday at the latest); the battery needed is the deepest it falls below full. This figure is ${what}` +
+        formula: `for each run of low-solar days, the battery starts full at the last spare hour the evening before. Each hour, the home's use minus the roof's output is drawn from it (spare solar refills it) until solar is spare again (the next midday at the latest). The battery needed is the furthest it falls below full. This figure is ${what}` +
           (x.start >= 0 ? ` (${days(x.len)} from ${fmtDate(cell, x.start)})` : ""),
         check: () => x.kwh });
   }
@@ -446,7 +446,7 @@ const LowSolar = (() => {
       `</div>` +
       `<label class="ls-thr rs-thr">A low-solar day makes under <input id="rs-thr" type="number" min="5" max="90" step="5" value="${pct}">% ` +
         `of this roof's average day (${r.mean.toFixed(1)} kWh, i.e. under ${r.cut.toFixed(1)} kWh) &middot; ${(r.lowShare * 100).toFixed(1)}% of all days, ${r.y0}&ndash;${r.y1}</label>` +
-      (structural ? `<div class="ls-note"><b>Most of winter is "low" on this roof:</b> it faces away from the winter sun or is shaded, so its longest runs are the season itself, not a run of bad weather. A battery sized on these runs would be sized for winter.</div>` : "") +
+      (structural ? `<div class="ls-note"><b>Most of winter is "low" on this roof.</b> It faces away from the winter sun or is shaded, so its longest runs are the season itself, not bad weather. A battery sized on these runs is sized for winter.</div>` : "") +
       `<div class="rs-grid"><div class="rs-col">` +
         `<h4>Longest run of low-solar days, each year${hiYear ? ` <span class="rs-key"><i></i>${hiYear}, the longest</span>` : ""}</h4>` +
         bars(years.map((_, k) => r.amax[k]), {
@@ -468,11 +468,11 @@ const LowSolar = (() => {
         `</div>` +
         (b ? batteryHtml(cell, b, hh) : "") +
         `<details class="clb-info"><summary>How this is worked out</summary>` +
-          `<p>Daily sunlight for every day from ${r.y0} to ${r.y1} comes from the ERA5 reanalysis (Copernicus Climate Change Service, via Open-Meteo, CC BY 4.0) for the ~25 km grid cell at ${cell.lat}, ${cell.lon}. Each day is split into direct sun and grey-sky light by how clear it was, and each part is scaled to this roof: its own average day in that month (from its tilt, direction, panels and the shading of hills, trees and buildings), split the same way. A tilted roof gains from direct sun, not from an overcast sky, so a dull day is dull on every roof.</p>` +
-          `<p>A low-solar day makes under ${pct}% of the roof's average day across the whole year. Winter's average day is well under the year's, so in practice these are dark winter days. A run is consecutive low-solar days. The once-a-decade run is the length only one year in ten exceeds; the common run is the middle year's longest.</p>` +
+          `<p>Daily sunlight for every day from ${r.y0} to ${r.y1} comes from the ERA5 reanalysis (Copernicus Climate Change Service, via Open-Meteo, CC BY 4.0) for the ~25 km grid cell at ${cell.lat}, ${cell.lon}. Each day is split into direct sun and grey-sky light by how clear it was. Each part is scaled to this roof's own average day in that month, split the same way. That average comes from the roof's tilt, direction, panels and shading from hills, trees and buildings. A tilted roof gains from direct sun, not from cloud, so a dull day is dull on every roof.</p>` +
+          `<p>A low-solar day makes under ${pct}% of the roof's average day across the whole year. Winter's average day is well under the year's, so these are mostly dark winter days. A run is low-solar days in a row. The once-a-decade run is the length only one year in ten beats. The common run is the middle year's longest.</p>` +
           (cell.qmap
-            ? `<p>Checked against Queenstown Airport's pyranometer (Earth Sciences NZ / NIWA, daily, 1991&ndash;2026): ERA5 follows it day by day (correlation 0.92) but smooths the darkest days &mdash; the station records very dark winter days five times as often. So each day's sunlight, as a share of its month's average, is mapped onto the station's distribution: ERA5's 86-year sequence of weather, with the station's dark days. Over the years both cover, the runs this gives match the station's own to within a day.</p>`
-            : `<p>Checked against NASA's satellite record (POWER, 1984&ndash;2024): the same average sunlight and a day-by-day correlation of 0.94. In the Wakatipu, where a station record has been checked, ERA5 smooths the darkest days; here no station correction is applied yet, so real runs can be somewhat longer.</p>`) + `</details>` +
+            ? `<p>Checked against Queenstown Airport's pyranometer (Earth Sciences NZ / NIWA, daily, 1991&ndash;2026): ERA5 follows it day by day (correlation 0.92) but smooths out the darkest days. The station records very dark winter days five times as often. So each day's sunlight, as a share of its month's average, is mapped onto the station's spread of days. This keeps ERA5's 86 years of weather with the station's dark days. Over the years both cover, the runs match the station's own to within a day.</p>`
+            : `<p>Checked against NASA's satellite record (POWER, 1984&ndash;2024): the same average sunlight and a day-by-day correlation of 0.94. In the Wakatipu, a station record shows ERA5 smooths out the darkest days. No station correction is applied here, so real runs can be somewhat longer.</p>`) + `</details>` +
       `</div></div>`;
     if (b && typeof WkView !== "undefined") box.querySelectorAll("[data-rsb]").forEach(el =>
       WkView.bind(el, () => batteryNode(cell, r, b, hh, el.dataset.rsb)));

@@ -328,38 +328,38 @@ function touRates(spec, base) {
 const RETAIL_PLANS = [
   {
     id: "flat", label: "Flat rate", biz: false,
-    note: "One price all day. The simplest plan and the default here.",
+    note: "One price all day. The default here.",
     buy: () => flatRates(30), sell_c: 14, daily_c: 250,
   },
   {
     id: "day_night", label: "Day / night", biz: false,
-    note: "Cheaper overnight, dearer through the day. Suits a battery that " +
-          "can fill up on cheap night power; suits bare solar less.",
+    note: "Cheaper overnight, dearer in the day. Suits a battery charged " +
+          "on cheap night power more than solar alone.",
     buy: () => touRates([[23, 7, 18]], 33), sell_c: 12, daily_c: 250,
   },
   {
     id: "peak_offpeak", label: "Peak / off-peak / night", biz: false,
-    note: "Morning and evening peaks priced highest. Solar rarely covers " +
-          "either peak on its own, so this is where a battery earns most.",
+    note: "Morning and evening peaks cost most. Solar alone rarely covers " +
+          "them, so a battery earns most here.",
     buy: () => touRates([[23, 7, 17], [7, 9, 45], [17, 21, 45]], 28),
     sell_c: 12, daily_c: 250,
   },
   {
     id: "high_buyback", label: "High buyback, dearer power", biz: false,
-    note: "Pays well for export and charges more for what you draw. Suits " +
-          "a big array on a house that is empty during the day.",
+    note: "Pays well for export, charges more for power you buy. Suits " +
+          "a big system on a house that is empty in the day.",
     buy: () => flatRates(35), sell_c: 20, daily_c: 250,
   },
   {
     id: "free_evening", label: "One free hour a day", biz: false,
-    note: "A free hour in the evening, paid for with a higher rate the rest " +
-          "of the time. Worth checking against your own usage.",
+    note: "A free evening hour, paid for by a higher rate the rest " +
+          "of the time. Check it against your own use.",
     buy: () => touRates([[21, 22, 0]], 33), sell_c: 12, daily_c: 250,
   },
   {
     id: "biz_flat", label: "Business — flat rate", biz: true,
-    note: "Commercial rates are lower per kWh and the load is daytime, " +
-          "which is when the roof generates.",
+    note: "Lower commercial rates per kWh. Use is mostly in the day, " +
+          "when the roof generates.",
     buy: () => flatRates(17), sell_c: 14, daily_c: 800,
   },
   {

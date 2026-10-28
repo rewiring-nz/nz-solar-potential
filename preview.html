@@ -782,8 +782,8 @@
 <body>
 <div id="map"></div>
 <div class="ai-banner" id="ai-banner" role="status">
-  <span>This tool was built with AI and is still being tested &ndash; expect mistakes.</span>
-  <button class="ai-banner-close" id="ai-banner-close" aria-label="Dismiss this notice"
+  <span>Built with AI and still in testing. Expect mistakes.</span>
+  <button class="ai-banner-close" id="ai-banner-close" aria-label="Dismiss"
           title="Dismiss (Esc)">&times;</button>
 </div>
 <script>
@@ -818,8 +818,8 @@
 </div>
 <div id="corner-actions">
   <!-- one switch for outlines and obstructions; roof markup is on the M key -->
-  <button class="corner-btn" id="toggle-outlines" title="Building outlines, and the obstructions the panels avoid"><span class="dot"></span>Outlines &amp; obstructions</button>
-  <button class="corner-btn" id="toggle-sun" title="Cast shadows for a chosen date and time"><span class="dot"></span>Sun simulation</button>
+  <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
+  <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
 </div>
@@ -840,7 +840,7 @@
         <div class="rsp-assumption" id="inview-assumption">
           Assuming
           <select class="coverage-select" id="coverage-select-main"></select>
-          roof coverage from solar panels:
+          of the roof covered in panels:
         </div>
         <div class="est-title" style="width:100%" id="inview-mode-title">
           <span>Heat map estimate</span><span class="legend-grad"></span>
@@ -877,29 +877,26 @@
       <div id="layout-disclaimer" style="margin:10px 0 0;padding:8px 10px;background:rgba(255,80,80,0.10);
            border:1px solid rgba(255,110,110,0.25);border-radius:8px;font-size:10px;line-height:1.45;
            color:#f2c6c6;">
-        <strong style="color:#f7b3b3;">Disclaimer:</strong> This is a rough estimate made with the
-        help of AI and still being tested. Expect mistakes.
+        <strong style="color:#f7b3b3;">Disclaimer:</strong> A rough estimate, made with AI and
+        still in testing. Expect mistakes.
         <a href="#" id="disclaimer-more" style="color:#ff9d9d;text-decoration:underline;white-space:nowrap;">Read more</a>
         <div id="disclaimer-detail" style="display:none;margin-top:8px;max-height:150px;overflow-y:auto;padding-right:6px;overscroll-behavior:contain;">
           <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:6px;">
-            <li>The 3D data used to map rooftops comes from a different year (sometimes many years
-                apart) from the imagery. Therefore sometimes buildings are missing, or buildings show
-                where they have since been knocked down.</li>
-            <li>The solar irradiance data is based on satellite estimates that may not be perfectly
-                accurate for an individual building&rsquo;s sunlight conditions.</li>
-            <li>The panel placement, and detection of roof obstructions, requires reconciling 3D data,
-                2D data, and building outline records, which do not always match, so there are plenty
-                of examples where panels can be placed incorrectly.</li>
-            <li>Solar economics change based on individual building consumption patterns, electricity
-                contracts and more. These are only rough estimates, with customisable assumptions to
-                show you how the estimate is made.</li>
+            <li>The 3D roof data and the aerial photos can be years apart. Some buildings may be
+                missing, or still shown after being knocked down.</li>
+            <li>Sunlight figures come from satellite estimates, so they can be off for a single
+                building.</li>
+            <li>Panels and roof obstructions are placed using 3D data, 2D data and building
+                outlines. These don&rsquo;t always match, so some panels will be in the wrong place.</li>
+            <li>Savings depend on how much power you use, your electricity plan and more. Treat them
+                as rough. You can change the assumptions to see how they work.</li>
           </ul>
         </div>
       </div>
       
 
     </div>
-    <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch Video Explainer</button>
+    <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch explainer video</button>
     <button class="corner-btn" id="toggle-panel-econ" style="align-self:flex-start;" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
 </div>
 
@@ -934,14 +931,14 @@
       <div class="slider-row"><label><span>System losses</span><span id="a-loss-val"></span></label>
         <input type="range" id="a-loss" min="5" max="30" step="0.5"></div>
       <button class="tuning-reset" id="a-reset">Reset to defaults</button>
-      <div style="font-size:10px; color:#888; margin-top:8px;">Panel area follows from power and
-        efficiency, so a bigger panel covers more roof and fewer of them fit.</div>
+      <div style="font-size:10px; color:#888; margin-top:8px;">Bigger panels cover more roof, so
+        fewer fit.</div>
     </div>
 
     <div class="settings-pane" id="pane-economics" style="display:none; padding:14px;">
       <div style="font-weight:700; margin-bottom:6px;">Installed cost by system size</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:8px;">$ per kW installed. The rate for
-        a system is set by the band its own size falls in.</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:8px;">$ per kW installed. Each system
+        uses the rate for its size.</div>
       <div id="cost-tiers"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Electricity prices &mdash; homes</div>
       <div class="slider-row"><label><span>Peak</span><span id="e-hpeak-val"></span></label>
@@ -961,20 +958,18 @@
         <input type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
       <div class="slider-row"><label><span>Daily charge</span><span id="e-bdaily-val"></span></label>
         <input type="range" id="e-bdaily" min="0" max="15" step="0.1"></div>
-      <div style="font-size:10.5px; color:#999; margin:6px 0 0;">Including GST. Peak hours and
-        export at peak are set on a building's own card. Whether a building is a home or a
-        business comes from its type; switch it on its card.</div>
+      <div style="font-size:10.5px; color:#999; margin:6px 0 0;">Prices include GST. Set peak hours,
+        peak export and home or business on each building's card.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback is expected to fall.
-        Payback and lifetime value follow this year by year, they are not a flat figure.</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback rates are expected to
+        fall. Payback and lifetime value use each year's rate.</div>
       <div class="slider-row"><label><span>Export falls by</span><span id="e-edec-val"></span></label>
         <input type="range" id="e-edec" min="0" max="8" step="0.1"></div>
       <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;" id="e-edec-preview"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Worked out hour by hour from each
-        building's household &mdash; who lives there, how the water and rooms are heated, any
-        electric cars &mdash; described on its own card. Roofs nobody has opened use the defaults
-        for their type.</div>
+      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Worked out hour by hour from the
+        household on each building's card: who lives there, how water and rooms are heated, and
+        any EVs. Other buildings use the defaults for their type.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
       <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
         <input type="range" id="e-life" min="10" max="35" step="1"></div>
@@ -984,17 +979,17 @@
         <input type="range" id="e-infl" min="0" max="10" step="0.5"></div>
       <div class="slider-row"><label><span>General inflation</span><span id="e-cpi-val"></span></label>
         <input type="range" id="e-cpi" min="0" max="6" step="0.1"></div>
-      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Every future year is divided by
-        general inflation, so all figures are in today's dollars.</div>
-      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Export is deliberately not
-        inflated &mdash; the buyback schedule above already sets it year by year.</div>
+      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">All figures are in today's
+        dollars, after general inflation.</div>
+      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Export prices are not
+        inflated. The buyback setting above sets them each year.</div>
       <div class="slider-row"><label><span>Inverter replaced in year</span><span id="e-invy-val"></span></label>
         <input type="range" id="e-invy" min="0" max="30" step="1"></div>
       <div class="slider-row"><label><span>Inverter cost</span><span id="e-invc-val"></span></label>
         <input type="range" id="e-invc" min="0" max="40" step="1"></div>
       <button class="tuning-reset" id="e-reset">Reset to defaults</button>
-      <div style="font-size:10px; color:#ff9b90; margin-top:8px;">Indicative only &mdash; not a quote.
-        Real pricing depends on roof access, switchboard work and installer.</div>
+      <div style="font-size:10px; color:#ff9b90; margin-top:8px;">Indicative, not a quote. Real
+        prices depend on roof access, switchboard work and installer.</div>
     </div>
   </div>
 
@@ -1010,7 +1005,7 @@
       <button id="bug-close" style="background:none; color:#aaa; border:none; font-size:12px; cursor:pointer;">Close</button>
       <span id="bug-status" style="font-size:11px; color:#7dff5e;"></span>
     </div>
-    <div style="font-size:10px; color:#888; margin-top:5px;">Includes the building & view you're looking at automatically.</div>
+    <div style="font-size:10px; color:#888; margin-top:5px;">We add the building and map view you're looking at.</div>
   </div>
   <iframe name="bug-sink" style="display:none;"></iframe>
   <form id="bug-form" action="https://submit.jotform.com/submit/262336538869068" method="POST"
@@ -1346,7 +1341,7 @@ async function setTerrain3D(on) {
     "bottom:86px;z-index:5;background:rgba(0,0,0,0.72);color:#e8edf2;" +
     "font:600 11px/1.3 system-ui,sans-serif;padding:5px 10px;border-radius:6px;" +
     "pointer-events:none;text-align:center;max-width:82vw;";
-  d.textContent = "3D — the surface is the LiDAR itself, so terrain, trees and roofs are measured.";
+  d.textContent = "3D view from laser survey data: terrain, trees and roofs are measured.";
   const attach = () => (document.getElementById("map") || document.body).appendChild(d);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
   else attach();
@@ -1388,7 +1383,7 @@ class ThreeDControl {
   onAdd() {
     const d = document.createElement("div");
     d.className = "maplibregl-ctrl maplibregl-ctrl-group";
-    d.innerHTML = `<button id="btn-3d" type="button" title="3D view — buildings from the LiDAR roof planes">3D</button>`;
+    d.innerHTML = `<button id="btn-3d" type="button" title="3D view">3D</button>`;
     d.addEventListener("click", e => { e.preventDefault(); setTerrain3D(!terrain3d); });
     this._c = d;
     return d;
@@ -1782,10 +1777,10 @@ const PANEL_ECON_KEYS = PANEL_ECON_BANDS.map(b => b.key);
 // colour chips needed a help video to understand).
 const PANEL_ECON_HEAD =
   `<div class="pe-head">Individual panel economics</div>` +
-  `<div class="pe-sub">Each panel is coloured by what it earns over its life against its share of the cost.</div>`;
+  `<div class="pe-sub">Each panel's colour shows what it earns over its life compared with its share of the cost.</div>`;
 function panelEconChip(b, n, on) {
   return `<button class="econ-band${on ? "" : " off"}" data-band="${b.key}" style="background:${b.colour}" ` +
-    `title="${b.name} (${b.label}) -- tap to ${on ? "hide" : "show"} these panels">` +
+    `title="${b.name} (${b.label}). Tap to ${on ? "hide" : "show"} these panels">` +
     `<span class="cnt">${n.toLocaleString()}</span><span class="nm">${b.name}</span><span class="roi">${b.label}</span></button>`;
 }
 let panelEconShow = Object.fromEntries(PANEL_ECON_KEYS.map(k => [k, true]));
@@ -2179,7 +2174,7 @@ function wireTuningControls(popupEl, buildingId) {
           `<strong>${Number(summary.ac_kwh_year).toLocaleString()}</strong> kWh/yr`;
       } catch (err) {
         summaryEl.classList.remove("stale");
-        summaryEl.textContent = "Refit failed -- is live_server.py running (not the plain static server)?";
+        summaryEl.textContent = "Refit failed. Is live_server.py running?";
       }
     }, 250);  // debounce so dragging a slider doesn't fire a request per pixel
   };
@@ -2194,7 +2189,7 @@ function wireTuningControls(popupEl, buildingId) {
     ransacVal.textContent = "0.15m";
     zVal.textContent = "2.75σ";
     summaryEl.classList.remove("stale");
-    summaryEl.textContent = "Adjust a slider to try live values for this roof.";
+    summaryEl.textContent = "Move a slider to try new values for this roof.";
     clearLiveTuning();
     selectBuilding(buildingId);  // restore the default-parameter static layout view
   });
@@ -3675,18 +3670,18 @@ map.on("load", async () => {
     if (chip) {
       send(`BAD LAYOUT on building ${bid}: ${chip.textContent.trim()}`);
       wrap.querySelector(".flag-chips").innerHTML =
-        `<span class="flag-done">&#10003; "${chip.textContent.trim()}" &mdash; noted.</span>`;
+        `<span class="flag-done">&#10003; Noted: "${chip.textContent.trim()}"</span>`;
     }
   });
 
   document.getElementById("bug-send").addEventListener("click", () => {
     const note = document.getElementById("bug-note").value.trim();
-    if (!note) { document.getElementById("bug-status").textContent = "write a note first"; return; }
+    if (!note) { document.getElementById("bug-status").textContent = "Write a note first."; return; }
     document.getElementById("bug-f-note").value = note;
     document.getElementById("bug-f-context").value = bugCtx();
     document.getElementById("bug-form").submit();
     document.getElementById("bug-note").value = "";
-    document.getElementById("bug-status").textContent = "\u2713 sent \u2014 file another any time";
+    document.getElementById("bug-status").textContent = "\u2713 Sent. Thank you.";
   });
 
   // --- Mobile controls -------------------------------------------------
@@ -3708,7 +3703,7 @@ map.on("load", async () => {
       document.getElementById("m-settings-title").textContent =
         isLayout ? "Panel density" : "Heat map coverage";
       document.getElementById("m-slider-label").textContent =
-        isLayout ? "Share of the fitted array shown" : "Share of roof covered by panels";
+        isLayout ? "Share of the panels shown" : "Share of roof covered by panels";
       mSlider.min = isLayout ? 0 : 5;
       mSlider.step = isLayout ? 1 : 5;
       mSlider.value = isLayout ? panelDensityPct : coveragePct;
@@ -3769,9 +3764,9 @@ map.on("load", async () => {
   function selfNote(e) {
     const pct = Math.round(e.selfPct);
     const kwh = Math.round(e.selfKwh).toLocaleString();
-    if (!e.capped) return `All ${kwh} kWh/yr is used on site &mdash; nothing exported.`;
+    if (!e.capped) return `All ${kwh} kWh/yr is used on site. None is exported.`;
     return `${pct}% used on site (${kwh} kWh/yr), the rest exported` +
-           (e.capByUse ? ` &mdash; limited by yearly use, not the load.` : `.`);
+           (e.capByUse ? `, capped by yearly use.` : `.`);
   }
   window.__economicsFor = economicsFor;
 
@@ -4205,9 +4200,9 @@ map.on("load", async () => {
                        color:#a9cdf5; margin-bottom:6px;">
           &#9998; Edit this roof&rsquo;s panels
         </button>
-        <button class="flag-btn" data-flag="send">&#9873; This layout looks wrong &mdash; tell us</button>
+        <button class="flag-btn" data-flag="send">&#9873; Report a wrong layout</button>
         <div class="flag-after" style="display:none;">
-          <div class="flag-done">&#10003; Sent, thank you. What is wrong with it?</div>
+          <div class="flag-done">&#10003; Sent, thanks. What&rsquo;s wrong with it?</div>
           <div class="flag-chips">
             ${FLAG_KINDS.map(([k, label]) =>
               `<button class="flag-chip" data-flag-kind="${k}">${label}</button>`).join("")}
@@ -4258,10 +4253,10 @@ map.on("load", async () => {
       ? `${p._multi.length} buildings selected`
       : (p.address ? escHtml(p.address) : `Building #${p.building_id}`);
     const sub = multi
-      ? `Combined totals · shift-click to add or remove a building`
+      ? `Combined totals · shift-click to add or remove buildings`
       : ((p.address
           ? (p.address_count > 1 ? `${p.address_count} addresses · outline #${p.building_id}` : `Building outline #${p.building_id}`)
-          : "No street address on record for this outline")
+          : "No street address")
          + ` &nbsp;·&nbsp; <span style="opacity:0.75;">shift-click to add more roofs</span>`);
     // A building we could not model gets the reason instead of an estimate.
     // Returned BEFORE buildingEstimate runs: these buildings have no density
@@ -4281,10 +4276,9 @@ map.on("load", async () => {
                       font-size:13.5px; line-height:1.5;">
             <b>${escHtml(p.no_estimate_text || "This roof could not be modelled")}</b>
             <div style="margin-top:6px; opacity:.8;">
-              We map this building but do not publish a figure for it. That is a
-              limit of what we can tell from the survey data, not a statement
-              that the roof is unsuitable &mdash; a site visit may well find it
-              usable.
+              The survey data isn&rsquo;t good enough to estimate this roof.
+              That doesn&rsquo;t mean it&rsquo;s unsuitable. A site visit may find
+              it usable.
             </div>
           </div>
           <div class="kv" style="margin-top:10px;">
@@ -4293,7 +4287,7 @@ map.on("load", async () => {
             <div>Surfaces found</div><div>${p.facet_count || 0}</div>
           </div>
           <div style="margin-top:10px; font-size:12.5px; opacity:.75;">
-            If you know this roof, telling us helps us fix it.
+            Know this roof? Tell us and we can fix it.
           </div>
           ${flagBlockHtml(p)}
         </div>
@@ -4307,10 +4301,9 @@ map.on("load", async () => {
                     border-radius:3px; padding:8px 11px; margin:6px 0 10px;
                     font-size:12.5px; line-height:1.45;">
           <b>Rough estimate: no laser survey here.</b>
-          This area has no LiDAR yet, so the roof is modelled from its outline:
-          a hipped roof at one assumed pitch for houses, flat for large
-          buildings. The real pitch, gables, dormers and tree shade are not
-          known, so the figures can be well off for any one roof.
+          The roof is modelled from its outline: hipped at a set pitch for
+          houses, flat for large buildings. We don&rsquo;t know the real pitch,
+          gables, dormers or tree shade, so figures can be well off.
         </div>` : "";
     // Today's photo differs from the 2021 survey's (src/register_imagery.py):
     // likely rebuilt or re-roofed, so the layout may describe the old roof.
@@ -4319,9 +4312,9 @@ map.on("load", async () => {
                     border-radius:3px; padding:8px 11px; margin:6px 0 10px;
                     font-size:12.5px; line-height:1.45;">
           <b>This roof may have changed since the 2021 survey.</b>
-          Today's photo looks different from the one taken with the laser
-          survey, so the building may have been rebuilt or re-roofed. The roof
-          faces, obstructions and panels here follow the 2021 roof.
+          Today's photo looks different, so it may have been rebuilt or
+          re-roofed. The roof faces, obstructions and panels shown are from the
+          survey.
         </div>` : "";
     return `
       <div class="popup">
@@ -4395,16 +4388,16 @@ map.on("load", async () => {
         <details class="tuning">
           <summary>How the layout works</summary>
           <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
-            Sunniest roof faces fill first, row by row -- never over an obstruction,
-            edge, or roof join. The default (80%) shows the main arrays an installer
-            would quote; sliding to 100% adds every remaining feasible panel.
+            Panels fill the sunniest roof faces first, row by row. They never go over
+            an obstruction, edge or roof join. The default (80%) shows the main arrays
+            an installer would quote. 100% adds every other panel that fits.
           </div>
           <div class="assumptions">
             <strong>Assumptions:</strong> ${assumptions.panel_rated_power_w}W panels
             (${assumptions.panel_efficiency_pct}% efficient, ${assumptions.panel_area_m2}m² each),
             ${assumptions.inverter_efficiency_pct}% inverter efficiency,
-            ${assumptions.system_derate_pct}% system losses (cell temperature, soiling, wiring,
-            mismatch, downtime &mdash; shading is not in this number, it is modelled per panel).
+            ${assumptions.system_derate_pct}% system losses (heat, dirt, wiring, mismatch,
+            downtime). Shading is worked out for each panel.
             ${assumptions.notes}
           </div>
         </details>
@@ -4422,7 +4415,7 @@ map.on("load", async () => {
             <label><span>Obstruction sensitivity</span><span id="val-zthresh">2.75&sigma;</span></label>
             <input type="range" id="slider-zthresh" min="1.5" max="4.0" step="0.05" value="2.75">
           </div>
-          <div class="tuning-summary" id="tuning-summary">Adjust a slider to try live values for this roof.</div>
+          <div class="tuning-summary" id="tuning-summary">Move a slider to try new values for this roof.</div>
           <button class="tuning-reset" id="tuning-reset">Reset to defaults</button>
         </details>
         </details>
@@ -4625,7 +4618,7 @@ map.on("load", async () => {
     // The page must price with the build's own assumptions unless the reader
     // changed them: say so on the figure if it ever does not.
     if (!assumptionsAsBuilt() && !window.__assumptionsEdited) {
-      m.gen.flags.push("The page's panel assumptions differ from the build's, and nobody changed them. Please report this.");
+      m.gen.flags.push("The panel settings don't match the build's. Please report this.");
       console.error("[workings] assumptions drifted from the build's", assumptions, ASSUMPTION_DEFAULTS);
     }
     return m;
@@ -4644,7 +4637,7 @@ map.on("load", async () => {
       if (sun && panels.length) {
         const g = genFromPanels(panels, sun, assumptions, { asBuilt: assumptionsAsBuilt() });
         if (g) {
-          if (F.edited) g.node.flags.push("Panels as edited by hand: moved panels keep their roof face's sunlight and shading.");
+          if (F.edited) g.node.flags.push("Panels edited by hand. Moved panels keep their roof face's sunlight and shading.");
           const curve = genCurve(sun, genWeightsFromPanels(g.perPanel, assumptions), g.node, props.tshade);
           // the share of these panels' sunlight that shade takes: the same
           // per-panel shade factors the kWh above are worked from
@@ -4661,9 +4654,9 @@ map.on("load", async () => {
         ? panels.reduce((t, q) => t + (q.ac_kwh_year || 0), 0) * bakedKwhScale()
         : decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
       const gen = Wk.given("Electricity generated a year", kwh, "kWh/yr", [], {
-        formula: "the build's own total for these panels",
-        note: sun === null && props.sr ? "This roof's sunlight table is still loading; the step-by-step workings appear when it arrives."
-              : "Zoom in to this roof to see the panel-by-panel workings.",
+        formula: "the build's total for these panels",
+        note: sun === null && props.sr ? "Sunlight data for this roof is still loading. The workings appear when it's ready."
+              : "Zoom in to see the workings for each panel.",
         check: () => kwh });
       const kwp = Wk.product("System size", "kW", [Wk.input("Panels", count, "panels"),
         Wk.input("Rated power of one panel", assumptions.panel_rated_power_w / 1000, "kW", { dp: 3 })]);
@@ -4873,9 +4866,9 @@ map.on("load", async () => {
       const withheld = isLayout && conf != null && conf < ROOF_CONFIDENCE_MIN && !count;
       unmod.style.display = withheld ? "" : "none";
       if (withheld) {
-        unmod.textContent = "No layout shown for this roof. Only "
-          + Math.round(conf * 100) + "% of the laser scan matches the roof shape we"
-          + " fitted, so a panel layout here would be guesswork.";
+        unmod.textContent = "No layout for this roof. Only "
+          + Math.round(conf * 100) + "% of the laser scan matches our roof shape,"
+          + " so a layout would be a guess.";
       }
     }
     const be = el("bldg-econ");
@@ -5025,17 +5018,17 @@ map.on("load", async () => {
             if (m) {
               const n = Math.floor(m.cutoff);
               el("panel-econ-note").innerHTML = fold(
-                `Return over ${econ.life_years} years against each panel's ` +
+                `Each panel's return over ${econ.life_years} years, against its ` +
                 `\u2248${fmtMoneyFull(m.costPerPanel)} share of the install. ` +
                 (n > 0
-                  ? `The first ${n} panel${n === 1 ? "" : "s"} cover the power used on site and ` +
-                    `break even at ${kwh(m.retailBE)} kWh/yr; the rest are exported ` +
+                  ? `The first ${n} panel${n === 1 ? "" : "s"} cover power used on site and ` +
+                    `break even at ${kwh(m.retailBE)} kWh/yr. The rest are exported ` +
                     `and need ${kwh(m.exportBE)} kWh/yr.`
                   : `Every panel is exported and needs ${kwh(m.exportBE)} kWh/yr to break even.`) +
-                ` 1\u00d7 means a panel earns back exactly its share of the cost.`);
+                ` 1\u00d7 means a panel earns back its share of the cost.`);
             } else {
               el("panel-econ-note").innerHTML = fold(
-                `1\u00d7 means a panel earns back exactly its share of the cost: ${kwh(breakEvenFor(buildingId))} kWh a year here.`);
+                `1\u00d7 means a panel earns back its share of the cost: ${kwh(breakEvenFor(buildingId))} kWh a year here.`);
             }
           }
           // The district-wide half has to move too. Switching the mode on from a
@@ -5179,7 +5172,7 @@ map.on("load", async () => {
     const p = selectedBuildingProps || {};
     if (!p.horizon_b64) {
       box.innerHTML = `<div style="font-size:10px; color:#999; text-align:center; padding:16px 0;">` +
-        `Horizon data has not been built for this area yet.</div>`;
+        `No horizon data for this area yet.</div>`;
       return;
     }
     const comb = decodeHorizon(p.horizon_b64);
@@ -5250,7 +5243,7 @@ map.on("load", async () => {
     const panelLoss = GEN && GEN.shadeLossPct != null && mode === "layout" ? GEN.shadeLossPct : null;
     const beam = panelLoss != null
       ? `<div style="font-size:10px; text-align:center; margin-bottom:2px;">Hills, trees and buildings take ` +
-        `${panelLoss < 10 ? "just " : ""}${yel(pct(panelLoss))} of these panels&rsquo; sunlight over a year</div>`
+        `${yel(pct(panelLoss))} of these panels&rsquo; sunlight over a year</div>`
       : p.horizon_beam_pct !== undefined
       ? `<div style="font-size:10px; text-align:center; margin-bottom:2px;">From the middle of ${multiSel ? "the largest selected" : "this"} roof, hills, trees and buildings block ` +
         `${yel(pct(Math.max(0, 100 - p.horizon_beam_pct)))} of the year&rsquo;s direct sun` +
@@ -5260,10 +5253,10 @@ map.on("load", async () => {
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
       `<svg width="100%" viewBox="0 0 ${W} ${H}">${svg}${az_ticks}</svg></div>` + beam +
       `<div style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
-      `sun tracks for <span style="color:${SEASON_COLORS.summer}; font-weight:700;">midsummer</span>, ` +
+      `Sun paths for <span style="color:${SEASON_COLORS.summer}; font-weight:700;">midsummer</span>, ` +
       `<span style="color:${SEASON_COLORS.spring}; font-weight:700;">equinox</span> and ` +
-      `<span style="color:${SEASON_COLORS.winter}; font-weight:700;">midwinter</span> over the local horizon &mdash; ` +
-      `grey = terrain, dark = trees &amp; buildings</div>`;
+      `<span style="color:${SEASON_COLORS.winter}; font-weight:700;">midwinter</span>. ` +
+      `Grey = hills, dark = trees &amp; buildings</div>`;
   }
 
   // opts.box / opts.mode / opts.big: the lightbox draws the same chart,
@@ -5598,7 +5591,7 @@ map.on("load", async () => {
       `<svg width="100%" viewBox="0 0 ${W} ${H}">${gridY}${summerLines}${peakLine}${paths}${hourTicks}${yLabels}</svg></div>` +
       `<div style="font-size:10px; text-align:center; margin-bottom:2px;">${legend}</div>` +
       `<div class="curve-sub" style="font-size:9.5px; color:#999; text-align:center; margin-bottom:8px;">` +
-      `${showPeak ? "a clear day in each season (illustration, not in the totals)" : "an average day in each season"}` +
+      `${showPeak ? "a clear day in each season, not in the totals" : "an average day in each season"}` +
       ` &nbsp;·&nbsp; ${isLayout ? "at current panel density" : `at ${coveragePct}% roof coverage`}` +
       (genCurveNow && !showPeak ? ` &nbsp;·&nbsp; <span class="curve-workings" style="text-decoration:underline dotted;cursor:pointer">how it adds up</span>` : "") + `</div>`;
     const cw = box.querySelector("#curve-workings, .curve-workings");
@@ -5624,8 +5617,8 @@ map.on("load", async () => {
       }
       box.setAttribute("role", "button");
       box.setAttribute("tabindex", "0");
-      box.setAttribute("aria-label", "Open the generation chart large");
-      box.title = "Open large";
+      box.setAttribute("aria-label", "Enlarge chart");
+      box.title = "Enlarge";
       box.onclick = () => openChartLightbox(buildingId);
       box.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openChartLightbox(buildingId); } };
     }
@@ -5655,8 +5648,8 @@ map.on("load", async () => {
         `<div id="clb-chart"></div>` +
         (p.horizon_b64 ? `<h4>The horizon from this roof</h4><div id="clb-horizon"></div>` +
           `<details class="clb-info"><summary>What this shows</summary>` +
-          `<p>The hills (light grey) and nearby trees and buildings (darker grey) around the building, seen from its eaves at the middle of the roof, with the sun's path in summer, spring and autumn, and winter. Where a path dips behind the grey, the sun is hidden from that point.</p>` +
-          `<p>Panels sit higher than the eaves and spread across the roof, so they see more sky than this view; each panel's shading is measured separately in the figures. The curves above use the hills: an hour the hills hide the sun gets only diffuse light.</p></details>` : "") +
+          `<p>Hills (light grey) and nearby trees and buildings (darker grey), seen from the eaves at the middle of the roof. The lines are the sun's path in summer, spring and autumn, and winter. Where a line dips behind the grey, the sun is hidden.</p>` +
+          `<p>Panels sit higher and spread across the roof, so they see more sky than this. Each panel's shading is worked out separately. In the curves above, an hour when the hills hide the sun gets only diffuse light.</p></details>` : "") +
       `</div>`;
     lb.hidden = false;
     document.body.classList.add("clb-open");
@@ -5726,7 +5719,7 @@ map.on("load", async () => {
       `<div class="clb-card sx rs-card" role="dialog" aria-modal="true" aria-label="Resilience">` +
         `<div class="clb-head"><h3>Resilience <span class="rs-addr">${title}</span></h3>` +
           `<button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
-        `<div class="ls-note" style="margin-top:-6px">How long this roof can go without good sun, from every day since 1940 &mdash; for sizing a battery to ride through it. For the system shown: ${GEN.kwp ? GEN.kwp.value.toFixed(1) + " kW" : ""}.</div>` +
+        `<div class="ls-note" style="margin-top:-6px">How long this roof can go without good sun, based on every day since 1940. Use it to size a battery. System shown: ${GEN.kwp ? GEN.kwp.value.toFixed(1) + " kW" : ""}.</div>` +
         `<div id="rs-body"></div>` +
       `</div>`;
     // the horizon sits in the chart column, under the month chart

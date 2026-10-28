@@ -83,8 +83,8 @@ const Wk = (() => {
     const n = node("op", label, unit, v, meta(o));
     n.op = "clamp"; n.lo = lo; n.hi = hi; n.children = [child];
     if (v !== child.value) {
-      n.flags.push(`Held at ${fmt(v, unit)}: the calculation gave ${fmt(child.value, unit)}, ` +
-                   `outside the ${fmt(lo, unit)} – ${fmt(hi, unit)} this model allows.`);
+      n.flags.push(`Held at ${fmt(v, unit)}. The sum gave ${fmt(child.value, unit)}, ` +
+                   `outside the allowed range of ${fmt(lo, unit)} to ${fmt(hi, unit)}.`);
     }
     return n;
   }
@@ -162,7 +162,7 @@ const Wk = (() => {
     const t = relTol == null ? 1e-6 : relTol;
     const va = typeof a === "number" ? a : a.value, vb = typeof b === "number" ? b : b.value;
     if (Math.abs(va - vb) <= t * Math.max(1, Math.abs(va), Math.abs(vb))) return null;
-    return `${what}: ${va} and ${vb} should be the same figure.`;
+    return `${what}: ${va} and ${vb} should match.`;
   }
 
   // ---- formatting ---------------------------------------------------------
@@ -368,7 +368,7 @@ const WkView = (() => {
       `<div class="wk-body">` +
         `<div class="wk-title">${esc(n.label)}</div>` +
         `<div class="wk-value">${canEdit(n) ? field(n, true) : esc(Wk.show(n))}</div>` +
-        (canEdit(n) || n.children.some(canEdit) ? `<div class="wk-hint">Change a number in a box and every figure is worked out again with it. It is kept for your next visit.</div>` : "") +
+        (canEdit(n) || n.children.some(canEdit) ? `<div class="wk-hint">Change a number in a box and every figure updates. Your change is saved for next time.</div>` : "") +
         (f ? `<div class="wk-formula">${esc(f)}</div>` : "") +
         (stack.length === 1 ? checkLine(n) : "") +
         n.flags.map(fl => `<div class="wk-flag">${esc(fl)}</div>`).join("") +
@@ -383,7 +383,7 @@ const WkView = (() => {
                  (c.flags.length ? `<span class="s" style="color:#ffb38f">⚠ ${esc(c.flags[0])}</span>` : "") +
                  `</li>`;
         }).join("") + `</ul>` : "") +
-        `<div class="wk-copy">Numbers are rounded for display; the sums use the full figures.</div>` +
+        `<div class="wk-copy">Numbers are rounded for display. The sums use full figures.</div>` +
       `</div>`;
     sheet.querySelectorAll("[data-act=close]").forEach(b => b.addEventListener("click", close));
     sheet.querySelectorAll("[data-act=back]").forEach(b => b.addEventListener("click", () => { stack.pop(); path.pop(); draw(); }));

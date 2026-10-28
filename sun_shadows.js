@@ -684,8 +684,8 @@
         <input type="date" aria-label="Date">
       </div>
       <div class="sun-meta"></div>
-      <div class="sun-note">Shadows from the LiDAR surface (roofs, trees, ground) at NZ time.
-        Hills outside the surveyed area cast none.</div>`;
+      <div class="sun-note">Shadows from the LiDAR survey of roofs, trees and ground, in NZ time.
+        Hills outside the survey cast no shadow.</div>`;
     // above the corner buttons, so the switch that closes it stays in reach
     const host = document.getElementById("corner-actions");
     if (host) { p.classList.add("in-corner"); host.insertBefore(p, host.firstChild); }

@@ -1288,9 +1288,9 @@
       try { applyToggles(); } catch (e) { HIDE_2D.forEach(id => m.getLayer(id) && m.setLayoutProperty(id, "visibility", "visible")); }
     }
   }
-  const HINT_ON = "3D — each roof face is its measured plane, standing on the ground beside the building; the land and trees are the LiDAR survey.";
-  const HINT_FLAT = "3D — each roof face is its measured plane, standing on the ground beside the building (LiDAR). Ground and trees are shown flat.";
-  const HINT_ZOOM = "3D — zoom in to see the buildings.";
+  const HINT_ON = "3D: each roof face as measured, standing on the ground beside the building. Land and trees from the LiDAR survey.";
+  const HINT_FLAT = "3D: each roof face as measured from LiDAR, standing on the ground beside the building. Ground and trees shown flat.";
+  const HINT_ZOOM = "3D: zoom in to see the buildings.";
   function updateHint() {
     const d = document.getElementById("map-3d-hint");
     if (!d || !S.on) return;
