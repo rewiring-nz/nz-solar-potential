@@ -1,47 +1,42 @@
 # Using the web map
 
-The map estimates rooftop solar potential for buildings covered by the
-project's datasets. It is a planning aid, not a system design, engineering
-certificate, quote, or guarantee of energy production.
+The map estimates rooftop solar for each building. It is a planning aid,
+not a system design, quote or guarantee.
 
-## Find and inspect a building
+## Look at a building
 
-1. Open the deployed map and navigate to the building.
-2. Select its rooftop to view estimated panel count, installed capacity in
-   kWp, average daily output, and annual output.
-3. Use the map's heat-map view for a broad comparison and its panel-layout
-   view to inspect the modelled roof facets, excluded obstructions, and panel
-   positions for a selected building.
-4. In the building detail panel, toggle between **Average** and **Sunny day**
-   seasonal generation curves, or switch to the **Horizon** tab to inspect the
-   skyline silhouette (mountain terrain and nearby trees/buildings) plotted
-   against seasonal sun paths (summer, equinox, winter).
+1. Find the building by searching or moving the map.
+2. Click its roof to see panel count, system size (kWp), and daily and
+   yearly output.
+3. Use the heat map to compare roofs, and the panel layout to see roof
+   faces, obstructions and panels.
+4. In the building panel, switch the seasonal curves between **Average**
+   and **Sunny day**, or open **Horizon** to see the skyline (hills, trees,
+   buildings) against the sun's path in summer, at the equinox and in
+   winter.
 
-## Interpret the estimate
+## Read the numbers
 
-- `kWp` is the panels' nameplate capacity at Standard Test Conditions. It is
-  not the amount of power produced continuously.
-- Daily and annual `kWh` are model estimates. They combine roof slope and
-  aspect, a pvlib irradiance model, NASA POWER cloud-adjusted data,
-  per-building horizon shading (terrain and nearby obstacles), and the PV
-  assumptions stored in `config.py`.
-- The **Horizon** tab shows the percentage of annual direct-beam solar radiation
-  retained after surrounding topography and nearby structures are accounted for.
-- A roof with no placed panels is not necessarily unsuitable for solar. It
-  may be too small after setbacks, too steep, shaded, unresolved by the
-  available data, or excluded by the current model.
+- `kWp` is the panels' nameplate rating at Standard Test Conditions, not
+  continuous output.
+- `kWh` figures are model estimates. They use each roof face's slope and
+  direction, sunlight calibrated to NIWA measurements, shading from hills,
+  trees and buildings, and the PV assumptions in `config.py`.
+- **Horizon** shows the share of the year's direct sun the roof keeps after
+  hills and nearby objects.
+- A roof with no panels is not necessarily bad for solar. It may be too
+  small after setbacks, too steep, too shaded, or not readable from the data.
 
-## Important limitations
+## Limits
 
-- Estimates depend on source captures with a specific date. New construction,
-  removals, vegetation growth, and rooftop changes may not be represented.
-- Roof facets are inferred from LiDAR and imagery. Small or complex roofs,
-  curved roofs, and roofs with subtle equipment can be resolved imperfectly.
-- Imagery-based obstruction detection is deliberately conservative. It can
-  exclude benign roof areas and can miss equipment with similar colour to the
-  surrounding roof.
-- The result does not assess structural capacity, electrical design, consent,
-  fire access, tariffs, export limits, site access, or installation cost.
+- The data has capture dates. New buildings, demolitions, tree growth and
+  roof changes may be missing.
+- Roof faces are inferred from LiDAR and photos. Small, curved or complex
+  roofs can be read wrongly.
+- Photo-based obstruction detection is cautious. It can block usable roof
+  and miss equipment the same colour as the roof.
+- It does not check structure, wiring, consent, fire access, export limits
+  or site access.
 
-For an installation decision, have a qualified solar installer inspect the
-current site and design the system.
+Before installing, get a qualified installer to inspect the site and design
+the system.

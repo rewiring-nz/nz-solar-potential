@@ -1,107 +1,105 @@
 # How the money is worked out
 
-Every dollar figure on the map comes from one file, [`economics.js`](../economics.js),
-about 500 lines of arithmetic with no map and no page in it. You can read it
-top to bottom, and you can run it:
+Every dollar figure on the map comes from the bill tool,
+[`bill_tool.js`](../bill_tool.js). It models a power bill with and without
+solar (and a battery), then runs the savings out over the panels' life. Cost
+tiers, prices and the battery simulation it calls are in
+[`economics.js`](../economics.js).
 
-```bash
-node tests/test_economics.mjs
-```
+It is a model, not a quote. Every input is on screen and editable, and every
+figure opens to its workings.
 
-That suite exists because a 2.4× error in the yearly figure once survived
-long enough to be spotted by eye on the live map. Anything you change here
-should keep all of it passing.
+Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 
-Nothing below is a quote. It is a model, every input is on screen, and the
-inputs are the part most worth arguing with.
+## The steps
 
-## What gets calculated
+1. **Household use.** The load is built from what people know about their
+   home: how many people live there, how water is heated, how rooms are
+   heated, and how many electric cars there are. Each part has its own
+   daily kWh per season and its own hour-of-day shape. Heating scales with
+   the town's heating degree-days, so a Queenstown home heats more than an
+   Auckland one. A business uses 75 kWh per m² of footprint a year (at least
+   6,000 kWh), plus heating and cars.
+2. **Your bills (optional).** Enter a winter and a summer bill, or a yearly
+   kWh figure, and the modelled load is scaled to match.
+3. **Solar.** The roof's own average day in each season: the generation
+   curve drawn on the building card, scaled to the system shown. Its year
+   equals the roof's annual generation figure.
+4. **Hour by hour.** For an average day in each season, solar serves the
+   load first, then charges the battery, then exports. What is left comes
+   from the grid. The bill is imports × price + daily charge − exports ×
+   buyback.
+5. **Over the years.** Bill savings are run out for 30 years: power prices
+   rise, export rates fall, panels lose output, and the inverter (and any
+   battery) is replaced. Figures are in today's dollars by default.
+6. **Results.** Winter and summer monthly bills now and with solar, bill
+   savings, net savings over 30 years, payback year and return on
+   investment (the yearly rate at which the savings, discounted back,
+   equal the cost).
 
-For a roof, the model needs three things: how much electricity it makes and
-when, how much of that the building uses rather than exports, and what each
-of those is worth.
+## Default assumptions
 
-**Generation** comes from the roof geometry, not from this file — panels are
-fitted to the actual faces, each face's tilt and aspect give its irradiance,
-and shading is applied per panel. The economics receives the result as a
-generation profile: kilowatts for each hour of a representative day in each
-season, which is exactly the curve drawn in the building panel. If the chart
-and the savings ever disagreed, one of them would be lying; they read the
-same array.
+| Assumption | Default |
+|---|---|
+| Install cost | $3,000/kW under 3 kW; $2,000 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW (incl. GST) |
+| Home prices | 34c/kWh peak, 26c off-peak, $2.50/day |
+| Business prices | 19c/kWh peak, 14c off-peak, $8.00/day |
+| Export price | 14c/kWh, falling 2% a year |
+| Peak hours | 7–10am and 6–9pm |
+| Power price rise | 4% a year |
+| General inflation (to today's dollars) | 2% a year |
+| Panel output loss | 0.5% a year |
+| System life | 30 years |
+| Inverter | replaced after 15 years at 18% of the solar cost |
+| Battery | $1,000/kWh, 5 kW, 90% round trip, 10% reserve, replaced after 15 years; charges from solar only, never the grid |
+| Household | 3 people, electric hot water on a midday timer, heat pump, no car, no battery |
 
-**Self-consumption** is simulated hour by hour. A household load shape (the
-familiar double peak — breakfast, then a bigger evening one) is scaled to
-the building's annual use. In each hour, generation meets load first; the
-surplus charges a battery if there is one, then exports; any remaining
-deficit is imported.
+## Home or business
 
-This matters more than it sounds. Self-consumption is an *output* of the
-model, not a dial: a bigger array does not make a house use more
-electricity, it only exports more. Getting this backwards is the single
-easiest way to make a large system look better than it is.
+The council's district plan zone decides it
+([`tools/fetch_zoning.py`](../tools/fetch_zoning.py), Queenstown Lakes
+District Council). Roof size is not a use signal: a 450 m² house and a 450 m²
+shop look the same from above. Where a zone allows both, or no zoning exists,
+a roof over 400 m² or a system over 100 kW counts as a business.
 
-**Value** is then per hour: electricity used on site avoids that hour's
-retail price, electricity exported earns the buyback rate. Over the system's
-life, retail prices inflate, the export rate declines, panels degrade, and
-everything is discounted back to today's money.
+## System size
 
-## The assumptions, and why each is there
+Until you move the size slider, a home (one household, under 350 m² of roof)
+shows its best panels up to 14 kW. Businesses and larger residential
+buildings show every panel that fits. The building card also works out the
+economic size, the panels that pay for themselves, and offers it with one
+tap.
 
-| Assumption | Default | Why |
-|---|---|---|
-| System cost | $1,200–3,000/kW by size | Smaller systems cost more per kW; the tiers are on screen |
-| Retail price | 30c home / 17c business | Homes and businesses buy at very different prices |
-| Export price | 14c, declining 2%/yr | Buyback is falling; a flat rate would flatter every system |
-| Electricity inflation | 4%/yr | Applied to retail only — export is already on a declining path |
-| Discount rate | 3%/yr | Money later is worth less. Set it to 0 for an undiscounted view |
-| Panel degradation | 0.5%/yr | Standard for modern modules |
-| Inverter replacement | year 15, 18% of install | An inverter does not last 30 years; omitting it flatters everything |
-| System life | 30 years | |
-| Battery | 10 kWh, $1,000/kW, 90% round trip, 10% reserve, replaced at 15 years | A battery that is never replaced looks far better than a real one |
+## Panel colours
 
-## Home or business?
+Every roof's panel colours come from the same bill model. Panels that cover
+power used on site, sunniest first, are valued at the retail price. The rest
+are valued at the export price. A panel's colour shows whether its
+generation repays its share of the cost. A roof that is not open uses the
+daily shape of a sunny-side roof in its area, scaled to its own yearly kWh,
+so it keeps its colours when you open it.
 
-Not by roof size. A 450 m² house in a suburb and a 450 m² business look
-identical from above, so a size rule mislabels large houses by construction.
-The classifier uses the **council district plan zone** the building sits in —
-what may legally be built there, from the authority that decides it
-([`tools/fetch_zoning.py`](../tools/fetch_zoning.py)). Where a zone genuinely
-holds both uses, or no zoning is published, it falls back to the size test.
+## Battery for resilience
 
-Measured on the pilot area, zoning disagrees with the old size rule on 205 of
-1,066 buildings, in both directions.
+Low-solar runs come from ERA5 daily sunlight, 1940–2025
+([`low_solar.js`](../low_solar.js)). For a home, the battery is sized to run
+on roof and battery alone through the year's hardest low-solar run (a normal
+year, once a decade, or the record), using the bill tool's hour-by-hour
+household use, winter heating included. If the roof makes less than the home
+uses on an average winter day, that shortfall is shown separately.
 
-## Retail plans
+## What the model leaves out
 
-The plans offered are **shapes of plan sold in New Zealand** — flat, day/
-night, peak/off-peak, high-buyback, a free hour — not offers from any
-retailer, which is why none is named. Every rate is editable, and the panel
-shows all 24 hours with the price of each, so you can see whether a
-particular roof produces when power is dear or when it is cheap.
+- Real metering data. The load is a modelled shape, scaled to your bills if
+  you enter them.
+- Export limits, feed-in caps and network constraints.
+- Maintenance, insurance and cleaning.
+- Tax, depreciation and financing.
+- Charging the battery from the grid at cheap night rates.
 
-A plan only changes the answer because the model prices each hour separately.
-On an annual model every plan is the same number.
+## Check it yourself
 
-## What this model does not do
-
-- No half-hourly metering data. The load is a shape, not your actual usage.
-- No network or daily fixed charges in the savings figure; solar does not
-  usually avoid them.
-- No feed-in caps, no export limits, no phase constraints.
-- No maintenance, insurance, or cleaning.
-- No tax, depreciation or commercial financing.
-- The battery never charges from the grid, so plans with cheap night rates
-  are undervalued for battery owners.
-
-Each of these would move the answer. They are left out because putting them
-in badly would be worse than leaving them visible as gaps.
-
-## Checking it yourself
-
-- `node tests/test_economics.mjs` — 17 assertions over the whole model.
-- Open any building, change a rate band, and watch the figures move.
-- `panel_count × 0.5 kW = kWp`, and annual kWh ÷ panels should land in
-  550–800 kWh/panel/yr for New Zealand.
-- [Pipeline](quickstart.md) runs the regional pipeline; see the
-  [pipeline reference](data-maintainers/pipeline-reference.md) for outputs and
-  verification guidance.
+- Open a building, change a price or the household, and watch the figures
+  move. Click any figure to see how it is worked out.
+- kWp = panels × 0.5 kW. Annual kWh per panel should be 550–800 in New
+  Zealand.

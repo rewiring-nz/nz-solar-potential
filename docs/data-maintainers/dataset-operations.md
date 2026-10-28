@@ -1,289 +1,171 @@
 # Dataset operations
 
-Run commands from the `nz-solar-potential` directory with the virtual
-environment active. `config.py` is the authoritative definition of pilot and
-regional bounding boxes, data-layer identifiers, exclusions, and PV
-assumptions.
+How to fetch, build, check and publish the map data. Run commands from the
+project folder with `.venv` active. `config.py` defines regions, surveys,
+layer IDs, exclusions and PV assumptions.
 
-## Process
+District builds run on the build VM, never on a laptop. A laptop builds one
+small region at a time (see the [quickstart](../quickstart.md)).
 
-This section maps a data-maintenance session to the decisions you make, the
-config you update, and where each dataset lives. For code-level module
-boundaries, see [architecture.md](../developers/architecture.md).
+## The flow
 
 ```mermaid
 flowchart TB
-  A{Decide on area} --> B[[Update config.py]]
-  B --> C{Inputs already present?}
-  C -- no --> D[[fetch_data.py / fetch_regions.py]]
-  D --> E[(data or data/regions/name)]
+  A{Choose area} --> B[[Update config.py]]
+  B --> C{Inputs present?}
+  C -- no --> D[[fetch_regions.py]]
+  D --> E[(data/regions/name)]
   C -- yes --> E
-  E --> F[[fetch_dem_wide.py: ensure district DEM]]
-  F --> H[[region_build.py: dedupe outlines]]
-  H --> I[[run_district_build.sh / run_stage.py]]
-  I --> J[(per-area layouts and solar_potential)]
-  J --> K[[emit_region.py and combine_regions.py]]
-  K --> L[(local map tiles, detail, heatmap and summaries)]
-  L --> M[[Preview locally: tools/pipeline_serve.py]]
-  M --> N{Validation passes?}
-  N -- no: data or config issue --> B
-  N -- no: algorithm issue --> O[[Fix src logic]]
+  E --> F[[fetch_dem_wide.py: wide DEM]]
+  F --> H[[region_build.py: one region per building]]
+  H --> I[[run_district_build.sh]]
+  I --> J[(per-region layouts and solar_potential)]
+  J --> K[[emit_region.py per region, then combine_regions.py]]
+  K --> L[(served set in data/)]
+  L --> M{Checks and gate pass?}
+  M -- no: data or config --> B
+  M -- no: algorithm --> O[[Fix src/]]
   O --> I
-  N -- yes --> P[[Publish versioned map data to tiles bucket]]
+  M -- yes --> P[[Publish to tiles bucket v N]]
 ```
 
-`run_district_build.sh` is the resumable district build. Per region it runs:
+## Source data
 
-* `build_layout_geojson → gate_panels → rerank_layouts → derive_solar_potential → patch_roof_confidence → bake_building_horizons → build_heatmap_raster`, 
+Layer IDs per survey are in `config.SURVEYS`.
 
-then `emit_region` writes the region's map artifacts and `combine_regions.py`
-combines them into the local map dataset. It does not generate the legacy
-root-level `data/solar_potential.geojson`; that file may remain locally from an
-older merge workflow and is ignored by Git. The current deployment publishes
-map data separately from the GitHub Pages frontend.
+| Data | Source | Used for |
+| --- | --- | --- |
+| Building outlines, layer [101290](https://data.linz.govt.nz/layer/101290) | LINZ Data Service (WFS 1.0.0) | The buildings estimated. `src/fetch_data.py`, `src/fetch_regions.py` |
+| LiDAR 1 m DSM: Queenstown 2021 ([105855](https://data.linz.govt.nz/layer/105855)), Wanaka 2022 ([113096](https://data.linz.govt.nz/layer/113096)), Kingston 2025 ([123405](https://data.linz.govt.nz/layer/123405)), Auckland 2024 (121992) | LINZ Exports API | Roof and obstacle heights, shading, heat map |
+| LiDAR bare-earth DEM: 105898, 113095, 123404 | LINZ | Configured but not fetched; horizons use the wide DEM |
+| LiDAR tile index: 105905, 113097, 123527, 121993 | LINZ | Maps an area to point-cloud tiles. `src/fetch_pointcloud_regions.py` |
+| Raw point clouds: [NZ21_Otago](https://opentopography.s3.sdsc.edu/pc-bulk/NZ21_Otago), [NZ22_Wanaka](https://opentopography.s3.sdsc.edu/pc-bulk/NZ22_Wanaka), NZ24_Auckland | OpenTopography | Point-level roof evidence. Kingston has none and uses its DSM |
+| Aerial imagery: Queenstown 2026 (124754), Wanaka 2022–23 (112781), Kingston (106403), Cromwell (119455), Glenorchy (104460), Auckland (121752) | LINZ | Roof lines and obstructions. Optional: builds carry on without it |
+| Survey-year imagery: Queenstown 2021 (114745), Wanaka (112781), Auckland (121752) | LINZ | Measuring each building's photo lean. `src/register_imagery.py` |
+| NZ 8 m DEM, layer [51768](https://data.linz.govt.nz/layer/51768) | LINZ | Distant horizons. Fetched to `data/dem_wide_mosaic.tif` by `src/fetch_dem_wide.py` |
+| NZ Addresses, layer [123113](https://data.linz.govt.nz/layer/123113) | LINZ | Address labels and search. `src/add_addresses.py` |
+| Measured sunlight | NIWA SolarView GHI (Wakatipu basin); else the nearest NIWA measured-radiation station | Sunlight calibration. `src/solar_model.py` |
+| ERA5 daily radiation, 1940–2025 | Copernicus, via Open-Meteo (CC BY 4.0) | Scales calibration between places; low-solar runs. `climate/era5/`, `tools/pack_era5_daily.py` |
+| District plan zones | Queenstown Lakes District Council | Home or business pricing. `tools/fetch_zoning.py` |
+| Aerial basemap | LINZ Basemaps | Map display; reference photo for lean. `preview.html`, `src/register_imagery.py` |
+| World imagery basemap | Esri World Imagery | Low-zoom map display only |
 
-Fetching inputs is a separate, earlier step.
+Where there is no LiDAR (Cromwell, Glenorchy), the survey is marked
+`"elevation": "synthetic"` and the build uses a modelled surface
+(`src/synthesize_dsm.py`).
 
-## Source datasets
+## 1. Choose an area
 
-The application combines external data fetched for the pipeline with basemaps
-shown in the web map. LiDAR and aerial-imagery layer IDs vary by survey; the
-configured coverage and identifiers are maintained in [config.py](../../config.py#L100-L195).
+Check LINZ has outlines, DSM and imagery for it, then add the region and its
+bounding box to `config.REGIONS`. The original pilot is `pilot`; its inputs
+start in `data/` and are linked into `data/regions/pilot/`.
 
-| Layer name | Source | URL | Comment | Used by |
-| --- | --- | --- | --- | --- |
-| Building outlines — layer 101290 | LINZ Data Service | [Layer 101290](https://data.linz.govt.nz/layer/101290); [WFS service](https://data.linz.govt.nz/services) | Building footprints used to define the buildings being estimated. Queried through WFS 1.0.0. | Outline fetching in [src/fetch_data.py](../../src/fetch_data.py#L35-L60) and [src/fetch_regions.py](../../src/fetch_regions.py#L100-L125); layout generation in [src/build_layout_geojson.py](../../src/build_layout_geojson.py#L700-L720). |
-| LiDAR DSM — Queenstown 2021 (105855), Wanaka 2022 (113096), Kingston 2025 (123405) | LINZ Data Service | [105855](https://data.linz.govt.nz/layer/105855) · [113096](https://data.linz.govt.nz/layer/113096) · [123405](https://data.linz.govt.nz/layer/123405); [Exports API](https://data.linz.govt.nz/services/api/v1/exports/) | Survey-specific 1 m digital surface models. Elevation evidence for roofs and nearby objects; also supports shading and terrain products. | Acquisition in [src/fetch_regions.py](../../src/fetch_regions.py#L140-L150); layout generation in [src/build_layout_geojson.py](../../src/build_layout_geojson.py#L700-L720); shading and heatmap stages. |
-| LiDAR bare-earth DEM — Queenstown 2021 (105898), Wanaka 2022 (113095), Kingston 2025 (123404) | LINZ Data Service | [105898](https://data.linz.govt.nz/layer/105898) · [113095](https://data.linz.govt.nz/layer/113095) · [123404](https://data.linz.govt.nz/layer/123404) | Survey-specific bare-earth DEM layers are configured. The current horizon workflow uses the wide-area DEM together with the DSM; the regional fetch path does not fetch these per-survey DEM layers. | Survey configuration in [config.py](../../config.py#L145-L195); active horizon processing in [src/bake_building_horizons.py](../../src/bake_building_horizons.py). |
-| LiDAR point-cloud tile index — Queenstown (105905), Wanaka (113097), Kingston (123527) | LINZ Data Service | [105905](https://data.linz.govt.nz/layer/105905) · [113097](https://data.linz.govt.nz/layer/113097) · [123527](https://data.linz.govt.nz/layer/123527) | Maps an area to raw point-cloud tile names. Kingston's index is configured, but no corresponding raw point-cloud bulk store is currently available. | Tile lookup in [src/fetch_pointcloud_regions.py](../../src/fetch_pointcloud_regions.py#L55-L75). |
-| Raw LiDAR point clouds — Queenstown 2021 and Wanaka 2022 | OpenTopography public bulk stores | [NZ21_Otago](https://opentopography.s3.sdsc.edu/pc-bulk/NZ21_Otago) · [NZ22_Wanaka](https://opentopography.s3.sdsc.edu/pc-bulk/NZ22_Wanaka) | Point-level roof evidence. Kingston has no raw point-cloud store configured and uses its DSM instead. | Download in [src/fetch_pointcloud_regions.py](../../src/fetch_pointcloud_regions.py#L78-L112); processing in [src/pointcloud_source.py](../../src/pointcloud_source.py). |
-| Aerial imagery — Queenstown 2026 (124754), Wanaka 2022–2023 (112781), Kingston (106403) | LINZ Data Service | [124754](https://data.linz.govt.nz/layer/124754) · [112781](https://data.linz.govt.nz/layer/112781) · [106403](https://data.linz.govt.nz/layer/106403) | Image evidence for roof and obstruction processing. Optional: builds can continue without imagery, with reduced image-based capability. | Acquisition in [src/fetch_regions.py](../../src/fetch_regions.py#L150-L170); roof and obstruction processing in [src/build_layout_geojson.py](../../src/build_layout_geojson.py#L700-L720). |
-| Survey-year reference imagery — Queenstown 2021 (114745), Wanaka (112781) | LINZ Data Service | [114745](https://data.linz.govt.nz/layer/114745) · [112781](https://data.linz.govt.nz/layer/112781) | Photo from the LiDAR survey period, used to estimate the shift between LiDAR-aligned building drawings and the map imagery. Kingston has no reference image configured. | Alignment in [src/register_imagery.py](../../src/register_imagery.py#L1-L35). |
-| Wide-area bare-earth DEM — layer 51768, “NZ 8m Digital Elevation Model (2012)” | LINZ Data Service | [Layer 51768](https://data.linz.govt.nz/layer/51768) | 8 m terrain data for distant horizon and terrain-shading context. The pipeline expects the mosaic at `data/dem_wide_mosaic.tif`. | Fetching in [src/fetch_dem_wide.py](../../src/fetch_dem_wide.py#L100-L115); horizon and terrain processing in [src/bake_building_horizons.py](../../src/bake_building_horizons.py). |
-| NZ Addresses — layer 123113 | LINZ Data Service | [Layer 123113](https://data.linz.govt.nz/layer/123113) | Address points are matched to buildings and added as labels/search data. | Optional enrichment in [src/add_addresses.py](../../src/add_addresses.py#L30-L60); map address data in [src/emit_region.py](../../src/emit_region.py#L270-L290). |
-| Monthly solar irradiance climatology | NASA POWER | [Climatology point API](https://power.larc.nasa.gov/api/temporal/climatology/point) | Runtime fallback for monthly cloud-adjustment factors where nearby configured station climatology is unavailable. | [src/solar_model.py](../../src/solar_model.py#L85-L108). |
-| Queenstown sunshine climatology — station 5446 | NIWA / Earth Sciences NZ | [NIWA climate data](https://niwa.co.nz/climate-and-weather/mean-daily-global-radiation-mjsq-m) | Monthly sunshine normals are embedded in the code and preferred for Queenstown; they are not fetched from an API at runtime. | Solar-yield calibration in [src/solar_model.py](../../src/solar_model.py#L112-L150). |
-| Aerial basemap tiles | LINZ Basemaps, `aerial` | `https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=YOUR_KEY` | High-zoom map imagery and the comparison photo used for image registration. | Map display in [preview.html](../../preview.html#L890-L918); alignment in [src/register_imagery.py](../../src/register_imagery.py#L65-L100). |
-| World imagery basemap | Esri World Imagery | `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` | Lower-zoom visual context for map users; not an input to the solar model. | [preview.html](../../preview.html#L890-L918). |
-
-Raster exports are requested through LINZ's Exports API, while vector layers
-are queried through WFS. Request construction is in
-[src/fetch_data.py](../../src/fetch_data.py#L35-L95). Generated PMTiles,
-terrain tiles, and heatmap tiles are application outputs, not external source
-datasets.
-
-| Decision or task | What you do | Config or source of truth | Location |
-| --- | --- | --- | --- |
-| Decide on an area | Choose or add a region name and bounding box | `config.REGIONS`, `config.PILOT_BBOX` | `config.py` |
-| Check LINZ coverage | Confirm the area has outlines, DSM, and imagery | LINZ Data Service | https://data.linz.govt.nz |
-| Check if inputs already exist | Look before fetching; fetches are resumable and skip existing files | filesystem | `data/` (pilot) or `data/regions/<area>/` |
-| Acquire missing inputs | Fetch outlines, DSM, imagery | `fetch_data.py` / `fetch_regions.py` | writes to the same locations |
-| Check the wide DEM is present | District-scale bare-earth DEM, not built by this repo | maintained data environment | `data/dem_wide_mosaic.tif` |
-| Prepare | Assign overlapping outlines to one owning region | `region_build.py` | `data/regions/<area>/building_outlines_dedup.geojson` |
-| Build | Run per-area and district stages, resumable via markers | `run_district_build.sh` / `run_stage.py` | per-area outputs in `data/regions/<area>/`, markers in `data/build_state/` |
-| Merge | Combine per-area outputs into site-level datasets | `merge_regions.py` and the district fan-in | `data/*.geojson`, rasters, `data/panel_layouts.pmtiles` |
-| Validate | Check logs, run audits, review the map visually | audit/render/validate scripts, local map | `data/build_logs/`, browser |
-| Decide: fix data/config or algorithm | A validation failure is either a coverage/config problem or a modelling problem | maintainer judgement | — |
-| Correct config or re-acquire | Adjust bbox, exclusions, or assumptions, or refetch | `config.py` | loops back to Build |
-| Correct an algorithm | Change segmentation, gating, or model code | `src/*.py` | loops back to Build |
-| Publish | Deploy the static site | `netlify.toml` | repo root / hosting |
-
-## Prerequisites
-
-Ensure you have setup your environment, per the [Local Setup](local-setup.md).
-
-## Start the Python environment
-
-Activate your python environment if not done so already. The python environment must be activated at the start of each new Terminal session. The `.venv` folder remains on the computer between sessions.
-```sh
-cd ~/nz-solar-potential
-source .venv/bin/activate
-```
-
-If `.venv/bin/activate` is not found, return to [Create the project Python
-environment](local-setup.md#create-the-project-python-environment) before
-continuing. If activation succeeds, `(.venv)` appears at the start of the
-Terminal prompt.
-
-## Choose and prepare an area
-
-Confirm LINZ coverage for the intended area before changing `config.py`. The
-configured area names and bounding boxes in `config.REGIONS` are the source of
-truth. The original Queenstown pilot is named `pilot` by the build code; its
-source files begin in `data/`, while the region-aware build path uses
-`data/regions/pilot/` for the pilot area. The repository code comments describe
-those pilot inputs as symlinked into the region tree. Check that this link or
-equivalent preparation exists before starting a region build.
-
-## Acquire source data
-
-Fetch the original pilot inputs when working with the legacy pilot acquisition
-path:
+## 2. Fetch
 
 ```sh
-.venv/bin/python src/fetch_data.py
+.venv/bin/python src/fetch_regions.py frankton_flats   # one region
+.venv/bin/python src/fetch_regions.py                  # every region
+.venv/bin/python src/fetch_dem_wide.py                 # wide DEM, if missing or too small
 ```
 
-The pilot download is saved in the project's `data/` directory. It includes
-`building_outlines.geojson`, `dsm_mosaic.tif`, and `imagery_mosaic.tif`, plus
-download and extraction files created while the rasters are processed. When
-calculating per-building horizon profiles across wide terrain, ensure the
-district-scale bare-earth DEM `data/dem_wide_mosaic.tif` is also present.
+Each region lands in `data/regions/<region>/`. Fetching resumes: existing
+files are skipped. Imagery is fetched in chunks of at most 8 km². Areas with
+no imagery log a warning and build from LiDAR alone. `src/fetch_data.py`
+fetches the legacy pilot inputs into `data/`.
 
-For new regional acquisition, prefer `fetch_regions.py`. Fetch one named
-expansion region, or omit the name to fetch every configured region:
+## 3. Prepare
 
-```sh
-.venv/bin/python src/fetch_regions.py frankton_flats
-```
-
-This command saves the named region under
-`data/regions/frankton_flats/`. Each region directory contains its building
-outlines and mosaicked DSM and imagery inputs. For example, replace
-`frankton_flats` with the region name passed to the command.
-
-Step 02 of `quickstart.sh` runs `src/fetch_dem_wide.py` after regional
-acquisition. It fetches or refreshes the root-level
-`data/dem_wide_mosaic.tif` when the file is missing or does not cover the
-configured regional extent. Regional imagery is optional,
-but the build will report degraded LiDAR-only processing when imagery is absent.
-
-Regional fetching is resumable: existing outputs are skipped. Imagery exports
-are split into chunks no larger than $8\,\mathrm{km^2}$ because imagery is the
-largest source and provider export jobs have practical size limits. Some rural
-areas have no urban aerial imagery; the fetcher records a warning and the
-pipeline continues with LiDAR-only inputs.
-
-## Prepare and build
-
-After fetching all regions that will be combined, assign each overlapping
-building outline to one owning region. This writes deduplicated outline files
-under `data/regions/<area>/` and must happen before region builds:
+After fetching every region you will combine, give each building one owning
+region:
 
 ```sh
 .venv/bin/python src/region_build.py
 ```
 
-For the current resumable district workflow, use:
+## 4. Build
 
 ```sh
-bash src/run_district_build.sh
-```
-
-Useful options are:
-
-```sh
+bash src/run_district_build.sh                       # incremental: stale buildings only
 bash src/run_district_build.sh --regions "pilot frankton_flats"
-bash src/run_district_build.sh --force
+bash src/run_district_build.sh --force               # rebuild everything
+bash src/run_district_build.sh --yield-only          # solar model changed: recompute kWh, no LiDAR
 ```
 
-The script gets the area list from `config.REGIONS`, includes `pilot`, and
-records stage completion markers so an interrupted run can resume. Its per-area
-stages are layout generation, panel gating, reranking, solar-potential
-derivation, roof-confidence patching, horizon baking, and heatmap-raster
-generation. It then merges regions and runs the district-wide density,
-terrain-mask, seasonal-curve, layout-shrink, and PMTiles stages.
+Per region it runs `register_imagery`, `build_layout_geojson`, `gate_panels`,
+`rerank_layouts`, `derive_solar_potential`, `patch_roof_confidence`,
+`bake_building_horizons`, `build_heatmap_raster`, `add_addresses`, then
+`emit_region`, which writes the region's tiles, cells, detail and summary to
+`data/out/<region>/`. Then `src/combine_regions.py` joins every region into
+the served set in `data/`. There is no merged district file
+(`src/merge_regions.py` is retired).
 
-Each stage is run through `src/run_stage.py`. Preflight checks verify declared
-inputs before expensive work, and successful stages write markers under
-`data/build_state/`. With the default resume mode, a stage is skipped only when
-its marker is newer than its declared inputs. Use `--force` to rebuild stages.
+Each stage runs through `src/run_stage.py`: it checks inputs first and
+writes a marker to `data/build_state/` on success. A rerun skips stages whose
+marker is newer than their inputs, so an interrupted build resumes. Logs are
+in `data/build_logs/<region>.log`. A failed region stops the combine.
 
-Logs are written to `data/build_logs/<region>.log`. A failed area stops the
-district fan-in, preventing an incomplete set of regions from being presented
-as a complete district. The older `run_full_build.sh` remains a simpler
-region-loop script for targeted or legacy use; it is not the recommended
-district release workflow.
+For fast layout work on one area: `bash src/run_dev_loop.sh pilot`.
 
-For fast layout-only iteration, use `run_dev_loop.sh`. The parallel layout
-rerun scripts are specialized alternatives for gate-rule changes; read their
-resource notes before selecting `run_layouts_regate_par.sh`.
+## 5. Check
 
-The older `run_full_build.sh` does not use the current stage-marker and
-preflight orchestration. Use it only when a targeted legacy workflow is
-specifically required.
+1. Read each region's log for failures and warnings.
+2. `src/audit_layout_quality.py`: low fill, scattered arrays, mixed angles,
+   too much obstruction.
+3. `src/render_top_movers.py`: picture cards of the buildings that changed
+   most.
+4. `src/render_building_debug.py <building_id>`: one roof's faces, planes and
+   panels.
+5. `src/validate_obstructions.py` when obstruction rules change.
+6. For layout changes, see "Judging a layout change" in [AGENTS.md](../../AGENTS.md)
+   (`tools/layout_ab.py`, `tools/layout_health.py`, `tools/face_area_check.py`).
+7. Look at the map: a mix of roofs, known hard cases, areas without imagery.
 
-The district script calls `derive_solar_potential.py` and
-`bake_building_horizons.py` in the supported stage order. These scripts can
-also be run directly for a named region when diagnosing or recovering one
-stage. Horizon baking additionally requires the root-level
-`data/dem_wide_mosaic.tif`; this file is not built by the repository scripts and
-must be copied from the maintained data environment.
+Run the tests before pushing code:
 
-## Serve the map locally
+```sh
+bash tests/run_all.sh --fast   # unit, economics, sync and diagram checks
+bash tests/run_all.sh          # adds the whole build on a synthetic region
+```
 
-Run either command from the `nz-solar-potential` project directory.
-
-For a static preview of generated data, run:
+## 6. Serve locally
 
 ```sh
 python3 -m http.server 8000
 ```
 
-Open `http://localhost:8000/preview.html` in a browser.
+Open `http://localhost:8000/preview.html`. For the tuning sliders, run
+`.venv/bin/python src/live_server.py` instead. It serves the folder above the
+project, so open `http://localhost:8000/<project-folder>/preview.html`.
+`tools/pipeline_serve.py` serves a preview with PMTiles range requests.
 
-For the local parameter-refit API and tuning sliders, run:
+## 7. Publish
 
-```sh
-.venv/bin/python src/live_server.py
-```
+The site (`preview.html` and its scripts) is served by GitHub Pages from this
+repository. The data is served from the Google Cloud tiles bucket, one folder
+per release: `gs://solar-potential-map-tiles/v<N>/`. `site-config.js`
+(`dataBase`, `dataVersion`) tells the page which folder to read.
 
-This server loads substantial source data at startup and is intended for local
-development only. It serves the project from its parent directory, so open
-`http://localhost:8000/nz-solar-potential/preview.html`. Static hosting does
-not provide its `/api/refit` endpoint.
-
-## Validate before publishing
-
-1. Read each requested region log for failed stages and warnings.
-2. Run `src/audit_layout_quality.py` for rebuilt areas; investigate low fill,
-   fragmented arrays, multiple panel angles, and excessive obstruction shares.
-3. Run `src/render_top_movers.py` to inspect visual diff cards for the top
-   capacity movers across builds before releasing.
-4. Use `src/render_building_debug.py <building_id>` to generate visual debug
-   cards when investigating individual roof segmentation, plane fits, or
-   skeleton reconstruction issues.
-5. Use `src/validate_obstructions.py` when changing obstruction behaviour.
-6. Use the local map preview to inspect a representative mix of rooftops,
-   including known difficult buildings and areas without imagery.
-7. Verify merged feature counts and output sizes. Per-area outputs live under
-   `data/regions/<area>/`; merged site-level outputs are written to `data/`:
-   `solar_potential.geojson`, `panel_layouts.geojson`, heatmap manifests and
-   raster outputs. The district workflow also creates
-   `data/panel_layouts.pmtiles` for map delivery.
-
-## Run automated checks
-
-From the project directory, run the repository's checks before pushing code or
-releasing a dataset:
+From GitHub (Actions > "Build and publish the map") or a laptop
+(`tools/remote_build.sh --publish`), the VM builds, gates and publishes. To
+review a VM build on a laptop first:
 
 ```sh
-bash tests/run_all.sh --fast
+tools/deploy_from_vm.sh                          # pull the served set, run the gate, stop
+tools/deploy_from_vm.sh --push                   # ...and publish if the gate passes
+tools/deploy_from_vm.sh --push-reviewed "why"    # publish past a gate whose list you have checked
 ```
 
-This runs pure-function checks, economics checks when Node.js is available,
-deprecated-API checks, repository-sync checks, and architecture-diagram checks.
-The full command, `bash tests/run_all.sh`, also runs the golden-building
-regression checks and needs the relevant local region data. A non-zero exit
-status means at least one check failed.
+The gate is `tools/predeploy_check.py`: it compares the new build against the
+live one. Publishing (`tools/publish_served.py`) uploads a new version
+folder, keeps the newest three, and commits only the `site-config.js` change.
+A version folder is never changed after upload.
 
-## Publish current artifacts
+**Roll back** by pointing `site-config.js` `dataBase` and `dataVersion` at an
+older folder that is still in the bucket.
 
-Static hosting publishes the repository root according to `netlify.toml`.
-The map can use committed static data, but the local `/api/refit` capability is
-not available in static hosting. The current district workflow generates
-`data/panel_layouts.pmtiles` for detailed layout delivery and also produces
-merged GeoJSON, heatmap rasters, seasonal curves, terrain masks, and density
-metadata. Treat these generated artifacts as publication candidates, and keep
-the input capture, code revision, configuration, and validation evidence with
-the release. Do not deploy the monolithic detailed layout GeoJSON directly to
-browsers at full district scale when the PMTiles artifact is available.
+## Safety
 
-## Recovery and safety
-
-- Pipeline writes that replace JSON use atomic replacement, so an interruption
-  should retain either the prior artifact or a complete replacement.
-- Re-run resumable fetches after a network failure; do not delete complete
-  source files merely to retry.
-- Preserve source metadata, config changes, command logs, and validation
-  evidence with a dataset release so estimates can be traced to their inputs.
+- JSON outputs are replaced atomically: an interruption leaves the old file
+  or a complete new one.
+- After a network failure, rerun the fetch. Don't delete complete files.
+- Keep the code revision, config, logs and check results with each release.

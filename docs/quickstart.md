@@ -1,7 +1,8 @@
 # Quickstart
-_This quickstart describes howto build rooftop spatial datasets from source, and publish in a webpage._
 
-## 1. Download source code
+Build the rooftop solar data for one area and view it on a local map.
+
+## 1. Get the code
 
 ```sh
 cd ~
@@ -9,72 +10,56 @@ git clone https://github.com/rewiring-nz/nz-solar-potential.git
 cd nz-solar-potential
 ```
 
-## 2. Setup Environment
+## 2. Set up your computer
 
-1. Setup your environment, per:
-  * [Setup Mac Environment](data-maintainers/env-setup-mac.md)
-  * [Setup Ubuntu Environment](data-maintainers/env-setup-ubuntu.md)
-  * [Setup Windows Environment](data-maintainers/env-setup-win.md)
+Follow the guide for your system:
 
-The local pipeline checks native GDAL tools and LERC raster decoding before
-downloading source data, automatically trying the available TIFF readers. A
-failure explains how to repair the environment; see
-[LERC dependency checks](data-maintainers/troubleshooting.md#lerc-raster-dependency-check).
-Python requirements do not configure codecs in system GDAL, and no native
-packages are installed automatically by this check.
+- [macOS](data-maintainers/env-setup-mac.md) (tested)
+- [Ubuntu](data-maintainers/env-setup-ubuntu.md)
+- [Windows (WSL2)](data-maintainers/env-setup-win.md)
 
-## 3. LINZ credentials
+Then [create the Python environment](data-maintainers/local-setup.md#create-the-project-python-environment).
 
-You need an API Key to download datasets from LINZ (Land Information New Zealand).
+The pipeline checks GDAL and LERC raster decoding before it downloads
+anything. If that check fails, see
+[LERC dependency check](data-maintainers/troubleshooting.md#lerc-raster-dependency-check).
 
-1. Create an account and API key from https://data.linz.govt.nz/my/api/create/
-2. Select **API Key** > **Manual scope**
-3. Enable maximum access, by changing pull-down selection of "No Access" to "Create, edit, and ..."
-4. Copy the API key into a config file `~/nz-solar-potential/.env`:
+## 3. Add a LINZ API key
+
+1. Create a key at https://data.linz.govt.nz/my/api/create/.
+2. Choose **API Key** > **Manual scope**.
+3. Set every service from "No Access" to "Create, edit, and ...".
+4. Put it in `.env` in the project folder:
 
 ```text
-LINZ_API_KEY=[your-key-here]
+LINZ_API_KEY=your-key
 ```
 
-# 4. Solar pipeline
-
-Run the pipeline:
+## 4. Run the pipeline
 
 ```sh
 bash quickstart.sh
 ```
 
-This runs locally by default and generates data for `PIPELINE_REGION` in
-`config.py`. Pass a configured region name to select another area.
+This builds the region set by `PIPELINE_REGION` in `config.py`, on your
+computer. To build another configured region, name it:
 
-To build and gate the default region on the team's shared cloud build VM:
+```sh
+bash quickstart.sh town_gorge_north
+```
+
+Region names are in `REGIONS` in `config.py`.
+
+To build on the team's shared cloud VM instead, see the
+[cloud quickstart](quickstart-cloud.md):
 
 ```sh
 bash quickstart.sh --mode cloud
 ```
 
-Defaults for the project, VM, zone, SSH user, region, ref, and cost assumptions
-are held in `config.py` under `CLOUD_SHARED_BUILD`. After cost approval, the
-command builds and gates the region, publishes the passing result to a public,
-expiring developer preview, and opens the preview URL. It resolves the preview
-alias from the GitHub SSH authentication greeting (using an existing SSH key;
-no extra CLI is needed when this checkout already authenticates to GitHub) and
-falls back to the GitHub CLI if available. It calculates the estimate from the
-VM, storage, retention, and expected-download assumptions in
-`CLOUD_SHARED_BUILD`. See [Cloud quickstart](quickstart-cloud.md) for one-time
-preview-bucket setup, optional per-developer VM profiles, and preflight.
+## 5. Check the result
 
-# 5. Review status
-
-* Check `~/nz-solar-potential/data/pipeline_runs/<datestamp>/report.md` for output status.
-* The pipeline combines the selected region directly into `data/`, replacing the current combined map dataset.
-* Check [Troubleshooting](data-maintainers/troubleshooting.md) for tips.
-* [Pipeline reference](data-maintainers/pipeline-reference.md) for run details.
-
-# 6. Next
-
-Try generating data for another region, as defined in the `REGIONS` in `nz-solar-potential/config.py`:
-
-```sh
-bash quickstart.sh town_gorge_north
-```
+- Read `data/pipeline_runs/<run-id>/report.md`.
+- The run replaces the combined map data in `data/` with the selected region.
+- Failures: [Troubleshooting](data-maintainers/troubleshooting.md).
+- Run details: [Pipeline reference](data-maintainers/pipeline-reference.md).

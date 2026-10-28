@@ -1,102 +1,50 @@
-# macOS environment setup
+# macOS setup
 
-These instructions set up an existing checkout of
-`nz-solar-potential`; they do not download source data or configure a LINZ key.
+Installs the tools for an existing checkout. It does not fetch data or set a
+LINZ key.
 
-## What you will install
+## 1. Homebrew
 
-- **Terminal**, which runs the commands in this guide. It is already included
-  with macOS.
-- **Homebrew**, a package manager that installs and updates command-line
-   applications on a Mac. It installs the project tools listed in its
-   `Brewfile`.
-- **Git**, which downloads project changes and records changes you make.
-- **Python**, the programming language and runtime that runs the solar
-   data-processing scripts.
-
-This project has its own `Brewfile` used by Homebrew. It installs applications used to build datasets.
-
-## Install Homebrew
-
-Check whether Homebrew is already available. Open **Terminal** from
-Applications > Utilities, or search for it with Spotlight, then run:
+In Terminal:
 
 ```sh
 brew --version
 ```
 
-If it prints a version number, Homebrew is already installed.
-If it says `command not found`, install Homebrew using its official installer:
+If it says `command not found`, install it:
 
 ```sh
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Follow the prompts. At the end, Homebrew may print a command beginning with
-`eval` to add Homebrew to your shell path. Copy and run that command exactly as
-shown. Close Terminal, open it again, then confirm Homebrew is available:
+Run the `eval ...` line the installer prints, reopen Terminal, and check
+`brew --version` again. Help: [Homebrew installation](https://docs.brew.sh/Installation).
 
-```sh
-brew --version
-```
+## 2. Project tools
 
-If this command says `command not found`, repeat the path command printed by
-the installer or use the [Homebrew installation guide](https://docs.brew.sh/Installation).
-
-## Open the project directory
-
-In Terminal, change into your local project checkout. For example, if it is in
-the default workspace used by this project:
-
-```sh
-cd ~/nz-solar-potential
-```
-
-## Install project tools
-
-The project's `Brewfile` is a list of required Mac applications. Homebrew
-compares it with the tools already on the computer and installs anything that
-is missing. It does not install the project's Python packages yet.
-
-Run:
+From the project folder (e.g. `cd ~/nz-solar-potential`):
 
 ```sh
 brew bundle --file=Brewfile
 ```
 
-This installs any Brewfile tools that are missing; it does not update every
-installed Homebrew package. Homebrew may finish by reporting that many
-formulae or casks are outdated. That is an informational count, not a failure
-and not a request to upgrade them for this project. Do not run `brew upgrade`
-just because this count appears. The command is successful if it exits with
-status 0 and returns to the shell prompt; investigate actual `Error:` messages
-or a nonzero exit status.
-
-This installs Git, which retrieves and records project changes, GDAL for
-raster acquisition, Python, which runs the data-processing scripts, and
-Tippecanoe, which provides the
-map-tile commands `tippecanoe`, `tile-join`, and `tippecanoe-decode`. Confirm
-the required commands are available:
+This installs Git, GDAL, Python and Tippecanoe if missing. A note that other
+packages are outdated is not an error; don't run `brew upgrade` for it.
+Check:
 
 ```sh
 git --version
 python3 --version
-command -v gdalbuildvrt
-command -v gdal_translate
+command -v gdalbuildvrt gdal_translate tile-join tippecanoe-decode
 tippecanoe --version
-command -v tile-join
-command -v tippecanoe-decode
 ```
 
-After creating the Python environment, quickstart checks actual LERC decoding
-and automatically selects a working GDAL TIFF reader. Installing or upgrading
-a package alone does not establish codec support. See
-[LERC dependency checks](troubleshooting.md#lerc-raster-dependency-check).
+The pipeline tests LERC decoding itself and picks a working TIFF reader. See
+[LERC dependency check](troubleshooting.md#lerc-raster-dependency-check).
 
-### Option: For cloud instances
+## 3. Cloud only: gcloud
 
-The cloud quickstart uses the Google Cloud CLI (`gcloud`). Install it with
-Homebrew's `gcloud-cli` cask:
+Only needed for cloud builds. Not in the Brewfile.
 
 ```sh
 brew install --cask gcloud-cli
@@ -104,23 +52,18 @@ gcloud --version
 gcloud auth login
 ```
 
-The project Brewfile does not install `gcloud`; it is only needed for cloud
-access. The cloud quickstart can offer to install this cask when it is missing
-and Homebrew is available. It asks for confirmation first. Homebrew itself
-must be installed and available on `PATH` before running the quickstart. See
-[Team access](team-access.md) for the cloud access check.
+The cloud quickstart offers to install it (and asks first) if Homebrew is
+present. See [Team access](team-access.md).
 
-## Next step
+## Next
 
-Return to [Create the project Python environment](local-setup.md#create-the-project-python-environment)
-to install the project's required Python packages and complete local setup.
+[Create the Python environment](local-setup.md#create-the-project-python-environment).
 
-## Troubleshooting
+## Problems
 
-| Problem | First action |
+| Problem | Fix |
 | --- | --- |
-| `brew: command not found` | Reopen Terminal and run the path command printed by the Homebrew installer. |
-| `brew bundle` says many formulae or casks are outdated | Informational only. If the command exits successfully, continue; do not upgrade unrelated packages just to clear the count. |
-| `brew bundle` exits nonzero or prints `Error:` | Confirm that Terminal is in the project directory and `Brewfile` is present (`ls Brewfile`). Follow the specific error; the outdated-package count alone is not the cause. |
-| `tippecanoe`, `tile-join`, or `tippecanoe-decode: command not found` | Run `brew bundle --file=Brewfile` from the project directory, then open a new Terminal and verify each command with `command -v`. |
-| `python3: command not found` | Run `brew bundle --file=Brewfile`, then close and reopen Terminal. |
+| `brew: command not found` | Reopen Terminal and run the installer's `eval` line. |
+| `brew bundle` exits non-zero or prints `Error:` | Check you are in the folder with `Brewfile` (`ls Brewfile`) and follow the error. |
+| `tippecanoe`, `tile-join` or `tippecanoe-decode` not found | Rerun `brew bundle --file=Brewfile`, open a new Terminal, check with `command -v`. |
+| `python3: command not found` | Rerun `brew bundle --file=Brewfile`, then reopen Terminal. |

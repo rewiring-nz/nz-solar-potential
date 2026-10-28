@@ -1,141 +1,42 @@
-# Windows environment setup
+# Windows setup
 
-> **Warning: Untested for this project:** This guide is a proposed setup path and has
-> not yet been verified by a `nz-solar-potential` data maintainer. Report any
-> differences or failures when testing it.
+> Untested for this project. Report anything that differs.
 
-Use Windows Subsystem for Linux (WSL2) with Ubuntu rather than a native Windows
-Python environment. The project's build scripts use a POSIX shell and the
-geospatial Python stack is generally more reliable in Linux.
+Use WSL2 with Ubuntu, not native Windows Python. The build scripts need a
+POSIX shell.
 
-## What you will install
+## 1. WSL2 and Ubuntu
 
-- **PowerShell**, a command window included with Windows, used to install and
-  manage WSL.
-- **WSL2 and Ubuntu**, a Linux environment running on Windows. It provides the
-  command style required by the project's build scripts.
-- **Git**, installed inside Ubuntu to retrieve the project and record changes.
-- **Python**, installed inside Ubuntu to run the data-processing scripts.
-- **Tippecanoe**, built inside Ubuntu to provide the map-tile commands
-  `tippecanoe`, `tile-join`, and `tippecanoe-decode`.
-
-## Install WSL2 and Ubuntu
-
-First check whether WSL is already available. Open **Windows PowerShell** as
-an Administrator and run:
+In PowerShell (as Administrator):
 
 ```powershell
 wsl --status
 ```
 
-If it reports a version 2 installation with Ubuntu available, open **Ubuntu**
-from the Start menu and continue to [Install Git](#install-git). Otherwise,
-run:
+If WSL 2 with Ubuntu is not there:
 
 ```powershell
 wsl --install -d Ubuntu
 ```
 
-Restart Windows when prompted. Open **Ubuntu** from the Start menu. On first
-launch, choose a Linux user name and password. This password is for Ubuntu
-administration; keep it safe.
+Restart when asked, open **Ubuntu** from the Start menu, and choose a Linux
+user name and password. Help: [Microsoft WSL guide](https://learn.microsoft.com/windows/wsl/install).
 
-Use the [Microsoft WSL installation guide](https://learn.microsoft.com/windows/wsl/install)
-if the install command reports an error.
+## 2. Tools inside Ubuntu
 
-## Install Git
+Run everything from here on in the Ubuntu terminal, not PowerShell. Follow the
+[Ubuntu setup](env-setup-ubuntu.md) for Git, Python, GDAL, Tippecanoe and
+(for cloud work) `gcloud`. The quickstart never installs `gcloud` into Windows.
 
-Git downloads the project and records changes. In the Ubuntu terminal, check
-whether it is already available:
+## 3. Keep the project inside Linux
 
-```sh
-git --version
-```
-
-If it prints a version number, keep the installed Git. If it says `command not
-found`, install it. Enter the Ubuntu password when `sudo` asks for it; nothing
-appears while the password is typed.
-
-```sh
-sudo apt update
-sudo apt install -y git
-```
-
-Confirm the installation:
-
-```sh
-git --version
-```
-
-## Install Python
-
-Python runs the project's data-processing scripts. The `venv` package creates
-an isolated environment for this project and `pip` installs its required
-packages. Check whether Python is available:
-
-```sh
-python3 --version
-```
-
-If it prints a version number, continue. If it says `command not found`,
-install Python and its project-environment tools:
-
-```sh
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip
-```
-
-Confirm the installation:
-
-```sh
-python3 --version
-```
-
-## Install Tippecanoe map tools
-
-The quickstart's map-output stages run inside WSL, so install Tippecanoe there
-(not in PowerShell or native Windows). Follow the
-[Ubuntu Tippecanoe setup](env-setup-ubuntu.md#install-tippecanoe-map-tools),
-then verify the three commands from the Ubuntu terminal:
-
-```sh
-tippecanoe --version
-command -v tile-join
-command -v tippecanoe-decode
-```
-
-## Option: For cloud instances
-
-Run cloud commands from the Ubuntu terminal inside WSL, not from PowerShell.
-The quickstart can offer to configure Google's apt repository and install
-`google-cloud-cli` when it detects Ubuntu in WSL. Confirm the installation and
-enter your Ubuntu administrator password if asked. Alternatively, follow
-Google's [Debian/Ubuntu instructions](https://docs.cloud.google.com/sdk/docs/install-sdk#deb).
-Then authenticate from the WSL terminal:
-
-```sh
-gcloud --version
-gcloud auth login
-```
-
-The quickstart does not install gcloud into Windows or modify the global
-`gcloud` project setting.
-
-## Keep the project inside Linux
-
-Store the project and its large `data/` directory under your Ubuntu home
-directory, such as `~/nz-solar-potential`, rather than under
-`/mnt/c/`. Accessing many files through the mounted Windows filesystem can make
-geospatial processing much slower.
-
-Clone or otherwise obtain the project using the repository location supplied by
-the project maintainer, then change to the folder containing `requirements.txt`
-and `.env.example`:
+Put the project and its `data/` folder under your Ubuntu home, e.g.
+`~/nz-solar-potential`, not under `/mnt/c/`. The Windows file system is much
+slower for this work.
 
 ```sh
 cd ~/nz-solar-potential
 ls requirements.txt .env.example
 ```
 
-Return to [Create the project Python environment](local-setup.md#create-the-project-python-environment)
-to install the project's required Python packages and complete local setup.
+Then [create the Python environment](local-setup.md#create-the-project-python-environment).

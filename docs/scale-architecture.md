@@ -1,231 +1,155 @@
 # Building New Zealand one region at a time
 
-How the build stops being one file, deletes its inputs as it goes, and
-coordinates many machines -- the groundwork for building any city. Every number is measured on the Queenstown build or on
-the VM as it stands today; every choice names the alternative it beat and why.
+How the build works region by region, deletes inputs as it goes, and
+spreads work over many machines. Figures are measured on the Queenstown
+build.
 
-## The one idea
+## The idea
 
-**The unit of work is a region, and the unit of output is a tile.**
+The unit of work is a region. The unit of output is a tile.
 
-Today the build fans in: 29 regions each write a GeoJSON, `merge_regions`
-concatenates them into one `solar_potential.geojson` and one
-`panel_layouts.geojson`, and everything the map serves is cut from those two
-files. At Queenstown scale that intermediate is 400 MB. At New Zealand scale it
-is 65 GB, and every stage after the merge -- deciles, terrain masks, tiles,
-detail split, addresses -- reads the whole of it into memory.
+Each region emits its own tiles (`src/emit_region.py`) and a combine step
+joins them (`src/combine_regions.py`). Nothing holds more than one region in
+memory, so the combine treats 1,384 regions the same as 35. There is no
+merged district file; `src/merge_regions.py` is retired.
 
-The merge exists for one reason: the browser used to want one file. It no
-longer does. Since 20 September the map reads **tiles** for buildings, panels
-and the heat map, and tiles have the property the merge never had -- **every
-one of them is built from a small area, and combining tilesets is a mechanical
-join, not a re-read of the country.**
-
-So each region finishes by emitting its own tiles, and a "combine" step joins
-them. Nothing ever holds more than one region in memory. The combine handles
-1,384 regions the same way it handles 29, because all it does is:
-
-| output | per region emits | combine does | why it is associative |
+| output | each region emits | combine does | why it is safe |
 | --- | --- | --- | --- |
-| `panel_layouts.pmtiles` | its own pmtiles | `tile-join` over a list of files | regions do not overlap; a boundary tile just holds both regions' features |
+| `panel_layouts.pmtiles` | its own pmtiles | `tile-join` | regions do not overlap; a border tile holds both |
 | `buildings.pmtiles` | its own pmtiles | `tile-join` | same |
-| `building_cells.pmtiles` | partial **sums** per grid cell, as JSON | add the partials, then tile once | a sum of sums is a sum |
-| `building_detail/13/x/y.json` | its buildings, keyed by tile | merge the dicts per tile | keyed by building id; no collisions |
-| `heatmap_tiles/z/x/y.png` | its tiles | copy; alpha-composite where two regions touch a tile | exactly what the old image-source version did implicitly |
-| `addresses/` | its addresses | concatenate, then shard by prefix | search reads one shard |
-| `seasonal_curves` | nothing | one file per **latitude band**, computed in combine | curve shape depends on latitude, not on the region |
-| `summary.json` | its totals and provenance | add them | the deploy gate reads this instead of diffing a 26 MB file |
+| `building_cells.pmtiles` | partial sums per grid cell (JSON) | add the partials, tile once | a sum of sums is a sum |
+| `building_detail/13/x/y.json` | its buildings, keyed by tile | merge per tile | keyed by building id |
+| `heatmap_tiles/z/x/y.png` | its tiles | copy; composite where two regions share a tile | |
+| `addresses/` | its addresses | concatenate, shard by prefix | search reads one shard |
+| `seasonal_curves` | nothing | one file per degree of latitude | curve shape depends on latitude |
+| `summary.json` | totals and provenance | add | the deploy gate reads these |
 
-`tile-join` on the VM (tippecanoe 2.82) was tested reading pmtiles from a
-list file and writing pmtiles: it works. Above a few hundred inputs the join
-runs hierarchically -- batches of 200, then a join of the batches -- because
-that is cheaper than one process holding 1,384 files open.
+Above 200 inputs the join runs in batches, then joins the batches. Density
+deciles, terrain masks, panel shrinking and the detail split run per region
+inside `emit_region`. Combining Queenstown takes about a minute; a patched
+building means re-emitting its region and recombining.
 
-**What this replaces, precisely.** Four stages that ran on the merged file --
-`bake_density_deciles`, `build_terrain_masks`, `shrink_panels_for_tiles`,
-`split_building_detail` -- were per-building all along and read the merged
-file only because it was there. They become region stages. `merge_regions`
-leaves the ship path (it stays as a debugging tool). `build_seasonal_curves`
-was the one thing that genuinely was not per-building: it is per
-(slope, aspect) for one latitude, so it becomes per latitude band -- thirteen
-files for the whole country, and Invercargill stops inheriting Queenstown's
-sun.
+## Where the data lives
 
-**What it costs.** Nothing at Queenstown scale: the combine of 29 regions is
-about a minute. A patched building means re-emitting its region and
-recombining, which is minutes rather than the old chunked rewrite of a 400 MB
-file.
+The site (code and page) is on GitHub Pages. The data is in the tiles
+bucket, one folder per release: `gs://solar-potential-map-tiles/v<N>/`
+(public, CORS for range requests, year-long cache).
+`tools/publish_served.py` uploads a release and keeps the newest three;
+`site-config.js` (`dataBase`, `dataVersion`) points the site at one.
+Rolling back is pointing it at an older folder. A separate private data
+bucket holds models and build inputs.
 
-## Where the tiles live
+The data cannot live on GitHub: the repo reached 2.3 GB with old tile
+copies in its history, panel tiles pass GitHub's file-size limits, and
+Pages caps a site at 1 GB.
 
-GitHub Pages caps a file at 100 MB. Queenstown's tiles are 60 MB; Auckland's
-would be about 1.5 GB. So tiles are published to a bucket of
-their own -- `gs://solar-potential-map-tiles/v<version>/data/`, created 22 Sep
-with CORS for Range requests and still private until there is something to
-serve (`tools/publish_served.py <version> --public` grants public read) --
-and the site points at them through `site-config.js` (`dataBase`). The data
-bucket, which holds models and inputs, stays private. The
-pmtiles format is built for exactly this -- a browser fetches byte ranges of
-one large file -- and it is the same code path the map uses today, with a
-different base URL. Queenstown on Pages keeps working unchanged: `dataBase`
-defaults to the site's own origin.
-
-Egress from the bucket is about NZ$0.20 per GB. A street view is ~1.3 MB, so
-ten thousand views is a few dollars. Cloudflare R2 has no egress fee at all,
-but it would need a new account; the bucket needs nothing and can be swapped
-later by changing one URL.
+Bucket egress is about NZ$0.20 per GB. A street view is about 1.3 MB, so
+ten thousand views cost a few dollars.
 
 ## Deleting inputs
 
-Inputs are 200 GB of the VM's 217 GB. Nationally they would be terabytes, and
-they are all re-fetchable from LINZ. So a region's inputs are deleted **the
-moment its outputs are safely in the bucket**, and not before:
+Inputs can be re-fetched from LINZ, and nationally they would be terabytes.
+A region's inputs are deleted only once its outputs are safely in the
+bucket:
 
-1. emit `data/out/<region>/` (tiles, region GeoJSONs, summary)
-2. upload it, and the region's face readings (`selected_faces`), to the bucket
-3. verify the upload by listing it back and comparing sizes
-4. delete `data/regions/<region>/` except a small `manifest.json` saying what
-   was built, from which survey, at which git sha
-5. delete point-cloud tiles that **no other region still on this disk**
-   lists -- tiles are shared at region borders, and a worker holding two
-   regions at once must not pull the ground out from under the second
+1. Emit `data/out/<region>/`.
+2. Upload it and the region's `selected_faces`.
+3. List the upload back and compare sizes.
+4. Delete `data/regions/<region>/` except a `manifest.json` (what was built,
+   from which survey, at which git commit).
+5. Delete point-cloud tiles no other region on this disk still lists
+   (tiles are shared at borders).
 
-Peak disk on a worker is then one region's working set -- 42 GB at the worst
-Queenstown region -- plus what it has not yet uploaded. The 400 GB disk stops
-being the thing that decides how big the country can be.
+Peak disk per worker is then one region's working set (42 GB for the
+largest Queenstown region) plus anything not yet uploaded.
 
-### What is kept: the region pack
+### The region pack
 
-Deleting the inputs outright would make every geometry fix a re-download, and
-geometry is the layer that keeps improving. So before a region's inputs go,
-`src/pack_region.py` keeps what any build stage can read -- points of every
-class within 4 m of each building, ground returns within 23.5 m, imagery within
-13 m (lossless) and the DSM -- written per source tile so a rebuild from the
-pack is byte-identical (tests/synthetic proves it). publish uploads and verifies
-the pack with everything else; `build_region.sh` restores it instead of fetching
-when a region is rebuilt. The real pack ratio is measured in the rehearsal.
+Geometry keeps improving, so a rebuild should not mean a re-download.
+Before inputs go, `src/pack_region.py` keeps what the build reads: all
+points within 4 m of each building, ground returns within 23.5 m, imagery
+within 13 m (lossless) and the DSM, per source tile. A rebuild from the
+pack is byte-identical (`tests/synthetic` checks this). `build_region.sh`
+restores the pack instead of fetching. The real pack ratio has not been
+measured at scale yet.
 
 ## Three layers, three costs
 
-What a rebuild costs depends on which layer changed (24 Sep 2026):
-
 | layer | what | re-run | cost |
 | --- | --- | --- | --- |
-| inputs | LiDAR, imagery, DSM, outlines | once; after that, the region pack | the download |
-| geometry | faces, obstructions, panels, shading factors | only stale buildings (build keys), from packs | CPU |
-| sun | kWh from the model, calibration, derate | `run_district_build.sh --yield-only` | minutes, no LiDAR |
-| economics | cost, payback | nothing: computed in the browser | none |
+| inputs | LiDAR, imagery, DSM, outlines | once, then from the pack | the download |
+| geometry | faces, obstructions, panels, shading | stale buildings only (build keys) | CPU |
+| sun | kWh, calibration, losses | `run_district_build.sh --yield-only` | minutes, no LiDAR |
+| economics | bills, savings, payback | nothing: in the browser | none |
 
-Every building's detail record carries its model version (`mv`: geometry and
-sun code hashes), and the served names are frozen in `src/output_contract.py`.
+Each building's detail record carries its model version (`mv`: geometry and
+sun code hashes). The served names are fixed in `src/output_contract.py`.
 
-## Coordinating machines
+## Many machines
 
-### The choice
+### Why a bucket queue
 
-Three ways to run 1,384 independent jobs on N spot machines:
+Options for running 1,384 independent jobs on spot machines:
 
-| option | what it needs from an administrator | what it gives |
+| option | needs from an administrator | gives |
 | --- | --- | --- |
-| **Google Cloud Batch** | enable the Batch API, grant IAM to a service account | retries, spot handling and a task list, all managed |
-| **a queue in the bucket + plain VMs** | nothing -- compute and storage already work | the same properties, in ~200 lines we can read |
-| Pub/Sub or Cloud Tasks | enable two APIs, IAM | a queue, plus a subscriber to write anyway |
+| Google Cloud Batch | enable the API, grant IAM | managed retries and spot handling |
+| a queue in the bucket + plain VMs | nothing | the same, in ~200 readable lines |
+| Pub/Sub or Cloud Tasks | enable two APIs, IAM | a queue, plus a subscriber to write |
 
-The service account this session runs as **cannot enable APIs or read IAM**
--- both were tried. So Batch means an administrator's console session before
-anything moves, and every later change to permissions too. The bucket queue
-needs nothing, and its state is a folder anyone can open in the console: `queue/`, `claims/`, `done/`, `failed/`. Counting the objects in
-each is the progress report. That legibility is worth more here than Batch's
-polish, because the person deciding whether the run is healthy does not read
-logs.
-
-Batch is the right answer at a scale where someone is operating this full
-time. That is not this project.
+The bucket queue needs no extra permissions, and its state is folders anyone
+can open: `queue/`, `claims/`, `done/`, `failed/`. The object counts are
+the progress report. Batch suits a project with a full-time operator; this
+is not one.
 
 ### How the queue works
 
-Bucket objects are the queue, and Google Cloud Storage gives one primitive
-that makes it correct: **create-if-absent is atomic** (`if-generation-match:
-0`). Two workers that try to claim the same region at the same instant get one
-success and one failure, guaranteed by the storage service, with no lock
+Cloud Storage create-if-absent is atomic (`if-generation-match: 0`), so two
+workers claiming one region get one success and one failure, with no lock
 server.
 
-- `queue/<region>.json` -- what to build: bbox, survey, building count.
-  Written once by `tools/enqueue_regions.py` from `data/national_regions.json`
+- `queue/<region>.json`: what to build (bbox, survey, building count).
+  Written by `tools/enqueue_regions.py` from `data/national_regions.json`
   or `config.REGIONS`.
-- `claims/<region>` -- who is building it and when they last said so. A
-  worker claims by creating this object; it rewrites it every five minutes
-  while working.
-- `done/<region>.json` -- the region's summary. Written on success; the claim
-  is deleted.
-- `failed/<region>.json` -- the log tail and an attempt counter. A region is
-  retried three times, then left for a person to look at.
+- `claims/<region>`: who is building it. Created to claim; rewritten every
+  five minutes.
+- `done/<region>.json`: the region's summary, on success. The claim is
+  deleted.
+- `failed/<region>.json`: log tail and attempt count. Three tries, then a
+  person looks.
 
-**Preemption.** A spot VM can be taken away at any moment. Its claim then
-stops being refreshed, and after 45 minutes another worker treats it as
-abandoned and takes it over -- atomically, by deleting the stale claim with
-its generation number, so only one taker can win. Work inside a region resumes
-from `run_stage` markers if the disk survives (`STOP` on preemption, as the
-current VM is configured) and restarts from the fetch if it does not. The
-worst case is losing one region's work, about two and a half hours for the
-largest.
+A spot VM can be taken at any time. Its claim then goes stale; after 45
+minutes another worker takes it over by deleting the claim with its
+generation number, so only one taker wins. Work resumes from `run_stage`
+markers if the disk survives, otherwise from the fetch. The worst case is
+losing one region, about 2.5 hours for the largest.
 
 ### The fleet
 
-`tools/fleet.sh up N` creates N spot VMs from a disk image of the current
-build machine, each with a startup script that runs the worker loop; `down`
-deletes them. Workers **delete themselves when the queue is empty**, so an
-idle fleet costs nothing. Machine family is C2D in zone `-a`, because that is
-where the quota is (100 cores free today, against 8 for T2D).
+`tools/fleet.sh up N` creates N spot VMs from an image of the build machine,
+each running the worker loop; `down` deletes them. Workers delete themselves
+when the queue is empty. Machines are C2D in zone `-a`, where the quota is.
+Fleet VMs get read-write storage and compute scopes so they can publish and
+retire themselves (the build VM's storage scope is read-only). Creating VMs
+with write scopes has been tested and works; if it is ever refused, the fix
+is one IAM grant (`compute.instanceAdmin` and `serviceAccountUser` on
+`claude-batch`).
 
-One thing the existing VM cannot do is upload: its service account carries
-`storage read-only` scope, fixed at creation. Fleet VMs are created with
-read-write storage and compute scopes so they can publish their region and
-retire themselves. Creating VMs from this session's account has not been
-tried yet; if it is refused, that is a single IAM grant
-(`compute.instanceAdmin` and `serviceAccountUser` on `claude-batch`), and
-it is the only thing that needs an administrator.
+`tools/status.py` prints one line, for example
+`done 412 / claimed 6 / queued 966 / failed 0`, and what each worker is on.
 
-### What "the run is healthy" looks like
+## Status
 
-`tools/status.py` prints one line: `done 412 / claimed 6 / queued 966 /
-failed 0`, and per-worker, what it is on and for how long. The same numbers
-are the object counts in the bucket folders. A failed region names its log.
+Built: emit and combine, upload and delete, region packs, the yield-only
+layer, the output contract, the queue, worker, fleet and status. The fleet
+has never run as a fleet. The first real run is the dress rehearsal on one
+city ([national-rehearsal.md](national-rehearsal.md), archived plan).
 
-## Status, 24 September
+## Considered and not done
 
-Everything below is built. The layers above landed on 24 Sep. The fleet has
-still never run as a fleet: the dress rehearsal (docs/national-rehearsal.md)
-is the next step.
-
-## Status, 22 September
-
-1 and 2 below are built and tested piecewise (BACKLOG.md has the evidence);
-3 is built and its queue is tested on the real bucket; the fleet itself has
-not yet been run as a fleet. Creating VMs with write scopes from this
-session's account was tried and works, so nothing here needs an administrator.
-
-## Order of work
-
-1. **Emit and combine** -- `src/emit_region.py`, `src/combine_regions.py`,
-   latitude-band curves, address shards. Prove it on Queenstown: the combined
-   output must match the live site building for building before anything
-   else changes. This is the piece that makes everything after it possible.
-2. **Upload and delete** -- `src/publish_region.py`, the manifest, the
-   shared-tile rule for point clouds.
-3. **Queue, worker, fleet, status.**
-4. Pick a city.
-
-Kingston and Wanaka, already running on the old path, land on the old path;
-they are then re-emitted through the new one, which is minutes.
-
-## What was considered and not done
-
-- **One database (PostGIS) instead of files.** Correct in the abstract, and
-  it would mean a server to run, back up and pay for, in a project whose
-  outputs are static tiles. Tiles are the database.
-- **Keeping the merged GeoJSON as well.** Two ship paths is how the 2 Sep
-  deploy shipped stale geometry with fresh mtimes. One path.
-- **Managed instance groups.** They restart preempted VMs for you, but a
-  restarted worker re-claims from the queue anyway, so the group adds a
-  moving part without removing one.
+- **PostGIS instead of files.** A server to run, back up and pay for, when
+  the outputs are static tiles.
+- **Keeping a merged GeoJSON as well.** Two ship paths once shipped stale
+  geometry with fresh timestamps. One path.
+- **Managed instance groups.** A restarted worker re-claims from the queue
+  anyway, so the group adds a moving part without removing one.

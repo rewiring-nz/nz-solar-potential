@@ -1,186 +1,156 @@
-# Reviewer's guide — how to understand and check this project
+# Reviewer's guide
 
-Written for a human reviewer who wants to verify the logic, not just read
-the code. It answers three questions per subsystem: *what does it claim to
-do*, *where is that enforced*, and *how do I check it myself*. Companion to
-[architecture.md](architecture.md), which describes the module boundaries.
+For a reviewer who wants to check the logic, not just read the code. For
+each part: what it claims, where that is enforced, and how to check it.
+Module boundaries are in [architecture.md](architecture.md).
 
 ## What the system claims
 
-For every building in the Queenstown Lakes district (15,353 outlines from
-LINZ), the pipeline estimates rooftop solar potential: roof facets with
-slope/aspect, obstructions, physically placeable panels ranked sunniest
-first, and annual generation. Everything derives from four public inputs —
-LINZ building outlines, aerial imagery (0.1 m), LiDAR point cloud, and
-DEM/DSM — plus hand-drawn roof markups for a subset of buildings used as
-both ground truth and training data.
+For every building in the served regions of Queenstown Lakes (v64: 32,838
+buildings in 35 regions), the pipeline estimates roof faces with slope and
+aspect, obstructions, panels that physically fit (ranked sunniest first) and
+yearly generation. Inputs: LINZ building outlines, aerial imagery, the LiDAR
+point cloud, DSM and DEM, plus hand-drawn roof markup for some buildings,
+used as ground truth and training data.
 
-## The two geometry generations (read this first)
+## Roof geometry: two paths
 
-The single most confusing thing about this codebase is that TWO roof-
-geometry systems coexist, and an environment flag decides which one leads.
+Two roof-geometry systems exist side by side.
 
-**Old path** (always available, the fallback): LiDAR-driven recursive
-partition (`src/roof_partition.py::_partition`, greedy RANSAC + cuts) and a
-constructive straight-skeleton model (`src/roof_skeleton.py`), competing
-inside `src/roof_segmentation.py::segment_building_best` under confidence
-gates.
+**LiDAR path** (the fallback): a recursive RANSAC partition
+(`src/roof_partition.py`) and a straight-skeleton model
+(`src/roof_skeleton.py`) compete in
+`src/roof_segmentation.py::segment_building_best` under confidence gates.
 
-**Selected-faces chain** (leads when `SOLAR_SELECTED_FACES=1`): an offline
-precompute (`tools/predict_faces.py`) builds up to three candidate readings
-per building and an evidence scorer picks one:
+**Selected faces** (on by default, `SOLAR_SELECTED_FACES=1`): an offline step
+(`tools/predict_faces.py`) builds up to three readings per building and a
+scorer picks one:
 
-- `sam_faces` — Segment Anything (vit_b), coverage-completion prompting
-- `line_faces` — a U-Net line detector (v5 extracts; v6's hip channel
-  joins the evidence map — see the Detector bullet below) → line
-  extraction → polygonisation
-- `lidar_faces` — normal-based region growing on the point cloud,
-  regularised to building axes; wins only by a +0.08 margin, on
-  shadow-degraded imagery (mean in-footprint luminance < 110), or when
-  both imagery readings are refused
+- `sam_faces`: Segment Anything (vit_b) on the photo.
+- `line_faces`: a U-Net line detector, then line extraction and
+  polygonising. The v5 model drives extraction; v6 adds only its hip channel
+  to the evidence map.
+- `lidar_faces`: normal-based region growing on the point cloud, squared to
+  the building axes. It wins only by a 0.08 margin, on dark (shadowed)
+  imagery, or when both photo readings are refused.
 
-The winner is written to `data/selected_faces/<building_id>.json`. The
-build consumes it in
-`src/roof_partition.py::facets_from_selected_faces` (line ~1258).
+The winner is written to `data/selected_faces/<building_id>.json` and read by
+`roof_partition.facets_from_selected_faces`.
 
-**Precedence during a build** (this ordering is the contract):
+**Precedence in a build:**
 
-1. The drawn markup for the building (`data/roof_labels.json`) — always
-   wins, never second-guessed (no plane-fit tests, no confidence gates).
-2. The selected-faces JSON, if present and above `SELECTED_MIN_SCORE`
-   (0.30), each face passing a one-plane gate
-   (`SELECTED_MIN_PLANE_INLIER` = 0.45). Uncovered residue is filled from
-   the old path (RESIDUAL FILL) so coverage is guaranteed.
-3. The old path.
+1. Hand-drawn markup (`data/roof_labels.json`). Always wins; no plane-fit or
+   confidence gates.
+2. Selected faces, if the reading scores at least `SELECTED_MIN_SCORE`
+   (0.30) and each face passes a one-plane gate (0.45 of returns on its
+   plane). A reading scored under `SELECTED_TRUST` (0.60) must compete with
+   the whole LiDAR path and loses if that explains the returns clearly
+   better. Roof the reading leaves uncovered is filled from the LiDAR path.
+3. The LiDAR path.
 
-A verdict panel entry saying "(old path)" means stages 1–2 produced
-nothing for that roof.
+A verdict-panel entry marked "(old path)" means steps 1 and 2 gave nothing.
 
-## Data flow and file contracts
+Off by default: ridge snapping (`SOLAR_RIDGE_SNAP=0`) and the plant-deck
+rule (`SOLAR_PLANT_DECKS=0`).
 
-| artifact | written by | consumed by |
+## Files and who writes them
+
+| file | written by | read by |
 |---|---|---|
-| `data/regions/<r>/building_outlines_dedup.geojson` | `src/region_build.py` (dedup/assignment) | everything region-aware |
+| `data/regions/<r>/building_outlines_dedup.geojson` | `src/region_build.py` | everything region-aware |
 | `data/selected_faces/<id>.json` | `tools/predict_faces.py` | `roof_partition.facets_from_selected_faces` |
-| `data/regions/<r>/panel_layouts.geojson` | `src/build_layout_geojson.py`, then `src/gate_panels.py` (drops), then `src/rerank_layouts.py` (fill_rank bands) | merge, preview tools |
-| `data/regions/<r>/solar_potential.geojson` | `src/derive_solar_potential.py` (+ `add_addresses` patch) | merge |
-| `data/out/<r>/` (region map output; ignored by Git) | `src/emit_region.py` | `src/combine_regions.py` |
-| combined files under `data/` (ignored by Git) | `src/combine_regions.py` | `tools/publish_served.py`, local preview |
-| `data/solar_potential.geojson` (legacy local output; ignored by Git) | `src/merge_regions.py` + `bake_density_deciles` | legacy/debug tools; not the current map release input |
-| `data/roof_labels.json` | the markup tool (`mark_roofs.html`, GitHub Pages) via `tools/ingest_labels.py` | training, benchmarks, authority rules |
+| `data/regions/<r>/panel_layouts.geojson` | `src/build_layout_geojson.py`, then `src/gate_panels.py`, then `src/rerank_layouts.py` | `src/derive_solar_potential.py`, `src/emit_region.py` |
+| `data/regions/<r>/solar_potential.geojson` | `src/derive_solar_potential.py` (+ `src/add_addresses.py`) | `src/emit_region.py` |
+| `data/out/<r>/` (not in Git) | `src/emit_region.py` | `src/combine_regions.py` |
+| served set under `data/` (not in Git) | `src/combine_regions.py` | `tools/publish_served.py`, local preview |
+| `data/roof_labels.json` | `mark_roofs.html` via `tools/ingest_labels.py` | training, benchmarks, precedence |
 
-The frontend is hosted on GitHub Pages; generated map data is published
-separately to the versioned tiles bucket. `tools/predeploy_check.py` compares a
-candidate build with the live site's regional summaries before release.
+The map is on GitHub Pages. Its data is published to a versioned folder in
+the tiles bucket, and `site-config.js` points at it.
+`tools/predeploy_check.py` compares a candidate build with the live one
+before release.
 
-## The rule constitution — project rules → enforcement → check
+## Rules, where they are enforced, how to check
 
-These are standing rules, each with the code
-that enforces it and the command that verifies it. If you change enforcement
-code, re-run the check.
-
-| rule | enforced at | check |
+| rule | enforced in | check |
 |---|---|---|
-| "His markup always wins" — drawn faces/obstructions are used verbatim, exempt from confidence and plane-fit gates | `roof_partition` (labels branch), `build_layout_geojson:447` (`drawn` exemptions), obstruction authority at `build_layout_geojson:421` (where he drew obstructions, ONLY his are used) | `src/verify_markup_rebuild.py`; verdict panel roofs with markup |
-| "Sunny side first" — density slider strips shadiest panels first, whole arrays by MEAN per-panel yield | `panel_fitting._order_by_array` AND `rerank_layouts` (both must use mean — they diverged once, see commit `a61c81b`) | inversion audit: at 50% density, hidden panels must not out-yield visible ones (script in commit message `a61c81b`) |
-| "100% density fills every possible area" — low-confidence panels are DEMOTED to ranks 81–100, never deleted | `build_layout_geojson` (`low_conf_fit` tagging), `panel_fitting.assign_fill_ranks`, `rerank_layouts` (straggler band) | `src/refit_one.py <id>` vs shipped counts |
-| "No lines unless confident" — weakly-supported lines cost score; like-plane fill facets merge | `face_candidates.score_net` (0.45 line price), `roof_partition` residual-fill merge | drawn-roof benchmark (below) |
-| "Equipment is not roof" | `face_candidates.lidar_faces` (region-median step test), obstruction detection, `gate_panels` (lumpy/sparse) | reference roof #5370338 in the dev-loop obstruction validation block |
-| "Facets live on their footprint" | `roof_segmentation._attach_building_geometry` (clip, drawn exempt) | dev-loop audit |
-| "Nothing ships from the laptop" (district scale) | district precompute + builds run on the VM (`run_district_build.sh`, `run_predict_all.sh` on the VM) | — operational rule |
+| Markup wins: drawn faces and obstructions used as drawn, exempt from confidence and plane-fit gates; where obstructions are drawn, only those count | `roof_partition` (labels branch), `build_layout_geojson` (drawn exemptions, obstruction authority) | `tools/verify_markup_rebuild.py`; verdict-panel roofs with markup |
+| Sunny side first: lowering density hides the shadiest panels first, whole arrays by mean panel yield | `panel_fitting._order_by_array` and `rerank_layouts` (both must use the mean) | at 50% density, no hidden panel should out-yield a visible one |
+| 100% density shows every feasible panel: low-confidence panels move to ranks 81-100, not deleted | `build_layout_geojson` (`low_conf_fit`), `panel_fitting.assign_fill_ranks`, `rerank_layouts` | `src/refit_one.py <id>` against shipped counts |
+| No lines without evidence: weak lines cost score; like-plane fill faces merge | `face_candidates` (line price 0.45 in the net score), `roof_partition` residual fill | drawn-roof benchmark (`tools/markup_benchmark.py`) |
+| Equipment is not roof | `face_candidates.lidar_faces` (step test), obstruction detection, `gate_panels` (lumpy, sparse) | obstruction block of the dev loop |
+| Faces stay on their footprint | `roof_segmentation._attach_building_geometry` (drawn exempt) | dev-loop audit |
+| District builds run on the build VM, not a laptop | `src/run_district_build.sh` on the VM | operating rule |
 
-## How to check each stage yourself
+## Check each stage yourself
 
-- **Face selection quality** (the number that licenses the design):
-  `.venv-sam/bin/python tools/select_faces.py` — measures every candidate
-  family against the hand-drawn benchmark roofs and prints
-  picked-vs-oracle agreement. Current: picked 0.785, oracle 0.811.
-  Any change to `face_candidates.py` must not lower the picked number.
-- **One building, end to end**: `python src/refit_one.py <building_id>`
-  re-fits with current code and diffs against the shipped layout.
-- **One building through the real build path**:
-  `SOLAR_SELECTED_FACES=1` + `build_layout_geojson._build_one(<id>)`
-  (see `src/patch_buildings.py`, which wraps exactly this for production
-  patches).
-- **Panel gates**: the dev loop (`bash src/run_dev_loop.sh pilot`) ends
-  with a layout-quality block and an obstruction-validation block over
-  named reference roofs, each annotated with the original
-  complaint and the previous build's numbers.
-- **Whole-region eyeball**: `tools/preview_sample.py --ids ... --out x.html`
-  renders imagery + facets + panels per building; the standing "verdict
-  panel" is this over the ~29 roofs with a recorded verdict.
-- **Against the live site**: `python tools/predeploy_check.py` — compares
-  a candidate merged build against production, listing zeroed buildings
-  and >30% panel drops. Nothing deploys without reading this.
-- **Detector**: `tools/train_line_model.py --epochs N` prints held-out
-  per-channel F1 (ridge/valley/cliff/hip; hash-based split, pinnable via
-  `data/bench_ids.txt`). Two models serve different roles: v5 (3-channel)
-  drives line EXTRACTION -- its statistics are what the extractor's
-  thresholds were calibrated on; v6 (4-channel, hip class derived from
-  markup corner geometry + scarcity-anchored loss) contributes its hip
-  channel to the EVIDENCE map only. Combined crease F1: v5 0.446 ->
-  v6 0.736. Two recorded traps: v6 as the extraction model collapses
-  LINE agreement (0.754 -> 0.42), and LiDAR step blobs must never feed
-  the extractor's thinning stage (same collapse); steps belong to the
-  scorer. Pretraining corpus flow: `tools/export_rid_training.py` then
-  `--extra-dir/--init/--lr` on the trainer.
+- **Face selection:** `.venv-sam/bin/python tools/select_faces.py` scores
+  each candidate family against the drawn roofs and prints picked-vs-best
+  agreement (last recorded: picked 0.785, best 0.811). A change to
+  `face_candidates.py` must not lower the picked figure.
+- **Geometry against the markup:** `python tools/markup_benchmark.py`
+  builds the drawn roofs with labels hidden and scores them.
+- **One building:** `python src/refit_one.py <building_id>` refits with
+  current code and diffs against the shipped layout.
+- **One building through the real build:** `src/patch_buildings.py` wraps
+  `build_layout_geojson._build_one(<id>)`.
+- **Panel gates:** `bash src/run_dev_loop.sh pilot` ends with layout-quality
+  and obstruction checks on named reference roofs.
+- **By eye:** `tools/preview_sample.py --ids ... --out x.html` renders photo,
+  faces and panels per building. The verdict panel is this over the roofs
+  with a recorded verdict (`data/verdicts.json`).
+- **Against the live site:** `python tools/predeploy_check.py` lists zeroed
+  buildings and big panel drops. Nothing deploys without reading it.
+- **Line detector:** `tools/train_line_model.py --epochs N` prints held-out
+  F1 per channel (ridge, valley, cliff, hip); pin the split with
+  `data/bench_ids.txt`. Do not use v6 for extraction (line agreement falls
+  from 0.754 to 0.42), and do not feed LiDAR step blobs to the extractor;
+  steps belong to the scorer. Pretraining: `tools/export_rid_training.py`,
+  then the trainer's `--extra-dir/--init/--lr`.
 
 ## Environment flags
 
 | flag | meaning |
 |---|---|
-| `SOLAR_SELECTED_FACES=1` | build consumes `data/selected_faces/` (the new chain). Off = old path only |
-| `SOLAR_PREDICT_RESUME=1` | `predict_faces` skips buildings with existing output (preemptible VM runs) |
-| `SOLAR_VISION_DIR` | override the vision-lines directory (`roof_line_source`) |
-| `SOLAR_MIN_SCORE`, `SOLAR_MIN_LEN_FRAC` | vision-line acceptance overrides |
-| `SOLAR_LINES_LEAD` | vision lines lead the partition (older experiment path) |
-| `SOLAR_DEBUG_NET`, `SOLAR_DEBUG_SPLIT` | per-family score prints in the line-network contest / split debugging |
-| `SOLAR_KEEP_EXPORTS`, `SOLAR_LAZ_SINGLE` | fetch/export behaviour tweaks |
+| `SOLAR_SELECTED_FACES` | `1` (default) reads `data/selected_faces/`; `0` uses the LiDAR path only |
+| `SOLAR_PREDICT_RESUME=1` | `predict_faces` skips buildings already done |
+| `SOLAR_VISION_DIR` | vision-lines directory (`roof_line_source`) |
+| `SOLAR_MIN_SCORE`, `SOLAR_MIN_LEN_FRAC` | vision-line acceptance |
+| `SOLAR_LINES_LEAD` | vision lines lead the partition (older experiment) |
+| `SOLAR_DEBUG_NET` | per-family scores in the line-network contest |
+| `SOLAR_KEEP_EXPORTS`, `SOLAR_LAZ_SINGLE` | fetch and point-cloud behaviour |
 | `LINZ_API_KEY` | data fetching |
 
-## Comprehension debt (known, prioritised)
+Layout switches for A/B tests (`SOLAR_*`) are named in the module that reads
+them; `tools/layout_ab.py` runs a sample with a switch off and on.
 
-1. **`roof_segmentation.py` (3,173 lines) and `roof_partition.py` (2,630)**
-   each accumulated a year of rule-per-incident growth. Their comments are
-   good locally but there is no internal table of contents; a reviewer
-   cannot find "the balcony rule" without grepping. A split is STAGED (not
-   done — the VM currently builds from a synced copy of this tree, and
-   module moves mid-flight would desync it): `roof_segmentation` →
-   attach/gates vs competition vs vision-lines lead;
-   `roof_partition` → partition core vs selected-faces consumption vs
-   top-surface utilities.
-1b. **Golden snapshots vs markup precedence** (resolved 2026-09-09): two
-   golden buildings "collapsed" from 4 and 10 facets to 1 and 2 -- that is
-   the markup-wins rule working correctly (1 and 2 faces were drawn on
-   those roofs; the snapshots predate the markup). When a golden building
-   fails with a facet-count DROP, check `data/roof_labels.json` for that id
-   before suspecting the gates.
-2. **Dead standalone scripts**: `src/compare_reconstruct.py`,
-   `src/scan_defects.py`, `src/label_sheet.py`, `src/triage_sheet.py`
-   are imported by nothing and belong to finished arcs. Deletion staged
-   with the split.
-3. **One repo.** `solar-wellington` was a hand-synced copy of this code;
-   it was retired on 24 Sep 2026 and `tools/check_repo_sync.py` with it.
-   `site-config.js` stays as the per-deployment settings point (which town
-   the map opens on, where tiles are served from).
-4. **`preview.html` (4,200 lines)** is one file by design (static Pages
-   deploy, no build step). Its sections are ordered: CSS, DOM, map setup,
-   data loading, selection/panel UI, search, economics hooks.
+## Known comprehension debt
 
-## Glossary of project-specific terms
+1. `roof_segmentation.py` (~3,200 lines) and `roof_partition.py` (~2,800)
+   grew one rule per incident and have no table of contents. A split is
+   planned: segmentation into attach/gates, competition and vision-lines;
+   partition into core, selected-faces and top-surface utilities.
+2. A golden building whose face count drops may be the markup rule working:
+   check `data/roof_labels.json` for that id before blaming the gates.
+3. One repo. The Wellington copy was retired on 24 Sep 2026.
+   `site-config.js` holds the per-deployment settings.
+4. `preview.html` (~6,100 lines) is one file by design: static Pages
+   deploy, no build step.
 
-- **facet** — one planar roof face as shipped (a `kind: "facet"` feature)
-- **face** — a candidate facet inside the selection chain, before gates
-- **drawn / authored / from_labels** — geometry from the hand-drawn markup
-- **selected** — geometry from `data/selected_faces/` (the new chain)
-- **old path** — RANSAC partition + skeleton competition
-- **straggler / confetti** — panels banded to ranks 81–100: real
-  placements hidden at default density, visible at 100%
-- **fill_rank / fill_order** — percentile band and exact sequence used by
-  the client-side density slider (tiles are static; the slider filters)
-- **verdict panel** — the ~29-roof render that verdicts are given on; the
-  regression gate for geometry changes (`data/verdicts.json`)
-- **defer** — the precompute refusing to write a selected-faces file so
-  the building falls to the old path deliberately
-- **lumpy / sparse** — `gate_panels` drop reasons: surface roughness under
-  a panel / too few LiDAR returns to trust the surface
+## Glossary
+
+- **facet**: one planar roof face as shipped (`kind: "facet"`).
+- **face**: a candidate facet in the selection chain, before gates.
+- **drawn / authored / from_labels**: geometry from the markup.
+- **selected**: geometry from `data/selected_faces/`.
+- **old path**: the LiDAR partition and skeleton.
+- **straggler**: a panel in ranks 81-100, hidden at the default density,
+  shown at 100%.
+- **fill_rank / fill_order**: band and exact order used by the density
+  slider.
+- **verdict panel**: the set of roofs with recorded verdicts; the
+  regression check for geometry changes.
+- **defer**: the precompute declines to write a selected-faces file, so the
+  building uses the LiDAR path.
+- **lumpy / sparse**: `gate_panels` drop reasons: rough surface under a
+  panel; too few LiDAR returns to trust.

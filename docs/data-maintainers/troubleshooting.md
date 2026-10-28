@@ -1,300 +1,142 @@
 # Troubleshooting
 
-Use this guide when a pipeline run or local data build stops unexpectedly. Start
-with that run's `report.md` at
-`data/pipeline_runs/<run-id>/report.md`. Find the first `FAIL`,
-`DEGRADED`, or unexpected `SKIPPED` step, then inspect the matching `[QS-NN]`
-lines in `run.log`. The same step number and label appear as `[QS-NN]` in the
-terminal and `run.log`.
+Start with the run's `data/pipeline_runs/<run-id>/report.md`. Find the first
+`FAIL`, `DEGRADED` or unexpected `SKIPPED` step, then read the lines with the
+same `[QS-NN]` tag in `run.log`.
 
-## Data removed during a clean-room test
+`FAIL` stops dependent steps. `DEGRADED` carries on without a source; a later
+`PASS` does not undo that (a DSM-only run stays DSM-only).
 
-Do not treat all of `data/` as disposable. `git clean -fd` does not remove
-ignored files, while `rm -rf data` removes committed assets as well as local
-caches. In particular, curated roof labels, benchmark/truth/verdict data,
-trained roof-line models, and the committed map dataset are not all
-regenerable from LINZ. Preserve `.env`/`LINZ_API_KEY` and `.venv` too.
+## Don't delete `data/`
 
-For a pipeline clean rebuild, target only the ignored region folder and, if
-needed, that region's run folders. The configured fetch can
-reacquire that survey's outlines, DSM/imagery and available LiDAR; the shared
-wide DEM and point-cloud cache can also be reacquired, but at additional
-download cost and with impact on other builds. A single Queenstown test
-completed after regenerable caches were removed; it does not prove every
-survey is available or every tracked input disposable. See the
-[pipeline reference](pipeline-reference.md#clean-room-rebuild-limits).
+`data/` holds tracked files you cannot fetch again: roof labels, benchmark and
+verdict data, trained models. `git clean -fd` is safe; `rm -rf data` is not.
+To rebuild a region, delete only its ignored folder. See
+[Cleaning up](pipeline-reference.md#cleaning-up).
 
-`FAIL` means the pipeline stopped before dependent steps. `DEGRADED` means
-it continued, but the report records a missing source or reduced capability.
-A later `PASS` does not erase that degraded input—for example, successful roof
-geometry does not turn a DSM-only run into a full point-cloud run.
-
-## Pipeline preflight errors
+## Preflight (step 01)
 
 ### LERC raster dependency check
 
-Quickstart and `tools/pipeline.py` decode a small offline LERC TIFF before
-acquisition. Both the selected Python's Rasterio and the system GDAL reader
-must work. Direct S3 raster fetches repeat the check before downloading tiles.
+`Cannot decode required LERC terrain tiles`: system GDAL's TIFF reader cannot
+decode LERC, even if `liblerc` is installed. The pipeline tests this on a
+small offline file before fetching, for both Rasterio and system GDAL.
 
-`Cannot decode required LERC terrain tiles` means the native GDAL TIFF reader
-is missing codec support, even if `liblerc` is installed. Python packages do
-not enable codecs in a separate system GDAL installation.
-
-On macOS, install the declared command-line tools when ready:
-
-```sh
-brew bundle --file=Brewfile
-```
-
-On Ubuntu/WSL, install `gdal-bin` with the system package manager. Installation
-alone does not prove LERC support; run the offline check with the project Python:
+- macOS: `brew bundle --file=Brewfile`
+- Ubuntu/WSL: install `gdal-bin`, then run the check:
 
 ```sh
 .venv/bin/python -c 'from src.s3_rasters import require_raster_support; require_raster_support()'
 ```
 
-The dependency check automatically tries `GTiff`, then `LIBERTIFF` if the
-first reader cannot decode LERC. No reader setting is needed for normal
-quickstart runs. To diagnose or override selection, set:
+The pipeline tries `GTiff`, then `LIBERTIFF`. To force one:
 
 ```sh
 SOLAR_TIFF_READER=GTiff bash quickstart.sh
-# Or force the alternative reader:
 SOLAR_TIFF_READER=LIBERTIFF bash quickstart.sh
 ```
 
-Auto selection and both readers have been validated on macOS with GDAL 3.13.3
-and Rasterio 1.5.2. Ubuntu/WSL guidance remains unverified; the same offline
-probe must pass there. Explicit override values are `auto`, `GTiff`, or
-`LIBERTIFF`.
-Do not export `GDAL_SKIP=GTiff` globally: it disables normal TIFF writing.
-The pipeline scopes reader selection to VRT construction and uses the validated
-Rasterio decoder for cropped TIFF output in alternative-reader mode.
+Values: `auto`, `GTiff`, `LIBERTIFF`. Tested on macOS with GDAL 3.13.3 and
+Rasterio 1.5.2; untested on Ubuntu/WSL. Don't set `GDAL_SKIP=GTiff`
+globally: it breaks TIFF writing.
 
-If Rasterio fails, install `requirements.txt` into the selected interpreter
-and use a Rasterio distribution with LERC-enabled GDAL. A system GDAL upgrade
-does not necessarily change Rasterio's bundled libraries, and vice versa.
-No dependency installation happens automatically. Failures appear in Step 01,
-`run.log`, and `report.md`. Strict, atomic VRT construction preserves the
-previous mosaic when a required tile cannot be opened.
+If Rasterio fails, reinstall `requirements.txt` into the interpreter in the
+report. System GDAL and Rasterio's bundled GDAL are separate; upgrading one
+does not fix the other. Nothing is installed automatically.
 
 ### Matplotlib is required for the map heatmap stage
 
-**Report symptom** (Step 01):
-
-> Matplotlib is required for the map heatmap stage but is missing from this Python environment. Install the project requirements and retry.
-
-The current preflight may also print a more specific message naming the
-selected interpreter and the exact command to repair it; use that Python path
-if it differs from the examples below. Older run reports use the quoted text.
-
-The pipeline uses the Python executable recorded in the report (normally the
-project's `.venv`). Installing Matplotlib into a different Python environment
-will not fix this error. From the project root, install the declared project
-requirements with the environment's interpreter:
+Install the requirements into the Python named in the report (usually `.venv`):
 
 ```sh
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python -c 'import matplotlib.colors; print(matplotlib.__version__)'
 ```
 
-The import check should print a version. On Windows Git Bash, use
-`.venv/Scripts/python.exe` instead of `.venv/bin/python` in both commands. Then
-rerun the pipeline. Matplotlib is needed by `src/build_heatmap_raster.py`,
-which creates the map's heatmap layer; it is included in `requirements.txt` and
-pinned in `requirements.lock.txt`.
-
-If installation succeeds but the import still fails, verify that `python`
-and `pip` refer to the same environment by always invoking pip as
-`<environment-python> -m pip`. If the error remains, keep the import check's
-full output and the Python path from `report.md`; do not randomly upgrade
-scientific packages in the shared environment.
+On Windows Git Bash use `.venv/Scripts/python.exe`. Always run pip as
+`<python> -m pip` so it installs into the same environment.
 
 ### `LINZ_API_KEY is not set`
 
-**Report symptom** (Step 01):
-
-> LINZ_API_KEY is not set in the environment or .env (value was not recorded).
-
-The runner checks that a key is present but never records its value. Either
-export `LINZ_API_KEY` in the shell that launches the pipeline, or put it in
-the project's ignored `.env` file as `LINZ_API_KEY=...`. The fetch scripts load
-`.env` themselves. Do not add the key to configuration files, reports, logs,
-source control, or chat. See
-[Local setup — LINZ credentials](local-setup.md#linz-credentials).
+Export `LINZ_API_KEY` in the shell, or add `LINZ_API_KEY=...` to `.env`. See
+[LINZ credentials](local-setup.md#linz-credentials).
 
 ### `No usable source survey for this bbox`
 
-**Report symptom** (Step 01): the bbox is not covered by a configured survey,
-or the selected survey has no DSM layer.
+The region must be in `config.REGIONS`, as `[west, south, east, north]` in
+WGS84, and wholly inside one `config.SURVEYS` entry with a DSM layer. Split a
+region that straddles two surveys.
 
-The selected region must be listed in `config.REGIONS`, and its whole bbox
-must be covered by one survey entry in `config.SURVEYS`. Check the bbox is
-`[west, south, east, north]` in WGS84 and verify its DSM layer. If the bbox
-straddles survey boundaries, split it into separate regions. Building outlines
-are national; the raster and point-cloud layers are not.
+For a new survey: set the DSM layer; add imagery and reference-imagery layers
+only if they exist. A point-cloud bulk URL also needs the survey's LiDAR
+tile-index layer and tile year; use `null` if there is no point cloud. A wrong
+year or store quietly drops the run to DSM only, so read step 02's coverage
+note.
 
-For a new survey, configure the correct DSM layer. Add the imagery and
-reference-imagery layer IDs only when they apply. A point-cloud bulk URL also
-needs that survey's LiDAR tile-index layer and tile year; use `null` for the
-bulk URL when raw point cloud is not published. A wrong year/store can return
-missing tiles and silently reduce processing to the DSM, so inspect Step 02's
-coverage comment rather than relying only on its command exit code.
+## Fetch (step 02)
 
-## LINZ API key and fetch failures
+### HTTP 401 from the Exports API
 
-### LINZ Exports API returns HTTP 401
+The key works for web services but cannot create exports. LINZ cannot add
+permissions to a key: make a new one with export permission and replace it.
+See [src/fetch_data.py](../../src/fetch_data.py).
 
-**Log text:**
+### HTTP 400 or `outside-extent`
 
-> 401 from the LINZ Exports API: this LINZ_API_KEY may use the web services but not create exports.
+Check the layer ID and that it covers the bbox. Some imagery chunks outside
+coverage are normal at the edge of a survey; a DSM wholly outside is not.
+DSM/DEM layers are Grid, imagery is Raster. Don't change the bbox or layer
+just to silence it.
 
-The key can be valid for web-service queries while lacking permission to
-create/download raster exports. LINZ does not let you add permissions to an
-existing key: create a **new** key with export/download permission enabled and
-replace the value in `.env` or the launching shell. Never paste the key into a
-report or issue. The fetch code's exact guidance is in
-[src/fetch_data.py](../../src/fetch_data.py#L85-L94); credential setup is in
-[Local setup](local-setup.md#linz-credentials).
+### `Fetch returned zero building outlines`
 
-### Exports API returns HTTP 400 or `outside-extent`
+Check the region name, bbox order and that it covers buildings in NZ.
 
-**Log text:** commonly `Exports API 400 for layer ...`, `outside-extent`, or
-`every one of ... chunks is outside layer ...`.
+### Point-cloud coverage incomplete
 
-Check the survey's layer ID and bbox coverage. A LINZ layer may have a broad
-published bounding rectangle while actual data has gaps; `outside-extent` on
-some imagery chunks can be an expected coverage edge, but a missing DSM or all
-DSM chunks outside coverage prevents a meaningful build. Confirm the layer is
-the intended product and that its expected format is Grid for DSM/DEM or Raster
-for imagery. Use the layer-specific explanation in the Step 02 log; do not
-change the bbox or layer ID merely to silence the error.
+The run carries on with the 1 m DSM: coarser geometry and gates, and the heat
+map may be empty. Check `lidar_tile_index_layer`, `pointcloud_bulk_url` and
+`pointcloud_tile_year` all describe the same survey. Never point at another
+survey's store. See [src/fetch_pointcloud_regions.py](../../src/fetch_pointcloud_regions.py).
 
-### Zero building outlines
+## Map build and preview
 
-**Report symptom** (Step 02): `Fetch returned zero building outlines`.
+### Tippecanoe missing (step 01)
 
-Check that the requested region exists in `config.REGIONS`, its bbox is in
-WGS84 order `[west, south, east, north]`, and that it covers land/buildings in
-New Zealand. The runner stops here because there are no buildings to estimate.
+Install `tippecanoe`, `tile-join` and `tippecanoe-decode`, open a new
+terminal and check with `command -v`. macOS: `brew bundle --file=Brewfile`.
+Ubuntu/WSL: [build it](env-setup-ubuntu.md#2-tippecanoe).
 
-### Missing or incomplete point-cloud tiles
+### Emit or combine failed (steps 14, 15)
 
-**Report status/comment** (Step 02): `DEGRADED`, `point-cloud coverage
-incomplete`, or a warning that tiles are missing from the bulk store.
+Read the `[QS-14]` or `[QS-15]` lines. Emit needs the region's solar and
+layout GeoJSON, the heat-map raster and sidecar, and its build keys. The
+required fields are in [tests/test_output_contract.py](../../tests/test_output_contract.py).
 
-The run can continue using the 1 m DSM, but roof geometry and panel gates have
-coarser evidence; the heatmap stage depends on usable point-cloud returns and
-may render no buildings. Check that `lidar_tile_index_layer`,
-`pointcloud_bulk_url`, and `pointcloud_tile_year` all describe the same survey.
-If the survey does not publish a bulk point cloud, use `null` for the URL and
-interpret the run as DSM-based; do not point at a different survey's store to
-make the tile count look complete. See the fetch details in
-[src/fetch_pointcloud_regions.py](../../src/fetch_pointcloud_regions.py#L120-L155).
+`no_estimate` features in `panel_layouts.pmtiles` are intended: the outline of
+a building with no estimate. Don't remove them.
 
-## Map-build and preview errors
+### Preview or PMTiles range probe failed (step 18)
 
-### Tippecanoe command missing
+Check `map-preview-server.log` and the `[QS-18]` lines. Confirm
+`data/buildings.pmtiles` exists and is not empty and the port is free. The
+server listens on `127.0.0.1` only. A good range probe returns HTTP 206, not
+200.
 
-**Report symptom** (Step 01):
+### No roof heat layer
 
-> Map-ready output requires these commands on PATH: tippecanoe, tile-join, tippecanoe-decode.
+Step 12 reports how many buildings rendered from LiDAR. Zero means no usable
+point cloud; the rest of the map still works. Check step 02's coverage.
 
-Install the listed tools (`tippecanoe`, `tile-join`, and
-`tippecanoe-decode`) for your platform, then open a new terminal and verify
-they resolve with `command -v tippecanoe`, `command -v tile-join`, and
-`command -v tippecanoe-decode` (or the platform equivalent). The pipeline
-checks these before starting large downloads. On macOS, install them with
-`brew bundle --file=Brewfile`; on Ubuntu or WSL, follow
-[Ubuntu environment setup](env-setup-ubuntu.md#install-tippecanoe-map-tools).
+### 404s in the console, but the map works
 
-### Regional map emission or combine failed
+Expected: the address search tries `addresses/index.json` before
+`addresses.json`; the static preview has no `/api/refit`; heat-map tiles
+outside the area don't exist. If nothing shows at all, check the start
+location and turn on **Panel Layout**.
 
-**Report symptom** (Step 14 or 15): `FAIL`, a nonzero subprocess exit code, or
-missing PMTiles/support files in the step comment.
+## Asking for help
 
-Inspect the matching `[QS-NN]` section in `run.log`. Step 14 is the per-region output from
-`src/emit_region.py`; check that solar/layout GeoJSON, the heatmap raster and
-sidecar, and required build keys exist. Step 15 combines the selected region
-into `data/`, replacing the current combined map dataset. The
-[output-contract test](../../tests/test_output_contract.py) describes the
-required regional PMTiles fields and support data.
-
-#### `panel_layouts.pmtiles: kind 'no_estimate'`
-
-**Report symptom** (Step 17):
-
-> panel_layouts.pmtiles: kind 'no_estimate' extra [] missing []
-
-`no_estimate` is an intentional footprint feature emitted for a building whose
-roof could not be estimated. It is not a facet, panel, or obstruction; the
-building tile carries the explanation shown by the map. The validator used to
-reject this producer-emitted kind because it listed only the three drawable
-layout kinds. Update to the corrected output-contract validator and rerun the
-quickstart; do not remove these features or relabel them as panels. A regression
-test checks the accepted kind and its required fields in
-[tests/test_output_contract.py](../../tests/test_output_contract.py).
-
-#### `IndentationError` in `src/combine_regions.py`
-
-If Step 15's log reports `IndentationError: unexpected indent` at the
-`--skip-markup-lines` argument, the combine command did not begin; this is a
-Python source indentation problem, not a data or Tippecanoe failure. Update the
-checkout to the corrected code, then verify it with:
-
-```sh
-.venv/bin/python -m py_compile src/combine_regions.py
-.venv/bin/python src/combine_regions.py --help
-```
-
-The help output should include `--skip-markup-lines`. Rerun the pipeline to
-produce a new run report; the old run remains a failure record. The CLI smoke
-test in [tests/test_quickstart_map.py](../../tests/test_quickstart_map.py)
-guards this parser path.
-
-### Local preview or PMTiles range probe failed
-
-**Report symptom** (Step 18): `Could not start local map server`,
-`Could not verify local preview`, or `PMTiles byte-range probe returned ...`.
-
-Check `map-preview-server.log` and the Step 18 `[QS-18]` lines in `run.log`. Confirm the preview page
-and `data/buildings.pmtiles` exist and are non-empty, and that the
-reported port is available. The server binds only to `127.0.0.1`; use the URL
-printed in the report on the same computer. A successful PMTiles check must
-return HTTP 206 for the requested byte range, not HTTP 200 for the whole file.
-The map also needs a browser connection to its public basemap tile providers.
-The runner records the server PID in `map-preview-server.pid`. Stop it after
-review with:
-
-```sh
-kill "$(cat data/pipeline_runs/<run-id>/map-preview-server.pid)"
-```
-
-### Map opens but has no roof heat layer
-
-Check Step 12 in `report.md`. Its comment records how many buildings rendered
-from LiDAR and the output size. Zero rendered buildings means there was no
-usable point-cloud roof evidence; the base building/layout map can still work,
-but the raster heat layer may be empty. Check Step 02 for tile coverage and
-confirm that the survey publishes the configured point cloud.
-
-### The map console shows 404s, but buildings and panels render
-
-Some local-preview 404s are expected and do not mean the pipeline output is
-invalid: the address search first probes `addresses/index.json` and falls back
-to the flat `addresses.json` file when the dataset is not sharded; the static
-preview has no `/api/refit` endpoint; and MapLibre may request heatmap tiles
-outside the generated tile footprint. Check the requested URLs and confirm
-that the relevant tiles return successfully in the area of interest. The
-pipeline validates the required data files and PMTiles range serving in
-Steps 17–18. A page stuck at zero buildings or without visible panels is a
-different problem; verify the initial location and select **Panel Layout**.
-
-## Reporting a new failure
-
-When asking for help, share the first failing step's exact `[QS-NN]` error and
-its `run.log` entries, plus the relevant non-secret parts of `report.md` (area,
-bbox, selected survey, statuses, and exit codes). Do **not** share `.env`, the
-LINZ key, or any shell transcript that contains it. Include your operating
-system and whether `.venv` or `.venv/Scripts` is the Python environment used.
+Share the first failing `[QS-NN]` error, its `run.log` lines, the non-secret
+parts of `report.md` (area, bbox, survey, statuses, exit codes), your OS and
+which Python you used. Never share `.env` or the key.

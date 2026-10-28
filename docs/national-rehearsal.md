@@ -1,3 +1,5 @@
+> Archived: point-in-time note from 2026-09-24; may be out of date.
+
 # Dress rehearsal: one city, end to end, before the country
 
 The national build has only ever run region by region on one VM. The fleet

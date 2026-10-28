@@ -1,29 +1,24 @@
-# Local setup for data maintainers
+# Local setup
 
-Data acquisition and dataset builds currently run on local workstations. Cloud
-execution is not a requirement or a documented production workflow yet.
+Set up a computer to fetch data and build regions locally. District builds
+run on the build VM (see [Dataset operations](dataset-operations.md)).
 
-Choose the guide for the computer being used:
+## 1. Install system tools
 
-- [macOS setup](env-setup-mac.md) is the primary and tested setup path.
-- [Windows setup](env-setup-win.md) uses WSL2 and is not yet tested for this
-  project.
-- [Ubuntu setup](env-setup-ubuntu.md) is not yet tested for this project.
+- [macOS](env-setup-mac.md): the tested setup.
+- [Windows](env-setup-win.md): uses WSL2. Not yet tested.
+- [Ubuntu](env-setup-ubuntu.md): not yet tested.
 
-All setups need sufficient local storage for source rasters, point clouds,
-intermediate region data, and generated outputs. High-resolution imagery can
-be multiple gigabytes per region.
+You need GDAL (`gdalbuildvrt`, `gdal_translate`) with working LERC decoding,
+and Tippecanoe. The pipeline checks both before it fetches. Python packages do
+not add codecs to system GDAL; see
+[LERC dependency check](troubleshooting.md#lerc-raster-dependency-check).
 
-Raster acquisition also needs system GDAL commands (`gdalbuildvrt` and
-`gdal_translate`) and working LERC decoding in both the CLI reader and Rasterio.
-These are checked before quickstart acquisition. Python requirements alone
-do not configure native system codecs. See
-[LERC dependency checks and reader selection](troubleshooting.md#lerc-raster-dependency-check).
+Leave plenty of disk space: imagery alone can be several GB per region.
 
 ## Create the project Python environment
 
-After completing the guide for your computer, run these commands from the
-`nz-solar-potential` project directory:
+From the project folder:
 
 ```sh
 python3 -m venv .venv
@@ -33,53 +28,30 @@ python -m pip install -r requirements.txt
 python -c "import geopandas, rasterio, shapely, laspy, pvlib; print('ready')"
 ```
 
-The first command creates an isolated `.venv` folder for this project, so the
-setup does not rely on packages installed elsewhere on the computer. If `.venv`
-already exists, the command updates it in place. The `(.venv)` prefix means the
-project environment is active. Run `. .venv/bin/activate` whenever you open a
-new terminal to work on the project.
-
-The final command should print:
-
-```text
-ready
-```
+The last line should print `ready`. Run `. .venv/bin/activate` in each new
+terminal; the prompt then starts with `(.venv)`.
 
 ## LINZ credentials
 
-Data acquisition requires a LINZ Data Service (LDS) account and API key. LDS
-provides the building outlines, elevation data, and imagery used by the
-pipeline.
+The pipeline downloads building outlines, elevation and imagery from the
+LINZ Data Service, which needs an API key.
 
-Create the API Key:
-1. Go to [LINZ Data Service](https://data.linz.govt.nz/) and select **Log in**.
-2. Create an account, or sign in to an existing account.
-3. Go to the [LINZ - API Keys](https://data.linz.govt.nz/my/api/)
-4. Select **API Key** > **Manual scope**
-5. Enable maximum access to all the LINZ services for this key. This involves changing pull-down selection of "No Access" to "Create, edit, and ..."
-
-Save the API Key locally:
-1. From the project directory, create the local credentials file:
+1. Sign in or create an account at [LINZ Data Service](https://data.linz.govt.nz/).
+2. Go to [API Keys](https://data.linz.govt.nz/my/api/).
+3. Choose **API Key** > **Manual scope**.
+4. Set every service from "No Access" to "Create, edit, and ...".
+5. Create `.env` from the example and add the key:
 
 ```sh
 cp .env.example .env
 ```
 
-`.env` is a hidden file in the repository root, beside `config.py`. The
-checked-in `.env.example` shows its supported keys; actual credentials stay
-local and are ignored by Git.
-
-2. Copy the API key into the root `.env`:
-
 ```text
-LINZ_API_KEY=[your-key-here]
+LINZ_API_KEY=your-key
 ```
 
-**Security Warning** Do not commit your `.env` key into git, issues or chat.
-or share the key in issues, chat, or documentation.
+`.env` sits beside `config.py` and Git ignores it. Never commit the key or
+paste it into issues or chat.
 
-**VS Code note:** You may see a message that terminal environment injection is
-disabled. No action is required for the documented data-maintenance commands:
-the project's fetch scripts load `LINZ_API_KEY` from `.env` themselves. Leave
-`python.terminal.useEnvFile` disabled unless there is a separate reason to make
-`.env` variables available to every VS Code terminal command.
+VS Code may say terminal environment injection is disabled. Ignore it: the
+fetch scripts read `.env` themselves.

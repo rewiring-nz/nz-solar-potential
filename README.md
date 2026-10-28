@@ -1,86 +1,80 @@
 # NZ Rooftop Solar Potential Map
 
-Per-building rooftop solar potential for New Zealand, from LINZ building
-outlines, LiDAR and aerial imagery: how much sun each roof face gets, how many
-panels physically fit, what they would generate, and what that is worth.
+A map of rooftop solar for every building, built from LINZ building outlines,
+LiDAR and aerial photos. For each roof it shows how much sun each face gets,
+how many panels fit, what they would generate, and what that is worth.
 
-Live map: https://rewiring-nz.github.io/nz-solar-potential/ (Queenstown Lakes:
-Queenstown, Arrowtown, Frankton, Kingston, Wanaka, Albert Town, Hawea,
-Cromwell, Bannockburn, Glenorchy, Kinloch). This
-is the one codebase that scales to the rest of the country; the separate
-Wellington copy was retired in September 2026.
+- Live map: https://rewiring-nz.github.io/nz-solar-potential/
+- How it works, in plain English:
+  [method.html](https://rewiring-nz.github.io/nz-solar-potential/method.html)
+- Try it on your own area: [docs/quickstart.md](docs/quickstart.md)
 
-**Verify it yourself:** [docs/quickstart.md](docs/quickstart.md) runs the
-identical methodology on any small NZ area you choose, in minutes, with a
-per-building report to check against the aerial photo.
-[method.html](https://rewiring-nz.github.io/nz-solar-potential/method.html)
-explains every decision the pipeline makes in plain English.
+Coverage (data version 64): 32,838 buildings in 35 regions across
+Queenstown Lakes and Cromwell: Queenstown, Frankton, Arrowtown, Kingston,
+Wanaka, Albert Town, Hawea, Cromwell, Bannockburn, Glenorchy and Kinloch.
+1,424,084 panels, 832.8 GWh a year. Auckland (Mt Eden) has been built but is
+not on the map.
 
-## Data sources (verified August 2026)
+## Data sources
 
-| Source | What | License | Access |
-|---|---|---|---|
-| [LINZ LiDAR](https://www.linz.govt.nz/products-services/data/types-linz-data/elevation-data/lidar-data-coverage) | Point clouds (LAZ) + DSM/DEM GeoTIFFs, 20cm–1m res depending on region | CC-BY-4.0, free | [data.linz.govt.nz](https://data.linz.govt.nz/), needs free account + API key |
-| [LINZ NZ Building Outlines](https://data.linz.govt.nz/layer/101290-nz-building-outlines/) | Building footprint polygons | CC-BY-4.0, free | Same LDS API key; **check coverage for the chosen pilot area first** — some regions (e.g. Bay of Plenty, Gisborne) weren't listed as covered as of this writing |
-| [NASA POWER](https://power.larc.nasa.gov/docs/tutorials/service-data-request/api/) | Global solar irradiance, cloud-adjusted | Open, no key needed | REST API, but coarse (~1°×1° grid, ~100km) — use only as a broad calibration/sanity-check input, not the primary geometry-level model |
-| [NIWA SolarView](https://niwa.co.nz/renewable-energy/solarview) | Per-address calculator using nearest climate station | **Results are non-commercial-use only per NIWA's EULA** | No bulk API — don't build on top of its output directly for a public tool; treat its methodology as a reference, not a data source |
+| Source | Used for | Licence |
+|---|---|---|
+| [LINZ LiDAR](https://www.linz.govt.nz/products-services/data/types-linz-data/elevation-data/lidar-data-coverage) (point clouds, 1 m DSM and DEM) | Roof shape, pitch, obstructions, nearby shading | CC BY 4.0 |
+| [LINZ NZ Building Outlines](https://data.linz.govt.nz/layer/101290-nz-building-outlines/) | Building footprints | CC BY 4.0 |
+| [LINZ aerial imagery](https://data.linz.govt.nz/) | Roof lines, obstructions, roofs newer than the LiDAR | CC BY 4.0 |
+| [LINZ NZ 8 m DEM](https://data.linz.govt.nz/layer/51768-nz-8m-digital-elevation-model-2012/) | Hills and mountains that block the sun | CC BY 4.0 |
+| [LINZ NZ Addresses](https://data.linz.govt.nz/layer/123113-nz-addresses/) | Street addresses and search | CC BY 4.0 |
+| [LINZ Basemaps](https://basemaps.linz.govt.nz/) | Map photo from zoom 14 in | CC BY 4.0 |
+| [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Map photo below zoom 14 | Esri terms of use |
+| [NIWA SolarView](https://niwa.co.nz/renewable-energy/solarview) | Measured sunlight (GHI) that calibrates the Wakatipu basin | NIWA |
+| NIWA measured-radiation stations | Calibrates sunlight outside the basin; Queenstown Aero daily radiation corrects ERA5's darkest days | NIWA |
+| [ERA5](https://cds.climate.copernicus.eu/) (Copernicus, via [Open-Meteo](https://open-meteo.com/)) | How sunlight differs between places; daily sunlight 1940–2025 for low-solar runs | CC BY 4.0 |
+| [QLDC District Plan zoning](https://www.qldc.govt.nz/) | Whether a building is a home or a business | Queenstown Lakes District Council |
 
-**Irradiance approach:** rather than depending on NIWA's restricted
-calculator, compute irradiance from first principles with
-[pvlib](https://pvlib-python.readthedocs.io/) (sun position + clear-sky
-model per roof facet's slope/aspect/lat), then bias-correct with NASA
-POWER's actual-cloud-adjusted monthly averages for the pilot region. This
-keeps the pipeline fully reproducible and licence-clean, and is the same
-approach used in the published LiDAR-solar-potential literature (GRASS
-`r.sun` / PVGIS-style models).
+Sunlight: [pvlib](https://pvlib-python.readthedocs.io/) gives clear-sky sun
+for each roof face's slope and direction. That is calibrated to NIWA SolarView
+measured GHI in the Wakatipu basin, or else to the nearest NIWA
+measured-radiation station, then scaled by ERA5's difference between that
+point and the region ([`src/solar_model.py`](src/solar_model.py)). NASA POWER
+is in the code as a fallback but no built region uses it.
+
+There is no licence file for this repository yet.
 
 ## How it works
 
-1. **Fetch** -- building outlines, LiDAR DSM and point cloud, aerial imagery
-   for a region (`src/fetch_regions.py`, `src/fetch_pointcloud_regions.py`).
-2. **Roof geometry** -- each footprint is cut into planar faces
-   (`src/roof_partition.py`, `src/roof_segmentation.py`). Hand-drawn markup
-   (`mark_roofs.html`, `data/roof_labels.json`) always wins where it exists;
-   otherwise a selected reading (SAM or line network) and the LiDAR
-   partition compete. Shared ridges are snapped to the crest the LiDAR shows
-   (`src/ridge_snap.py`); obstructions are detected from imagery and LiDAR.
-3. **Panel layout** -- panels are racked on one grid frame per building
-   (`src/panel_fitting.py`), clear of edges, ridges, obstructions and drawn
-   fold lines; ordered sunniest-first so any density is the best subset.
-4. **Yield** -- per-panel irradiance from slope, aspect, latitude and each
-   building's own terrain horizon (`src/solar_model.py`,
-   `src/building_horizon.py`), calibrated against measured data.
-5. **Economics** -- cost, savings, payback and per-panel break-even, computed
-   in the browser from `economics.js` with editable assumptions.
-6. **Publish** -- each region emits vector tiles and summaries; a combine
-   step joins them (`src/emit_region.py`, `src/combine_regions.py`) and
-   `tools/deploy_from_vm.sh` gates the result against the live site before
-   pushing.
+1. **Fetch** outlines, LiDAR, the surface model and aerial photos for each
+   region (`src/fetch_regions.py`, `src/fetch_pointcloud_regions.py`).
+2. **Read the roof.** Each footprint is cut into flat faces. Hand-drawn markup
+   (`mark_roofs.html`, `data/roof_labels.json`) wins where it exists. Next
+   comes the best precomputed reading (`data/selected_faces/`), then the LiDAR
+   fit (`src/roof_partition.py`, `src/roof_segmentation.py`). Obstructions
+   come from the photo and the LiDAR.
+3. **Place panels** on one grid per building, clear of edges, ridges and
+   obstructions, in racked arrays on the sunny side (`src/panel_fitting.py`).
+4. **Yield.** Sun on each panel from slope, direction, latitude and the
+   building's own horizon (`src/solar_model.py`, `src/building_horizon.py`).
+5. **Money.** Bills, savings and payback are worked out in the browser by
+   `bill_tool.js` (see [docs/economics.md](docs/economics.md)).
+6. **Publish.** Each region emits its own tiles (`src/emit_region.py`);
+   `src/combine_regions.py` joins them. `tools/deploy_from_vm.sh` checks the
+   result against the live map (`tools/predeploy_check.py`) and publishes a new
+   version folder to a Google Cloud Storage bucket. The site is on GitHub
+   Pages; `site-config.js` points it at the current data version.
 
-Builds run on a cloud VM, region by region (`src/run_district_build.sh`;
-architecture in [docs/scale-architecture.md](docs/scale-architecture.md)).
-Nothing at district scale is computed on a laptop. The build is incremental:
-only buildings whose reading, markup or geometry code changed are rebuilt, and
-a change to the solar model alone is `--yield-only` (no LiDAR). Before a
-region's inputs are deleted, a pack of what the geometry needs is kept
-(`src/pack_region.py`). The national dress rehearsal is
-[docs/national-rehearsal.md](docs/national-rehearsal.md).
+District builds run on a cloud VM, region by region
+(`src/run_district_build.sh`). They are incremental: only buildings whose
+reading, markup or geometry code changed are rebuilt. A solar-model-only
+change uses `--yield-only`.
 
 ## Checks
 
 ```bash
-bash tests/run_all.sh           # everything, incl. the whole build on a synthetic region (~1 min)
-bash tests/run_all.sh --fast    # unit, economics, deprecation, import/arity, xref, contract, ridge-snap and diagram checks
+bash tests/run_all.sh           # everything, incl. a build of a synthetic region (~1 min)
+bash tests/run_all.sh --fast    # skips the synthetic build
 python tools/predeploy_check.py # what a new build changes against the live one
 python tools/bench.py           # geometry against the hand-drawn markup
-python tools/cases.py check     # every flagged roof, fixed or not
+python tools/cases.py check     # every flagged roof
 ```
-
-## Documentation
-
-[docs/README.md](docs/README.md) maps the documentation: users, data
-maintainers, developers, reviewers, the economics model and the theory.
-[BACKLOG.md](BACKLOG.md) is the open work.
 
 ## Local setup
 
@@ -91,16 +85,22 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-To run the map (from the repo root, one level up from `solar-map/`), use
-`live_server.py` rather than a plain static server -- it serves
-`preview.html` and `data/` exactly the same way, plus the `/api/refit`
-endpoint the tuning sliders need:
+To run the map, start `live_server.py` from the repo root (one level above
+`solar-map/`). It also serves the `/api/refit` endpoint the tuning sliders
+need:
 
 ```bash
 source solar-map/.venv/bin/activate
 python solar-map/src/live_server.py 8000
 ```
 
-Then open `http://localhost:8000/solar-map/preview.html`. A plain
-`python3 -m http.server` still works for everything except the sliders
-(they'll show "Refit failed -- is live_server.py running?").
+Open `http://localhost:8000/solar-map/preview.html`. A plain
+`python3 -m http.server` works for everything except the sliders.
+
+Full setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.md).
+
+## More
+
+- [docs/README.md](docs/README.md): map of the documentation.
+- [BACKLOG.md](BACKLOG.md): open work.
+- [AGENTS.md](AGENTS.md): rules for AI-assisted work.

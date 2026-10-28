@@ -1,119 +1,74 @@
 # Cloud quickstart (Google Cloud)
 
-Run the configured default region on the team's shared Google Compute Engine
-build VM with:
+Two ways to build in the cloud:
+
+- **Shared build VM** (team): `bash quickstart.sh --mode cloud`
+- **Your own VM** (experimental): `bash quickstart.sh --mode cloud --profile PROFILE`
+
+Both build a whole configured region; there is no building cap
+(`frankton_arm_lake` is about 79 buildings).
+
+## Shared build VM
 
 ```sh
-bash quickstart.sh --mode cloud
+bash quickstart.sh --mode cloud            # default region
+bash quickstart.sh --mode cloud REGION     # another region
+bash quickstart.sh --mode cloud --cloud preflight   # free check, builds nothing
 ```
 
-This starts the shared VM if needed, syncs the selected Git ref, builds the
-configured region, runs the deploy gate, publishes a passing result to the
-public developer-preview bucket, and opens the stable preview URL. The alias
-comes first from the GitHub greeting returned by the existing SSH
-authentication (`ssh -T git@github.com`); no extra CLI is needed when this
-checkout's SSH key is already linked to GitHub. If SSH authentication is not
-available, the quickstart can use the GitHub CLI if installed. Default project,
-VM, zone, SSH user, region, Git ref, preview bucket, retention, and cost
-assumptions are stored in
-[`config.py`](../config.py) under `CLOUD_SHARED_BUILD`. Pass a region name to
-override the configured region. Use `--cloud preflight` for the no-build,
-no-cost check; preflight does not require GitHub CLI authentication.
+It starts the shared VM if needed, syncs the Git ref, builds the region, runs
+the deploy gate, publishes a passing build as a developer preview and opens
+it. The VM builds what is pushed to the ref in
+`config.CLOUD_SHARED_BUILD["ref"]`, so commit and push first.
 
-The separate per-developer VM lifecycle remains available with
-`bash quickstart.sh --mode cloud --profile PROFILE [REGION]`. Its provisioning,
-bootstrap, report collection, preview tunnelling, and cleanup are selected
-with `--cloud`.
-Cloud commands first verify the Git checkout and selected configuration, check
-or offer to install `gcloud`, verify the active Google account and configured
-cloud target, then ask for cost approval before checking SSH connectivity or
-using the VM.
-On macOS, a missing CLI can be installed through Homebrew; on Ubuntu, Debian,
-and Ubuntu under WSL, the quickstart can configure Google's apt repository and
-install `google-cloud-cli`. Each installation requires an explicit `yes` and
-may request the system administrator password. The quickstart does not install
-Homebrew or modify unsupported Linux distributions; use Google's
-[installation instructions](https://docs.cloud.google.com/sdk/docs/install-sdk)
-there.
+Defaults (project, VM, zone, SSH user, region, ref, preview bucket,
+retention, cost assumptions) are in `CLOUD_SHARED_BUILD` in
+[config.py](../config.py).
 
-The numbered preflight and shared-build log is saved under
-`data/cloud_quickstart_runs/<run-id>.log`. Its `[QS-01]` through `[QS-06]`
-labels cover checkout/config, `gcloud`, account/target, cost approval, VM/SSH
-readiness, and the selected action. For a profile-based cloud region run, the remote
-pipeline continues numbering at `[QS-07]`; its `report.md` and `run.log` use
-the same numbers. Local runs retain their existing `[QS-01]` through
-`[QS-18]` sequence.
+Before using the VM it checks the checkout and config, checks for `gcloud`
+(and offers to install it, asking first), checks your Google account, then
+asks you to approve the cost.
 
-The quickstart builds a whole configured region; it does not cap building
-count. `frankton_arm_lake` is currently listed at about 79 buildings in
-`config.REGIONS`.
+Logs: `data/cloud_quickstart_runs/<run-id>.log`. Steps `[QS-01]`–`[QS-06]`
+are checkout/config, `gcloud`, account, cost approval, VM/SSH, and the action.
+A profile run's remote pipeline continues from `[QS-07]`. Local runs use
+`[QS-01]`–`[QS-18]`.
 
-## Indicative costs
+### Cost
 
-For the shared build, the quickstart calculates an estimate from the configured
-VM-hourly rate and runtime, prorated disk rate, expected preview storage and
-retention, and expected public downloads. The current planning assumptions are
-an 8-hour VM run, 100 GB disk, 1 GB preview storage retained for 14 days, and
-20 GB of public downloads. With the current indicative rates in `config.py`,
-the calculated total is NZ$5.00, rounded up to the next NZ$0.50. These
-usage and unit-price assumptions are indicative, are not verified against
-project billing, and are not spending caps. Actual charges can be higher,
-particularly if a build takes longer or the public page receives more
-downloads or you publish several runs during the 14-day retention period. Disk
-charges continue while a VM is stopped. Check current prices with the
+The estimate uses the rates in `config.py`: an 8-hour VM run, a 100 GB disk,
+1 GB of preview storage kept 14 days, and 20 GB of public downloads. That
+comes to about NZ$5.00 (rounded up to the next 50c).
+
+This is a planning figure, not a cap, and not checked against real billing.
+Charges can be higher if the build runs longer, the preview is downloaded
+more, or you publish several runs in 14 days. Disk charges continue while a
+VM is stopped. Check prices with the
 [Google Cloud pricing calculator](https://cloud.google.com/products/calculator).
 
-Before starting the shared VM or running a profile-based action that uses a
-billable VM, after the local installation and authentication checks, the
-quickstart displays the calculated estimate and assumptions and requires the
-user to type `yes`; Enter, any other response, or non-interactive execution
-declines before VM readiness checks or other VM use. Shared cost assumptions
-are in `config.py`; estimates for optional per-developer VM profiles are set in
-their profile. Estimate override command-line flags are not supported.
-Preflight, status, and cleanup do not require the cost prompt.
-
-`config.py` is the repository's source for shared, non-secret pipeline and
-cloud-build defaults. The root `.env` is a local ignored file for secrets such
-as `LINZ_API_KEY`; start from `.env.example` and do not commit it. The optional
-per-developer VM profile is stored outside the checkout by default at
-`~/.config/nz-solar-potential/cloud-profiles.json`.
+You must type `yes`. Enter, anything else, or a non-interactive run declines
+before the VM is touched. There are no flags to override the estimate.
+Preflight, status and cleanup don't ask.
 
 ### Developer preview
 
-The default shared-VM command publishes a public preview after the build passes
-its gate; no extra preview or alias flags are needed. The alias is resolved
-from the GitHub SSH authentication greeting, or from `gh api user --jq .login`
-when SSH authentication is unavailable and GitHub CLI is installed. The
-quickstart opens the stable URL:
-
-```sh
-bash quickstart.sh --mode cloud
-```
-
-The shared VM syncs the Git ref configured in
-`config.CLOUD_SHARED_BUILD["ref"]`; commit and push the preview implementation
-to that ref before running the command.
-
-After the data and page are uploaded successfully, the quickstart prints and
-opens a stable URL:
+A passing build is published to:
 
 ```text
 https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html
 ```
 
-Each successful run uploads served data to a new immutable
-`devel/<alias>/runs/<run-id>/data/` prefix, then updates that alias's
-`site-config.js` pointer. The preview uses its own copy of `preview.html` and
-its companion JavaScript files; production `site-config.js` and the
-versioned production bucket are not changed. The bucket is public: anyone with
-the URL can view the served map data. Do not upload keys, raw inputs, build
-logs, or other private material.
+Your alias comes from `ssh -T git@github.com`, or `gh api user --jq .login`
+if SSH is not set up. Each run uploads to a new
+`devel/<alias>/runs/<run-id>/data/` folder and moves your alias's pointer.
+Production data and `site-config.js` are not touched.
 
-The preview bucket, `gs://rewiring-solar-previews`, already exists in the
-project and is set up (public read, `devel/` deleted after 14 days).
-Contributors do not create or configure it: creating buckets and changing
-who can read them is the project owner's job. To recreate it (project owner
-only; creation and public storage may incur charges):
+The bucket is public. Never upload keys, raw inputs or logs. Everything under
+`devel/` is deleted after 14 days, including your preview page if you don't
+refresh it.
+
+The bucket already exists. Only the project owner creates or reconfigures it
+(it costs money and makes objects public):
 
 ```sh
 gcloud storage buckets create gs://rewiring-solar-previews \
@@ -122,35 +77,25 @@ gcloud storage buckets create gs://rewiring-solar-previews \
 python3 tools/publish_preview.py --configure-bucket
 ```
 
-The bucket name is globally unique; if that name is unavailable, change
-`preview_bucket` in `config.CLOUD_SHARED_BUILD` and use the same name here.
-This grants public object-read access, grants the shared VM's service account
-object read/write access so it can update the stable preview pointer, and adds
-a lifecycle rule that deletes objects under
-`devel/` after 14 days. The setup command preserves existing lifecycle rules;
-use it only on the dedicated preview bucket because the bucket-wide public
-read policy makes all its objects public. Public Access Prevention must not
-be enforced for this bucket. The page and its data share one HTTPS origin, so
-cross-origin CORS configuration is not required.
+`--configure-bucket` grants public read, gives the shared VM's service
+account read/write, and adds the 14-day `devel/` lifecycle rule (keeping
+existing rules). Use it only on this bucket. Public Access Prevention must be
+off. No CORS is needed. If the name is taken, change `preview_bucket` in
+`config.CLOUD_SHARED_BUILD`.
 
-Old immutable run data expires automatically. The stable preview page also
-expires after 14 days without a successful refresh. Bucket storage and public
-downloads can incur additional charges; both are included in the calculated
-planning estimate described above. Interactive `yes` confirmation is still
-required, and the estimate is not a spending cap.
+## Your own VM (profiles)
 
-## External developer (create an environment)
+Profiles hold resource settings, not credentials. They live in
+`~/.config/nz-solar-potential/cloud-profiles.json`. Actions:
+`--cloud preflight | create | bootstrap | ssh | run | collect | preview | status | delete`.
 
-1. Create a Google Cloud project, attach billing, set a budget alert, enable
-   `compute.googleapis.com`, and check quota for 4 vCPUs and a 100 GB disk.
+### Set up an environment
+
+1. Create a Google Cloud project with billing and a budget alert. Enable
+   `compute.googleapis.com`. Check quota for 4 vCPUs and a 100 GB disk.
 2. Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
-   and authenticate:
-
-   ```sh
-   gcloud auth login
-   ```
-
-3. Clone this repository and copy the example profile:
+   and run `gcloud auth login`.
+3. Copy the example profile:
 
    ```sh
    git clone https://github.com/rewiring-nz/nz-solar-potential.git
@@ -160,11 +105,9 @@ required, and the estimate is not a spending cap.
    chmod 600 ~/.config/nz-solar-potential/cloud-profiles.json
    ```
 
-4. Edit `cloud-profiles.json`: set your project ID and public IP as an SSH
-   CIDR (`x.x.x.x/32`). Review the machine, disk, cost estimate, and estimate
-   assumptions against your intended workload. Profiles contain resource
-   settings, not credentials. The profile name is `external-poc`.
-5. Check the profile and create the VM:
+4. Edit it: your project ID and your public IP as an SSH CIDR (`x.x.x.x/32`).
+   Check the machine, disk and cost estimate. The profile is `external-poc`.
+5. Check, create and set up the VM (creating it starts billing):
 
    ```sh
    bash quickstart.sh --mode cloud --profile external-poc --cloud preflight
@@ -173,89 +116,66 @@ required, and the estimate is not a spending cap.
    bash quickstart.sh --mode cloud --profile external-poc --cloud bootstrap
    ```
 
-   Creation bills the project. The pipeline creates one VM and a profile-scoped
-   SSH rule limited to the configured CIDR. Use least-privilege Compute Engine
-   and firewall permissions; the VM has no attached service account by default.
+   This makes one VM (no service account) and one SSH firewall rule limited
+   to your CIDR.
 
-6. Add your LINZ API key to the VM's ignored `.env` file, then run the region:
+6. Put your LINZ key on the VM, never in the profile or repo:
 
    ```sh
    bash quickstart.sh --mode cloud --profile external-poc --cloud ssh
    cd ~/nz-solar-potential
    umask 077
-   nano .env
+   nano .env          # LINZ_API_KEY=your-key
    ```
 
-   Add `LINZ_API_KEY=your-key`, save, and exit. Do not put the key in the
-   profile or repository. From your workstation:
+7. Run a region from your computer:
 
    ```sh
    bash quickstart.sh --mode cloud --profile external-poc frankton_arm_lake
    ```
 
-   The numbered report and combined run log are copied to local
-   `data/pipeline_runs/<run-id>/`, matching local-run output.
-   Cloud mode runs the checkout already on the VM; it does not upload local
-   changes. Before a run, connect with `ssh`, update the VM checkout to the
-   intended commit, and confirm the working tree is clean. Uncommitted
-   workstation changes are not included.
-   Cloud actions execute in `tools/pipeline.py`; `quickstart.sh` is the
-   supported command entry point.
+   It runs the checkout already on the VM; local changes are not uploaded.
+   SSH in and update it to the commit you want first. The report and log
+   are copied to `data/pipeline_runs/<run-id>/`.
 
-7. Open the preview through an SSH tunnel:
+8. View the preview through an SSH tunnel at `http://127.0.0.1:8765/`
+   (Ctrl-C to stop), and copy reports home before cleaning up:
 
    ```sh
    bash quickstart.sh --mode cloud --profile external-poc --cloud preview
-   ```
-
-   Browse to `http://127.0.0.1:8765/`; stop the tunnel with Ctrl-C. Copy run
-   reports to your workstation before cleanup:
-
-   ```sh
    bash quickstart.sh --mode cloud --profile external-poc --cloud collect
    ```
 
-8. Delete the VM, its auto-delete boot disk, and the profile-owned SSH rule:
+9. Delete the VM, its boot disk and the SSH rule:
 
    ```sh
    bash quickstart.sh --mode cloud --profile external-poc --cloud delete \
      --confirm YOUR_PROJECT_ID/australia-southeast1-b/solar-quickstart
    ```
 
-   Cleanup only deletes resources it can verify belong to this profile.
+   It deletes only resources it can show belong to this profile.
 
-## External developer: share the environment with an internal developer
+### Share an environment
 
-1. Get the internal developer's Google account email and public IP/CIDR.
-2. In Google Cloud **IAM**, grant that account the Compute Engine and SSH
-   permissions needed for the agreed role: connect to the existing VM, or
-   create/manage a separate VM. Do not grant project Owner or Editor access.
-3. Ensure their IP is allowed by the VM's SSH firewall rule. Add both
-   developers' IPs to `ssh_source_ranges` before creating the VM. The pipeline
-   will not silently change an existing firewall rule; if the VM already
-   exists, agree on an authorized shared network with the project administrator.
-4. Send them the project ID, region, zone, VM name, and non-secret profile
-   securely. Do not send the LINZ key or share your `gcloud` credentials.
-5. Agree who pays, when the VM may be used, who collects reports, and who
-   deletes the VM and firewall rule when finished.
+Owner:
 
-## Internal developer (use a shared environment)
+1. Get the other person's Google account and public IP.
+2. In IAM, grant only the Compute Engine and SSH permissions they need. Never
+   Owner or Editor.
+3. Add their IP to `ssh_source_ranges` before creating the VM. The pipeline
+   won't change an existing firewall rule.
+4. Send the project ID, region, zone, VM name and profile securely. Never
+   send the LINZ key or your `gcloud` credentials.
+5. Agree who pays, when the VM is used, who collects reports, and who deletes
+   it.
 
-Request the profile and project/VM details from the environment owner, along
-with confirmation of your IAM/SSH access, enabled APIs, available quota,
-billing contact, and whether you may create or delete resources. Install and
-authenticate with `gcloud`, save the non-secret profile locally, then run
-`bash quickstart.sh --mode cloud --profile PROFILE --cloud preflight`.
-
-For an existing VM, skip `create` and `bootstrap` unless authorized. Use
-`--cloud ssh`, the default run action, `--cloud preview`, and
-`--cloud collect` as approved. Coordinate an exclusive run
-window: the pipeline replaces the VM's combined map data with the selected
-region. The environment owner is responsible for shared-resource cleanup.
+Guest: get the profile and confirm your access, quota, billing contact and
+whether you may create or delete things. Install `gcloud`, save the profile,
+run `--cloud preflight`. On an existing VM skip `create` and `bootstrap`
+unless allowed. Book your run: each run replaces the VM's combined map data.
 
 ## Scope
 
-This is a single-VM workflow. It does not start a fleet, publish map data, or
-change bucket IAM. All single-VM quickstart actions are driven by
-`quickstart.sh` and `tools/pipeline.py`.
-For run failures, see the [troubleshooting guide](data-maintainers/troubleshooting.md).
+The profile workflow is one VM. It doesn't start a fleet, publish production
+data or change bucket permissions. Failures:
+[troubleshooting](data-maintainers/troubleshooting.md).

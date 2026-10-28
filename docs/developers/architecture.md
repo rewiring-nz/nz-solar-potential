@@ -1,117 +1,100 @@
-# Architecture for software contributors
+# Architecture
 
-> Reviewing rather than contributing? Start with the
-> [reviewer's guide](reviewers-guide.md): the two geometry generations,
-> the owner's rule constitution mapped to enforcement points, and a
-> verification command per stage.
+Reviewing rather than changing code? Start with the
+[reviewer's guide](reviewers-guide.md).
 
-## System shape
+## What it is
 
-`nz-solar-potential` is a local Python geospatial pipeline plus a static
-MapLibre web-map frontend. The pipeline derives per-building solar estimates
-and panel layouts from LINZ building outlines, elevation data, point clouds,
-and aerial imagery. The frontend reads generated data and presents aggregate
-and selected-building views.
+A Python geospatial pipeline and a static MapLibre map. The pipeline turns
+LINZ building outlines, LiDAR, elevation models and aerial imagery into
+per-building roof faces, panel layouts and yields. The map (`preview.html`)
+reads the published tiles and does the money maths in the browser.
 
 ```mermaid
 flowchart TB
   LINZ[(LINZ source datasets)] --> Fetch[[fetch_data / fetch_regions]]
-  Fetch --> Inputs[(data and data/regions/name)]
-  Inputs --> Vision[[predict_faces: SAM / line detector / LiDAR candidates + evidence scorer]]
+  Fetch --> Inputs[(data/regions/name)]
+  Inputs --> Vision[[predict_faces: SAM / line detector / LiDAR candidates + scorer]]
   Vision --> Selected[(data/selected_faces/id.json)]
   Selected --> Segment
   Labels[(data/roof_labels.json - hand-drawn markup)] --> Segment
-  Inputs --> Segment[[roof segmentation: markup > selected faces > RANSAC+skeleton]]
+  Inputs --> Segment[[roof segmentation: markup > selected faces > LiDAR partition/skeleton]]
   Segment --> Detect[[obstruction detection]]
   Detect --> Fit[[panel fitting and gates]]
-  Fit --> Layouts[(per-area panel_layouts.geojson)]
+  Fit --> Layouts[(per-region panel_layouts.geojson)]
   Layouts --> Derive[[derive_solar_potential]]
   Derive --> Horizon[[bake_building_horizons]]
-  Horizon --> Raster[(heatmap raster)]
-  Raster --> Merge[[merge and district post-processing]]
-  Merge --> Outputs[(merged GeoJSON, rasters, PMTiles)]
-  Outputs --> Map([preview.html / static hosting])
+  Horizon --> Emit[[emit_region: per-region tiles, cells, detail, summary]]
+  Emit --> Combine[[combine_regions]]
+  Combine --> Outputs[(served set: PMTiles, cells, detail, heat-map tiles)]
+  Outputs --> Map([preview.html])
 ```
 
-In this diagram, cylinders represent data or generated artifacts, subroutine
-shapes represent executable scripts or processing stages, and the rounded map
-node represents the user-facing interface.
+Cylinders are data, subroutine boxes are scripts or stages, the rounded node
+is the map. `src/run_district_build.sh` runs the stages; `src/run_stage.py`
+wraps each with preflight checks and completion markers.
 
-The diagram shows the logical flow. The current release orchestration is
-implemented by `src/run_district_build.sh`, which wraps individual stages with
-`src/run_stage.py` preflight checks and completion markers. Its final fan-in
-also runs density deciles, terrain masks, seasonal curves, layout shrinking,
-and Tippecanoe PMTiles generation.
+## Module boundaries
 
-## Key boundaries
+- `config.py`: model constants, source layer IDs, regions, exclusions, and
+  the PV assumptions shown in the UI (`PV_ASSUMPTIONS`).
+- `src/fetch_data.py`, `src/fetch_regions.py`: fetch inputs.
+- `src/region_build.py`: region paths, and assigns each outline to exactly
+  one region. Region-aware tools use its path helpers.
+- The pilot is special: its inputs start in `data/`, but
+  `area_paths("pilot")` resolves to `data/regions/pilot/`. A fresh checkout
+  needs the pilot inputs prepared there.
+- `src/roof_segmentation.py`, `src/roof_partition.py`, `src/roof_skeleton.py`:
+  roof faces. Precedence is hand-drawn markup, then selected faces, then the
+  LiDAR partition and straight skeleton.
+- `src/preflight.py` declares stage inputs; `src/run_stage.py` records
+  completion so a build resumes.
+- `src/build_layout_geojson.py`, `src/gate_panels.py`,
+  `src/rerank_layouts.py`: fit, gate and rank panels.
+- `src/derive_solar_potential.py`: building totals are summed from the
+  layouts, never recomputed.
+- `src/building_horizon.py`, `src/bake_building_horizons.py`: 72-bin
+  horizon per building (`horizon_b64`, `horizon_beam_pct`) from the 8 m DEM
+  and the 1 m DSM.
+- `src/emit_region.py` writes each region's tiles, cells, detail, heat-map
+  tiles, addresses and summary under `data/out/<region>/`.
+  `src/combine_regions.py` joins regions into the served set without
+  loading the district into memory. `src/output_contract.py` fixes the
+  names the map reads. `src/merge_regions.py` is retired; nothing ships
+  from it.
+- `src/run_district_build.sh`: the release build. Incremental by default
+  from per-building build keys (`src/build_keys.py`).
+- `src/render_building_debug.py`, `src/render_top_movers.py`: debug cards
+  and build-over-build diffs.
+- `preview.html`: the map. `src/live_server.py` adds a local-only refit
+  endpoint; keep it in step with the static build.
+- `site-config.js`: per-deployment settings (data version and URL, default
+  view, site name, towns in search).
+- `bill_tool.js` prices every roof (household load, time-of-use prices,
+  savings, payback). `economics.js` holds cost tiers, rates and the battery
+  day simulation. `generation.js` and `workings.js` build each displayed
+  figure and its breakdown. Each has a Node test in `tests/`.
 
-- `config.py` owns model constants, source layer IDs, area definitions,
-  exclusions, and user-visible PV assumptions.
-- `src/fetch_data.py` and `src/fetch_regions.py` acquire source inputs.
-- `src/region_build.py` resolves paths and assigns overlapping outlines to one
-  region before builds. All region-aware tools should use its path helpers.
-- The pilot is a special area: acquisition starts with files in `data/`, while
-  `area_paths("pilot")` resolves build inputs and outputs under
-  `data/regions/pilot/`. The repository currently relies on pilot inputs being
-  prepared in that region tree; keep that preparation visible when operating
-  a fresh checkout.
-- `src/roof_segmentation.py`, `src/roof_partition.py`, and
-  `src/roof_skeleton.py` segment roofs into planar facets using RANSAC and
-  constructive straight-skeleton methods competing under confidence gates.
-- `src/preflight.py` declares stage inputs and provides early failure messages;
-  `src/run_stage.py` records stage completion and supports resume-by-marker.
-- `src/build_layout_geojson.py`, `src/gate_panels.py`, and
-  `src/rerank_layouts.py` fit, gate, and rank physical panel layouts.
-- `src/derive_solar_potential.py` aggregates layout outputs into the
-  building-summary layer (`solar_potential.geojson`), guaranteeing numerical
-  consistency between layout features and building totals without recomputation.
-- `src/building_horizon.py` and `src/bake_building_horizons.py` compute
-  per-building 72-bin horizon profiles (`horizon_b64`, `horizon_beam_pct`)
-  combining wide bare-earth DEM terrain and near DSM obstacles.
-- `src/emit_region.py` writes each region's own tiles, cells, detail,
-  heat-map tiles, addresses and summary; `src/combine_regions.py` joins
-  regions into the served set without reading the district into memory. That
-  is the boundary between per-region processing and map-facing data, and
-  `src/output_contract.py` freezes the names on the map side of it.
-  (`src/merge_regions.py` still exists as a debugging tool; nothing ships
-  from it.)
-- `src/run_district_build.sh` is the release orchestrator: incremental by
-  default from per-building build keys (`src/build_keys.py`), resumable from
-  code-aware stage markers. The older merged-file scripts
-  (`run_full_build.sh`, `run_layouts_regate*.sh`, `build_heatmap.py`) were
-  removed on 24 Sep 2026.
-- `src/render_building_debug.py` and `src/render_top_movers.py` generate visual
-  debug cards and build-over-build diff reports for pre-release validation.
-- `preview.html` is the static map. `src/live_server.py` adds a local-only
-  refit endpoint and must stay behaviourally aligned with the static build.
-- `site-config.js` contains deployment-specific map settings such as data
-  version, default view, site name, and searchable towns. `economics.js` holds
-  pure client-side cost, savings, and payback calculations, separated from the
-  page so they can be tested by `tests/test_economics.mjs`.
+## Principles
 
-## Design principles
+- Build from versioned code, config and source data.
+- Metres in NZTM2000 (EPSG:2193); WGS84 (EPSG:4326) only for map output.
+- Keep regions independent during heavy processing, to bound memory and
+  allow resume.
+- Generated data is a contract: change producer and consumer together.
+- Make randomness deterministic, so a building's output does not depend on
+  build order.
+- Judge layouts by renders against the photo as well as by geometry checks.
 
-- Prefer reproducible local builds from versioned code, configuration, and
-  source data.
-- Preserve geographic correctness: use NZTM2000 for metre-based processing and
-  WGS84 only for web-map output.
-- Keep regions independent during costly processing to bound memory and enable
-  resumable failures.
-- Treat generated datasets as contracts. Preserve field names and assumptions
-  consumed by the map unless updating producer and consumer together.
-- Use deterministic processing where randomness is involved so a building's
-  output does not depend on unrelated build order.
-- Validate visually as well as geometrically. Roof layout quality is a
-  user-visible property not fully captured by containment checks alone.
+## Workflow
 
-## Development workflow
+Set up with the [local setup guide](../data-maintainers/local-setup.md).
+Make a narrow change and check it with `bash src/run_dev_loop.sh pilot`.
+Run the relevant audit before a regional rebuild. District builds use
+`bash src/run_district_build.sh`.
 
-Set up the environment using the [data maintainer guide](../data-maintainers/local-setup.md), then make a narrow change and use `bash src/run_dev_loop.sh pilot` for the fastest behaviour check. Run the relevant audit or validation script before a broad regional rebuild. Use `bash src/run_district_build.sh` for a resumable district release and inspect its stage markers and logs.
-
-The repository has a local automated check suite at `tests/run_all.sh`, but no
-CI/CD workflow or documentation-site generator is currently documented here.
-Run `bash tests/run_all.sh --fast` for a quick check; the full suite adds
-golden-building regression tests that require local region data. Add targeted
-tests when changing deterministic algorithms or data contracts, and update the
-matching document when a command, output, model assumption, or operational
-constraint changes.
+Tests: `bash tests/run_all.sh --fast` for a quick check; the full run adds
+golden-building tests that need local region data. CI
+(`.github/workflows/tests.yml`) runs the unit tests and the JavaScript money
+and workings tests. Add tests when you change a deterministic algorithm or a
+data contract, and update the matching doc in the same change.

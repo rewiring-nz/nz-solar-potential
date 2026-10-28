@@ -1,51 +1,42 @@
-# ADR 0001: Containerisation strategy
+# ADR 0001: Containerisation
 
 Date: 2026-08-30
 
 ## Status
 
-Proposed for evaluation. Docker is not currently required for development or
-data maintenance.
+Proposed for evaluation. Docker is not required.
 
 ## Context
 
-The pipeline runs locally and depends on Python geospatial packages, large
-local rasters and point clouds, LINZ credentials, and long-running regional
-builds. Most current development is on macOS, while instructions must also
-serve Ubuntu and Windows users. Cloud execution is a future maturity stage.
+The pipeline needs Python geospatial packages, native GDAL tools, large
+rasters and point clouds, LINZ credentials and long builds. Most work is on
+macOS; the guides also cover Ubuntu and Windows.
 
-Containers could make Python and native geospatial dependency versions more
-repeatable and create a bridge to future batch infrastructure. They also add
-complexity around large bind mounts, file ownership, disk and volume
-performance, Apple Silicon compatibility, local debugging, and credential
-handling. Those costs are material for high-volume geospatial processing.
+Containers could pin dependency versions and help with batch jobs. They also
+add cost: large bind mounts, file ownership, disk performance, Apple Silicon
+support, debugging and credential handling.
 
 ## Decision
 
-Keep the `.venv` local workflow as the supported baseline. Do not add Docker,
-Docker Compose, or a cloud runtime until an evaluation demonstrates a concrete
-benefit for this project.
+The local `.venv` workflow stays the baseline. Add no Docker, Compose or
+container runtime until an evaluation shows a real benefit.
 
-## Adoption criteria
+## When to reconsider
 
-Consider a container proof of concept when one or more of these conditions is
-met:
+Try a container proof of concept if:
 
-- Reproducible setup repeatedly fails across supported platforms.
-- Native dependency drift causes meaningful contributor or release delays.
-- A cloud batch target requires a portable execution artifact.
-- CI needs a consistent geospatial runtime that cannot be maintained reliably
-  with ordinary dependency installation.
+- setup keeps failing across supported platforms;
+- native dependency drift delays contributors or releases;
+- a batch target needs a portable artefact; or
+- CI needs a geospatial runtime that ordinary installs cannot keep stable.
 
-The proof of concept must build one representative area, run the existing
-validation checks, preserve access to host data without copying it into images,
-keep `LINZ_API_KEY` outside the image and repository, and measure setup time,
-runtime, memory use, disk use, and macOS/Ubuntu performance against the native
-workflow.
+The proof of concept must build one area, pass the existing checks, read
+host data without copying it into the image, keep `LINZ_API_KEY` out of the
+image and repo, and measure setup time, runtime, memory and disk against the
+native workflow on macOS and Ubuntu.
 
 ## Consequences
 
-Current setup remains simple and local-first. Reproducibility depends on the
-documented Python environment and supported package wheels. Any later adoption
-must update the local setup and operations guides, record measured trade-offs,
-and retain a workable path for developers who do not use containers.
+Setup stays simple and local. Reproducibility rests on the documented Python
+environment. Any adoption must update the setup guides, record the measured
+trade-offs, and keep a path for developers who do not use containers.
