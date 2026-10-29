@@ -14,7 +14,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 PY=.venv/bin/python
 VM=${DEPLOY_VM:-claude-doing-things}
-PROJECT=${DEPLOY_PROJECT:-$(gcloud config get-value project 2>/dev/null)}
+# The VM's project comes from config, not gcloud's default project: a laptop
+# whose default is another project reaches a stopped VM of the same name there.
+PROJECT=${DEPLOY_PROJECT:-$($PY -c 'import config; print(config.CLOUD_SHARED_BUILD["project"])')}
 ZONE=${DEPLOY_ZONE:-australia-southeast1-b}
 . tools/cloud_profile.sh
 if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
@@ -34,14 +36,16 @@ for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles addresse
          assumptions.json seasonal_curves.json build_summary.json markup_lines.geojson; do
   gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet "$VM:~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
 done
-for d in building_detail heatmap_tiles summaries seasonal_curves addresses; do
+for d in building_detail heatmap_tiles summaries seasonal_curves addresses sun; do
   rm -rf "data/$d.pull" && mkdir -p "data/$d.pull"
   if gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet --recurse "$VM:~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then
     rm -rf "data/$d" && mv "data/$d.pull/$d" "data/$d"
   else
     # the gate reads summaries, the page reads detail: stale copies of either
     # would ship last build's data under this build's tiles
-    case $d in summaries|building_detail) echo "FATAL: could not pull $d"; rm -rf "data/$d.pull"; exit 1 ;; esac
+    # sun: the page's workings read data/sun/<region>.json; the gate refuses a
+    # build without them
+    case $d in summaries|building_detail|sun) echo "FATAL: could not pull $d"; rm -rf "data/$d.pull"; exit 1 ;; esac
   fi
   rm -rf "data/$d.pull"
 done
