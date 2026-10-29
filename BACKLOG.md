@@ -5,16 +5,19 @@ are also GitHub Issues on the project board
 (https://github.com/orgs/rewiring-nz/projects/5); pick up and assign work
 there.
 
-Live: data version 64 (28 Oct). 32,838 buildings, 35 regions, 1,424,084
-panels, 832.8 GWh a year.
+Live: data version 66 (30 Oct). 32,838 buildings, 35 regions, 1,334,791
+panels, 797.3 GWh a year.
 
 ## Ship
 
-- **Build the true panel pitch.** Panels now pack and draw at 1.134 x
-  1.961 m, not 1.10 x 2.00 (`SOLAR_TRUE_PITCH`). On 80 pilot roofs: 10,233
-  -> 10,116 panels, health rates unchanged. Not built yet: needs a full
-  district build, and the synthetic reference and goldens re-recorded on the
-  VM.
+- **Re-record the synthetic reference** on the VM: v66 packs panels at
+  their true size (1.134 x 1.961 m), so the synthetic region's panel counts
+  no longer match its reference.
+- **The laptop deploy gate reads stale withheld reasons.** NEWLY WITHHELD
+  takes `no_estimate_reason` from the laptop's own
+  `data/regions/<r>/solar_potential.geojson` (September copies), so it lists
+  hundreds of roofs the VM build does not withhold. Run
+  `tools/predeploy_check.py` on the VM until the relay pulls those reasons.
 - **Audit: still to do in the pipeline.**
   - Plane-intersection and reflex cuts drift after the first cut
     (`roof_partition.py:1066, 2134`; needs `_reanchor`).
