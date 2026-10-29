@@ -256,7 +256,8 @@ def register_frame(frame, facets, obstructions=None, **fit_kwargs):
     # family and the count comes back. Flat groups also search the row phase.
     res = fit_kwargs.get("resolution", RASTER_RESOLUTION_M)
     pw, ph = (config.PANEL_WIDTH_M, config.PANEL_HEIGHT_M) if portrait else (config.PANEL_HEIGHT_M, config.PANEL_WIDTH_M)
-    w_cells, h_cells = max(1, round(pw / res)), max(1, round(ph / res))
+    # phases in whole cells over one true pitch (_pack_orientation)
+    w_cells, h_cells = int(np.ceil(pw / res)), int(np.ceil(ph / res))
     groups = {}
     for f in facets:
         groups.setdefault(frame_group(frame, f.get("aspect_deg"), f.get("slope_deg")), []).append(f)
@@ -480,8 +481,34 @@ ALIGN_LOSS_TOLERANCE = 0.05  # column-aligned packing is preferred unless it fit
 # jagged/angled facet edge where rigid columns strand serious usable area still falls back
 
 
+# TRUE PITCH. Panels are packed and drawn at config.PANEL_WIDTH_M x
+# PANEL_HEIGHT_M. Rounded to whole 0.1 m cells they were 1.10 x 2.00 m.
+# SOLAR_TRUE_PITCH=0 restores the rounded cells.
+TRUE_PITCH = os.environ.get("SOLAR_TRUE_PITCH", "1") != "0"
+
+
+def _pitch_cells(size_m, res):
+    """A panel side in cells: exact, or whole cells with TRUE_PITCH off."""
+    return size_m / res if TRUE_PITCH else max(1, round(size_m / res))
+
+
+def _cell_span(start, pitch):
+    """Cells whose centres lie under a panel from `start` to `start + pitch`
+    (both in cells). The occupancy raster marks a cell usable when its centre
+    is inside the usable area, so this tests the panel against the same
+    points: no edge reaches more than half a cell past a tested centre, the
+    tolerance the old whole-cell panels had."""
+    return int(np.ceil(start - 0.5 - 1e-9)), int(np.floor(start + pitch - 0.5 + 1e-9)) + 1
+
+
 def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS, phases=None):
-    """occupancy: boolean grid, True = usable. w, h in metres (grid cells).
+    """occupancy: boolean grid, True = usable. w, h in metres.
+
+    Panels are laid at their true pitch (w x h). The grid is only for testing
+    free space: rounding the panel to whole 0.1 m cells packed and drew a
+    1.134 x 1.961 m panel as 1.10 x 2.00, so rows of ten overlapped by 0.34 m
+    across the slope and lost 0.39 m up it. Placed rectangles are returned in
+    fractional cell units (r0, c0, r1, c1).
 
     Two packing strategies, best-of:
     1. Column-aligned grid (preferred): panels sit at a shared column pitch
@@ -496,8 +523,8 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS, phases=No
     A handful of vertical (row) start offsets are tried for both, since where
     the first row-band starts can gain or lose a whole extra row lower down."""
     rows, cols = occupancy.shape
-    w_cells, h_cells = max(1, round(w / res)), max(1, round(h / res))
-    if w_cells > cols or h_cells > rows:
+    pw, ph = _pitch_cells(w, res), _pitch_cells(h, res)
+    if _cell_span(0.0, pw)[1] > cols or _cell_span(0.0, ph)[1] > rows:
         return []
 
     # Precompute a summed-area table so any rectangle's "all occupied?"
@@ -510,17 +537,25 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS, phases=No
         total = sat[r1, c1] - sat[r0, c1] - sat[r1, c0] + sat[r0, c0]
         return total == (r1 - r0) * (c1 - c0)
 
-    # Every row phase, not a sample of them. This used to try offset_steps=10 of
-    # the h_cells possible alignments (10 of 20 for a portrait panel at 0.1m
-    # cells), so whether a facet got its best row alignment was partly luck --
-    # and the luck changed whenever the usable SHAPE changed, which made
-    # otherwise-strict improvements upstream look like small regressions. The
-    # extra phases cost one more sweep each and the summed-area table makes a
-    # sweep cheap.
-    row_offsets = range(h_cells) if h_cells <= 2 * offset_steps else \
-        np.linspace(0, h_cells, offset_steps, endpoint=False, dtype=int)
+    def fits(r, c):
+        r0, r1 = _cell_span(r, ph)
+        c0, c1 = _cell_span(c, pw)
+        if r0 < 0 or c0 < 0 or r1 > rows or c1 > cols:
+            return False
+        return rect_fully_occupied(r0, r1, c0, c1)
 
-    col_offsets = range(w_cells)
+    # Every row phase, not a sample of them. This used to try offset_steps=10 of
+    # the possible alignments (10 of 20 for a portrait panel at 0.1m cells), so
+    # whether a facet got its best row alignment was partly luck -- and the luck
+    # changed whenever the usable SHAPE changed, which made otherwise-strict
+    # improvements upstream look like small regressions. The extra phases cost
+    # one more sweep each and the summed-area table makes a sweep cheap. Whole
+    # cells are enough: the occupancy cannot tell finer phases apart.
+    n_row, n_col = int(np.ceil(ph)), int(np.ceil(pw))
+    row_offsets = range(n_row) if n_row <= 2 * offset_steps else \
+        np.linspace(0, ph, offset_steps, endpoint=False)
+
+    col_offsets = range(n_col)
     # A building frame fixes the phase (building_frame): the grid is anchored
     # to the frame origin, and a locked phase is not searched. The free
     # per-row scan below is skipped too -- staggered columns are exactly what
@@ -534,36 +569,36 @@ def _pack_orientation(occupancy, res, w, h, offset_steps=OFFSET_STEPS, phases=No
     for r_off in row_offsets:
         for c_off in col_offsets:
             placed = []
-            r0 = r_off
-            while r0 + h_cells <= rows:
-                c0 = c_off
-                while c0 + w_cells <= cols:
-                    if rect_fully_occupied(r0, r0 + h_cells, c0, c0 + w_cells):
-                        placed.append((r0, c0, r0 + h_cells, c0 + w_cells))
-                    c0 += w_cells  # always step by the grid pitch -- columns stay aligned
-                r0 += h_cells
+            r0 = float(r_off)
+            while _cell_span(r0, ph)[1] <= rows:
+                c0 = float(c_off)
+                while _cell_span(c0, pw)[1] <= cols:
+                    if fits(r0, c0):
+                        placed.append((r0, c0, r0 + ph, c0 + pw))
+                    c0 += pw  # always step by the panel pitch -- columns stay aligned
+                r0 += ph
             if len(placed) > len(best_aligned):
                 best_aligned = placed
 
     best_free = []
     for r_off in ([] if phases is not None else row_offsets):
         placed = []
-        r0 = r_off
-        while r0 + h_cells <= rows:
-            c0 = 0
-            while c0 + w_cells <= cols:
-                if rect_fully_occupied(r0, r0 + h_cells, c0, c0 + w_cells):
-                    placed.append((r0, c0, r0 + h_cells, c0 + w_cells))
-                    c0 += w_cells  # jump past the panel just placed
+        r0 = float(r_off)
+        while _cell_span(r0, ph)[1] <= rows:
+            c0 = 0.0
+            while _cell_span(c0, pw)[1] <= cols:
+                if fits(r0, c0):
+                    placed.append((r0, c0, r0 + ph, c0 + pw))
+                    c0 += pw  # jump past the panel just placed
                 else:
                     c0 += 1  # fine-grained search for the next valid start in this row
-            r0 += h_cells
+            r0 += ph
         if len(placed) > len(best_free):
             best_free = placed
 
     allowed_loss = max(1, int(np.ceil(ALIGN_LOSS_TOLERANCE * len(best_free))))
     best = best_aligned if len(best_aligned) >= len(best_free) - allowed_loss else best_free
-    return best, w_cells, h_cells
+    return best, pw, ph
 
 
 SHALLOW_SEAM_DEG = 9.0         # a fold gentler than this needs no ridge cap.
@@ -837,13 +872,14 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             # Grid lines at multiples of the panel pitch from the FRAME origin
             # (surface u = v = 0). The occupancy grid starts at (u_min, v_min),
             # so the first grid line inside it sits this many cells in.
-            wc_, hc_ = max(1, round(w / resolution)), max(1, round(h / resolution))
-            # grid lines at multiples of the pitch from the frame origin, shifted
-            # by the group's registered phase (register_frame)
-            col_phase = (int(round(-u_min / resolution)) + (lock.get("col_phase") or 0)) % wc_
+            pw_, ph_ = _pitch_cells(w, resolution), _pitch_cells(h, resolution)
+            # grid lines at multiples of the true pitch from the frame origin,
+            # shifted by the group's registered phase (register_frame), in cells
+            snap = (lambda x: x) if TRUE_PITCH else (lambda x: int(round(x)))
+            col_phase = (snap(-u_min / resolution) + (lock.get("col_phase") or 0)) % pw_
             row_phase = None
             if lock.get("rows") and os.environ.get("SOLAR_FRAME_ROWS", "1") != "0":
-                row_phase = (int(round(-v_min / resolution)) + (lock.get("row_phase") or 0)) % hc_
+                row_phase = (snap(-v_min / resolution) + (lock.get("row_phase") or 0)) % ph_
             phases = (row_phase, col_phase)
         result = _pack_orientation(occupancy, resolution, w, h, phases=phases)
         if phases is not None:
@@ -901,7 +937,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             chosen = land if len(land[1]) > len(port[1]) * (1.0 + LANDSCAPE_WIN_MARGIN) else port
         else:
             chosen = port or land
-        _, placed, w_cells, h_cells = chosen
+        _, placed, _pw, _ph = chosen
 
         # POCKETS: 100% should place every panel that fits. One grid in one
         # orientation leaves usable pockets -- odd corners, strips beside
@@ -918,6 +954,7 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
         # own panels.
         occ2 = occupancy.copy()
         for r0, c0, r1, c1 in placed:
+            r0, c0, r1, c1 = int(np.floor(r0)), int(np.floor(c0)), int(np.ceil(r1)), int(np.ceil(c1))
             occ2[max(0, r0 - 1):r1 + 1, max(0, c0 - 1):c1 + 1] = False
         extra = []
         if occ2.any() and not RACKING:

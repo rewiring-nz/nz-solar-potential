@@ -98,6 +98,20 @@ def test_off_switch_keeps_everything():
         pf.RACKING = True
 
 
+def test_panels_pack_at_their_true_pitch():
+    # 1.134 m panels on a 0.1 m grid were rounded to 1.10: ten fitted in
+    # 11.2 m where only nine real panels do
+    import numpy as np
+    occ = np.ones((20, 112), dtype=bool)          # 11.2 m by 2.0 m of clear roof
+    placed, pw, ph = pf._pack_orientation(occ, 0.1, 1.134, 1.961)
+    assert len(placed) == 9
+    widths = {round((c1 - c0) * 0.1, 3) for _, c0, _, c1 in placed}
+    heights = {round((r1 - r0) * 0.1, 3) for r0, _, r1, _ in placed}
+    assert widths == {1.134} and heights == {1.961}
+    lefts = sorted(c0 for _, c0, _, _ in placed)
+    assert all(abs((b - a) * 0.1 - 1.134) < 1e-9 for a, b in zip(lefts, lefts[1:]))
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -10,9 +10,12 @@ panels, 832.8 GWh a year.
 
 ## Ship
 
+- **Build the true panel pitch.** Panels now pack and draw at 1.134 x
+  1.961 m, not 1.10 x 2.00 (`SOLAR_TRUE_PITCH`). On 80 pilot roofs: 10,233
+  -> 10,116 panels, health rates unchanged. Not built yet: needs a full
+  district build, and the synthetic reference and goldens re-recorded on the
+  VM.
 - **Audit: still to do in the pipeline.**
-  - Panels are packed on the 0.1 m grid as 1.10 x 2.00 m
-    (`panel_fitting.py:499`); the real panel is 1.134 x 1.961.
   - Plane-intersection and reflex cuts drift after the first cut
     (`roof_partition.py:1066, 2134`; needs `_reanchor`).
   - Frame rules: a wing under 20 deg gets snapped anyway; `frame_group`
