@@ -48,6 +48,17 @@ panels, 832.8 GWh a year.
   or shape statistic separates good readings from bad. Next: the vision
   referee (`tools/vision_referee.py`) only where the photo and LiDAR readings
   disagree (a few hundred roofs, a few dollars).
+- **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
+  flags shared edges where the two faces' planes step over 0.4 m apart and
+  the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
+  edges (20% of roofs) in the LiDAR frame, 14.5% (37%) at the faces the
+  map draws, because `buildings3d.js` samples the DSM at faces moved by the
+  photo lean (`img_dx`/`img_dy`) without taking it off. Next: sample at the
+  unshifted position. Moving flagged edges to where the planes cross makes
+  roof lines worse against the markup (line F 0.656 -> 0.593, 1 roof better,
+  15 worse), and the step score does not separate good readings from bad
+  (Spearman 0.06 vs line F); re-test with the point cloud and
+  `SOLAR_MARKUP_FRAME=lidar` before using either.
 - **Composite roofs.** `src/composite_roof.py` (a house as its wings, joined
   with straight valleys) is off (`SOLAR_COMPOSITE_ROOFS`). On 139 Shotover
   houses it explains a median 51 points fewer returns than the current faces.

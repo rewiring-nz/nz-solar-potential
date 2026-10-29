@@ -30,6 +30,13 @@ rate of each across a build is a number a change can be held to.
                          every face and panel inside it is shifted too
     POOR LIDAR FIT       under 60% of the roof's laser returns lie on the
                          faces drawn: the faces are not the roof
+    FACES STEP APART     two faces sharing an edge, each drawn on its own
+                         plane (slope/aspect, height from the DSM), step
+                         apart by over 0.4 m along it where the DSM shows
+                         one continuous roof: the edge is off the line where
+                         the planes cross, or a tilt is wrong (3B Inverness
+                         Crescent: ridge 1.1 m off, 0.46 m step). A step the
+                         DSM also shows (a lower wing) is not counted.
     ROOF BEYOND OUTLINE  smooth roof-height LiDAR, grown out from inside the
                          outline (stopping at ground, trees and other
                          buildings), covers more than max(10 m2, 8%) outside
@@ -83,6 +90,47 @@ RAGGED_M_PER_VERTEX = 1.0
 SEAM_MIN_SLOPE = 10.0
 SEAM_MIN_LEN_M = 2.0
 SEAM_OFF_M = 0.5
+# "Faces that don't meet in 3D", measured. The 3D view (buildings3d.js) draws
+# each face on a plane with the face's own slope/aspect and a height set by
+# the median DSM inside it; where two faces share an edge, the difference of
+# their two planes along it is the step or wedge it shows (the plane gap).
+# Whether the roof really steps there is read from the DSM across the same
+# line, STEP_REACH_M either side, against two surfaces built from the same two
+# planes: DRAWN, each plane on its own side of the drawn edge (what the 3D view
+# shows), and JOINED, the two planes meeting where they cross (the lower
+# envelope at a ridge or hip, the upper at a valley). At a real step -- a
+# parapet, a lower wing -- the drawn surface fits the DSM and the joined one
+# cannot. Where the DSM is one continuous roof, the joined surface fits and
+# the drawn one misses it on a strip beside the edge: the edge is off the line
+# where the planes cross, or a tilt is wrong. Comparing the planes with each
+# side's DSM alone cannot tell these apart: a ridge drawn 1.4 m off the crest
+# leaves each plane fitting its own side and the DSM, seen through those
+# tilts, appears to step by exactly the plane gap (3B Inverness Crescent,
+# #4719777, 0.49 m).
+# The two surfaces differ only between the edge and the planes' crossing, so
+# they are compared over that strip and STEP_PAD_M beyond it (at most
+# STEP_REACH_M). A station is a crease when the joined surface's mean
+# |DSM - surface| there is within STEP_JOINED_FIT_M (it is the roof) and either
+# under STEP_FIT_RATIO of the drawn one's or the planes cross within
+# STEP_NEAR_M of the edge -- closer than a 1 m DSM can put a wall, so no step
+# there can be told from the crease. Where neither surface fits (a face that
+# spans two levels of a big roof: 16 m apart at its edge on #5371126) the
+# edge is not judged here; POOR LIDAR FIT covers those faces. An edge counts
+# when most stations are creases and the plane gap at the median station is
+# over STEP_OFF_M. The 3D view closes gaps under 0.6 m at shared vertices, so
+# a 0.4-0.6 m gap shows as a twisted wedge rather than a ledge.
+# Faces are measured where the layout puts them, in the LiDAR's frame. The
+# map's tiles move each building by its photo lean (src/emit_region.py), so
+# a view that samples the DSM at the tiles' faces sees more steps: on the
+# Queenstown regions, 14.5% of edges at the shifted faces, 6.8% unshifted.
+STEP_OFF_M = 0.40
+STEP_MIN_LEN_M = 1.5
+STEP_STATION_M = 0.5
+STEP_REACH_M = 2.5
+STEP_PAD_M = 0.75
+STEP_NEAR_M = 0.5
+STEP_FIT_RATIO = 0.7
+STEP_JOINED_FIT_M = 0.15
 NOTCH_MIN_M2 = 1.0
 NOTCH_MIN_DEPTH_M = 0.5
 NOTCH_INSIDE_SHARE = 0.5
@@ -106,20 +154,164 @@ ARRAY_MIN = 3   # same as src/panel_fitting.py ARRAY_MIN_PANELS
 ARRAY_PAIR_FACE_M2 = 12.0       # same as src/panel_fitting.py
 ARRAY_TOUCH_M = 1.30            # same as src/panel_fitting.py: a rail runs on past a one-panel gap (vent)
 ROOF_CHECKS = ["mixed_orientation", "small_array", "disorderly_rows", "ragged_face", "sliver_faces", "empty_good_face",
-               "outline_over_ground", "poor_fit", "roof_beyond_outline", "seam_off_ridge"]
+               "outline_over_ground", "poor_fit", "roof_beyond_outline", "seam_off_ridge", "seam_step"]
 # reported for comparison with runs before 19 Oct, not scored
 INFO_CHECKS = ["concave_face_any"]
 WEIGHT = {"mixed_orientation": 4, "small_array": 3, "off_building": 3, "across_edge": 3, "on_obstruction": 2, "overlap": 2,
           "disorderly_rows": 4, "ragged_face": 2, "sliver_faces": 1, "empty_good_face": 4,
           "outline_over_ground": 6, "poor_fit": 4, "roof_beyond_outline": 6,
-          "seam_off_ridge": 4}
+          "seam_off_ridge": 4, "seam_step": 4}
 LABEL = {"mixed_orientation": "portrait and landscape mixed on a face", "small_array": "lone panel, or under 3 on a face (2 on a small face)",
          "off_building": "off the building", "across_edge": "across a face edge",
          "on_obstruction": "on an obstruction", "overlap": "panels overlap",
          "disorderly_rows": "disorderly rows", "ragged_face": "ragged face",
          "sliver_faces": "sliver faces", "empty_good_face": "empty good face",
          "outline_over_ground": "outline over ground", "poor_fit": "poor LiDAR fit",
-         "roof_beyond_outline": "roof beyond outline", "seam_off_ridge": "seam off the ridge"}
+         "roof_beyond_outline": "roof beyond outline", "seam_off_ridge": "seam off the ridge",
+         "seam_step": "faces step apart where the LiDAR does not"}
+
+
+def _tilt(q):
+    """(a, b) of z = a x + b y + c from a face's slope and aspect, as buildings3d.js does."""
+    s, asp = q.get("slope_deg"), q.get("aspect_deg")
+    if s is None or asp is None:
+        return None
+    t = math.tan(math.radians(s))
+    A = math.radians(asp)
+    return -t * math.sin(A), -t * math.cos(A)
+
+
+def _face_offset(g, ab, H, step=0.6, inset=0.45):
+    """The 3D view's height for a face: the median DSM residual off its tilt,
+    sampled on a `step` grid `inset` in from the edges, outliers rejected."""
+    import numpy as np
+    import shapely
+    core = g.buffer(-inset)
+    if core.is_empty or core.area < 0.5:
+        core, step = g.buffer(-0.15), 0.35
+    if core.is_empty:
+        return None
+    x0, y0, x1, y1 = core.bounds
+    xs, ys = np.meshgrid(np.arange(math.ceil(x0 / step) * step, x1 + 1e-9, step),
+                         np.arange(math.ceil(y0 / step) * step, y1 + 1e-9, step))
+    xs, ys = xs.ravel(), ys.ravel()
+    m = shapely.contains_xy(core, xs, ys)
+    xs, ys = xs[m], ys[m]
+    if xs.size < 2:
+        return None
+    z = H(xs, ys)
+    ok = np.isfinite(z)
+    if ok.sum() < 2:
+        return None
+    r = z[ok] - (ab[0] * xs[ok] + ab[1] * ys[ok])
+    c = float(np.median(r))
+    for _ in range(3):
+        lim = max(0.25, 2.5 * 1.4826 * float(np.median(np.abs(r - c))))
+        k = r[np.abs(r - c) <= lim]
+        if not k.size or k.size == r.size:
+            break
+        r, c = k, float(np.median(k))
+    return c
+
+
+def _seam_steps(faces, H):
+    """One record per shared edge of at least STEP_MIN_LEN_M:
+    {i, j, length, gap, drawn, joined, crease, miss, shift, mid}.
+    gap: median height of face i's plane minus face j's along the edge (the
+    3D view's step); drawn / joined: median mean |DSM - surface| across the
+    edge, over the strip out to the planes' crossing, for the two surfaces;
+    crease: share of stations judged one continuous roof (see STEP_*); miss:
+    the median |gap| when most stations are creases, else 0; shift: median
+    distance from the edge to where the planes cross.
+    faces: [(polygon, properties)] in NZTM; H(xs, ys) -> DSM heights (NaN off-survey)."""
+    import numpy as np
+    import shapely
+    from shapely.ops import linemerge
+    planes = []
+    for g, q in faces:
+        ab = _tilt(q)
+        c = _face_offset(g, ab, H) if ab is not None and not g.is_empty else None
+        planes.append(None if c is None else np.array([ab[0], ab[1], c]))
+    out = []
+    ts = np.concatenate([-np.arange(STEP_REACH_M, 0, -0.25), np.arange(0.25, STEP_REACH_M + 1e-9, 0.25)])
+    for i in range(len(faces)):
+        for j in range(i + 1, len(faces)):
+            pi, pj = planes[i], planes[j]
+            if pi is None or pj is None:
+                continue
+            gi, gj = faces[i][0], faces[j][0]
+            if gi.distance(gj) > 0.1:
+                continue
+            seam = gi.boundary.intersection(gj.buffer(0.1))
+            lines = [s for s in getattr(seam, "geoms", [seam]) if s.geom_type in ("LineString", "MultiLineString")]
+            if not lines:
+                continue
+            seam = linemerge(lines) if len(lines) > 1 else lines[0]
+            pieces = [s for s in getattr(seam, "geoms", [seam]) if s.length >= STEP_STATION_M]
+            if sum(s.length for s in pieces) < STEP_MIN_LEN_M:
+                continue
+            dp = pi - pj
+            grad = math.hypot(dp[0], dp[1])
+            gaps, rd, rj, shift, crease = [], [], [], [], []
+            for s in pieces:
+                for d in np.arange(STEP_STATION_M / 2, s.length, STEP_STATION_M):
+                    p = s.interpolate(d)
+                    q2 = s.interpolate(min(d + 0.2, s.length)); q1 = s.interpolate(max(d - 0.2, 0))
+                    tx, ty = q2.x - q1.x, q2.y - q1.y
+                    L = math.hypot(tx, ty)
+                    if L < 1e-6:
+                        continue
+                    xs, ys = p.x - ty / L * ts, p.y + tx / L * ts
+                    in_i = shapely.contains_xy(gi, xs, ys)
+                    in_j = shapely.contains_xy(gj, xs, ys) & ~in_i
+                    gap = float(dp[0] * p.x + dp[1] * p.y + dp[2])
+                    off = abs(gap) / grad if grad > 1e-3 else np.inf
+                    z = H(xs, ys)
+                    ok = (in_i | in_j) & np.isfinite(z) & (np.abs(ts) <= min(off + STEP_PAD_M, STEP_REACH_M))
+                    if (ok & in_i).sum() < 2 or (ok & in_j).sum() < 2:
+                        continue
+                    zi = pi[0] * xs + pi[1] * ys + pi[2]
+                    zj = pj[0] * xs + pj[1] * ys + pj[2]
+                    drawn = np.where(in_i, zi, zj)
+                    fit = lambda surf: float(np.mean(np.abs(z[ok] - surf[ok])))
+                    gaps.append(gap)
+                    shift.append(off)
+                    rd.append(fit(drawn))
+                    rj.append(min(fit(np.minimum(zi, zj)), fit(np.maximum(zi, zj))))
+                    crease.append(rj[-1] <= STEP_JOINED_FIT_M
+                                  and (off <= STEP_NEAR_M or rj[-1] < STEP_FIT_RATIO * rd[-1]))
+            if len(gaps) < max(2, int(STEP_MIN_LEN_M / STEP_STATION_M)):
+                continue
+            gaps, rd, rj = np.array(gaps), np.array(rd), np.array(rj)
+            crease = float(np.mean(crease))
+            gap = float(np.median(gaps))
+            mid = seam.interpolate(0.5, normalized=True)
+            out.append({"i": i, "j": j, "length": round(sum(s.length for s in pieces), 2),
+                        "gap": round(gap, 2), "drawn": round(float(np.median(rd)), 2),
+                        "joined": round(float(np.median(rj)), 2), "crease": round(crease, 2),
+                        "miss": round(float(np.median(np.abs(gaps))), 2) if crease > 0.5 else 0.0,
+                        "shift": round(float(np.median(shift)), 2), "mid": (mid.x, mid.y)})
+    return out
+
+
+def _dsm_sampler(dsm, geom, pad=3.0):
+    """Bilinear DSM heights around one roof: H(xs, ys) -> z (NaN off-survey)."""
+    import numpy as np
+    from rasterio.windows import from_bounds
+    from scipy.ndimage import map_coordinates
+    # whole pixels: read() snaps a fractional window but window_transform()
+    # keeps the fraction, which would slide the heights up to a pixel
+    win = from_bounds(*geom.buffer(pad).bounds, transform=dsm.transform)
+    win = win.round_offsets(op="floor").round_lengths(op="ceil")
+    z = dsm.read(1, window=win, boundless=True, fill_value=np.nan).astype("float64")
+    if dsm.nodata is not None:
+        z[z == dsm.nodata] = np.nan
+    inv = ~dsm.window_transform(win)
+
+    def H(xs, ys):
+        c, r = inv * (np.asarray(xs, float), np.asarray(ys, float))
+        return map_coordinates(z, [r - 0.5, c - 0.5], order=1, mode="constant", cval=np.nan)
+    return H
 
 
 def _seam_offsets(faces):
@@ -204,6 +396,7 @@ def check_region(region, features=None):
     features built in memory (tools/layout_ab.py) for some of its roofs."""
     import geopandas as gpd
     from shapely.geometry import shape
+    from shapely.ops import unary_union
     from shapely.ops import transform as shp_transform
     from shapely.strtree import STRtree
     from pyproj import Transformer
@@ -405,6 +598,16 @@ def check_region(region, features=None):
         off = sum(1 for _, m in seams if m > SEAM_OFF_M)
         if off:
             hits["seam_off_ridge"] += off
+        steps = []
+        if dsm is not None and len(d["facet"]) > 1:
+            try:
+                steps = _seam_steps(d["facet"], _dsm_sampler(dsm, unary_union(faces)))
+            except Exception:
+                steps = []
+        totals["step_seams_measured"] += len(steps)
+        bad_steps = [s for s in steps if s["miss"] > STEP_OFF_M]
+        if bad_steps:
+            hits["seam_step"] += len(bad_steps)
         conf = d["facet"][0][1].get("roof_confidence")
         if conf is not None and conf < POOR_FIT:
             hits["poor_fit"] += 1
@@ -413,13 +616,19 @@ def check_region(region, features=None):
         score = sum(WEIGHT.get(k, 0) * min(v, 10) for k, v in hits.items())
         if hits:
             roofs.append({"id": bid, "region": region, "score": score, "panels": len(panels),
-                          "faces": len(faces), "hits": dict(hits)})
+                          "faces": len(faces), "hits": dict(hits),
+                          **({"step_miss_m": round(sum(s["miss"] * s["length"] for s in bad_steps), 1),
+                              "steps": [{k: s[k] for k in ("i", "j", "length", "gap", "drawn", "joined", "crease", "shift")}
+                                        for s in bad_steps]} if bad_steps else {})})
     roofs.sort(key=lambda r: -r["score"])
     n_flagged = sum(1 for r in roofs if r["score"])
     rates = {k: round(1000 * totals[k] / max(n_panels, 1), 2) for k in PANEL_CHECKS}
     # of the pitched seams that could be measured (layouts with planes), the share off the ridge
     rates["seams_off_share"] = (round(100 * totals["seam_off_ridge"] / totals["seams_measured"], 1)
                                 if totals["seams_measured"] else None)
+    # of the shared edges measured against the DSM, the share whose faces step apart where the roof does not
+    rates["step_seams_share"] = (round(100 * totals["seam_step"] / totals["step_seams_measured"], 1)
+                                 if totals["step_seams_measured"] else None)
     rates.update({k: round(100 * sum(1 for r in roofs if r["hits"].get(k)) / max(n_roofs, 1), 2) for k in ROOF_CHECKS + INFO_CHECKS})
     clean = n_roofs - n_flagged
     return {"region": region, "roofs": n_roofs, "panels": n_panels, "clean_roofs": clean,
@@ -471,7 +680,7 @@ def main():
         print(f"\nworst {a.worst}:")
         for w in worst[:a.worst]:
             print(f"  #{w['id']:<9} {w['region']:20s} score {w['score']:3d}  {w['panels']:4d} panels {w['faces']:3d} faces  " +
-                  ", ".join(f"{LABEL[k]} {v}" for k, v in sorted(w["hits"].items(), key=lambda t: -WEIGHT[t[0]] * t[1])))
+                  ", ".join(f"{LABEL.get(k, k)} {v}" for k, v in sorted(w["hits"].items(), key=lambda t: -WEIGHT.get(t[0], 0) * t[1])))
     if a.json:
         a.json.write_text(json.dumps(summary, separators=(",", ":")))
         print(f"\nwrote {a.json}")
