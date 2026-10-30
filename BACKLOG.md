@@ -28,17 +28,27 @@ regions, 1,334,824 panels.
   - *Three "nothing is there" labels show a standing building* in both
     photos: 4718482, 4718539, 4744515 (in `config.DEMOLISHED_BUILDING_IDS`,
     so off the map entirely). Check them in the labelling tool.
-  - *Identical roofs, different answers.* The eight townhouses at 6/60
-    Hallenstein St (`4734600`–`4734608`) are split into faces five ways and
-    get 30–48 panels. Two read as one flat face; the rest have a 2° face and
-    an 8–10° face at ~224°, some with 3-panel slivers.
-    - The size slider drops the 8–10° strip first: it yields 549 kWh a
-      panel against 589.
-    - Check in the LiDAR which way the strip really slopes. Then make
-      repeated roofs agree.
-  - *Outline outside the roof edge.* 41 Ballarat St `4735359` has panels
-    over air beyond the visible roof edge. This matters for the 3D
-    extrusion too.
+  - *Identical roofs, different answers.* Fixed in code behind
+    `SOLAR_REPEAT_ROOFS=1` (`src/repeat_roofs.py`), not yet built; needs
+    Josh's look, then the switch on and a build.
+    - 6/60 Hallenstein St: the LiDAR shows six of the eight townhouses with
+      an 8–10° strip along the north-east edge, 0.7 m higher there and
+      falling south-west, so the size slider is right to drop it first. The
+      two corner units are flat with no strip. The six had been read five
+      ways; all six now share one reading (2° membrane + strip).
+    - Panel counts still differ (33–47) because LINZ outlines for the one
+      design range 143–186 m² and obstructions are detected per roof. Next:
+      let a set agree on its outline and obstructions too.
+    - District: 592 sets of identical roofs, 1,547 buildings. 204 sets keep
+      their own readings because the shared one fit the LiDAR worse.
+  - *Outline outside the roof edge.* Fixed in code behind
+    `SOLAR_OUTLINE_FIT=1` (`src/outline_fit.py`), not yet built. 41 Ballarat
+    St's outline sits 1.25 m south-east of its LiDAR roof; slid onto it, the
+    hips meet at the photo's apex and no panel is over the yard. District:
+    853 of 24,138 outlines slide (3.5%, median 0.9 m); 18% in
+    town_west_fernhill, where the survey photo agrees with the slide. The
+    3D view and the map outline follow the slid outline. Eaves (outline
+    the right place, roof wider) are not changed.
   - *Commercial roofs on Beach St.* Fixed in code, not yet built; needs
     the next district build and Josh's look.
     - 48 Beach St `5370368`: the plant room (3.9 m up, 22 m2) is now an
