@@ -108,6 +108,48 @@ def test_small_patches_and_patches_without_returns_stay():
     assert op.drop_roof_like([vent, blind], FACE, [FACE], _pc()) == [vent, blind]
 
 
+# 48 Beach St: a plant room's flat lid 3.9 m above a flat deck
+FLAT = dict(geometry=box(0, 0, 20, 12), plane_a=0.0, plane_b=0.0, plane_c=100.0)
+
+
+def _deck_with_box(x0, y0, x1, y1, up):
+    deck = _grid(0, 0, 20, 12, lambda x, y: 100.0 + 0 * x)
+    deck = deck[~((deck[:, 0] >= x0) & (deck[:, 0] <= x1) & (deck[:, 1] >= y0) & (deck[:, 1] <= y1))]
+    lid = _grid(x0, y0, x1, y1, lambda x, y: 100.0 + up + 0 * x)
+    pts = np.vstack([deck, lid])
+    pts[:, 2] += rng.normal(0, 0.03, len(pts))
+    return Points(pts)
+
+
+def test_a_plant_room_lid_is_not_a_level():
+    lid = box(4, 3, 9, 8)                         # 25 m2, 3.9 m up, flat
+    assert op.drop_roof_like([lid], FLAT, [FLAT], _deck_with_box(4, 3, 9, 8, 3.9)) == [lid]
+
+
+def test_a_level_a_step_up_is_still_roof():
+    # 4735304: a level 0.6 m up, on a plane parallel to the face
+    lvl = box(4, 3, 9, 8)
+    assert op.drop_roof_like([lvl], FLAT, [FLAT], _deck_with_box(4, 3, 9, 8, 0.6)) == []
+
+
+def test_the_height_detector_carves_the_plant_room():
+    from src import obstruction_detection as od
+    pc = _deck_with_box(4, 3, 9, 8, 3.9)
+    obs = od.detect_obstructions_from_height(pc, FLAT["geometry"], (0.0, 0.0, 100.0))
+    assert any(o.intersection(box(4, 3, 9, 8)).area > 20 for o in obs), [o.area for o in obs]
+
+
+def test_a_storey_is_left_to_segmentation():
+    # bigger than STRUCTURE_MAX_M2 at a storey's height: a level, not a box
+    from src import obstruction_detection as od
+    big = dict(geometry=box(0, 0, 30, 24), plane_a=0.0, plane_b=0.0, plane_c=100.0)
+    deck = _grid(0, 0, 30, 24, lambda x, y: 100.0 + 0 * x)
+    inside = (deck[:, 0] >= 2) & (deck[:, 0] <= 12) & (deck[:, 1] >= 2) & (deck[:, 1] <= 10)
+    deck[inside, 2] += 3.0                        # 80 m2 a storey up
+    obs = od.detect_obstructions_from_height(Points(deck), big["geometry"], (0.0, 0.0, 100.0))
+    assert not any(o.area > 20 for o in obs), [o.area for o in obs]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

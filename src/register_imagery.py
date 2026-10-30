@@ -24,7 +24,9 @@ that sample, sharpness >= SHARP_MIN put 87-95% of buildings within 0.75 m of
 their neighbours' median, below it only 55%. A building whose own match is
 weak, or disagrees with its trusted neighbours by more than
 AGREE_MAX_M, takes their median instead: lean varies smoothly across a
-photo, so a neighbour's lean is a good estimate of this building's.
+photo, so a neighbour's lean is a good estimate of this building's. Before
+borrowing, a weak match is measured twice more: over a wider window, then
+with only the roof voting (ROOF_LOOK).
 
 emit_region moves the DRAWN geometry (outline, faces, panels, obstructions)
 and build_heatmap_raster moves each building's heat-map pixels by the shift;
@@ -76,6 +78,23 @@ ROBUST_M = 0.3
 # moves in Arrowtown sat visibly better, but one jumped 3.9 m onto the next
 # roof. A second look further than this from its neighbours is not believed.
 SECOND_LOOK_MAX_M = 2.5
+# ...AND THEN THE ROOF ALONE. Both looks correlate the whole window, street
+# and neighbours included, and the ground does not lean: on a big roof that
+# repeats -- parallel ridges a few metres apart -- the street's vote and the
+# roof's period put the peak one period short. 24 Beach St (1,688 m2, ridges
+# ~4 m apart) matched 2.9 m at sharpness 4.6, borrowed its neighbours' 2.1 m,
+# and the map drew every panel row over a ridge and every vent a metre and a
+# half off. Weighting the survey photo's edges by the roof outline
+# (grown ROOF_GROW_M) lets only the roof vote: 3.6 m at 5.3, with the vents
+# on the vents. It is the last look before borrowing, not the first: on 60
+# trusted roofs it agreed within 0.3 m on 52, and the misses were small roofs
+# (37-218 m2) with too little inside the outline to match. On the pilot's
+# 169 borrowed roofs it is trusted on 61; the eight with the biggest moves
+# (32 Frankton Rd, 4735242, 4735613 ...) all sat on their roofs better,
+# rendered on the map's photo. Same SHARP_MIN, never further than
+# SECOND_LOOK_MAX_M from the neighbours. SOLAR_ROOF_LOOK=0 turns it off.
+ROOF_GROW_M = 0.5
+ROOF_LOOK = os.environ.get("SOLAR_ROOF_LOOK", "1") != "0"
 # CHANGED SINCE THE SURVEY. The LiDAR and the survey-year photo are 2021; the
 # map's photo is 2026. Where a building was rebuilt in between, every layout
 # stage worked on a roof that is gone -- 35 Brecon St was a bare deck under
@@ -169,8 +188,9 @@ def _gradient(rgb):
     return (g - g.mean()) / (g.std() + 1e-9)
 
 
-def measure(geom, reference_ds, tiles):
-    """(dx_east, dy_north, sharpness) of the map photo against the reference, or None."""
+def measure(geom, reference_ds, tiles, roof_only=False):
+    """(dx_east, dy_north, sharpness) of the map photo against the reference, or None.
+    roof_only: only the survey photo's edges inside the outline vote (ROOF_GROW_M)."""
     from rasterio.windows import from_bounds
     b = geom.buffer(PAD_M).bounds
     h = int((b[3] - b[1]) / RES_M)
@@ -186,6 +206,11 @@ def measure(geom, reference_ds, tiles):
     if ref.std() < 2 or disp.std() < 2:
         return None
     A, B = _gradient(ref), _gradient(disp)
+    if roof_only:
+        from rasterio.features import rasterize
+        from rasterio.transform import from_origin
+        A = A * rasterize([(geom.buffer(ROOF_GROW_M), 1)], out_shape=(h, w),
+                          transform=from_origin(b[0], b[3], RES_M, RES_M))
     cc = np.fft.fftshift(np.real(np.fft.ifft2(np.fft.fft2(A) * np.conj(np.fft.fft2(B)))))
     cy, cx = h // 2, w // 2
     win = cc[cy - s:cy + s + 1, cx - s:cx + s + 1]
@@ -227,11 +252,13 @@ def roof_change(geom, reference_ds, tiles, shift):
     return float(abs(la.mean() - lb.mean())), float(np.corrcoef(ga, gb)[0, 1])
 
 
-def reconcile(raw, second_look=None):
+def reconcile(raw, second_look=None, roof_look=None):
     """raw: {bid: (x, y, dx, dy, sharp)} -> {bid: [dx, dy, quality]} with weak or
     outlying matches replaced by their trusted neighbours' median.
     second_look(bid) -> (dx, dy, sharp) or None: the wide-window measurement,
-    asked only of matches that would otherwise be replaced (see WIDE_PAD_M)."""
+    asked only of matches that would otherwise be replaced (see WIDE_PAD_M).
+    roof_look(bid), the same with only the roof voting (ROOF_GROW_M), is asked
+    of a weak match the second look did not settle, before borrowing."""
     from scipy.spatial import cKDTree
     bids = list(raw)
     if not bids:
@@ -261,6 +288,11 @@ def reconcile(raw, second_look=None):
         elif robust:
             dx, dy, q = (V[i][0], V[i][1], raw[b][4]) if trusted[i] else (wide[0], wide[1], wide[2])
             STATS["second_look"] = STATS.get("second_look", 0) + 1
+        elif (not trusted[i] and roof_look is not None
+              and (roof := roof_look(b)) is not None and roof[2] >= SHARP_MIN
+              and (med is None or np.hypot(roof[0] - med[0], roof[1] - med[1]) <= SECOND_LOOK_MAX_M)):
+            dx, dy, q = roof
+            STATS["roof_look"] = STATS.get("roof_look", 0) + 1
         elif med is not None:
             dx, dy, q = med[0], med[1], 0.0
             STATS["borrowed"] += 1
@@ -364,7 +396,9 @@ def register(region):
             return measure(geoms[bid], ref_ds, tiles)
         finally:
             PAD_M = keep
-    out = reconcile(raw, second_look)
+    def roof_look(bid):
+        return measure(geoms[bid], ref_ds, tiles, roof_only=True) if ROOF_LOOK else None
+    out = reconcile(raw, second_look, roof_look)
     # MARKUP DRAWN ON THE LEANING PHOTO ALREADY SITS WHERE THE MAP SHOWS THE
     # ROOF. The labelling tool shows the region's pipeline photo; where that
     # is not the reference (every Queenstown region but pilot, 2026 vs 2021),
@@ -397,6 +431,7 @@ def register(region):
     print(f"[{region}] image lean: {len(out)}/{len(gdf)} buildings shifted "
           f"(median {np.median(mags) if mags else 0:.2f} m, p90 {np.percentile(mags, 90) if mags else 0:.2f} m; "
           f"{STATS['trusted']} own, {STATS.get('second_look', 0)} on a second look, "
+          f"{STATS.get('roof_look', 0)} on the roof alone, "
           f"{STATS['borrowed']} from neighbours) in {time.time() - t0:.0f}s")
     return out
 

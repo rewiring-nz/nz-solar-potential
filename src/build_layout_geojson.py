@@ -45,7 +45,7 @@ from src.plane_seams import snap_seams_to_plane_intersections
 from src.roof_levels import split_lower_levels
 from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
-from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays, centre_panels
+from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, drop_scraps, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays, centre_panels
 from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
@@ -684,6 +684,8 @@ def _build_one_at(building_id, nudge_m):
         break
 
     kept_panel_lists = drop_minor_arrays([pf["panels"] for pf in per_facet])
+    # ...and a scrap of two or three that belongs to no array goes (drop_scraps)
+    kept_panel_lists = drop_scraps(kept_panel_lists)
     all_kept = [pnl for panels in kept_panel_lists for pnl in panels]
     if all_kept:
         assign_fill_ranks(all_kept)

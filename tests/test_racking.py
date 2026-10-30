@@ -112,6 +112,69 @@ def test_panels_pack_at_their_true_pitch():
     assert all(abs((b - a) * 0.1 - 1.134) < 1e-9 for a, b in zip(lefts, lefts[1:]))
 
 
+def _face(panels):
+    return [dict(p) for p in panels]
+
+
+def test_scraps_beside_a_main_array_go():
+    # 93 Beach St: sets of 3 and 2 between ducts, beside arrays of 53-133
+    main = _face(_row(0, 0, 12))
+    three = _face(_row(0, 10, 3))                 # its own face, far from any array
+    two = _face(_row(20, 10, 2))
+    kept = pf.drop_scraps([main, three, two])
+    assert [len(k) for k in kept] == [12, 0, 0]
+
+
+def test_a_block_a_rail_spans_to_stays():
+    # 3 + skipped panel + 12 along one rail on one face: one array (ARRAY_TOUCH_M)
+    w, gap = 1.13, 0.02
+    row = _face(_row(0, 0, 16, w=w, gap=gap))
+    del row[3]
+    assert [len(k) for k in pf.drop_scraps([row])] == [15]
+
+
+def test_touching_panels_on_two_faces_are_one_array():
+    main = _face(_row(0, 0, 12))
+    over_the_seam = _face(_row(0, 1.72 + 0.1, 3))  # next face, 0.1 m across the seam
+    assert [len(k) for k in pf.drop_scraps([main, over_the_seam])] == [12, 3]
+
+
+def test_a_small_roof_keeps_its_scraps():
+    # largest array under MAIN_ARRAY_MIN_PANELS: the pair and the three ARE the install
+    a, b = _face(_row(0, 0, 3)), _face(_row(0, 10, 2))
+    assert [len(k) for k in pf.drop_scraps([a, b])] == [3, 2]
+
+
+def test_scrap_rule_has_an_off_switch():
+    os.environ["SOLAR_DROP_SCRAPS"] = "0"
+    try:
+        main, three = _face(_row(0, 0, 12)), _face(_row(0, 10, 3))
+        assert [len(k) for k in pf.drop_scraps([main, three])] == [12, 3]
+    finally:
+        del os.environ["SOLAR_DROP_SCRAPS"]
+
+
+def _strip_facet(width_m, length_m=20.6, slope=30.0, y0=0.0):
+    """A pitched strip along x, falling south (aspect 180), width_m in plan."""
+    import math
+    g = box(0, y0, length_m, y0 + width_m)
+    a, b = 0.0, math.tan(math.radians(slope))
+    return {"geometry": g, "building_geometry": box(-1, -1, length_m + 1, 20),
+            "slope_deg": slope, "aspect_deg": 180.0, "building_id": 1,
+            "plane_a": a, "plane_b": b, "plane_c": 100.0 - b * y0}
+
+
+def test_a_strip_only_landscape_fits_does_not_turn_the_building():
+    # 44 Beach St: a 3 m plan strip (one portrait row) and a 1.5 m strip
+    # (landscape only). The trial for portrait must count the narrow strip
+    # turned, as the locked fit does, or landscape wins the whole building.
+    wide, narrow = _strip_facet(3.0), _strip_facet(1.5, y0=4.0)
+    facets = [wide, narrow]
+    frame = pf.building_frame(facets, box(-1, -1, 21.6, 20))
+    assert frame is not None
+    assert pf.register_frame(frame, facets)["portrait"] is True
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

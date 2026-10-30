@@ -394,6 +394,32 @@ HEIGHT_MAX_BLOB_AREA_M2 = 20.0  # absolute cap, not just MAX_BLOB_AREA_FRACTION 
 # like a discrete rooftop object -- that's a segmentation-quality symptom, not an obstruction, and
 # flagging it would silently write off a fifth of a roof's real usable area. 20m2 comfortably
 # covers a large single real object (a big chiller/tank) while rejecting a mis-merged sub-facet.
+# A RAISED STRUCTURE IS NOT A MIS-MERGED LEVEL. The cap above, and the
+# planar rescue below, read a big part whose returns sit on one plane as roof
+# segmentation failed to separate. That holds for a level a step or a parapet
+# away; it does not hold for a box a storey up. 48 Beach St (#5370368): a
+# plant room 3.9 m above a 245 m2 flat roof, 109 returns, spread 0.08 m (a
+# flat lid), hull 22 m2 -- one point over the cap, so it was neither a face
+# nor an obstruction, and 10 panels were laid on it at the deck's height. A
+# part standing STRUCTURE_MIN_M or more above the deck, every return above,
+# and no larger than STRUCTURE_MAX_M2, is a rooftop structure (plant room,
+# lift overrun, stair housing) and keeps panels out. Bigger is a storey and
+# stays with segmentation. The levels the cap and the rescue were set on
+# stood 0.6-0.7 m up (#4735304, #5370328). SOLAR_RAISED_STRUCTURES=0 off.
+STRUCTURE_MIN_M = 1.5
+STRUCTURE_MAX_M2 = 60.0
+STRUCTURE_ABOVE_FRACTION = 0.95
+RAISED_STRUCTURES = os.environ.get("SOLAR_RAISED_STRUCTURES", "1") != "0"
+
+
+def _is_structure(residuals, area_m2):
+    """`residuals`: the part's returns minus the deck plane, signed."""
+    if not RAISED_STRUCTURES or len(residuals) < HEIGHT_MIN_CLUSTER_POINTS or area_m2 > STRUCTURE_MAX_M2:
+        return False
+    return (float(np.median(residuals)) >= STRUCTURE_MIN_M
+            and float(np.mean(residuals > HEIGHT_STRONG_ABOVE_MARGIN_M)) >= STRUCTURE_ABOVE_FRACTION)
+
+
 HEIGHT_BLOB_BUFFER_M = 0.15  # smaller than the colour detector's -- unlike a colour transition
 # ring, a height anomaly is detected across an object's whole footprint (every point on top of
 # it has a large residual, not just its edge), so there's much less real coverage to make up
@@ -680,7 +706,8 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
                         try:
                             coeffs, *_ = np.linalg.lstsq(A, part_pts[:, 2], rcond=None)
                             fit_res = A @ coeffs - part_pts[:, 2]
-                            if np.sqrt(np.mean(fit_res ** 2)) < HEIGHT_STRONG_PLANAR_RMS_M:
+                            if (np.sqrt(np.mean(fit_res ** 2)) < HEIGHT_STRONG_PLANAR_RMS_M
+                                    and not _is_structure(part_pts[:, 2] - (plane_a * part_pts[:, 0] + plane_b * part_pts[:, 1] + plane_c), part.area)):
                                 continue  # a missed roof level, not equipment (see constant above)
                         except np.linalg.LinAlgError:
                             pass
@@ -700,6 +727,8 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
         if hull.geom_type != "Polygon":
             continue
         max_area = min(HEIGHT_MAX_BLOB_AREA_M2, MAX_BLOB_AREA_FRACTION * facet_area_m2)
+        if hull.area > max_area and _is_structure(residual[flagged][member_idx], hull.area):
+            max_area = min(STRUCTURE_MAX_M2, MAX_BLOB_AREA_FRACTION * facet_area_m2)
         if hull.area < HEIGHT_MIN_BLOB_AREA_M2 or hull.area > max_area:
             continue
         obstructions.append((hull, False))

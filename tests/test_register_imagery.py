@@ -129,6 +129,52 @@ def test_markup_frame_is_off_by_default():
     assert b["7"]["lines"][0]["points"][0] == [1266000.0, 5007000.0]
 
 
+def test_a_weak_match_takes_the_roof_alone_before_borrowing():
+    # 24 Beach St: weak on the whole window, borrowed the neighbours' lean;
+    # the roof alone is sharp and within reach of them
+    raw = {i: (10.0 * i, 0.0, 1.8, -1.1, 9.0) for i in range(6)}
+    raw[6] = (35.0, 5.0, 2.5, -1.5, 4.6)
+    out = ri.reconcile(raw, lambda b: (2.0, -1.1, 4.5), lambda b: (3.1, -1.8, 5.3))
+    assert out["6"] == [3.1, -1.8, 5.3]
+
+
+def test_the_roof_alone_is_not_believed_weak_or_far():
+    raw = {i: (10.0 * i, 0.0, 1.8, -1.1, 9.0) for i in range(6)}
+    raw[6] = (35.0, 5.0, 2.5, -1.5, 4.6)
+    weak = ri.reconcile(raw, None, lambda b: (3.1, -1.8, 4.0))
+    far = ri.reconcile(raw, None, lambda b: (-2.0, 2.0, 9.0))
+    assert weak["6"] == [1.8, -1.1, 0.0] and far["6"] == [1.8, -1.1, 0.0]
+
+
+def test_a_trusted_match_never_asks_the_roof():
+    raw = {i: (10.0 * i, 0.0, 1.8, -1.1, 9.0) for i in range(6)}
+    asked = []
+    ri.reconcile(raw, None, lambda b: asked.append(b))
+    assert asked == []
+
+
+class _RoofOnly:
+    """The map's photo where only the roof leans; the ground stays put."""
+    def __init__(self, east, north):
+        self.e, self.n = east, north
+
+    def window(self, b, h, w):
+        cols = np.arange(w)[None, :] + int(round((b[0] - X0) / RES))
+        rows = np.arange(h)[:, None] + int(round((Y1 - b[3]) / RES))
+        ground = P[np.clip(rows, 0, N - 1), np.clip(cols, 0, N - 1)].copy()
+        sc = np.clip(cols - int(round(self.e / RES)), 0, N - 1)
+        sr = np.clip(rows + int(round(self.n / RES)), 0, N - 1)
+        moved = P[sr, sc]
+        roof = (sr >= 200) & (sr < 400) & (sc >= 150) & (sc < 420)
+        ground[roof] = moved[roof]
+        return np.stack([ground] * 3)
+
+
+def test_the_roof_alone_measures_the_roof_not_the_street():
+    dx, dy, _ = ri.measure(ROOF, _reference(), _RoofOnly(2.0, -1.2), roof_only=True)
+    assert abs(dx - 2.0) < 0.15 and abs(dy + 1.2) < 0.15, (dx, dy)
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

@@ -460,6 +460,7 @@ FRAME_MAX_LOSS = 0.25        # a face leaves the building frame if the locked gr
 #     ARRAY_MIN_PANELS, at every density (blocks on one face share its grid,
 #     so 3 + 3 split by a skylight stays).
 RACKING = os.environ.get("SOLAR_RACKING", "1") != "0"
+TRIAL_TURN = os.environ.get("SOLAR_TRIAL_TURN", "1") != "0"  # see _pack_usable
 ARRAY_MIN_PANELS = 3   # per face, in all: a clean block of 3 is a real install on a small
 # section (Josh: only 2-panel arrays are "very rare"); at 4, 16 faces in the 400-roof sample
 # went empty that hold one tidy row of 3
@@ -905,14 +906,23 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             locked_n = len(result[0]) if result else 0
             if best_free and len(best_free[0]) * (1.0 - FRAME_MAX_LOSS) > locked_n:
                 result, is_portrait = best_free, free_portrait
-            # A FACE THAT CANNOT HOLD AN ARRAY IN THE BUILDING'S ORIENTATION
-            # may turn the other way -- the whole face, never part of it
-            # (racks run either way; mixing on one rack is what never happens).
-            if RACKING and (len(result[0]) if result else 0) < ARRAY_MIN_PANELS:
-                ow, oh = (panel_height, panel_width) if is_portrait else (panel_width, panel_height)
-                alt = _pack_orientation(occupancy, resolution, ow, oh)
-                if alt and len(alt[0]) >= ARRAY_MIN_PANELS:
-                    result, is_portrait = alt, not is_portrait
+        # A FACE THAT CANNOT HOLD AN ARRAY IN THE BUILDING'S ORIENTATION
+        # may turn the other way -- the whole face, never part of it
+        # (racks run either way; mixing on one rack is what never happens).
+        # The orientation trials in register_frame turn too, so each trial
+        # counts the layout its choice would really produce. Without that,
+        # a narrow strip only landscape fits scored for landscape alone and
+        # swung the whole building: 44 Beach St's 3.4 m slope went to two
+        # landscape rows (27 panels on the roof) where an installer racks one
+        # portrait row; with the trial turning that strip as the locked fit
+        # does, it is portrait, with the strip landscape (24 panels).
+        # SOLAR_TRIAL_TURN=0 turns only the locked fit, as before.
+        if (lock and RACKING and (phases is not None or TRIAL_TURN)
+                and (len(result[0]) if result else 0) < ARRAY_MIN_PANELS):
+            ow, oh = (panel_height, panel_width) if is_portrait else (panel_width, panel_height)
+            alt = _pack_orientation(occupancy, resolution, ow, oh)
+            if alt and len(alt[0]) >= ARRAY_MIN_PANELS:
+                result, is_portrait = alt, not is_portrait
         if result:
             placed_o, wc, hc = result
             candidates.append((is_portrait, placed_o, wc, hc))
@@ -1041,6 +1051,57 @@ def drop_minor_arrays(facet_panels):
                 for panel in panels:
                     panel["straggler"] = True
     return facet_panels
+
+
+def drop_scraps(facet_panels):
+    """facet_panels: list of per-facet panel lists for ONE building. Returns
+    the same structure without scraps: groups of fewer than
+    MIN_CLUSTER_PANELS that belong to no larger array, on a roof that has a
+    main array (MAIN_ARRAY_MIN_PANELS).
+
+    A scrap was demoted to fill rank 100, so it still showed at 100% and
+    counted in the roof's economic size: 93 Beach St showed sets of 3 and 2
+    between its ducts beside arrays of 53-133 panels (Josh, 30 Oct: "should
+    not be placed, they are clearly not part of a bigger array").
+
+    "Part of a bigger array" is what a rail can span: panels on one face
+    within ARRAY_TOUCH_M (one skipped panel, a vent in the row) share a grid
+    and a rack, so 3 + 3 split by a skylight stays; panels on different
+    faces join only where they touch (ARRAY_TOUCH_TOL_M). A roof whose
+    largest array is under MAIN_ARRAY_MIN_PANELS keeps its small groups: on
+    a small roof a pair or three IS the install. SOLAR_DROP_SCRAPS=0 off."""
+    if os.environ.get("SOLAR_DROP_SCRAPS", "1") == "0" or not facet_panels:
+        return facet_panels
+    flat = [(fi, p) for fi, panels in enumerate(facet_panels) for p in panels]
+    if len(flat) < MIN_CLUSTER_PANELS:
+        return facet_panels
+    geoms = [p["geometry"] for _, p in flat]
+    tree = STRtree(geoms)
+    parent = list(range(len(flat)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i, g in enumerate(geoms):
+        for j in tree.query(g.buffer(ARRAY_TOUCH_M)):
+            j = int(j)
+            if j <= i:
+                continue
+            gap = g.distance(geoms[j])
+            if gap <= ARRAY_TOUCH_TOL_M or (flat[i][0] == flat[j][0] and gap <= ARRAY_TOUCH_M):
+                parent[find(i)] = find(j)
+    size = {}
+    for i in range(len(flat)):
+        size[find(i)] = size.get(find(i), 0) + 1
+    if max(size.values()) < MAIN_ARRAY_MIN_PANELS:
+        return facet_panels
+    keep = [[] for _ in facet_panels]
+    for i, (fi, p) in enumerate(flat):
+        if size[find(i)] >= MIN_CLUSTER_PANELS:
+            keep[fi].append(p)
+    return keep
 
 
 def _erosion_order(panels, poa_key):
@@ -1371,11 +1432,11 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
 
 MIN_CLUSTER_PANELS = 4       # 100% density once looked randomly placed: neither
 # every panel nor only clean arrays. So 100% now MEANS "every clean array":
-# contiguous clusters under four panels are dropped at fit time on every roof
-# -- the residential analogue of the 8-panel commercial rule -- unless they are
-# the only panels the roof
-# has, because some small roofs genuinely only fit a scrap and that scrap is
-# still worth showing.
+# a group under four panels that belongs to no larger array is dropped at fit
+# time (drop_scraps) on a roof with a main array; assign_fill_ranks demotes
+# any touching cluster under four that is left (a block bridged to an array
+# by a rail) to rank 100. A small roof keeps its scrap: some only fit one,
+# and it is still worth showing.
 ARRAY_TOUCH_TOL_M = 0.35   # panels this close are the same physical array (tile gaps are 4cm)
 
 

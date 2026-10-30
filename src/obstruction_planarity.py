@@ -99,6 +99,18 @@ def _is_level(pts, f):
     return False
 
 
+def _is_structure(pts, f, area_m2):
+    """A flat lid a storey up is a rooftop structure, not a level: see
+    obstruction_detection.STRUCTURE_MIN_M (48 Beach St's plant room, 3.9 m
+    up, is a level to _is_level). The median is used, not every return, as the
+    merged patch carries a rim of deck around the box."""
+    from src.obstruction_detection import RAISED_STRUCTURES, STRUCTURE_MIN_M, STRUCTURE_MAX_M2
+    if not RAISED_STRUCTURES or area_m2 > STRUCTURE_MAX_M2:
+        return False
+    r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
+    return float(np.median(r)) >= STRUCTURE_MIN_M
+
+
 def _is_roof(pts, f):
     r = pts[:, 2] - (f["plane_a"] * pts[:, 0] + f["plane_b"] * pts[:, 1] + f["plane_c"])
     return (float((np.abs(r) < ON_PLANE_M).mean()) >= ON_PLANE_SHARE
@@ -129,6 +141,7 @@ def drop_roof_like(obstructions, face, facets, pc_source):
         if any(_is_roof(pts, f) for f in near):
             continue
         if (o.area >= LEVEL_MIN_M2 and os.environ.get("SOLAR_OBS_LEVEL_CHECK", "1") != "0"
+                and not _is_structure(pts, face, o.area)
                 and _is_level(pts, face)):
             continue
         keep.append(o)

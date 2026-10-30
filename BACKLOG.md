@@ -39,13 +39,26 @@ regions, 1,334,824 panels.
   - *Outline outside the roof edge.* 41 Ballarat St `4735359` has panels
     over air beyond the visible roof edge. This matters for the 3D
     extrusion too.
-  - *Commercial flat roofs.*
-    - 48 Beach St `5370368`: obstructions are drawn on clear roof while
-      panels cover plant.
-    - 93 Beach St `4725633`: 2–3 panel scraps between ducts show at 100%
-      and count in the economic size.
-    - 24 Beach St `4735237`: panels over ridges and obstructions.
-    - 44 Beach St `5370317`: landscape rows where portrait fits.
+  - *Commercial roofs on Beach St.* Fixed in code, not yet built; needs
+    the next district build and Josh's look.
+    - 48 Beach St `5370368`: the plant room (3.9 m up, 22 m2) is now an
+      obstruction (`STRUCTURE_MIN_M`); 10 panels came off it. Still open:
+      small colour blobs on the clear white roof (the small-object
+      contrast path). Gating colour blobs on returns *above* the deck was
+      tried and reverted: it also dropped real vent hoods on 5370326,
+      whose LiDAR reads as flat as a shadow.
+    - 93 Beach St `4725633`: scraps under 4 panels that belong to no
+      array are dropped (`drop_scraps`), so they leave the economic size.
+    - 24 Beach St `4735237`: the layout respected the markup; the map
+      drew it with a borrowed lean 1.5 m short, so rows sat on the ridge
+      skylights. A weak match is now measured on the roof alone before
+      borrowing (`ROOF_LOOK`): 3.6 m, vents on vents. 61 of the pilot's
+      169 borrowed leans change. Needs `register_imagery` re-run.
+    - 44 Beach St `5370317`: the main slope is portrait now. The narrow
+      second strip stays landscape (portrait does not fit 1.8 m); the
+      strips may be mis-split (the map photo shows two light strips).
+    - 40 commercial pilot roofs, A/B: panels 7,506 -> 7,295, all from the
+      100%-only band (255 -> 57); ranks 1-80 unchanged (6,678 -> 6,677).
 - **`tools/render_cases.py` cannot read the per-region build.** At v67,
   most case tiles render "0 facets, 0 panels" and four raise KeyError. Three
   cases show "regressed" from a broken 25 Sep check run that recorded zero
