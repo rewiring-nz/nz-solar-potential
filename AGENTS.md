@@ -217,7 +217,10 @@ figure for the same thing. Code enforces this:
   section on faces that curve in plan (`SOLAR_CURVED_SPLIT`) and refitting the
   tilt of an empty face its returns reject (`SOLAR_EMPTY_FACE_REFIT`). The
   3D view takes obstruction box tops from the DSM where `SITE.obstTopFromDsm`
-  is set (on in this deployment) or with `?SOLAR_OBST_TOP_DSM=1`.
+  is set (on in this deployment) or with `?SOLAR_OBST_TOP_DSM=1`. It reads
+  every height at the building's LiDAR position, taking off the photo lean
+  (`img_dx`/`img_dy`) the geometry was moved by; `?SOLAR_LEAN_HEIGHTS=0` or
+  `SITE.leanHeights = false` turns that off.
 - `src/derive_solar_potential.py` builds the building summary by adding up
   its layout, so totals and layouts match.
 - Shading uses per-building 72-direction horizons (`horizon_b64`,

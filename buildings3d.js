@@ -104,7 +104,9 @@
   const C = {
     roof: [0.93, 0.92, 0.90],
     wall: [0.74, 0.745, 0.76],
-    obst: [0.62, 0.63, 0.65],
+    // the 2D map's obstruction red (#ff3b30), a touch deeper so the lit top
+    // and shaded sides still read as a box: grey boxes read as rocks
+    obst: [0.86, 0.22, 0.18],
     roofLine: [0.22, 0.24, 0.27],
     wallLine: [0.40, 0.42, 0.45],
     panel: hex("#0d2c5e"),
@@ -180,6 +182,19 @@
     while (dsm.size > DSM_MAX) dsm.delete(dsm.keys().next().value);
     return e;
   }
+  // HEIGHTS AT THE LIDAR POSITION. Every building's geometry arrives moved
+  // onto the photo by its measured lean (img_dx / img_dy on the buildings
+  // tiles, src/emit_region.py), but the DSM is the survey, unmoved. Sampled at
+  // the moved faces, a face reads the roof up to a metre and a half beside it:
+  // over the live Queenstown regions 37% of multi-face roofs had faces that
+  // step apart in 3D where the LiDAR shows one roof, against 20% with the lean
+  // taken off (tools/layout_health.py seam_step; leaning 0.75 m or more, 19.8%
+  // of shared edges against 6.7%). The solid is still drawn where the map draws
+  // the building; only the height lookup takes the lean off. Switch:
+  // ?SOLAR_LEAN_HEIGHTS=0 turns it off, SITE.leanHeights=false likewise.
+  const LEAN_HEIGHTS = !/[?&]SOLAR_LEAN_HEIGHTS=0\b/.test(location.search)
+    && !(window.SITE && window.SITE.leanHeights === false);
+  let HLEAN = [0, 0];
   // the DSM tiles under a box in local metres; null when all are in hand
   function dsmPending(x0, y0, x1, y1) {
     const a = fromXY(x0, y1), b = fromXY(x1, y0);
@@ -195,6 +210,7 @@
   // nearest DSM pixel (the tiles are nearest-resampled at this zoom, so a
   // roof edge is a step; interpolating would invent a ramp)
   function H(X, Y) {
+    X -= HLEAN[0]; Y -= HLEAN[1];
     const px = Math.floor((S.O.mx + X * S.O.s) * NPX), py = Math.floor((S.O.my - Y * S.O.s) * NPX);
     const e = dsm.get((px >> 8) + "/" + (py >> 8));
     if (!e || !e.h) return NaN;
@@ -309,7 +325,8 @@
       if (seen.has(bid + ":" + key)) continue;
       seen.add(bid + ":" + key);
       let o = out.get(bid);
-      if (!o) out.set(bid, o = { geoms: [], osig: "", c0 });
+      if (!o) out.set(bid, o = { geoms: [], osig: "", c0,
+        lean: [+f.properties.img_dx || 0, +f.properties.img_dy || 0] });
       o.geoms.push(g);
       o.osig += key + ";";
     }
@@ -323,7 +340,7 @@
     const feat = new Map();
     for (const bid of bids) {
       const o = outl.get(bid);
-      const F = { outl: [], facets: new Map(), obst: [], panels: [], osig: o.osig };
+      const F = { outl: [], facets: new Map(), obst: [], panels: [], osig: o.osig, lean: o.lean };
       for (const g of o.geoms) for (const rings of ringsOf(g)) if (rings.length) F.outl.push(rings);
       feat.set(bid, F);
     }
@@ -469,6 +486,10 @@
   }
 
   function buildRec(bid, F) {
+    HLEAN = LEAN_HEIGHTS && F.lean ? F.lean : [0, 0];
+    try { return buildRecAt(bid, F); } finally { HLEAN = [0, 0]; }
+  }
+  function buildRecAt(bid, F) {
     const t0 = performance.now();
     const outl = F.outl;
     const allOut = outl.flat();
@@ -1461,6 +1482,7 @@
       const F = featFor(bid);
       if (!F) return null;
       const out = [];
+      HLEAN = LEAN_HEIGHTS && F.lean ? F.lean : [0, 0];
       F.facets.forEach(fc => {
         const pts = faceSamples(fc.polys, 0.6, 0.45);
         if (pts.length < 6) return;
@@ -1471,6 +1493,7 @@
         out.push({ n: pts.length, tile: [fc.q.slope_deg, fc.q.aspect_deg], lsq: [+sl(l).toFixed(1), +as(l).toFixed(0)],
           medAbsTile: +rms(t).toFixed(2), medAbsLsq: +rms(l).toFixed(2) });
       });
+      HLEAN = [0, 0];
       return out;
     },
     groundStats(bid) {
