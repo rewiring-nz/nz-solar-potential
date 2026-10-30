@@ -189,5 +189,49 @@ check("a business uses more than a home and peaks in the day", () => {
   if (!(L[11] > L[2] * 3)) throw new Error("no daytime peak");
 });
 
+// THE EXPLORER (season charts, the year hour by hour) draws from the bills'
+// own hour rows; these hold it to the same figures.
+check("each season's chart parts add up to its hour rows, and the rows to the day's use", () => {
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home({ evs: 1 }), { winter: 420 }, prices);
+  for (const s of B.BT_SEASONS) {
+    const sd = r.run.seasons[s];
+    for (let h = 0; h < 24; h++) {
+      const parts = Object.values(sd.partsH).reduce((t, a) => t + a[h], 0);
+      near(parts, sd.rows[h].use, 1e-9, `${s} ${h}:00 parts vs use`);
+    }
+    near(sum(sd.rows.map(x => x.use)), r.run.nodes.seasons[s].use.value, 1e-9, `${s} rows vs use node`);
+    near(sum(sd.rows.map(x => x.imp)), r.run.nodes.seasons[s].imp.value, 1e-9, `${s} rows vs import node`);
+  }
+});
+
+check("the year, hour by hour, adds up to the bills (with and without a battery)", () => {
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  for (const batt of [0, 10]) {
+    const r = B.btEvaluate(ctx, home({ battery: batt }), null, prices);
+    const Y = B.btYearHours(r.run, batt > 0);
+    if (Y.rows.length !== 8760) throw new Error(`${Y.rows.length} hours`);
+    if (!Y.check.ok) throw new Error(`does not add up: ${Y.check.off.join(", ")} ${Y.check.daysOff.join(", ")}`);
+    near(Y.totals.bill, (batt ? r.run.nodes.battBill : r.run.nodes.solarBill).value, 1e-6, "bill");
+  }
+});
+
+check("a change of assumption moves the year and the bills together", () => {
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const a = B.btEvaluate(ctx, home(), null, prices);
+  const b = B.btEvaluate(ctx, home(), null, { buy: 40, sell: 10, daily: 3 });
+  const Ya = B.btYearHours(a.run, false), Yb = B.btYearHours(b.run, false);
+  if (!(Ya.check.ok && Yb.check.ok)) throw new Error("a year does not add up");
+  if (!(Yb.totals.bill > Ya.totals.bill)) throw new Error("dearer power did not raise the year's bill");
+});
+
+check("the year as CSV has a header and 8,760 hours", () => {
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home(), null, prices);
+  const lines = B.btYearCsv(B.btYearHours(r.run, false)).trim().split("\n");
+  if (lines.length !== 8761) throw new Error(`${lines.length} lines`);
+  if (!lines[0].startsWith("date,hour,season")) throw new Error("no header");
+});
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

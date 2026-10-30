@@ -393,11 +393,21 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
              battMonth: month(`${BT_CAP(s)} bill a month, with solar and a battery`, battDay) };
     const f = Wk.same(rows.reduce((t, r) => t + r.use, 0), use, `Hourly and daily use, ${s}`, 1e-6);
     if (f) use.flags.push(f);
+    // each part's share of every hour, for the season charts: the same day
+    // split by what uses it (it adds back up to the hour's use; tested)
+    const partsH = {};
+    for (const k of Object.keys(load.parts)) {
+      const day = load.parts[k][s] * cal.scale[s];
+      partsH[k] = load.shapes[k].map(f => day * f);
+    }
     res.seasons[s] = {
       loadKwh: use.value, genKwh: made.value,
       nowMonth: S[s].nowMonth.value, solarMonth: S[s].solarMonth.value, battMonth: S[s].battMonth.value,
       selfShare: made.value > 0 ? (made.value - exp.value) / made.value : 0,
       load: L, gen: G, solarImp: solar.impH, battImp: withB.impH,
+      // the hour rows the bills are added up from (the same objects the
+      // Workings tables hold), so a chart drawn from them cannot disagree
+      rows, rowsB, partsH,
     };
   }
   const N = res.nodes;
@@ -434,6 +444,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   N.dayKw = Wk.quotient("Average daytime load", "kW", N.dayKwh, btIn("Daytime hours", 8, "h"), { dp: 2,
     note: "The home's average use in the middle of the day. Solar can power this directly." });
   N.dayShare = Wk.quotient("Share of the day's use in the daytime", "share", N.dayKwh, N.avgDay, { dp: 0 });
+  res.days = BT_SEASONS.map(s => days[s].value);
   res.year = { nowKwh: N.useYear.value, nowBill: N.nowBill.value, solarImport: N.solarImport.value,
                solarExport: N.solarExport.value, solarBill: N.solarBill.value, battImport: N.battImport.value,
                battExport: N.battExport.value, battBill: N.battBill.value, gen: N.genYear.value };
@@ -613,9 +624,64 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
                                          gen: ctx.genNode || N.genYear, kwp: kwpN }) };
 }
 
+// THE YEAR, HOUR BY HOUR. The bills are worked out on an average day in each
+// season, so the year is those days laid end to end on the calendar
+// (December to February summer, March to May autumn, June to August winter,
+// September to November spring: 90, 92, 92 and 91 days). Nothing is worked
+// out again: every hour is a row of its season's bill table, so the year
+// adds up to the same totals as the bills, and `check` says so (or what
+// differs). Day-to-day weather is not in it; Resilience has that.
+const BT_MONTH_SEASON = ["summer", "summer", "autumn", "autumn", "autumn", "winter",
+                         "winter", "winter", "spring", "spring", "spring", "summer"];
+const BT_MONTH_LEN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const BT_MONTH_NAME = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function btYearHours(run, withBatt) {
+  const N = run.nodes;
+  const P = N.prices;
+  const rows = [];
+  const calDays = {};
+  BT_MONTH_SEASON.forEach((s, m) => { calDays[s] = (calDays[s] || 0) + BT_MONTH_LEN[m]; });
+  const tot = { use: 0, solar: 0, imp: 0, exp: 0, billNow: 0, bill: 0 };
+  let doy = 0;
+  for (let m = 0; m < 12; m++) {
+    const s = BT_MONTH_SEASON[m];
+    const hr = withBatt ? run.seasons[s].rowsB : run.seasons[s].rows;
+    for (let d = 1; d <= BT_MONTH_LEN[m]; d++, doy++) {
+      for (let h = 0; h < 24; h++) {
+        const r = hr[h];
+        const cost = r.impCost - r.expPay + (h === 0 ? P.daily.value : 0);
+        const costNow = r.useCost + (h === 0 ? P.daily.value : 0);
+        rows.push({ doy, month: m, day: d, h, season: s, use: r.use, solar: r.solar, imp: r.imp, exp: r.exp,
+                    buy: r.buy, sell: r.sell, costNow, cost });
+        tot.use += r.use; tot.solar += r.solar; tot.imp += r.imp; tot.exp += r.exp;
+        tot.billNow += costNow; tot.bill += cost;
+      }
+    }
+  }
+  // the year must add up to the bills' own figures
+  const want = {
+    use: N.useYear.value, solar: N.genYear.value,
+    imp: (withBatt ? N.battImport : N.solarImport).value, exp: (withBatt ? N.battExport : N.solarExport).value,
+    billNow: N.nowBill.value, bill: (withBatt ? N.battBill : N.solarBill).value,
+  };
+  const off = Object.keys(want).filter(k => Math.abs(tot[k] - want[k]) > 1e-6 * Math.max(1, Math.abs(want[k])));
+  const daysOff = BT_SEASONS.filter((s, i) => calDays[s] !== run.days[i]);
+  return { rows, totals: tot, want, check: { ok: !off.length, off, daysOff } };
+}
+
+function btYearCsv(year) {
+  const head = "date,hour,season,use_kwh,solar_kwh,from_grid_kwh,exported_kwh,price_per_kwh,export_price_per_kwh,bill_today_dollars,bill_with_solar_dollars";
+  const f = (v, dp) => (Math.round(v * 10 ** dp) / 10 ** dp).toString();
+  return head + "\n" + year.rows.map(r =>
+    [`${String(r.day).padStart(2, "0")} ${BT_MONTH_NAME[r.month]}`, `${String(r.h).padStart(2, "0")}:00`, r.season,
+     f(r.use, 4), f(r.solar, 4), f(r.imp, 4), f(r.exp, 4), f(r.buy, 4), f(r.sell, 4), f(r.costNow, 4), f(r.cost, 4)].join(",")).join("\n") + "\n";
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
-                     btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon };
+                     btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
+                     btYearHours, btYearCsv };
 }
 
 // ---------------------------------------------------------------------------
@@ -741,6 +807,71 @@ const BT_CSS = `
 .sx-range input::-moz-range-thumb { pointer-events: auto; width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); cursor: grab; }
 .sx-range input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--sx-tint); }
 .sx-more .sx-h:first-child { margin-top: 22px; }
+.sx-explore { display: block; width: 100%; margin-top: 10px; background: var(--sx-fill); border: 0; border-radius: 12px;
+  color: var(--sx-ink); font: 500 13.5px/1.3 inherit; font-family: inherit; padding: 10px 14px; text-align: left; cursor: pointer; }
+.sx-explore span { float: right; color: var(--sx-ink-3); font-size: 17px; line-height: 1; }
+.sx-explore:hover, .sx-explore:focus-visible { background: rgba(255,255,255,.08); outline: none; }
+.side-panel:not(.compact) .sx-explore { display: none; }
+.sx-lead { margin: 2px 4px 10px; }
+.sx-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--sx-ink-2); margin: 0 4px 8px; }
+.sx-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.sx-key i.pk { background: rgba(255,255,255,.12); }
+.sx-key .u { margin-left: auto; color: var(--sx-ink-3); }
+.sx-seasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.sx-season { background: var(--sx-fill); border-radius: 12px; padding: 10px 10px 8px; min-width: 0; }
+.sx-season-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; margin: 0 2px 4px; }
+.sx-season-h span { font-size: 11.5px; color: var(--sx-ink-3); }
+.sx-chartbox { position: relative; }
+.sx-chart { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: zoom-in; }
+.sx-h-row { display: flex; align-items: center; gap: 10px; }
+.sx-h-row > span { flex: 1; }
+.sx-big { font-size: 12.5px; padding: 6px 10px; }
+.sx-bigcard { width: min(1180px, 100%); }
+.sx-seasons-big { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.sx-seasons-big .sx-season { padding: 12px 14px 10px; }
+.sx-seasons-big .sx-season-h { font-size: 16px; }
+.sx-seasons-big .sx-figs b { font-size: 15px; }
+.sx-seasons-big .sx-figs small { font-size: 11.5px; }
+.sx-seasons-big .sx-sbill { font-size: 14px; }
+.sx-seasons-big .sx-tip { width: 200px; font-size: 12.5px; }
+@media (max-width: 760px) { .sx-seasons-big { grid-template-columns: 1fr; } }
+body.clb-open .wk-sheet { z-index: 4600; }
+.sx-chart .pk { fill: rgba(255,255,255,.06); }
+.sx-chart .gl { stroke: rgba(255,255,255,.08); stroke-width: .6; }
+.sx-chart .ax { fill: rgba(235,235,245,.45); font-size: 8.5px; font-family: inherit; }
+.sx-chart .cur { stroke: rgba(255,255,255,.55); stroke-width: .8; }
+.sx-tip { position: absolute; top: 0; z-index: 3; width: 170px; background: rgba(28,28,30,.96); border: 0.5px solid var(--sx-sep);
+  border-radius: 9px; padding: 7px 9px; font-size: 11.5px; line-height: 1.45; color: var(--sx-ink-2); pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+.sx-tip b { color: var(--sx-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sx-tip .parts { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: 10.5px; color: var(--sx-ink-3); }
+.sx-tip i { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 3px; }
+.sx-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr)); gap: 2px; margin-top: 6px; }
+.sx-figs span { cursor: pointer; border-radius: 7px; padding: 4px 4px 3px; min-width: 0; }
+.sx-figs span:hover, .sx-figs span:focus-visible { background: rgba(255,255,255,.05); outline: none; }
+.sx-figs small { display: block; font-size: 10.5px; color: var(--sx-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-figs b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sx-sbill { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 13px; margin: 4px 4px 0; color: var(--sx-ink-2); font-variant-numeric: tabular-nums; }
+.sx-sbill > span:first-child { color: var(--sx-ink-3); font-size: 12px; white-space: nowrap; }
+.sx-sbill .sx-hours { white-space: nowrap; }
+.sx-sbill [data-wk] { cursor: pointer; border-radius: 6px; padding: 1px 3px; }
+.sx-sbill [data-wk]:hover, .sx-sbill [data-wk]:focus-visible { background: rgba(255,255,255,.05); outline: none; }
+.sx-sbill .after { color: var(--sx-good); font-weight: 650; }
+.sx-sbill .after small { color: var(--sx-ink-3); font-weight: 400; }
+.sx-sbill .sx-hours { margin-left: auto; font-size: 12px; color: var(--sx-ink-3); }
+.sx-year .sx-row { justify-content: flex-start; }
+.sx-yearbox { position: relative; padding: 4px 14px 0; }
+.sx-yearbox canvas { width: 100%; height: 120px; image-rendering: pixelated; border-radius: 6px; display: block; cursor: crosshair; }
+.sx-year-ax { display: grid; grid-template-columns: 31fr 28fr 31fr 30fr 31fr 30fr 31fr 31fr 30fr 31fr 30fr 31fr; font-size: 10px; color: var(--sx-ink-3); margin-top: 3px; }
+.sx-yearbox .sx-tip { width: 200px; top: -6px; }
+#bt-year-sum { margin: 8px 14px 4px; }
+.sx-btn { background: var(--sx-fill-2); border: 0; border-radius: 9px; color: var(--sx-ink); font: 500 13px/1 inherit; font-family: inherit; padding: 8px 12px; cursor: pointer; }
+.sx-btn:hover, .sx-btn:focus-visible { background: #636366; outline: none; }
+.sx-method { padding: 6px 14px 12px; font-size: 13.5px; line-height: 1.55; color: var(--sx-ink-2); }
+.sx-method p { margin: 8px 0; }
+.sx-method b { color: var(--sx-ink); font-weight: 600; }
+.sx-method .sx-n { color: var(--sx-tint); cursor: pointer; border-bottom: 1px dotted rgba(255,214,10,.5); }
+.sx-method .sx-n:hover, .sx-method .sx-n:focus-visible { outline: none; color: #fff; }
+.sx-method a { color: var(--sx-tint); }
 @media (max-width: 1250px) { .sx-bills .sx-row { grid-template-columns: 1fr 96px 96px; } }
 @media (max-width: 420px) { .sx-summary { grid-template-columns: 1fr 1fr; } .sx-cell .v { font-size: 19px; } }
 @media (prefers-reduced-motion: reduce) { .sx * { transition: none !important; } }
@@ -757,6 +888,91 @@ function btMoney(v) {
   const neg = v < 0;
   const s = "$" + Math.round(Math.abs(v)).toLocaleString();
   return neg ? "-" + s : s;
+}
+
+// A DAY IN EACH SEASON: the bills' own hour rows drawn as an area chart.
+// Use is stacked by what uses it; the roof's solar is drawn over it, so the
+// overlap is power the roof covers, use above the solar line comes from the
+// grid (or the battery) and solar above use is exported. All four seasons
+// share one scale so they compare at a glance. Peak hours are shaded.
+const BT_SOLAR_COLOUR = "#ffd60a";
+function btSeasonChart(s, sd, ymax, withBatt) {
+  const W = 300, H = 132, L = 26, R = 4, T = 6, B = 18;
+  const x = h => L + (h + 0.5) * (W - L - R) / 24;
+  const y = v => T + (H - T - B) * (1 - v / ymax);
+  const rows = withBatt ? sd.rowsB : sd.rows;
+  const parts = Object.keys(sd.partsH).filter(k => sd.partsH[k].some(v => v > 1e-9));
+  const base = new Array(24).fill(0);
+  const pathFor = (lo, hi) => {
+    const top = hi.map((v, h) => `${x(h).toFixed(1)},${y(v).toFixed(1)}`);
+    const bot = lo.map((v, h) => `${x(h).toFixed(1)},${y(v).toFixed(1)}`).reverse();
+    return `M${top.join("L")}L${bot.join("L")}Z`;
+  };
+  let svg = "";
+  btPeakHours().forEach(([a, b]) => {
+    svg += `<rect x="${(L + a * (W - L - R) / 24).toFixed(1)}" y="${T}" width="${((b - a) * (W - L - R) / 24).toFixed(1)}" height="${H - T - B}" class="pk"/>`;
+  });
+  const step = ymax > 6 ? (ymax > 12 ? 5 : 2) : ymax > 2 ? 1 : 0.5;
+  for (let v = step; v < ymax; v += step) {
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="gl"/>` +
+           `<text x="${L - 4}" y="${(y(v) + 3).toFixed(1)}" class="ax" text-anchor="end">${v}</text>`;
+  }
+  for (const k of parts) {
+    const hi = base.map((b, h) => b + sd.partsH[k][h]);
+    svg += `<path d="${pathFor(base, hi)}" fill="${BT_PART_STYLE[k].colour}" fill-opacity=".55"/>`;
+    hi.forEach((v, h) => { base[h] = v; });
+  }
+  const sol = rows.map(r => r.solar);
+  svg += `<path d="${pathFor(new Array(24).fill(0), sol)}" fill="${BT_SOLAR_COLOUR}" fill-opacity=".28"/>` +
+         `<polyline points="${sol.map((v, h) => `${x(h).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${BT_SOLAR_COLOUR}" stroke-width="1.8"/>`;
+  [[6, "6am"], [12, "noon"], [18, "6pm"]].forEach(([h, t]) => {
+    svg += `<text x="${(L + h * (W - L - R) / 24).toFixed(1)}" y="${H - 4}" class="ax" text-anchor="middle">${t}</text>`;
+  });
+  svg += `<line class="cur" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>` +
+         `<rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="sx-chart" data-season="${s}" role="img" ` +
+    `aria-label="${BT_CAP(s)}: an average day, use and solar each hour">${svg}</svg>`;
+}
+
+// THE METHOD, WITH TODAY'S NUMBERS. Written from the same objects the sums
+// use (the household, its Workings nodes, the prices, the battery), so the
+// text cannot say one thing while the figures do another. A number with
+// workings opens them.
+function btMethodHtml(r, prof, isBiz) {
+  const N = r.nodes, D = BT_DEFAULTS, P = N.prices;
+  const E = typeof econ !== "undefined" ? econ : {};
+  const BD = typeof BATTERY_DEFAULTS !== "undefined" ? BATTERY_DEFAULTS : { kw: 5, round_trip_pct: 90, reserve_pct: 10 };
+  const go = (key, text) => `<span class="sx-n" data-wk="${key}" tabindex="0" role="button">${text}</span>`;
+  const n1 = v => (Math.round(v * 10) / 10).toLocaleString();
+  const c = v => `${(v * 100).toFixed(1).replace(/\.0$/, "")}c`;
+  const days = r.run.days;
+  const scale = r.cal.scale;
+  const calText = r.cal.by === "bills"
+    ? `Your bills scale this estimate by ${BT_SEASONS.map(s => `${n1(scale[s])}× in ${s}`).join(", ")}.`
+    : r.cal.by === "total" ? `Your yearly use scales this estimate by ${n1(scale.winter)}× in every season.`
+    : "Nothing entered, so the estimate is used as is. Enter a bill or your yearly use and every figure is scaled to match.";
+  const useParts = isBiz
+    ? `A business uses ${D.biz_kwh_per_m2} kWh per m² of roof a year (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day.`
+    : `Appliances, lights and cooking: ${D.appliance_base_kwh} kWh a day plus ${D.appliance_per_person_kwh} per person (${prof.people} here). ` +
+      (prof.water === "gas" ? "Hot water is gas, so it uses no electricity. "
+        : `Hot water: ${D.water_base_kwh} kWh a day plus ${D.water_per_person_kwh} per person${prof.water === "heatpump" ? `, divided by ${D.water_heatpump_cop} for a heat pump cylinder` : ""}, heated ${prof.waterOnSun ? "in the middle of the day on a timer" : "mostly overnight"}. `);
+  const heatText = prof.heating === "gas" || prof.heating === "none"
+    ? "Rooms are not heated with electricity."
+    : `Heating follows how cold the town is: ${go("use", Math.round(r.load.hdd).toLocaleString() + " heating degree-days")} a year × ${D.heat_kwh_per_hdd} kWh each for a heat pump${prof.heating === "electric" ? `, × ${D.resistive_vs_heatpump} for plug-in heaters` : ""}, nearly all of it in winter.`;
+  const evText = prof.evs > 0
+    ? `${prof.evs} electric car${prof.evs > 1 ? "s" : ""}: ${D.ev_km_per_year.toLocaleString()} km a year each at ${D.ev_kwh_per_km} kWh/km, charged ${prof.evOnSun ? "while the sun is out" : "overnight"}.`
+    : "No electric car.";
+  const battText = prof.battery > 0
+    ? `A ${prof.battery} kWh battery takes spare solar and gives it back when the ${isBiz ? "building" : "home"} needs it: ${BD.round_trip_pct}% of what goes in comes out, it keeps ${BD.reserve_pct}% in reserve and moves at most ${BD.kw} kW.`
+    : "No battery: spare solar is exported.";
+  return `<div class="sx-method">` +
+    `<p><b>Electricity use.</b> ${useParts.trim()} ${heatText} ${evText} Each part has its own shape across the day and its own change by season. Together: ${go("use", Math.round(N.useYear.value).toLocaleString() + " kWh a year")}. ${calText}</p>` +
+    `<p><b>Solar.</b> The roof's own average day in each season, from its tilt, direction and shading (the curve on the building card): ${go("gen", Math.round(N.genYear.value).toLocaleString() + " kWh a year")}.</p>` +
+    `<p><b>Hour by hour.</b> For an average day in each season (${BT_SEASONS.map((s, i) => `${s} ${days[i]} days`).join(", ")}), each hour the solar powers the ${isBiz ? "building" : "home"} first. ${battText} The rest comes from the grid.</p>` +
+    `<p><b>Bills.</b> Power from the grid at ${c(P.peak.value)} a kWh in peak hours (${btPeakText()}) and ${c(P.off.value)} off-peak; exports earn ${c(P.peakSell.value)} at peak and ${c(P.offSell.value)} off-peak; plus $${P.daily.value.toFixed(2)} a day. A month is ${P.month.value.toFixed(1)} days. A year: ${go("nowbill", btMoney(N.nowBill.value) + " today")}, ${go("solarbill", btMoney((prof.battery > 0 ? N.battBill : N.solarBill).value) + (prof.battery > 0 ? " with solar and the battery" : " with solar"))}.</p>` +
+    `<p><b>Over the years.</b> Power prices rise ${E.elec_inflation_pct}% a year, export rates fall ${E.export_decline_pct}% a year and panels lose ${E.degradation_pct}% of their output a year, over a ${E.life_years}-year life. The inverter is replaced in year ${(E.inverter_replace_year || 0) + 1} at ${E.inverter_cost_pct}% of the solar cost${prof.battery > 0 ? `, the battery after ${BD.life_years || 15} years` : ""}. Money is shown ${E.real_prices ? `in today's dollars (general inflation ${E.cpi_pct}% a year taken out)` : "in each year's own dollars"}.</p>` +
+    `<p class="sx-foot">Every figure in this panel comes from these steps. Tap any number to see its working. <a href="method.html#money" target="_blank" rel="noopener">The full method</a>.</p>` +
+    `</div>`;
 }
 
 function btStoreKey(bid) { return "billtool:v2:" + bid; }
@@ -802,6 +1018,10 @@ function btEvaluateFor(bid, isBizDefault, ctx) {
 // The latest panel's workings, so a sheet left open while an assumption is
 // changed re-works from the new calculation.
 const BT_LATEST = { nodeFor: {} };
+const BT_YEAR_VIEW = { measure: "use" };   // which measure the year view shows (kept across redraws)
+// which of the panel's sections are open, kept across a full rebuild (a price
+// or assumption change re-renders the whole panel through onEcon)
+const BT_OPEN = new Set();
 function renderBillTool(box, ctx) {
   if (!document.getElementById("bt-css")) {
     const st = document.createElement("style");
@@ -893,6 +1113,50 @@ function renderBillTool(box, ctx) {
     const priceSum = `${(E[pfx + "_peak_c"] || 0)}c peak · ${(E[pfx + "_offpeak_c"] || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
     const SX_SPLIT = "<!--sx-split-->";
+    // A day in each season (the next layer down from the card)
+    const SD = r.run.seasons;
+    const peakOf = sd => Math.max(...(withBatt ? sd.rowsB : sd.rows).map(x => Math.max(x.use, x.solar)));
+    const ymaxRaw = Math.max(0.5, ...BT_SEASONS.map(s => peakOf(SD[s]))) * 1.08;
+    const ymax = ymaxRaw > 6 ? Math.ceil(ymaxRaw) : Math.ceil(ymaxRaw * 2) / 2;
+    const usedParts = Object.keys(r.yearParts).filter(k => r.yearParts[k] > 1);
+    const fig = (key, label, n) => `<span data-wk="${key}" tabindex="0" role="button"><small>${label}</small><b>${Wk.fmt(n.value, "kWh", 1)}</b></span>`;
+    const seasonCard = (s, i) => {
+      const nowM = S[s].nowMonth, aft = S[s][after];
+      return `<div class="sx-season">` +
+        `<div class="sx-season-h"><b>${BT_CAP(s)}</b><span>${r.run.days[i]} days</span></div>` +
+        `<div class="sx-chartbox">${btSeasonChart(s, SD[s], ymax, withBatt)}<div class="sx-tip" hidden></div></div>` +
+        `<div class="sx-figs">` +
+          fig(`s-use-${s}`, "Use", S[s].use) + fig(`s-made-${s}`, "Solar", S[s].made) +
+          fig(`s-imp-${s}`, "From the grid", withBatt ? S[s].impB : S[s].imp) + fig(`s-exp-${s}`, "Exported", withBatt ? S[s].expB : S[s].exp) +
+        `</div>` +
+        `<div class="sx-sbill"><span>A month</span>` +
+          `<span data-wk="s-now-${s}" tabindex="0" role="button">${btMoney(nowM.value)}</span><span class="sx-arrow">→</span>` +
+          `<span class="after" data-wk="s-after-${s}" tabindex="0" role="button">${aft.value < -0.5 ? btMoney(-aft.value) + " <small>credit</small>" : btMoney(aft.value)}</span>` +
+          `<span class="sx-hours" data-wk="s-hours-${s}" tabindex="0" role="button">the hours ›</span>` +
+        `</div></div>`;
+    };
+    const keyHtml = `<div class="sx-key">` + usedParts.map(k => `<span><i style="background:${BT_PART_STYLE[k].colour}"></i>${BT_PART_STYLE[k].label}</span>`).join("") +
+      `<span><i style="background:${BT_SOLAR_COLOUR}"></i>Solar</span><span><i class="pk"></i>Peak price</span><span class="u">kWh each hour</span></div>`;
+    const seasonsHtml = haveGen
+      ? `<div class="sx-h sx-h-row" id="bt-seasons"><span>A day in each season</span><button type="button" class="sx-btn sx-big" data-bigseasons="1">Open large <span aria-hidden="true">⤢</span></button></div>` +
+        `<div class="sx-foot sx-lead">An average day: what this ${isBiz ? "business" : "home"} uses each hour, coloured by what uses it, and what the roof makes (yellow). Where the yellow covers the colour, the roof is powering the ${isBiz ? "business" : "home"}; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Change anything under Assumptions and every figure here updates.</div>` +
+        keyHtml + `<div class="sx-seasons">${BT_SEASONS.map(seasonCard).join("")}</div>` +
+        `<details class="sx-dis" id="bt-adv-year"><summary><span class="t">The whole year, hour by hour</span><span class="sum">8,760 hours · download</span></summary>` +
+          `<div class="sx-group sx-year">` +
+            `<div class="sx-row">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"], ["cost", "Bill"]], BT_YEAR_VIEW.measure, "Show")}</div>` +
+            `<div class="sx-yearbox"><canvas id="bt-year-canvas" width="365" height="24" aria-label="The year, hour by hour"></canvas>` +
+              `<div class="sx-year-ax">${BT_MONTH_NAME.map(m => `<span>${m}</span>`).join("")}</div><div class="sx-tip" hidden></div></div>` +
+            `<div class="sx-foot" id="bt-year-sum"></div>` +
+            `<div class="sx-row"><button type="button" class="sx-btn" id="bt-year-csv">Download the 8,760 hours (CSV)</button></div>` +
+          `</div>` +
+          `<div class="sx-foot">Each day is its season's average day, because that is how the bills are worked out, so the year adds up to the same totals. Midnight at the bottom, the evening at the top. Day-to-day weather is in Resilience.</div>` +
+        `</details>`
+      : "";
+    const methodHtml = haveGen
+      ? `<div class="sx-h">How it's worked out</div>` +
+        `<details class="sx-dis" id="bt-adv-method"><summary><span class="t">The method, with the numbers used now</span><span class="sum">updates with every change</span></summary>` +
+          `<div class="sx-group">${btMethodHtml(r, prof, isBiz)}</div></details>`
+      : "";
     const html =
       `<div class="sx">` +
       // the corner card leads with what it costs (Josh, 18 Oct)
@@ -916,7 +1180,8 @@ function renderBillTool(box, ctx) {
         (haveGen ? billPair("summer", "Summer bill", "lowest month") : "") +
       `</div>` +
       (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
-      `</div>` + SX_SPLIT + `<div class="sx sx-more">` +
+      (haveGen ? `<button type="button" class="sx-explore" data-explore="1">A day in each season, and how it's worked out <span aria-hidden="true">›</span></button>` : "") +
+      `</div>` + SX_SPLIT + `<div class="sx sx-more">` + seasonsHtml +
 
       `<div class="sx-h">Over the panels' life</div>` +
       `<div class="sx-group">` +
@@ -997,6 +1262,7 @@ function renderBillTool(box, ctx) {
         row("Total", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost", cls: "total" }) +
       `</div>` +
       `<div class="sx-foot">An estimate, not a quote. <details class="sx-why sx-inline"><summary>More</summary>Based on the roof, the local climate and the assumptions above. Tap any result to see the working.</details></div>` +
+      methodHtml +
       `</div>`;
     const [top, more] = html.split(SX_SPLIT);
     const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
@@ -1004,6 +1270,10 @@ function renderBillTool(box, ctx) {
     const roots = moreBox ? [box, moreBox] : [box];
     const qa = sel => roots.flatMap(rt => [...rt.querySelectorAll(sel)]);
     const q1 = sel => qa(sel)[0] || null;
+    qa("details.sx-dis[id]").forEach(d => {
+      if (BT_OPEN.has(d.id)) d.open = true;
+      d.addEventListener("toggle", () => { if (d.open) BT_OPEN.add(d.id); else BT_OPEN.delete(d.id); });
+    });
 
     // every result opens its workings
     const nodeFor = {
@@ -1014,6 +1284,18 @@ function renderBillTool(box, ctx) {
       repl: () => ret.nodes.replacements, payback: () => ret.nodes.payback,
     };
     Object.keys(r.yearParts).forEach(k => { nodeFor["part-" + k] = () => N.parts[k]; });
+    BT_SEASONS.forEach(s => {
+      nodeFor[`s-use-${s}`] = () => S[s].use;
+      nodeFor[`s-made-${s}`] = () => S[s].made;
+      nodeFor[`s-imp-${s}`] = () => withBatt ? S[s].impB : S[s].imp;
+      nodeFor[`s-exp-${s}`] = () => withBatt ? S[s].expB : S[s].exp;
+      nodeFor[`s-now-${s}`] = () => S[s].nowMonth;
+      nodeFor[`s-after-${s}`] = () => S[s][after];
+      nodeFor[`s-hours-${s}`] = () => withBatt ? S[s].battDay : S[s].solarDay;
+    });
+    nodeFor.gen = () => N.genYear;
+    nodeFor.nowbill = () => N.nowBill;
+    nodeFor.solarbill = () => withBatt ? N.battBill : N.solarBill;
     // the getter reads the LATEST calculation: a sheet left open while an
     // assumption is changed in it re-works from the new figures, not from
     // the draw it was opened from
@@ -1025,7 +1307,7 @@ function renderBillTool(box, ctx) {
     });
 
     // wiring
-    const keepOpen = () => ["bt-adv-price", "bt-adv-home"].filter(i => { const d = q1("#" + i); return d && d.open; });
+    const keepOpen = () => ["bt-adv-price", "bt-adv-home", "bt-adv-year", "bt-adv-method"].filter(i => { const d = q1("#" + i); return d && d.open; });
     const redraw = (focusSel) => {
       const open = keepOpen();
       draw();
@@ -1036,6 +1318,12 @@ function renderBillTool(box, ctx) {
     qa(".sx-seg").forEach(g => g.addEventListener("click", ev => {
       const b = ev.target.closest("button"); if (!b) return;
       const k = g.dataset.key, v = b.dataset.v;
+      if (k === "ymeasure") {
+        BT_YEAR_VIEW.measure = v;
+        g.querySelectorAll("button").forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
+        drawYear();
+        return;
+      }
       if (k === "real") { econ.real_prices = v === "1"; if (ctx.onEcon) ctx.onEcon(); else redraw(); return; }
       if (k === "type") state.type = v;
       else (state.type === "business" ? state.business : state.home)[k] = (k === "evs" || k === "battery") ? +v : v;
@@ -1098,6 +1386,144 @@ function renderBillTool(box, ctx) {
       econ[inp.dataset.econ] = v;
       if (ctx.onEcon) ctx.onEcon(); else redraw();
     }));
+
+    // the card's way down a layer: open the full panel at the season charts
+    qa("[data-explore]").forEach(b => b.addEventListener("click", () => {
+      const sp = document.getElementById("side-panel");
+      const ex = document.getElementById("side-panel-expand");
+      if (sp && sp.classList.contains("compact") && ex) ex.click();
+      setTimeout(() => { const t = q1("#bt-seasons"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); }, 80);
+    }));
+
+    // season charts: the hour under the pointer, from the same hour rows
+    const bindCharts = (charts, zoom) => charts.forEach(svg => {
+      const s = svg.dataset.season, sd = r.run.seasons[s];
+      const rows = withBatt ? sd.rowsB : sd.rows;
+      const tip = svg.parentElement.querySelector(".sx-tip");
+      const cur = svg.querySelector(".cur");
+      const show = ev => {
+        const rect = svg.getBoundingClientRect();
+        const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+        const vx = px / rect.width * 300;
+        const h = Math.max(0, Math.min(23, Math.floor((vx - 26) / (300 - 30) * 24)));
+        const row = rows[h];
+        const cx = 26 + (h + 0.5) * (300 - 30) / 24;
+        cur.setAttribute("x1", cx); cur.setAttribute("x2", cx); cur.style.display = "";
+        const k = v => Wk.fmt(v, "kWh", 2);
+        const partsLine = Object.keys(sd.partsH).filter(p => sd.partsH[p][h] > 0.005)
+          .map(p => `<span><i style="background:${BT_PART_STYLE[p].colour}"></i>${BT_PART_STYLE[p].label} ${k(sd.partsH[p][h])}</span>`).join("");
+        tip.innerHTML = `<b>${row.h}–${String(h + 1).padStart(2, "0")}:00 · ${btIsPeak(h) ? "peak" : "off-peak"} ${(row.buy * 100).toFixed(1)}c</b>` +
+          `<div>Use <b>${k(row.use)}</b></div><div class="parts">${partsLine}</div>` +
+          `<div>Solar <b>${k(row.solar)}</b> · used here <b>${k(row.direct)}</b></div>` +
+          (withBatt ? `<div>From the battery <b>${k(row.fromB || 0)}</b></div>` : "") +
+          `<div>From the grid <b>${k(row.imp)}</b> · exported <b>${k(row.exp)}</b></div>`;
+        tip.hidden = false;
+        tip.style.left = Math.min(Math.max(0, px - 80), rect.width - 170) + "px";
+      };
+      const hide = () => { tip.hidden = true; cur.style.display = "none"; };
+      svg.addEventListener("mousemove", show);
+      svg.addEventListener("touchstart", show, { passive: true });
+      svg.addEventListener("touchmove", show, { passive: true });
+      svg.addEventListener("mouseleave", hide);
+      if (zoom) svg.addEventListener("click", () => openBig());
+    });
+    bindCharts(qa(".sx-chart"), true);
+
+    // ALL FOUR SEASONS LARGE: the same cards, from the same calculation, in
+    // the page's chart lightbox; each figure still opens its workings.
+    const openBig = () => {
+      if (!haveGen) return;
+      let lb = document.getElementById("chart-lightbox");
+      if (!lb) {
+        lb = document.createElement("div");
+        lb.id = "chart-lightbox";
+        document.body.appendChild(lb);
+      }
+      const close = () => {
+        lb.hidden = true;
+        document.body.classList.remove("clb-open");
+        if (lb.__return && lb.__return.focus) lb.__return.focus();
+      };
+      lb.__return = document.activeElement;
+      lb.innerHTML =
+        `<div class="clb-card sx sx-bigcard" role="dialog" aria-modal="true" aria-label="A day in each season">` +
+          `<div class="clb-head"><h3>A day in each season</h3><button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
+          `<div class="sx-foot sx-lead">An average day, hour by hour. Colours: what the ${isBiz ? "business" : "home"} uses. Yellow: what the roof makes. Where the yellow covers the colour, the roof is powering it; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Tap a figure to see how it is worked out.</div>` +
+          keyHtml + `<div class="sx-seasons sx-seasons-big">${BT_SEASONS.map(seasonCard).join("")}</div>` +
+        `</div>`;
+      lb.hidden = false;
+      document.body.classList.add("clb-open");
+      lb.onclick = e => { if (e.target === lb) close(); };
+      lb.onkeydown = e => { if (e.key === "Escape") close(); };
+      lb.querySelector(".clb-x").addEventListener("click", close);
+      const big = [...lb.querySelectorAll(".sx-chart")];
+      bindCharts(big, false);
+      big.forEach(svg => { svg.style.cursor = "crosshair"; });
+      lb.querySelectorAll("[data-wk]").forEach(elx => {
+        const k = elx.dataset.wk, f = nodeFor[k];
+        if (f && typeof WkView !== "undefined") WkView.bind(elx, () => (BT_LATEST.nodeFor[k] || f)());
+      });
+      requestAnimationFrame(() => lb.querySelector(".clb-x").focus());
+    };
+    qa("[data-bigseasons]").forEach(b => b.addEventListener("click", openBig));
+
+    // the whole year: drawn when opened, from btYearHours (the bills' own rows)
+    let yearData = null;
+    const getYear = () => yearData || (yearData = btYearHours(r.run, withBatt));
+    const drawYear = () => {
+      const cv = q1("#bt-year-canvas");
+      const det = q1("#bt-adv-year");
+      if (!cv || !det || !det.open) return;
+      const Y = getYear(), m = BT_YEAR_VIEW.measure;
+      const val = row => row[m];
+      const vmax = Math.max(1e-9, ...Y.rows.map(val));
+      const ctx2 = cv.getContext("2d");
+      const img = ctx2.createImageData(365, 24);
+      const col = { use: [143, 179, 255], solar: [255, 214, 10], imp: [255, 155, 107], exp: [48, 209, 88], cost: [255, 105, 97] }[m];
+      Y.rows.forEach(row => {
+        const t = Math.max(0, val(row)) / vmax;
+        const i = ((23 - row.h) * 365 + row.doy) * 4;
+        img.data[i] = Math.round(28 + (col[0] - 28) * t); img.data[i + 1] = Math.round(28 + (col[1] - 28) * t);
+        img.data[i + 2] = Math.round(30 + (col[2] - 30) * t); img.data[i + 3] = 255;
+      });
+      ctx2.putImageData(img, 0, 0);
+      const T = Y.totals;
+      const sumEl = q1("#bt-year-sum");
+      if (sumEl) {
+        const ok = Y.check.ok
+          ? `<span class="ok">✓ These add up to the same year as the bills above.</span>`
+          : `<span class="warn">These do not add up to the bills above (${Y.check.off.join(", ")}${Y.check.daysOff.length ? "; season lengths differ from the calendar" : ""}).</span>`;
+        sumEl.innerHTML = `The year: use ${Math.round(T.use).toLocaleString()} kWh, solar ${Math.round(T.solar).toLocaleString()} kWh, ` +
+          `from the grid ${Math.round(T.imp).toLocaleString()} kWh, exported ${Math.round(T.exp).toLocaleString()} kWh; ` +
+          `bills ${btMoney(T.billNow)} today, ${btMoney(T.bill)} ${withBatt ? "with solar and the battery" : "with solar"}. ${ok}`;
+      }
+    };
+    const yd = q1("#bt-adv-year");
+    if (yd) {
+      yd.addEventListener("toggle", drawYear);
+      drawYear();
+      const cv = q1("#bt-year-canvas"), tip = yd.querySelector(".sx-yearbox .sx-tip");
+      cv.addEventListener("mousemove", ev => {
+        const rect = cv.getBoundingClientRect();
+        const doy = Math.max(0, Math.min(364, Math.floor((ev.clientX - rect.left) / rect.width * 365)));
+        const h = Math.max(0, Math.min(23, 23 - Math.floor((ev.clientY - rect.top) / rect.height * 24)));
+        const row = getYear().rows[doy * 24 + h];
+        const unit = BT_YEAR_VIEW.measure === "cost" ? "" : " kWh";
+        const v = BT_YEAR_VIEW.measure === "cost" ? "$" + row.cost.toFixed(2) : row[BT_YEAR_VIEW.measure].toFixed(2);
+        tip.innerHTML = `<b>${row.day} ${BT_MONTH_NAME[row.month]}, ${String(h).padStart(2, "0")}:00</b> (${row.season}) · ${v}${unit}`;
+        tip.hidden = false;
+        tip.style.left = Math.min(Math.max(0, ev.clientX - rect.left - 80), rect.width - 200) + "px";
+      });
+      cv.addEventListener("mouseleave", () => { tip.hidden = true; });
+      q1("#bt-year-csv").addEventListener("click", () => {
+        const blob = new Blob([btYearCsv(getYear())], { type: "text/csv" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `solar-hours-${ctx.buildingId}.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      });
+    }
     if (ctx.onResult) ctx.onResult(r);
   };
   draw();
