@@ -34,5 +34,10 @@ window.SITE = {
     ["Cromwell", 169.1970, -45.0400, 14.5], ["Bannockburn", 169.1580, -45.0880, 15],
     ["Glenorchy", 168.3870, -44.8500, 15], ["Kinloch", 168.3500, -44.8390, 15.5]
   ],
+  // 3D obstruction boxes take their top from the LiDAR inside them, never
+  // below 0.15 m over the roof plane (buildings3d.js OBST_TOP_DSM). On the
+  // 794 boxes in central Queenstown the top's area-weighted gap to the LiDAR
+  // falls from 0.84 m to 0.64 m; boxes more than 0.5 m off from 23% to 13.5%.
+  obstTopFromDsm: true,
   name: "Queenstown Lakes",
 };

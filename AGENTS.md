@@ -214,10 +214,10 @@ figure for the same thing. Code enforces this:
   (`src/roof_skeleton.py`). Ridge snap and the plant-deck rule are off by
   default (`SOLAR_RIDGE_SNAP`, `SOLAR_PLANT_DECKS`), as are joining a drawn
   line end to a line it stops short of (`SOLAR_DANGLE_JOIN_M`), a plane per
-  section on faces that curve in plan (`SOLAR_CURVED_SPLIT`), refitting the
-  tilt of an empty face its returns reject (`SOLAR_EMPTY_FACE_REFIT`), and,
-  in the 3D view, obstruction box tops from the DSM (`?SOLAR_OBST_TOP_DSM=1`
-  or `SITE.obstTopFromDsm`).
+  section on faces that curve in plan (`SOLAR_CURVED_SPLIT`) and refitting the
+  tilt of an empty face its returns reject (`SOLAR_EMPTY_FACE_REFIT`). The
+  3D view takes obstruction box tops from the DSM where `SITE.obstTopFromDsm`
+  is set (on in this deployment) or with `?SOLAR_OBST_TOP_DSM=1`.
 - `src/derive_solar_potential.py` builds the building summary by adding up
   its layout, so totals and layouts match.
 - Shading uses per-building 72-direction horizons (`horizon_b64`,
