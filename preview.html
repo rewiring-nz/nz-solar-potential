@@ -4317,6 +4317,8 @@ map.on("load", async () => {
     // best meaningless and at worst throws inside the panel.
     // Showing 0 kW next to the usual sliders would read as "this roof is
     // worthless", which is a different and wrong claim.
+    // "demolished" (src/demolished.py): today's photo shows no building
+    // matching the outline the 2021 survey was read from.
     if (!multi && p.no_estimate_reason) {
       return `
       <div class="popup">
@@ -4328,10 +4330,13 @@ map.on("load", async () => {
                       border-radius:3px; padding:10px 12px; margin-top:8px;
                       font-size:13.5px; line-height:1.5;">
             <b>${escHtml(p.no_estimate_text || "This roof could not be modelled")}</b>
-            <div style="margin-top:6px; opacity:.8;">
-              The survey data isn&rsquo;t good enough to estimate this roof.
-              That doesn&rsquo;t mean it&rsquo;s unsuitable. A site visit may find
-              it usable.
+            <div style="margin-top:6px; opacity:.8;">${p.no_estimate_reason === "demolished"
+              ? `Today&rsquo;s aerial photo shows no building matching this
+                 outline, so the 2021 roof it was measured from is gone. A new
+                 building here will be estimated once a newer survey covers it.`
+              : `The survey data isn&rsquo;t good enough to estimate this roof.
+                 That doesn&rsquo;t mean it&rsquo;s unsuitable. A site visit may find
+                 it usable.`}
             </div>
           </div>
           <div class="kv" style="margin-top:10px;">

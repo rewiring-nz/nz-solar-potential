@@ -69,7 +69,11 @@ fi
 # each roof's lean as it is read (SOLAR_MARKUP_FRAME), and the heat map is
 # drawn where the map's photo shows each roof. It never fails a build (on
 # failure the drawing stays where the LiDAR is).
-STAGES="register_imagery build_layout_geojson gate_panels rerank_layouts derive_solar_potential
+# demolished comes after the gate and before everything that reads panels: a
+# building the photos show was demolished or replaced since the survey has its
+# layout replaced by a "demolished" reason (src/demolished.py). It runs on
+# every build, layouts patched or not, and never fails one.
+STAGES="register_imagery build_layout_geojson gate_panels demolished rerank_layouts derive_solar_potential
         patch_roof_confidence bake_building_horizons build_heatmap_raster"
 # After addresses: the region's own tiles, cells, detail and summary. This
 # is what replaced the fan-in (docs/scale-architecture.md).

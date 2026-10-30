@@ -109,6 +109,8 @@ REQUIRED = {
     "add_addresses":          {"region": ["solar_potential"]},
     # Per-building image-vs-LiDAR offset; emit moves the drawing by it.
     "register_imagery":       {"region": ["outlines", "dsm"], "optional_region": ["imagery"]},
+    # Buildings gone since the survey: compares the photos, rewrites the layouts.
+    "demolished":             {"region": ["panel_layouts", "outlines"]},
     # The region's own tiles, cells, detail and summary (docs/scale-architecture.md).
     "emit_region":            {"region": ["solar_potential", "panel_layouts"],
                                "optional_region": ["heatmap_png"]},

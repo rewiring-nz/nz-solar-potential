@@ -38,7 +38,7 @@ _REASON_TEXT = {
     "low_confidence": "Roof shape could not be read confidently enough",
     "all_obstructed": "Roof is covered by vents, plant or other obstructions",
     "too_small": "No roof area large enough for a panel",
-    "demolished": "Recorded as demolished or replaced since the survey",
+    "demolished": "Demolished or replaced since the survey",
     "timed_out": "Too complex to finish modelling",
     "failed": "Modelling failed on this building",
 }

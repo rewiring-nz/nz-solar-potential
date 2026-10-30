@@ -11,9 +11,23 @@ regions, 1,334,824 panels.
 ## Ship
 
 - **Roofs Josh flagged on 31 Oct** (all in `data/roof_cases.json`):
-  - *Demolished buildings still drawn.* 18 Beetham St `5373533` is gone in
-    the imagery, but the map shows 26 panels. The imagery-change check only
-    warns. Tell gone from re-roofed, and withhold the gone ones.
+  - *Demolished buildings still drawn.* Built: the `demolished` stage
+    (`src/demolished.py`) screens every outline against both photos and asks
+    a vision referee about the 987 it keeps; "gone" or "replaced" withholds
+    the roof with reason `demolished`. Not yet in a build. Before the next
+    one:
+    - **Top up the `Claude-API` workspace.** It ran out of credit after 286
+      of the 987 answers ($1.30 spent; about $3 to finish). 18 Beetham St is
+      among the unanswered. A build without credit withholds only answered
+      roofs.
+    - **Josh to review the contact sheet** of the 78 withheld so far (64
+      gone, 14 replaced). Doubtful: 5372536, 4738530, 5373481, 4734839,
+      4733127.
+    - The deploy gate will list them under NEWLY WITHHELD; that drop is
+      expected.
+  - *Three "nothing is there" labels show a standing building* in both
+    photos: 4718482, 4718539, 4744515 (in `config.DEMOLISHED_BUILDING_IDS`,
+    so off the map entirely). Check them in the labelling tool.
   - *Identical roofs, different answers.* The eight townhouses at 6/60
     Hallenstein St (`4734600`–`4734608`) are split into faces five ways and
     get 30–48 panels. Two read as one flat face; the rest have a 2° face and

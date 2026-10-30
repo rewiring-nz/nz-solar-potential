@@ -231,6 +231,17 @@ figure for the same thing. Code enforces this:
   and gives every member the reading that explains the whole set best
   (`data/repeat_faces/<id>.json`, read before `data/selected_faces`; an agreed
   reading skips the per-building LiDAR competition). Both feed the build keys.
+- Buildings demolished or replaced since the survey are withheld by the
+  `demolished` stage (`src/demolished.py`, after `gate_panels`): a pixel
+  screen on every outline (survey photo vs map photo), then a Claude vision
+  referee on the screened few hundred; "gone" or "replaced" at confidence
+  0.7+ replaces the layout with reason `demolished`. Answers are cached per
+  building in `data/regions/<r>/demolished.json` (key: outline and lean);
+  the key is the project secret `Claude-API`, and runs stop at
+  `SOLAR_DEMOLISHED_MAX_USD` (default $5 a region). `SOLAR_DEMOLISHED=0`
+  turns it off; `SOLAR_DEMOLISHED_REFEREE=0` screens without asking. Drawn
+  roofs are never withheld. `config.DEMOLISHED_BUILDING_IDS` still drops
+  field-reported outlines from the build entirely.
 - `src/derive_solar_potential.py` builds the building summary by adding up
   its layout, so totals and layouts match.
 - Shading uses per-building 72-direction horizons (`horizon_b64`,
