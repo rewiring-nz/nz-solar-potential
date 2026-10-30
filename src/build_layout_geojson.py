@@ -35,6 +35,7 @@ from shapely.ops import transform as shapely_transform
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import shapely
 import config
+from src.outline_fit import fitted_outlines
 from src.preflight import preflight
 import geopandas as gpd
 
@@ -172,7 +173,10 @@ def _init_worker(area, model):
     _CTX.update({"dem_wide_band": _dw_band, "dem_wide_transform": _dw_tr,
                  "dem_wide_nodata": _dw_nd})
     _CTX.update({
-        "gdf": gpd.read_file(paths["outlines"]).set_index("building_id", drop=False),
+        # outlines slid onto the roof the LiDAR sees where clearly off
+        # (src/outline_fit.py, SOLAR_OUTLINE_FIT)
+        "gdf": fitted_outlines(gpd.read_file(paths["outlines"]),
+                               paths["dir"]).set_index("building_id", drop=False),
         "dsm_ds": dsm_ds,
         "dsm_band": dsm_ds.read(1),
         "imagery_ds": rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None,

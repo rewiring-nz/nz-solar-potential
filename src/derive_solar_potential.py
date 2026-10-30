@@ -13,6 +13,7 @@ import json, sys
 from collections import defaultdict
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.outline_fit import fitted_outlines
 from src.preflight import preflight
 import geopandas as gpd
 import pyproj
@@ -64,7 +65,9 @@ CARRIED_OVER = ("address", "address_count",
 
 def derive(region):
     paths = area_paths(region)
-    gdf = gpd.read_file(paths["outlines"]).set_index("building_id", drop=False)
+    # the outline the layout was clipped to (src/outline_fit.py)
+    gdf = fitted_outlines(gpd.read_file(paths["outlines"]),
+                          paths["dir"]).set_index("building_id", drop=False)
     gdf_wgs = gdf.to_crs("EPSG:4326")
     d = json.loads(paths["panel_layouts"].read_text())
     agg = defaultdict(lambda: {"facet_count": 0, "obstruction_count": 0,

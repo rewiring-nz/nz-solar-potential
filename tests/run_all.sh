@@ -67,6 +67,7 @@ run "roof levels"           $PY tests/test_roof_levels.py
 run "small obstructions"    $PY tests/test_small_obstructions.py
 run "geometry stages"       $PY tests/test_geometry_stage.py
 run "image lean"            $PY tests/test_register_imagery.py
+run "identical roofs, outline fit" $PY tests/test_repeat_roofs.py
 run "plane refresh"         $PY tests/test_plane_refresh.py
 run "sunken regions"        $PY tests/test_sunken.py
 run "staircases"            $PY tests/test_staircase.py

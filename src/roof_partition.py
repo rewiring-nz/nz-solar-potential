@@ -1283,13 +1283,47 @@ SELECTED_MIN_COVER = float(os.environ.get("SOLAR_SELECTED_MIN_COVER", "0.85"))  
 SELECTED_ALT_MIN_AREA = float(os.environ.get("SOLAR_SELECTED_ALT_MIN_AREA", "0.92"))  # the LiDAR path must keep the roof
 
 
+# IDENTICAL ROOFS, ONE READING (src/repeat_roofs.py). Where a building is one
+# of a set of copies of a roof, the set's agreed reading replaces its own: on
+# 6/60 Hallenstein St six copies had been read five ways. An agreed reading
+# does not compete with the LiDAR path building by building -- that
+# competition is what would split the set again -- because it already won
+# across the set on the members' own returns. Off unless SOLAR_REPEAT_ROOFS=1.
+REPEAT_FACES_DIR = SELECTED_FACES_DIR.parent / "repeat_faces"
+USE_REPEAT_ROOFS = os.environ.get("SOLAR_REPEAT_ROOFS", "0") == "1"
+
+
+def selected_doc(building_id):
+    """The reading a building is built from: its set's agreed reading when
+    there is one (SOLAR_REPEAT_ROOFS), else its own selected faces; None
+    when it has neither."""
+    if building_id is None:
+        return None
+    dirs = ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR]
+    for d in dirs:
+        fp = d / f"{building_id}.json"
+        if not fp.exists():
+            continue
+        try:
+            return json.loads(fp.read_text())
+        except (OSError, ValueError):
+            return None
+    return None
+
+
 def selected_score(building_id):
     """The precomputed reading's own score, or None when there is none."""
-    fp = SELECTED_FACES_DIR / f"{building_id}.json"
     try:
-        return float(json.loads(fp.read_text()).get("score", 0.0))
-    except (OSError, ValueError, TypeError):
+        doc = selected_doc(building_id)
+        return None if doc is None else float(doc.get("score", 0.0))
+    except (TypeError, ValueError):
         return None
+
+
+def selected_agreed(building_id):
+    """True when the building's reading is its repeat set's agreed one."""
+    doc = selected_doc(building_id)
+    return bool(doc) and doc.get("source") == "repeat"
 SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
 
 
@@ -1462,15 +1496,11 @@ def facets_from_selected_faces(building_id, footprint, pts):
     """
     if not USE_SELECTED_FACES or building_id is None:
         return []
-    fp = SELECTED_FACES_DIR / f"{building_id}.json"
-    if not fp.exists():
-        return []
-    try:
-        doc = json.loads(fp.read_text())
-    except (OSError, ValueError):
-        # narrow on purpose: a bare except here swallowed a missing import
-        # for a whole debugging session, exactly as this module's own
-        # docstrings warn
+    # narrow on purpose (selected_doc catches only OSError/ValueError): a bare
+    # except here swallowed a missing import for a whole debugging session,
+    # exactly as this module's own docstrings warn
+    doc = selected_doc(building_id)
+    if doc is None:
         return []
     if doc.get("score", 0.0) < SELECTED_MIN_SCORE:
         return []

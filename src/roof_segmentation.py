@@ -2118,10 +2118,14 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
             # A weakly scored reading competes with the LiDAR partition
             # (SELECTED_TRUST in roof_partition); the better explanation of
             # the returns wins, the reading keeping ties.
-            from src.roof_partition import (selected_score, SELECTED_TRUST, SELECTED_COMPETE_MARGIN,
-                                            SELECTED_MIN_COVER, SELECTED_ALT_MIN_AREA)
+            from src.roof_partition import (selected_score, selected_agreed, SELECTED_TRUST,
+                                            SELECTED_COMPETE_MARGIN, SELECTED_MIN_COVER,
+                                            SELECTED_ALT_MIN_AREA)
             _ss = selected_score(building_id)
-            if _ss is not None and _ss < SELECTED_TRUST:
+            # an agreed reading of identical roofs already won on every copy's
+            # returns (src/repeat_roofs.py); competing again here, copy by
+            # copy, is what split the set
+            if _ss is not None and _ss < SELECTED_TRUST and not selected_agreed(building_id):
                 # The rival is the WHOLE LiDAR path -- partition, then the
                 # skeleton and plain-roof competitors it falls back to -- not
                 # the bare partition: on 4725584 the partition alone explained

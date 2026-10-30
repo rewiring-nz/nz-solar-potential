@@ -19,6 +19,7 @@ import geopandas as gpd
 import rasterio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.outline_fit import fitted_outlines
 from src.preflight import preflight
 from src.building_horizon import (compute_building_horizon, encode_horizon,
                                   beam_visible_fraction, load_far_dem)
@@ -35,7 +36,8 @@ def bake(region):
     if not sp_path.exists():
         print(f"[{region}] no solar_potential.geojson -- run derive first")
         return
-    gdf = gpd.read_file(paths["outlines"]).set_index("building_id", drop=False)
+    gdf = fitted_outlines(gpd.read_file(paths["outlines"]),
+                          paths["dir"]).set_index("building_id", drop=False)  # src/outline_fit.py
 
     dsm_ds = rasterio.open(paths["dsm"])
     dsm_band = dsm_ds.read(1)

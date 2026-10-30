@@ -44,6 +44,7 @@ from scipy.spatial import cKDTree
 
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.outline_fit import fitted_outlines
 from src.preflight import preflight
 from src.pointcloud_source import PointCloudSource
 from src.solar_model import SolarModel
@@ -202,7 +203,7 @@ def main(area="pilot"):
     preflight("build_heatmap_raster", area)
     from src.region_build import area_paths, area_bbox_nztm, area_centroid_wgs84
     paths = area_paths(area)
-    gdf = gpd.read_file(paths["outlines"])
+    gdf = fitted_outlines(gpd.read_file(paths["outlines"]), paths["dir"])  # src/outline_fit.py
     pc_source = PointCloudSource()
     dsm_ds = rasterio.open(paths["dsm"])
     dsm_band = dsm_ds.read(1)

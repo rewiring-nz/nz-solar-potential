@@ -111,15 +111,40 @@ def reading_hash(building_id):
     """Hash of the selected-faces reading a building is built from, or "none".
     Same 12-character md5 the original built_from.json recorded."""
     p = DATA / "selected_faces" / f"{building_id}.json"
+    # an agreed reading of identical roofs replaces the building's own
+    # (src/repeat_roofs.py, SOLAR_REPEAT_ROOFS)
+    r = DATA / "repeat_faces" / f"{building_id}.json"
+    if os.environ.get("SOLAR_REPEAT_ROOFS", "0") == "1" and r.exists():
+        p = r
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 
-def building_key(building_id, geometry_hash=None):
+def building_key(building_id, geometry_hash=None, region=None):
     """What a building's layout is built from: its reading and the geometry
     code. Drawn markup (data/roof_labels.json) is an input too and is in the
-    key through its own hash, so a newly drawn roof reads as stale."""
-    return f"{reading_hash(building_id)}+{labels_hash(building_id)}+" \
-           f"{geometry_hash or stage_code_hash(GEOMETRY_STAGE)}"
+    key through its own hash, so a newly drawn roof reads as stale. So is the
+    slide that moves its outline onto the roof (src/outline_fit.py), added
+    only where there is one, so every other key is unchanged."""
+    k = f"{reading_hash(building_id)}+{labels_hash(building_id)}+" \
+        f"{geometry_hash or stage_code_hash(GEOMETRY_STAGE)}"
+    s = outline_slide(region, building_id) if region else None
+    return k + (f"+s{s[0]:.2f},{s[1]:.2f}" if s else "")
+
+
+_slides = {}
+
+
+def outline_slide(region, building_id):
+    """The accepted outline slide for a building, or None (SOLAR_OUTLINE_FIT)."""
+    if os.environ.get("SOLAR_OUTLINE_FIT", "0") != "1":
+        return None
+    if region not in _slides:
+        try:
+            _slides[region] = json.loads((DATA / "regions" / region / "outline_fit.json").read_text())
+        except (OSError, ValueError):
+            _slides[region] = {}
+    from src.outline_fit import accepted
+    return accepted(_slides[region].get(str(int(building_id))))
 
 
 _labels = None
@@ -158,7 +183,7 @@ def record_keys(region, building_ids, geometry_hash=None, replace=False):
     gh = geometry_hash or stage_code_hash(GEOMETRY_STAGE)
     keys = {} if replace else load_keys(region)
     for bid in building_ids:
-        keys[str(int(bid))] = building_key(int(bid), gh)
+        keys[str(int(bid))] = building_key(int(bid), gh, region)
     p = keys_path(region)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
@@ -170,7 +195,7 @@ def stale_buildings(region, building_ids, geometry_hash=None):
     """The subset of building_ids whose recorded key differs from now."""
     gh = geometry_hash or stage_code_hash(GEOMETRY_STAGE)
     keys = load_keys(region)
-    return [int(b) for b in building_ids if keys.get(str(int(b))) != building_key(int(b), gh)]
+    return [int(b) for b in building_ids if keys.get(str(int(b))) != building_key(int(b), gh, region)]
 
 
 YIELD_STAGE = "apply_yield"
