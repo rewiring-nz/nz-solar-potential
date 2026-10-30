@@ -212,10 +212,11 @@ figure for the same thing. Code enforces this:
   `data/selected_faces/<id>.json`. A reading scored under 0.60 competes with
   the LiDAR path. Fallback: RANSAC plane partition and straight skeleton
   (`src/roof_skeleton.py`). Ridge snap and the plant-deck rule are off by
-  default (`SOLAR_RIDGE_SNAP`, `SOLAR_PLANT_DECKS`), as are joining a drawn
-  line end to a line it stops short of (`SOLAR_DANGLE_JOIN_M`), a plane per
+  default (`SOLAR_RIDGE_SNAP`, `SOLAR_PLANT_DECKS`), as are a plane per
   section on faces that curve in plan (`SOLAR_CURVED_SPLIT`) and refitting the
-  tilt of an empty face its returns reject (`SOLAR_EMPTY_FACE_REFIT`). The
+  tilt of an empty face its returns reject (`SOLAR_EMPTY_FACE_REFIT`). A
+  drawn line end within 1 m of another drawn line is joined to it
+  (`SOLAR_DANGLE_JOIN_M`, 0 turns it off). The
   3D view takes obstruction box tops from the DSM where `SITE.obstTopFromDsm`
   is set (on in this deployment) or with `?SOLAR_OBST_TOP_DSM=1`. It reads
   every height at the building's LiDAR position, taking off the photo lean

@@ -488,8 +488,11 @@ _STEP_REF = 0.40           # m of height step that scores 1.0
 # So an end within DANGLE_JOIN_M of ANOTHER DRAWN LINE (not the footprint) is
 # run out to meet it with no fold test. Whether the cut then becomes a face
 # boundary is still decided by roof_partition._planes_differ: a line drawn on
-# one plane still changes nothing. Off by default (0) until judged.
-DANGLE_JOIN_M = float(os.environ.get("SOLAR_DANGLE_JOIN_M", "0"))
+# one plane still changes nothing. On the 54 marked roofs with such an end,
+# with each part of a cut required to fit its own plane, 9 change: drawn lines
+# matched by face edges up on 8, seam steps 12 -> 10, panels 2,096 -> 2,123.
+# SOLAR_DANGLE_JOIN_M=0 turns it off.
+DANGLE_JOIN_M = float(os.environ.get("SOLAR_DANGLE_JOIN_M", "1.0"))
 
 
 def _fold_evidence(pts, origin, along, normal, s0, s1,
