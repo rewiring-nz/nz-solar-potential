@@ -154,11 +154,11 @@ fi
 # --force still rebuilds every stage of every region; --yield-only skips the
 # geometry altogether (see src/apply_yield.py). --incremental is accepted for
 # old scripts and changes nothing: this is what it used to ask for.
-# OUTLINES ON THE ROOF (src/outline_fit.py, SOLAR_OUTLINE_FIT=1): an outline
+# OUTLINES ON THE ROOF (src/outline_fit.py; SOLAR_OUTLINE_FIT=0 turns it off): an outline
 # clearly offset from the roof the LiDAR sees is slid onto it, before the plan,
 # so a building whose slide changed reads as stale. Never fails a build: on
 # failure every outline stays where LINZ put it.
-if [ "${SOLAR_OUTLINE_FIT:-0}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
+if [ "${SOLAR_OUTLINE_FIT:-1}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
   echo "=== outlines on the roof ($(date -u +%H:%M:%S)) ==="
   for r in $REGIONS; do
     $PY src/outline_fit.py "$r" >>"$LOGDIR/$r.log" 2>&1 \
@@ -166,11 +166,11 @@ if [ "${SOLAR_OUTLINE_FIT:-0}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
   done
 fi
 
-# IDENTICAL ROOFS, ONE READING (src/repeat_roofs.py, SOLAR_REPEAT_ROOFS=1): sets of
+# IDENTICAL ROOFS, ONE READING (src/repeat_roofs.py; SOLAR_REPEAT_ROOFS=0 turns it off): sets of
 # copies of one roof get their set's agreed reading before the plan, so a
 # changed agreement marks its buildings stale. Never fails a build: on failure
 # each building keeps its own reading.
-if [ "${SOLAR_REPEAT_ROOFS:-0}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
+if [ "${SOLAR_REPEAT_ROOFS:-1}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
   echo "=== identical roofs ($(date -u +%H:%M:%S)) ==="
   for r in $REGIONS; do
     $PY src/repeat_roofs.py "$r" >>"$LOGDIR/$r.log" 2>&1 \

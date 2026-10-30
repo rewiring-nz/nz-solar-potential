@@ -222,11 +222,11 @@ figure for the same thing. Code enforces this:
   every height at the building's LiDAR position, taking off the photo lean
   (`img_dx`/`img_dy`) the geometry was moved by; `?SOLAR_LEAN_HEIGHTS=0` or
   `SITE.leanHeights = false` turns that off.
-- Two pre-plan steps in `src/run_district_build.sh`, both off by default.
-  `SOLAR_OUTLINE_FIT=1`: `src/outline_fit.py` slides an outline that is
+- Two pre-plan steps in `src/run_district_build.sh`, both on by default
+  (`=0` turns either off). `SOLAR_OUTLINE_FIT`: `src/outline_fit.py` slides an outline that is
   clearly offset from the roof the LiDAR sees onto it (writes
   `data/regions/<r>/outline_fit.json`; layout, derive, horizons and heat map
-  read it through `fitted_outlines`). `SOLAR_REPEAT_ROOFS=1`:
+  read it through `fitted_outlines`). `SOLAR_REPEAT_ROOFS`:
   `src/repeat_roofs.py` finds sets of identical roofs by their LiDAR surfaces
   and gives every member the reading that explains the whole set best
   (`data/repeat_faces/<id>.json`, read before `data/selected_faces`; an agreed

@@ -114,7 +114,7 @@ def reading_hash(building_id):
     # an agreed reading of identical roofs replaces the building's own
     # (src/repeat_roofs.py, SOLAR_REPEAT_ROOFS)
     r = DATA / "repeat_faces" / f"{building_id}.json"
-    if os.environ.get("SOLAR_REPEAT_ROOFS", "0") == "1" and r.exists():
+    if os.environ.get("SOLAR_REPEAT_ROOFS", "1") == "1" and r.exists():
         p = r
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
@@ -136,7 +136,7 @@ _slides = {}
 
 def outline_slide(region, building_id):
     """The accepted outline slide for a building, or None (SOLAR_OUTLINE_FIT)."""
-    if os.environ.get("SOLAR_OUTLINE_FIT", "0") != "1":
+    if os.environ.get("SOLAR_OUTLINE_FIT", "1") != "1":
         return None
     if region not in _slides:
         try:

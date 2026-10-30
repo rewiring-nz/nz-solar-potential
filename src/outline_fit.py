@@ -25,7 +25,7 @@ with hand-drawn markup are not moved: the markup governs their geometry.
 Writes data/regions/<r>/outline_fit.json:
     {building_id: [dx_east_m, dy_north_m, iou_before, iou_after, vacated_roof_share]}
 for every building measured. The stages that clip to the outline read it
-through fitted_outlines() when SOLAR_OUTLINE_FIT=1.
+through fitted_outlines(); SOLAR_OUTLINE_FIT=0 turns that off.
 
 Usage: python src/outline_fit.py <region> [--ids ...]
 """
@@ -54,7 +54,7 @@ MIN_GAIN = 0.05          # 41 Ballarat St: 0.80 -> 0.92
 MIN_FIT_IOU = 0.80       # the slid outline must then fit the roof well
 MIN_ROOF_CELLS = 200     # 12.5 m2 of returns
 VACATED_MAX = 0.35       # share of the vacated strip that may be roof
-USE = os.environ.get("SOLAR_OUTLINE_FIT", "0") == "1"
+USE = os.environ.get("SOLAR_OUTLINE_FIT", "1") == "1"  # on; =0 turns it off
 
 
 def roof_cells(pc, geom, others, ground_z=None):
@@ -169,7 +169,7 @@ def _marked():
 
 def fitted_outlines(gdf, region_dir, use=None):
     """`gdf` with each accepted slide applied to its outline (in place, and
-    returned). A no-op unless SOLAR_OUTLINE_FIT=1 or `use`."""
+    returned). A no-op when SOLAR_OUTLINE_FIT=0, unless `use`."""
     if not (USE if use is None else use):
         return gdf
     fp = Path(region_dir) / "outline_fit.json"

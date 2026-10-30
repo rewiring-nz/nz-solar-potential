@@ -28,9 +28,9 @@ regions, 1,334,824 panels.
   - *Three "nothing is there" labels show a standing building* in both
     photos: 4718482, 4718539, 4744515 (in `config.DEMOLISHED_BUILDING_IDS`,
     so off the map entirely). Check them in the labelling tool.
-  - *Identical roofs, different answers.* Fixed in code behind
-    `SOLAR_REPEAT_ROOFS=1` (`src/repeat_roofs.py`), not yet built; needs
-    Josh's look, then the switch on and a build.
+  - *Identical roofs, different answers.* Fixed in code
+    (`src/repeat_roofs.py`, `SOLAR_REPEAT_ROOFS`, on by default); waits for
+    the next district build.
     - 6/60 Hallenstein St: the LiDAR shows six of the eight townhouses with
       an 8–10° strip along the north-east edge, 0.7 m higher there and
       falling south-west, so the size slider is right to drop it first. The
@@ -41,8 +41,9 @@ regions, 1,334,824 panels.
       let a set agree on its outline and obstructions too.
     - District: 592 sets of identical roofs, 1,547 buildings. 204 sets keep
       their own readings because the shared one fit the LiDAR worse.
-  - *Outline outside the roof edge.* Fixed in code behind
-    `SOLAR_OUTLINE_FIT=1` (`src/outline_fit.py`), not yet built. 41 Ballarat
+  - *Outline outside the roof edge.* Fixed in code
+    (`src/outline_fit.py`, `SOLAR_OUTLINE_FIT`, on by default); waits for
+    the next district build. 41 Ballarat
     St's outline sits 1.25 m south-east of its LiDAR roof; slid onto it, the
     hips meet at the photo's apex and no panel is over the yard. District:
     853 of 24,138 outlines slide (3.5%, median 0.9 m); 18% in

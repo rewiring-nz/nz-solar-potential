@@ -29,7 +29,7 @@ members' own.
 Writes data/repeat_faces/<id>.json in the selected-faces schema, with
 `source: "repeat"`, `repeat_of` (whose reading it is) and `repeat_set`;
 roof_partition reads it in place of data/selected_faces/<id>.json when
-SOLAR_REPEAT_ROOFS=1. Region summary: data/regions/<r>/repeat_roofs.json.
+SOLAR_REPEAT_ROOFS is on (the default; =0 turns it off). Region summary: data/regions/<r>/repeat_roofs.json.
 
 Usage: python src/repeat_roofs.py <region> [--ids ...] [--dry-run]
 """

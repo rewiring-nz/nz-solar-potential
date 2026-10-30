@@ -1288,9 +1288,9 @@ SELECTED_ALT_MIN_AREA = float(os.environ.get("SOLAR_SELECTED_ALT_MIN_AREA", "0.9
 # 6/60 Hallenstein St six copies had been read five ways. An agreed reading
 # does not compete with the LiDAR path building by building -- that
 # competition is what would split the set again -- because it already won
-# across the set on the members' own returns. Off unless SOLAR_REPEAT_ROOFS=1.
+# across the set on the members' own returns. On by default; SOLAR_REPEAT_ROOFS=0 turns it off.
 REPEAT_FACES_DIR = SELECTED_FACES_DIR.parent / "repeat_faces"
-USE_REPEAT_ROOFS = os.environ.get("SOLAR_REPEAT_ROOFS", "0") == "1"
+USE_REPEAT_ROOFS = os.environ.get("SOLAR_REPEAT_ROOFS", "1") == "1"
 
 
 def selected_doc(building_id):
