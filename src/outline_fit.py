@@ -66,18 +66,26 @@ def roof_cells(pc, geom, others, ground_z=None):
     nx = int((maxx - minx + 2 * PAD_M) / CELL_M) + 1
     ny = int((maxy - miny + 2 * PAD_M) / CELL_M) + 1
     pts = pc.points_in_bbox(x0, y0, x0 + nx * CELL_M, y0 + ny * CELL_M, building_only=True)
-    if ground_z is None:
-        g = pc.ground_points_in_bbox(x0 - 5, y0 - 5, x0 + nx * CELL_M + 5, y0 + ny * CELL_M + 5)
-        if g is None or len(g) < 20:
-            return None
-        ground_z = float(np.percentile(g[:, 2], 50))
     gx = x0 + (np.arange(nx) + 0.5) * CELL_M
     gy = y0 + (np.arange(ny) + 0.5) * CELL_M
     XX, YY = np.meshgrid(gx, gy)
     inside = shapely.contains_xy(geom, XX.ravel(), YY.ravel()).reshape(ny, nx)
     roof = np.zeros((ny, nx), dtype=bool)
     if pts is not None and len(pts):
-        hi = pts[pts[:, 2] >= ground_z + MIN_HEIGHT_M]
+        # THE GROUND UNDER EACH RETURN, not one height for the building: on a
+        # hillside a single median ground cuts the uphill side of the roof
+        # out of the mask and every outline there "slides" downhill
+        # (town_west_fernhill: 19% of outlines against 3.5% elsewhere).
+        if ground_z is None:
+            g = pc.ground_points_in_bbox(x0 - 8, y0 - 8, x0 + nx * CELL_M + 8, y0 + ny * CELL_M + 8)
+            if g is None or len(g) < 20:
+                return None
+            from scipy.spatial import cKDTree
+            _, k = cKDTree(g[:, :2]).query(pts[:, :2], k=min(8, len(g)))
+            gz = np.median(g[:, 2][k], axis=1)
+        else:
+            gz = np.full(len(pts), ground_z)
+        hi = pts[pts[:, 2] >= gz + MIN_HEIGHT_M]
         ix = ((hi[:, 0] - x0) / CELL_M).astype(int)
         iy = ((hi[:, 1] - y0) / CELL_M).astype(int)
         ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
