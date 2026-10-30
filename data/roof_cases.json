@@ -945,6 +945,83 @@
      "at": "2026-09-25T14:26:25"
     }
    ]
+  },
+  {
+   "id": 4734606,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "6/60 Hallenstein St: eight identical townhouse roofs get different panel layouts -- the pr",
+   "quotes": [
+    "6/60 Hallenstein St: eight identical townhouse roofs get different panel layouts -- the process is not right for panel layout and roof recognition. Reducing density removes the sunny side first; it should remove the shady areas first."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5373533,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "18 Beetham St: phantom building, knocked down -- the imagery shows it is no longer there. ",
+   "quotes": [
+    "18 Beetham St: phantom building, knocked down -- the imagery shows it is no longer there. These need to be detected and removed."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4735359,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "41 Ballarat St: panels floating over air -- the building outline sits outside the roof edg",
+   "quotes": [
+    "41 Ballarat St: panels floating over air -- the building outline sits outside the roof edge in the imagery (overhang or misalignment), which also affects extruding the outline for the 3D model."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4735237,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "24 Beach St: lots of badly placed panels, from panels over ridges to panels over obstructi",
+   "quotes": [
+    "24 Beach St: lots of badly placed panels, from panels over ridges to panels over obstructions."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5370317,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "44 Beach St: these panels should be vertical (portrait), not horizontal, on the roof.",
+   "quotes": [
+    "44 Beach St: these panels should be vertical (portrait), not horizontal, on the roof."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5370368,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "48 Beach St: incorrectly mapped obstructions -- panels placed over obstructions while empt",
+   "quotes": [
+    "48 Beach St: incorrectly mapped obstructions -- panels placed over obstructions while empty roof is marked as obstructions."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4725633,
+   "region": "pilot",
+   "first_flagged": "2026-10-30",
+   "defect": "93 Beach St: tiny sets of 3 and 2 panels should not be placed -- clearly not part of a big",
+   "quotes": [
+    "93 Beach St: tiny sets of 3 and 2 panels should not be placed -- clearly not part of a bigger array, and they are over obstructions."
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }

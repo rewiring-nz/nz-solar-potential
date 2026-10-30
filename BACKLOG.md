@@ -5,10 +5,40 @@ are also GitHub Issues on the project board
 (https://github.com/orgs/rewiring-nz/projects/5); pick up and assign work
 there.
 
-Live: data version 66 (30 Oct). 32,838 buildings, 35 regions, 1,334,791
-panels, 797.3 GWh a year.
+Live: data version 67 (31 Oct; roof-line join on). 32,838 buildings, 35
+regions, 1,334,824 panels.
 
 ## Ship
+
+- **Roofs Josh flagged on 31 Oct** (all in `data/roof_cases.json`):
+  - *Demolished buildings still drawn.* 18 Beetham St `5373533` is gone in
+    the imagery, but the map shows 26 panels. The imagery-change check only
+    warns. Tell gone from re-roofed, and withhold the gone ones.
+  - *Identical roofs, different answers.* The eight townhouses at 6/60
+    Hallenstein St (`4734600`–`4734608`) are split into faces five ways and
+    get 30–48 panels. Two read as one flat face; the rest have a 2° face and
+    an 8–10° face at ~224°, some with 3-panel slivers.
+    - The size slider drops the 8–10° strip first: it yields 549 kWh a
+      panel against 589.
+    - Check in the LiDAR which way the strip really slopes. Then make
+      repeated roofs agree.
+  - *Outline outside the roof edge.* 41 Ballarat St `4735359` has panels
+    over air beyond the visible roof edge. This matters for the 3D
+    extrusion too.
+  - *Commercial flat roofs.*
+    - 48 Beach St `5370368`: obstructions are drawn on clear roof while
+      panels cover plant.
+    - 93 Beach St `4725633`: 2–3 panel scraps between ducts show at 100%
+      and count in the economic size.
+    - 24 Beach St `4735237`: panels over ridges and obstructions.
+    - 44 Beach St `5370317`: landscape rows where portrait fits.
+- **`tools/render_cases.py` cannot read the per-region build.** At v67,
+  most case tiles render "0 facets, 0 panels" and four raise KeyError. Three
+  cases show "regressed" from a broken 25 Sep check run that recorded zero
+  for everything.
+- **`data/build_snapshot_prev.json` on the VM is stale.** It covers 15,346
+  buildings, so `src/render_top_movers.py` ranks the wrong movers. Compare
+  against the live summaries, as `tools/predeploy_check.py` does.
 
 - **Re-record the synthetic reference** on the VM: v66 packs panels at
   their true size (1.134 x 1.961 m), so the synthetic region's panel counts
