@@ -472,6 +472,25 @@ DANGLE_EV_GAP = 0.6        # and still clearly there across the gap
 _SLOPE_REF = 0.30          # m/m of slope disagreement that scores 1.0
 _STEP_REF = 0.40           # m of height step that scores 1.0
 
+# A DRAWN END THAT ALL BUT TOUCHES ANOTHER DRAWN LINE IS JOINED TO IT.
+#
+# The fold gate above asks the LiDAR whether a line goes on. That is the right
+# question for a ridge that stops metres short of a wall, and the wrong one
+# for an end that stops a hand's width short of the line it was drawn to meet:
+# there the author's intent is not in doubt, and the gate throws the line away
+# whenever the fold is gentle. #5372566 (19 Camp St) draws a 62 m2 triangle off
+# its front face with a 13.3 m ridge that ends 0.62 m short of the cliff line.
+# The triangle is 1.0 deg against the face's 7.4 deg (0.11 m/m, a fold score of
+# 0.37 against the 1.0 the gate needs), so the line was dropped, the triangle
+# merged into the 7.4 deg face and its 18 panels were laid as a separate,
+# wrongly tilted block.
+#
+# So an end within DANGLE_JOIN_M of ANOTHER DRAWN LINE (not the footprint) is
+# run out to meet it with no fold test. Whether the cut then becomes a face
+# boundary is still decided by roof_partition._planes_differ: a line drawn on
+# one plane still changes nothing. Off by default (0) until judged.
+DANGLE_JOIN_M = float(os.environ.get("SOLAR_DANGLE_JOIN_M", "0"))
+
 
 def _fold_evidence(pts, origin, along, normal, s0, s1,
                    near=0.8, far=4.5, min_pts=10):
@@ -525,13 +544,15 @@ def drawn_polylines(building_id):
     return out
 
 
-def drawn_network(building_id, footprint, pts):
+def drawn_network(building_id, footprint, pts, joined=None):
     """His lines, with a free end closed where the LiDAR says the fold goes on.
 
     Returns a list of LineStrings -- the drawn lines unchanged, except that an
     end left hanging within DANGLE_GAP_MAX of the footprint or of another line
     is run out to meet it when the fold is still there across the gap. Returns
     the lines untouched if anything is missing or the feature is switched off.
+    An end joined by DANGLE_JOIN_M is appended to `joined` (a list), as the
+    LineString from the drawn end to its new tip.
     """
     lines = drawn_polylines(building_id)
     if not lines or not EXTEND_DANGLING or footprint is None or pts is None:
@@ -571,6 +592,24 @@ def drawn_network(building_id, footprint, pts):
             if others is not None:
                 gaps.append(others.distance(Point(end)))
             gap = min(gaps)
+            if (DANGLE_JOIN_M > 0 and others is not None and len(gaps) > 1
+                    and 1e-3 < gaps[1] <= DANGLE_JOIN_M and gaps[1] <= gaps[0]):
+                # join it to the nearest point of that line, not along its own
+                # direction: an end that stops short at an angle still meets
+                from shapely.ops import nearest_points
+                tgt = nearest_points(Point(end), others)[1]
+                ux, uy = tgt.x - end[0], tgt.y - end[1]
+                un = max(math.hypot(ux, uy), 1e-9)
+                # 0.35 m past the line, as the gated extension does, so the cut
+                # crosses the face edge drawn along it
+                tip = (tgt.x + ux / un * 0.35, tgt.y + uy / un * 0.35)
+                if joined is not None:
+                    joined.append(LineString([tuple(end), tip]))
+                if at_end:
+                    coords = coords + [tip]
+                else:
+                    coords = [tip] + coords
+                continue
             if gap <= DANGLE_FREE_MIN or gap > DANGLE_GAP_MAX:
                 continue
             # measure in the terminal segment's own frame

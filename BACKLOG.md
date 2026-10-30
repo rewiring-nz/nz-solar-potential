@@ -62,6 +62,19 @@ panels, 797.3 GWh a year.
   15 worse), and the step score does not separate good readings from bad
   (Spearman 0.06 vs line F); re-test with the point cloud and
   `SOLAR_MARKUP_FRAME=lidar` before using either.
+- **Seam fixes behind switches, judged on the Mac (all off).**
+  - `SOLAR_DANGLE_JOIN_M=1.0`: a drawn end within 1 m of another drawn line
+    is joined to it; each part of the cut must fit its own plane (70% of
+    returns within 0.15 m). On the 54 marked roofs with such an end, 9
+    change: drawn lines found rise on 8, seam steps 12 -> 10, panels
+    2,096 -> 2,123. 19 Camp St's triangle becomes its own 1.1 deg face. Turn on.
+  - `?SOLAR_OBST_TOP_DSM=1` (3D view): over 6,254 boxes in three regions the
+    box top's distance from the DSM falls from 0.80 to 0.49 m (area-weighted).
+    Not yet checked in the browser. Turn on after a look in 3D.
+  - `SOLAR_EMPTY_FACE_REFIT=1`: no panel change; 3 of 450 sampled roofs change
+    before the 20 m2 floor, seam steps 10 -> 9. Low value; fine to turn on.
+  - `SOLAR_CURVED_SPLIT=1`: fires on 19 Camp St only, of about 456 roofs; the
+    cut is a straight line across the face that nobody drew. Leave off.
 - **Composite roofs.** `src/composite_roof.py` (a house as its wings, joined
   with straight valleys) is off (`SOLAR_COMPOSITE_ROOFS`). On 139 Shotover
   houses it explains a median 51 points fewer returns than the current faces.

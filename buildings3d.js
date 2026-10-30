@@ -74,6 +74,22 @@
   // house read a storey taller than it looks. The 25th still skips the
   // hedges, cars and neighbouring roofs a ring catches.
   const GROUND_Q = 0.25;
+  // OBSTRUCTION BOX TOP FROM THE SURVEY (switch: ?SOLAR_OBST_TOP_DSM=1, or
+  // SITE.obstTopFromDsm). By default a box's flat top is the HIGHEST corner of
+  // the roof plane under it plus the obstruction's height above that plane, so
+  // a tilted plane lifts the whole top by the plane's fall across the box.
+  // #5372566 (19 Camp St): its plant deck carries 4.4 deg where the LiDAR is
+  // about flat; the plane falls 1.48 m under the 140 m2 box, so the top stood
+  // 1.2 m above the deck's surveyed height, with walls to 2.3 m beside a real
+  // step of about 0.5 m. With the switch on, the top is the 85th percentile of
+  // the DSM inside the obstruction (what the survey measured there), but never
+  // below 0.15 m over the roof plane's highest corner. Replayed over the 6,254
+  // boxes in pilot, frankton_flats and arrowtown_millbrook (live v66), the top's
+  // distance from the DSM falls from an area-weighted 0.80 m to 0.49 m, and
+  // boxes more than 0.5 m off from 32.6% to 16.5%. Taking the DSM alone
+  // reaches 0.23 m, but buries 16% of boxes in the plane of a tilted face.
+  const OBST_TOP_DSM = /[?&]SOLAR_OBST_TOP_DSM=1\b/.test(location.search)
+    || !!(window.SITE && window.SITE.obstTopFromDsm);
   const EARTH = 40075016.686;
   const LAYER_ID = "buildings-3d";
   // 2D layers the meshes replace: drawn on the flat ground under a 3D roof
@@ -685,6 +701,7 @@
     }
 
     // ---- obstructions: a box from the roof up to the DSM's height there
+    const boxes = [];
     for (const o of F.obst) {
       const r = o.rings[0];
       let cx = 0, cy = 0;
@@ -692,19 +709,30 @@
       cx /= r.length; cy /= r.length;
       const f = faceAt(cx, cy);
       const roofAt = (x, y) => (f ? planeZ(f, x, y) : roofZ(x, y));
-      const hs = [];
+      const hs = [], zs = [];
       const ob = bboxOf(o.rings);
       for (let y = ob[1] + 0.25; y <= ob[3]; y += 0.5) for (let x = ob[0] + 0.25; x <= ob[2]; x += 0.5) {
         if (!inRings(o.rings, x, y)) continue;
         const zz = H(x, y);
-        if (isFinite(zz)) hs.push(zz - roofAt(x, y));
+        if (isFinite(zz)) { hs.push(zz - roofAt(x, y)); zs.push(zz); }
       }
       const up = hs.length ? percentile(hs, 0.85) : 0;
       if (!(up > 0.15)) continue;
       const hgt = Math.min(1.5, up);
-      let baseMax = -Infinity;
-      for (const p of r) baseMax = Math.max(baseMax, roofAt(p[0], p[1]));
-      const zt = baseMax + hgt - ground;
+      let baseMax = -Infinity, baseMin = Infinity;
+      for (const p of r) {
+        const zr = roofAt(p[0], p[1]);
+        baseMax = Math.max(baseMax, zr); baseMin = Math.min(baseMin, zr);
+      }
+      // the surveyed top, clamped between 0.15 m over the highest roof
+      // corner (lower, and the face's plane would bury part of the box: 16%
+      // of boxes in pilot, frankton_flats and arrowtown_millbrook) and the
+      // default rule's top
+      const zt = (OBST_TOP_DSM
+        ? Math.min(baseMax + hgt, Math.max(baseMax + 0.15, percentile(zs, 0.85)))
+        : baseMax + hgt) - ground;
+      boxes.push({ area: Math.abs(ringArea(r)), top: zt + ground, old: baseMax + hgt,
+        dsm: percentile(zs, 0.85), fall: baseMax - baseMin });
       const tr = triangulate(o.rings);
       const P = tr.pts.map(p => [p[0], p[1], zt]);
       const tc = lit(C.obst, shade(0, 0, 1, 0.6, 0.42));
@@ -753,7 +781,7 @@
     S.stats.buildMs += dt;
     if (dt > (S.stats.maxMs || 0)) { S.stats.maxMs = dt; S.stats.maxBid = bid; }
     return {
-      bid, osig: F.osig, outl, bb, zmax, ground,
+      bid, osig: F.osig, outl, bb, zmax, ground, boxes,
       tp: new Float32Array(tp), tcG: new Float32Array(tcG), tcH: new Float32Array(tcH),
       lp: new Float32Array(lp), lc: new Float32Array(lc), top: new Float32Array(topPos),
       panels, liftPanel,
@@ -1444,6 +1472,6 @@
       const gs = ringSamples(F.outl, (x, y) => F.outl.some(r => inRings(r, x, y)));
       return [0.05, 0.15, 0.3, 0.5, 0.8].map(q => +percentile(gs, q).toFixed(1));
     },
-    debug(bid) { const r = S.cache.get(bid); return r && { ground: r.ground, zmax: r.zmax, faces: r.faces, tris: r.tp.length / 9, panels: r.panels.length }; },
+    debug(bid) { const r = S.cache.get(bid); return r && { ground: r.ground, zmax: r.zmax, boxes: r.boxes, faces: r.faces, tris: r.tp.length / 9, panels: r.panels.length }; },
   };
 })();

@@ -48,6 +48,7 @@ from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, assign_fil
 from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
+from src.curved_faces import split_curved_faces
 from src.face_straighten import absorb_slivers, fit_seams, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
 from src.building_shading import building_shading_factor, facet_sun, facet_sun_context
 from src.building_horizon import (far_profile as _hz_far_profile,
@@ -474,6 +475,9 @@ def _build_one_at(building_id, nudge_m):
     facets = _reshape(seams_to_plane_lines, pc_source)
     facets = _reshape(fit_seams, pc_source)
     facets = _reshape(straighten_faces)
+    # ...and a face that curves in plan gets a plane per section (src/curved_faces.py,
+    # off unless SOLAR_CURVED_SPLIT=1).
+    facets = _reshape(split_curved_faces, pc_source)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
@@ -682,6 +686,8 @@ def _build_one_at(building_id, nudge_m):
 
     for pf, panels in zip(per_facet, kept_panel_lists):
         f = pf["facet"]
+        if EMPTY_FACE_REFIT and not panels:
+            _refit_empty_face(f, pf, pc_source, model)
         features.append({
             "type": "Feature",
             "geometry": shapely_transform(to_wgs84, f["geometry"]).__geo_interface__,
@@ -803,6 +809,82 @@ def away_from_sun(model, slope_deg, aspect_deg, building_best=1.0):
         return True
     off_north = abs((aspect_deg + 180.0) % 360.0 - 180.0)
     return off_north > SUN_SIDE_SECTOR_DEG and share < SUN_SIDE_REL * building_best
+
+
+# AN EMPTY FACE DOES NOT KEEP A TILT ITS OWN RETURNS REJECT.
+#
+# A face that takes no panels -- a plant deck under a drawn obstruction, a
+# face the sun rule leaves empty -- still draws in the 3D view and colours the
+# heat map at its tilt, and nothing downstream checks that tilt, because no
+# panel is priced on it. #5372566 (19 Camp St): its plant deck carries
+# 4.4 deg / 200 deg; its returns sit a median 0.38 m off that plane, and the
+# best plane through them is about 1 deg. The 3D view drew the deck as a
+# wedge and stood its obstruction box 1.2 m above the surveyed deck.
+#
+# So with no panels on a face, its tilt is replaced when it misfits its own
+# returns by more than EMPTY_FACE_MAX_RES_M (median |residual|): by the robust
+# refit or by flat, whichever fits better, and only if that is at least
+# EMPTY_FACE_GAIN better. The gain is modest because on a cluttered deck the
+# clutter dominates every plane's residual: on #5372566's deck the returns
+# span -0.5 to +1.1 m round their median (AC units), the stored tilt misfits
+# by 0.43 m, flat by 0.43 m and the robust refit (2.8 deg) by 0.32 m.
+# A face with panels is never touched here -- its panels were priced on its
+# tilt. Off by default (SOLAR_EMPTY_FACE_REFIT=1).
+EMPTY_FACE_REFIT = os.environ.get("SOLAR_EMPTY_FACE_REFIT", "0") == "1"
+EMPTY_FACE_MAX_RES_M = 0.15
+EMPTY_FACE_GAIN = 0.8
+EMPTY_FACE_MIN_POINTS = 30
+# Too small to judge: on 450 sampled roofs the refits of faces under 20 m2 were
+# split, and the one that went wrong was a 4 m2 face the DSM reads at 57 deg
+# (#4742511) set flat.
+EMPTY_FACE_MIN_M2 = 20.0
+EMPTY_FACE_MAX_REFIT_DEG = 15.0
+
+
+def _refit_empty_face(f, pf, pc_source, model):
+    try:
+        import math
+        import numpy as np
+        from src.roof_partition import _fit_plane_robust, _slope_aspect
+        g = f["geometry"]
+        if f.get("plane_a") is None or g.area < EMPTY_FACE_MIN_M2:
+            return
+        core = g.buffer(-0.45)
+        core = core if not core.is_empty and core.area > 2 else g
+        pts = pc_source.points_in_bbox(*core.bounds, building_only=True)
+        if len(pts) == 0:
+            return
+        pts = pts[shapely.contains_xy(core, pts[:, 0], pts[:, 1])]
+        if len(pts) < EMPTY_FACE_MIN_POINTS:
+            return
+
+        def res(a, b):
+            r = pts[:, 2] - (a * pts[:, 0] + b * pts[:, 1])
+            c = float(np.median(r))
+            return float(np.median(np.abs(r - c))), c
+
+        now, _ = res(f["plane_a"], f["plane_b"])
+        if now <= EMPTY_FACE_MAX_RES_M:
+            return
+        cands = [(0.0, 0.0)]
+        pl = _fit_plane_robust(pts)
+        # a misfit face is cluttered or spans a wall, and a free fit through it
+        # finds the wall: on 150 pilot roofs, unbounded refits took 2.7 deg
+        # faces to 62.7 and 72.5 deg. A refit may not be steeper than
+        # EMPTY_FACE_MAX_REFIT_DEG or the tilt it replaces.
+        if pl is not None and math.degrees(math.atan(math.hypot(pl[0], pl[1]))) <= max(
+                EMPTY_FACE_MAX_REFIT_DEG, f["slope_deg"]):
+            cands.append((float(pl[0]), float(pl[1])))
+        best = min(((res(a, b), a, b) for a, b in cands), key=lambda t: t[0][0])
+        (score, c), a, b = best
+        if score > EMPTY_FACE_GAIN * now:
+            return
+        slope, aspect = _slope_aspect((a, b, c))
+        f.update(plane_a=a, plane_b=b, plane_c=c, slope_deg=slope, aspect_deg=aspect,
+                 empty_face_refit=True)
+        pf["poa"] = model.annual_poa_kwh_per_m2(slope, aspect) * pf["shading_factor"]
+    except Exception:
+        return
 
 
 def _yield_inputs(facet, shading_factor):

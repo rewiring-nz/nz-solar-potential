@@ -62,6 +62,7 @@ run "cloud profiles"        $PY tests/test_cloud_profiles.py
 run "cloud preview publishing" $PY tests/test_publish_preview.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
 run "seam steps"            $PY tests/test_seam_steps.py
+run "seam fixes"            $PY tests/test_seam_fixes.py
 run "roof levels"           $PY tests/test_roof_levels.py
 run "small obstructions"    $PY tests/test_small_obstructions.py
 run "geometry stages"       $PY tests/test_geometry_stage.py

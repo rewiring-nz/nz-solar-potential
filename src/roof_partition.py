@@ -1598,9 +1598,16 @@ OPEN_LINE_MIN_SLOPE_DEG = 5.0
 # and how much better two planes must fit than one
 OPEN_LINE_MIN_RMS = 0.15
 OPEN_LINE_MIN_RMS_GAIN = 0.20
+# A cut through a joined end skips the fit-gain test, so each part must carry
+# a plane of its own instead: enough returns, and most of them on it. Without
+# this, parts that could not be read borrowed a neighbour's plane or fitted a
+# steep sliver -- #4739074 read a flat deck at 24.6 deg, #4747486 grew a
+# 39 deg sliver at a junction.
+JOIN_PART_MIN_POINTS_X = 4
+JOIN_PART_MIN_FIT = 0.70
 
 
-def _planes_differ(parts, poly, pts):
+def _planes_differ(parts, poly, pts, joined=False):
     """Is this face genuinely two planes, or one plane with a line drawn on it?
 
     Two tests, both of which must pass. The pieces have to face the sun
@@ -1608,6 +1615,13 @@ def _planes_differ(parts, poly, pts):
     the whole face has to fit ONE plane materially worse than the pieces fit
     two, which is what says the fold is in the survey and not just in the
     drawing.
+
+    `joined`: the cut runs a drawn end the last DANGLE_JOIN_M to the line it
+    was drawn to meet, so the fold is authored, not guessed. The fit-gain test
+    is skipped -- on #5372566 the drawn triangle fits 1.1 deg against the rest
+    of the face's 8.2 deg, but the rest is rough (rms 0.45 m), so two planes
+    fit only 11% better than one -- and each part must instead fit a plane of
+    its own (JOIN_PART_MIN_FIT).
     """
     import numpy as np
 
@@ -1628,16 +1642,19 @@ def _planes_differ(parts, poly, pts):
     fits = []
     for q in parts:
         sub = _points_in(q, pts)
-        if len(sub) < MIN_POINTS_PER_FACE:
+        if len(sub) < MIN_POINTS_PER_FACE * (JOIN_PART_MIN_POINTS_X if joined else 1):
             return False          # cannot tell, so do not cut
         r, sa = rms(sub)
         if r is None:
             return False
+        if joined and _inlier_fraction(sub, _fit_plane_robust(sub)) < JOIN_PART_MIN_FIT:
+            return False          # a part that is not one plane would be read wrong
         subs.append((r, len(sub)))
         fits.append(sa)
     n = sum(k for _, k in subs)
     r_two = (sum(r * r * k for r, k in subs) / max(n, 1)) ** 0.5
-    if r_one < OPEN_LINE_MIN_RMS or r_two > (1.0 - OPEN_LINE_MIN_RMS_GAIN) * r_one:
+    if not joined and (r_one < OPEN_LINE_MIN_RMS
+                       or r_two > (1.0 - OPEN_LINE_MIN_RMS_GAIN) * r_one):
         return False
     for i in range(len(fits)):
         for j in range(i + 1, len(fits)):
@@ -1675,8 +1692,9 @@ def _split_on_open_lines(building_id, footprint, pts, faces):
         return faces
     if not EXTEND_DANGLING or not faces:
         return faces
+    joins = []
     try:
-        net = drawn_network(building_id, footprint, pts)
+        net = drawn_network(building_id, footprint, pts, joined=joins)
     except Exception:
         return faces
     if not net:
@@ -1720,7 +1738,8 @@ def _split_on_open_lines(building_id, footprint, pts, faces):
         # whole reason a fold matters to the estimate. Where the planes agree,
         # the fold is cosmetic, the panel keepout already stops panels
         # spanning it, and the map draws it from the markup layer.
-        if not _planes_differ(parts, poly, pts):
+        joined = any(j.intersects(poly) for j in joins)
+        if not _planes_differ(parts, poly, pts, joined=joined):
             out.append(f)
             continue
         for q in parts:
