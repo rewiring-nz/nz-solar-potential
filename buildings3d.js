@@ -339,7 +339,14 @@
       if (!g || !q || !feat.has(q.building_id)) continue;
       const c0 = firstCoord(g);
       if (!c0) continue;
-      const key = q.building_id + q.kind + (q.kind === "panel" ? q.fill_order : "") + ":" + c0[0].toFixed(7) + "," + c0[1].toFixed(7);
+      // A piece repeated by two tiles is identical; two faces can still START
+      // at the same vertex. #5372566's 328 m2 east face and its NE face both
+      // begin at the ridge top, and a key of kind + first vertex dropped the
+      // east face, so the 3D view filled it from its neighbours' planes. The
+      // face's own properties and the vertex count tell them apart.
+      const nv = g.type === "Polygon" ? g.coordinates[0].length : g.type === "MultiPolygon" ? g.coordinates[0][0].length : 0;
+      const key = q.building_id + q.kind + (q.kind === "panel" ? q.fill_order : "")
+        + (q.kind === "facet" ? "|" + facetKey(q) : "") + ":" + c0[0].toFixed(7) + "," + c0[1].toFixed(7) + ":" + nv;
       if (seen.has(key)) continue;
       seen.add(key);
       const F = feat.get(q.building_id);
