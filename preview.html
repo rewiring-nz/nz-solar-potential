@@ -453,6 +453,9 @@
   #bldg-sys-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff;
     border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
   .sys-note { font-size: 11.5px; line-height: 1.4; color: rgba(235,235,245,.55); margin-top: 7px; }
+  .auto-reset { background: rgba(255,176,0,.14); border: 1px solid rgba(255,176,0,.45); color: #ffb000;
+    border-radius: 999px; padding: 1px 8px; margin-right: 6px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .auto-reset:hover { background: rgba(255,176,0,.26); }
   .sys-reset { background: none; border: 0; padding: 0; font: inherit; color: #ffb000; cursor: pointer; text-decoration: underline; }
   /* Leader lines from just inside each end of the track, so the two extremes
      of the slider say what they actually mean rather than leaving "0-100%" to
@@ -858,7 +861,8 @@
         <div class="hslider-wrap" id="vslider-wrap">
           <div class="hslider-head">
             <span id="vslider-label">Panel density</span>
-            <span id="vslider-value">Auto</span>
+            <span><button type="button" class="auto-reset" id="vslider-auto" hidden title="Back to each roof's default size">&#8634; Auto</button>
+            <span id="vslider-value">Auto</span></span>
           </div>
           <input type="range" id="vslider" min="0" max="100" step="1" value="80">
           <div class="hslider-notes">
@@ -1060,6 +1064,7 @@
     <div style="font-size:12px; color:#ccc; margin-bottom:6px;" id="m-slider-label">Roof coverage</div>
     <input type="range" id="m-slider" min="5" max="100" step="5" value="100" style="width:100%;">
     <div style="text-align:center; font-weight:800; margin-top:6px;" id="m-slider-value">100%</div>
+    <div style="text-align:center; margin-top:6px;"><button type="button" class="auto-reset" id="m-slider-auto" hidden>&#8634; Back to auto</button></div>
   </div>
 </div>
 <div class="loading" id="loading">Loading panel layouts…</div>
@@ -1555,6 +1560,14 @@ function bldgSysMaxOrder() { return bldgSys && bldgSys.k > 0 ? bldgSys.orders[bl
 // size, else the density slider.
 // Moving the density slider with a roof open moves that roof too: its size
 // becomes the panels at that density, set by hand.
+// The open roof back on its default size: what Auto shows for it on the map.
+function bldgSysToDefault() {
+  if (!bldgSys) return;
+  const pr = selectedBuildingProps && selectedBuildingProps.building_id === bldgSys.buildingId ? selectedBuildingProps : null;
+  const n = bldgSys.orders.length;
+  bldgSys.k = cappedHome(pr) && !bigHomeIds.includes(bldgSys.buildingId) ? Math.min(n, homeCapPanels()) : n;
+  bldgSys.mode = "default";
+}
 function bldgSysFollowDensity(pct) {
   if (!bldgSys) return;
   bldgSys.k = bldgSys.ranks.filter(r => r == null || r <= pct).length;
@@ -3117,6 +3130,12 @@ map.on("load", async () => {
     }, 120);
   });
   document.addEventListener("click", e => {
+    if (!e.target || e.target.id !== "bldg-sys-auto" || !bldgSys) return;
+    bldgSysToDefault();
+    applyPanelDensityPaint();
+    if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+  });
+  document.addEventListener("click", e => {
     if (!e.target || e.target.id !== "bldg-sys-reset" || !bldgSys) return;
     Object.assign(bldgSys, { mode: "econ", k: bldgSys.econSize != null ? bldgSys.econSize : bldgSys.k });
     applyPanelDensityPaint();
@@ -3514,7 +3533,12 @@ map.on("load", async () => {
       document.getElementById("vslider-label").textContent = "Panel density";
       s.min = 0; s.step = 1; s.value = panelDensityPct;
       document.getElementById("vslider-value").textContent = sizingDefault ? "Auto" : panelDensityPct + "%";
+      if (window.__syncAutoButtons) window.__syncAutoButtons();
     } else {
+      for (const id of ["vslider-auto", "m-slider-auto"]) {
+        const b = document.getElementById(id);
+        if (b) b.hidden = true;
+      }
       document.getElementById("vslider-label").textContent = "Roof coverage";
       s.min = 5; s.step = 5; s.value = coveragePct;
       document.getElementById("vslider-value").textContent = coveragePct + "%";
@@ -3552,12 +3576,40 @@ map.on("load", async () => {
   // The no-heatmap fallback can flip the mode before this chrome exists;
   // sync once now so the buttons reflect whatever mode init settled on.
   syncModeUI();
+  // BACK TO AUTO. Moving the density slider leaves Auto (each roof at its
+  // default size) for one share on every roof; this puts every roof, and the
+  // open one, back on its default. Shown only while the density is set by hand.
+  function syncAutoButtons() {
+    const off = !(mode === "layout" && !sizingDefault);
+    for (const id of ["vslider-auto", "m-slider-auto"]) {
+      const b = document.getElementById(id);
+      if (b) b.hidden = off;
+    }
+  }
+  window.__syncAutoButtons = syncAutoButtons;
+  function resetSizingAuto() {
+    sizingDefault = true;
+    panelDensityPct = 80;
+    const s = document.getElementById("vslider");
+    if (s && mode === "layout") s.value = panelDensityPct;
+    document.getElementById("vslider-value").textContent = "Auto";
+    const mv = document.getElementById("m-slider-value");
+    if (mv && mode === "layout") mv.textContent = "Auto";
+    if (bldgSys) bldgSysToDefault();
+    syncAutoButtons();
+    applyPanelDensityPaint();
+    if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+    recomputeInViewSummary();
+  }
+  for (const id of ["vslider-auto", "m-slider-auto"])
+    document.getElementById(id).addEventListener("click", resetSizingAuto);
   document.getElementById("vslider").addEventListener("input", (e) => {
     const v = parseInt(e.target.value, 10);
     document.getElementById("vslider-value").textContent = v + "%";
     if (mode === "layout") {
       panelDensityPct = v;
       sizingDefault = false;
+      syncAutoButtons();
         bldgSysFollowDensity(v);
       applyPanelDensityPaint();          // immediate, cheap: no tile re-upload
       clearTimeout(window.__densityTimer);
@@ -3720,6 +3772,7 @@ map.on("load", async () => {
       if (mode === "layout") {
         panelDensityPct = v;
         sizingDefault = false;
+        if (window.__syncAutoButtons) window.__syncAutoButtons();
         bldgSysFollowDensity(v);
         applyPanelDensityPaint();      // immediate, cheap: no tile re-upload
         clearTimeout(window.__densityTimer);
@@ -4806,7 +4859,9 @@ map.on("load", async () => {
       : `Showing the map's ${panelDensityPct}% panel density.`;
     const btn = S.settled && S.econK > 0 && !(S.mode === "econ")
       ? ` <button type="button" class="sys-reset" id="bldg-sys-reset">Use the economic size</button>` : "";
-    let note = `${which} ${econText}${btn}`;
+    const auto = S.mode === "hand" || S.mode === "econ" || (S.mode === "map" && !sizingDefault)
+      ? ` <button type="button" class="auto-reset" id="bldg-sys-auto" title="Back to this roof's default size">&#8634; Back to auto</button>` : "";
+    let note = `${which} ${econText}${btn}${auto}`;
     document.getElementById("bldg-sys-note").innerHTML = note;
   }
 

@@ -811,7 +811,6 @@ const BT_CSS = `
   color: var(--sx-ink); font: 500 13.5px/1.3 inherit; font-family: inherit; padding: 10px 14px; text-align: left; cursor: pointer; }
 .sx-explore span { float: right; color: var(--sx-ink-3); font-size: 17px; line-height: 1; }
 .sx-explore:hover, .sx-explore:focus-visible { background: rgba(255,255,255,.08); outline: none; }
-.side-panel:not(.compact) .sx-explore { display: none; }
 .sx-lead { margin: 2px 4px 10px; }
 .sx-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--sx-ink-2); margin: 0 4px 8px; }
 .sx-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
@@ -826,7 +825,8 @@ const BT_CSS = `
 .sx-h-row { display: flex; align-items: center; gap: 10px; }
 .sx-h-row > span { flex: 1; }
 .sx-big { font-size: 12.5px; padding: 6px 10px; }
-.sx-bigcard { width: min(1180px, 100%); }
+.sx-bigcard { width: min(1600px, 100%); }
+.sx-bigfoot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .sx-seasons-big { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .sx-seasons-big .sx-season { padding: 12px 14px 10px; }
 .sx-seasons-big .sx-season-h { font-size: 16px; }
@@ -834,7 +834,16 @@ const BT_CSS = `
 .sx-seasons-big .sx-figs small { font-size: 11.5px; }
 .sx-seasons-big .sx-sbill { font-size: 14px; }
 .sx-seasons-big .sx-tip { width: 200px; font-size: 12.5px; }
-@media (max-width: 760px) { .sx-seasons-big { grid-template-columns: 1fr; } }
+.sx-seasons-big .sx-season { display: grid; grid-template-columns: minmax(0, 1fr) 150px; column-gap: 14px;
+  grid-template-areas: "h h" "chart figs" "chart bill"; grid-template-rows: auto 1fr auto; }
+.sx-seasons-big .sx-season-h { grid-area: h; }
+.sx-seasons-big .sx-chartbox { grid-area: chart; }
+.sx-seasons-big .sx-figs { grid-area: figs; grid-template-columns: 1fr; align-content: start; row-gap: 6px; margin-top: 4px; }
+.sx-seasons-big .sx-sbill { grid-area: bill; flex-wrap: wrap; row-gap: 2px; }
+@media (max-width: 760px) {
+  .sx-seasons-big { grid-template-columns: 1fr; }
+  .sx-seasons-big .sx-season { display: block; }
+}
 body.clb-open .wk-sheet { z-index: 4600; }
 .sx-chart .pk { fill: rgba(255,255,255,.06); }
 .sx-chart .gl { stroke: rgba(255,255,255,.08); stroke-width: .6; }
@@ -896,8 +905,10 @@ function btMoney(v) {
 // grid (or the battery) and solar above use is exported. All four seasons
 // share one scale so they compare at a glance. Peak hours are shaded.
 const BT_SOLAR_COLOUR = "#ffd60a";
-function btSeasonChart(s, sd, ymax, withBatt) {
-  const W = 300, H = 132, L = 26, R = 4, T = 6, B = 18;
+function btSeasonChart(s, sd, ymax, withBatt, size) {
+  // size {W, H} in viewBox units: the lightbox draws a wider, taller box
+  // so the chart fills the screen while its labels stay their normal size.
+  const W = (size && size.W) || 300, H = (size && size.H) || 132, L = 26, R = 4, T = 6, B = 18;
   const x = h => L + (h + 0.5) * (W - L - R) / 24;
   const y = v => T + (H - T - B) * (1 - v / ymax);
   const rows = withBatt ? sd.rowsB : sd.rows;
@@ -1120,11 +1131,11 @@ function renderBillTool(box, ctx) {
     const ymax = ymaxRaw > 6 ? Math.ceil(ymaxRaw) : Math.ceil(ymaxRaw * 2) / 2;
     const usedParts = Object.keys(r.yearParts).filter(k => r.yearParts[k] > 1);
     const fig = (key, label, n) => `<span data-wk="${key}" tabindex="0" role="button"><small>${label}</small><b>${Wk.fmt(n.value, "kWh", 1)}</b></span>`;
-    const seasonCard = (s, i) => {
+    const seasonCard = (s, i, size) => {
       const nowM = S[s].nowMonth, aft = S[s][after];
       return `<div class="sx-season">` +
         `<div class="sx-season-h"><b>${BT_CAP(s)}</b><span>${r.run.days[i]} days</span></div>` +
-        `<div class="sx-chartbox">${btSeasonChart(s, SD[s], ymax, withBatt)}<div class="sx-tip" hidden></div></div>` +
+        `<div class="sx-chartbox">${btSeasonChart(s, SD[s], ymax, withBatt, size)}<div class="sx-tip" hidden></div></div>` +
         `<div class="sx-figs">` +
           fig(`s-use-${s}`, "Use", S[s].use) + fig(`s-made-${s}`, "Solar", S[s].made) +
           fig(`s-imp-${s}`, "From the grid", withBatt ? S[s].impB : S[s].imp) + fig(`s-exp-${s}`, "Exported", withBatt ? S[s].expB : S[s].exp) +
@@ -1140,7 +1151,7 @@ function renderBillTool(box, ctx) {
     const seasonsHtml = haveGen
       ? `<div class="sx-h sx-h-row" id="bt-seasons"><span>A day in each season</span><button type="button" class="sx-btn sx-big" data-bigseasons="1">Open large <span aria-hidden="true">⤢</span></button></div>` +
         `<div class="sx-foot sx-lead">An average day: what this ${isBiz ? "business" : "home"} uses each hour, coloured by what uses it, and what the roof makes (yellow). Where the yellow covers the colour, the roof is powering the ${isBiz ? "business" : "home"}; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Change anything under Assumptions and every figure here updates.</div>` +
-        keyHtml + `<div class="sx-seasons">${BT_SEASONS.map(seasonCard).join("")}</div>` +
+        keyHtml + `<div class="sx-seasons">${BT_SEASONS.map((s, i) => seasonCard(s, i)).join("")}</div>` +
         `<details class="sx-dis" id="bt-adv-year"><summary><span class="t">The whole year, hour by hour</span><span class="sum">8,760 hours · download</span></summary>` +
           `<div class="sx-group sx-year">` +
             `<div class="sx-row">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"], ["cost", "Bill"]], BT_YEAR_VIEW.measure, "Show")}</div>` +
@@ -1387,13 +1398,8 @@ function renderBillTool(box, ctx) {
       if (ctx.onEcon) ctx.onEcon(); else redraw();
     }));
 
-    // the card's way down a layer: open the full panel at the season charts
-    qa("[data-explore]").forEach(b => b.addEventListener("click", () => {
-      const sp = document.getElementById("side-panel");
-      const ex = document.getElementById("side-panel-expand");
-      if (sp && sp.classList.contains("compact") && ex) ex.click();
-      setTimeout(() => { const t = q1("#bt-seasons"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); }, 80);
-    }));
+    // the card's way down a layer: the four seasons, large, in the lightbox
+    qa("[data-explore]").forEach(b => b.addEventListener("click", () => openBig()));
 
     // season charts: the hour under the pointer, from the same hour rows
     const bindCharts = (charts, zoom) => charts.forEach(svg => {
@@ -1404,10 +1410,11 @@ function renderBillTool(box, ctx) {
       const show = ev => {
         const rect = svg.getBoundingClientRect();
         const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
-        const vx = px / rect.width * 300;
-        const h = Math.max(0, Math.min(23, Math.floor((vx - 26) / (300 - 30) * 24)));
+        const VW = svg.viewBox.baseVal.width || 300;
+        const vx = px / rect.width * VW;
+        const h = Math.max(0, Math.min(23, Math.floor((vx - 26) / (VW - 30) * 24)));
         const row = rows[h];
-        const cx = 26 + (h + 0.5) * (300 - 30) / 24;
+        const cx = 26 + (h + 0.5) * (VW - 30) / 24;
         cur.setAttribute("x1", cx); cur.setAttribute("x2", cx); cur.style.display = "";
         const k = v => Wk.fmt(v, "kWh", 2);
         const partsLine = Object.keys(sd.partsH).filter(p => sd.partsH[p][h] > 0.005)
@@ -1445,17 +1452,43 @@ function renderBillTool(box, ctx) {
         if (lb.__return && lb.__return.focus) lb.__return.focus();
       };
       lb.__return = document.activeElement;
+      // FILL THE SCREEN: the four charts share the window's height (two rows
+      // of two, one column on a phone), less the heading, the key and each
+      // season's figures. The viewBox is sized to the chart's on-screen
+      // shape at 1.35 px per unit, so axis text reads at about 11 px.
+      // On a wide screen each season's figures sit in a 150 px column beside
+      // its chart, so the chart takes the card's full height.
+      const twoCol = innerWidth > 760;
+      const cardW = Math.min(1600, innerWidth - 48);
+      const chartPx = twoCol ? (cardW - 44 - 14) / 2 - 28 - 164 : cardW - 44 - 20;
+      const hPx = twoCol ? Math.max(240, (innerHeight - 48 - 170 - 2 * 50) / 2) : 220;
+      const size = { W: Math.round(chartPx / 1.35), H: Math.round(hPx / 1.35) };
       lb.innerHTML =
         `<div class="clb-card sx sx-bigcard" role="dialog" aria-modal="true" aria-label="A day in each season">` +
           `<div class="clb-head"><h3>A day in each season</h3><button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
           `<div class="sx-foot sx-lead">An average day, hour by hour. Colours: what the ${isBiz ? "business" : "home"} uses. Yellow: what the roof makes. Where the yellow covers the colour, the roof is powering it; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Tap a figure to see how it is worked out.</div>` +
-          keyHtml + `<div class="sx-seasons sx-seasons-big">${BT_SEASONS.map(seasonCard).join("")}</div>` +
+          keyHtml + `<div class="sx-seasons sx-seasons-big">${BT_SEASONS.map((s, i) => seasonCard(s, i, size)).join("")}</div>` +
+          `<div class="sx-bigfoot"><button type="button" class="sx-btn" data-tomethod="year">The whole year, hour by hour ›</button>` +
+          `<button type="button" class="sx-btn" data-tomethod="method">How it's worked out ›</button></div>` +
         `</div>`;
       lb.hidden = false;
       document.body.classList.add("clb-open");
       lb.onclick = e => { if (e.target === lb) close(); };
       lb.onkeydown = e => { if (e.key === "Escape") close(); };
       lb.querySelector(".clb-x").addEventListener("click", close);
+      // the next layer down lives in the panel: close, open it there
+      lb.querySelectorAll("[data-tomethod]").forEach(b => b.addEventListener("click", () => {
+        close();
+        const sp = document.getElementById("side-panel");
+        const ex = document.getElementById("side-panel-expand");
+        if (sp && sp.classList.contains("compact") && ex) ex.click();
+        setTimeout(() => {
+          const t = q1(b.dataset.tomethod === "year" ? "#bt-adv-year" : "#bt-adv-method");
+          if (!t) return;
+          if (t.tagName === "DETAILS") t.open = true;   // fires its own toggle
+          t.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+      }));
       const big = [...lb.querySelectorAll(".sx-chart")];
       bindCharts(big, false);
       big.forEach(svg => { svg.style.cursor = "crosshair"; });
