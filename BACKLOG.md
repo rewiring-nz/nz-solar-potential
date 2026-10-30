@@ -37,9 +37,8 @@ regions, 1,334,824 panels.
       of the 987 answers ($1.30 spent; about $3 to finish). 18 Beetham St is
       among the unanswered. A build without credit withholds only answered
       roofs.
-    - **Josh to review the contact sheet** of the 78 withheld so far (64
-      gone, 14 replaced). Doubtful: 5372536, 4738530, 5373481, 4734839,
-      4733127.
+    - The 78 withheld so far (64 gone, 14 replaced) were reviewed on a
+      contact sheet of both photos and judged right.
     - The deploy gate will list them under NEWLY WITHHELD; that drop is
       expected.
   - *Three "nothing is there" labels show a standing building* in both
