@@ -33,12 +33,11 @@ regions, 1,334,824 panels.
     a vision referee about the 987 it keeps; "gone" or "replaced" withholds
     the roof with reason `demolished`. Not yet in a build. Before the next
     one:
-    - **Top up the `Claude-API` workspace.** It ran out of credit after 286
-      of the 987 answers ($1.30 spent; about $3 to finish). 18 Beetham St is
-      among the unanswered. A build without credit withholds only answered
-      roofs.
-    - The 78 withheld so far (64 gone, 14 replaced) were reviewed on a
-      contact sheet of both photos and judged right.
+    - All 987 answered ($4.60 in all). 247 would be withheld (194 gone,
+      53 replaced). The first 78 were reviewed and judged right; the other
+      169 await review (contact sheet in `demolished-review/new/`, outside
+      the repo). Borderline: 4736289, 4739163, 4736316. 4728200 and 5370424
+      have a blank survey photo and were judged on today's photo alone.
     - The deploy gate will list them under NEWLY WITHHELD; that drop is
       expected.
   - *Three "nothing is there" labels show a standing building* in both
