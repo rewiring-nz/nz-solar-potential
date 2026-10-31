@@ -77,13 +77,27 @@ roof fixes and 216 demolished buildings withheld. Built in 10 h 50 min.
 v68 review (gate, `tools/face_area_check.py` against the saved v67 layouts,
 `tools/render_built.py` renders): flagged roofs improved or unchanged; 24
 roofs still on the map lost face area, and about 10 big drops were rendered.
-- Fixed for v69 (`SOLAR_REPEAT_KEEP_ROOF`): a copy given a neighbour's
-  reading that leaves part of the roof unread (4736995, 5375073, 5374336,
-  5375067, 5376118 in wanaka_town). Needs the next district build.
-- Still to trace: 4749739 / 4749406 (frankton_quail_rise, 248 -> 189 and
-  168 -> 127), 4734459 and 4749146 (town_west_fernhill, 41 -> 6, 90 -> 51),
-  4731151 (lake_hayes_est_west, 81 -> 39), 5370646 / 5370587
-  (arrowtown_millbrook, 143 -> 81, 127 -> 68).
+- Fixed for v69, each A/B'd and rendered on the photo; needs the next
+  district build:
+  - `SOLAR_REPEAT_KEEP_ROOF`: a copy given a neighbour's reading that leaves
+    part of the roof unread (wanaka_town 4736995 15 -> 42, 5375073 14 -> 49).
+  - `SOLAR_REPEAT_CONTEST`: a weak shared reading (under 0.60) competes with
+    the LiDAR path (4749739 189 -> 248, 4749406 127 -> 165, 5370646 81 -> 140).
+  - `SUN_SIDE_MIN_SHARE` / `SUN_SIDE_MIN_PANELS`: a tiny sunny face does not
+    bare the roof (4734459 6 -> 32).
+  - Lake Hayes 4731151 recovers with the two identical-roof rules (39 -> 77).
+  - 600-roof sample, v68 code vs v69: 12 roofs change, panels +0.6%.
+- Kept as is: 5370587 (Arrowtown terrace, 132 -> 73) loses one 2-3 panel
+  array per unit to the scrap rule. Relaxing the rule to keep them brought
+  the same scattered pairs back on complex houses across the sample, which
+  is what the rule removes.
+- Still open: 4749146 (town_west_fernhill, 90 -> 51): its slid outline
+  breaks its faces into jagged pieces, with or without its saved reading.
+  Readings in `data/selected_faces` predate the outline slide (20 Sep) and
+  `tools/predict_faces.py` does not read fitted outlines; slid buildings
+  (853) may need their readings recomputed.
+- `tests/test_xref.py` fails on `tools/pipeline_webui` (16 unresolved
+  imports in the pipeline panel code and `tools/pipeline.py` `config.get`).
 - Partial on the flagged Beach St roofs: 48 Beach St still has panels on the
   dark plant box's east half; 44 Beach St's second strip stays landscape.
 - `tests/test_local_queue.py` interrupt test fails on the Mac ("Operation
