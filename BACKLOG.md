@@ -34,10 +34,11 @@ regions, 1,334,824 panels.
     the roof with reason `demolished`. Not yet in a build. Before the next
     one:
     - All 987 answered ($4.60 in all). 247 would be withheld (194 gone,
-      53 replaced). The first 78 were reviewed and judged right; the other
-      169 await review (contact sheet in `demolished-review/new/`, outside
-      the repo). Borderline: 4736289, 4739163, 4736316. 4728200 and 5370424
-      have a blank survey photo and were judged on today's photo alone.
+      53 replaced), all reviewed on contact sheets and judged right
+      (`demolished-review/`, outside the repo). Borderline but kept:
+      4736289, 4739163, 4736316. 4728200 and 5370424 have a blank survey
+      photo and were judged on today's photo alone. Ready for the next
+      district build.
     - The deploy gate will list them under NEWLY WITHHELD; that drop is
       expected.
   - *Three "nothing is there" labels show a standing building* in both
