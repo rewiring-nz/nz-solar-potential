@@ -6,6 +6,12 @@ call except /api/health needs the per-launch token printed at start-up, sent
 as the X-Pipeline-Token header (EventSource streams send it as ?token=,
 because browsers cannot set headers there). POSTs must be JSON from this
 server's own origin, so another page in the browser cannot start a build.
+
+Three targets: local (this checkout), developer (shared VM, published to the
+preview bucket under devel/<alias>/) and published (shared VM, then the deploy
+gate, then the live site). Viewing developer and published regions reads
+public bucket JSON; starting a cloud job needs a typed yes plus the estimate's
+cloud cost echoed back, so a job can only start against the cost shown.
 """
 
 from __future__ import annotations
@@ -23,9 +29,11 @@ from pathlib import Path
 from typing import Callable
 
 from tools.pipeline_serve import RangeHandler
+from tools.pipeline_webui import cloud as C
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import locality_proxy as LP
 from tools.pipeline_webui import region_catalog as RC
+from tools.pipeline_webui import remote_catalog as RM
 from tools.pipeline_webui.common import DATA, ROOT, git_short
 from tools.pipeline_webui.jobs import JobError, JobManager, TERMINAL
 
@@ -40,7 +48,8 @@ class App:
 
     def __init__(self, token: str, data: Path = DATA, root: Path = ROOT, python: str = sys.executable,
                  api_key_fn: Callable[[], str] | None = None, http_get: Callable | None = None,
-                 estimates: E.EstimateStore | None = None, jobs: JobManager | None = None):
+                 estimates: E.EstimateStore | None = None, jobs: JobManager | None = None,
+                 cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None):
         self.token = token
         self.data = Path(data)
         self.root = Path(root)
@@ -50,8 +59,13 @@ class App:
             api_key_fn = _linz_key_value
         self.api_key_fn = api_key_fn
         self.http_get = http_get
-        self.estimates = estimates or E.EstimateStore(self.data, E.linz_size_lookup(api_key_fn))
-        self.jobs = jobs or JobManager(self.data, self.root, python)
+        self.cloud = cloud or C.Cloud()
+        self.remote = remote or RM.RemoteCatalog()
+        self.estimates = estimates or E.EstimateStore(self.data, E.linz_size_lookup(api_key_fn),
+                                                      cloud=self.cloud)
+        self.jobs = jobs or JobManager(self.data, self.root, python,
+                                       cloud_builder=C.cloud_command,
+                                       cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
 
     def api_key(self) -> str:
@@ -150,6 +164,7 @@ class WebHandler(RangeHandler):
     def _health(self) -> dict:
         jobs = self.app.jobs
         return {"ok": True, "git": self.app.git, "active_job": jobs.active,
+                "active_jobs": jobs.active_jobs(),
                 "workspace_lock": jobs.workspace_owner() is not None and jobs.active is None,
                 "linz_key": bool(self.app.api_key_fn()), "max_regions": E.MAX_REGIONS}
 
@@ -157,6 +172,11 @@ class WebHandler(RangeHandler):
         app = self.app
         head = parts[0] if parts else ""
         if head == "regions" and method == "GET":
+            source = (query.get("source") or ["local"])[0]
+            if source != "local":
+                if len(parts) != 1 or source not in RM.SOURCES:
+                    raise HttpError(400, "source must be local, developer or published")
+                return 200, app.remote.get(source, refresh=(query.get("refresh") or [""])[0] == "1")
             if len(parts) == 1:
                 return 200, RC.catalog(app.data)
             detail = RC.region_detail("/".join(parts[1:]), app.data)
@@ -176,9 +196,19 @@ class WebHandler(RangeHandler):
                 return 202, {"estimate_id": estimate_id, "status": "pending"}
             if method == "GET" and len(parts) == 2:
                 return 200, app.estimates.get(parts[1])
+        if head == "queue" and method == "GET" and len(parts) == 1:
+            return 200, {"lanes": app.jobs.queue()}
+        if parts == ["cloud", "status"] and method == "GET":
+            # gcloud describe only: free, and never starts the VM.
+            status = app.cloud.vm_status(refresh=(query.get("refresh") or [""])[0] == "1")
+            cfg = app.cloud.config()
+            return 200, {**status, "ref": cfg["ref"],
+                         "preview_bucket": cfg["preview_bucket"],
+                         "busy_with": app.jobs.active_jobs().get("cloud")}
         if head == "jobs":
             if len(parts) == 1 and method == "GET":
-                return 200, {"jobs": app.jobs.list(), "active_job": app.jobs.active}
+                return 200, {"jobs": app.jobs.list(), "active_job": app.jobs.active,
+                             "active_jobs": app.jobs.active_jobs()}
             if len(parts) == 1 and method == "POST":
                 return 202, self._start_job(body)
             if len(parts) == 2 and method == "GET":
@@ -201,9 +231,21 @@ class WebHandler(RangeHandler):
         if str(body.get("confirm", "")).strip().lower() != "yes":
             raise HttpError(400, "type yes to confirm the estimate")
         record = self.app.estimates.usable(str(body.get("estimate_id") or ""))
+        target = record.get("target", "local")
+        if body.get("target", target) != target:
+            raise HttpError(409, "the estimate was made for another target; estimate again")
+        if target != "local":
+            cloud = record.get("cloud") or {}
+            if not cloud.get("cost_nzd") or str(body.get("cost_nzd")) != str(cloud["cost_nzd"]):
+                raise HttpError(400, "confirm the cloud cost shown in the estimate")
         paid = body.get("paid_referee", False)
         if not isinstance(paid, bool):
             raise HttpError(400, "paid_referee must be true or false")
+        if target == "published":
+            # The checkout can change after the estimate; remote_build.sh commits and pushes main.
+            blockers = self.app.cloud.publish_blockers()
+            if blockers:
+                raise HttpError(409, "cannot publish: " + " ".join(blockers))
         job_id = self.app.jobs.start(record, paid_referee=paid)
         RC.invalidate()
         return {"job_id": job_id, "status": "queued"}
@@ -234,7 +276,9 @@ class WebHandler(RangeHandler):
                 view = jobs.view(job_id)
                 summary = json.dumps({k: view.get(k) for k in
                                       ("status", "progress", "eta_s", "current_index", "runs",
-                                       "final_combine")}, default=str)
+                                       "final_combine", "waiting", "queue_position",
+                                       "preview_url", "gate_result", "published_version")},
+                                     default=str)
                 if summary != last_status:
                     last_status = summary
                     self.wfile.write(f"event: status\ndata: {summary}\n\n".encode("utf-8"))
@@ -294,8 +338,9 @@ def main(argv: list[str] | None = None) -> int:
     port = server.server_address[1]
     url = f"http://127.0.0.1:{port}/pipeline.html#token={app.token}"
     print(f"Pipeline web panel: {url}", flush=True)
-    print("Anyone with this link can start builds on this computer. Ctrl+C stops the panel;",
-          "a running build is cancelled first.", flush=True)
+    print("Anyone with this link can start builds on this computer and on the shared VM.",
+          "Ctrl+C stops the panel; running builds are cancelled first and queued ones dropped.",
+          flush=True)
     if not args.no_open_browser:
         webbrowser.open(url)
     try:
@@ -304,11 +349,12 @@ def main(argv: list[str] | None = None) -> int:
         pass
     finally:
         server.server_close()
-        if app.jobs.active:
-            print(f"Cancelling job {app.jobs.active} ...", flush=True)
+        for job_id in [j for j in app.jobs.active_jobs().values() if j]:
+            print(f"Cancelling job {job_id} ...", flush=True)
             try:
-                app.jobs.cancel(app.jobs.active)
-                app.jobs.wait(app.jobs.cancel_grace_s + 20)
+                app.jobs.cancel(job_id)
             except JobError:
                 pass
+        if any(app.jobs.active_jobs().values()):
+            app.jobs.wait(app.jobs.cancel_grace_s + 20)
     return 0

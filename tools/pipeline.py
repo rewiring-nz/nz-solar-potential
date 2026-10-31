@@ -1732,7 +1732,8 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
                         help=("region to process: a LINZ locality id "
                               "<council>/<town>/<suburb> (find one with "
                               "tools/find_area.py) or a config.REGIONS name "
-                              f"(default: {default_area})"))
+                              f"(default: {default_area}); --mode cloud also "
+                              "takes several, space-separated in one argument"))
     parser.add_argument("--mode", choices=("local", "cloud"), default="local",
                         help="where to run the pipeline (default: local)")
     parser.add_argument("--profile",
@@ -1790,7 +1791,15 @@ def main() -> int:
         if args.mode == "cloud" else args.profile
     )
     try:
-        area = _safe_area(args.region or _default_region(config))
+        if args.mode == "cloud" and args.region:
+            # A shared cloud build takes several space-separated regions in one VM session.
+            for one_region in args.region.split():
+                _safe_area(one_region)
+            if selected_profile_name and len(args.region.split()) > 1:
+                parser.error("a --profile run takes one region")
+            area = args.region.split()[0]
+        else:
+            area = _safe_area(args.region or _default_region(config))
     except ValueError as exc:
         parser.error(str(exc))
     if args.mode == "local" or args.region:
@@ -1904,7 +1913,8 @@ def main() -> int:
                     if result.startswith(GATE_WARNING_PREFIX):
                         print(result, file=sys.stderr, flush=True)
                     print(f"Developer preview: {preview_url}", flush=True)
-                    webbrowser.open(preview_url)
+                    if not args.no_open_browser:
+                        webbrowser.open(preview_url)
                 return 0 if result is not None else 1
 
             def check_checkout_and_profile() -> CloudProfile:

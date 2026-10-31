@@ -26,6 +26,7 @@ from src.region_ids import file_slug, is_locality_id, validate
 from tools.pipeline_webui.common import DATA, read_json, web_dir, write_json_atomic
 
 DEFAULTS_FILE = Path(__file__).with_name("estimate_defaults.json")
+TARGETS = ("local", "developer", "published")
 MAX_REGIONS = 25            # tools/find_area.py DETAILS_LIMIT
 TTL_SECONDS = 30 * 60
 CALIBRATION_RUNS = 10
@@ -189,51 +190,102 @@ def referee_note(rows: list[dict]) -> dict:
 def estimate(regions: list[str], data: Path = DATA, target: str = "local",
              lookup: SizeLookup | None = None, defaults: dict | None = None,
              disk_free: int | None = None, survey_fn: Callable = _survey,
-             now: float | None = None) -> dict:
-    if target != "local":
-        raise EstimateError("only the local target is available")
+             now: float | None = None, cloud=None) -> dict:
+    if target not in TARGETS:
+        raise EstimateError(f"unknown target: {target}")
+    is_cloud = target != "local"
+    if is_cloud and cloud is None:
+        raise EstimateError("cloud targets are not configured on this server")
     regions = validate_regions(regions)
     data = Path(data)
     defaults = defaults or load_defaults()
     calibration = calibrate(data, defaults)
     spb = calibration["seconds_per_building"]
     rows = []
+    # The VM fetches its own inputs, so a cloud estimate counts nothing as cached here.
+    cache_dir = data / "_cloud_estimate_uncached" if is_cloud else data
     for region in regions:
         try:
             size = region_size(region, data, lookup)
-        except LookupError as exc:
-            rows.append({"region": region, "buildings": None, "warnings": [],
-                         "blockers": [str(exc)], "download_gb": 0, "download_s": 0,
-                         "compute_s": 0, "total_s": 0, "disk_gb": 0, "cached": {}})
+        except Exception as exc:
+            # LookupError text is ours; other failures can carry a keyed URL, so show the type only.
+            msg = str(exc) if isinstance(exc, LookupError) else (
+                f"LINZ lookup failed ({type(exc).__name__}); try again")
+            # The VM resolves the area itself, so a failed local lookup only weakens a cloud estimate.
+            rows.append({"region": region, "buildings": None,
+                         "warnings": [msg + " (the VM resolves the area itself)"] if is_cloud else [],
+                         "blockers": [] if is_cloud else [msg], "download_gb": 0,
+                         "download_s": 0, "compute_s": 0, "total_s": 0, "disk_gb": 0, "cached": {}})
             continue
-        except Exception as exc:  # network failures: the text can carry a keyed URL
-            rows.append({"region": region, "buildings": None, "warnings": [],
-                         "blockers": [f"LINZ lookup failed ({type(exc).__name__}); try again"],
-                         "download_gb": 0, "download_s": 0, "compute_s": 0, "total_s": 0,
-                         "disk_gb": 0, "cached": {}})
-            continue
-        rows.append(estimate_region(region, size, survey_fn(size["bbox"], region), data, defaults, spb))
+        rows.append(estimate_region(region, size, survey_fn(size["bbox"], region), cache_dir,
+                                    defaults, spb))
     totals = {k: round(sum(r.get(k) or 0 for r in rows), 3)
               for k in ("buildings", "download_gb", "download_s", "compute_s", "total_s", "disk_gb")}
-    free = shutil.disk_usage(data if data.exists() else data.parent).free if disk_free is None else disk_free
-    free_gb = free / 1e9
     warnings, blockers = [], []
-    if totals["disk_gb"] > free_gb:
-        blockers.append(f"Needs about {totals['disk_gb']:.1f} GB; {free_gb:.1f} GB free.")
-    elif totals["disk_gb"] > DISK_WARN_FRACTION * free_gb:
-        warnings.append(f"Uses about {totals['disk_gb']:.1f} GB of the {free_gb:.1f} GB free.")
+    cloud_block = None
+    if is_cloud:
+        free_gb = None
+        cloud_block = cloud_estimate(cloud, target, totals["total_s"])
+        warnings.extend(cloud_block.pop("warnings"))
+        blockers.extend(cloud_block["blockers"])
+    else:
+        free = (shutil.disk_usage(data if data.exists() else data.parent).free
+                if disk_free is None else disk_free)
+        free_gb = free / 1e9
+        if totals["disk_gb"] > free_gb:
+            blockers.append(f"Needs about {totals['disk_gb']:.1f} GB; {free_gb:.1f} GB free.")
+        elif totals["disk_gb"] > DISK_WARN_FRACTION * free_gb:
+            warnings.append(f"Uses about {totals['disk_gb']:.1f} GB of the {free_gb:.1f} GB free.")
     now = time.time() if now is None else now
+    machine = ({"cpu_count": os.cpu_count(), "workers": 1, "disk_free_gb": round(free_gb, 1),
+                "note": "Builds in one checkout run one at a time."} if not is_cloud else
+               {"vm": f"{cloud_block['project']}/{cloud_block['zone']}/{cloud_block['vm']}",
+                "note": "Developer and published builds share one VM and run one at a time."})
     return {
         "estimate_id": secrets.token_hex(8), "status": "ready", "target": target,
         "regions": rows, "totals": totals, "warnings": warnings,
         "blockers": blockers + [f"{r['region']}: {b}" for r in rows for b in r["blockers"]],
-        "machine": {"cpu_count": os.cpu_count(), "workers": 1, "disk_free_gb": round(free_gb, 1),
-                    "note": "Builds in one checkout run one at a time."},
-        "cloud_cost_usd": 0.0, "paid_referee": referee_note(rows),
+        "machine": machine, "cloud": cloud_block,
+        "cloud_cost_nzd": cloud_block["cost_nzd"] if cloud_block else "0",
+        "paid_referee": referee_note(rows),
         "assumptions": {k: v for k, v in defaults.items() if not k.startswith("_")},
         "assumption_notes": defaults.get("_notes"), "calibration": calibration,
         "disclaimer": DISCLAIMER, "created": now, "expires_at": now + TTL_SECONDS,
     }
+
+
+def cloud_estimate(cloud, target: str, estimated_seconds: float) -> dict:
+    """VM state, cost and blockers for a developer or published build. All checks are free."""
+    cfg = cloud.config()
+    status = cloud.vm_status(refresh=True)
+    warnings, blockers = [], []
+    block = {"project": cfg["project"], "vm": cfg["vm"], "zone": cfg["zone"],
+             "ref": cfg["ref"], "vm_status": status["status"], "vm_error": status["error"],
+             "preview_user": None, "preview_url": None}
+    if status["error"]:
+        blockers.append(f"VM status unavailable: {status['error']}")
+    elif status["status"] == "RUNNING":
+        warnings.append("The VM is already running. If another build is in progress the "
+                        "code sync refuses and this job stops before building anything.")
+    elif status["status"] not in ("TERMINATED", "STOPPED"):
+        blockers.append(f"The VM is {status['status']}; wait until it is RUNNING or stopped.")
+    if target == "developer":
+        more, alias = cloud.developer_blockers()
+        blockers.extend(more)
+        if alias:
+            block["preview_user"] = alias
+            block["preview_url"] = cloud.preview_url(alias)
+        warnings.append("The VM builds the pushed code on " + cfg["ref"] +
+                        ", not uncommitted or unpushed changes in this checkout.")
+    else:
+        blockers.extend(cloud.publish_blockers())
+        warnings.append("Publishing changes the live map. The deploy gate runs first; if it "
+                        "flags anything nothing is published (publishing past the gate stays "
+                        "on the command line with --reviewed).")
+    block.update(cloud.cost(target, estimated_seconds))
+    block["blockers"] = blockers
+    block["warnings"] = warnings
+    return block
 
 
 def validate_regions(regions) -> list[str]:
@@ -268,8 +320,8 @@ class EstimateStore:
 
     def start(self, regions, target: str = "local", background: bool = True) -> str:
         regions = validate_regions(regions)
-        if target != "local":
-            raise EstimateError("only the local target is available")
+        if target not in TARGETS:
+            raise EstimateError(f"unknown target: {target}")
         estimate_id = secrets.token_hex(8)
         now = time.time()
         write_json_atomic(self._path(estimate_id), {"estimate_id": estimate_id, "status": "pending",

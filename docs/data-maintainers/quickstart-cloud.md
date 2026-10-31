@@ -11,12 +11,16 @@ The profile workflow is for a separate VM you administer.
 
 ## Shared build VM
 
+To choose areas on a map and start or queue shared-VM builds from the
+browser, use the [web pipeline panel](web-pipeline.md).
+
 Read the [cost and external-API warning](#cost) before building. Preflight
 alone does not start a build or confirm preview-bucket readiness.
 
 ```sh
 bash quickstart.sh --mode cloud            # default region
 bash quickstart.sh --mode cloud REGION     # another region
+bash quickstart.sh --mode cloud "REGION_A REGION_B"  # several regions, one VM run (shared VM only)
 bash quickstart.sh --mode cloud --cloud preflight   # free check, builds nothing
 ```
 

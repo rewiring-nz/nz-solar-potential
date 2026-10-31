@@ -4,6 +4,7 @@ Run: .venv/bin/python tests/test_pipeline_web_jobs.py
 """
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -52,6 +53,7 @@ print("combined " + " ".join(sys.argv[1:]), flush=True)
 
 
 def _manager(tmp: Path, grace: float = 5.0) -> JobManager:
+    # lock_poll_s keeps the workspace-lock wait test fast.
     (tmp / "fake.py").write_text(FAKE)
     (tmp / "combine.py").write_text(COMBINE)
     data = tmp / "data"
@@ -60,7 +62,7 @@ def _manager(tmp: Path, grace: float = 5.0) -> JobManager:
         data, ROOT, sys.executable,
         command_builder=lambda py, region, paid: [py, str(tmp / "fake.py"), str(data), region],
         combine_builder=lambda py, regions: [py, str(tmp / "combine.py"), *regions],
-        cancel_grace_s=grace)
+        cancel_grace_s=grace, lock_poll_s=0.05)
 
 
 def _estimate(*regions):
@@ -81,12 +83,8 @@ def test_regions_run_in_order_failures_continue_and_combine_runs():
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         m = _manager(Path(tmp))
         job_id = m.start(_estimate("a", "bad", "b"))
-        try:
-            m.start(_estimate("c"))
-        except JobError as exc:
-            assert exc.status == 409
-        else:
-            raise AssertionError("second job started while one is running")
+        second = m.start(_estimate("c"))
+        assert m.load(second)["status"] == "queued"
         job = _wait(m, job_id)
         assert [r["status"] for r in job["runs"]] == ["succeeded", "failed", "succeeded"], job["runs"]
         assert job["status"] == "failed"
@@ -99,6 +97,8 @@ def test_regions_run_in_order_failures_continue_and_combine_runs():
         tail = m.log(job_id, offset=log["next_offset"] - 5)
         assert len(tail["text"]) == 5
         assert job["progress"] == 1.0 or job["status"] == "failed"
+        later = _wait(m, second)
+        assert later["status"] == "succeeded" and later["started"] >= job["finished"]
 
 
 def test_single_region_success_needs_no_extra_combine():
@@ -128,18 +128,22 @@ def test_cancel_sends_sigint_and_skips_the_rest():
             assert exc.status == 409
 
 
-def test_workspace_lock_blocks_and_stale_jobs_recover():
+def test_workspace_lock_makes_local_jobs_wait_and_stale_jobs_recover():
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         m = _manager(Path(tmp))
         lock = m.data / "pipeline-workspace.lock"
         lock.mkdir()
         write_json_atomic(lock / "owner.json", {"pid": 4242})
-        try:
-            m.start(_estimate("a"))
-        except JobError as exc:
-            assert exc.status == 409 and "4242" in str(exc)
-        else:
-            raise AssertionError("started past the workspace lock")
+        job_id = m.start(_estimate("a"))
+        deadline = time.time() + 10
+        while not m.load(job_id).get("waiting") and time.time() < deadline:
+            time.sleep(0.02)
+        assert "4242" in m.load(job_id)["waiting"]
+        assert m.load(job_id)["runs"][0]["status"] == "queued"
+        (lock / "owner.json").unlink()
+        lock.rmdir()
+        job = _wait(m, job_id)
+        assert job["status"] == "succeeded" and job["waiting"] is None
         write_json_atomic(m.dir / "20260101T000000-abcdef" / "job.json",
                           {"job_id": "20260101T000000-abcdef", "status": "running", "created": "x",
                            "regions": ["a"], "runs": [{"region": "a", "status": "running"}]})
@@ -155,6 +159,91 @@ def test_workspace_lock_blocks_and_stale_jobs_recover():
                 raise AssertionError(bad)
 
 
+CLOUD_FAKE = r'''
+import sys, time
+target, regions = sys.argv[1], sys.argv[2]
+print("building " + target + " " + regions, flush=True)
+if "slow" in regions:
+    time.sleep(30)
+print("GATE_RESULT=pass", flush=True)
+print("PREVIEW_URL=https://example.test/devel/me/preview.html", flush=True)
+if target == "published":
+    print("PUSHED (data v68)", flush=True)
+'''
+
+
+def _cloud_manager(tmp: Path) -> JobManager:
+    m = _manager(tmp)
+    (tmp / "cloud.py").write_text(CLOUD_FAKE)
+    m.cloud_builder = lambda target, py, regions, paid: [py, str(tmp / "cloud.py"), target,
+                                                         " ".join(regions)]
+    m.cloud_env = lambda: dict(os.environ, CLOUD_VM="fake")
+    return m
+
+
+def _cloud_estimate(target, *regions):
+    est = _estimate(*regions)
+    est["target"] = target
+    est["cloud"] = {"cost_nzd": "5.00", "cost_text": "up to NZD 5.00; not a spending cap",
+                    "project": "p", "vm": "v", "zone": "z", "ref": "main",
+                    "preview_user": "me", "preview_url": "https://example.test/x"}
+    return est
+
+
+def test_cloud_lane_runs_beside_local_and_records_outputs():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        m = _cloud_manager(Path(tmp))
+        local = m.start(_estimate("slow"))
+        dev = m.start(_cloud_estimate("developer", "a", "b/c/d"))
+        pub = m.start(_cloud_estimate("published", "a"))
+        q = m.queue()
+        assert [j["job_id"] for j in q["local"]["jobs"]] == [local]
+        assert [j["job_id"] for j in q["cloud"]["jobs"]] == [dev, pub]
+        assert m.view(pub)["queue_position"] in (1, 2, None)
+        job = _wait(m, dev)
+        assert job["status"] == "succeeded" and job["lane"] == "cloud"
+        assert job["gate_result"] == "pass"
+        assert job["preview_url"] == "https://example.test/devel/me/preview.html"
+        assert job["approved"]["cloud_cost_nzd"] == "5.00"
+        assert "building developer a b/c/d" in m.log(dev)["text"]
+        assert m.load(local)["status"] in ("queued", "running"), "the local lane runs independently"
+        published = _wait(m, pub)
+        assert published["published_version"] == "68"
+        m.cancel(local)
+        assert _wait(m, local)["status"] == "cancelled"
+
+
+def test_queued_job_can_be_removed_and_cloud_needs_a_builder():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        m = _cloud_manager(Path(tmp))
+        first = m.start(_cloud_estimate("developer", "slow"))
+        second = m.start(_cloud_estimate("developer", "a"))
+        m.cancel(second)
+        assert m.load(second)["status"] == "cancelled"
+        assert second not in [j["job_id"] for j in m.queue()["cloud"]["jobs"]]
+        m.cancel(first)
+        assert _wait(m, first)["status"] == "cancelled"
+        try:
+            m.cancel(second)
+        except JobError as exc:
+            assert exc.status == 409
+        else:
+            raise AssertionError("cancelled a finished job")
+        plain = JobManager(m.data, ROOT, sys.executable)
+        try:
+            plain.start(_cloud_estimate("developer", "a"))
+        except JobError as exc:
+            assert exc.status == 409
+        else:
+            raise AssertionError("cloud job without a cloud builder")
+        try:
+            plain.start(_cloud_estimate("elsewhere", "a"))
+        except JobError as exc:
+            assert exc.status == 400
+        else:
+            raise AssertionError("unknown target accepted")
+
+
 def test_progress_weights_finished_steps():
     status = {"steps": [{"key": "a", "status": "PASS"}, {"key": "b", "status": "RUNNING"}]}
     assert run_fraction(status, {}) == 0.5
@@ -168,7 +257,9 @@ if __name__ == "__main__":
     for test in (test_regions_run_in_order_failures_continue_and_combine_runs,
                  test_single_region_success_needs_no_extra_combine,
                  test_cancel_sends_sigint_and_skips_the_rest,
-                 test_workspace_lock_blocks_and_stale_jobs_recover,
+                 test_workspace_lock_makes_local_jobs_wait_and_stale_jobs_recover,
+                 test_cloud_lane_runs_beside_local_and_records_outputs,
+                 test_queued_job_can_be_removed_and_cloud_needs_a_builder,
                  test_progress_weights_finished_steps):
         test()
     print("pipeline web job tests passed")

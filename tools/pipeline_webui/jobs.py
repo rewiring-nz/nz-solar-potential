@@ -1,17 +1,24 @@
-"""One pipeline job at a time for the web panel: regions built in sequence.
+"""Pipeline jobs for the web panel, queued in two lanes.
 
-Each region runs `tools/pipeline.py <region> --no-open-browser
---no-preview-server --no-paid-referee|--paid-referee` in its own session, with
-stdout appended to data/pipeline_web/jobs/<id>/stdout.log. A failed region
-is recorded and the job continues with the rest. When more than one region
-was built, a final src/combine_regions.py puts every built region
-(data/out/<id>/summary.json) back into the map dataset, because each run's
-own combine step keeps only its region. Terrain tiles stay the last region's.
+The local lane builds in this checkout. Each region runs `tools/pipeline.py
+<region> --no-open-browser --no-preview-server --no-paid-referee|--paid-referee`
+in its own session, with stdout appended to data/pipeline_web/jobs/<id>/stdout.log.
+A failed region is recorded and the job continues with the rest. When more
+than one region was built, a final src/combine_regions.py puts every built
+region (data/out/<id>/summary.json) back into the map dataset, because each
+run's own combine step keeps only its region. Terrain tiles stay the last
+region's. A job whose turn comes while a CLI build holds
+data/pipeline-workspace.lock waits for it.
 
-Cancelling sends SIGINT to the running pipeline.py: it then stops its queue
-workers and they release data/pipeline-workspace.lock. SIGTERM would kill it
-without that cleanup, so SIGTERM and SIGKILL are only escalations after
-CANCEL_GRACE_S.
+The cloud lane runs developer and published builds on the shared VM, one
+command per job (see cloud.cloud_command), and records the preview URL, gate
+result and published version from the output.
+
+Each lane runs one job at a time; later jobs queue in order and can be removed
+before they start. Cancelling a running job sends SIGINT: pipeline.py then
+stops its queue workers and they release the workspace lock, and
+remote_build.sh stops the VM only if it started it. SIGTERM would skip that
+cleanup, so SIGTERM and SIGKILL are only escalations after CANCEL_GRACE_S.
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.region_ids import list_regions
+from tools.pipeline_webui.cloud import parse_cloud_line
 from tools.pipeline_webui.common import DATA, ROOT, read_json, web_dir, write_json_atomic
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
@@ -36,8 +44,13 @@ LOG_CHUNK = 256 * 1024
 LIST_LIMIT = 50
 RUN_DIR_PREFIX = "PIPELINE_RUN_DIR="
 
+LOCK_POLL_S = 5.0
+LANES = {"local": ("local",), "cloud": ("developer", "published")}
+LANE_OF = {target: lane for lane, targets in LANES.items() for target in targets}
+
 CommandBuilder = Callable[[str, str, bool], list]
 CombineBuilder = Callable[[str, list], list]
+CloudBuilder = Callable[[str, str, list, bool], list]
 
 
 class JobError(Exception):
@@ -105,24 +118,60 @@ def progress(job: dict, statuses: list[dict | None], weights: dict[str, float]) 
     return round(min(total / len(regions), 1.0), 4)
 
 
+class Lane:
+    """One FIFO of jobs and the single job it is running."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.queue: list[str] = []
+        self.active: str | None = None
+        self.process: subprocess.Popen | None = None
+        self.cancel_requested = False
+        self.thread: threading.Thread | None = None
+
+
+def lane_for(target: str) -> str:
+    if target not in LANE_OF:
+        raise JobError(f"unknown target: {target}")
+    return LANE_OF[target]
+
+
 class JobManager:
+    """Two lanes: local builds in this checkout, and cloud builds on the shared VM.
+
+    Each lane runs one job at a time and queues the rest in order. Developer
+    and published builds share the cloud lane because they share one VM, whose
+    code sync refuses while it is building.
+    """
+
     def __init__(self, data: Path = DATA, root: Path = ROOT, python: str = "python3",
                  command_builder: CommandBuilder | None = None,
                  combine_builder: CombineBuilder | None = None,
-                 cancel_grace_s: float = CANCEL_GRACE_S):
+                 cancel_grace_s: float = CANCEL_GRACE_S,
+                 cloud_builder: CloudBuilder | None = None,
+                 cloud_env: Callable[[], dict] | None = None,
+                 lock_poll_s: float = LOCK_POLL_S):
         self.data = Path(data)
         self.root = Path(root)
         self.python = python
         self.command_builder = command_builder or pipeline_command
         self.combine_builder = combine_builder or combine_command
+        self.cloud_builder = cloud_builder
+        self.cloud_env = cloud_env
         self.cancel_grace_s = cancel_grace_s
+        self.lock_poll_s = lock_poll_s
         self.dir = web_dir(self.data) / "jobs"
         self.lock = threading.Lock()
-        self.active: str | None = None
-        self.process: subprocess.Popen | None = None
-        self.cancel_requested = False
-        self.thread: threading.Thread | None = None
+        self.lanes = {name: Lane(name) for name in LANES}
         self.recover()
+
+    @property
+    def active(self) -> str | None:
+        """The local lane's running job (kept for callers that predate lanes)."""
+        return self.lanes["local"].active
+
+    def active_jobs(self) -> dict[str, str | None]:
+        return {name: lane.active for name, lane in self.lanes.items()}
 
     # ---- records -------------------------------------------------------
     def _job_dir(self, job_id: str) -> Path:
@@ -140,7 +189,7 @@ class JobManager:
         return job
 
     def recover(self) -> None:
-        """Jobs left running by a stopped server are marked interrupted."""
+        """Jobs left queued or running by a stopped server are marked interrupted."""
         if not self.dir.is_dir():
             return
         for path in self.dir.glob("*/job.json"):
@@ -149,7 +198,7 @@ class JobManager:
                 job["status"] = "interrupted"
                 job["finished"] = _now()
                 for run in job.get("runs", []):
-                    if run.get("status") == "running":
+                    if run.get("status") in ("queued", "running"):
                         run["status"] = "interrupted"
                 write_json_atomic(path, job)
 
@@ -167,46 +216,110 @@ class JobManager:
             return None
         return read_json(lock / "owner.json", {}) or {}
 
+    def queue(self) -> dict:
+        """Each lane's running job and its queued jobs, in run order."""
+        with self.lock:
+            snapshot = {n: (lane.active, list(lane.queue)) for n, lane in self.lanes.items()}
+        out = {}
+        for name, (active, queued) in snapshot.items():
+            jobs = []
+            for job_id in ([active] if active else []) + queued:
+                try:
+                    job = self.load(job_id)
+                except JobError:
+                    continue
+                jobs.append({k: job.get(k) for k in (
+                    "job_id", "target", "regions", "status", "created", "started",
+                    "estimated_total_s", "current_index", "waiting", "approved")})
+            out[name] = {"targets": list(LANES[name]), "active": active,
+                         "jobs": jobs, "queued": len(queued)}
+        return out
+
     # ---- lifecycle -----------------------------------------------------
     def start(self, estimate: dict, paid_referee: bool = False) -> str:
+        """Queue a job from an approved estimate; it runs when its lane is free."""
+        target = estimate.get("target", "local")
+        lane_name = lane_for(target)
+        if lane_name == "cloud" and self.cloud_builder is None:
+            raise JobError("cloud targets are not configured on this server", 409)
+        regions = [r["region"] for r in estimate.get("regions", [])]
+        if not regions:
+            raise JobError("the estimate names no regions")
+        cloud = estimate.get("cloud") or {}
+        job_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
+        job = {
+            "job_id": job_id, "estimate_id": estimate.get("estimate_id"),
+            "regions": regions, "target": target, "lane": lane_name,
+            "paid_referee": bool(paid_referee),
+            "approved": {"confirm": "yes", "at": _now(),
+                         "estimate_totals": estimate.get("totals"),
+                         "paid_referee_usd_upper": (estimate.get("paid_referee") or {}).get("usd_upper")
+                         if paid_referee else 0.0,
+                         "cloud_cost_nzd": cloud.get("cost_nzd"),
+                         "cloud_cost_text": cloud.get("cost_text")},
+            "estimated_total_s": (estimate.get("totals") or {}).get("total_s"),
+            "created": _now(), "started_clock": None, "finished": None,
+            "status": "queued", "current_index": -1, "waiting": None,
+        }
+        if lane_name == "local":
+            job["runs"] = [{"region": r, "run_dir": None, "exit_code": None, "status": "queued"}
+                           for r in regions]
+            job["final_combine"] = {"status": "not needed", "exit_code": None}
+        else:
+            job["runs"] = [{"region": " ".join(regions), "run_dir": None, "exit_code": None,
+                            "status": "queued"}]
+            job["final_combine"] = {"status": "not needed", "exit_code": None}
+            job["cloud"] = {k: cloud.get(k) for k in ("project", "vm", "zone", "ref",
+                                                       "preview_user", "preview_url")}
+            job["preview_url"] = None
+            job["gate_result"] = None
+            job["published_version"] = None
         with self.lock:
-            if self.active:
-                raise JobError(f"job {self.active} is still running", 409)
-            owner = self.workspace_owner()
-            if owner is not None:
-                raise JobError("a CLI build is running in this checkout "
-                               f"(data/pipeline-workspace.lock, pid {owner.get('pid', '?')})", 409)
-            job_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
-            job = {
-                "job_id": job_id, "estimate_id": estimate.get("estimate_id"),
-                "regions": [r["region"] for r in estimate.get("regions", [])],
-                "target": estimate.get("target", "local"), "paid_referee": bool(paid_referee),
-                "approved": {"confirm": "yes", "at": _now(),
-                             "estimate_totals": estimate.get("totals"),
-                             "paid_referee_usd_upper": (estimate.get("paid_referee") or {}).get("usd_upper")
-                             if paid_referee else 0.0},
-                "estimated_total_s": (estimate.get("totals") or {}).get("total_s"),
-                "created": _now(), "started_clock": None, "finished": None,
-                "status": "queued", "current_index": -1,
-                "runs": [{"region": r["region"], "run_dir": None, "exit_code": None, "status": "queued"}
-                         for r in estimate.get("regions", [])],
-                "final_combine": {"status": "not needed", "exit_code": None},
-            }
-            if not job["regions"]:
-                raise JobError("the estimate names no regions")
+            lane = self.lanes[lane_name]
             self._save(job)
-            self.active = job_id
-            self.cancel_requested = False
-            self.thread = threading.Thread(target=self._run, args=(job,), daemon=True,
-                                           name=f"job-{job_id}")
-            self.thread.start()
-            return job_id
+            lane.queue.append(job_id)
+            if lane.thread is None or not lane.thread.is_alive():
+                lane.thread = threading.Thread(target=self._worker, args=(lane,), daemon=True,
+                                               name=f"lane-{lane_name}")
+                lane.thread.start()
+        return job_id
 
-    def _popen(self, cmd: list, log) -> subprocess.Popen:
+    def _worker(self, lane: Lane) -> None:
+        while True:
+            with self.lock:
+                if not lane.queue:
+                    lane.thread = None
+                    return
+                job_id = lane.queue.pop(0)
+                lane.active = job_id
+                lane.cancel_requested = False
+            try:
+                job = self.load(job_id)
+                if lane.name == "local":
+                    self._run_local(lane, job)
+                else:
+                    self._run_cloud(lane, job)
+            except Exception:  # noqa: BLE001 - one broken record must not stop the lane
+                pass
+            finally:
+                with self.lock:
+                    lane.active = None
+                    lane.process = None
+
+    def _popen(self, cmd: list, log, env: dict | None = None) -> subprocess.Popen:
         return subprocess.Popen(
             [str(c) for c in cmd], cwd=self.root, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-            start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"})
+            start_new_session=True,
+            env={**(env or os.environ), "PYTHONUNBUFFERED": "1"})
+
+    def _launch(self, lane: Lane, cmd: list, log, env: dict | None = None) -> subprocess.Popen:
+        """Start a lane's process; a cancel that arrived just before still stops it."""
+        with self.lock:
+            lane.process = self._popen(cmd, log, env)
+            if lane.cancel_requested:
+                threading.Thread(target=self._stop, args=(lane.process,), daemon=True).start()
+            return lane.process
 
     def _stream(self, proc: subprocess.Popen, log, on_line=None) -> int:
         assert proc.stdout is not None
@@ -217,16 +330,44 @@ class JobManager:
                 on_line(line.rstrip("\n"))
         return proc.wait()
 
-    def _run(self, job: dict) -> None:
-        job_dir = self._job_dir(job["job_id"])
+    def _begin(self, job: dict) -> None:
         job["status"] = "running"
         job["started"] = _now()
         job["started_clock"] = time.time()
         self._save(job)
+
+    def _finish(self, job: dict) -> None:
+        job["finished"] = _now()
+        job["waiting"] = None
+        self._save(job)
+
+    def _wait_for_workspace(self, lane: Lane, job: dict, log) -> bool:
+        """Wait while a CLI build holds data/pipeline-workspace.lock; False if cancelled."""
+        announced = False
+        while not lane.cancel_requested:
+            owner = self.workspace_owner()
+            if owner is None:
+                if announced:
+                    job["waiting"] = None
+                    self._save(job)
+                return True
+            if not announced:
+                job["waiting"] = ("a CLI build holds data/pipeline-workspace.lock "
+                                  f"(pid {owner.get('pid', '?')}); waiting for it to finish")
+                self._save(job)
+                log.write(job["waiting"] + "\n")
+                log.flush()
+                announced = True
+            time.sleep(self.lock_poll_s)
+        return False
+
+    def _run_local(self, lane: Lane, job: dict) -> None:
+        job_dir = self._job_dir(job["job_id"])
+        self._begin(job)
         try:
             with (job_dir / "stdout.log").open("a", encoding="utf-8") as log:
                 for i, run in enumerate(job["runs"]):
-                    if self.cancel_requested:
+                    if lane.cancel_requested or not self._wait_for_workspace(lane, job, log):
                         run["status"] = "cancelled"
                         continue
                     job["current_index"] = i
@@ -242,33 +383,30 @@ class JobManager:
                             self._save(job)
 
                     cmd = self.command_builder(self.python, run["region"], job["paid_referee"])
+                    code = self._stream(self._launch(lane, cmd, log), log, on_line)
                     with self.lock:
-                        self.process = self._popen(cmd, log)
-                    code = self._stream(self.process, log, on_line)
-                    with self.lock:
-                        self.process = None
+                        lane.process = None
                     run["exit_code"] = code
                     run["finished"] = _now()
-                    run["status"] = ("cancelled" if self.cancel_requested
+                    run["status"] = ("cancelled" if lane.cancel_requested
                                      else "succeeded" if code == 0 else "failed")
                     self._save(job)
                 built = [r["region"] for r in job["runs"] if r["status"] == "succeeded"]
-                if len(built) > 1 and not self.cancel_requested:
+                if len(built) > 1 and not lane.cancel_requested:
                     every = list_regions(self.data / "out", "summary.json")
                     regions = every or built
                     job["final_combine"] = {"status": "running", "exit_code": None, "regions": regions}
                     self._save(job)
                     log.write(f"\n=== combine {len(regions)} built regions into the map ===\n")
                     log.flush()
+                    code = self._stream(
+                        self._launch(lane, self.combine_builder(self.python, regions), log), log)
                     with self.lock:
-                        self.process = self._popen(self.combine_builder(self.python, regions), log)
-                    code = self._stream(self.process, log)
-                    with self.lock:
-                        self.process = None
+                        lane.process = None
                     job["final_combine"].update(exit_code=code,
                                                 status="succeeded" if code == 0 else "failed")
             statuses = [r["status"] for r in job["runs"]]
-            if self.cancel_requested:
+            if lane.cancel_requested:
                 job["status"] = "cancelled"
             elif all(s == "succeeded" for s in statuses) and job["final_combine"]["status"] != "failed":
                 job["status"] = "succeeded"
@@ -278,19 +416,68 @@ class JobManager:
             job["status"] = "failed"
             job["error"] = f"job runner failed ({type(exc).__name__})"
         finally:
-            job["finished"] = _now()
-            self._save(job)
-            with self.lock:
-                self.active = None
-                self.process = None
+            self._finish(job)
+
+    def _run_cloud(self, lane: Lane, job: dict) -> None:
+        job_dir = self._job_dir(job["job_id"])
+        run = job["runs"][0]
+        self._begin(job)
+        try:
+            with (job_dir / "stdout.log").open("a", encoding="utf-8") as log:
+                if lane.cancel_requested:
+                    run["status"] = "cancelled"
+                else:
+                    job["current_index"] = 0
+                    run["status"] = "running"
+                    run["started"] = _now()
+                    self._save(job)
+                    log.write(f"\n=== {job['target']} build on the shared VM: "
+                              f"{' '.join(job['regions'])} ===\n")
+                    log.flush()
+
+                    def on_line(line):
+                        before = (job.get("preview_url"), job.get("gate_result"),
+                                  job.get("published_version"))
+                        parse_cloud_line(line, job)
+                        if before != (job.get("preview_url"), job.get("gate_result"),
+                                      job.get("published_version")):
+                            self._save(job)
+
+                    cmd = self.cloud_builder(job["target"], self.python, job["regions"],
+                                             job["paid_referee"])
+                    env = self.cloud_env() if self.cloud_env else None
+                    code = self._stream(self._launch(lane, cmd, log, env), log, on_line)
+                    with self.lock:
+                        lane.process = None
+                    run["exit_code"] = code
+                    run["finished"] = _now()
+                    run["status"] = ("cancelled" if lane.cancel_requested
+                                     else "succeeded" if code == 0 else "failed")
+            job["status"] = run["status"] if run["status"] != "queued" else "cancelled"
+        except Exception as exc:
+            job["status"] = "failed"
+            job["error"] = f"job runner failed ({type(exc).__name__})"
+        finally:
+            self._finish(job)
 
     def cancel(self, job_id: str) -> dict:
+        """Remove a queued job, or stop the running one."""
         job = self.load(job_id)
         with self.lock:
-            if self.active != job_id:
-                raise JobError("that job is not running", 409)
-            self.cancel_requested = True
-            proc = self.process
+            for lane in self.lanes.values():
+                if job_id in lane.queue:
+                    lane.queue.remove(job_id)
+                    job["status"] = "cancelled"
+                    job["finished"] = _now()
+                    for run in job.get("runs", []):
+                        run["status"] = "cancelled"
+                    self._save(job)
+                    return job
+            lane = next((ln for ln in self.lanes.values() if ln.active == job_id), None)
+            if lane is None:
+                raise JobError("that job is not queued or running", 409)
+            lane.cancel_requested = True
+            proc = lane.process
         if proc is not None:
             threading.Thread(target=self._stop, args=(proc,), daemon=True).start()
         return job
@@ -316,9 +503,12 @@ class JobManager:
                 continue
 
     def wait(self, timeout: float | None = None) -> None:
-        thread = self.thread
-        if thread:
-            thread.join(timeout)
+        """Wait for every lane to drain (tests and shutdown)."""
+        deadline = None if timeout is None else time.time() + timeout
+        for lane in self.lanes.values():
+            thread = lane.thread
+            if thread:
+                thread.join(None if deadline is None else max(deadline - time.time(), 0))
 
     # ---- views ---------------------------------------------------------
     def run_status(self, run: dict) -> dict | None:
@@ -346,7 +536,11 @@ class JobManager:
             job["eta_s"] = 0
         elif job.get("estimated_total_s") is not None:
             job["eta_s"] = max(round(float(job["estimated_total_s"]) - elapsed), 0)
-        job["active"] = self.active == job_id
+        job["active"] = job_id in self.active_jobs().values()
+        with self.lock:
+            lane = self.lanes.get(job.get("lane") or "local")
+            job["queue_position"] = (lane.queue.index(job_id) + 1
+                                     if lane and job_id in lane.queue else None)
         return job
 
     def log(self, job_id: str, offset: int = 0) -> dict:

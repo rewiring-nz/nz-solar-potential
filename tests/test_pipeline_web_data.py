@@ -175,7 +175,7 @@ def test_estimate_store_lifecycle_and_blockers():
         eid = store.start([region], background=False)
         rec = store.usable(eid)
         assert rec["totals"]["buildings"] == 10 and lookups == [region]
-        assert rec["cloud_cost_usd"] == 0.0 and rec["paid_referee"]["default"] is False
+        assert rec["cloud_cost_nzd"] == "0" and rec["cloud"] is None and rec["paid_referee"]["default"] is False
         store.start([region], background=False)
         assert lookups == [region], "the size must be cached after the first lookup"
         for bad in (lambda: store.usable(eid, now=rec["expires_at"] + 1),):

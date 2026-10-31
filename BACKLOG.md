@@ -29,8 +29,13 @@ token-protected; picks LINZ suburbs/localities on a map, estimates buildings,
 download, time and disk, needs a typed `yes`, builds regions in sequence with
 live progress and cancel, then combines all built regions. `tools/pipeline.py`
 now writes `status.json` and accepts `--no-preview-server`.
-Remaining: browser-launched builds on the shared VM (hosted backend, auth,
-cloud cost confirmation).
+Cloud slice of #12: the panel's Local / Developer / Published toggle lists
+local areas, every developer's previews and the live data version; starts
+developer previews and gated publishes on the shared VM after an NZD cost
+estimate and typed `yes`; and shows selected and queued work per lane (local,
+cloud). Cloud mode of `tools/pipeline.py` accepts several space-separated
+regions. Remaining: a hosted backend with team auth (the panel still runs on
+each developer's computer with their own `gcloud` credentials).
 
 Completed: unattended quickstart and pipeline runs. A failed deploy gate on a
 developer preview or build-only `tools/remote_build.sh` run now prints

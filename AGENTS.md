@@ -49,9 +49,15 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   `--mode cloud --profile <name>` uses a per-developer VM; `--cloud` runs a
   VM lifecycle action. See [docs/data-maintainers/quickstart-cloud.md](docs/data-maintainers/quickstart-cloud.md).
 - `tools/pipeline_serve.py`: local preview server with PMTiles byte ranges.
-- `tools/pipeline_web.py`: local web panel (#12) over `tools/pipeline.py`:
-  choose LINZ localities, estimate, typed `yes`, sequential builds, live log,
-  cancel. Loopback with a per-launch token; records under `data/pipeline_web/`.
+- `tools/pipeline_web.py`: local web panel (#12) with a Local / Developer /
+  Published target toggle: choose LINZ localities, estimate (cloud targets add
+  an NZD cost, not a spending cap), typed `yes`, queued builds in a local lane
+  and a cloud lane (shared VM), live log, cancel. Developer runs
+  `tools/pipeline.py --mode cloud --cloud build` (preview under `devel/<alias>/`);
+  Published runs `tools/remote_build.sh --publish`, which publishes only when the
+  deploy gate passes; the panel never passes `--reviewed`. Published is blocked
+  unless the checkout is on a clean, pushed `main`. Loopback with a per-launch
+  token; records under `data/pipeline_web/`.
   Package `tools/pipeline_webui/`; page `pipeline.html`. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
 - Local pipeline execution uses `src/local_queue.py` and

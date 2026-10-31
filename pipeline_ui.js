@@ -8,6 +8,16 @@
   const LOCALITY_DEBOUNCE_MS = 400;
   const LOG_MAX_LINES = 5000;
   const ESTIMATE_POLL_MS = 1000;
+  const QUEUE_POLL_MS = 5000;
+  const VM_POLL_MS = 60000;
+  const TARGETS = {
+    local: { label: "Local", regions: "Areas built or prepared in this checkout.",
+             start: "Start build" },
+    developer: { label: "Developer", regions: "Every developer's preview on the shared VM's preview bucket.",
+                 start: "Start developer build on the VM" },
+    published: { label: "Published", regions: "Areas on the live map (production).",
+                 start: "Build, gate and publish" },
+  };
 
   const tokenMatch = location.hash.match(/token=([A-Za-z0-9_-]+)/);
   if (tokenMatch) {
@@ -39,6 +49,7 @@
   let currentEstimate = null;
   let stream = null;
   let shownJob = null;
+  let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
 
   async function api(path, opts = {}) {
     const headers = { "X-Pipeline-Token": token };
@@ -69,7 +80,38 @@
     document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + name));
     if (name === "jobs") loadJobs();
+    if (name === "queue") loadQueue();
     updateHint();
+  }
+
+  // ---- target toggle ---------------------------------------------------
+  document.querySelectorAll("#targets button").forEach((b) => b.addEventListener("click", () => setTarget(b.dataset.target)));
+  function setTarget(name) {
+    const changed = name !== target;
+    target = name;
+    localStorage.setItem("pipelineTarget", name);
+    document.querySelectorAll("#targets button").forEach((b) => b.classList.toggle("active", b.dataset.target === name));
+    document.body.className = "target-" + name;
+    $("regions-desc").textContent = TARGETS[name].regions;
+    if (changed) {
+      currentEstimate = null;
+      $("estimate").innerHTML = "";
+      renderSelection();
+      if (map.getSource("regions")) loadRegions(true);
+    }
+    loadVm(false);
+  }
+
+  async function loadVm(refresh) {
+    if (target === "local" || !writable) { $("vm-info").textContent = ""; return; }
+    try {
+      const vm = await api("cloud/status" + (refresh ? "?refresh=1" : ""));
+      $("vm-info").innerHTML = `VM ${esc(vm.vm)} <span class="pill ${esc(vm.status)}">${esc(vm.status || "unknown")}</span>
+        ${vm.error ? `<span class="block">${esc(vm.error)}</span>` : ""}
+        ${vm.busy_with ? " · panel job " + esc(vm.busy_with) + " using it" : ""} · builds ${esc(vm.ref)}`;
+    } catch (e) {
+      $("vm-info").innerHTML = `<span class="block">VM status: ${esc(e.message)}</span>`;
+    }
   }
 
   // ---- map -------------------------------------------------------------
@@ -138,7 +180,9 @@
   function showRegionPopup(feature, lngLat) {
     const p = feature.properties;
     const html = `<b>${esc(p.name || p.region)}</b><br><span class="pill ${esc(p.state)}">${esc(p.state)}</span>
-      ${p.n != null ? fmtInt(p.n) + " buildings" : ""}<br>
+      ${p.n != null ? fmtInt(p.n) + " buildings" : ""}
+      ${p.alias ? "<br>Developer: " + esc(p.alias) + (p.run ? " · run " + esc(p.run) : "") : ""}
+      ${p.data_version ? "<br>Live data v" + esc(p.data_version) : ""}<br>
       <a href="${esc(p.preview_url)}" target="_blank" rel="noopener">Open preview</a>
       ${p.report_url ? ` · <a href="${esc(p.report_url)}" target="_blank" rel="noopener">Report</a>` : ""}`;
     new maplibregl.Popup().setLngLat(lngLat).setHTML(html).addTo(map);
@@ -181,28 +225,38 @@
   }
 
   // ---- regions tab -----------------------------------------------------
-  async function loadRegions(fit) {
+  $("regions-refresh").addEventListener("click", () => { loadRegions(false, true); loadVm(true); });
+
+  async function loadRegions(fit, refresh) {
+    const source = target;
     let fc;
-    try { fc = await api("regions"); } catch (e) {
+    $("regions-meta").innerHTML = source === "local" ? "" : "<p class='muted'>Reading the bucket…</p>";
+    try {
+      fc = await api("regions" + (source === "local" ? "" : "?source=" + source + (refresh ? "&refresh=1" : "")));
+    } catch (e) {
+      $("regions-meta").innerHTML = "";
       $("region-list").innerHTML = `<p class="block">${esc(e.message)}</p>`;
       return;
     }
+    if (source !== target) return;  // the toggle moved on while this loaded
+    $("regions-meta").innerHTML = regionsMeta(fc);
     if (map.getSource("regions")) map.getSource("regions").setData(fc);
     const items = fc.features.map((f) => f.properties)
       .sort((a, b) => String(b.built_at || "").localeCompare(String(a.built_at || "")));
     $("region-list").innerHTML = items.length ? items.map((p) => `
-      <div class="item" data-region="${esc(p.region)}">
+      <div class="item" data-region="${esc(p.region)}" data-alias="${esc(p.alias || "")}">
         <h3 class="fly">${esc(p.name || p.region)} <span class="pill ${esc(p.state)}">${esc(p.state)}</span></h3>
-        <div class="muted">${esc(p.region)}${p.council ? " · " + esc(p.council) : ""}</div>
+        <div class="muted">${esc(p.region)}${p.council ? " · " + esc(p.council) : ""}${p.alias ? " · developer " + esc(p.alias) : ""}</div>
         <div class="muted">${p.n != null ? fmtInt(p.n) + " buildings · " : ""}${p.kwh ? fmtInt(Math.round(p.kwh / 1000)) + " MWh/yr · " : ""}${p.built_at ? "built " + esc(p.built_at.slice(0, 10)) : ""}</div>
         <div class="links">
-          ${p.state === "built" ? `<a href="${esc(p.preview_url)}" target="_blank" rel="noopener">Open preview</a>` : ""}
+          ${p.state === "built" ? `<a href="${esc(p.preview_url)}" target="_blank" rel="noopener">${p.source === "published" ? "Open live map" : "Open preview"}</a>` : ""}
           ${p.report_url ? `<a href="${esc(p.report_url)}" target="_blank" rel="noopener">Last report (${esc(p.last_run_status || "?")})</a>` : ""}
           ${writable ? `<button class="small rebuild">Rebuild</button>` : ""}
         </div>
-      </div>`).join("") : "<p class='muted'>Nothing built yet. Use New build.</p>";
+      </div>`).join("") : `<p class='muted'>${source === "local" ? "Nothing built yet. Use New build." : "Nothing found."}</p>`;
     document.querySelectorAll("#region-list .item").forEach((el) => {
-      const feature = fc.features.find((f) => f.properties.region === el.dataset.region);
+      const feature = fc.features.find((f) => f.properties.region === el.dataset.region &&
+        (!f.properties.alias || f.properties.alias === el.dataset.alias));
       el.querySelector(".fly").addEventListener("click", () => flyTo(feature));
       const rb = el.querySelector(".rebuild");
       if (rb) rb.addEventListener("click", () => {
@@ -215,6 +269,21 @@
       fc.features.forEach((f) => extend(bounds, f.geometry));
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 0 });
     }
+  }
+
+  function regionsMeta(fc) {
+    const warn = (fc.warnings || []);
+    const warnHtml = warn.length ? `<details><summary class="warn">${warn.length} warning(s)</summary>
+      ${warn.map((w) => `<div class="warn">${esc(w)}</div>`).join("")}</details>` : "";
+    if (fc.source === "published") {
+      return `<div class="muted">Live data v${esc(fc.data_version || "?")} · versions in the bucket: ${esc((fc.versions || []).join(", ") || "?")}
+        · <a href="${esc(fc.site)}" target="_blank" rel="noopener">live map</a></div>${warnHtml}`;
+    }
+    if (fc.source === "developer") {
+      return `<div class="muted">${(fc.aliases || []).map((a) =>
+        `<a href="${esc(a.preview_url)}" target="_blank" rel="noopener">${esc(a.alias)}</a> (${fmtInt(a.regions)})`).join(" · ") || "No developer previews."}</div>${warnHtml}`;
+    }
+    return "";
   }
 
   function extend(bounds, geom) {
@@ -244,7 +313,7 @@
   function renderSelection() {
     const chips = [...selected.entries()].map(([id, label]) =>
       `<span class="chip" title="${esc(id)}">${esc(label)}<button data-id="${esc(id)}" aria-label="Remove">×</button></span>`);
-    $("selection").innerHTML = chips.length ? "<b>Selected:</b><br>" + chips.join("") : "<p class='muted'>Nothing selected.</p>";
+    $("selection").innerHTML = chips.length ? `<b>Selected for a ${esc(TARGETS[target].label.toLowerCase())} build:</b><br>` + chips.join("") : "<p class='muted'>Nothing selected.</p>";
     $("selection").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => toggleSelection(b.dataset.id)));
     $("estimate-btn").disabled = !writable || !selected.size;
   }
@@ -277,9 +346,9 @@
 
   $("estimate-btn").addEventListener("click", async () => {
     $("estimate-btn").disabled = true;
-    $("estimate").innerHTML = "<p class='muted'>Estimating… (counting buildings with LINZ can take a minute for new areas)</p>";
+    $("estimate").innerHTML = `<p class='muted'>Estimating a ${esc(TARGETS[target].label.toLowerCase())} build… (counting buildings with LINZ can take a minute for new areas)</p>`;
     try {
-      const { estimate_id } = await api("estimate", { method: "POST", body: { regions: [...selected.keys()] } });
+      const { estimate_id } = await api("estimate", { method: "POST", body: { regions: [...selected.keys()], target } });
       let est;
       for (;;) {
         est = await api("estimate/" + estimate_id);
@@ -287,6 +356,7 @@
         await new Promise((r) => setTimeout(r, ESTIMATE_POLL_MS));
       }
       if (est.status === "error") throw new Error(est.error);
+      if (est.target !== target) return;  // the toggle moved on; estimate again
       currentEstimate = est;
       renderEstimate(est);
     } catch (e) {
@@ -310,16 +380,17 @@
       <table><tr><th>Area</th><th class="num">Buildings</th><th class="num">Download</th><th class="num">Time</th></tr>
       ${rows}
       <tr><th>Total</th><th class="num">${fmtInt(t.buildings)}</th><th class="num">${fmtGb(t.download_gb)}</th><th class="num">${fmtDur(t.total_s)}</th></tr></table>
-      <div class="muted">Disk about ${fmtGb(t.disk_gb)} (${esc(est.machine.disk_free_gb)} GB free). Cloud cost: $0 (runs on this computer).
-        Rate ${esc(est.calibration.seconds_per_building)} s/building from ${est.calibration.source === "history" ? esc(est.calibration.runs_used) + " recent runs" : "defaults"}.</div>
+      ${costHtml(est)}
+      <div class="muted">Rate ${esc(est.calibration.seconds_per_building)} s/building from ${est.calibration.source === "history" ? esc(est.calibration.runs_used) + " recent runs" : "defaults"}.</div>
       ${(est.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
       ${(est.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
       <p class="muted">${esc(est.disclaimer)}</p>
       ${blocked ? "" : `<div class="confirm">
         <label><input type="checkbox" id="referee"> Use the paid AI referee (up to US$${esc(ref.usd_upper)}; ${esc(ref.text || "")})</label>
-        <p>Type <b>yes</b> to start this build:</p>
+        <p>${est.target === "local" ? "Type <b>yes</b> to start this build:"
+          : `Type <b>yes</b> to accept a cloud cost of up to <b>NZD ${esc(est.cloud.cost_nzd)}</b> (not a spending cap)${est.target === "published" ? " and publish to the live map if the gate passes" : ""}:`}</p>
         <input type="text" id="confirm" autocomplete="off" placeholder="yes">
-        <p><button class="primary" id="start-btn" disabled>Start build</button></p>
+        <p><button class="primary" id="start-btn" disabled>${esc(TARGETS[est.target].start)}</button></p>
       </div>`}`;
     if (blocked) return;
     $("confirm").addEventListener("input", () => {
@@ -328,22 +399,74 @@
     $("start-btn").addEventListener("click", startJob);
   }
 
+  function costHtml(est) {
+    const t = est.totals;
+    if (est.target === "local") {
+      return `<div class="muted">Disk about ${fmtGb(t.disk_gb)} (${esc(est.machine.disk_free_gb)} GB free). Cloud cost: $0 (runs on this computer).</div>`;
+    }
+    const c = est.cloud || {};
+    return `<div class="cost"><b>Cloud cost estimate: up to NZD ${esc(c.cost_nzd)}</b> (${esc(c.vm_hours)} VM hours)
+      <div>${esc(c.cost_text)}</div>
+      <div class="muted">${esc(c.cost_basis)}</div>
+      <div class="muted">VM ${esc(c.project)}/${esc(c.zone)}/${esc(c.vm)} is <b>${esc(c.vm_status || "unknown")}</b>; it builds <b>${esc(c.ref)}</b> as pushed.
+        ${c.preview_url ? `Preview: <a href="${esc(c.preview_url)}" target="_blank" rel="noopener">${esc(c.preview_user)}</a>.` : ""}
+        ${est.target === "published" ? "<b>Publishes to the live map if the deploy gate passes.</b>" : ""}</div></div>`;
+  }
+
   async function startJob() {
     $("start-btn").disabled = true;
     try {
       const res = await api("jobs", { method: "POST", body: {
         estimate_id: currentEstimate.estimate_id, confirm: $("confirm").value.trim(),
-        paid_referee: $("referee").checked } });
+        paid_referee: $("referee").checked, target: currentEstimate.target,
+        cost_nzd: currentEstimate.cloud ? currentEstimate.cloud.cost_nzd : undefined } });
       selected.clear();
       renderSelection();
       syncSelectionState();
       $("estimate").innerHTML = "";
-      showTab("jobs");
-      showJob(res.job_id);
+      showTab("queue");
     } catch (e) {
       $("estimate").insertAdjacentHTML("beforeend", `<p class="block">${esc(e.message)}</p>`);
       $("start-btn").disabled = false;
     }
+  }
+
+  // ---- queue tab -------------------------------------------------------
+  async function loadQueue() {
+    let res;
+    try { res = await api("queue"); } catch (e) {
+      $("queue-list").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+      return;
+    }
+    const lanes = res.lanes || {};
+    const total = Object.values(lanes).reduce((n, l) => n + l.jobs.length, 0);
+    $("queue-count").textContent = total ? "(" + total + ")" : "";
+    const sel = selected.size ? `<div class="item"><b>Selected, not started (${esc(TARGETS[target].label)}):</b>
+      ${[...selected.values()].map((l) => `<span class="chip">${esc(l)}</span>`).join("")}
+      <div class="muted">${currentEstimate ? "Estimated; confirm on New build." : "Estimate on New build to start."}</div></div>` : "";
+    $("queue-list").innerHTML = sel + Object.entries(lanes).map(([name, lane]) => `
+      <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}</h3>
+        ${lane.jobs.map((j) => {
+          const running = j.job_id === lane.active;
+          const cost = j.approved && j.approved.cloud_cost_nzd && j.approved.cloud_cost_nzd !== "0" ? " · up to NZD " + esc(j.approved.cloud_cost_nzd) : "";
+          return `<div class="item"><span class="row-actions">${writable ? `<button class="small" data-q="${esc(j.job_id)}" data-running="${running}">${running ? "Cancel" : "Remove"}</button>` : ""}</span>
+            <h3 data-job="${esc(j.job_id)}"><span class="pill ${esc(j.target)}">${esc(j.target)}</span> <span class="pill ${esc(j.status)}">${running ? "running" : "queued"}</span> ${esc(j.job_id)}</h3>
+            <div class="muted">${esc((j.regions || []).join(", "))}</div>
+            <div class="muted">${j.estimated_total_s != null ? "about " + fmtDur(j.estimated_total_s) : ""}${cost}${j.waiting ? " · " + esc(j.waiting) : ""}</div></div>`;
+        }).join("") || "<p class='muted'>Idle.</p>"}</div>`).join("");
+    $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => { showTab("jobs"); showJob(el.dataset.job); }));
+    $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () =>
+      cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue)));
+  }
+
+  async function cancelJob(jobId, running, btn) {
+    const msg = running
+      ? "Cancel this running build? The region being built stops; finished regions are kept. For a cloud build the VM stops only if this run started it."
+      : "Remove this job from the queue?";
+    if (!confirm(msg)) return;
+    if (btn) btn.disabled = true;
+    try { await api(`jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: {} }); }
+    catch (e) { alert(e.message); if (btn) btn.disabled = false; }
   }
 
   // ---- jobs tab --------------------------------------------------------
@@ -354,10 +477,11 @@
       return;
     }
     $("job-list").innerHTML = res.jobs.map((j) => `
-      <div class="item"><h3 data-job="${esc(j.job_id)}">${esc(j.created)} <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
+      <div class="item"><h3 data-job="${esc(j.job_id)}">${esc(j.created)} <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
         <div class="muted">${esc(j.regions.join(", "))}</div></div>`).join("") || "<p class='muted'>No jobs yet.</p>";
     $("job-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
-    if (!shownJob && res.active_job) showJob(res.active_job);
+    const active = Object.values(res.active_jobs || {}).find(Boolean) || res.active_job;
+    if (!shownJob && active) showJob(active);
   }
 
   async function showJob(jobId) {
@@ -404,22 +528,23 @@
     }).join("");
     const fc = job.final_combine || {};
     el.innerHTML = `
-      <h3>Job ${esc(job.job_id)} <span class="pill ${esc(job.status)}">${esc(job.status)}</span></h3>
+      <h3>Job ${esc(job.job_id)} <span class="pill ${esc(job.target || "local")}">${esc(job.target || "local")}</span> <span class="pill ${esc(job.status)}">${esc(job.status)}</span></h3>
+      ${job.queue_position ? `<div class="muted">Queued: position ${esc(job.queue_position)} in its lane.</div>` : ""}
+      ${job.waiting ? `<div class="warn">${esc(job.waiting)}</div>` : ""}
+      ${job.approved && job.approved.cloud_cost_text ? `<div class="muted">Approved: ${esc(job.approved.cloud_cost_text)}</div>` : ""}
+      ${job.gate_result ? `<div>Deploy gate: <span class="pill ${job.gate_result === "pass" ? "PASS" : "FAIL"}">${esc(job.gate_result)}</span></div>` : ""}
+      ${job.published_version ? `<div><b>Published data v${esc(job.published_version)}</b></div>` : ""}
       <progress max="1" value="${Number(job.progress || 0)}"></progress>
       <div class="muted">${Math.round((job.progress || 0) * 100)}%${running && job.eta_s != null ? " · about " + fmtDur(job.eta_s) + " left (estimate)" : ""}
         ${job.paid_referee ? " · paid referee on" : ""}</div>
       <table>${runs}</table>
       ${fc.status && fc.status !== "not needed" ? `<div class="muted">Map combine: ${esc(fc.status)}</div>` : ""}
       ${job.error ? `<div class="block">${esc(job.error)}</div>` : ""}
-      ${running && job.active !== false && writable ? `<button class="small" id="cancel-btn">Cancel</button>` : ""}
-      ${job.status === "succeeded" ? `<p><a href="/preview.html" target="_blank" rel="noopener">Open the map preview</a></p>` : ""}`;
+      ${running && writable ? `<button class="small" id="cancel-btn">${job.status === "queued" ? "Remove from queue" : "Cancel"}</button>` : ""}
+      ${job.preview_url ? `<p><a href="${esc(job.preview_url)}" target="_blank" rel="noopener">Open the developer preview</a></p>` : ""}
+      ${job.status === "succeeded" && (job.target || "local") === "local" ? `<p><a href="/preview.html" target="_blank" rel="noopener">Open the map preview</a></p>` : ""}`;
     const cancel = $("cancel-btn");
-    if (cancel) cancel.addEventListener("click", async () => {
-      if (!confirm("Cancel this build? The region being built stops; finished regions are kept.")) return;
-      cancel.disabled = true;
-      try { await api(`jobs/${encodeURIComponent(job.job_id)}/cancel`, { method: "POST", body: {} }); }
-      catch (e) { alert(e.message); cancel.disabled = false; }
-    });
+    if (cancel) cancel.addEventListener("click", () => cancelJob(job.job_id, job.status === "running", cancel));
   }
 
   // ---- start-up --------------------------------------------------------
@@ -434,16 +559,24 @@
         if (!health.linz_key) banner("No LINZ API key found (environment, .env or Secret Manager): area search and new areas will fail.");
         else if (health.workspace_lock) banner("A command-line build is running in this checkout; new builds wait until it ends.");
       }
-      $("server-info").textContent = `Local server · code ${health.git || "?"}${health.active_job ? " · job running" : ""}`;
+      const lanes = health.active_jobs || {};
+      $("server-info").textContent = `Local server · code ${health.git || "?"}` +
+        (lanes.local ? " · local job running" : "") + (lanes.cloud ? " · cloud job running" : "");
     } catch (e) {
       banner(e.status === 403
         ? "This link's token is out of date (the server was restarted). Open the new link it printed."
         : "Read-only: the panel server is not running. Start it with <code>python3 tools/pipeline_web.py</code>.");
       $("server-info").textContent = "Not connected";
     }
+    setTarget(target);
     renderSelection();
     updateHint();
-    if (writable) loadJobs();
+    if (writable) {
+      loadJobs();
+      loadQueue();
+      setInterval(loadQueue, QUEUE_POLL_MS);
+      setInterval(() => loadVm(false), VM_POLL_MS);
+    }
     if (map.getSource("regions")) loadRegions(false);  // re-render with Rebuild buttons
   }
   init();

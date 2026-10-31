@@ -1,15 +1,24 @@
 # Web pipeline panel
 
 A local web page for the pipeline: choose suburbs and localities on a map,
-see an estimate, type `yes`, and follow the build. It runs the same
-`tools/pipeline.py` as the [quickstart](quickstart.md), one region after
-another, on this computer. It does not start cloud machines or cost cloud
-money.
+see an estimate, type `yes`, and follow the build. A toggle at the top picks
+the target:
+
+| Target | Shows | A build runs | Costs |
+| --- | --- | --- | --- |
+| **Local** | Areas built in this checkout | `tools/pipeline.py <region>` on this computer, as the [quickstart](quickstart.md) does | Nothing in the cloud |
+| **Developer** | Every developer's previews in `gs://rewiring-solar-previews/devel/<alias>/` | `tools/pipeline.py "<regions>" --mode cloud --cloud build` on the shared build VM, publishing to your own `devel/<alias>/` preview, as the [cloud quickstart](quickstart-cloud.md) does | Google Cloud, shown before you start |
+| **Published** | The live map's data version and its areas | `tools/remote_build.sh --regions "<regions>" --publish` on the shared build VM; it publishes only if the [deploy gate](../../tools/predeploy_check.py) passes | Google Cloud, shown before you start |
+
+The panel never publishes past a failed gate: `--reviewed` is left to the
+command line, after someone has rendered and judged the gate's list.
 
 ## Start it
 
 Do the [local setup](local-setup.md) first; the panel needs the same Python
-environment and LINZ API key.
+environment and LINZ API key. The Developer and Published targets also need
+`gcloud` signed in with access to the shared project
+([team access](team-access.md)) and the GitHub CLI for your preview alias.
 
 ```bash
 .venv/bin/python tools/pipeline_web.py
@@ -24,17 +33,23 @@ It prints a link such as
 | `--python PATH` | Interpreter for pipeline runs (default: the one running the panel). |
 | `--no-open-browser` | Print the link without opening it. |
 
-`Ctrl+C` stops the panel. A build that is still running is cancelled first.
+`Ctrl+C` stops the panel. Running builds are cancelled first and queued
+ones are dropped. Cancelling a cloud build stops the local command; the VM
+is stopped only if that build started it.
 
 ## Use it
 
-- **Regions** lists every area built or prepared in this checkout:
-  - green: built
-  - amber: inputs downloaded, not built
-  - red: the last run failed
+- **Regions** depends on the target:
+  - Local lists every area built or prepared in this checkout (green:
+    built; amber: inputs downloaded, not built; red: the last run failed),
+    with links to its map preview and last `report.md`.
+  - Developer lists each alias's preview areas with a link to that preview.
+  - Published shows the live data version, the versions kept in the
+    bucket, and the live areas.
 
-  Each area links to its map preview and last `report.md`. **Rebuild** adds
-  the area to a new build.
+  Cloud listings are read from the public buckets and cached for 10
+  minutes; **Refresh** reads them again. **Rebuild** adds the area to a new
+  build for the current target.
 - **New build**: search for a suburb or locality, or zoom in to level 10 or
   closer and click areas on the map. **Estimate** shows, per area:
   - building count
@@ -44,8 +59,12 @@ It prints a link such as
   - warnings, such as no LiDAR or a large area
   - blockers, such as no survey coverage or too little disk
 
-  To start, type `yes`. The paid AI referee is off unless you tick it; the
-  estimate shows its upper cost.
+  For Developer and Published the estimate also shows the Google Cloud
+  cost (see [Cloud builds](#cloud-builds)). To start, type `yes`. The paid
+  AI referee is off unless you tick it; the estimate shows its upper cost.
+- **Queue**: what is selected but not started, and each lane's running and
+  waiting jobs. **Remove** drops a waiting job; **Cancel** stops a running
+  one.
 - **Jobs**: progress, an estimated time left, per-area status with links to
   each run's report, and the live log. **Cancel** stops the area being
   built; finished areas are kept.
@@ -58,6 +77,13 @@ which record where each figure was measured. An estimate expires after 30
 minutes; a build can only start from the estimate that was shown.
 
 ## What a build does
+
+Jobs run in two lanes, each one job at a time: the **local** lane on this
+computer and the **cloud** lane on the shared VM. A job started while its
+lane is busy waits in the queue. The lanes are independent, so a local
+build and a cloud build can run together.
+
+Local builds:
 
 - Areas build one at a time, each as
   `tools/pipeline.py <region> --no-open-browser --no-preview-server`. The
@@ -72,6 +98,26 @@ minutes; a build can only start from the estimate that was shown.
   command-line build holds `data/pipeline-workspace.lock`.
 - If the panel is stopped mid-build, that job shows as `interrupted` next
   time.
+
+## Cloud builds
+
+- **Cost.** The estimate shows an upper Google Cloud cost in NZD, its
+  basis and the VM. VM hours are the estimated build time × 1.5, between 8
+  and 16 (the spot VM stops itself 16 hours after starting). Unit prices
+  come from `config.CLOUD_SHARED_BUILD`. The figure is an estimate, not a
+  spending cap; actual charges can be higher. Starting needs a typed `yes`,
+  and the server checks that the start request carries the same cost the
+  estimate showed.
+- **Code.** The VM builds `main` as pushed to GitHub, not uncommitted or
+  unpushed changes in this checkout. If the VM is already building, its
+  code sync refuses and the job stops before building anything.
+- **Publish blockers.** `remote_build.sh --publish` commits and pushes
+  `site-config.js` on `main` from this checkout. A Published estimate is
+  blocked, and the start is checked again, unless this checkout is on
+  `main`, `site-config.js` has no local changes, and there are no unpushed
+  commits.
+- **Results.** A developer job links its preview. A published job shows the
+  gate result and, when it passed, the published data version.
 
 Each area's run directory is `data/pipeline_runs/<run-id>/`, the same as a
 command-line run. It holds `report.md`, `run.log` and `status.json` (see
@@ -92,10 +138,11 @@ records under `data/pipeline_web/`, which is ignored by Git:
 - The LINZ key stays on the server. Locality requests go through it, and
   errors name only the failure type.
 
-The panel is not a hosted service. Running builds on the shared VM from the
-browser is planned separately in
-[issue #12](https://github.com/rewiring-nz/nz-solar-potential/issues/12);
-until then, use the [cloud quickstart](quickstart-cloud.md).
+- Anyone with the link can also start paid builds on the shared VM; each
+  still needs the typed `yes` against the shown cost.
+
+The panel is not a hosted service; it runs on your computer with your
+`gcloud` credentials.
 
 ## Troubleshooting
 
@@ -107,3 +154,6 @@ until then, use the [cloud quickstart](quickstart-cloud.md).
 | "zoom in" when choosing areas | The view is wider than 1°; zoom in. |
 | "a CLI build is running in this checkout" | Wait for it, or stop it and see [Local task queue](pipeline-reference.md#local-task-queue) before removing a stale lock. |
 | An area failed | Open its report from the Jobs tab and follow [Troubleshooting](troubleshooting.md). |
+| VM status `UNKNOWN` | The message shows gcloud's error; usually `gcloud auth login` or missing access to the project ([team access](team-access.md)). |
+| "cannot publish: … unpushed commit(s)" | Push or reset those commits, then estimate again. |
+| A cloud job stopped at the code sync | The VM was busy with another build; wait for it, then start again. |

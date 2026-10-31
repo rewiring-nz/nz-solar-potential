@@ -97,6 +97,7 @@ run "shared build plan"     $PY tests/test_build_plan.py
 run "pipeline web panel data" $PY tests/test_pipeline_web_data.py
 run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
+run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py
