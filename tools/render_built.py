@@ -64,7 +64,7 @@ def pick(a, now, before):
             old = before.get(r, {})
             for b in set(by) | set(old):
                 n0, n1 = panels(old.get(b, [])), panels(by.get(b, []))
-                if n0 != n1:
+                if n0 != n1 and not (a.skip_zeroed and n1 == 0):
                     rows.append((abs(n1 - n0), b, r, f"{n0} -> {n1} panels"))
         rows.sort(reverse=True)
         return [(b, r, note) for _, b, r, note in rows[:a.movers]]
@@ -121,8 +121,13 @@ def main():
     g.add_argument("--ids", type=int, nargs="+")
     g.add_argument("--cases", action="store_true", help="every roof in data/roof_cases.json")
     g.add_argument("--movers", type=int, help="the N roofs whose panel count moved most")
+    ap.add_argument("--skip-zeroed", action="store_true",
+                    help="with --movers, leave out roofs now at 0 (withheld)")
+    ap.add_argument("--now", help="folder of <region>/panel_layouts.geojson to draw as NOW "
+                    "(default: data/regions)")
     ap.add_argument("--before", help="folder of earlier <region>/panel_layouts.geojson")
     ap.add_argument("--cols", type=int, default=0, help="roofs per row (default: 2 with --before, else 3)")
+    ap.add_argument("--dpi", type=int, default=70)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     if a.movers and not a.before:
@@ -132,7 +137,7 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    now = load_layouts(REGIONS)
+    now = load_layouts(Path(a.now).expanduser() if a.now else REGIONS)
     before = load_layouts(Path(a.before).expanduser()) if a.before else {}
     todo = pick(a, now, before)
     per = 2 if a.before else 1
@@ -164,7 +169,7 @@ def main():
             cells[0].text(0.01, 0.01, note, transform=cells[0].transAxes, fontsize=8,
                           color="white", backgroundcolor="black")
     plt.tight_layout()
-    plt.savefig(a.out, dpi=70)
+    plt.savefig(a.out, dpi=a.dpi)
     print(f"{len(todo)} roofs -> {a.out}")
 
 

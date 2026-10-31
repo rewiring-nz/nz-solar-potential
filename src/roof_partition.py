@@ -1291,6 +1291,9 @@ SELECTED_ALT_MIN_AREA = float(os.environ.get("SOLAR_SELECTED_ALT_MIN_AREA", "0.9
 # across the set on the members' own returns. On by default; SOLAR_REPEAT_ROOFS=0 turns it off.
 REPEAT_FACES_DIR = SELECTED_FACES_DIR.parent / "repeat_faces"
 USE_REPEAT_ROOFS = os.environ.get("SOLAR_REPEAT_ROOFS", "1") == "1"
+# An agreed reading that covers clearly less roof than the LiDAR path gives
+# way to it (src/roof_segmentation.py). SOLAR_REPEAT_KEEP_ROOF=0 turns it off.
+REPEAT_KEEP_ROOF = os.environ.get("SOLAR_REPEAT_KEEP_ROOF", "1") == "1"
 
 
 def selected_doc(building_id):

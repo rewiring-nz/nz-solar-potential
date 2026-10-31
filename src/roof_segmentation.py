@@ -2120,12 +2120,35 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
             # the returns wins, the reading keeping ties.
             from src.roof_partition import (selected_score, selected_agreed, SELECTED_TRUST,
                                             SELECTED_COMPETE_MARGIN, SELECTED_MIN_COVER,
-                                            SELECTED_ALT_MIN_AREA)
+                                            SELECTED_ALT_MIN_AREA, REPEAT_KEEP_ROOF)
             _ss = selected_score(building_id)
             # an agreed reading of identical roofs already won on every copy's
             # returns (src/repeat_roofs.py); competing again here, copy by
             # copy, is what split the set
-            if _ss is not None and _ss < SELECTED_TRUST and not selected_agreed(building_id):
+            _agreed = selected_agreed(building_id)
+            # ...but it must still keep the roof. Explained points cannot see
+            # a wing the moved faces never reach: v68 gave 4736995, an L, its
+            # rectangular neighbour's faces (explained 0.90 vs its own 0.88)
+            # and it went from 57 panels to 15. When the LiDAR path, after
+            # the attach stage, covers clearly more roof than the agreed
+            # reading (the SELECTED_ALT_MIN_AREA ratio, the other way round),
+            # this copy is not the same roof and the LiDAR path builds it.
+            if (_agreed and REPEAT_KEEP_ROOF and _ss is not None and _ss < SELECTED_TRUST):
+                alt = _partition_facets(pc_source, building_geom, building_id, imagery_ds,
+                                        use_selected=False)
+                if os.environ.get("SOLAR_FACE_DEBUG"):
+                    print(f"[partition {building_id}] agreed reading {_ss:.2f}; LiDAR path {len(alt)} faces")
+                if alt:
+                    _att = _attach_building_geometry(faces, building_geom, pc_source, building_id)
+                    _alt_att = _attach_building_geometry(alt, building_geom, pc_source, building_id)
+                    _att_area = sum(f["geometry"].area for f in _att)
+                    _alt_area = sum(f["geometry"].area for f in _alt_att)
+                    if os.environ.get("SOLAR_FACE_DEBUG"):
+                        print(f"[partition {building_id}] agreed reading covers {_att_area:.0f} m2, "
+                              f"LiDAR path {_alt_area:.0f} m2")
+                    if _att_area < SELECTED_ALT_MIN_AREA * _alt_area:
+                        return alt
+            if _ss is not None and _ss < SELECTED_TRUST and not _agreed:
                 # The rival is the WHOLE LiDAR path -- partition, then the
                 # skeleton and plain-roof competitors it falls back to -- not
                 # the bare partition: on 4725584 the partition alone explained
