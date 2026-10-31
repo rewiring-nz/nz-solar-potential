@@ -77,8 +77,9 @@ def calibrate(data: Path, defaults: dict) -> dict:
 
 
 def _bbox_km2(bbox) -> float:
-    from src.localities import bbox_km2
-    return bbox_km2(bbox)
+    # PROJ runs in a child process; see geo_worker for why the server never loads it.
+    from tools.pipeline_webui import geo_worker
+    return geo_worker.run(["km2", json.dumps(list(bbox))])["bbox_km2"]
 
 
 def region_size(region: str, data: Path, lookup: SizeLookup | None) -> dict:
@@ -112,17 +113,12 @@ def region_size(region: str, data: Path, lookup: SizeLookup | None) -> dict:
 def linz_size_lookup(api_key_fn: Callable[[], str]) -> SizeLookup:
     """Building count and bbox as tools/find_area.py --details reads them."""
     def lookup(region: str) -> dict:
-        from src import localities as L
+        from tools.pipeline_webui import geo_worker
         key = api_key_fn()
         if not key:
             raise LookupError("LINZ_API_KEY is not set (environment, .env or Secret Manager)")
-        props = L.resolve(key, region)
-        outlines = L.fetch_outlines(key, props)
-        n = len(outlines["features"])
-        if not n:
-            raise LookupError(f"{props.get('name')} has no building outlines; choose another area")
-        bbox = L.outlines_bbox_wgs84(outlines)
-        return {"buildings": n, "bbox": bbox, "bbox_km2": round(L.bbox_km2(bbox), 3)}
+        # The key goes in the child's environment, never its arguments.
+        return geo_worker.run(["size", region], env={"LINZ_API_KEY": key})
     return lookup
 
 

@@ -206,12 +206,66 @@ def test_estimate_store_lifecycle_and_blockers():
             assert exc.status == 404
 
 
+PROJ_PACKAGES = ("pyproj", "rasterio", "fiona", "osgeo", "pyogrio", "geopandas")
+
+
+def test_server_process_never_loads_proj():
+    """PROJ in the server makes every later fork crash on macOS; it runs in geo_worker."""
+    import subprocess
+    probe = f"""
+import sys, tempfile, pathlib
+sys.path.insert(0, {str(ROOT)!r})
+import config
+from tools.pipeline_webui import server, estimate as E
+region = next(iter(config.REGIONS))
+with tempfile.TemporaryDirectory() as d:
+    size = E.region_size(region, pathlib.Path(d), None)
+assert size["bbox_km2"] > 0, size
+loaded = sorted({{m.split(".")[0] for m in sys.modules}} & set({PROJ_PACKAGES!r}))
+print("LOADED", loaded)
+"""
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
+                         timeout=120, check=False)
+    assert out.returncode == 0, out.stderr[-2000:]
+    assert "LOADED []" in out.stdout, out.stdout
+
+
+def test_geo_worker_keeps_the_key_out_of_arguments_and_errors():
+    from tools.pipeline_webui import geo_worker as G
+    seen = {}
+
+    def fake_run(args, env=None, python=sys.executable):
+        seen.update(args=args, env=env)
+        return {"buildings": 3, "bbox": [1, 2, 3, 4], "bbox_km2": 1.0}
+    real_run, G.run = G.run, fake_run
+    try:
+        assert E.linz_size_lookup(lambda: KEY)("a/b/c")["buildings"] == 3
+    finally:
+        G.run = real_run
+    assert KEY not in " ".join(seen["args"]) and seen["env"] == {"LINZ_API_KEY": KEY}
+
+    import contextlib
+    import io
+    real_size = G._size
+    G._size = lambda region: (_ for _ in ()).throw(
+        RuntimeError(f"500 for https://data.linz.govt.nz/services;key={KEY}/wfs"))
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert G.main(["size", "a/b/c"]) == 1
+    finally:
+        G._size = real_size
+    assert KEY not in buf.getvalue() and "RuntimeError" in buf.getvalue()
+
+
 if __name__ == "__main__":
     for test in (test_catalog_states_and_links, test_bbox_validation,
                  test_localities_drop_water_mark_homonyms_and_cache,
                  test_locality_errors_never_carry_the_key,
                  test_estimate_arithmetic_and_cache_effects,
                  test_calibration_uses_finished_runs_only,
-                 test_estimate_store_lifecycle_and_blockers):
+                 test_estimate_store_lifecycle_and_blockers,
+                 test_server_process_never_loads_proj,
+                 test_geo_worker_keeps_the_key_out_of_arguments_and_errors):
         test()
     print("pipeline web data tests passed")

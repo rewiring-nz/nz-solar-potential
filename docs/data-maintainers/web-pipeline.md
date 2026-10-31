@@ -154,6 +154,7 @@ The panel is not a hosted service; it runs on your computer with your
 | "zoom in" when choosing areas | The view is wider than 1°; zoom in. |
 | "a CLI build is running in this checkout" | Wait for it, or stop it and see [Local task queue](pipeline-reference.md#local-task-queue) before removing a stale lock. |
 | An area failed | Open its report from the Jobs tab and follow [Troubleshooting](troubleshooting.md). |
+| macOS "Python quit unexpectedly" after Estimate | A panel older than this fix loaded PROJ in the server, and the next git, gcloud or build process it started crashed. Stop the panel and start it again on current code. Area calculations now run in a separate process (`tools/pipeline_webui/geo_worker.py`). |
 | VM status `UNKNOWN` | The message shows gcloud's error; usually `gcloud auth login` or missing access to the project ([team access](team-access.md)). |
 | "cannot publish: … unpushed commit(s)" | Push or reset those commits, then estimate again. |
 | A cloud job stopped at the code sync | The VM was busy with another build; wait for it, then start again. |

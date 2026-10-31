@@ -57,7 +57,12 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   Published runs `tools/remote_build.sh --publish`, which publishes only when the
   deploy gate passes; the panel never passes `--reviewed`. Published is blocked
   unless the checkout is on a clean, pushed `main`. Loopback with a per-launch
-  token; records under `data/pipeline_web/`.
+  token; records under `data/pipeline_web/`. The server process never loads
+  PROJ (pyproj, rasterio, fiona, GDAL, geopandas): once PROJ has opened
+  `proj.db`, every later fork from the threaded server segfaults in the child on
+  macOS ("Python quit unexpectedly"). Area calculations run in
+  `tools/pipeline_webui/geo_worker.py`; a test in
+  `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html`. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
 - Local pipeline execution uses `src/local_queue.py` and
