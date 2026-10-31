@@ -129,25 +129,25 @@ Install `tippecanoe`, `tile-join` and `tippecanoe-decode`, open a new
 terminal and check with `command -v`. macOS: `brew bundle --file=Brewfile`.
 Ubuntu/WSL: [build it](env-setup-ubuntu.md#2-tippecanoe).
 
-### Emit or combine failed (steps 14, 15)
+### Emit or combine failed (steps 17, 18)
 
-Read the `[QS-14]` or `[QS-15]` lines. Emit needs the region's solar and
+Read the `[QS-17]` or `[QS-18]` lines. Emit needs the region's solar and
 layout GeoJSON, the heat-map raster and sidecar, and its build keys. The
 required fields are in [tests/test_output_contract.py](../../tests/test_output_contract.py).
 
 `no_estimate` features in `panel_layouts.pmtiles` are intended: the outline of
 a building with no estimate. Don't remove them.
 
-### Preview or PMTiles range probe failed (step 18)
+### Preview or PMTiles range probe failed (step 21)
 
-Check `map-preview-server.log` and the `[QS-18]` lines. Confirm
+Check `map-preview-server.log` and the `[QS-21]` lines. Confirm
 `data/buildings.pmtiles` exists and is not empty and the port is free. The
 server listens on `127.0.0.1` only. A good range probe returns HTTP 206, not
 200.
 
 ### No roof heat layer
 
-Step 12 reports how many buildings rendered from LiDAR. Zero means no usable
+Step 15 reports how many buildings rendered from LiDAR. Zero means no usable
 point cloud; the rest of the map still works. Check step 02's coverage.
 
 ### 404s in the console, but the map works

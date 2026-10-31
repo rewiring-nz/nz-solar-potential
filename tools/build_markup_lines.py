@@ -32,7 +32,10 @@ def _image_shifts():
     if os.environ.get("SOLAR_IMAGE_SHIFT", "1") == "0":
         return {}
     out = {}
-    for f in (ROOT / "data" / "regions").glob("*/image_shift.json"):
+    from src.region_ids import list_regions
+    regions_dir = ROOT / "data" / "regions"
+    for r in list_regions(regions_dir, sentinel="image_shift.json"):
+        f = regions_dir / r / "image_shift.json"
         try:
             out.update(json.loads(f.read_text()))
         except Exception:

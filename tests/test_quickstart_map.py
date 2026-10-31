@@ -53,13 +53,15 @@ def test_range_server_serves_static_and_partial_content():
 
 def test_map_report_lists_new_steps_and_output_paths():
     from tools.pipeline import STEPS
-    assert [step["number"] for step in STEPS] == list(range(1, 19))
-    assert STEPS[13]["label"] == "Emit regional map tiles"
-    assert STEPS[14]["label"] == "Combine map dataset"
-    assert STEPS[16]["label"] == "Validate map contract"
+    assert [step["number"] for step in STEPS] == list(range(1, len(STEPS) + 1))
+    by_key = {step["key"]: step for step in STEPS}
+    assert by_key["emit_region"]["label"] == "Emit regional map tiles"
+    assert by_key["combine"]["label"] == "Combine map dataset"
+    assert by_key["validate"]["label"] == "Validate map contract"
     assert RUNS.name == "pipeline_runs"
-    assert STEPS[14]["outputs"].startswith("data/ map contract")
-    assert STEPS[15]["outputs"].startswith("data/terrain/")
+    assert by_key["combine"]["outputs"].startswith("data/ map contract")
+    assert by_key["terrain"]["outputs"].startswith("data/terrain/")
+    assert STEPS[-1]["key"] == "preview"
 
 
 def test_brewfile_installs_tippecanoe_cli_suite():

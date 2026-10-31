@@ -1,10 +1,44 @@
 # Backlog
 
+Completed: national [area catalogue](docs/data-maintainers/areas.md), grouped
+by council with LINZ ids and pipeline region ids. `tools/list_areas.py`
+refreshes the snapshot from LINZ without fetching buildings or starting
+builds. Candidates exclude lakes and inland bays; building presence and
+survey readiness still need checking before scheduling.
+
 Completed first local slice of #45: loopback task coordinator with JSON
 persistence, subprocess workers, default pipeline dispatch, explicit conflict
 and interruption reporting, and cloud-free multi-process tests.
 Remaining: common cloud/local task/configuration contracts, regional/final
 assembly separation and migration of the existing GCS worker path.
+
+Completed second slice of #45: one shared per-region stage plan
+(`src/build_plan.py`) read by the local, district and fleet engines, with a
+drift test (`tests/test_build_plan.py`). Every engine now runs outline fit,
+identical roofs, imagery registration before layout, demolition screening,
+addresses and emit. The paid demolition referee is off unless approved by a
+start-of-run yes/no question (or `--paid-referee` / workflow input).
+Remaining: shared input preparation (fetch, prediction, dedupe, pack
+restore), output-equivalence tests between engines, a VM cost confirmation
+on `fleet.sh up`, and re-recording `tests/synthetic/reference.json` on Linux
+(stale on HEAD since the 20 Oct record: 606 → 459 panels).
+
+Completed: unattended quickstart and pipeline runs. A failed deploy gate on a
+developer preview or build-only `tools/remote_build.sh` run now prints
+`GATE WARNING` and continues (`GATE_RESULT=pass|flagged|not-run` for
+callers); `--interactive` stops and asks instead. `tools/pipeline.py --yes`
+accepts the printed, logged cloud cost estimate without a prompt and never
+approves the paid referee or a gcloud install. Production `--publish` still
+needs a passing gate or `--reviewed`.
+
+Completed: LINZ locality regions. A region can be named by its LINZ NZ
+Suburbs and Localities place, `<council>/<town>/<suburb>`, with nested
+directories under `data/regions/` and `data/out/`; `tools/find_area.py` finds
+ids, `src/localities.py` fetches attribute-matched outlines at preflight, and
+[Choosing an area](docs/data-maintainers/choosing-an-area.md) guides
+maintainers. Legacy `config.REGIONS` bbox regions still build and are not
+migrated. Remaining: a full district build of a locality region on the build
+VM (fleet queue, pack/restore and publish paths are untested with nested ids).
 
 Open work, in priority order. Finished work is in git history. Open items
 are also GitHub Issues on the project board

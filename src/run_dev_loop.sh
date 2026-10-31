@@ -29,7 +29,7 @@ START=$(date +%s)
 
 for r in $AREAS; do
   echo "=== $r: rebuilding layouts ==="
-  log="data/build_logs/${r}_dev.log"
+  log="data/build_logs/${r//\//__}_dev.log"
   {
     $PY src/build_layout_geojson.py "$r" &&
     $PY src/gate_panels.py "$r" &&

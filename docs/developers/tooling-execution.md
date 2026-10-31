@@ -10,8 +10,14 @@ catalogue of research scripts or individual processing/debug commands.
 
 ## Entry points and delegation
 
-Solid arrows below mean invocation or task hand-off, not data dependencies.
-The three build engines share stage scripts, but not a common stage plan.
+Solid arrows below mean invocation or task hand-off, not data dependencies;
+dotted arrows mean "reads". There is one launch path per audience, but three
+**build engines** run regions: the local executor inside `pipeline.py`,
+`run_district_build.sh` (shared VM, through `remote_build.sh`) and
+`build_region.sh` (fleet workers). All three read their per-region step list
+from one shared plan, [build_plan.py](../../src/build_plan.py); see
+[Stage plans across engines](#stage-plans-across-engines) for what is shared
+and what still differs.
 
 ```mermaid
 flowchart TB
@@ -25,6 +31,7 @@ flowchart TB
   Actions["GitHub build-and-publish workflow"] --> Remote
   Operator["Direct remote-build command"] --> Remote
   Remote --> Sync["tools/sync_vm.sh"]
+  Remote -->|--fetch| Fetch["src/fetch_regions.py"]
   Remote --> District["src/run_district_build.sh"]
   Remote --> Gate["tools/predeploy_check.py"]
   Remote --> Preview["tools/publish_preview.py: developer preview"]
@@ -33,9 +40,10 @@ flowchart TB
   Fleet["tools/fleet.sh"] --> Worker["src/worker.sh"]
   Queue -->|claim task| Worker
   Worker --> Region["src/build_region.sh"]
+  Local -.-> Plan[("src/build_plan.py: prepare, stages, finish")]
+  District -.-> Plan
+  Region -.-> Plan
   Local --> Stages["Shared src processing stages"]
-  District --> Preparation["outline_fit.py and repeat_roofs.py before incremental plan"]
-  District --> Demolition["demolished stage after panel gate"]
   District --> Stages
   Region --> Stages
   Local --> LocalFinish["Emit, combine, validate, local preview"]
@@ -58,14 +66,14 @@ the caller invokes those steps separately and checks their results.
 | Entry point | Execution and region selection | Code and preparation | Completion and side effects |
 | --- | --- | --- | --- |
 | [quickstart.sh](../../quickstart.sh) | Delegates all arguments to the pipeline | Selects the project Python environment; cloud mode can use system Python | No separate workflow |
-| [pipeline.py](../../tools/pipeline.py), local | One configured region via loopback queue; one worker by default | Current checkout; fetches inputs and wide DEM; optional prediction; task provenance guards | Replaces combined map data with that region, validates map contract, starts loopback preview; no production publish |
+| [pipeline.py](../../tools/pipeline.py), local | One configured region via loopback queue; one worker by default | Current checkout; fetches inputs and wide DEM; optional prediction; shared plan steps; task provenance guards; asks the paid-referee question at start | Replaces combined map data with that region, validates map contract, starts loopback preview; no production publish |
 | [pipeline_queue.py](../../tools/pipeline_queue.py) | Manual coordinator, submission, workers and status; no cloud credentials | JSON persistence; multiple worker processes; one active task per checkout | Runs existing local executor; explicit failure/interruption, no automatic retries |
-| Pipeline, shared cloud | Shared VM; defaults to `CLOUD_SHARED_BUILD["regions"]`; positional argument selects one region | Syncs configured `ref`, not the caller's branch/SHA; uses existing regional inputs; no `--fetch` forwarded | District build, live-comparison gate, public developer preview; launcher requests browser opening |
-| Pipeline, cloud profile | Developer VM; one region, defaulting to `PIPELINE_REGION` | Runs pipeline local mode in existing `~/nz-solar-potential` checkout over SSH; no automatic code sync | Collects report/log; preview requires a separate SSH-tunnel action; no public publication |
-| [remote_build.sh](../../tools/remote_build.sh) / [GitHub workflow](../../.github/workflows/build-and-publish.yml) | Shared VM; `--regions "a b"` or district default when omitted | Syncs a branch (`main` by default); optional fetch; normal, force or yield-only build | Gates; optionally publishes production or developer preview, never both. Production switches and commits `site-config.js` |
-| [run_district_build.sh](../../src/run_district_build.sh) | Run on build VM; explicit region list or `all_areas()` | Inputs and selected faces prepared separately; outline-fit/repeated-roof pre-plan steps; per-building incremental planner; force/yield-only options | Demolition screening on normal/force path; emits build regions, combines available emitted regions; no preview server or publication |
-| [build_region.sh](../../src/build_region.sh) | One region on a worker; queue task can supply a bbox not in config | Attempts pack restore, fetches inputs, deduplicates outlines, predicts faces in shards | Emits region; publishes and reclaims inputs unless `--no-publish`; no combine or production gate |
-| [enqueue_regions.py](../../tools/enqueue_regions.py), [fleet.sh](../../tools/fleet.sh), [worker.sh](../../src/worker.sh) | Queue from config or planner; workers claim regions | Fleet image plus startup `git pull`; no run-wide commit pinning | Per-region queue state and logs; optional worker self-deletion; no automatic global combine or live release |
+| Pipeline, shared cloud | Shared VM; defaults to `CLOUD_SHARED_BUILD["regions"]`; positional argument selects one region | Syncs configured `ref`, not the caller's branch/SHA; uses existing regional inputs; no `--fetch` forwarded; forwards the paid-referee answer | District build, live-comparison gate, public developer preview; launcher requests browser opening |
+| Pipeline, cloud profile | Developer VM; one region, defaulting to `PIPELINE_REGION` | Runs pipeline local mode in existing `~/nz-solar-potential` checkout over SSH; no automatic code sync; paid-referee answer passed as `SOLAR_DEMOLISHED_REFEREE` | Collects report/log; preview requires a separate SSH-tunnel action; no public publication |
+| [remote_build.sh](../../tools/remote_build.sh) / [GitHub workflow](../../.github/workflows/build-and-publish.yml) | Shared VM; `--regions "a b"` or district default when omitted | Syncs a branch (`main` by default); optional fetch; normal, force or yield-only build; paid-referee question (or `--paid-referee`/`--no-paid-referee`, workflow input `paid_referee`) before any cloud call | Gates; optionally publishes production or developer preview, never both. Production switches and commits `site-config.js` |
+| [run_district_build.sh](../../src/run_district_build.sh) | Run on build VM; explicit region list or `all_areas()` | Inputs and selected faces prepared separately; shared plan steps; per-building incremental planner; force/yield-only options | Demolition screening on normal/force path; emits build regions, combines available emitted regions; no preview server or publication |
+| [build_region.sh](../../src/build_region.sh) | One region on a worker; queue task can supply a bbox not in config | Attempts pack restore, fetches inputs, deduplicates outlines, predicts faces in shards; shared plan steps | Emits region; publishes and reclaims inputs unless `--no-publish`; no combine or production gate |
+| [enqueue_regions.py](../../tools/enqueue_regions.py), [fleet.sh](../../tools/fleet.sh), [worker.sh](../../src/worker.sh) | Queue from config or planner; workers claim regions | Fleet image plus startup `git pull`; no run-wide commit pinning; `fleet.sh up` asks the paid-referee question once and bakes the answer into worker startup | Per-region queue state and logs; optional worker self-deletion; no automatic global combine or live release |
 | [run_dev_loop.sh](../../src/run_dev_loop.sh) | One or more areas, default `pilot`; existing inputs | Direct stage calls from current checkout | Layout/gate/rerank and quality audits; no emit, combine or publication |
 | [deploy_from_vm.sh](../../tools/deploy_from_vm.sh) | Laptop relay of shared VM outputs | Existing build, no regional processing | Copies combined data locally, gates, optionally publishes release and commits site switch |
 
@@ -138,44 +146,84 @@ Shared-VM access uses IAP. The experimental profile implementation uses
 its own SSH/firewall configuration; do not assume it has the shared VM's
 deployment or authentication model.
 
-## Regional workflow differences
+## Stage plans across engines
 
-This table describes ordering, not interchangeable command aliases.
+Every build engine reads its per-region steps from
+[build_plan.py](../../src/build_plan.py), in this order:
+
+1. **Prepare** (`build_plan.PREPARE`): `outline_fit`, then `repeat_roofs`.
+   Each has a switch (`SOLAR_OUTLINE_FIT`, `SOLAR_REPEAT_ROOFS`, default on);
+   a failure warns and the build continues. Skipped on yield-only rebuilds.
+2. **Stages** (`build_plan.STAGES`, through `run_stage.py`):
+   `register_imagery`, `build_layout_geojson`, `gate_panels`, `demolished`,
+   `rerank_layouts`, `derive_solar_potential`, `patch_roof_confidence`,
+   `bake_building_horizons`, `build_heatmap_raster`. Yield-only rebuilds use
+   `build_plan.YIELD_ONLY_STAGES` (`apply_yield`, then rerank onward).
+3. **Finish** (`build_plan.FINISH`): `add_addresses` (failure warns), then
+   `emit_region` (failure stops the region).
+
+Shell engines read the lists through the plan's CLI
+(`python3 src/build_plan.py stages|prepare|finish`).
+[test_build_plan.py](../../tests/test_build_plan.py) fails when an engine
+stops reading the plan or hard-codes a stage sequence, and when the local
+executor's step list leaves out or reorders a plan step. The
+[synthetic region](../../tests/synthetic/run.py) runs the plan's steps
+except `add_addresses`, which needs the LINZ addresses service.
+
+### Paid step: demolition referee
+
+`demolished` screens every roof with no external cost. Its referee can send
+photo crops of screened roofs to a paid vision API (Anthropic). The referee
+is **off unless approved at the start of the run**: each entry point asks a
+yes/no question, shows a conservative estimate (USD $0.004 a roof, stopping
+near `SOLAR_DEMOLISHED_MAX_USD`, default USD $5 a region, so not a spending
+cap), and takes only an explicit `yes`. Enter, any other answer, end of input
+and non-interactive runs decline. A caller that has already set
+`SOLAR_DEMOLISHED_REFEREE=0|1` is not asked again; `SOLAR_DEMOLISHED=0`
+turns the stage off and is never asked. The answer travels to the engine as
+`SOLAR_DEMOLISHED_REFEREE`. Where the question is asked:
+
+| Entry point | Question | Non-interactive control |
+| --- | --- | --- |
+| `pipeline.py` local / profile `run` | After the VM cost confirmation (cloud) or before queueing (local) | `--paid-referee` / `--no-paid-referee`; `--yes` takes the default (no) |
+| `pipeline.py` shared cloud | Inside the cost-confirmation step | Same flags; forwarded to `remote_build.sh` |
+| `remote_build.sh` | After argument checks, before any cloud call | `--paid-referee` / `--no-paid-referee` |
+| GitHub workflow | Not asked | `paid_referee` input, default false |
+| `fleet.sh up` | Before creating workers | `SOLAR_DEMOLISHED_REFEREE` in the caller's environment |
+| `run_district_build.sh`, `build_region.sh` | Only if not already decided; workers have no terminal and decline | `SOLAR_DEMOLISHED_REFEREE` |
+
+[Dataset operations](../data-maintainers/dataset-operations.md#demolition-screening)
+owns the referee's authorization requirements and degraded-screening limits.
+This cost is not included in the quickstart's VM/hosting estimate.
+
+### What still differs per engine
+
+The plan covers the per-region steps. Everything around them is still
+engine-specific:
 
 | Phase | Pipeline local / profile VM | District / shared VM | Region worker |
 | --- | --- | --- | --- |
-| Inputs | Fetch region and shared wide DEM | Prepared separately, or remote launcher's optional `--fetch` | Restore pack or fetch; explicit point-cloud fetch on non-restore path |
+| Inputs | Fetch region and shared wide DEM | Prepared separately, or remote launcher's optional `--fetch` | Restore pack or fetch; outline dedupe; explicit point-cloud fetch on non-restore path |
 | Prediction | Optional; missing dependencies/checkpoints or prediction failure can degrade/skip | Separate precompute, not part of district script | Sharded prediction; shard failure stops build; separate prediction marker |
-| Imagery registration | After layout, derivation and horizons | Before layout | Before layout |
-| Pre-plan | No outline-fit or repeated-roof precompute | `outline_fit.py`, then `repeat_roofs.py`, enabled by default; skipped for yield-only; failures warn and continue | No outline-fit or repeated-roof precompute |
-| Geometry | Layout, gate, rerank, derive | Incremental clean/patch/full planner or forced layout; `demolished` after gate, before rerank/derive; yield-only substitutes `apply_yield` and omits demolition screening | Layout, gate, rerank, derive through stage markers |
-| Enrichment | Verification report, confidence, horizons, heat map, optional addresses | Confidence, horizons, heat map, optional addresses | Confidence, horizons, heat map, optional addresses |
-| Finish | Emit selected region, combine only that region, optional terrain, contract validator, preview | Emit per region, combine all available non-excluded emitted regions | Emit one region, optional regional upload/verification and input cleanup |
+| Stage selection | Every plan step, every run | Per-building incremental planner (clean/patch/full), `--force`, `--yield-only` | Stage markers |
+| Local-only steps | Verification report after derive; combine of this region only; optional terrain; contract validator; preview | none | none |
+| Finish | Combine only that region | Combine all available non-excluded emitted regions | Optional regional upload/verification and input cleanup |
 
-Evidence: [pipeline command sequence](../../tools/pipeline.py),
-[district planner and stages](../../src/run_district_build.sh),
-[worker region sequence](../../src/build_region.sh).
-Registration order is a current difference, not a recommendation to copy it.
-These paths must not be declared equivalent without output/regression tests.
+Evidence: [pipeline steps](../../tools/pipeline.py),
+[district planner](../../src/run_district_build.sh),
+[worker sequence](../../src/build_region.sh).
+The engines run the same steps but are not declared output-equivalent: input
+preparation and stage selection still differ.
 
-The district-only pre-plan steps produce
-`data/regions/<region>/outline_fit.json` and `data/repeat_faces/<id>.json`;
-their contents feed build keys. Shared geometry consumers now import
-`fitted_outlines`, and the selected-face path can prefer a repeated-roof
-reading over the ordinary selected reading, while hand-drawn markup retains
-precedence. Local/worker builds can therefore consume existing sidecars
-without generating or refreshing them. See
+The prepare steps produce `data/regions/<region>/outline_fit.json` and
+`data/repeat_faces/<id>.json`; their contents feed build keys. Geometry
+consumers import `fitted_outlines`, and the selected-face path can prefer a
+repeated-roof reading over the ordinary selected reading, while hand-drawn
+markup retains precedence. See
 [outline_fit.py](../../src/outline_fit.py),
 [repeat_roofs.py](../../src/repeat_roofs.py),
 [build_keys.py](../../src/build_keys.py) and
 [roof_partition.py](../../src/roof_partition.py).
-
-The district [demolished stage](../../src/demolished.py) withholds sufficiently
-confident gone/replaced buildings and exempts hand-drawn roofs. Unlike the
-other two engines, it can send image crops to a paid external API.
-[Dataset operations](../data-maintainers/dataset-operations.md#demolition-screening)
-owns its authorization requirements, switches and degraded-screening limits.
-This extra work is not included in the quickstart's VM/hosting estimate.
 
 `run_stage.py` writes completion markers and checks preconditions.
 Skipping requires `--skip-done`, matching stage code hashes, and no newer
@@ -199,17 +247,22 @@ is the **shared-cloud launcher flow**, not a supervisor state machine:
 
 ```mermaid
 flowchart TD
-  Check["Checkout, configuration and cloud checks"] --> Approval{"Interactive cost approval"}
-  Approval -->|no or non-interactive| Decline["Stop before build work"]
+  Check["Checkout, configuration and cloud checks"] --> Approval{"Cost approval: typed yes, or --yes"}
+  Approval -->|no, or no terminal without --yes| Decline["Stop before build work"]
   Approval -->|yes| Ready["VM readiness, start if needed, sync code"]
   Ready --> Build["Launch remote build with nohup; caller polls"]
   Build -->|nonzero exit or VM stops| Failed["Report failure; do not publish"]
   Build -->|success| Gate{"Deployment gate"}
-  Gate -->|fail: preview path| Failed
-  Gate -->|pass| Publish["Publish developer preview"]
+  Gate -->|fail, default| Warn["GATE WARNING; continue without review"]
+  Gate -->|fail, --interactive and not yes| Failed
+  Gate -->|pass, or --interactive yes| Publish["Publish developer preview"]
+  Warn --> Publish
   Publish -->|upload or URL check fails| Failed
-  Publish -->|success| Open["Print URL and request browser opening"]
+  Publish -->|success| Open["Print URL (and any WARNING) and request browser opening"]
 ```
+
+Production `remote_build.sh --publish` is not on this path: a failed gate
+there still stops unless `--reviewed "why"` is given.
 
 - **Local queue:** persistent tasks and attempt logs under
   `data/pipeline_queues/`; worker/attempt-checked acknowledgements and
@@ -278,7 +331,7 @@ The first slice intentionally queues the **whole existing single-region
 pipeline**, including combine/validation/preview. It does not claim
 regional-only tasks, offline input acquisition, identical district outputs,
 GCS queue compatibility or a resolved configuration snapshot. Shared cloud
-and fleet still use their existing paths; the
+and fleet keep their own engines (sharing the stage plan); the
 [remaining work](#target-direction-remaining-work) tracks consolidation.
 
 Cloud-free coverage in [test_local_queue.py](../../tests/test_local_queue.py)
@@ -297,19 +350,18 @@ separate from the current diagrams above:
 2. Route supported user operations through the front door while retaining
    specialized execution engines. Existing wrappers/Actions should delegate
    rather than acquire another copy of orchestration.
-3. Before sharing stage plans, test the current ordering, input preparation,
-   optional failures, incremental behaviour and combine scope. Then extract
-   common planning/execution where semantics really match. The district-only
-   outline-fit, repeated-roof and demolition additions make a dispatcher-only
-   change insufficient to promise equivalent results across run modes.
+3. **Done:** one stage plan ([build_plan.py](../../src/build_plan.py)) read
+   by all three engines, with a drift test. **Remaining:** consolidate input
+   preparation (fetch, prediction, outline dedupe, pack restore) into shared
+   steps, then test output equivalence between engines before declaring
+   them interchangeable.
 4. Define run identity, code provenance, process ownership, logs and terminal
    states before adding a common dashboard or cancellation interface.
    A public status page must not imply public permission to stop builds.
-5. Keep cloud cost approval before chargeable work. Extending an interactive
-   interface to fleet/CI needs an explicit approval design, not an implicit
-   bypass. Include external model/API use, data transfer and per-region
-   budgets in that design; the current VM/hosting estimate omits the
-   demolition referee.
+5. Keep cloud cost approval before chargeable work. The paid referee now
+   has a start-of-run question on every entry point (default no). Remaining:
+   `fleet.sh up` has no VM cost confirmation, and the VM/hosting estimate
+   still omits the referee and data transfer.
 
 No new CLI syntax is specified here: interface choices need agreement and
 implementation before being shown as supported commands.

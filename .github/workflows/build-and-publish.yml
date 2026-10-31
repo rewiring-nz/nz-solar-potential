@@ -32,6 +32,10 @@ on:
         description: "Publish even if the gate fails -- say why (leave blank otherwise)"
         required: false
         default: ""
+      paid_referee:
+        description: "Spend on the paid demolition referee (Anthropic API, about USD $0.004 a roof, stops near USD $5 a region; not a spending cap)"
+        type: boolean
+        default: false
 
 concurrency:
   group: build-vm
@@ -73,6 +77,7 @@ jobs:
           MODE: ${{ inputs.mode }}
           PUBLISH: ${{ inputs.publish }}
           REVIEWED: ${{ inputs.reviewed }}
+          PAID_REFEREE: ${{ inputs.paid_referee }}
           COMMIT_NOTE: "Run from GitHub Actions by @${{ github.actor }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         run: |
           git config user.name "github-actions[bot]"
@@ -84,4 +89,5 @@ jobs:
           [ "$MODE" = force ] && args+=(--force)
           [ "$PUBLISH" = true ] && args+=(--publish)
           [ -n "$REVIEWED" ] && args+=(--reviewed "$REVIEWED")
+          if [ "$PAID_REFEREE" = true ]; then args+=(--paid-referee); else args+=(--no-paid-referee); fi
           tools/remote_build.sh "${args[@]}"

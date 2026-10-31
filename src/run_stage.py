@@ -49,6 +49,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.build_keys import stage_code_hash
+from src import region_ids
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -56,7 +57,9 @@ STATE_DIR = DATA_DIR / "build_state"
 
 
 def marker_path(stage, region):
-    return STATE_DIR / f"{region or '_district'}.{stage}.done"
+    # A locality region id holds '/'; markers are flat files.
+    name = region_ids.file_slug(region) if region else "_district"
+    return STATE_DIR / f"{name}.{stage}.done"
 
 
 def _git_sha():

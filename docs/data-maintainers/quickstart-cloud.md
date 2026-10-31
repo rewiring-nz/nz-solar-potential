@@ -60,12 +60,32 @@ for the stage controls and cache behaviour. This is a current gap in the
 full-workflow estimate, not an additional spending guarantee.
 
 You must type `yes`. Enter, anything else, or a non-interactive run declines
-before the VM is touched. There are no flags to override the estimate.
+before the VM is touched. For unattended runs, pass `--yes` (`-y`) to accept
+the printed estimate without a prompt: the estimate is still shown and
+written to the log, and QS-04 records "Approved without a prompt by --yes".
+`--yes` does not approve the paid referee (pass `--paid-referee` for that),
+does not install a missing gcloud, and does not replace `--confirm` for VM
+create/delete. There are no flags to override the estimate.
 Preflight and profile status/delete actions do not ask for this approval.
+
+### Deploy gate
+
+The build is compared with the live site by `tools/predeploy_check.py`. By
+default a failed gate does not stop the run: `remote_build.sh` prints
+`GATE WARNING` lines with the flagged list, publishes the developer preview,
+and QS-06 and the final output start with `WARNING:`. Read the list before
+any production publish; a drop is not automatically wrong (better geometry
+and the demolished stage remove panels).
+
+Pass `--interactive` to stop at a failed gate and answer `yes` to continue;
+anything else, or no terminal, stops before the preview is published.
+`--interactive` and `--yes` cannot be combined. Production publishing
+(`tools/remote_build.sh --publish`) is unchanged: it still needs a passing
+gate or `--reviewed "why"`.
 
 ### Developer preview
 
-A passing build is published to:
+A gated build is published to:
 
 ```text
 https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html

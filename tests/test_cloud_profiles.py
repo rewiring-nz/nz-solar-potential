@@ -196,6 +196,7 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("[QS-05] PASS Check VM state and SSH readiness", log)
         self.assertIn("[QS-06] PASS Run cloud action: run", log)
         dispatch.assert_called_once()
+        self.assertTrue(dispatch.call_args.kwargs["paid_referee"])
 
     def test_cloud_preflight_does_not_request_cost_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as log_dir:
@@ -312,7 +313,9 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIsInstance(run_args[2], cloud_pipeline.CloudQuickstartLog)
         self.assertIn("[QS-01] PASS Check local checkout and shared cloud defaults", log)
         self.assertIn("preview alias alice", log)
-        self.assertIn("[QS-04] PASS Confirm estimated cloud cost: Human approval received.", log)
+        self.assertIn("[QS-04] PASS Confirm estimated cloud cost: Human approval received;", log)
+        self.assertIn("paid demolition referee approved", log)
+        self.assertTrue(run_args[0]["paid_referee"])
         self.assertIn("[QS-06] PASS Build, gate, and publish developer preview", log)
         open_browser.assert_called_once_with(preview_url)
 
@@ -350,6 +353,35 @@ class CloudProfileTests(unittest.TestCase):
                 self.assertEqual(cloud_pipeline.main(), 0)
         self.assertEqual(run_build.call_args.args[0]["preview_user"], "alice")
         open_browser.assert_called_once_with(preview_url)
+
+    def test_shared_build_with_yes_runs_unattended_and_reports_gate_warning(self) -> None:
+        preview_url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        warning = f"{cloud_pipeline.GATE_WARNING_PREFIX} the deploy gate flagged items (flagged)"
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(sys, "argv", ["pipeline.py", "--mode", "cloud", "--yes"]),
+                patch.dict(os.environ, {"SOLAR_CLOUD_PROFILE": ""}),
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.shutil, "which", return_value="/usr/bin/git"),
+                patch.object(cloud_pipeline, "_gcloud", return_value="/usr/bin/gcloud"),
+                patch.object(cloud_pipeline, "_shared_cloud_preflight", return_value="verified"),
+                patch.object(cloud_pipeline, "_shared_vm_readiness", return_value="ready"),
+                patch.object(cloud_pipeline, "_github_alias", return_value="alice"),
+                patch.object(cloud_pipeline, "_run_shared_cloud_build",
+                             return_value=(warning, preview_url)) as run_build,
+                patch.object(sys.stdin, "isatty", return_value=False),
+                patch("builtins.input", side_effect=AssertionError("prompted")),
+                patch.object(sys, "stderr", stderr),
+                patch.object(cloud_pipeline.webbrowser, "open", return_value=True),
+            ):
+                self.assertEqual(cloud_pipeline.main(), 0)
+            log = next(Path(log_dir).glob("*.log")).read_text(encoding="utf-8")
+        self.assertIn("[QS-04] PASS Confirm estimated cloud cost: Approved without a prompt by --yes", log)
+        self.assertIn("paid demolition referee skipped", log)
+        self.assertFalse(run_build.call_args.args[0]["paid_referee"])
+        self.assertFalse(run_build.call_args.args[0]["interactive"])
+        self.assertIn(warning, stderr.getvalue())
 
     def test_shared_build_passes_github_alias_to_remote_publisher(self) -> None:
         config = cloud_pipeline._load_shared_cloud_config()
@@ -403,6 +435,88 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("Calculated estimate: NZD $5.00", content)
         self.assertIn("publish a public preview", content)
         self.assertIn("not a spending cap", content)
+
+    def test_yes_accepts_logged_estimate_without_prompt_or_terminal(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(sys.stdin, "isatty", return_value=False),
+                patch("builtins.input", side_effect=AssertionError("prompted")),
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                approval = cloud_pipeline._confirm_shared_cloud_cost(config, log, assume_yes=True)
+            content = log.path.read_text(encoding="utf-8")
+        self.assertEqual(approval, cloud_pipeline.COST_APPROVED_BY_FLAG)
+        self.assertIn("Calculated estimate: NZD $5.00", content)
+        self.assertIn("accepted by --yes", content)
+
+    def test_cost_without_terminal_or_yes_declines_with_hint(self) -> None:
+        config = cloud_pipeline._load_shared_cloud_config()
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(sys.stdin, "isatty", return_value=False),
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                with self.assertRaisesRegex(RuntimeError, "pass --yes"):
+                    cloud_pipeline._confirm_shared_cloud_cost(config, log)
+                content = log.path.read_text(encoding="utf-8")
+        self.assertIn("Calculated estimate: NZD $5.00", content)
+
+    def test_yes_does_not_approve_paid_referee(self) -> None:
+        parser = cloud_pipeline._argument_parser("frankton_arm_lake")
+        with patch.object(cloud_pipeline.build_plan, "confirm_paid",
+                          side_effect=AssertionError("asked")):
+            self.assertFalse(cloud_pipeline._decide_paid_referee(parser.parse_args(["--yes"]), 1))
+        self.assertTrue(cloud_pipeline._decide_paid_referee(
+            parser.parse_args(["--yes", "--paid-referee"]), 1))
+
+    def test_yes_and_interactive_are_exclusive(self) -> None:
+        parser = cloud_pipeline._argument_parser("frankton_arm_lake")
+        with patch.object(sys, "stderr", io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(["--yes", "--interactive"])
+
+    def test_yes_never_installs_missing_gcloud(self) -> None:
+        with (
+            patch.object(cloud_pipeline.platform, "system", return_value="Darwin"),
+            patch.object(cloud_pipeline.shutil, "which", side_effect=[None, "/brew"]),
+            patch.object(sys.stdin, "isatty", return_value=True),
+            patch("builtins.input", side_effect=AssertionError("prompted")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "brew install --cask gcloud-cli"):
+                cloud_pipeline._gcloud(None, allow_prompt=False)
+
+    def _shared_build(self, output: str, **config_values: object) -> tuple[list[str], tuple[str, str | None]]:
+        config = cloud_pipeline._load_shared_cloud_config()
+        config["preview_user"] = "alice"
+        config.update(config_values)
+        process = MagicMock()
+        process.stdout = io.StringIO(output)
+        process.wait.return_value = 0
+        with tempfile.TemporaryDirectory() as log_dir:
+            with (
+                patch.object(cloud_pipeline, "CLOUD_RUNS", Path(log_dir)),
+                patch.object(cloud_pipeline.subprocess, "Popen", return_value=process) as popen,
+            ):
+                log = cloud_pipeline.CloudQuickstartLog()
+                result = cloud_pipeline._run_shared_cloud_build(config, config["regions"], log)
+        return popen.call_args.args[0], result
+
+    def test_flagged_gate_warns_and_still_returns_preview(self) -> None:
+        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        command, result = self._shared_build(f"GATE_RESULT=flagged\nPREVIEW_URL={url}\n")
+        self.assertNotIn("--interactive", command)
+        self.assertEqual(result[1], url)
+        self.assertTrue(result[0].startswith(cloud_pipeline.GATE_WARNING_PREFIX))
+        self.assertIn("without review", result[0])
+
+    def test_interactive_is_passed_to_remote_build(self) -> None:
+        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        command, result = self._shared_build(
+            f"GATE_RESULT=pass\nPREVIEW_URL={url}\n", interactive=True)
+        self.assertIn("--interactive", command)
+        self.assertIn("preview was published", result[0])
 
     def test_github_alias_uses_authenticated_cli_login(self) -> None:
         completed = cloud_pipeline.subprocess.CompletedProcess(

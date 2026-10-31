@@ -1,4 +1,7 @@
-"""Run the configured regional solar pipeline with durable diagnostics.
+"""Run the regional solar pipeline for one region with durable diagnostics.
+
+A region is a LINZ suburb/locality id <council>/<town>/<suburb>
+(src/localities.py, tools/find_area.py) or a legacy config.REGIONS name.
 
 Each step's number and label are shared by terminal output,
 run.log, and report.md. The Markdown report is rewritten atomically
@@ -64,123 +67,148 @@ python3 -m venv .venv
 for tool in tippecanoe tile-join tippecanoe-decode; do command -v "$tool"; done
 """
 
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from src import build_plan  # noqa: E402  (the shared stage plan every build engine reads)
+
+# Step descriptions, keyed by step name. The order of the region steps comes
+# from src/build_plan.py, so this executor runs the same stages as the
+# district and fleet builds; tests/test_build_plan.py fails on drift.
+_STEP_INFO: dict[str, tuple[str, str, str]] = {
+    "preflight": (
+        "Preflight: validate area and runtime",
+        "config.py region; selected Python environment; GDAL/Rasterio LERC decoding; LINZ_API_KEY presence",
+        "Run metadata; confirmed raster dependencies, area name and WGS84 bbox",
+    ),
+    "fetch": (
+        "Fetch outlines, elevation, imagery, and point cloud",
+        "Area bbox; configured LINZ survey layers; LINZ API; point-cloud tile index/store",
+        "data/regions/<area>/building_outlines.geojson; dsm_mosaic.tif; optional imagery_mosaic.tif; data/dem_wide_mosaic.tif; data/pointcloud/ tiles",
+    ),
+    "vision": (
+        "Vision precompute (optional)",
+        "Fetched outlines, imagery and point cloud; SAM, torch, segment-anything, roof_lines_v5.pt and roof_lines_v6.pt",
+        "data/selected_faces/<building_id>.json (some roofs may deliberately defer)",
+    ),
+    "outline_fit": (
+        "Fit outlines to the roof (optional)",
+        "Outlines, DSM, point cloud when available; SOLAR_OUTLINE_FIT=0 skips",
+        "data/regions/<area>/outline_fit.json",
+    ),
+    "repeat_roofs": (
+        "Agree identical roofs (optional)",
+        "Outlines, selected faces, DSM; SOLAR_REPEAT_ROOFS=0 skips",
+        "data/repeat_faces/<building_id>.json for agreeing repeat roofs",
+    ),
+    "register_imagery": (
+        "Register imagery alignment (optional)",
+        "Area imagery and LINZ Basemaps reference-photo tiles",
+        "data/regions/<area>/image_shift.json when measurable",
+    ),
+    "build_layout_geojson": (
+        "Build roof geometry and layout",
+        "Outlines, DSM, optional imagery/LiDAR, selected faces, outline fits and repeat roofs when available",
+        "data/regions/<area>/panel_layouts.geojson",
+    ),
+    "gate_panels": (
+        "Gate panel layouts",
+        "data/regions/<area>/panel_layouts.geojson; local LiDAR/DSM evidence",
+        "Updated data/regions/<area>/panel_layouts.geojson",
+    ),
+    "demolished": (
+        "Screen demolished buildings",
+        "Panel layouts, outlines, DSM, survey and current imagery; paid referee only when approved at start",
+        "Updated data/regions/<area>/panel_layouts.geojson; data/regions/<area>/demolished.json",
+    ),
+    "rerank_layouts": (
+        "Rerank panel layouts",
+        "data/regions/<area>/panel_layouts.geojson",
+        "Updated data/regions/<area>/panel_layouts.geojson",
+    ),
+    "derive_solar_potential": (
+        "Derive building solar potential",
+        "Panel layouts and building outlines",
+        "data/regions/<area>/solar_potential.geojson",
+    ),
+    "report": (
+        "Render building verification report",
+        "Solar potential, panel layouts, optional aerial imagery",
+        "data/regions/<area>/quickstart_report.html",
+    ),
+    "patch_roof_confidence": (
+        "Patch roof confidence",
+        "Solar potential and gated panel layouts",
+        "Updated data/regions/<area>/solar_potential.geojson",
+    ),
+    "bake_building_horizons": (
+        "Bake per-building horizons",
+        "Outlines, DSM, wide DEM and solar potential",
+        "solar_potential.geojson with building horizon fields",
+    ),
+    "build_heatmap_raster": (
+        "Build per-pixel solar heatmap",
+        "Outlines, DSM, point cloud (when available), wide DEM and image shifts",
+        "data/regions/<area>/heatmap_raster.png and heatmap_raster.json",
+    ),
+    "add_addresses": (
+        "Add building addresses (optional)",
+        "Building polygons and LINZ NZ Addresses WFS",
+        "Address properties in solar_potential.geojson",
+    ),
+    "emit_region": (
+        "Emit regional map tiles",
+        "Region solar/layout GeoJSON, heatmap, outlines, build keys",
+        "data/out/<area>/ tiles, cells, detail, heatmap tiles and summary",
+    ),
+    "combine": (
+        "Combine map dataset",
+        "Regional tile artifacts",
+        "data/ map contract (PMTiles, cells, detail, heatmap, summary)",
+    ),
+    "terrain": (
+        "Build local 3D terrain tiles",
+        "Area DSM and wide DEM",
+        "data/terrain/ tiles (optional 3D view)",
+    ),
+    "validate": (
+        "Validate map contract",
+        "Emitted PMTiles and supporting JSON/PNG assets in data/",
+        "Contract-checked local map dataset",
+    ),
+    "preview": (
+        "Start local map preview",
+        "Validated map dataset and PMTiles byte-range server",
+        "Loopback preview URL and server PID/log",
+    ),
+}
+
+
+def _step_keys() -> list[str]:
+    """Local step order: input preparation, the shared region plan, then
+    the local-only report, combine, terrain, validate and preview steps."""
+    keys = ["preflight", "fetch", "vision"]
+    for key in build_plan.region_steps():
+        keys.append(key)
+        if key == "derive_solar_potential":
+            keys.append("report")
+    return keys + ["combine", "terrain", "validate", "preview"]
+
+
 STEPS = [
-    {
-        "number": 1,
-        "label": "Preflight: validate area and runtime",
-        "inputs": "config.py region; selected Python environment; GDAL/Rasterio LERC decoding; LINZ_API_KEY presence",
-        "outputs": "Run metadata; confirmed raster dependencies, area name and WGS84 bbox",
-    },
-    {
-        "number": 2,
-        "label": "Fetch outlines, elevation, imagery, and point cloud",
-        "inputs": "Area bbox; configured LINZ survey layers; LINZ API; point-cloud tile index/store",
-        "outputs": "data/regions/<area>/building_outlines.geojson; dsm_mosaic.tif; optional imagery_mosaic.tif; data/dem_wide_mosaic.tif; data/pointcloud/ tiles",
-    },
-    {
-        "number": 3,
-        "label": "Vision precompute (optional)",
-        "inputs": "Fetched outlines, imagery and point cloud; SAM, torch, segment-anything, roof_lines_v5.pt and roof_lines_v6.pt",
-        "outputs": "data/selected_faces/<building_id>.json (some roofs may deliberately defer)",
-    },
-    {
-        "number": 4,
-        "label": "Build roof geometry and layout",
-        "inputs": "Outlines, DSM, optional imagery/LiDAR, selected faces when available",
-        "outputs": "data/regions/<area>/panel_layouts.geojson",
-    },
-    {
-        "number": 5,
-        "label": "Gate panel layouts",
-        "inputs": "data/regions/<area>/panel_layouts.geojson; local LiDAR/DSM evidence",
-        "outputs": "Updated data/regions/<area>/panel_layouts.geojson",
-    },
-    {
-        "number": 6,
-        "label": "Rerank panel layouts",
-        "inputs": "data/regions/<area>/panel_layouts.geojson",
-        "outputs": "Updated data/regions/<area>/panel_layouts.geojson",
-    },
-    {
-        "number": 7,
-        "label": "Derive building solar potential",
-        "inputs": "Panel layouts and building outlines",
-        "outputs": "data/regions/<area>/solar_potential.geojson",
-    },
-    {
-        "number": 8,
-        "label": "Render building verification report",
-        "inputs": "Solar potential, panel layouts, optional aerial imagery",
-        "outputs": "data/regions/<area>/quickstart_report.html",
-    },
-    {
-        "number": 9,
-        "label": "Patch roof confidence",
-        "inputs": "Solar potential and gated panel layouts",
-        "outputs": "Updated data/regions/<area>/solar_potential.geojson",
-    },
-    {
-        "number": 10,
-        "label": "Bake per-building horizons",
-        "inputs": "Outlines, DSM, wide DEM and solar potential",
-        "outputs": "solar_potential.geojson with building horizon fields",
-    },
-    {
-        "number": 11,
-        "label": "Register imagery alignment (optional)",
-        "inputs": "Area imagery and LINZ Basemaps reference-photo tiles",
-        "outputs": "data/regions/<area>/image_shift.json when measurable",
-    },
-    {
-        "number": 12,
-        "label": "Build per-pixel solar heatmap",
-        "inputs": "Outlines, DSM, point cloud (when available), wide DEM and image shifts",
-        "outputs": "data/regions/<area>/heatmap_raster.png and heatmap_raster.json",
-    },
-    {
-        "number": 13,
-        "label": "Add building addresses (optional)",
-        "inputs": "Building polygons and LINZ NZ Addresses WFS",
-        "outputs": "Address properties in solar_potential.geojson",
-    },
-    {
-        "number": 14,
-        "label": "Emit regional map tiles",
-        "inputs": "Region solar/layout GeoJSON, heatmap, outlines, build keys",
-        "outputs": "data/out/<area>/ tiles, cells, detail, heatmap tiles and summary",
-    },
-    {
-        "number": 15,
-        "label": "Combine map dataset",
-        "inputs": "Regional tile artifacts",
-        "outputs": "data/ map contract (PMTiles, cells, detail, heatmap, summary)",
-    },
-    {
-        "number": 16,
-        "label": "Build local 3D terrain tiles",
-        "inputs": "Area DSM and wide DEM",
-        "outputs": "data/terrain/ tiles (optional 3D view)",
-    },
-    {
-        "number": 17,
-        "label": "Validate map contract",
-        "inputs": "Emitted PMTiles and supporting JSON/PNG assets in data/",
-        "outputs": "Contract-checked local map dataset",
-    },
-    {
-        "number": 18,
-        "label": "Start local map preview",
-        "inputs": "Validated map dataset and PMTiles byte-range server",
-        "outputs": "Loopback preview URL and server PID/log",
-    },
+    {"number": number, "key": key, "label": _STEP_INFO[key][0],
+     "inputs": _STEP_INFO[key][1], "outputs": _STEP_INFO[key][2]}
+    for number, key in enumerate(_step_keys(), 1)
 ]
+STEP = {step["key"]: step["number"] for step in STEPS}
 
 
 def _safe_area(area: str) -> str:
-    """Return a path-safe area slug, or raise before using it in a path."""
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", area):
-        raise ValueError("area name must be 1-64 letters, digits, '_' or '-', and start with a letter or digit")
-    return area
+    """Return a path-safe region id, or raise before using it in a path.
+
+    A region id is a config.REGIONS name or a LINZ locality id
+    <council>/<town-city>/<suburb-locality> (src/region_ids.py)."""
+    from src import region_ids
+    return region_ids.validate(area)
 
 
 def _python_executable(path: str) -> Path:
@@ -449,12 +477,31 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
         return False, "Map-ready output requires Tippecanoe's commands on PATH: " + ", ".join(missing_tools) + ". Install the Tippecanoe package (macOS: brew bundle --file=Brewfile; Ubuntu/WSL: follow docs/data-maintainers/env-setup-ubuntu.md) and reopen the terminal before retrying.", {"name": area}
     try:
         sys.path.insert(0, str(ROOT))
+        from src import region_ids
+        if region_ids.is_locality_id(area):
+            # Resolve the LINZ locality and fetch its outlines (free WFS
+            # calls) so the bbox, and so the survey, are known before any
+            # raster download starts.
+            prepared = subprocess.run(
+                [str(py), "src/localities.py", "prepare", area],
+                cwd=ROOT, capture_output=True, text=True)
+            if prepared.returncode:
+                reason = (prepared.stderr.strip().splitlines() or ["unknown error"])[-1]
+                return False, (f"LINZ locality {area!r} could not be prepared: {reason} "
+                               "Find a valid region id with: python tools/find_area.py <name> "
+                               "(docs/data-maintainers/choosing-an-area.md)."), {"name": area}
         with contextlib.redirect_stdout(io.StringIO()):
             import config
             from src.surveys import survey_for
-            if area not in config.REGIONS:
-                raise KeyError(f"unknown configured region {area!r}; add its bbox to config.REGIONS")
-            bbox = [float(v) for v in config.REGIONS[area]]
+            if region_ids.is_locality_id(area):
+                record = json.loads((DATA / "regions" / area / "locality.json").read_text())
+                bbox = [float(v) for v in record["bbox"]]
+            elif area in config.REGIONS:
+                bbox = [float(v) for v in config.REGIONS[area]]
+            else:
+                raise KeyError(
+                    f"unknown region {area!r}: use a LINZ locality id from "
+                    f"'python tools/find_area.py <name>', or a config.REGIONS name")
             survey = survey_for(bbox, area)
         if not survey.get("dsm_layer"):
             raise ValueError("the selected survey has no DSM layer configured")
@@ -465,7 +512,7 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
             "reference_imagery_layer", "lidar_tile_index_layer",
             "pointcloud_bulk_url", "pointcloud_tile_year")}
     except Exception as exc:
-        return False, f"No usable configured region/survey: {type(exc).__name__}: {exc}. Configure the region bbox in config.REGIONS and source layers in config.SURVEYS.", {"name": area}
+        return False, f"No usable region/survey: {type(exc).__name__}: {exc}. A region is a LINZ locality id (docs/data-maintainers/choosing-an-area.md) or a config.REGIONS name; source layers come from config.SURVEYS.", {"name": area}
     free_gb = shutil.disk_usage(DATA).free / 1e9 if DATA.exists() else shutil.disk_usage(ROOT).free / 1e9
     details = (
         f"Region {area}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; "
@@ -553,7 +600,7 @@ def _start_preview_server(area: str, run: PipelineRun, py: Path,
     server_log = run.run_dir / "map-preview-server.log"
     pid_file = run.run_dir / "map-preview-server.pid"
     command = [str(py), "tools/pipeline_serve.py", "--root", str(ROOT), "--port", str(port)]
-    record = run.begin(18, command)
+    record = run.begin(STEP["preview"], command)
     route = "/preview.html"
     bbox = run.metadata["bbox"]
     lat, lng = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
@@ -594,17 +641,17 @@ def _start_preview_server(area: str, run: PipelineRun, py: Path,
                 if open_browser:
                     with contextlib.suppress(Exception):
                         webbrowser.open(url, new=2)
-                run.finish(18, "PASS", f"Local preview serves HTTP 200 and PMTiles byte ranges (206). Open {url}. Stop the local server with PID {process.pid} when finished; details: {server_log.relative_to(ROOT)}.", 0)
+                run.finish(STEP["preview"], "PASS", f"Local preview serves HTTP 200 and PMTiles byte ranges (206). Open {url}. Stop the local server with PID {process.pid} when finished; details: {server_log.relative_to(ROOT)}.", 0)
                 return True, url
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 time.sleep(0.2)
         process.terminate()
         process.wait(timeout=5)
-        run.finish(18, "FAIL", f"Could not verify local preview: {last_error}. See {server_log.relative_to(ROOT)}.", 1)
+        run.finish(STEP["preview"], "FAIL", f"Could not verify local preview: {last_error}. See {server_log.relative_to(ROOT)}.", 1)
         return False, ""
     except Exception as exc:
-        run.finish(18, "FAIL", f"Could not start local map server: {type(exc).__name__}: {exc}.", 1)
+        run.finish(STEP["preview"], "FAIL", f"Could not start local map server: {type(exc).__name__}: {exc}.", 1)
         return False, ""
 
 
@@ -739,7 +786,7 @@ def _install_gcloud(log: CloudQuickstartLog | None, command: list[str], descript
         )
 
 
-def _gcloud(log: CloudQuickstartLog | None = None) -> str:
+def _gcloud(log: CloudQuickstartLog | None = None, allow_prompt: bool = True) -> str:
     path = shutil.which("gcloud")
     if path:
         return path
@@ -783,7 +830,9 @@ sudo apt-get install -y google-cloud-cli"""
             "and Ubuntu/Debian with apt."
         )
 
-    if not sys.stdin.isatty():
+    # --yes never installs software: package installs change the machine and
+    # can ask for a sudo password, which an unattended run cannot answer.
+    if not allow_prompt or not sys.stdin.isatty():
         raise RuntimeError(
             f"gcloud is missing and installation requires interactive confirmation. "
             f"Install it with `{retry}`, then rerun."
@@ -810,11 +859,48 @@ sudo apt-get install -y google-cloud-cli"""
     return path
 
 
+COST_APPROVED_BY_HUMAN = "Human approval received."
+GATE_WARNING_PREFIX = "WARNING:"
+COST_APPROVED_BY_FLAG = (
+    "Approved without a prompt by --yes; the estimate above is the recorded basis "
+    "for the approval."
+)
+
+
+def _cost_approval(log: CloudQuickstartLog | None, assume_yes: bool, scope: str) -> str:
+    """Approve the cost already shown: --yes, or a typed `yes` at a terminal.
+
+    --yes is the only non-interactive approval: an environment variable or a
+    missing terminal never approves spending. The estimate is always written to
+    the log first, so an unattended approval has the same record as a typed one.
+    """
+    if assume_yes:
+        if log:
+            log.detail(4, f"Cost estimate accepted by --yes; no prompt shown ({scope}).")
+        return COST_APPROVED_BY_FLAG
+    if not sys.stdin.isatty():
+        raise RuntimeError(
+            f"cost approval is required before {scope} and this run has no terminal to ask; "
+            "no cloud action was started. Rerun in a terminal, or pass --yes to accept the "
+            "logged estimate without a prompt."
+        )
+    try:
+        answer = input("[QS-04] Continue? (yes/NO) ")
+    except EOFError:
+        answer = ""
+    if answer.strip().casefold() != "yes":
+        raise CloudQuickstartDeclined(
+            "human cost confirmation declined; no cloud action was started."
+        )
+    return COST_APPROVED_BY_HUMAN
+
+
 def _confirm_cloud_cost(
     profile: CloudProfile,
     action: str,
     log: CloudQuickstartLog | None = None,
-) -> None:
+    assume_yes: bool = False,
+) -> str:
     configured_estimate = profile.values.get("cost_estimate_nzd")
     configured_basis = profile.values.get("cost_estimate_basis")
     estimate = configured_estimate
@@ -828,11 +914,6 @@ def _confirm_cloud_cost(
         raise ValueError("cost estimate must be a non-negative NZD amount with up to two decimals")
     if not basis.strip() or len(basis) > 300:
         raise ValueError("cost estimate assumptions must be 1-300 characters")
-    if not sys.stdin.isatty():
-        raise RuntimeError(
-            "interactive cost confirmation is required before this cloud action; "
-            "no cloud action was started."
-        )
     action_text = {
         "create": "create the configured VM and its boot disk",
         "bootstrap": "run setup commands on the configured VM",
@@ -848,14 +929,7 @@ def _confirm_cloud_cost(
             f"Estimate: NZD ${estimate} ({basis}). This is not a spending cap; "
             "actual charges can be higher.",
         )
-    try:
-        answer = input("[QS-04] Continue? (yes/NO) ")
-    except EOFError:
-        answer = ""
-    if answer.strip().casefold() != "yes":
-        raise CloudQuickstartDeclined(
-            "human cost confirmation declined; no cloud action was started."
-        )
+    return _cost_approval(log, assume_yes, "this cloud action")
 
 
 def _cloud_preflight(
@@ -926,7 +1000,7 @@ def _load_shared_cloud_config() -> dict[str, Any]:
         raise ValueError("CLOUD_SHARED_BUILD.vm must be a valid VM name")
     if not re.fullmatch(r"[a-z]+-[a-z]+[0-9]-[a-z]", values["zone"]):
         raise ValueError("CLOUD_SHARED_BUILD.zone must be a valid GCP zone")
-    if not re.fullmatch(r"[a-z_][a-z0-9_ -]*", values["regions"]):
+    if not re.fullmatch(r"[a-z0-9_][a-z0-9_/ -]*", values["regions"]):
         raise ValueError("CLOUD_SHARED_BUILD.regions contains unsupported characters")
     if not values["ssh_user"] or not re.fullmatch(r"[a-z_][a-z0-9_-]*", values["ssh_user"]):
         raise ValueError("CLOUD_SHARED_BUILD.ssh_user must be a valid SSH username")
@@ -1103,8 +1177,8 @@ def _shared_preview_cost(config: dict[str, Any]) -> tuple[Decimal, str]:
 
 
 def _confirm_shared_cloud_cost(
-    config: dict[str, Any], log: CloudQuickstartLog,
-) -> None:
+    config: dict[str, Any], log: CloudQuickstartLog, assume_yes: bool = False,
+) -> str:
     estimate, basis = _shared_preview_cost(config)
     estimate_text = f"{estimate:.2f}"
     log.detail(
@@ -1114,19 +1188,7 @@ def _confirm_shared_cloud_cost(
         f"({basis}). Actual charges can be higher, especially if runtime or public "
         "downloads exceed these assumptions; this is not a spending cap.",
     )
-    if not sys.stdin.isatty():
-        raise RuntimeError(
-            "interactive cost confirmation is required before shared cloud work; "
-            "no cloud action was started."
-        )
-    try:
-        answer = input("[QS-04] Continue? (yes/NO) ")
-    except EOFError:
-        answer = ""
-    if answer.strip().casefold() != "yes":
-        raise CloudQuickstartDeclined(
-            "human cost confirmation declined; no cloud action was started."
-        )
+    return _cost_approval(log, assume_yes, "shared cloud work")
 
 
 def _run_shared_cloud_build(
@@ -1136,7 +1198,10 @@ def _run_shared_cloud_build(
         "bash", str(ROOT / "tools" / "remote_build.sh"),
         "--regions", region, "--ref", config["ref"],
         "--preview-user", config["preview_user"],
+        "--paid-referee" if config.get("paid_referee") else "--no-paid-referee",
     ]
+    if config.get("interactive"):
+        command.append("--interactive")
     env = os.environ.copy()
     env.update({
         "CLOUD_PROJECT": config["project"],
@@ -1153,10 +1218,13 @@ def _run_shared_cloud_build(
         raise RuntimeError(f"could not start shared cloud build: {exc}") from exc
     assert process.stdout is not None
     preview_url: str | None = None
+    gate_result: str | None = None
     for line in process.stdout:
         content = line.rstrip("\r\n")
         if content.startswith("PREVIEW_URL="):
             preview_url = content.partition("=")[2]
+        elif content.startswith("GATE_RESULT="):
+            gate_result = content.partition("=")[2].strip()
         log.detail(6, content)
     status = process.wait()
     if status:
@@ -1171,6 +1239,13 @@ def _run_shared_cloud_build(
         raise RuntimeError(
             "shared build completed without the expected developer preview URL; "
             "verify that the remote preview publisher succeeded."
+        )
+    if gate_result and gate_result != "pass":
+        return (
+            f"{GATE_WARNING_PREFIX} the deploy gate flagged items ({gate_result}); the developer "
+            "preview was published without review. Check the GATE lines above before "
+            "publishing to production.",
+            preview_url,
         )
     return (
         "Shared build and gate completed; the developer preview was published.",
@@ -1443,13 +1518,14 @@ def _report_preview_port(report: Path) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _remote_pipeline_command(region: str, port: int) -> str:
+def _remote_pipeline_command(region: str, port: int, paid_referee: bool = False) -> str:
     selected = _safe_area(region)
     if not 1024 <= port <= 65535:
         raise ValueError("preview port must be between 1024 and 65535")
     return (
         "set -u; cd \"$HOME/nz-solar-potential\" || exit 2; "
         "before=$(find data/pipeline_runs -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | sort); "
+        f"{build_plan.REFEREE_SWITCH}={int(paid_referee)} "
         f".venv/bin/python tools/pipeline.py {selected} --port {port} --no-open-browser "
         f"--step-offset {CLOUD_PIPELINE_STEP_OFFSET}; "
         "pipeline_status=$?; "
@@ -1463,10 +1539,10 @@ def _remote_pipeline_command(region: str, port: int) -> str:
     )
 
 
-def _run_pipeline(profile: CloudProfile, region: str, port: int) -> int:
+def _run_pipeline(profile: CloudProfile, region: str, port: int, paid_referee: bool = False) -> int:
     selected = _safe_area(region)
-    print(f"Running configured region {selected!r} on {profile.target}.")
-    returncode, run_id = _ssh_stream(profile, _remote_pipeline_command(selected, port))
+    print(f"Running region {selected!r} on {profile.target}.")
+    returncode, run_id = _ssh_stream(profile, _remote_pipeline_command(selected, port, paid_referee))
     if not run_id:
         if returncode:
             raise RuntimeError(
@@ -1553,6 +1629,7 @@ def _dispatch_cloud_action(
     region: str,
     port: int | None,
     confirmation: str | None,
+    paid_referee: bool = False,
 ) -> int:
     if action == "preflight":
         print("Preflight passed. It did not create resources or enable APIs.")
@@ -1563,7 +1640,7 @@ def _dispatch_cloud_action(
     elif action == "ssh":
         _ssh(profile)
     elif action == "run":
-        return _run_pipeline(profile, region, port or profile.values["preview_port"])
+        return _run_pipeline(profile, region, port or profile.values["preview_port"], paid_referee)
     elif action == "collect":
         _collect(profile)
     elif action == "preview":
@@ -1578,11 +1655,34 @@ def _dispatch_cloud_action(
     return 0
 
 
+def _decide_paid_referee(args: argparse.Namespace, region_count: int) -> bool:
+    """The start-of-run yes/no for the paid demolition referee; default no.
+
+    --yes accepts only the cost estimate already shown; it never approves this
+    extra paid service, so an unattended run takes the default answer (no)
+    unless --paid-referee is given explicitly.
+    """
+    flag = getattr(args, "paid_referee_flag", None)
+    if flag is not None:
+        return bool(flag)
+    if getattr(args, "yes", False):
+        return False
+    return build_plan.confirm_paid(region_count, ask=input)
+
+
+def _referee_note(approved: bool) -> str:
+    return ("paid demolition referee approved." if approved
+            else "paid demolition referee skipped (screening and cached verdicts only).")
+
+
 def _argument_parser(default_area: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the regional solar pipeline with persistent numbered logs.")
     parser.add_argument("region", nargs="?", default=None,
-                        help=f"configured region to process (default: {default_area})")
+                        help=("region to process: a LINZ locality id "
+                              "<council>/<town>/<suburb> (find one with "
+                              "tools/find_area.py) or a config.REGIONS name "
+                              f"(default: {default_area})"))
     parser.add_argument("--mode", choices=("local", "cloud"), default="local",
                         help="where to run the pipeline (default: local)")
     parser.add_argument("--profile",
@@ -1605,6 +1705,20 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
                         help="preferred preview port (uses another free port if occupied)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="start the local preview server but do not open a browser tab")
+    referee = parser.add_mutually_exclusive_group()
+    referee.add_argument("--paid-referee", dest="paid_referee_flag", action="store_true", default=None,
+                         help="approve the paid demolition referee without asking")
+    referee.add_argument("--no-paid-referee", dest="paid_referee_flag", action="store_false",
+                         help="skip the paid demolition referee without asking (the default answer)")
+    prompting = parser.add_mutually_exclusive_group()
+    prompting.add_argument(
+        "--yes", "-y", action="store_true",
+        help="accept the shown cloud cost estimate without a prompt (still printed and logged); "
+             "does not approve the paid referee, gcloud installation, or --confirm targets")
+    prompting.add_argument(
+        "--interactive", action="store_true",
+        help="stop and ask before continuing past a failed review gate; by default a failed "
+             "gate on a developer preview logs a warning and continues")
     parser.add_argument("--workers", type=int, default=1,
                         help="local queue worker processes (default: 1); tasks in one checkout serialize")
     parser.add_argument("--queue-dir",
@@ -1687,7 +1801,8 @@ def main() -> int:
                     1, "Check local checkout and shared cloud defaults",
                     check_shared_checkout_and_config,
                 )
-                gcloud = log.step(2, "Check or install Google Cloud CLI", lambda: _gcloud(log))
+                gcloud = log.step(2, "Check or install Google Cloud CLI",
+                                  lambda: _gcloud(log, allow_prompt=not args.yes))
                 log.step(
                     3,
                     "Check Google authentication and shared VM",
@@ -1696,8 +1811,11 @@ def main() -> int:
 
                 def confirm_shared_cost() -> str:
                     if action == "build":
-                        _confirm_shared_cloud_cost(shared, log)
-                        return "Human approval received."
+                        approval = _confirm_shared_cloud_cost(shared, log, args.yes)
+                        shared["paid_referee"] = _decide_paid_referee(
+                            args, len(shared["regions"].split()))
+                        shared["interactive"] = args.interactive
+                        return f"{approval.rstrip('.')}; {_referee_note(shared['paid_referee'])}"
                     return "Preflight only; no cloud work or cost approval required."
 
                 log.step(4, "Confirm estimated cloud cost", confirm_shared_cost)
@@ -1727,6 +1845,8 @@ def main() -> int:
                         raise RuntimeError(
                             "shared build succeeded without returning a developer preview URL."
                         )
+                    if result.startswith(GATE_WARNING_PREFIX):
+                        print(result, file=sys.stderr, flush=True)
                     print(f"Developer preview: {preview_url}", flush=True)
                     webbrowser.open(preview_url)
                 return 0 if result is not None else 1
@@ -1751,7 +1871,8 @@ def main() -> int:
                 return selected_profile
 
             profile = log.step(1, "Check local checkout and cloud profile", check_checkout_and_profile)
-            gcloud = log.step(2, "Check or install Google Cloud CLI", lambda: _gcloud(log))
+            gcloud = log.step(2, "Check or install Google Cloud CLI",
+                              lambda: _gcloud(log, allow_prompt=not args.yes))
             log.step(
                 3,
                 "Check Google authentication and cloud target",
@@ -1762,10 +1883,15 @@ def main() -> int:
                 ),
             )
 
+            paid_referee = {"approved": False}
+
             def confirm_cost() -> str:
                 if action in chargeable_actions:
-                    _confirm_cloud_cost(profile, action, log)
-                    return "Human approval received."
+                    approval = _confirm_cloud_cost(profile, action, log, args.yes)
+                    if action == "run":
+                        paid_referee["approved"] = _decide_paid_referee(args, 1)
+                        return f"{approval.rstrip('.')}; {_referee_note(paid_referee['approved'])}"
+                    return approval
                 return "This action does not create or use a billable VM; no cost approval required."
 
             log.step(4, "Confirm estimated cloud cost", confirm_cost)
@@ -1779,6 +1905,7 @@ def main() -> int:
                 f"Run cloud action: {action}",
                 lambda: _dispatch_cloud_action(
                     profile, action, area, args.port, args.confirm,
+                    paid_referee=paid_referee["approved"],
                 ),
             )
             print(f"Cloud quickstart log: {log.path}", flush=True)
@@ -1792,6 +1919,7 @@ def main() -> int:
         )
     if not 1 <= args.workers <= 32:
         parser.error("--workers must be between 1 and 32")
+    args.paid_referee = _decide_paid_referee(args, 1)
     from tools.pipeline_queue import run_local
     return run_local(args, area, ROOT)
 
@@ -1839,30 +1967,61 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
     env = os.environ.copy()
     env["SOLAR_SELECTED_FACES"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
-    commands = [
-        [str(py), "src/fetch_regions.py", area],
-        None,  # optional vision step, decided from the fetched inputs
-        [str(py), "src/run_stage.py", "build_layout_geojson", area],
-        [str(py), "src/run_stage.py", "gate_panels", area],
-        [str(py), "src/run_stage.py", "rerank_layouts", area],
-        [str(py), "src/run_stage.py", "derive_solar_potential", area],
-        [str(py), "tools/pipeline._report.py", area],
-        [str(py), "src/run_stage.py", "patch_roof_confidence", area],
-        [str(py), "src/run_stage.py", "bake_building_horizons", area],
-        [str(py), "src/run_stage.py", "register_imagery", area],
-        [str(py), "src/run_stage.py", "build_heatmap_raster", area],
-        [str(py), "src/run_stage.py", "add_addresses", area],
-        [str(py), "src/emit_region.py", area, "--out", str(region_out_root)],
-        [str(py), "src/combine_regions.py", "--regions", area,
-         "--out-root", str(region_out_root), "--dest", str(map_data),
-         "--skip-markup-lines"],
-        [str(py), "tools/build_terrain_tiles.py", area, "--min-zoom", "11",
-         "--max-zoom", "17", "--out", str(terrain_stage_dir)],
-    ]
+    # The paid demolition referee runs only when approved at the start.
+    env[build_plan.REFEREE_SWITCH] = "1" if getattr(args, "paid_referee", False) else "0"
+    commands: dict[str, list[str] | None] = {
+        "fetch": [str(py), "src/fetch_regions.py", area],
+        "vision": None,  # optional, decided from the fetched inputs
+        **{step.name: [str(py), f"src/{step.name}.py", area] for step in build_plan.PREPARE},
+        **{stage: [str(py), "src/run_stage.py", stage, area] for stage in build_plan.stages()},
+        "report": [str(py), "tools/pipeline._report.py", area],
+        "add_addresses": [str(py), "src/run_stage.py", "add_addresses", area],
+        "emit_region": [str(py), "src/emit_region.py", area, "--out", str(region_out_root)],
+        "combine": [str(py), "src/combine_regions.py", "--regions", area,
+                    "--out-root", str(region_out_root), "--dest", str(map_data),
+                    "--skip-markup-lines"],
+        "terrain": [str(py), "tools/build_terrain_tiles.py", area, "--min-zoom", "11",
+                    "--max-zoom", "17", "--out", str(terrain_stage_dir)],
+    }
+    prepare = {step.name: step for step in build_plan.PREPARE}
+    optional_notes = {
+        "register_imagery": "Imagery alignment did not complete; the map can still display geometry at its LiDAR coordinates.",
+        "add_addresses": "Address enrichment did not complete; buildings remain clickable by building ID.",
+        "terrain": "3D terrain tiles are unavailable; the 2D map remains complete.",
+        **{name: f"Preparation step did not complete; {step.warning}." for name, step in prepare.items()},
+    }
+    expected_outputs = {
+        "outline_fit": area_dir / "outline_fit.json",
+        "register_imagery": area_dir / "image_shift.json",
+        "build_layout_geojson": area_dir / "panel_layouts.geojson",
+        "gate_panels": area_dir / "panel_layouts.geojson",
+        "demolished": area_dir / "panel_layouts.geojson",
+        "rerank_layouts": area_dir / "panel_layouts.geojson",
+        "derive_solar_potential": area_dir / "solar_potential.geojson",
+        "report": area_dir / "quickstart_report.html",
+        "patch_roof_confidence": area_dir / "solar_potential.geojson",
+        "bake_building_horizons": area_dir / "solar_potential.geojson",
+        "build_heatmap_raster": area_dir / "heatmap_raster.png",
+        "add_addresses": area_dir / "solar_potential.geojson",
+        "emit_region": region_out / "summary.json",
+        "combine": map_data / "buildings.pmtiles",
+        "terrain": terrain_stage_dir / "meta.json",
+    }
+    geojson_steps = {"build_layout_geojson", "gate_panels", "demolished", "rerank_layouts",
+                     "derive_solar_potential", "patch_roof_confidence",
+                     "bake_building_horizons", "add_addresses"}
     failed_at: int | None = None
-    for number, command in enumerate(commands, start=2):
+    for step in STEPS:
+        key, number = step["key"], step["number"]
+        if key not in commands:
+            continue
+        command = commands[key]
         record = run.records[number - 1]
-        if number == 3:
+        if key in prepare and not build_plan.prepare_enabled(prepare[key], env):
+            run.begin(number)
+            run.finish(number, "SKIPPED", f"{prepare[key].switch}=0; {prepare[key].warning}.", None)
+            continue
+        if key == "vision":
             (DATA / "selected_faces").mkdir(parents=True, exist_ok=True)
             vision_files = [DATA / "sam_vit_b.pth", DATA / "models/roof_lines_v5.pt", DATA / "models/roof_lines_v6.pt"]
             line_models_ready = all(p.is_file() for p in vision_files[1:])
@@ -1914,7 +2073,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
             code, output = run.run_command(number, command, env=env)
         except KeyboardInterrupt:
             raise
-        if number == 2 and code == 0:
+        if key == "fetch" and code == 0:
             # Regional acquisition does not fetch the shared wide DEM. Fetch
             # or refresh it explicitly before validating the combined inputs.
             dem_command = [str(py), "src/fetch_dem_wide.py"]
@@ -1925,18 +2084,13 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
             output = "\n".join(part for part in (output, dem_output) if part)
             code = dem_code
         if code != 0:
-            if number in {11, 13, 16}:
-                note = {
-                    11: "Imagery alignment did not complete; the map can still display geometry at its LiDAR coordinates.",
-                    13: "Address enrichment did not complete; buildings remain clickable by building ID.",
-                    16: "3D terrain tiles are unavailable; the 2D map remains complete.",
-                }[number]
-                run.finish(number, "DEGRADED", f"Optional command exited {code}. {note} Inspect run.log.", code)
+            if key in optional_notes:
+                run.finish(number, "DEGRADED", f"Optional command exited {code}. {optional_notes[key]} Inspect run.log.", code)
                 continue
             run.finish(number, "FAIL", f"Command exited {code}; dependent outputs were not run. See run.log.", code)
             failed_at = number
             break
-        if number == 2:
+        if key == "fetch":
             status, comment = _evaluate_fetch(area_dir, output)
             if status == "FAIL":
                 run.finish(number, status, comment, code)
@@ -1944,39 +2098,28 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                 break
             run.finish(number, status, comment, code)
         else:
-            expected = {
-                4: area_dir / "panel_layouts.geojson",
-                5: area_dir / "panel_layouts.geojson",
-                6: area_dir / "panel_layouts.geojson",
-                7: area_dir / "solar_potential.geojson",
-                8: area_dir / "quickstart_report.html",
-                9: area_dir / "solar_potential.geojson",
-                10: area_dir / "solar_potential.geojson",
-                11: area_dir / "image_shift.json",
-                12: area_dir / "heatmap_raster.png",
-                13: area_dir / "solar_potential.geojson",
-                14: region_out / "summary.json",
-                15: map_data / "buildings.pmtiles",
-                16: terrain_stage_dir / "meta.json",
-            }[number]
-            if number == 11 and not expected.is_file():
+            expected = expected_outputs.get(key)
+            if expected is None:
+                run.finish(number, "PASS", "Command succeeded.", 0)
+                continue
+            if key == "register_imagery" and not expected.is_file():
                 run.finish(number, "SKIPPED", "No image_shift.json was produced (for example, the survey has no reference imagery); map geometry will render at its source coordinates.", 0)
                 continue
-            if number in {11, 16} and (not expected.is_file() or expected.stat().st_size == 0):
+            if key in optional_notes and (not expected.is_file() or expected.stat().st_size == 0):
                 run.finish(number, "DEGRADED", f"Optional output missing/empty: {expected.relative_to(ROOT)}. The 2D solar map remains available.", 0)
                 continue
             if not expected.is_file() or expected.stat().st_size == 0:
                 run.finish(number, "FAIL", f"Command returned success but expected output is missing/empty: {expected.relative_to(ROOT)}. See run.log.", 0)
                 failed_at = number
                 break
-            if number in {4, 5, 6, 7, 9, 10, 13}:
+            if key in geojson_steps:
                 feature_count, validation_error = _geojson_feature_count(expected)
                 if validation_error:
                     run.finish(number, "FAIL", f"Expected GeoJSON is invalid: {validation_error} in {expected.relative_to(ROOT)}.", 0)
                     failed_at = number
                     break
                 if feature_count == 0:
-                    if number == 7:
+                    if key == "derive_solar_potential":
                         run.finish(number, "FAIL", f"Solar potential output has zero building features: {expected.relative_to(ROOT)}.", 0)
                         failed_at = number
                         break
@@ -1985,7 +2128,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                 feature_note = f"; {feature_count} GeoJSON features"
             else:
                 feature_note = ""
-            if number == 8:
+            if key == "report":
                 rendered = re.search(r"\((\d+) buildings rendered\)", output)
                 n_rendered = int(rendered.group(1)) if rendered else None
                 comment = f"Wrote {expected.relative_to(ROOT)}; {n_rendered} buildings rendered." if n_rendered is not None else f"Wrote {expected.relative_to(ROOT)}; inspect the HTML report for coverage."
@@ -1993,17 +2136,17 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                     run.finish(number, "DEGRADED", comment + " No image cards rendered; verify imagery/facet availability.", 0)
                 else:
                     run.finish(number, "PASS", comment, 0)
-            elif number == 10:
+            elif key == "bake_building_horizons":
                 doc = json.loads(expected.read_text(encoding="utf-8"))
                 n_horizon = sum("horizon_b64" in f.get("properties", {})
                                 for f in doc["features"])
                 run.finish(number, "PASS" if n_horizon else "DEGRADED",
                            f"Horizon profiles available for {n_horizon}/{feature_count} buildings; map detail can display horizon data where present.", 0)
-            elif number == 11:
+            elif key == "register_imagery":
                 shifts = json.loads(expected.read_text(encoding="utf-8"))
                 run.finish(number, "PASS" if shifts else "SKIPPED",
                            f"Image alignment shifts recorded for {len(shifts)} buildings." if shifts else "No image shifts were measurable; rendering remains in LiDAR coordinates.", 0)
-            elif number == 12:
+            elif key == "build_heatmap_raster":
                 sidecar = area_dir / "heatmap_raster.json"
                 if not sidecar.is_file() or sidecar.stat().st_size == 0:
                     run.finish(number, "FAIL", "Heatmap sidecar is missing/empty; the emitted heatmap cannot be georeferenced.", 0)
@@ -2017,7 +2160,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                     if rendered else f"Wrote {expected.stat().st_size / 1e6:.1f} MB plus georeferencing sidecar; rendered count was not reported."
                 run.finish(number, "DEGRADED" if n_rendered == 0 else "PASS", comment +
                            (" No roofs had usable point-cloud coverage; the map's roof heat layer will be empty." if n_rendered == 0 else ""), 0)
-            elif number == 14:
+            elif key == "emit_region":
                 for rel in ("buildings.pmtiles", "panel_layouts.pmtiles", "cells.json", "summary.json"):
                     artifact = region_out / rel
                     if not artifact.is_file() or artifact.stat().st_size == 0:
@@ -2027,7 +2170,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                 if failed_at is not None:
                     break
                 run.finish(number, "PASS", f"Emitted regional tiles and support data under {region_out.relative_to(ROOT)}.", 0)
-            elif number == 15:
+            elif key == "combine":
                 required = ("buildings.pmtiles", "panel_layouts.pmtiles", "building_cells.pmtiles", "assumptions.json",
                             "addresses.json", "building_detail/index.json", "heatmap_tiles/meta.json",
                             "seasonal_curves/index.json", "build_summary.json")
@@ -2041,7 +2184,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                     (map_data / "markup_lines.geojson").write_text(
                         json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8")
                 run.finish(number, "PASS", f"Combined region into map data at {map_data.relative_to(ROOT)}.", 0)
-            elif number == 16:
+            elif key == "terrain":
                 terrain_tiles = list(terrain_stage_dir.rglob("*.png"))
                 if terrain_dir.exists():
                     shutil.rmtree(terrain_dir)
@@ -2054,22 +2197,23 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
     if failed_at is None:
         validator = [str(py), "tools/validate_quickstart_map.py",
                      "--region-out", str(region_out), "--map-data", str(map_data)]
-        run.begin(17, validator)
+        number = STEP["validate"]
+        run.begin(number, validator)
         try:
-            code, output = run.run_command(17, validator, env=env, begin=False)
+            code, output = run.run_command(number, validator, env=env, begin=False)
         except KeyboardInterrupt:
             raise
         if code != 0:
-            run.finish(17, "FAIL", "Map output contract validation failed. Review run.log before opening this dataset.", code)
-            failed_at = 17
+            run.finish(number, "FAIL", "Map output contract validation failed. Review run.log before opening this dataset.", code)
+            failed_at = number
         else:
-            run.finish(17, "PASS", output.strip() or "Map contract validated.", 0)
+            run.finish(number, "PASS", output.strip() or "Map contract validated.", 0)
 
     if failed_at is None:
         ok, url = _start_preview_server(area, run, py,
                                         args.port or 8765, not args.no_open_browser)
         if not ok:
-            failed_at = 18
+            failed_at = STEP["preview"]
 
     if failed_at is not None:
         for s in run.records[failed_at:]:

@@ -30,7 +30,7 @@ Arrows show the operational order, not that every command invokes the next.
 Input acquisition, ownership and face prediction are preparation outside the
 district script. The remote launcher can fetch with `--fetch`, but does not
 run face prediction. For stage order and differences between launchers, use
-the [execution reference](../developers/tooling-execution.md#regional-workflow-differences).
+the [execution reference](../developers/tooling-execution.md#stage-plans-across-engines).
 
 ## Source data
 
@@ -109,7 +109,7 @@ the final combine.
 includes available summaries under `data/out/`, excluding
 `config.SERVED_EXCLUDE`; unchanged regions can be included.
 
-The [execution reference](../developers/tooling-execution.md#regional-workflow-differences)
+The [execution reference](../developers/tooling-execution.md#stage-plans-across-engines)
 explains stage order, sidecars and marker freshness. Builds are incremental
 from per-building keys; local pipeline and worker reruns have different
 reuse rules.
@@ -118,16 +118,25 @@ For fast layout work on one area: `bash src/run_dev_loop.sh pilot`.
 
 ### Demolition screening
 
-**Authorize external cost and image transfer before a geometry build.** The
-default `demolished` stage can send survey/current image crops to the
-Anthropic API. The quickstart's VM/preview estimate does not include this.
-Its per-region `SOLAR_DEMOLISHED_MAX_USD` usage threshold is not a hard
-full-workflow spending cap.
+Every engine runs the `demolished` stage. Its free screen runs every time;
+its **referee**, which sends survey/current image crops to the Anthropic API,
+is off unless approved at the start of the run. Each entry point asks a
+yes/no question with a conservative estimate (USD $0.004 a roof, stopping
+near `SOLAR_DEMOLISHED_MAX_USD`, default USD $5 a region; not a spending cap)
+and approves only on an explicit `yes`. Enter, any other answer and
+non-interactive runs decline. The quickstart's VM/preview estimate does not
+include this cost.
 
-`SOLAR_DEMOLISHED=0` disables the stage;
-`SOLAR_DEMOLISHED_REFEREE=0` avoids new referee calls but cached verdicts can
-still apply. Configure these in the build environment on the VM. Yield-only
-builds skip screening.
+Non-interactive approval: `--paid-referee` on `tools/pipeline.py` and
+`tools/remote_build.sh`, the `paid_referee` input on the GitHub workflow, or
+`SOLAR_DEMOLISHED_REFEREE=1` in the environment of `tools/fleet.sh up` or a
+direct engine call. `--no-paid-referee` declines without asking, as does
+`--yes` on `tools/pipeline.py` (it approves the VM cost estimate only). The
+[execution reference](../developers/tooling-execution.md#paid-step-demolition-referee)
+lists where each entry point asks.
+
+`SOLAR_DEMOLISHED=0` disables the stage; with the referee declined, cached
+verdicts still apply. Yield-only builds skip screening.
 
 Missing imagery/key, API failures or exhausted usage can leave only cached
 verdicts applied; a zero exit code does not prove every roof was screened.

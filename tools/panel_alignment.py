@@ -99,8 +99,9 @@ def main():
     ap.add_argument("--json", default=None)
     a = ap.parse_args()
     import config
-    regs = a.regions or sorted(p.name for p in (ROOT / "data" / "regions").iterdir()
-                               if p.is_dir() and p.name not in getattr(config, "SERVED_EXCLUDE", set()))
+    from src.region_ids import list_regions
+    regs = a.regions or [r for r in list_regions(ROOT / "data" / "regions")
+                           if r not in getattr(config, "SERVED_EXCLUDE", set())]
     tot = {"panels": 0, "off_walls": 0, "off_face": 0}
     worst = []
     out = []

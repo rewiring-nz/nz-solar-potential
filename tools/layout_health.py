@@ -648,7 +648,8 @@ def main():
     if a.regions:
         regions = a.regions
     else:
-        regions = sorted(p.parent.name for p in (ROOT / "data" / "out").glob("*/summary.json"))
+        from src.region_ids import list_regions
+        regions = list_regions(ROOT / "data" / "out", sentinel="summary.json")
     out = []
     for r in regions:
         res = check_region(r)

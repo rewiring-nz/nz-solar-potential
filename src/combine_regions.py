@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.region_build import DATA_DIR, area_paths
+from src import region_ids
 from src.build_building_tiles import tile_bounds, CELL_BANDS, COVERAGE_STEPS
 from src.building_types import BTYPES
 
@@ -302,8 +303,8 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
     if regions is None:
         import config
         skip = getattr(config, "SERVED_EXCLUDE", set())
-        regions = sorted(p.name for p in out_root.iterdir()
-                         if (p / "summary.json").exists() and p.name not in skip)
+        regions = [r for r in region_ids.list_regions(out_root, sentinel="summary.json")
+                   if r not in skip]
     if not regions:
         raise SystemExit(f"no emitted regions under {out_root}")
     for r in regions:
@@ -341,6 +342,8 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
         sun_dir.mkdir()
         for r in regions:
             if (out_root / r / "sun.json").exists():
+                # A locality id nests: data/sun/<council>/<town>/<suburb>.json
+                (sun_dir / f"{r}.json").parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(out_root / r / "sun.json", sun_dir / f"{r}.json")
 
         # per-region summaries for the gate, and the totals
@@ -349,6 +352,7 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
         totals = defaultdict(float)
         by_type = defaultdict(lambda: defaultdict(float))
         for s in summaries:
+            (sdir / f"{s['region']}.json").parent.mkdir(parents=True, exist_ok=True)
             (sdir / f"{s['region']}.json").write_text(json.dumps(s, separators=(",", ":")))
             for k in ("n", "n_est", "panel_count", "kwp", "kwh", "from_selected_facets"):
                 totals[k] += s.get(k, 0) or 0

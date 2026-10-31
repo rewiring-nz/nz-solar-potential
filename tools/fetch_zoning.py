@@ -139,7 +139,8 @@ def main(argv):
     import geopandas as gpd
     from src.region_build import area_paths
     d = ROOT / "data/regions"
-    regions = argv or sorted(p.name for p in d.iterdir() if p.is_dir())
+    from src.region_ids import list_regions
+    regions = argv or list_regions(d)
     for region in regions:
         op = Path(area_paths(region)["outlines"])
         if not op.exists():

@@ -15,6 +15,8 @@ reference when you need the exact stages, files or implementation.
 | Document | What it covers |
 | --- | --- |
 | [Quickstart](data-maintainers/quickstart.md) | Run the pipeline on one region and open the map. |
+| [Choosing an area](data-maintainers/choosing-an-area.md) | Find a LINZ suburb or locality and its region id. |
+| [Areas](data-maintainers/areas.md) | Browse the national candidate-area catalogue by council, with exact region ids. |
 | [Cloud quickstart](data-maintainers/quickstart-cloud.md) | Shared-VM developer previews and experimental developer-VM profiles, costs and clean-up. |
 | [Local setup](data-maintainers/local-setup.md) | Install tools, create the Python environment and configure LINZ credentials. |
 | [Pipeline reference](data-maintainers/pipeline-reference.md) | Interpret local/profile pipeline stages, outputs and statuses; stop previews and clean up safely. |

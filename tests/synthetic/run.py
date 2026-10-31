@@ -37,9 +37,19 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 REFERENCE = HERE / "reference.json"
 REGION = "zz_harness"
-STAGES = ["register_imagery", "build_layout_geojson", "gate_panels", "rerank_layouts",
-          "derive_solar_potential", "patch_roof_confidence",
-          "bake_building_horizons", "build_heatmap_raster", "emit_region"]
+sys.path.insert(0, str(ROOT))
+from src import build_plan  # noqa: E402
+
+# The steps every build engine runs (src/build_plan.py), so a stage added to
+# the plan is exercised here too. add_addresses is left out: it queries the
+# LINZ addresses service, and this harness runs offline.
+OFFLINE_SKIP = {"add_addresses"}
+PREPARE = {step.name: step for step in build_plan.PREPARE}
+STEPS = [s for s in build_plan.region_steps() if s not in OFFLINE_SKIP]
+STAGES = [s for s in STEPS if s not in PREPARE]
+# The paid demolition referee never runs here; screening alone is deterministic.
+BASE_ENV = {"SOLAR_SELECTED_FACES": "1", "PYTHONHASHSEED": "0",
+            build_plan.REFEREE_SWITCH: "0"}
 
 
 def _tree_files():
@@ -78,11 +88,13 @@ def build(work, py, log=print):
     subprocess.run(["git", "init", "-q"], cwd=work, check=True)
     subprocess.run([py, str(HERE / "make_region.py"), str(work)], check=True,
                    stdout=subprocess.DEVNULL)
-    env = {**os.environ, "SOLAR_SELECTED_FACES": "1", "PYTHONHASHSEED": "0"}
+    env = {**os.environ, **BASE_ENV}
     failed = []
-    for s in STAGES:
-        r = subprocess.run([py, "src/run_stage.py", s, REGION], cwd=work, env=env,
-                           capture_output=True, text=True)
+    for s in STEPS:
+        if s in PREPARE and not build_plan.prepare_enabled(PREPARE[s], env):
+            continue
+        command = [py, f"src/{s}.py", REGION] if s in PREPARE else [py, "src/run_stage.py", s, REGION]
+        r = subprocess.run(command, cwd=work, env=env, capture_output=True, text=True)
         (work / f"_{s}.log").write_text(r.stdout + r.stderr)
         if r.returncode != 0:
             failed.append(s)
@@ -116,8 +128,7 @@ def incremental_check(work, py, full_fp):
         return "the full build recorded no build key for #%d" % bid
     k.pop(str(bid))
     keys.write_text(json.dumps(k))
-    env = {**os.environ, "SOLAR_SELECTED_FACES": "1", "PYTHONHASHSEED": "0",
-           "SOLAR_FULL_FRACTION": "0.5"}
+    env = {**os.environ, **BASE_ENV, "SOLAR_FULL_FRACTION": "0.5"}
     r = subprocess.run([py, "tools/patch_stale_selected.py", "--regions", REGION, "--patch"],
                        cwd=work, env=env, capture_output=True, text=True)
     (work / "_incremental.log").write_text(r.stdout + r.stderr)
@@ -142,7 +153,7 @@ def pack_check(work, py, full_fp):
     stage, and require every output byte-identical to the build from the full
     survey. This is what makes deleting inputs after publishing safe for a
     geometry layer that keeps changing (src/pack_region.py)."""
-    env = {**os.environ, "SOLAR_SELECTED_FACES": "1", "PYTHONHASHSEED": "0"}
+    env = {**os.environ, **BASE_ENV}
     r = subprocess.run([py, "src/pack_region.py", REGION], cwd=work, env=env,
                        capture_output=True, text=True)
     (work / "_pack.log").write_text(r.stdout + r.stderr)

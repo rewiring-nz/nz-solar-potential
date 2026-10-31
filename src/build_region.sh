@@ -1,6 +1,6 @@
 #!/bin/bash
-# One region, start to finish, on any machine: fetch -> predict -> build ->
-# emit -> publish. This is the unit the worker loop runs and the unit the
+# One region, start to finish, on any machine: fetch -> predict -> prepare ->
+# build -> emit -> publish. This is the unit the worker loop runs and the unit the
 # queue hands out (docs/maintainers/scale-architecture.md).
 #
 #   ./src/build_region.sh <region> [--no-publish]
@@ -16,6 +16,8 @@ set -u
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
 REGION="${1:?region name}"
+# A LINZ locality id holds '/'; logs and markers are flat files.
+RSLUG="${REGION//\//__}"
 PUBLISH=1
 [ "${2:-}" = "--no-publish" ] && PUBLISH=0
 [ -f .env ] && { set -a; . ./.env; set +a; }
@@ -47,7 +49,7 @@ gcloud storage cat "${SOLAR_BUCKET:-gs://solar-potential-map-data}/${SOLAR_BUILD
 # byte-identically. Restoring it is minutes and no LINZ or OpenTopography
 # traffic -- the difference between re-laying the country after a geometry
 # fix and re-downloading it. Only a region never built before fetches.
-if $PY src/pack_region.py "$REGION" --restore >>"$LOGDIR/$REGION.log" 2>&1; then
+if $PY src/pack_region.py "$REGION" --restore >>"$LOGDIR/$RSLUG.log" 2>&1; then
   log "restored inputs from the region pack"
   $PY src/fetch_regions.py "$REGION" || { log "FATAL: fetch_regions rc=$?"; exit 1; }
 else
@@ -59,34 +61,57 @@ fi
 # Ownership. A region from the national planner is a grid cell that overlaps
 # nothing, so this is a no-op there; hand-drawn regions overlap and need it.
 log "dedupe outlines"
-$PY src/region_build.py "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 || log "WARN: dedupe rc=$? (continuing)"
+$PY src/region_build.py "$REGION" >>"$LOGDIR/$RSLUG.log" 2>&1 || log "WARN: dedupe rc=$? (continuing)"
 
-if [ ! -f "$STATE/$REGION.predict.done" ]; then
+if [ ! -f "$STATE/$RSLUG.predict.done" ]; then
   log "predict faces ($SHARDS shards)"
   rc=0
   for i in $(seq 0 $((SHARDS - 1))); do
     OMP_NUM_THREADS=2 $PY tools/predict_faces.py --region "$REGION" --shard "$i/$SHARDS" \
-      >>"$LOGDIR/predict_$REGION.log" 2>&1 &
+      >>"$LOGDIR/predict_$RSLUG.log" 2>&1 &
   done
   for job in $(jobs -p); do wait "$job" || rc=1; done
-  [ $rc -eq 0 ] || { log "FATAL: a predict shard failed (see $LOGDIR/predict_$REGION.log)"; exit 1; }
-  date -u +%FT%TZ > "$STATE/$REGION.predict.done"
+  [ $rc -eq 0 ] || { log "FATAL: a predict shard failed (see $LOGDIR/predict_$RSLUG.log)"; exit 1; }
+  date -u +%FT%TZ > "$STATE/$RSLUG.predict.done"
 else
   log "predict: already done"
 fi
 
-log "build"
-for s in register_imagery build_layout_geojson gate_panels rerank_layouts derive_solar_potential \
-         patch_roof_confidence bake_building_horizons build_heatmap_raster; do
-  $PY src/run_stage.py --skip-done "$s" "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
-    || { log "FATAL: $s failed (see $LOGDIR/$REGION.log)"; exit 1; }
-done
-$PY src/run_stage.py --skip-done add_addresses "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
-  || log "WARN: addresses failed -- patch later"
+# The steps after input preparation come from the shared plan
+# (src/build_plan.py), the same list the district build runs: prepare
+# sidecars, the stage chain, then addresses and the emit.
+STAGES="$($PY src/build_plan.py stages)" || { log "FATAL: could not read the build plan"; exit 1; }
+PREPARE="$($PY src/build_plan.py prepare)" || exit 1
+FINISH="$($PY src/build_plan.py finish)" || exit 1
+# The paid demolition referee runs only when the fleet launch approved it
+# (tools/fleet.sh up passes SOLAR_DEMOLISHED_REFEREE); a worker has no one to
+# ask, so it declines otherwise.
+SOLAR_DEMOLISHED_REFEREE="$($PY src/build_plan.py confirm-paid --regions "$REGION" </dev/null 2>>"$LOGDIR/$RSLUG.log")" \
+  || SOLAR_DEMOLISHED_REFEREE=0
+export SOLAR_DEMOLISHED_REFEREE
 
-log "emit"
-$PY src/run_stage.py --skip-done emit_region "$REGION" >>"$LOGDIR/$REGION.log" 2>&1 \
-  || { log "FATAL: emit_region failed (see $LOGDIR/$REGION.log)"; exit 1; }
+while IFS=$'\t' read -r step switch warning; do
+  [ -n "$step" ] || continue
+  [ "${!switch:-1}" = "1" ] || continue
+  log "$step"
+  $PY "src/$step.py" "$REGION" </dev/null >>"$LOGDIR/$RSLUG.log" 2>&1 \
+    || log "WARN: $step failed -- $warning"
+done <<< "$PREPARE"
+
+log "build"
+for s in $STAGES; do
+  $PY src/run_stage.py --skip-done "$s" "$REGION" >>"$LOGDIR/$RSLUG.log" 2>&1 \
+    || { log "FATAL: $s failed (see $LOGDIR/$RSLUG.log)"; exit 1; }
+done
+
+while IFS=$'\t' read -r step fatal; do
+  [ -n "$step" ] || continue
+  log "$step"
+  if ! $PY src/run_stage.py --skip-done "$step" "$REGION" </dev/null >>"$LOGDIR/$RSLUG.log" 2>&1; then
+    [ "$fatal" = "1" ] && { log "FATAL: $step failed (see $LOGDIR/$RSLUG.log)"; exit 1; }
+    log "WARN: $step failed -- patch later"
+  fi
+done <<< "$FINISH"
 
 if [ $PUBLISH -eq 1 ]; then
   log "publish"

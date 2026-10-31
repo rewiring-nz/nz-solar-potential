@@ -66,8 +66,10 @@ def test_cloud_pipeline_step_offset_keeps_labels_sequential_after_prechecks():
 def test_failed_step_updates_report():
     with tempfile.TemporaryDirectory(prefix="quickstart-report-", dir=ROOT) as tmp:
         run = QuickstartRun("test_area", Path(tmp) / "run")
-        run.begin(4, ["python", "src/run_stage.py", "build_layout_geojson", "test_area"])
-        run.finish(4, "FAIL", "command exited 1", 1)
+        from tools.pipeline import STEP
+        layout = STEP["build_layout_geojson"]
+        run.begin(layout, ["python", "src/run_stage.py", "build_layout_geojson", "test_area"])
+        run.finish(layout, "FAIL", "command exited 1", 1)
         report = run.report_path.read_text(encoding="utf-8")
         assert run.overall == "FAIL"
         assert "**FAIL**" in report
@@ -139,7 +141,7 @@ def test_cloud_action_dispatches_selected_region_and_profile():
         assert _dispatch_cloud_action(
             profile, "run", "frankton_arm_lake", 8765, None,
         ) == 0
-    run.assert_called_once_with(profile, "frankton_arm_lake", 8765)
+    run.assert_called_once_with(profile, "frankton_arm_lake", 8765, False)
 
 
 def test_cloud_remote_command_tracks_only_new_pipeline_runs():
@@ -148,6 +150,9 @@ def test_cloud_remote_command_tracks_only_new_pipeline_runs():
     command = _remote_pipeline_command("frankton_arm_lake", 8765)
     assert "tools/pipeline.py frankton_arm_lake --port 8765 --no-open-browser" in command
     assert "--step-offset 6" in command
+    # The remote run never asks again: the start-of-run answer travels with it.
+    assert "SOLAR_DEMOLISHED_REFEREE=0 .venv/bin/python tools/pipeline.py" in command
+    assert "SOLAR_DEMOLISHED_REFEREE=1 " in _remote_pipeline_command("frankton_arm_lake", 8765, True)
     assert "CLOUD_RUN_ID=%s" in command
     assert "before=$(find data/pipeline_runs" in command
     assert "data/pipeline_runs" in command

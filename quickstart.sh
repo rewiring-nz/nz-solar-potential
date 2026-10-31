@@ -1,6 +1,8 @@
 #!/bin/bash
 # Compatibility wrapper for tools/pipeline.py.
-# Pass a configured region name, or omit it to use config.PIPELINE_REGION.
+# Pass a region id -- a LINZ locality <council>/<town>/<suburb> (find one with
+# tools/find_area.py) or a config.REGIONS name -- or omit it to use
+# config.PIPELINE_REGION.
 set -Eeuo pipefail
 cd "$(dirname "$0")"
 # Windows (Git Bash / MSYS) puts the interpreter somewhere else.

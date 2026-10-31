@@ -3,7 +3,7 @@
 # and then delete themselves.
 #
 #   tools/fleet.sh image          # snapshot the build VM's disk as the worker image
-#   tools/fleet.sh up 6           # start 6 workers
+#   tools/fleet.sh up 6           # start 6 workers (asks about the paid referee; default no)
 #   tools/fleet.sh status         # queue counts + who is building what
 #   tools/fleet.sh list           # the worker VMs
 #   tools/fleet.sh down           # delete every worker VM
@@ -59,13 +59,16 @@ BUCKET=${SOLAR_BUCKET:-${PROFILE_BUCKET:-gs://solar-potential-map-data}}
 BUILD_PREFIX=${SOLAR_BUILD_PREFIX:-${PROFILE_PREFIX:-build}}
 export SOLAR_BUCKET="$BUCKET" SOLAR_BUILD_PREFIX="$BUILD_PREFIX"
 PREFIX=solar-worker
-STARTUP=$(cat <<EOS
+# REFEREE is the paid demolition referee decision (src/build_plan.py), asked
+# once by `up` because workers have no terminal and so decline on their own.
+make_startup() {
+  cat <<EOS
 #!/bin/bash
 # runs as root at boot; the checkout and venv live in j's home on the image
-su - j -c 'cd ~/solar-map && git pull -q 2>/dev/null; SOLAR_BUCKET="$BUCKET" SOLAR_BUILD_PREFIX="$BUILD_PREFIX" SOLAR_SELF_DELETE=1 ./src/worker.sh' \
+su - j -c 'cd ~/solar-map && git pull -q 2>/dev/null; SOLAR_BUCKET="$BUCKET" SOLAR_BUILD_PREFIX="$BUILD_PREFIX" SOLAR_DEMOLISHED_REFEREE=${REFEREE:-0} SOLAR_SELF_DELETE=1 ./src/worker.sh' \
   >> /var/log/solar-worker.log 2>&1
 EOS
-)
+}
 
 case "${1:-}" in
   image)
@@ -76,6 +79,11 @@ case "${1:-}" in
     ;;
   up)
     N=${2:?how many workers}
+    # Paid step, decided before any worker starts: yes/no, default no. The
+    # number of regions the workers claim is not known here, so the estimate
+    # is per region.
+    REFEREE=$($PY src/build_plan.py confirm-paid --per-region) || REFEREE=0
+    STARTUP=$(make_startup)
     for i in $(seq 1 "$N"); do
       NAME="$PREFIX-$(date -u +%m%d)-$i-$RANDOM"
       gcloud compute instances create "$NAME" --project="$PROJECT" --zone "$ZONE" \

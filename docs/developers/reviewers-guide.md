@@ -72,7 +72,7 @@ rule (`SOLAR_PLANT_DECKS=0`).
 | `data/roof_labels.json` | `mark_roofs.html` via `tools/ingest_labels.py` | training, benchmarks, precedence |
 
 For exact stage order and differences between engines, use the
-[execution reference](tooling-execution.md#regional-workflow-differences);
+[execution reference](tooling-execution.md#stage-plans-across-engines);
 for serving and release steps, use
 [dataset operations](../data-maintainers/dataset-operations.md#7-publish).
 

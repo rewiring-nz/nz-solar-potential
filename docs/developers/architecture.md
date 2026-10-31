@@ -62,8 +62,17 @@ The direct layout-to-derive edge represents paths without demolition screening.
 - `config.py`: model constants, source layer IDs, regions, exclusions, and
   the PV assumptions shown in the UI (`PV_ASSUMPTIONS`).
 - `src/fetch_data.py`, `src/fetch_regions.py`: fetch inputs.
+- `src/region_ids.py`: region id rules. An id is its path under
+  `data/regions/` and `data/out/`: a LINZ locality
+  `<council>/<town>/<suburb>` or a legacy `config.REGIONS` name.
+  `list_regions` walks both shapes; `file_slug` flattens an id for markers
+  and logs.
+- `src/localities.py`, `tools/find_area.py`: LINZ NZ Suburbs and Localities
+  lookup. `prepare` writes a locality's attribute-matched building outlines
+  and `locality.json` (LINZ attributes, bbox) into `data/regions/<id>/`.
 - `src/region_build.py`: region paths, and assigns each outline to exactly
-  one region. Region-aware tools use its path helpers.
+  one region; a locality owns the buildings LINZ assigns to it. Region-aware
+  tools use its path helpers.
 - The pilot is special: its inputs start in `data/`, but
   `area_paths("pilot")` resolves to `data/regions/pilot/`. A fresh checkout
   needs the pilot inputs prepared there.

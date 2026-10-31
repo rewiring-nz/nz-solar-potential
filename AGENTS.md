@@ -114,6 +114,11 @@ figure for the same thing. Code enforces this:
   region-appropriate estimate and its assumptions before any call that could
   start or use a billable VM. Say it is not a spending cap. Require an
   explicit `yes`; Enter, anything else, or a non-interactive run declines.
+  The one exception is the explicit `--yes` flag on `tools/pipeline.py`: it
+  still prints and logs the estimate, then records that `--yes` (not a
+  person at the prompt) approved it. No environment variable approves cost,
+  and `--yes` never approves the paid referee, a gcloud install or a
+  `--confirm` target.
   With no defensible default estimate, require one from the user. Keep
   no-cost checks separate. Single-VM profile actions live in
   `tools/pipeline.py` (via `quickstart.sh`); the shared-VM build and publish
@@ -145,9 +150,16 @@ figure for the same thing. Code enforces this:
   `site-config.js` switch. `--push-reviewed "<why>"` publishes past a gate
   whose list has been rendered and judged. Roll back by pointing
   `site-config.js` `dataBase`/`dataVersion` at an older folder.
+- **Review gates warn on previews and block only production.** A failed
+  `tools/predeploy_check.py` gate in `tools/remote_build.sh` prints
+  `GATE WARNING` and continues for build-only runs and developer previews,
+  so unattended runs are not held up by human review; `--interactive` stops
+  and asks instead. Production `--publish` still needs a passing gate or
+  `--reviewed "<why>"`.
 - **Developer previews are separate from production.** The shared cloud
-  quickstart publishes each passing gated build to the public preview
-  bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]`, under immutable
+  quickstart publishes each gated build to the public preview
+  bucket in `config.CLOUD_SHARED_BUILD["preview_bucket"]` (with a warning
+  when the gate flagged items), under immutable
   `devel/<alias>/runs/` paths, and updates only that alias's pointer. The
   bucket expires `devel/` objects after `preview_retention_days`. Never put
   private inputs or production releases there.
@@ -184,6 +196,13 @@ figure for the same thing. Code enforces this:
 ### Pipeline
 - Each region builds in its own Python process, because decoded point-cloud
   tiles stay in memory.
+- `src/build_plan.py` is the single per-region step plan (prepare:
+  `outline_fit`, `repeat_roofs`; stages through `run_stage.py`; finish:
+  `add_addresses`, `emit_region`). The local executor in `tools/pipeline.py`,
+  `src/run_district_build.sh` and `src/build_region.sh` all read it, and
+  `tests/test_build_plan.py` fails on drift. Input preparation, stage
+  selection and combine scope still differ per engine
+  ([tooling execution](docs/developers/tooling-execution.md#stage-plans-across-engines)).
 - `src/run_district_build.sh` plans each region from per-building build keys
   (clean / patch / full), runs layout, gating, reranking, derivation,
   confidence, horizon and raster stages, then `emit_region.py` per region and
@@ -197,7 +216,19 @@ figure for the same thing. Code enforces this:
   under `data/build_state/`, and skips a stage only when its inputs are older
   than its marker.
 - `config.PIPELINE_REGION` is the default region for `tools/pipeline.py`; the
-  CLI can pick any `config.REGIONS` name.
+  CLI takes any region id.
+- A region id is its path under `data/regions/` and `data/out/`
+  (`src/region_ids.py`): a LINZ NZ Suburbs and Localities area
+  `<council>/<town>/<suburb>` (layer `config.LINZ_SUBURBS_LOCALITIES_LAYER`,
+  slugs of the LINZ ASCII names, `no-town` when LINZ gives none,
+  `-<linz-id>` appended on a name collision), or a legacy `config.REGIONS`
+  bbox name. `src/localities.py prepare` writes a locality's outlines,
+  selected by the outlines' `suburb_locality`/`town_city`/
+  `territorial_authority` attributes, and `locality.json` (bbox = outlines
+  + 150 m). Dedupe gives a locality every building LINZ assigns to it.
+  Flat per-region files use `region_ids.file_slug` (`/` -> `__`).
+  `tools/find_area.py` and [choosing-an-area.md](docs/data-maintainers/choosing-an-area.md)
+  are the maintainer entry points.
 - `config.SERVED_EXCLUDE` keeps the Mt Eden regions and `akl_epsom_01` off
   the map; their builds stay on disk.
 - Triage a failed pipeline run from its `report.md`, then the numbered step
@@ -241,7 +272,7 @@ figure for the same thing. Code enforces this:
   every height at the building's LiDAR position, taking off the photo lean
   (`img_dx`/`img_dy`) the geometry was moved by; `?SOLAR_LEAN_HEIGHTS=0` or
   `SITE.leanHeights = false` turns that off.
-- Two pre-plan steps in `src/run_district_build.sh`, both on by default
+- Two prepare steps in `src/build_plan.py` (every engine), both on by default
   (`=0` turns either off). `SOLAR_OUTLINE_FIT`: `src/outline_fit.py` slides an outline that is
   clearly offset from the roof the LiDAR sees onto it (writes
   `data/regions/<r>/outline_fit.json`; layout, derive, horizons and heat map
@@ -257,8 +288,11 @@ figure for the same thing. Code enforces this:
   0.7+ replaces the layout with reason `demolished`. Answers are cached per
   building in `data/regions/<r>/demolished.json` (key: outline and lean);
   the key is the project secret `Claude-API`, and runs stop at
-  `SOLAR_DEMOLISHED_MAX_USD` (default $5 a region). `SOLAR_DEMOLISHED=0`
-  turns it off; `SOLAR_DEMOLISHED_REFEREE=0` screens without asking. Drawn
+  `SOLAR_DEMOLISHED_MAX_USD` (default $5 a region). The referee is paid and
+  runs only when `SOLAR_DEMOLISHED_REFEREE=1`; every entry point asks a
+  yes/no question at the start (default no; non-interactive runs and
+  `--yes` decline unless `--paid-referee` or the env is set), via `build_plan.confirm_paid`.
+  `SOLAR_DEMOLISHED=0` turns the stage off. Drawn
   roofs are never withheld. `config.DEMOLISHED_BUILDING_IDS` still drops
   field-reported outlines from the build entirely.
 - `src/derive_solar_potential.py` builds the building summary by adding up
@@ -278,6 +312,12 @@ figure for the same thing. Code enforces this:
 - The refit API exists only in `src/live_server.py`; static hosting lacks it.
 
 Last checked against the code: 2026-10-28.
+
+The national candidate-area snapshot is maintained in
+[Areas](docs/data-maintainers/areas.md), regenerated by `tools/list_areas.py`
+from LINZ locality attributes using the pipeline's region-id helpers.
+It excludes lakes and inland bays, matching `tools/find_area.py` defaults;
+it does not certify building presence or survey coverage.
 
 ## Open questions
 

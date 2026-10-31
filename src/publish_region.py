@@ -42,6 +42,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.region_build import DATA_DIR, REGIONS_DIR, area_paths, area_bbox_wgs84
+from src import region_ids
 from src.gcs_queue import url, _run
 
 OUT_ROOT = DATA_DIR / "out"
@@ -181,8 +182,9 @@ def publish(region, delete=True, dry=False):
         if lst.exists():
             mine = set(lst.read_text().split())
         others = set()
-        for other in REGIONS_DIR.iterdir():
-            if other.name == region or not other.is_dir():
+        for other_id in region_ids.list_regions(REGIONS_DIR):
+            other = REGIONS_DIR / other_id
+            if other_id == region:
                 continue
             if (other / "manifest.json").exists():
                 continue          # already published: its inputs are gone too

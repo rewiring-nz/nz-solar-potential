@@ -238,7 +238,9 @@ def _check_owned(region):
     missing = ids(raw) - ids(dd)
     if not missing:
         return
-    for other in REGIONS_DIR.glob("*/building_outlines_dedup.geojson"):
+    from src.region_ids import list_regions
+    for r in list_regions(REGIONS_DIR, sentinel="building_outlines_dedup.geojson"):
+        other = REGIONS_DIR / r / "building_outlines_dedup.geojson"
         if other != dd:
             missing -= ids(other)
             if not missing:

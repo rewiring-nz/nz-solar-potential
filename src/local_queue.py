@@ -17,6 +17,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
+from src import region_ids
+
 TERMINAL = frozenset({"succeeded", "failed", "interrupted"})
 
 
@@ -43,15 +45,20 @@ def validate_task(task: Any) -> dict[str, Any]:
         "id", "region", "workspace", "python", "options", "provenance",
     }:
         raise QueueError("Task must contain id, region, workspace, python, options and provenance.")
-    for key in ("id", "region"):
-        if not isinstance(task[key], str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", task[key]):
-            raise QueueError(f"Invalid task {key}.")
+    if not isinstance(task["id"], str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", task["id"]):
+        raise QueueError("Invalid task id.")
+    try:
+        region_ids.validate(task["region"])
+    except ValueError:
+        raise QueueError("Invalid task region.") from None
     for key in ("workspace", "python"):
         if not isinstance(task[key], str) or not Path(task[key]).is_absolute():
             raise QueueError(f"Task {key} must be an absolute path.")
     task = dict(task, workspace=str(Path(task["workspace"]).resolve()))
     options = task["options"]
-    if not isinstance(options, dict) or set(options) != {"port", "no_open_browser", "step_offset"}:
+    if not isinstance(options, dict) or set(options) != {
+        "port", "no_open_browser", "step_offset", "paid_referee",
+    }:
         raise QueueError("Invalid pipeline options.")
     port = options["port"]
     if port is not None and (type(port) is not int or not 1024 <= port <= 65535):
@@ -60,6 +67,8 @@ def validate_task(task: Any) -> dict[str, Any]:
         raise QueueError("no_open_browser must be boolean.")
     if type(options["step_offset"]) is not int or options["step_offset"] < 0:
         raise QueueError("step_offset must be a non-negative integer.")
+    if type(options["paid_referee"]) is not bool:
+        raise QueueError("paid_referee must be boolean.")
     provenance = task["provenance"]
     if not isinstance(provenance, dict) or set(provenance) != {"commit", "files"}:
         raise QueueError("Invalid task provenance.")

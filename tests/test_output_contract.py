@@ -47,6 +47,18 @@ def test_no_estimate_layout_feature_is_valid():
     assert "layer 'wrong'" in validate_layout_feature("wrong", valid)
 
 
+def test_geometry_hash_ignores_outline_slide_suffix():
+    from src.build_keys import geometry_hash_of_key, model_version
+
+    plain_key = "none+nolab+d9e74662fb83"
+    slid_key = plain_key + "+s0.50,0.75"
+    assert geometry_hash_of_key(plain_key) == "d9e74662fb83"
+    assert geometry_hash_of_key(slid_key) == "d9e74662fb83"
+    assert geometry_hash_of_key("legacy") is None
+    assert model_version(geometry_hash_of_key(slid_key), "76a635") == "gd9e746-y76a635"
+
+
 if __name__ == "__main__":
     test_no_estimate_layout_feature_is_valid()
+    test_geometry_hash_ignores_outline_slide_suffix()
     sys.exit(main())

@@ -10,7 +10,7 @@ Use narrow geometry checks before paying for regional rebuilds
 ([reviewer's guide](../developers/reviewers-guide.md#check-each-stage-yourself)).
 For a rebuild, choose incremental, force or yield-only according to the
 [operator guide](../data-maintainers/dataset-operations.md#4-build).
-The [execution comparison](../developers/tooling-execution.md#regional-workflow-differences)
+The [execution comparison](../developers/tooling-execution.md#stage-plans-across-engines)
 explains why the local, district and worker paths are not interchangeable.
 
 ## What a national build needs

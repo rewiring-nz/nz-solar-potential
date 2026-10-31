@@ -210,7 +210,12 @@ def yield_code_hash():
 
 def geometry_hash_of_key(key):
     """The geometry-code part of a recorded building key, or None."""
-    return key.rsplit("+", 1)[-1] if key and "+" in key else None
+    if not isinstance(key, str):
+        return None
+    parts = key.split("+")
+    if len(parts) < 3 or not re.fullmatch(r"[0-9a-f]{12}", parts[2]):
+        return None
+    return parts[2]
 
 
 def model_version(geometry_hash, yield_hash):
@@ -220,4 +225,3 @@ def model_version(geometry_hash, yield_hash):
     g = geometry_hash[:6] if geometry_hash else "unknown"
     y = yield_hash if yield_hash in ("mixed",) else (yield_hash[:6] if yield_hash else "unknown")
     return f"g{g}-y{y}"
-

@@ -221,7 +221,7 @@ def clean_roofs(region, area_paths, tmp_dir):
         out[rm] = np.fmin(sub[rm], eave)
         z[r0:r1, c0:c1] = out
         done += 1
-    dst = Path(tmp_dir) / f"{region}_dsm_roofs.tif"
+    dst = Path(tmp_dir) / f"{region.replace('/', '__')}_dsm_roofs.tif"
     prof.update(dtype="float32", nodata=np.nan, compress="deflate", tiled=True)
     with rasterio.open(dst, "w", **prof) as d:
         d.write(z, 1)
@@ -300,7 +300,7 @@ def flatten_buildings(region, area_paths, tmp_dir):
         sub = z[r0:r1, c0:c1]
         sub[fm] = g
         done += 1
-    dst = Path(tmp_dir) / f"{region}_dsm_ground.tif"
+    dst = Path(tmp_dir) / f"{region.replace('/', '__')}_dsm_ground.tif"
     prof.update(dtype="float32", nodata=np.nan, compress="deflate", tiled=True)
     with rasterio.open(dst, "w", **prof) as d:
         d.write(z, 1)
@@ -518,8 +518,8 @@ def main():
     if a.out is None:
         a.out = OUT.parent / "terrain_ground" if a.ground else OUT
     from src.region_build import area_paths
-    d = ROOT / "data/regions"
-    regions = a.regions or sorted(p.name for p in d.iterdir() if p.is_dir())
+    from src.region_ids import list_regions
+    regions = a.regions or list_regions(ROOT / "data/regions")
     a.out.mkdir(parents=True, exist_ok=True)
     total = build_all(regions, a.min_zoom, a.max_zoom, area_paths, a.out, ground=a.ground)
     (a.out / "meta.json").write_text(json.dumps(

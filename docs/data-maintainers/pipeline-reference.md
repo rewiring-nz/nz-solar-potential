@@ -6,14 +6,29 @@ diagnose failures with [Troubleshooting](troubleshooting.md).
 
 ## Regions
 
-- `config.REGIONS`: region names and WGS84 bounding boxes.
+A region is one of:
+
+- A LINZ suburb or locality, named `<council>/<town>/<suburb>` from the LINZ
+  NZ Suburbs and Localities layer, e.g.
+  `queenstown-lakes-district/arrowtown/arrowtown`. Find one with
+  `tools/find_area.py`; see [Choosing an area](choosing-an-area.md). No
+  `config.py` edit is needed. Its outlines and bounding box are written by
+  `src/localities.py` to `data/regions/<id>/` (`building_outlines.geojson`,
+  `locality.json`) at preflight.
+- A legacy bounding-box region named in `config.REGIONS`, such as `pilot`
+  (the original central Queenstown pilot) or `town_gorge_north`.
+
+Related settings:
+
 - `config.SURVEYS`: each survey's layers and coverage. A region must sit
   wholly inside one survey.
 - `config.PIPELINE_REGION`: the local/profile default region. Shared-cloud
   mode instead defaults to `config.CLOUD_SHARED_BUILD["regions"]`.
-  Pass a name to override it. The original central Queenstown pilot is `pilot`.
+  Pass a region id to override it.
 
-Add a region by editing `config.py`.
+Region ids are relative paths: a locality's outputs are under
+`data/regions/<council>/<town>/<suburb>/` and `data/out/<council>/<town>/<suburb>/`.
+Flat files named after a region (build markers, logs) replace `/` with `__`.
 
 ## Needs
 
@@ -28,7 +43,7 @@ Additional operating limits:
 checkout; update that checkout first. Shared cloud mode instead uses the
 district engine, not the table below. Cloud commands are in the
 [cloud quickstart](quickstart-cloud.md); exact backend differences are
-in the [execution reference](../developers/tooling-execution.md#regional-workflow-differences).
+in the [execution reference](../developers/tooling-execution.md#stage-plans-across-engines).
 
 ## Local task queue
 
@@ -132,30 +147,49 @@ the [consolidation boundary](../developers/tooling-execution.md#local-queue-cons
 
 ## Local and profile-VM steps
 
-These are not the shared-cloud district sequence. The local pipeline writes
-stage markers but does not pass `--skip-done`: rerunning creates a new report
-and reruns the commands, with any input reuse handled by individual tools.
+Steps 04–17 are the shared stage plan ([src/build_plan.py](../../src/build_plan.py)),
+the same per-region steps the district and fleet engines run; steps 12 and
+18–21 are local-only. The local pipeline writes stage markers but does not
+pass `--skip-done`: rerunning creates a new report and reruns the commands,
+with any input reuse handled by individual tools.
 
 | # | Step |
 |---|---|
 | 01 | Preflight: validate area and runtime |
 | 02 | Fetch outlines, elevation, imagery, point cloud; ensure the wide DEM (`src/fetch_regions.py`, `src/fetch_dem_wide.py`) |
 | 03 | Vision precompute (optional) |
-| 04 | Build roof geometry and layout |
-| 05 | Gate panel layouts |
-| 06 | Rerank panel layouts |
-| 07 | Derive building solar potential |
-| 08 | Render building verification report |
-| 09 | Patch roof confidence |
-| 10 | Bake per-building horizons |
-| 11 | Register imagery alignment (optional) |
-| 12 | Build per-pixel solar heat map |
-| 13 | Add building addresses (optional) |
-| 14 | Emit regional map tiles (`src/emit_region.py`) |
-| 15 | Combine map dataset (`src/combine_regions.py`) |
-| 16 | Build local 3D terrain tiles |
-| 17 | Validate map contract |
-| 18 | Start local map preview |
+| 04 | Fit outlines to the roof (optional; `SOLAR_OUTLINE_FIT=0` skips) |
+| 05 | Agree identical roofs (optional; `SOLAR_REPEAT_ROOFS=0` skips) |
+| 06 | Register imagery alignment (optional) |
+| 07 | Build roof geometry and layout |
+| 08 | Gate panel layouts |
+| 09 | Screen demolished buildings (paid referee only if approved, below) |
+| 10 | Rerank panel layouts |
+| 11 | Derive building solar potential |
+| 12 | Render building verification report |
+| 13 | Patch roof confidence |
+| 14 | Bake per-building horizons |
+| 15 | Build per-pixel solar heat map |
+| 16 | Add building addresses (optional) |
+| 17 | Emit regional map tiles (`src/emit_region.py`) |
+| 18 | Combine map dataset (`src/combine_regions.py`) |
+| 19 | Build local 3D terrain tiles |
+| 20 | Validate map contract |
+| 21 | Start local map preview |
+
+**Paid step question.** Before queueing (local) or inside the cost
+confirmation (cloud), the pipeline asks whether to use the paid demolition
+referee, with an estimate. Only `yes` approves; Enter, a non-interactive
+run or `--yes` declines. `--paid-referee` / `--no-paid-referee` answer it in advance.
+See [demolition screening](dataset-operations.md#demolition-screening).
+
+**Unattended and interactive runs.** `--yes` (`-y`) accepts the cloud cost
+estimate without a prompt; the estimate is still printed and logged. Review
+gates never block a run by default: a failed deploy gate on the shared cloud
+preview prints `GATE WARNING` and continues. `--interactive` stops and asks
+at a failed gate instead (it cannot be combined with `--yes`). The local
+pipeline has no review gate, so `--interactive` changes nothing there. See
+[cloud quickstart: deploy gate](quickstart-cloud.md#deploy-gate).
 
 Exact definitions: [tools/pipeline.py](../../tools/pipeline.py).
 
@@ -165,7 +199,7 @@ Exact definitions: [tools/pipeline.py](../../tools/pipeline.py).
   of each step), `run.log` (all output, tagged `[QS-NN]`), and the preview
   server's PID and log.
 - `data/out/<region>/`: the region's emitted tiles and summaries.
-- `data/`: the combined map. **Step 15 replaces whatever map data was there**
+- `data/`: the combined map. **Step 18 replaces whatever map data was there**
   with the selected region. Other emitted regions remain under `data/out/`
   but are not included in this combine. Don't run it over map data you want
   to keep. Root `data/solar_potential.geojson` is not a current map input.

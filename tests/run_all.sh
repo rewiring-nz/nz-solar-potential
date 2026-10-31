@@ -24,6 +24,8 @@
 #   small obj    vents read as crisp contrast, stains do not; edge-drop width.
 #   xref         every import of a repo name, including inside functions and
 #                in tools/, still resolves -- what a deletion breaks first.
+#   region ids   LINZ locality ids <council>/<town>/<suburb>, nested region
+#                directories, and the outline filter. Offline.
 #   cloud        profile validation, target confirmation, and profile routing.
 #   synthetic    the whole district build on a made-up eight-roof region,
 #                fingerprinted against tests/synthetic/reference.json. Runs
@@ -86,8 +88,11 @@ run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
 run "local task queue"       $PY tests/test_local_queue.py
+run "region ids, LINZ localities" $PY tests/test_region_ids.py
+run "national area catalogue" $PY tests/test_list_areas.py
 run "LERC raster dependencies" $PY tests/test_s3_rasters.py
 run "quickstart map preview" $PY tests/test_quickstart_map.py
+run "shared build plan"     $PY tests/test_build_plan.py
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py

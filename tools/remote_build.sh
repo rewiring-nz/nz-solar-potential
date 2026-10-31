@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build on the VM and, if the gate passes, publish -- from anywhere gcloud runs.
+# Build on the VM, gate it against the live site, and publish -- from anywhere gcloud runs.
 #
 #   tools/remote_build.sh --regions "glenorchy kinloch"            # build + gate, no publish
 #   tools/remote_build.sh --regions "glenorchy kinloch" --publish  # ...and publish if the gate passes
@@ -7,6 +7,19 @@
 #   tools/remote_build.sh --publish --reviewed "why"               # publish although the gate failed
 #   tools/remote_build.sh --yield-only --publish                   # the sun changed, not the roofs
 #   tools/remote_build.sh --regions frankton_arm_lake --preview-user alice
+#   tools/remote_build.sh --regions newtown --paid-referee       # approve the paid referee
+#   tools/remote_build.sh --regions newtown --preview-user alice --interactive  # ask at a failed gate
+#
+# GATE: a failed gate never blocks a build-only run or a developer preview; it
+# prints "GATE WARNING" and continues so unattended runs scale. --interactive
+# stops and asks instead (and stops when there is no terminal). Production
+# --publish always needs a passing gate or --reviewed "why". The script prints
+# GATE_RESULT=pass|flagged|not-run for callers (tools/pipeline.py).
+#
+# PAID STEP: the build's demolished stage can ask a paid vision referee
+# (src/build_plan.py). This script asks at the start, before the VM starts;
+# the answer defaults to no, and a run with no terminal declines unless
+# --paid-referee (the explicit approval the GitHub workflow passes) is given.
 #
 # No --regions: an incremental build of every region (stale ones only).
 #
@@ -43,7 +56,7 @@ TARGET="${VM_USER:-$DEFAULT_VM_USER}@$VM"
 SSH() {
   local output rc
   if output=$(gcloud compute ssh --tunnel-through-iap "$TARGET" --project="$PROJECT" --zone="$ZONE" \
-    --ssh-flag="-o ConnectTimeout=60" --command "$1" 2>&1); then
+    --ssh-flag="-o ConnectTimeout=60" --command "$1" </dev/null 2>&1); then
     printf '%s\n' "$output" \
       | grep -v "^Warning\|^WARNING\|NumPy\|please see\|^Updating\|^Existing\|^$" || true
   else
@@ -59,18 +72,21 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; PREVIEW_USER=""
+REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; PREVIEW_USER=""; REFEREE=""; INTERACTIVE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --regions)      REGIONS="$2"; shift 2 ;;
     --fetch)        FETCH=1; shift ;;
     --publish)      PUBLISH=1; shift ;;
     --reviewed)     REVIEWED="$2"; shift 2 ;;
+    --interactive)  INTERACTIVE=1; shift ;;
     --yield-only)   MODE="--yield-only"; shift ;;
     --force)        MODE="--force"; shift ;;
     --keep-running) KEEP=1; shift ;;
     --ref)          REF="$2"; shift 2 ;;
     --preview-user) PREVIEW_USER="$2"; shift 2 ;;
+    --paid-referee)    REFEREE=1; shift ;;
+    --no-paid-referee) REFEREE=0; shift ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
@@ -81,6 +97,16 @@ done
   echo "--preview-user must be a 1-39 character alphanumeric/hyphen alias"; exit 2;
 }
 case "$REGIONS" in *[!a-z0-9_\ ]*) echo "region names are lower-case letters, digits and _"; exit 2 ;; esac
+
+# Decide the paid referee here, before any cloud call: the build on the VM runs
+# without a terminal and so could only decline.
+if [ "$MODE" = "--yield-only" ]; then
+  REFEREE=0
+elif [ -z "$REFEREE" ]; then
+  if [ -n "$REGIONS" ]; then scope=(--regions "$REGIONS")
+  else scope=(--region-count "$(python3 -c 'import config; print(len(config.REGIONS))')"); fi
+  REFEREE=$(python3 src/build_plan.py confirm-paid "${scope[@]}") || REFEREE=0
+fi
 
 STARTED=0
 finish() {
@@ -127,7 +153,7 @@ VM_USER="${VM_USER:-j}" SYNC_VM="$VM" SYNC_ZONE="$ZONE" SYNC_PROJECT="$PROJECT" 
   tools/sync_vm.sh --ref "$REF" || exit 1
 
 echo "=== build on the VM ==="
-steps="cd ~/solar-map"
+steps="cd ~/solar-map && export SOLAR_DEMOLISHED_REFEREE=$REFEREE"
 [ $FETCH -eq 1 ] && steps="$steps && .venv/bin/python src/fetch_regions.py $REGIONS"
 steps="$steps && bash src/run_district_build.sh $MODE${REGIONS:+ --regions \"$REGIONS\"}"
 SSH "rm -f ~/remote_build.log; nohup bash -c '($steps) >> ~/remote_build.log 2>&1; echo REMOTE_BUILD_RC=\$? >> ~/remote_build.log' >/dev/null 2>&1 &"
@@ -146,17 +172,38 @@ rc=$(SSH "grep '^REMOTE_BUILD_RC=' ~/remote_build.log | tail -1 | cut -d= -f2" |
 
 echo "=== gate against live ==="
 SSH "cd ~/solar-map && .venv/bin/python tools/predeploy_check.py; echo GATE_RC=\$?" | tee /tmp/remote_gate.$$
-gate=$(grep '^GATE_RC=' /tmp/remote_gate.$$ | cut -d= -f2); rm -f /tmp/remote_gate.$$
-if [ "$gate" != 0 ]; then
-  [ -n "$REVIEWED" ] || { echo "GATE FAILED -- not publishing"; exit 1; }
-  echo "GATE FAILED -- publishing anyway, reviewed: $REVIEWED"
-  [ -z "$PREVIEW_USER" ] || { echo "GATE FAILED -- developer previews require a passing gate"; exit 1; }
+gate=$(grep '^GATE_RC=' /tmp/remote_gate.$$ | cut -d= -f2 | tr -dc 0-9); rm -f /tmp/remote_gate.$$
+# predeploy_check.py: 0 nothing flagged, 1 items to look at, 2 the check could
+# not run; no GATE_RC at all means the SSH call itself failed.
+case "$gate" in
+  0) GATE_RESULT=pass ;;
+  1) GATE_RESULT=flagged; gate_why="the gate flagged items listed above" ;;
+  *) GATE_RESULT=not-run; gate_why="the gate did not run (rc=${gate:-none}); nothing was compared" ;;
+esac
+if [ "$GATE_RESULT" != pass ]; then
+  if [ $PUBLISH -eq 1 ]; then
+    # Production stays gated: the live site changes only after a person has
+    # judged the list and said why (--reviewed), whatever the mode.
+    [ -n "$REVIEWED" ] || { echo "GATE FAILED -- $gate_why; not publishing to production without --reviewed \"why\""; exit 1; }
+    echo "GATE FAILED -- publishing anyway, reviewed: $REVIEWED"
+  elif [ $INTERACTIVE -eq 1 ]; then
+    [ -t 0 ] || { echo "GATE FAILED -- $gate_why; --interactive needs a terminal to ask, stopping"; exit 1; }
+    echo "GATE FAILED -- $gate_why."
+    echo "Continue and publish the developer preview anyway? (yes/NO)"
+    answer=""; read -r answer || answer=""
+    [ "$answer" = yes ] || { echo "GATE FAILED -- stopped at the prompt; nothing published"; exit 1; }
+    echo "GATE WARNING -- continuing after interactive approval"
+  else
+    echo "GATE WARNING -- $gate_why; continuing without review (pass --interactive to stop and ask)."
+    echo "GATE WARNING -- review the list before any production publish; a drop is not automatically wrong."
+  fi
 fi
+echo "GATE_RESULT=$GATE_RESULT"
 
 if [ -n "$PREVIEW_USER" ]; then
   echo "=== publish temporary developer preview ==="
   preview_out=$(SSH "cd ~/solar-map && .venv/bin/python tools/publish_preview.py --user '$PREVIEW_USER' --regions '$REGIONS'") || {
-    echo "PREVIEW FAILED -- build and gate passed, but the public preview was not updated"
+    echo "PREVIEW FAILED -- the build completed, but the public preview was not updated"
     exit 1
   }
   printf '%s\n' "$preview_out"

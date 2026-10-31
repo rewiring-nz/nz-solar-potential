@@ -74,8 +74,8 @@ def _find_region(bid):
     from src.region_build import area_paths
     import config
     d = ROOT / "data/regions"
-    names = sorted({p.name for p in d.iterdir() if p.is_dir()} | set(config.REGIONS)) \
-        if d.exists() else list(config.REGIONS)
+    from src.region_ids import list_regions
+    names = sorted(set(list_regions(d)) | set(config.REGIONS))
     for r in names:
         op = area_paths(r)["outlines"]
         if not Path(op).exists():

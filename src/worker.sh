@@ -27,7 +27,7 @@ while true; do
   ( while true; do sleep 300; $PY -c "import sys; sys.path.insert(0,'.'); from src.gcs_queue import heartbeat; heartbeat('$REGION')" 2>/dev/null; done ) &
   HB=$!
 
-  if ./src/build_region.sh "$REGION" >"$LOGDIR/worker_$REGION.log" 2>&1; then
+  if ./src/build_region.sh "$REGION" >"$LOGDIR/worker_${REGION//\//__}.log" 2>&1; then
     kill $HB 2>/dev/null; wait $HB 2>/dev/null
     $PY - <<PYEOF
 import sys, json; sys.path.insert(0, '.')
@@ -43,7 +43,7 @@ PYEOF
 import sys; sys.path.insert(0, '.')
 from src.gcs_queue import mark_failed
 from pathlib import Path
-mark_failed('$REGION', Path('$LOGDIR/worker_$REGION.log').read_text()[-4000:])
+mark_failed('$REGION', Path('$LOGDIR/worker_${REGION//\//__}.log').read_text()[-4000:])
 PYEOF
     log "FAILED $REGION (recorded; will be retried by any worker)"
   fi

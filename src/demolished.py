@@ -46,8 +46,10 @@ outline screened out, so a rebuild does not screen it again, and
 and rewrites panel_layouts.geojson in place: every feature of a withheld
 building is replaced by one no_estimate feature.
 
-Switches: SOLAR_DEMOLISHED=0 turns the stage off (nothing withheld);
-SOLAR_DEMOLISHED_REFEREE=0 screens but asks nothing.
+Switches: SOLAR_DEMOLISHED=0 turns the stage off (nothing withheld). The
+paid referee asks only when SOLAR_DEMOLISHED_REFEREE=1; unset or 0 screens and
+applies cached verdicts but asks nothing. Build entry points set it from a
+yes/no question that defaults to no (src/build_plan.py confirm_paid).
 
 Usage: python src/demolished.py <region>
 """
@@ -298,7 +300,7 @@ def detect(region, paths):
     shifts = drawing_shifts(paths["dir"])
     gdf = gpd.read_file(paths["outlines"]).to_crs("EPSG:2193")
     drawn = drawn_ids()
-    referee = os.environ.get("SOLAR_DEMOLISHED_REFEREE", "1") != "0"
+    referee = os.environ.get("SOLAR_DEMOLISHED_REFEREE", "0") == "1"
     client, spent, asked, skipped, n_screened = None, 0.0, 0, 0, 0
     recs = {}
     t0 = time.time()

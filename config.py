@@ -165,6 +165,10 @@ POINTCLOUD_TILE_YEAR = "2021"  # "Otago - Queenstown LiDAR Tile Index (2021)" --
 
 # LINZ layer IDs (confirmed to exist and cover the pilot bbox)
 LINZ_BUILDING_OUTLINES_LAYER = 101290
+# "NZ Suburbs and Localities": the official areas a region is named after
+# (src/localities.py). Building outlines carry the matching suburb_locality,
+# town_city and territorial_authority attributes.
+LINZ_SUBURBS_LOCALITIES_LAYER = 113764
 LINZ_DSM_LAYER = 105855  # "Otago - Queenstown LiDAR 1m DSM (2021)"
 LINZ_DEM_LAYER = 105898  # "Otago - Queenstown LiDAR 1m DEM (2021)" -- bare earth, for shading horizon
 LINZ_WIDE_DEM_LAYER = 51768  # "NZ 8m Digital Elevation Model (2012)" -- distant terrain context

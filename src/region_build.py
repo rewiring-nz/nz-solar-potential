@@ -26,6 +26,7 @@ import pyproj
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from src import region_ids
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 REGIONS_DIR = DATA_DIR / "regions"
@@ -73,9 +74,7 @@ def all_areas():
     while all_areas -- the function every STAGE calls -- still did not have
     it. One definition, here, where both kinds of caller already look.
     """
-    on_disk = set()
-    if REGIONS_DIR.exists():
-        on_disk = {p.name for p in REGIONS_DIR.iterdir() if p.is_dir()}
+    on_disk = set(region_ids.list_regions(REGIONS_DIR))
     return sorted(on_disk | {"pilot"} | set(config.REGIONS))
 
 
@@ -122,6 +121,13 @@ def area_bbox_wgs84(name):
                 return [float(v) for v in bbox]
         except Exception:
             pass
+    # A LINZ locality region: the extent of its buildings, recorded by
+    # src/localities.py when it fetched them.
+    locality = REGIONS_DIR / name / "locality.json"
+    if locality.exists():
+        bbox = json.loads(locality.read_text()).get("bbox")
+        if bbox and len(bbox) == 4:
+            return [float(v) for v in bbox]
     if name in config.REGIONS:
         return list(config.REGIONS[name])
     if name == "pilot":
@@ -190,10 +196,13 @@ def dedupe_outlines(region_names=None):
 
     owner = {}  # building_id -> (margin, region)
     for name, gdf in frames.items():
-        bbox = area_bbox_nztm(name)
+        # A LINZ locality's outlines are exactly the buildings LINZ assigns to
+        # it, so it owns them outright over any overlapping bounding box.
+        locality = region_ids.is_locality_id(name)
+        bbox = None if locality else area_bbox_nztm(name)
         for row in gdf.itertuples():
             c = row.geometry.centroid
-            margin = _edge_margin(c.x, c.y, bbox)
+            margin = float("inf") if locality else _edge_margin(c.x, c.y, bbox)
             bid = row.building_id
             if bid not in owner or margin > owner[bid][0]:
                 owner[bid] = (margin, name)
@@ -228,9 +237,9 @@ def dedupe_with_built(region):
     serve. combine_regions re-emits any region whose ownership changed."""
     out_root = DATA_DIR / "out"
     names = [region] + sorted(
-        p.parent.name for p in out_root.glob("*/summary.json")
-        if p.parent.name != region
-        and (REGIONS_DIR / p.parent.name / "building_outlines.geojson").exists())
+        r for r in region_ids.list_regions(out_root, sentinel="summary.json")
+        if r != region
+        and (REGIONS_DIR / r / "building_outlines.geojson").exists())
     dedupe_outlines(names)
 
 

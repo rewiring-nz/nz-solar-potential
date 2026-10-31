@@ -28,13 +28,18 @@ bash quickstart.sh
 ```
 
 This builds the region set by `PIPELINE_REGION` in `config.py`, on your
-computer. To build another configured region, name it:
+computer. To build another area, pass its LINZ suburb or locality id
+`<council>/<town>/<suburb>`:
 
 ```sh
-bash quickstart.sh town_gorge_north
+.venv/bin/python tools/find_area.py arrowtown   # prints the region id
+bash quickstart.sh queenstown-lakes-district/arrowtown/arrowtown
 ```
 
-Region names are in `REGIONS` in `config.py`.
+[Choosing an area](choosing-an-area.md) explains where the ids come from
+and how to check an area's size and LiDAR coverage. Older bounding-box
+regions in `REGIONS` in `config.py` (such as `town_gorge_north`) still build
+by name.
 The local queue starts one worker process without cloud access. For
 multi-worker debugging and persistent task status, see
 [Local task queue](pipeline-reference.md#local-task-queue).

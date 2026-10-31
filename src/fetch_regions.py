@@ -14,7 +14,10 @@ Large regions are split into <= MAX_EXPORT_KM2 chunks per export job and
 mosaicked back together -- one giant imagery export both risks the Exports
 API's job-size ceiling and buffers multi-GB zips in memory.
 
-Usage: python src/fetch_regions.py [region ...]   (default: all regions)
+Usage: python src/fetch_regions.py [region ...]   (default: all config.REGIONS)
+
+A region is a config.REGIONS name or a LINZ locality id
+<council>/<town-city>/<suburb-locality> (find one with tools/find_area.py).
 """
 
 import os
@@ -146,10 +149,19 @@ def main():
     ensure_dem_wide(api_key)
 
     wanted = sys.argv[1:] or list(config.REGIONS)
+    # A LINZ locality region is resolved and its outlines fetched by name
+    # (src/localities.py), which also records the bbox the steps below use.
+    from src import localities, region_ids
+    for name in wanted:
+        if region_ids.is_locality_id(name):
+            try:
+                localities.prepare(name, api_key)
+            except LookupError as e:
+                raise SystemExit(str(e))
     # Known = has a bbox from ANY source area_bbox_wgs84 accepts: task.json
-    # (a queued national region, in no config), config.REGIONS, or outlines
-    # on disk. Checking config.REGIONS alone refused every queued region, so
-    # build_region.sh could not fetch one -- the whole point of the queue.
+    # (a queued national region, in no config), locality.json, config.REGIONS,
+    # or outlines on disk. Checking config.REGIONS alone refused every queued
+    # region, so build_region.sh could not fetch one -- the whole point of the queue.
     for name in wanted:
         try:
             area_bbox_wgs84(name)

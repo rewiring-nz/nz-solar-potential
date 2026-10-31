@@ -64,30 +64,31 @@ if [ -z "$REGIONS" ]; then
   REGIONS="$($PY -c 'from src.region_build import all_areas; print(" ".join(all_areas()))')"
 fi
 
-# Per-region stages, in dependency order.
-# register_imagery comes first: markup traced on the map's photo is moved by
-# each roof's lean as it is read (SOLAR_MARKUP_FRAME), and the heat map is
-# drawn where the map's photo shows each roof. It never fails a build (on
-# failure the drawing stays where the LiDAR is).
-# demolished comes after the gate and before everything that reads panels: a
-# building the photos show was demolished or replaced since the survey has its
-# layout replaced by a "demolished" reason (src/demolished.py). It runs on
-# every build, layouts patched or not, and never fails one.
-STAGES="register_imagery build_layout_geojson gate_panels demolished rerank_layouts derive_solar_potential
-        patch_roof_confidence bake_building_horizons build_heatmap_raster"
-# After addresses: the region's own tiles, cells, detail and summary. This
-# is what replaced the fan-in (docs/maintainers/scale-architecture.md).
-EMIT="emit_region"
+# Per-region steps come from the shared plan (src/build_plan.py): the prepare
+# sidecars, the stage chain and the finish steps, in dependency order. The fleet
+# worker and the local executor read the same plan; tests/test_build_plan.py
+# fails if a hard-coded list comes back here.
+STAGES="$($PY src/build_plan.py stages)" || { echo "FAILED: could not read the build plan"; exit 1; }
 if [ $YIELD_ONLY -eq 1 ]; then
   # The yield layer only: geometry, panels and shading factors stay as built;
   # every kWh is recomputed from them with the current solar model and
   # everything downstream of a kWh is redone. See src/apply_yield.py.
-  STAGES="apply_yield rerank_layouts derive_solar_potential
-          patch_roof_confidence bake_building_horizons build_heatmap_raster"
+  STAGES="$($PY src/build_plan.py stages --yield-only)" || exit 1
+fi
+PREPARE="$($PY src/build_plan.py prepare)" || exit 1
+FINISH="$($PY src/build_plan.py finish)" || exit 1
+
+# PAID STEP, DECIDED NOW. The demolished stage asks a paid vision referee only
+# with SOLAR_DEMOLISHED_REFEREE=1. The question defaults to no, and a
+# non-interactive run declines unless the caller set the variable already
+# (tools/remote_build.sh does, from its own question or --paid-referee).
+if [ $YIELD_ONLY -eq 0 ]; then
+  SOLAR_DEMOLISHED_REFEREE="$($PY src/build_plan.py confirm-paid --regions "$REGIONS")" || SOLAR_DEMOLISHED_REFEREE=0
+  export SOLAR_DEMOLISHED_REFEREE
 fi
 
 echo "=== district build $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
-echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}"
+echo "regions: $(echo $REGIONS | wc -w | tr -d ' ')   resume: ${SKIP:-off}   paid referee: ${SOLAR_DEMOLISHED_REFEREE:-0}"
 
 # SNAPSHOT THE BUILD WE ARE ABOUT TO REPLACE. The fan-in overwrites
 # data/solar_potential.geojson, and once that is gone there is nothing left to
@@ -154,28 +155,21 @@ fi
 # --force still rebuilds every stage of every region; --yield-only skips the
 # geometry altogether (see src/apply_yield.py). --incremental is accepted for
 # old scripts and changes nothing: this is what it used to ask for.
-# OUTLINES ON THE ROOF (src/outline_fit.py; SOLAR_OUTLINE_FIT=0 turns it off): an outline
-# clearly offset from the roof the LiDAR sees is slid onto it, before the plan,
-# so a building whose slide changed reads as stale. Never fails a build: on
-# failure every outline stays where LINZ put it.
-if [ "${SOLAR_OUTLINE_FIT:-1}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
-  echo "=== outlines on the roof ($(date -u +%H:%M:%S)) ==="
-  for r in $REGIONS; do
-    $PY src/outline_fit.py "$r" >>"$LOGDIR/$r.log" 2>&1 \
-      || echo "  WARN: outline_fit failed for $r -- its outlines stay as surveyed"
-  done
-fi
-
-# IDENTICAL ROOFS, ONE READING (src/repeat_roofs.py; SOLAR_REPEAT_ROOFS=0 turns it off): sets of
-# copies of one roof get their set's agreed reading before the plan, so a
-# changed agreement marks its buildings stale. Never fails a build: on failure
-# each building keeps its own reading.
-if [ "${SOLAR_REPEAT_ROOFS:-1}" = "1" ] && [ $YIELD_ONLY -eq 0 ]; then
-  echo "=== identical roofs ($(date -u +%H:%M:%S)) ==="
-  for r in $REGIONS; do
-    $PY src/repeat_roofs.py "$r" >>"$LOGDIR/$r.log" 2>&1 \
-      || echo "  WARN: repeat_roofs failed for $r -- its buildings keep their own readings"
-  done
+# PREPARE, before the plan (src/build_plan.py PREPARE): outline_fit slides an
+# outline clearly offset from the roof the LiDAR sees onto it; repeat_roofs
+# gives sets of identical roofs their agreed reading. Both feed the build keys,
+# so a changed result marks its buildings stale. Each is off with its switch set
+# to 0, never fails a build, and is skipped on yield-only builds.
+if [ $YIELD_ONLY -eq 0 ]; then
+  while IFS=$'\t' read -r step switch warning; do
+    [ -n "$step" ] || continue
+    [ "${!switch:-1}" = "1" ] || continue
+    echo "=== $step ($(date -u +%H:%M:%S)) ==="
+    for r in $REGIONS; do
+      $PY "src/$step.py" "$r" </dev/null >>"$LOGDIR/${r//\//__}.log" 2>&1 \
+        || echo "  WARN: $step failed for $r -- $warning"
+    done
+  done <<< "$PREPARE"
 fi
 
 PLAN=data/build_state/incremental_plan.json
@@ -203,21 +197,27 @@ for r in $REGIONS; do
       if [ "$mode" != "full" ]; then continue; fi
       if [ "$s" = "build_layout_geojson" ]; then flag="--force"; fi
     fi
-    if ! $PY src/run_stage.py $flag "$s" "$r" >>"$LOGDIR/$r.log" 2>&1; then
-      echo "  FAILED: $s for $r (see $LOGDIR/$r.log)"
+    if ! $PY src/run_stage.py $flag "$s" "$r" >>"$LOGDIR/${r//\//__}.log" 2>&1; then
+      echo "  FAILED: $s for $r (see $LOGDIR/${r//\//__}.log)"
       fail=1
       break
     fi
   done
-  # Addresses need the network, and are a patch-in-place post-process. A
-  # failure here must not discard the offline compute around it -- re-run
-  # later with: python src/run_stage.py add_addresses <region>
-  $PY src/run_stage.py $SKIP add_addresses "$r" >>"$LOGDIR/$r.log" 2>&1 \
-    || echo "  WARN: addresses failed for $r -- patch later"
-  if ! $PY src/run_stage.py $SKIP $EMIT "$r" >>"$LOGDIR/$r.log" 2>&1; then
-    echo "  FAILED: $EMIT for $r (see $LOGDIR/$r.log)"
-    fail=1
-  fi
+  # Finish steps: addresses need the network and are a patch-in-place
+  # post-process, so a failure there must not discard the offline compute
+  # around it (re-run later with: python src/run_stage.py add_addresses <region>).
+  # The emit is fatal.
+  while IFS=$'\t' read -r step fatal; do
+    [ -n "$step" ] || continue
+    if ! $PY src/run_stage.py $SKIP "$step" "$r" </dev/null >>"$LOGDIR/${r//\//__}.log" 2>&1; then
+      if [ "$fatal" = "1" ]; then
+        echo "  FAILED: $step for $r (see $LOGDIR/${r//\//__}.log)"
+        fail=1
+      else
+        echo "  WARN: $step failed for $r -- patch later"
+      fi
+    fi
+  done <<< "$FINISH"
 done
 
 if [ $fail -ne 0 ]; then
