@@ -21,6 +21,7 @@ import hmac
 import http.server
 import json
 import secrets
+import signal
 import sys
 import time
 import urllib.parse
@@ -319,6 +320,40 @@ def make_server(app: App, port: int = DEFAULT_PORT,
     return server
 
 
+def port_owner(port: int) -> tuple[int, str] | None:
+    """(pid, command line) of the process listening on a TCP port, if lsof can tell."""
+    import subprocess
+    try:
+        found = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                               capture_output=True, text=True, timeout=10, check=False)
+        pid = int(found.stdout.split()[0])
+        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                                 capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+    return pid, command.stdout.strip()
+
+
+def port_in_use_message(port: int, exc: OSError, owner_fn=port_owner) -> str:
+    lines = [f"Cannot listen on 127.0.0.1:{port} ({exc.strerror})."]
+    owner = owner_fn(port) if port else None
+    if owner:
+        pid, command = owner
+        if "pipeline_web" in command:
+            lines += [f"An earlier pipeline panel is still running (process {pid}).",
+                      "Stop it with Ctrl+C in its terminal, or from here with:",
+                      f"  kill {pid}",
+                      "Either way it cancels its running builds before it exits."]
+        else:
+            lines.append(f"Process {pid} holds the port: {command or 'unknown command'}")
+    lines.append(f"Or start this panel on another port: --port {port + 1} (or --port 0 for any free port).")
+    return "\n".join(lines)
+
+
+def _interrupt(signum, frame):
+    raise KeyboardInterrupt
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -333,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server = make_server(app, args.port)
     except OSError as exc:
-        print(f"Cannot listen on 127.0.0.1:{args.port} ({exc.strerror}); try --port.", file=sys.stderr)
+        print(port_in_use_message(args.port, exc), file=sys.stderr)
         return 1
     port = server.server_address[1]
     url = f"http://127.0.0.1:{port}/pipeline.html#token={app.token}"
@@ -343,6 +378,10 @@ def main(argv: list[str] | None = None) -> int:
           flush=True)
     if not args.no_open_browser:
         webbrowser.open(url)
+    # A panel started in the background ignores SIGINT; make `kill` and Ctrl+C both
+    # take the shutdown path below, which cancels running builds.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, _interrupt)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

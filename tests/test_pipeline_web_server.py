@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 from test_pipeline_web_data import KEY, FakeLinz
 from test_pipeline_web_jobs import _manager
 from tools.pipeline_webui import estimate as E
-from tools.pipeline_webui.server import App, make_server
+from tools.pipeline_webui.server import App, make_server, port_in_use_message
 
 TOKEN = "test-token-abc"
 
@@ -136,7 +136,18 @@ def test_static_files_keep_pipeline_serve_rules():
             server.server_close()
 
 
+def test_port_in_use_message_says_how_to_stop_an_old_panel():
+    busy = OSError(48, "Address already in use")
+    panel = port_in_use_message(8766, busy, lambda port: (4242, "python tools/pipeline_web.py"))
+    assert "earlier pipeline panel" in panel and "kill 4242" in panel and "--port 8767" in panel
+    other = port_in_use_message(8766, busy, lambda port: (77, "/usr/bin/some-server"))
+    assert "kill" not in other and "/usr/bin/some-server" in other
+    unknown = port_in_use_message(8766, busy, lambda port: None)
+    assert "--port 8767" in unknown and "kill" not in unknown
+
+
 if __name__ == "__main__":
     test_api_end_to_end()
     test_static_files_keep_pipeline_serve_rules()
+    test_port_in_use_message_says_how_to_stop_an_old_panel()
     print("pipeline web server tests passed")

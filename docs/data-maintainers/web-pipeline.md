@@ -37,6 +37,32 @@ It prints a link such as
 ones are dropped. Cancelling a cloud build stops the local command; the VM
 is stopped only if that build started it.
 
+Closing the browser tab does not stop the panel. If its terminal is still
+open, return to it and press `Ctrl+C`. If the terminal is gone, starting a new
+panel on the same port fails and names the old one:
+
+```text
+Cannot listen on 127.0.0.1:8766 (Address already in use).
+An earlier pipeline panel is still running (process 12345).
+Stop it with Ctrl+C in its terminal, or from here with:
+  kill 12345
+```
+
+Run the `kill` command it prints. The panel treats `kill` (SIGTERM) and
+`Ctrl+C` (SIGINT) the same way: it cancels running builds and drops queued
+ones before exiting, including when it was started in the background. If the
+port belongs to another program, the message shows that program's command
+instead; check it yourself with:
+
+```sh
+lsof -nP -iTCP:8766 -sTCP:LISTEN
+ps -p 12345 -o pid=,command=
+```
+
+For a panel started with `--port N`, use `N` instead of `8766`. Check that the
+listener is gone by repeating the `lsof` command. Do not stop a process just
+because it owns the port if its command is unrelated.
+
 ## Use it
 
 - **Regions** depends on the target:
@@ -149,6 +175,7 @@ The panel is not a hosted service; it runs on your computer with your
 | Symptom | Fix |
 | --- | --- |
 | "Read-only: the panel server is not running" | Start `tools/pipeline_web.py` and open the link it prints. |
+| "Cannot listen on 127.0.0.1:8766 (Address already in use)" | If the message names an earlier pipeline panel, run the `kill <pid>` it prints ([Start it](#start-it)). If another program holds the port, start the panel with `--port N` or `--port 0`. |
 | "This link's token is out of date" | The panel was restarted; open the new link. |
 | "No LINZ API key found" | Set `LINZ_API_KEY` as in [local setup](local-setup.md). |
 | "zoom in" when choosing areas | The view is wider than 1°; zoom in. |
