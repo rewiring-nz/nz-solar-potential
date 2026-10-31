@@ -25,6 +25,11 @@ maintenance includes removing obsolete code paths and redundant explanations.
 Live: data version 67 (31 Oct; roof-line join on). 32,838 buildings, 35
 regions, 1,334,824 panels.
 
+Building: v68, launched 31 Oct 07:28 UTC on the VM (`--force`, the 35 served
+regions, about 6 h). Carries outline fit, identical-roof sharing, the Beach St
+roof fixes and the 247 approved demolished withholds. Then gate, render the
+movers, publish.
+
 ## Ship
 
 - **Roofs Josh flagged on 31 Oct** (all in `data/roof_cases.json`):
