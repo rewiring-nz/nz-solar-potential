@@ -553,6 +553,7 @@ def _build_one_at(building_id, nudge_m):
     for _pass in (0, 1):
         per_facet = []
         _rel_skipped = False
+        _rel_area = 0.0
         for f in facets:
             facet_centroid = f["geometry"].centroid
             # Shading: the direct sun that clears the near (1 m DSM) and far
@@ -639,6 +640,8 @@ def _build_one_at(building_id, nudge_m):
             elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
                 panels = []
                 _rel_skipped = _rel_skipped or not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0)
+                if not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0):
+                    _rel_area += f["geometry"].area
             else:
                 panels = fit_panels_on_facet(f, obstructions=obstructions,
                                              sibling_facets=siblings,
@@ -671,16 +674,34 @@ def _build_one_at(building_id, nudge_m):
                 kept_panels.append(pnl)
             # clean arrays only: after the shade veto, which can leave fragments
             # (src/panel_fitting.py RACKING)
+            if os.environ.get("SOLAR_FACE_DEBUG"):
+                print(f"[sun {building_id}] pass {_pass} face {f['geometry'].area:.0f} m2 "
+                      f"{f['slope_deg']:.0f}/{f['aspect_deg']:.0f} share "
+                      f"{sun_share(model, f['slope_deg'], f['aspect_deg']):.2f} of {_sunniest:.2f}: "
+                      f"{len(panels)} fitted, {len(kept_panels)} after shade")
             kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
             kept_panels = shape_arrays(kept_panels, face_area=f["geometry"].area)
             kept_panels = centre_panels(kept_panels, f["geometry"],
                                         [o.buffer(0.3) for o in obstructions if o is not None] + list(_keepouts))
             per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
                               "poa": facet_poa * shading_factor, "shading_factor": shading_factor})
-        if (_pass == 0 and _rel_skipped
-                and not any(pf["panels"] for pf in per_facet)):
-            _sunniest = 0.0
-            continue
+        if _pass == 0 and _rel_skipped:
+            # A sunny side must be a real part of the roof. On 4734459
+            # (Fernhill) a 16 m2 east face took 3 panels and became the
+            # sunny side, so the 157 m2 south-east face (0.68 of it, under
+            # 0.78) went bare: 36 panels to 6. Where the faces holding panels
+            # are under SUN_SIDE_MIN_SHARE of the area the rule left bare
+            # plus theirs and hold under SUN_SIDE_MIN_PANELS, the roof uses
+            # its next-best side (still above SUN_SIDE_ABS). An ordinary
+            # gable is about half and half; a sunny row of 11 on a narrow
+            # face (4735330) is an install, and its shady side stays bare.
+            # SOLAR_SUN_SIDE_MIN_SHARE=0 reruns only when the roof is empty.
+            _held = sum(pf["facet"]["geometry"].area for pf in per_facet if pf["panels"])
+            _held_n = sum(len(pf["panels"]) for pf in per_facet)
+            if _held == 0 or (_held_n < SUN_SIDE_MIN_PANELS
+                              and _held < SUN_SIDE_MIN_SHARE * (_held + _rel_area)):
+                _sunniest = 0.0
+                continue
         break
 
     kept_panel_lists = drop_minor_arrays([pf["panels"] for pf in per_facet])
@@ -772,6 +793,9 @@ SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.65"))  # 0.70 zeroe
 # all-south houses in v57 (one 24-29 degree face, 0.66-0.70); 0.65 keeps a south roof up to ~27 degrees
 SUN_SIDE_SECTOR_DEG = 112.5   # off north: south-east through south-west
 SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny side
+SUN_SIDE_MIN_SHARE = float(os.environ.get("SOLAR_SUN_SIDE_MIN_SHARE", "0.25"))  # nor a sunny side
+# this small a share of the roof it would leave bare (second pass)
+SUN_SIDE_MIN_PANELS = 8      # ...holding fewer panels than a small home system (~3.6 kW)
 
 
 def sun_share(model, slope_deg, aspect_deg):

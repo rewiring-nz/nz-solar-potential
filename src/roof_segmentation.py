@@ -2120,11 +2120,16 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
             # the returns wins, the reading keeping ties.
             from src.roof_partition import (selected_score, selected_agreed, SELECTED_TRUST,
                                             SELECTED_COMPETE_MARGIN, SELECTED_MIN_COVER,
-                                            SELECTED_ALT_MIN_AREA, REPEAT_KEEP_ROOF)
+                                            SELECTED_ALT_MIN_AREA, REPEAT_KEEP_ROOF,
+                                            REPEAT_CONTEST)
             _ss = selected_score(building_id)
-            # an agreed reading of identical roofs already won on every copy's
-            # returns (src/repeat_roofs.py); competing again here, copy by
-            # copy, is what split the set
+            # An agreed reading of identical roofs that scores under
+            # SELECTED_TRUST competes like any other. v68 exempted it, on the
+            # grounds that competing copy by copy split the set; but the set
+            # that motivated it (6/60 Hallenstein St) agrees on a reading
+            # scored 0.61, which never competes, and the exemption only kept
+            # weak shared readings over clean LiDAR results (4749739 248 -> 189,
+            # 5370646 140 -> 81). SOLAR_REPEAT_CONTEST=0 restores the exemption.
             _agreed = selected_agreed(building_id)
             # ...but it must still keep the roof. Explained points cannot see
             # a wing the moved faces never reach: v68 gave 4736995, an L, its
@@ -2137,7 +2142,9 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
                 alt = _partition_facets(pc_source, building_geom, building_id, imagery_ds,
                                         use_selected=False)
                 if os.environ.get("SOLAR_FACE_DEBUG"):
-                    print(f"[partition {building_id}] agreed reading {_ss:.2f}; LiDAR path {len(alt)} faces")
+                    print(f"[partition {building_id}] agreed reading {_ss:.2f}: {len(faces)} faces explain "
+                          f"{score:.2f}; LiDAR path {len(alt)} faces explain "
+                          f"{(explained_fraction(alt, pts) if alt else 0.0):.2f}")
                 if alt:
                     _att = _attach_building_geometry(faces, building_geom, pc_source, building_id)
                     _alt_att = _attach_building_geometry(alt, building_geom, pc_source, building_id)
@@ -2148,7 +2155,8 @@ def _partition_facets(pc_source, building_geom, building_id, imagery_ds=None, us
                               f"LiDAR path {_alt_area:.0f} m2")
                     if _att_area < SELECTED_ALT_MIN_AREA * _alt_area:
                         return alt
-            if _ss is not None and _ss < SELECTED_TRUST and not _agreed:
+            if (_ss is not None and _ss < SELECTED_TRUST
+                    and (REPEAT_CONTEST or not _agreed)):
                 # The rival is the WHOLE LiDAR path -- partition, then the
                 # skeleton and plain-roof competitors it falls back to -- not
                 # the bare partition: on 4725584 the partition alone explained

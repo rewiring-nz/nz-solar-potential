@@ -1286,14 +1286,16 @@ SELECTED_ALT_MIN_AREA = float(os.environ.get("SOLAR_SELECTED_ALT_MIN_AREA", "0.9
 # IDENTICAL ROOFS, ONE READING (src/repeat_roofs.py). Where a building is one
 # of a set of copies of a roof, the set's agreed reading replaces its own: on
 # 6/60 Hallenstein St six copies had been read five ways. An agreed reading
-# does not compete with the LiDAR path building by building -- that
-# competition is what would split the set again -- because it already won
-# across the set on the members' own returns. On by default; SOLAR_REPEAT_ROOFS=0 turns it off.
+# scored under SELECTED_TRUST still competes with the LiDAR path, and must
+# keep the roof (REPEAT_CONTEST, REPEAT_KEEP_ROOF). On by default; SOLAR_REPEAT_ROOFS=0 turns it off.
 REPEAT_FACES_DIR = SELECTED_FACES_DIR.parent / "repeat_faces"
 USE_REPEAT_ROOFS = os.environ.get("SOLAR_REPEAT_ROOFS", "1") == "1"
 # An agreed reading that covers clearly less roof than the LiDAR path gives
 # way to it (src/roof_segmentation.py). SOLAR_REPEAT_KEEP_ROOF=0 turns it off.
 REPEAT_KEEP_ROOF = os.environ.get("SOLAR_REPEAT_KEEP_ROOF", "1") == "1"
+# An agreed reading scored under SELECTED_TRUST competes with the LiDAR path
+# like any reading (src/roof_segmentation.py). SOLAR_REPEAT_CONTEST=0 exempts it.
+REPEAT_CONTEST = os.environ.get("SOLAR_REPEAT_CONTEST", "1") == "1"
 
 
 def selected_doc(building_id):
