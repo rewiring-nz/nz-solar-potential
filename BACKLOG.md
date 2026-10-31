@@ -56,13 +56,24 @@ Guides now live in matching persona subdirectories, with historical notes
 under `docs/ai-agents/archive/`; references follow the moves. Documentation
 maintenance includes removing obsolete code paths and redundant explanations.
 
-Live: data version 67 (31 Oct; roof-line join on). 32,838 buildings, 35
-regions, 1,334,824 panels.
+Live: data version 68 (1 Nov). 32,838 buildings, 35 regions, 1,299,243
+panels, 776.4 GWh. Carries outline fit, identical-roof sharing, the Beach St
+roof fixes and 216 demolished buildings withheld. Built in 10 h 50 min.
 
-Building: v68, launched 31 Oct 07:28 UTC on the VM (`--force`, the 35 served
-regions, about 6 h). Carries outline fit, identical-roof sharing, the Beach St
-roof fixes and the 247 approved demolished withholds. Then gate, render the
-movers, publish.
+v68 review (gate, `tools/face_area_check.py` against the saved v67 layouts,
+`tools/render_built.py` renders): flagged roofs improved or unchanged; 24
+roofs still on the map lost face area, and about 10 big drops were rendered.
+- Fixed for v69 (`SOLAR_REPEAT_KEEP_ROOF`): a copy given a neighbour's
+  reading that leaves part of the roof unread (4736995, 5375073, 5374336,
+  5375067, 5376118 in wanaka_town). Needs the next district build.
+- Still to trace: 4749739 / 4749406 (frankton_quail_rise, 248 -> 189 and
+  168 -> 127), 4734459 and 4749146 (town_west_fernhill, 41 -> 6, 90 -> 51),
+  4731151 (lake_hayes_est_west, 81 -> 39), 5370646 / 5370587
+  (arrowtown_millbrook, 143 -> 81, 127 -> 68).
+- Partial on the flagged Beach St roofs: 48 Beach St still has panels on the
+  dark plant box's east half; 44 Beach St's second strip stays landscape.
+- `tests/test_local_queue.py` interrupt test fails on the Mac ("Operation
+  not permitted" signalling the worker); passes elsewhere.
 
 ## Ship
 
