@@ -1605,6 +1605,10 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
                         help="preferred preview port (uses another free port if occupied)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="start the local preview server but do not open a browser tab")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="local queue worker processes (default: 1); tasks in one checkout serialize")
+    parser.add_argument("--queue-dir",
+                        help="persistent local queue directory (default: a new data/pipeline_queues/<id>)")
     return parser
 
 
@@ -1624,6 +1628,8 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     if args.mode == "cloud":
+        if args.workers != 1 or args.queue_dir:
+            parser.error("--workers and --queue-dir configure local execution only")
         action = args.cloud or ("build" if not selected_profile_name else "run")
         if selected_profile_name and action == "build":
             parser.error("--cloud build uses the shared VM and cannot be combined with --profile")
@@ -1784,6 +1790,13 @@ def main() -> int:
         parser.error(
             "--profile, --profiles-file, --cloud, and --confirm require --mode cloud"
         )
+    if not 1 <= args.workers <= 32:
+        parser.error("--workers must be between 1 and 32")
+    from tools.pipeline_queue import run_local
+    return run_local(args, area, ROOT)
+
+
+def _run_local(args: argparse.Namespace, area: str) -> int:
     py = _python_executable(args.python)
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     RUNS.mkdir(parents=True, exist_ok=True)
@@ -1794,7 +1807,7 @@ def main() -> int:
         run_dir = RUNS / f"{run_id}-{suffix:02d}"
         suffix += 1
     if args.step_offset < 0:
-        parser.error("--step-offset cannot be negative")
+        raise ValueError("--step-offset cannot be negative")
     run = PipelineRun(area, run_dir, step_offset=args.step_offset)
     area_dir = DATA / "regions" / area
     run.metadata = {"run_dir": str(run_dir.relative_to(ROOT))}

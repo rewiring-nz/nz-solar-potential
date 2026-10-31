@@ -144,7 +144,7 @@ def compare(top=40, min_loss=5):
             print(f"  #{b}  {p[PANELS]} -> 0 panels  {p[ADDRESS]}")
 
 
-# The 11 buildings from the first bug doc (docs/bugdoc-2026-08-22.md).
+# The 11 buildings from the first bug doc (docs/ai-agents/archive/bugdoc-2026-08-22.md).
 # Every rebuild should be checked against these by name, not just in the
 # aggregate -- they are the cases that defined what "wrong" looks like here.
 WATCHLIST = {
@@ -165,7 +165,7 @@ WATCHLIST = {
 def watchlist():
     prev = json.loads(SNAP.read_text()) if SNAP.exists() else {}
     cur = _read_current()
-    print("bug-doc watchlist (docs/bugdoc-2026-08-22.md):")
+    print("bug-doc watchlist (docs/ai-agents/archive/bugdoc-2026-08-22.md):")
     for bid, why in WATCHLIST.items():
         c = cur.get(str(bid))
         p = prev.get(str(bid))

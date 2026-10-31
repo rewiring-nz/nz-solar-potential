@@ -1,10 +1,10 @@
 # How the money is worked out
 
 Every dollar figure on the map comes from the bill tool,
-[`bill_tool.js`](../bill_tool.js). It models a power bill with and without
+[`bill_tool.js`](../../bill_tool.js). It models a power bill with and without
 solar (and a battery), then runs the savings out over the panels' life. Cost
 tiers, prices and the battery simulation it calls are in
-[`economics.js`](../economics.js).
+[`economics.js`](../../economics.js).
 
 It is a model, not a quote. Every input is on screen and editable, and every
 figure opens to its workings.
@@ -57,7 +57,7 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 ## Home or business
 
 The council's district plan zone decides it
-([`tools/fetch_zoning.py`](../tools/fetch_zoning.py), Queenstown Lakes
+([`tools/fetch_zoning.py`](../../tools/fetch_zoning.py), Queenstown Lakes
 District Council). Roof size is not a use signal: a 450 m² house and a 450 m²
 shop look the same from above. Where a zone allows both, or no zoning exists,
 a roof over 400 m² or a system over 100 kW counts as a business.
@@ -82,7 +82,7 @@ so it keeps its colours when you open it.
 ## Battery for resilience
 
 Low-solar runs come from ERA5 daily sunlight, 1940–2025
-([`low_solar.js`](../low_solar.js)). For a home, the battery is sized to run
+([`low_solar.js`](../../low_solar.js)). For a home, the battery is sized to run
 on roof and battery alone through the year's hardest low-solar run (a normal
 year, once a decade, or the record), using the bill tool's hour-by-hour
 household use, winter heating included. If the roof makes less than the home

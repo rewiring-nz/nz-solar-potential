@@ -2,11 +2,11 @@
 
 A web view of New Zealand's rooftop solar potential, publicly viewable from: **[rewiring-nz.github.io/nz-solar-potential/](https://rewiring-nz.github.io/nz-solar-potential/)**.
 
-![Heatmap view of rooftop solarpotential](images/Heatmap.png)
+![Heatmap view of rooftop solarpotential](../images/Heatmap.png)
 
 _Heatmap view of rooftop solarpotential_
 
-![Panellayout view of rooftop solarpotential](images/PanelLayout.png)
+![Panellayout view of rooftop solarpotential](../images/PanelLayout.png)
 
 _Panellayout view of rooftop solarpotential_
 
@@ -19,11 +19,11 @@ Data maintainers and developers can view their local updates. Use the URL printe
 
 | Build or preview | Where to open it | Availability |
 | --- | --- | --- |
-| [Local quickstart](quickstart.md) | The printed **Map preview** URL, usually `http://127.0.0.1:8765/preview.html?...`; also recorded in the run's `report.md` | Only on your computer while the preview server runs. The port can change; the printed URL centres the map on the built region. |
-| [Shared-cloud quickstart](quickstart-cloud.md#developer-preview) | The printed **Developer preview** URL: `https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html` | Public and shareable. The alias opens its latest published preview; previews expire after 14 days unless refreshed. |
-| [Developer-VM profile](quickstart-cloud.md#your-own-vm-profiles) | Start the documented `--cloud preview` SSH tunnel, then open `http://127.0.0.1:8765/preview.html` using the tunnel's port | Only on your computer while the VM's preview server and SSH tunnel run. It is not a public preview URL. |
-| [District or worker build](developers/tooling-execution.md#capability-matrix) without preview publication | No browser URL is created by the build alone. Use [Serve locally](data-maintainers/dataset-operations.md#6-serve-locally) for combined outputs. | Worker outputs must be collected and combined before previewing the complete map. |
-| [Production release](data-maintainers/dataset-operations.md#7-publish) | The public GitHub Pages URL above | Updated only after the release is published and the site's data pointer switches. |
+| [Local quickstart](../data-maintainers/quickstart.md) | The printed **Map preview** URL, usually `http://127.0.0.1:8765/preview.html?...`; also recorded in the run's `report.md` | Only on your computer while the preview server runs. The port can change; the printed URL centres the map on the built region. |
+| [Shared-cloud quickstart](../data-maintainers/quickstart-cloud.md#developer-preview) | The printed **Developer preview** URL: `https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html` | Public and shareable. The alias opens its latest published preview; previews expire after 14 days unless refreshed. |
+| [Developer-VM profile](../data-maintainers/quickstart-cloud.md#your-own-vm-profiles) | Start the documented `--cloud preview` SSH tunnel, then open `http://127.0.0.1:8765/preview.html` using the tunnel's port | Only on your computer while the VM's preview server and SSH tunnel run. It is not a public preview URL. |
+| [District or worker build](../developers/tooling-execution.md#capability-matrix) without preview publication | No browser URL is created by the build alone. Use [Serve locally](../data-maintainers/dataset-operations.md#6-serve-locally) for combined outputs. | Worker outputs must be collected and combined before previewing the complete map. |
+| [Production release](../data-maintainers/dataset-operations.md#7-publish) | The public GitHub Pages URL above | Updated only after the release is published and the site's data pointer switches. |
 
 If automatic browser opening fails, copy the printed URL into your browser.
 `127.0.0.1` links are local to the person opening them; send a public

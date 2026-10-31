@@ -5,7 +5,7 @@ API enabled and IAM granted before anything moves; the bucket already
 works from every account this project uses. And the queue's state is a folder
 anyone can open in the console -- `queue/`, `claims/`, `done/`, `failed/` -- so
 "is the run healthy" is four object counts, not a log to read
-(docs/scale-architecture.md, "Coordinating machines").
+(docs/maintainers/scale-architecture.md, "Coordinating machines").
 
 WHAT MAKES IT CORRECT. Cloud Storage's create-if-absent is atomic
 (`--if-generation-match=0`): when two workers try to claim the same region in

@@ -107,5 +107,5 @@ city scale.
 - VM-hours per 1,000 buildings, measured
 - anything that failed, and why
 
-Those four numbers replace the estimates in `docs/scaling-and-iteration.md`
+Those four numbers replace the estimates in `docs/maintainers/scaling-and-iteration.md`
 and decide how the national run is sized.

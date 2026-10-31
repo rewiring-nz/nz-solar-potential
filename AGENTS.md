@@ -8,7 +8,7 @@ a fact, rule or workflow.
 
 - Keep here: verified decisions, limits, data facts, contracts, workflows,
   open questions. Not secrets, personal data, logs, chat, or walkthroughs
-  that live in [docs/](docs/).
+  that live in [docs/](docs).
 - State the fact and where it lives. Replace old statements; don't append.
 - No attribution ("X said", chat quotes, dates of conversations).
 
@@ -26,6 +26,10 @@ Doc map: [docs/index.md](docs/index.md).
 Write for the persona named there. Keep each procedure or detailed
 explanation in one primary guide and link from summaries; repeat safety
 warnings where a reader is about to act.
+Keep Markdown guides in persona subdirectories matching the index, with
+point-in-time notes under `docs/ai-agents/archive/`. When code is removed,
+remove its obsolete documentation and diagram paths in the same change;
+consolidate redundant explanations rather than preserving them as history.
 
 ## Build and test
 
@@ -43,8 +47,15 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   approves the cost; defaults in `config.CLOUD_SHARED_BUILD`, preview owner
   from the GitHub SSH identity (GitHub CLI fallback).
   `--mode cloud --profile <name>` uses a per-developer VM; `--cloud` runs a
-  VM lifecycle action. See [docs/quickstart-cloud.md](docs/quickstart-cloud.md).
+  VM lifecycle action. See [docs/data-maintainers/quickstart-cloud.md](docs/data-maintainers/quickstart-cloud.md).
 - `tools/pipeline_serve.py`: local preview server with PMTiles byte ranges.
+- Local pipeline execution uses `src/local_queue.py` and
+  `tools/pipeline_queue.py`: loopback coordinator, JSON state and one worker
+  process by default (`--workers` changes the pool size). Tasks in a checkout
+  serialize; concurrent builds need human-managed independent writable
+  workspaces. No GCS/cloud credentials are required for queue operation.
+  GCS fleet tasks are not yet migrated. Recovery and locks:
+  [pipeline reference](docs/data-maintainers/pipeline-reference.md#local-task-queue).
 - `bash tests/run_all.sh`: all local checks (Python, economics, deprecated
   APIs, repo sync, diagram, synthetic region in `tests/synthetic`). Add
   targeted tests under `tests/` when changing algorithms or data contracts.
@@ -66,7 +77,7 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   them rather than copying values. Update the matching doc in `docs/` (and
   `method.html`, which is maintained by hand) in the same change as a
   command, output, limit or constant. Mark experiments and unverified cloud
-  steps. Platform setup lives in [docs/data-maintainers/](docs/data-maintainers/).
+  steps. Platform setup lives in [docs/data-maintainers/](docs/data-maintainers).
 
 ## Every number shows its workings
 
@@ -106,7 +117,7 @@ figure for the same thing. Code enforces this:
   With no defensible default estimate, require one from the user. Keep
   no-cost checks separate. Single-VM profile actions live in
   `tools/pipeline.py` (via `quickstart.sh`); the shared-VM build and publish
-  is `tools/remote_build.sh`. See [docs/quickstart-cloud.md](docs/quickstart-cloud.md)
+  is `tools/remote_build.sh`. See [docs/data-maintainers/quickstart-cloud.md](docs/data-maintainers/quickstart-cloud.md)
   and [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
 - **Tasks** are GitHub Issues on the project board
   (https://github.com/orgs/rewiring-nz/projects/5). Link PRs with `Fixes #N`.
@@ -272,7 +283,7 @@ Last checked against the code: 2026-10-28.
 
 - What provenance record should go with each published data version?
 - Should containerisation follow local workflow measurements? See
-  [ADR 0001](docs/decisions/0001-containerisation-strategy.md).
+  [ADR 0001](docs/maintainers/decisions/0001-containerisation-strategy.md).
 - How are pilot root inputs created or symlinked into `data/regions/pilot/`
   on a fresh checkout?
 - Should `src/live_server.py` support region outputs, or stay limited to the

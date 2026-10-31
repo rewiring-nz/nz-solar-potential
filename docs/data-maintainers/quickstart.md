@@ -14,7 +14,7 @@ cd nz-solar-potential
 
 ## 2. Set up once
 
-Follow [Local setup](data-maintainers/local-setup.md) for your system tools,
+Follow [Local setup](local-setup.md) for your system tools,
 Python environment and LINZ key. Return here when the environment check
 prints `ready` and credentials are configured.
 
@@ -35,6 +35,10 @@ bash quickstart.sh town_gorge_north
 ```
 
 Region names are in `REGIONS` in `config.py`.
+The local queue starts one worker process without cloud access. For
+multi-worker debugging and persistent task status, see
+[Local task queue](pipeline-reference.md#local-task-queue).
+Extra workers do not split a single region or speed up builds sharing one checkout.
 
 ## 4. Check the result
 
@@ -43,6 +47,6 @@ Region names are in `REGIONS` in `config.py`.
 - Read `data/pipeline_runs/<run-id>/report.md`.
 - A completed run can still be degraded; check its coverage and warnings
   before trusting the map.
-- Failures: [Troubleshooting](data-maintainers/troubleshooting.md).
+- Failures: [Troubleshooting](troubleshooting.md).
 - Stages, outputs and stopping the preview:
-  [Pipeline reference](data-maintainers/pipeline-reference.md).
+  [Pipeline reference](pipeline-reference.md).

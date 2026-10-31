@@ -30,7 +30,7 @@ jobs:
           for t in pure imports_and_arity no_deprecations output_contract xref \
                    geometry_stage plane_refresh plant_decks project_secrets \
                    register_imagery ridge_snap roof_levels small_obstructions \
-                   staircase sunken synthesize_dsm quickstart_reporting \
+                   staircase sunken synthesize_dsm quickstart_reporting local_queue \
                    cloud_profiles publish_preview face_straighten obstruction_planarity \
                    racking structured_roof s3_rasters installer_rules shading_split; do
             echo "::group::$t"

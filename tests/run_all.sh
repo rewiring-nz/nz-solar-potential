@@ -85,6 +85,7 @@ run "project secrets"       $PY tests/test_project_secrets.py
 run "xref"                  $PY tests/test_xref.py
 run "output contract"       $PY tests/test_output_contract.py
 run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
+run "local task queue"       $PY tests/test_local_queue.py
 run "LERC raster dependencies" $PY tests/test_s3_rasters.py
 run "quickstart map preview" $PY tests/test_quickstart_map.py
 run "diagram vs code"       $PY tools/check_diagram.py

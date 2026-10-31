@@ -2216,7 +2216,7 @@ const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
 // Where the data lives. Empty = beside the page (GitHub Pages, as today).
 // A bucket URL ending in "/" moves every tile, detail and index fetch there
 // without touching the page: Pages caps a file at 100 MB and Auckland's
-// panel tiles alone are ~1.5 GB (docs/scale-architecture.md).
+// panel tiles alone are ~1.5 GB (docs/maintainers/scale-architecture.md).
 const DATA_BASE = (window.SITE && window.SITE.dataBase) || "";
 let coveragePct = 25;   // Heat Map default (Josh, 18 Oct)
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
@@ -3159,7 +3159,7 @@ map.on("load", async () => {
     // district. That is the right size here and is NOT the right answer
     // nationally: 2.1 million addresses is roughly 34 MB, so national search
     // needs this sharded by prefix or replaced with a geocoder
-    // (docs/scaling-and-iteration.md). It is a separate problem from the one
+    // (docs/maintainers/scaling-and-iteration.md). It is a separate problem from the one
     // this change fixes, and a tenth of the size.
     let searchable = TOWNS.slice();
     const addrRow = ([addr, lng, lat, id]) => ({ addr, lower: addr.toLowerCase(), at: { lng, lat, id } });

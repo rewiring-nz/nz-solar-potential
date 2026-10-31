@@ -6,7 +6,7 @@ and all of it comes from two services: OpenTopography's point-cloud bulk
 store and LINZ's export API. Nobody has measured what either sustains, and
 fifty machines on one API is how you find its rate limiter. That number, not
 the machine count, is the floor for a national run
-(docs/scaling-and-iteration.md). This measures it, in two parts:
+(docs/maintainers/scaling-and-iteration.md). This measures it, in two parts:
 
   point clouds  download real tiles for a bbox at 1, 2, 4, 8, 16 parallel
                 streams and report aggregate MB/s at each: where the curve

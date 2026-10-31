@@ -92,7 +92,7 @@ def bake(sp, layouts):
     A FUNCTION OF TWO DOCUMENTS, not of two files at the data root: it is
     per-building arithmetic and always was. It read the merged files only
     because they were there, which is what made it a fan-in stage -- and
-    the fan-in is what does not scale (docs/scale-architecture.md).
+    the fan-in is what does not scale (docs/maintainers/scale-architecture.md).
     emit_region calls this on one region; main() below still serves the
     merged path while it exists.
     """

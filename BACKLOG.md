@@ -1,5 +1,11 @@
 # Backlog
 
+Completed first local slice of #45: loopback task coordinator with JSON
+persistence, subprocess workers, default pipeline dispatch, explicit conflict
+and interruption reporting, and cloud-free multi-process tests.
+Remaining: common cloud/local task/configuration contracts, regional/final
+assembly separation and migration of the existing GCS worker path.
+
 Open work, in priority order. Finished work is in git history. Open items
 are also GitHub Issues on the project board
 (https://github.com/orgs/rewiring-nz/projects/5); pick up and assign work
@@ -12,6 +18,9 @@ from the proposed common pipeline interface.
 The [documentation index](docs/index.md) now routes readers by persona;
 setup, access administration, release procedures and execution comparisons
 have primary guides rather than repeated walkthroughs.
+Guides now live in matching persona subdirectories, with historical notes
+under `docs/ai-agents/archive/`; references follow the moves. Documentation
+maintenance includes removing obsolete code paths and redundant explanations.
 
 Live: data version 67 (31 Oct; roof-line join on). 32,838 buildings, 35
 regions, 1,334,824 panels.
@@ -226,7 +235,7 @@ regions, 1,334,824 panels.
 
 ## Scale
 
-- **Dress rehearsal on one city** (docs/national-rehearsal.md). The fleet
+- **Dress rehearsal on one city** (docs/ai-agents/archive/national-rehearsal.md). The fleet
   (`tools/fleet.sh`, `src/gcs_queue.py`) has never run as a fleet. LINZ and
   OpenTopography fetch rates are unknown (`tools/measure_fetch_rate.py`). The
   real region-pack ratio is unmeasured (`src/pack_region.py` prints it).

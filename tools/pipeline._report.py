@@ -4,7 +4,7 @@ One card per building: aerial imagery with the built facet boundaries and
 placed panels drawn over it, plus the numbers derived for that roof and
 which geometry path produced it (markup / selected vision faces / LiDAR
 partition). The point is that a stranger can hold the output against the
-photograph and against docs/quickstart.md's checks.
+photograph and against docs/data-maintainers/quickstart.md's checks.
 
     python tools/pipeline._report.py <region>
 """

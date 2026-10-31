@@ -3,7 +3,7 @@
 WHY THIS STAGE EXISTS. Everything the map serves used to be cut from two
 merged files, and every stage after the merge read the whole district into
 memory. That is 400 MB at Queenstown and 65 GB at New Zealand
-(docs/scale-architecture.md). The browser has read tiles since 20 September,
+(docs/maintainers/scale-architecture.md). The browser has read tiles since 20 September,
 and tiles have the property the merge never had: they are built from a small
 area and combined mechanically. So the region finishes by emitting its own,
 and combine_regions joins them.

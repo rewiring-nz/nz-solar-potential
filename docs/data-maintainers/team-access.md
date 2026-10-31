@@ -1,7 +1,7 @@
 # Team access
 
 For joining or administering the shared project. To run a build after access
-is granted, use the [cloud quickstart](../quickstart-cloud.md) for a developer
+is granted, use the [cloud quickstart](quickstart-cloud.md) for a developer
 preview or [dataset operations](dataset-operations.md#7-publish) for a release.
 
 You need two accounts: **GitHub** (code, tasks, reviews) and **Google** (the
@@ -51,7 +51,7 @@ bash quickstart.sh --mode cloud --cloud preflight
 The pipeline reads `LINZ_API_KEY` from the environment or `.env`, else from
 Secret Manager as you ([src/project_secrets.py](../../src/project_secrets.py)).
 
-Use [profile setup](../quickstart-cloud.md#your-own-vm-profiles) only when
+Use [profile setup](quickstart-cloud.md#your-own-vm-profiles) only when
 you intend to administer a separate VM.
 
 ## Preview hosting administration

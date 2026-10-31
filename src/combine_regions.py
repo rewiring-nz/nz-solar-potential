@@ -4,7 +4,7 @@ The other half of emit_region. Each region emitted its own tiles, cells,
 detail, heat-map tiles and addresses under data/out/<region>/; this joins them
 into data/ without ever holding more than one region's worth of anything in
 memory that is not itself a sum. What each join is and why it is safe is the
-table in docs/scale-architecture.md; in short:
+table in docs/maintainers/scale-architecture.md; in short:
 
     pmtiles      tile-join, hierarchically above 200 inputs
     cells        partial sums added, then tiled ONCE

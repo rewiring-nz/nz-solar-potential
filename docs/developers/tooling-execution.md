@@ -16,9 +16,11 @@ The three build engines share stage scripts, but not a common stage plan.
 ```mermaid
 flowchart TB
   Quick["quickstart.sh: compatibility wrapper"] --> Pipeline["tools/pipeline.py"]
-  Pipeline -->|local| Local["Single-region sequence inside pipeline.py"]
+  Pipeline -->|local| LocalQueue["Loopback coordinator: JSON task state"]
+  LocalQueue --> LocalWorkers["pipeline_queue.py: subprocess workers"]
+  LocalWorkers --> Local["Single-region executor inside pipeline.py"]
   Pipeline -->|cloud with profile: SSH| Profile["pipeline.py in developer VM checkout"]
-  Profile -->|local mode on VM| Local
+  Profile -->|local mode on VM| LocalQueue
   Pipeline -->|shared cloud| Remote["tools/remote_build.sh"]
   Actions["GitHub build-and-publish workflow"] --> Remote
   Operator["Direct remote-build command"] --> Remote
@@ -56,7 +58,8 @@ the caller invokes those steps separately and checks their results.
 | Entry point | Execution and region selection | Code and preparation | Completion and side effects |
 | --- | --- | --- | --- |
 | [quickstart.sh](../../quickstart.sh) | Delegates all arguments to the pipeline | Selects the project Python environment; cloud mode can use system Python | No separate workflow |
-| [pipeline.py](../../tools/pipeline.py), local | One configured region; defaults to `config.PIPELINE_REGION` | Current checkout; fetches inputs and wide DEM; optional prediction | Replaces combined map data with that region, validates map contract, starts loopback preview; no production publish |
+| [pipeline.py](../../tools/pipeline.py), local | One configured region via loopback queue; one worker by default | Current checkout; fetches inputs and wide DEM; optional prediction; task provenance guards | Replaces combined map data with that region, validates map contract, starts loopback preview; no production publish |
+| [pipeline_queue.py](../../tools/pipeline_queue.py) | Manual coordinator, submission, workers and status; no cloud credentials | JSON persistence; multiple worker processes; one active task per checkout | Runs existing local executor; explicit failure/interruption, no automatic retries |
 | Pipeline, shared cloud | Shared VM; defaults to `CLOUD_SHARED_BUILD["regions"]`; positional argument selects one region | Syncs configured `ref`, not the caller's branch/SHA; uses existing regional inputs; no `--fetch` forwarded | District build, live-comparison gate, public developer preview; launcher requests browser opening |
 | Pipeline, cloud profile | Developer VM; one region, defaulting to `PIPELINE_REGION` | Runs pipeline local mode in existing `~/nz-solar-potential` checkout over SSH; no automatic code sync | Collects report/log; preview requires a separate SSH-tunnel action; no public publication |
 | [remote_build.sh](../../tools/remote_build.sh) / [GitHub workflow](../../.github/workflows/build-and-publish.yml) | Shared VM; `--regions "a b"` or district default when omitted | Syncs a branch (`main` by default); optional fetch; normal, force or yield-only build | Gates; optionally publishes production or developer preview, never both. Production switches and commits `site-config.js` |
@@ -81,6 +84,18 @@ renderers are not automatically operations of the pipeline front door.
 
 ```mermaid
 flowchart LR
+  subgraph LocalMachine["Local developer computer: no cloud queue credentials"]
+    LocalCLI["pipeline.py or manual queue commands"]
+    LocalCoordinator["Loopback coordinator"]
+    LocalState[("JSON task state and attempt logs")]
+    LocalPool["Worker processes: default 1"]
+    LocalExecutor["Fresh pipeline executor process per task"]
+    LocalPreview["Loopback map preview"]
+    LocalCLI --> LocalCoordinator
+    LocalCoordinator --> LocalState
+    LocalPool -->|claim and acknowledge over HTTP| LocalCoordinator
+    LocalPool --> LocalExecutor --> LocalPreview
+  end
   subgraph Caller["Developer laptop or GitHub Actions runner"]
     Launch["Pipeline shared mode or remote_build.sh"]
     Control["Poll build; request gate and publish over IAP"]
@@ -99,8 +114,9 @@ flowchart LR
   ReleaseBucket -.->|release version used by| Switch
   subgraph Profile["Separate developer VM"]
     ProfileRun["~/nz-solar-potential: pipeline local mode"]
+    ProfileQueue["VM-local coordinator and worker process"]
     ProfileServer["Loopback preview server"]
-    ProfileRun --> ProfileServer
+    ProfileRun --> ProfileQueue --> ProfileServer
   end
   ProfileCaller["Pipeline with profile on laptop"] -->|SSH run and report collection| ProfileRun
   Browser["Developer browser"] -->|separate SSH tunnel| ProfileServer
@@ -195,11 +211,15 @@ flowchart TD
   Publish -->|success| Open["Print URL and request browser opening"]
 ```
 
+- **Local queue:** persistent tasks and attempt logs under
+  `data/pipeline_queues/`; worker/attempt-checked acknowledgements and
+  per-checkout exclusion. See [local operation and recovery](../data-maintainers/pipeline-reference.md#local-task-queue).
+  Local persistence is not an end-to-end supervisor or automatic recovery.
 - **Local/profile runs:** the [pipeline reference](../data-maintainers/pipeline-reference.md#outputs)
   defines report locations and statuses; profile mode copies reports home.
   Local preview readiness probes the page for HTTP 200 and
   PMTiles byte ranges for HTTP 206; it does not verify browser rendering.
-- **Shared runs:** the [cloud quickstart](../quickstart-cloud.md#shared-build-vm)
+- **Shared runs:** the [cloud quickstart](../data-maintainers/quickstart-cloud.md#shared-build-vm)
   locates the caller log. Remote `~/remote_build.log` is reused by subsequent
   launches; regional logs are under `data/build_logs/`.
   The build is detached, but the caller still owns polling, gate and
@@ -221,7 +241,52 @@ flowchart TD
 Fleet code is present, but a multi-worker production rehearsal is not
 established by this source inspection.
 
-## Target direction: not implemented
+## Local queue consolidation boundary
+
+### Task lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: validated submission with new task id
+  pending --> running: claim while checkout is idle
+  running --> running: owner heartbeat
+  running --> succeeded: executor returns zero and owner acknowledges
+  running --> failed: execution or workspace conflict reported
+  running --> failed: worker catches interruption and reports it
+  pending --> interrupted: coordinator shuts down
+  running --> interrupted: coordinator shuts down or reloads running state
+  succeeded --> [*]
+  failed --> [*]
+  interrupted --> [*]
+```
+
+Queue states differ from numbered pipeline step statuses: a `succeeded`
+task can have `DEGRADED` steps. Heartbeats do not expire claims or retry
+tasks. For conflicts, shutdown/restart semantics and manual recovery, use
+the [pipeline reference](../data-maintainers/pipeline-reference.md#evidence-conflicts-and-recovery).
+
+### Execution and remaining differences
+
+[local_queue.py](../../src/local_queue.py) supplies serialized HTTP queue
+operations and atomic JSON state. [pipeline_queue.py](../../tools/pipeline_queue.py)
+supplies process workers and calls `pipeline._run_local` in a fresh process.
+Local and profile-VM pipeline runs therefore use the same local queue and
+executor code. Coordinator and workspace ownership are explicit; human
+coordination still governs old scripts and shared/symlinked input trees.
+
+The first slice intentionally queues the **whole existing single-region
+pipeline**, including combine/validation/preview. It does not claim
+regional-only tasks, offline input acquisition, identical district outputs,
+GCS queue compatibility or a resolved configuration snapshot. Shared cloud
+and fleet still use their existing paths; the
+[remaining work](#target-direction-remaining-work) tracks consolidation.
+
+Cloud-free coverage in [test_local_queue.py](../../tests/test_local_queue.py)
+exercises competing claims, different-workspace concurrency with actual
+processes, failures, changed configuration, interruption, ownership
+conflicts, persistence and existing pipeline dispatch/reporting.
+
+## Target direction: remaining work
 
 The intended common front door is `tools/pipeline.py`. Keep this target
 separate from the current diagrams above:
@@ -254,6 +319,7 @@ implementation before being shown as supported commands.
 Update the matrix and relevant diagram in the same change as a launcher,
 dispatch branch, stage order, storage side effect or run-lifetime change.
 Use relative source links; keep volatile cloud values in configuration.
+Remove obsolete paths and redundant explanations when code is removed.
 Archived plans are not evidence of live deployment.
 
 The existing [diagram checker](../../tools/check_diagram.py) checks a

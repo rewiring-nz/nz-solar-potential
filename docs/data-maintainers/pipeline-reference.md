@@ -1,7 +1,7 @@
 # Pipeline reference
 
 Look up the stages, reports and outputs of a single-region local run (also
-used on a cloud profile VM). Start one with the [quickstart](../quickstart.md);
+used on a cloud profile VM). Start one with the [quickstart](quickstart.md);
 diagnose failures with [Troubleshooting](troubleshooting.md).
 
 ## Regions
@@ -27,8 +27,108 @@ Additional operating limits:
 `--mode cloud --profile NAME` runs this sequence in the existing developer-VM
 checkout; update that checkout first. Shared cloud mode instead uses the
 district engine, not the table below. Cloud commands are in the
-[cloud quickstart](../quickstart-cloud.md); exact backend differences are
+[cloud quickstart](quickstart-cloud.md); exact backend differences are
 in the [execution reference](../developers/tooling-execution.md#regional-workflow-differences).
+
+## Local task queue
+
+Local runs now submit a task to a loopback coordinator and start one worker
+process by default. No Google account, GCS bucket, `gcloud` or SQLite is
+needed for queue operation. Fetching source data still needs the LINZ
+credentials and dependencies described in [Local setup](local-setup.md).
+Process cleanup is tested locally on macOS; CI is configured to run these
+tests on Linux. Use WSL for Windows, not native Windows processes.
+
+```sh
+bash quickstart.sh pilot --no-open-browser
+bash quickstart.sh pilot --workers 2 --no-open-browser
+```
+
+Each invocation still builds **one region**, with the same numbered stages
+below. Extra workers do not split that region. Tasks in the same checkout
+serialize because they share caches, stage markers and the combined map.
+Use separate, human-managed checkouts and data directories for concurrent
+builds; do not symlink their writable data trees together. The coordinator
+does not create worktrees, allocate CPU/RAM or manage separate environments.
+
+The printed queue directory defaults to `data/pipeline_queues/<id>/`.
+`--queue-dir PATH` chooses a persistent directory instead. It must not be
+owned by another running coordinator; it is not an option for attaching to
+one. A directory can retain prior tasks, including failures; prefer a new
+directory for a new run.
+
+### Manually submit and run multiple workers
+
+For debugging, start one coordinator in a terminal:
+
+```sh
+.venv/bin/python -m tools.pipeline_queue serve --queue-dir data/my-local-queue
+```
+
+In another terminal, submit tasks **before** starting workers:
+
+```sh
+.venv/bin/python -m tools.pipeline_queue submit --queue-dir data/my-local-queue \
+  pilot --no-open-browser
+.venv/bin/python -m tools.pipeline_queue submit --queue-dir data/my-local-queue \
+  town_gorge_north --no-open-browser
+```
+
+Run each worker command in its own terminal, using distinct names:
+
+```sh
+.venv/bin/python -m tools.pipeline_queue worker --queue-dir data/my-local-queue --worker one
+.venv/bin/python -m tools.pipeline_queue worker --queue-dir data/my-local-queue --worker two
+```
+
+These two tasks serialize in the same checkout. To exercise concurrent
+builds, submit a task with `--workspace /absolute/path/to/another/checkout`
+and `--python /absolute/path/to/its/.venv/bin/python`. That checkout needs
+the queue implementation, its dependencies and its own prepared environment.
+Workers exit when the submitted batch is terminal; start workers again
+after submitting more tasks.
+
+Inspect status while the coordinator runs:
+
+```sh
+.venv/bin/python -m tools.pipeline_queue status --queue-dir data/my-local-queue
+```
+
+### Evidence, conflicts and recovery
+
+- `state.json` persists task specifications, worker/attempt ownership and
+  terminal outcomes. `attempts/<task>-<attempt>.log` retains subprocess output.
+  Existing `data/pipeline_runs/` reports and preview URLs are unchanged.
+- Numbered pipeline output streams to the worker terminal. Queue success
+  means the pipeline returned zero; read its report for `DEGRADED` steps.
+- Tasks record the Git commit and hashes of configuration, pipeline and
+  queue source files. A change to those files before execution rejects the
+  task. This is not a full dependency/model/environment snapshot; developers
+  must still agree on matching inputs and versions.
+- The coordinator binds only to loopback. `.connection.json` holds a local
+  access token and is owner-readable; never share it or publish queue files.
+  This is a trusted local developer tool, not a multi-user/public service.
+- One active task per checkout is allowed within a queue. Across queues,
+  `data/pipeline-workspace.lock/` detects a conflicting queued build and
+  fails it visibly. Older/direct stage scripts do not honor that lock:
+  humans must coordinate those operations.
+- Ctrl+C stops the foreground coordinator/worker. The pipeline-managed pool
+  stops its workers on interruption. Attempt ownership rejects stale
+  acknowledgements; there is no automatic lease takeover, retry or failover.
+  Failed tasks stay failed and require deliberate resubmission with a new id.
+- Clean coordinator shutdown marks pending/running tasks interrupted.
+  After a crash, pending tasks remain pending on restart; running tasks
+  become interrupted. A hard-killed worker can leave a task running until
+  coordinator shutdown/restart.
+- After a crash, inspect `state.json`, attempt logs and lock `owner.json`
+  files. Stop any surviving workers/child processes before manually removing
+  the specific stale `coordinator.lock/` or `pipeline-workspace.lock/`
+  directory. Restarting a coordinator marks previously running tasks
+  interrupted, never successful. Do not remove locks on a live run.
+
+The existing GCS fleet queue is **not migrated** by this first local slice.
+It still has different task, retry and regional-execution semantics; see
+the [consolidation boundary](../developers/tooling-execution.md#local-queue-consolidation-boundary).
 
 ## Local and profile-VM steps
 
@@ -101,7 +201,7 @@ results and provenance you need to keep. Preserve `.env` and `.venv`.
 To reclaim local space, identify regenerable inputs for the selected region
 before removing them. The wide DEM and point-cloud tiles can be shared by
 neighbouring regions. The
-[regional publication cleanup](../scale-architecture.md#deleting-inputs)
+[regional publication cleanup](../maintainers/scale-architecture.md#deleting-inputs)
 checks upload sizes and shared-tile ownership; it is not a blanket cleanup
 command for a local pipeline run.
 

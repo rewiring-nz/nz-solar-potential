@@ -7,6 +7,28 @@ same `[QS-NN]` tag in `run.log`.
 `FAIL` stops dependent steps. `DEGRADED` carries on without a source; a later
 `PASS` does not undo that (a DSM-only run stays DSM-only).
 
+## Local queue errors before step 01
+
+If no numbered report was created, inspect the printed queue directory:
+`state.json` records task status/errors, and `attempts/` contains executor
+logs when a subprocess started. A queue `succeeded` result does not erase
+`DEGRADED` steps in the pipeline report.
+
+- **Queue already owned / workspace conflict:** another coordinator or
+  queued build owns that directory. Coordinate with its owner; do not
+  delete a live lock or run direct stages against its writable data.
+- **Code/configuration changed after submission:** submit again after
+  agreeing which revision/settings to run. The old task is not silently
+  updated.
+- **Coordinator unavailable / worker exited unexpectedly:** stop and
+  inspect surviving processes and attempt logs. There is no automatic
+  retry or stale-worker takeover.
+
+For status commands, lock locations and deliberate crash recovery, use
+[Evidence, conflicts and recovery](pipeline-reference.md#evidence-conflicts-and-recovery).
+The local coordinator requires no cloud credentials; a later fetch failure
+may still require a LINZ key.
+
 ## Don't delete `data/`
 
 `data/` holds tracked files you cannot fetch again: roof labels, benchmark and

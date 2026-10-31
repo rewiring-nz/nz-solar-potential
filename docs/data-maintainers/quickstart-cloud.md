@@ -6,7 +6,7 @@ Two ways to build in the cloud:
 - **Your own VM** (experimental): `bash quickstart.sh --mode cloud --profile PROFILE`
 
 Both build a whole configured region; there is no building cap. Use the
-shared VM if you have [team access](data-maintainers/team-access.md).
+shared VM if you have [team access](team-access.md).
 The profile workflow is for a separate VM you administer.
 
 ## Shared build VM
@@ -22,13 +22,13 @@ bash quickstart.sh --mode cloud --cloud preflight   # free check, builds nothing
 
 Before running:
 
-- Commit and push to `CLOUD_SHARED_BUILD["ref"]` in [config.py](../config.py).
+- Commit and push to `CLOUD_SHARED_BUILD["ref"]` in [config.py](../../config.py).
   The launcher does not automatically use your local branch or commit.
 - Choose a prepared region: inputs and selected faces must already be on the
-  VM. For a new area, follow [dataset preparation](data-maintainers/dataset-operations.md#2-fetch)
+  VM. For a new area, follow [dataset preparation](dataset-operations.md#2-fetch)
   first; this quickstart does not fetch it.
 - Confirm with the administrator that
-  [preview hosting](data-maintainers/team-access.md#preview-hosting-administration)
+  [preview hosting](team-access.md#preview-hosting-administration)
   is configured. Preflight does not check bucket readiness.
 - Unset `SOLAR_CLOUD_PROFILE` if it is selecting a developer VM.
 
@@ -45,7 +45,7 @@ Logs are in `data/cloud_quickstart_runs/<run-id>.log` (`[QS-01]` to
 
 Read the estimate printed before approval. Its VM, disk, preview-storage
 and download assumptions come from `CLOUD_SHARED_BUILD` in
-[config.py](../config.py), not live billing. It is not a spending cap.
+[config.py](../../config.py), not live billing. It is not a spending cap.
 Charges can be higher if the build runs longer, the preview is downloaded
 more, or you publish several runs in 14 days. Disk charges continue while a
 VM is stopped. Check prices with the
@@ -55,7 +55,7 @@ The shared district build includes demolition screening that can
 call a paid external vision API with survey/current image crops. The
 VM/disk/preview estimate above does **not** include that API cost. Obtain
 separate authorization for that cost and image transfer before running with
-the referee enabled; see [demolition screening](data-maintainers/dataset-operations.md#demolition-screening)
+the referee enabled; see [demolition screening](dataset-operations.md#demolition-screening)
 for the stage controls and cache behaviour. This is a current gap in the
 full-workflow estimate, not an additional spending guarantee.
 
@@ -94,7 +94,7 @@ Profiles hold resource settings, not credentials. They live in
 `SOLAR_CLOUD_PROFILE` also selects a profile; unset it to use shared mode.
 Profile `status` reports the VM, not individual active pipeline runs.
 Unlike shared mode, this runs the local pipeline sequence; see the
-[pipeline reference](data-maintainers/pipeline-reference.md) for steps and
+[pipeline reference](pipeline-reference.md) for steps and
 statuses. It does not publish to the public preview bucket or production.
 
 ### Set up an environment
@@ -184,6 +184,6 @@ unless allowed. Book your run: each run replaces the VM's combined map data.
 
 ## Scope
 
-For failures, use [Troubleshooting](data-maintainers/troubleshooting.md).
+For failures, use [Troubleshooting](troubleshooting.md).
 For how the two cloud modes delegate to different engines, use the
-[execution reference](developers/tooling-execution.md).
+[execution reference](../developers/tooling-execution.md).

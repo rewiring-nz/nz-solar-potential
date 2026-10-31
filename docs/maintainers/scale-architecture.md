@@ -3,7 +3,7 @@
 Storage and coordination design for maintainers: why regional assembly,
 input packs and a bucket queue bound the work. For capacity estimates, use
 [national planning](scaling-and-iteration.md); for commands, use
-[dataset operations](data-maintainers/dataset-operations.md). Measurements
+[dataset operations](../data-maintainers/dataset-operations.md). Measurements
 below come from the Queenstown build, not a national fleet rehearsal.
 
 ## The idea
@@ -35,8 +35,8 @@ building means re-emitting its region and recombining.
 
 Site code and generated data have separate lifecycles: GitHub Pages serves
 the page; object storage serves versioned map data and holds private build
-inputs. Resource names and access are in [Team access](data-maintainers/team-access.md#what-lives-where).
-The [release procedure](data-maintainers/dataset-operations.md#7-publish)
+inputs. Resource names and access are in [Team access](../data-maintainers/team-access.md#what-lives-where).
+The [release procedure](../data-maintainers/dataset-operations.md#7-publish)
 owns retention and rollback instructions.
 
 The data cannot live on GitHub: the repo reached 2.3 GB with old tile
@@ -63,7 +63,7 @@ bucket:
    without a publication manifest (tiles are shared at borders). Emitted
    outputs under `data/out/<region>/` stay for combine.
 
-These are the default actions of [publish_region.py](../src/publish_region.py);
+These are the default actions of [publish_region.py](../../src/publish_region.py);
 `--no-delete` keeps inputs. Regional upload is not production publication:
 it does not run the live-comparison gate or switch the website release.
 
@@ -94,6 +94,13 @@ sun code hashes). The served names are fixed in `src/output_contract.py`.
 
 ## Many machines
 
+This section describes the existing **GCS fleet**, not the new local
+loopback queue. Local/profile pipeline tasks currently run the whole
+single-region pipeline; fleet tasks run the regional worker sequence and
+use different retry/publication rules. They are not yet interchangeable.
+See the [local queue consolidation boundary](../developers/tooling-execution.md#local-queue-consolidation-boundary)
+for implemented behaviour and the remaining migration work.
+
 ### Why a bucket queue
 
 Options for running 1,384 independent jobs on spot machines:
@@ -108,7 +115,7 @@ The bucket queue avoids an additional queue-service API, but still needs
 permissions to read/write/delete build objects and create/manage workers.
 Authorized users can inspect `queue/`, `claims/`, `done/`, `failed/`;
 the build bucket is not a public dashboard. Object counts are the progress
-report. Queue behaviour is implemented in [gcs_queue.py](../src/gcs_queue.py).
+report. Queue behaviour is implemented in [gcs_queue.py](../../src/gcs_queue.py).
 
 ### How the queue works
 
@@ -138,7 +145,7 @@ failure-recovery rehearsal.
 `tools/fleet.sh up N` creates N spot VMs from an image of the build machine,
 each running the worker loop; `down` deletes them. Workers delete themselves
 when the queue is empty. Machine, zone, image and storage defaults are in
-[fleet.sh](../tools/fleet.sh), with profile/environment overrides.
+[fleet.sh](../../tools/fleet.sh), with profile/environment overrides.
 The script requests read-write storage and compute scopes; the effective
 service-account IAM permissions and project quota must also permit upload
 and self-deletion. Current quota, account grants and shared-VM scopes are
@@ -155,7 +162,7 @@ regional outputs, combining, gating and releasing remain separate work.
 
 Implemented: emit and combine, upload and input cleanup, region packs, the
 yield-only layer, the output contract, queue, worker, fleet and status.
-The archived [national rehearsal plan](national-rehearsal.md) records that
+The archived [national rehearsal plan](../ai-agents/archive/national-rehearsal.md) records that
 a multi-worker fleet had not been exercised at that point. Source inspection
 does not establish a later successful rehearsal; validate throughput,
 recovery and release assembly before treating national operation as proven.

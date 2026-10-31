@@ -3,7 +3,7 @@ Placement quality gate, applied as a post-filter over built panel layouts.
 
 Drops any placed panel whose underlying LiDAR contradicts "flat roof
 surface here" -- the failure classes from the 23-building field-report set
-(docs/bugdoc-2026-08-22.md):
+(docs/ai-agents/archive/bugdoc-2026-08-22.md):
 
 - too few building-class returns beneath it  -> carpark / air / demolished
   (19 Industrial Pl, 10/16 Kent St, 61 Ballarat St)

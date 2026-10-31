@@ -7,10 +7,10 @@ current release statistics or a cloud spending estimate.
 ## Keeping changes fast
 
 Use narrow geometry checks before paying for regional rebuilds
-([reviewer's guide](developers/reviewers-guide.md#check-each-stage-yourself)).
+([reviewer's guide](../developers/reviewers-guide.md#check-each-stage-yourself)).
 For a rebuild, choose incremental, force or yield-only according to the
-[operator guide](data-maintainers/dataset-operations.md#4-build).
-The [execution comparison](developers/tooling-execution.md#regional-workflow-differences)
+[operator guide](../data-maintainers/dataset-operations.md#4-build).
+The [execution comparison](../developers/tooling-execution.md#regional-workflow-differences)
 explains why the local, district and worker paths are not interchangeable.
 
 ## What a national build needs
@@ -93,7 +93,7 @@ registry, derived regions, region packs, the yield-only layer, the output
 contract, and per-region emit and combine. The distributed fleet is
 implemented, but a successful multi-worker rehearsal is not established by
 the code. Start with a one-city dress rehearsal
-([national-rehearsal.md](national-rehearsal.md), archived plan). Design:
+([national-rehearsal.md](../ai-agents/archive/national-rehearsal.md), archived plan). Design:
 [scale-architecture.md](scale-architecture.md).
 
 None of this needs geometry work to pause; they touch different files.

@@ -5,9 +5,9 @@ project folder with `.venv` active. Prerequisites:
 [local setup](local-setup.md), [team access](team-access.md).
 
 District builds run on the build VM, never on a laptop. A laptop builds one
-small region at a time (see the [quickstart](../quickstart.md)).
+small region at a time (see the [quickstart](quickstart.md)).
 For a shared-VM developer preview rather than a release, use the
-[cloud quickstart](../quickstart-cloud.md).
+[cloud quickstart](quickstart-cloud.md).
 
 ## The flow
 

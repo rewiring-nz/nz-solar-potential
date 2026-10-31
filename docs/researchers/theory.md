@@ -2,7 +2,7 @@
 
 For researchers assessing the evidence and its limits. For a plain-English
 walkthrough, start with [How a roof estimate is made](../../method.html);
-financial assumptions are in [Economics](../economics.md).
+financial assumptions are in [Economics](economics.md).
 
 ## In short
 
@@ -125,7 +125,7 @@ total comes from the layouts, so panel count, orientation, shading and
 yield stay linked.
 
 Money is calculated in the browser, not baked into the solar estimate.
-[Economics](../economics.md) describes the load/bill model, financial
+[Economics](economics.md) describes the load/bill model, financial
 assumptions, battery scenarios and exclusions. These are scenarios, not a
 customer's real bill.
 

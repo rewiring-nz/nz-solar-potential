@@ -158,7 +158,7 @@ def main():
         print(f"could not fetch live: {type(e).__name__}: {e}")
         print("Refusing to pass a check that did not run.")
         return 2
-    # THE NEW BUILD IS PER-REGION SUMMARIES NOW (docs/scale-architecture.md).
+    # THE NEW BUILD IS PER-REGION SUMMARIES NOW (docs/maintainers/scale-architecture.md).
     # Each carries a per-building [panel_count, kwh] ladder; that is what the
     # gate compares. The merged file is read only where a checkout still has
     # one and no summaries.

@@ -111,7 +111,7 @@ REQUIRED = {
     "register_imagery":       {"region": ["outlines", "dsm"], "optional_region": ["imagery"]},
     # Buildings gone since the survey: compares the photos, rewrites the layouts.
     "demolished":             {"region": ["panel_layouts", "outlines"]},
-    # The region's own tiles, cells, detail and summary (docs/scale-architecture.md).
+    # The region's own tiles, cells, detail and summary (docs/maintainers/scale-architecture.md).
     "emit_region":            {"region": ["solar_potential", "panel_layouts"],
                                "optional_region": ["heatmap_png"]},
     # The per-pixel heat map reads the outlines, the DSM and the point cloud --

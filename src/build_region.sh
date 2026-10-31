@@ -1,7 +1,7 @@
 #!/bin/bash
 # One region, start to finish, on any machine: fetch -> predict -> build ->
 # emit -> publish. This is the unit the worker loop runs and the unit the
-# queue hands out (docs/scale-architecture.md).
+# queue hands out (docs/maintainers/scale-architecture.md).
 #
 #   ./src/build_region.sh <region> [--no-publish]
 #

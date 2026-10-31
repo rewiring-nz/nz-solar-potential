@@ -7,7 +7,7 @@ how many panels fit, what they would generate, and what that is worth.
 - Live map: https://rewiring-nz.github.io/nz-solar-potential/
 - How it works, in plain English:
   [method.html](https://rewiring-nz.github.io/nz-solar-potential/method.html)
-- Try it on your own area: [docs/quickstart.md](docs/quickstart.md)
+- Try it on your own area: [docs/data-maintainers/quickstart.md](docs/data-maintainers/quickstart.md)
 
 Coverage (data version 64): 32,838 buildings in 35 regions across
 Queenstown Lakes and Cromwell: Queenstown, Frankton, Arrowtown, Kingston,
@@ -55,7 +55,7 @@ There is no licence file for this repository yet.
 4. **Yield.** Sun on each panel from slope, direction, latitude and the
    building's own horizon (`src/solar_model.py`, `src/building_horizon.py`).
 5. **Money.** Bills, savings and payback are worked out in the browser by
-   `bill_tool.js` (see [docs/economics.md](docs/economics.md)).
+   `bill_tool.js` (see [docs/researchers/economics.md](docs/researchers/economics.md)).
 6. **Publish.** Each region emits its own tiles (`src/emit_region.py`);
    `src/combine_regions.py` joins them. `tools/deploy_from_vm.sh` checks the
    result against the live map (`tools/predeploy_check.py`) and publishes a new
@@ -79,8 +79,8 @@ python tools/cases.py check     # every flagged roof
 
 ## Local setup
 
-Start with the [local quickstart](docs/quickstart.md) to build one small
-region and open its map, or the [cloud quickstart](docs/quickstart-cloud.md)
+Start with the [local quickstart](docs/data-maintainers/quickstart.md) to build one small
+region and open its map, or the [cloud quickstart](docs/data-maintainers/quickstart-cloud.md)
 to build on the shared VM and publish a developer preview.
 
 Tools, Python and credentials:

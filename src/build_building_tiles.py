@@ -256,7 +256,7 @@ def main():
     # index is right at district scale (0.5 MB) and is NOT right nationally --
     # 2.1 million addresses is roughly 34 MB, so national search needs this
     # sharded by prefix or replaced with a geocoder. Recorded in
-    # docs/scaling-and-iteration.md rather than pretended away.
+    # docs/maintainers/scaling-and-iteration.md rather than pretended away.
     addrs = []
     for f in feats:
         p2 = f["properties"]

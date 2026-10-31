@@ -8,14 +8,14 @@ reference when you need the exact stages, files or implementation.
 
 | Document | What it covers |
 | --- | --- |
-| [Using the web map](web-map-users.md) | Find a building and read its estimate. |
+| [Using the web map](map-users/web-map-users.md) | Find a building and read its estimate. |
 
 ## Data maintainers
 
 | Document | What it covers |
 | --- | --- |
-| [Quickstart](quickstart.md) | Run the pipeline on one region and open the map. |
-| [Cloud quickstart](quickstart-cloud.md) | Shared-VM developer previews and experimental developer-VM profiles, costs and clean-up. |
+| [Quickstart](data-maintainers/quickstart.md) | Run the pipeline on one region and open the map. |
+| [Cloud quickstart](data-maintainers/quickstart-cloud.md) | Shared-VM developer previews and experimental developer-VM profiles, costs and clean-up. |
 | [Local setup](data-maintainers/local-setup.md) | Install tools, create the Python environment and configure LINZ credentials. |
 | [Pipeline reference](data-maintainers/pipeline-reference.md) | Interpret local/profile pipeline stages, outputs and statuses; stop previews and clean up safely. |
 | [Dataset operations](data-maintainers/dataset-operations.md) | Prepare, build, review, publish and roll back a district dataset. |
@@ -35,20 +35,20 @@ reference when you need the exact stages, files or implementation.
 | Document | What it covers |
 | --- | --- |
 | [How a roof estimate is made](https://rewiring-nz.github.io/nz-solar-potential/method.html) | Start here for a plain-English walkthrough. Source: [`method.html`](../method.html), edited by hand. |
-| [Economics](economics.md) | Inspect the bill model, financial assumptions and battery scenarios. |
-| [Theory](theory/theory.md) | Assess evidence, modelling choices, accuracy limits and missing validation. |
+| [Economics](researchers/economics.md) | Inspect the bill model, financial assumptions and battery scenarios. |
+| [Theory](researchers/theory.md) | Assess evidence, modelling choices, accuracy limits and missing validation. |
 
 ## Maintainers
 
 | Document | What it covers |
 | --- | --- |
-| [Scaling and iteration](scaling-and-iteration.md) | Plan national capacity from historical measurements and identify what still needs measuring. |
-| [Scale architecture](scale-architecture.md) | Understand regional assembly, input retention and fleet coordination. |
-| [ADR 0001](decisions/0001-containerisation-strategy.md) | Containerisation decision. |
+| [Scaling and iteration](maintainers/scaling-and-iteration.md) | Plan national capacity from historical measurements and identify what still needs measuring. |
+| [Scale architecture](maintainers/scale-architecture.md) | Understand regional assembly, input retention and fleet coordination. |
+| [ADR 0001](maintainers/decisions/0001-containerisation-strategy.md) | Containerisation decision. |
 
 ## AI agents
 
 | Document | What it covers |
 | --- | --- |
 | [AGENTS.md](../AGENTS.md) | Facts and rules for AI-assisted work. |
-| [handover 24 Sep](handover-2026-09-24.md), [bug notes 22 Aug](bugdoc-2026-08-22.md), [national rehearsal plan](national-rehearsal.md) | Archived point-in-time notes (may be out of date) |
+| [handover 24 Sep](ai-agents/archive/handover-2026-09-24.md), [bug notes 22 Aug](ai-agents/archive/bugdoc-2026-08-22.md), [national rehearsal plan](ai-agents/archive/national-rehearsal.md) | Archived point-in-time notes (may be out of date) |

@@ -26,7 +26,7 @@
 # cells, detail, heat-map tiles, addresses and a summary (src/emit_region.py),
 # and src/combine_regions.py joins them into the served set. Nothing after the
 # per-region stages reads the district into memory, which is what lets the
-# same script build a town or a country (docs/scale-architecture.md). The
+# same script build a town or a country (docs/maintainers/scale-architecture.md). The
 # terrain masks, deciles and panel shrink that used to run on the merged file
 # run inside the emit, per region, at that region's own sun.
 set -u
@@ -76,7 +76,7 @@ fi
 STAGES="register_imagery build_layout_geojson gate_panels demolished rerank_layouts derive_solar_potential
         patch_roof_confidence bake_building_horizons build_heatmap_raster"
 # After addresses: the region's own tiles, cells, detail and summary. This
-# is what replaced the fan-in (docs/scale-architecture.md).
+# is what replaced the fan-in (docs/maintainers/scale-architecture.md).
 EMIT="emit_region"
 if [ $YIELD_ONLY -eq 1 ]; then
   # The yield layer only: geometry, panels and shading factors stay as built;

@@ -93,11 +93,15 @@ The direct layout-to-derive edge represents paths without demolition screening.
   incremental planning (`src/build_keys.py`).
 - `tools/pipeline.py`: local single-region orchestration and cloud
   dispatch; `quickstart.sh` is its compatibility wrapper.
+- `src/local_queue.py`, `tools/pipeline_queue.py`: loopback coordination,
+  JSON task persistence and subprocess workers for that local executor.
+  One worker is the default; tasks in one checkout serialize. The existing
+  GCS fleet queue is not yet migrated to this protocol.
 - `tools/remote_build.sh`: shared-VM sync, district build, gate and optional
   publication; also called directly by the GitHub build workflow.
 - `src/build_region.sh`, `src/worker.sh`, `src/gcs_queue.py`: regional worker
   build, queue ownership and regional publication. See
-  [scale architecture](../scale-architecture.md).
+  [scale architecture](../maintainers/scale-architecture.md).
 - `src/render_building_debug.py`, `src/render_top_movers.py`: debug cards
   and build-over-build diffs.
 - `preview.html`: the map. `src/live_server.py` adds a local-only refit
