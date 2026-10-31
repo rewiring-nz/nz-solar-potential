@@ -248,11 +248,30 @@ Exact definitions: [tools/pipeline.py](../../tools/pipeline.py).
 The preview serves the map and combined data on `127.0.0.1` and needs
 internet access for basemaps. It does not expose the pilot-only refit API
 ([execution boundaries](../developers/tooling-execution.md#deployment-and-ownership)).
-Stop the preview with:
+The pipeline starts the preview server in a separate session; it keeps running
+after the pipeline finishes, and `Ctrl+C` in the pipeline terminal does not
+stop it. Inspect the run's recorded PID and verify it is still the preview
+server before stopping it:
 
 ```sh
-kill "$(cat data/pipeline_runs/<run-id>/map-preview-server.pid)"
+cat data/pipeline_runs/<run-id>/map-preview-server.pid
+ps -p 12345 -o pid=,command=
+kill 12345
 ```
+
+Replace `12345` with the PID from the first command. Confirm the command names
+`tools/pipeline_serve.py` from this checkout before sending the signal. Plain
+`kill` sends SIGTERM, which stops the preview even if it inherited an ignored
+SIGINT from a background launch. This stops only the preview HTTP server; it
+does not cancel a pipeline build or delete generated data. If you started
+`tools/pipeline_serve.py` directly in a terminal, `Ctrl+C` there also stops it.
+
+If the PID file is missing
+or stale, find the listener on the port shown in the preview URL with
+`lsof -nP -iTCP:<port> -sTCP:LISTEN`, inspect its command with `ps`, and stop
+it only if it is the preview server. A browser tab whose server is no longer
+listening is simply stale; close the tab rather than killing an unrelated
+process.
 
 ## Statuses
 
