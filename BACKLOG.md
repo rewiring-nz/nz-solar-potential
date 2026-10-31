@@ -23,6 +23,15 @@ restore), output-equivalence tests between engines, a VM cost confirmation
 on `fleet.sh up`, and re-recording `tests/synthetic/reference.json` on Linux
 (stale on HEAD since the 20 Oct record: 606 → 459 panels).
 
+Completed local slice of #12: web pipeline panel (`tools/pipeline_web.py`,
+`pipeline.html`, [guide](docs/data-maintainers/web-pipeline.md)). Loopback,
+token-protected; picks LINZ suburbs/localities on a map, estimates buildings,
+download, time and disk, needs a typed `yes`, builds regions in sequence with
+live progress and cancel, then combines all built regions. `tools/pipeline.py`
+now writes `status.json` and accepts `--no-preview-server`.
+Remaining: browser-launched builds on the shared VM (hosted backend, auth,
+cloud cost confirmation).
+
 Completed: unattended quickstart and pipeline runs. A failed deploy gate on a
 developer preview or build-only `tools/remote_build.sh` run now prints
 `GATE WARNING` and continues (`GATE_RESULT=pass|flagged|not-run` for

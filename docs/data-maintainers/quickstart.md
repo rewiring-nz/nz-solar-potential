@@ -50,6 +50,9 @@ multi-worker debugging and persistent task status, see
 [Local task queue](pipeline-reference.md#local-task-queue).
 Extra workers do not split a single region or speed up builds sharing one checkout.
 
+To pick areas on a map and follow builds in the browser instead, use the
+[web pipeline panel](web-pipeline.md).
+
 ## 4. Check the result
 
 - The pipeline opens a local map preview. Open the printed URL if the browser

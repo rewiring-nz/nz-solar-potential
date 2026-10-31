@@ -232,8 +232,12 @@ Exact definitions: [tools/pipeline.py](../../tools/pipeline.py).
 ## Outputs
 
 - `data/pipeline_runs/<UTC-run-id>/`: `report.md` (status, timing and effect
-  of each step), `run.log` (all output, tagged `[QS-NN]`), and the preview
-  server's PID and log.
+  of each step), `status.json` (the same step statuses and timings as JSON,
+  without commands; read by the [web pipeline](web-pipeline.md)), `run.log`
+  (all output, tagged `[QS-NN]`), and the preview server's PID and log. A
+  local run prints `PIPELINE_RUN_DIR=<path>` when it creates this folder.
+  `--no-preview-server` passes step 21 without starting a server, for callers
+  that already serve the map.
 - `data/out/<region>/`: the region's emitted tiles and summaries.
 - `data/`: the combined map. **Step 18 replaces whatever map data was there**
   with the selected region. Other emitted regions remain under `data/out/`

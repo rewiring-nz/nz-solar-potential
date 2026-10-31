@@ -94,6 +94,9 @@ run "national area catalogue" $PY tests/test_list_areas.py
 run "LERC raster dependencies" $PY tests/test_s3_rasters.py
 run "quickstart map preview" $PY tests/test_quickstart_map.py
 run "shared build plan"     $PY tests/test_build_plan.py
+run "pipeline web panel data" $PY tests/test_pipeline_web_data.py
+run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
+run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "diagram vs code"       $PY tools/check_diagram.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py

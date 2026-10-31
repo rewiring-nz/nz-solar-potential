@@ -378,6 +378,26 @@ class PipelineRun:
         tmp = self.report_path.with_suffix(".md.tmp")
         tmp.write_text("\n".join(content), encoding="utf-8")
         os.replace(tmp, self.report_path)
+        self._write_status()
+
+    def _write_status(self) -> None:
+        """Machine-readable twin of report.md for tools/pipeline_web (no commands)."""
+        keep = ("number", "key", "label", "status", "started", "finished", "seconds", "comment", "exit_code")
+        status = {
+            "schema": 1,
+            "area": self.area,
+            "run_id": self.run_dir.name,
+            "started": self.started,
+            "overall": self.overall,
+            "step_offset": self.step_offset,
+            "steps": [{k: s.get(k) for k in keep} for s in self.records],
+            "metadata": {k: self.metadata[k] for k in ("bbox", "map_preview_url", "git_commit", "survey_name")
+                         if k in self.metadata},
+        }
+        path = self.run_dir / "status.json"
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(status, indent=1, default=str), encoding="utf-8")
+        os.replace(tmp, path)
 
     def event(self, number: int, text: str) -> None:
         line = f"[QS-{number + self.step_offset:02d}] {text}"
@@ -1735,6 +1755,8 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
                         help="preferred preview port (uses another free port if occupied)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="start the local preview server but do not open a browser tab")
+    parser.add_argument("--no-preview-server", action="store_true",
+                        help="do not start a preview server at the end (tools/pipeline_web.py serves the map)")
     referee = parser.add_mutually_exclusive_group()
     referee.add_argument("--paid-referee", dest="paid_referee_flag", action="store_true", default=None,
                          help="approve the paid demolition referee without asking")
@@ -1971,6 +1993,8 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
     if args.step_offset < 0:
         raise ValueError("--step-offset cannot be negative")
     run = PipelineRun(area, run_dir, step_offset=args.step_offset)
+    with contextlib.suppress(ValueError):
+        print(f"PIPELINE_RUN_DIR={run_dir.relative_to(ROOT)}", flush=True)
     area_dir = DATA / "regions" / area
     run.metadata = {"run_dir": str(run_dir.relative_to(ROOT))}
     region_out_root = DATA / "out"
@@ -2243,7 +2267,11 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
         else:
             run.finish(number, "PASS", output.strip() or "Map contract validated.", 0)
 
-    if failed_at is None:
+    if failed_at is None and getattr(args, "no_preview_server", False):
+        run.begin(STEP["preview"])
+        run.finish(STEP["preview"], "PASS",
+                   "Preview server not started (--no-preview-server); the map is served by tools/pipeline_web.py.", 0)
+    elif failed_at is None:
         ok, url = _start_preview_server(area, run, py,
                                         args.port or 8765, not args.no_open_browser)
         if not ok:

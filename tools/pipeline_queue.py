@@ -34,7 +34,7 @@ def provenance(workspace: Path) -> dict[str, Any]:
 
 def make_task(workspace: Path, region: str, python: str, *, port: int | None = None,
               no_open_browser: bool = False, step_offset: int = 0,
-              paid_referee: bool = False) -> dict[str, Any]:
+              paid_referee: bool = False, no_preview_server: bool = False) -> dict[str, Any]:
     from tools.pipeline import _safe_area
     workspace = workspace.resolve()
     # Do not resolve the interpreter symlink: that discards virtualenv identity.
@@ -47,7 +47,7 @@ def make_task(workspace: Path, region: str, python: str, *, port: int | None = N
         "workspace": str(workspace),
         "python": executable,
         "options": {"port": port, "no_open_browser": no_open_browser, "step_offset": step_offset,
-                    "paid_referee": paid_referee},
+                    "paid_referee": paid_referee, "no_preview_server": no_preview_server},
         "provenance": provenance(workspace),
     })
 
@@ -163,7 +163,8 @@ def run_local(args: argparse.Namespace, area: str, workspace: Path) -> int:
         python = _python_executable(args.python)
         task = make_task(workspace, area, str(python), port=args.port,
                          no_open_browser=args.no_open_browser, step_offset=args.step_offset,
-                         paid_referee=bool(getattr(args, "paid_referee", False)))
+                         paid_referee=bool(getattr(args, "paid_referee", False)),
+                         no_preview_server=bool(getattr(args, "no_preview_server", False)))
         with Coordinator(directory):
             client = QueueClient(directory)
             client.call("submit", task=task)

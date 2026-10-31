@@ -49,6 +49,11 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   `--mode cloud --profile <name>` uses a per-developer VM; `--cloud` runs a
   VM lifecycle action. See [docs/data-maintainers/quickstart-cloud.md](docs/data-maintainers/quickstart-cloud.md).
 - `tools/pipeline_serve.py`: local preview server with PMTiles byte ranges.
+- `tools/pipeline_web.py`: local web panel (#12) over `tools/pipeline.py`:
+  choose LINZ localities, estimate, typed `yes`, sequential builds, live log,
+  cancel. Loopback with a per-launch token; records under `data/pipeline_web/`.
+  Package `tools/pipeline_webui/`; page `pipeline.html`. See
+  [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
 - Local pipeline execution uses `src/local_queue.py` and
   `tools/pipeline_queue.py`: loopback coordinator, JSON state and one worker
   process by default (`--workers` changes the pool size). Tasks in a checkout

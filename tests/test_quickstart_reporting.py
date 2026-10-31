@@ -165,6 +165,38 @@ def test_cloud_remote_command_tracks_only_new_pipeline_runs():
         assert _report_preview_port(report) == 9123
 
 
+def test_status_json_tracks_steps_without_commands():
+    import json
+    with tempfile.TemporaryDirectory(prefix="quickstart-report-", dir=ROOT) as tmp:
+        run = PipelineRun("test_area", Path(tmp) / "run")
+        status = json.loads((run.run_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["schema"] == 1 and status["area"] == "test_area"
+        assert status["overall"] == "RUNNING"
+        assert all(step["status"] == "PENDING" for step in status["steps"])
+        run.begin(2, ["python", "src/fetch_regions.py", "test_area"])
+        status = json.loads((run.run_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["steps"][1]["status"] == "RUNNING"
+        assert status["steps"][1]["key"] == "fetch"
+        assert "command" not in status["steps"][1]
+        run.finish(2, "FAIL", "boom", 3)
+        status = json.loads((run.run_dir / "status.json").read_text(encoding="utf-8"))
+        assert status["overall"] == "FAIL"
+        assert status["steps"][1]["exit_code"] == 3
+        assert isinstance(status["steps"][1]["seconds"], float)
+
+
+def test_no_preview_server_flag_parses_and_validates_in_queue_task():
+    from src.local_queue import validate_task
+    from tools.pipeline_queue import make_task
+    args = _argument_parser("pilot").parse_args(["pilot", "--no-preview-server"])
+    assert args.no_preview_server is True
+    assert _argument_parser("pilot").parse_args(["pilot"]).no_preview_server is False
+    task = make_task(ROOT, "pilot", sys.executable, no_preview_server=True)
+    assert task["options"]["no_preview_server"] is True
+    legacy = dict(task, options={k: v for k, v in task["options"].items() if k != "no_preview_server"})
+    validate_task(legacy)
+
+
 if __name__ == "__main__":
     for test in (test_area_names_are_path_safe, test_report_and_logs_share_step_number_and_label,
                  test_cloud_pipeline_step_offset_keeps_labels_sequential_after_prechecks,
@@ -173,6 +205,8 @@ if __name__ == "__main__":
                  test_pipeline_cli_defaults_to_local_and_keeps_default_region,
                  test_cloud_lifecycle_action_parses_through_pipeline_entry_point,
                  test_cloud_action_dispatches_selected_region_and_profile,
-                 test_cloud_remote_command_tracks_only_new_pipeline_runs):
+                 test_cloud_remote_command_tracks_only_new_pipeline_runs,
+                 test_status_json_tracks_steps_without_commands,
+                 test_no_preview_server_flag_parses_and_validates_in_queue_task):
         test()
     print("quickstart reporting tests passed")

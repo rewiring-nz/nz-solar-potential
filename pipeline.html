@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar pipeline panel</title>
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  :root { --side: 400px; --ok: #2e7d32; --bad: #c62828; --warn: #ef6c00; --sel: #1565c0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: #222; }
+  #app { display: flex; height: 100vh; }
+  #side { width: var(--side); display: flex; flex-direction: column; border-right: 1px solid #ccc; background: #fafafa; }
+  #map { flex: 1; }
+  header { padding: 10px 12px 0; }
+  header h1 { font-size: 16px; margin: 0 0 6px; }
+  #banner { display: none; margin: 6px 12px; padding: 8px; border-radius: 4px; background: #fff3e0; border: 1px solid var(--warn); }
+  #banner.show { display: block; }
+  nav { display: flex; border-bottom: 1px solid #ccc; padding: 0 8px; }
+  nav button { border: 0; background: none; padding: 8px 12px; cursor: pointer; font: inherit; border-bottom: 3px solid transparent; }
+  nav button.active { border-bottom-color: var(--sel); font-weight: 600; }
+  .tab { display: none; flex: 1; overflow: auto; padding: 10px 12px; }
+  .tab.active { display: block; }
+  .item { padding: 8px; margin-bottom: 6px; background: #fff; border: 1px solid #ddd; border-radius: 4px; }
+  .item h3 { font-size: 14px; margin: 0 0 2px; cursor: pointer; }
+  .muted { color: #666; font-size: 12px; }
+  .pill { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 11px; color: #fff; background: #777; }
+  .pill.built, .pill.succeeded, .pill.PASS { background: var(--ok); }
+  .pill.failed, .pill.FAIL, .pill.cancelled, .pill.interrupted { background: var(--bad); }
+  .pill.downloaded, .pill.DEGRADED, .pill.running, .pill.RUNNING, .pill.queued { background: var(--warn); }
+  .links a { margin-right: 10px; font-size: 12px; }
+  button.primary { background: var(--sel); color: #fff; border: 0; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  button.primary:disabled { background: #9db5d3; cursor: not-allowed; }
+  button.small { font-size: 12px; padding: 2px 8px; cursor: pointer; }
+  input[type=search], input[type=text] { width: 100%; padding: 6px; font: inherit; }
+  #search-results div { padding: 4px 6px; cursor: pointer; border-bottom: 1px solid #eee; }
+  #search-results div:hover { background: #e3f2fd; }
+  .chip { display: inline-block; margin: 2px; padding: 2px 6px; background: #e3f2fd; border-radius: 10px; font-size: 12px; }
+  .chip button { border: 0; background: none; cursor: pointer; padding: 0 0 0 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 6px 0; }
+  th, td { text-align: left; padding: 3px 4px; border-bottom: 1px solid #eee; vertical-align: top; }
+  td.num, th.num { text-align: right; }
+  .warn { color: var(--warn); } .block { color: var(--bad); font-weight: 600; }
+  progress { width: 100%; height: 14px; }
+  #log { background: #111; color: #ddd; font: 11px/1.35 ui-monospace, Menlo, monospace; padding: 6px; height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  #hint { position: absolute; top: 10px; left: calc(var(--side) + 10px); max-width: calc(100vw - var(--side) - 70px); background: rgba(255,255,255,.92); padding: 4px 8px; border-radius: 4px; font-size: 12px; pointer-events: none; }
+  .confirm { margin-top: 8px; padding: 8px; border: 1px solid var(--sel); border-radius: 4px; background: #fff; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <header>
+      <h1>Solar pipeline panel</h1>
+      <div class="muted" id="server-info">Connecting…</div>
+    </header>
+    <div id="banner"></div>
+    <nav>
+      <button data-tab="regions" class="active">Regions</button>
+      <button data-tab="build">New build</button>
+      <button data-tab="jobs">Jobs</button>
+    </nav>
+    <section class="tab active" id="tab-regions">
+      <p class="muted">Areas built or prepared in this checkout. Click a name to fly there.</p>
+      <div id="region-list"></div>
+    </section>
+    <section class="tab" id="tab-build">
+      <input type="search" id="search" placeholder="Search suburbs and localities…" autocomplete="off">
+      <div id="search-results"></div>
+      <p class="muted">Or zoom in (level 10 or closer) and click areas on the map.</p>
+      <div id="selection"></div>
+      <p><button class="primary" id="estimate-btn" disabled>Estimate</button></p>
+      <div id="estimate"></div>
+    </section>
+    <section class="tab" id="tab-jobs">
+      <div id="job-detail"></div>
+      <h3>Recent jobs</h3>
+      <div id="job-list"></div>
+    </section>
+  </aside>
+  <div id="map"></div>
+</div>
+<div id="hint"></div>
+<script src="pipeline_ui.js"></script>
+</body>
+</html>

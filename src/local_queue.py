@@ -56,10 +56,12 @@ def validate_task(task: Any) -> dict[str, Any]:
             raise QueueError(f"Task {key} must be an absolute path.")
     task = dict(task, workspace=str(Path(task["workspace"]).resolve()))
     options = task["options"]
-    if not isinstance(options, dict) or set(options) != {
-        "port", "no_open_browser", "step_offset", "paid_referee",
-    }:
+    required = {"port", "no_open_browser", "step_offset", "paid_referee"}
+    # no_preview_server is optional so queue state written before it existed stays valid.
+    if not isinstance(options, dict) or not required <= set(options) <= required | {"no_preview_server"}:
         raise QueueError("Invalid pipeline options.")
+    if type(options.get("no_preview_server", False)) is not bool:
+        raise QueueError("no_preview_server must be boolean.")
     port = options["port"]
     if port is not None and (type(port) is not int or not 1024 <= port <= 65535):
         raise QueueError("Preview port must be between 1024 and 65535.")

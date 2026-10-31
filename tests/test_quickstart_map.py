@@ -85,7 +85,7 @@ def test_pipeline_run_directory_structure():
         run = QuickstartRun("test_area", run_dir)
         assert run.log_path.is_file()
         assert run.report_path.is_file()
-        assert set(p.name for p in run_dir.iterdir()) == {"run.log", "report.md"}
+        assert set(p.name for p in run_dir.iterdir()) == {"run.log", "report.md", "status.json"}
         assert not (run_dir / "run.json").exists()
         assert not list(run_dir.glob("step-*.log"))
 

@@ -62,6 +62,7 @@ data/summaries_prev/
 data/combine_*/
 data/quickstart_runs/
 data/pipeline_runs/
+data/pipeline_web/
 
 # SERVED with the map (docs/maintainers/scale-architecture.md): per-region summaries for the
 # deploy gate, the build totals, and the per-latitude-band curves.

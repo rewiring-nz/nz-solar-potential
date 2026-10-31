@@ -1,0 +1,301 @@
+{
+ "bbox": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "id": "layer-113764.2338",
+    "properties": {
+     "id": 2338,
+     "name": "Sunshine Bay",
+     "name_ascii": "Sunshine Bay",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 1000
+    },
+    "geometry": {
+     "type": "MultiPolygon",
+     "coordinates": [
+      [
+       [
+        [
+         168.6,
+         -45.05
+        ],
+        [
+         168.60999999999999,
+         -45.05
+        ],
+        [
+         168.60999999999999,
+         -45.04
+        ],
+        [
+         168.60001,
+         -45.04001
+        ],
+        [
+         168.6,
+         -45.04
+        ],
+        [
+         168.6,
+         -45.05
+        ]
+       ]
+      ]
+     ]
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "layer-113764.1001",
+    "properties": {
+     "id": 1001,
+     "name": "Frankton",
+     "name_ascii": "Frankton",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 5000
+    },
+    "geometry": {
+     "type": "MultiPolygon",
+     "coordinates": [
+      [
+       [
+        [
+         168.65,
+         -45.05
+        ],
+        [
+         168.66,
+         -45.05
+        ],
+        [
+         168.66,
+         -45.04
+        ],
+        [
+         168.65001,
+         -45.04001
+        ],
+        [
+         168.65,
+         -45.04
+        ],
+        [
+         168.65,
+         -45.05
+        ]
+       ]
+      ]
+     ]
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "layer-113764.3000",
+    "properties": {
+     "id": 3000,
+     "name": "Lake Wakatipu",
+     "name_ascii": "Lake Wakatipu",
+     "additional_name": null,
+     "type": "Lake",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 1000
+    },
+    "geometry": {
+     "type": "MultiPolygon",
+     "coordinates": [
+      [
+       [
+        [
+         168.62,
+         -45.05
+        ],
+        [
+         168.63,
+         -45.05
+        ],
+        [
+         168.63,
+         -45.04
+        ],
+        [
+         168.62001,
+         -45.04001
+        ],
+        [
+         168.62,
+         -45.04
+        ],
+        [
+         168.62,
+         -45.05
+        ]
+       ]
+      ]
+     ]
+    }
+   }
+  ]
+ },
+ "homonyms": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "id": "layer-113764.1001",
+    "properties": {
+     "id": 1001,
+     "name": "Frankton",
+     "name_ascii": "Frankton",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 5000
+    },
+    "geometry": null
+   },
+   {
+    "type": "Feature",
+    "id": "layer-113764.1002",
+    "properties": {
+     "id": 1002,
+     "name": "Frankton",
+     "name_ascii": "Frankton",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 10
+    },
+    "geometry": null
+   },
+   {
+    "type": "Feature",
+    "id": "layer-113764.2338",
+    "properties": {
+     "id": 2338,
+     "name": "Sunshine Bay",
+     "name_ascii": "Sunshine Bay",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 1000
+    },
+    "geometry": null
+   }
+  ]
+ },
+ "search": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "id": "layer-113764.1002",
+    "properties": {
+     "id": 1002,
+     "name": "Frankton",
+     "name_ascii": "Frankton",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 10
+    },
+    "geometry": null
+   },
+   {
+    "type": "Feature",
+    "id": "layer-113764.1001",
+    "properties": {
+     "id": 1001,
+     "name": "Frankton",
+     "name_ascii": "Frankton",
+     "additional_name": null,
+     "type": "Suburb",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 5000
+    },
+    "geometry": {
+     "type": "Polygon",
+     "coordinates": [
+      [
+       [
+        168.7,
+        -45.02
+       ],
+       [
+        168.74,
+        -45.02
+       ],
+       [
+        168.74,
+        -45.0
+       ],
+       [
+        168.7,
+        -45.0
+       ],
+       [
+        168.7,
+        -45.02
+       ]
+      ]
+     ]
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "layer-113764.3001",
+    "properties": {
+     "id": 3001,
+     "name": "Frankton Arm",
+     "name_ascii": "Frankton Arm",
+     "additional_name": null,
+     "type": "Inland Bay",
+     "major_name": "Queenstown",
+     "major_name_ascii": "Queenstown",
+     "major_name_type": "Town",
+     "territorial_authority": "Queenstown-Lakes District",
+     "territorial_authority_ascii": "Queenstown-Lakes District",
+     "population_estimate": 1000
+    },
+    "geometry": null
+   }
+  ]
+ }
+}

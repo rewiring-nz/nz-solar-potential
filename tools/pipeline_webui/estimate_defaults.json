@@ -1,0 +1,13 @@
+{
+ "_notes": "Planning assumptions for tools/pipeline_webui/estimate.py, not limits. Measured on queenstown-lakes-district/queenstown/sunshine-bay (249 buildings, bbox 0.97 km2, run 20261031T122452Z on an Apple-silicon laptop): survey imagery mosaic 0.33 GB and Basemaps reference mosaic 0.35 GB (0.35 GB/km2 each), 6 LiDAR tiles 0.08 GB (0.08 GB/km2 of bbox, rounded up for whole tiles), data/out 2 MB plus about 14 MB of non-imagery files under data/regions (0.1 MB/building), 177 s for every step except preflight, fetch and preview with inputs cached (0.7 s/building). seconds_per_building is replaced by the median of recent finished runs when status.json history exists. download_mbps and linz_export_overhead_s are guesses; set them to your connection.",
+ "seconds_per_building": 0.7,
+ "fixed_overhead_s": 30,
+ "download_mbps": 50,
+ "imagery_gb_per_km2": 0.35,
+ "reference_imagery_gb_per_km2": 0.35,
+ "lidar_gb_per_km2": 0.1,
+ "linz_export_overhead_s": 120,
+ "output_mb_per_building": 0.1,
+ "large_region_buildings": 5000,
+ "large_region_note": "The largest Queenstown region needed a 42 GB working set on disk (docs/maintainers/scale-architecture.md); expect long runs and high memory use."
+}
