@@ -12,6 +12,18 @@ reference when you need the exact stages, files or implementation.
 
 ## Data maintainers
 
+Start here. Each how-to is a short set of steps ending in "Next steps".
+
+| How-to | What it covers |
+| --- | --- |
+| [Run the local quickstart](data-maintainers/howto-local-quickstart.md) | Build the default area on your computer and open the map. |
+| [Run the cloud quickstart](data-maintainers/howto-cloud-quickstart.md) | Build the default area on the shared VM and open a developer preview. |
+| [Build a region](data-maintainers/howto-build-a-region.md) | Find, check and build another area, locally or on the shared VM. |
+| [Build several regions](data-maintainers/howto-scale.md) | Build multiple regions and view them on one map: locally, on the shared VM or on a fleet. |
+| [Pipeline run options](data-maintainers/reference-pipeline.md) | Reference: every way to run the pipeline, its options, environment variables and cost prompts. |
+
+Background and detail:
+
 | Document | What it covers |
 | --- | --- |
 | [Quickstart](data-maintainers/quickstart.md) | Run the pipeline on one region and open the map. |
