@@ -91,13 +91,11 @@ movers, publish.
       strips may be mis-split (the map photo shows two light strips).
     - 40 commercial pilot roofs, A/B: panels 7,506 -> 7,295, all from the
       100%-only band (255 -> 57); ranks 1-80 unchanged (6,678 -> 6,677).
-- **`tools/render_cases.py` cannot read the per-region build.** At v67,
-  most case tiles render "0 facets, 0 panels" and four raise KeyError. Three
-  cases show "regressed" from a broken 25 Sep check run that recorded zero
-  for everything.
-- **`data/build_snapshot_prev.json` on the VM is stale.** It covers 15,346
-  buildings, so `src/render_top_movers.py` ranks the wrong movers. Compare
-  against the live summaries, as `tools/predeploy_check.py` does.
+- **`tools/research/render_cases.py` cannot read the per-region build**
+  (it rebuilds each roof and gets 0 facets). Use `tools/render_built.py`,
+  which draws the built layouts before and after (`--cases`, `--movers N`,
+  `--ids`, `--before <copy of data/regions>`). `cases.py check --render`
+  still calls the old path.
 
 - **Re-record the synthetic reference** on the VM: v66 packs panels at
   their true size (1.134 x 1.961 m), so the synthetic region's panel counts
