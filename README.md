@@ -46,8 +46,9 @@ There is no licence file for this repository yet.
    region (`src/fetch_regions.py`, `src/fetch_pointcloud_regions.py`).
 2. **Read the roof.** Each footprint is cut into flat faces. Hand-drawn markup
    (`mark_roofs.html`, `data/roof_labels.json`) wins where it exists. Next
-   comes the best precomputed reading (`data/selected_faces/`), then the LiDAR
-   fit (`src/roof_partition.py`, `src/roof_segmentation.py`). Obstructions
+   comes a precomputed reading (repeated-roof consensus when available, else
+   `data/selected_faces/`), then the LiDAR fit (`src/roof_partition.py`,
+   `src/roof_segmentation.py`). Obstructions
    come from the photo and the LiDAR.
 3. **Place panels** on one grid per building, clear of edges, ridges and
    obstructions, in racked arrays on the sunny side (`src/panel_fitting.py`).
@@ -78,29 +79,17 @@ python tools/cases.py check     # every flagged roof
 
 ## Local setup
 
-```bash
-cd solar-map
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+Start with the [local quickstart](docs/quickstart.md) to build one small
+region and open its map, or the [cloud quickstart](docs/quickstart-cloud.md)
+to build on the shared VM and publish a developer preview.
 
-To run the map, start `live_server.py` from the repo root (one level above
-`solar-map/`). It also serves the `/api/refit` endpoint the tuning sliders
-need:
-
-```bash
-source solar-map/.venv/bin/activate
-python solar-map/src/live_server.py 8000
-```
-
-Open `http://localhost:8000/solar-map/preview.html`. A plain
-`python3 -m http.server` works for everything except the sliders.
-
-Full setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.md).
+Tools, Python and credentials:
+[local setup](docs/data-maintainers/local-setup.md).
+To preview an already-built dataset without rebuilding, follow
+[Serve locally](docs/data-maintainers/dataset-operations.md#6-serve-locally).
 
 ## More
 
-- [docs/README.md](docs/README.md): map of the documentation.
+- [docs/index.md](docs/index.md): map of the documentation.
 - [BACKLOG.md](BACKLOG.md): open work.
 - [AGENTS.md](AGENTS.md): rules for AI-assisted work.

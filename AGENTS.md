@@ -17,7 +17,15 @@ a fact, rule or workflow.
 A Python geospatial pipeline (LINZ outlines, LiDAR, imagery → per-building
 solar estimates and panel layouts) and a static MapLibre map. Module
 boundaries: [docs/developers/architecture.md](docs/developers/architecture.md).
-Doc map: [docs/README.md](docs/README.md).
+Entry points, delegation, machine boundaries and run ownership:
+[docs/developers/tooling-execution.md](docs/developers/tooling-execution.md).
+`tools/pipeline.py` is not yet a common front door for all operations:
+local pipeline, district and worker builds maintain separate stage
+sequences. Document current behaviour separately from the consolidation target.
+Doc map: [docs/index.md](docs/index.md).
+Write for the persona named there. Keep each procedure or detailed
+explanation in one primary guide and link from summaries; repeat safety
+warnings where a reader is about to act.
 
 ## Build and test
 

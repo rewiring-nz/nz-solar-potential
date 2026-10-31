@@ -1,8 +1,10 @@
 # Building New Zealand one region at a time
 
-How the build works region by region, deletes inputs as it goes, and
-spreads work over many machines. Figures are measured on the Queenstown
-build.
+Storage and coordination design for maintainers: why regional assembly,
+input packs and a bucket queue bound the work. For capacity estimates, use
+[national planning](scaling-and-iteration.md); for commands, use
+[dataset operations](data-maintainers/dataset-operations.md). Measurements
+below come from the Queenstown build, not a national fleet rehearsal.
 
 ## The idea
 
@@ -31,13 +33,11 @@ building means re-emitting its region and recombining.
 
 ## Where the data lives
 
-The site (code and page) is on GitHub Pages. The data is in the tiles
-bucket, one folder per release: `gs://solar-potential-map-tiles/v<N>/`
-(public, CORS for range requests, year-long cache).
-`tools/publish_served.py` uploads a release and keeps the newest three;
-`site-config.js` (`dataBase`, `dataVersion`) points the site at one.
-Rolling back is pointing it at an older folder. A separate private data
-bucket holds models and build inputs.
+Site code and generated data have separate lifecycles: GitHub Pages serves
+the page; object storage serves versioned map data and holds private build
+inputs. Resource names and access are in [Team access](data-maintainers/team-access.md#what-lives-where).
+The [release procedure](data-maintainers/dataset-operations.md#7-publish)
+owns retention and rollback instructions.
 
 The data cannot live on GitHub: the repo reached 2.3 GB with old tile
 copies in its history, panel tiles pass GitHub's file-size limits, and
@@ -55,10 +55,17 @@ bucket:
 1. Emit `data/out/<region>/`.
 2. Upload it and the region's `selected_faces`.
 3. List the upload back and compare sizes.
-4. Delete `data/regions/<region>/` except a `manifest.json` (what was built,
-   from which survey, at which git commit).
-5. Delete point-cloud tiles no other region on this disk still lists
-   (tiles are shared at borders).
+4. Write `data/regions/<region>/manifest.json` (what was built, from which
+   survey, at which git commit), then delete matching regional rasters and
+   the uploaded local pack. Keep outlines, layouts, tile lists and other
+   regional files; the region directory is not deleted wholesale.
+5. Delete point-cloud tiles not listed by another region on this disk
+   without a publication manifest (tiles are shared at borders). Emitted
+   outputs under `data/out/<region>/` stay for combine.
+
+These are the default actions of [publish_region.py](../src/publish_region.py);
+`--no-delete` keeps inputs. Regional upload is not production publication:
+it does not run the live-comparison gate or switch the website release.
 
 Peak disk per worker is then one region's working set (42 GB for the
 largest Queenstown region) plus anything not yet uploaded.
@@ -73,7 +80,7 @@ pack is byte-identical (`tests/synthetic` checks this). `build_region.sh`
 restores the pack instead of fetching. The real pack ratio has not been
 measured at scale yet.
 
-## Three layers, three costs
+## Rebuild boundaries
 
 | layer | what | re-run | cost |
 | --- | --- | --- | --- |
@@ -94,13 +101,14 @@ Options for running 1,384 independent jobs on spot machines:
 | option | needs from an administrator | gives |
 | --- | --- | --- |
 | Google Cloud Batch | enable the API, grant IAM | managed retries and spot handling |
-| a queue in the bucket + plain VMs | nothing | the same, in ~200 readable lines |
+| a queue in the bucket + plain VMs | bucket object access, VM permissions and quota | application-managed claims, heartbeats and retries |
 | Pub/Sub or Cloud Tasks | enable two APIs, IAM | a queue, plus a subscriber to write |
 
-The bucket queue needs no extra permissions, and its state is folders anyone
-can open: `queue/`, `claims/`, `done/`, `failed/`. The object counts are
-the progress report. Batch suits a project with a full-time operator; this
-is not one.
+The bucket queue avoids an additional queue-service API, but still needs
+permissions to read/write/delete build objects and create/manage workers.
+Authorized users can inspect `queue/`, `claims/`, `done/`, `failed/`;
+the build bucket is not a public dashboard. Object counts are the progress
+report. Queue behaviour is implemented in [gcs_queue.py](../src/gcs_queue.py).
 
 ### How the queue works
 
@@ -118,32 +126,39 @@ server.
 - `failed/<region>.json`: log tail and attempt count. Three tries, then a
   person looks.
 
-A spot VM can be taken at any time. Its claim then goes stale; after 45
-minutes another worker takes it over by deleting the claim with its
-generation number, so only one taker wins. Work resumes from `run_stage`
-markers if the disk survives, otherwise from the fetch. The worst case is
-losing one region, about 2.5 hours for the largest.
+A spot VM can be taken at any time. The queue code attempts takeover of
+claims whose heartbeat is older than 45 minutes, using generation-conditional
+deletion and create-if-absent. Work can reuse `run_stage` markers if the
+disk survives; otherwise the region needs its inputs restored or fetched.
+This is implemented recovery logic, not evidence of a completed multi-worker
+failure-recovery rehearsal.
 
 ### The fleet
 
 `tools/fleet.sh up N` creates N spot VMs from an image of the build machine,
 each running the worker loop; `down` deletes them. Workers delete themselves
-when the queue is empty. Machines are C2D in zone `-a`, where the quota is.
-Fleet VMs get read-write storage and compute scopes so they can publish and
-retire themselves (the build VM's storage scope is read-only). Creating VMs
-with write scopes has been tested and works; if it is ever refused, the fix
-is one IAM grant (`compute.instanceAdmin` and `serviceAccountUser` on
-`claude-batch`).
+when the queue is empty. Machine, zone, image and storage defaults are in
+[fleet.sh](../tools/fleet.sh), with profile/environment overrides.
+The script requests read-write storage and compute scopes; the effective
+service-account IAM permissions and project quota must also permit upload
+and self-deletion. Current quota, account grants and shared-VM scopes are
+deployment facts to verify before a run, not guaranteed by this script.
+
+Workers publish region artefacts to the build bucket. Fleet startup does
+not assemble a combined map or publish a production release: collecting
+regional outputs, combining, gating and releasing remain separate work.
 
 `tools/status.py` prints one line, for example
 `done 412 / claimed 6 / queued 966 / failed 0`, and what each worker is on.
 
 ## Status
 
-Built: emit and combine, upload and delete, region packs, the yield-only
-layer, the output contract, the queue, worker, fleet and status. The fleet
-has never run as a fleet. The first real run is the dress rehearsal on one
-city ([national-rehearsal.md](national-rehearsal.md), archived plan).
+Implemented: emit and combine, upload and input cleanup, region packs, the
+yield-only layer, the output contract, queue, worker, fleet and status.
+The archived [national rehearsal plan](national-rehearsal.md) records that
+a multi-worker fleet had not been exercised at that point. Source inspection
+does not establish a later successful rehearsal; validate throughput,
+recovery and release assembly before treating national operation as proven.
 
 ## Considered and not done
 

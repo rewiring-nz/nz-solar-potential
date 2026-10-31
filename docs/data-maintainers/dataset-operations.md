@@ -1,33 +1,36 @@
 # Dataset operations
 
-How to fetch, build, check and publish the map data. Run commands from the
-project folder with `.venv` active. `config.py` defines regions, surveys,
-layer IDs, exclusions and PV assumptions.
+Prepare, build, review and release a district dataset. Run commands from the
+project folder with `.venv` active. Prerequisites:
+[local setup](local-setup.md), [team access](team-access.md).
 
 District builds run on the build VM, never on a laptop. A laptop builds one
 small region at a time (see the [quickstart](../quickstart.md)).
+For a shared-VM developer preview rather than a release, use the
+[cloud quickstart](../quickstart-cloud.md).
 
 ## The flow
 
 ```mermaid
 flowchart TB
-  A{Choose area} --> B[[Update config.py]]
-  B --> C{Inputs present?}
-  C -- no --> D[[fetch_regions.py]]
-  D --> E[(data/regions/name)]
-  C -- yes --> E
-  E --> F[[fetch_dem_wide.py: wide DEM]]
-  F --> H[[region_build.py: one region per building]]
-  H --> I[[run_district_build.sh]]
-  I --> J[(per-region layouts and solar_potential)]
-  J --> K[[emit_region.py per region, then combine_regions.py]]
-  K --> L[(served set in data/)]
-  L --> M{Checks and gate pass?}
-  M -- no: data or config --> B
-  M -- no: algorithm --> O[[Fix src/]]
-  O --> I
-  M -- yes --> P[[Publish to tiles bucket v N]]
+  Config["Choose regions in config.py"] --> Fetch["Fetch missing regional inputs and wide DEM"]
+  Fetch --> Ownership["region_build.py: prepare outline ownership"]
+  Ownership --> Predict["Optional selected-face precompute: predict_faces.py"]
+  Predict --> District["run_district_build.sh on build VM"]
+  District --> Served[("Per-region outputs + combined served set")]
+  Served --> Review["Inspect outputs and run predeploy_check.py"]
+  Review --> Gate{"Gate passes or production override reviewed?"}
+  Gate -->|no| Fix["Correct inputs or code before rebuilding"]
+  Fix --> District
+  Gate -->|yes| Publish["publish_served.py: versioned tiles bucket"]
+  Publish --> Switch["Update site-config.js release pointer"]
 ```
+
+Arrows show the operational order, not that every command invokes the next.
+Input acquisition, ownership and face prediction are preparation outside the
+district script. The remote launcher can fetch with `--fetch`, but does not
+run face prediction. For stage order and differences between launchers, use
+the [execution reference](../developers/tooling-execution.md#regional-workflow-differences).
 
 ## Source data
 
@@ -84,6 +87,12 @@ region:
 
 ## 4. Build
 
+Prepare selected-face readings with `tools/predict_faces.py --region REGION`
+when using the selected-faces geometry path. The district script consumes
+existing readings; it does not run that precompute itself. Before a geometry
+build, authorize [demolition screening](#demolition-screening), including
+external API cost and image transfer. Then, on the VM:
+
 ```sh
 bash src/run_district_build.sh                       # incremental: stale buildings only
 bash src/run_district_build.sh --regions "pilot frankton_flats"
@@ -91,20 +100,39 @@ bash src/run_district_build.sh --force               # rebuild everything
 bash src/run_district_build.sh --yield-only          # solar model changed: recompute kWh, no LiDAR
 ```
 
-Per region it runs `register_imagery`, `build_layout_geojson`, `gate_panels`,
-`rerank_layouts`, `derive_solar_potential`, `patch_roof_confidence`,
-`bake_building_horizons`, `build_heatmap_raster`, `add_addresses`, then
-`emit_region`, which writes the region's tiles, cells, detail and summary to
-`data/out/<region>/`. Then `src/combine_regions.py` joins every region into
-the served set in `data/`. There is no merged district file
-(`src/merge_regions.py` is retired).
+Check `data/build_logs/<region>.log` and pre-plan warnings. Outline fitting
+and repeated-roof consensus can fail without stopping the build; they run
+before normal/forced builds, not yield-only builds. A failed region stops
+the final combine.
 
-Each stage runs through `src/run_stage.py`: it checks inputs first and
-writes a marker to `data/build_state/` on success. A rerun skips stages whose
-marker is newer than their inputs, so an interrupted build resumes. Logs are
-in `data/build_logs/<region>.log`. A failed region stops the combine.
+**`--regions` restricts the build loop, not the final combined map.** Combine
+includes available summaries under `data/out/`, excluding
+`config.SERVED_EXCLUDE`; unchanged regions can be included.
+
+The [execution reference](../developers/tooling-execution.md#regional-workflow-differences)
+explains stage order, sidecars and marker freshness. Builds are incremental
+from per-building keys; local pipeline and worker reruns have different
+reuse rules.
 
 For fast layout work on one area: `bash src/run_dev_loop.sh pilot`.
+
+### Demolition screening
+
+**Authorize external cost and image transfer before a geometry build.** The
+default `demolished` stage can send survey/current image crops to the
+Anthropic API. The quickstart's VM/preview estimate does not include this.
+Its per-region `SOLAR_DEMOLISHED_MAX_USD` usage threshold is not a hard
+full-workflow spending cap.
+
+`SOLAR_DEMOLISHED=0` disables the stage;
+`SOLAR_DEMOLISHED_REFEREE=0` avoids new referee calls but cached verdicts can
+still apply. Configure these in the build environment on the VM. Yield-only
+builds skip screening.
+
+Missing imagery/key, API failures or exhausted usage can leave only cached
+verdicts applied; a zero exit code does not prove every roof was screened.
+The [stage implementation](../../src/demolished.py) defines the cache,
+hand-drawn exemptions and withholding criteria.
 
 ## 5. Check
 
@@ -120,23 +148,22 @@ For fast layout work on one area: `bash src/run_dev_loop.sh pilot`.
    (`tools/layout_ab.py`, `tools/layout_health.py`, `tools/face_area_check.py`).
 7. Look at the map: a mix of roofs, known hard cases, areas without imagery.
 
-Run the tests before pushing code:
-
-```sh
-bash tests/run_all.sh --fast   # unit, economics, sync and diagram checks
-bash tests/run_all.sh          # adds the whole build on a synthetic region
-```
+When code changed, run the matching tests before pushing; the
+[reviewer's guide](../developers/reviewers-guide.md#checks-before-publishing)
+lists the fast suite, synthetic build and geometry checks.
 
 ## 6. Serve locally
 
 ```sh
-python3 -m http.server 8000
+.venv/bin/python tools/pipeline_serve.py --root . --port 8000
 ```
 
-Open `http://localhost:8000/preview.html`. For the tuning sliders, run
-`.venv/bin/python src/live_server.py` instead. It serves the folder above the
-project, so open `http://localhost:8000/<project-folder>/preview.html`.
-`tools/pipeline_serve.py` serves a preview with PMTiles range requests.
+Open `http://localhost:8000/preview.html`. This loopback server supports the
+byte-range requests PMTiles needs. Stop it with Ctrl+C.
+
+The [live refit server](../../src/live_server.py) is a separate developer
+tool requiring root-level pilot inputs, not the regional preview path; see
+[execution boundaries](../developers/tooling-execution.md#deployment-and-ownership).
 
 ## 7. Publish
 

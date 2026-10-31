@@ -5,10 +5,14 @@ Two ways to build in the cloud:
 - **Shared build VM** (team): `bash quickstart.sh --mode cloud`
 - **Your own VM** (experimental): `bash quickstart.sh --mode cloud --profile PROFILE`
 
-Both build a whole configured region; there is no building cap
-(`frankton_arm_lake` is about 79 buildings).
+Both build a whole configured region; there is no building cap. Use the
+shared VM if you have [team access](data-maintainers/team-access.md).
+The profile workflow is for a separate VM you administer.
 
 ## Shared build VM
+
+Read the [cost and external-API warning](#cost) before building. Preflight
+alone does not start a build or confirm preview-bucket readiness.
 
 ```sh
 bash quickstart.sh --mode cloud            # default region
@@ -16,39 +20,48 @@ bash quickstart.sh --mode cloud REGION     # another region
 bash quickstart.sh --mode cloud --cloud preflight   # free check, builds nothing
 ```
 
-It starts the shared VM if needed, syncs the Git ref, builds the region, runs
-the deploy gate, publishes a passing build as a developer preview and opens
-it. The VM builds what is pushed to the ref in
-`config.CLOUD_SHARED_BUILD["ref"]`, so commit and push first.
+Before running:
 
-Defaults (project, VM, zone, SSH user, region, ref, preview bucket,
-retention, cost assumptions) are in `CLOUD_SHARED_BUILD` in
-[config.py](../config.py).
+- Commit and push to `CLOUD_SHARED_BUILD["ref"]` in [config.py](../config.py).
+  The launcher does not automatically use your local branch or commit.
+- Choose a prepared region: inputs and selected faces must already be on the
+  VM. For a new area, follow [dataset preparation](data-maintainers/dataset-operations.md#2-fetch)
+  first; this quickstart does not fetch it.
+- Confirm with the administrator that
+  [preview hosting](data-maintainers/team-access.md#preview-hosting-administration)
+  is configured. Preflight does not check bucket readiness.
+- Unset `SOLAR_CLOUD_PROFILE` if it is selecting a developer VM.
 
-Before using the VM it checks the checkout and config, checks for `gcloud`
-(and offers to install it, asking first), checks your Google account, then
-asks you to approve the cost.
+The launcher checks cloud access, asks for cost approval, starts the VM if
+needed, builds, gates and publishes a public developer preview. The default
+region is `CLOUD_SHARED_BUILD["regions"]`; a positional name overrides it.
+Keep the launcher connected until publication: the detached build alone
+does not make the whole workflow survive a disconnect.
 
-Logs: `data/cloud_quickstart_runs/<run-id>.log`. Steps `[QS-01]`–`[QS-06]`
-are checkout/config, `gcloud`, account, cost approval, VM/SSH, and the action.
-A profile run's remote pipeline continues from `[QS-07]`. Local runs use
-`[QS-01]`–`[QS-18]`.
+Logs are in `data/cloud_quickstart_runs/<run-id>.log` (`[QS-01]` to
+`[QS-06]`). Shared mode supports `build` and `preflight` only.
 
 ### Cost
 
-The estimate uses the rates in `config.py`: an 8-hour VM run, a 100 GB disk,
-1 GB of preview storage kept 14 days, and 20 GB of public downloads. That
-comes to about NZ$5.00 (rounded up to the next 50c).
-
-This is a planning figure, not a cap, and not checked against real billing.
+Read the estimate printed before approval. Its VM, disk, preview-storage
+and download assumptions come from `CLOUD_SHARED_BUILD` in
+[config.py](../config.py), not live billing. It is not a spending cap.
 Charges can be higher if the build runs longer, the preview is downloaded
 more, or you publish several runs in 14 days. Disk charges continue while a
 VM is stopped. Check prices with the
 [Google Cloud pricing calculator](https://cloud.google.com/products/calculator).
 
+The shared district build includes demolition screening that can
+call a paid external vision API with survey/current image crops. The
+VM/disk/preview estimate above does **not** include that API cost. Obtain
+separate authorization for that cost and image transfer before running with
+the referee enabled; see [demolition screening](data-maintainers/dataset-operations.md#demolition-screening)
+for the stage controls and cache behaviour. This is a current gap in the
+full-workflow estimate, not an additional spending guarantee.
+
 You must type `yes`. Enter, anything else, or a non-interactive run declines
 before the VM is touched. There are no flags to override the estimate.
-Preflight, status and cleanup don't ask.
+Preflight and profile status/delete actions do not ask for this approval.
 
 ### Developer preview
 
@@ -67,27 +80,22 @@ The bucket is public. Never upload keys, raw inputs or logs. Everything under
 `devel/` is deleted after 14 days, including your preview page if you don't
 refresh it.
 
-The bucket already exists. Only the project owner creates or reconfigures it
-(it costs money and makes objects public):
-
-```sh
-gcloud storage buckets create gs://rewiring-solar-previews \
-  --project=solar-potential-map-512020 --location=australia-southeast1 \
-  --uniform-bucket-level-access
-python3 tools/publish_preview.py --configure-bucket
-```
-
-`--configure-bucket` grants public read, gives the shared VM's service
-account read/write, and adds the 14-day `devel/` lifecycle rule (keeping
-existing rules). Use it only on this bucket. Public Access Prevention must be
-off. No CORS is needed. If the name is taken, change `preview_bucket` in
-`config.CLOUD_SHARED_BUILD`.
+The launcher checks the returned preview URL, then requests browser opening.
+It does not check whether that request succeeded or whether the page loaded;
+open the printed URL manually if needed. End-to-end page availability is
+the intended quickstart outcome, not a guarantee of the current success
+status.
 
 ## Your own VM (profiles)
 
 Profiles hold resource settings, not credentials. They live in
 `~/.config/nz-solar-potential/cloud-profiles.json`. Actions:
 `--cloud preflight | create | bootstrap | ssh | run | collect | preview | status | delete`.
+`SOLAR_CLOUD_PROFILE` also selects a profile; unset it to use shared mode.
+Profile `status` reports the VM, not individual active pipeline runs.
+Unlike shared mode, this runs the local pipeline sequence; see the
+[pipeline reference](data-maintainers/pipeline-reference.md) for steps and
+statuses. It does not publish to the public preview bucket or production.
 
 ### Set up an environment
 
@@ -176,6 +184,6 @@ unless allowed. Book your run: each run replaces the VM's combined map data.
 
 ## Scope
 
-The profile workflow is one VM. It doesn't start a fleet, publish production
-data or change bucket permissions. Failures:
-[troubleshooting](data-maintainers/troubleshooting.md).
+For failures, use [Troubleshooting](data-maintainers/troubleshooting.md).
+For how the two cloud modes delegate to different engines, use the
+[execution reference](developers/tooling-execution.md).

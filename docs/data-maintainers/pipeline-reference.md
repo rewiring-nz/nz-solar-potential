@@ -1,36 +1,40 @@
 # Pipeline reference
 
-What `quickstart.sh` / `tools/pipeline.py` reads, writes and reports. The
-how-to is the [quickstart](../quickstart.md); failures are in
-[Troubleshooting](troubleshooting.md).
+Look up the stages, reports and outputs of a single-region local run (also
+used on a cloud profile VM). Start one with the [quickstart](../quickstart.md);
+diagnose failures with [Troubleshooting](troubleshooting.md).
 
 ## Regions
 
 - `config.REGIONS`: region names and WGS84 bounding boxes.
 - `config.SURVEYS`: each survey's layers and coverage. A region must sit
   wholly inside one survey.
-- `config.PIPELINE_REGION`: the default region. Pass a name to override it.
-  The original central Queenstown pilot is `pilot`.
+- `config.PIPELINE_REGION`: the local/profile default region. Shared-cloud
+  mode instead defaults to `config.CLOUD_SHARED_BUILD["regions"]`.
+  Pass a name to override it. The original central Queenstown pilot is `pilot`.
 
 Add a region by editing `config.py`.
 
 ## Needs
 
-- Python 3.11+ and the project environment ([Local setup](local-setup.md)).
-- `LINZ_API_KEY` in the shell or `.env`. It is never written to reports or logs.
-- `tippecanoe`, `tile-join` and `tippecanoe-decode` on `PATH`
-  ([macOS](env-setup-mac.md#2-project-tools),
-  [Ubuntu/WSL](env-setup-ubuntu.md#2-tippecanoe)).
+Complete [Local setup](local-setup.md) for system tools, Python and credentials.
+Additional operating limits:
+
 - About 10 GB free for a small region.
 - Optional: the vision step needs torch, segment-anything, the SAM checkpoint
   and both roof-line models in `data/models/`. Without them it is skipped.
 
-Runs are local by default. `--mode cloud --profile NAME` runs the same region
-on a VM, and `--cloud ACTION` manages that VM; see the
-[cloud quickstart](../quickstart-cloud.md). Cloud mode runs the checkout
-already on the VM, so update it to the commit you want first.
+`--mode cloud --profile NAME` runs this sequence in the existing developer-VM
+checkout; update that checkout first. Shared cloud mode instead uses the
+district engine, not the table below. Cloud commands are in the
+[cloud quickstart](../quickstart-cloud.md); exact backend differences are
+in the [execution reference](../developers/tooling-execution.md#regional-workflow-differences).
 
-## Steps
+## Local and profile-VM steps
+
+These are not the shared-cloud district sequence. The local pipeline writes
+stage markers but does not pass `--skip-done`: rerunning creates a new report
+and reruns the commands, with any input reuse handled by individual tools.
 
 | # | Step |
 |---|---|
@@ -62,12 +66,15 @@ Exact definitions: [tools/pipeline.py](../../tools/pipeline.py).
   server's PID and log.
 - `data/out/<region>/`: the region's emitted tiles and summaries.
 - `data/`: the combined map. **Step 15 replaces whatever map data was there**
-  with the selected region. Don't run it over data you want to keep.
+  with the selected region. Other emitted regions remain under `data/out/`
+  but are not included in this combine. Don't run it over map data you want
+  to keep. Root `data/solar_potential.geojson` is not a current map input.
 - `data/regions/<region>/quickstart_report.html`: per-building check cards.
 
-The preview serves `data/` on `127.0.0.1` and needs internet access for the
-basemaps. The tuning sliders need `src/live_server.py` (`/api/refit`). Stop
-the preview with:
+The preview serves the map and combined data on `127.0.0.1` and needs
+internet access for basemaps. It does not expose the pilot-only refit API
+([execution boundaries](../developers/tooling-execution.md#deployment-and-ownership)).
+Stop the preview with:
 
 ```sh
 kill "$(cat data/pipeline_runs/<run-id>/map-preview-server.pid)"
@@ -86,14 +93,18 @@ their part. Read the report before trusting a result.
 
 ## Cleaning up
 
-`data/` holds tracked files that LINZ cannot give back: roof labels,
-benchmark and verdict data, trained models. Keep `.env` and `.venv` too.
+**Do not delete `data/` wholesale.** It contains curated labels, benchmarks,
+verdicts and trained models as well as generated files. Do not delete a
+whole region directory without inspecting it either: it can contain review
+results and provenance you need to keep. Preserve `.env` and `.venv`.
 
-- `git clean -fd` leaves ignored files alone. Safe.
-- Don't use `git clean -fdX` or `rm -rf data`.
-- To rebuild one region, delete only `data/regions/<region>/` and its run
-  folders.
-- `data/dem_wide_mosaic.tif` and `data/pointcloud/` can be fetched again, but
-  that costs downloads and affects other builds.
+To reclaim local space, identify regenerable inputs for the selected region
+before removing them. The wide DEM and point-cloud tiles can be shared by
+neighbouring regions. The
+[regional publication cleanup](../scale-architecture.md#deleting-inputs)
+checks upload sizes and shared-tile ownership; it is not a blanket cleanup
+command for a local pipeline run.
 
-A clean rebuild has been checked for one small Queenstown region only.
+`git clean -fd` leaves ignored inputs but deletes untracked work, including
+new labels or documentation. Preview with `git clean -nd` and inspect every
+path before using it. Do not use `git clean -fdX` to reset this project.

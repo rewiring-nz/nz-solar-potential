@@ -6,9 +6,8 @@ Module boundaries are in [architecture.md](architecture.md).
 
 ## What the system claims
 
-For every building in the served regions of Queenstown Lakes (v64: 32,838
-buildings in 35 regions), the pipeline estimates roof faces with slope and
-aspect, obstructions, panels that physically fit (ranked sunniest first) and
+For buildings in the served regions, the pipeline estimates roof faces with
+slope and aspect, obstructions, panels that physically fit (ranked sunniest first) and
 yearly generation. Inputs: LINZ building outlines, aerial imagery, the LiDAR
 point cloud, DSM and DEM, plus hand-drawn roof markup for some buildings,
 used as ground truth and training data.
@@ -34,18 +33,23 @@ scorer picks one:
   the building axes. It wins only by a 0.08 margin, on dark (shadowed)
   imagery, or when both photo readings are refused.
 
-The winner is written to `data/selected_faces/<building_id>.json` and read by
-`roof_partition.facets_from_selected_faces`.
+The winner is written to `data/selected_faces/<building_id>.json`. A
+district pre-plan can also write an agreed reading for matching LiDAR roof
+surfaces to `data/repeat_faces/<building_id>.json`.
 
 **Precedence in a build:**
 
 1. Hand-drawn markup (`data/roof_labels.json`). Always wins; no plane-fit or
    confidence gates.
-2. Selected faces, if the reading scores at least `SELECTED_MIN_SCORE`
-   (0.30) and each face passes a one-plane gate (0.45 of returns on its
-   plane). A reading scored under `SELECTED_TRUST` (0.60) must compete with
-   the whole LiDAR path and loses if that explains the returns clearly
-   better. Roof the reading leaves uncovered is filled from the LiDAR path.
+2. The repeated-roof reading, when enabled and present; otherwise the
+   ordinary selected reading. `roof_partition.selected_doc` resolves this.
+   The reading must score at least `SELECTED_MIN_SCORE`
+   (0.30), and each face must pass its one-plane gate (normally 0.45 of
+   returns; large complex faces have a stricter gate). An ordinary reading
+   below `SELECTED_TRUST` (0.60) competes with the whole LiDAR path and loses
+   if that explains the returns clearly better. An agreed repeated-roof
+   reading skips that per-building competition. Uncovered roof is filled
+   from the LiDAR path.
 3. The LiDAR path.
 
 A verdict-panel entry marked "(old path)" means steps 1 and 2 gave nothing.
@@ -59,16 +63,18 @@ rule (`SOLAR_PLANT_DECKS=0`).
 |---|---|---|
 | `data/regions/<r>/building_outlines_dedup.geojson` | `src/region_build.py` | everything region-aware |
 | `data/selected_faces/<id>.json` | `tools/predict_faces.py` | `roof_partition.facets_from_selected_faces` |
-| `data/regions/<r>/panel_layouts.geojson` | `src/build_layout_geojson.py`, then `src/gate_panels.py`, then `src/rerank_layouts.py` | `src/derive_solar_potential.py`, `src/emit_region.py` |
+| `data/repeat_faces/<id>.json` | `src/repeat_roofs.py` | `roof_partition.selected_doc` |
+| `data/regions/<r>/outline_fit.json` | `src/outline_fit.py` | `outline_fit.fitted_outlines`, build keys |
+| `data/regions/<r>/panel_layouts.geojson` | layout, gate, optional district demolition screen, rerank | `src/derive_solar_potential.py`, `src/emit_region.py` |
 | `data/regions/<r>/solar_potential.geojson` | `src/derive_solar_potential.py` (+ `src/add_addresses.py`) | `src/emit_region.py` |
 | `data/out/<r>/` (not in Git) | `src/emit_region.py` | `src/combine_regions.py` |
 | served set under `data/` (not in Git) | `src/combine_regions.py` | `tools/publish_served.py`, local preview |
 | `data/roof_labels.json` | `mark_roofs.html` via `tools/ingest_labels.py` | training, benchmarks, precedence |
 
-The map is on GitHub Pages. Its data is published to a versioned folder in
-the tiles bucket, and `site-config.js` points at it.
-`tools/predeploy_check.py` compares a candidate build with the live one
-before release.
+For exact stage order and differences between engines, use the
+[execution reference](tooling-execution.md#regional-workflow-differences);
+for serving and release steps, use
+[dataset operations](../data-maintainers/dataset-operations.md#7-publish).
 
 ## Rules, where they are enforced, how to check
 
@@ -83,6 +89,10 @@ before release.
 | District builds run on the build VM, not a laptop | `src/run_district_build.sh` on the VM | operating rule |
 
 ## Check each stage yourself
+
+Choose the check for the concept you changed; use the full-suite checklist
+below before publishing. Historical benchmark figures here are regression
+context, not an independent accuracy estimate.
 
 - **Face selection:** `.venv-sam/bin/python tools/select_faces.py` scores
   each candidate family against the drawn roofs and prints picked-vs-best
@@ -108,11 +118,31 @@ before release.
   steps belong to the scorer. Pretraining: `tools/export_rid_training.py`,
   then the trainer's `--extra-dir/--init/--lr`.
 
+## Checks before publishing
+
+```sh
+bash tests/run_all.sh --fast   # unit, JavaScript and repository checks
+bash tests/run_all.sh          # also synthetic-region and golden-building checks
+```
+
+Golden-building checks require local region data and skip without it.
+JavaScript checks require Node; without it the runner skips them. CI's
+[test workflow](../../.github/workflows/tests.yml) provides the data-free checks.
+The existing diagram check validates a curated symbol/constants list, not
+the Markdown Mermaid diagrams; see the
+[execution-reference checklist](tooling-execution.md#keeping-this-reference-accurate).
+
+Add targeted tests for deterministic algorithms and data contracts, and
+update the matching guide when behaviour changes. For a regional build,
+also complete the [operator review](../data-maintainers/dataset-operations.md#5-check)
+and deploy gate; passing unit tests alone does not establish layout quality.
+
 ## Environment flags
 
 | flag | meaning |
 |---|---|
-| `SOLAR_SELECTED_FACES` | `1` (default) reads `data/selected_faces/`; `0` uses the LiDAR path only |
+| `SOLAR_SELECTED_FACES` | `1` (default) enables selected/repeated readings; `0` bypasses them, but markup still wins |
+| `SOLAR_REPEAT_ROOFS` | `1` (default) prefers an available repeated-roof reading within the selected-faces path |
 | `SOLAR_PREDICT_RESUME=1` | `predict_faces` skips buildings already done |
 | `SOLAR_VISION_DIR` | vision-lines directory (`roof_line_source`) |
 | `SOLAR_MIN_SCORE`, `SOLAR_MIN_LEN_FRAC` | vision-line acceptance |
@@ -126,7 +156,7 @@ them; `tools/layout_ab.py` runs a sample with a switch off and on.
 
 ## Known comprehension debt
 
-1. `roof_segmentation.py` (~3,200 lines) and `roof_partition.py` (~2,800)
+1. `roof_segmentation.py` and `roof_partition.py`
    grew one rule per incident and have no table of contents. A split is
    planned: segmentation into attach/gates, competition and vision-lines;
    partition into core, selected-faces and top-surface utilities.
@@ -134,7 +164,7 @@ them; `tools/layout_ab.py` runs a sample with a switch off and on.
    check `data/roof_labels.json` for that id before blaming the gates.
 3. One repo. The Wellington copy was retired on 24 Sep 2026.
    `site-config.js` holds the per-deployment settings.
-4. `preview.html` (~6,100 lines) is one file by design: static Pages
+4. `preview.html` is one file by design: static Pages
    deploy, no build step.
 
 ## Glossary

@@ -1,6 +1,8 @@
 # Quickstart
 
 Build the rooftop solar data for one area and view it on a local map.
+For a shared-VM build and public developer preview, use the
+[cloud quickstart](quickstart-cloud.md) instead.
 
 ## 1. Get the code
 
@@ -10,32 +12,16 @@ git clone https://github.com/rewiring-nz/nz-solar-potential.git
 cd nz-solar-potential
 ```
 
-## 2. Set up your computer
+## 2. Set up once
 
-Follow the guide for your system:
+Follow [Local setup](data-maintainers/local-setup.md) for your system tools,
+Python environment and LINZ key. Return here when the environment check
+prints `ready` and credentials are configured.
 
-- [macOS](data-maintainers/env-setup-mac.md) (tested)
-- [Ubuntu](data-maintainers/env-setup-ubuntu.md)
-- [Windows (WSL2)](data-maintainers/env-setup-win.md)
+## 3. Run the pipeline
 
-Then [create the Python environment](data-maintainers/local-setup.md#create-the-project-python-environment).
-
-The pipeline checks GDAL and LERC raster decoding before it downloads
-anything. If that check fails, see
-[LERC dependency check](data-maintainers/troubleshooting.md#lerc-raster-dependency-check).
-
-## 3. Add a LINZ API key
-
-1. Create a key at https://data.linz.govt.nz/my/api/create/.
-2. Choose **API Key** > **Manual scope**.
-3. Set every service from "No Access" to "Create, edit, and ...".
-4. Put it in `.env` in the project folder:
-
-```text
-LINZ_API_KEY=your-key
-```
-
-## 4. Run the pipeline
+**This replaces the current combined map data in `data/` with the selected
+region.** Use a small region locally; district builds belong on the build VM.
 
 ```sh
 bash quickstart.sh
@@ -50,16 +36,13 @@ bash quickstart.sh town_gorge_north
 
 Region names are in `REGIONS` in `config.py`.
 
-To build on the team's shared cloud VM instead, see the
-[cloud quickstart](quickstart-cloud.md):
+## 4. Check the result
 
-```sh
-bash quickstart.sh --mode cloud
-```
-
-## 5. Check the result
-
+- The pipeline opens a local map preview. Open the printed URL if the browser
+  did not open automatically.
 - Read `data/pipeline_runs/<run-id>/report.md`.
-- The run replaces the combined map data in `data/` with the selected region.
+- A completed run can still be degraded; check its coverage and warnings
+  before trusting the map.
 - Failures: [Troubleshooting](data-maintainers/troubleshooting.md).
-- Run details: [Pipeline reference](data-maintainers/pipeline-reference.md).
+- Stages, outputs and stopping the preview:
+  [Pipeline reference](data-maintainers/pipeline-reference.md).

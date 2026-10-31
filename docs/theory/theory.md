@@ -1,5 +1,9 @@
 # Why a building estimate can be trusted
 
+For researchers assessing the evidence and its limits. For a plain-English
+walkthrough, start with [How a roof estimate is made](../../method.html);
+financial assumptions are in [Economics](../economics.md).
+
 ## In short
 
 The estimate is a district planning estimate, not an engineering
@@ -24,7 +28,7 @@ version.
 ```mermaid
 flowchart TB
   A[(LINZ outlines + LiDAR)] --> B[(Roof evidence\noutline + DSM + points)]
-  B --> C[[Roof faces\nmarkup > selected faces > LiDAR planes]]
+  B --> C[[Roof faces\nmarkup > repeated/selected faces > LiDAR planes]]
   I[(Aerial imagery)] --> D[[Roof objects\nskylights, vents, plant]]
   C --> E[[Usable faces\nsetbacks + confidence gates]]
   D --> E
@@ -53,7 +57,7 @@ behind any total.
 | Aerial imagery | LINZ, layer `124754`, Queenstown 0.1m Urban Aerial Photos (2026) | 0.1 m in urban areas; captured 12 Feb-3 Mar 2026 | Roof objects and currency. Affected by shadow and colour; no height. Absent in some rural areas. |
 | Sunlight calibration | NIWA SolarView measured GHI (Wakatipu basin); else the nearest NIWA measured-radiation station; scaled by ERA5 spatial ratios | Monthly; ERA5 ~25 km | Corrects clear-sky sun to measured local sun. Cannot tell one roof from its neighbour; shading does that. |
 | Daily sunlight | ERA5 (Copernicus, via Open-Meteo, CC BY 4.0), 1940-2025 | Daily, ~25 km | Low-solar runs and battery sizing. |
-| Map imagery | LINZ Basemaps; Esri World Imagery | Display only | Context for the reader; not a model input. |
+| Map imagery | LINZ Basemaps; Esri World Imagery | Display context; LINZ Basemaps also supplies registration imagery | The registration reference helps align photos; neither basemap supplies roof height. |
 
 Layer IDs and constants live in [`config.py`](../../config.py) and
 [`src/surveys.py`](../../src/surveys.py). Where this page and the code
@@ -74,12 +78,12 @@ Each source answers a different question:
   an indirect signal (shadow, paint, dirt and existing panels all look
   alike) and gives no height.
 
-Roof faces come from hand-drawn markup where it exists, otherwise from the
-best-scoring precomputed reading (photo segmentation, a line detector, or
-LiDAR region growing), otherwise from LiDAR plane fitting and a straight
-skeleton. Panels are then placed at real size, clear of edges, ridges and
-obstructions, and gated against the LiDAR. The result is a feasible layout,
-not a survey of every centimetre.
+Roof faces come from hand-drawn markup where it exists, otherwise from a
+precomputed reading (repeated-roof consensus when available, else the
+best-scoring photo/line-detector/LiDAR reading), otherwise from LiDAR plane
+fitting and a straight skeleton. Panels are placed at real size, clear of
+edges, ridges and obstructions, and gated against the LiDAR. The result is a
+feasible layout, not a survey of every centimetre.
 
 ### Obstructions and shade
 
@@ -120,16 +124,10 @@ reduced for shade and a 14% system loss (inverter included).
 total comes from the layouts, so panel count, orientation, shading and
 yield stay linked.
 
-Money: [`bill_tool.js`](../../bill_tool.js), tested by
-`tests/test_bill_tool.mjs`, prices every roof. It builds a household's
-electricity use hour by hour for an average day in each season, runs the
-roof's own generation against it (with a battery if chosen), and prices
-imports and exports at peak and off-peak rates. Savings run over 30 years
-with power prices rising, export rates falling and panels ageing, in
-today's dollars (CPI), less an inverter replacement. Install cost tiers are
-in [`economics.js`](../../economics.js). See
-[economics.md](../economics.md). These are scenarios, not a customer's real
-bill.
+Money is calculated in the browser, not baked into the solar estimate.
+[Economics](../economics.md) describes the load/bill model, financial
+assumptions, battery scenarios and exclusions. These are scenarios, not a
+customer's real bill.
 
 ## Validation and what is left
 

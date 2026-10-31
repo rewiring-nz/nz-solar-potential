@@ -5,6 +5,14 @@ are also GitHub Issues on the project board
 (https://github.com/orgs/rewiring-nz/projects/5); pick up and assign work
 there.
 
+Completed documentation: [tooling and execution architecture](docs/developers/tooling-execution.md)
+maps launchers, machine boundaries, stage differences and run lifetimes;
+the linked architecture and operating guides distinguish current behaviour
+from the proposed common pipeline interface.
+The [documentation index](docs/index.md) now routes readers by persona;
+setup, access administration, release procedures and execution comparisons
+have primary guides rather than repeated walkthroughs.
+
 Live: data version 67 (31 Oct; roof-line join on). 32,838 buildings, 35
 regions, 1,334,824 panels.
 

@@ -10,9 +10,9 @@ same `[QS-NN]` tag in `run.log`.
 ## Don't delete `data/`
 
 `data/` holds tracked files you cannot fetch again: roof labels, benchmark and
-verdict data, trained models. `git clean -fd` is safe; `rm -rf data` is not.
-To rebuild a region, delete only its ignored folder. See
-[Cleaning up](pipeline-reference.md#cleaning-up).
+verdict data, trained models. Do not delete it or a whole region directory
+as a troubleshooting step. See [Cleaning up](pipeline-reference.md#cleaning-up)
+before removing generated inputs or untracked work.
 
 ## Preflight (step 01)
 

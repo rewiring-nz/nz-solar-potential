@@ -1,7 +1,9 @@
 # Architecture
 
-Reviewing rather than changing code? Start with the
-[reviewer's guide](reviewers-guide.md).
+Data flow and module responsibilities for developers. For command delegation,
+machine boundaries and build-engine differences, use
+[tooling and execution](tooling-execution.md). For validation tools and review
+rules, use the [reviewer's guide](reviewers-guide.md).
 
 ## What it is
 
@@ -10,6 +12,12 @@ LINZ building outlines, LiDAR, elevation models and aerial imagery into
 per-building roof faces, panel layouts and yields. The map (`preview.html`)
 reads the published tiles and does the money maths in the browser.
 
+## Data flow
+
+This is a conceptual producer/consumer view, not a launcher call graph or
+an exact stage schedule. Vision is optional in the local pipeline and a
+separate preparation step for district builds.
+
 ```mermaid
 flowchart TB
   LINZ[(LINZ source datasets)] --> Fetch[[fetch_data / fetch_regions]]
@@ -17,22 +25,37 @@ flowchart TB
   Inputs --> Vision[[predict_faces: SAM / line detector / LiDAR candidates + scorer]]
   Vision --> Selected[(data/selected_faces/id.json)]
   Selected --> Segment
+  Inputs --> OutlineFit[[outline_fit: district pre-plan]]
+  OutlineFit --> Fitted[(outline_fit.json)]
+  Fitted --> Segment
+  Inputs --> Repeat[[repeat_roofs: district pre-plan]]
+  Selected --> Repeat
+  Repeat --> Repeated[(data/repeat_faces/id.json)]
+  Repeated --> Segment
   Labels[(data/roof_labels.json - hand-drawn markup)] --> Segment
-  Inputs --> Segment[[roof segmentation: markup > selected faces > LiDAR partition/skeleton]]
+  Inputs --> Segment[[roof segmentation: markup > repeat/selected faces > LiDAR partition/skeleton]]
   Segment --> Detect[[obstruction detection]]
   Detect --> Fit[[panel fitting and gates]]
   Fit --> Layouts[(per-region panel_layouts.geojson)]
-  Layouts --> Derive[[derive_solar_potential]]
-  Derive --> Horizon[[bake_building_horizons]]
-  Horizon --> Emit[[emit_region: per-region tiles, cells, detail, summary]]
+  Layouts --> Demolished[[demolished: district photo screen and optional API referee]]
+  Demolished --> Derive[[derive_solar_potential]]
+  Layouts --> Derive
+  Derive --> Horizon[[confidence and building horizons]]
+  Horizon --> Heat[[build_heatmap_raster]]
+  Heat --> Emit[[emit_region: per-region tiles, cells, detail, summary]]
+  Derive --> Emit
   Emit --> Combine[[combine_regions]]
   Combine --> Outputs[(served set: PMTiles, cells, detail, heat-map tiles)]
   Outputs --> Map([preview.html])
 ```
 
 Cylinders are data, subroutine boxes are scripts or stages, the rounded node
-is the map. `src/run_district_build.sh` runs the stages; `src/run_stage.py`
-wraps each with preflight checks and completion markers.
+is the map. Per-region intermediates stay separate from the combined served
+set; no root-level merged solar-potential GeoJSON is required by the map.
+Outline-fit/repeated-roof precomputation and demolition screening are
+district-path additions; local and worker orchestration do not run them.
+Those builds can still read existing outline-fit/repeated-roof sidecars.
+The direct layout-to-derive edge represents paths without demolition screening.
 
 ## Module boundaries
 
@@ -45,10 +68,11 @@ wraps each with preflight checks and completion markers.
   `area_paths("pilot")` resolves to `data/regions/pilot/`. A fresh checkout
   needs the pilot inputs prepared there.
 - `src/roof_segmentation.py`, `src/roof_partition.py`, `src/roof_skeleton.py`:
-  roof faces. Precedence is hand-drawn markup, then selected faces, then the
-  LiDAR partition and straight skeleton.
+  roof faces. Hand-drawn markup takes precedence over repeated/selected faces
+  and the LiDAR fallback; review gates are in the
+  [reviewer's guide](reviewers-guide.md#roof-geometry-two-paths).
 - `src/preflight.py` declares stage inputs; `src/run_stage.py` records
-  completion so a build resumes.
+  completion and checks freshness for callers requesting marker-based skips.
 - `src/build_layout_geojson.py`, `src/gate_panels.py`,
   `src/rerank_layouts.py`: fit, gate and rank panels.
 - `src/derive_solar_potential.py`: building totals are summed from the
@@ -62,8 +86,18 @@ wraps each with preflight checks and completion markers.
   loading the district into memory. `src/output_contract.py` fixes the
   names the map reads. `src/merge_regions.py` is retired; nothing ships
   from it.
-- `src/run_district_build.sh`: the release build. Incremental by default
-  from per-building build keys (`src/build_keys.py`).
+- `src/outline_fit.py`, `src/repeat_roofs.py`: fitted footprints and consensus
+  readings for matching roof surfaces. `src/demolished.py` screens changed
+  roofs, with an optional paid API; [authorization and limits](../data-maintainers/dataset-operations.md#demolition-screening).
+- `src/run_district_build.sh`: district orchestration and per-building
+  incremental planning (`src/build_keys.py`).
+- `tools/pipeline.py`: local single-region orchestration and cloud
+  dispatch; `quickstart.sh` is its compatibility wrapper.
+- `tools/remote_build.sh`: shared-VM sync, district build, gate and optional
+  publication; also called directly by the GitHub build workflow.
+- `src/build_region.sh`, `src/worker.sh`, `src/gcs_queue.py`: regional worker
+  build, queue ownership and regional publication. See
+  [scale architecture](../scale-architecture.md).
 - `src/render_building_debug.py`, `src/render_top_movers.py`: debug cards
   and build-over-build diffs.
 - `preview.html`: the map. `src/live_server.py` adds a local-only refit
@@ -85,16 +119,3 @@ wraps each with preflight checks and completion markers.
 - Make randomness deterministic, so a building's output does not depend on
   build order.
 - Judge layouts by renders against the photo as well as by geometry checks.
-
-## Workflow
-
-Set up with the [local setup guide](../data-maintainers/local-setup.md).
-Make a narrow change and check it with `bash src/run_dev_loop.sh pilot`.
-Run the relevant audit before a regional rebuild. District builds use
-`bash src/run_district_build.sh`.
-
-Tests: `bash tests/run_all.sh --fast` for a quick check; the full run adds
-golden-building tests that need local region data. CI
-(`.github/workflows/tests.yml`) runs the unit tests and the JavaScript money
-and workings tests. Add tests when you change a deterministic algorithm or a
-data contract, and update the matching doc in the same change.
