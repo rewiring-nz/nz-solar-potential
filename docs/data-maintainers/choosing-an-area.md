@@ -95,8 +95,12 @@ bash quickstart.sh queenstown-lakes-district/arrowtown/arrowtown
 
 The first stage resolves the id against LINZ and writes
 `data/regions/<id>/building_outlines.geojson` and `locality.json` (the LINZ
-attributes, bounding box and imagery estimate). Later runs reuse them. To
-re-fetch after LINZ updates the outlines:
+attributes, bounding box, imagery estimate and the outline source). The
+outlines are selected from the council's LINZ building-outlines GeoPackage,
+downloaded once per council to `data/sources/linz/layer-101290/<council>/`
+and reused until LINZ publishes a new version
+([Building outlines source](pipeline-reference.md#building-outlines-source)).
+Later runs reuse them. To re-select after LINZ updates the outlines:
 
 ```sh
 .venv/bin/python src/localities.py prepare <region-id> --refresh
@@ -105,7 +109,9 @@ re-fetch after LINZ updates the outlines:
 ## Older regions
 
 Regions defined by a bounding box in `config.REGIONS`, such as `pilot` and
-`town_gorge_north`, still build by name. They are not LINZ areas and are not
-being migrated: rebuilding published districts as localities would need full
-rebuilds on the build VM. Where a locality overlaps an older region, the
-locality owns the buildings LINZ assigns to it.
+`town_gorge_north`, are deprecated for new work. They still build by name,
+with a warning, so published districts need no rebuild. They are not LINZ
+areas and are not being migrated: rebuilding published districts as
+localities would need full rebuilds on the build VM. Use a locality id for
+any new area. Where a locality overlaps an older region, the locality owns
+the buildings LINZ assigns to it.

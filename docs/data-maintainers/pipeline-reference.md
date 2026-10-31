@@ -14,21 +14,57 @@ A region is one of:
   `tools/find_area.py`; see [Choosing an area](choosing-an-area.md). No
   `config.py` edit is needed. Its outlines and bounding box are written by
   `src/localities.py` to `data/regions/<id>/` (`building_outlines.geojson`,
-  `locality.json`) at preflight.
+  `locality.json`) at preflight, selected from the council's LINZ GeoPackage
+  (see [Building outlines source](#building-outlines-source)).
 - A legacy bounding-box region named in `config.REGIONS`, such as `pilot`
-  (the original central Queenstown pilot) or `town_gorge_north`.
+  (the original central Queenstown pilot) or `town_gorge_north`. Deprecated
+  for new work: these still build, and the pipeline prints a warning.
 
 Related settings:
 
 - `config.SURVEYS`: each survey's layers and coverage. A region must sit
   wholly inside one survey.
-- `config.PIPELINE_REGION`: the local/profile default region. Shared-cloud
-  mode instead defaults to `config.CLOUD_SHARED_BUILD["regions"]`.
-  Pass a region id to override it.
+- `config.CLOUD_SHARED_BUILD["local_region"]`: the local/profile default
+  region, a locality id. Shared-cloud mode defaults to
+  `config.CLOUD_SHARED_BUILD["regions"]`. Both sit in the block that build
+  keys leave out, so changing a default rebuilds nothing.
+  `config.PIPELINE_REGION` is the deprecated fallback when `local_region`
+  is absent. Pass a region id to override any default.
 
 Region ids are relative paths: a locality's outputs are under
 `data/regions/<council>/<town>/<suburb>/` and `data/out/<council>/<town>/<suburb>/`.
 Flat files named after a region (build markers, logs) replace `/` with `__`.
+
+## Building outlines source
+
+LINZ [NZ Building Outlines](https://data.linz.govt.nz/layer/101290-nz-building-outlines/)
+are the source of truth for which buildings a region holds. `src/linz_exports.py`
+downloads them once per territorial authority through the LINZ Exports API
+(GeoPackage, EPSG:2193, cropped to the council boundary from LINZ layer 3036)
+and caches them:
+
+```
+data/sources/linz/layer-101290/<council>/building_outlines.gpkg
+data/sources/linz/layer-101290/<council>/manifest.json
+```
+
+The manifest records the LINZ layer version, publish date, export id,
+download time and feature count. The cached file is reused until LINZ
+publishes a new layer version. A locality's outlines are then selected
+locally with the same rule the WFS filter used (`suburb_locality`,
+`town_city`, `territorial_authority`); both sources give identical
+buildings. To fetch or refresh a council by hand:
+
+```sh
+.venv/bin/python src/linz_exports.py fetch "Queenstown-Lakes District"
+.venv/bin/python src/linz_exports.py fetch "Queenstown-Lakes District" --refresh
+```
+
+If the export cannot be used (no export permission on the key, LINZ queue
+failure), the locality falls back to LINZ WFS and `locality.json` records the
+reason under `outline_source`. Set `SOLAR_OUTLINE_SOURCE=wfs` to use WFS
+directly. LINZ also offers GeoParquet exports; the pipeline does not use
+them yet.
 
 ## Needs
 

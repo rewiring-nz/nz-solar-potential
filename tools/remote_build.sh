@@ -6,7 +6,7 @@
 #   tools/remote_build.sh --fetch --regions "newtown" --publish    # fetch LiDAR/photos first
 #   tools/remote_build.sh --publish --reviewed "why"               # publish although the gate failed
 #   tools/remote_build.sh --yield-only --publish                   # the sun changed, not the roofs
-#   tools/remote_build.sh --regions frankton_arm_lake --preview-user alice
+#   tools/remote_build.sh --regions queenstown-lakes-district/queenstown/sunshine-bay --fetch --preview-user alice
 #   tools/remote_build.sh --regions newtown --paid-referee       # approve the paid referee
 #   tools/remote_build.sh --regions newtown --preview-user alice --interactive  # ask at a failed gate
 #
@@ -96,7 +96,7 @@ done
 [ -n "$PREVIEW_USER" ] && ! printf '%s' "$PREVIEW_USER" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$' && {
   echo "--preview-user must be a 1-39 character alphanumeric/hyphen alias"; exit 2;
 }
-case "$REGIONS" in *[!a-z0-9_\ ]*) echo "region names are lower-case letters, digits and _"; exit 2 ;; esac
+case "$REGIONS" in *[!a-z0-9_/\ -]*) echo "region ids are LINZ locality ids <council>/<town>/<suburb> (lower-case letters, digits, - and /) or legacy names (lower-case letters, digits and _)"; exit 2 ;; esac
 
 # Decide the paid referee here, before any cloud call: the build on the VM runs
 # without a terminal and so could only decline.

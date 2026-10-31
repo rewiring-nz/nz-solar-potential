@@ -187,7 +187,7 @@ def confirm_paid(
               f"(set {REFEREE_SWITCH}=1 to approve it).", file=out)
         return False
     try:
-        answer = ask("Use the paid demolition referee? Type yes to approve [no]: ")
+        answer = ask("Use the paid demolition referee? (yes/no) [no]: ")
     except EOFError:
         answer = ""
     approved = answer.strip().lower() == "yes"

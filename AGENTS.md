@@ -215,8 +215,14 @@ figure for the same thing. Code enforces this:
 - `src/run_stage.py` wraps each stage: preflight checks, completion markers
   under `data/build_state/`, and skips a stage only when its inputs are older
   than its marker.
-- `config.PIPELINE_REGION` is the default region for `tools/pipeline.py`; the
-  CLI takes any region id.
+- `config.CLOUD_SHARED_BUILD["local_region"]` (a locality id) is the default
+  region for `tools/pipeline.py`, and `["regions"]` the shared-cloud default.
+  Both sit inside the `CLOUD_SHARED_BUILD` block, which
+  `build_keys._hashed_bytes` strips, so moving a default changes no build
+  key. Any other `config.py` edit, comments included, changes every stage
+  hash and marks every published region stale. `config.PIPELINE_REGION` is
+  the deprecated fallback; `config.REGIONS` names still build, with a
+  warning. The CLI takes any region id.
 - A region id is its path under `data/regions/` and `data/out/`
   (`src/region_ids.py`): a LINZ NZ Suburbs and Localities area
   `<council>/<town>/<suburb>` (layer `config.LINZ_SUBURBS_LOCALITIES_LAYER`,
@@ -235,6 +241,17 @@ figure for the same thing. Code enforces this:
   log. Guide: [docs/data-maintainers/troubleshooting.md](docs/data-maintainers/troubleshooting.md).
 
 ### Data, CRS and storage
+- LINZ building outlines (layer 101290) are the source of truth for which
+  buildings a locality holds. `src/linz_exports.py` downloads them once per
+  territorial authority through the LINZ Exports API (GeoPackage, EPSG:2193,
+  cropped by LINZ layer 3036) into
+  `data/sources/linz/layer-101290/<council>/` with a `manifest.json`
+  (layer version, export id); the cache is reused until the layer version
+  changes. Exports are spatial only; the attribute selection runs locally.
+  Selections from the GeoPackage and from WFS matched exactly (IDs,
+  properties, geometry) on two Queenstown localities. WFS is the fallback
+  (`SOLAR_OUTLINE_SOURCE=wfs`, or any export failure, recorded in
+  `locality.json` `outline_source`).
 - LINZ WFS fetches use WFS 1.0.0 with `typeName` and `maxFeatures`; 2.0.0
   returned empty results.
 - Missing aerial imagery does not stop a build: the fetcher warns and the

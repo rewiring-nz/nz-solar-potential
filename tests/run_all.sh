@@ -89,6 +89,7 @@ run "output contract"       $PY tests/test_output_contract.py
 run "quickstart reporting"   $PY tests/test_quickstart_reporting.py
 run "local task queue"       $PY tests/test_local_queue.py
 run "region ids, LINZ localities" $PY tests/test_region_ids.py
+run "LINZ council GeoPackages, locality defaults" $PY tests/test_linz_exports.py
 run "national area catalogue" $PY tests/test_list_areas.py
 run "LERC raster dependencies" $PY tests/test_s3_rasters.py
 run "quickstart map preview" $PY tests/test_quickstart_map.py

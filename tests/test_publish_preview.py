@@ -44,6 +44,27 @@ class PublishPreviewTests(unittest.TestCase):
                 "window.SITE = {};", "https://example/", "v1", "frankton_arm_lake",
             )
 
+    def test_locality_bounds_come_from_its_built_extent(self) -> None:
+        source = (
+            'window.SITE = {\n  dataVersion: "48",\n'
+            '  dataBase: "https://example.com/production/",\n'
+            '  defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },\n};\n'
+        )
+        rid = "queenstown-lakes-district/queenstown/sunshine-bay"
+        with patch("src.region_build.area_bbox_wgs84",
+                   return_value=[168.60, -45.06, 168.62, -45.04]) as bbox:
+            result = publish_preview._replace_site_config(source, "https://example/", "v1", rid)
+        bbox.assert_called_once_with(rid)
+        self.assertIn("center: [168.610000, -45.050000]", result)
+
+    def test_rejects_unknown_or_malformed_regions(self) -> None:
+        for name in ("no_such_region_anywhere", "../etc"):
+            with self.assertRaisesRegex(ValueError, "built or configured"):
+                publish_preview._replace_site_config(
+                    'dataVersion: "1",\ndataBase: "x",\ndefaultView: { center: [0, 0], zoom: 1 },',
+                    "https://example/", "v1", name,
+                )
+
     def test_publishes_immutable_data_then_stable_preview_pointer(self) -> None:
         run_id = "20261017T120000Z-deadbeef"
         with tempfile.TemporaryDirectory() as directory:

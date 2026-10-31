@@ -2,7 +2,7 @@
 # Compatibility wrapper for tools/pipeline.py.
 # Pass a region id -- a LINZ locality <council>/<town>/<suburb> (find one with
 # tools/find_area.py) or a config.REGIONS name -- or omit it to use
-# config.PIPELINE_REGION.
+# config.CLOUD_SHARED_BUILD["local_region"] (a LINZ locality id).
 set -Eeuo pipefail
 cd "$(dirname "$0")"
 # Windows (Git Bash / MSYS) puts the interpreter somewhere else.

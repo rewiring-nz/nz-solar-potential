@@ -309,7 +309,7 @@ class CloudProfileTests(unittest.TestCase):
         run_args = run_build.call_args.args
         self.assertEqual(run_args[0]["project"], defaults["project"])
         self.assertEqual(run_args[0]["preview_user"], "alice")
-        self.assertEqual(run_args[1], "frankton_arm_lake")
+        self.assertEqual(run_args[1], "queenstown-lakes-district/queenstown/sunshine-bay")
         self.assertIsInstance(run_args[2], cloud_pipeline.CloudQuickstartLog)
         self.assertIn("[QS-01] PASS Check local checkout and shared cloud defaults", log)
         self.assertIn("preview alias alice", log)
@@ -414,7 +414,10 @@ class CloudProfileTests(unittest.TestCase):
         self.assertEqual(values["vm"], "claude-doing-things")
         self.assertEqual(values["zone"], "australia-southeast1-b")
         self.assertEqual(values["ssh_user"], "j")
-        self.assertEqual(values["regions"], "frankton_arm_lake")
+        self.assertEqual(values["regions"], "queenstown-lakes-district/queenstown/sunshine-bay")
+        import config as project_config
+        self.assertEqual(project_config.CLOUD_SHARED_BUILD["local_region"],
+                         "queenstown-lakes-district/queenstown/sunshine-bay")
         self.assertEqual(values["ref"], "main")
         estimate, basis = cloud_pipeline._shared_preview_cost(values)
         self.assertEqual(estimate, Decimal("5.00"))

@@ -103,6 +103,19 @@ The key works for web services but cannot create exports. LINZ cannot add
 permissions to a key: make a new one with export permission and replace it.
 See [src/fetch_data.py](../../src/fetch_data.py).
 
+A locality's building outlines come from a per-council Exports API
+GeoPackage. Without export permission, or when the LINZ export fails or
+times out (30 minutes), preflight prints `council GeoPackage unavailable
+(...); using LINZ WFS` and carries on with WFS. `locality.json` records the
+reason under `outline_source.fallback_reason`. To retry the export:
+`.venv/bin/python src/linz_exports.py fetch "<Council name>" --refresh`.
+See [Building outlines source](pipeline-reference.md#building-outlines-source).
+
+### `deprecated` warning for a region name
+
+The region is a legacy `config.REGIONS` bounding-box name. It still builds.
+For new work use a LINZ locality id; see [Choosing an area](choosing-an-area.md).
+
 ### HTTP 400 or `outside-extent`
 
 Check the layer ID and that it covers the bbox. Some imagery chunks outside

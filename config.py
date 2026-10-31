@@ -121,7 +121,14 @@ CLOUD_SHARED_BUILD = {
     "vm": "claude-doing-things",
     "zone": "australia-southeast1-b",
     "ssh_user": "j",
-    "regions": "frankton_arm_lake",
+    # Quickstart areas are LINZ locality ids, <council>/<town>/<suburb>
+    # (docs/data-maintainers/choosing-an-area.md). local_region is the
+    # default for local runs of tools/pipeline.py; it is kept in this block
+    # because the block is left out of build keys (src/build_keys.py), so
+    # changing a default rebuilds nothing. PIPELINE_REGION above is the
+    # deprecated legacy default, used only when local_region is absent.
+    "local_region": "queenstown-lakes-district/queenstown/sunshine-bay",
+    "regions": "queenstown-lakes-district/queenstown/sunshine-bay",
     "ref": "main",
     "preview_bucket": "gs://rewiring-solar-previews",
     "preview_retention_days": 14,

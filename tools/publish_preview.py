@@ -46,9 +46,14 @@ def _replace_site_config(
     source: str, data_base: str, version: str, regions: str,
 ) -> str:
     names = regions.split()
-    if not names or any(name not in config.REGIONS for name in names):
-        raise ValueError("preview regions must name configured regions")
-    bounds = [config.REGIONS[name] for name in names]
+    if not names:
+        raise ValueError("preview regions must name at least one region")
+    from src.region_build import area_bbox_wgs84
+    from src.region_ids import validate
+    try:
+        bounds = [area_bbox_wgs84(validate(name)) for name in names]
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"preview regions must be built or configured regions: {exc}") from exc
     min_lon = min(box[0] for box in bounds)
     min_lat = min(box[1] for box in bounds)
     max_lon = max(box[2] for box in bounds)

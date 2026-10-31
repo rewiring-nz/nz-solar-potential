@@ -19,7 +19,12 @@ Preparing a region writes into data/regions/<id>/:
       town_city and territorial_authority attributes match the locality.
       Selecting by attribute, not by polygon, means localities never share
       a building, and matches LINZ's own assignment of each building.
-  locality.json  the LINZ attributes and the region's WGS84 bbox: the
+      They are read from one GeoPackage per council the locality lists,
+      exported once and cached under data/sources/linz/ (src/linz_exports.py);
+      WFS is the fallback when the export cannot be used, and the only
+      source with SOLAR_OUTLINE_SOURCE=wfs. Both give the same selection.
+  locality.json  the LINZ attributes, the outline source and its LINZ layer
+      version, and the region's WGS84 bbox: the
       buildings' extent plus OUTLINE_PAD_M. The locality polygon is not
       used for the bbox -- rural localities reach far into empty land, and
       imagery is fetched for the whole bbox (~0.35 GB/km2 at 0.1 m).
@@ -196,13 +201,63 @@ def outline_filter(props: dict) -> str:
 
 
 def fetch_outlines(api_key: str, props: dict) -> dict:
-    """Building outlines (EPSG:2193, the layer's default) in the locality."""
+    """Building outlines (EPSG:2193, the layer's default) in the locality, by WFS."""
     feats = _wfs(api_key, config.LINZ_BUILDING_OUTLINES_LAYER, outline_filter(props),
                  timeout=600)
+    return _feature_collection(feats)
+
+
+def _feature_collection(feats: list[dict]) -> dict:
     # The crs member is what LINZ's own responses carry; without it GeoJSON
     # readers assume WGS84 and every downstream stage misplaces the outlines.
     return {"type": "FeatureCollection", "features": feats,
             "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::2193"}}}
+
+
+def outlines_from_councils(api_key: str, props: dict, refresh: bool = False,
+                           log=None) -> tuple[dict, dict]:
+    """Outlines selected from the cached per-council GeoPackages
+    (src/linz_exports.py), reading every council the locality lists.
+    Returns the collection and the provenance of each council file."""
+    from src import linz_exports
+    log = log or (lambda msg: print(msg, file=sys.stderr))
+    tas = territorial_authorities(props)
+    if not tas:
+        raise LookupError(f"LINZ locality {props.get('name')} lists no territorial authority")
+    paths, sources = [], []
+    for ta in tas:
+        paths.append(linz_exports.council_geopackage(
+            api_key, ta, refresh=refresh, layer=config.LINZ_BUILDING_OUTLINES_LAYER, log=log))
+        manifest = linz_exports.read_manifest(ta, config.LINZ_BUILDING_OUTLINES_LAYER) or {}
+        sources.append({k: manifest.get(k) for k in (
+            "territorial_authority", "layer_version", "layer_published_at",
+            "export_id", "downloaded_utc")})
+    where = linz_exports.outline_where(props["name"], props.get("major_name"), tas)
+    feats = linz_exports.read_outlines(paths, where, layer=config.LINZ_BUILDING_OUTLINES_LAYER)
+    return _feature_collection(feats), {"method": "council-geopackage", "councils": sources}
+
+
+def outline_source() -> str:
+    """"geopackage" (default) or "wfs", from SOLAR_OUTLINE_SOURCE."""
+    import os
+    value = os.environ.get("SOLAR_OUTLINE_SOURCE", "geopackage").strip().lower()
+    if value not in ("geopackage", "wfs"):
+        raise ValueError("SOLAR_OUTLINE_SOURCE must be 'geopackage' or 'wfs'")
+    return value
+
+
+def load_outlines(api_key: str, props: dict, refresh: bool = False) -> tuple[dict, dict]:
+    """A locality's outlines from the council GeoPackage, falling back to WFS
+    (with the reason logged) when the export cannot be used."""
+    if outline_source() == "geopackage":
+        try:
+            return outlines_from_councils(api_key, props, refresh=refresh)
+        except Exception as exc:  # any export failure: WFS gives the same selection
+            reason = f"{type(exc).__name__}: {exc}"
+            print(f"  council GeoPackage unavailable ({reason}); using LINZ WFS",
+                  file=sys.stderr)
+            return fetch_outlines(api_key, props), {"method": "wfs", "fallback_reason": reason}
+    return fetch_outlines(api_key, props), {"method": "wfs"}
 
 
 def outlines_bbox_wgs84(outlines: dict, pad_m: float = OUTLINE_PAD_M) -> list[float]:
@@ -259,7 +314,7 @@ def prepare(region: str, api_key: str, refresh: bool = False) -> dict:
     if existing and not refresh and (out_dir / "building_outlines.geojson").exists():
         return existing
     props = resolve(api_key, region)
-    outlines = fetch_outlines(api_key, props)
+    outlines, outline_provenance = load_outlines(api_key, props)
     if not outlines["features"]:
         raise LookupError(f"LINZ locality {props['name']} (id {props['id']}) has no "
                           "building outlines; choose another area")
@@ -270,6 +325,8 @@ def prepare(region: str, api_key: str, refresh: bool = False) -> dict:
                    "name": "LINZ NZ Suburbs and Localities"},
         "linz": {k: props.get(k) for k in LOCALITY_FIELDS},
         "outline_filter": outline_filter(props),
+        "outline_source": {"layer": config.LINZ_BUILDING_OUTLINES_LAYER,
+                           **outline_provenance},
         "buildings": len(outlines["features"]),
         "bbox": bbox,
         "bbox_note": f"WGS84 extent of the buildings plus {OUTLINE_PAD_M:g} m",
@@ -291,7 +348,10 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("prepare", help="fetch a locality's outlines and write locality.json")
     p.add_argument("region")
-    p.add_argument("--refresh", action="store_true", help="refetch even if already prepared")
+    p.add_argument("--refresh", action="store_true",
+                   help="select the outlines again even if already prepared (the council "
+                        "GeoPackage is re-exported only when LINZ publishes a new version; "
+                        "force that with src/linz_exports.py fetch --refresh)")
     a = ap.parse_args(argv)
     from dotenv import load_dotenv
     load_dotenv()

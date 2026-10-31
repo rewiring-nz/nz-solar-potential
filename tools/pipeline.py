@@ -211,6 +211,31 @@ def _safe_area(area: str) -> str:
     return region_ids.validate(area)
 
 
+def _default_region(project_config: Any) -> str:
+    """The area a run uses when none is named: CLOUD_SHARED_BUILD.local_region
+    (a LINZ locality id; kept in the block build keys leave out), else the
+    deprecated PIPELINE_REGION."""
+    shared = getattr(project_config, "CLOUD_SHARED_BUILD", {}) or {}
+    region = shared.get("local_region") if isinstance(shared, dict) else None
+    return region or project_config.PIPELINE_REGION
+
+
+def _legacy_region_warning(regions: str, legacy_names: Any) -> str | None:
+    """A deprecation notice when any of `regions` (space-separated) is a legacy
+    config.REGIONS bounding-box name rather than a LINZ locality id."""
+    from src import region_ids
+    legacy = [r for r in regions.split()
+              if not region_ids.is_locality_id(r) and r in legacy_names]
+    if not legacy:
+        return None
+    return (
+        "warning: legacy config.REGIONS name(s) " + ", ".join(legacy) + " are "
+        "deprecated for new work. They still build, but new areas should use a "
+        "LINZ locality id <council>/<town>/<suburb>: find one with "
+        "'python tools/find_area.py <name>' "
+        "(docs/data-maintainers/choosing-an-area.md).")
+
+
 def _python_executable(path: str) -> Path:
     return Path(path).expanduser().absolute()
 
@@ -1202,6 +1227,11 @@ def _run_shared_cloud_build(
     ]
     if config.get("interactive"):
         command.append("--interactive")
+    from src import region_ids
+    if any(region_ids.is_locality_id(r) for r in region.split()):
+        # A locality's inputs are fetched on the VM (src/fetch_regions.py,
+        # which skips anything already there) before its first build.
+        command.append("--fetch")
     env = os.environ.copy()
     env.update({
         "CLOUD_PROJECT": config["project"],
@@ -1731,16 +1761,20 @@ def main() -> int:
     from cloud_profile import load_profile
 
     import config
-    parser = _argument_parser(config.PIPELINE_REGION)
+    parser = _argument_parser(_default_region(config))
     args = parser.parse_args()
     selected_profile_name = (
         args.profile or os.environ.get("SOLAR_CLOUD_PROFILE")
         if args.mode == "cloud" else args.profile
     )
     try:
-        area = _safe_area(args.region or config.PIPELINE_REGION)
+        area = _safe_area(args.region or _default_region(config))
     except ValueError as exc:
         parser.error(str(exc))
+    if args.mode == "local" or args.region:
+        legacy_note = _legacy_region_warning(area, config.REGIONS)
+        if legacy_note:
+            print(legacy_note, file=sys.stderr)
     if args.mode == "cloud":
         if args.workers != 1 or args.queue_dir:
             parser.error("--workers and --queue-dir configure local execution only")

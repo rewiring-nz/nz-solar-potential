@@ -27,9 +27,12 @@ region.** Use a small region locally; district builds belong on the build VM.
 bash quickstart.sh
 ```
 
-This builds the region set by `PIPELINE_REGION` in `config.py`, on your
-computer. To build another area, pass its LINZ suburb or locality id
-`<council>/<town>/<suburb>`:
+This builds the default area,
+`queenstown-lakes-district/queenstown/sunshine-bay` (about 250 buildings,
+`CLOUD_SHARED_BUILD["local_region"]` in `config.py`), on your computer. Its
+outputs go under `data/regions/queenstown-lakes-district/queenstown/sunshine-bay/`
+and `data/out/queenstown-lakes-district/queenstown/sunshine-bay/`. To build
+another area, pass its LINZ suburb or locality id `<council>/<town>/<suburb>`:
 
 ```sh
 .venv/bin/python tools/find_area.py arrowtown   # prints the region id
@@ -37,9 +40,11 @@ bash quickstart.sh queenstown-lakes-district/arrowtown/arrowtown
 ```
 
 [Choosing an area](choosing-an-area.md) explains where the ids come from
-and how to check an area's size and LiDAR coverage. Older bounding-box
-regions in `REGIONS` in `config.py` (such as `town_gorge_north`) still build
-by name.
+and how to check an area's size and LiDAR coverage. The first build in a
+council downloads that council's LINZ building outlines once as a GeoPackage
+(Queenstown-Lakes District: about 16 MB, a few minutes in the LINZ export
+queue). Older bounding-box regions in `REGIONS` in `config.py` (such as
+`town_gorge_north`) still build by name, with a deprecation warning.
 The local queue starts one worker process without cloud access. For
 multi-worker debugging and persistent task status, see
 [Local task queue](pipeline-reference.md#local-task-queue).

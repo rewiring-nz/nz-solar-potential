@@ -24,9 +24,11 @@ Before running:
 
 - Commit and push to `CLOUD_SHARED_BUILD["ref"]` in [config.py](../../config.py).
   The launcher does not automatically use your local branch or commit.
-- Choose a prepared region: inputs and selected faces must already be on the
-  VM. For a new area, follow [dataset preparation](dataset-operations.md#2-fetch)
-  first; this quickstart does not fetch it.
+- Choose a region. A LINZ locality id (`<council>/<town>/<suburb>`, see
+  [Choosing an area](choosing-an-area.md)) is fetched on the VM before its
+  build (`tools/remote_build.sh --fetch`; existing inputs are reused). A
+  legacy `config.REGIONS` name must already be prepared on the VM; see
+  [dataset preparation](dataset-operations.md#2-fetch).
 - Confirm with the administrator that
   [preview hosting](team-access.md#preview-hosting-administration)
   is configured. Preflight does not check bucket readiness.
@@ -34,7 +36,9 @@ Before running:
 
 The launcher checks cloud access, asks for cost approval, starts the VM if
 needed, builds, gates and publishes a public developer preview. The default
-region is `CLOUD_SHARED_BUILD["regions"]`; a positional name overrides it.
+region is `CLOUD_SHARED_BUILD["regions"]`
+(`queenstown-lakes-district/queenstown/sunshine-bay`); a positional region
+id overrides it.
 Keep the launcher connected until publication: the detached build alone
 does not make the whole workflow survive a disconnect.
 
@@ -159,7 +163,8 @@ statuses. It does not publish to the public preview bucket or production.
 7. Run a region from your computer:
 
    ```sh
-   bash quickstart.sh --mode cloud --profile external-poc frankton_arm_lake
+   bash quickstart.sh --mode cloud --profile external-poc \
+     queenstown-lakes-district/queenstown/sunshine-bay
    ```
 
    It runs the checkout already on the VM; local changes are not uploaded.
