@@ -43,7 +43,30 @@ DEM_WIDE_LAYER = config.LINZ_WIDE_DEM_LAYER
 WIDE_DEM_BUFFER_M = 30_000
 
 
-def wide_dem_bbox_wgs84():
+def _wide_dem_boxes(areas=None, data_dir=DATA_DIR):
+    if areas is None:
+        return [config.PILOT_BBOX, *config.REGIONS.values()]
+    import json
+    from src import region_ids
+    from src.region_build import area_bbox_wgs84
+
+    boxes = []
+    for area in areas:
+        area = region_ids.validate(area)
+        path = Path(data_dir) / "regions" / area / "locality.json"
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            footprints = record.get("acquisition_footprints")
+        except (OSError, ValueError, AttributeError):
+            footprints = None
+        if footprints:
+            boxes.extend(footprints)
+        else:
+            boxes.append(area_bbox_wgs84(area))
+    return boxes or [config.PILOT_BBOX, *config.REGIONS.values()]
+
+
+def wide_dem_bbox_wgs84(areas=None, data_dir=DATA_DIR):
     """The WGS84 extent the wide DEM must cover: every region, buffered.
 
     Buffered in METRES, in NZTM, because a degree of longitude is 0.7 km
@@ -58,7 +81,7 @@ def wide_dem_bbox_wgs84():
 
     fwd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
     inv = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True)
-    boxes = [config.PILOT_BBOX, *config.REGIONS.values()]
+    boxes = _wide_dem_boxes(areas, data_dir)
     pts = [fwd.transform(lon, lat)
            for b in boxes
            for lon, lat in ((b[0], b[1]), (b[2], b[3]))]
@@ -66,7 +89,7 @@ def wide_dem_bbox_wgs84():
     w, s = inv.transform(min(p[0] for p in pts) - b, min(p[1] for p in pts) - b)
     e, n = inv.transform(max(p[0] for p in pts) + b, max(p[1] for p in pts) + b)
 
-    fixed = getattr(config, "DEM_WIDE_BBOX", None)
+    fixed = getattr(config, "DEM_WIDE_BBOX", None) if areas is None else None
     if fixed:
         w, s = min(w, fixed[0]), min(s, fixed[1])
         e, n = max(e, fixed[2]), max(n, fixed[3])
@@ -98,7 +121,7 @@ DEM_8M_S3 = ("https://nz-elevation.s3.ap-southeast-2.amazonaws.com/"
              "new-zealand/new-zealand-contour/dem_8m/2193/")
 
 
-def wide_dem_area_wgs84():
+def wide_dem_area_wgs84(areas=None, data_dir=DATA_DIR):
     """The area the wide DEM must cover as a SHAPE: each region buffered,
     unioned. Once the district spans Otago and Auckland, its bounding box is
     most of the country; the shape is two small patches."""
@@ -107,11 +130,11 @@ def wide_dem_area_wgs84():
     from shapely.ops import transform, unary_union
     fwd = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True).transform
     inv = pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326", always_xy=True).transform
-    boxes = [config.PILOT_BBOX, *config.REGIONS.values()]
+    boxes = _wide_dem_boxes(areas, data_dir)
     return transform(inv, unary_union([transform(fwd, box(*b)).buffer(WIDE_DEM_BUFFER_M) for b in boxes]))
 
 
-def ensure_dem_wide_s3(out_dir=DATA_DIR):
+def ensure_dem_wide_s3(out_dir=DATA_DIR, areas=None):
     """The wide DEM as a VRT over LINZ's open 8 m DEM tiles (the same NZ 8 m
     DEM as layer 51768), only the tiles near a region. Written as
     dem_wide_mosaic.vrt with dem_wide_mosaic.tif linked to it, so every
@@ -119,7 +142,8 @@ def ensure_dem_wide_s3(out_dir=DATA_DIR):
     from src import s3_rasters
     out_dir = Path(out_dir)
     vrt = out_dir / "dem_wide_mosaic.vrt"
-    s3_rasters.vrt_of_tiles(DEM_8M_S3, wide_dem_area_wgs84(), vrt, out_dir / "dem8m_tiles")
+    s3_rasters.vrt_of_tiles(DEM_8M_S3, wide_dem_area_wgs84(areas, out_dir),
+                            vrt, out_dir / "dem8m_tiles")
     tif = out_dir / "dem_wide_mosaic.tif"
     if tif.exists() and not tif.is_symlink():
         tif.rename(out_dir / "dem_wide_mosaic.layer51768.tif")   # kept: what earlier builds read
@@ -129,26 +153,31 @@ def ensure_dem_wide_s3(out_dir=DATA_DIR):
     return tif
 
 
-def ensure_dem_wide(api_key, out_dir=DATA_DIR):
+def ensure_dem_wide(api_key, out_dir=DATA_DIR, areas=None):
     """Fetch the wide DEM unless the one on disk already covers the district."""
     out_dir = Path(out_dir)
     mosaic_path = out_dir / "dem_wide_mosaic.tif"
-    bbox = wide_dem_bbox_wgs84()
-    if mosaic_path.exists() and mosaic_path.stat().st_size > 0:
-        covers = mosaic_covers(mosaic_path, bbox)
-        if covers is not False:
-            # None means rasterio is not installed here, which is the case in
-            # the pure-function tests; presence is the only check available.
+    bbox = wide_dem_bbox_wgs84(areas, out_dir)
+    exists = mosaic_path.exists() and mosaic_path.stat().st_size > 0
+    covers = mosaic_covers(mosaic_path, bbox) if exists else False
+    outcome = "reused_from_cache" if covers is not False else "downloaded"
+    if outcome == "downloaded" and any((out_dir / "dem8m_tiles").glob("*.tif")):
+        outcome = "partially_resumed"
+    from src.dataset_timing import measure
+    with measure("shared wide DEM", f"LINZ layer {DEM_WIDE_LAYER} / open S3", "shared", outcome):
+        if exists and covers is not False:
+            # None means rasterio is not installed here, so presence is the only available check.
             print(f"  {mosaic_path} exists, skipping")
             return mosaic_path
-        print(f"  {mosaic_path} does not cover {bbox} -- refetching. Horizons "
-              f"baked against the old one are now stale.")
+        if exists:
+            print(f"  {mosaic_path} does not cover {bbox} -- refetching. Horizons "
+                  f"baked against the old one are now stale.")
 
-    if os.environ.get("SOLAR_DEM_WIDE_SOURCE", "s3") == "s3":
-        print(f"Wide 8 m DEM from LINZ's open tiles, around every region...")
-        return ensure_dem_wide_s3(out_dir)
-    print(f"Fetching 8m DEM layer {DEM_WIDE_LAYER} for bbox {bbox}...")
-    return fetch_raster(bbox, api_key, DEM_WIDE_LAYER, "dem_wide", out_dir=out_dir)
+        if os.environ.get("SOLAR_DEM_WIDE_SOURCE", "s3") == "s3":
+            print("Wide 8 m DEM from LINZ's open tiles, around every region...")
+            return ensure_dem_wide_s3(out_dir, areas)
+        print(f"Fetching 8m DEM layer {DEM_WIDE_LAYER} for bbox {bbox}...")
+        return fetch_raster(bbox, api_key, DEM_WIDE_LAYER, "dem_wide", out_dir=out_dir)
 
 
 def main():

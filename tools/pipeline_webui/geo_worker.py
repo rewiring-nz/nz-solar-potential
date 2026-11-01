@@ -39,6 +39,18 @@ def _size(region: str) -> dict:
     return {"buildings": n, "bbox": bbox, "bbox_km2": round(L.bbox_km2(bbox), 3)}
 
 
+def _selection(request_path: str, data: str) -> dict:
+    from src.meshblock_selection import materialise
+    result = materialise(Path(request_path), Path(data), os.environ.get("LINZ_API_KEY", ""))
+    from src.localities import bbox_km2
+    footprints = result.get("acquisition_footprints") or [result["bbox"]]
+    return {"region": result["selection_id"], "buildings": result["buildings"],
+            "bbox": result["bbox"], "bbox_km2": round(bbox_km2(result["bbox"]), 3),
+            "acquisition_footprints": footprints,
+            "acquisition_km2": round(sum(bbox_km2(bbox) for bbox in footprints), 3),
+            "meshblock_count": len(result["meshblock_ids"])}
+
+
 def run(args: list[str], env: dict | None = None, python: str = sys.executable) -> dict:
     """Run one calculation in a child process; raise LookupError with its message on failure."""
     proc = subprocess.run(
@@ -61,8 +73,11 @@ def main(argv: list[str]) -> int:
             out = _km2(json.loads(argv[1]))
         elif len(argv) == 2 and argv[0] == "size":
             out = _size(argv[1])
+        elif len(argv) == 3 and argv[0] == "selection":
+            out = _selection(argv[1], argv[2])
         else:
-            out = {"error": "usage: geo_worker km2 <bbox-json> | size <region>"}
+            out = {"error": "usage: geo_worker km2 <bbox-json> | size <region> | "
+                            "selection <request-json> <data-dir>"}
     except LookupError as exc:
         out = {"error": str(exc)}
     except Exception as exc:  # noqa: BLE001 - other failures can carry a keyed URL: type only

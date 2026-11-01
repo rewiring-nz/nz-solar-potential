@@ -56,6 +56,19 @@ def area_bbox_wgs84(name):
     return _bbox(name)
 
 
+def area_footprints_wgs84(name):
+    """Disjoint buffered building footprints for a selection, else its bbox."""
+    import json
+    from src.region_build import area_paths
+    bbox = area_bbox_wgs84(name)
+    locality = area_paths(name)["dir"] / "locality.json"
+    try:
+        footprints = json.loads(locality.read_text()).get("acquisition_footprints")
+    except (OSError, ValueError, AttributeError):
+        footprints = None
+    return footprints or [bbox]
+
+
 def tiles_for_bbox_wgs84(bbox, api_key):
     minx, miny = TO_NZTM.transform(bbox[0], bbox[1])
     maxx, maxy = TO_NZTM.transform(bbox[2], bbox[3])
@@ -83,13 +96,15 @@ def download_tile(filename, store=None, retries=4):
     part = dest.with_suffix(".part")
     for attempt in range(retries):
         try:
-            resp = requests.get(f"{store or BULK_URL}/{filename}", stream=True, timeout=120)
-            if resp.status_code == 404:
-                return "missing-upstream"
-            resp.raise_for_status()
-            with open(part, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
-                    f.write(chunk)
+            from src.dataset_timing import transfer
+            with transfer():
+                resp = requests.get(f"{store or BULK_URL}/{filename}", stream=True, timeout=120)
+                if resp.status_code == 404:
+                    return "missing-upstream"
+                resp.raise_for_status()
+                with open(part, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
+                        f.write(chunk)
             part.rename(dest)
             return f"{dest.stat().st_size / 1e6:.0f}MB"
         except (requests.exceptions.RequestException, OSError) as e:
@@ -133,7 +148,8 @@ def main(region_names=None):
                   f"-- this region will build from its 1 m DSM")
             continue
         year = sv.get("pointcloud_tile_year") or TILE_YEAR
-        tiles = tiles_for_bbox_wgs84(bbox, api_key)
+        tiles = sorted({tile for footprint in area_footprints_wgs84(name)
+                        for tile in tiles_for_bbox_wgs84(footprint, api_key)})
         print(f"{name}: {len(tiles)} tiles from {store.rsplit('/', 1)[-1]} ({year})")
         names = [tilename_to_filename(t, year) for t in tiles]
         for fn in names:

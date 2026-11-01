@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.region_ids import is_locality_id, list_regions, validate
+from src.region_ids import is_locality_id, is_meshblock_selection_id, list_regions, validate
 from tools.pipeline_webui.common import DATA, read_json, web_dir
 
 SUMMARY_FIELDS = ("built_at", "git", "n", "n_est", "panel_count", "kwp", "kwh", "elevation", "centroid")
@@ -79,8 +79,9 @@ def _legacy_bbox(region: str):
 def region_properties(region: str, data: Path = DATA, runs: dict | None = None) -> tuple[dict, dict | None]:
     """(properties, geometry) for one region id."""
     data = Path(data)
-    props: dict[str, Any] = {"region": region,
-                             "kind": "locality" if is_locality_id(region) else "legacy"}
+    kind = ("meshblock-selection" if is_meshblock_selection_id(region)
+            else "locality" if is_locality_id(region) else "legacy")
+    props: dict[str, Any] = {"region": region, "kind": kind}
     locality = read_json(data / "regions" / region / "locality.json") or {}
     linz = locality.get("linz") or {}
     if locality:
@@ -89,6 +90,15 @@ def region_properties(region: str, data: Path = DATA, runs: dict | None = None) 
             "council": linz.get("territorial_authority"), "linz_id": linz.get("id"),
             "buildings": locality.get("buildings"), "bbox_km2": locality.get("bbox_km2"),
             "prepared_utc": locality.get("prepared_utc"),
+        })
+    selection = read_json(data / "regions" / region / "selection.json") or {}
+    if kind == "meshblock-selection":
+        props.update({
+            "name": f"{linz.get('name') or locality.get('parent_region')} (meshblock selection)",
+            "parent_region": selection.get("parent_region"),
+            "meshblock_count": len(selection.get("meshblock_ids") or []),
+            "meshblock_ids": selection.get("meshblock_ids") or [],
+            "selection_id": selection.get("selection_id"),
         })
     summary = read_json(data / "out" / region / "summary.json") or {}
     props.update({k: summary[k] for k in SUMMARY_FIELDS if k in summary})
@@ -105,9 +115,11 @@ def region_properties(region: str, data: Path = DATA, runs: dict | None = None) 
         props["state"] = "downloaded"
 
     geometry = None
+    if kind == "meshblock-selection":
+        geometry = selection.get("geometry")
     if linz.get("id") is not None:
         cached = read_json(web_dir(data) / "cache" / "localities" / f"{int(linz['id'])}.geojson")
-        if isinstance(cached, dict):
+        if geometry is None and isinstance(cached, dict):
             geometry = cached.get("geometry")
     if geometry is None and locality.get("bbox"):
         geometry = _bbox_polygon(locality["bbox"])
@@ -126,7 +138,8 @@ def region_properties(region: str, data: Path = DATA, runs: dict | None = None) 
 
 def region_ids(data: Path = DATA) -> list[str]:
     data = Path(data)
-    ids = set(list_regions(data / "regions")) | set(list_regions(data / "out", "summary.json"))
+    ids = (set(list_regions(data / "regions", include_meshblock_selections=True))
+           | set(list_regions(data / "out", "summary.json", include_meshblock_selections=True)))
     return sorted(ids)
 
 
