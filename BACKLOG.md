@@ -15,6 +15,10 @@ outlines above the heat map. The simple map is `rooftop-solar.html`, with
 isolated from cloud targets. Documentation renders from `docs/index.md`.
 Remaining: remote source catalogues, valid-data masks rather than file
 extents, and full raster viewing for intermediate datasets.
+Follow-up baseline: the simple rooftop map now links to the explorer,
+local pipeline panel and documentation through a collapsed navigation menu.
+The map-user guide distinguishes independent explorer layers and attribute
+queries from the simple map's analysis modes.
 
 Completed: national [area catalogue](docs/data-maintainers/areas.md), grouped
 by council with LINZ ids and pipeline region ids. `tools/list_areas.py`
@@ -121,6 +125,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   not permitted" signalling the worker); passes elsewhere.
 
 ## Ship
+
+- **The roof set: get 100 roofs right, then scale.** `data/roof_set.json`
+  (`tools/make_roof_set.py`): 100 development roofs (35 flagged, 9 from the
+  v68 render review, 25 new of the failing kinds, 31 already drawn) and 30
+  held back at random from the whole map. Marking page:
+  https://claude.ai/artifact/RroCQEBj9kA7BntDryKt4V (saves each roof online
+  as it is drawn; B shows the build's faces as a reference). 91 roofs need
+  drawing, development roofs first. Next, after v69 is live:
+  - ingest the drawn roofs into `data/roof_labels.json`;
+  - give `tools/markup_benchmark.py` a `--set dev|holdout` option and add
+    panel checks (installer rules: margins, no panel across a line, whole
+    groups, orientation);
+  - baseline the 100 on the VM, then fix one general rule at a time;
+  - score the 30 once, at the end, beside the 600-roof sample.
+  The detector models (3-18 Sep) trained on 72 of the old drawn roofs, so
+  only the held-back 30 are a fair final test. Blind runs now slide drawn
+  outlines like any other (`outline_fit._marked` honours `SOLAR_HIDE_LABELS`).
 
 - **Roofs Josh flagged on 31 Oct** (all in `data/roof_cases.json`):
   - *Demolished buildings still drawn.* Built: the `demolished` stage

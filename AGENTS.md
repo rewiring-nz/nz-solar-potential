@@ -188,6 +188,13 @@ figure for the same thing. Code enforces this:
   a build, also run `tools/face_area_check.py` against the previous layouts
   (a building should not lose roof-face area) and the deploy gate, and render
   every roof either flags.
+- **The roof set.** `data/roof_set.json` (written by `tools/make_roof_set.py`)
+  holds 100 development roofs (every roof in `data/roof_cases.json`, render
+  review finds, new roofs of each failing kind, drawn roofs round-robin by
+  region) and 30 held-back roofs drawn at random from the whole map. Fix
+  rules against the 100, scored blind against the markup
+  (`SOLAR_HIDE_LABELS=1`, `tools/markup_benchmark.py`). Never render or study
+  the 30 while fixing; score them once, at the end.
 - **Stop VM jobs by session; check for orphans.** Launch long jobs with
   `setsid nohup` and stop them with `pkill -s <session>`. Killing a Python
   parent by PID leaves its multiprocessing workers (~1.8 GB each) running.

@@ -1,0 +1,728 @@
+{
+ "seed": 1101,
+ "rule": "Choose the 100 development roofs and the 30 held-back roofs.",
+ "dev": [
+  {
+   "id": 4735292,
+   "region": "pilot",
+   "why": "flagged: truncated pyramid: 4 slopes plus a real 4 m flat square at the peak",
+   "drawn": false
+  },
+  {
+   "id": 4724740,
+   "region": "dalefield",
+   "why": "flagged: 216 m2 flat middle had no facet at all, so no panels",
+   "drawn": false
+  },
+  {
+   "id": 4734913,
+   "region": "pilot",
+   "why": "flagged: unnecessary inaccurate roof lines drawn where none exist",
+   "drawn": false
+  },
+  {
+   "id": 4734696,
+   "region": "pilot",
+   "why": "flagged: valley lines missing from the preview",
+   "drawn": true
+  },
+  {
+   "id": 4734994,
+   "region": "pilot",
+   "why": "flagged: fuzzy, jagged boundaries following nothing visible",
+   "drawn": false
+  },
+  {
+   "id": 4735106,
+   "region": "pilot",
+   "why": "flagged: not close to the obvious faces visible in the imagery",
+   "drawn": false
+  },
+  {
+   "id": 4740503,
+   "region": "pilot",
+   "why": "flagged: panels placed on balconies; the depth is in the LiDAR",
+   "drawn": false
+  },
+  {
+   "id": 4735623,
+   "region": "pilot",
+   "why": "flagged: far less detailed than the markup; clearly defined faces missed",
+   "drawn": true
+  },
+  {
+   "id": 5371107,
+   "region": "pilot",
+   "why": "flagged: invented kite-shaped face in the middle of a plain roof",
+   "drawn": true
+  },
+  {
+   "id": 4735099,
+   "region": "pilot",
+   "why": "flagged: simple roof read wrongly",
+   "drawn": true
+  },
+  {
+   "id": 4734914,
+   "region": "pilot",
+   "why": "flagged: bow-tie facets that cross themselves",
+   "drawn": false
+  },
+  {
+   "id": 5372565,
+   "region": "pilot",
+   "why": "flagged: clear empty roof left unfilled",
+   "drawn": true
+  },
+  {
+   "id": 4722059,
+   "region": "frankton_flats",
+   "why": "flagged: 85-face web from duct edges; shipped DARK twice",
+   "drawn": false
+  },
+  {
+   "id": 4725488,
+   "region": "pilot",
+   "why": "flagged: 119-face sawtooth stripped by the surface gates (100 panels -> 12)",
+   "drawn": true
+  },
+  {
+   "id": 4726050,
+   "region": "pilot",
+   "why": "flagged: 22 Earl Street: missing a whole perfectly good section of roof (the raised NE wi",
+   "drawn": false
+  },
+  {
+   "id": 4751260,
+   "region": "pilot",
+   "why": "flagged: 42 Suburb Street: far more panels could fit; the outline does not align with the",
+   "drawn": false
+  },
+  {
+   "id": 4746298,
+   "region": "arrowtown_millbrook",
+   "why": "flagged: 13 Douglas Avenue: a good example of the alignment problem -- outline offset fro",
+   "drawn": false
+  },
+  {
+   "id": 4735304,
+   "region": "pilot",
+   "why": "flagged: 12/16 Kent Street: panels being added over an edge (left wing), and no panels on",
+   "drawn": false
+  },
+  {
+   "id": 4735039,
+   "region": "pilot",
+   "why": "flagged: 4 Kent Street: an extra row could clearly be added down the middle of this flat ",
+   "drawn": false
+  },
+  {
+   "id": 4725584,
+   "region": "pilot",
+   "why": "flagged: 32 Frankton Road: a very disorganised layout. The underlying roof is simple and ",
+   "drawn": true
+  },
+  {
+   "id": 5371141,
+   "region": "pilot",
+   "why": "flagged: 1/24 Frankton Road: lots of panels missing that could be added (west arm), and m",
+   "drawn": false
+  },
+  {
+   "id": 5371139,
+   "region": "pilot",
+   "why": "flagged: 14C Frankton Road: not a clean layout on this sawtooth roof; should be clean str",
+   "drawn": false
+  },
+  {
+   "id": 4727237,
+   "region": "wanaka_town",
+   "why": "flagged: 13 Plantation Road: lots of panels missing on this roof (the east half of the lo",
+   "drawn": false
+  },
+  {
+   "id": 4735274,
+   "region": "pilot",
+   "why": "flagged: 11A Camp St: roof lines wonky, not straight along the ridges",
+   "drawn": false
+  },
+  {
+   "id": 4726056,
+   "region": "pilot",
+   "why": "flagged: 17 Church St: flat roof with lots of plant shows no panels at all",
+   "drawn": false
+  },
+  {
+   "id": 5370328,
+   "region": "pilot",
+   "why": "flagged: 9 Marine Parade: roof lines wrong; obstructions drawn over clear space",
+   "drawn": false
+  },
+  {
+   "id": 5372604,
+   "region": "pilot",
+   "why": "flagged: 1 Ballarat St: panels over obstructions the map does not mark; lines miss the ri",
+   "drawn": false
+  },
+  {
+   "id": 4725580,
+   "region": "pilot",
+   "why": "flagged: 12 Stanley St: complex pyramid roof, lines misaligned",
+   "drawn": false
+  },
+  {
+   "id": 5371137,
+   "region": "pilot",
+   "why": "flagged: 8 Sydney St: lines wrong, obstructions over clear areas, panels at an odd angle",
+   "drawn": false
+  },
+  {
+   "id": 4734606,
+   "region": "pilot",
+   "why": "flagged: 6/60 Hallenstein St: eight identical townhouse roofs get different panel layouts",
+   "drawn": false
+  },
+  {
+   "id": 4735359,
+   "region": "pilot",
+   "why": "flagged: 41 Ballarat St: panels floating over air -- the building outline sits outside th",
+   "drawn": false
+  },
+  {
+   "id": 4735237,
+   "region": "pilot",
+   "why": "flagged: 24 Beach St: lots of badly placed panels, from panels over ridges to panels over",
+   "drawn": true
+  },
+  {
+   "id": 5370317,
+   "region": "pilot",
+   "why": "flagged: 44 Beach St: these panels should be vertical (portrait), not horizontal, on the ",
+   "drawn": false
+  },
+  {
+   "id": 5370368,
+   "region": "pilot",
+   "why": "flagged: 48 Beach St: incorrectly mapped obstructions -- panels placed over obstructions ",
+   "drawn": false
+  },
+  {
+   "id": 4725633,
+   "region": "pilot",
+   "why": "flagged: 93 Beach St: tiny sets of 3 and 2 panels should not be placed -- clearly not par",
+   "drawn": false
+  },
+  {
+   "id": 4749739,
+   "region": "frankton_quail_rise",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 4749406,
+   "region": "frankton_quail_rise",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 5370646,
+   "region": "arrowtown_millbrook",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 4736995,
+   "region": "wanaka_town",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 5375073,
+   "region": "wanaka_town",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 4731151,
+   "region": "lake_hayes_est_west",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 4734459,
+   "region": "town_west_fernhill",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 4749146,
+   "region": "town_west_fernhill",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 5370587,
+   "region": "arrowtown_millbrook",
+   "why": "v68 render review",
+   "drawn": false
+  },
+  {
+   "id": 4734017,
+   "region": "shotover_lakehayes",
+   "why": "commercial roof",
+   "drawn": false
+  },
+  {
+   "id": 4746139,
+   "region": "arrowtown_millbrook",
+   "why": "commercial roof",
+   "drawn": false
+  },
+  {
+   "id": 4730782,
+   "region": "wanaka_west",
+   "why": "commercial roof",
+   "drawn": false
+  },
+  {
+   "id": 1519960,
+   "region": "cromwell_west",
+   "why": "commercial roof",
+   "drawn": false
+  },
+  {
+   "id": 4737875,
+   "region": "speargrass_hayes",
+   "why": "commercial roof",
+   "drawn": false
+  },
+  {
+   "id": 5373446,
+   "region": "frankton_arm",
+   "why": "identical-roof copy",
+   "drawn": false
+  },
+  {
+   "id": 4737316,
+   "region": "wanaka_town",
+   "why": "identical-roof copy",
+   "drawn": false
+  },
+  {
+   "id": 4750540,
+   "region": "arrowtown_millbrook",
+   "why": "identical-roof copy",
+   "drawn": false
+  },
+  {
+   "id": 4729789,
+   "region": "frankton_arm",
+   "why": "identical-roof copy",
+   "drawn": false
+  },
+  {
+   "id": 5374910,
+   "region": "wanaka_town",
+   "why": "identical-roof copy",
+   "drawn": false
+  },
+  {
+   "id": 4744294,
+   "region": "town_gorge_north",
+   "why": "outline slid onto the roof",
+   "drawn": false
+  },
+  {
+   "id": 4725839,
+   "region": "arthurs_point_east",
+   "why": "outline slid onto the roof",
+   "drawn": false
+  },
+  {
+   "id": 4723023,
+   "region": "frankton_arm",
+   "why": "outline slid onto the roof",
+   "drawn": false
+  },
+  {
+   "id": 4743544,
+   "region": "town_gorge_north",
+   "why": "outline slid onto the roof",
+   "drawn": false
+  },
+  {
+   "id": 4733790,
+   "region": "town_west_fernhill",
+   "why": "outline slid onto the roof",
+   "drawn": false
+  },
+  {
+   "id": 4726775,
+   "region": "speargrass_hayes",
+   "why": "complex house",
+   "drawn": false
+  },
+  {
+   "id": 5374434,
+   "region": "wanaka_town",
+   "why": "complex house",
+   "drawn": false
+  },
+  {
+   "id": 4724923,
+   "region": "wanaka_town",
+   "why": "complex house",
+   "drawn": false
+  },
+  {
+   "id": 4722627,
+   "region": "frankton_arm",
+   "why": "complex house",
+   "drawn": false
+  },
+  {
+   "id": 5375740,
+   "region": "wanaka_town",
+   "why": "complex house",
+   "drawn": false
+  },
+  {
+   "id": 4748924,
+   "region": "wanaka_town",
+   "why": "town with no markup",
+   "drawn": false
+  },
+  {
+   "id": 4720675,
+   "region": "wanaka_town",
+   "why": "town with no markup",
+   "drawn": false
+  },
+  {
+   "id": 5375171,
+   "region": "wanaka_town",
+   "why": "town with no markup",
+   "drawn": false
+  },
+  {
+   "id": 4729120,
+   "region": "arrowtown_hills",
+   "why": "town with no markup",
+   "drawn": false
+  },
+  {
+   "id": 4743267,
+   "region": "wanaka_town",
+   "why": "town with no markup",
+   "drawn": false
+  },
+  {
+   "id": 4735015,
+   "region": "pilot",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4746110,
+   "region": "arrowtown_millbrook",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4729620,
+   "region": "speargrass_hayes",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4748050,
+   "region": "frankton_quail_rise",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4732152,
+   "region": "frankton_arm",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4730598,
+   "region": "frankton_flats",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4740662,
+   "region": "shotover_lakehayes",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5371581,
+   "region": "hanleys_farm",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4741639,
+   "region": "kelvin_heights",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5372064,
+   "region": "jacks_point",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4733916,
+   "region": "town_west_fernhill",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5372641,
+   "region": "town_south_lake",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4725794,
+   "region": "arthurs_point_east",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4740398,
+   "region": "frankton_arm_lake",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5371002,
+   "region": "town_gorge_north",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5372222,
+   "region": "frankton_east_lake",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5370340,
+   "region": "pilot",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4746196,
+   "region": "arrowtown_millbrook",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4727413,
+   "region": "speargrass_hayes",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5372232,
+   "region": "frankton_quail_rise",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4729357,
+   "region": "frankton_arm",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4730603,
+   "region": "frankton_flats",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 5372383,
+   "region": "shotover_lakehayes",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4719462,
+   "region": "hanleys_farm",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4723238,
+   "region": "kelvin_heights",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4742246,
+   "region": "jacks_point",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4734157,
+   "region": "town_west_fernhill",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4735249,
+   "region": "town_south_lake",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4735073,
+   "region": "pilot",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4747492,
+   "region": "arrowtown_millbrook",
+   "why": "drawn",
+   "drawn": true
+  },
+  {
+   "id": 4727942,
+   "region": "speargrass_hayes",
+   "why": "drawn",
+   "drawn": true
+  }
+ ],
+ "holdout": [
+  {
+   "id": 1520561,
+   "region": "cromwell_west"
+  },
+  {
+   "id": 1528996,
+   "region": "cromwell_west"
+  },
+  {
+   "id": 1540181,
+   "region": "cromwell_west"
+  },
+  {
+   "id": 1593509,
+   "region": "cromwell_east"
+  },
+  {
+   "id": 1607527,
+   "region": "cromwell_west"
+  },
+  {
+   "id": 1620600,
+   "region": "cromwell_east"
+  },
+  {
+   "id": 1646695,
+   "region": "cromwell_east"
+  },
+  {
+   "id": 4719038,
+   "region": "speargrass_hayes"
+  },
+  {
+   "id": 4720029,
+   "region": "arrowtown_millbrook"
+  },
+  {
+   "id": 4720704,
+   "region": "wanaka_town"
+  },
+  {
+   "id": 4723011,
+   "region": "frankton_arm"
+  },
+  {
+   "id": 4725010,
+   "region": "wanaka_town"
+  },
+  {
+   "id": 4726861,
+   "region": "lake_hayes_est_west"
+  },
+  {
+   "id": 4729194,
+   "region": "wanaka_town"
+  },
+  {
+   "id": 4731441,
+   "region": "dalefield"
+  },
+  {
+   "id": 4737212,
+   "region": "wanaka_town"
+  },
+  {
+   "id": 4737221,
+   "region": "wanaka_town"
+  },
+  {
+   "id": 4738493,
+   "region": "tucker_beach"
+  },
+  {
+   "id": 4738723,
+   "region": "jacks_point"
+  },
+  {
+   "id": 4742487,
+   "region": "arrowtown_millbrook"
+  },
+  {
+   "id": 4745023,
+   "region": "hawea"
+  },
+  {
+   "id": 4746506,
+   "region": "arrowtown_millbrook"
+  },
+  {
+   "id": 4746905,
+   "region": "gorge_road_corridor"
+  },
+  {
+   "id": 4749944,
+   "region": "wanaka_albert_town"
+  },
+  {
+   "id": 5171599,
+   "region": "cromwell_east"
+  },
+  {
+   "id": 5172143,
+   "region": "cromwell_west"
+  },
+  {
+   "id": 5371516,
+   "region": "hanleys_farm"
+  },
+  {
+   "id": 5373369,
+   "region": "frankton_flats"
+  },
+  {
+   "id": 5373671,
+   "region": "hawea"
+  },
+  {
+   "id": 5375105,
+   "region": "wanaka_town"
+  }
+ ]
+}

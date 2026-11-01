@@ -19,15 +19,21 @@ Data maintainers and developers can view their local updates. Use the URL printe
 
 | Build or preview | Where to open it | Availability |
 | --- | --- | --- |
-| [Local quickstart](../data-maintainers/quickstart.md) | The printed **Map preview** URL, usually `http://127.0.0.1:8765/preview.html?...`; also recorded in the run's `report.md` | Only on your computer while the preview server runs. The port can change; the printed URL centres the map on the built region. |
-| [Shared-cloud quickstart](../data-maintainers/quickstart-cloud.md#developer-preview) | The printed **Developer preview** URL: `https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html` | Public and shareable. The alias opens its latest published preview; previews expire after 14 days unless refreshed. |
-| [Developer-VM profile](../data-maintainers/quickstart-cloud.md#your-own-vm-profiles) | Start the documented `--cloud preview` SSH tunnel, then open `http://127.0.0.1:8765/preview.html` using the tunnel's port | Only on your computer while the VM's preview server and SSH tunnel run. It is not a public preview URL. |
+| [Local quickstart](../data-maintainers/quickstart.md) | The printed **Map preview** URL, usually `http://127.0.0.1:8765/rooftop-solar.html?...`; also recorded in the run's `report.md` | Only on your computer while the preview server runs. The port can change; the printed URL centres the map on the built region. |
+| [Shared-cloud quickstart](../data-maintainers/quickstart-cloud.md#developer-preview) | The printed **Developer preview** URL: `https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/rooftop-solar.html` | Public and shareable. The alias opens its latest published preview; previews expire after 14 days unless refreshed. |
+| [Developer-VM profile](../data-maintainers/quickstart-cloud.md#your-own-vm-profiles) | Start the documented `--cloud preview` SSH tunnel, then open `http://127.0.0.1:8765/rooftop-solar.html` using the tunnel's port | Only on your computer while the VM's preview server and SSH tunnel run. It is not a public preview URL. |
 | [District or worker build](../developers/tooling-execution.md#capability-matrix) without preview publication | No browser URL is created by the build alone. Use [Serve locally](../data-maintainers/dataset-operations.md#6-serve-locally) for combined outputs. | Worker outputs must be collected and combined before previewing the complete map. |
 | [Production release](../data-maintainers/dataset-operations.md#7-publish) | The public GitHub Pages URL above | Updated only after the release is published and the site's data pointer switches. |
 
 If automatic browser opening fails, copy the printed URL into your browser.
 `127.0.0.1` links are local to the person opening them; send a public
 developer-preview link when sharing a build with someone else.
+
+The simple map is `rooftop-solar.html`; old `preview.html` links redirect to
+it, preserving their query string and fragment. Open **Explore & docs** in
+the map's bottom-left controls to reach the data explorer, pipeline panel or
+documentation. The pipeline panel requires its local backend; it cannot run
+builds from static hosting.
 
 ## Look at a building
 
@@ -47,8 +53,10 @@ developer-preview link when sharing a build with someone else.
 
 ## Layers and legend
 
-Open **Layers & legend** below the map navigation controls. The shared legend
-also appears in the [pipeline panel](../data-maintainers/web-pipeline.md).
+Detailed dataset controls live on the separate [data explorer](../../data-explorer.html),
+not on the simple rooftop map. Open **Layers & legend** below the explorer's
+map navigation controls. The shared legend also appears in the
+[pipeline panel](../data-maintainers/web-pipeline.md).
 Groups can be collapsed, and checkboxes show or hide overlays. Basemap radio
 buttons choose **Aerial (Esri / LINZ)** or **OpenStreetMap** without clearing
 the other layers. Both basemaps need internet access.
@@ -57,23 +65,27 @@ The stack, from top to bottom, is:
 
 1. **Rooftop solar analysis**: panel layouts, solar-analysis building outlines,
    then the solar heat map. Panels paint above outlines; outlines paint above
-   the heat map. Heat Map and Panel Layout remain mutually exclusive analysis
-   modes, matching the existing dashboard controls. Hiding an overlay does not
-   change the estimate being calculated.
-2. **Derived datasets**: calculated roof facets, detected obstructions and
-   other available intermediate layers. The **Roof facets** fill uses direction
-   for hue and pitch for saturation; its compact compass legend distinguishes
-   this geometry encoding from solar-performance colours. Facets and
-   obstructions are displayed in Panel Layout mode.
+   the heat map. Explorer layers toggle independently: panels and the heat map
+   can both be enabled. Roof facets and obstructions from the analysis dataset
+   also toggle independently. The simple rooftop map retains its existing
+   mutually exclusive Heat Map and Panel Layout modes.
+2. **Derived datasets**: available intermediate calculation outputs.
 3. **Source datasets**: available dataset footprints. A faint fill and dashed
    outline show a cached file's extent, not guaranteed valid-data coverage.
 4. **Basemap**.
 
 **Details** explains each layer; **Zoom** fits the map to its extent when
-known. The preview lists only datasets supplied with that map build, not
-everything cached on the computer that built it. Older builds without a
-dataset catalogue still show the existing analysis controls and basemaps,
-with an explicit notice that dataset footprints are unavailable.
+known. Select **Query** beside a vector layer, then click the map to see the
+attributes of features at that point. Selecting a query layer enables it
+without hiding other layers. Raster overlays do not expose pixel-value
+queries; source footprints expose cache metadata rather than raw point-cloud
+points or raster samples.
+
+On a local server, **Local cache and calculations** lists cached sources and
+available calculations in that checkout. **Published map** lists only
+artifacts supplied with the selected map build, not the builder's local
+caches. Older published builds without a catalogue report its unavailability;
+the simple rooftop map still works.
 
 ## Read the numbers
 

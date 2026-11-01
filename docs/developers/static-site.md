@@ -48,8 +48,8 @@ Reproduce the Pages artifact locally:
 .venv/bin/python tools/pipeline_serve.py --root site-build --port 8765
 ```
 
-The site builder copies only `tools/site_assets.py`'s frontend allowlist, `site-config.js`, the
-index/method pages, and generated documentation with referenced images.
+The site builder copies only `tools/site_assets.py`'s frontend allowlist,
+`site-config.js`, and generated documentation with referenced images.
 It does not copy raw Markdown, local data, credentials, Python source, or
 the checkout history. Production map data remains at `site-config.js`'s
 configured data URL; no cloud operation is needed to render or build the site.

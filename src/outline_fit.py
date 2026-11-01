@@ -159,6 +159,12 @@ def accepted(entry):
 
 
 def _marked():
+    # SOLAR_HIDE_LABELS=1 builds as if nothing were drawn (the blind markup
+    # benchmark, tools/markup_benchmark.py). A drawn roof must then slide like
+    # any other, or the benchmark scores a roof built differently from every
+    # undrawn one.
+    if os.environ.get("SOLAR_HIDE_LABELS") == "1":
+        return set()
     p = Path(__file__).resolve().parent.parent / "data" / "roof_labels.json"
     try:
         d = json.loads(p.read_text())
