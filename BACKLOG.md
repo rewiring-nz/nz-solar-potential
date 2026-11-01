@@ -9,6 +9,10 @@ outlines above the heat map. The simple map is `rooftop-solar.html`, with
 isolated from cloud targets. Documentation renders from `docs/index.md`.
 Remaining: remote source catalogues, valid-data masks rather than file
 extents, and full raster viewing for intermediate datasets.
+Follow-up baseline: the simple rooftop map now links to the explorer,
+local pipeline panel and documentation through a collapsed navigation menu.
+The map-user guide distinguishes independent explorer layers and attribute
+queries from the simple map's analysis modes.
 
 Completed: national [area catalogue](docs/data-maintainers/areas.md), grouped
 by council with LINZ ids and pipeline region ids. `tools/list_areas.py`
