@@ -41,7 +41,11 @@ builds from static hosting.
 2. Click its roof to see panel count, system size (kWp), and daily and
    yearly output.
 3. Use the heat map to compare roofs, and the panel layout to see roof
-   faces, obstructions and panels.
+   faces, obstructions and panels. Facet colours show roof geometry, not
+   solar yield: hue follows compass direction (north at the top of the
+   compass wheel), while saturation increases with pitch and reaches its cap
+   at 45°. Flat faces are grey; missing or invalid direction/pitch is pink.
+   The same legend is available with the catalogue's **Roof facets** layer.
 4. In the building panel, switch the seasonal curves between **Average**
    and **Sunny day**, or open **Horizon** to see the skyline (hills, trees,
    buildings) against the sun's path in summer, at the equinox and in

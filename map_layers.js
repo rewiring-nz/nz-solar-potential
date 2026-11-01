@@ -6,11 +6,93 @@
     analysis: "Rooftop solar analysis", derived: "Derived datasets",
     source: "Source datasets", operations: "Build areas", basemap: "Basemap",
   };
+  const FACET_ASPECT_STOPS = [
+    [0, "#40afee"], [45, "#a99ce7"], [90, "#e38aba"], [135, "#ed8b82"],
+    [180, "#ce9d5c"], [225, "#97af62"], [270, "#4cb891"], [315, "#00b9ca"],
+    [360, "#40afee"],
+  ];
+  const FACET_FLAT = "#92979e";
+  const FACET_INVALID = "#d64a8a";
+  const FACET_FILL_OPACITY = 0.42;
+  function facetValidExpression() {
+    const aspect = ["get", "aspect_deg"];
+    const slope = ["get", "slope_deg"];
+    return ["all", ["==", ["typeof", aspect], "number"], [">=", aspect, 0], ["<=", aspect, 360],
+      ["==", ["typeof", slope], "number"], [">=", slope, 0], ["<=", slope, 90]];
+  }
+  function facetColorExpression() {
+    const aspect = ["%", ["get", "aspect_deg"], 360];
+    const slope = ["min", ["get", "slope_deg"], 45];
+    const directional = ["interpolate-hcl", ["linear"], aspect,
+      ...FACET_ASPECT_STOPS.flatMap(([angle, colour]) => [angle, colour])];
+    return ["case", facetValidExpression(),
+      ["interpolate", ["linear"], slope, 0, FACET_FLAT, 45, directional],
+      FACET_INVALID];
+  }
+  function facetOutlineExpression() {
+    return ["case", facetValidExpression(), "#f7f8fa", "#391326"];
+  }
+  function blendColour(hex, fraction) {
+    const value = hex.slice(1).match(/.{2}/g).map(part => parseInt(part, 16));
+    const flat = FACET_FLAT.slice(1).match(/.{2}/g).map(part => parseInt(part, 16));
+    return "#" + value.map((channel, index) =>
+      Math.round(flat[index] + (channel - flat[index]) * fraction).toString(16).padStart(2, "0")).join("");
+  }
+  function facetLegendElement() {
+    if (!root.document) return null;
+    const legend = root.document.createElement("section");
+    legend.className = "facet-geometry-legend";
+    legend.setAttribute("aria-label", "Roof geometry colour legend");
+    const title = root.document.createElement("strong");
+    title.className = "facet-geometry-title";
+    title.textContent = "Roof geometry, not solar yield";
+    legend.append(title);
+    const compassRow = root.document.createElement("div");
+    compassRow.className = "facet-compass-row";
+    const wheel = root.document.createElement("div");
+    wheel.className = "facet-compass-wheel";
+    wheel.setAttribute("role", "img");
+    wheel.setAttribute("aria-label", "Compass colour wheel: north, east, south, west");
+    wheel.style.background = `conic-gradient(from 0deg, ${FACET_ASPECT_STOPS.map(
+      ([angle, colour]) => `${colour} ${angle}deg`).join(", ")})`;
+    for (const [direction, position] of [["N", "north"], ["E", "east"], ["S", "south"], ["W", "west"]]) {
+      const label = root.document.createElement("span");
+      label.className = `facet-compass-${position}`;
+      label.textContent = direction;
+      wheel.append(label);
+    }
+    const aspectText = root.document.createElement("span");
+    aspectText.textContent = "Facing direction (clockwise from north)";
+    compassRow.append(wheel, aspectText);
+    legend.append(compassRow);
+    const slopeTitle = root.document.createElement("span");
+    slopeTitle.className = "facet-slope-title";
+    slopeTitle.textContent = "Pitch: saturation increases to 45°";
+    legend.append(slopeTitle);
+    const samples = root.document.createElement("div");
+    samples.className = "facet-slope-samples";
+    for (const [label, slope] of [["Flat 0°", 0], ["20°", 20], ["Steep ≥45°", 45]]) {
+      const sample = root.document.createElement("span");
+      sample.className = "facet-slope-sample";
+      const swatch = root.document.createElement("i");
+      swatch.style.backgroundColor = blendColour(FACET_ASPECT_STOPS[0][1], slope / 45);
+      sample.append(swatch, root.document.createTextNode(label));
+      samples.append(sample);
+    }
+    legend.append(samples);
+    const invalid = root.document.createElement("div");
+    invalid.className = "facet-invalid-sample";
+    const invalidSwatch = root.document.createElement("i");
+    invalidSwatch.style.backgroundColor = FACET_INVALID;
+    invalid.append(invalidSwatch, root.document.createTextNode("Missing or invalid direction/pitch"));
+    legend.append(invalid);
+    return legend;
+  }
   function order(entry) {
     if (entry.group !== "analysis") return entry.order || 0;
     if (entry.kind === "panel" || entry.id === "analysis-panels") return 30;
     if (entry.kind === "building" || entry.id === "analysis-outlines") return 20;
-    return 10;
+    return entry.order == null ? 10 : entry.order;
   }
   function aerialStyle() {
     return { version: 8, sources: {
@@ -181,6 +263,9 @@
             section.append(info);
           }
         }
+        if (members.some(entry => entry.kind === "facet")) {
+          section.append(facetLegendElement());
+        }
         this.body.append(section);
       }
       for (const message of this.messages) {
@@ -315,16 +400,19 @@
       const common = { source: dataset.source, layout: { visibility: "none" } };
       if (spec.sourceLayer) common["source-layer"] = spec.sourceLayer;
       if (spec.kind && spec.kind !== "building") common.filter = ["==", ["get", "kind"], spec.kind];
+      const facet = spec.kind === "facet";
       const layers = source.type === "raster" ? [
         { id: dataset.source + "-raster", type: "raster", paint: { "raster-opacity": 0.78 } },
       ] : [
         { id: dataset.source + "-fill", type: "fill",
-          paint: { "fill-color": colour, "fill-opacity": spec.kind === "panel" ? 0.8 : 0.08 } },
+          paint: { "fill-color": facet ? facetColorExpression() : colour,
+            "fill-opacity": facet ? FACET_FILL_OPACITY : spec.kind === "panel" ? 0.8 : 0.08 } },
         { id: dataset.source + "-line", type: "line",
-          paint: { "line-color": colour, "line-width": 1.5,
+          paint: { "line-color": facet ? facetOutlineExpression() : colour,
+            "line-width": facet ? 1 : 1.5,
             ...(spec.representation === "footprint" ? { "line-dasharray": [3, 2] } : {}) } },
       ];
-      if (spec.kind === "building" || spec.kind === "facet") {
+      if (spec.kind === "building") {
         // An invisible polygon supports clicks inside an outline, not just on its edge.
         layers[0].paint["fill-opacity"] = 0;
       }
@@ -426,7 +514,9 @@
       },
     }));
   }
-  const api = { Legend, basemaps, aerialStyle, sorted, safeURL, validCatalogue, uniqueFeatures, attributeContent };
+  const api = { Legend, basemaps, aerialStyle, sorted, safeURL, validCatalogue, uniqueFeatures,
+    attributeContent, facetColorExpression, facetOutlineExpression, facetValidExpression,
+    facetLegendElement, facetFillOpacity: FACET_FILL_OPACITY };
   root.MapLayers = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window === "undefined" ? globalThis : window);

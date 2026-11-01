@@ -1,5 +1,11 @@
 # Backlog
 
+Completed #48: roof facets are filled by facing direction, with pitch encoded
+as saturation (full at 45°), and a distinct colour for missing/invalid geometry
+data. The shared legend, catalogue styling and rooftop map use the same
+expression; panels and obstructions stay above facets and 3D hides both facet
+fills and outlines. No dataset rebuild or output-contract change is needed.
+
 Completed #47: shared grouped map-layer legend in the pipeline panel and
 separate data explorer, with independent overlay toggles, feature-attribute
 queries, aerial/OpenStreetMap selection, cached-source extent overlays and

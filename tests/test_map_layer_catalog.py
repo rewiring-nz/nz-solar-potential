@@ -185,6 +185,9 @@ def test_local_catalog_uses_cached_headers_deduplicates_and_marks_subsets():
         assert layers["analysis-panels"]["url"] == "data/panel_layouts.pmtiles"
         assert layers["analysis-panels"]["sourceLayer"] == "layout"
         assert layers["analysis-panels"]["kind"] == "panel"
+        assert layers["analysis-facets"]["kind"] == "facet"
+        assert layers["analysis-facets"]["order"] < layers["analysis-obstructions"]["order"]
+        assert "pitch" in layers["analysis-facets"]["description"]
         assert layers["analysis-outlines"]["url"] == "data/buildings.pmtiles"
         assert layers["analysis-outlines"]["sourceLayer"] == "buildings"
         assert layers["analysis-outlines"]["kind"] == "building"

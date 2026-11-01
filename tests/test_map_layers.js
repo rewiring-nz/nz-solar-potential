@@ -99,8 +99,49 @@
     const ids = control.map.layers.map(layer => layer.id);
     assert(ids.indexOf("dataset-h-raster") < ids.indexOf("dataset-b-line") &&
       ids.indexOf("dataset-b-line") < ids.indexOf("dataset-p-fill"), "incorrect analysis paint order");
-    assert(!control.map.getLayer("dataset-b-fill"), "outlines must not obscure heat map");
+    assert(control.map.getLayer("dataset-b-fill").paint["fill-opacity"] === 0,
+      "outline hit area must stay invisible over the heat map");
     assert(control.map.getLayer("dataset-p-fill").filter[2] === "panel", "missing kind filter");
+  });
+  await test("facet paint wraps aspect, caps pitch and marks invalid data", () => {
+    const colour = M.facetColorExpression();
+    assert(colour[0] === "case" && colour[1][0] === "all", "facet data validity is not checked");
+    assert(colour[2][0] === "interpolate" && colour[2][3] === 0 &&
+      colour[2][4] === "#92979e" && colour[2][5] === 45, "slope does not run from grey to the 45-degree cap");
+    assert(colour[3] === "#d64a8a", "invalid geometry lacks a distinct colour");
+    const wheel = colour[2][6];
+    assert(wheel[0] === "interpolate-hcl" && wheel[2][0] === "%" &&
+      wheel.at(-2) === 360 && wheel.at(-1) === wheel[4], "aspect wheel does not wrap at north");
+    const directions = [wheel[4], wheel[8], wheel[12], wheel[16]];
+    assert(new Set(directions).size === 4, "cardinal directions do not have distinct colours");
+    assert(colour[1].some(part => Array.isArray(part[1]) && part[1][0] === "typeof"),
+      "missing or non-numeric geometry is not validated");
+    assert(M.facetFillOpacity === 0.42, "facet opacity is not fixed and moderate");
+    assert(M.facetOutlineExpression()[0] === "case", "invalid data is not distinguishable in outlines");
+  });
+  await test("facet catalogue toggle styles fill and outline together below panels and obstructions", async () => {
+    const control = legend();
+    control.setCatalogue(catalogue([
+      { ...footprint("facet", "analysis"), kind: "facet", order: 15 },
+      { ...footprint("obstruction", "analysis"), kind: "obstruction", order: 24 },
+      { ...footprint("panel", "analysis"), kind: "panel", order: 30 },
+    ]), "https://example.org/");
+    const facets = control.datasets.get("facet");
+    await facets.entry.setVisible(true);
+    await control.datasets.get("obstruction").entry.setVisible(true);
+    await control.datasets.get("panel").entry.setVisible(true);
+    const fill = control.map.getLayer("dataset-facet-fill");
+    const line = control.map.getLayer("dataset-facet-line");
+    assert(JSON.stringify(fill.paint["fill-color"]) === JSON.stringify(M.facetColorExpression()),
+      "catalogue fill does not use shared expression");
+    assert(fill.paint["fill-opacity"] === M.facetFillOpacity, "facet opacity changed with data");
+    assert(JSON.stringify(line.paint["line-color"]) === JSON.stringify(M.facetOutlineExpression()),
+      "facet outline does not distinguish invalid data");
+    assert(control.map.layers.indexOf(fill) < control.map.layers.indexOf(control.map.getLayer("dataset-obstruction-fill")) &&
+      control.map.layers.indexOf(fill) < control.map.layers.indexOf(control.map.getLayer("dataset-panel-fill")),
+    "facet fill is above an obstruction or panel");
+    await facets.entry.setVisible(false);
+    assert(fill.layout.visibility === "none" && line.layout.visibility === "none", "facet toggle split fill and outline visibility");
   });
   await test("preview excludes unavailable analysis and duplicate derived kinds", () => {
     const control = legend();
@@ -169,13 +210,22 @@
       control.setCatalogue(catalogue([
         { ...footprint("imagery", "source"), label: "Cached imagery", data, bounds: [168.65, -45.04, 168.67, -45.02] },
         { ...footprint("fitted", "derived"), label: "Fitted outlines", data },
+        { ...footprint("facets", "analysis"), kind: "facet", order: 15,
+          data: { type: "FeatureCollection", features: [{ type: "Feature", properties: {
+            kind: "facet", aspect_deg: 359, slope_deg: 45,
+          }, geometry: data.features[0].geometry }] } },
       ]), location.href);
       await control.datasets.get("fitted").entry.setVisible(true);
       await control.datasets.get("imagery").entry.setVisible(true);
+      await control.datasets.get("facets").entry.setVisible(true);
       control.refresh();
       const ids = map.getStyle().layers.map(layer => layer.id);
       assert(ids.indexOf("dataset-imagery-line") < ids.indexOf("dataset-fitted-fill") &&
         ids.indexOf("dataset-fitted-line") < ids.indexOf("analysis-anchor"), "wrong real MapLibre order");
+      const facetStyle = map.getStyle().layers.find(layer => layer.id === "dataset-facets-fill");
+      assert(facetStyle.paint["fill-color"][0] === "case" &&
+        facetStyle.paint["fill-opacity"] === M.facetFillOpacity,
+      "actual MapLibre rejected or changed the facet expression");
       globalThis.layerTestMap = map;
       globalThis.layerTestControl = control;
     });

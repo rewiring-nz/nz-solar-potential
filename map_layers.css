@@ -32,9 +32,33 @@
 .map-layer-info summary { font-weight: 400; padding: 0; }
 .map-layer-info p { margin: 4px 0; white-space: pre-line; }
 .map-layer-warning { color: #ffb7a9; padding: 4px 12px; margin: 0; font-size: 12px; }
+.facet-geometry-legend { box-sizing: border-box; margin: 6px 10px 4px; padding: 7px 9px;
+  border: 1px solid #ffffff30; border-radius: 6px; background: #111820e8;
+  color: #f2f4f7; font: 11px/1.3 system-ui, sans-serif; }
+.facet-geometry-title { display: block; margin-bottom: 5px; font-size: 11px; }
+.facet-compass-row { display: flex; align-items: center; gap: 8px; }
+.facet-compass-wheel { position: relative; flex: none; width: 52px; height: 52px;
+  border: 1px solid #fff9; border-radius: 50%; box-shadow: inset 0 0 0 1px #1118; }
+.facet-compass-wheel span { position: absolute; color: #101318; font-weight: 800;
+  font-size: 9px; line-height: 1; text-shadow: 0 0 2px #fff; }
+.facet-compass-north { top: 3px; left: 50%; transform: translateX(-50%); }
+.facet-compass-east { right: 3px; top: 50%; transform: translateY(-50%); }
+.facet-compass-south { bottom: 3px; left: 50%; transform: translateX(-50%); }
+.facet-compass-west { left: 3px; top: 50%; transform: translateY(-50%); }
+.facet-slope-title { display: block; margin-top: 6px; }
+.facet-slope-samples { display: flex; justify-content: space-between; gap: 4px; margin-top: 3px; }
+.facet-slope-sample, .facet-invalid-sample { display: flex; align-items: center; gap: 4px; }
+.facet-slope-sample { font-size: 10px; white-space: nowrap; }
+.facet-slope-sample i, .facet-invalid-sample i { display: inline-block; flex: none;
+  width: 14px; height: 10px; border: 1px solid #f7f8fa; border-radius: 2px; }
+.facet-invalid-sample { margin-top: 5px; font-size: 10px; }
+.facet-invalid-sample i { border-color: #fff; }
+.facet-geometry-legend.rooftop { position: absolute; right: 12px; bottom: 112px;
+  z-index: 1; width: min(230px, calc(100vw - 24px)); margin: 0; }
 .map-layer-legend input:focus-visible, .map-layer-legend button:focus-visible,
 .map-layer-legend summary:focus-visible { outline: 2px solid #ffd24a; outline-offset: 2px; }
 @media (max-width: 760px) {
   .map-layer-legend { width: min(250px, calc(100vw - 32px)); }
   .map-layer-body { max-height: 40vh; }
+  .facet-geometry-legend.rooftop { bottom: 86px; right: 8px; }
 }
