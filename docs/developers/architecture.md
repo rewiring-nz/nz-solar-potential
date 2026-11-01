@@ -93,8 +93,17 @@ The direct layout-to-derive edge represents paths without demolition screening.
   tiles, addresses and summary under `data/out/<region>/`.
   `src/combine_regions.py` joins regions into the served set without
   loading the district into memory. `src/output_contract.py` fixes the
-  names the map reads. `src/merge_regions.py` is retired; nothing ships
-  from it.
+  names the map reads. It also writes `data/map_layers.json` from the exact
+  selected emitted regions and PMTiles in that served set. Local source-cache
+  footprints are provided by `src/map_layer_catalog.py` through the
+  token-authenticated pipeline API, or by the loopback preview server
+  (`tools/pipeline_serve.py`) at `GET /data/local_map_layers.json`, which is
+  computed per request and never written to `data/`. Neither is published
+  with map data; `tools/deploy_from_vm.sh` pulls `map_layers.json` only when
+  the VM's served set has one. Footprint features carry `layer_id`, `status`
+  (`cached`, `cached_subset`, `built`, `emitted`), source/format fields and
+  data-relative `cached_path` values for attribute popups; never absolute paths.
+  `src/merge_regions.py` is retired; nothing ships from it.
 - `src/outline_fit.py`, `src/repeat_roofs.py`: fitted footprints and consensus
   readings for matching roof surfaces. `src/demolished.py` screens changed
   roofs, with an optional paid API; [authorization and limits](../data-maintainers/dataset-operations.md#demolition-screening).
@@ -102,6 +111,10 @@ The direct layout-to-derive edge represents paths without demolition screening.
   incremental planning (`src/build_keys.py`).
 - `tools/pipeline.py`: local single-region orchestration and cloud
   dispatch; `quickstart.sh` is its compatibility wrapper.
+- `tools/pipeline_webui/server.py`: token-authenticated local control API.
+  `GET /api/layers?source=local` describes only cached local source footprints
+  and available regional vectors; developer and published targets explicitly
+  report that local cache data is unavailable without fetching remote data.
 - `src/local_queue.py`, `tools/pipeline_queue.py`: loopback coordination,
   JSON task persistence and subprocess workers for that local executor.
   One worker is the default; tasks in one checkout serialize. The existing

@@ -1,4 +1,5 @@
-# Exact environment of the machine that BUILDS THE PUBLISHED MAPS.
+# Exact numerical environment of the machine that BUILDS THE PUBLISHED MAPS,
+# plus pinned build-time documentation dependencies.
 #
 # Frozen from the GCP VM's venv on 31 Aug 2026, the same venv that produced
 # the current Queenstown and Island Bay layouts. requirements.txt states the
@@ -33,6 +34,9 @@ kiwisolver==1.5.1
 laspy==2.7.0
 lazrs==0.8.2
 matplotlib==3.11.1
+# Static documentation rendering; not part of the original VM freeze.
+markdown-it-py==4.2.0
+mdurl==0.1.2
 numpy==2.5.2
 opencv-python-headless==5.0.0.93
 packaging==26.3

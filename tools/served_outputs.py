@@ -8,6 +8,7 @@ SERVED_FILES = [
     "assumptions.json",
     "seasonal_curves.json",
     "build_summary.json",
+    "map_layers.json",
     "markup_lines.geojson",
 ]
 SERVED_DIRS = [

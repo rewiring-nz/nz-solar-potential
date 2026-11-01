@@ -34,6 +34,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.region_build import DATA_DIR, area_paths
+from src.region_build import write_json_atomic
+from src.map_layer_catalog import build_static_catalog
 from src import region_ids
 from src.build_building_tiles import tile_bounds, CELL_BANDS, COVERAGE_STEPS
 from src.building_types import BTYPES
@@ -368,10 +370,15 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
             "cells": n_cells, "detail_tiles": n_detail, "heatmap_tiles": n_heat,
             "addresses": n_addr, "address_shards": n_shards, "curve_bands": n_bands,
         }, indent=1))
+        write_json_atomic(
+            work / "map_layers.json",
+            build_static_catalog(list(regions), out_root, work),
+        )
 
         # swap in: files first, then folders
         for name in ("panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles",
-                     "assumptions.json", "seasonal_curves.json", "build_summary.json"):
+                     "assumptions.json", "seasonal_curves.json", "build_summary.json",
+                     "map_layers.json"):
             if (work / name).exists():
                 shutil.move(str(work / name), str(dest / name))
         if (work / "addresses.json").exists():

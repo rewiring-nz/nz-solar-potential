@@ -283,7 +283,7 @@ class CloudProfileTests(unittest.TestCase):
         defaults = cloud_pipeline._load_shared_cloud_config()
         preview_url = (
             "https://storage.googleapis.com/rewiring-solar-previews/"
-            "devel/alice/preview.html"
+            "devel/alice/rooftop-solar.html"
         )
         with tempfile.TemporaryDirectory() as log_dir:
             with (
@@ -322,7 +322,7 @@ class CloudProfileTests(unittest.TestCase):
     def test_shared_build_publishes_and_opens_preview_by_default(self) -> None:
         preview_url = (
             "https://storage.googleapis.com/rewiring-solar-previews/"
-            "devel/alice/preview.html"
+            "devel/alice/rooftop-solar.html"
         )
         with tempfile.TemporaryDirectory() as log_dir:
             with (
@@ -355,7 +355,7 @@ class CloudProfileTests(unittest.TestCase):
         open_browser.assert_called_once_with(preview_url)
 
     def test_shared_build_with_yes_runs_unattended_and_reports_gate_warning(self) -> None:
-        preview_url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        preview_url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/rooftop-solar.html"
         warning = f"{cloud_pipeline.GATE_WARNING_PREFIX} the deploy gate flagged items (flagged)"
         stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as log_dir:
@@ -388,7 +388,7 @@ class CloudProfileTests(unittest.TestCase):
         config["preview_user"] = "alice"
         expected_url = (
             "https://storage.googleapis.com/rewiring-solar-previews/"
-            "devel/alice/preview.html"
+            "devel/alice/rooftop-solar.html"
         )
         process = MagicMock()
         process.stdout = io.StringIO(f"PREVIEW_URL={expected_url}\n")
@@ -507,7 +507,7 @@ class CloudProfileTests(unittest.TestCase):
         return popen.call_args.args[0], result
 
     def test_flagged_gate_warns_and_still_returns_preview(self) -> None:
-        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/rooftop-solar.html"
         command, result = self._shared_build(f"GATE_RESULT=flagged\nPREVIEW_URL={url}\n")
         self.assertNotIn("--interactive", command)
         self.assertEqual(result[1], url)
@@ -515,7 +515,7 @@ class CloudProfileTests(unittest.TestCase):
         self.assertIn("without review", result[0])
 
     def test_interactive_is_passed_to_remote_build(self) -> None:
-        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html"
+        url = "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/rooftop-solar.html"
         command, result = self._shared_build(
             f"GATE_RESULT=pass\nPREVIEW_URL={url}\n", interactive=True)
         self.assertIn("--interactive", command)

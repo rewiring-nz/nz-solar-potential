@@ -76,3 +76,8 @@ data/pipeline_web/
 
 # Local working data from the old method-page generator (removed 28 Oct).
 .ua/
+
+# Rendered from docs/**/*.md by tools/render_docs.py, not edited by hand.
+docs/**/*.html
+site-build/
+roof-sample.html

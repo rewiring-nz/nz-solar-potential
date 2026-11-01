@@ -55,6 +55,7 @@ if command -v node >/dev/null 2>&1; then
   for t in economics workings generation bill_tool low_solar_battery; do
     run "$t (js)"           node tests/test_$t.mjs
   done
+  run "map layer legend (js)" node tests/test_map_layers.js
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
 fi
@@ -62,6 +63,8 @@ run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
 run "cloud profiles"        $PY tests/test_cloud_profiles.py
 run "cloud preview publishing" $PY tests/test_publish_preview.py
+run "static documentation"  $PY tests/test_render_docs.py
+run "canonical map links"   $PY tests/test_canonical_map_links.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
 run "seam steps"            $PY tests/test_seam_steps.py
 run "seam fixes"            $PY tests/test_seam_fixes.py

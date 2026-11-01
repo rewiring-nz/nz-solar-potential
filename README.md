@@ -6,7 +6,7 @@ how many panels fit, what they would generate, and what that is worth.
 
 - Live map: https://rewiring-nz.github.io/nz-solar-potential/
 - How it works, in plain English:
-  [method.html](https://rewiring-nz.github.io/nz-solar-potential/method.html)
+  [How a roof estimate is made](docs/researchers/how-a-roof-estimate-is-made.md)
 - Try it on your own area: [docs/data-maintainers/quickstart.md](docs/data-maintainers/quickstart.md)
 
 Coverage (data version 64): 32,838 buildings in 35 regions across

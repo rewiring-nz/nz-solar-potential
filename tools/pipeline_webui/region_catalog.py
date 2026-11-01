@@ -27,8 +27,8 @@ _cache_lock = threading.Lock()
 
 
 def preview_url(lon: float, lat: float, zoom: float = PREVIEW_ZOOM) -> str:
-    """The view format preview.html reads (startView: ?lat=&lng=&z=)."""
-    return f"/preview.html?lat={lat:.7f}&lng={lon:.7f}&z={zoom:g}"
+    """The view format rooftop-solar.html reads (startView: ?lat=&lng=&z=)."""
+    return f"/rooftop-solar.html?lat={lat:.7f}&lng={lon:.7f}&z={zoom:g}"
 
 
 def latest_runs(data: Path = DATA) -> dict[str, dict]:

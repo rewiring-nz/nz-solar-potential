@@ -96,7 +96,7 @@ gate or `--reviewed "why"`.
 A gated build is published to:
 
 ```text
-https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/preview.html
+https://storage.googleapis.com/rewiring-solar-previews/devel/GITHUB_ALIAS/rooftop-solar.html
 ```
 
 Your alias comes from `ssh -T git@github.com`, or `gh api user --jq .login`

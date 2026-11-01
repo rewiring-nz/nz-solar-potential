@@ -8,13 +8,22 @@ from __future__ import annotations
 
 import argparse
 import http.server
+import ipaddress
+import json
 import re
+import sys
 import urllib.parse
 from pathlib import Path
 
 
+LOCAL_CATALOG_PATH = "/data/local_map_layers.json"
+
+
 class RangeHandler(http.server.SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # The local preview computes the cache catalogue on request; it is never a
+    # file in data/, so no publish or copy allowlist can pick it up.
+    local_catalog = True
 
     def end_headers(self) -> None:
         self.send_header("Accept-Ranges", "bytes")
@@ -35,8 +44,36 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
         if not self._refused():
             super().do_HEAD()
 
+    def _send_local_catalog(self) -> None:
+        try:
+            loopback = ipaddress.ip_address(self.client_address[0]).is_loopback
+        except (IndexError, ValueError):
+            loopback = False
+        if not loopback:
+            self.send_error(404)
+            return
+        try:
+            from src.map_layer_catalog import build_local_catalog
+            catalogue = build_local_catalog(Path(self.directory) / "data")
+            status = 200
+        except Exception as exc:  # noqa: BLE001 - report the failure without paths
+            catalogue = {"version": 1, "layers": [],
+                         "warnings": [f"local catalogue failed ({type(exc).__name__})"],
+                         "availability": {"source": "local", "local_cache": False}}
+            status = 500
+        body = json.dumps(catalogue).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
         if self._refused():
+            return
+        if self.local_catalog and urllib.parse.urlsplit(self.path).path == LOCAL_CATALOG_PATH:
+            self._send_local_catalog()
             return
         range_header = self.headers.get("Range")
         if not range_header:
@@ -93,6 +130,10 @@ def main() -> int:
     root = args.root.resolve()
     if not root.is_dir():
         parser.error(f"not a directory: {root}")
+    # Imports also work when invoked directly as tools/pipeline_serve.py.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from tools.render_docs import render_docs
+    render_docs(root)
     handler = lambda *a, **kw: RangeHandler(*a, directory=str(root), **kw)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler)
     server.daemon_threads = True

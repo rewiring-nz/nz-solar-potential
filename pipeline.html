@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solar pipeline panel</title>
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
+<script src="map_layers.js"></script>
+<link href="map_layers.css" rel="stylesheet">
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
   :root { --side: 400px; --ok: #2e7d32; --bad: #c62828; --warn: #ef6c00; --sel: #1565c0; }
@@ -66,6 +69,11 @@
   <aside id="side">
     <header>
       <h1>Solar pipeline panel</h1>
+      <div class="links" aria-label="Pages">
+        <a href="rooftop-solar.html">Rooftop solar</a>
+        <a href="data-explorer.html?source=local">Data explorer</a>
+        <a href="docs/index.html">Docs</a>
+      </div>
       <div id="targets" role="group" aria-label="Target">
         <button data-target="local" title="This checkout and computer">Local</button>
         <button data-target="developer" title="Shared build VM; previews under devel/&lt;alias&gt;/">Developer</button>

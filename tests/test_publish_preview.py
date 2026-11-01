@@ -74,8 +74,11 @@ class PublishPreviewTests(unittest.TestCase):
             data.mkdir()
             for name in publish_preview.CORE_DATA_FILES:
                 (data / name).write_bytes(b"tile data")
+            (data / "map_layers.json").write_text('{"version":1,"layers":[]}', encoding="utf-8")
             for name in publish_preview.FRONTEND_FILES:
                 (root / name).write_text("<html></html>", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "index.md").write_text("# Docs\n", encoding="utf-8")
             (root / "site-config.js").write_text(
                 'window.SITE = {\n  dataVersion: "48",\n'
                 '  dataBase: "https://example.com/production/",\n'
@@ -98,12 +101,23 @@ class PublishPreviewTests(unittest.TestCase):
 
         self.assertEqual(
             url,
-            "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/preview.html",
+            "https://storage.googleapis.com/rewiring-solar-previews/devel/alice/rooftop-solar.html",
         )
+        uploaded = [command[-1] for command in commands]
+        for name in ("rooftop-solar.html", "preview.html", "data-explorer.html",
+                     "data_explorer.js", "map_layers.js", "map_layers.css", "docs/index.html"):
+            self.assertIn(f"gs://rewiring-solar-previews/devel/alice/{name}", uploaded)
+        self.assertFalse(any(path.endswith(".md") for path in uploaded))
         self.assertTrue(
             any(
                 f"/devel/alice/runs/{run_id}/data/panel_layouts.pmtiles" in command[-1]
                 and "--cache-control=public,max-age=31536000,immutable" in command
+                for command in commands
+            )
+        )
+        self.assertTrue(
+            any(
+                f"/devel/alice/runs/{run_id}/data/map_layers.json" in command[-1]
                 for command in commands
             )
         )

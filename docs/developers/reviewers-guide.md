@@ -164,8 +164,11 @@ them; `tools/layout_ab.py` runs a sample with a switch off and on.
    check `data/roof_labels.json` for that id before blaming the gates.
 3. One repo. The Wellington copy was retired on 24 Sep 2026.
    `site-config.js` holds the per-deployment settings.
-4. `preview.html` is one file by design: static Pages
-   deploy, no build step.
+4. `rooftop-solar.html` is the canonical static map; `preview.html` redirects
+   old links without losing query/fragment state. Documentation is rendered
+   at build/startup by [the static-site tooling](static-site.md).
+   `tools/preview_sample.py` writes `roof-sample.html` by default, so a
+   geometry diagnostic does not overwrite the compatibility redirect.
 
 ## Glossary
 

@@ -245,7 +245,7 @@ def main():
     ap.add_argument("--labelled", action="store_true",
                     help="sample from roofs marked complete")
     ap.add_argument("--jobs", type=int, default=0)
-    ap.add_argument("--out", default="preview.html")
+    ap.add_argument("--out", default="roof-sample.html")
     a = ap.parse_args()
 
     import geopandas as gpd

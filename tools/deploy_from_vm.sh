@@ -36,6 +36,11 @@ for f in panel_layouts.pmtiles buildings.pmtiles building_cells.pmtiles addresse
          assumptions.json seasonal_curves.json build_summary.json markup_lines.geojson; do
   gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet "$VM:~/solar-map/data/$f" "data/$f" || { echo "FATAL: could not pull $f"; exit 1; }
 done
+# map_layers.json is optional for builds that predate the layer catalogue; a
+# stale local copy would describe another build's served set.
+rm -f data/map_layers.json
+gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet "$VM:~/solar-map/data/map_layers.json" data/map_layers.json 2>/dev/null \
+  || { rm -f data/map_layers.json; echo "(no map_layers.json in the served set; data explorer uses no published catalogue)"; }
 for d in building_detail heatmap_tiles summaries seasonal_curves addresses sun; do
   rm -rf "data/$d.pull" && mkdir -p "data/$d.pull"
   if gcloud compute scp --tunnel-through-iap --project="$PROJECT" --zone "$ZONE" --quiet --recurse "$VM:~/solar-map/data/$d" "data/$d.pull/" 2>/dev/null; then

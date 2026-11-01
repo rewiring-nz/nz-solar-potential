@@ -41,6 +41,34 @@ developer-preview link when sharing a build with someone else.
    buildings) against the sun's path in summer, at the equinox and in
    winter.
 
+## Layers and legend
+
+Open **Layers & legend** below the map navigation controls. The shared legend
+also appears in the [pipeline panel](../data-maintainers/web-pipeline.md).
+Groups can be collapsed, and checkboxes show or hide overlays. Basemap radio
+buttons choose **Aerial (Esri / LINZ)** or **OpenStreetMap** without clearing
+the other layers. Both basemaps need internet access.
+
+The stack, from top to bottom, is:
+
+1. **Rooftop solar analysis**: panel layouts, solar-analysis building outlines,
+   then the solar heat map. Panels paint above outlines; outlines paint above
+   the heat map. Heat Map and Panel Layout remain mutually exclusive analysis
+   modes, matching the existing dashboard controls. Hiding an overlay does not
+   change the estimate being calculated.
+2. **Derived datasets**: calculated roof facets, detected obstructions and
+   other available intermediate layers. Facets and obstructions are displayed
+   in Panel Layout mode.
+3. **Source datasets**: available dataset footprints. A faint fill and dashed
+   outline show a cached file's extent, not guaranteed valid-data coverage.
+4. **Basemap**.
+
+**Details** explains each layer; **Zoom** fits the map to its extent when
+known. The preview lists only datasets supplied with that map build, not
+everything cached on the computer that built it. Older builds without a
+dataset catalogue still show the existing analysis controls and basemaps,
+with an explicit notice that dataset footprints are unavailable.
+
 ## Read the numbers
 
 - `kWp` is the panels' nameplate rating at Standard Test Conditions, not

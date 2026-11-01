@@ -72,7 +72,7 @@ def test_catalog_states_and_links():
         props = {f["properties"]["region"]: f for f in fc["features"]}
         assert props["pilot"]["properties"]["state"] == "built"
         assert props["pilot"]["properties"]["report_url"] == "/data/pipeline_runs/20260101T000000Z/report.md"
-        assert props["pilot"]["properties"]["preview_url"].startswith("/preview.html?lat=-45.03")
+        assert props["pilot"]["properties"]["preview_url"].startswith("/rooftop-solar.html?lat=-45.03")
         loc = props[region]
         assert loc["properties"]["state"] == "failed", loc["properties"]
         assert loc["geometry"]["type"] == "Polygon"

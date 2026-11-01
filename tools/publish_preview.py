@@ -20,10 +20,11 @@ if str(ROOT) not in sys.path:
 
 import config
 from tools.served_outputs import SERVED_DIRS, SERVED_FILES, STATIC_DIRS
+# One public frontend allowlist, shared with the Pages build; rooftop-solar.html
+# is the canonical map and preview.html redirects old links to it.
+from tools.site_assets import FRONTEND_FILES
 
 DATA = ROOT / "data"
-FRONTEND_FILES = ("preview.html", "economics.js", "bill_tool.js", "panel_editor.js", "workings.js",
-                  "generation.js", "sun_shadows.js", "buildings3d.js", "low_solar.js")
 CORE_DATA_FILES = ("panel_layouts.pmtiles", "buildings.pmtiles", "building_cells.pmtiles")
 IMMUTABLE_CACHE = "public,max-age=31536000,immutable"
 REVALIDATE_CACHE = "public,no-cache,max-age=0"
@@ -196,7 +197,12 @@ def publish(
         raise FileNotFoundError(
             "combined build is missing required preview artifacts: " + ", ".join(missing)
         )
-    missing_frontend = [str(root / name) for name in FRONTEND_FILES if not (root / name).is_file()]
+    from tools.render_docs import _safe_file, render_docs
+
+    # Docs are rendered from the checked-out Markdown first, so the uploaded
+    # HTML matches this commit; only the renderer's returned assets ship.
+    site_files = tuple(dict.fromkeys((*FRONTEND_FILES, *render_docs(root))))
+    missing_frontend = [str(root / name) for name in site_files if not _safe_file(root / name, root)]
     if missing_frontend:
         raise FileNotFoundError(
             "preview frontend is missing required files: " + ", ".join(missing_frontend)
@@ -228,7 +234,7 @@ def publish(
                 str(source), f"{run_data}/{name}",
             ], runner=runner)
 
-    for name in FRONTEND_FILES:
+    for name in site_files:
         source = root / name
         if not source.is_file():
             raise FileNotFoundError(f"preview frontend asset is missing: {source}")
@@ -252,7 +258,7 @@ def publish(
     finally:
         config_path.unlink(missing_ok=True)
 
-    return f"https://storage.googleapis.com/{bucket.removeprefix('gs://')}/devel/{user.lower()}/preview.html"
+    return f"https://storage.googleapis.com/{bucket.removeprefix('gs://')}/devel/{user.lower()}/rooftop-solar.html"
 
 
 def main() -> int:

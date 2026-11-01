@@ -149,7 +149,7 @@ def test_cloud_estimates():
         dev = _estimate("developer", fake_cloud(), tmp)
         assert not dev["blockers"], dev["blockers"]
         assert dev["cloud"]["preview_user"] == "tester"
-        assert dev["cloud"]["preview_url"].endswith("/devel/tester/preview.html")
+        assert dev["cloud"]["preview_url"].endswith("/devel/tester/rooftop-solar.html")
         assert dev["cloud_cost_nzd"] == dev["cloud"]["cost_nzd"]
         assert "not a spending cap" in dev["cloud"]["cost_text"]
         assert "disk_free_gb" not in dev["machine"]

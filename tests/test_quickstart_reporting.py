@@ -52,6 +52,30 @@ def test_report_and_logs_share_step_number_and_label():
         assert not (run.run_dir / "run.json").exists()
 
 
+def test_run_and_step_durations_are_logged_as_hhmmss():
+    import json
+
+    with tempfile.TemporaryDirectory(prefix="quickstart-report-", dir=ROOT) as tmp:
+        run = PipelineRun("test_area", Path(tmp) / "run")
+        run.started_clock = 0.0
+        run.begin(2)
+        run.step_clocks[2] = 0.0
+        with patch("tools.pipeline.time.monotonic", return_value=3661.7):
+            run.finish(2, "PASS", "complete", 0)
+            run.finish_run()
+
+        log = run.log_path.read_text(encoding="utf-8")
+        report = run.report_path.read_text(encoding="utf-8")
+        status = json.loads((run.run_dir / "status.json").read_text(encoding="utf-8"))
+        assert "[RUN] STARTED (UTC): " in log
+        assert "[QS-02] PASS Fetch outlines, elevation, imagery, and point cloud (exit=0, 01:01:02)" in log
+        assert "[RUN] FINISHED (UTC): " in log
+        assert "total runtime: 01:01:02" in log
+        assert "- **Total runtime:** 01:01:02" in report
+        assert status["runtime"] == "01:01:02"
+        assert status["runtime_seconds"] == 3661.7
+
+
 def test_cloud_pipeline_step_offset_keeps_labels_sequential_after_prechecks():
     with tempfile.TemporaryDirectory(prefix="quickstart-report-", dir=ROOT) as tmp:
         run = PipelineRun("test_area", Path(tmp) / "run", step_offset=6)
@@ -199,6 +223,7 @@ def test_no_preview_server_flag_parses_and_validates_in_queue_task():
 
 if __name__ == "__main__":
     for test in (test_area_names_are_path_safe, test_report_and_logs_share_step_number_and_label,
+                 test_run_and_step_durations_are_logged_as_hhmmss,
                  test_cloud_pipeline_step_offset_keeps_labels_sequential_after_prechecks,
                  test_failed_step_updates_report, test_fetch_requires_wide_dem_after_fetch_stage,
                  test_child_output_redacts_api_key_before_logging,

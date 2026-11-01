@@ -234,8 +234,11 @@ Exact definitions: [tools/pipeline.py](../../tools/pipeline.py).
 - `data/pipeline_runs/<UTC-run-id>/`: `report.md` (status, timing and effect
   of each step), `status.json` (the same step statuses and timings as JSON,
   without commands; read by the [web pipeline](web-pipeline.md)), `run.log`
-  (all output, tagged `[QS-NN]`), and the preview server's PID and log. A
-  local run prints `PIPELINE_RUN_DIR=<path>` when it creates this folder.
+  (pipeline start and finish timestamps plus step output tagged `[QS-NN]` and
+  run timing tagged `[RUN]`), and the preview server's PID and log. Step
+  completion and total runtime are shown as `hh:mm:ss`; the start and finish
+  timestamps are UTC. A local run prints `PIPELINE_RUN_DIR=<path>` when it
+  creates this folder.
   `--no-preview-server` passes step 21 without starting a server, for callers
   that already serve the map.
 - `data/out/<region>/`: the region's emitted tiles and summaries.

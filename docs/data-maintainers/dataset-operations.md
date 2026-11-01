@@ -50,7 +50,7 @@ Layer IDs per survey are in `config.SURVEYS`.
 | Measured sunlight | NIWA SolarView GHI (Wakatipu basin); else the nearest NIWA measured-radiation station | Sunlight calibration. `src/solar_model.py` |
 | ERA5 daily radiation, 1940–2025 | Copernicus, via Open-Meteo (CC BY 4.0) | Scales calibration between places; low-solar runs. `climate/era5/`, `tools/pack_era5_daily.py` |
 | District plan zones | Queenstown Lakes District Council | Home or business pricing. `tools/fetch_zoning.py` |
-| Aerial basemap | LINZ Basemaps | Map display; reference photo for lean. `preview.html`, `src/register_imagery.py` |
+| Aerial basemap | LINZ Basemaps | Map display; reference photo for lean. `rooftop-solar.html`, `src/register_imagery.py` |
 | World imagery basemap | Esri World Imagery | Low-zoom map display only |
 
 Where there is no LiDAR (Cromwell, Glenorchy), the survey is marked
@@ -167,7 +167,7 @@ lists the fast suite, synthetic build and geometry checks.
 .venv/bin/python tools/pipeline_serve.py --root . --port 8000
 ```
 
-Open `http://localhost:8000/preview.html`. This loopback server supports the
+Open `http://localhost:8000/rooftop-solar.html`. This loopback server supports the
 byte-range requests PMTiles needs. Stop it with Ctrl+C.
 
 The [live refit server](../../src/live_server.py) is a separate developer
@@ -176,8 +176,10 @@ tool requiring root-level pilot inputs, not the regional preview path; see
 
 ## 7. Publish
 
-The site (`preview.html` and its scripts) is served by GitHub Pages from this
-repository. The data is served from the Google Cloud tiles bucket, one folder
+The site (`rooftop-solar.html`, `data-explorer.html` and their scripts) and
+rendered documentation are deployed by the
+[static Pages workflow](../developers/static-site.md). The data is served
+from the Google Cloud tiles bucket, one folder
 per release: `gs://solar-potential-map-tiles/v<N>/`. `site-config.js`
 (`dataBase`, `dataVersion`) tells the page which folder to read.
 

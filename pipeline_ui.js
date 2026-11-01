@@ -116,6 +116,8 @@
 
   // ---- map -------------------------------------------------------------
   const empty = { type: "FeatureCollection", features: [] };
+  const tileProtocol = new pmtiles.Protocol();
+  maplibregl.addProtocol("pmtiles", tileProtocol.tile);
   const map = new maplibregl.Map({
     container: "map",
     style: {
@@ -141,6 +143,28 @@
     center: [172.5, -41.5], zoom: 5,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  const layerLegend = new MapLayers.Legend({ beforeId: "localities-fill" });
+  map.addControl(layerLegend, "top-right");
+  let layerRequest = 0;
+  let layersTarget = null;
+  async function loadLayers() {
+    const source = target;
+    const request = ++layerRequest;
+    if (layersTarget !== source) {
+      layerLegend.clearDatasets();
+      layerLegend.setMessages([]);
+      layersTarget = source;
+    }
+    try {
+      const catalogue = await api("layers?source=" + source);
+      if (request !== layerRequest || source !== target) return;
+      layerLegend.setCatalogue(catalogue, location.href);
+    } catch (error) {
+      if (request !== layerRequest || source !== target) return;
+      layerLegend.clearDatasets();
+      layerLegend.setMessages(["Dataset catalogue: " + error.message]);
+    }
+  }
 
   const stateColour = ["match", ["get", "state"], "built", "#2e7d32", "failed", "#c62828", "#ef6c00"];
 
@@ -161,14 +185,28 @@
       paint: { "line-color": stateColour, "line-width": 2 } });
     map.addLayer({ id: "regions-point", type: "circle", source: "regions", filter: ["==", ["geometry-type"], "Point"],
       paint: { "circle-color": stateColour, "circle-radius": 7, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+    layerLegend.setEntries([
+      ...MapLayers.basemaps(map),
+      ...[
+        { id: "localities", label: "Locality selection boundaries", ids: ["localities-fill", "localities-line", "localities-label"], colour: "#90caf9" },
+        { id: "regions", label: "Prepared / built areas", ids: ["regions-fill", "regions-line", "regions-point"], colour: "#2e7d32",
+          description: "Green: built; amber: prepared; red: last run failed. These area boundaries are not cached dataset coverage." },
+      ].map(entry => Object.assign(entry, {
+        group: "operations",
+        getVisible: () => map.getLayoutProperty(entry.ids[0], "visibility") !== "none",
+        queryLayers: entry.ids.filter(id => !id.endsWith("-label")),
+        setVisible: on => entry.ids.forEach(id => map.setLayoutProperty(id, "visibility", on ? "visible" : "none")),
+      })),
+    ]);
 
     map.on("click", "localities-fill", (e) => {
+      if (layerLegend.queryId) return;
       if (!e.features.length) return;
       const p = e.features[0].properties;
       toggleSelection(p.region_id, p.name + (p.town && p.town !== p.name ? ", " + p.town : ""));
     });
-    map.on("click", "regions-fill", (e) => showRegionPopup(e.features[0], e.lngLat));
-    map.on("click", "regions-point", (e) => showRegionPopup(e.features[0], e.lngLat));
+    map.on("click", "regions-fill", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
+    map.on("click", "regions-point", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
     ["localities-fill", "regions-fill", "regions-point"].forEach((id) => {
       map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
@@ -228,6 +266,7 @@
   $("regions-refresh").addEventListener("click", () => { loadRegions(false, true); loadVm(true); });
 
   async function loadRegions(fit, refresh) {
+    loadLayers();
     const source = target;
     let fc;
     $("regions-meta").innerHTML = source === "local" ? "" : "<p class='muted'>Reading the bucket…</p>";

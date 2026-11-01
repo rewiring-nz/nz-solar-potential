@@ -210,7 +210,7 @@ if [ -n "$PREVIEW_USER" ]; then
   preview_url=$(printf '%s\n' "$preview_out" | sed -n 's/^PREVIEW_URL=//p' | tail -1)
   lower_user=$(printf '%s' "$PREVIEW_USER" | tr '[:upper:]' '[:lower:]')
   case "$preview_url" in
-    https://storage.googleapis.com/*/devel/"$lower_user"/preview.html) ;;
+    https://storage.googleapis.com/*/devel/"$lower_user"/rooftop-solar.html) ;;
     *) echo "PREVIEW FAILED -- publisher returned an invalid preview URL"; exit 1 ;;
   esac
   echo "PREVIEW_URL=$preview_url"

@@ -244,6 +244,13 @@ def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
 
 
+def _format_duration(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 def _md(value: Any) -> str:
     return (str(value).replace("|", "\\|").replace("\n", "<br>")
             .replace("<", "&lt;").replace(">", "&gt;"))
@@ -298,6 +305,8 @@ class PipelineRun:
         self.report_path = run_dir / "report.md"
         self.started = _now()
         self.started_clock = time.monotonic()
+        self.finished: str | None = None
+        self.runtime_seconds: float | None = None
         self.records = [dict(s, status="PENDING", comment="Not run yet", command="", exit_code=None,
                              started=None, finished=None, seconds=None)
                         for s in STEPS]
@@ -307,6 +316,7 @@ class PipelineRun:
         self.overall = "RUNNING"
         run_dir.mkdir(parents=True, exist_ok=False)
         self.log_path.touch()
+        self.run_event(f"STARTED (UTC): {self.started}")
         self._write_report()
 
     def _write_log(self, text: str) -> None:
@@ -327,7 +337,7 @@ class PipelineRun:
     def _write_report(self) -> None:
         rows = []
         for s in self.records:
-            timing = (f"exit {s['exit_code']}, {s['seconds']}s"
+            timing = (f"exit {s['exit_code']}, {_format_duration(s['seconds'])}"
                       if s.get("exit_code") is not None else "—")
             rows.append("| {number:02d} | {label} | {inputs} | {outputs} | **{status}** ({timing}) | {comment} |".format(
                 number=s["number"] + self.step_offset, label=_md(s["label"]), inputs=_md(s["inputs"]),
@@ -346,6 +356,9 @@ class PipelineRun:
             "",
             f"- **Run ID:** `{self.run_dir.name}`",
             f"- **Started (UTC):** {self.started}",
+            *([f"- **Finished (UTC):** {self.finished}",
+               f"- **Total runtime:** {_format_duration(self.runtime_seconds)}"]
+              if self.finished is not None and self.runtime_seconds is not None else []),
             f"- **Status:** **{self.overall}**",
             f"- **Python:** `{sys.executable}`",
             f"- **Git commit:** `{self.metadata.get('git_commit', 'unknown')}`",
@@ -388,6 +401,10 @@ class PipelineRun:
             "area": self.area,
             "run_id": self.run_dir.name,
             "started": self.started,
+            "finished": self.finished,
+            "runtime_seconds": self.runtime_seconds,
+            "runtime": (_format_duration(self.runtime_seconds)
+                        if self.runtime_seconds is not None else None),
             "overall": self.overall,
             "step_offset": self.step_offset,
             "steps": [{k: s.get(k) for k in keep} for s in self.records],
@@ -403,6 +420,22 @@ class PipelineRun:
         line = f"[QS-{number + self.step_offset:02d}] {text}"
         print(line, flush=True)
         self._write_log(line)
+
+    def run_event(self, text: str) -> None:
+        line = f"[RUN] {text}"
+        print(line, flush=True)
+        self._write_log(line)
+
+    def finish_run(self) -> None:
+        if self.finished is not None:
+            return
+        self.finished = _now()
+        self.runtime_seconds = round(time.monotonic() - self.started_clock, 1)
+        self.run_event(
+            f"FINISHED (UTC): {self.finished}; total runtime: "
+            f"{_format_duration(self.runtime_seconds)}"
+        )
+        self._save()
 
     def redact(self, text: str) -> str:
         for secret in self.secrets:
@@ -427,7 +460,8 @@ class PipelineRun:
         clock = self.step_clocks.pop(number, time.monotonic())
         record.update(status=status, comment=comment, exit_code=exit_code,
                       finished=_now(), seconds=round(time.monotonic() - clock, 1))
-        self.event(number, f"{status} {record['label']} (exit={exit_code}, {record['seconds']}s): {comment}")
+        self.event(number, f"{status} {record['label']} (exit={exit_code}, "
+                           f"{_format_duration(record['seconds'])}): {comment}")
         self._save()
 
     def run_command(self, number: int, command: list[str], *, env: dict[str, str] | None = None,
@@ -469,6 +503,7 @@ class PipelineRun:
                         f"Not run because step {number + self.step_offset:02d} was interrupted."
                     )
             self._save()
+            self.finish_run()
             raise
         except OSError as exc:
             message = self.redact(f"could not start command: {type(exc).__name__}: {exc}")
@@ -646,7 +681,7 @@ def _start_preview_server(area: str, run: PipelineRun, py: Path,
     pid_file = run.run_dir / "map-preview-server.pid"
     command = [str(py), "tools/pipeline_serve.py", "--root", str(ROOT), "--port", str(port)]
     record = run.begin(STEP["preview"], command)
-    route = "/preview.html"
+    route = "/rooftop-solar.html"
     bbox = run.metadata["bbox"]
     lat, lng = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
     url = f"http://127.0.0.1:{port}{route}?lat={lat:.7f}&lng={lng:.7f}&z=15.5"
@@ -1283,7 +1318,7 @@ def _run_shared_cloud_build(
         )
     expected_url = (
         f"https://storage.googleapis.com/{config['preview_bucket'][5:]}/devel/"
-        f"{config['preview_user']}/preview.html"
+        f"{config['preview_user']}/rooftop-solar.html"
     )
     if preview_url != expected_url:
         raise RuntimeError(
@@ -2293,6 +2328,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
                 s["status"] = "NOT RUN"
                 s["comment"] = f"Not run because step {failed_at:02d} failed; dependent outputs are unavailable."
         run._save()
+    run.finish_run()
     print(f"\nPipeline report: {run.report_path}\nCombined log: {run.log_path}", flush=True)
     if run.metadata.get("map_preview_url"):
         print(f"Map preview: {run.metadata['map_preview_url']}", flush=True)

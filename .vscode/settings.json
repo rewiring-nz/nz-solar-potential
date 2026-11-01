@@ -18,5 +18,6 @@
   "chat.tools.terminal.autoApprove": {
     "command": true
   },
-  "chat.agent.maxRequests": 200
+  "chat.agent.maxRequests": 200,
+  "python.terminal.useEnvFile": true
 }

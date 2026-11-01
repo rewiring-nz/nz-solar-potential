@@ -1,3 +1,4 @@
+-r requirements-docs.txt
 geopandas>=1.0
 # Rasterio wheels bundle GDAL; system GDAL CLI codecs are checked separately.
 rasterio>=1.3

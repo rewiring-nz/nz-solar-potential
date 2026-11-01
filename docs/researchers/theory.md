@@ -1,7 +1,7 @@
 # Why a building estimate can be trusted
 
 For researchers assessing the evidence and its limits. For a plain-English
-walkthrough, start with [How a roof estimate is made](../../method.html);
+walkthrough, start with [How a roof estimate is made](how-a-roof-estimate-is-made.md);
 financial assumptions are in [Economics](economics.md).
 
 ## In short

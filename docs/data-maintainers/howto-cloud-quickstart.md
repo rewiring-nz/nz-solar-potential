@@ -47,7 +47,7 @@ instead, follow [Your own VM](quickstart-cloud.md#your-own-vm-profiles).
 6. Open the printed preview URL:
 
    ```text
-   https://storage.googleapis.com/rewiring-solar-previews/devel/<github-alias>/preview.html
+   https://storage.googleapis.com/rewiring-solar-previews/devel/<github-alias>/rooftop-solar.html
    ```
 
 7. If the output starts with `WARNING:`, read the `GATE WARNING` list. It

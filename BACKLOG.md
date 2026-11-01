@@ -1,5 +1,13 @@
 # Backlog
 
+Completed #47: shared grouped map-layer legend in the pipeline panel and
+preview, with aerial/OpenStreetMap selection, cached-source extent overlays,
+available intermediate layers and dataset details/zoom. Analysis stacking is
+panels above building outlines above the heat map; existing preview analysis
+modes and totals are preserved. Local cache layers are isolated from cloud
+targets. Remaining: remote source catalogues, valid-data masks rather than
+file extents, and full raster viewing for intermediate datasets.
+
 Completed: national [area catalogue](docs/data-maintainers/areas.md), grouped
 by council with LINZ ids and pipeline region ids. `tools/list_areas.py`
 refreshes the snapshot from LINZ without fetching buildings or starting

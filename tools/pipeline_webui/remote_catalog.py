@@ -24,7 +24,7 @@ from src.region_ids import validate
 from tools.pipeline_webui.common import ROOT
 
 CACHE_SECONDS = 10 * 60
-LIVE_SITE = "https://rewiring-nz.github.io/nz-solar-potential/preview.html"
+LIVE_SITE = "https://rewiring-nz.github.io/nz-solar-potential/rooftop-solar.html"
 GCS = "https://storage.googleapis.com"
 LISTING = GCS + "/storage/v1/b/{bucket}/o?{query}"
 _DATA_BASE = re.compile(r"""dataBase\s*:\s*["']([^"']+)["']""")
@@ -163,7 +163,7 @@ class RemoteCatalog:
             if not _ALIAS.fullmatch(alias):
                 continue
             folder = f"{GCS}/{bucket}/devel/{alias}/"
-            entry = {"alias": alias, "preview_url": folder + "preview.html",
+            entry = {"alias": alias, "preview_url": folder + "rooftop-solar.html",
                      "data_base": None, "regions": 0, "built_at": None}
             out["aliases"].append(entry)
             try:
@@ -173,7 +173,7 @@ class RemoteCatalog:
                     raise ValueError("dataBase is outside the preview bucket")
                 entry["data_base"] = base
                 feats, warnings = self._summaries(
-                    base, folder + "preview.html",
+                    base, folder + "rooftop-solar.html",
                     {"source": "developer", "alias": alias, "run": cfg["data_version"]})
             except Exception as exc:  # noqa: BLE001 - one alias must not hide the rest
                 out["warnings"].append(f"{alias}: preview unavailable ({type(exc).__name__})")

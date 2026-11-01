@@ -29,7 +29,9 @@ import webbrowser
 from pathlib import Path
 from typing import Callable
 
+from src import map_layer_catalog as MLC
 from tools.pipeline_serve import RangeHandler
+from tools.render_docs import render_docs
 from tools.pipeline_webui import cloud as C
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import locality_proxy as LP
@@ -86,6 +88,8 @@ class WebHandler(RangeHandler):
     app: App  # set on the subclass made by make_server
 
     quiet = False
+    # Local caches are listed only through the token-checked /api/layers here.
+    local_catalog = False
 
     def log_message(self, fmt, *args):
         if self.quiet:
@@ -172,6 +176,13 @@ class WebHandler(RangeHandler):
     def _route(self, method: str, parts: list[str], query: dict, body: dict):
         app = self.app
         head = parts[0] if parts else ""
+        if head == "layers" and method == "GET" and len(parts) == 1:
+            source = (query.get("source") or ["local"])[0]
+            if source == "local":
+                return 200, MLC.build_local_catalog(app.data)
+            if source in {"developer", "published"}:
+                return 200, MLC.unavailable_catalog(source)
+            raise HttpError(400, "source must be local, developer or published")
         if head == "regions" and method == "GET":
             source = (query.get("source") or ["local"])[0]
             if source != "local":
@@ -364,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-open-browser", action="store_true",
                         help="print the link instead of opening it")
     args = parser.parse_args(argv)
+    render_docs(ROOT)
     app = App(secrets.token_urlsafe(24), python=args.python)
     try:
         server = make_server(app, args.port)

@@ -43,13 +43,14 @@ Background and detail:
 | --- | --- |
 | [Architecture](developers/architecture.md) | Understand data flow and module responsibilities. |
 | [Tooling and execution](developers/tooling-execution.md) | Trace commands across machines; compare build engines and the proposed common interface. |
+| [Static site and documentation](developers/static-site.md) | Render and publish the same documentation on GitHub Pages, local servers and developer previews. |
 | [Reviewer's guide](developers/reviewers-guide.md) | Check geometry rules, inspect changes and choose validation tools. |
 
 ## Researchers
 
 | Document | What it covers |
 | --- | --- |
-| [How a roof estimate is made](https://rewiring-nz.github.io/nz-solar-potential/method.html) | Start here for a plain-English walkthrough. Source: [`method.html`](../method.html), edited by hand. |
+| [How a roof estimate is made](researchers/how-a-roof-estimate-is-made.md) | Start here for a plain-English walkthrough. |
 | [Economics](researchers/economics.md) | Inspect the bill model, financial assumptions and battery scenarios. |
 | [Theory](researchers/theory.md) | Assess evidence, modelling choices, accuracy limits and missing validation. |
 

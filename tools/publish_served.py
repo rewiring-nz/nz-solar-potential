@@ -7,7 +7,7 @@
 
 Then in site-config.js:  dataBase: "https://storage.googleapis.com/solar-potential-map-tiles/v42/",
 and dataVersion: "42". The page prefixes every data URL with dataBase
-(preview.html, DATA_BASE), so nothing else changes. tools/deploy_from_vm.sh
+(rooftop-solar.html, DATA_BASE), so nothing else changes. tools/deploy_from_vm.sh
 does all of this.
 
 WHY A VERSION FOLDER. Tiles are fetched by byte range and cached by the

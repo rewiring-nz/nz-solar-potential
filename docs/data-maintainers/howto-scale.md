@@ -47,7 +47,7 @@ only that region. Choose a method:
    .venv/bin/python tools/pipeline_serve.py --root . --port 8000
    ```
 
-   Open `http://localhost:8000/preview.html`. Press Ctrl+C to stop.
+   Open `http://localhost:8000/rooftop-solar.html`. Press Ctrl+C to stop.
 
 ## On the shared VM
 
@@ -73,7 +73,7 @@ run the build.
    it stopped.
 
 4. Open
-   `https://storage.googleapis.com/rewiring-solar-previews/devel/<github-alias>/preview.html`
+   `https://storage.googleapis.com/rewiring-solar-previews/devel/<github-alias>/rooftop-solar.html`
    and read any `GATE WARNING` list.
 
 The combined map includes every region that has been emitted on the VM, not

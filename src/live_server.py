@@ -1,9 +1,9 @@
 """
-Local server for the pilot: serves preview.html and data/ as static
+Local server for the pilot: serves rooftop-solar.html and data/ as static
 files (same as `python3 -m http.server`), plus one API endpoint,
 /api/refit, that recomputes segmentation/obstruction-detection/panel-
 fitting for a single building on demand with overridable parameters --
-so the sliders in preview.html can show what a parameter change actually
+so the sliders in rooftop-solar.html can show what a parameter change actually
 does to a real building's layout, live, instead of guessing and waiting
 for a full ~90s pilot-wide rebuild.
 
@@ -41,7 +41,7 @@ from src.building_shading import building_shading_factor
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_DIR / "data"
 # Serve from the repo root (one level up), not the project dir, so the URL
-# stays http://localhost:8000/solar-map/preview.html -- consistent with
+# stays http://localhost:8000/solar-map/rooftop-solar.html -- consistent with
 # every link already shared for this pilot rather than dropping the prefix.
 SERVE_ROOT = PROJECT_DIR.parent
 
@@ -221,6 +221,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 def main():
+    from tools.render_docs import render_docs
+    render_docs(PROJECT_DIR)
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     server = http.server.ThreadingHTTPServer(("", port), Handler)
     refit = "without /api/refit" if REFIT_UNAVAILABLE else "with /api/refit"

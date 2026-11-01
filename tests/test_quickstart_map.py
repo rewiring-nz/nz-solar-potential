@@ -19,7 +19,7 @@ from tools.pipeline import PipelineRun, RUNS, QuickstartRun
 def test_range_server_serves_static_and_partial_content():
     with tempfile.TemporaryDirectory(prefix="quickstart-map-") as temp:
         root = Path(temp)
-        (root / "preview.html").write_text("<!doctype html><title>map</title>")
+        (root / "rooftop-solar.html").write_text("<!doctype html><title>map</title>")
         payload = bytes(range(256)) * 3
         (root / "buildings.pmtiles").write_bytes(payload)
         handler = lambda *args, **kwargs: RangeHandler(*args, directory=str(root), **kwargs)
@@ -28,7 +28,7 @@ def test_range_server_serves_static_and_partial_content():
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"
         try:
-            with urllib.request.urlopen(base + "/preview.html") as response:
+            with urllib.request.urlopen(base + "/rooftop-solar.html") as response:
                 assert response.status == 200
                 assert b"<title>map</title>" in response.read()
             request = urllib.request.Request(base + "/buildings.pmtiles",
@@ -118,7 +118,7 @@ def test_pipeline_preview_targets_shared_data_map():
             "test_area", run, Path(sys.executable), preferred_port=0, open_browser=False)
         try:
             assert ok
-            assert "/preview.html?lat=" in url
+            assert "/rooftop-solar.html?lat=" in url
             assert run.metadata["map_preview_url"] == url
             assert (run.run_dir / "map-preview-server.pid").is_file()
             assert (run.run_dir / "map-preview-server.log").is_file()

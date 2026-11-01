@@ -50,7 +50,7 @@ done
 # The VM gets what is on GitHub, not what is on this machine.
 if git rev-parse --git-dir >/dev/null 2>&1; then
   git fetch -q origin "$REF" 2>/dev/null
-  if [ -n "$(git status --porcelain --untracked-files=no -- src tools tests config.py preview.html)" ]; then
+  if [ -n "$(git status --porcelain --untracked-files=no -- src tools tests config.py rooftop-solar.html preview.html data-explorer.html docs requirements-docs.txt)" ]; then
     echo "NOTE: uncommitted code changes here will NOT reach the VM -- commit and push them first."
   fi
   if [ "$(git rev-parse --abbrev-ref HEAD)" = "$REF" ] && \

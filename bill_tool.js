@@ -982,7 +982,7 @@ function btMethodHtml(r, prof, isBiz) {
     `<p><b>Hour by hour.</b> For an average day in each season (${BT_SEASONS.map((s, i) => `${s} ${days[i]} days`).join(", ")}), each hour the solar powers the ${isBiz ? "building" : "home"} first. ${battText} The rest comes from the grid.</p>` +
     `<p><b>Bills.</b> Power from the grid at ${c(P.peak.value)} a kWh in peak hours (${btPeakText()}) and ${c(P.off.value)} off-peak; exports earn ${c(P.peakSell.value)} at peak and ${c(P.offSell.value)} off-peak; plus $${P.daily.value.toFixed(2)} a day. A month is ${P.month.value.toFixed(1)} days. A year: ${go("nowbill", btMoney(N.nowBill.value) + " today")}, ${go("solarbill", btMoney((prof.battery > 0 ? N.battBill : N.solarBill).value) + (prof.battery > 0 ? " with solar and the battery" : " with solar"))}.</p>` +
     `<p><b>Over the years.</b> Power prices rise ${E.elec_inflation_pct}% a year, export rates fall ${E.export_decline_pct}% a year and panels lose ${E.degradation_pct}% of their output a year, over a ${E.life_years}-year life. The inverter is replaced in year ${(E.inverter_replace_year || 0) + 1} at ${E.inverter_cost_pct}% of the solar cost${prof.battery > 0 ? `, the battery after ${BD.life_years || 15} years` : ""}. Money is shown ${E.real_prices ? `in today's dollars (general inflation ${E.cpi_pct}% a year taken out)` : "in each year's own dollars"}.</p>` +
-    `<p class="sx-foot">Every figure in this panel comes from these steps. Tap any number to see its working. <a href="method.html#money" target="_blank" rel="noopener">The full method</a>.</p>` +
+    `<p class="sx-foot">Every figure in this panel comes from these steps. Tap any number to see its working. The full method is listed under Docs.</p>` +
     `</div>`;
 }
 

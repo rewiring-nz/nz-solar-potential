@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Map layer tests</title>
+<script>
+// Exercise MapLibre in the integrated browser even when its tab is hidden.
+window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16);
+window.cancelAnimationFrame = clearTimeout;
+</script>
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
+<link href="../map_layers.css" rel="stylesheet">
+<pre id="result">Running tests...</pre>
+<div id="map" style="height:400px;width:100%;"></div>
+<script src="../map_layers.js"></script>
+<script src="test_map_layers.js"></script>
+</html>

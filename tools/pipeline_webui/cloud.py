@@ -79,7 +79,7 @@ class Cloud:
 
     def preview_url(self, alias: str) -> str:
         bucket = self.config()["preview_bucket"].removeprefix("gs://")
-        return f"https://storage.googleapis.com/{bucket}/devel/{alias}/preview.html"
+        return f"https://storage.googleapis.com/{bucket}/devel/{alias}/rooftop-solar.html"
 
     def vm_status(self, refresh: bool = False) -> dict:
         """Return {status, checked_at, error}. Free: describe never starts the VM."""

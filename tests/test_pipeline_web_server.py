@@ -68,6 +68,15 @@ def test_api_end_to_end():
             assert c.request("GET", "/api/regions", token="wrong")[0] == 403
             status, fc = c.request("GET", "/api/regions")
             assert status == 200 and fc["type"] == "FeatureCollection"
+            assert c.request("GET", "/api/layers", token=None)[0] == 403
+            status, layers = c.request("GET", "/api/layers?source=local")
+            assert status == 200 and layers["version"] == 1
+            assert layers["availability"] == {"source": "local", "local_cache": True}
+            status, unavailable = c.request("GET", "/api/layers?source=developer")
+            assert status == 200 and not unavailable["layers"]
+            assert unavailable["availability"] == {"source": "developer", "local_cache": False}
+            assert "unavailable" in unavailable["warnings"][0]
+            assert c.request("GET", "/api/layers?source=remote")[0] == 400
             status, loc = c.request("GET", "/api/localities?bbox=168.6,-45.1,168.7,-45.0")
             assert status == 200 and len(loc["features"]) == 2
             assert KEY not in json.dumps(loc)

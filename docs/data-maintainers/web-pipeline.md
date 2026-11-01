@@ -104,6 +104,32 @@ minutes; a build can only start from the estimate that was shown.
 
 ## What a build does
 
+### Map layers
+
+**Layers & legend**, below the navigation controls, uses the same component
+as [the map preview](../map-users/web-map-users.md#layers-and-legend).
+It groups analysis, derived and source datasets above the basemap. Panels
+paint above solar-analysis building outlines, which paint above the heat map.
+Basemap selection switches between the existing Esri/LINZ aerial combination
+and OpenStreetMap without resetting overlays.
+
+For **Local**, the dataset catalogue checks actual files in the checkout,
+including shared cached sources and available intermediate outputs. A cached
+extent is drawn as a faint fill with a dashed boundary; it is not a claim
+that every pixel contains usable data. Missing requested LiDAR tiles are not
+shown as cached. Layer data is loaded on demand when enabled.
+
+Prepared/built region and locality-selection boundaries are separate **Build
+areas** overlays. Their status colours are not evidence that all sources were
+downloaded. **Refresh**, region refreshes and completed panel jobs refresh
+the catalogue; existing dataset visibility is retained where the dataset
+still exists.
+
+**Developer** and **Published** never inherit this computer's cached-source
+overlays. Until remote source catalogues are supplied, the legend explicitly
+reports that those dataset layers are unavailable; their existing area listings
+and preview links remain usable.
+
 Jobs run in two lanes, each one job at a time: the **local** lane on this
 computer and the **cloud** lane on the shared VM. A job started while its
 lane is busy waits in the queue. The lanes are independent, so a local

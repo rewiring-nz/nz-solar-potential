@@ -90,10 +90,11 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
 - `config.PV_ASSUMPTIONS` is the one source for PV assumptions shown in the
   UI. Don't hardcode them elsewhere.
 - Scripts, `config.py` and data contracts are the source of truth: link to
-  them rather than copying values. Update the matching doc in `docs/` (and
-  `method.html`, which is maintained by hand) in the same change as a
-  command, output, limit or constant. Mark experiments and unverified cloud
-  steps. Platform setup lives in [docs/data-maintainers/](docs/data-maintainers).
+  them rather than copying values. Update the matching doc in `docs/` (including
+  `docs/researchers/how-a-roof-estimate-is-made.md`, which is maintained by
+  hand) in the same change as a command, output, limit or constant. Mark
+  experiments and unverified cloud steps. Platform setup lives in
+  [docs/data-maintainers/](docs/data-maintainers).
 
 ## Every number shows its workings
 
@@ -343,6 +344,10 @@ figure for the same thing. Code enforces this:
   is the pricing model; `economics.js` holds cost tiers, prices and the
   battery simulation it uses.
 - The refit API exists only in `src/live_server.py`; static hosting lacks it.
+- `map_layers.js` and `map_layers.css` provide the shared pipeline/preview
+  legend and aerial/OpenStreetMap switch. The analysis stack is panels above
+  solar-analysis building outlines above the heat map. Preview adapters reuse
+  existing analysis-mode state; hiding overlays does not alter estimates.
 
 Last checked against the code: 2026-10-28.
 
