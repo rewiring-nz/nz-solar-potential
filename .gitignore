@@ -22,6 +22,7 @@ data/heatmaps/lod/
 !data/roof_labels.json
 !data/bench_ids.txt
 !data/bench_set.json
+!data/roof_set.json
 !data/status_items.json
 !data/label_set/
 data/label_set/*
