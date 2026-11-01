@@ -132,16 +132,26 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   4743318 and 4743327 26 -> 13 go half bare behind a jagged line). Gainers
   and drops have the same face counts and overlapping explained scores, so
   neither separates them. Several Wanaka drops look like the gables that
-  gained; which reading is true needs markup. Next: draw 4739603, 5376055,
-  5375921, 5375984, 4743318 and 4729804 in the roof set and judge the contest
-  against the drawing, not the photo.
+  gained; which reading is true needs markup. The blind check below
+  settled most of these for v69.
 - Blind check (2 Nov): none of the 64 roofs judged in the v69 review and the
   fewer-faces A/B has markup, so every better/worse above is an agent's
   reading of the photo. 48 of them are on a blind side-by-side page for the
   owner (https://claude.ai/artifact/AiBqdiPoePuuL9qrEJRBJq; verdicts in its
   `verdicts` collection; answer key and the agent's own calls, recorded
-  first, in `data/blind_check/answer_key_2nov.json`). Score the agent's
-  calls against the owner's before trusting another render review.
+  first, in `data/blind_check/answer_key_2nov.json`; owner verdicts in
+  `data/blind_check/owner_verdicts_2nov.json`).
+  Scored (2 Nov): v68 vs v69 on 36 roofs, owner picks v69 on 22, v68 on 9,
+  same on 5. The agent agreed on 20 of the 31 decided, and called v68 on 14
+  where the owner backed it on 5: render review leans against change. Three
+  of the four plain-shed drops the agent flagged (4739603, 5376055,
+  5375921) are better at v69 in the owner's eye; 5375984 is better at v68.
+  v69's contest stays. The fewer-faces rule loses 10 of 12 (owner backs it
+  only on 4724517 and 5371948, neither of which the agent picked): the
+  rejection holds. Roofs where v68 was better, to draw in the roof set:
+  4725214, 4736995, 4735193, 4749406, 5375061, 5370646, 5375984, 5375975,
+  4731151. Owner notes repeat two faults: panels across a ridge (5375073)
+  and stray landscape rows at a face edge (5374556, 5373571, 4731151).
 - Kept as is: 5370587 (Arrowtown terrace, 132 -> 73) loses one 2-3 panel
   array per unit to the scrap rule. Relaxing the rule to keep them brought
   the same scattered pairs back on complex houses across the sample, which
