@@ -175,6 +175,24 @@ def test_a_strip_only_landscape_fits_does_not_turn_the_building():
     assert pf.register_frame(frame, facets)["portrait"] is True
 
 
+
+def test_one_landscape_row_on_a_pitched_strip_is_dropped():
+    # 5374556, 5373571, 4731151 (blind check, 2 Nov): a strip too narrow for
+    # a portrait row turned to one landscape row beside portrait arrays.
+    import importlib
+    try:
+        os.environ["SOLAR_DROP_ONE_ROW_LANDSCAPE"] = "0"
+        m = importlib.reload(pf)
+        assert len(m.fit_panels_on_facet(_strip_facet(1.5))) > 0
+        os.environ["SOLAR_DROP_ONE_ROW_LANDSCAPE"] = "1"
+        m = importlib.reload(pf)
+        assert m.fit_panels_on_facet(_strip_facet(1.5)) == []
+        assert len(m.fit_panels_on_facet(_strip_facet(2.6))) >= 3   # one portrait row stays
+    finally:
+        del os.environ["SOLAR_DROP_ONE_ROW_LANDSCAPE"]
+        importlib.reload(pf)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

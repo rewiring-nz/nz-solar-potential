@@ -814,6 +814,19 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     return best
 
 
+DROP_ONE_ROW_LANDSCAPE = os.environ.get("SOLAR_DROP_ONE_ROW_LANDSCAPE", "1") != "0"  # see _pack_usable
+
+
+def _row_count(placed, h_cells):
+    """Rows in a packed layout: row starts more than half a panel apart."""
+    starts = sorted(r0 for r0, _c0, _r1, _c1 in placed)
+    rows, last = 0, None
+    for r in starts:
+        if last is None or r - last > 0.5 * h_cells:
+            rows, last = rows + 1, r
+    return rows
+
+
 def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet, sibling_facets=None,
                  lock=None):
     """`usable` is already fully eroded -- edge clearance from the building's
@@ -947,6 +960,17 @@ def _pack_usable(usable, panel_width, panel_height, resolution, to_world, facet,
             chosen = land if len(land[1]) > len(port[1]) * (1.0 + LANDSCAPE_WIN_MARGIN) else port
         else:
             chosen = port or land
+        if (DROP_ONE_ROW_LANDSCAPE and chosen is land and land is not None
+                and float(facet.get("slope_deg") or 0.0) >= FLAT_SLOPE_DEG
+                and _row_count(land[1], land[3]) < 2):
+            # A single landscape row on a pitched face is a strip the
+            # portrait racks could not use, turned to fill it: beside portrait
+            # arrays it reads as a mismatched rack (owner's blind check, 2 Nov:
+            # 5374556, 5373571, 4731151). Portrait if it holds an array, else
+            # nothing.
+            chosen = port if (port and len(port[1]) >= ARRAY_MIN_PANELS) else None
+            if chosen is None:
+                return []
         _, placed, _pw, _ph = chosen
 
         # POCKETS: 100% should place every panel that fits. One grid in one
