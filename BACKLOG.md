@@ -77,8 +77,9 @@ roof fixes and 216 demolished buildings withheld. Built in 10 h 50 min.
 v68 review (gate, `tools/face_area_check.py` against the saved v67 layouts,
 `tools/render_built.py` renders): flagged roofs improved or unchanged; 24
 roofs still on the map lost face area, and about 10 big drops were rendered.
-- Fixed for v69, each A/B'd and rendered on the photo; needs the next
-  district build:
+- Fixed for v69, each A/B'd and rendered on the photo. v69 district build
+  (35 served regions, `--force`) started 1 Nov 04:27 UTC; v68 layouts saved
+  on the VM in `~/v68_layouts` for the before/after review:
   - `SOLAR_REPEAT_KEEP_ROOF`: a copy given a neighbour's reading that leaves
     part of the roof unread (wanaka_town 4736995 15 -> 42, 5375073 14 -> 49).
   - `SOLAR_REPEAT_CONTEST`: a weak shared reading (under 0.60) competes with
