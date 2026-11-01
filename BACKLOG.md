@@ -90,9 +90,15 @@ Guides now live in matching persona subdirectories, with historical notes
 under `docs/ai-agents/archive/`; references follow the moves. Documentation
 maintenance includes removing obsolete code paths and redundant explanations.
 
-Live: data version 68 (1 Nov). 32,838 buildings, 35 regions, 1,299,243
-panels, 776.4 GWh. Carries outline fit, identical-roof sharing, the Beach St
-roof fixes and 216 demolished buildings withheld. Built in 10 h 50 min.
+Live: data version 69 (2 Nov). 32,838 buildings, 35 regions, 1,300,366
+panels (+1,123), 777.0 GWh. Carries the v68 review fixes below (weak shared
+readings compete, copies keep their roof, a tiny sunny side does not bare
+the roof). Built in 10 h 40 min. Gate run on the VM: 0 zeroed, 0 newly
+withheld, 2 big drops (rendered, below); the laptop gate's 308 NEWLY
+WITHHELD are its stale September reasons.
+
+v68 (1 Nov): outline fit, identical-roof sharing, the Beach St roof fixes
+and 216 demolished buildings withheld.
 
 v68 review (gate, `tools/face_area_check.py` against the saved v67 layouts,
 `tools/render_built.py` renders): flagged roofs improved or unchanged; 24
@@ -108,6 +114,18 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
     bare the roof (4734459 6 -> 32).
   - Lake Hayes 4731151 recovers with the two identical-roof rules (39 -> 77).
   - 600-roof sample, v68 code vs v69: 12 roofs change, panels +0.6%.
+- v69 review (`tools/render_built.py --before ~/v68_layouts`): the review
+  roofs render as the A/B did. `SOLAR_REPEAT_CONTEST` moves 184 of the 530
+  roofs on the map with a weak agreed reading (under 0.60): 118 up (+1,065
+  panels), 66 down (-354). The 12 biggest drops all render worse, and in one
+  way: on a long plain shed or flat roof (wanaka_town 5375921, 5375984,
+  5375975, 5375972, 5376055/5375061; frankton_arm 4739603 sawtooth, 72 -> 42)
+  the LiDAR path wins with an extra split along the roof, leaving a bare or
+  narrow strip the agreed reading did not have. Each goes back with
+  `SOLAR_REPEAT_CONTEST=0` (4739603 42 -> 72, 5376055 24 -> 52). Open for
+  v70: a LiDAR path that wins only by splitting one plane into parallel strips
+  of the same pitch and aspect must not beat an agreed reading. Judge it on
+  these drops and the gainers (4749739, 5370646, 4731151, 5375073) together.
 - Kept as is: 5370587 (Arrowtown terrace, 132 -> 73) loses one 2-3 panel
   array per unit to the scrap rule. Relaxing the rule to keep them brought
   the same scattered pairs back on complex houses across the sample, which
