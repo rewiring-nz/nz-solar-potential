@@ -349,6 +349,8 @@ figure for the same thing. Code enforces this:
   solar-analysis building outlines above the heat map. Explorer layers toggle
   independently and support feature-attribute queries. `rooftop-solar.html`
   retains the simple map's analysis modes; `preview.html` redirects to it.
+  The shared facet style encodes aspect as hue and slope as saturation, with a
+  compass legend in both catalogue-based layers and the rooftop map.
 
 Last checked against the code: 2026-10-28.
 
