@@ -128,6 +128,9 @@ bash tests/run_all.sh          # also synthetic-region and golden-building check
 Golden-building checks require local region data and skip without it.
 JavaScript checks require Node; without it the runner skips them. CI's
 [test workflow](../../.github/workflows/tests.yml) provides the data-free checks.
+CI runs the repository cross-reference check and deterministic pipeline-web
+panel and map-layer catalogue tests. It records Python failures while
+continuing the selected checks, then runs the JavaScript checks independently.
 The existing diagram check validates a curated symbol/constants list, not
 the Markdown Mermaid diagrams; see the
 [execution-reference checklist](tooling-execution.md#keeping-this-reference-accurate).

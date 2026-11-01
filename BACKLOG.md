@@ -107,8 +107,11 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   Readings in `data/selected_faces` predate the outline slide (20 Sep) and
   `tools/predict_faces.py` does not read fitted outlines; slid buildings
   (853) may need their readings recomputed.
-- `tests/test_xref.py` fails on `tools/pipeline_webui` (16 unresolved
-  imports in the pipeline panel code and `tools/pipeline.py` `config.get`).
+- Completed #52: fixed `tests/test_xref.py` to resolve nested package modules
+  and scope-local module aliases, with regression cases for shadowing and
+  genuinely missing imports. CI now runs the deterministic pipeline-web and
+  map-layer catalogue tests, accumulates Python and JavaScript failures, and
+  runs the JavaScript checks independently of Python failures.
 - Partial on the flagged Beach St roofs: 48 Beach St still has panels on the
   dark plant box's east half; 44 Beach St's second strip stays landscape.
 - `tests/test_local_queue.py` interrupt test fails on the Mac ("Operation
