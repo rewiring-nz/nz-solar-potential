@@ -181,6 +181,18 @@ def test_fitted_outlines_moves_only_when_switched_on():
     assert of.fitted_outlines(g.copy(), d, use=True).geometry[0].bounds[0] == 1.0
 
 
+
+def test_blind_benchmark_slides_drawn_outlines_too():
+    import os
+    import importlib
+    m = importlib.reload(of)
+    os.environ["SOLAR_HIDE_LABELS"] = "1"
+    try:
+        assert m._marked() == set()
+    finally:
+        del os.environ["SOLAR_HIDE_LABELS"]
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
