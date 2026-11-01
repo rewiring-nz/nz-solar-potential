@@ -17,8 +17,8 @@
   function facetValidExpression() {
     const aspect = ["get", "aspect_deg"];
     const slope = ["get", "slope_deg"];
-    return ["all", ["is-number", aspect], [">=", aspect, 0], ["<=", aspect, 360],
-      ["is-number", slope], [">=", slope, 0], ["<=", slope, 90]];
+    return ["all", ["==", ["typeof", aspect], "number"], [">=", aspect, 0], ["<=", aspect, 360],
+      ["==", ["typeof", slope], "number"], [">=", slope, 0], ["<=", slope, 90]];
   }
   function facetColorExpression() {
     const aspect = ["%", ["get", "aspect_deg"], 360];

@@ -112,6 +112,10 @@
     const wheel = colour[2][6];
     assert(wheel[0] === "interpolate-hcl" && wheel[2][0] === "%" &&
       wheel.at(-2) === 360 && wheel.at(-1) === wheel[4], "aspect wheel does not wrap at north");
+    const directions = [wheel[4], wheel[8], wheel[12], wheel[16]];
+    assert(new Set(directions).size === 4, "cardinal directions do not have distinct colours");
+    assert(colour[1].some(part => Array.isArray(part[1]) && part[1][0] === "typeof"),
+      "missing or non-numeric geometry is not validated");
     assert(M.facetFillOpacity === 0.42, "facet opacity is not fixed and moderate");
     assert(M.facetOutlineExpression()[0] === "case", "invalid data is not distinguishable in outlines");
   });
@@ -218,8 +222,9 @@
       const ids = map.getStyle().layers.map(layer => layer.id);
       assert(ids.indexOf("dataset-imagery-line") < ids.indexOf("dataset-fitted-fill") &&
         ids.indexOf("dataset-fitted-line") < ids.indexOf("analysis-anchor"), "wrong real MapLibre order");
-      assert(map.getLayer("dataset-facets-fill").paint["fill-color"][0] === "case" &&
-        map.getLayer("dataset-facets-fill").paint["fill-opacity"] === M.facetFillOpacity,
+      const facetStyle = map.getStyle().layers.find(layer => layer.id === "dataset-facets-fill");
+      assert(facetStyle.paint["fill-color"][0] === "case" &&
+        facetStyle.paint["fill-opacity"] === M.facetFillOpacity,
       "actual MapLibre rejected or changed the facet expression");
       globalThis.layerTestMap = map;
       globalThis.layerTestControl = control;
