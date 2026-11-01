@@ -344,10 +344,11 @@ figure for the same thing. Code enforces this:
   is the pricing model; `economics.js` holds cost tiers, prices and the
   battery simulation it uses.
 - The refit API exists only in `src/live_server.py`; static hosting lacks it.
-- `map_layers.js` and `map_layers.css` provide the shared pipeline/preview
+- `map_layers.js` and `map_layers.css` provide the shared pipeline/data-explorer
   legend and aerial/OpenStreetMap switch. The analysis stack is panels above
-  solar-analysis building outlines above the heat map. Preview adapters reuse
-  existing analysis-mode state; hiding overlays does not alter estimates.
+  solar-analysis building outlines above the heat map. Explorer layers toggle
+  independently and support feature-attribute queries. `rooftop-solar.html`
+  retains the simple map's analysis modes; `preview.html` redirects to it.
 
 Last checked against the code: 2026-10-28.
 
