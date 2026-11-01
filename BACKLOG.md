@@ -122,10 +122,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   5375975, 5375972, 5376055/5375061; frankton_arm 4739603 sawtooth, 72 -> 42)
   the LiDAR path wins with an extra split along the roof, leaving a bare or
   narrow strip the agreed reading did not have. Each goes back with
-  `SOLAR_REPEAT_CONTEST=0` (4739603 42 -> 72, 5376055 24 -> 52). Open for
-  v70: a LiDAR path that wins only by splitting one plane into parallel strips
-  of the same pitch and aspect must not beat an agreed reading. Judge it on
-  these drops and the gainers (4749739, 5370646, 4731151, 5375073) together.
+  `SOLAR_REPEAT_CONTEST=0` (4739603 42 -> 72, 5376055 24 -> 52).
+  Tried and rejected (2 Nov): the LiDAR path replaces an agreed reading only
+  with fewer faces. Every drop above had the LiDAR path at as many faces or
+  more, every rendered gainer at fewer -- but across all 543 weak agreed
+  readings (A/B on the VM, `~/ab70`) 73 change, 34 up and 33 down, panels
+  19,320 -> 19,376, and the renders of the down side are worse on 10 of 12
+  (4729804 63 -> 38 and 5373571 53 -> 30 lose sunny faces; the Wanaka gables
+  4743318 and 4743327 26 -> 13 go half bare behind a jagged line). Gainers
+  and drops have the same face counts and overlapping explained scores, so
+  neither separates them. Several Wanaka drops look like the gables that
+  gained; which reading is true needs markup. Next: draw 4739603, 5376055,
+  5375921, 5375984, 4743318 and 4729804 in the roof set and judge the contest
+  against the drawing, not the photo.
 - Kept as is: 5370587 (Arrowtown terrace, 132 -> 73) loses one 2-3 panel
   array per unit to the scrap rule. Relaxing the rule to keep them brought
   the same scattered pairs back on complex houses across the sample, which
