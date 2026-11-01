@@ -509,7 +509,7 @@ def _combined_analysis_layers(
         ("analysis-panels", "Solar panels", "panel_layouts.pmtiles", LAYOUT_LAYER,
          "panel", "#dc2626", 30, "Combined panel polygons from the emitted layout vector tiles."),
         ("analysis-facets", "Roof facets", "panel_layouts.pmtiles", LAYOUT_LAYER,
-         "facet", "#f97316", 25, "Combined roof-facet polygons from the emitted layout vector tiles."),
+         "facet", "#f97316", 15, "Combined roof-facet polygons; hue shows facing direction and saturation shows pitch, not solar yield."),
         ("analysis-obstructions", "Roof obstructions", "panel_layouts.pmtiles", LAYOUT_LAYER,
          "obstruction", "#7c3aed", 24, "Combined obstruction polygons from the emitted layout vector tiles."),
         ("analysis-outlines", "Building outlines", "buildings.pmtiles", BUILDING_LAYER,

@@ -94,8 +94,8 @@
   const LAYER_ID = "buildings-3d";
   // 2D layers the meshes replace: drawn on the flat ground under a 3D roof
   // they would only show at the edges, a step out of place.
-  const HIDE_2D = ["facets-outline", "obstructions-fill", "obstructions-outline",
-    "panels-fill", "panels-outline", "live-facets-outline", "live-obstructions-fill",
+  const HIDE_2D = ["facets-fill", "facets-outline", "obstructions-fill", "obstructions-outline",
+    "panels-fill", "panels-outline", "live-facets-fill", "live-facets-outline", "live-obstructions-fill",
     "live-panels-fill", "live-panels-outline"];
 
   // Light from the north-west and above (the sun is in the north here), so

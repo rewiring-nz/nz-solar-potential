@@ -5,6 +5,7 @@
 <title>NZ rooftop solar potential — pilot preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<script src="map_layers.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <!-- Per-deployment settings (which town this site opens on). Local, synchronous
      and deliberately NOT shared between the two repos -- see site-config.js. -->
@@ -22,6 +23,7 @@
 <script src="buildings3d.js"></script>
 <script src="low_solar.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
+<link href="map_layers.css" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, sans-serif; }
   /* dark under the map: a frame drawn before imagery or terrain arrives
@@ -683,7 +685,8 @@
   #zoom-hint.show { display: block; }
   @media (max-width: 700px) {
     /* Desktop chrome off; mobile chrome on. */
-    .dashboard-stack, .legend, .legend-facet, .mobile-details-tab { display: none !important; }
+    .dashboard-stack, .legend, .legend-facet, .facet-geometry-legend.rooftop,
+    .mobile-details-tab { display: none !important; }
     #m-top {
       display: flex; flex-direction: column; gap: 6px;
       position: absolute; top: 8px; left: 8px; right: 8px; z-index: 6;
@@ -784,6 +787,10 @@
 </head>
 <body>
 <div id="map"></div>
+<div id="facet-geometry-legend" class="facet-geometry-legend rooftop"></div>
+<script>
+  document.getElementById("facet-geometry-legend").append(MapLayers.facetLegendElement());
+</script>
 <div class="ai-banner" id="ai-banner" role="status">
   <span>Built with AI and still in testing. Expect mistakes.</span>
   <button class="ai-banner-close" id="ai-banner-close" aria-label="Dismiss"
@@ -1422,7 +1429,7 @@ let mode = "heatmap";
 // minzoom, maxzoom] per cell band. Top level because applyBtypeFilters, also
 // top level, filters the cells-* layers by building type.
 const CELL_BANDS = [[9, 0, 6], [12, 6, 9], [16, 9, 13]];
-const LAYOUT_LAYERS = ["facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
+const LAYOUT_LAYERS = ["facets-fill", "facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
 let obstructionsOn = false;  // default hidden
 let outlinesOn = false;      // building outlines, default hidden
 // Base filter per layout layer -- always shows every building's facets/
@@ -1491,6 +1498,7 @@ function buildBtypeToggles(list) {
 }
 
 const LAYOUT_KIND_FILTER = {
+  "facets-fill": ["==", ["get", "kind"], "facet"],
   "facets-outline": ["==", ["get", "kind"], "facet"],
   "obstructions-fill": ["==", ["get", "kind"], "obstruction"],
   "obstructions-outline": ["==", ["get", "kind"], "obstruction"],
@@ -2022,6 +2030,9 @@ function setMode(newMode) {
 function syncToggleButtons() {
   const lf = document.querySelector(".legend-facet");
   if (lf) lf.style.display = overlayOn && mode === "heatmap" ? "" : "none";
+  const facetLegend = document.getElementById("facet-geometry-legend");
+  if (facetLegend) facetLegend.style.display =
+    overlayOn && mode === "layout" && outlinesOn ? "" : "none";
   const dashHeat = document.getElementById("toggle-heatmap-dash");
   const dashLayout = document.getElementById("toggle-layout-dash");
   // Active only while it is actually painting something, so the pair reads as
@@ -2070,9 +2081,13 @@ function applyToggles() {
       // panels on the bare roof and the toggle brings back both outlines.
       const vis = overlayOn && mode === "layout" && (
         id.startsWith("obstructions") ? obstructionsOn :
-        id === "facets-outline" ? outlinesOn : true);
+        id === "facets-outline" || id === "facets-fill" ? outlinesOn : true);
       map.setLayoutProperty(id, "visibility", vis ? "visible" : "none");
     });
+    const facetsVisible = overlayOn && mode === "layout" && outlinesOn;
+    for (const id of ["live-facets-fill", "live-facets-outline"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", facetsVisible ? "visible" : "none");
+    }
     if (map.getLayer("live-obstructions-fill")) {
       map.setLayoutProperty("live-obstructions-fill", "visibility", obstructionsOn ? "visible" : "none");
     }
@@ -4095,18 +4110,23 @@ map.on("load", async () => {
   // cloud independent of facets -- Google-flux-style granularity with soft
   // ridge gradients.)
 
-  // No solid facet fill anymore -- it used the same colour scale as the
-  // heatmap, so a low-yield (south-facing) facet rendered nearly the same
-  // dark blue as the navy panels sitting on top of it, and the two were
-  // hard to tell apart. Generation-potential colour now lives only in the
-  // Heat Map layer (a smooth per-pixel raster, no flat-fill clash
-  // possible); Panel Layout shows just a dotted outline of the facet
-  // boundary underneath the actual panels.
+  // Facets use the shared geometry palette: aspect sets hue and slope sets
+  // saturation. Yield remains separate in the heat-map raster.
   // Invisible probe bound to the layout source: MapLibre only fetches tiles
   // for sources with a visible layer, and in Heat Map mode all four layout
   // layers are hidden -- without this, the seasonal curves (which read the
   // clicked building's facets/panels from loaded tiles) had no data in
   // heat-map mode.
+  map.addLayer({
+    id: "facets-fill",
+    minzoom: 14,
+    "source-layer": "layout",
+    type: "fill",
+    source: "layout",
+    filter: LAYOUT_KIND_FILTER["facets-fill"],
+    paint: { "fill-color": MapLayers.facetColorExpression(),
+      "fill-opacity": MapLayers.facetFillOpacity }
+  });
   map.addLayer({
     id: "facets-outline",
     minzoom: 14,
@@ -4185,8 +4205,18 @@ map.on("load", async () => {
   map.addLayer({
     id: "live-facets-outline", type: "line", source: "live-layout",
     filter: ["==", ["get", "kind"], "facet"],
-    paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.3, 15, 0.8, 17, 1.5], "line-dasharray": [2, 2] }
-  });
+    layout: { visibility: "none" },
+    paint: { "line-color": MapLayers.facetOutlineExpression(),
+      "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.3, 15, 0.8, 17, 1.5],
+      "line-dasharray": [2, 2] }
+  }, "obstructions-fill");
+  map.addLayer({
+    id: "live-facets-fill", type: "fill", source: "live-layout",
+    filter: ["==", ["get", "kind"], "facet"],
+    layout: { visibility: "none" },
+    paint: { "fill-color": MapLayers.facetColorExpression(),
+      "fill-opacity": MapLayers.facetFillOpacity }
+  }, "facets-outline");
   map.addLayer({
     id: "live-obstructions-fill", type: "fill", source: "live-layout",
     filter: ["==", ["get", "kind"], "obstruction"],
