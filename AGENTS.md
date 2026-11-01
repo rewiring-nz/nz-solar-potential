@@ -195,6 +195,16 @@ figure for the same thing. Code enforces this:
   rules against the 100, scored blind against the markup
   (`SOLAR_HIDE_LABELS=1`, `tools/markup_benchmark.py`). Never render or study
   the 30 while fixing; score them once, at the end.
+- **An agent's reading of a render is not a measurement.** "Better" and
+  "worse" come from the markup (scored blind) or from the owner's verdict
+  in a blind side-by-side (both versions shuffled left/right, no counts or
+  labels; the 2 Nov page and its answer key, `data/blind_check/`). The
+  agent records its own calls before the owner judges, and its agreement
+  with the owner is reported with every result. On 2 Nov none of the 64
+  roofs judged for v69 and the fewer-faces rule had markup: every call was
+  the agent's eye on a 0.3 m photo. A change whose movers have no markup
+  ships only after the owner has judged them blind, or is labelled
+  unverified in the release.
 - **Stop VM jobs by session; check for orphans.** Launch long jobs with
   `setsid nohup` and stop them with `pkill -s <session>`. Killing a Python
   parent by PID leaves its multiprocessing workers (~1.8 GB each) running.

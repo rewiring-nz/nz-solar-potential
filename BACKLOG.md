@@ -135,6 +135,13 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   gained; which reading is true needs markup. Next: draw 4739603, 5376055,
   5375921, 5375984, 4743318 and 4729804 in the roof set and judge the contest
   against the drawing, not the photo.
+- Blind check (2 Nov): none of the 64 roofs judged in the v69 review and the
+  fewer-faces A/B has markup, so every better/worse above is an agent's
+  reading of the photo. 48 of them are on a blind side-by-side page for the
+  owner (https://claude.ai/artifact/AiBqdiPoePuuL9qrEJRBJq; verdicts in its
+  `verdicts` collection; answer key and the agent's own calls, recorded
+  first, in `data/blind_check/answer_key_2nov.json`). Score the agent's
+  calls against the owner's before trusting another render review.
 - Kept as is: 5370587 (Arrowtown terrace, 132 -> 73) loses one 2-3 panel
   array per unit to the scrap rule. Relaxing the rule to keep them brought
   the same scattered pairs back on complex houses across the sample, which
