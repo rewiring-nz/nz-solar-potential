@@ -152,6 +152,22 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   4725214, 4736995, 4735193, 4749406, 5375061, 5370646, 5375984, 5375975,
   4731151. Owner notes repeat two faults: panels across a ridge (5375073)
   and stray landscape rows at a face edge (5374556, 5373571, 4731151).
+- v70 candidate (2 Nov, branch v70-review): a single landscape row on a
+  pitched face is dropped (SOLAR_DROP_ONE_ROW_LANDSCAPE). A/B on 984 roofs
+  that ship landscape panels on a pitched face (up to 40 per QLDC region,
+  VM `~/ab71`): 492 change, 37,484 -> 35,111 panels, 103 roofs go to zero,
+  10 gain (portrait chosen instead). 40 movers (the 3 flagged, 12 that go
+  to zero, 25 at random) are on the owner's blind review,
+  https://claude.ai/artifact/ExStV2iwLSfDEEzPtvfCwy, key in
+  `data/blind_check/answer_key_v70_sideways.json` (agent's prior, recorded
+  first: v70 except where the roof goes to zero). Ships only on the
+  owner's verdict.
+- Panels across a ridge, 5375073 (wanaka_town): about 70% of the returns
+  inside its face are at ground height, so the house postdates the LiDAR.
+  Its faces come from the photo (a repeat reading of 5375075 via SAM), and
+  with no heights the roof reads as one 1.5 deg face across the ridge.
+  How many roofs postdate the LiDAR, and what a photo-only roof should
+  get, is open; the review's ridge tag will say how often it shows.
 - Kept as is: 5370587 (Arrowtown terrace, 132 -> 73) loses one 2-3 panel
   array per unit to the scrap rule. Relaxing the rule to keep them brought
   the same scattered pairs back on complex houses across the sample, which

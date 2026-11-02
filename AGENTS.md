@@ -204,7 +204,16 @@ figure for the same thing. Code enforces this:
   roofs judged for v69 and the fewer-faces rule had markup: every call was
   the agent's eye on a 0.3 m photo. A change whose movers have no markup
   ships only after the owner has judged them blind, or is labelled
-  unverified in the release.
+  unverified in the release. The scored check (2 Nov): the owner backed
+  the agent on 20 of 31 decided pairs, and on 5 of the 14 where the agent
+  called the change worse.
+  Build the page with `tools/render_built.py --tiles` and
+  `tools/review_page.py`: each drawing gets a score out of 10 and fault
+  tags (outline, roof lines, panels across a ridge, over obstructions, over
+  empty area, racking direction, empty space unused), so a review says
+  what is wrong as well as which side is better. A one-drawing review of
+  a sample of the live map, repeated each release, gives the accuracy
+  over time.
 - **Stop VM jobs by session; check for orphans.** Launch long jobs with
   `setsid nohup` and stop them with `pkill -s <session>`. Killing a Python
   parent by PID leaves its multiprocessing workers (~1.8 GB each) running.
