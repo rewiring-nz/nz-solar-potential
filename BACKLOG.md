@@ -334,6 +334,13 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   the gap. `keep:outline` (drawn extent in place of the outline) changed
   nothing (0.515): the readings set the roof's extent, not the outline, and
   blind outlines already score 0.94.
+- **Tried 3 Nov, no gain (stay off):** composite roofs
+  (`SOLAR_COMPOSITE_ROOFS=1`: fires on 3 of 131 drawn roofs, all worse,
+  panel IoU 0.518 -> 0.514); fold split (`SOLAR_FOLD_SPLIT=1`,
+  `src/fold_split.py`: never fires, even with loose limits). The survey has
+  2-6 returns per m2 on these roofs (2.3 on 4742246), so a 20-30 m2 face holds
+  20-60 returns: too few to find a second plane. LiDAR-only refinement cannot
+  recover the faces complex roofs miss; the lines have to come from the photo.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
