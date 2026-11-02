@@ -198,6 +198,49 @@ The panel is not a hosted service; it runs on your computer with your
 
 ## Troubleshooting
 
+### Local estimate helper crashes
+
+`area calculation failed (exit -11)` means the local area helper died from
+SIGSEGV (a native-code crash), not that LINZ returned zero buildings. The
+zero totals on a blocked estimate are not a usable estimate.
+
+Restart the panel after updating it. Failed helpers now report the signal and
+last stage both in the panel and its terminal, without forwarding raw output
+that might contain a LINZ key. `starting` means no stage marker arrived: the
+failure could be during process launch or interpreter startup. Later markers
+identify the operation that was about to run, not the exact crashing function.
+
+The local map-layer catalogue previously imported Rasterio (and therefore
+GDAL/PROJ) into the threaded server when the page loaded. This violated the
+server's macOS fork-safety rule and could crash later estimate helpers before
+they started. Catalogue inspection now runs in the isolated helper too.
+Restarting is necessary: updating files cannot unload native libraries from
+an already-running server.
+
+For an unprepared locality, the estimate resolves its LINZ attributes, fetches
+building outlines through WFS, then uses pyproj to transform the outline bounds
+and calculate area. It does **not** read the council GeoPackage. A crash at
+`transforming outline bounds` or `calculating area` points towards the native
+coordinate-transformation stack; it does not establish a library-order bug.
+
+To separate a helper failure from launching it inside the threaded panel,
+stop the panel and run the same helper directly with the same virtual environment:
+
+```sh
+.venv/bin/python -X faulthandler -m tools.pipeline_webui.geo_worker km2 '[168.6,-45.1,168.7,-45.0]'
+# Only when LINZ_API_KEY is already set in your shell:
+.venv/bin/python -X faulthandler -m tools.pipeline_webui.geo_worker size queenstown-lakes-district/queenstown/fernhill
+```
+
+These are local diagnostics; they do not start a build or a cloud VM. The size
+command makes LINZ requests, reads the key from the environment (not `.env`),
+and can take several minutes. Do not put the key on the command line.
+If the direct command also crashes, inspect its native crash report and check
+the Python/pyproj installation using [local setup](local-setup.md). If only the
+panel fails, report that distinction, the last stage, macOS and Python versions,
+and the code revision shown by the panel. Inspect diagnostics locally and redact
+keys, tokens, keyed URLs and personal paths before sharing them.
+
 | Symptom | Fix |
 | --- | --- |
 | "Read-only: the panel server is not running" | Start `tools/pipeline_web.py` and open the link it prints. |

@@ -219,6 +219,16 @@ import config
 from tools.pipeline_webui import server, estimate as E
 region = next(iter(config.REGIONS))
 with tempfile.TemporaryDirectory() as d:
+    # Exercise the actual local layers route, not just importing the server.
+    # Even an empty catalogue imports Rasterio to inspect cached rasters.
+    from tools.pipeline_webui.jobs import JobManager
+    data = pathlib.Path(d)
+    app = server.App("test-token", data=data, api_key_fn=lambda: "",
+                     jobs=JobManager(data, pathlib.Path({str(ROOT)!r}), sys.executable))
+    handler = object.__new__(server.WebHandler)
+    handler.app = app
+    status, catalog = handler._route("GET", ["layers"], {{"source": ["local"]}}, {{}})
+    assert status == 200 and catalog["version"] == 1
     size = E.region_size(region, pathlib.Path(d), None)
 assert size["bbox_km2"] > 0, size
 loaded = sorted({{m.split(".")[0] for m in sys.modules}} & set({PROJ_PACKAGES!r}))
@@ -258,6 +268,36 @@ def test_geo_worker_keeps_the_key_out_of_arguments_and_errors():
     assert KEY not in buf.getvalue() and "RuntimeError" in buf.getvalue()
 
 
+def test_geo_worker_crash_diagnostics_are_safe():
+    import contextlib
+    import io
+    import subprocess
+    from unittest.mock import patch
+    from tools.pipeline_webui import geo_worker as G
+
+    for stderr, stage in (
+        ("", "starting"),
+        (G.STAGE_PREFIX + "transforming outline bounds\n" + KEY, "transforming outline bounds"),
+        (G.STAGE_PREFIX + KEY, "starting"),
+    ):
+        # A dying helper must not be accepted even if stdout contains valid JSON.
+        result = subprocess.CompletedProcess([], -11, '{"bbox_km2": 1}', stderr)
+        logs = io.StringIO()
+        with patch.object(G.subprocess, "run", return_value=result), contextlib.redirect_stderr(logs):
+            try:
+                G.run(["size", "a/b/c"])
+            except LookupError as exc:
+                assert "SIGSEGV" in str(exc) and f"last stage: {stage}" in str(exc)
+                assert KEY not in str(exc)
+            else:
+                raise AssertionError("crashed helper accepted")
+        assert stage in logs.getvalue() and KEY not in logs.getvalue()
+
+    with patch.object(G.subprocess, "run", return_value=subprocess.CompletedProcess(
+            [], 0, '{"bbox_km2": 1}', G.STAGE_PREFIX + "complete")):
+        assert G.run(["km2", "[1,2,3,4]"]) == {"bbox_km2": 1}
+
+
 if __name__ == "__main__":
     for test in (test_catalog_states_and_links, test_bbox_validation,
                  test_localities_drop_water_mark_homonyms_and_cache,
@@ -266,6 +306,7 @@ if __name__ == "__main__":
                  test_calibration_uses_finished_runs_only,
                  test_estimate_store_lifecycle_and_blockers,
                  test_server_process_never_loads_proj,
-                 test_geo_worker_keeps_the_key_out_of_arguments_and_errors):
+                 test_geo_worker_keeps_the_key_out_of_arguments_and_errors,
+                 test_geo_worker_crash_diagnostics_are_safe):
         test()
     print("pipeline web data tests passed")

@@ -61,8 +61,13 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   PROJ (pyproj, rasterio, fiona, GDAL, geopandas): once PROJ has opened
   `proj.db`, every later fork from the threaded server segfaults in the child on
   macOS ("Python quit unexpectedly"). Area calculations run in
-  `tools/pipeline_webui/geo_worker.py`; a test in
+  `tools/pipeline_webui/geo_worker.py`, as does local map-layer catalogue
+  inspection (which imports Rasterio even without cached rasters); a test in
   `tests/test_pipeline_web_data.py` checks this.
+  Local estimate helper failures report their signal and last fixed stage in
+  the page and terminal; raw worker output is not forwarded because it can
+  contain keyed URLs. Direct local probes are in the web-panel troubleshooting
+  guide; the estimate helper fetches outlines through WFS, not GeoPackages.
   Package `tools/pipeline_webui/`; page `pipeline.html`. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
 - Local pipeline execution uses `src/local_queue.py` and

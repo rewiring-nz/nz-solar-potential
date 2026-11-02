@@ -34,6 +34,7 @@ from tools.pipeline_serve import RangeHandler
 from tools.render_docs import render_docs
 from tools.pipeline_webui import cloud as C
 from tools.pipeline_webui import estimate as E
+from tools.pipeline_webui import geo_worker
 from tools.pipeline_webui import locality_proxy as LP
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
@@ -179,7 +180,7 @@ class WebHandler(RangeHandler):
         if head == "layers" and method == "GET" and len(parts) == 1:
             source = (query.get("source") or ["local"])[0]
             if source == "local":
-                return 200, MLC.build_local_catalog(app.data)
+                return 200, geo_worker.run(["catalog", str(app.data)])
             if source in {"developer", "published"}:
                 return 200, MLC.unavailable_catalog(source)
             raise HttpError(400, "source must be local, developer or published")

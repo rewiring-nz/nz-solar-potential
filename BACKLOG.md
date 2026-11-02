@@ -1,5 +1,13 @@
 # Backlog
 
+Local panel estimate crash fix: local map-layer catalogue inspection now runs
+outside the threaded server, keeping Rasterio/GDAL/PROJ out of subsequent
+macOS forks. SIGSEGV failures identify the signal and last worker stage without
+exposing raw output. The Fernhill macOS crash cannot be reproduced on Linux;
+confirm the fix after restarting the panel, using direct-helper checks in the
+[web-panel guide](docs/data-maintainers/web-pipeline.md#local-estimate-helper-crashes)
+to distinguish native transformation failures from threaded-server launch failures.
+
 Completed #48: roof facets are filled by facing direction, with pitch encoded
 as saturation (full at 45°), and a distinct colour for missing/invalid geometry
 data. The shared legend, catalogue styling and rooftop map use the same
