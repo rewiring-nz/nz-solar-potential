@@ -50,6 +50,7 @@ from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
 from src.curved_faces import split_curved_faces
+from src.fold_split import split_folds
 from src.face_straighten import absorb_slivers, fit_seams, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
 from src.building_shading import building_shading_factor, facet_sun, facet_sun_context
 from src.building_horizon import (far_profile as _hz_far_profile,
@@ -472,6 +473,9 @@ def _build_one_at(building_id, nudge_m):
     # ...and again after the seams moved geometry under unchanged planes.
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
     facets = _reshape(split_lower_levels, pc_source, dsm=_dsm_ev, photo=_CTX.get("photo_ds"))
+    # ...and a face whose returns are two planes is cut where they cross
+    # (src/fold_split.py, off unless SOLAR_FOLD_SPLIT=1).
+    facets = _reshape(split_folds, pc_source)
     # ...and last, the edges between faces straightened together, so a ridge
     # is a line rather than the zig-zag the returns left (src/face_straighten.py).
     facets = _reshape(merge_coplanar_faces)
