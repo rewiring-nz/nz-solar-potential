@@ -391,7 +391,11 @@ let idx=0, tool="ridge", data=load(), img=new Image();
 // this tool still knows what is done. Local storage always wins -- work in
 // progress here is newer than whatever was exported into the file.
 ROOFS.forEach(r=>{
-  if(r.saved && !data[r.id]){
+  // an empty local record (a roof only browsed, never drawn) must not hide
+  // the saved markings
+  const loc = data[r.id];
+  if(r.saved && (!loc || !(loc.lines||[]).length && !(loc.obstructions||[]).length
+                 && !(loc.nopanel||[]).length && !loc.problem)){
     data[r.id] = {lines: r.saved.lines||[], obstructions: r.saved.obstructions||[],
                   nopanel: r.saved.nopanel||[], complete: !!r.saved.complete,
                   problem: r.saved.problem||null};
