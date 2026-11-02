@@ -244,7 +244,7 @@ def _labels():
     # SOLAR_HIDE_LABELS=keep:<parts> hides every drawn part but those named
     # (faces, lines, obstructions, nopanel, outline): the error budget builds
     # with one part of the markup back at a time to measure what each stage
-    # costs. `outline` keeps only the drawn roof's extent (the union of its
+    # costs. `allusable` drops his "no panels here" face marks. `outline` keeps only the drawn roof's extent (the union of its
     # faces, read by drawn_outline) in place of the building outline.
     hide = os.environ.get("SOLAR_HIDE_LABELS", "")
     if hide == "1":
@@ -260,6 +260,9 @@ def _labels():
         if keep is not None:
             for b in _LABELS_CACHE[0].values():
                 b["_face_rings"] = [f.get("ring") for f in b.get("faces") or [] if f.get("ring")]
+                if "allusable" in keep:      # shape only, not his no-panel calls
+                    for f in b.get("faces") or []:
+                        f["usable"] = True
                 for part in ("faces", "lines", "obstructions", "nopanel"):
                     if part not in keep:
                         b[part] = []
