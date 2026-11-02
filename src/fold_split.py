@@ -21,7 +21,9 @@ line where those two planes cross only when
     (the crossing line is where the returns actually change plane, so a step
     between two levels -- planes that cross somewhere else -- is not cut).
 A face is cut at most FOLD_MAX_DEPTH times over. Drawn faces and plain forms
-are never cut. Off by default (SOLAR_FOLD_SPLIT=1) until judged.
+are never cut. Off by default (SOLAR_FOLD_SPLIT=1) until judged. The
+survey has 2-6 returns per m2 on these roofs (3 on 4742246), so a 20 m2 face
+has about 50; each limit can be set as SOLAR_<NAME> for an A/B.
 """
 import math
 import os
@@ -32,16 +34,16 @@ from shapely.geometry import LineString, Polygon
 from shapely.ops import split as _split
 
 FOLD_SPLIT = os.environ.get("SOLAR_FOLD_SPLIT", "0") == "1"
-FOLD_MIN_FACE_M2 = 12.0
+FOLD_MIN_FACE_M2 = float(os.environ.get("SOLAR_FOLD_MIN_FACE_M2", "12.0"))
 FOLD_EDGE_M = 0.3
-FOLD_INLIER_M = 0.08
+FOLD_INLIER_M = float(os.environ.get("SOLAR_FOLD_INLIER_M", "0.08"))
 FOLD_ONE_MAX = 0.80
-FOLD_TWO_MIN = 0.85
+FOLD_TWO_MIN = float(os.environ.get("SOLAR_FOLD_TWO_MIN", "0.85"))
 FOLD_GAIN = 0.15
 FOLD_MIN_ANGLE_DEG = 8.0
-FOLD_MIN_PART_M2 = 4.0
-FOLD_MIN_POINTS = 25
-FOLD_SIDE_AGREE = 0.80
+FOLD_MIN_PART_M2 = float(os.environ.get("SOLAR_FOLD_MIN_PART_M2", "4.0"))
+FOLD_MIN_POINTS = int(os.environ.get("SOLAR_FOLD_MIN_POINTS", "25"))
+FOLD_SIDE_AGREE = float(os.environ.get("SOLAR_FOLD_SIDE_AGREE", "0.80"))
 FOLD_MAX_DEPTH = 3
 RANSAC_ITERS = 300
 
