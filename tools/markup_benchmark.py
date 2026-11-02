@@ -57,7 +57,9 @@ def labelled():
 def run(a):
     out_dir = Path(a.out); out_dir.mkdir(parents=True, exist_ok=True)
     regions, _ = labelled()
-    env = dict(os.environ, SOLAR_HIDE_LABELS="1")
+    # --keep faces,lines builds with only those drawn parts (the error
+    # budget); default hides everything.
+    env = dict(os.environ, SOLAR_HIDE_LABELS=f"keep:{a.keep}" if a.keep else "1")
     for r, ids in sorted(regions.items()):
         sf = out_dir / f"{r}_ids.json"; sf.write_text(json.dumps(ids))
         cmd = [sys.executable, "tools/layout_ab.py", r, "--jobs", str(a.jobs),
@@ -87,6 +89,17 @@ def _lines(polys, outline=None):
     return u if not u.is_empty and u.length > 0.3 else None
 
 
+def _panel_iou(got, ref):
+    """Area IoU of two panel layouts on one roof; None when neither has any."""
+    from shapely.ops import unary_union
+    if not got and not ref:
+        return None
+    if not got or not ref:
+        return 0.0
+    g, r = unary_union(got), unary_union(ref)
+    return round(g.intersection(r).area / max(g.union(r).area, 1e-9), 3)
+
+
 def score(a):
     from shapely.geometry import Polygon, shape
     from shapely.ops import transform as tf, unary_union
@@ -101,13 +114,24 @@ def score(a):
         bf = out_dir / f"{r}_blind.json"
         if not bf.exists():
             continue
-        built = defaultdict(lambda: {"facet": [], "obstruction": [], "panel": 0})
+        built = defaultdict(lambda: {"facet": [], "obstruction": [], "panel": 0, "panels": []})
         for f in json.loads(bf.read_text()).get("features") or []:
             q = f["properties"]; k = q.get("kind")
             if k in ("facet", "obstruction"):
                 built[q["building_id"]][k].append(tf(T, shape(f["geometry"])))
             elif k == "panel":
                 built[q["building_id"]]["panel"] += 1
+                if a.ref:
+                    built[q["building_id"]]["panels"].append(tf(T, shape(f["geometry"])))
+        # --ref DIR: the same roofs built with every drawn part. Panel IoU
+        # against it is how much of the layout this run gets right; built
+        # with one part of the markup back at a time, it splits the error by stage.
+        refp = defaultdict(list)
+        rf = Path(a.ref) / f"{r}_blind.json" if a.ref else None
+        if rf is not None and rf.exists():
+            for f in json.loads(rf.read_text()).get("features") or []:
+                if f["properties"].get("kind") == "panel":
+                    refp[f["properties"]["building_id"]].append(tf(T, shape(f["geometry"])))
         lf = (Path(a.live) / f"{r}.geojson") if a.live else (ROOT / "data" / "regions" / r / "panel_layouts.geojson")
         if lf and lf.exists():
             for f in json.loads(lf.read_text())["features"]:
@@ -185,7 +209,8 @@ def score(a):
                          "obstruction_precision": None if oprec is None else round(oprec, 3),
                          "obstruction_m2_built": round(gobs.area, 1) if gobs is not None else 0.0,
                          "obstruction_m2_drawn": round(orec_all, 1), "obstruction_m2_found": round(orec_hit, 1),
-                         "panels_blind": built[bid]["panel"], "panels_drawn": live.get(bid)})
+                         "panels_blind": built[bid]["panel"], "panels_drawn": live.get(bid),
+                         "panel_iou": _panel_iou(built[bid]["panels"], refp.get(bid)) if a.ref else None})
     if not rows:
         print("nothing to score -- run first"); return
     n = len(rows)
@@ -202,6 +227,10 @@ def score(a):
                "panels_blind_vs_drawn": f"{pb_matched} vs {pd}" if pd else None,
                "roofs_lines_right(F>=0.7)": sum(1 for r in rows if r["line_f"] >= 0.7),
                "roofs_faces_right(IoU>=0.8)": sum(1 for r in rows if r["face_iou"] >= 0.8)}
+    if a.ref:
+        pr = [r["panel_iou"] for r in rows if r["panel_iou"] is not None]
+        summary["panel_iou_vs_ref"] = round(sum(pr) / max(len(pr), 1), 3)
+        summary["roofs_panels_right(IoU>=0.8)"] = sum(1 for x in pr if x >= 0.8)
     (out_dir / "score.json").write_text(json.dumps({"summary": summary, "roofs": rows}, indent=1))
     print(json.dumps(summary, indent=1))
     print("worst 15 by line F:")
@@ -217,6 +246,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--out", default=str(Path.home() / "ab" / "markup_bench"))
     ap.add_argument("--live", default=None, help="dir of <region>.geojson layouts for the drawn roofs' panel counts (default: the built regions)")
+    ap.add_argument("--keep", default=None, help="run: build with only these drawn parts (faces,lines,obstructions,nopanel)")
+    ap.add_argument("--ref", default=None, help="score: a run dir built with full markup; adds panel IoU against it")
     a = ap.parse_args()
     (run if a.what == "run" else score)(a)
 

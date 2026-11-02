@@ -241,7 +241,11 @@ def _labels():
     # SOLAR_HIDE_LABELS=1: build as if nobody had drawn any roof -- the
     # markup benchmark (tools/markup_benchmark.py) scores the pipeline's own
     # reading of Josh's 144 hand-drawn roofs against what he drew.
-    if os.environ.get("SOLAR_HIDE_LABELS") == "1":
+    # SOLAR_HIDE_LABELS=keep:<parts> hides every drawn part but those named
+    # (faces, lines, obstructions, nopanel): the error budget builds with one
+    # part of the markup back at a time to measure what each stage costs.
+    hide = os.environ.get("SOLAR_HIDE_LABELS", "")
+    if hide == "1":
         return {}
     if _LABELS_CACHE[0] is None:
         try:
@@ -250,7 +254,21 @@ def _labels():
         except Exception:
             _LABELS_CACHE[0] = {}
         _to_lidar_frame(_LABELS_CACHE[0])
+        keep = kept_label_parts()
+        if keep is not None:
+            for b in _LABELS_CACHE[0].values():
+                for part in ("faces", "lines", "obstructions", "nopanel"):
+                    if part not in keep:
+                        b[part] = []
     return _LABELS_CACHE[0]
+
+
+def kept_label_parts():
+    """The drawn parts SOLAR_HIDE_LABELS=keep:a,b keeps, else None."""
+    hide = os.environ.get("SOLAR_HIDE_LABELS", "")
+    if not hide.startswith("keep:"):
+        return None
+    return {x.strip() for x in hide[5:].split(",") if x.strip()}
 
 
 def _to_lidar_frame(buildings):

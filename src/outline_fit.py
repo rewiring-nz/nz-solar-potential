@@ -163,7 +163,8 @@ def _marked():
     # benchmark, tools/markup_benchmark.py). A drawn roof must then slide like
     # any other, or the benchmark scores a roof built differently from every
     # undrawn one.
-    if os.environ.get("SOLAR_HIDE_LABELS") == "1":
+    hide = os.environ.get("SOLAR_HIDE_LABELS", "")
+    if hide == "1" or (hide.startswith("keep:") and "faces" not in hide):
         return set()
     p = Path(__file__).resolve().parent.parent / "data" / "roof_labels.json"
     try:
