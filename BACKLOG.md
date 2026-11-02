@@ -328,6 +328,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   at 0.8+): blind 0.518 (13); drawn obstructions only 0.559 (22); drawn
   geometry only 0.780 (72). Roof geometry is most of the error; obstructions
   matter once the geometry is right (0.78 -> 1.0). Work geometry first.
+  Shape alone (drawn faces and lines, his "no panels here" face marks
+  dropped, `keep:faces,lines,allusable`) scores 0.759 (69): the gain is roof
+  shape, not his judgement. Roofs of 5+ drawn faces (76 of 131) hold 65% of
+  the gap. `keep:outline` (drawn extent in place of the outline) changed
+  nothing (0.515): the readings set the roof's extent, not the outline, and
+  blind outlines already score 0.94.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
