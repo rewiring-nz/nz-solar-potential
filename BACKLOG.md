@@ -316,7 +316,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   commercial roofs (12 Stanley St, 42 Suburb St, 4734994, 5372596). No score
   or shape statistic separates good readings from bad. Next: the vision
   referee (`tools/vision_referee.py`) only where the photo and LiDAR readings
-  disagree (a few hundred roofs, a few dollars).
+  disagree (a few hundred roofs, a few dollars). Re-run on v70 (2 Nov, 131
+  roofs, `~/mb`): base 0.584 / 62 roofs; trust 0.587 / 64; clip 0.602 / 64;
+  both 0.601 / 64 with faces right 33 -> 37. Both vs base moves 49 roofs, 27
+  better and 22 worse: the gain is small and the pick churns.
+- **Error budget.** `markup_benchmark.py run --keep <parts>` builds the drawn
+  roofs with only those drawn parts (`SOLAR_HIDE_LABELS=keep:...`), and
+  `score --ref <full run>` adds panel IoU against the full-markup build, so
+  the layout error splits into geometry (faces, lines) and obstructions.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
