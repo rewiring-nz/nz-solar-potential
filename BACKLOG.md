@@ -324,6 +324,10 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   roofs with only those drawn parts (`SOLAR_HIDE_LABELS=keep:...`), and
   `score --ref <full run>` adds panel IoU against the full-markup build, so
   the layout error splits into geometry (faces, lines) and obstructions.
+  Result (2 Nov, 131 roofs, panel area IoU vs the full-markup layout; roofs
+  at 0.8+): blind 0.518 (13); drawn obstructions only 0.559 (22); drawn
+  geometry only 0.780 (72). Roof geometry is most of the error; obstructions
+  matter once the geometry is right (0.78 -> 1.0). Work geometry first.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
