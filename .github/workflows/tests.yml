@@ -26,21 +26,29 @@ jobs:
         run: pip install -r requirements.lock.txt
       - name: Unit tests
         run: |
-          set -e
+          set +e
+          failed=0
           for t in pure imports_and_arity no_deprecations output_contract xref \
                    geometry_stage plane_refresh plant_decks project_secrets \
                    register_imagery ridge_snap roof_levels small_obstructions \
                    staircase sunken synthesize_dsm quickstart_reporting local_queue \
                    cloud_profiles publish_preview render_docs canonical_map_links face_straighten obstruction_planarity \
-                   racking structured_roof s3_rasters installer_rules shading_split; do
+                   racking structured_roof s3_rasters installer_rules shading_split \
+                   pipeline_web_data pipeline_web_jobs pipeline_web_server pipeline_web_cloud \
+                   map_layer_catalog; do
             echo "::group::$t"
-            python tests/test_$t.py
+            python tests/test_$t.py || failed=1
             echo "::endgroup::"
           done
+          exit "$failed"
       - name: Money maths and workings (economics.js, bill_tool.js, generation.js, workings.js)
+        if: always()
         run: |
-          node tests/test_workings.mjs
-          node tests/test_generation.mjs
-          node tests/test_economics.mjs
-          node tests/test_bill_tool.mjs
-          node tests/test_low_solar_battery.mjs
+          set +e
+          failed=0
+          for t in workings generation economics bill_tool low_solar_battery; do
+            echo "::group::$t (js)"
+            node tests/test_$t.mjs || failed=1
+            echo "::endgroup::"
+          done
+          exit "$failed"
