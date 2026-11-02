@@ -5,6 +5,7 @@
  "download_mbps": 50,
  "imagery_gb_per_km2": 0.35,
  "reference_imagery_gb_per_km2": 0.35,
+ "dsm_gb_per_km2": 0.02,
  "lidar_gb_per_km2": 0.1,
  "linz_export_overhead_s": 120,
  "output_mb_per_building": 0.1,

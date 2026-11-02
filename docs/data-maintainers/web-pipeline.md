@@ -85,6 +85,41 @@ because it owns the port if its command is unrelated.
   - warnings, such as no LiDAR or a large area
   - blockers, such as no survey coverage or too little disk
 
+  Selecting a locality also enables **Meshblocks**. The parent polygon is a
+  LINZ suburb/locality boundary; the council name groups localities and is not
+  the boundary being built. The meshblock overlay uses Stats NZ Meshblock 2023
+  (generalised), served by LINZ layer 111228 (`MB2023`, native EPSG:2193;
+  WFS geometry returned in EPSG:4326). Candidate meshblocks are filtered to
+  those intersecting the parent locality. Select or clear individual blocks,
+  or use **Select all** / **Deselect all**. An empty selection cannot be
+  estimated. Changing the parent or selected blocks invalidates the previous
+  estimate.
+
+  The estimate reports the selected building count, the sum of disjoint
+  buffered acquisition footprints, download estimate, runtime, disk estimate
+  and warnings. These are planning estimates, not limits. A meshblock build
+  runs locally only; it cannot start a Developer or Published build. It runs
+  the normal pipeline as one work area, not one pipeline per block.
+
+  Buildings are selected as whole LINZ building-outline features. For each
+  outline, the pipeline finds its representative point in EPSG:2193 and assigns
+  it to the lexically lowest `MB2023` ID whose polygon covers that point.
+  The map simplifies meshblock polygons for display; ownership uses the cached
+  source geometry. Only buildings owned by a selected block are included;
+  boundaries never clip buildings and ties cannot duplicate them. This is a
+  stable rule for an identical parent, dataset version and selection.
+
+  A selection has a deterministic ID below its parent:
+  `data/regions/<parent>/meshblocks-<16-hex-id>/`. Its `selection.json`
+  records the parent, selected IDs, boundary dataset/version and geometry,
+  ownership rule, building IDs and acquisition footprints. Pipeline artefacts
+  are written below that selection directory, and emitted artefacts below the
+  matching `data/out/` directory; the parent locality's files are not changed.
+  The run combines only the selection into the local map data, so that map
+  output represents the selected work area, not complete parent coverage.
+  Selections are excluded from normal complete-area listings and are never
+  published as complete coverage.
+
   For Developer and Published the estimate also shows the Google Cloud
   cost (see [Cloud builds](#cloud-builds)). To start, type `yes`. The paid
   AI referee is off unless you tick it; the estimate shows its upper cost.
@@ -179,6 +214,24 @@ records under `data/pipeline_web/`, which is ignored by Git:
 - `jobs/<id>/job.json` and `stdout.log`
 - `estimates/`
 - `cache/` (LINZ locality polygons for 7 days, and building counts)
+
+The run directory also holds `acquisition_timings.json`. Each dataset record
+has its source/layer, UTC start, outcome, numeric elapsed seconds, and elapsed
+`hh:mm:ss`; transfer seconds and `hh:mm:ss` are separate where measurable.
+Each record is one dataset acquisition attempt, so a failed attempt and a
+later retry remain separately visible.
+Total acquisition time includes export queue/polling, transfer and local
+preparation; transfer time measures byte-transfer work only, not waiting or
+mosaicking. Where export polling or local preparation takes at least a minute,
+the log also gives a compact `export_wait` or `local_prepare` phase. Multipart
+exports and LiDAR tiles are summarized per dataset. The shared 8 m terrain DEM
+keeps disjoint selection footprints, each with the normal 30 km terrain
+buffer, rather than downloading the enclosing rectangle.
+Unavailable and failed acquisitions are recorded too; failure records contain
+the exception type, not a potentially sensitive URL or error message. Meshblock
+outline preparation happens during Estimate, before the pipeline run, and its
+timing is stored in
+`data/regions/<parent>/meshblocks-<id>/acquisition_timings.json`.
 
 ## Security
 

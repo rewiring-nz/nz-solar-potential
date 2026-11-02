@@ -31,12 +31,15 @@ class RegionIdTests(unittest.TestCase):
     def test_validate_accepts_both_shapes(self):
         for rid in ("pilot", "town_gorge_north", "Arrowtown-2",
                     "queenstown-lakes-district/queenstown/frankton",
-                    "southland-district/no-town/halfway-bay-1234"):
+                    "southland-district/no-town/halfway-bay-1234",
+                    "qld/queenstown/frankton/meshblocks-0123456789abcdef"):
             self.assertEqual(region_ids.validate(rid), rid)
+        self.assertTrue(region_ids.is_meshblock_selection_id(
+            "qld/queenstown/frankton/meshblocks-0123456789abcdef"))
 
     def test_validate_rejects_unsafe(self):
         for rid in ("", "../etc", "a/b", "a/b/c/d", "/a/b/c", "a/../c",
-                    "A/b/c", "a b", "a/b/c/", ".hidden", None):
+                    "A/b/c", "a b", "a/b/c/", "a/b/c/meshblocks-bad", ".hidden", None):
             with self.assertRaises(ValueError, msg=rid):
                 region_ids.validate(rid)
 
@@ -57,6 +60,7 @@ class RegionIdTests(unittest.TestCase):
             touch("legacy_x/summary.json")
             touch("qld/queenstown/frankton/building_outlines.geojson")
             touch("qld/queenstown/frankton/summary.json")
+            touch("qld/queenstown/frankton/meshblocks-0123456789abcdef/summary.json")
             touch("qld/no-town/kingston/building_outlines.geojson")
             (root / "qld/queenstown/empty").mkdir()
             (root / "empty_council/town").mkdir(parents=True)
@@ -67,6 +71,10 @@ class RegionIdTests(unittest.TestCase):
                               "qld/queenstown/frankton"])
             self.assertEqual(region_ids.list_regions(root, sentinel="summary.json"),
                              ["legacy_x", "qld/queenstown/frankton"])
+            self.assertEqual(region_ids.list_regions(root, sentinel="summary.json",
+                                                     include_meshblock_selections=True),
+                             ["legacy_x", "qld/queenstown/frankton",
+                              "qld/queenstown/frankton/meshblocks-0123456789abcdef"])
             self.assertEqual(region_ids.list_regions(root / "missing"), [])
 
 

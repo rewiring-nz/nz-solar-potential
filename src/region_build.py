@@ -171,6 +171,14 @@ def areas_from_argv(argv):
         return all_areas()
     known = set(all_areas())
     for a in args:
+        if region_ids.is_meshblock_selection_id(a):
+            manifest = REGIONS_DIR / a / "selection.json"
+            try:
+                record = json.loads(manifest.read_text())
+            except (OSError, ValueError):
+                record = {}
+            if record.get("selection_id") == a and record.get("meshblock_ids"):
+                continue
         if a not in known:
             raise SystemExit(f"unknown region {a!r} (known: {', '.join(sorted(known))})")
     return args

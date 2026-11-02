@@ -98,8 +98,15 @@
     <section class="tab" id="tab-build">
       <input type="search" id="search" placeholder="Search suburbs and localities…" autocomplete="off">
       <div id="search-results"></div>
-      <p class="muted">Or zoom in (level 10 or closer) and click areas on the map.</p>
+      <p class="muted">Choose a suburb/locality as the parent area (the council is shown for context), or zoom in (level 10 or closer) and click areas on the map.</p>
       <div id="selection"></div>
+      <p><button class="small" id="meshblock-btn" disabled>Choose meshblocks for this locality</button></p>
+      <div id="meshblock-controls" hidden>
+        <p class="muted">Meshblock boundaries are Stats NZ 2023 generalised; the locality boundary remains the parent area.</p>
+        <button class="small" id="meshblock-all">Select all</button>
+        <button class="small" id="meshblock-none">Deselect all</button>
+        <span id="meshblock-count" class="muted"></span>
+      </div>
       <p><button class="primary" id="estimate-btn" disabled>Estimate</button></p>
       <div id="estimate"></div>
     </section>
