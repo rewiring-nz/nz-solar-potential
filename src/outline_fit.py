@@ -176,7 +176,15 @@ def _marked():
 
 def fitted_outlines(gdf, region_dir, use=None):
     """`gdf` with each accepted slide applied to its outline (in place, and
-    returned). A no-op when SOLAR_OUTLINE_FIT=0, unless `use`."""
+    returned). A no-op when SOLAR_OUTLINE_FIT=0, unless `use`.
+    SOLAR_HIDE_LABELS=keep:...,outline puts each drawn roof's extent in
+    place of its outline instead (the error budget)."""
+    if "outline" in os.environ.get("SOLAR_HIDE_LABELS", ""):
+        from src.roof_line_source import drawn_outline
+        col = gdf.geometry.name
+        ids = gdf["building_id"] if "building_id" in gdf.columns else gdf.index
+        gdf[col] = [drawn_outline(int(b)) or g for b, g in zip(ids, gdf.geometry)]
+        return gdf
     if not (USE if use is None else use):
         return gdf
     fp = Path(region_dir) / "outline_fit.json"

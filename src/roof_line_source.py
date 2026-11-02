@@ -242,8 +242,10 @@ def _labels():
     # markup benchmark (tools/markup_benchmark.py) scores the pipeline's own
     # reading of Josh's 144 hand-drawn roofs against what he drew.
     # SOLAR_HIDE_LABELS=keep:<parts> hides every drawn part but those named
-    # (faces, lines, obstructions, nopanel): the error budget builds with one
-    # part of the markup back at a time to measure what each stage costs.
+    # (faces, lines, obstructions, nopanel, outline): the error budget builds
+    # with one part of the markup back at a time to measure what each stage
+    # costs. `outline` keeps only the drawn roof's extent (the union of its
+    # faces, read by drawn_outline) in place of the building outline.
     hide = os.environ.get("SOLAR_HIDE_LABELS", "")
     if hide == "1":
         return {}
@@ -257,10 +259,38 @@ def _labels():
         keep = kept_label_parts()
         if keep is not None:
             for b in _LABELS_CACHE[0].values():
+                b["_face_rings"] = [f.get("ring") for f in b.get("faces") or [] if f.get("ring")]
                 for part in ("faces", "lines", "obstructions", "nopanel"):
                     if part not in keep:
                         b[part] = []
     return _LABELS_CACHE[0]
+
+
+def drawn_outline(building_id):
+    """The drawn roof's extent in the LiDAR frame (its faces' union, closed
+    over hairline gaps) when SOLAR_HIDE_LABELS=keep:...,outline, else None."""
+    keep = kept_label_parts()
+    if keep is None or "outline" not in keep:
+        return None
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS:
+        return None
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    polys = []
+    for r in lab.get("_face_rings") or []:
+        try:
+            q = Polygon([(x, y) for x, y in r]).buffer(0)
+        except Exception:
+            continue
+        if q.area > 0.5:
+            polys.append(q.buffer(0.15))
+    if not polys:
+        return None
+    u = unary_union(polys).buffer(-0.15)
+    if u.geom_type == "MultiPolygon":
+        u = max(u.geoms, key=lambda g: g.area)
+    return u if u.area > 1 else None
 
 
 def kept_label_parts():
