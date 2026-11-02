@@ -13,6 +13,7 @@ ships and needs no per-worker state.
     tools/render_built.py --cases --before ~/v67_layouts --out cases.jpg
     tools/render_built.py --movers 24 --before ~/v67_layouts --out movers.jpg
     tools/render_built.py --ids 4725633 5370368 --out beach.jpg
+    tools/render_built.py --ids 4725633 --before ~/ab/lay0 --now ~/ab/lay1 --tiles ~/review/img
 """
 import argparse
 import json
@@ -128,8 +129,12 @@ def main():
     ap.add_argument("--before", help="folder of earlier <region>/panel_layouts.geojson")
     ap.add_argument("--cols", type=int, default=0, help="roofs per row (default: 2 with --before, else 3)")
     ap.add_argument("--dpi", type=int, default=70)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", help="one contact sheet (.jpg)")
+    ap.add_argument("--tiles", help="folder: one untitled image per roof and version "
+                    "(<id>_before.jpg, <id>_now.jpg), for tools/review_page.py")
     a = ap.parse_args()
+    if not (a.out or a.tiles):
+        ap.error("give --out or --tiles")
     if a.movers and not a.before:
         ap.error("--movers needs --before")
 
@@ -140,6 +145,27 @@ def main():
     now = load_layouts(Path(a.now).expanduser() if a.now else REGIONS)
     before = load_layouts(Path(a.before).expanduser()) if a.before else {}
     todo = pick(a, now, before)
+    if a.tiles:
+        out = Path(a.tiles).expanduser()
+        out.mkdir(parents=True, exist_ok=True)
+        n = 0
+        for bid, r, _note in todo:
+            if r is None:
+                continue
+            f1 = now.get(r, {}).get(bid, [])
+            f0 = before.get(r, {}).get(bid, [])
+            bounds = extent([f0, f1])
+            if bounds is None:
+                continue
+            for tag, feats in (("before", f0), ("now", f1)) if a.before else (("now", f1),):
+                fig, ax = plt.subplots(figsize=(4.8, 4.5))
+                draw(ax, feats, r, bounds)
+                fig.subplots_adjust(0, 0, 1, 1)
+                fig.savefig(out / f"{bid}_{tag}.jpg", dpi=a.dpi)
+                plt.close(fig)
+            n += 1
+        print(f"{n} roofs -> {out}")
+        return
     per = 2 if a.before else 1
     cols = a.cols or (2 if a.before else 3)
     rows = math.ceil(len(todo) / cols)
