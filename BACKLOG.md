@@ -152,16 +152,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   4725214, 4736995, 4735193, 4749406, 5375061, 5370646, 5375984, 5375975,
   4731151. Owner notes repeat two faults: panels across a ridge (5375073)
   and stray landscape rows at a face edge (5374556, 5373571, 4731151).
-- v70 candidate (2 Nov, branch v70-review): a single landscape row on a
-  pitched face is dropped (SOLAR_DROP_ONE_ROW_LANDSCAPE). A/B on 984 roofs
-  that ship landscape panels on a pitched face (up to 40 per QLDC region,
-  VM `~/ab71`): 492 change, 37,484 -> 35,111 panels, 103 roofs go to zero,
-  10 gain (portrait chosen instead). 40 movers (the 3 flagged, 12 that go
-  to zero, 25 at random) are on the owner's blind review,
-  https://claude.ai/artifact/ExStV2iwLSfDEEzPtvfCwy, key in
-  `data/blind_check/answer_key_v70_sideways.json` (agent's prior, recorded
-  first: v70 except where the roof goes to zero). Ships only on the
-  owner's verdict.
+- Tried and rejected (2 Nov): drop a single landscape row on a pitched
+  face (A/B on 984 roofs, VM `~/ab71`: 492 change, 37,484 -> 35,111
+  panels, 103 roofs to zero). Owner's blind review of 40 movers
+  (https://claude.ai/artifact/ExStV2iwLSfDEEzPtvfCwy; answers in
+  `data/blind_check/owner_v70_sideways.json`): v69 picked 24, v70 3, same
+  10; mean score 5.3 vs 3.2. Roofs that went to zero: v69 on 11 of 12
+  (6.1 vs 1.2). Roofs that kept panels: v69 13, v70 3, same 10. Only two
+  of the three roofs that prompted it improved. A sideways row on a strip
+  is better than an empty strip; the "weird" rows in the 2 Nov notes are
+  a symptom of wrong roof lines, not of racking ("racking" was tagged on
+  2 of 40). The agent's prior agreed on 14 of 27.
+- Fault tags from that review, both versions (40 roofs): roof lines wrong
+  16, empty space unused 8 (v69), outline wrong 7, panels across a ridge
+  7, obstructions 2, off the roof 1, racking 2. Roof lines are the main
+  fault; ridge-tagged roofs: 4741990, 4731151, 4746845, 4725292, 4720823,
+  5373571, 1560393. 4746515: lines trace a tree's shadow instead of the
+  roof edge behind it. 4719462: a diagonal wing's panels are not square
+  to its eave.
 - Panels across a ridge, 5375073 (wanaka_town): about 70% of the returns
   inside its face are at ground height, so the house postdates the LiDAR.
   Its faces come from the photo (a repeat reading of 5375075 via SAM), and
