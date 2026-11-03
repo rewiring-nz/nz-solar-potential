@@ -103,6 +103,8 @@
   <h2>Building outline &mdash; if the yellow line is wrong</h2>
   <button data-tool="outline" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400"></span> Move / reshape outline</span><span class="k">O</span></button>
   <button data-tool="outline_new" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Redraw outline</span><span class="k">R</span></button>
+  <button data-tool="oline" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;clip-path:polygon(0 42%,100% 42%,100% 58%,0 58%)"></span> Outline line</span><span class="k">L</span></button>
+  <button data-tool="olpart" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;opacity:.5"></span> Add / remove a part</span><span class="k">K</span></button>
   <button id="olreset">Back to the surveyed outline</button>
   <details class="hint"><summary>When and how to fix the outline</summary><div>The yellow outline comes from the LINZ survey and is sometimes off: shifted from the roof, missing an extension, or taking in a neighbour. Fix it <b>before</b> drawing lines, so your lines can snap to it.<br><b>Move / reshape</b>: drag inside the outline to move all of it; drag a corner to move it; drag from the middle of an edge to add a corner; click a corner and press <b>Delete</b> to remove it.<br><b>Redraw</b>: click each corner of the real roof edge, then <b>Enter</b> or click the first point again.<br>The surveyed outline stays dashed underneath for reference. Undo steps back through outline changes while an outline tool is selected.</div></details>
 
@@ -284,7 +286,7 @@
 <script>
 const ROOFS = /*__ROOFS__*/;
 const OPTS = /*__OPTS__*/{};
-const COL = {ridge:"#1fff7a",valley:"#35b6ff",cliff:"#ff3b30",edge:"#2ecc71"};
+const COL = {ridge:"#1fff7a",valley:"#35b6ff",cliff:"#ff3b30",edge:"#2ecc71",oline:"#ffd400"};
 const KEY = "roof_labels_v1";
 const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
 const DRAG_SHAPES = new Set(["rect","ellipse"]);
@@ -355,6 +357,7 @@ function finishPoly(){
 function snapTargets(){
   const r=rec(), out=[];
   r.lines.forEach(l=>{ out.push(l.a); out.push(l.b); });
+  (r.olines||[]).forEach(l=>{ out.push(l.a); out.push(l.b); });
   (OL(R())||[]).slice(0,-1).forEach(q=>out.push(q));
   (R().holes||[]).forEach(h=>h.slice(0,-1).forEach(q=>out.push(q)));
   return out;
@@ -367,6 +370,7 @@ function snapTargets(){
 function snapEdges(){
   const segs=[];
   rec().lines.forEach(l=>segs.push([l.a,l.b]));
+  (rec().olines||[]).forEach(l=>segs.push([l.a,l.b]));
   const ring=r=>{ for(let i=0;i<r.length-1;i++) segs.push([r[i],r[i+1]]); };
   if(OL(R())) ring(OL(R()));
   (R().holes||[]).forEach(ring);
@@ -465,7 +469,7 @@ function save(){
     // collide -- last-writer-wins only bites if two people edit the SAME roof.
     DB.doc("labels/"+R().id).set({
       lines: d.lines, obstructions: d.obstructions, nopanel: d.nopanel||[],
-      complete: !!d.complete, problem: d.problem||null, outline: d.outline||null,
+      complete: !!d.complete, problem: d.problem||null, outline: d.outline||null, olines: d.olines||[],
       area: R().area, address: R().address || "",
       saved_utc: new Date().toISOString(),
     }).catch(e=>{ say("could not sync: "+(e&&e.code||"error")+" — saved locally"); });
@@ -739,7 +743,7 @@ function boundaryFor(outline, lines){
   return hull.length>=3 ? hull : ring;
 }
 
-function facesFor(outline, lines){
+function facesFor(outline, lines, minArea=MIN_FACE_M2){
   const ring=boundaryFor(outline, lines);
   if(ring.length<3) return [];
 
@@ -836,13 +840,82 @@ function facesFor(outline, lines){
         }
         // interior faces come out counter-clockwise; the outer boundary is the
         // one traced the other way, and is discarded
-        if(s/2 >= MIN_FACE_M2) out.push(poly);
+        if(s/2 >= minArea) out.push(poly);
       }
     });
   });
   return out;
 }
 const faces = () => facesFor(OL(R()), rec().lines);
+
+// OUTLINE LINES. Single segments that edit the outline: the outline's edges and
+// these lines cut the crop into cells, and the outline is the union of the
+// cells marked in. A line that closes off a cell outside the outline (bridging
+// a notch, joining two parts, a new edge out to a corner) adds that cell; a
+// line across the outline only divides it, and K then drops the part that is
+// not roof. Cells touching the crop edge are open ground and never join.
+function olCells(){
+  const [x0,y0,x1,y1]=R().bounds, m=1;
+  const box=[[x0-m,y0-m],[x1+m,y0-m],[x1+m,y1+m],[x0-m,y1+m],[x0-m,y0-m]];
+  // the surveyed edges stay in, so a part removed with K can be added back;
+  // slivers are kept (minArea ~0) or the union would open gaps along them
+  const ring=OL(R()), segs=[];
+  [ring, rec().outline ? R().outline : []].forEach(rg=>{
+    for(let i=0;i<rg.length-1;i++) segs.push({a:rg[i], b:rg[i+1]}); });
+  (rec().olines||[]).forEach(l=>segs.push(l));
+  const onBox=q=>Math.min(Math.abs(q[0]-box[0][0]),Math.abs(q[0]-box[1][0]),
+                          Math.abs(q[1]-box[0][1]),Math.abs(q[1]-box[2][1])) < 0.05;
+  return facesFor(box, segs, 1e-4).filter(c=>!c.some(onBox))
+    .map(c=>({poly:c, in: inPoly(labelPoint(c), ring)}));
+}
+function _onSeg(q,a,b){ const p=_projOnSeg(q,a,b); return Math.hypot(q[0]-p[0],q[1]-p[1]) < 0.05; }
+// boundary of the union of cells: edges used once, chained into rings, the
+// largest kept (the build keeps one outline per building)
+function unionRing(cells){
+  const k=p=>p[0].toFixed(2)+"_"+p[1].toFixed(2), E=new Map();
+  cells.forEach(c=>c.forEach((p,i)=>{ const q=c[(i+1)%c.length];
+    const rk=k(q)+">"+k(p);
+    if(E.has(rk)) E.delete(rk); else E.set(k(p)+">"+k(q), [p,q]); }));
+  const from=new Map(); E.forEach(([p,q])=>from.set(k(p), [p,q]));
+  let best=null, ba=0;
+  while(from.size){
+    const [start]=from.keys(), ring=[]; let cur=start, guard=0;
+    while(from.has(cur) && guard++<5000){ const [p,q]=from.get(cur); from.delete(cur); ring.push(p); cur=k(q); }
+    const a=polyArea(ring);
+    if(ring.length>=3 && a>ba){ ba=a; best=ring; }
+  }
+  if(!best) return null;
+  // drop corners that sit on a straight run (left by splitting edges)
+  const out=best.filter((p,i)=>{ const a=best[(i-1+best.length)%best.length], b=best[(i+1)%best.length];
+    return Math.abs((p[0]-a[0])*(b[1]-a[1])-(p[1]-a[1])*(b[0]-a[0])) > 1e-4*Math.hypot(b[0]-a[0],b[1]-a[1]); });
+  return out.length>=3 ? out : null;
+}
+const olHist2 = {};       // per roof: {outline, olines} before each outline-line edit
+function olSnap(){ (olHist2[R().id]=olHist2[R().id]||[]).push(
+  {outline: rec().outline ? rec().outline.map(q=>q.slice()) : null,
+   olines: (rec().olines||[]).map(l=>({a:l.a.slice(), b:l.b.slice()}))}); }
+function olApply(cells){
+  const ring=unionRing(cells.filter(c=>c.in).map(c=>c.poly));
+  if(!ring){ say("that would leave no outline"); return false; }
+  rec().outline=closeRing(ring); return true;
+}
+function addOutlineLine(a,b){
+  olSnap();
+  (rec().olines=rec().olines||[]).push({a,b});
+  const cells=olCells();
+  let added=0;
+  cells.forEach(c=>{ if(!c.in && c.poly.filter(q=>_onSeg(q,a,b)).length>=2){ c.in=true; added++; } });
+  olApply(cells);
+  say(added ? "outline extended to the line" : "outline line placed \u2014 K, then click a part to add or remove it");
+}
+function toggleOutlinePart(w){
+  const cells=olCells();
+  const hit=cells.filter(c=>inPoly(w,c.poly)).sort((p,q)=>polyArea(p.poly)-polyArea(q.poly))[0];
+  if(!hit){ say("click a part closed off by the outline and outline lines"); return; }
+  olSnap(); hit.in=!hit.in;
+  if(!olApply(cells)){ olHist2[R().id].pop(); return; }
+  say(hit.in ? "part added to the outline" : "part removed from the outline");
+}
 
 // Centroid is outside its own polygon on any L or U shaped face, so the area
 // caption would float over a neighbour. Fall back to scanning for a point that
@@ -918,6 +991,9 @@ function draw(){
     ring(R().outline,"rgba(255,212,0,.55)",[6,6],1.8);   // surveyed, for reference
     ring(rec().outline,"#ffd400",[],3.2);
   } else ring(R().outline,"#ffd400",[],3.2);     // THIS building, solid
+  (rec().olines||[]).forEach(l=>{ const[x1,y1]=toPx(l.a[0],l.a[1]), [x2,y2]=toPx(l.b[0],l.b[1]);
+    ctx.setLineDash([3*dpr(),3*dpr()]); ctx.strokeStyle="#ffd400"; ctx.lineWidth=lw(2.0);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.setLineDash([]); });
   if(tool==="outline"){                          // corner handles
     const H=HANDLE()*1.2;
     OL(R()).slice(0,-1).forEach((q,k)=>{ const[x,y]=toPx(q[0],q[1]);
@@ -997,7 +1073,7 @@ function draw(){
       ctx.fillStyle=pc; ctx.beginPath();ctx.arc(x,y,lw(4.2),0,7);ctx.fill(); });
     ctx.lineCap="butt";
   }
-  if(hoverSnap && (LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new")){
+  if(hoverSnap && (LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new" || tool==="solar" || tool==="oline")){
     const [hx,hy]=toPx(hoverSnap.p[0],hoverSnap.p[1]), r=lw(9);
     const path=()=>{ ctx.beginPath();
       if(hoverSnap.kind==="edge"){                 // diamond = anywhere along a line
@@ -1180,6 +1256,7 @@ cv.addEventListener("pointerdown", e=>{
     drag={mode, vi, px, py, orig: rec().outline.map(q=>q.slice())};
     cv.setPointerCapture(e.pointerId); draw(); return;
   }
+  if(tool==="olpart"){ toggleOutlinePart(toW(px,py)); save(); draw(); return; }
   if(tool==="nopanel"){
     const w=toW(px,py), r=rec(), fs=faces();
     const f=fs.find(g=>inPoly(w,g));
@@ -1217,7 +1294,7 @@ cv.addEventListener("pointerdown", e=>{
           + ((tool==="poly" || tool==="outline_new" || tool==="solar") && triPts.length>=3 ? ", or click the first point" : ""));
     draw(); return;
   }
-  if(LINE_TOOLS.has(tool)){
+  if(LINE_TOOLS.has(tool) || tool==="oline"){
     const hit=snapPoint(px,py);
     if(!pending){
       const a = hit ? hit.p : toW(px,py);
@@ -1231,6 +1308,7 @@ cv.addEventListener("pointerdown", e=>{
       else { const [sx,sy]=snap(pending.a,px,py); b=toW(sx,sy); }
       if(Math.hypot(b[0]-pending.a[0], b[1]-pending.a[1]) < MIN_LINE_M){
         pending=null; say("too short \u2014 click two separate points"); draw(); return; }
+      if(tool==="oline"){ addOutlineLine(pending.a,b); pending=null; save(); draw(); return; }
       rec().lines.push({kind:tool,a:pending.a,b}); pending=null; save();
       if(hit) say(hit.kind==="edge" ? "joined onto the line" : "joined to an existing point");
     }
@@ -1256,7 +1334,7 @@ cv.addEventListener("pointermove", e=>{
     else open.forEach(q=>{ q[0]+=wx-ox; q[1]+=wy-oy; });
     rec().outline=closeRing(open); draw(); return;
   }
-  if(LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new" || tool==="solar"){
+  if(LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new" || tool==="solar" || tool==="oline"){
     const h=snapPoint(px,py);
     const changed = JSON.stringify(h)!==JSON.stringify(hoverSnap);
     hoverSnap=h;
@@ -1328,13 +1406,16 @@ const DESC = {
   select:"Click a line or shape you have already drawn, then press Delete. Unlike Undo, this reaches any of them, not just the last.",
   outline:"Drag inside the outline to move it, drag a corner to reshape, drag from an edge to add a corner. Click a corner and press Delete to remove it.",
   outline_new:"Click each corner of the real roof edge, then Enter (or click the first point). It replaces the yellow outline for this roof.",
+  oline:"Two clicks per line, snapping to the outline and other lines. A line that closes off a part outside the outline adds it; a line across the outline divides it, then K and a click drops the part that is not roof.",
+  olpart:"Click a part closed off by the outline and outline lines to add it to the outline, or to remove it.",
   solar:"Click the four corners of an existing solar array, then Enter. The build treats it as roof that takes panels, not as an obstruction.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
 const NAMES = {ridge:"Ridge line", valley:"Valley line", cliff:"Cliff line",
                rect:"Box", ellipse:"Circle", tri:"Triangle", poly:"Polygon",
                pline:"Line / run", nopanel:"No panels here",
                select:"Select & delete", outline:"Move / reshape outline",
-               outline_new:"Redraw outline", solar:"Existing solar panels"};
+               outline_new:"Redraw outline", solar:"Existing solar panels",
+               oline:"Outline line", olpart:"Add / remove a part"};
 function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[]; if(t!=="outline") olSel=null;
   if(t!=="select"){ selLine=null; }
   const td=document.getElementById("tooldesc"), tw=document.getElementById("tooldesc-wrap");
@@ -1350,8 +1431,8 @@ function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[]; if(t!=="ou
   draw(); }
 document.querySelectorAll("[data-tool]").forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
 document.getElementById("olreset").onclick=()=>{
-  if(!rec().outline){ say("already the surveyed outline"); return; }
-  olPush(); delete rec().outline; olSel=null; save(); draw();
+  if(!rec().outline && !(rec().olines||[]).length){ say("already the surveyed outline"); return; }
+  olPush(); delete rec().outline; rec().olines=[]; olSel=null; save(); draw();
   say("back to the surveyed outline");
 };
 const help=document.getElementById("help");
@@ -1363,6 +1444,10 @@ function undo(){
   const r=rec();
   if(triPts.length){ triPts.pop(); }
   else if(pending){ pending=null; }
+  else if((tool==="oline" || tool==="olpart") && (olHist2[R().id]||[]).length){
+    const h=olHist2[R().id].pop();
+    if(h.outline) r.outline=h.outline; else delete r.outline;
+    r.olines=h.olines; say("outline change undone"); }
   else if((tool==="outline" || tool==="outline_new") && (olHist[R().id]||[]).length){
     r.outline = olHist[R().id].pop(); olSel=null; say("outline change undone"); }
   else if(tool==="nopanel" && r.nopanel.length){ r.nopanel.pop(); }
@@ -1519,6 +1604,8 @@ addEventListener("keydown", e=>{
   if(!e.metaKey && !e.ctrlKey && (e.key==="o"||e.key==="O")){ setTool("outline"); return; }
   if(!e.metaKey && !e.ctrlKey && (e.key==="r"||e.key==="R")){ setTool("outline_new"); return; }
   if(!e.metaKey && !e.ctrlKey && (e.key==="a"||e.key==="A")){ setTool("solar"); return; }
+  if(!e.metaKey && !e.ctrlKey && (e.key==="l"||e.key==="L")){ setTool("oline"); return; }
+  if(!e.metaKey && !e.ctrlKey && (e.key==="k"||e.key==="K")){ setTool("olpart"); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
   if(e.key==="Enter"){ if(triPts.length){ e.preventDefault(); finishPoly(); } return; }
   if(e.key==="["||e.key==="]"){
@@ -1609,7 +1696,8 @@ if(OPTS.unmarkedOnly){
       if(!data[id] || (!data[id].lines.length && !data[id].obstructions.length && !data[id].outline))
         data[id] = {lines: remote[id].lines||[], obstructions: remote[id].obstructions||[],
                     nopanel: remote[id].nopanel||[], complete: !!remote[id].complete,
-                    problem: remote[id].problem||null, outline: remote[id].outline||null};
+                    problem: remote[id].problem||null, outline: remote[id].outline||null,
+                    olines: remote[id].olines||[]};
     });
     draw();
   }, e => say("shared sync stopped: "+(e&&e.code||"error")+" — still saving locally"));
