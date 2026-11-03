@@ -1519,8 +1519,13 @@ addEventListener("keydown", e=>{
     }
     return;
   }
+  // Esc backs out one step: a half-drawn line or shape first, then the tool
+  // itself, so clicks on the roof do nothing until a tool is picked again
   if(e.key==="Escape"){ document.getElementById("help").classList.remove("on");
-    pending=null; sel=null; triPts=[]; draw(); return; }
+    const busy = pending || triPts.length || sel!==null || selLine!==null || olSel!==null;
+    pending=null; sel=null; selLine=null; olSel=null; triPts=[];
+    if(!busy && tool){ setTool(null); say("no tool selected \u2014 pick one, or press 1\u20139"); }
+    draw(); return; }
   if(e.key==="Delete"||e.key==="Backspace"){
     if(sel!==null || selLine!==null || (tool==="outline" && olSel!==null)){
       e.preventDefault(); deleteSelected(); } return; }
