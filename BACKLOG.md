@@ -341,6 +341,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   2-6 returns per m2 on these roofs (2.3 on 4742246), so a 20-30 m2 face holds
   20-60 returns: too few to find a second plane. LiDAR-only refinement cannot
   recover the faces complex roofs miss; the lines have to come from the photo.
+- **Line detector: more labels still help; frozen SAM does not (3 Nov).**
+  Learning curve (`train_line_model.py --curve --pretrained --epochs 30`,
+  fixed val of 24 roofs; ridge / valley / cliff, mean as printed): 20 roofs
+  0.23/0.13/0.15 (0.246), 40 0.242, 60 0.271, 92 roofs 0.39/0.27/0.20
+  (0.392, +0.12 over 60). Still climbing steeply: more drawn roofs are
+  worth it. A head on frozen SAM ViT-B features (`tools/research/sam_line_head.py`,
+  same split, loss and metric) scores 0.29/0.33/0.26, hip 0.22 (0.365):
+  better valleys and cliffs, worse ridges and hips, no net gain. One seed
+  each. Untried: per-channel blend of the two, SAM features as an extra
+  U-Net input.
+- **Drawn outlines (3 Nov).** The markup tool moves, reshapes or redraws the
+  building outline (O / R); the label's `outline` replaces the surveyed and
+  fitted one in `fitted_outlines`. Not yet on the published tool (branch
+  `error-budget`).
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
