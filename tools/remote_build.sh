@@ -127,8 +127,9 @@ if ! status=$(gcloud compute instances describe "$VM" --zone "$ZONE" --project "
 fi
 if [ "$status" != RUNNING ]; then
   echo "VM is $status; starting it may incur compute charges."
-  if ! gcloud compute instances start "$VM" --zone "$ZONE" --project "$PROJECT" -q; then
-    echo "ERROR: could not start VM $VM. Check Compute Instance Admin permissions and VM status."
+  # through the monthly hour cap (data/vm_budget.json), never a bare start
+  if ! VM="$VM" ZONE="$ZONE" PROJECT="$PROJECT" "$(dirname "$0")/vm_start.sh"; then
+    echo "ERROR: VM $VM not started (monthly hour cap, permissions or VM status; see above)."
     exit 1
   fi
   STARTED=1
