@@ -438,6 +438,11 @@ let olSel = null;         // selected corner of the drawn outline
 
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ return {}; } }
 
+// A script error mid-click otherwise fails silently and leaves a half-drawn
+// line hanging; show it in the status line so it can be reported.
+addEventListener("error", e=>{ try{ say("error: "+(e.message||"unknown")+" (line "+(e.lineno||"?")+")"); }catch(_){} });
+addEventListener("unhandledrejection", e=>{ try{ say("error: "+((e.reason&&(e.reason.message||e.reason.code))||e.reason)); }catch(_){} });
+
 // SHARED MODE. Opened as a published page, everyone marking sees the same
 // progress and nobody re-does a roof someone else already did. Opened as a
 // downloaded file there is no viewer to answer, claude.use resolves null, and
@@ -1580,7 +1585,9 @@ if(OPTS.unmarkedOnly){
     "Shared with everyone on this link — your marks appear for them and theirs for you. Mark as few or as many as you like.";
   db.collection("labels").onSnapshot(snap => {
     remote = {};
-    snap.docs.forEach(d => { remote[d.id] = d.data(); });
+    // the store hands back frozen objects; copy them, or adopting a roof leaves
+    // its lines array read-only and the next drawn line throws
+    snap.docs.forEach(d => { remote[d.id] = JSON.parse(JSON.stringify(d.data())); });
     // adopt anything we do not have locally, so a roof someone else did shows
     // as done and opens with their lines rather than blank
     Object.keys(remote).forEach(id => {
