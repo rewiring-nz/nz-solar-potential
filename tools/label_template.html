@@ -452,7 +452,7 @@ addEventListener("unhandledrejection", e=>{ try{ say("error: "+((e.reason&&(e.re
 let DB = null, remote = {}, ingested = {};
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){}
-  if(DB && data[R().id]){
+  if(DB && data[R().id] && (hasMarks(data[R().id]) || data[R().id].complete || remote[R().id])){
     const d = data[R().id];
     // One document per roof. 156 roofs is far inside the store's limits, and
     // per-roof documents mean two people labelling different roofs never
@@ -465,9 +465,11 @@ function save(){
     }).catch(e=>{ say("could not sync: "+(e&&e.code||"error")+" — saved locally"); });
   }
 }
-function marked(id){ const d=data[id];
-  return !!(remote[id] || ingested[id] ||
-    (d && (d.problem || d.outline || (d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
+// A record with nothing in it is not a marked roof: clicking a roof saves one,
+// and counting it would make U skip a roof nobody drew.
+const hasMarks = d => !!(d && (d.problem || d.outline || (d.lines||[]).length
+  || (d.obstructions||[]).length || (d.nopanel||[]).length));
+function marked(id){ return !!(ingested[id] || hasMarks(remote[id]) || hasMarks(data[id])); }
 let lastNudge = 0;
 function nudgeSave(){
   if(DB) return;                       // the shared store already holds it
