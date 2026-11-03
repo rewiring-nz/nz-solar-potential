@@ -119,6 +119,10 @@
   <details class="hint"><summary>What counts as no-panel</summary><div>Your lines shade the roof into faces as you draw. Click any face that could <b>never</b> take a panel &mdash; a wall caught inside the outline, a canopy, glass. Click again to unmark.<br><b>This is the one that catches the worst failure we have:</b> panels placed down a wall. If a shaded face is not really roof, this is how you say so.</div></details>
   <div id="facenudge" class="desc" style="display:none"></div>
 
+  <h2>Solar panels already there</h2>
+  <button data-tool="solar" style="--tc:#ffd60a"><span><span class="sw" style="background:#ffd60a"></span> Existing solar panels</span><span class="k">A</span></button>
+  <details class="hint"><summary>Why mark existing panels</summary><div>Click the four corners of each existing array, then <b>Enter</b> (or click the first corner again). The build counts that area as roof that can take panels; without it, an array reads as an obstruction and the best part of the roof is left empty. Marked arrays also teach a future panel detector.</div></details>
+
   <h2>Obstructions &mdash; drag out a shape</h2>
   <button data-tool="poly" style="--tc:var(--obs)"><span><span class="sw" style="background:var(--obs);clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Polygon</span><span class="k">4</span></button>
   <button data-tool="pline" style="--tc:var(--obs)"><span><span class="sw" style="background:var(--obs);clip-path:polygon(0 38%,100% 0,100% 24%,0 62%)"></span> Line / run</span><span class="k">5</span></button>
@@ -286,7 +290,7 @@ const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
 const DRAG_SHAPES = new Set(["rect","ellipse"]);
 // Everything you build by clicking points. Triangle closes itself at three;
 // polygon and line run until you press Enter, so they take any number.
-const POLY_TOOLS = new Set(["tri","poly","pline","outline_new"]);
+const POLY_TOOLS = new Set(["tri","poly","pline","outline_new","solar"]);
 let triPts = [];        // corners placed so far, for whichever poly tool is active
 const PLINE_WIDTH_M = 0.4;   // a drawn run has no area until it is given one
 // Every width and size below is authored in CSS pixels. The canvas backing
@@ -338,10 +342,12 @@ function finishPoly(){
   }
   const o = tool==="pline"
     ? {shape:"polyline", pts:triPts.slice(), width_m:PLINE_WIDTH_M}
+    : tool==="solar" ? {shape:"polygon", pts:triPts.slice(), solar:true}
     : {shape: tool==="tri" ? "triangle" : "polygon", pts:triPts.slice()};
   rec().obstructions.push(o);
   sel=rec().obstructions.length-1; triPts=[]; save(); draw();
-  say(o.shape==="polyline"
+  say(o.solar ? "existing solar marked \u2014 the build will put panels here"
+      : o.shape==="polyline"
       ? `line placed \u2014 ${o.width_m.toFixed(2)} m wide, [ and ] change it`
       : `${o.shape} placed`);
 }
@@ -959,9 +965,9 @@ function draw(){
       else ctx.rect(x1,y1,w,h);
       corners=[[x1,y1],[x2,y1],[x1,y2],[x2,y2]];
     }
-    ctx.fillStyle="rgba(192,107,255,.22)"; ctx.fill();
+    ctx.fillStyle=o.solar ? "rgba(255,214,10,.22)" : "rgba(192,107,255,.22)"; ctx.fill();
     ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4); ctx.stroke();
-    ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4); ctx.stroke();
+    ctx.strokeStyle=o.solar ? "#ffd60a" : "#c06bff"; ctx.lineWidth=lw(3.4); ctx.stroke();
     if(sel===i){ ctx.fillStyle="#fff"; const H=HANDLE();
       corners.forEach(([px,py])=>ctx.fillRect(px-H/2,py-H/2,H,H)); }
   });
@@ -984,7 +990,7 @@ function draw(){
       if(tool!=="pline" && triPts.length>=3){ const[fx,fy]=toPx(triPts[0][0],triPts[0][1]); ctx.lineTo(fx,fy); }
     };
     ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4); trace(); ctx.stroke();
-    const pc = tool==="outline_new" ? "#ffd400" : "#c06bff";
+    const pc = tool==="outline_new" ? "#ffd400" : tool==="solar" ? "#ffd60a" : "#c06bff";
     ctx.strokeStyle=pc; ctx.lineWidth=lw(3.4); trace(); ctx.stroke();
     triPts.forEach(q=>{ const[x,y]=toPx(q[0],q[1]);
       ctx.fillStyle="#000"; ctx.beginPath();ctx.arc(x,y,lw(6.4),0,7);ctx.fill();
@@ -1200,7 +1206,7 @@ cv.addEventListener("pointerdown", e=>{
     const w=s ? s.p : toW(px,py);
     // clicking back on the first point closes a polygon, the way drawing tools
     // normally behave
-    if((tool==="poly" || tool==="outline_new") && triPts.length>=3){
+    if((tool==="poly" || tool==="outline_new" || tool==="solar") && triPts.length>=3){
       const f=toPx(triPts[0][0], triPts[0][1]);
       if(Math.hypot(px-f[0], py-f[1]) <= SNAP_PX*dpr()){ finishPoly(); return; }
     }
@@ -1208,7 +1214,7 @@ cv.addEventListener("pointerdown", e=>{
     if(tool==="tri" && triPts.length===3){ finishPoly(); return; }
     say(tool==="tri" ? `corner ${triPts.length} of 3`
         : `${triPts.length} point${triPts.length===1?"":"s"} \u2014 Enter to finish, Esc to cancel`
-          + ((tool==="poly" || tool==="outline_new") && triPts.length>=3 ? ", or click the first point" : ""));
+          + ((tool==="poly" || tool==="outline_new" || tool==="solar") && triPts.length>=3 ? ", or click the first point" : ""));
     draw(); return;
   }
   if(LINE_TOOLS.has(tool)){
@@ -1250,7 +1256,7 @@ cv.addEventListener("pointermove", e=>{
     else open.forEach(q=>{ q[0]+=wx-ox; q[1]+=wy-oy; });
     rec().outline=closeRing(open); draw(); return;
   }
-  if(LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new"){
+  if(LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new" || tool==="solar"){
     const h=snapPoint(px,py);
     const changed = JSON.stringify(h)!==JSON.stringify(hoverSnap);
     hoverSnap=h;
@@ -1322,12 +1328,13 @@ const DESC = {
   select:"Click a line or shape you have already drawn, then press Delete. Unlike Undo, this reaches any of them, not just the last.",
   outline:"Drag inside the outline to move it, drag a corner to reshape, drag from an edge to add a corner. Click a corner and press Delete to remove it.",
   outline_new:"Click each corner of the real roof edge, then Enter (or click the first point). It replaces the yellow outline for this roof.",
+  solar:"Click the four corners of an existing solar array, then Enter. The build treats it as roof that takes panels, not as an obstruction.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
 const NAMES = {ridge:"Ridge line", valley:"Valley line", cliff:"Cliff line",
                rect:"Box", ellipse:"Circle", tri:"Triangle", poly:"Polygon",
                pline:"Line / run", nopanel:"No panels here",
                select:"Select & delete", outline:"Move / reshape outline",
-               outline_new:"Redraw outline"};
+               outline_new:"Redraw outline", solar:"Existing solar panels"};
 function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[]; if(t!=="outline") olSel=null;
   if(t!=="select"){ selLine=null; }
   const td=document.getElementById("tooldesc"), tw=document.getElementById("tooldesc-wrap");
@@ -1511,6 +1518,7 @@ addEventListener("keydown", e=>{
   if(t){ setTool(t); return; }
   if(!e.metaKey && !e.ctrlKey && (e.key==="o"||e.key==="O")){ setTool("outline"); return; }
   if(!e.metaKey && !e.ctrlKey && (e.key==="r"||e.key==="R")){ setTool("outline_new"); return; }
+  if(!e.metaKey && !e.ctrlKey && (e.key==="a"||e.key==="A")){ setTool("solar"); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
   if(e.key==="Enter"){ if(triPts.length){ e.preventDefault(); finishPoly(); } return; }
   if(e.key==="["||e.key==="]"){

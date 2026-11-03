@@ -187,6 +187,8 @@ def score(a):
             lf1 = 2 * rec * prec / max(rec + prec, 1e-9)
             dobs = []
             for o in v.get("obstructions") or []:
+                if o.get("solar"):
+                    continue
                 try:
                     dobs.append(translate(Polygon([(x, y) for x, y in o["ring"]]).buffer(0), dx, dy))
                 except Exception:

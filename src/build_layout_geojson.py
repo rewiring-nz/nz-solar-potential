@@ -609,6 +609,19 @@ def _build_one_at(building_id, nudge_m):
             if not _drawn_obs:
                 obstructions = drop_roof_like(obstructions, f, facets, pc_source)
                 obstructions = drop_edge_hugging(obstructions, f, pc_source)
+            # Existing solar marked by hand is panel area: the detector flags an
+            # array as an obstruction because it looks nothing like the roofing
+            # around it (src/obstruction_detection.py), so cut it back out.
+            try:
+                from src.roof_line_source import drawn_solar_polys
+                _solar = drawn_solar_polys(f.get("building_id"))
+            except Exception:
+                _solar = []
+            if _solar:
+                from shapely.ops import unary_union as _uu
+                _sol = _uu(_solar)
+                obstructions = [d for d in (o.difference(_sol) for o in obstructions if o is not None)
+                                if not d.is_empty and d.area > 0.05]
             # edge drops the detector found stay panel-free, unless the markup
             # governs this roof's obstructions
             if not _drawn_obs:
