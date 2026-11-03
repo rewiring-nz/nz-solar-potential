@@ -192,7 +192,7 @@ def main():
     if lp.exists():
         for k, v in json.loads(lp.read_text()).get("buildings", {}).items():
             if not (v.get("lines") or v.get("obstructions")
-                    or v.get("nopanel") or v.get("problem")):
+                    or v.get("nopanel") or v.get("problem") or v.get("outline")):
                 continue
             _saved[int(k)] = {
                 "lines": v.get("lines") or [],
@@ -200,6 +200,7 @@ def main():
                 "nopanel": v.get("nopanel") or [],
                 "complete": bool(v.get("complete")),
                 "problem": v.get("problem"),
+                "outline": v.get("outline"),
             }
 
     truth = {}

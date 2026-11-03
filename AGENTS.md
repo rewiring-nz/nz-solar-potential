@@ -316,6 +316,9 @@ figure for the same thing. Code enforces this:
 
 ### Geometry, sunlight and front end
 - Roof precedence: hand-drawn markup > selected faces > LiDAR fallback.
+  A building outline drawn in `mark_roofs.html` (its outline tools; the
+  label's `outline` ring) replaces the surveyed and the fitted outline in
+  `outline_fit.fitted_outlines` (`roof_line_source.hand_outline`).
   Selected faces (`SOLAR_SELECTED_FACES=1`, the default): `tools/predict_faces.py`
   scores three readings per building (SAM vit_b, a U-Net line detector, and
   normal-grown LiDAR regions) and writes the winner to
