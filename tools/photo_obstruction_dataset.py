@@ -51,6 +51,8 @@ def _init():
         for bid, lab in json.loads(LABELS.read_text())["buildings"].items():
             obs = []
             for o in lab.get("obstructions") or []:
+                if o.get("solar"):
+                    continue
                 try:
                     obs.append(Polygon(o["ring"]).buffer(0))
                 except Exception:
