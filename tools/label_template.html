@@ -100,6 +100,12 @@
   <h2>View</h2>
   <details class="hint"><summary>Zoom, pan and fit</summary><div><b>Zoom:</b> scroll where the cursor is, or the <b>+ &minus;</b> buttons top-right.<br><b>Pan:</b> press <b>✋ Pan</b> and drag, or drag with the <b>right button</b>, or hold <b>Space</b> and drag, or use the <b>arrow keys</b> (hold Shift for bigger steps).<br><b>0</b> or <b>Fit</b> puts the whole roof back on screen.</div></details>
 
+  <h2>Building outline &mdash; if the yellow line is wrong</h2>
+  <button data-tool="outline" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400"></span> Move / reshape outline</span><span class="k">O</span></button>
+  <button data-tool="outline_new" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;clip-path:polygon(50% 0,100% 38%,82% 100%,18% 100%,0 38%)"></span> Redraw outline</span><span class="k">R</span></button>
+  <button id="olreset">Back to the surveyed outline</button>
+  <details class="hint"><summary>When and how to fix the outline</summary><div>The yellow outline comes from the LINZ survey and is sometimes off: shifted from the roof, missing an extension, or taking in a neighbour. Fix it <b>before</b> drawing lines, so your lines can snap to it.<br><b>Move / reshape</b>: drag inside the outline to move all of it; drag a corner to move it; drag from the middle of an edge to add a corner; click a corner and press <b>Delete</b> to remove it.<br><b>Redraw</b>: click each corner of the real roof edge, then <b>Enter</b> or click the first point again.<br>The surveyed outline stays dashed underneath for reference. Undo steps back through outline changes while an outline tool is selected.</div></details>
+
   <h2>Three lines &mdash; click, then click</h2>
   <button data-tool="ridge" class="on" style="--tc:var(--ridge)"><span><span class="sw" style="background:var(--ridge)"></span> Ridge line</span><span class="k">1</span></button>
   <button data-tool="valley" style="--tc:var(--valley)"><span><span class="sw" style="background:var(--valley)"></span> Valley line</span><span class="k">2</span></button>
@@ -140,9 +146,9 @@
     structure.<br>
     <b>Outline is wrong</b> &mdash; a building IS there, but this outline is
     offset, or merges two buildings, or splits one. The roof is fine; the
-    footprint is not. If it is only slightly off, do not bother flagging it
-    &mdash; just mark the roof where it really is. That is the more useful
-    record, and the offset is measurable without you.<br>
+    footprint is not. Better than flagging it: fix it with <b>Move / reshape
+    outline</b> (O) or <b>Redraw outline</b> (R), then mark the roof. The build
+    uses your outline in place of the surveyed one.<br>
     <b>Cannot read the image</b> &mdash; too blurred, too dark, too deep in
     shadow to see the folds. Flag it and move on. A guessed line is worse than
     no line, because it becomes truth that the model is scored against.<br><br>
@@ -280,7 +286,7 @@ const LINE_TOOLS = new Set(["ridge","valley","cliff"]);
 const DRAG_SHAPES = new Set(["rect","ellipse"]);
 // Everything you build by clicking points. Triangle closes itself at three;
 // polygon and line run until you press Enter, so they take any number.
-const POLY_TOOLS = new Set(["tri","poly","pline"]);
+const POLY_TOOLS = new Set(["tri","poly","pline","outline_new"]);
 let triPts = [];        // corners placed so far, for whichever poly tool is active
 const PLINE_WIDTH_M = 0.4;   // a drawn run has no area until it is given one
 // Every width and size below is authored in CSS pixels. The canvas backing
@@ -323,6 +329,13 @@ function finishPoly(){
       len+=Math.hypot(triPts[i][0]-triPts[i-1][0], triPts[i][1]-triPts[i-1][1]);
     if(len < MIN_LINE_M){ say("that run has no length"); return; }
   }
+  if(tool==="outline_new"){
+    olPush();
+    rec().outline = closeRing(triPts);
+    triPts=[]; save(); setTool("outline");
+    say("outline redrawn — drag corners to adjust, or Back to the surveyed outline");
+    return;
+  }
   const o = tool==="pline"
     ? {shape:"polyline", pts:triPts.slice(), width_m:PLINE_WIDTH_M}
     : {shape: tool==="tri" ? "triangle" : "polygon", pts:triPts.slice()};
@@ -336,7 +349,7 @@ function finishPoly(){
 function snapTargets(){
   const r=rec(), out=[];
   r.lines.forEach(l=>{ out.push(l.a); out.push(l.b); });
-  (R().outline||[]).slice(0,-1).forEach(q=>out.push(q));
+  (OL(R())||[]).slice(0,-1).forEach(q=>out.push(q));
   (R().holes||[]).forEach(h=>h.slice(0,-1).forEach(q=>out.push(q)));
   return out;
 }
@@ -349,7 +362,7 @@ function snapEdges(){
   const segs=[];
   rec().lines.forEach(l=>segs.push([l.a,l.b]));
   const ring=r=>{ for(let i=0;i<r.length-1;i++) segs.push([r[i],r[i+1]]); };
-  if(R().outline) ring(R().outline);
+  if(OL(R())) ring(OL(R()));
   (R().holes||[]).forEach(ring);
   return segs;
 }
@@ -395,10 +408,10 @@ ROOFS.forEach(r=>{
   // the saved markings
   const loc = data[r.id];
   if(r.saved && (!loc || !(loc.lines||[]).length && !(loc.obstructions||[]).length
-                 && !(loc.nopanel||[]).length && !loc.problem)){
+                 && !(loc.nopanel||[]).length && !loc.problem && !loc.outline)){
     data[r.id] = {lines: r.saved.lines||[], obstructions: r.saved.obstructions||[],
                   nopanel: r.saved.nopanel||[], complete: !!r.saved.complete,
-                  problem: r.saved.problem||null};
+                  problem: r.saved.problem||null, outline: r.saved.outline||null};
   }
 });
 let pending=null, drag=null, sel=null, shift=false, space=false;
@@ -409,6 +422,19 @@ const rec = () => { const o = (data[R().id] = data[R().id] || {lines:[], obstruc
   if(o.complete === undefined) o.complete = false;
   if(o.problem === undefined) o.problem = null;
   return o; };
+
+// THE OUTLINE IN FORCE. A drawn outline (the outline tools) replaces the
+// surveyed one for this roof: faces, snapping and the export all read it, and
+// the build puts it in place of the LINZ outline (roof_line_source.hand_outline).
+// Stored closed, first point repeated, like the surveyed ring.
+const OL = r => { const d=data[r.id]; return (d && d.outline) || r.outline; };
+const closeRing = pts => { const q=pts.map(p=>[+p[0].toFixed(3), +p[1].toFixed(3)]);
+  return q.concat([q[0].slice()]); };
+const olHist = {};        // per roof: earlier outlines, for undo
+function olPush(){ (olHist[R().id] = olHist[R().id] || [])
+  .push(rec().outline ? rec().outline.map(q=>q.slice()) : null); }
+function olEnsure(){ if(!rec().outline) rec().outline = R().outline.map(q=>q.slice()); }
+let olSel = null;         // selected corner of the drawn outline
 
 function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){ return {}; } }
 
@@ -428,7 +454,7 @@ function save(){
     // collide -- last-writer-wins only bites if two people edit the SAME roof.
     DB.doc("labels/"+R().id).set({
       lines: d.lines, obstructions: d.obstructions, nopanel: d.nopanel||[],
-      complete: !!d.complete, problem: d.problem||null,
+      complete: !!d.complete, problem: d.problem||null, outline: d.outline||null,
       area: R().area, address: R().address || "",
       saved_utc: new Date().toISOString(),
     }).catch(e=>{ say("could not sync: "+(e&&e.code||"error")+" — saved locally"); });
@@ -436,7 +462,7 @@ function save(){
 }
 function marked(id){ const d=data[id];
   return !!(remote[id] || ingested[id] ||
-    (d && (d.problem || (d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
+    (d && (d.problem || d.outline || (d.lines||[]).length||(d.obstructions||[]).length||(d.nopanel||[]).length))); }
 let lastNudge = 0;
 function nudgeSave(){
   if(DB) return;                       // the shared store already holds it
@@ -803,7 +829,7 @@ function facesFor(outline, lines){
   });
   return out;
 }
-const faces = () => facesFor(R().outline, rec().lines);
+const faces = () => facesFor(OL(R()), rec().lines);
 
 // Centroid is outside its own polygon on any L or U shaped face, so the area
 // caption would float over a neighbour. Fall back to scanning for a point that
@@ -875,7 +901,16 @@ function draw(){
   if (showBuilt) (R().built||[]).forEach(f => ring(f,"rgba(120,190,255,.55)",[4,4],1.6));
   // neighbours first, dimmed -- so a busy block reads correctly
   (R().neighbours||[]).forEach(n => ring(n,"rgba(255,255,255,.45)",[5,5],1.8));
-  ring(R().outline,"#ffd400",[],3.2);            // THIS building, solid
+  if(rec().outline){                             // drawn outline in force:
+    ring(R().outline,"rgba(255,212,0,.55)",[6,6],1.8);   // surveyed, for reference
+    ring(rec().outline,"#ffd400",[],3.2);
+  } else ring(R().outline,"#ffd400",[],3.2);     // THIS building, solid
+  if(tool==="outline"){                          // corner handles
+    const H=HANDLE()*1.2;
+    OL(R()).slice(0,-1).forEach((q,k)=>{ const[x,y]=toPx(q[0],q[1]);
+      ctx.fillStyle="#000"; ctx.fillRect(x-H/2-1,y-H/2-1,H+2,H+2);
+      ctx.fillStyle = k===olSel ? "#fff" : "#ffd400"; ctx.fillRect(x-H/2,y-H/2,H,H); });
+  }
   (R().holes||[]).forEach(h=>{                   // courtyard -- open air, not roof
     ctx.fillStyle="rgba(0,0,0,.45)";
     ctx.beginPath(); h.forEach((q,k)=>{const[x,y]=toPx(q[0],q[1]); k?ctx.lineTo(x,y):ctx.moveTo(x,y);});
@@ -942,13 +977,14 @@ function draw(){
       if(tool!=="pline" && triPts.length>=3){ const[fx,fy]=toPx(triPts[0][0],triPts[0][1]); ctx.lineTo(fx,fy); }
     };
     ctx.strokeStyle="#000"; ctx.lineWidth=lw(6.4); trace(); ctx.stroke();
-    ctx.strokeStyle="#c06bff"; ctx.lineWidth=lw(3.4); trace(); ctx.stroke();
+    const pc = tool==="outline_new" ? "#ffd400" : "#c06bff";
+    ctx.strokeStyle=pc; ctx.lineWidth=lw(3.4); trace(); ctx.stroke();
     triPts.forEach(q=>{ const[x,y]=toPx(q[0],q[1]);
       ctx.fillStyle="#000"; ctx.beginPath();ctx.arc(x,y,lw(6.4),0,7);ctx.fill();
-      ctx.fillStyle="#c06bff"; ctx.beginPath();ctx.arc(x,y,lw(4.2),0,7);ctx.fill(); });
+      ctx.fillStyle=pc; ctx.beginPath();ctx.arc(x,y,lw(4.2),0,7);ctx.fill(); });
     ctx.lineCap="butt";
   }
-  if(hoverSnap && (LINE_TOOLS.has(tool) || tool==="tri")){
+  if(hoverSnap && (LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new")){
     const [hx,hy]=toPx(hoverSnap.p[0],hoverSnap.p[1]), r=lw(9);
     const path=()=>{ ctx.beginPath();
       if(hoverSnap.kind==="edge"){                 // diamond = anywhere along a line
@@ -973,7 +1009,7 @@ function draw(){
 }
 
 function show(i){
-  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; selLine=null;
+  idx=(i+ROOFS.length)%ROOFS.length; pending=null; drag=null; sel=null; selLine=null; olSel=null;
   hoverSnap=null; triPts=[];
   const r=R();
   // THE ADDRESS IS THE HEADLINE: the title carries the building's address,
@@ -1041,6 +1077,13 @@ function hitLine(px,py){
 
 function deleteSelected(){
   const r=rec();
+  if(tool==="outline" && olSel!==null){
+    const open=OL(R()).slice(0,-1);
+    if(open.length<=3){ say("an outline needs at least three corners"); return; }
+    olPush(); olEnsure();
+    open.splice(olSel,1); r.outline=closeRing(open); olSel=null; save(); draw();
+    say("corner removed"); return;
+  }
   if(selLine!==null && r.lines[selLine]!==undefined){
     const k=r.lines[selLine].kind;
     r.lines.splice(selLine,1); selLine=null; save(); draw();
@@ -1101,6 +1144,29 @@ cv.addEventListener("pointerdown", e=>{
     panning={px,py,ox:view.panx,oy:view.pany};
     cv.setPointerCapture(e.pointerId); return;
   }
+  if(tool==="outline"){
+    const open=OL(R()).slice(0,-1), P=open.map(q=>toPx(q[0],q[1])), H=HANDLE()*1.2;
+    let vi=P.findIndex(([x,y])=>Math.abs(px-x)<=H && Math.abs(py-y)<=H);
+    let mode=null;
+    if(vi>=0) mode="overtex";
+    else {
+      // from the middle of an edge: a new corner there, dragged at once
+      let best=-1, bd=10*dpr();
+      for(let k=0;k<P.length;k++){
+        const a=P[k], b=P[(k+1)%P.length];
+        const q=_projOnSeg([px,py],a,b), d=Math.hypot(px-q[0],py-q[1]);
+        if(d<bd){ bd=d; best=k; }
+      }
+      if(best>=0){ open.splice(best+1,0,toW(px,py)); vi=best+1; mode="overtex"; }
+      else if(inPoly(toW(px,py), OL(R()))) mode="omove";
+    }
+    if(!mode){ olSel=null; say("drag inside the outline to move it, or a corner to reshape"); draw(); return; }
+    olPush(); olEnsure();
+    rec().outline=closeRing(open);
+    olSel = mode==="overtex" ? vi : null;
+    drag={mode, vi, px, py, orig: rec().outline.map(q=>q.slice())};
+    cv.setPointerCapture(e.pointerId); draw(); return;
+  }
   if(tool==="nopanel"){
     const w=toW(px,py), r=rec(), fs=faces();
     const f=fs.find(g=>inPoly(w,g));
@@ -1127,7 +1193,7 @@ cv.addEventListener("pointerdown", e=>{
     const w=s ? s.p : toW(px,py);
     // clicking back on the first point closes a polygon, the way drawing tools
     // normally behave
-    if(tool==="poly" && triPts.length>=3){
+    if((tool==="poly" || tool==="outline_new") && triPts.length>=3){
       const f=toPx(triPts[0][0], triPts[0][1]);
       if(Math.hypot(px-f[0], py-f[1]) <= SNAP_PX*dpr()){ finishPoly(); return; }
     }
@@ -1135,7 +1201,7 @@ cv.addEventListener("pointerdown", e=>{
     if(tool==="tri" && triPts.length===3){ finishPoly(); return; }
     say(tool==="tri" ? `corner ${triPts.length} of 3`
         : `${triPts.length} point${triPts.length===1?"":"s"} \u2014 Enter to finish, Esc to cancel`
-          + (tool==="poly" && triPts.length>=3 ? ", or click the first point" : ""));
+          + ((tool==="poly" || tool==="outline_new") && triPts.length>=3 ? ", or click the first point" : ""));
     draw(); return;
   }
   if(LINE_TOOLS.has(tool)){
@@ -1170,7 +1236,14 @@ cv.addEventListener("pointermove", e=>{
   const [px,py]=evPx(e);
   if(panning){ view.panx=panning.ox+(px-panning.px);
                view.pany=panning.oy+(py-panning.py); draw(); return; }
-  if(LINE_TOOLS.has(tool) || tool==="tri"){
+  if(drag && (drag.mode==="overtex" || drag.mode==="omove")){
+    const [wx,wy]=toW(px,py), [ox,oy]=toW(drag.px,drag.py);
+    const open=drag.orig.slice(0,-1).map(q=>q.slice());
+    if(drag.mode==="overtex") open[drag.vi]=[wx,wy];
+    else open.forEach(q=>{ q[0]+=wx-ox; q[1]+=wy-oy; });
+    rec().outline=closeRing(open); draw(); return;
+  }
+  if(LINE_TOOLS.has(tool) || tool==="tri" || tool==="outline_new"){
     const h=snapPoint(px,py);
     const changed = JSON.stringify(h)!==JSON.stringify(hoverSnap);
     hoverSnap=h;
@@ -1206,6 +1279,17 @@ cv.addEventListener("pointermove", e=>{
 
 cv.addEventListener("pointerup", e=>{
   if(panning){ panning=null; return; }
+  if(drag && (drag.mode==="overtex" || drag.mode==="omove")){
+    // a click that did not move anything leaves the outline as it was, so
+    // selecting a corner does not mark the roof as having a drawn outline
+    const [px,py]=evPx(e);
+    if(Math.hypot(px-drag.px, py-drag.py) < 2*dpr()){
+      const h=olHist[R().id], prev=h.pop();
+      if(prev) rec().outline=prev; else delete rec().outline;
+      if(drag.mode==="overtex" && olSel!==null && OL(R()).length-1 <= olSel) olSel=null;
+    }
+    drag=null; save(); draw(); return;
+  }
   if(drag && drag.mode==="new"){
     const [ax,ay]=toW(Math.min(drag.x0,drag.x1), Math.max(drag.y0,drag.y1));
     const [bx,by]=toW(Math.max(drag.x0,drag.x1), Math.min(drag.y0,drag.y1));
@@ -1229,12 +1313,15 @@ const DESC = {
   poly:"Click each corner, then Enter (or click the first point again) to close. For an awkward shape no box or triangle fits.",
   pline:"Click along a run \u2014 a pipe, a cable tray, a ridge vent \u2014 then Enter. Stored as a centreline with a width; [ and ] make it thinner or wider.",
   select:"Click a line or shape you have already drawn, then press Delete. Unlike Undo, this reaches any of them, not just the last.",
+  outline:"Drag inside the outline to move it, drag a corner to reshape, drag from an edge to add a corner. Click a corner and press Delete to remove it.",
+  outline_new:"Click each corner of the real roof edge, then Enter (or click the first point). It replaces the yellow outline for this roof.",
   nopanel:"Click a shaded face that could never take panels \u2014 a wall inside the outline, a canopy, glass. The shading is what the code will build from your lines."};
 const NAMES = {ridge:"Ridge line", valley:"Valley line", cliff:"Cliff line",
                rect:"Box", ellipse:"Circle", tri:"Triangle", poly:"Polygon",
                pline:"Line / run", nopanel:"No panels here",
-               select:"Select & delete"};
-function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[];
+               select:"Select & delete", outline:"Move / reshape outline",
+               outline_new:"Redraw outline"};
+function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[]; if(t!=="outline") olSel=null;
   if(t!=="select"){ selLine=null; }
   const td=document.getElementById("tooldesc"), tw=document.getElementById("tooldesc-wrap");
   const ts=document.getElementById("tooldesc-sum");
@@ -1248,6 +1335,11 @@ function setTool(t){ tool=t; pending=null; hoverSnap=null; triPts=[];
   document.querySelectorAll("[data-tool]").forEach(b=>b.classList.toggle("on", b.dataset.tool===t));
   draw(); }
 document.querySelectorAll("[data-tool]").forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
+document.getElementById("olreset").onclick=()=>{
+  if(!rec().outline){ say("already the surveyed outline"); return; }
+  olPush(); delete rec().outline; olSel=null; save(); draw();
+  say("back to the surveyed outline");
+};
 const help=document.getElementById("help");
 document.getElementById("helpbtn").onclick=()=>help.classList.add("on");
 document.getElementById("helpclose").onclick=()=>help.classList.remove("on");
@@ -1257,6 +1349,8 @@ function undo(){
   const r=rec();
   if(triPts.length){ triPts.pop(); }
   else if(pending){ pending=null; }
+  else if((tool==="outline" || tool==="outline_new") && (olHist[R().id]||[]).length){
+    r.outline = olHist[R().id].pop(); olSel=null; say("outline change undone"); }
   else if(tool==="nopanel" && r.nopanel.length){ r.nopanel.pop(); }
   else if(r.obstructions.length && sel!==null){ r.obstructions.splice(sel,1); sel=null; }
   else if(r.lines.length){ r.lines.pop(); }
@@ -1344,14 +1438,16 @@ document.getElementById("download").onclick=()=>{
   const out={ tool:"label_template", saved_utc:new Date().toISOString(),
     crs:"EPSG:2193", buildings:{} };
   ROOFS.forEach(r=>{ const d=data[r.id] || remote[r.id];
-    if(d && (d.problem || (d.lines||[]).length||(d.obstructions||[]).length))
+    if(d && (d.problem || d.outline || (d.lines||[]).length||(d.obstructions||[]).length))
       out.buildings[r.id]={area:r.area,address:r.address,
+        // a drawn outline replaces the surveyed one in the build
+        ...(d.outline ? {outline:d.outline} : {}),
         lines:(d.lines||[]).map(l=>({...l, points:[l.a, l.b]})),
         obstructions:(d.obstructions||[]).map(o=>({...o, ring:obsRing(o)})),
         nopanel:d.nopanel||[], complete:!!d.complete, problem:d.problem||null,
         // the faces those lines imply, exported so scoring compares against
         // the same construction rather than re-deriving it slightly differently
-        faces: facesFor(r.outline, d.lines||[]).map(f=>({
+        faces: facesFor(d.outline || r.outline, d.lines||[]).map(f=>({
           ring: f.map(q=>[+q[0].toFixed(3), +q[1].toFixed(3)]),
           m2: +polyArea(f).toFixed(1),
           usable: !(d.nopanel||[]).some(pt=>inPoly(pt,f)) }))}; });
@@ -1406,6 +1502,8 @@ addEventListener("keydown", e=>{
     return;
   }
   if(t){ setTool(t); return; }
+  if(!e.metaKey && !e.ctrlKey && (e.key==="o"||e.key==="O")){ setTool("outline"); return; }
+  if(!e.metaKey && !e.ctrlKey && (e.key==="r"||e.key==="R")){ setTool("outline_new"); return; }
   if(e.key==="?"){ document.getElementById("help").classList.toggle("on"); return; }
   if(e.key==="Enter"){ if(triPts.length){ e.preventDefault(); finishPoly(); } return; }
   if(e.key==="["||e.key==="]"){
@@ -1419,7 +1517,8 @@ addEventListener("keydown", e=>{
   if(e.key==="Escape"){ document.getElementById("help").classList.remove("on");
     pending=null; sel=null; triPts=[]; draw(); return; }
   if(e.key==="Delete"||e.key==="Backspace"){
-    if(sel!==null || selLine!==null){ e.preventDefault(); deleteSelected(); } return; }
+    if(sel!==null || selLine!==null || (tool==="outline" && olSel!==null)){
+      e.preventDefault(); deleteSelected(); } return; }
   const k=e.key.toLowerCase();
   if(k==="n"){ step(1); } else if(k==="p"){ step(-1); }
   else if(k==="h"){ document.getElementById("hidedone").click(); }
@@ -1485,10 +1584,10 @@ if(OPTS.unmarkedOnly){
     // adopt anything we do not have locally, so a roof someone else did shows
     // as done and opens with their lines rather than blank
     Object.keys(remote).forEach(id => {
-      if(!data[id] || (!data[id].lines.length && !data[id].obstructions.length))
+      if(!data[id] || (!data[id].lines.length && !data[id].obstructions.length && !data[id].outline))
         data[id] = {lines: remote[id].lines||[], obstructions: remote[id].obstructions||[],
                     nopanel: remote[id].nopanel||[], complete: !!remote[id].complete,
-                    problem: remote[id].problem||null};
+                    problem: remote[id].problem||null, outline: remote[id].outline||null};
     });
     draw();
   }, e => say("shared sync stopped: "+(e&&e.code||"error")+" — still saving locally"));

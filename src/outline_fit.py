@@ -175,20 +175,26 @@ def _marked():
 
 def fitted_outlines(gdf, region_dir, use=None):
     """`gdf` with each accepted slide applied to its outline (in place, and
-    returned). A no-op when SOLAR_OUTLINE_FIT=0, unless `use`."""
-    if not (USE if use is None else use):
-        return gdf
-    fp = Path(region_dir) / "outline_fit.json"
-    try:
-        fits = json.loads(fp.read_text())
-    except (OSError, ValueError):
-        return gdf
-    from shapely.affinity import translate
-    marked = _marked()
+    returned). A no-op when SOLAR_OUTLINE_FIT=0, unless `use`. An outline
+    drawn in the labelling tool replaces the surveyed and the fitted one:
+    hand markup wins (roof_line_source.hand_outline)."""
+    from src.roof_line_source import hand_outline
     col = gdf.geometry.name
     ids = gdf["building_id"] if "building_id" in gdf.columns else gdf.index
+    fits = {}
+    if USE if use is None else use:
+        try:
+            fits = json.loads((Path(region_dir) / "outline_fit.json").read_text())
+        except (OSError, ValueError):
+            fits = {}
+    from shapely.affinity import translate
+    marked = _marked()
     new = []
     for bid, g in zip(ids, gdf.geometry):
+        drawn = hand_outline(int(bid))
+        if drawn is not None:
+            new.append(drawn)
+            continue
         s = None if int(bid) in marked else accepted(fits.get(str(int(bid))))
         new.append(translate(g, s[0], s[1]) if s else g)
     gdf[col] = new

@@ -253,6 +253,28 @@ def _labels():
     return _LABELS_CACHE[0]
 
 
+def hand_outline(building_id):
+    """The building outline drawn in the labelling tool (its outline tool),
+    in the LiDAR frame, else None.
+
+    The surveyed LINZ outline is wrong on some drawn roofs: 12 of the first
+    144 were flagged bad_outline, and outline_fit only slides an outline, it
+    cannot reshape one. A drawn outline is hand markup, so it replaces both the
+    surveyed and the fitted outline wherever the build reads outlines
+    (outline_fit.fitted_outlines)."""
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS or not lab.get("outline"):
+        return None
+    from shapely.geometry import Polygon
+    try:
+        q = Polygon([(p[0], p[1]) for p in lab["outline"]]).buffer(0)
+    except Exception:
+        return None
+    if q.geom_type == "MultiPolygon":
+        q = max(q.geoms, key=lambda g: g.area)
+    return q if q.area > 1 else None
+
+
 def _to_lidar_frame(buildings):
     """Move markup traced on the map's leaning photo back onto the LiDAR.
 

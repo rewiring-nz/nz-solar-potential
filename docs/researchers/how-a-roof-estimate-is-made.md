@@ -22,7 +22,9 @@ The configured regions plus whatever is on disk. Auckland (Mt Eden) is built but
 
 LINZ NZ Building Outlines for each region. An outline is the surveyed wall line, so it sets the roof's edge and its straight sides.
 
-**Source:** `src/fetch_data.py`
+Where a labeller has moved or redrawn the outline in the markup tool, the drawn outline replaces the surveyed one (and any automatic slide onto the LiDAR) everywhere the build reads outlines.
+
+**Source:** `src/fetch_data.py · src/outline_fit.py`
 
 ### Fetch the surface model and photos
 
