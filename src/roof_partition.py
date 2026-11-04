@@ -1329,7 +1329,7 @@ def selected_agreed(building_id):
     """True when the building's reading is its repeat set's agreed one."""
     doc = selected_doc(building_id)
     return bool(doc) and doc.get("source") == "repeat"
-SELECTED_MIN_PLANE_INLIER = 0.45  # a facet must be A plane     # below this, neither reading earned trust
+SELECTED_MIN_PLANE_INLIER = float(os.environ.get("SOLAR_SELECTED_MIN_INLIER", "0.45"))  # a facet must be A plane; below this, neither reading earned trust
 
 
 BIG_FACE_KEEP_M2 = 100.0   # a machine face this big ships even over the vertex cap

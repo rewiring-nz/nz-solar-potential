@@ -37,9 +37,9 @@ FOLD_SPLIT = os.environ.get("SOLAR_FOLD_SPLIT", "0") == "1"
 FOLD_MIN_FACE_M2 = float(os.environ.get("SOLAR_FOLD_MIN_FACE_M2", "12.0"))
 FOLD_EDGE_M = 0.3
 FOLD_INLIER_M = float(os.environ.get("SOLAR_FOLD_INLIER_M", "0.08"))
-FOLD_ONE_MAX = 0.80
+FOLD_ONE_MAX = float(os.environ.get("SOLAR_FOLD_ONE_MAX", "0.80"))
 FOLD_TWO_MIN = float(os.environ.get("SOLAR_FOLD_TWO_MIN", "0.85"))
-FOLD_GAIN = 0.15
+FOLD_GAIN = float(os.environ.get("SOLAR_FOLD_GAIN", "0.15"))
 FOLD_MIN_ANGLE_DEG = 8.0
 FOLD_MIN_PART_M2 = float(os.environ.get("SOLAR_FOLD_MIN_PART_M2", "4.0"))
 FOLD_MIN_POINTS = int(os.environ.get("SOLAR_FOLD_MIN_POINTS", "25"))
@@ -109,13 +109,18 @@ def _why(g, msg):
 
 def _try_split(g, pts, rng):
     """[(part, plane), (part, plane)] or None."""
-    one = _lsq(pts)
-    s1 = float((_res(one, pts) <= FOLD_INLIER_M).mean())
-    if s1 >= FOLD_ONE_MAX:
-        return _why(g, f"one plane fits {s1:.2f} of {len(pts)}")
+    # ONE PLANE'S SHARE IS THE BEST PLANE'S, NOT THE LEAST-SQUARES ONE'S. A
+    # least-squares plane through a face with a chimney, a tree branch or
+    # the far slope of a ridge is pulled off every return: on 32 Manuka
+    # Crescent's 141 m2 face it held 0.10 of the returns while the best plane
+    # held nearly all, so the share read as "not one plane" on faces that are,
+    # and the comparison with two planes measured nothing.
     a = _ransac(pts, rng)
     if a is None:
         return None
+    s1 = float((_res(a, pts) <= FOLD_INLIER_M).mean())
+    if s1 >= FOLD_ONE_MAX:
+        return _why(g, f"one plane fits {s1:.2f} of {len(pts)}")
     rest = pts[_res(a, pts) > FOLD_INLIER_M]
     if len(rest) < FOLD_MIN_POINTS:
         return _why(g, f"one-plane {s1:.2f}; only {len(rest)} returns off the best plane")
