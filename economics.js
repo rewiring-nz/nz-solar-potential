@@ -16,7 +16,8 @@
 const ECON_DEFAULTS = {
   cost_tiers: [
     { max_kw: 3,     rate: 3000, label: "under 3 kW" },
-    { max_kw: 8,     rate: 2000, label: "3 – 8 kW" },
+    // My Solar Quotes: $2.20/W for 5-6 kW (2025), a $2.54/W median for 3-5 kW (2026 quotes)
+    { max_kw: 8,     rate: 2300, label: "3 – 8 kW" },
     { max_kw: 25,    rate: 1800, label: "8 – 25 kW" },
     { max_kw: 50,    rate: 1500, label: "25 – 50 kW" },
     { max_kw: Infinity, rate: 1200, label: "over 50 kW" },

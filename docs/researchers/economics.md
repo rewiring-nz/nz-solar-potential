@@ -13,13 +13,14 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 
 ## The steps
 
-1. **Household use.** The load is built from what people know about their
-   home: how many people live there, how water is heated, how rooms are
-   heated, and how many electric cars there are. Each part has its own
-   daily kWh per season and its own hour-of-day shape. Heating scales with
-   the town's heating degree-days, so a Queenstown home heats more than an
-   Auckland one. A business uses 75 kWh per m² of footprint a year (at least
-   6,000 kWh), plus heating and cars.
+1. **Household use.** A home uses the Electricity Authority's average for
+   its regional council (EMI, 2025; Otago 7,829 kWh a year), scaled for how
+   many people live there, plus electric cars. Each season's day and its
+   hour-by-hour shape follow the town's metered half-hourly load (EMI). A
+   non-home building uses electricity per m² of floor by type (business 100,
+   school 35, hospital 150, community 40 kWh/m² a year, at least 6,000 kWh)
+   on a floor of roof area × storeys from its LiDAR height, plus heating
+   by degree-days and cars.
 2. **Your bills (optional).** Enter a winter and a summer bill, or a yearly
    kWh figure, and the modelled load is scaled to match.
 3. **Solar.** The roof's own average day in each season: the generation
@@ -41,7 +42,7 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 
 | Assumption | Default |
 |---|---|
-| Install cost | $3,000/kW under 3 kW; $2,000 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW (incl. GST) |
+| Install cost | $3,000/kW under 3 kW; $2,300 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW (incl. GST) |
 | Home prices | 34c/kWh peak, 26c off-peak, $2.50/day |
 | Business prices | 19c/kWh peak, 14c off-peak, $8.00/day |
 | Export price | 14c/kWh, falling 2% a year |

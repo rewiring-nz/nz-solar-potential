@@ -149,17 +149,17 @@ def test_nearest_bin_clamps_slope():
 # Published assumptions. These are numbers the public reads.
 # --------------------------------------------------------------------------
 
-def test_total_losses_are_fourteen_percent_including_the_inverter():
-    """The TOTAL is 14% including the inverter, so the thing to pin is
-    the product, not either factor alone. Losses compound multiplicatively --
-    3% inverter plus 11% everything-else is NOT 14% -- which is why the derate
-    is 11.34 and not a round number.
+def test_total_losses_include_the_inverter_and_reflection():
+    """The TOTAL is 16.4% including the inverter and the light the glass
+    reflects at low angles, so the thing to pin is the product, not either
+    factor alone. Losses compound multiplicatively, which is why the derate is
+    13.79 and not a round number: 0.97 x (1 - 0.1134) x (1 - 0.0276) = 0.836.
 
-    This test has now caught three deliberate changes to a published figure
-    (0.81 -> 0.85 -> 0.86). That is what it is for."""
+    This test has now caught four deliberate changes to a published figure
+    (0.81 -> 0.85 -> 0.86 -> 0.836). That is what it is for."""
     pv = config.PV_ASSUMPTIONS
     factor = (pv["inverter_efficiency_pct"] / 100.0) * (1 - pv["system_derate_pct"] / 100.0)
-    assert abs(factor - 0.86) < 5e-5, f"DC->AC {factor:.5f}, total loss {100*(1-factor):.2f}%"
+    assert abs(factor - 0.8362) < 2e-4, f"DC->AC {factor:.5f}, total loss {100*(1-factor):.2f}%"
 
 
 def test_derate_stays_in_a_defensible_band():

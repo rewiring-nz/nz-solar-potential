@@ -467,7 +467,18 @@ PV_ASSUMPTIONS = {
     #
     # It now sits ~8% above PVGIS's effective 0.791. Deliberate: PVGIS applies
     # a generic loss default, ours is specific to the module actually modelled.
-    "system_derate_pct": 11.34,
+    # REFLECTION OFF THE GLASS is in it too (since 5 Nov 2026). The sky
+    # model projects sunlight onto each face but nothing took off the light
+    # the panel glass reflects at low angles; PVGIS puts that at 2.76% a year
+    # for a north-facing 25 deg Queenstown roof (its l_aoi). Folded in here:
+    #     (1 - 0.1134) x (1 - 0.0276) = 0.8621  ->  13.79%
+    # so total losses are 0.97 x 0.8621 = 0.836 (16.4%). Measured against
+    # PVGIS (5 Nov 2026, Queenstown, north 25 deg, its 14% system loss): the
+    # map's unshaded north-facing 15-35 deg panels in pilot gave a median
+    # 1,312 kWh/kWp against PVGIS's 1,215, the in-plane sunlight agreeing
+    # within 1% (1,526 vs 1,510 kWh/m2); this brings it to about 1,276,
+    # +5%, the rest being PVGIS's generic temperature and system losses.
+    "system_derate_pct": 13.79,
     "notes": (
         "kWp = panel count x rated power at Standard Test Conditions "
         "(1000 W/m2, 25C cell temp) -- a nameplate figure, not a real-world "

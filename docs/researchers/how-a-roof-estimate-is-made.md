@@ -260,7 +260,7 @@ Trees and buildings within 100 m shade each face and panel separately, so one wi
 
 ### Convert to kWh
 
-kWh/m² of sun on the panel equals full-power hours, because panels are rated at 1,000 W/m². Total system loss is 14% including the inverter (0.97 × 0.8866 = 0.860), covering heat, dirt, mismatch, wiring, tolerance and downtime.
+kWh/m² of sun on the panel equals full-power hours, because panels are rated at 1,000 W/m². Total system loss is 16.4% including the inverter (0.97 × 0.8621 = 0.836), covering heat, dirt, mismatch, wiring, tolerance, downtime, and light reflected off the glass at low angles (2.76%, PVGIS for Queenstown). Checked against PVGIS (Queenstown, north-facing 25°): the in-plane sunlight agrees within 1% and the map's yield sits about 5% above PVGIS, whose temperature and system losses are generic.
 
 **Source:** `config.py (PV_ASSUMPTIONS)`
 
@@ -294,7 +294,7 @@ $3,000/kW under 3 kW; $2,000 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25�
 
 ### Household use
 
-A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A business uses 75 kWh per m² of footprint a year (at least 6,000 kWh) plus heating by degree-days, spread across the working day. Bills you enter scale the modelled use to match.
+A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A non-home building uses electricity per m² of floor before heating, by type: business 100 kWh (BRANZ BEES: NZ commercial buildings 100–300 kWh/m² of total energy), school 35 (UK 39–43, Australian Green Star 54), hospital or medical 150 and community 40 (both estimates), at least 6,000 kWh a year. Its floor is its roof area × storeys, the storeys counted from its height above the ground in the LiDAR surface (`height_m`, 3.6 m a storey). Heating by degree-days scales with the floor too. Use is spread across the working day. Bills you enter scale the modelled use to match.
 
 **Source:** `bill_tool.js`
 

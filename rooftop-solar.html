@@ -2969,7 +2969,7 @@ map.on("load", async () => {
     const sun = SUN_DOCS[pr.sr];
     const r = btEvaluateFor(pr.building_id, (pr.btype || "home") !== "home", {
       lat: (sun && sun !== true && sun.lat) || seasonCurves.lat || -41,
-      lon: map.getCenter().lng,
+      lon: map.getCenter().lng, btype: pr.btype, heightM: pr.height_m,
       roofM2: pr.facet_area_m2 || 150, kwp,
       gen: shape.map(row => row.map(v => v * kwhYear)), seasonDays: null });
     const out = btPanelEcon(r, count);
@@ -5286,6 +5286,8 @@ map.on("load", async () => {
             lat: (GEN && GEN.curve && SUN_DOCS[props.sr] && SUN_DOCS[props.sr].lat) || (seasonCurves && seasonCurves.lat) || -41,
             // the town whose metered load shapes the household's day (bill_tool.js btEmiRegion)
             lon: map.getCenter().lng,
+            // what a non-home uses per m2 of floor, and its storeys (bill_tool.js BT_BIZ_KWH_M2)
+            btype: props.btype, heightM: props.height_m,
             roofM2: props.facet_area_m2 || 150,
             kwp: kwp, kwpNode: GEN.kwp, genNode: GEN.gen,
             moreBox: el("bill-more"),

@@ -192,6 +192,20 @@ check("a business uses more than a home and peaks in the day", () => {
   if (!(L[11] > L[2] * 3)) throw new Error("no daytime peak");
 });
 
+check("a business's use grows with its floors, from its measured height", () => {
+  const one = B.btBuildLoad({ type: "business", heating: "none", evs: 0 }, { lat: -45, roofM2: 600, btype: "business", heightM: 4 });
+  const three = B.btBuildLoad({ type: "business", heating: "none", evs: 0 }, { lat: -45, roofM2: 600, btype: "business", heightM: 11 });
+  near(three.storeys, 3, 0, "storeys from 11 m");
+  near(B.btDailyKwh(three, "autumn") / B.btDailyKwh(one, "autumn"), 3, 0.01, "use x storeys");
+  near(B.btDailyKwh(one, "autumn") * 365 / 1.0, 600 * 100, 600 * 100 * 0.15, "100 kWh/m2 a year");
+});
+
+check("a school uses less per m2 than a business", () => {
+  const s = B.btBuildLoad({ type: "business", heating: "none", evs: 0 }, { lat: -45, roofM2: 2000, btype: "school", heightM: 5 });
+  const b = B.btBuildLoad({ type: "business", heating: "none", evs: 0 }, { lat: -45, roofM2: 2000, btype: "business", heightM: 5 });
+  if (!(B.btDailyKwh(s, "autumn") < B.btDailyKwh(b, "autumn") * 0.5)) throw new Error("school not lighter");
+});
+
 // THE EXPLORER (season charts, the year hour by hour) draws from the bills'
 // own hour rows; these hold it to the same figures.
 check("each season's chart parts add up to its hour rows, and the rows to the day's use", () => {
