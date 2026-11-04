@@ -53,14 +53,16 @@ check("a Queenstown home uses EMI's Otago average, scaled for its people", () =>
   near(year, 7829, 160, "kWh a year for 2.6 people in a typical house");
 });
 
-check("a bigger house uses a little more, within limits", () => {
-  const yr = m2 => { const L = B.btBuildLoad(home({ people: 3 }), { lat: -45.03, lon: 168.66, roofM2: m2 });
+check("a bigger house uses more, in round steps", () => {
+  const yr = (m2, people = 3) => { const L = B.btBuildLoad(home({ people }), { lat: -45.03, lon: 168.66, roofM2: m2 });
     return B.BT_SEASONS.reduce((t, s, i) => t + B.btDailyKwh(L, s) * [90, 92, 92, 91][i], 0); };
   const typ = yr(170);
-  near(yr(290) / typ, Math.pow(290 / 170, 0.25), 0.01, "290 m² vs 170 m²");
-  near(yr(100) / typ, Math.pow(100 / 170, 0.25), 0.01, "100 m² vs 170 m²");
-  near(yr(2000) / typ, 1.3, 0.01, "held at 1.3");
-  near(yr(30) / typ, 0.85, 0.01, "held at 0.85");
+  [[80, 0.7], [120, 0.85], [200, 1], [250, 1.15], [350, 1.3], [600, 1.5]].forEach(([m2, f]) =>
+    near(yr(m2) / typ, f, 0.001, `${m2} m²`));
+  // a person alone in a small house about half the average home, a big family in a big house about double
+  const avg = yr(170, 2.6);
+  if (yr(80, 1) / avg > 0.55) throw new Error(`small ${yr(80, 1) / avg}`);
+  if (yr(350, 6) / avg < 2) throw new Error(`big ${yr(350, 6) / avg}`);
 });
 
 check("a winter day uses more than a summer day, as the town's metered load does", () => {

@@ -15,9 +15,9 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 
 1. **Household use.** A home uses the Electricity Authority's average for
    its regional council (EMI, 2025; Otago 7,829 kWh a year), scaled for how
-   many people live there and, a little, for the size of the house (roof
-   area ÷ the typical 170 m², to the power 0.25, held to 0.85–1.3: a 290 m²
-   house uses 14% more), plus electric cars. Each season's day and its
+   many people live there and for the size of the house (by roof area:
+   under 100 m² 30% less, 100–140 m² 15% less, 140–220 m² typical,
+   220–300 m² 15% more, 300–400 m² 30% more, over 400 m² 50% more), plus electric cars. Each season's day and its
    hour-by-hour shape follow the town's metered half-hourly load (EMI). A
    non-home building uses electricity per m² of floor by type (business 100,
    school 35, hospital 150, community 40 kWh/m² a year, at least 6,000 kWh)
