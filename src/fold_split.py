@@ -98,24 +98,35 @@ def _crossing(a, b, g):
     return LineString([(x0 - R * ux, y0 - R * uy), (x0 + R * ux, y0 + R * uy)])
 
 
+_DEBUG = os.environ.get("SOLAR_FOLD_DEBUG") == "1"
+
+
+def _why(g, msg):
+    if _DEBUG:
+        print(f"[fold {g.area:.0f} m2] {msg}", flush=True)
+    return None
+
+
 def _try_split(g, pts, rng):
     """[(part, plane), (part, plane)] or None."""
     one = _lsq(pts)
     s1 = float((_res(one, pts) <= FOLD_INLIER_M).mean())
     if s1 >= FOLD_ONE_MAX:
-        return None
+        return _why(g, f"one plane fits {s1:.2f} of {len(pts)}")
     a = _ransac(pts, rng)
     if a is None:
         return None
     rest = pts[_res(a, pts) > FOLD_INLIER_M]
     if len(rest) < FOLD_MIN_POINTS:
-        return None
+        return _why(g, f"one-plane {s1:.2f}; only {len(rest)} returns off the best plane")
     b = _ransac(rest, rng)
     if b is None or _normal_angle(a, b) < FOLD_MIN_ANGLE_DEG:
-        return None
+        return _why(g, f"one-plane {s1:.2f}; second plane angle "
+                       f"{_normal_angle(a, b) if b is not None else -1:.1f}")
     s2 = float((np.minimum(_res(a, pts), _res(b, pts)) <= FOLD_INLIER_M).mean())
     if s2 < FOLD_TWO_MIN or s2 < s1 + FOLD_GAIN:
-        return None
+        return _why(g, f"one-plane {s1:.2f}, two-plane {s2:.2f} of {len(pts)}, "
+                       f"angle {_normal_angle(a, b):.0f}")
     line = _crossing(a, b, g)
     if line is None or not line.intersects(g):
         return None
