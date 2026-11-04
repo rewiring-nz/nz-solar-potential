@@ -33,6 +33,7 @@ import rasterio
 from shapely.ops import transform as shapely_transform
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import numpy as np
 import shapely
 import config
 from src.outline_fit import fitted_outlines
@@ -62,6 +63,71 @@ from src.region_build import area_paths, area_centroid_wgs84, areas_from_argv
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DEEP_SHADE_FACTOR = 0.45  # a panel keeping less than this share of the year's direct beam is
 # under a tree/neighbour and should not be proposed at all
+
+# A PANEL ACROSS A FOLD IS LYING ON TWO ROOFS. Where a machine face runs past
+# its ridge or valley (32 Manuka Crescent, Wanaka: the face edge 0.3-0.5 m
+# past the LiDAR crest, panels over the real ridge in the photo), the returns
+# under the overhanging panels sit on the NEIGHBOUR's plane, off their own.
+# A return counts against the panel when it is more than FOLD_PANEL_OFF_M off
+# the panel's face plane and within FOLD_PANEL_ON_M of a neighbouring face's
+# plane that differs by FOLD_PANEL_MIN_ANGLE_DEG or more. Returns far off
+# every plane (ground and walls past an eave, chimneys) count for neither, so
+# an eave or an object does not trip it. A panel with at least
+# FOLD_PANEL_MIN_HITS such returns, FOLD_PANEL_MAX_SHARE or more of those
+# under it, is dropped. Drawn faces are exempt: hand markup wins. Off unless
+# SOLAR_FOLD_PANEL=1 until measured.
+FOLD_PANEL = os.environ.get("SOLAR_FOLD_PANEL", "0") == "1"
+FOLD_PANEL_OFF_M = 0.15
+FOLD_PANEL_ON_M = 0.10
+FOLD_PANEL_MIN_ANGLE_DEG = 8.0
+FOLD_PANEL_MIN_HITS = 3
+FOLD_PANEL_MAX_SHARE = float(os.environ.get("SOLAR_FOLD_PANEL_SHARE", "0.25"))
+
+
+def _plane_angle(f, g):
+    na = np.array([-f["plane_a"], -f["plane_b"], 1.0])
+    nb = np.array([-g["plane_a"], -g["plane_b"], 1.0])
+    c = abs(na @ nb) / (np.linalg.norm(na) * np.linalg.norm(nb))
+    return float(np.degrees(np.arccos(min(1.0, c))))
+
+
+def drop_panels_across_folds(f, panels, facets, pc_source):
+    """The panels of face f that do not lie across a fold into a neighbour."""
+    if not FOLD_PANEL or not panels or f.get("from_labels") or f.get("plane_a") is None:
+        return panels
+    near = [g for g in facets
+            if g is not f and g.get("plane_a") is not None
+            and g["geometry"].distance(f["geometry"]) < 1.0
+            and _plane_angle(f, g) >= FOLD_PANEL_MIN_ANGLE_DEG]
+    if not near:
+        return panels
+    try:
+        x0, y0, x1, y1 = f["geometry"].buffer(2.5).bounds
+        pts = pc_source.points_in_bbox(x0, y0, x1, y1, building_only=True)
+    except Exception:
+        return panels
+    if pts is None or len(pts) == 0:
+        return panels
+    def res(g, p):
+        return np.abs(p[:, 2] - (g["plane_a"] * p[:, 0] + g["plane_b"] * p[:, 1] + g["plane_c"]))
+    kept = []
+    for pnl in panels:
+        poly = pnl["geometry"]
+        sub = pts[shapely.contains_xy(poly, pts[:, 0], pts[:, 1])]
+        if len(sub) == 0:
+            kept.append(pnl)
+            continue
+        off = res(f, sub) > FOLD_PANEL_OFF_M
+        on_other = np.zeros(len(sub), bool)
+        for g in near:
+            on_other |= res(g, sub) < FOLD_PANEL_ON_M
+        hits = int((off & on_other).sum())
+        if hits >= FOLD_PANEL_MIN_HITS and hits / len(sub) >= FOLD_PANEL_MAX_SHARE:
+            if os.environ.get("SOLAR_FACE_DEBUG"):
+                print(f"[fold-panel] dropped: {hits}/{len(sub)} returns on a neighbour's plane", flush=True)
+            continue
+        kept.append(pnl)
+    return kept
 
 # Below this share of a roof's points lying within 30 cm of the planes we are
 # about to place panels on, do not propose panels at all. 10 Stanley St is
@@ -664,6 +730,7 @@ def _build_one_at(building_id, nudge_m):
                                              sibling_facets=siblings,
                                              fold_keepouts=_keepouts,
                                              frame=_frame)
+            panels = drop_panels_across_folds(f, panels, facets, pc_source)
             if low_fit:
                 for pnl in panels:
                     pnl["straggler"] = True
