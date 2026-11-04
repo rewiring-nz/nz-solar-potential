@@ -1064,6 +1064,20 @@
    "history": [],
    "notes": "",
    "verdicts": []
+  },
+  {
+   "id": 4737213,
+   "region": "wanaka",
+   "first_flagged": "2026-11-04",
+   "defect": "panels laid across a ridge (L-shaped house)",
+   "quotes": [
+    "Layout over a ridge here"
+   ],
+   "status": "needs_fix",
+   "flagged_times": 1,
+   "history": [],
+   "notes": "113 Matai Road has three buildings (5374787, 4737213, 5376626); confirm which is the L-shaped house from the outlines on the VM",
+   "verdicts": []
   }
  ]
 }
