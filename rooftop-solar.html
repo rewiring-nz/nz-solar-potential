@@ -5582,6 +5582,14 @@ map.on("load", async () => {
         pen = true;
       });
       svg += `<path d="${d}" fill="none" stroke="${col}" stroke-width="2"/>`;
+      // the arc's name, in its colour, just above its highest point
+      const top = a.pts.reduce((m, q) => (q[1] > m[1] ? q : m), a.pts[0]);
+      const tt = ((90 - top[0]) % 360 + 360) % 360;
+      if (tt <= 180) {
+        const label = { summer: "Summer sun path", spring: "Average sun path", winter: "Winter sun path" }[a.name];
+        svg += `<text x="${x(tt).toFixed(1)}" y="${(y(Math.max(top[1], 0)) - 4).toFixed(1)}" fill="${col}" ` +
+               `font-size="8" font-weight="600" text-anchor="middle">${label}</text>`;
+      }
     });
     const az_ticks = [[0, "E"], [45, "NE"], [90, "N"], [135, "NW"], [180, "W"]].map(([t, lbl]) =>
       `<text x="${x(t)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${lbl}</text>`).join("");
