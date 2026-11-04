@@ -4419,7 +4419,10 @@ map.on("load", async () => {
     type: "fill",
     source: "layout",
     filter: panelLayerFilter("panel-areas-fill"),
-    paint: { "fill-color": "#081e3f", "fill-opacity": PANEL_FILL_OPACITY }
+    // a brighter blue than the panels: at z13-14 the panels' navy is lost on
+    // dark roofs, and an area reads as "panels here" only if it stands out
+    paint: { "fill-color": "#2f6fd6", "fill-opacity": 0.85,
+             "fill-outline-color": "#9cc2ff" }
   });
   map.addLayer({
     id: "panels-fill",
