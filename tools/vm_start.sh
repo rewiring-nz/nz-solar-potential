@@ -20,8 +20,10 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VM=${VM:-claude-doing-things}
 ZONE=${ZONE:-australia-southeast1-b}
 PROJECT=${PROJECT:-solar-potential-map-512020}
-# every project holding a build VM: the cap is the month's total, not per VM
-PROJECTS="solar-potential-map-512020 downloads-417521"
+# every project holding a build VM: the cap is the month's total, not per VM.
+# The old downloads-417521 VM (and its disk and snapshots) was deleted on
+# 4 Nov 2026; one VM remains.
+PROJECTS="solar-potential-map-512020"
 BUDGET="$REPO_ROOT/data/vm_budget.json"
 [ -f "$BUDGET" ] || { echo "no $BUDGET: refusing to start without a budget"; exit 1; }
 CAP=$(python3 -c "import json;print(json.load(open('$BUDGET'))['hours_per_month'])")
