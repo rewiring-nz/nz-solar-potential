@@ -251,14 +251,17 @@
   /* Standing disclaimer: red pill at the top of the map, dismissible.
      Above every other overlay on purpose -- it is the one thing a first-time
      visitor should read before believing a number. */
+  /* Centred over the map, but never under the dashboard or the search
+     button beside it (12 + 286 + 14 + 24 + 34 px): on a narrower window it
+     starts right of them instead. */
   .ai-banner {
-    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    position: absolute; top: 12px; left: max(386px, calc(50% - 280px)); transform: none;
     z-index: 8; display: flex; align-items: center; gap: 10px;
     background: #c62828; color: #fff;
     border: 1px solid rgba(255,255,255,0.35); border-radius: 999px;
     padding: 7px 8px 7px 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.35);
     font-size: 12px; font-weight: 650; line-height: 1.25;
-    max-width: min(92vw, 560px);
+    max-width: min(560px, calc(100% - 446px));
   }
   .ai-banner-close {
     flex: none; width: 20px; height: 20px; border-radius: 50%; border: none;
@@ -965,6 +968,8 @@
   html.light .wk-tab th, html.light .wk-tab td { border-bottom-color: rgba(15,20,30,0.15); }
   html.light .wk-tab th { background: #f3f5f8; }
   html.light .wk-tab tr.mark td { color: var(--ink); }
+  html.light .facet-geometry-legend { background: rgba(255,255,255,0.96); color: var(--ink);
+    border-color: rgba(15,20,30,0.15); box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
   </style>
 </head>
 <body>
@@ -1642,7 +1647,7 @@ let mode = "layout";   // Panel Layout opens by default; Heat Map is one click a
 // minzoom, maxzoom] per cell band. Top level because applyBtypeFilters, also
 // top level, filters the cells-* layers by building type.
 const CELL_BANDS = [[9, 0, 6], [12, 6, 9], [16, 9, 13]];
-const LAYOUT_LAYERS = ["facets-fill", "facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline"];
+const LAYOUT_LAYERS = ["facets-fill", "facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline", "panel-areas-fill"];
 let obstructionsOn = false;  // default hidden
 let outlinesOn = false;      // building outlines, default hidden
 // Base filter per layout layer -- always shows every building's facets/
@@ -1717,6 +1722,7 @@ const LAYOUT_KIND_FILTER = {
   "obstructions-outline": ["==", ["get", "kind"], "obstruction"],
   "panels-fill": ["==", ["get", "kind"], "panel"],
   "panels-outline": ["==", ["get", "kind"], "panel"],
+  "panel-areas-fill": ["==", ["get", "kind"], "panel_area"],
 };
 
 // Panel-layout density is fully client-side: every feasible panel ships in
@@ -2187,6 +2193,8 @@ function panelColourExpr() {
 
 function applyPanelDensityPaint() {
   if (!map.getLayer("panels-fill")) return;
+  if (map.getLayer("panel-areas-fill"))
+    map.setFilter("panel-areas-fill", panelLayerFilter("panel-areas-fill", layoutExcludedBuildingId));
   map.setPaintProperty("panels-fill", "fill-opacity", densityOpacityExpr(PANEL_FILL_OPACITY));
   map.setPaintProperty("panels-outline", "line-opacity", densityOpacityExpr(PANEL_LINE_OPACITY));
   repaintPanelColours();
@@ -2222,6 +2230,9 @@ function setLayoutExclusion(excludeBuildingId) {
 
 function panelLayerFilter(id, excludeBuildingId) {
   const parts = [LAYOUT_KIND_FILTER[id]];
+  // the zoomed-out panel areas come in two sets: the map's default sizing
+  // (homes held to the household cap) and every panel (src/emit_region.py)
+  if (id === "panel-areas-fill") parts.push(["==", ["get", "set"], sizingDefault ? "default" : "all"]);
   if (excludeBuildingId !== undefined) {
     parts.push(["!=", ["get", "building_id"], excludeBuildingId]);
   }
@@ -3589,9 +3600,9 @@ map.on("load", async () => {
 
   const zoomHint = document.getElementById("zoom-hint");
   const updateZoomHint = () => {
-    // Panel geometry is only drawn from PANEL_MIN_ZOOM. Say so instead of
-    // showing an empty map.
-    zoomHint.classList.toggle("show", mode === "layout" && map.getZoom() < PANEL_MIN_ZOOM);
+    // Panel areas are drawn from z13 (single panels from PANEL_MIN_ZOOM). Say
+    // so instead of showing an empty map further out.
+    zoomHint.classList.toggle("show", mode === "layout" && map.getZoom() < 13);
   };
   window.__updateZoomHint = updateZoomHint;
   map.on("zoomend", updateZoomHint);
@@ -4394,6 +4405,18 @@ map.on("load", async () => {
     source: "layout",
     filter: LAYOUT_KIND_FILTER["obstructions-outline"],
     paint: { "line-color": "#ff3b30", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.2, 15, 0.6, 17, 1.0], "line-dasharray": [2, 2], "line-opacity": 0.9 }
+  });
+  // Below PANEL_MIN_ZOOM each roof's panels arrive merged into the areas they
+  // cover (kind "panel_area", src/emit_region.py): the whole layout at every
+  // zoom, instead of a thinned sample that filled in as the map zoomed.
+  map.addLayer({
+    id: "panel-areas-fill",
+    minzoom: 13, maxzoom: PANEL_MIN_ZOOM,
+    "source-layer": "layout",
+    type: "fill",
+    source: "layout",
+    filter: panelLayerFilter("panel-areas-fill"),
+    paint: { "fill-color": "#081e3f", "fill-opacity": PANEL_FILL_OPACITY }
   });
   map.addLayer({
     id: "panels-fill",
