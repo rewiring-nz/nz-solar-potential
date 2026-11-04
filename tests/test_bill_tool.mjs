@@ -47,10 +47,20 @@ check("a typical home uses about what NZ homes use", () => {
 });
 
 check("a Queenstown home uses EMI's Otago average, scaled for its people", () => {
-  const L = B.btBuildLoad(home({ people: 2.6 }), { lat: -45.03, lon: 168.66, roofM2: 150 });
+  const L = B.btBuildLoad(home({ people: 2.6 }), { lat: -45.03, lon: 168.66, roofM2: 170 });
   near(L.region.key === "queenstown" ? 1 : 0, 1, 0, "region");
   const year = B.BT_SEASONS.reduce((t, s, i) => t + B.btDailyKwh(L, s) * [90, 92, 92, 91][i], 0);
-  near(year, 7829, 160, "kWh a year for 2.6 people");
+  near(year, 7829, 160, "kWh a year for 2.6 people in a typical house");
+});
+
+check("a bigger house uses a little more, within limits", () => {
+  const yr = m2 => { const L = B.btBuildLoad(home({ people: 3 }), { lat: -45.03, lon: 168.66, roofM2: m2 });
+    return B.BT_SEASONS.reduce((t, s, i) => t + B.btDailyKwh(L, s) * [90, 92, 92, 91][i], 0); };
+  const typ = yr(170);
+  near(yr(290) / typ, Math.pow(290 / 170, 0.25), 0.01, "290 m² vs 170 m²");
+  near(yr(100) / typ, Math.pow(100 / 170, 0.25), 0.01, "100 m² vs 170 m²");
+  near(yr(2000) / typ, 1.3, 0.01, "held at 1.3");
+  near(yr(30) / typ, 0.85, 0.01, "held at 0.85");
 });
 
 check("a winter day uses more than a summer day, as the town's metered load does", () => {

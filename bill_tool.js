@@ -68,6 +68,17 @@ const BT_EMI_DATA = typeof BT_EMI !== "undefined" ? BT_EMI
 // them (fridge, standby, space heating): use x (fixed + (1 - fixed) x people / 2.6).
 // The fixed share is an estimate, not an EMI figure.
 const BT_AVG_PEOPLE = 2.6, BT_FIXED_SHARE = 0.4;
+// A bigger house uses a little more: more rooms to heat and light. Use is
+// scaled by (roof area / typical)^0.25, held to 0.85-1.3. The typical house
+// roof is 170 m² (median of the 923 house-sized outlines, 60-400 m², in the
+// Queenstown pilot). The exponent sits in the 0.2-0.4 range that household
+// surveys find for electricity against floor area; at 0.25 a 290 m² house
+// (the 90th percentile) uses 14% more than a typical one, a 100 m² one 12% less.
+const BT_TYPICAL_HOUSE_M2 = 170, BT_HOUSE_SIZE_EXP = 0.25, BT_HOUSE_SIZE_MIN = 0.85, BT_HOUSE_SIZE_MAX = 1.3;
+function btHouseSizeFactor(roofM2) {
+  const f = Math.pow(Math.max(1, roofM2) / BT_TYPICAL_HOUSE_M2, BT_HOUSE_SIZE_EXP);
+  return Math.max(BT_HOUSE_SIZE_MIN, Math.min(BT_HOUSE_SIZE_MAX, f));
+}
 // The town whose metered load shapes this building's day: the nearest with
 // EMI data within 150 km, else the whole country. Wanaka and Cromwell take
 // Queenstown's: the Cromwell grid exit point carries orchard irrigation and
@@ -231,7 +242,11 @@ function btBuildLoad(p, opts) {
         btIn("Share that does not grow with people", BT_FIXED_SHARE, "×", { dp: 2, note: "Fridge, standby, heating the rooms. An estimate." }),
         Wk.product("Share that does", "×", [btIn("Rest of the use", 1 - BT_FIXED_SHARE, "×", { dp: 2 }),
           Wk.quotient("People vs an average home", "×", people,
-            btIn("Average home", BT_AVG_PEOPLE, "people", { dp: 1, source: "Stats NZ, 2023 Census." }))])])]);
+            btIn("Average home", BT_AVG_PEOPLE, "people", { dp: 1, source: "Stats NZ, 2023 Census." }))])]),
+      Wk.given("For the size of the house", btHouseSizeFactor(roofM2), "×",
+        [roof, btIn("Typical house roof", BT_TYPICAL_HOUSE_M2, "m²", { source: "Median house-sized roof in the Queenstown pilot." })],
+        { dp: 2, formula: `(roof ÷ typical)^${BT_HOUSE_SIZE_EXP}, held to ${BT_HOUSE_SIZE_MIN}–${BT_HOUSE_SIZE_MAX}`,
+          note: "A bigger house has more rooms to heat and light.", check: () => btHouseSizeFactor(roofM2) })]);
     const day = Wk.quotient("An average day", "kWh/day", year, btIn("Days in a year", 365, "days"));
     for (const s of BT_SEASONS) {
       nodes.home[s] = Wk.product(`Household use, ${s}`, "kWh/day", [day,
@@ -1034,7 +1049,7 @@ function btMethodHtml(r, prof, isBiz) {
   const reg = r.load.region;
   const useParts = isBiz
     ? `A ${r.load.bizKind || "business"} uses ${BT_BIZ_KWH_M2[r.load.bizKind || "business"].kwh} kWh per m² of floor a year before heating (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day. Its floor is its roof area × ${r.load.storeys} storey${r.load.storeys === 1 ? "" : "s"}${r.load.storeys > 1 || r.load.heightKnown ? ", counted from its height in the laser scan" : ""}.`
-    : `A home's use is the Electricity Authority's figure for the average home in ${btCouncilKwh(reg).label} (${Math.round(btCouncilKwh(reg).kwh).toLocaleString()} kWh a year, 2025), scaled for ${prof.people} ${prof.people === 1 ? "person" : "people"} against an average of ${BT_AVG_PEOPLE}. ` +
+    : `A home's use is the Electricity Authority's figure for the average home in ${btCouncilKwh(reg).label} (${Math.round(btCouncilKwh(reg).kwh).toLocaleString()} kWh a year, 2025), scaled for ${prof.people} ${prof.people === 1 ? "person" : "people"} against an average of ${BT_AVG_PEOPLE}, and a little for the size of the house (a 290 m² roof uses about 14% more than a typical 170 m² one, a 100 m² roof 12% less). ` +
       `Each season's day, and how it is spread over the hours, follows the metered half-hourly load of ${reg.label} over the last year (EMI): hot water and heating run when homes actually run them, overnight on ripple control and at the morning and evening peaks.`;
   const heatText = !isBiz ? ""
     : prof.heating === "gas" || prof.heating === "none"
