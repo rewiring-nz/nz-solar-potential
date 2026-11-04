@@ -334,6 +334,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   the gap. `keep:outline` (drawn extent in place of the outline) changed
   nothing (0.515): the readings set the roof's extent, not the outline, and
   blind outlines already score 0.94.
+- **Tried 4 Nov on 152 drawn roofs (139 scored), no gain (stay off):**
+  stricter one-plane bar for machine faces (`SOLAR_SELECTED_MIN_INLIER`
+  0.60 / 0.75: panel IoU 0.515 -> 0.515 / 0.512); fold split with its
+  one-plane share fixed to the best plane (`SOLAR_FOLD_SPLIT=1`, inlier
+  0.15 m: 0.515); panels across a fold dropped (`SOLAR_FOLD_PANEL=1`: 0.515,
+  roofs right 13 -> 14, 97 panels fewer, only 2 panels off the 4 flagged
+  Wanaka roofs). Runs on the VM in `~/mb5`. Flagged 4 Nov (Manuka Cres 32,
+  54, 64A; 113 Matai Rd = 4737213): 32's faces sit within ~0.4 m of the
+  LiDAR crest, panels run to the face edge; 54 and 113 carry photo readings
+  whose faces miss their planes by ~1 m; 64A is low-pitch with thin LiDAR.
+  The Wanaka map photo is the survey-year photo (lean ~0, checked against
+  drawn ridges: median 0.12 m), so lean is not the cause there.
+- **Map (branch `map-3d-panels`, not merged):** 3D switches to Panel
+  Layout; big homes read from every loaded building (a Wanaka view knew 1
+  of 13, so 12 jumped from capped to full on click); layout tiles ship z15
+  whole and panels draw from z15 (needs tiles re-emitted); 3D faces welded
+  at shared corners. 3D shards on 17 Church St come from tiny steep faces
+  in the build (41.9 deg from 8 samples on a flat roof): fix in the build.
 - **Tried 3 Nov, no gain (stay off):** composite roofs
   (`SOLAR_COMPOSITE_ROOFS=1`: fires on 3 of 131 drawn roofs, all worse,
   panel IoU 0.518 -> 0.514); fold split (`SOLAR_FOLD_SPLIT=1`,
