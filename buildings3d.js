@@ -1304,6 +1304,7 @@
     quadScene.add(quad);
     return { renderer, scene, camera, mat, batches: [], selMesh, sel, rt, quadScene, mvp: null };
   }
+  const OVERLAY_3D = /[?&]SOLAR_3D_OVERLAY=1\b/.test(location.search);
   const layer = {
     id: LAYER_ID, type: "custom", renderingMode: "3d",
     onAdd(map, gl) {
@@ -1324,7 +1325,17 @@
       const fb = gl.getParameter(gl.FRAMEBUFFER_BINDING);
       const rn = R.renderer;
       rn.resetState();
-      if (fb === null) {
+      // DRAWN INTO THE MAP'S OWN FRAME, AGAINST ITS DEPTH. Rendered into a
+      // separate target with its own depth buffer and pasted on top, a
+      // building showed through every tree and rise in the ground in front
+      // of it. Drawn straight into the map's framebuffer without clearing
+      // depth, the terrain MapLibre has already drawn hides what stands behind
+      // it, as it would in the real world. ?SOLAR_3D_OVERLAY=1 restores the
+      // old pasted-on-top drawing (antialiased, never hidden).
+      if (fb === null && !OVERLAY_3D) {
+        rn.setViewport(0, 0, w, h);
+        rn.render(R.scene, R.camera);
+      } else if (fb === null) {
         if (R.rt.width !== w || R.rt.height !== h) R.rt.setSize(w, h);
         rn.setRenderTarget(R.rt);
         rn.setClearColor(0x000000, 0);
