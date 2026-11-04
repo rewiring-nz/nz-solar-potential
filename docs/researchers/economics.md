@@ -52,7 +52,7 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 | System life | 30 years |
 | Inverter | replaced after 15 years at 18% of the solar cost |
 | Battery | $1,000/kWh, 5 kW, 90% round trip, 10% reserve, replaced after 15 years; charges from solar only, never the grid |
-| Household | 3 people, electric hot water on a midday timer, heat pump, no car, no battery |
+| Household | 3 people (EMI regional average home and the town's metered load shape), no car, no battery |
 
 ## Home or business
 
