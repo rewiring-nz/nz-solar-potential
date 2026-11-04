@@ -294,7 +294,7 @@ $3,000/kW under 3 kW; $2,000 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25�
 
 ### Household use
 
-Built from people, hot water, heating and electric cars, each with its own daily kWh per season and hour-of-day shape. Heating scales with the town's heating degree-days. Default: 3 people, electric hot water on a midday timer, a heat pump, no car. A business uses 75 kWh per m² of footprint a year (at least 6,000 kWh). Bills you enter scale the modelled use to match.
+A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A business uses 75 kWh per m² of footprint a year (at least 6,000 kWh) plus heating by degree-days, spread across the working day. Bills you enter scale the modelled use to match.
 
 **Source:** `bill_tool.js`
 

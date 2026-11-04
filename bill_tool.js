@@ -10,8 +10,11 @@
 // actually look at: a winter and a summer monthly bill, now and with solar.
 //
 // THE MODEL (pure: numbers in, numbers out; tests/test_bill_tool.mjs):
-//   load   = appliances + hot water + room heating + electric cars, each with
-//            its own daily kWh per season and its own hour-of-day shape;
+//   load   = the household's use (EMI: its regional council's average home,
+//            shaped hour by hour and season by season by its town's metered
+//            half-hourly load -- load_profiles.js, tools/build_load_profiles.py)
+//            plus electric cars; a business, its floor area's use and heating,
+//            shaped across the working day;
 //   solar  = the roof's own average day per season (window.__genProfile, the
 //            curve drawn in the building panel), scaled to the system shown;
 //   hour by hour: solar serves the load, then the battery, then the grid
@@ -31,10 +34,7 @@ const BT_MONTH_DAYS = 30.4;
 const BT_DEFAULTS = {
   home: {
     people: 3,
-    water: "electric",        // electric | heatpump | gas
-    heating: "heatpump",      // heatpump | electric | gas | none
     evs: 0,
-    waterOnSun: true,         // cylinder on a timer that runs it midday
     evOnSun: false,           // cars charged when the sun is out
     battery: 0,               // kWh
   },
@@ -59,6 +59,43 @@ const BT_DEFAULTS = {
   biz_kwh_per_m2: 75,
   biz_min_kwh: 6000,
 };
+
+// EMI profiles (load_profiles.js): on the page a global, in the tests required.
+const BT_EMI_DATA = typeof BT_EMI !== "undefined" ? BT_EMI
+  : (typeof require !== "undefined" ? require("./load_profiles.js").BT_EMI : null);
+// An average NZ home holds about 2.6 people (Stats NZ, 2023 Census). A home's
+// use is scaled by its people with a fixed share that does not grow with
+// them (fridge, standby, space heating): use x (fixed + (1 - fixed) x people / 2.6).
+// The fixed share is an estimate, not an EMI figure.
+const BT_AVG_PEOPLE = 2.6, BT_FIXED_SHARE = 0.4;
+// The town whose metered load shapes this building's day: the nearest with
+// EMI data within 150 km, else the whole country. Wanaka and Cromwell take
+// Queenstown's: the Cromwell grid exit point carries orchard irrigation and
+// frost fans, which no house has.
+function btEmiRegion(lat, lon) {
+  const R = BT_EMI_DATA && BT_EMI_DATA.regions;
+  if (!R) return null;
+  let best = "national", bd = 150;
+  for (const k of ["queenstown", "wellington"]) {
+    const r = R[k];
+    if (!r || r.lat == null || lat == null || lon == null) continue;
+    const d = Math.hypot((lat - r.lat) * 111.1, (lon - r.lon) * 111.1 * Math.cos(lat * Math.PI / 180));
+    if (d < bd) { bd = d; best = k; }
+  }
+  // shapes are stored rounded; each day's fractions are made to add to exactly 1
+  const shape = {};
+  for (const s of BT_SEASONS) {
+    const a = R[best].shape[s], tot = a.reduce((x, y) => x + y, 0);
+    shape[s] = a.map(v => v / tot);
+  }
+  return Object.assign({ key: best }, R[best], { shape });
+}
+function btCouncilKwh(reg) {
+  const C = BT_EMI_DATA.council_kwh;
+  if (reg.council && C[reg.council]) return { kwh: C[reg.council], label: reg.council };
+  const v = Object.values(C);
+  return { kwh: v.reduce((a, b) => a + b, 0) / v.length, label: "the average of NZ's 16 regions" };
+}
 
 // Season multipliers on each part's daily kWh.
 const BT_SEASONAL = {
@@ -119,7 +156,7 @@ const btZero = (label, why) => Wk.input(label, 0, "kWh/day", { note: why });
 function btBuildLoad(p, opts) {
   const D = BT_DEFAULTS;
   const lat = opts && opts.lat, roofM2 = (opts && opts.roofM2) || 150;
-  const nodes = { appliance: {}, water: {}, heat: {}, ev: {} };
+  const nodes = p.type === "business" ? { appliance: {}, home: {}, ev: {} } : { home: {}, ev: {} };
   const shapes = {};
   const hdd = Wk.given("Heating degree-days a year", btHdd(lat), "°C·days",
     [btIn("Latitude", Math.abs(lat || 41), "°", { dp: 2, source: "This building's town." })], {
@@ -140,7 +177,7 @@ function btBuildLoad(p, opts) {
       Wk.product("By floor area", "kWh/yr", [btIn("Electricity per m²", D.biz_kwh_per_m2, "kWh/m²",
         { dp: 0, source: "Typical NZ commercial use per m² of floor, before heating." }), roof])]);
     const day = Wk.quotient("A typical day", "kWh/day", year, btIn("Days in a year", 365, "days"));
-    for (const s of BT_SEASONS) nodes.appliance[s] = Wk.product(`Business use, ${s}`, "kWh/day",
+    for (const s of BT_SEASONS) nodes.appliance[s] = Wk.product(`Working-day use, ${s}`, "kWh/day",
       [day, seasonal("appliance", s, "Lighting is used more in the darker months.")]);
     shapes.appliance = BT_SHAPES.business;
     const base = Wk.product("Heat pump heating on the coldest days", "kWh/day", [hdd, perKwhHdd,
@@ -149,44 +186,48 @@ function btBuildLoad(p, opts) {
     heatWinter = p.heating === "heatpump" ? base
       : p.heating === "electric" ? Wk.product("Electric heaters on the coldest days", "kWh/day", [base, resistive])
       : null;
-    for (const s of BT_SEASONS) nodes.water[s] = btZero(`Hot water, ${s}`, "Not modelled separately for a business.");
-    shapes.heat = BT_SHAPES.business_heat;
-    shapes.water = BT_SHAPES.water_night;
+
   } else {
+    // THE WHOLE HOUSE, FROM EMI. A home's use is not built up from guessed
+    // appliances, cylinder and heater figures any more: its year is EMI's
+    // average for its regional council, and each season's day and its shape
+    // are its town's metered load (load_profiles.js). That shape carries the
+    // real timing -- hot water on ripple control overnight and at the peaks,
+    // heating morning and evening -- which the hand-made appliance and
+    // cylinder curves did not (they put most hot water at midday).
+    const reg = btEmiRegion(lat, opts && opts.lon);
+    const ck = btCouncilKwh(reg);
     const people = btIn("People", Math.max(1, Math.min(8, p.people || 1)), "people", { source: "Your answer." });
-    const app = Wk.sum("Appliances, lights and cooking, a typical day", "kWh/day", [
-      btIn("Base (fridge, standby, lights)", D.appliance_base_kwh, "kWh/day",
-        { source: "Set so a 3-person home uses about 7,000 kWh a year, the NZ average (MBIE)." }),
-      Wk.product("For the people", "kWh/day", [btIn("Each person", D.appliance_per_person_kwh, "kWh/day"), people])]);
-    const cyl = Wk.sum("Electric cylinder, a typical day", "kWh/day", [
-      btIn("Standing losses", D.water_base_kwh, "kWh/day", { source: "EECA: a cylinder loses heat all day." }),
-      Wk.product("For the people", "kWh/day", [btIn("Each person", D.water_per_person_kwh, "kWh/day",
-        { source: "EECA: hot water is about a third of a home's electricity with an electric cylinder." }), people])]);
-    const water = p.water === "electric" ? cyl
-      : p.water === "heatpump" ? Wk.quotient("Heat pump water heater, a typical day", "kWh/day", cyl,
-          btIn("Heat pump efficiency (units of heat per unit of electricity)", D.water_heatpump_cop, "×", { dp: 1 }))
-      : null;
-    const size = Wk.clamp("Size vs a typical 150 m² house", "×",
-      Wk.quotient("Roof area ÷ 150 m²", "×", roof, btIn("Typical house", 150, "m²")), 0.6, 2.0, { dp: 2 });
-    const hp = Wk.product("Heat pump heating on the coldest days", "kWh/day", [hdd, perKwhHdd, size]);
-    heatWinter = p.heating === "heatpump" ? hp
-      : p.heating === "electric" ? Wk.product("Electric heaters on the coldest days", "kWh/day", [hp, resistive])
-      : null;
+    const year = Wk.product("A home like this, a year", "kWh/yr", [
+      btIn(`Average home, ${ck.label}`, Math.round(ck.kwh), "kWh/yr",
+        { source: "EMI (Electricity Authority), Residential consumption league table, year to 31 Dec 2025: average use per home, metered." }),
+      Wk.sum("For this many people", "×", [
+        btIn("Share that does not grow with people", BT_FIXED_SHARE, "×", { dp: 2, note: "Fridge, standby, heating the rooms. An estimate." }),
+        Wk.product("Share that does", "×", [btIn("Rest of the use", 1 - BT_FIXED_SHARE, "×", { dp: 2 }),
+          Wk.quotient("People vs an average home", "×", people,
+            btIn("Average home", BT_AVG_PEOPLE, "people", { dp: 1, source: "Stats NZ, 2023 Census." }))])])]);
+    const day = Wk.quotient("An average day", "kWh/day", year, btIn("Days in a year", 365, "days"));
     for (const s of BT_SEASONS) {
-      nodes.appliance[s] = Wk.product(`Appliances, ${s}`, "kWh/day",
-        [app, seasonal("appliance", s, "Lighting is used more in the darker months.")]);
-      nodes.water[s] = water ? Wk.product(`Hot water, ${s}`, "kWh/day",
-        [water, seasonal("water", s, "Colder inlet water takes more heating in winter.")])
-        : btZero(`Hot water, ${s}`, "Heated with gas: no electricity.");
+      nodes.home[s] = Wk.product(`Household use, ${s}`, "kWh/day", [day,
+        btIn(`${BT_CAP(s)} vs the year`, reg.season_factor[s], "×",
+          { dp: 2, source: `EMI metered half-hourly load, ${reg.label}, ${BT_EMI_DATA.source.split(";")[0].replace(/^.*Grid_export /, "")}.` })]);
     }
-    shapes.appliance = BT_SHAPES.appliance;
-    shapes.water = p.waterOnSun ? BT_SHAPES.water_sun : BT_SHAPES.water_night;
-    shapes.heat = BT_SHAPES.heat;
+    shapes.home = reg.shape;
   }
-  for (const s of BT_SEASONS) {
-    nodes.heat[s] = heatWinter ? Wk.product(`Heating, ${s}`, "kWh/day",
-      [heatWinter, seasonal("heat", s, "Share of the coldest days' heating used in this season.")])
-      : btZero(`Heating, ${s}`, p.heating === "none" ? "No heating." : "Heated with gas or wood: no electricity.");
+  if (p.type === "business") {
+    // one line for the business, not lights and heating apart: its working
+    // day and its heating, added hour by hour into one shape per season
+    for (const s of BT_SEASONS) {
+      const heat = heatWinter ? Wk.product(`Heating, ${s}`, "kWh/day",
+        [heatWinter, seasonal("heat", s, "Share of the coldest days' heating used in this season.")])
+        : btZero(`Heating, ${s}`, p.heating === "none" ? "No heating." : "Heated with gas or wood: no electricity.");
+      nodes.home[s] = Wk.sum(`Business use, ${s}`, "kWh/day", [nodes.appliance[s], heat]);
+      const a = nodes.appliance[s].value, hh = heat.value, tot = a + hh || 1;
+      shapes.home = shapes.home || {};
+      shapes.home[s] = BT_SHAPES.business.map((v, h) => (a * v + hh * BT_SHAPES.business_heat[h]) / tot);
+    }
+    delete nodes.appliance; delete nodes.water; delete nodes.heat;
+    delete shapes.appliance; delete shapes.water; delete shapes.heat;
   }
   const evs = btIn(p.type === "business" ? "Electric vehicles" : "Electric cars", p.evs || 0, "", { dp: 0, source: "Your answer." });
   const evDay = Wk.quotient("Charging, a typical day", "kWh/day", Wk.product("Charging a year", "kWh/yr", [evs,
@@ -201,7 +242,7 @@ function btBuildLoad(p, opts) {
     parts[k] = {};
     for (const s of BT_SEASONS) parts[k][s] = nodes[k][s].value;
   }
-  return { parts, nodes, shapes, hdd: hdd.value };
+  return { parts, nodes, shapes, hdd: hdd.value, region: p.type === "business" ? null : btEmiRegion(lat, opts && opts.lon) };
 }
 
 // The hourly load (kW) of one season, optionally scaled.
@@ -210,7 +251,7 @@ function btSeasonLoad(load, s, scale) {
   const out = new Array(24).fill(0);
   for (const part of Object.keys(load.parts)) {
     const day = load.parts[part][s] * k;
-    const sh = load.shapes[part];
+    const sh = Array.isArray(load.shapes[part]) ? load.shapes[part] : load.shapes[part][s];
     for (let h = 0; h < 24; h++) out[h] += day * sh[h];
   }
   return out;
@@ -398,7 +439,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
     const partsH = {};
     for (const k of Object.keys(load.parts)) {
       const day = load.parts[k][s] * cal.scale[s];
-      partsH[k] = load.shapes[k].map(f => day * f);
+      partsH[k] = (Array.isArray(load.shapes[k]) ? load.shapes[k] : load.shapes[k][s]).map(f => day * f);
     }
     res.seasons[s] = {
       loadKwh: use.value, genKwh: made.value,
@@ -570,7 +611,7 @@ function crossMark(rows, payback) {
 //   tariff: {peak, offpeak, peakSell, offpeakSell, daily} (or flat {buy, sell, daily})
 //   sys:    {solarPerKw, battPerKwh} -- the user's own prices, or null for ours
 function btEvaluate(ctx, prof, calib, tariff, sys) {
-  const load = btBuildLoad(prof, { lat: ctx.lat, roofM2: ctx.roofM2 });
+  const load = btBuildLoad(prof, { lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2 });
   const cal = btCalibration(load, calib, tariff, ctx.seasonDays);
   const run = btRun(ctx.gen, load, cal, tariff, prof.battery || 0, ctx.seasonDays);
   const N = run.nodes, Y = run.year;
@@ -887,9 +928,7 @@ body.clb-open .wk-sheet { z-index: 4600; }
 `;
 
 const BT_PART_STYLE = {
-  appliance: { label: "Appliances & lights", colour: "#8fb3ff" },
-  water: { label: "Hot water", colour: "#5fd0c0" },
-  heat: { label: "Heating", colour: "#ff9b6b" },
+  home: { label: "Electricity use", colour: "#8fb3ff" },
   ev: { label: "Electric cars", colour: "#c79bff" },
 };
 
@@ -962,12 +1001,13 @@ function btMethodHtml(r, prof, isBiz) {
     ? `Your bills scale this estimate by ${BT_SEASONS.map(s => `${n1(scale[s])}× in ${s}`).join(", ")}.`
     : r.cal.by === "total" ? `Your yearly use scales this estimate by ${n1(scale.winter)}× in every season.`
     : "Nothing entered, so the estimate is used as is. Enter a bill or your yearly use and every figure is scaled to match.";
+  const reg = r.load.region;
   const useParts = isBiz
     ? `A business uses ${D.biz_kwh_per_m2} kWh per m² of roof a year (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day.`
-    : `Appliances, lights and cooking: ${D.appliance_base_kwh} kWh a day plus ${D.appliance_per_person_kwh} per person (${prof.people} here). ` +
-      (prof.water === "gas" ? "Hot water is gas, so it uses no electricity. "
-        : `Hot water: ${D.water_base_kwh} kWh a day plus ${D.water_per_person_kwh} per person${prof.water === "heatpump" ? `, divided by ${D.water_heatpump_cop} for a heat pump cylinder` : ""}, heated ${prof.waterOnSun ? "in the middle of the day on a timer" : "mostly overnight"}. `);
-  const heatText = prof.heating === "gas" || prof.heating === "none"
+    : `A home's use is the Electricity Authority's figure for the average home in ${btCouncilKwh(reg).label} (${Math.round(btCouncilKwh(reg).kwh).toLocaleString()} kWh a year, 2025), scaled for ${prof.people} ${prof.people === 1 ? "person" : "people"} against an average of ${BT_AVG_PEOPLE}. ` +
+      `Each season's day, and how it is spread over the hours, follows the metered half-hourly load of ${reg.label} over the last year (EMI): hot water and heating run when homes actually run them, overnight on ripple control and at the morning and evening peaks.`;
+  const heatText = !isBiz ? ""
+    : prof.heating === "gas" || prof.heating === "none"
     ? "Rooms are not heated with electricity."
     : `Heating follows how cold the town is: ${go("use", Math.round(r.load.hdd).toLocaleString() + " heating degree-days")} a year × ${D.heat_kwh_per_hdd} kWh each for a heat pump${prof.heating === "electric" ? `, × ${D.resistive_vs_heatpump} for plug-in heaters` : ""}, nearly all of it in winter.`;
   const evText = prof.evs > 0
@@ -977,7 +1017,7 @@ function btMethodHtml(r, prof, isBiz) {
     ? `A ${prof.battery} kWh battery takes spare solar and gives it back when the ${isBiz ? "building" : "home"} needs it: ${BD.round_trip_pct}% of what goes in comes out, it keeps ${BD.reserve_pct}% in reserve and moves at most ${BD.kw} kW.`
     : "No battery: spare solar is exported.";
   return `<div class="sx-method">` +
-    `<p><b>Electricity use.</b> ${useParts.trim()} ${heatText} ${evText} Each part has its own shape across the day and its own change by season. Together: ${go("use", Math.round(N.useYear.value).toLocaleString() + " kWh a year")}. ${calText}</p>` +
+    `<p><b>Electricity use.</b> ${useParts.trim()} ${heatText} ${evText} Together: ${go("use", Math.round(N.useYear.value).toLocaleString() + " kWh a year")}. ${calText}</p>` +
     `<p><b>Solar.</b> The roof's own average day in each season, from its tilt, direction and shading (the curve on the building card): ${go("gen", Math.round(N.genYear.value).toLocaleString() + " kWh a year")}.</p>` +
     `<p><b>Hour by hour.</b> For an average day in each season (${BT_SEASONS.map((s, i) => `${s} ${days[i]} days`).join(", ")}), each hour the solar powers the ${isBiz ? "building" : "home"} first. ${battText} The rest comes from the grid.</p>` +
     `<p><b>Bills.</b> Power from the grid at ${c(P.peak.value)} a kWh in peak hours (${btPeakText()}) and ${c(P.off.value)} off-peak; exports earn ${c(P.peakSell.value)} at peak and ${c(P.offSell.value)} off-peak; plus $${P.daily.value.toFixed(2)} a day. A month is ${P.month.value.toFixed(1)} days. A year: ${go("nowbill", btMoney(N.nowBill.value) + " today")}, ${go("solarbill", btMoney((prof.battery > 0 ? N.battBill : N.solarBill).value) + (prof.battery > 0 ? " with solar and the battery" : " with solar"))}.</p>` +
@@ -1059,7 +1099,7 @@ function renderBillTool(box, ctx) {
     const prof = Object.assign({ type: state.type }, isBiz ? state.business : state.home);
     const tariff = btTariffFromEcon(isBiz);
     const haveGen = !!(ctx.gen && ctx.gen.length === 4 && ctx.kwp > 0);
-    const r = btEvaluate({ lat: ctx.lat, roofM2: ctx.roofM2, kwp: ctx.kwp, kwpNode: ctx.kwpNode,
+    const r = btEvaluate({ lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2, kwp: ctx.kwp, kwpNode: ctx.kwpNode,
                            gen: haveGen ? ctx.gen : null, seasonDays: ctx.seasonDays, genNode: ctx.genNode },
                          prof, state.calib, tariff, state.sys);
     last = r;
@@ -1248,13 +1288,12 @@ function renderBillTool(box, ctx) {
         `</div></div>` +
       `</div>` +
       `<details class="sx-dis" id="bt-adv-home"><summary><span class="t">About this ${isBiz ? "business" : "home"}</span>` +
-        `<span class="sum">${isBiz ? "Business" : `${P.people} ${P.people === 1 ? "person" : "people"}`} · ${({ heatpump: "heat pumps", electric: "electric heaters", gas: "gas heating", none: "no heating" })[P.heating]}${P.evs ? ` · ${P.evs} EV${P.evs > 1 ? "s" : ""}` : ""}</span></summary>` +
+        `<span class="sum">${isBiz ? `Business · ${({ heatpump: "heat pumps", electric: "electric heaters", gas: "gas heating", none: "no heating" })[P.heating]}` : `${P.people} ${P.people === 1 ? "person" : "people"}`}${P.evs ? ` · ${P.evs} EV${P.evs > 1 ? "s" : ""}` : ""}</span></summary>` +
         `<div class="sx-group">` +
           row("Building", seg("type", [["home", "Home"], ["business", "Business"]], state.type, "Building")) +
           (isBiz ? "" : row("People", `<div class="sx-step" data-step="people"><button type="button" data-d="-1" aria-label="Fewer people">−</button><b>${P.people}</b><button type="button" data-d="1" aria-label="More people">+</button></div>`)) +
-          (isBiz ? "" : row("Hot water", seg("water", [["electric", "Electric"], ["heatpump", "Heat pump"], ["gas", "Gas"]], P.water, "Hot water"))) +
-          (isBiz || P.water === "gas" ? "" : row("Heat water when it's sunny", `<label class="sx-switch"><input type="checkbox" data-tick="waterOnSun" ${P.waterOnSun ? "checked" : ""} aria-label="Heat water when it's sunny"><i></i></label>`, { small: "a timer on the cylinder" })) +
-          row("Heating", seg("heating", [["heatpump", "Heat pump"], ["electric", "Electric"], ["gas", "Gas"], ["none", "None"]], P.heating, "Heating")) +
+
+          (isBiz ? row("Heating", seg("heating", [["heatpump", "Heat pump"], ["electric", "Electric"], ["gas", "Gas"], ["none", "None"]], P.heating, "Heating")) : "") +
           row(isBiz ? "Electric vehicles" : "Electric cars", seg("evs", (isBiz ? [0, 1, 2, 4, 8] : [0, 1, 2, 3]).map(n => [n, String(n)]), P.evs, "Electric cars")) +
           (P.evs > 0 ? row(isBiz ? "Charge in the working day" : "Charge when it's sunny", `<label class="sx-switch"><input type="checkbox" data-tick="evOnSun" ${P.evOnSun ? "checked" : ""} aria-label="Charge when it's sunny"><i></i></label>`) : "") +
         `</div>` +

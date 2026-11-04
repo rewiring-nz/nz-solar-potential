@@ -46,18 +46,28 @@ check("a typical home uses about what NZ homes use", () => {
   if (year < 6000 || year > 11000) throw new Error(`year ${Math.round(year)} kWh`);
 });
 
-check("gas hot water and gas heating take electricity off the bill", () => {
-  const el = B.btBuildLoad(home(), { lat: -45, roofM2: 150 });
-  const gas = B.btBuildLoad(home({ water: "gas", heating: "gas" }), { lat: -45, roofM2: 150 });
-  if (!(B.btDailyKwh(gas, "winter") < B.btDailyKwh(el, "winter") * 0.6)) throw new Error("gas home not lighter");
-  near(gas.parts.water.winter, 0, 1e-9, "gas water"); near(gas.parts.heat.winter, 0, 1e-9, "gas heat");
+check("a Queenstown home uses EMI's Otago average, scaled for its people", () => {
+  const L = B.btBuildLoad(home({ people: 2.6 }), { lat: -45.03, lon: 168.66, roofM2: 150 });
+  near(L.region.key === "queenstown" ? 1 : 0, 1, 0, "region");
+  const year = B.BT_SEASONS.reduce((t, s, i) => t + B.btDailyKwh(L, s) * [90, 92, 92, 91][i], 0);
+  near(year, 7829, 160, "kWh a year for 2.6 people");
 });
 
-check("Queenstown heats more than Auckland", () => {
-  const q = B.btBuildLoad(home(), { lat: -45.03, roofM2: 150 });
-  const a = B.btBuildLoad(home(), { lat: -36.88, roofM2: 150 });
-  const ratio = q.parts.heat.winter / a.parts.heat.winter;
-  if (ratio < 2.2 || ratio > 3.2) throw new Error(`ratio ${ratio}`);
+check("a winter day uses more than a summer day, as the town's metered load does", () => {
+  const L = B.btBuildLoad(home(), { lat: -45.03, lon: 168.66, roofM2: 150 });
+  const ratio = L.parts.home.winter / L.parts.home.summer;
+  if (ratio < 1.5 || ratio > 2.5) throw new Error(`winter/summer ${ratio}`);
+});
+
+check("hot water is not put at midday: the night and peaks carry the load", () => {
+  const L = B.btBuildLoad(home(), { lat: -45.03, lon: 168.66, roofM2: 150 });
+  const sh = L.shapes.home.winter;
+  if (!(sh[19] > sh[13] && sh[8] > sh[13])) throw new Error("no morning/evening peak over midday");
+});
+
+check("away from a town with EMI data, the national shape and average are used", () => {
+  const L = B.btBuildLoad(home(), { lat: -38.0, lon: 176.0, roofM2: 150 });
+  near(L.region.key === "national" ? 1 : 0, 1, 0, "region");
 });
 
 check("an EV adds about 5 kWh a day", () => {
@@ -80,13 +90,6 @@ check("the bill with no solar is imports x price + daily charge", () => {
   const W = r.run.seasons.winter;
   near(W.nowMonth, (W.loadKwh * 0.30 + 2.5) * 30.4, 0.01, "winter bill");
   near(W.solarMonth, W.nowMonth, 1e-6, "no gen, no change");
-});
-
-check("timing hot water to the sun raises what the roof covers", () => {
-  const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: genFor(6) };
-  const night = B.btEvaluate(ctx, home({ waterOnSun: false }), null, prices);
-  const sun = B.btEvaluate(ctx, home({ waterOnSun: true }), null, prices);
-  if (!(sun.solarSave > night.solarSave)) throw new Error(`${sun.solarSave} vs ${night.solarSave}`);
 });
 
 check("a battery lowers the bill further, and costs more", () => {
