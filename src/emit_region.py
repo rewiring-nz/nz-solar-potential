@@ -70,7 +70,7 @@ SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed",
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
-LAYOUT_PROPS = ["kind", "building_id", "fill_rank", "fill_order", "array_id",
+LAYOUT_PROPS = ["kind", "set", "building_id", "fill_rank", "fill_order", "array_id",
                 "array_size", "ac_kwh_year", "slope_deg", "aspect_deg",
                 "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype",
                 # the workings: sunlight-table bin and shading (src/workings_data.py)
@@ -84,6 +84,52 @@ def _git_sha():
                               ).stdout.strip() or "unknown"
     except Exception:
         return "unknown"
+
+
+# The map's default sizing for one household (rooftop-solar.html
+# HOME_SYSTEM_CAP_KW and HOME_CAP_MAX_ROOF_M2): a home whose roof is under
+# HOME_CAP_ROOF_M2 shows its best panels up to HOME_CAP_KW.
+HOME_CAP_KW = 14
+HOME_CAP_ROOF_M2 = 350
+PANEL_AREA_MERGE_DEG = 3.5e-6     # ~0.3 m: closes the gaps between panels in a row
+
+
+def _panel_areas(features, buildings):
+    """kind "panel_area" features: each building's panels merged into the
+    areas they cover, for the default sizing and for every panel."""
+    from shapely.geometry import shape, mapping
+    from shapely.ops import unary_union
+    w = (getattr(config, "PV_ASSUMPTIONS", {}) or {}).get("panel_rated_power_w", 500)
+    cap = int(HOME_CAP_KW * 1000 // w)
+    roof = {int(b["properties"]["building_id"]): (b["properties"].get("facet_area_m2") or 0.0)
+            for b in buildings if b["properties"].get("building_id") is not None}
+    by = defaultdict(list)
+    for f in features:
+        q = f["properties"]
+        if q.get("kind") == "panel" and q.get("building_id") is not None:
+            by[int(q["building_id"])].append(f)
+    out = []
+    d = PANEL_AREA_MERGE_DEG
+    for bid, ps in by.items():
+        btype = ps[0]["properties"].get("btype") or "home"
+        capped = btype == "home" and roof.get(bid, 0.0) < HOME_CAP_ROOF_M2
+        sets = {"all": ps}
+        sets["default"] = [p for p in ps if not capped or p["properties"].get("fill_order") is None
+                           or p["properties"]["fill_order"] <= cap]
+        for name, sel in sets.items():
+            if not sel:
+                continue
+            try:
+                g = unary_union([shape(p["geometry"]).buffer(d, join_style=2) for p in sel]) \
+                    .buffer(-d, join_style=2).simplify(d / 3)
+            except Exception:
+                continue
+            if g.is_empty:
+                continue
+            out.append({"type": "Feature", "geometry": mapping(g),
+                        "properties": {"kind": "panel_area", "set": name, "building_id": bid,
+                                       "btype": btype}})
+    return out
 
 
 def _tippecanoe(out, layer, src, zmin, zmax, extra):
@@ -398,6 +444,21 @@ def emit(region, out_root=OUT_ROOT):
     shrink(lay_copy)
     lay_tmp = tmp / "_layouts.geojson"
     lay_tmp.write_text(json.dumps(lay_copy, separators=(",", ":")))
+    # THE ZOOMED-OUT VIEW SHOWS EACH ROOF'S PANEL AREA, NOT A SAMPLE OF ITS
+    # PANELS. The z13-14 tiles are held to a size budget, and thinned to it
+    # a roof showed a scatter of its panels that filled in as the map
+    # zoomed (Josh: "spotty and inconsistent"). Below the panel zoom each
+    # building's panels, merged into the areas they cover, ship instead:
+    # kind "panel_area", once for the map's default sizing ("default": a
+    # one-household home held to HOME_CAP_KW, its best panels by fill_order)
+    # and once for every panel ("all"). Panels themselves ship from z15
+    # (below), whole.
+    lo_tmp = tmp / "_layouts_lo.geojson"
+    lo_tmp.write_text(json.dumps({"type": "FeatureCollection",
+                                  "features": [f for f in lay_copy["features"]
+                                               if f["properties"].get("kind") != "panel"]
+                                  + _panel_areas(lay_copy["features"], feats)},
+                                 separators=(",", ":")))
     # --maximum-tile-bytes is a PER-REGION budget on purpose. The district-wide
     # tippecanoe used to thin z13/z14 against one 500 kB tile budget; cut per
     # region and joined with -pk, each region thinned against its own smaller
@@ -420,7 +481,7 @@ def emit(region, out_root=OUT_ROOT):
     # z15 tiles median 100 kB, max 912 kB, against 299 kB max at z16. z13-14
     # keep the budget; they carry facets and the heat-map weights only.
     props = [a for k in LAYOUT_PROPS for a in ("-y", k)]
-    _tippecanoe(tmp / "_layout_lo.pmtiles", "layout", lay_tmp, 13, 14,
+    _tippecanoe(tmp / "_layout_lo.pmtiles", "layout", lo_tmp, 13, 14,
                 ["--drop-densest-as-needed", "--detect-shared-borders",
                  "--maximum-tile-bytes=200000", *props])
     _tippecanoe(tmp / "_layout_hi.pmtiles", "layout", lay_tmp, 15, 16,
@@ -431,6 +492,7 @@ def emit(region, out_root=OUT_ROOT):
     (tmp / "_layout_lo.pmtiles").unlink()
     (tmp / "_layout_hi.pmtiles").unlink()
     lay_tmp.unlink()
+    lo_tmp.unlink()
 
     # 6. heat-map tiles
     n_heat = 0
