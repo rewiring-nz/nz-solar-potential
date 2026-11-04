@@ -278,6 +278,15 @@ SLIVER_MAX_M2 = 30.0
 SLIVER_ASPECT_DEG = 25.0
 SLIVER_TOL_M = 0.15
 SLIVER_ON_PLANE = 0.6
+# A WILD FACE is small and its own plane does not hold its returns: 17 Church
+# St, a near-flat roof, carried faces of 41.9, 17.6, 11 and 10 degrees fitted
+# from 5-17 samples, drawn in 3D as shards standing out of the roof. Such a
+# face goes to the neighbour whose plane holds its returns (SLIVER_ON_PLANE
+# and more than its own), whatever its width or the way it faces -- a small
+# face's aspect is as wild as its tilt. SOLAR_WILD_FACES=1 turns it on.
+WILD_FACES = os.environ.get("SOLAR_WILD_FACES", "0") == "1"
+WILD_MAX_M2 = 20.0
+WILD_OWN_MAX = 0.5
 
 
 def _strip_width(face):
@@ -317,8 +326,10 @@ def absorb_slivers(facets, pc_source=None, *_, **__):
         changed = False
         for i, f in enumerate(sorted(faces, key=lambda f: f["geometry"].area)):
             if (f.get("plane_a") is None or (f.get("slope_deg") or 0) < 4
-                    or f["geometry"].area > SLIVER_MAX_M2 or f["geometry"].geom_type != "Polygon"
-                    or _strip_width(f) >= SLIVER_W_M):
+                    or f["geometry"].area > SLIVER_MAX_M2 or f["geometry"].geom_type != "Polygon"):
+                continue
+            narrow = _strip_width(f) < SLIVER_W_M
+            if not narrow and not (WILD_FACES and f["geometry"].area <= WILD_MAX_M2):
                 continue
             inner = f["geometry"].buffer(-0.15)
             if inner.is_empty:
@@ -331,12 +342,15 @@ def absorb_slivers(facets, pc_source=None, *_, **__):
             if len(pts) < 8:
                 continue
             own = _on_plane(f, pts)
+            wild = WILD_FACES and f["geometry"].area <= WILD_MAX_M2 and own < WILD_OWN_MAX
+            if not narrow and not wild:
+                continue
             best = None
             for g in faces:
                 if g is f or g.get("plane_a") is None or g["geometry"].area <= f["geometry"].area:
                     continue
                 da = abs(((f.get("aspect_deg") or 0) - (g.get("aspect_deg") or 0) + 180) % 360 - 180)
-                if da > SLIVER_ASPECT_DEG:
+                if da > SLIVER_ASPECT_DEG and not wild:
                     continue
                 shared = f["geometry"].boundary.intersection(g["geometry"].buffer(0.05))
                 if shared.is_empty or shared.length < MERGE_MIN_SHARED_M:
