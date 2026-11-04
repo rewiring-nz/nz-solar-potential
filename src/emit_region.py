@@ -71,11 +71,13 @@ SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed",
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
-LAYOUT_PROPS = ["kind", "set", "building_id", "fill_rank", "fill_order", "array_id",
+LAYOUT_PROPS = ["kind", "building_id", "fill_rank", "fill_order", "array_id",
                 "array_size", "ac_kwh_year", "slope_deg", "aspect_deg",
                 "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype",
                 # the workings: sunlight-table bin and shading (src/workings_data.py)
-                "sb", "ab", "sh"]
+                "sb", "ab", "sh",
+                # panel_area's sizing set (output_contract LAYOUT_ALLOWED, same order)
+                "set"]
 
 
 def _git_sha():
