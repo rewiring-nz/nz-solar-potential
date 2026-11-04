@@ -27,6 +27,11 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 OUT = ROOT / "data" / "selected_faces"
+# The LiDAR reading's lead over the imagery winner before it ships (0.08,
+# the no-harm margin measured on 32 drawn roofs). SOLAR_LIDAR_MARGIN sets it
+# for an A/B: 1 Beetham St's LiDAR reading scored 0.482 against the line
+# reading's 0.436 and lost, on a roof whose dense returns show every hip.
+LIDAR_MARGIN = float(os.environ.get("SOLAR_LIDAR_MARGIN", "0.08"))
 PAD_M = 4.0
 
 
@@ -362,7 +367,7 @@ def main():
         elif f_lid and dark and sc_lid >= 0.30 \
                 and sc_lid >= max(sc_sam, sc_line) - 0.10:
             pick, faces, score = "lidar", f_lid, sc_lid
-        elif f_lid and sc_lid > max(sc_sam, sc_line) + 0.08:
+        elif f_lid and sc_lid > max(sc_sam, sc_line) + LIDAR_MARGIN:
             pick, faces, score = "lidar", f_lid, sc_lid
         elif line_ok and sc_line >= sc_sam:
             pick, faces, score = "line", f_line, sc_line
