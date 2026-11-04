@@ -42,11 +42,17 @@
     return (s / 3600).toFixed(1) + " h";
   };
   const fmtGb = (g) => (g == null ? "?" : g < 1 ? Math.round(g * 1000) + " MB" : g.toFixed(1) + " GB");
+  const fmtArea = (km2) => (km2 == null ? "?" : Number(km2).toFixed(2) + " km²");
 
   let writable = false;
   const selected = new Map();       // region_id -> label
   const localityFeatures = new Map(); // linz_id -> feature
+  const meshblockFeatures = new Map(); // MB2023 -> feature
+  const selectedMeshblocks = new Map(); // MB2023 -> label
+  let selectedParent = null;
+  let meshblockMode = false;
   let currentEstimate = null;
+  let selectionRevision = 0;
   let stream = null;
   let shownJob = null;
   let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
@@ -87,6 +93,10 @@
   // ---- target toggle ---------------------------------------------------
   document.querySelectorAll("#targets button").forEach((b) => b.addEventListener("click", () => setTarget(b.dataset.target)));
   function setTarget(name) {
+    if (meshblockMode && name !== "local") {
+      banner("Meshblock selection builds currently run locally only. Return to locality selection before changing target.");
+      return;
+    }
     const changed = name !== target;
     target = name;
     localStorage.setItem("pipelineTarget", name);
@@ -94,6 +104,7 @@
     document.body.className = "target-" + name;
     $("regions-desc").textContent = TARGETS[name].regions;
     if (changed) {
+      selectionRevision++;
       currentEstimate = null;
       $("estimate").innerHTML = "";
       renderSelection();
@@ -170,6 +181,7 @@
 
   map.on("load", () => {
     map.addSource("localities", { type: "geojson", data: empty, promoteId: "linz_id" });
+    map.addSource("meshblocks", { type: "geojson", data: empty, promoteId: "meshblock_id" });
     map.addSource("regions", { type: "geojson", data: empty });
     map.addLayer({ id: "localities-fill", type: "fill", source: "localities",
       paint: { "fill-color": "#1565c0",
@@ -179,18 +191,29 @@
     map.addLayer({ id: "localities-label", type: "symbol", source: "localities", minzoom: 12,
       layout: { "text-field": ["get", "name"], "text-size": 12 },
       paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1 } });
+    map.addLayer({ id: "meshblocks-fill", type: "fill", source: "meshblocks",
+      paint: { "fill-color": "#00acc1",
+               "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.48, 0.12] } });
+    map.addLayer({ id: "meshblocks-line", type: "line", source: "meshblocks",
+      paint: { "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#006064", "#80deea"],
+               "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 1] } });
+    map.addLayer({ id: "meshblocks-label", type: "symbol", source: "meshblocks", minzoom: 12,
+      layout: { "text-field": ["get", "meshblock_id"], "text-size": 10 },
+      paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1 } });
+    const regionColour = ["case", ["==", ["get", "kind"], "meshblock-selection"], "#7e57c2", stateColour];
     map.addLayer({ id: "regions-fill", type: "fill", source: "regions", filter: ["==", ["geometry-type"], "Polygon"],
-      paint: { "fill-color": stateColour, "fill-opacity": 0.25 } });
+      paint: { "fill-color": regionColour, "fill-opacity": 0.25 } });
     map.addLayer({ id: "regions-line", type: "line", source: "regions", filter: ["==", ["geometry-type"], "Polygon"],
-      paint: { "line-color": stateColour, "line-width": 2 } });
+      paint: { "line-color": regionColour, "line-width": 2 } });
     map.addLayer({ id: "regions-point", type: "circle", source: "regions", filter: ["==", ["geometry-type"], "Point"],
       paint: { "circle-color": stateColour, "circle-radius": 7, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
     layerLegend.setEntries([
       ...MapLayers.basemaps(map),
       ...[
         { id: "localities", label: "Locality selection boundaries", ids: ["localities-fill", "localities-line", "localities-label"], colour: "#90caf9" },
+        { id: "meshblocks", label: "Stats NZ meshblocks (2023)", ids: ["meshblocks-fill", "meshblocks-line", "meshblocks-label"], colour: "#00acc1" },
         { id: "regions", label: "Prepared / built areas", ids: ["regions-fill", "regions-line", "regions-point"], colour: "#2e7d32",
-          description: "Green: built; amber: prepared; red: last run failed. These area boundaries are not cached dataset coverage." },
+          description: "Green: complete locality; purple: partial meshblock selection; amber: prepared; red: last run failed. These boundaries are not cached dataset coverage." },
       ].map(entry => Object.assign(entry, {
         group: "operations",
         getVisible: () => map.getLayoutProperty(entry.ids[0], "visibility") !== "none",
@@ -200,14 +223,19 @@
     ]);
 
     map.on("click", "localities-fill", (e) => {
-      if (layerLegend.queryId) return;
+      if (layerLegend.queryId || meshblockMode) return;
       if (!e.features.length) return;
       const p = e.features[0].properties;
-      toggleSelection(p.region_id, p.name + (p.town && p.town !== p.name ? ", " + p.town : ""));
+      toggleSelection(p.region_id, p.name + (p.town && p.town !== p.name ? ", " + p.town : ""),
+                      false, { region_id: p.region_id, linz_id: p.linz_id, name: p.name });
+    });
+    map.on("click", "meshblocks-fill", (e) => {
+      if (layerLegend.queryId || !meshblockMode || !e.features.length) return;
+      toggleMeshblock(e.features[0].properties.meshblock_id);
     });
     map.on("click", "regions-fill", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
     map.on("click", "regions-point", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
-    ["localities-fill", "regions-fill", "regions-point"].forEach((id) => {
+    ["localities-fill", "meshblocks-fill", "regions-fill", "regions-point"].forEach((id) => {
       map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
     });
@@ -218,6 +246,7 @@
   function showRegionPopup(feature, lngLat) {
     const p = feature.properties;
     const html = `<b>${esc(p.name || p.region)}</b><br><span class="pill ${esc(p.state)}">${esc(p.state)}</span>
+      ${p.kind === "meshblock-selection" ? `<br><span class="warn">Partial selection: ${fmtInt(p.meshblock_count)} meshblocks within ${esc(p.parent_region)}; not complete parent coverage.</span>` : ""}
       ${p.n != null ? fmtInt(p.n) + " buildings" : ""}
       ${p.alias ? "<br>Developer: " + esc(p.alias) + (p.run ? " · run " + esc(p.run) : "") : ""}
       ${p.data_version ? "<br>Live data v" + esc(p.data_version) : ""}<br>
@@ -284,7 +313,8 @@
       .sort((a, b) => String(b.built_at || "").localeCompare(String(a.built_at || "")));
     $("region-list").innerHTML = items.length ? items.map((p) => `
       <div class="item" data-region="${esc(p.region)}" data-alias="${esc(p.alias || "")}">
-        <h3 class="fly">${esc(p.name || p.region)} <span class="pill ${esc(p.state)}">${esc(p.state)}</span></h3>
+        <h3 class="fly">${esc(p.name || p.region)} <span class="pill ${esc(p.state)}">${esc(p.state)}</span>
+          ${p.kind === "meshblock-selection" ? '<span class="pill" style="background:#7e57c2">partial selection</span>' : ""}</h3>
         <div class="muted">${esc(p.region)}${p.council ? " · " + esc(p.council) : ""}${p.alias ? " · developer " + esc(p.alias) : ""}</div>
         <div class="muted">${p.n != null ? fmtInt(p.n) + " buildings · " : ""}${p.kwh ? fmtInt(Math.round(p.kwh / 1000)) + " MWh/yr · " : ""}${p.built_at ? "built " + esc(p.built_at.slice(0, 10)) : ""}</div>
         <div class="links">
@@ -339,23 +369,125 @@
   }
 
   // ---- new build tab ---------------------------------------------------
-  function toggleSelection(region, label, forceOn) {
+  function toggleSelection(region, label, forceOn, parent) {
     if (!writable || !region) return;
+    if (meshblockMode && parent && selectedParent &&
+        parent.region_id !== selectedParent.region_id) {
+      meshblockMode = false;
+      selectedMeshblocks.clear();
+      meshblockFeatures.clear();
+      if (map.getSource("meshblocks")) map.getSource("meshblocks").setData(empty);
+    }
     if (selected.has(region) && !forceOn) selected.delete(region);
     else selected.set(region, label || region);
+    if (parent) selectedParent = parent;
+    if (selectedParent && !selected.has(selectedParent.region_id)) {
+      selectedParent = null;
+      meshblockMode = false;
+      selectedMeshblocks.clear();
+      meshblockFeatures.clear();
+      if (map.getSource("meshblocks")) map.getSource("meshblocks").setData(empty);
+    }
     currentEstimate = null;
+    selectionRevision++;
     $("estimate").innerHTML = "";
     renderSelection();
     syncSelectionState();
   }
 
   function renderSelection() {
+    $("meshblock-btn").disabled = !writable || !selectedParent || selected.size !== 1;
+    $("meshblock-btn").textContent = meshblockMode ? "Back to locality selection" : "Choose meshblocks for this locality";
+    $("meshblock-controls").hidden = !meshblockMode;
     const chips = [...selected.entries()].map(([id, label]) =>
       `<span class="chip" title="${esc(id)}">${esc(label)}<button data-id="${esc(id)}" aria-label="Remove">×</button></span>`);
-    $("selection").innerHTML = chips.length ? `<b>Selected for a ${esc(TARGETS[target].label.toLowerCase())} build:</b><br>` + chips.join("") : "<p class='muted'>Nothing selected.</p>";
+    $("selection").innerHTML = meshblockMode
+      ? `<b>${selectedMeshblocks.size} meshblock(s) selected</b> within ${esc(selectedParent.name)}<br>` +
+        [...selectedMeshblocks.keys()].map((id) => `<span class="chip">${esc(id)}</span>`).join("")
+      : chips.length ? `<b>Selected for a ${esc(TARGETS[target].label.toLowerCase())} build:</b><br>` +
+        chips.join("") : "<p class='muted'>Nothing selected.</p>";
     $("selection").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => toggleSelection(b.dataset.id)));
-    $("estimate-btn").disabled = !writable || !selected.size;
+    $("meshblock-count").textContent = meshblockFeatures.size
+      ? `${selectedMeshblocks.size} of ${meshblockFeatures.size} meshblocks` : "";
+    $("estimate-btn").disabled = !writable || (meshblockMode ? !selectedMeshblocks.size : !selected.size) ||
+      (meshblockMode && target !== "local");
   }
+
+  function syncMeshblockState() {
+    if (!map.getSource("meshblocks")) return;
+    meshblockFeatures.forEach((f, id) =>
+      map.setFeatureState({ source: "meshblocks", id }, { selected: selectedMeshblocks.has(id) }));
+    $("meshblock-count").textContent = `${selectedMeshblocks.size} of ${meshblockFeatures.size} meshblocks`;
+  }
+
+  function toggleMeshblock(id) {
+    if (!meshblockMode || !id) return;
+    if (selectedMeshblocks.has(id)) selectedMeshblocks.delete(id);
+    else selectedMeshblocks.set(id, id);
+    currentEstimate = null;
+    selectionRevision++;
+    $("estimate").innerHTML = "";
+    renderSelection();
+    syncMeshblockState();
+  }
+
+  async function loadMeshblocks(parent) {
+    const fc = await api(`meshblocks?region=${encodeURIComponent(parent.region_id)}&linz_id=${encodeURIComponent(parent.linz_id)}`);
+    if (!fc.features.length) throw new Error("no Stats NZ meshblocks intersect this locality");
+    meshblockFeatures.clear();
+    fc.features.forEach((f) => meshblockFeatures.set(f.properties.meshblock_id, f));
+    map.getSource("meshblocks").setData(fc);
+    selectedMeshblocks.clear();
+    meshblockMode = true;
+    currentEstimate = null;
+    selectionRevision++;
+    $("estimate").innerHTML = "";
+    renderSelection();
+    syncMeshblockState();
+    const feature = localityFeatures.get(parent.linz_id);
+    if (feature) flyTo(feature);
+  }
+
+  $("meshblock-btn").addEventListener("click", async () => {
+    if (meshblockMode) {
+      meshblockMode = false;
+      selectedMeshblocks.clear();
+      currentEstimate = null;
+      selectionRevision++;
+      $("estimate").innerHTML = "";
+      renderSelection();
+      syncMeshblockState();
+      return;
+    }
+    if (!selectedParent || selected.size !== 1) return;
+    if (target !== "local") {
+      banner("Meshblock selection builds currently run locally only. Choose Local to continue.");
+      return;
+    }
+    try {
+      $("meshblock-count").textContent = "Loading locality meshblocks…";
+      await loadMeshblocks(selectedParent);
+    } catch (e) {
+      $("meshblock-count").textContent = "";
+      banner("Could not load meshblocks: " + esc(e.message));
+    }
+  });
+  $("meshblock-all").addEventListener("click", () => {
+    meshblockFeatures.forEach((_, id) => selectedMeshblocks.set(id, id));
+    currentEstimate = null;
+    selectionRevision++;
+    $("estimate").innerHTML = "";
+    renderSelection();
+    syncMeshblockState();
+  });
+  $("meshblock-none").addEventListener("click", () => {
+    selectedMeshblocks.clear();
+    currentEstimate = null;
+    selectionRevision++;
+    $("estimate").innerHTML = "";
+    renderSelection();
+    syncMeshblockState();
+  });
 
   let searchTimer = null;
   $("search").addEventListener("input", () => {
@@ -370,7 +502,8 @@
           || "<div class='muted'>No matches</div>";
         $("search-results").querySelectorAll("[data-i]").forEach((el) => el.addEventListener("click", () => {
           const r = res.results[+el.dataset.i];
-          toggleSelection(r.region_id, r.name + (r.town && r.town !== r.name ? ", " + r.town : ""), true);
+          toggleSelection(r.region_id, r.name + (r.town && r.town !== r.name ? ", " + r.town : ""),
+                          true, { region_id: r.region_id, linz_id: r.linz_id, name: r.name });
           $("search-results").innerHTML = "";
           $("search").value = "";
           const cached = localityFeatures.get(r.linz_id);
@@ -384,10 +517,15 @@
   });
 
   $("estimate-btn").addEventListener("click", async () => {
+    const requestRevision = selectionRevision;
     $("estimate-btn").disabled = true;
     $("estimate").innerHTML = `<p class='muted'>Estimating a ${esc(TARGETS[target].label.toLowerCase())} build… (counting buildings with LINZ can take a minute for new areas)</p>`;
     try {
-      const { estimate_id } = await api("estimate", { method: "POST", body: { regions: [...selected.keys()], target } });
+      const body = meshblockMode
+        ? { selection: { parent_region: selectedParent.region_id, parent_linz_id: selectedParent.linz_id,
+                         meshblock_ids: [...selectedMeshblocks.keys()] }, target }
+        : { regions: [...selected.keys()], target };
+      const { estimate_id } = await api("estimate", { method: "POST", body });
       let est;
       for (;;) {
         est = await api("estimate/" + estimate_id);
@@ -395,30 +533,37 @@
         await new Promise((r) => setTimeout(r, ESTIMATE_POLL_MS));
       }
       if (est.status === "error") throw new Error(est.error);
-      if (est.target !== target) return;  // the toggle moved on; estimate again
+      if (est.target !== target || requestRevision !== selectionRevision) return;
       currentEstimate = est;
       renderEstimate(est);
     } catch (e) {
-      $("estimate").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+      if (requestRevision === selectionRevision) {
+        $("estimate").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+      }
     } finally {
-      $("estimate-btn").disabled = !selected.size;
+      $("estimate-btn").disabled = !writable || (meshblockMode ? !selectedMeshblocks.size : !selected.size) ||
+        (meshblockMode && target !== "local");
     }
   });
 
   function renderEstimate(est) {
     const t = est.totals;
     const rows = est.regions.map((r) => `<tr>
-        <td>${esc(selected.get(r.region) || r.region)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
+        <td>${esc(r.meshblock_count ? `${selectedParent.name} · ${r.meshblock_count} meshblocks`
+                                      : selected.get(r.region) || r.region)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
           ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}</td>
-        <td class="num">${fmtInt(r.buildings)}</td><td class="num">${fmtGb(r.download_gb)}</td>
+        <td class="num">${fmtInt(r.buildings)}</td>
+        <td class="num">${fmtArea(r.bbox_km2)}${r.acquisition_footprints
+          ? `<div class="muted">${r.acquisition_footprints.length} buffered footprint(s)</div>` : ""}</td>
+        <td class="num">${fmtGb(r.download_gb)}</td>
         <td class="num">${fmtDur(r.total_s)}</td></tr>`).join("");
     const ref = est.paid_referee || {};
     const blocked = (est.blockers || []).length > 0;
     $("estimate").innerHTML = `
-      <table><tr><th>Area</th><th class="num">Buildings</th><th class="num">Download</th><th class="num">Time</th></tr>
+      <table><tr><th>Area / selection</th><th class="num">Buildings</th><th class="num">Footprint</th><th class="num">Download</th><th class="num">Time</th></tr>
       ${rows}
-      <tr><th>Total</th><th class="num">${fmtInt(t.buildings)}</th><th class="num">${fmtGb(t.download_gb)}</th><th class="num">${fmtDur(t.total_s)}</th></tr></table>
+      <tr><th>Total</th><th class="num">${fmtInt(t.buildings)}</th><th class="num">—</th><th class="num">${fmtGb(t.download_gb)}</th><th class="num">${fmtDur(t.total_s)}</th></tr></table>
       ${costHtml(est)}
       <div class="muted">Rate ${esc(est.calibration.seconds_per_building)} s/building from ${est.calibration.source === "history" ? esc(est.calibration.runs_used) + " recent runs" : "defaults"}.</div>
       ${(est.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
@@ -460,6 +605,12 @@
         paid_referee: $("referee").checked, target: currentEstimate.target,
         cost_nzd: currentEstimate.cloud ? currentEstimate.cloud.cost_nzd : undefined } });
       selected.clear();
+      selectionRevision++;
+      selectedParent = null;
+      meshblockMode = false;
+      selectedMeshblocks.clear();
+      meshblockFeatures.clear();
+      if (map.getSource("meshblocks")) map.getSource("meshblocks").setData(empty);
       renderSelection();
       syncSelectionState();
       $("estimate").innerHTML = "";

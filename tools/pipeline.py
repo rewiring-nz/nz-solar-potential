@@ -363,6 +363,8 @@ class PipelineRun:
             f"- **Python:** `{sys.executable}`",
             f"- **Git commit:** `{self.metadata.get('git_commit', 'unknown')}`",
             f"- **WGS84 bbox:** `{self.metadata.get('bbox', 'not validated')}`",
+            *([f"- **Dataset acquisition timings:** [`acquisition_timings.json`](acquisition_timings.json)"]
+              if self.metadata.get("acquisition_timings") else []),
             f"- **Survey overrides:** `{json.dumps(self.metadata.get('survey_overrides', {}), sort_keys=True)}`",
             f"- **Survey selected:** `{self.metadata.get('survey_name', 'not resolved')}`",
             *([f"- **Map preview:** [{self.metadata['map_preview_url']}]({self.metadata['map_preview_url']})"]
@@ -370,6 +372,7 @@ class PipelineRun:
             f"- **Combined log:** [`run.log`](run.log)",
             "",
             "Step numbers and labels below match the `[QS-NN]` prefixes in the terminal and `run.log`.",
+            "Dataset acquisition totals include export waiting and local preparation; transfer time is separate where directly measured.",
             "",
             "| Step | Description | Source data / inputs | Target data / outputs | Result | Comment / consequence |",
             "|---:|---|---|---|---|---|",
@@ -408,7 +411,8 @@ class PipelineRun:
             "overall": self.overall,
             "step_offset": self.step_offset,
             "steps": [{k: s.get(k) for k in keep} for s in self.records],
-            "metadata": {k: self.metadata[k] for k in ("bbox", "map_preview_url", "git_commit", "survey_name")
+            "metadata": {k: self.metadata[k] for k in (
+                "bbox", "map_preview_url", "git_commit", "survey_name", "acquisition_timings")
                          if k in self.metadata},
         }
         path = self.run_dir / "status.json"
@@ -570,10 +574,15 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
                 return False, (f"LINZ locality {area!r} could not be prepared: {reason} "
                                "Find a valid region id with: python tools/find_area.py <name> "
                                "(docs/data-maintainers/choosing-an-area.md)."), {"name": area}
+        elif region_ids.is_meshblock_selection_id(area):
+            selection_path = DATA / "regions" / area / "selection.json"
+            selection = json.loads(selection_path.read_text()) if selection_path.is_file() else {}
+            if selection.get("selection_id") != area or not selection.get("meshblock_ids"):
+                raise ValueError("meshblock selection manifest is missing or does not match this area")
         with contextlib.redirect_stdout(io.StringIO()):
             import config
             from src.surveys import survey_for
-            if region_ids.is_locality_id(area):
+            if region_ids.is_locality_id(area) or region_ids.is_meshblock_selection_id(area):
                 record = json.loads((DATA / "regions" / area / "locality.json").read_text())
                 bbox = [float(v) for v in record["bbox"]]
             elif area in config.REGIONS:
@@ -1828,13 +1837,20 @@ def main() -> int:
     try:
         if args.mode == "cloud" and args.region:
             # A shared cloud build takes several space-separated regions in one VM session.
+            from src import region_ids
             for one_region in args.region.split():
+                if region_ids.is_meshblock_selection_id(one_region):
+                    parser.error("meshblock selection builds currently run locally only")
                 _safe_area(one_region)
             if selected_profile_name and len(args.region.split()) > 1:
                 parser.error("a --profile run takes one region")
             area = args.region.split()[0]
         else:
             area = _safe_area(args.region or _default_region(config))
+            if args.mode == "cloud":
+                from src import region_ids
+                if region_ids.is_meshblock_selection_id(area):
+                    parser.error("meshblock selection builds currently run locally only")
     except ValueError as exc:
         parser.error(str(exc))
     if args.mode == "local" or args.region:
@@ -2042,6 +2058,9 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
         print(f"PIPELINE_RUN_DIR={run_dir.relative_to(ROOT)}", flush=True)
     area_dir = DATA / "regions" / area
     run.metadata = {"run_dir": str(run_dir.relative_to(ROOT))}
+    acquisition_path = run_dir / "acquisition_timings.json"
+    os.environ["SOLAR_ACQUISITION_TIMINGS"] = str(acquisition_path)
+    run.metadata["acquisition_timings"] = str(acquisition_path.relative_to(ROOT))
     region_out_root = DATA / "out"
     region_out = region_out_root / area
     region_out_root.mkdir(parents=True, exist_ok=True)
@@ -2052,6 +2071,17 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
     run.begin(1)
     ok, details, area_meta = _preflight(area, py)
     run.metadata.update(area_meta)
+    try:
+        acquisitions = json.loads(acquisition_path.read_text(encoding="utf-8")).get("acquisitions", [])
+    except (OSError, ValueError):
+        acquisitions = []
+    for acquisition in acquisitions:
+        transfer = (f"; transfer={acquisition['transfer_hms']}"
+                    if acquisition.get("transfer_hms") else "")
+        run.run_event(
+            f"ACQUISITION {acquisition.get('dataset')} ({acquisition.get('area')}): "
+            f"{acquisition.get('outcome')}; total={acquisition.get('elapsed_hms')}{transfer}"
+        )
     try:
         run.metadata["git_commit"] = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True,

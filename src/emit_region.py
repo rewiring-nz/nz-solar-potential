@@ -411,11 +411,19 @@ def emit(region, out_root=OUT_ROOT):
     # theirs, and the survivors read as staggered pairs with holes (13
     # Douglas Ave: 26 of 53). The overview zooms keep the budget; z16 ships
     # whole, and the two are joined.
+    #
+    # ...AND NOT AT ANY ZOOM THE MAP DRAWS PANELS AT. Thinned z15 tiles held
+    # some of each roof's panels (a Wanaka house: 54 of 96), so a broad view
+    # showed a thinned layout that filled in when the roof was clicked and
+    # the map zoomed in. The map draws panels from z15 (rooftop-solar.html,
+    # PANEL_MIN_ZOOM), so z15 ships whole too. Measured on wanaka_town: whole
+    # z15 tiles median 100 kB, max 912 kB, against 299 kB max at z16. z13-14
+    # keep the budget; they carry facets and the heat-map weights only.
     props = [a for k in LAYOUT_PROPS for a in ("-y", k)]
-    _tippecanoe(tmp / "_layout_lo.pmtiles", "layout", lay_tmp, 13, 15,
+    _tippecanoe(tmp / "_layout_lo.pmtiles", "layout", lay_tmp, 13, 14,
                 ["--drop-densest-as-needed", "--detect-shared-borders",
                  "--maximum-tile-bytes=200000", *props])
-    _tippecanoe(tmp / "_layout_hi.pmtiles", "layout", lay_tmp, 16, 16,
+    _tippecanoe(tmp / "_layout_hi.pmtiles", "layout", lay_tmp, 15, 16,
                 ["--detect-shared-borders", "--no-feature-limit", "--no-tile-size-limit", *props])
     subprocess.run(["tile-join", "-q", "-pk", "--force", "-o", str(tmp / "panel_layouts.pmtiles"),
                     str(tmp / "_layout_lo.pmtiles"), str(tmp / "_layout_hi.pmtiles")],

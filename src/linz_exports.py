@@ -112,12 +112,14 @@ def _export(session: requests.Session, layer: int, crop_url: str, name: str) -> 
         raise RuntimeError(f"LINZ export request failed ({resp.status_code}): {resp.text[:300]}")
     export = resp.json()
     deadline = time.monotonic() + EXPORT_TIMEOUT_S
-    while export.get("state") == "processing":
-        if time.monotonic() > deadline:
-            raise TimeoutError(f"LINZ export {export.get('id')} still processing after "
-                               f"{EXPORT_TIMEOUT_S // 60} minutes")
-        time.sleep(POLL_SECONDS)
-        export = _get(session, export["url"]).json()
+    from src.dataset_timing import phase
+    with phase("export_wait"):
+        while export.get("state") == "processing":
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"LINZ export {export.get('id')} still processing after "
+                                   f"{EXPORT_TIMEOUT_S // 60} minutes")
+            time.sleep(POLL_SECONDS)
+            export = _get(session, export["url"]).json()
     if export.get("state") != "complete":
         raise RuntimeError(f"LINZ export {export.get('id')} ended {export.get('state')!r}")
     return export
@@ -126,22 +128,26 @@ def _export(session: requests.Session, layer: int, crop_url: str, name: str) -> 
 def _download_gpkg(session: requests.Session, export: dict, dest: Path) -> None:
     # download_url redirects to a signed URL that rejects the API key header,
     # so the redirect is followed without it.
-    first = session.get(export["download_url"], timeout=120, allow_redirects=False)
-    if first.is_redirect or first.status_code in (301, 302, 303, 307, 308):
-        resp = requests.get(first.headers["Location"], timeout=600)
-    else:
-        resp = first
+    from src.dataset_timing import phase, transfer
+    with transfer():
+        first = session.get(export["download_url"], timeout=120, allow_redirects=False)
+        if first.is_redirect or first.status_code in (301, 302, 303, 307, 308):
+            resp = requests.get(first.headers["Location"], timeout=600)
+        else:
+            resp = first
+        content = resp.content
     resp.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-        members = [m for m in zf.namelist() if m.lower().endswith(".gpkg")]
-        if len(members) != 1:
-            raise RuntimeError(f"expected one .gpkg in LINZ export {export.get('id')}, "
-                               f"found {members or 'none'}")
-        tmp = dest.with_suffix(".gpkg.tmp")
-        with zf.open(members[0]) as src, open(tmp, "wb") as out:
-            while chunk := src.read(1 << 20):
-                out.write(chunk)
-        tmp.replace(dest)
+    with phase("local_prepare"):
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            members = [m for m in zf.namelist() if m.lower().endswith(".gpkg")]
+            if len(members) != 1:
+                raise RuntimeError(f"expected one .gpkg in LINZ export {export.get('id')}, "
+                                   f"found {members or 'none'}")
+            tmp = dest.with_suffix(".gpkg.tmp")
+            with zf.open(members[0]) as src, open(tmp, "wb") as out:
+                while chunk := src.read(1 << 20):
+                    out.write(chunk)
+            tmp.replace(dest)
 
 
 def _feature_count(path: Path) -> int:

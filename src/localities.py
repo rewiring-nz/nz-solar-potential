@@ -105,9 +105,11 @@ def _wfs(api_key: str, layer: int, cql: str, property_names=None,
     }
     if property_names:
         params["propertyName"] = ",".join(property_names)
-    resp = requests.get(WFS_URL.format(key=api_key), params=params, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
+    from src.dataset_timing import transfer
+    with transfer():
+        resp = requests.get(WFS_URL.format(key=api_key), params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
     if "features" not in data:
         raise RuntimeError(f"unexpected WFS response from layer {layer}")
     if len(data["features"]) >= max_features:
@@ -312,34 +314,40 @@ def prepare(region: str, api_key: str, refresh: bool = False) -> dict:
     out_dir = REGIONS_DIR / region
     existing = read_locality(region)
     if existing and not refresh and (out_dir / "building_outlines.geojson").exists():
-        return existing
-    props = resolve(api_key, region)
-    outlines, outline_provenance = load_outlines(api_key, props)
-    if not outlines["features"]:
-        raise LookupError(f"LINZ locality {props['name']} (id {props['id']}) has no "
-                          "building outlines; choose another area")
-    bbox = outlines_bbox_wgs84(outlines)
-    record = {
-        "region": region,
-        "source": {"layer": config.LINZ_SUBURBS_LOCALITIES_LAYER,
-                   "name": "LINZ NZ Suburbs and Localities"},
-        "linz": {k: props.get(k) for k in LOCALITY_FIELDS},
-        "outline_filter": outline_filter(props),
-        "outline_source": {"layer": config.LINZ_BUILDING_OUTLINES_LAYER,
-                           **outline_provenance},
-        "buildings": len(outlines["features"]),
-        "bbox": bbox,
-        "bbox_note": f"WGS84 extent of the buildings plus {OUTLINE_PAD_M:g} m",
-        "bbox_km2": round(bbox_km2(bbox), 2),
-        "imagery_gb_estimate": round(imagery_gb_estimate(bbox), 1),
-        "prepared_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for name, obj in (("building_outlines.geojson", outlines), (LOCALITY_FILE, record)):
-        tmp = out_dir / (name + ".tmp")
-        tmp.write_text(json.dumps(obj, indent=None if name.endswith("geojson") else 1))
-        tmp.replace(out_dir / name)
-    return record
+        from src.dataset_timing import measure
+        with measure("building outlines", f"LINZ layer {config.LINZ_BUILDING_OUTLINES_LAYER}",
+                     region, "reused_from_cache"):
+            return existing
+    from src.dataset_timing import measure
+    with measure("building outlines", f"LINZ layer {config.LINZ_BUILDING_OUTLINES_LAYER}",
+                 region, "downloaded"):
+        props = resolve(api_key, region)
+        outlines, outline_provenance = load_outlines(api_key, props)
+        if not outlines["features"]:
+            raise LookupError(f"LINZ locality {props['name']} (id {props['id']}) has no "
+                              "building outlines; choose another area")
+        bbox = outlines_bbox_wgs84(outlines)
+        record = {
+            "region": region,
+            "source": {"layer": config.LINZ_SUBURBS_LOCALITIES_LAYER,
+                       "name": "LINZ NZ Suburbs and Localities"},
+            "linz": {k: props.get(k) for k in LOCALITY_FIELDS},
+            "outline_filter": outline_filter(props),
+            "outline_source": {"layer": config.LINZ_BUILDING_OUTLINES_LAYER,
+                               **outline_provenance},
+            "buildings": len(outlines["features"]),
+            "bbox": bbox,
+            "bbox_note": f"WGS84 extent of the buildings plus {OUTLINE_PAD_M:g} m",
+            "bbox_km2": round(bbox_km2(bbox), 2),
+            "imagery_gb_estimate": round(imagery_gb_estimate(bbox), 1),
+            "prepared_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for name, obj in (("building_outlines.geojson", outlines), (LOCALITY_FILE, record)):
+            tmp = out_dir / (name + ".tmp")
+            tmp.write_text(json.dumps(obj, indent=None if name.endswith("geojson") else 1))
+            tmp.replace(out_dir / name)
+        return record
 
 
 def main(argv=None) -> int:

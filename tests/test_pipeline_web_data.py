@@ -14,8 +14,11 @@ sys.path.insert(0, str(ROOT))
 
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import locality_proxy as LP
+from tools.pipeline_webui import meshblock_proxy as MB
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui.common import write_json_atomic
+from src import meshblock_selection as MS
+from src.dataset_timing import format_duration, measure, phase, transfer
 
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "linz_localities_wfs.json").read_text())
 KEY = "secret-test-key-123"
@@ -126,6 +129,266 @@ def test_locality_errors_never_carry_the_key():
     assert all(r["bbox"] is None for r in results[1:])
 
 
+def test_meshblocks_are_spatially_filtered_to_the_parent_and_cached():
+    region = "queenstown-lakes-district/queenstown/sunshine-bay"
+    parent = {
+        "type": "Feature", "properties": {"id": 2338, "name": "Sunshine Bay",
+        "major_name": "Queenstown", "territorial_authority": "Queenstown-Lakes District"},
+        "geometry": {"type": "Polygon", "coordinates": [
+            [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+            [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]],
+        ]},
+    }
+
+    class FakeMeshblocks:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, url, params, timeout):
+            self.calls.append(params)
+            if params["typeName"].endswith("113764"):
+                return FakeResponse({"features": [parent]})
+            return FakeResponse({"features": [
+                {"properties": {"MB2023": "1234567"}, "geometry": {
+                    "type": "Polygon", "coordinates": [[[1, 1], [1.5, 1.00001], [2, 1],
+                                                         [2, 2], [1, 2], [1, 1]]]}},
+                {"properties": {"MB2023": "7654321"}, "geometry": {
+                    "type": "Polygon", "coordinates": [[[4.5, 4.5], [5.5, 4.5], [5.5, 5.5], [4.5, 5.5], [4.5, 4.5]]]}},
+            ]})
+
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        data, fake = Path(tmp), FakeMeshblocks()
+        fc = MB.meshblocks(region, 2338, KEY, data, fake, now=1000)
+        assert [f["properties"]["meshblock_id"] for f in fc["features"]] == ["1234567"]
+        assert fc["dataset"] == {
+            "name": "Stats NZ Meshblock 2023 (generalised)", "layer_id": 111228,
+            "version": "2023 generalised", "native_crs": "EPSG:2193",
+            "response_crs": "EPSG:4326", "id_field": "MB2023",
+        }
+        calls = len(fake.calls)
+        assert MB.meshblocks(region, 2338, KEY, data, fake, now=2000) == fc
+        exact = MB.meshblocks(region, 2338, KEY, data, fake, now=2000, exact=True)
+        assert exact["features"][0]["geometry"] == {
+            "type": "Polygon", "coordinates": [[[1, 1], [1.5, 1.00001], [2, 1],
+                                                 [2, 2], [1, 2], [1, 1]]]}
+        assert exact["features"][0]["geometry"] != fc["features"][0]["geometry"]
+        assert len(fake.calls) == calls
+        try:
+            MB.meshblocks("not/a/locality", 2338, KEY, data, fake)
+        except MB.MeshblockError as exc:
+            assert exc.status == 400
+        else:
+            raise AssertionError("non-locality parent accepted")
+
+
+def test_meshblock_selection_validation_identity_and_boundary_ownership():
+    region = "queenstown-lakes-district/queenstown/sunshine-bay"
+    dataset = {"layer_id": 111228, "version": "2023 generalised"}
+    assert MS.selection_id(region, ["200", "100"], dataset) == MS.selection_id(
+        region, ["100", "200"], dataset)
+    for bad in (None, {}, {"parent_region": region, "parent_linz_id": 2338, "meshblock_ids": []},
+                {"parent_region": "pilot", "parent_linz_id": 2338, "meshblock_ids": ["100"]}):
+        try:
+            E.validate_selection(bad)
+        except E.EstimateError:
+            pass
+        else:
+            raise AssertionError(f"invalid selection accepted: {bad}")
+
+    import pyproj
+    from shapely.geometry import box, mapping
+    to_nztm = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
+    boundary_lon = 168.66
+    low, high = (168.65, 168.66), (168.66, 168.67)
+    blocks = [
+        {"properties": {"meshblock_id": "100"},
+         "geometry": mapping(box(low[0], -45.05, low[1], -45.04))},
+        {"properties": {"meshblock_id": "200"},
+         "geometry": mapping(box(high[0], -45.05, high[1], -45.04))},
+    ]
+    x0, y0 = to_nztm(boundary_lon, -45.05)
+    x1, y1 = to_nztm(boundary_lon, -45.04)
+    x, y = (x0 + x1) / 2, (y0 + y1) / 2
+    whole_building = {"type": "Polygon", "coordinates": [[
+        [x - 2, y - 2], [x + 2, y - 2], [x + 2, y + 2], [x - 2, y + 2], [x - 2, y - 2]]]}
+    outline = {"type": "Feature", "properties": {"id": 77}, "geometry": whole_building}
+    fc = {"type": "FeatureCollection", "features": [outline]}
+    owned_low = MS.select_buildings(fc, blocks, ["100"])
+    owned_high = MS.select_buildings(fc, blocks, ["200"])
+    assert owned_low["features"] == [outline]
+    assert owned_high["features"] == []
+    assert owned_low["features"][0]["geometry"] == whole_building
+
+
+def test_meshblock_materialisation_is_parent_scoped_and_resumable():
+    import pyproj
+    from shapely.geometry import box, mapping
+    from shapely.ops import transform
+
+    region = "queenstown-lakes-district/queenstown/sunshine-bay"
+    dataset = {"layer_id": 111228, "version": "2023 generalised"}
+    to_nztm = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
+    block = {"type": "Feature", "properties": {"meshblock_id": "1234567"},
+             "geometry": mapping(box(168.65, -45.05, 168.66, -45.04))}
+    outside = {"type": "Feature", "properties": {"meshblock_id": "7654321"},
+               "geometry": mapping(box(168.66, -45.05, 168.67, -45.04))}
+    x, y = to_nztm(168.655, -45.045)
+    outline = {"type": "Feature", "properties": {"id": 77},
+               "geometry": mapping(box(x - 3, y - 3, x + 3, y + 3))}
+    props = {"id": 2338, "name": "Sunshine Bay", "name_ascii": "Sunshine Bay",
+             "major_name": "Queenstown", "major_name_ascii": "Queenstown",
+             "territorial_authority": "Queenstown-Lakes District",
+             "territorial_authority_ascii": "Queenstown-Lakes District"}
+    original_resolve, original_wfs = MS.localities.resolve, MS.localities._wfs
+    MS.localities.resolve = lambda _key, _region: props
+    calls = []
+
+    def fake_wfs(_key, _layer, _cql, **_kwargs):
+        calls.append(_cql)
+        return [outline]
+
+    MS.localities._wfs = fake_wfs
+    try:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            data = Path(tmp)
+            parent_file = data / "regions" / region / "building_outlines.geojson"
+            write_json_atomic(parent_file, {"type": "FeatureCollection", "features": []})
+            original_parent = parent_file.read_text()
+            request = data / "selection-request.json"
+            request.write_text(json.dumps({
+                "parent_region": region, "parent_linz_id": 2338,
+                "meshblock_ids": ["1234567"], "dataset": dataset,
+                "meshblocks": [block, outside],
+            }))
+            manifest = MS.materialise(request, data, KEY)
+            assert manifest["selection_id"].startswith(region + "/meshblocks-")
+            area = data / "regions" / manifest["selection_id"]
+            assert area.parent == data / "regions" / region
+            assert manifest["meshblock_ids"] == ["1234567"]
+            assert manifest["building_ids"] == ["77"]
+            assert manifest["building_selection_rule"] == MS.OWNERSHIP_RULE
+            written = json.loads((area / "building_outlines.geojson").read_text())["features"]
+            assert len(written) == 1, written
+            assert written == json.loads(json.dumps([outline]))
+            assert parent_file.read_text() == original_parent
+            assert MS.materialise(request, data, KEY) == json.loads(json.dumps(manifest))
+            acquisitions = json.loads((area / "acquisition_timings.json").read_text())["acquisitions"]
+            assert [item["outcome"] for item in acquisitions] == [
+                "downloaded", "reused_from_cache"]
+            assert len(calls) == 1
+    finally:
+        MS.localities.resolve, MS.localities._wfs = original_resolve, original_wfs
+
+
+def test_dataset_timing_format_and_failure_record():
+    assert format_duration(3661.4) == "01:01:01"
+    assert format_duration(100 * 3600) == "100:00:00"
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        path = Path(tmp) / "acquisition_timings.json"
+        try:
+            with measure("building outlines", "LINZ layer 101290", "area",
+                         "downloaded", path) as timing:
+                with transfer():
+                    timing.set_outcome("partially_resumed")
+                with phase("export_wait"):
+                    pass
+                with phase("local_prepare"):
+                    pass
+                    raise RuntimeError("sensitive URL must not be logged")
+        except RuntimeError:
+            pass
+        record = json.loads(path.read_text())["acquisitions"][0]
+        assert record["outcome"] == "failed"
+        assert record["elapsed_hms"] == format_duration(record["elapsed_seconds"])
+        assert record["transfer_seconds"] is not None
+        assert record["phases"]["export_wait"]["elapsed_hms"] == "00:00:00"
+        assert record["phases"]["local_prepare"]["elapsed_hms"] == "00:00:00"
+        assert record["error_type"] == "RuntimeError"
+        assert "sensitive URL" not in path.read_text()
+        with measure("building outlines", "LINZ layer 101290", "area",
+                     "reused_from_cache", path):
+            pass
+        records = json.loads(path.read_text())["acquisitions"]
+        assert [item["outcome"] for item in records] == ["failed", "reused_from_cache"]
+        assert records[0]["error_type"] == "RuntimeError"
+        assert "error_type" not in records[1]
+
+
+def test_disjoint_raster_fetch_creates_a_resumable_parts_directory():
+    import importlib
+    import types
+    from unittest.mock import patch
+
+    rasterio = types.ModuleType("rasterio")
+    rasterio.__path__ = []
+    raster_merge = types.ModuleType("rasterio.merge")
+    raster_merge.merge = lambda *_args, **_kwargs: None
+    dotenv = types.ModuleType("dotenv")
+    dotenv.load_dotenv = lambda *_args, **_kwargs: None
+    with patch.dict(sys.modules, {"rasterio": rasterio, "rasterio.merge": raster_merge,
+                                  "dotenv": dotenv}):
+        fetch_regions = importlib.import_module("src.fetch_regions")
+        original_fetch = fetch_regions.fetch_raster_chunked
+        original_merge = fetch_regions._merge_footprints
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out_dir = Path(tmp)
+                seen = []
+
+                def fake_chunk(footprint, _key, _layer, _name, directory, _format):
+                    assert directory.is_dir()
+                    part = directory / f"part-{len(seen)}.tif"
+                    part.touch()
+                    seen.append(footprint)
+                    return part
+
+                fetch_regions.fetch_raster_chunked = fake_chunk
+                fetch_regions._merge_footprints = lambda paths, destination: (paths, destination)
+                result = fetch_regions.fetch_raster_footprints(
+                    [[1, 2, 3, 4], [5, 6, 7, 8]], KEY, 42, "dsm", out_dir, "grid")
+                assert seen == [[1, 2, 3, 4], [5, 6, 7, 8]]
+                assert (out_dir / "dsm_footprints").is_dir()
+                assert result[1] == out_dir / "dsm_mosaic.tif"
+                assert fetch_regions.raster_acquisition_outcome(out_dir, "dsm") == "downloaded"
+                (out_dir / "dsm_footprints" / "part0000_mosaic.tif").touch()
+                assert fetch_regions.raster_acquisition_outcome(
+                    out_dir, "dsm") == "partially_resumed"
+                (out_dir / "dsm_mosaic.tif").touch()
+                assert fetch_regions.raster_acquisition_outcome(
+                    out_dir, "dsm") == "reused_from_cache"
+        finally:
+            fetch_regions.fetch_raster_chunked = original_fetch
+            fetch_regions._merge_footprints = original_merge
+
+
+def test_wide_dem_uses_only_disjoint_selection_coverage():
+    import importlib
+    import types
+    from unittest.mock import patch
+
+    rasterio = types.ModuleType("rasterio")
+    rasterio.__path__ = []
+    raster_merge = types.ModuleType("rasterio.merge")
+    raster_merge.merge = lambda *_args, **_kwargs: None
+    dotenv = types.ModuleType("dotenv")
+    dotenv.load_dotenv = lambda *_args, **_kwargs: None
+    with patch.dict(sys.modules, {"rasterio": rasterio, "rasterio.merge": raster_merge,
+                                  "dotenv": dotenv}):
+        wide_dem = importlib.import_module("src.fetch_dem_wide")
+        region = "qld/queenstown/frankton/meshblocks-0123456789abcdef"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "regions" / region / "locality.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"acquisition_footprints": [
+                [172.0, -42.0, 172.01, -41.99],
+                [175.0, -40.0, 175.01, -39.99],
+            ]}))
+            area = wide_dem.wide_dem_area_wgs84([region], tmp)
+            assert len(area.geoms) == 2
+            bbox = wide_dem.wide_dem_bbox_wgs84([region], tmp)
+            assert bbox[0] > 170 and bbox[2] < 177, bbox
+
+
 def test_estimate_arithmetic_and_cache_effects():
     defaults = E.load_defaults()
     size = {"buildings": 1000, "bbox": [0, 0, 0.01, 0.01], "bbox_km2": 2.0, "source": "test"}
@@ -134,10 +397,11 @@ def test_estimate_arithmetic_and_cache_effects():
         data = Path(tmp)
         fresh = E.estimate_region("r", size, lidar, data, defaults, 0.5)
         expected_gb = 2.0 * (defaults["imagery_gb_per_km2"] + defaults["reference_imagery_gb_per_km2"]
-                             + defaults["lidar_gb_per_km2"])
+                             + defaults["dsm_gb_per_km2"] + defaults["lidar_gb_per_km2"])
         assert abs(fresh["download_gb"] - round(expected_gb, 3)) < 1e-9
         assert fresh["compute_s"] == round(defaults["fixed_overhead_s"] + 500)
-        for name in ("building_outlines.geojson", "pointcloud_tiles.txt", "imagery_mosaic.tif",
+        for name in ("building_outlines.geojson", "pointcloud_tiles.txt", "dsm_mosaic.tif",
+                     "imagery_mosaic.tif",
                      "reference_imagery_mosaic.tif"):
             (data / "regions" / "r").mkdir(parents=True, exist_ok=True)
             (data / "regions" / "r" / name).write_text("x")
@@ -262,6 +526,12 @@ if __name__ == "__main__":
     for test in (test_catalog_states_and_links, test_bbox_validation,
                  test_localities_drop_water_mark_homonyms_and_cache,
                  test_locality_errors_never_carry_the_key,
+                 test_meshblocks_are_spatially_filtered_to_the_parent_and_cached,
+                 test_meshblock_selection_validation_identity_and_boundary_ownership,
+                 test_meshblock_materialisation_is_parent_scoped_and_resumable,
+                 test_dataset_timing_format_and_failure_record,
+                 test_disjoint_raster_fetch_creates_a_resumable_parts_directory,
+                 test_wide_dem_uses_only_disjoint_selection_coverage,
                  test_estimate_arithmetic_and_cache_effects,
                  test_calibration_uses_finished_runs_only,
                  test_estimate_store_lifecycle_and_blockers,

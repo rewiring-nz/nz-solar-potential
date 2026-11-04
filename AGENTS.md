@@ -65,6 +65,11 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html`. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
+- The web pipeline can select Stats NZ 2023 meshblocks within a LINZ locality
+  for one local-only pipeline run. Selections have nested identities and
+  outputs; acquisition timings are per-run in `data/pipeline_runs/` (selection
+  outline preparation is recorded under the selection area). See
+  [web pipeline guide](docs/data-maintainers/web-pipeline.md#use-it).
 - Local pipeline execution uses `src/local_queue.py` and
   `tools/pipeline_queue.py`: loopback coordinator, JSON state and one worker
   process by default (`--workers` changes the pool size). Tasks in a checkout

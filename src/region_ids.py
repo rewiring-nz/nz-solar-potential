@@ -22,6 +22,7 @@ from pathlib import Path
 
 _SEGMENT = r"[a-z0-9][a-z0-9_-]{0,63}"
 _LOCALITY_RE = re.compile(rf"{_SEGMENT}/{_SEGMENT}/{_SEGMENT}")
+_MESHBLOCK_SELECTION_RE = re.compile(rf"{_SEGMENT}/{_SEGMENT}/{_SEGMENT}/meshblocks-[0-9a-f]{{16}}")
 _LEGACY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 LOCALITY_DEPTH = 3
 
@@ -30,9 +31,14 @@ def is_locality_id(region: str) -> bool:
     return bool(_LOCALITY_RE.fullmatch(region))
 
 
+def is_meshblock_selection_id(region: str) -> bool:
+    return bool(_MESHBLOCK_SELECTION_RE.fullmatch(region))
+
+
 def validate(region: str) -> str:
     """Return `region` if it is a path-safe region id, else raise ValueError."""
-    if isinstance(region, str) and (_LEGACY_RE.fullmatch(region) or is_locality_id(region)):
+    if isinstance(region, str) and (_LEGACY_RE.fullmatch(region) or is_locality_id(region)
+                                    or is_meshblock_selection_id(region)):
         return region
     raise ValueError(
         "region must be a configured name (letters, digits, '_' or '-') or a LINZ "
@@ -45,7 +51,8 @@ def file_slug(region: str) -> str:
     return validate(region).replace("/", "__")
 
 
-def list_regions(root: Path, sentinel: str | None = None) -> list[str]:
+def list_regions(root: Path, sentinel: str | None = None,
+                 include_meshblock_selections: bool = False) -> list[str]:
     """Region ids under `root` (data/regions or data/out).
 
     A top-level directory holding only directories, whose third-level
@@ -73,8 +80,14 @@ def list_regions(root: Path, sentinel: str | None = None) -> list[str]:
                 if has_file(town):
                     localities = []
                     break
-                localities += [a for a in sorted(filter(keep, town.iterdir()))
-                               if has_file(a) and is_locality_id(a.relative_to(root).as_posix())]
+                for area in sorted(filter(keep, town.iterdir())):
+                    area_id = area.relative_to(root).as_posix()
+                    if has_file(area) and is_locality_id(area_id):
+                        localities.append(area)
+                    if include_meshblock_selections:
+                        localities += [selection for selection in sorted(filter(keep, area.iterdir()))
+                                       if has_file(selection) and is_meshblock_selection_id(
+                                           selection.relative_to(root).as_posix())]
         found += localities or ([top] if has_file(top) else [])
     ids = []
     for p in found:

@@ -52,9 +52,11 @@ def fetch_building_outlines(bbox_nztm2000, api_key, layer_id=config.LINZ_BUILDIN
         "bbox": bbox_str,
         "maxFeatures": 10000,
     }
-    resp = requests.get(f"{url};key={api_key}/wfs", params=params, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
+    from src.dataset_timing import transfer
+    with transfer():
+        resp = requests.get(f"{url};key={api_key}/wfs", params=params, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
     if "features" not in data:
         raise RuntimeError(f"Unexpected WFS response: {data}")
     return data
@@ -126,36 +128,46 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
     job_url = job["url"]
     print(f"Export job {job['id']} created, polling...")
 
-    while job["state"] == "processing":
-        time.sleep(5)
-        job = requests.get(job_url, headers=headers, timeout=30).json()
-        print(f"  state={job['state']} progress={job.get('progress')}")
+    from src.dataset_timing import phase
+    with phase("export_wait"):
+        while job["state"] == "processing":
+            time.sleep(5)
+            job = requests.get(job_url, headers=headers, timeout=30).json()
+            print(f"  state={job['state']} progress={job.get('progress')}")
 
     if job["state"] != "complete":
         raise RuntimeError(f"Export job did not complete: {job}")
 
     zip_path = out_dir / f"{name}_export.zip"
-    with requests.get(job["download_url"], headers=headers, timeout=300, stream=True) as dl:
-        dl.raise_for_status()
-        with open(zip_path, "wb") as f:
-            for chunk in dl.iter_content(chunk_size=8 * 1024 * 1024):
-                f.write(chunk)  # streamed -- region-scale imagery zips run to GBs, far past
-                # what buffering the whole response in memory (the original approach) should carry
+    from src.dataset_timing import transfer
+    with transfer():
+        with requests.get(job["download_url"], headers=headers, timeout=300, stream=True) as dl:
+            dl.raise_for_status()
+            with open(zip_path, "wb") as f:
+                for chunk in dl.iter_content(chunk_size=8 * 1024 * 1024):
+                    f.write(chunk)  # streamed -- region-scale imagery zips run to GBs, far past
+                    # what buffering the whole response in memory (the original approach) should carry
 
-    extract_dir = out_dir / name
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(extract_dir)
+    with phase("local_prepare"):
+        extract_dir = out_dir / name
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(extract_dir)
 
-    tifs = sorted(extract_dir.glob("*.tif"))
-    srcs = [rasterio.open(f) for f in tifs]
-    mosaic, transform = merge(srcs)
-    profile = srcs[0].profile
-    profile.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform)
-    mosaic_path = out_dir / f"{name}_mosaic.tif"
-    with rasterio.open(mosaic_path, "w", **profile) as dst:
-        dst.write(mosaic)
-    for s in srcs:
-        s.close()
+        tifs = sorted(extract_dir.glob("*.tif"))
+        srcs = [rasterio.open(f) for f in tifs]
+        mosaic, transform = merge(srcs)
+        profile = srcs[0].profile
+        profile.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform)
+        mosaic_path = out_dir / f"{name}_mosaic.tif"
+        temporary = mosaic_path.with_name(mosaic_path.stem + ".part.tif")
+        try:
+            with rasterio.open(temporary, "w", **profile) as dst:
+                dst.write(mosaic)
+            temporary.replace(mosaic_path)
+        finally:
+            for s in srcs:
+                s.close()
+            temporary.unlink(missing_ok=True)
 
     print(f"Mosaicked {len(tifs)} tiles -> {mosaic_path}")
     reclaim_export_intermediates(zip_path, extract_dir, mosaic_path)

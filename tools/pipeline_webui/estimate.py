@@ -153,7 +153,8 @@ def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults:
     imagery_gb = 0.0 if cached["imagery"] else km2 * defaults["imagery_gb_per_km2"]
     reference_gb = 0.0 if cached["reference_imagery"] else km2 * defaults["reference_imagery_gb_per_km2"]
     lidar_gb = 0.0 if (cached["lidar"] or synthetic) else km2 * defaults["lidar_gb_per_km2"]
-    download_gb = imagery_gb + reference_gb + lidar_gb
+    dsm_gb = 0.0 if (cached["dsm"] or synthetic) else km2 * defaults["dsm_gb_per_km2"]
+    download_gb = imagery_gb + reference_gb + dsm_gb + lidar_gb
     download_s = download_gb * 8000 / max(defaults["download_mbps"], 0.1)
     if not cached["outlines"]:
         download_s += defaults["linz_export_overhead_s"]
@@ -169,6 +170,7 @@ def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults:
         "size_source": size.get("source"), "survey": survey.get("name"),
         "elevation": survey.get("elevation"), "cached": cached,
         "download_gb": round(download_gb, 3), "download_s": round(download_s),
+        "dsm_gb": round(dsm_gb, 3),
         "compute_s": round(compute_s), "total_s": round(download_s + compute_s),
         "disk_gb": round(disk_gb, 3), "warnings": warnings, "blockers": blockers,
     }
@@ -186,21 +188,67 @@ def referee_note(rows: list[dict]) -> dict:
 def estimate(regions: list[str], data: Path = DATA, target: str = "local",
              lookup: SizeLookup | None = None, defaults: dict | None = None,
              disk_free: int | None = None, survey_fn: Callable = _survey,
-             now: float | None = None, cloud=None) -> dict:
+             now: float | None = None, cloud=None, selection: dict | None = None,
+             meshblock_lookup: Callable | None = None,
+             api_key_fn: Callable[[], str] | None = None) -> dict:
     if target not in TARGETS:
         raise EstimateError(f"unknown target: {target}")
     is_cloud = target != "local"
     if is_cloud and cloud is None:
         raise EstimateError("cloud targets are not configured on this server")
-    regions = validate_regions(regions)
     data = Path(data)
     defaults = defaults or load_defaults()
     calibration = calibrate(data, defaults)
     spb = calibration["seconds_per_building"]
     rows = []
-    # The VM fetches its own inputs, so a cloud estimate counts nothing as cached here.
-    cache_dir = data / "_cloud_estimate_uncached" if is_cloud else data
-    for region in regions:
+    selection_info = None
+    if selection is not None:
+        if target != "local":
+            raise EstimateError("meshblock selection builds currently run locally only")
+        selection = validate_selection(selection)
+        if meshblock_lookup is None or api_key_fn is None:
+            raise EstimateError("meshblock selection is not configured on this server", 503)
+        collection = meshblock_lookup(selection["parent_region"], selection["parent_linz_id"])
+        dataset = collection.get("dataset") or {}
+        features = collection.get("features") or []
+        found = {str((f.get("properties") or {}).get("meshblock_id")) for f in features}
+        if not set(selection["meshblock_ids"]).issubset(found):
+            raise EstimateError("selection contains a meshblock outside the selected locality", 409)
+        from src.meshblock_selection import selection_id
+        area = selection_id(selection["parent_region"], selection["meshblock_ids"], dataset)
+        request_path = web_dir(data) / "selections" / f"{file_slug(area)}.json"
+        write_json_atomic(request_path, {
+            "parent_region": selection["parent_region"],
+            "parent_linz_id": selection["parent_linz_id"],
+            "meshblock_ids": selection["meshblock_ids"],
+            "dataset": dataset, "meshblocks": features,
+        })
+        from tools.pipeline_webui import geo_worker
+        resolved = geo_worker.run(
+            ["selection", str(request_path), str(data)],
+            env={"LINZ_API_KEY": api_key_fn()})
+        size = {"buildings": resolved["buildings"], "bbox": resolved["bbox"],
+                "bbox_km2": resolved.get("acquisition_km2", resolved["bbox_km2"]),
+                "source": "meshblock selection"}
+        cache_dir = data
+        row = estimate_region(resolved["region"], size,
+                              survey_fn(size["bbox"], resolved["region"]),
+                              cache_dir, defaults, spb)
+        row["meshblock_count"] = resolved["meshblock_count"]
+        row["meshblock_ids"] = selection["meshblock_ids"]
+        row["parent_region"] = selection["parent_region"]
+        row["dataset"] = dataset
+        row["acquisition_footprints"] = resolved.get("acquisition_footprints", [])
+        rows.append(row)
+        selection_info = {"parent_region": selection["parent_region"],
+                          "parent_linz_id": selection["parent_linz_id"],
+                          "meshblock_ids": selection["meshblock_ids"],
+                          "dataset": dataset, "selection_id": resolved["region"]}
+    else:
+        regions = validate_regions(regions)
+        # The VM fetches its own inputs, so a cloud estimate counts nothing as cached here.
+        cache_dir = data / "_cloud_estimate_uncached" if is_cloud else data
+    for region in ([] if selection_info else regions):
         try:
             size = region_size(region, data, lookup)
         except Exception as exc:
@@ -242,6 +290,7 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         "regions": rows, "totals": totals, "warnings": warnings,
         "blockers": blockers + [f"{r['region']}: {b}" for r in rows for b in r["blockers"]],
         "machine": machine, "cloud": cloud_block,
+        "selection": selection_info,
         "cloud_cost_nzd": cloud_block["cost_nzd"] if cloud_block else "0",
         "paid_referee": referee_note(rows),
         "assumptions": {k: v for k, v in defaults.items() if not k.startswith("_")},
@@ -300,12 +349,46 @@ def validate_regions(regions) -> list[str]:
     return out
 
 
+def validate_selection(selection: dict) -> dict:
+    """Validate one locality parent and a non-empty list of meshblock IDs."""
+    if not isinstance(selection, dict):
+        raise EstimateError("meshblock selection must be an object")
+    try:
+        parent = validate(selection.get("parent_region"))
+    except ValueError as exc:
+        raise EstimateError(str(exc)) from None
+    if not is_locality_id(parent):
+        raise EstimateError("meshblock selection parent must be one LINZ locality")
+    linz_id = selection.get("parent_linz_id")
+    if isinstance(linz_id, bool):
+        raise EstimateError("parent_linz_id must be a positive LINZ locality id")
+    try:
+        linz_id = int(linz_id)
+    except (TypeError, ValueError):
+        raise EstimateError("parent_linz_id must be a positive LINZ locality id") from None
+    if linz_id < 1:
+        raise EstimateError("parent_linz_id must be a positive LINZ locality id")
+    ids = selection.get("meshblock_ids")
+    if not isinstance(ids, list) or not ids:
+        raise EstimateError("choose at least one meshblock")
+    if len(ids) > 5000 or any(not isinstance(value, str) or
+                              not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", value)
+                              for value in ids):
+        raise EstimateError("meshblock selection contains invalid IDs or is too large")
+    return {"parent_region": parent, "parent_linz_id": linz_id,
+            "meshblock_ids": sorted(set(ids))}
+
+
 class EstimateStore:
     """Estimates computed in a background thread and kept for TTL_SECONDS."""
 
-    def __init__(self, data: Path = DATA, lookup: SizeLookup | None = None, **estimate_kwargs):
+    def __init__(self, data: Path = DATA, lookup: SizeLookup | None = None,
+                 meshblock_lookup: Callable | None = None,
+                 api_key_fn: Callable[[], str] | None = None, **estimate_kwargs):
         self.data = Path(data)
         self.lookup = lookup
+        self.meshblock_lookup = meshblock_lookup
+        self.api_key_fn = api_key_fn
         self.kwargs = estimate_kwargs
         self.dir = web_dir(self.data) / "estimates"
 
@@ -314,19 +397,31 @@ class EstimateStore:
             raise EstimateError("unknown estimate", 404)
         return self.dir / f"{estimate_id}.json"
 
-    def start(self, regions, target: str = "local", background: bool = True) -> str:
-        regions = validate_regions(regions)
+    def start(self, regions, target: str = "local", background: bool = True,
+              selection: dict | None = None) -> str:
+        if selection is not None:
+            if regions:
+                raise EstimateError("choose either full areas or a meshblock selection")
+            selection = validate_selection(selection)
+            if target != "local":
+                raise EstimateError("meshblock selection builds currently run locally only")
+            regions = []
+        else:
+            regions = validate_regions(regions)
         if target not in TARGETS:
             raise EstimateError(f"unknown target: {target}")
         estimate_id = secrets.token_hex(8)
         now = time.time()
         write_json_atomic(self._path(estimate_id), {"estimate_id": estimate_id, "status": "pending",
-                                                    "regions": regions, "created": now,
+                                                    "regions": regions, "selection": selection,
+                                                    "created": now,
                                                     "expires_at": now + TTL_SECONDS})
 
         def work():
             try:
-                result = estimate(regions, self.data, target, self.lookup, **self.kwargs)
+                result = estimate(regions, self.data, target, self.lookup, selection=selection,
+                                  meshblock_lookup=self.meshblock_lookup,
+                                  api_key_fn=self.api_key_fn, **self.kwargs)
                 result["estimate_id"] = estimate_id
             except EstimateError as exc:
                 result = {"estimate_id": estimate_id, "status": "error", "error": str(exc)}

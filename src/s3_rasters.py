@@ -276,7 +276,9 @@ def vrt_of_tiles(collection_url, geom_wgs84, vrt_path, tile_dir):
         p = tile_dir / url.rsplit("/", 1)[-1]
         if not p.exists():
             part = p.with_suffix(".part")
-            urllib.request.urlretrieve(url, part)
+            from src.dataset_timing import transfer
+            with transfer():
+                urllib.request.urlretrieve(url, part)
             part.rename(p)
         paths.append(str(p))
     if not paths:
