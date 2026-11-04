@@ -225,6 +225,17 @@ def main():
                     addr[int(pr["building_id"])] = pr["address"]
         except Exception:
             pass
+    # ...and from data/addresses.json ([address, lon, lat, building_id] for
+    # every district address point), which covers roofs outside the built
+    # file: 30 of the 130-roof set had no address and showed only an id.
+    ap = DATA_DIR / "addresses.json"
+    if ap.exists():
+        try:
+            for a in json.loads(ap.read_text()):
+                if a[3] is not None and int(a[3]) not in addr:
+                    addr[int(a[3])] = a[0]
+        except Exception:
+            pass
 
     # WHAT THE PIPELINE CURRENTLY THINKS THE ROOF IS.
     #
