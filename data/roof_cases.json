@@ -1092,6 +1092,21 @@
    "history": [],
    "notes": "Selected reading: line 0.436 vs lidar 0.482 (lost on the 0.08 margin); build used the LiDAR partition path. 56k returns: hips plain in the slope map.",
    "verdicts": []
+  },
+  {
+   "id": 5371259,
+   "region": "unknown",
+   "first_flagged": "2026-11-05",
+   "defect": "curved terrace of many small gables; 3D model a jagged stack of mismatched slabs",
+   "quotes": [
+    "This building is another example of a very bad 3D model, and a good test case if we can get it right automatically it will likely improve many other things.",
+    "I think there needs to be 3D reconciliation between lidar and imagery."
+   ],
+   "status": "needs_fix",
+   "flagged_times": 1,
+   "history": [],
+   "notes": "",
+   "verdicts": []
   }
  ]
 }
