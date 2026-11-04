@@ -461,6 +461,10 @@ addEventListener("unhandledrejection", e=>{ try{ say("error: "+((e.reason&&(e.re
 // never (see the capability contract).
 let DB = null, remote = {}, ingested = {};
 function save(){
+  // when this browser last changed the roof: a newer copy in the shared store
+  // wins over an older one held here (see the snapshot handler)
+  const now = new Date().toISOString();
+  if(data[R().id]) data[R().id]._t = now;
   try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){}
   if(DB && data[R().id] && (hasMarks(data[R().id]) || data[R().id].complete || remote[R().id])){
     const d = data[R().id];
@@ -471,7 +475,7 @@ function save(){
       lines: d.lines, obstructions: d.obstructions, nopanel: d.nopanel||[],
       complete: !!d.complete, problem: d.problem||null, outline: d.outline||null, olines: d.olines||[],
       area: R().area, address: R().address || "",
-      saved_utc: new Date().toISOString(),
+      saved_utc: now,
     }).catch(e=>{ say("could not sync: "+(e&&e.code||"error")+" — saved locally"); });
   }
 }
@@ -1692,12 +1696,20 @@ if(OPTS.unmarkedOnly){
     snap.docs.forEach(d => { remote[d.id] = JSON.parse(JSON.stringify(d.data())); });
     // adopt anything we do not have locally, so a roof someone else did shows
     // as done and opens with their lines rather than blank
+    // THE NEWER COPY WINS. Adopting only into empty local records let an old
+    // copy kept in this browser's storage overwrite newer work in the store:
+    // a roof drawn with 29 lines went back to 4 when the page reopened on it
+    // and the next click saved the stale copy. Local edits carry _t (when
+    // this browser last saved the roof); a local copy without it, or older
+    // than the store's saved_utc, gives way.
     Object.keys(remote).forEach(id => {
-      if(!data[id] || (!data[id].lines.length && !data[id].obstructions.length && !data[id].outline))
+      const loc = data[id];
+      const stale = loc && remote[id].saved_utc && (!loc._t || loc._t < remote[id].saved_utc);
+      if(!loc || stale || (!loc.lines.length && !loc.obstructions.length && !loc.outline))
         data[id] = {lines: remote[id].lines||[], obstructions: remote[id].obstructions||[],
                     nopanel: remote[id].nopanel||[], complete: !!remote[id].complete,
                     problem: remote[id].problem||null, outline: remote[id].outline||null,
-                    olines: remote[id].olines||[]};
+                    olines: remote[id].olines||[], _t: remote[id].saved_utc||""};
     });
     draw();
   }, e => say("shared sync stopped: "+(e&&e.code||"error")+" — still saving locally"));
