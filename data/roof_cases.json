@@ -1022,6 +1022,48 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4723808,
+   "region": "wanaka",
+   "first_flagged": "2026-11-04",
+   "defect": "ridge placed off the real ridge in the photo; panels run across the real ridge",
+   "quotes": [
+    "The roof lines on this roof are incorrectly placed so the panels overlap the real ridge line in the photo"
+   ],
+   "status": "needs_fix",
+   "flagged_times": 1,
+   "history": [],
+   "notes": "",
+   "verdicts": []
+  },
+  {
+   "id": 4723819,
+   "region": "wanaka",
+   "first_flagged": "2026-11-04",
+   "defect": "faces wrong throughout: not close on any mode",
+   "quotes": [
+    "This roof is completely wrong in many ways, not even close on any mode"
+   ],
+   "status": "needs_fix",
+   "flagged_times": 1,
+   "history": [],
+   "notes": "",
+   "verdicts": []
+  },
+  {
+   "id": 5374788,
+   "region": "wanaka",
+   "first_flagged": "2026-11-04",
+   "defect": "roof lines wrong",
+   "quotes": [
+    "Incorrect roof lines here"
+   ],
+   "status": "needs_fix",
+   "flagged_times": 1,
+   "history": [],
+   "notes": "",
+   "verdicts": []
   }
  ]
 }
