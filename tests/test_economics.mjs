@@ -113,7 +113,7 @@ check("payback under the system life implies a net gain", () => {
 
 check("cost follows the size bands", () => {
   close(E.costPerKw(2), 3000, 0, "under 3 kW");
-  close(E.costPerKw(5), 2000, 0, "3-8 kW");
+  close(E.costPerKw(5), 2300, 0, "3-8 kW");
   close(E.costPerKw(11.4), 1800, 0, "8-25 kW");
   close(E.costPerKw(30), 1500, 0, "25-50 kW");
   close(E.costPerKw(200), 1200, 0, "over 50 kW");

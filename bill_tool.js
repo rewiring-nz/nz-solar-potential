@@ -56,8 +56,8 @@ const BT_DEFAULTS = {
   ev_km_per_year: 11000,        // NZ average (Waka Kotahi)
   ev_kwh_per_km: 0.165,
   // business electricity per m2 of footprint per year, before heating and cars
-  biz_kwh_per_m2: 75,
   biz_min_kwh: 6000,
+  storey_m: 3.6,                // floor-to-floor height used to count storeys from the LiDAR height
 };
 
 // EMI profiles (load_profiles.js): on the page a global, in the tests required.
@@ -96,6 +96,24 @@ function btCouncilKwh(reg) {
   const v = Object.values(C);
   return { kwh: v.reduce((a, b) => a + b, 0) / v.length, label: "the average of NZ's 16 regions" };
 }
+
+// A NON-HOME BUILDING'S ELECTRICITY, PER m2 OF FLOOR A YEAR, BEFORE SPACE
+// HEATING (heating is added by degree-days below). Floor = roof area x storeys,
+// storeys from the building's LiDAR height (height_m, src/emit_region.py).
+//   business  100  BRANZ BEES: NZ commercial buildings use 100-300 kWh/m2 of
+//                  total energy a year, heating included; power points and
+//                  lighting are the largest electricity uses (SR260, SR277).
+//   school     35  UK schools 39-43 kWh/m2 of electricity (CIBSE 2025), the
+//                  Australian Green Star standard-practice benchmark 54.
+//   hospital  150  medical centres and rest homes run all day and night; an
+//                  estimate, not a published NZ benchmark.
+//   community  40  halls, churches, clubs: occasional use; an estimate.
+const BT_BIZ_KWH_M2 = {
+  business: { kwh: 100, source: "BRANZ BEES: NZ commercial buildings use 100–300 kWh/m² of total energy a year, heating included." },
+  school: { kwh: 35, source: "Schools use 39–43 kWh/m² of electricity a year in the UK (CIBSE 2025); 54 is Australia's Green Star benchmark." },
+  hospital: { kwh: 150, source: "An estimate for medical centres and rest homes, which run day and night." },
+  community: { kwh: 40, source: "An estimate for halls, churches and clubs, used part of the week." },
+};
 
 // Season multipliers on each part's daily kWh.
 const BT_SEASONAL = {
@@ -172,16 +190,24 @@ function btBuildLoad(p, opts) {
     { dp: 1, source: "A heat pump gives about 2.5 units of heat per unit of electricity. A plug-in heater gives 1." });
   let heatWinter;
   if (p.type === "business") {
-    const year = Wk.maxOf("Business electricity a year, before heating and cars", "kWh/yr", [
+    const kind = BT_BIZ_KWH_M2[opts && opts.btype] ? opts.btype : "business";
+    const hM = opts && opts.heightM > 0 ? opts.heightM : null;
+    const storeys = Wk.given("Storeys", hM ? Math.max(1, Math.min(40, Math.round(hM / D.storey_m))) : 1, "",
+      hM ? [btIn("Height above the ground", hM, "m", { dp: 1, source: "Measured from the laser scan." }),
+            btIn("Floor-to-floor height", D.storey_m, "m", { dp: 1 })] : [],
+      { dp: 0, formula: hM ? "height ÷ floor-to-floor height, rounded, 1 to 40" : "no height measured: one storey",
+        check: () => hM ? Math.max(1, Math.min(40, Math.round(hM / D.storey_m))) : 1 });
+    var floorM2 = Wk.product("Floor area", "m²", [roof, storeys]);
+    const year = Wk.maxOf("Electricity a year, before heating and cars", "kWh/yr", [
       btIn("Smallest business", D.biz_min_kwh, "kWh/yr"),
-      Wk.product("By floor area", "kWh/yr", [btIn("Electricity per m²", D.biz_kwh_per_m2, "kWh/m²",
-        { dp: 0, source: "Typical NZ commercial use per m² of floor, before heating." }), roof])]);
+      Wk.product("By floor area", "kWh/yr", [btIn(`Electricity per m² of floor (${kind})`, BT_BIZ_KWH_M2[kind].kwh, "kWh/m²",
+        { dp: 0, source: BT_BIZ_KWH_M2[kind].source }), floorM2])]);
     const day = Wk.quotient("A typical day", "kWh/day", year, btIn("Days in a year", 365, "days"));
     for (const s of BT_SEASONS) nodes.appliance[s] = Wk.product(`Working-day use, ${s}`, "kWh/day",
       [day, seasonal("appliance", s, "Lighting is used more in the darker months.")]);
     shapes.appliance = BT_SHAPES.business;
     const base = Wk.product("Heat pump heating on the coldest days", "kWh/day", [hdd, perKwhHdd,
-      Wk.quotient("Size vs a 150 m² house", "×", roof, btIn("Typical house", 150, "m²")),
+      Wk.quotient("Floor vs a 150 m² house", "×", floorM2, btIn("Typical house", 150, "m²")),
       btIn("Share of the floor heated", 0.6, "share", { dp: 0 })]);
     heatWinter = p.heating === "heatpump" ? base
       : p.heating === "electric" ? Wk.product("Electric heaters on the coldest days", "kWh/day", [base, resistive])
@@ -242,7 +268,11 @@ function btBuildLoad(p, opts) {
     parts[k] = {};
     for (const s of BT_SEASONS) parts[k][s] = nodes[k][s].value;
   }
-  return { parts, nodes, shapes, hdd: hdd.value, region: p.type === "business" ? null : btEmiRegion(lat, opts && opts.lon) };
+  const bizKind = p.type === "business" ? (BT_BIZ_KWH_M2[opts && opts.btype] ? opts.btype : "business") : null;
+  const hM = opts && opts.heightM > 0 ? opts.heightM : null;
+  return { parts, nodes, shapes, hdd: hdd.value, bizKind, heightKnown: !!hM,
+           storeys: p.type === "business" && hM ? Math.max(1, Math.min(40, Math.round(hM / D.storey_m))) : 1,
+           region: p.type === "business" ? null : btEmiRegion(lat, opts && opts.lon) };
 }
 
 // The hourly load (kW) of one season, optionally scaled.
@@ -611,7 +641,7 @@ function crossMark(rows, payback) {
 //   tariff: {peak, offpeak, peakSell, offpeakSell, daily} (or flat {buy, sell, daily})
 //   sys:    {solarPerKw, battPerKwh} -- the user's own prices, or null for ours
 function btEvaluate(ctx, prof, calib, tariff, sys) {
-  const load = btBuildLoad(prof, { lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2 });
+  const load = btBuildLoad(prof, { lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2, btype: ctx.btype, heightM: ctx.heightM });
   const cal = btCalibration(load, calib, tariff, ctx.seasonDays);
   const run = btRun(ctx.gen, load, cal, tariff, prof.battery || 0, ctx.seasonDays);
   const N = run.nodes, Y = run.year;
@@ -1003,7 +1033,7 @@ function btMethodHtml(r, prof, isBiz) {
     : "Nothing entered, so the estimate is used as is. Enter a bill or your yearly use and every figure is scaled to match.";
   const reg = r.load.region;
   const useParts = isBiz
-    ? `A business uses ${D.biz_kwh_per_m2} kWh per m² of roof a year (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day.`
+    ? `A ${r.load.bizKind || "business"} uses ${BT_BIZ_KWH_M2[r.load.bizKind || "business"].kwh} kWh per m² of floor a year before heating (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day. Its floor is its roof area × ${r.load.storeys} storey${r.load.storeys === 1 ? "" : "s"}${r.load.storeys > 1 || r.load.heightKnown ? ", counted from its height in the laser scan" : ""}.`
     : `A home's use is the Electricity Authority's figure for the average home in ${btCouncilKwh(reg).label} (${Math.round(btCouncilKwh(reg).kwh).toLocaleString()} kWh a year, 2025), scaled for ${prof.people} ${prof.people === 1 ? "person" : "people"} against an average of ${BT_AVG_PEOPLE}. ` +
       `Each season's day, and how it is spread over the hours, follows the metered half-hourly load of ${reg.label} over the last year (EMI): hot water and heating run when homes actually run them, overnight on ripple control and at the morning and evening peaks.`;
   const heatText = !isBiz ? ""
@@ -1099,7 +1129,7 @@ function renderBillTool(box, ctx) {
     const prof = Object.assign({ type: state.type }, isBiz ? state.business : state.home);
     const tariff = btTariffFromEcon(isBiz);
     const haveGen = !!(ctx.gen && ctx.gen.length === 4 && ctx.kwp > 0);
-    const r = btEvaluate({ lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2, kwp: ctx.kwp, kwpNode: ctx.kwpNode,
+    const r = btEvaluate({ lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2, btype: ctx.btype, heightM: ctx.heightM, kwp: ctx.kwp, kwpNode: ctx.kwpNode,
                            gen: haveGen ? ctx.gen : null, seasonDays: ctx.seasonDays, genNode: ctx.genNode },
                          prof, state.calib, tariff, state.sys);
     last = r;

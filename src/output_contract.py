@@ -57,6 +57,9 @@ BUILDING_ALLOWED = [
     "photo_changed",
     # the region whose sunlight table (data/sun/<sr>.json) priced this roof
     "sr",
+    # height of the roof above the ground beside it, m, from the DSM
+    # (src/emit_region.py _heights); the bill tool counts storeys from it. Optional.
+    "height_m",
 ]
 
 # panel_layouts.pmtiles, layer "layout": facets, panels and obstructions.
@@ -65,7 +68,10 @@ LAYOUT_ALLOWED = ["kind", "building_id", "fill_rank", "fill_order", "array_id",
                   "array_size", "ac_kwh_year", "slope_deg", "aspect_deg",
                   "roof_confidence", "poa_kwh_m2_yr", "panel_count", "btype",
                   # the workings: tilt/direction bin and shading (src/workings_data.py)
-                  "sb", "ab", "sh"]
+                  "sb", "ab", "sh",
+                  # panel_area: each building's panels merged, below the panel zoom
+                  # ("default" sizing or "all"; src/emit_region.py _panel_areas)
+                  "set"]
 LAYOUT_REQUIRED = {
     "facet": ["kind", "building_id", "slope_deg", "aspect_deg", "poa_kwh_m2_yr",
               "panel_count", "btype"],
@@ -77,6 +83,7 @@ LAYOUT_REQUIRED = {
     # building's no_estimate_reason from buildings.pmtiles; this layout copy
     # remains in the region's layout stream and is not styled as a panel.
     "no_estimate": ["kind", "building_id", "btype"],
+    "panel_area": ["kind", "building_id", "set"],
 }
 
 # detail/13/x/y.json: {building_id: {...}}, fetched when a building is clicked.

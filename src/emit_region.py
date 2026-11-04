@@ -66,7 +66,8 @@ DEM_WIDE = DATA_DIR / "dem_wide_mosaic.tif"
 HEATMAP_ZMIN, HEATMAP_ZMAX = 9, 17
 
 # What the map's building layer carries, plus the type fields the toggle reads.
-SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed", "photo_changed", "sr"]
+SLIM_KEEP = KEEP + ["btype", "use", "name", "img_dx", "img_dy", "pitch_guessed", "photo_changed", "sr",
+                    "height_m"]
 
 # The panel layer's properties -- the same list run_district_build.sh passed
 # to tippecanoe, kept here because this is now the only place it is cut.
@@ -129,6 +130,57 @@ def _panel_areas(features, buildings):
             out.append({"type": "Feature", "geometry": mapping(g),
                         "properties": {"kind": "panel_area", "set": name, "building_id": bid,
                                        "btype": btype}})
+    return out
+
+
+# HOW TALL EACH BUILDING STANDS, so the bill tool can count its storeys:
+# a business's electricity scales with its floor area, not its roof
+# (bill_tool.js BT_BIZ_KWH_M2). The roof is the DSM's median (HEIGHT_ROOF_Q)
+# inside the footprint; the ground, its HEIGHT_GROUND_Q percentile in a ring
+# HEIGHT_RING_M outside it (the 3D view reads the ground the same way).
+HEIGHT_ROOF_Q = 50
+HEIGHT_GROUND_Q = 10
+HEIGHT_RING_M = (2.0, 5.0)
+
+
+def _heights(feats, dsm_path):
+    """{building_id: metres the roof stands above the ground beside it}."""
+    import numpy as np
+    import pyproj
+    import rasterio
+    import rasterio.windows
+    import shapely
+    from shapely.geometry import shape
+    from shapely.ops import transform as tf
+    out = {}
+    if not Path(dsm_path).exists():
+        return out
+    T = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
+    with rasterio.open(dsm_path) as ds:
+        nod = ds.nodata
+        for f in feats:
+            try:
+                g = tf(T, shape(f["geometry"]))
+                x0, y0, x1, y1 = g.buffer(HEIGHT_RING_M[1] + 1).bounds
+                w = rasterio.windows.from_bounds(x0, y0, x1, y1, ds.transform).round_offsets().round_lengths()
+                a = ds.read(1, window=w, boundless=True, fill_value=nod if nod is not None else np.nan).astype(float)
+                if a.size == 0:
+                    continue
+                tr = ds.window_transform(w)
+                rows, cols = np.indices(a.shape)
+                xs = tr.c + (cols + 0.5) * tr.a
+                ys = tr.f + (rows + 0.5) * tr.e
+                ok = np.isfinite(a) & ((a != nod) if nod is not None else True) & (a > -1000)
+                inside = shapely.contains_xy(g, xs, ys) & ok
+                ring = (shapely.contains_xy(g.buffer(HEIGHT_RING_M[1]), xs, ys)
+                        & ~shapely.contains_xy(g.buffer(HEIGHT_RING_M[0]), xs, ys) & ok)
+                if inside.sum() < 4 or ring.sum() < 4:
+                    continue
+                h = float(np.percentile(a[inside], HEIGHT_ROOF_Q) - np.percentile(a[ring], HEIGHT_GROUND_Q))
+                if 0 < h < 200:
+                    out[int(f["properties"]["building_id"])] = round(h, 1)
+            except Exception:
+                continue
     return out
 
 
@@ -231,8 +283,12 @@ def emit(region, out_root=OUT_ROOT):
                     sun_model.lookup[(fp["sb"], fp["ab"])]):
                 face_bad += 1
     checks["faces_mismatched"] = face_bad
+    heights = _heights(feats, area_paths(region)["dsm"])
     for f in feats:
         f["properties"]["sr"] = region
+        hb = heights.get(int(f["properties"]["building_id"]))
+        if hb is not None:
+            f["properties"]["height_m"] = hb
     print(f"[{region}] workings: {checks['panels']:,} panels re-derived, "
           f"{checks['mismatched']} mismatched, {checks['missing_inputs']} without inputs, "
           f"{face_bad} faces mismatched; sunlight from {sun_source}")
