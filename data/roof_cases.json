@@ -1078,6 +1078,20 @@
    "history": [],
    "notes": "113 Matai Road has three buildings (5374787, 4737213, 5376626); confirm which is the L-shaped house from the outlines on the VM",
    "verdicts": []
+  },
+  {
+   "id": 4735613,
+   "region": "pilot",
+   "first_flagged": "2026-11-05",
+   "defect": "composite roof: about eight separate low hip roofs at different storey heights joined by flat terraces and courtyards; layout ignores the hips",
+   "quotes": [
+    "The panel layouts on this roof are clearly terrible and not even close to the roof shape. It is a roof shape made up of lots of smaller more clear roofs similar to households, but all put together into a large business roof."
+   ],
+   "status": "needs_fix",
+   "flagged_times": 1,
+   "history": [],
+   "notes": "Selected reading: line 0.436 vs lidar 0.482 (lost on the 0.08 margin); build used the LiDAR partition path. 56k returns: hips plain in the slope map.",
+   "verdicts": []
   }
  ]
 }
