@@ -1284,6 +1284,16 @@ let switching3D = false;   // the switch-on sequence owns the camera until its t
 async function setTerrain3D(on) {
   terrain3d = on;
   const ticket = ++terrainSwitching;
+  // 3D IS FOR LOOKING AT THE PANELS ON THE ROOF. The solids carry the layout
+  // lying on each face; the heat map has nothing to stand up, so turning 3D
+  // on switches to Panel Layout (and turns the overlay back on). Turning 3D
+  // off leaves the mode where it is.
+  if (on && (mode !== "layout" || !overlayOn)) {
+    mode = "layout";
+    overlayOn = true;
+    applyToggles();
+    setTimeout(() => { if (window.__refreshHeatWeights) window.__refreshHeatWeights(); }, 0);
+  }
   // the button answers at once; the view follows when it is ready
   const b = document.getElementById("btn-3d");
   if (b) b.classList.toggle("active", on);
@@ -1539,6 +1549,27 @@ let panelDensityPct = 80;
 // map, the building card and the totals, so they cannot disagree.
 let sizingDefault = true;
 let bigHomeIds = [];   // homes with a block-of-units roof: not capped (see onViewChanged)
+// WHICH HOMES ARE BIG IS A FACT ABOUT THE BUILDING, NOT ABOUT THE VIEW. It
+// was read from the buildings drawn on screen, and at a broad view most are
+// not in that list: of 13 big homes with more than the capped panel count in
+// one Wanaka view, the map knew 1, so 12 showed capped at 28 panels and
+// jumped to the full layout when clicked. Every loaded building is read, and
+// a building once known to be big stays known.
+const bigHomeSet = new Set();
+function noteBigHomes(extra) {
+  let feats = [];
+  try { feats = map.querySourceFeatures("buildings", { sourceLayer: "buildings" }); } catch (e) { feats = []; }
+  const before = bigHomeSet.size;
+  for (const f of feats) {
+    const pr = f.properties;
+    if (pr && (pr.btype || "home") === "home" && !cappedHome(pr)) bigHomeSet.add(pr.building_id);
+  }
+  if (extra && (extra.btype || "home") === "home" && !cappedHome(extra)) bigHomeSet.add(extra.building_id);
+  if (bigHomeSet.size !== before) {
+    bigHomeIds = [...bigHomeSet].sort((a, b) => a - b);
+    if (sizingDefault) applyPanelDensityPaint();
+  }
+}
 function homeCapPanels() {
   const w = (window.__assumptions && window.__assumptions.panel_rated_power_w) || 500;
   return Math.floor(HOME_SYSTEM_CAP_KW * 1000 / w);
@@ -1774,6 +1805,11 @@ function densityOpacityExpr(baseOpacity) {
   const shown = panelBandExpr(b => panelEconShow[b.key], true);
   return ["case", ["all", dense, shown], baseOpacity, 0];
 }
+// PANELS ARE DRAWN ONLY WHERE THE TILES HOLD EVERY PANEL. Below z15 the
+// layout tiles are thinned to a size budget (src/emit_region.py), so a roof
+// drawn from them showed some of its panels and filled in when clicked
+// (a Wanaka house: 54 of 96 at z15.5 before z15 shipped whole).
+const PANEL_MIN_ZOOM = 15;
 const PANEL_FILL_OPACITY = 0.72, PANEL_LINE_OPACITY = 0.5;
 const PANEL_BASE_COLOUR = "#081e3f";
 // Which panels earn back their own share of the install: whether a south-
@@ -3364,12 +3400,18 @@ map.on("load", async () => {
 
   const zoomHint = document.getElementById("zoom-hint");
   const updateZoomHint = () => {
-    // Panel geometry is only drawn from z14 (sub-pixel below that, and far
-    // too many features to filter). Say so instead of showing an empty map.
-    zoomHint.classList.toggle("show", mode === "layout" && map.getZoom() < 14);
+    // Panel geometry is only drawn from PANEL_MIN_ZOOM. Say so instead of
+    // showing an empty map.
+    zoomHint.classList.toggle("show", mode === "layout" && map.getZoom() < PANEL_MIN_ZOOM);
   };
   window.__updateZoomHint = updateZoomHint;
   map.on("zoomend", updateZoomHint);
+  // big homes come from the building tiles as they load, not only on a move
+  let bigTimer = null;
+  map.on("sourcedata", e => {
+    if (e.sourceId !== "buildings" || !e.isSourceLoaded) return;
+    clearTimeout(bigTimer); bigTimer = setTimeout(() => noteBigHomes(), 200);
+  });
   // One debounced pass per interaction. This used to run on BOTH moveend and
   // idle, and each pass queries every rendered building and re-interpolates
   // its deciles -- at 15k buildings that is real work to do twice.
@@ -3381,11 +3423,7 @@ map.on("load", async () => {
       recomputeInViewSummary();
       // homes whose roof is a block of units are not held to the household
       // cap on the map either (the card's rule, cappedHome)
-      const big = inViewBuildingProps().filter(pr => (pr.btype || "home") === "home" && !cappedHome(pr))
-        .map(pr => pr.building_id).sort((a, b) => a - b);
-      if (sizingDefault && JSON.stringify(big) !== JSON.stringify(bigHomeIds)) {
-        bigHomeIds = big; applyPanelDensityPaint();
-      }
+      noteBigHomes();
     }, 140);
   };
   // TILES ARRIVE AFTER THE VIEW SETTLES, so the view is not the only thing
@@ -3426,7 +3464,7 @@ map.on("load", async () => {
   // vector source is the thing that is broken and not the view.
   let healArmed = false, lastHealAt = 0;
   function layoutTilesLookBroken() {
-    if (!layoutReady || mode !== "layout" || map.getZoom() < 14) return false;
+    if (!layoutReady || mode !== "layout" || map.getZoom() < PANEL_MIN_ZOOM) return false;
     if (map.queryRenderedFeatures({ layers: ["buildings-fill"] }).length === 0) return false;
     return map.queryRenderedFeatures({ layers: ["panels-fill"] }).length === 0;
   }
@@ -4170,7 +4208,7 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "panels-fill",
-    minzoom: 14,
+    minzoom: PANEL_MIN_ZOOM,
     "source-layer": "layout",
     type: "fill",
     source: "layout",
@@ -4813,7 +4851,7 @@ map.on("load", async () => {
     raw.forEach(f => {
       const q = f.properties;
       if (q.fill_order == null || by.has(q.fill_order)) return;
-      by.set(q.fill_order, { order: q.fill_order, rank: q.fill_rank, kwh: q.ac_kwh_year || 0, arr: q.array_id });
+      by.set(q.fill_order, { order: q.fill_order, rank: q.fill_rank, kwh: q.ac_kwh_year || 0, arr: q.array_id, btype: q.btype });
     });
     return [...by.values()].sort((a, b) => a.order - b.order);
   }
@@ -4832,9 +4870,12 @@ map.on("load", async () => {
     // economic size is worked out alongside and offered, not applied.
     const ranks = all.map(q => q.rank);
     const pr0 = selectedBuildingProps && selectedBuildingProps.building_id === bid ? selectedBuildingProps : null;
-    const k0 = sizingDefault
-      ? (cappedHome(pr0) ? Math.min(all.length, homeCapPanels()) : all.length)
-      : ranks.filter(r => r == null || r <= panelDensityPct).length;
+    if (pr0) noteBigHomes(pr0);
+    // The count the map is showing for this roof, by the map's own rule
+    // (withinSize, which mirrors densityOpacityExpr): what was on screen
+    // before the click is what stays on screen after it.
+    const k0 = all.filter(q => withinSize({ building_id: bid, fill_order: q.order,
+                                            fill_rank: q.rank, btype: q.btype })).length;
     bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks,
                 kwh: all.map(q => q.kwh), arrs: all.map(q => q.arr),
                 k: k0, mode: sizingDefault ? "default" : "map", settled: false, sig: null };

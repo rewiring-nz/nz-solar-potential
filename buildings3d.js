@@ -555,6 +555,106 @@
       }
     }
     const planeZ = (f, x, y) => Math.min(hi, Math.max(lo, f.a * x + f.b * y + f.c));
+
+    // ---- WELDED SEAMS. Each face is drawn on its own fitted plane, and two
+    // fitted planes never cross exactly on the line the faces share: the
+    // seam came out as a step, and every inner edge got a wall from the
+    // ground up, so a roof read as a stack of sharp shards (17 Church St).
+    // A real roof is one continuous skin. So the faces are welded:
+    //   1. an edge that another face's corner sits on (within WELD_ON_M) is
+    //      split there, so neighbours share corners and nothing T-joins;
+    //   2. at every shared corner the faces whose planes there lie within
+    //      WELD_STEP_M of each other take one height, the mean of theirs;
+    //      planes further apart are a real step between levels and stay apart;
+    //   3. an inner edge whose two corners are both welded is a seam, not a
+    //      step, and gets no wall.
+    // ?SOLAR_WELD=0 draws every face on its own plane, as before.
+    const weldOn = !/[?&]SOLAR_WELD=0\b/.test(location.search);
+    const cornerZ = planeZ;
+    const WELD_ON_M = 0.15, WELD_STEP_M = 0.6;
+    const wkey = (x, y) => x.toFixed(3) + "," + y.toFixed(3);
+    if (faces.length > 1 && weldOn) {
+      const corners = [];
+      faces.forEach((f, fi) => f.polys.forEach(rings => rings.forEach(r => r.forEach(p => corners.push([p[0], p[1], fi])))));
+      faces.forEach((f, fi) => {
+        f.polys = f.polys.map(rings => rings.map(r => {
+          const out = [];
+          for (let i = 0; i < r.length; i++) {
+            const p = r[i], q = r[(i + 1) % r.length];
+            out.push(p);
+            const dx = q[0] - p[0], dy = q[1] - p[1], L2 = dx * dx + dy * dy;
+            if (L2 < 1e-6) continue;
+            const L = Math.sqrt(L2), ins = [];
+            for (const c of corners) {
+              if (c[2] === fi) continue;
+              const tt = ((c[0] - p[0]) * dx + (c[1] - p[1]) * dy) / L2;
+              if (tt * L < 0.05 || (1 - tt) * L < 0.05) continue;
+              const ex = p[0] + dx * tt - c[0], ey = p[1] + dy * tt - c[1];
+              if (Math.hypot(ex, ey) < WELD_ON_M) ins.push([tt, p[0] + dx * tt, p[1] + dy * tt]);
+            }
+            ins.sort((u, v) => u[0] - v[0]);
+            let last = -1;
+            for (const s of ins) { if (s[0] - last > 1e-4) { out.push([s[1], s[2]]); last = s[0]; } }
+          }
+          return out;
+        }));
+      });
+      // one height per shared corner, per cluster of planes that agree there
+      faces.forEach(f => { f.weld = new Map(); });
+      const done = new Set();
+      faces.forEach(f0 => f0.polys.forEach(rings => rings.forEach(r => r.forEach(p => {
+        const k = wkey(p[0], p[1]);
+        if (done.has(k)) return;
+        done.add(k);
+        const near = [];
+        faces.forEach(f => {
+          if (p[0] < f.bb[0] - WELD_ON_M || p[0] > f.bb[2] + WELD_ON_M ||
+              p[1] < f.bb[1] - WELD_ON_M || p[1] > f.bb[3] + WELD_ON_M) return;
+          if (f.polys.some(rr => edgeDist(rr, p[0], p[1]) < WELD_ON_M)) near.push([cornerZ(f, p[0], p[1]), f]);
+        });
+        if (near.length < 2) return;
+        near.sort((u, v) => u[0] - v[0]);
+        let grp = [near[0]];
+        const flush = () => {
+          if (grp.length > 1) {
+            const z = grp.reduce((s, g) => s + g[0], 0) / grp.length;
+            for (const g of grp) g[1].weld.set(k, z);
+          }
+        };
+        for (let i = 1; i < near.length; i++) {
+          if (near[i][0] - grp[grp.length - 1][0] < WELD_STEP_M) grp.push(near[i]);
+          else { flush(); grp = [near[i]]; }
+        }
+        flush();
+      }))));
+    }
+    // a face's height at its own corners (welded where shared), its plane elsewhere
+    const faceZ = (f, x, y) => {
+      const w = f.weld && f.weld.get(wkey(x, y));
+      return w !== undefined ? w : cornerZ(f, x, y);
+    };
+    // the welded skin's height inside face f: the face's triangulation,
+    // interpolated, so panels lie on the surface that is drawn
+    function surfZ(f, x, y) {
+      if (!weldOn) return planeZ(f, x, y);
+      if (!f.tris) {
+        f.tris = [];
+        for (const rings of f.polys) {
+          const tr = triangulate(rings);
+          const P = tr.pts.map(p => [p[0], p[1], faceZ(f, p[0], p[1])]);
+          for (const tt of tr.faces) f.tris.push([P[tt[0]], P[tt[1]], P[tt[2]]]);
+        }
+      }
+      for (const [A, B, Cc] of f.tris) {
+        const d = (B[1] - Cc[1]) * (A[0] - Cc[0]) + (Cc[0] - B[0]) * (A[1] - Cc[1]);
+        if (Math.abs(d) < 1e-12) continue;
+        const l1 = ((B[1] - Cc[1]) * (x - Cc[0]) + (Cc[0] - B[0]) * (y - Cc[1])) / d;
+        const l2 = ((Cc[1] - A[1]) * (x - Cc[0]) + (A[0] - Cc[0]) * (y - Cc[1])) / d;
+        const l3 = 1 - l1 - l2;
+        if (l1 >= -1e-6 && l2 >= -1e-6 && l3 >= -1e-6) return l1 * A[2] + l2 * B[2] + l3 * Cc[2];
+      }
+      return planeZ(f, x, y);
+    }
     const flatTop = inside.length ? percentile(inside, 0.6) : ground + 3;
     // the roof surface for the footprint fill: the lower envelope of the
     // face planes within reach, else the nearest face, else flat
@@ -698,7 +798,7 @@
       const nl = Math.hypot(f.a, f.b, 1);
       const fsh = shade(-f.a / nl, -f.b / nl, 1 / nl, RA, RD);
       const colG = lit(C.roof, fsh), colH = lit(heatCol(f.q.poa_kwh_m2_yr), Math.min(1, fsh + 0.12));
-      const z = (x, y) => planeZ(f, x, y) - ground;
+      const z = (x, y) => faceZ(f, x, y) - ground;
       for (const rings of f.polys) {
         const tr = triangulate(rings);
         const P = tr.pts.map(p => [p[0], p[1], z(p[0], p[1])]);
@@ -709,6 +809,8 @@
           seg([A[0], A[1], A[2] + 0.03], [B[0], B[1], B[2] + 0.03], C.roofLine);
           const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
           if (outl.some(o => edgeDist(o, mx, my) < 0.35)) continue;
+          // a welded seam is one skin: no wall under it
+          if (f.weld && f.weld.has(wkey(p[0], p[1])) && f.weld.has(wkey(q[0], q[1]))) continue;
           const dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy) || 1;
           const wc = lit(C.wall, shade(dy / len, -dx / len, 0, WA, WD));
           tri([p[0], p[1], 0], [q[0], q[1], 0], B, wc);
@@ -787,7 +889,7 @@
       for (const p of r) { cx += p[0]; cy += p[1]; }
       cx /= r.length; cy /= r.length;
       const f = faceAt(cx, cy);
-      const z = f ? (x, y) => planeZ(f, x, y) - ground + PANEL_UP : (x, y) => fillZ(x, y) + FILL_DROP + PANEL_UP;
+      const z = f ? (x, y) => surfZ(f, x, y) - ground + PANEL_UP : (x, y) => fillZ(x, y) + FILL_DROP + PANEL_UP;
       const tr = triangulate(rings);
       const P = tr.pts.map(p => [p[0], p[1], z(p[0], p[1])]);
       const pos = [];
