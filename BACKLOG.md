@@ -343,7 +343,10 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   one-plane share fixed to the best plane (`SOLAR_FOLD_SPLIT=1`, inlier
   0.15 m: 0.515); panels across a fold dropped (`SOLAR_FOLD_PANEL=1`: 0.515,
   roofs right 13 -> 14, 97 panels fewer, only 2 panels off the 4 flagged
-  Wanaka roofs). Runs on the VM in `~/mb5`. Flagged 4 Nov (Manuka Cres 32,
+  Wanaka roofs). Runs on the VM in `~/mb5`. Readings that use the full
+  LiDAR, given a lead of only 0.04 over photo readings (`SOLAR_LIDAR_MARGIN`,
+  default 0.08): 0.514 -> 0.512, roofs right 14 -> 14 (`~/mb7`). LiDAR-side
+  rules are a measured dead end at this point density. Flagged 4 Nov (Manuka Cres 32,
   54, 64A; 113 Matai Rd = 4737213): 32's faces sit within ~0.4 m of the
   LiDAR crest, panels run to the face edge; 54 and 113 carry photo readings
   whose faces miss their planes by ~1 m; 64A is low-pitch with thin LiDAR.
@@ -369,7 +372,9 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   (0.392, +0.12 over 60). Still climbing steeply: more drawn roofs are
   worth it. A head on frozen SAM ViT-B features (`tools/research/sam_line_head.py`,
   same split, loss and metric) scores 0.29/0.33/0.26, hip 0.22 (0.365):
-  better valleys and cliffs, worse ridges and hips, no net gain. One seed
+  better valleys and cliffs, worse ridges and hips, no net gain. 5 Nov,
+  112 train roofs and 28 val: 92 roofs 0.309, all 112 roofs 0.428 (+0.12
+  for 20 more roofs). Still the steepest lever measured. One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
 - **Drawn outlines (3 Nov).** The markup tool moves, reshapes or redraws the
