@@ -825,6 +825,20 @@
   html.light .inview-heading { color: var(--ink); }
   html.light .loading { color: var(--ink); background: #f3f5f8; }
   html.light .dashboard { color: var(--ink); background: #f3f5f8; }
+  /* Disclaimer card under the dashboard: same width, always shown. Text is
+     12px at 4.5:1+ contrast in both themes. */
+  .disclaimer-card {
+    width: 284px; box-sizing: content-box; padding: 9px 14px; border-radius: 8px;
+    background: rgba(40,14,14,0.92); border: 1px solid rgba(255,120,120,0.45);
+    color: #ffe1e1; font-size: 12px; line-height: 1.45;
+  }
+  .disclaimer-card strong { color: #fff; }
+  .disclaimer-card a { color: #ffb4b4; text-decoration: underline; white-space: nowrap; }
+  #disclaimer-detail { margin-top: 8px; max-height: 150px; overflow-y: auto; padding-right: 6px; overscroll-behavior: contain; }
+  #disclaimer-detail ul { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 6px; }
+  html.light .disclaimer-card { background: #fdecec; border-color: #e7a3a3; color: #5c1414; }
+  html.light .disclaimer-card strong { color: #8b1a1a; }
+  html.light .disclaimer-card a { color: #a3201f; }
   html.light .dashboard .slider-row label { color: var(--ink-2); }
   html.light .collapse-btn { color: var(--ink-2); }
   html.light .collapse-btn:hover { color: var(--ink); }
@@ -1083,28 +1097,28 @@
       <div class="rsp-subtitle" style="margin: 8px 0 0;">For buildings in map view (<span id="inview-count">0</span>)</div>
       <div id="btype-toggles" class="btype-row"></div>
       </div>
-      <div id="layout-disclaimer" style="margin:10px 0 0;padding:8px 10px;background:rgba(255,80,80,0.10);
-           border:1px solid rgba(255,110,110,0.25);border-radius:8px;font-size:10px;line-height:1.45;
-           color:#f2c6c6;">
-        <strong style="color:#f7b3b3;">Disclaimer:</strong> A rough estimate, made with AI and
-        still in testing. Expect mistakes.
-        <a href="#" id="disclaimer-more" style="color:#ff9d9d;text-decoration:underline;white-space:nowrap;">Read more</a>
-        <div id="disclaimer-detail" style="display:none;margin-top:8px;max-height:150px;overflow-y:auto;padding-right:6px;overscroll-behavior:contain;">
-          <ul style="margin:0;padding-left:16px;display:flex;flex-direction:column;gap:6px;">
-            <li>The 3D roof data and the aerial photos can be years apart. Some buildings may be
-                missing, or still shown after being knocked down.</li>
-            <li>Sunlight figures come from satellite estimates, so they can be off for a single
-                building.</li>
-            <li>Panels and roof obstructions are placed using 3D data, 2D data and building
-                outlines. These don&rsquo;t always match, so some panels will be in the wrong place.</li>
-            <li>Savings depend on how much power you use, your electricity plan and more. Treat them
-                as rough. You can change the assumptions to see how they work.</li>
-          </ul>
-        </div>
-      </div>
       
 
     </div>
+  <!-- Disclaimer sits outside the folding dashboard so it shows whether the
+       dashboard is open or folded. -->
+  <div id="layout-disclaimer" class="disclaimer-card" role="note">
+    <strong>Disclaimer:</strong> A rough estimate, made with AI and
+    still in testing. Expect mistakes.
+    <a href="#" id="disclaimer-more">Read more</a>
+    <div id="disclaimer-detail" style="display:none;">
+      <ul>
+        <li>The 3D roof data and the aerial photos can be years apart. Some buildings may be
+          missing, or still shown after being knocked down.</li>
+        <li>Sunlight figures come from satellite estimates, so they can be off for a single
+          building.</li>
+        <li>Panels and roof obstructions are placed using 3D data, 2D data and building
+          outlines. These don&rsquo;t always match, so some panels will be in the wrong place.</li>
+        <li>Savings depend on how much power you use, your electricity plan and more. Treat them
+          as rough. You can change the assumptions to see how they work.</li>
+      </ul>
+    </div>
+  </div>
     <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch explainer video</button>
     <button class="corner-btn" id="toggle-panel-econ" style="align-self:flex-start;" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
 </div>
