@@ -380,8 +380,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   still runs v5 (lines) and v6 (evidence), trained on the September labels,
   with thresholds calibrated on v5: a retrained model is scored in each role
   on the held-out roofs (`SOLAR_LINE_MODEL`, `SOLAR_EVIDENCE_MODEL`, `~/mb8`)
-  before either is replaced. v71 published 5 Nov (reflection loss, building
-  heights). Still the steepest lever measured. One seed
+  before either is replaced. Result (6 Nov, 32 held-out roofs, panel IoU
+  blind vs full markup, model trained on the other 122): v5+v6 0.502; new
+  model as evidence 0.511 (1 roof better, 0 worse by 0.02+); new model in
+  both roles 0.514 (3 better, 1 worse), line F 0.574 -> 0.548. Both gains
+  are one roof (4719759, 0.10 -> 0.40); bootstrap 95% includes zero. In both
+  roles the faces changed on 15 of 32 roofs and the panels on 4: a better
+  line score is not reaching the layout. Production stays on v5/v6. The
+  limit is now the step from lines to faces and the reading pick, not the
+  detector score. v71 published 5 Nov (reflection loss, building heights). One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
 - **Drawn outlines (3 Nov).** The markup tool moves, reshapes or redraws the
