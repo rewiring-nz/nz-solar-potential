@@ -26,7 +26,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
-OUT = ROOT / "data" / "selected_faces"
+# SOLAR_SELECTED_DIR writes the winners elsewhere, so an experiment can run
+# beside another that is using data/selected_faces.
+OUT = Path(os.environ.get("SOLAR_SELECTED_DIR") or ROOT / "data" / "selected_faces")
+# SOLAR_DUMP_READINGS=<dir> also writes every reading of each roof there, in
+# the candidate format tools/vision_referee.py reads
+# ({"id", "region", "pick", "cands": {name: [WKT]}}).
+DUMP = os.environ.get("SOLAR_DUMP_READINGS")
 # The LiDAR reading's lead over the imagery winner before it ships (0.08,
 # the no-harm margin measured on 32 drawn roofs). SOLAR_LIDAR_MARGIN sets it
 # for an A/B: 1 Beetham St's LiDAR reading scored 0.482 against the line
@@ -482,6 +488,15 @@ def main():
             print(f"  #{bid}: refused {pick} reading "
                   f"({len(faces)} faces, max {_verts[-1]} vertices)")
             continue
+        if DUMP:
+            Path(DUMP).mkdir(parents=True, exist_ok=True)
+            (Path(DUMP) / f"{bid}.json").write_text(json.dumps({
+                "id": bid, "region": a.region, "pick": pick,
+                "scores": {"sam": round(sc_sam, 3), "line": round(sc_line, 3),
+                           "lidar": round(sc_lid, 3), "hypothesis": round(sc_hyp, 3)},
+                "cands": {k: [g.wkt for g in v] for k, v in (
+                    ("sam", f_sam), ("line", f_line), ("lidar", f_lid),
+                    ("hypothesis", f_hyp)) if v}}))
         (OUT / f"{bid}.json").write_text(json.dumps({
             "source": pick, "score": round(score, 3),
             "score_sam": round(sc_sam, 3), "score_line": round(sc_line, 3),

@@ -3,6 +3,7 @@
     python tools/vision_referee.py render <building_id> <region> [--cands DIR]   # the images, to look at
     python tools/vision_referee.py run   [--cands DIR] [--max-usd 5] [--model M]  # ask, cached
     python tools/vision_referee.py score [--cands DIR] [--oracle FILE]            # against Josh's markup
+    python tools/vision_referee.py apply --out DIR [--min-conf C]             # choices -> selected faces
 
 The pipeline draws several readings of each roof -- the LiDAR partition, a
 precomputed photo reading, plain hip/gable forms -- and picks one by how
@@ -305,6 +306,35 @@ def cmd_score(a):
         print(f"  referee only when confident >= {t}: {m(sel):.3f} (>=0.7: {sum(x >= 0.7 for x in sel)})")
 
 
+def cmd_apply(a):
+    """Write each referee choice as the roof's selected reading (the format
+    tools/predict_faces.py writes), into --out. A roof the referee did not
+    answer, or answered below --min-conf, keeps the pipeline's own pick."""
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    n = changed = 0
+    for f in sorted(Path(a.cands).glob("*.json")):
+        d = json.loads(f.read_text())
+        name = d.get("pick")
+        c = CACHE / f"{a.tag}{a.model}_{d['id']}.json"
+        if c.exists():
+            r = json.loads(c.read_text())
+            conf = float((r.get("answer") or {}).get("confidence") or 0)
+            if r.get("choice_name") in d["cands"] and conf >= a.min_conf:
+                name = r["choice_name"]
+        if name not in d["cands"]:
+            continue
+        from shapely import wkt
+        faces = [wkt.loads(w) for w in d["cands"][name]]
+        out.joinpath(f"{d['id']}.json").write_text(json.dumps({
+            "source": name, "score": d["scores"].get(name, 0.0),
+            "faces": [[[round(v, 2) for v in xy] for xy in g.exterior.coords]
+                      for g in faces if g.geom_type == "Polygon"]}))
+        n += 1
+        changed += name != d.get("pick")
+    print(f"{n} roofs written to {out}; referee changed the pick on {changed}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -313,11 +343,14 @@ def main():
     u = sub.add_parser("run"); u.add_argument("--cands", default=str(CANDS))
     u.add_argument("--tag", default="", help="cache name prefix, to keep runs apart")
     u.add_argument("--max-usd", type=float, default=5.0); u.add_argument("--model", default="claude-sonnet-5-5")
+    p = sub.add_parser("apply"); p.add_argument("--cands", default=str(CANDS))
+    p.add_argument("--out", required=True); p.add_argument("--tag", default="")
+    p.add_argument("--model", default="claude-sonnet-5-5"); p.add_argument("--min-conf", type=float, default=0.0)
     s = sub.add_parser("score"); s.add_argument("--cands", default=str(CANDS))
     s.add_argument("--oracle", default=str(Path.home() / "ab" / "oracle2.json")); s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--tag", default="")
     a = ap.parse_args()
-    {"render": cmd_render, "run": cmd_run, "score": cmd_score}[a.cmd](a)
+    {"render": cmd_render, "run": cmd_run, "score": cmd_score, "apply": cmd_apply}[a.cmd](a)
 
 
 if __name__ == "__main__":
