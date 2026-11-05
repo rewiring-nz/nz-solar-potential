@@ -108,6 +108,53 @@ def main():
     except Exception:
         lm6 = None
 
+    # SOLAR_ORACLE_LINES=1: a perfect detector. Both roles return the roof's
+    # drawn lines (data/roof_labels.json, rasterised exactly as the training
+    # targets are) in place of the model's output, so the markup benchmark
+    # measures what the steps after the detector -- extraction, faces from
+    # lines, the reading pick -- lose when the lines are right. Roofs with no
+    # drawn lines get an empty map. SOLAR_FORCE_PICK=line ships the line
+    # reading whenever it produced faces, which isolates faces-from-lines
+    # from the pick.
+    oracle = None
+    if os.environ.get("SOLAR_ORACLE_LINES") == "1":
+        from export_training_data import rasterise, LINE_WIDTH_PX
+        _labs = json.loads((ROOT / "data/roof_labels.json").read_text()
+                           ).get("buildings", {})
+
+        class _Oracle(torch.nn.Module):
+            def __init__(self, n):
+                super().__init__()
+                self.n, self.maps = n, None
+            def forward(self, x):
+                out = torch.full((1, self.n) + tuple(x.shape[2:]), -12.0)
+                if self.maps is not None:
+                    h0, w0 = self.maps.shape[1:]
+                    m = torch.from_numpy(self.maps[:self.n]).float()
+                    out[0, :m.shape[0], :h0, :w0] = m * 24.0 - 12.0
+                return out.to(x.device)
+        oracle = (_Oracle(3), _Oracle(4))
+        lm = oracle[0]
+        lm6 = oracle[1]
+
+        def _oracle_maps(bid, geom, bounds, shape):
+            lab = _labs.get(str(bid)) or {}
+            corners = list(geom.exterior.coords)
+            def _hip(l):
+                return any((p0[0] - c[0]) ** 2 + (p0[1] - c[1]) ** 2 < 4.0
+                           for p0 in (l["a"], l["b"]) for c in corners)
+            lines = [l for l in lab.get("lines") or [] if l.get("a") and l.get("b")]
+            def segs(f):
+                return [(l["a"], l["b"]) for l in lines if f(l)]
+            k = lambda name: (lambda l: l.get("kind") == name)
+            # line role: v5's three channels, hips inside ridge as drawn
+            ridge = rasterise(shape, segs(k("ridge")), bounds, LINE_WIDTH_PX)
+            valley = rasterise(shape, segs(k("valley")), bounds, LINE_WIDTH_PX)
+            cliff = rasterise(shape, segs(k("cliff")), bounds, LINE_WIDTH_PX)
+            hip = rasterise(shape, segs(lambda l: l.get("kind") == "ridge" and _hip(l)),
+                            bounds, LINE_WIDTH_PX)
+            return np.stack([ridge, valley, cliff, hip]) / 255.0
+
     ids = a.ids
     if a.bench and not ids:
         ids = [int(x) for x in
@@ -155,6 +202,8 @@ def main():
         h, w = rgb.shape[:2]
         if h < 32 or w < 32:
             continue
+        if oracle is not None:
+            oracle[0].maps = oracle[1].maps = _oracle_maps(bid, geom, b, (h, w))
         pts = top_surface(pc.points_in_bbox(minx - 1, miny - 1,
                                             maxx + 1, maxy + 1,
                                             building_only=True))
@@ -369,7 +418,9 @@ def main():
         # reached a deploy. It waits for evidence, not for agreement.
         _weak = (os.environ.get("SOLAR_HYP_WEAK") == "1"
                  and max(sc_sam, sc_line, sc_lid) < 0.45)
-        if f_hyp and (conf_hyp >= 0.55
+        if os.environ.get("SOLAR_FORCE_PICK") == "line" and f_line:
+            pick, faces, score = "line", f_line, max(sc_line, 0.61)
+        elif f_hyp and (conf_hyp >= 0.55
                       and (max(sc_sam, sc_line, sc_lid) < 0.50
                            or (os.environ.get("SOLAR_HYP_COMPETE") == "1"
                                and sc_hyp > max(sc_sam, sc_line, sc_lid)))
