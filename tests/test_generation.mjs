@@ -47,7 +47,8 @@ check("every panel: the browser's kWh is Python's kWh, from the shipped inputs",
     if (Math.abs(p.py_exact - p.ac_kwh_year) > 0.5 + 0.05) throw new Error(`panel off its rounded value: ${p.py_exact} vs ${p.ac_kwh_year}`);
     n++;
   }
-  if (n < 1000) throw new Error(`only ${n} panels in the fixture`);
+  // Kinloch holds 974 panels (v71); the floor catches a fixture cut short, not a smaller build.
+  if (n < 900) throw new Error(`only ${n} panels in the fixture`);
 });
 
 check("every building: the step-by-step figure is the map's figure, exactly", () => {
