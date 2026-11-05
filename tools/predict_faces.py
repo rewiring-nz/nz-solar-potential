@@ -75,21 +75,35 @@ def main():
     sam = sam_model_registry["vit_b"](checkpoint=str(ROOT / "data/sam_vit_b.pth"))
     sam.to(device)
     predictor = SamPredictor(sam)
-    ck = torch.load(ROOT / "data/models/roof_lines_v5.pt",
-                    map_location="cpu", weights_only=False)
-    lm = T.build_unet(ck.get("pretrained", False), out_channels=3)
-    lm.load_state_dict(ck["state_dict"])
+    # SOLAR_LINE_MODEL / SOLAR_EVIDENCE_MODEL swap in another checkpoint for
+    # either role, so a retrained detector can be scored in each before it
+    # replaces v5 or v6. A 4-channel (ridge, valley, cliff, hip) model in the
+    # line role is cut to its first three channels, the order v5 was trained on.
+    def _load_unet(path, want):
+        c = torch.load(path, map_location="cpu", weights_only=False)
+        n = len(c.get("kinds") or []) or want
+        m = T.build_unet(c.get("pretrained", False), out_channels=n)
+        m.load_state_dict(c["state_dict"])
+        if n > want:
+            class _First(torch.nn.Module):
+                def __init__(self, inner):
+                    super().__init__()
+                    self.inner = inner
+                def forward(self, x):
+                    return self.inner(x)[:, :want]
+            m = _First(m)
+        return m
+    lm = _load_unet(os.environ.get("SOLAR_LINE_MODEL")
+                    or ROOT / "data/models/roof_lines_v5.pt", 3)
     lm.to(device).eval()
     # ROLE SPLIT: v5 drives the line-extraction stack (its statistics are
     # what every threshold downstream was calibrated on -- v6 there
     # collapsed LINE agreement 0.754 -> 0.422); v6, which finally SEES
     # hips (combined crease F1 0.736 vs 0.446), is the EVIDENCE model:
     # the scorer's eyes and the form contest's seam support.
-    ck6 = torch.load(ROOT / "data/models/roof_lines_v6.pt",
-                     map_location="cpu", weights_only=False)
-    lm6 = T.build_unet(ck6.get("pretrained", False), out_channels=4)
     try:
-        lm6.load_state_dict(ck6["state_dict"])
+        lm6 = _load_unet(os.environ.get("SOLAR_EVIDENCE_MODEL")
+                         or ROOT / "data/models/roof_lines_v6.pt", 4)
         lm6.to(device).eval()
     except Exception:
         lm6 = None
