@@ -374,7 +374,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   same split, loss and metric) scores 0.29/0.33/0.26, hip 0.22 (0.365):
   better valleys and cliffs, worse ridges and hips, no net gain. 5 Nov,
   112 train roofs and 28 val: 92 roofs 0.309, all 112 roofs 0.428 (+0.12
-  for 20 more roofs). Still the steepest lever measured. One seed
+  for 20 more roofs). 6 Nov, 184 drawn roofs, new val of 32 roofs (not
+  comparable with the 28-roof val): 112 train roofs 0.357, all 122 roofs
+  0.407 (ridge 0.40, valley 0.32, cliff 0.23). Still climbing. Production
+  still runs v5 (lines) and v6 (evidence), trained on the September labels,
+  with thresholds calibrated on v5: a retrained model is scored in each role
+  on the held-out roofs (`SOLAR_LINE_MODEL`, `SOLAR_EVIDENCE_MODEL`, `~/mb8`)
+  before either is replaced. v71 published 5 Nov (reflection loss, building
+  heights). Still the steepest lever measured. One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
 - **Drawn outlines (3 Nov).** The markup tool moves, reshapes or redraws the
