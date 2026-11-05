@@ -219,8 +219,9 @@ def ask(client, model, images):
     for label, im in images:
         content.append({"type": "text", "text": "Reference:" if label == "reference" else f"Drawing {label}:"})
         content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": _b64(im)}})
-    r = client.messages.create(model=model, max_tokens=700, messages=[{"role": "user", "content": content}])
-    text = r.content[0].text.strip()
+    r = client.messages.create(model=model, max_tokens=4000, messages=[{"role": "user", "content": content}])
+    # newer models can open with a thinking block; the answer is the text
+    text = "".join(getattr(c, "text", "") for c in r.content if c.type == "text").strip()
     try:
         ans = json.loads(text[text.rindex("{"):text.rindex("}") + 1])
         ans["reasoning"] = text[:text.rindex("{")].strip()[:1500]
