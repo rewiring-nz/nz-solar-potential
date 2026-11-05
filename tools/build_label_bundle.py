@@ -228,12 +228,12 @@ def main():
     # ...and from data/addresses.json ([address, lon, lat, building_id] for
     # every district address point), which covers roofs outside the built
     # file: 30 of the 130-roof set had no address and showed only an id.
-    ap = DATA_DIR / "addresses.json"
-    if ap.exists():
+    addr_path = DATA_DIR / "addresses.json"
+    if addr_path.exists():
         try:
-            for a in json.loads(ap.read_text()):
-                if a[3] is not None and int(a[3]) not in addr:
-                    addr[int(a[3])] = a[0]
+            for row in json.loads(addr_path.read_text()):
+                if row[3] is not None and int(row[3]) not in addr:
+                    addr[int(row[3])] = row[0]
         except Exception:
             pass
 
