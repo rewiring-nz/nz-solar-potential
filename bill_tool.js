@@ -783,7 +783,7 @@ if (typeof module !== "undefined" && module.exports) {
 
 const BT_CSS = `
 .sx { --sx-fill: rgba(255,255,255,.055); --sx-fill-2: rgba(118,118,128,.20); --sx-sep: rgba(255,255,255,.09);
-  --sx-ink: #f5f5f7; --sx-ink-2: rgba(235,235,245,.62); --sx-ink-3: rgba(235,235,245,.38);
+  --sx-ink: #f5f5f7; --sx-ink-2: rgba(235,235,245,.66); --sx-ink-3: rgba(235,235,245,.56);
   --sx-tint: #ffd60a; --sx-good: #30d158;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   color: var(--sx-ink); margin-top: 14px; }
