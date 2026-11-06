@@ -27,6 +27,13 @@ const r2 = x => Math.round(x * 100) / 100;
 c("$10,000 loan at 6% over 15 years, a year", 1029.63, r2(B.btAnnuity(10000, 0.06, 15)),
   "10,000 × 0.06 ÷ (1 − 1.06^−15) = 600 ÷ 0.58273 = 1,029.63");
 c("$9,000 at 0% over 10 years, a year", 900, B.btAnnuity(9000, 0, 10), "9,000 ÷ 10");
+c("the default loan: 5.5% over 30 years", "5.5/30", `${E.ECON_DEFAULTS.loan_rate_pct}/${E.ECON_DEFAULTS.loan_years}`,
+  "economics.js ECON_DEFAULTS");
+// a $10,000 system: the loan covers it and its one replacement inverter (18%)
+c("borrowed for a $10,000 system", 11800, 10000 * (1 + E.ECON_DEFAULTS.inverter_cost_pct / 100),
+  "10,000 + 18% for the replacement inverter");
+c("...repaid at 5.5% over 30 years, a year", 811.90, r2(B.btAnnuity(11800, 0.055, 30)),
+  "11,800 × 0.055 ÷ (1 − 1.055^−30) = 649 ÷ 0.79936 = 811.90");
 c("the repayments add up to more than the loan", true, B.btAnnuity(10000, 0.06, 15) * 15 > 10000,
   "15 × 1,029.63 = 15,444 > 10,000: the difference is the interest");
 

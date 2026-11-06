@@ -331,8 +331,8 @@ STEPS: list[dict] = [
          "facts": [("System life", "life_years", " years"), ("Panel ageing", "degradation_pct", "% a year")],
          "code": ["economics.js::costPerKw", "bill_tool.js::btReturns"], "stages": ["page:economics.js"]},
         {"title": "Net saving with a loan",
-         "text": "The green box: bill savings less the repayments on a loan for the whole cost, at "
-                 "{loan_rate_pct}% over {loan_years} years. Both can be changed.",
+         "text": "The green box: bill savings less the repayments on a loan for the system and its one "
+                 "replacement inverter, at {loan_rate_pct}% over {loan_years} years. Both can be changed.",
          "facts": [("Loan rate", "loan_rate_pct", "%"), ("Loan term", "loan_years", " years")],
          "code": ["bill_tool.js::btAnnuity"], "stages": ["page:bill_tool.js"]},
      ]},

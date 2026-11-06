@@ -279,6 +279,10 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   const r = B.btEvaluate(ctx, home(), null, prices);
   const N = r.nodes;
   near(N.solarNet.value, N.solarSave.value - N.solarRepay.value, 1e-9, "net = savings - repayments");
+  // the loan covers the system and its one replacement inverter, over its life
+  const borrowed = N.solarRepay.children[0].value;
+  near(borrowed, N.solarCost.value * (1 + E.getEcon().inverter_cost_pct / 100), 1e-6, "system + inverter borrowed");
+  near(N.solarRepay.value, B.btAnnuity(borrowed, 0.055, 30), 1e-6, "5.5% over 30 years");
   const v = Wk.verify(N.solarNet);
   if (!v.ok) throw new Error("net does not verify: " + JSON.stringify(v.problems.map(b => b.node.label)));
   // and the check can fail: a repayment shown wrong is caught

@@ -6,4 +6,5 @@ FRONTEND_FILES = (
     "economics.js", "bill_tool.js", "panel_editor.js", "workings.js",
     "generation.js", "sun_shadows.js", "buildings3d.js", "low_solar.js", "load_profiles.js",
     "map_layers.js", "map_layers.css", "data_explorer.js", "pipeline_ui.js",
+    "methodology.js", "methodology.json",
 )

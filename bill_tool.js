@@ -711,21 +711,26 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
     if (f) N.genYear.flags.push(f);
     N.genYear.children.push(ctx.genNode);
   }
-  // PAYING FOR IT WITH A LOAN: the yearly repayment on the whole cost, as a
-  // fixed-repayment loan (econ.loan_rate_pct over econ.loan_years), and the
-  // net a year while it is being repaid: bill savings less repayments. The
-  // card's headline is this net figure.
+  // PAYING FOR IT WITH A LOAN: one fixed-repayment loan (econ.loan_rate_pct
+  // over econ.loan_years, the system's life) for the system AND the
+  // replacements it needs in that life -- the one replacement inverter, and
+  // the battery's replacement where there is one -- so the yearly figure is
+  // the whole cost of the system spread over its life. The card's headline is
+  // bill savings less these repayments.
   const EL = typeof econ !== "undefined" ? econ : {};
-  const loanRate = btIn("Loan interest rate", (EL.loan_rate_pct != null ? EL.loan_rate_pct : 6) / 100, "share",
+  const loanRate = btIn("Loan interest rate", (EL.loan_rate_pct != null ? EL.loan_rate_pct : 5.5) / 100, "share",
     { source: "Assumptions & pricing (econ.loan_rate_pct)", edit: { key: "econ:loan_rate_pct", scale: 100, unit: "%", step: 0.1 } });
-  const loanYears = btIn("Loan term", EL.loan_years != null ? EL.loan_years : 15, "yrs",
+  const loanYears = btIn("Loan term", EL.loan_years != null ? EL.loan_years : 30, "yrs",
     { dp: 0, source: "Assumptions & pricing (econ.loan_years)", edit: { key: "econ:loan_years", scale: 1, unit: "yrs", step: 1 } });
   const repayNode = (costN, label) => Wk.given(label, btAnnuity(costN.value, loanRate.value, loanYears.value), "$/yr",
     [costN, loanRate, loanYears],
-    { formula: "cost × rate ÷ (1 − (1 + rate)^−years): the fixed yearly repayment that clears the loan in its term",
+    { formula: "amount × rate ÷ (1 − (1 + rate)^−years): the fixed yearly repayment that clears the loan in its term",
       check: k => btAnnuity(k[0], k[1], k[2]) });
-  const solarRepay = repayNode(solarCostN, "Loan repayments a year, solar");
-  const allRepay = repayNode(allCostN, "Loan repayments a year, solar and battery");
+  const solarLoan = Wk.sum("Borrowed: the solar system and one replacement inverter", "$", [solarCostN, inverter.node]);
+  const allLoan = Wk.sum("Borrowed: solar, battery, and their replacements", "$",
+    prof.battery > 0 ? [allCostN, inverter.node, battery.node] : [allCostN, inverter.node]);
+  const solarRepay = repayNode(solarLoan, "Loan repayments a year, solar");
+  const allRepay = repayNode(allLoan, "Loan repayments a year, solar and battery");
   const solarNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.solarSave, solarRepay);
   const battNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.battSave, allRepay);
   return { load, cal, run, solarCost: solarCostN.value, battCost: battCostN.value,
@@ -1453,7 +1458,7 @@ function renderBillTool(box, ctx) {
           `<div class="rs-v">${m(Math.abs(shownNet.net))}<span> a year</span></div></div>` +
           `<div class="rs-parts">` +
           `<div data-wk="save" tabindex="0" role="button"><b>${m(save1.value)}</b> bill savings from the system${withBatt ? " and battery" : ""}</div>` +
-          `<div data-wk="repay" tabindex="0" role="button"><b>&minus;${m(repN.value)}</b> a year in loan repayments for the system cost <small>(${pct} over ${yrs} years)</small></div>` +
+          `<div data-wk="repay" tabindex="0" role="button"><b>&minus;${m(repN.value)}</b> a year in loan repayments for the system and a replacement inverter <small>(${pct} over ${yrs} years)</small></div>` +
           `</div>` +
           `<div class="rs-n">Rough estimate. Tap a figure to see how it&rsquo;s worked out.</div></div>`
         : "";

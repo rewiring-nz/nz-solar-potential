@@ -30,6 +30,14 @@ class DocumentationTests(unittest.TestCase):
         for name in FRONTEND_FILES:
             if name.endswith(".html"):
                 ResourceParser().feed((ROOT / name).read_text(encoding="utf-8"))
+        # Files the page's scripts load by a literal fetch("name.json") are
+        # public too: methodology.json was fetched by methodology.js but not
+        # published, so the live diagram could not load.
+        import re
+        for name in FRONTEND_FILES:
+            if name.endswith(".js") or name.endswith(".html"):
+                text = (ROOT / name).read_text(encoding="utf-8")
+                resources += re.findall(r"""fetch\(\s*["']([A-Za-z0-9_./-]+\.(?:json|js|csv))["']""", text)
         for url in resources:
             parsed = urlsplit(url)
             if not parsed.scheme and not parsed.netloc:

@@ -446,16 +446,16 @@
     },
     {
      "title": "Net saving with a loan",
-     "text": "The green box: bill savings less the repayments on a loan for the whole cost, at 6.0% over 15 years. Both can be changed.",
+     "text": "The green box: bill savings less the repayments on a loan for the system and its one replacement inverter, at 5.5% over 30 years. Both can be changed.",
      "facts": [
       {
        "label": "Loan rate",
-       "value": "6.0%",
+       "value": "5.5%",
        "source": "economics.js ECON_DEFAULTS.loan_rate_pct"
       },
       {
        "label": "Loan term",
-       "value": "15 years",
+       "value": "30 years",
        "source": "economics.js ECON_DEFAULTS.loan_years"
       }
      ],
