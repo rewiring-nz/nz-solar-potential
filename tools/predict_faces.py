@@ -444,7 +444,16 @@ def main():
         # reached a deploy. It waits for evidence, not for agreement.
         _weak = (os.environ.get("SOLAR_HYP_WEAK") == "1"
                  and max(sc_sam, sc_line, sc_lid) < 0.45)
-        if os.environ.get("SOLAR_FORCE_PICK") == "line" and f_line:
+        # SOLAR_PICK_RULE=argmax (experiment, off): the reading with the
+        # highest score, with no hand rules. On 142 drawn roofs (mb18) the
+        # rules below picked faces matching the markup at 0.626 (area IoU);
+        # the highest score alone at 0.639 (+0.013, 95% +0.001..+0.027; 19
+        # roofs better, 14 worse); the best of the four at 0.708.
+        _cands = [(sc, k, f) for sc, k, f in ((sc_sam, "sam", f_sam), (sc_line, "line", f_line if line_ok else []),
+                                               (sc_lid, "lidar", f_lid), (sc_hyp, "hypothesis", f_hyp)) if f]
+        if os.environ.get("SOLAR_PICK_RULE") == "argmax" and _cands:
+            score, pick, faces = max(_cands, key=lambda t: t[0])
+        elif os.environ.get("SOLAR_FORCE_PICK") == "line" and f_line:
             pick, faces, score = "line", f_line, max(sc_line, 0.61)
         elif f_hyp and (conf_hyp >= 0.55
                       and (max(sc_sam, sc_line, sc_lid) < 0.50

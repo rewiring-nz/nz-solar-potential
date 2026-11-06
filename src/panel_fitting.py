@@ -1599,6 +1599,88 @@ def shape_arrays(panels, face_area=None):
     return shaped if shaped else panels
 
 
+# CONSOLIDATED ARRAYS (experiment, off; SOLAR_CONSOLIDATE_ARRAYS=1 turns it
+# on). On a large face the packer's blocks around vents and roof features
+# read as scattered patches (32 Frankton Road: 730 panels in some twenty
+# blocks of 2 to 30). An installer racks such a roof as a few large
+# rectangular arrays and gives up the odd panels to do it. On faces of at
+# least CONSOLIDATE_MIN_FACE_M2 the face's panels are laid on their shared
+# grid and the largest fully filled rectangles (at least two rows and
+# CONSOLIDATE_MIN_RECT panels) are kept, largest first; the rest go. A face
+# that would lose more than CONSOLIDATE_MAX_LOSS of its panels is left as
+# packed. House hip faces are below the size floor: stepped rows there are a
+# real install (shape_arrays).
+CONSOLIDATE = os.environ.get("SOLAR_CONSOLIDATE_ARRAYS", "0") == "1"
+CONSOLIDATE_MIN_FACE_M2 = float(os.environ.get("SOLAR_CONSOLIDATE_MIN_FACE_M2", "80"))
+CONSOLIDATE_MIN_RECT = int(os.environ.get("SOLAR_CONSOLIDATE_MIN_RECT", "6"))
+CONSOLIDATE_MAX_LOSS = float(os.environ.get("SOLAR_CONSOLIDATE_MAX_LOSS", "0.25"))
+
+
+def _largest_rect(occ):
+    """Largest all-True axis-aligned rectangle in a boolean grid, at least two
+    rows deep: (area, r0, r1, c0, c1) inclusive, or None."""
+    nr, nc = occ.shape
+    h = np.zeros(nc, dtype=int)
+    best = None
+    for r in range(nr):
+        h = np.where(occ[r], h + 1, 0)
+        stack = []
+        for c in range(nc + 1):
+            cur = h[c] if c < nc else 0
+            start = c
+            while stack and stack[-1][1] >= cur:
+                s0, hh = stack.pop()
+                width = c - s0
+                for depth in (hh,):
+                    if depth >= 2 and (best is None or depth * width > best[0]):
+                        best = (depth * width, r - depth + 1, r, s0, c - 1)
+                start = s0
+            stack.append((start, cur))
+    return best
+
+
+def consolidate_arrays(panels, face_area=None):
+    """One large face's panels as a few clean rectangles (see CONSOLIDATE)."""
+    if not (RACKING and CONSOLIDATE) or len(panels) < CONSOLIDATE_MIN_RECT * 2:
+        return panels
+    if face_area is not None and face_area < CONSOLIDATE_MIN_FACE_M2:
+        return panels
+    geoms = [p["geometry"] if isinstance(p, dict) else p for p in panels]
+    cs = np.asarray(geoms[0].minimum_rotated_rectangle.exterior.coords)[:3]
+    e1, e2 = cs[1] - cs[0], cs[2] - cs[1]
+    u = e1 / (np.linalg.norm(e1) or 1.0)
+    v = np.array([-u[1], u[0]])
+    wu, hv = float(np.linalg.norm(e1)) or 1.0, float(np.linalg.norm(e2)) or 1.0
+    cen = np.array([[g.centroid.x, g.centroid.y] for g in geoms])
+    pu, pv = cen @ u, cen @ v
+    col = np.round((pu - pu.min()) / wu).astype(int)
+    row = np.round((pv - pv.min()) / hv).astype(int)
+    # off-grid panels (a block packed at another offset) have no cell: leave the face
+    if (np.abs((pu - pu.min()) / wu - col).max() > 0.3
+            or np.abs((pv - pv.min()) / hv - row).max() > 0.3):
+        return panels
+    cell = {}
+    for i, (r, c) in enumerate(zip(row, col)):
+        if (r, c) in cell:      # two panels in one cell: not a single grid
+            return panels
+        cell[(r, c)] = i
+    occ = np.zeros((row.max() + 1, col.max() + 1), dtype=bool)
+    occ[row, col] = True
+    keep = np.zeros(len(panels), dtype=bool)
+    while True:
+        b = _largest_rect(occ)
+        if b is None or b[0] < CONSOLIDATE_MIN_RECT:
+            break
+        _, r0, r1, c0, c1 = b
+        for r in range(r0, r1 + 1):
+            for c in range(c0, c1 + 1):
+                keep[cell[(r, c)]] = True
+        occ[r0:r1 + 1, c0:c1 + 1] = False
+    if keep.sum() < (1 - CONSOLIDATE_MAX_LOSS) * len(panels):
+        return panels
+    return [p for i, p in enumerate(panels) if keep[i]]
+
+
 # CENTRED ARRAYS (Josh, v55 verdicts, 4 Kent St: "panels should be more
 # centered"). The packer anchors each face's grid to the building frame, so a
 # face's block of panels sits hard against one side of the face with the

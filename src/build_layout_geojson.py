@@ -46,7 +46,7 @@ from src.plane_seams import snap_seams_to_plane_intersections
 from src.roof_levels import split_lower_levels
 from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
-from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, drop_scraps, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays, centre_panels
+from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, drop_scraps, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays, consolidate_arrays, centre_panels
 from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
@@ -765,6 +765,7 @@ def _build_one_at(building_id, nudge_m):
                       f"{len(panels)} fitted, {len(kept_panels)} after shade")
             kept_panels = enforce_arrays(kept_panels, face_area=f["geometry"].area)
             kept_panels = shape_arrays(kept_panels, face_area=f["geometry"].area)
+            kept_panels = consolidate_arrays(kept_panels, face_area=f["geometry"].area)
             kept_panels = centre_panels(kept_panels, f["geometry"],
                                         [o.buffer(0.3) for o in obstructions if o is not None] + list(_keepouts))
             per_facet.append({"facet": f, "panels": kept_panels, "obstructions": obstructions,
