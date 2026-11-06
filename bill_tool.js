@@ -1458,17 +1458,28 @@ function renderBillTool(box, ctx) {
       // = net on screen as well as in the sums
       const shownNet = btNetShown(save1.value, repN.value), st = shownNet.step;
       const m = v => btMoney(v, st);
+      // LOOK: one figure, two short rows, the detail behind an (i). Each
+      // figure still opens its workings when tapped.
+      const info = `A rough estimate. Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
+        `less the yearly repayments on a loan for the system and a replacement inverter at ${pct} over ${yrs} years. ` +
+        `Tap a figure to see how it is worked out.`;
       saveBox.innerHTML = show
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
-          `<div class="rs-top" data-wk="net-year" tabindex="0" role="button">` +
-          `<div class="rs-l">${ahead ? "This roof could be saving you" : "While the loan is repaid, this roof would cost you"}</div>` +
-          `<div class="rs-v">${m(Math.abs(shownNet.net))}<span> a year</span></div></div>` +
+          `<div class="rs-head"><span class="rs-l">${ahead ? "This roof could save you" : "With the loan, this roof costs"}</span>` +
+          `<button type="button" class="rs-i" aria-label="About this figure" aria-expanded="false">i</button></div>` +
+          `<div class="rs-v" data-wk="net-year">${m(Math.abs(shownNet.net))}<span>/yr</span></div>` +
+          `<div class="rs-info" hidden>${info}</div>` +
           `<div class="rs-parts">` +
-          `<div data-wk="save" tabindex="0" role="button"><b>${m(save1.value)}</b> bill savings from the system${withBatt ? " and battery" : ""}</div>` +
-          `<div data-wk="repay" tabindex="0" role="button"><b>&minus;${m(repN.value)}</b> a year in loan repayments for the system and a replacement inverter <small>(${pct} over ${yrs} years)</small></div>` +
-          `</div>` +
-          `<div class="rs-n">Rough estimate. Tap a figure to see how it&rsquo;s worked out.</div></div>`
+          `<div class="rs-row" data-wk="save"><span>Bill savings</span><b>${m(save1.value)}</b></div>` +
+          `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${m(repN.value)}</b></div>` +
+          `</div></div>`
         : "";
+      const ib = saveBox.querySelector(".rs-i");
+      if (ib) ib.addEventListener("click", e => {
+        e.stopPropagation();
+        const p = saveBox.querySelector(".rs-info"), open = p.hidden;
+        p.hidden = !open; ib.setAttribute("aria-expanded", String(open));
+      });
     }
     const roots = [box, moreBox, saveBox].filter(Boolean);
     const qa = sel => roots.flatMap(rt => [...rt.querySelectorAll(sel)]);

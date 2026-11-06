@@ -434,15 +434,24 @@
     box-shadow: 0 1px 4px rgba(0,0,0,.45); pointer-events: none; }
   .money-pill.neg { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
   #toggle-money { padding-left: 9px; padding-right: 9px; font-weight: 800; }
-  .roof-saving .rs-n { font-size: 11px; margin-top: 6px; color: #fff; }
+  /* Clean: one figure, two aligned rows, detail behind the (i). Figures open
+     their workings on tap; no dotted underline on the green (hover shows it). */
   .roof-saving { cursor: default; }
+  .roof-saving .wk-num, .roof-saving .wk-num:hover { text-decoration: none; }
   .roof-saving [data-wk] { cursor: pointer; border-radius: 6px; }
   .roof-saving [data-wk]:hover, .roof-saving [data-wk]:focus-visible { background: rgba(255,255,255,.12); outline: none; }
-  .roof-saving .rs-parts { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.3);
-    display: grid; gap: 3px; font-size: 12.5px; }
-  .roof-saving .rs-parts > div { padding: 1px 4px; margin: 0 -4px; }
-  .roof-saving .rs-parts b { font-weight: 750; }
-  .roof-saving .rs-parts small { font-size: 11px; }
+  .roof-saving .rs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .roof-saving .rs-l { opacity: .92; }
+  .roof-saving .rs-v { display: inline-block; padding: 0 4px; margin-left: -4px; }
+  .roof-saving .rs-v span { opacity: .85; margin-left: 2px; }
+  .roof-saving .rs-i { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.75);
+    background: none; color: #fff; font: italic 700 12px/1 Georgia, serif; cursor: pointer; padding: 0; }
+  .roof-saving .rs-i:hover, .roof-saving .rs-i:focus-visible, .roof-saving .rs-i[aria-expanded="true"] { background: rgba(0,0,0,.22); outline: none; }
+  .roof-saving .rs-info { font-size: 12px; line-height: 1.45; margin: 6px 0 2px; color: #fff; }
+  .roof-saving .rs-parts { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.25);
+    display: grid; gap: 2px; font-size: 13px; }
+  .roof-saving .rs-row { display: flex; justify-content: space-between; padding: 2px 4px; margin: 0 -4px; }
+  .roof-saving .rs-row b { font-weight: 700; font-variant-numeric: tabular-nums; }
   /* repayments larger than the savings: same layout, a dark slate ground */
   .roof-saving.behind { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
   .hz-pct { color: #ffd24a; }
