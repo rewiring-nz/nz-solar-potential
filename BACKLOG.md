@@ -428,6 +428,9 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   21 worse), the line reading picked on 75 roofs instead of 47, layout
   face IoU 0.594 -> 0.611, panel IoU 0.484 -> 0.486 (95% -0.008..+0.012;
   26 better, 24 worse). With the line reading forced, no gain (0.489).
+  Watershed competing with the line network on score
+  (`SOLAR_LINE_WATERSHED=both`, `~/mb15`): panel IoU 0.488 (95%
+  -0.005..+0.014; 25 better, 17 worse).
   Off by default; not shipped.
   v71 published 5 Nov (reflection loss, building heights). One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
