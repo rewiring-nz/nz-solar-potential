@@ -32,7 +32,7 @@ def patch_area(name):
         print(f"{name}: missing layouts or solar_potential, skipping")
         return
 
-    # Area-weighted, matching how the value is computed at build time: one
+    # Weighted by panel count + 1 (facet area is not in the layout): one
     # small bad facet should not condemn a roof that is otherwise understood.
     num, den = {}, {}
     for f in json.loads(layouts.read_text())["features"]:

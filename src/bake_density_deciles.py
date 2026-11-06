@@ -142,7 +142,10 @@ def bake(sp, layouts):
         # can ask "the best N panels" (a 6kW system) and get the right energy
         # without loading the panel tiles. Stored at the sizes a real quote
         # uses; households are 3-12kW, so the ladder is dense there.
-        by_order = sorted(t for t in panels if t[2])
+        # by fill_order itself (t[2]): sorting the bare tuples ordered by
+        # fill_rank then kWh ASCENDING, so where N cut into a rank shared by
+        # several panels it took the shadiest of them, not the first by order
+        by_order = sorted((t for t in panels if t[2]), key=lambda t: t[2])
         for n in SYSTEM_PANEL_STEPS:
             sel = by_order[:n]
             feat["properties"][f"sys_kwh_{n}"] = int(round(sum(t[1] for t in sel)))

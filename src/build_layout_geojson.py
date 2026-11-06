@@ -394,7 +394,7 @@ def _build_one_inner(building_id):
     VALIDATED BEFORE BEING OFFERED. The extra panels do not come from paving
     over equipment -- panel area landing on hand-marked obstructions went DOWN,
     6.43% to 5.65% of placed area -- and every panel stays inside the true
-    outline, because the 0.3 m edge setback keeps them clear of the boundary
+    outline, because the edge setback (config.PANEL_EDGE_SETBACK_M) keeps them clear of the boundary
     regardless of which boundary was used to find them.
 
     OFF BY DEFAULT. It multiplies the layout stage, which is the expensive one,
@@ -791,11 +791,11 @@ SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.78"))  # 0.80 in v5
 # faces), where installers use both sides; 29 York St's south-west face is 0.767 of its sunny side
 SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.65"))  # 0.70 zeroed 88
 # all-south houses in v57 (one 24-29 degree face, 0.66-0.70); 0.65 keeps a south roof up to ~27 degrees
-SUN_SIDE_SECTOR_DEG = 112.5   # off north: south-east through south-west
+SUN_SIDE_SECTOR_DEG = 112.5   # off north: east-south-east through west-south-west
 SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny side
 SUN_SIDE_MIN_SHARE = float(os.environ.get("SOLAR_SUN_SIDE_MIN_SHARE", "0.25"))  # nor a sunny side
 # this small a share of the roof it would leave bare (second pass)
-SUN_SIDE_MIN_PANELS = 8      # ...holding fewer panels than a small home system (~3.6 kW)
+SUN_SIDE_MIN_PANELS = 8      # ...holding fewer panels than a small home system (8 x 500 W = 4 kW)
 
 
 def sun_share(model, slope_deg, aspect_deg):

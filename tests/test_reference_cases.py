@@ -96,6 +96,56 @@ case("no two panels overlap", 0.0, round(sum(P[i].intersection(P[j]).area
 case("every panel inside the face less its setback", True,
      all(box(0.1 - 1e-6, 0.1 - 1e-6, 9.9 + 1e-6, 4.3 + 1e-6).contains(p) for p in P), "0.1 m in from each edge")
 
+# ---- the heat map shades the way panels do (src/build_heatmap_raster.py) ------
+import src.build_heatmap_raster as HM   # noqa: E402
+
+
+class _Sun:
+    lookup = {(25, 0): 1500.0}
+    hourly = {"beam_lookup": {(25, 0): 990.0}}
+
+
+_b = HM.build_beam_share_array(_Sun())[5, 0]
+m.beam_share = lambda slope, aspect: 990.0 / 1500.0
+case("heat map: half the direct sun blocked keeps", round(m.kept_sun(25, 0, 0.5, 1.0), 4),
+     round(_b * 0.5 + (1 - _b), 4), "0.66 direct × 0.5 + 0.34 sky = 0.67, as a panel (it was 0.5: the whole light scaled)")
+case("heat map slopes go as steep as panels", config.MAX_ROOF_SLOPE_DEG, HM.MAX_SLOPE_DEG, "config.MAX_ROOF_SLOPE_DEG")
+
+# ---- "the best N panels" are the first N in fill order (bake_density_deciles) --
+from src.bake_density_deciles import bake, SYSTEM_PANEL_STEPS   # noqa: E402
+
+_sq = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]
+_panels = [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [_sq]},
+            "properties": {"kind": "panel", "building_id": 7, "fill_rank": 1, "fill_order": i + 1,
+                           "ac_kwh_year": 700 - 10 * i, "array_size": 40}} for i in range(40)]
+_sp = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon",
+       "coordinates": [_sq]}, "properties": {"building_id": 7}}]}
+bake(_sp, {"type": "FeatureCollection", "features": _panels})
+_n = min(n for n in SYSTEM_PANEL_STEPS if n >= 6)
+case(f"the best {_n} panels' year, 40 panels in one rank", sum(700 - 10 * i for i in range(_n)),
+     _sp["features"][0]["properties"][f"sys_kwh_{_n}"],
+     f"700 + 690 + ... the first {_n} by fill order (it took the shadiest {_n} of the rank)")
+
+# ---- the sunlight model reproduces its calibration (src/solar_model.py) ------
+# A flat roof at the calibration point must get SolarView's measured year: the
+# monthly cloud factors are solved for exactly that. Needs the wide elevation
+# model (data/dem_wide_mosaic.tif) for the mountains; skipped without it.
+import src.solar_model as SM   # noqa: E402
+
+_dem = next((p for p in (ROOT / "data" / "dem_wide_mosaic.tif",
+                         ROOT.parent / "solar-map" / "data" / "dem_wide_mosaic.tif") if p.exists()), None)
+if _dem is not None:
+    SM.DEM_WIDE_PATH = _dem
+    lat, lon = SM.pilot_location()
+    sv_year = sum(SM.SOLARVIEW_MEASURED_GHI_KWH_M2_DAY[k] * d for k, d in zip(SM.MONTH_NAMES, SM.DAYS_IN_MONTH))
+    fac = SM.solarview_calibrated_monthly_factors(lat, lon, None)
+    flat = SM.build_poa_lookup_table(lat, lon, horizon_profile=SM._pilot_horizon_profile(lat, lon),
+                                     monthly_factor=fac)[0][(0, 0)]
+    case("a flat roof at the calibration point gets SolarView's year", round(sv_year, 1), round(flat, 1),
+         "sum of SolarView's measured daily GHI × days in each month (kWh/m²)", tol=0.005 * sv_year)
+else:
+    print("skip: calibration case needs data/dem_wide_mosaic.tif")
+
 # ---- report ------------------------------------------------------------------
 w = max(len(r[1]) for r in rows)
 for st, name, exp, got, how in rows:

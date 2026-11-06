@@ -13,7 +13,8 @@ shape GUESSED:
 
   ground   the national 8 m DEM (the wide DEM the horizon stages already use),
            resampled to the 1 m grid a LINZ DSM would have;
-  roofs    every outline becomes a roof of one assumed pitch. Houses get a
+  roofs    every outline becomes a roof of one assumed pitch. Footprints
+           under GABLE_MAX_M2 get a gable; other houses get a
            hip roof -- every point rises with its distance from the nearest
            wall, which is exactly a hipped roof on a rectangle and a close
            stand-in on anything else -- because a hip is the one shape that
@@ -26,8 +27,8 @@ it, panels laid on them, terrain and neighbouring buildings shade them, and
 the photo still finds vents and skylights.
 
 WHAT IT CANNOT KNOW, and the map says so for every building built this way
-(`pitch_guessed` on the building): the real pitch; gable versus hip, so gable
-ends are modelled as hips; dormers and roof levels; and trees, so no tree
+(`pitch_guessed` on the building): the real pitch; gable versus hip, so a house's
+form is a guess from its footprint size; dormers and roof levels; and trees, so no tree
 shade at all. Totals are an estimate of a different kind from the surveyed
 towns, and are labelled as such.
 

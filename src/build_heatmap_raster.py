@@ -44,6 +44,7 @@ from scipy.spatial import cKDTree
 
 warnings.filterwarnings("ignore")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import config
 from src.outline_fit import fitted_outlines
 from src.preflight import preflight
 from src.pointcloud_source import PointCloudSource
@@ -74,7 +75,9 @@ Z_SMOOTH_SIGMA_PX = 1.0  # light smoothing before the gradient -- suppresses per
 # between changing angles" look explicitly asked for, vs the old 3.5px smear at 1m resolution)
 EDGE_FEATHER_SIGMA_PX = 0.8  # soft alpha edge at the footprint boundary -- deliberately not
 # razor-sharp, per the same request
-SLOPE_BIN_DEG, ASPECT_BIN_DEG, MAX_SLOPE_DEG = 5, 10, 45
+# slope capped where panels are (config.MAX_ROOF_SLOPE_DEG): at 45 a 50 deg pixel
+# was drawn with 45 deg sunlight while a panel there used its own bin
+SLOPE_BIN_DEG, ASPECT_BIN_DEG, MAX_SLOPE_DEG = 5, 10, config.MAX_ROOF_SLOPE_DEG
 ALPHA = 235  # slight base transparency; the frontend's raster-opacity does the rest
 
 
@@ -87,6 +90,24 @@ def build_lookup_array(model):
     for (slope_bin, aspect_bin), poa in model.lookup.items():
         lookup[slope_bin // SLOPE_BIN_DEG, aspect_bin // ASPECT_BIN_DEG] = poa
     return lookup
+
+
+def build_beam_share_array(model):
+    """The share of each slope/aspect bin's yearly sunlight that comes from
+    the sun's disc (SolarModel.beam_share), on the same grid as the lookup.
+
+    THE HEAT MAP SHADES THE WAY PANELS DO. Panels keep beam x (direct sun
+    that gets through) + the rest x (open sky) (SolarModel.kept_sun). The heat
+    map scaled the WHOLE sunlight by the direct-sun fraction, so under a tree
+    or a neighbour it showed far more shade than the panels on the same roof
+    (the panel path records the old method overstated shade 2-3x). Sky light
+    is kept whole here: the per-pixel sky view is not computed."""
+    max_slope_bin = max(sb for sb, _ in model.lookup)
+    share = np.full((max_slope_bin // SLOPE_BIN_DEG + 1, 360 // ASPECT_BIN_DEG), np.nan)
+    for (slope_bin, aspect_bin), poa in model.lookup.items():
+        beam = model.hourly["beam_lookup"].get((slope_bin, aspect_bin), 0.0)
+        share[slope_bin // SLOPE_BIN_DEG, aspect_bin // ASPECT_BIN_DEG] = min(1.0, beam / poa) if poa > 0 else 0.0
+    return share
 
 
 SHADE_GRID_STEP_M = 1.0  # matches the DSM's own resolution -- finer invents
@@ -150,7 +171,7 @@ def _sample_grid(grid, xs, ys, gx, gy):
             + (g01 * (1 - ti) + g11 * ti) * tj).astype(np.float32)
 
 
-def render_building(points, geom, lookup, x_origin, y_origin, shading_factor):
+def render_building(points, geom, lookup, x_origin, y_origin, shading_factor, beam_share=None):
     """Returns (poa_grid, row0, col0) for this building's bbox in the pilot-wide
     grid, or None when there's no usable point coverage. poa_grid is NaN
     outside the footprint / away from real points."""
@@ -192,7 +213,11 @@ def render_building(points, geom, lookup, x_origin, y_origin, shading_factor):
         shade = _sample_grid(shading_factor[0], shading_factor[1], shading_factor[2], gx, gy)
     else:
         shade = shading_factor
-    poa = lookup[slope_idx, aspect_idx] * shade
+    if beam_share is None:
+        poa = lookup[slope_idx, aspect_idx] * shade
+    else:
+        b = beam_share[slope_idx, aspect_idx]
+        poa = lookup[slope_idx, aspect_idx] * (b * shade + (1.0 - b))
 
     inside = shapely.contains_xy(geom, gx, gy)
     poa[~inside | no_evidence] = np.nan
@@ -212,6 +237,7 @@ def main(area="pilot"):
     centroid = area_centroid_wgs84(area)
     model = SolarModel() if centroid is None else SolarModel(*centroid)
     lookup = build_lookup_array(model)
+    beam_share = build_beam_share_array(model)
 
     minx, miny, maxx, maxy = area_bbox_nztm(area)
     x_origin, y_origin = minx, maxy  # top-left
@@ -262,7 +288,7 @@ def main(area="pilot"):
             # for it, unlike the near field this grid now resolves.
             shade_grid = shade_grid * _hz_far_ratio(far, model.horizon_profile, model.hourly)
         result = render_building(points, row.geometry, lookup, x_origin, y_origin,
-                                 (shade_grid, shade_xs, shade_ys))
+                                 (shade_grid, shade_xs, shade_ys), beam_share)
         if result is None:
             continue
         poa, r0, c0 = result

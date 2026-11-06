@@ -1,5 +1,6 @@
 """
-Per roof facet: fit the maximum number of 1x2m panels, respecting an edge
+Per roof facet: fit the maximum number of panels (config.PANEL_WIDTH_M x
+PANEL_HEIGHT_M, 1.134 x 1.961 m), respecting an edge
 setback.
 
 The key subtlety: a facet's polygon (from roof_segmentation) is in
@@ -12,7 +13,7 @@ under- or over-fit real panels.
 Fix: "unroll" the facet into its own 2D on-surface coordinate frame
 (u = along the ridge/contour direction, unaffected by tilt; v = up the
 slope, plan-view length scaled by 1/cos(slope) to recover true surface
-length), pack real 1x2m rectangles there, then map the fitted panel
+length), pack real panel-sized rectangles there, then map the fitted panel
 corners back to plan-view world coordinates for output/mapping.
 
 Panels are packed in uniform aligned rows (the way real installations are

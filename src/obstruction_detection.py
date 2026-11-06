@@ -761,7 +761,7 @@ def detect_obstructions_from_height(pc_source, facet_geom, plane, residual_thres
 
 ELONGATION_RATIO_THRESHOLD = 3.0  # long-side/short-side of a height blob's own minimum
 # rotated rectangle -- past this it reads as a strip/wedge, not a compact object
-CROSS_CHECK_Z_THRESHOLD = 1.75  # deliberately looser than Z_THRESHOLD (2.75): this only asks
+CROSS_CHECK_Z_THRESHOLD = 1.75  # deliberately looser than Z_THRESHOLD (3.25): this only asks
 # "does the image show anything unusual across this whole shape", as corroboration for a LiDAR
 # blob shaped like a plane-fit artifact, not standing alone as its own detection the way
 # Z_THRESHOLD must. Checked against the *median* contrast value over the blob's own footprint,

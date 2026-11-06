@@ -266,7 +266,7 @@ SOLARVIEW_CAL_LOCATION = (-45.03, 168.66)
 # terrain horizon) is already handled by the clear-sky model and the horizon
 # scan, so widening the gate does not smear site-specific geometry around.
 #
-# 0.30 covers the whole Queenstown district (furthest region 0.222 deg) with
+# 0.40 covers the whole Queenstown district (furthest region 0.222 deg) with
 # margin, and comes nowhere near Wellington at 7.1 deg -- that repo shares this
 # file and must keep falling through to its own calibration.
 SOLARVIEW_CAL_MAX_DIST_DEG = 0.40
@@ -332,16 +332,39 @@ def _solarview_denominator(tz="Pacific/Auckland", year=2023):
     clearsky = location.get_clearsky(times, model="ineichen")
     solpos = location.get_solarposition(times)
     prof = _pilot_horizon_profile(lat, lon)
-    if prof is not None:
-        horizon_at_az = horizon_angle_at(prof, solpos["azimuth"].to_numpy())
-        blocked = solpos["apparent_elevation"].to_numpy() < horizon_at_az
-        ghi = clearsky["ghi"].where(~blocked, clearsky["dhi"])
-    else:
-        ghi = clearsky["ghi"]
-    daily = ghi.resample("1D").sum()
     month_abbr_by_num = dict(enumerate(MONTH_NAMES, start=1))
-    _SOLARVIEW_DENOMINATOR = {month_abbr_by_num[m]: daily[daily.index.month == m].mean()
-                              for m in range(1, 13)}
+    measured = {m: SOLARVIEW_MEASURED_GHI_KWH_M2_DAY[m] * 1000.0 for m in MONTH_NAMES}
+    if prof is None:
+        daily = clearsky["ghi"].resample("1D").sum()
+        _SOLARVIEW_DENOMINATOR = {month_abbr_by_num[m]: daily[daily.index.month == m].mean()
+                                  for m in range(1, 13)}
+        return _SOLARVIEW_DENOMINATOR
+    # THE FACTOR IS SOLVED WITH THE MODEL'S OWN ARITHMETIC. build_poa_lookup_
+    # table scales the clear sky by the factor, splits it with Erbs, and on
+    # hours behind the horizon keeps only Erbs's diffuse. Dividing SolarView
+    # by the clear sky with ITS diffuse kept on those hours (as this did until
+    # 7 Nov) gave a factor the model did not reproduce: the flat lookup came
+    # to 1,389 kWh/m2 a year against SolarView's 1,362.5 (+1.9%), north faces
+    # at 25 deg +3.5%, June's factor 16% high, because cloud-scaled light at a
+    # low sun is nearly all diffuse under Erbs. So each month's factor is
+    # found by repeating the model's own steps until its mean day matches
+    # SolarView's; the result is returned as the equivalent denominator
+    # (measured / factor) so every caller is unchanged.
+    # tests/test_reference_cases.py checks the flat lookup equals SolarView.
+    blocked = solpos["apparent_elevation"].to_numpy() < horizon_angle_at(prof, solpos["azimuth"].to_numpy())
+    month_of = np.asarray(times.month)
+    f = {m: 1.0 for m in MONTH_NAMES}
+    for _ in range(12):
+        fs = pd.Series([f[MONTH_NAMES[mm - 1]] for mm in month_of], index=times)
+        ghi = clearsky["ghi"] * fs
+        dhi = pvlib.irradiance.erbs(ghi, solpos["apparent_zenith"], times)["dhi"].fillna(0.0)
+        daily = ghi.where(~blocked, dhi).resample("1D").sum()
+        got = {month_abbr_by_num[m]: daily[daily.index.month == m].mean() for m in range(1, 13)}
+        step = {m: measured[m] / got[m] for m in MONTH_NAMES}
+        f = {m: f[m] * step[m] for m in MONTH_NAMES}
+        if max(abs(s - 1) for s in step.values()) < 1e-7:
+            break
+    _SOLARVIEW_DENOMINATOR = {m: measured[m] / f[m] for m in MONTH_NAMES}
     return _SOLARVIEW_DENOMINATOR
 
 
@@ -697,14 +720,21 @@ def _pilot_horizon_profile(lat, lon):
     ~180-ray DEM scan per SolarModel construction, a couple seconds, not
     worth the staleness risk of a cache keyed on a DEM file that could
     change."""
+    # SAID ALOUD, every time: an open horizon raises every roof's sunlight, and
+    # the stages that build a model (layout, apply_yield, horizons, emit) did
+    # not all warn when it happened.
     if not DEM_WIDE_PATH.exists():
+        print(f"  WARNING: {DEM_WIDE_PATH} is missing -- the sunlight model assumes an OPEN horizon "
+              f"(no mountains) at {lat:.3f}, {lon:.3f}", file=sys.stderr)
         return None
     to_nztm = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:2193", always_xy=True)
     x, y = to_nztm.transform(lon, lat)
     try:
         return compute_horizon_profile(str(DEM_WIDE_PATH), x, y)
     except ValueError:
-        return None  # observer point outside the DEM extent -- degrade to open-horizon rather than crash
+        print(f"  WARNING: {lat:.3f}, {lon:.3f} is outside {DEM_WIDE_PATH.name} -- the sunlight model "
+              f"assumes an OPEN horizon there", file=sys.stderr)
+        return None
 
 
 class SolarModel:

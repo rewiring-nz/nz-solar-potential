@@ -9,8 +9,8 @@ PILOT_BBOX_NZTM2000 = [1257815.95, 5002860.10, 1259272.13, 5005166.35]  # EPSG:2
 
 # WGS84 [min_lon, min_lat, max_lon, max_lat], matching REGIONS below. This
 # covers the full configured pilot/district extent plus a 30 km buffer in
-# EPSG:2193, which is the maximum far-terrain ray distance used by the
-# horizon calculations. The metric source bounds are approximately
+# EPSG:2193: the area horizon (src/terrain_horizon.py) reaches 30 km; each
+# building's far horizon (src/building_horizon.py) reaches 20 km. The metric source bounds are approximately
 # [1225154.0, 4966857.5, 1305935.6, 5045588.3] in EPSG:2193.
 DEM_WIDE_BBOX = [168.214585, -45.351447, 169.289392, -44.682770]
 
@@ -359,8 +359,9 @@ PANEL_EDGE_SETBACK_M = 0.1  # edge and ridge setbacks are 0.1 m (22 Sep); measur
 # narrow facets (a real ~1.4m-wide strip loses 0.6m total, under the panel's own 1m minimum
 # dimension, so it fit zero panels despite real usable area, on #5371143) -- but that traded away
 # realistic edge clearance on every *normal-width* facet just to rescue the rare narrow one, and
-# was reported back as making edges "clearly wrong" on ordinary roofs. Restored to 0.3;
-# PANEL_EDGE_SETBACK_FALLBACK_M below handles the narrow-facet case instead, per-facet.
+# was reported back as making edges "clearly wrong" on ordinary roofs, so it was 0.3 until
+# 22 Sep, when it went back to 0.1 (the value above). The fallback below equals it, so the
+# narrow-facet retry currently changes nothing.
 PANEL_EDGE_SETBACK_FALLBACK_M = 0.1  # retried only for a facet that fits zero panels at the
 # primary setback above -- keeps narrow facets panelable without loosening the default for
 # everything else.
@@ -440,12 +441,14 @@ PV_ASSUMPTIONS = {
     "panel_area_m2": PANEL_WIDTH_M * PANEL_HEIGHT_M,
     "panel_efficiency_pct": 22.5,  # STC efficiency implied by 500W / 2.2238m2 / 1000W/m2
     "inverter_efficiency_pct": 97.0,  # typical string/micro-inverter conversion efficiency
-    # TOTAL system losses are 14%, INCLUDING the inverter.
+    # TOTAL system losses are 16.4%, INCLUDING the inverter and glass
+    # reflection (worked below). The 14% figure in the history is before
+    # reflection was folded in.
     #
     # Read this with inverter_efficiency_pct above: the two multiply, and the
     # product is what matters.
-    #     0.97 inverter x (1 - 0.1134) = 0.860   ->  14.0% total loss
-    # so system_derate_pct is 11.34 rather than a round number BECAUSE losses
+    #     0.97 inverter x (1 - 0.1134) = 0.860   ->  14.0% total loss (before reflection)
+    # so system_derate_pct was 11.34 rather than a round number BECAUSE losses
     # compound multiplicatively, not additively: 3% + 11% is not 14%.
     #
     # This departs from PVWatts, whose 14% default EXCLUDES the inverter (a
@@ -488,7 +491,8 @@ PV_ASSUMPTIONS = {
         "face's own slope and aspect using an anisotropic sky model. Each "
         "face and panel is then reduced for the terrain, trees and "
         "neighbouring buildings that actually shade it, before the inverter "
-        "and system losses above -- 14% in total, including the inverter, covering cell temperature, soiling, "
+        "and system losses above -- 16.4% in total, including the inverter and light reflected off the "
+        "panel glass, covering cell temperature, soiling, "
         "wiring, mismatch and downtime, which follows the industry "
         "(PVWatts) convention except that shading is not in that number: "
         "we model it per panel from the laser scan instead. Real output "
