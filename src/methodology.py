@@ -348,7 +348,7 @@ STEPS: list[dict] = [
         {"title": "Power prices",
          "text": "Home prices are the Electricity Authority's latest for {price_region} ({price_month}): "
                  "{price_c}c a kWh and ${daily_d} a day for a standard-use home, incl. GST. The one price is split "
-                 "into {peak_c}c in peak hours and {offpeak_c}c off-peak, so a typical home pays the same average. "
+                 "into {peak_c}c in peak hours and {offpeak_c}c off-peak, so a typical home pays about the same average. "
                  "Areas on another network use its prices: {other_regions}. "
                  "Exported solar earns {export_c}c a kWh in the first year (retailer buy-back rates on Powerswitch). "
                  "The prices are refreshed each month.",
