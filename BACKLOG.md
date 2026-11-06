@@ -415,11 +415,11 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   faint lines not traced, lines traced along the eave, and a few outline
   offsets. `tools/linemap_bench.py` reruns this offline in two minutes from
   maps saved with `SOLAR_DUMP_LINEMAP` (the 157 maps: VM `~/mb13/maps.tgz`).
-  It has no LiDAR, so it understates the line reading: `line_facets`
-  merges cells on one plane, and the faces the build makes from drawn
-  lines score 0.688 on its metric (145 roofs) where the bench gives the
-  model's map 0.495. Use it to rank extraction variants, not to predict
-  the build.
+  METHOD=build runs `face_candidates.faces_from_map`, the build's own
+  chain with the LiDAR plane fit, on maps saved with their points (VM
+  `~/mb16/maps.tgz`, 157 roofs): model map 0.488, drawn lines rasterised
+  0.681 (the build's drawn-line faces 0.688). On the 47 roofs where the
+  build shipped the line reading, bench 0.665 vs build 0.666.
   Seeded watershed in place of the line network
   (`SOLAR_LINE_WATERSHED=1`, `face_candidates.watershed_faces`; seeds where
   the smoothed map < 0.005, eroded 5 px, 80 px minimum): offline 0.495 ->

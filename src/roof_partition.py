@@ -1163,6 +1163,36 @@ OUTER_FACE_CONTAINS = 0.90    # ...nor can one that swallows every other face
 # case -- people stop drawing where the crease visually stops, not at the
 # boundary. 2.5 m (label_geometry's default) leaves most faces unclosed.
 LINE_SEAL_M = 6.0
+# A line end this close to the roof edge is moved onto it before sealing,
+# whatever its degree. The seal only extends degree-1 ends, so a junction a
+# few mm inside the outline (two hips meeting at a corner) never reached
+# it and the faces either side merged. Drawn lines inside an outline that
+# matches the drawn roof to 0.988 IoU, through line_facets: faces 0.695 vs
+# drawn faces without the link (7 faces read as 2 on 4747637), 0.826 with
+# it at 0.4 m. On saved line maps (tools/linemap_bench.py, 157 drawn roofs)
+# 0.4 m: drawn lines +0.025, model map +0.011; 2 m: +0.008 and +0.041.
+# Experiment, off by default until measured on panels:
+# SOLAR_SEAL_SNAP_M=<metres>.
+SEAL_SNAP_M = 0.0
+
+
+def _snap_ends_to_boundary(segs, boundary, tol):
+    """Join each segment end within tol of boundary to it with a short link
+    that crosses it by 2 cm, so noding meets the edge exactly (a point moved
+    onto the edge lands a float's width off it and stays unjoined)."""
+    from shapely.geometry import Point
+    out = []
+    for s in segs:
+        ends = [(s[0], s[1]), (s[2], s[3])] if len(s) == 4 else [tuple(s[0]), tuple(s[1])]
+        out.append([ends[0], ends[1]])
+        for e in ends:
+            p = Point(e)
+            d = boundary.distance(p)
+            if 1e-9 < d <= tol:
+                q = boundary.interpolate(boundary.project(p))
+                ux, uy = (q.x - e[0]) / d, (q.y - e[1]) / d
+                out.append([e, (q.x + ux * 0.02, q.y + uy * 0.02)])
+    return out
 
 
 def _seal_network(segs, boundary, max_ext=None):
@@ -1190,6 +1220,9 @@ def _seal_network(segs, boundary, max_ext=None):
 
     if max_ext is None:
         max_ext = LINE_SEAL_M
+    snap_m = float(os.environ.get("SOLAR_SEAL_SNAP_M", SEAL_SNAP_M))
+    if snap_m > 0:
+        segs = _snap_ends_to_boundary(segs, boundary, snap_m)
     lines = [LineString(s) for s in segs if LineString(s).length > 1e-9]
     if not lines:
         return []
