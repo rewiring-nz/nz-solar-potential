@@ -399,7 +399,9 @@ figure for the same thing. Code enforces this:
   `.github/workflows/wholesale-prices.yml` refreshes it monthly, fetching
   only the newest two months (older days come from the published file;
   `--full` with the raw cache in `data/wholesale/raw/` rebuilds all).
-  `tests/test_wholesale.py` and `.mjs` check it. The bill model does not use it.
+  `tests/test_wholesale.py` and `.mjs` check it. It is a comparison
+  for readers who want to dig in, never an input to the bill model:
+  households and businesses pay retail prices, not wholesale.
 - Sunlight is calibrated to NIWA SolarView GHI in the Wakatipu basin, else the
   nearest NIWA measured-radiation station, scaled by ERA5 spatial ratios
   (`src/solar_model.py` header).
