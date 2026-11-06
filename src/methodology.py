@@ -133,6 +133,8 @@ def values() -> dict:
         "export_c": (_fmt(_js_const("economics.js", r"home_offpeak_sell_c:\s*([\d.]+)")),
                      "economics.js ECON_DEFAULTS.home_offpeak_sell_c"),
     })
+    v["peak_export_c"] = (_fmt(_js_const("economics.js", r"home_peak_sell_c:\s*([\d.]+)")),
+                          "economics.js ECON_DEFAULTS.home_peak_sell_c")
     v["biz_peak_c"] = (_fmt(_js_const("economics.js", r"biz_peak_c:\s*([\d.]+)")), "economics.js ECON_DEFAULTS.biz_peak_c")
     v["biz_offpeak_c"] = (_fmt(_js_const("economics.js", r"biz_offpeak_c:\s*([\d.]+)")), "economics.js ECON_DEFAULTS.biz_offpeak_c")
     # the other network regions the map's areas are priced for
@@ -361,7 +363,8 @@ STEPS: list[dict] = [
                  "Areas on another network use its prices: {other_regions}. "
                  "Businesses pay energy prices, {biz_peak_c}c peak and {biz_offpeak_c}c off-peak; their network "
                  "and connection charges are a separate bill that solar does not change. "
-                 "Exported solar earns {export_c}c a kWh in the first year (retailer buy-back rates on Powerswitch). "
+                 "Exported solar earns {export_c}c a kWh in the day and {peak_export_c}c at peak in the first year "
+                 "(retailer buy-back rates). "
                  "The prices are refreshed each month.",
          "facts": [("EA price", "price_c", "c/kWh"), ("Peak", "peak_c", "c/kWh"), ("Off-peak", "offpeak_c", "c/kWh"),
                    ("Daily charge", "daily_d", " $/day"), ("Export", "export_c", "c/kWh")],

@@ -107,8 +107,15 @@ c("a business pays energy prices: 17c peak, 10c off-peak, no daily charge", "17/
   c("a business's flat price", Math.round(share * 17 + (1 - share) * 10), E.ECON_DEFAULTS.biz_buy_c,
     `${(share * 100).toFixed(0)}% of a typical business's use in peak hours: ${share.toFixed(2)} × 17c + ${(1 - share).toFixed(2)} × 10c`);
 }
-c("solar export starts at 12c a kWh", "12/12", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
-  "Powerswitch retailer buy-back rates");
+c("solar export: 12c in the day, 20c at peak", "12/20", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
+  "2026 retailer buy-back rates (peak 20-23c, otherwise 10-12c)");
+{
+  const keep = globalThis.econ;
+  globalThis.econ = Object.assign({}, keep, { home_peak_sell_c: 8, home_offpeak_sell_c: 12 });
+  const t = B.btTariffFromEcon(false, null);
+  globalThis.econ = keep;
+  c("peak export is never below daytime export", 12, t.peakSell, "8c typed for peak, 12c in the day: peak paid 12c");
+}
 c("the prices are no more than eight months old", true,
   (Date.now() - Date.parse(q.month)) / 864e5 < 245, `EA month ${q.month} (the EA publishes about five months behind): run tools/fetch_regional_prices.mjs`);
 

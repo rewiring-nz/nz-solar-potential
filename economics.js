@@ -41,12 +41,16 @@ const ECON_DEFAULTS = {
   // THE PLAN: "tou" (peak and off-peak, the default) or "flat" (one price all
   // day: home_buy_c / biz_buy_c). Switched on a building's card, map-wide.
   plan: "tou",
-  home_peak_c: 50, home_offpeak_c: 25, home_peak_sell_c: 12, home_offpeak_sell_c: 12, home_daily: 2.5,
+  // EXPORT: 12c in the day, 20c at peak (2026 retailer peak buy-back:
+  // Electric Kiwi 20c/10c, Mercury 23c/11.5c, Octopus 23c/10c; lines
+  // companies pay peak export rebates from April 2026). Peak export is
+  // never below daytime export (bill_tool.js btTariffFromEcon).
+  home_peak_c: 50, home_offpeak_c: 25, home_peak_sell_c: 20, home_offpeak_sell_c: 12, home_daily: 2.5,
   // A BUSINESS PAYS ENERGY PRICES: its network and connection charges come
   // on a separate bill that solar does not change, so they are left out
   // (daily 0) and the energy rate is far below a home's: 17c peak, 10c
   // off-peak.
-  biz_peak_c: 17,  biz_offpeak_c: 10,  biz_peak_sell_c: 12,  biz_offpeak_sell_c: 12,  biz_daily: 0,
+  biz_peak_c: 17,  biz_offpeak_c: 10,  biz_peak_sell_c: 20,  biz_offpeak_sell_c: 12,  biz_daily: 0,
   // [from, to) hours of the day that are peak: 7-10am and 6-9pm (Josh,
   // 18 Oct); adjustable on the building panel's sliders
   peak_hours: [[7, 10], [18, 21]],

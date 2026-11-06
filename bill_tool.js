@@ -341,8 +341,8 @@ function btPriceNodes(tariff) {
   // whether they are still that or the reader's own
   // (btTariffFromEcon sets t.source when the area's EA prices are in use)
   const src = (t && t.source ? `${t.source}. ` : "Your plan (Prices), including GST. ") +
-    `Peak hours: ${btPeakText()}. Export starts at ${t.offpeakSell}c a kWh ` +
-    `(retailer buy-back rates, powerswitch.org.nz/solar-rates).`;
+    `Peak hours: ${btPeakText()}. Export starts at ${t.offpeakSell}c a kWh in the day and ${t.peakSell}c at peak ` +
+    `(retailer buy-back rates).`;
   const P = {
     peak: btIn("Peak price", t.peak / 100, "$/kWh", { dp: 3, source: src, edit: ed("peak_c") }),
     off: btIn("Off-peak price", t.offpeak / 100, "$/kWh", { dp: 3, source: src, edit: ed("offpeak_c") }),
@@ -1221,6 +1221,8 @@ function btTariffFromEcon(isBiz, area) {
     const flat = r ? r.flat_c : E[p + "_buy_c"];
     Object.assign(t, { peak: flat, offpeak: flat, flat: true });
   }
+  // peak export is never paid below daytime export
+  t.peakSell = Math.max(t.peakSell, t.offpeakSell);
   return t;
 }
 
