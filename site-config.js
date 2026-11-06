@@ -21,6 +21,16 @@ window.SITE = {
   // The Electricity Authority network region whose home prices the bill
   // model uses (regional_prices.js): 34 = Queenstown (Aurora Energy).
   priceRegion: 34,
+  // Map areas on another network: Aurora's Central Otago network covers
+  // Wanaka, Albert Town, Hawea, Cromwell and Bannockburn (35). Kingston's
+  // supply is on the PowerNet-managed Southland network (2025 outage
+  // reports), so The Power Company's region (38) -- inferred, not confirmed
+  // by a network map. Every other area is Queenstown (34).
+  priceRegionByArea: {
+    wanaka_town: 35, wanaka_west: 35, wanaka_albert_town: 35, hawea: 35,
+    cromwell_east: 35, cromwell_west: 35, bannockburn: 35,
+    kingston: 38,
+  },
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
   towns: [

@@ -52,6 +52,27 @@ c("peak is the set ratio above off-peak", r2(RP.peak_ratio), r2(q.peak_c / q.off
     `${d.home_peak_c}/${d.home_offpeak_c}/${d.home_daily}`, "SITE.priceRegion = 34");
   c("businesses keep their own prices", E.ECON_DEFAULTS.biz_peak_c, d.biz_peak_c, "the EA set is residential");
 }
+{
+  // each map area priced for its own network region (site-config.js priceRegionByArea)
+  globalThis.window = globalThis.window || {};
+  const fs = require("node:fs");
+  const vm = require("node:vm");
+  const box = { window: {} };
+  vm.runInNewContext(fs.readFileSync(new URL("../site-config.js", import.meta.url), "utf8"), box);
+  const site = box.window.SITE;
+  const at = area => E.homePricesFor(area, { prices: RP, site, econ: E.ECON_DEFAULTS });
+  for (const [area, code] of [["town_south_lake", 34], ["glenorchy", 34], ["wanaka_town", 35], ["hawea", 35],
+                              ["cromwell_east", 35], ["bannockburn", 35], ["kingston", 38]]) {
+    const p = at(area);
+    c(`${area} is priced for EA region ${code}`, `${code}: ${RP.regions[code].peak_c}c`, p ? `${p.code}: ${p.peak_c}c` : "none",
+      `${RP.regions[code].name}`);
+  }
+  const own = Object.assign({}, E.ECON_DEFAULTS, { home_peak_c: 45 });
+  c("a reader's own home prices apply everywhere", null,
+    E.homePricesFor("wanaka_town", { prices: RP, site, econ: own }), "home_peak_c changed in Assumptions & pricing");
+  c("every served area with its own region names a region that exists", true,
+    Object.values(site.priceRegionByArea).every(k => RP.regions[k]), "site-config.js against regional_prices.js");
+}
 c("solar export starts at 12c a kWh", "12/12", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
   "Powerswitch retailer buy-back rates");
 c("the prices are no more than eight months old", true,

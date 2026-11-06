@@ -141,13 +141,35 @@ function applyRegionalPrices(defaults, prices, code) {
   defaults.home_peak_c = r.peak_c;
   defaults.home_offpeak_c = r.offpeak_c;
   defaults.home_daily = r.daily;
-  defaults.price_source = `Electricity Authority, ${r.name}, ${r.month.slice(0, 7)}: ` +
+  defaults.price_source = priceSourceText(r);
+  return r;
+}
+function priceSourceText(r) {
+  return `Electricity Authority, ${r.name}, ${r.month.slice(0, 7)}: ` +
     `${r.variable_c}c a kWh and $${r.daily.toFixed(2)} a day for a standard-use home, incl. GST, ` +
     `split into peak and off-peak so a typical home pays that average`;
-  return r;
 }
 if (typeof REGIONAL_PRICES !== "undefined" && typeof window !== "undefined" && window.SITE) {
   applyRegionalPrices(ECON_DEFAULTS, REGIONAL_PRICES, window.SITE.priceRegion);
+}
+// EACH AREA ITS OWN NETWORK REGION. A building's map area (its `sr`) names
+// its EA region through SITE.priceRegionByArea (else SITE.priceRegion):
+// Wanaka and Cromwell are on Aurora's Central Otago network, Kingston on The
+// Power Company's. Returns that region's home prices, or null when the
+// reader has set home prices of their own (then theirs apply everywhere).
+function homePricesFor(area, opts) {
+  const o = opts || {};
+  const prices = o.prices || (typeof REGIONAL_PRICES !== "undefined" ? REGIONAL_PRICES : null);
+  const site = o.site || (typeof window !== "undefined" ? window.SITE : null);
+  const e = o.econ || (typeof econ !== "undefined" ? econ : null);
+  if (!prices || !site) return null;
+  if (e && (e.home_peak_c !== ECON_DEFAULTS.home_peak_c || e.home_offpeak_c !== ECON_DEFAULTS.home_offpeak_c
+            || e.home_daily !== ECON_DEFAULTS.home_daily)) return null;
+  const byArea = site.priceRegionByArea || {};
+  const code = area != null && byArea[area] != null ? byArea[area] : site.priceRegion;
+  const r = code != null ? prices.regions[code] : null;
+  return r ? { code: +code, name: r.name, peak_c: r.peak_c, offpeak_c: r.offpeak_c, daily: r.daily,
+               source: priceSourceText(r) } : null;
 }
 let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
 econ.cost_tiers[4].max_kw = Infinity;   // JSON round-trip turns Infinity into null
@@ -315,7 +337,7 @@ function economicsFor(kwp, kwhYear, roofM2, override) {
 }
 // Node (tests) and browser (preview.html) both, without a build step.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { costAnchors, applyRegionalPrices, ECON_DEFAULTS, SELF_PROFILES, costPerKw, systemCost,
+  module.exports = { costAnchors, applyRegionalPrices, homePricesFor, ECON_DEFAULTS, SELF_PROFILES, costPerKw, systemCost,
                      isBusiness, sellRate, economicsFor, setEcon: e => { econ = e; },
                      getEcon: () => econ };
 }

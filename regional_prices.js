@@ -318,9 +318,9 @@ const REGIONAL_PRICES = {
    "month": "2026-05-31",
    "daily": 1.9908,
    "variable_c": 40.69,
-   "peak_share": 0.2915,
-   "peak_c": 48.83,
-   "offpeak_c": 37.34
+   "peak_share": 0.2934,
+   "peak_c": 48.8,
+   "offpeak_c": 37.32
   },
   "36": {
    "name": "Otago (OtagoNet)",
@@ -345,9 +345,9 @@ const REGIONAL_PRICES = {
    "month": "2026-05-31",
    "daily": 3.3807,
    "variable_c": 31.28,
-   "peak_share": 0.2915,
-   "peak_c": 37.54,
-   "offpeak_c": 28.71
+   "peak_share": 0.2934,
+   "peak_c": 37.52,
+   "offpeak_c": 28.69
   },
   "39": {
    "name": "Invercargill (Electricity Invercargill)",

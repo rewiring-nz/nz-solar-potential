@@ -339,10 +339,8 @@ function btPriceNodes(tariff) {
   const t = btTariff(tariff);
   // where the home prices start from (economics.js applyRegionalPrices), and
   // whether they are still that or the reader's own
-  const E0 = typeof ECON_DEFAULTS !== "undefined" ? ECON_DEFAULTS : null;
-  const fromEa = t && t.pfx === "home" && E0 && E0.price_source && typeof econ !== "undefined"
-    && econ.home_peak_c === E0.home_peak_c && econ.home_offpeak_c === E0.home_offpeak_c && econ.home_daily === E0.home_daily;
-  const src = (fromEa ? `${E0.price_source}. ` : "Your plan (Prices), including GST. ") +
+  // (btTariffFromEcon sets t.source when the area's EA prices are in use)
+  const src = (t && t.source ? `${t.source}. ` : "Your plan (Prices), including GST. ") +
     `Peak hours: ${btPeakText()}. Export starts at ${t.offpeakSell}c a kWh ` +
     `(retailer buy-back rates, powerswitch.org.nz/solar-rates).`;
   const P = {
@@ -1168,11 +1166,20 @@ function btSaveState(bid, st) {
 // The plan's prices for a home or a business, from the map's one set of
 // assumptions (economics.js `econ`): editing them here edits them for the
 // whole map, so every figure everywhere is priced the same way.
-function btTariffFromEcon(isBiz) {
+//
+// A HOME IS PRICED FOR ITS OWN AREA. `area` is the building's map region (its
+// `sr`); economics.js homePricesFor gives the Electricity Authority's prices
+// for that area's network region (SITE.priceRegionByArea). They apply while
+// the reader has not set home prices of their own in Assumptions & pricing;
+// once they have, theirs apply everywhere. Businesses keep econ's prices.
+function btTariffFromEcon(isBiz, area) {
   const E = typeof econ !== "undefined" ? econ : {};
   const p = isBiz ? "biz" : "home";
-  return { peak: E[p + "_peak_c"], offpeak: E[p + "_offpeak_c"], peakSell: E[p + "_peak_sell_c"],
-           offpeakSell: E[p + "_offpeak_sell_c"], daily: E[p + "_daily"], pfx: p };
+  const t = { peak: E[p + "_peak_c"], offpeak: E[p + "_offpeak_c"], peakSell: E[p + "_peak_sell_c"],
+              offpeakSell: E[p + "_offpeak_sell_c"], daily: E[p + "_daily"], pfx: p };
+  const r = !isBiz && typeof homePricesFor === "function" ? homePricesFor(area) : null;
+  if (r) Object.assign(t, { peak: r.peak_c, offpeak: r.offpeak_c, daily: r.daily, source: r.source });
+  return t;
 }
 
 // The bill model for a roof that isn't open: the household its reader saved
@@ -1183,7 +1190,7 @@ function btEvaluateFor(bid, isBizDefault, ctx) {
   const type = saved.type || (isBizDefault ? "business" : "home");
   const prof = Object.assign({ type }, BT_DEFAULTS[type], saved[type] || {});
   const sys = Object.assign({ solarPerKw: null, battPerKwh: null }, saved.sys || {});
-  return btEvaluate(ctx, prof, saved.calib || null, btTariffFromEcon(type === "business"), sys);
+  return btEvaluate(ctx, prof, saved.calib || null, btTariffFromEcon(type === "business", ctx.area), sys);
 }
 
 // box: the element to fill. ctx: { buildingId, isBusiness, lat, roofM2,
@@ -1230,7 +1237,7 @@ function renderBillTool(box, ctx) {
   const draw = () => {
     const isBiz = state.type === "business";
     const prof = Object.assign({ type: state.type }, isBiz ? state.business : state.home);
-    const tariff = btTariffFromEcon(isBiz);
+    const tariff = btTariffFromEcon(isBiz, ctx.area);
     const haveGen = !!(ctx.gen && ctx.gen.length === 4 && ctx.kwp > 0);
     const r = btEvaluate({ lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2, btype: ctx.btype, heightM: ctx.heightM, kwp: ctx.kwp, kwpNode: ctx.kwpNode,
                            gen: haveGen ? ctx.gen : null, seasonDays: ctx.seasonDays, genNode: ctx.genNode },
@@ -1289,12 +1296,16 @@ function renderBillTool(box, ctx) {
       return `<span class="val after" data-wk="after-${s}" tabindex="0" role="button">` +
         (n.value < -0.5 ? `<b>${btMoney(-n.value)}</b> <small>credit</small>` : `<b>${btMoney(n.value)}</b>`) + `</span>`;
     };
-    const price = (label, key) => row(label, field(key, +(E[key] || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
+    // the prices THIS building is priced at: its area's EA prices for a home
+    // (btTariffFromEcon), else the map's set
+    const shown = key => key.endsWith("_peak_c") ? tariff.peak : key.endsWith("_offpeak_c") ? tariff.offpeak
+      : key.endsWith("_daily") ? tariff.daily : E[key];
+    const price = (label, key) => row(label, field(key, +(shown(key) || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
     const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
     // a payback after the panels' life is no payback
     const pbText = ret.payback == null || ret.payback > ret.years ? `over ${ret.years} yrs · doesn't pay back` : `over ${ret.years} yrs · pays back in ${ret.payback.toFixed(1)}`;
-    const priceSum = `${(E[pfx + "_peak_c"] || 0)}c peak · ${(E[pfx + "_offpeak_c"] || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
+    const priceSum = `${(shown(pfx + "_peak_c") || 0)}c peak · ${(shown(pfx + "_offpeak_c") || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
     const SX_SPLIT = "<!--sx-split-->";
     // A day in each season (the next layer down from the card)
@@ -1389,7 +1400,7 @@ function renderBillTool(box, ctx) {
         price("Off-peak", pfx + "_offpeak_c") +
         price("Export, off-peak", pfx + "_offpeak_sell_c") +
         price("Export, peak", pfx + "_peak_sell_c") +
-        row("Daily charge", field("daily", +(E[pfx + "_daily"] || 0).toFixed(2), `min="0" step="0.1" data-econ="${pfx}_daily"`, "$", "/day")) +
+        row("Daily charge", field("daily", +(shown(pfx + "_daily") || 0).toFixed(2), `min="0" step="0.1" data-econ="${pfx}_daily"`, "$", "/day")) +
         btPeakHours().map(([a, b], i) => {
           const lo = i === 0 ? 4 : 12, hi = i === 0 ? 13 : 24;
           return `<div class="sx-row sx-peak"><span class="lbl">${i === 0 ? "Morning peak" : "Evening peak"}<small data-peak-label="${i}">${hours([a, b])}</small></span>` +

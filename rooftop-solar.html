@@ -3116,7 +3116,7 @@ map.on("load", async () => {
     const r = btEvaluateFor(pr.building_id, (pr.btype || "home") !== "home", {
       lat: (sun && sun !== true && sun.lat) || seasonCurves.lat || -41,
       lon: map.getCenter().lng, btype: pr.btype, heightM: pr.height_m,
-      roofM2: pr.facet_area_m2 || 150, kwp,
+      roofM2: pr.facet_area_m2 || 150, kwp, area: pr.sr,
       gen: shape.map(row => row.map(v => v * kwhYear)), seasonDays: null });
     const out = Object.assign(btPanelEcon(r, count), { netYear: r.netYear });
     if (econCache.size > 20000) econCache.clear();
@@ -5520,6 +5520,8 @@ map.on("load", async () => {
             lon: map.getCenter().lng,
             // what a non-home uses per m2 of floor, and its storeys (bill_tool.js BT_BIZ_KWH_M2)
             btype: props.btype, heightM: props.height_m,
+            // its own area's power prices (economics.js homePricesFor)
+            area: props.sr,
             roofM2: props.facet_area_m2 || 150,
             kwp: kwp, kwpNode: GEN.kwp, genNode: GEN.gen,
             moreBox: el("bill-more"),
@@ -6305,7 +6307,7 @@ map.on("load", async () => {
     else {
       const lat = (seasonCurves && seasonCurves.lat) || -45;
       load = btBuildLoad(prof, { lat, roofM2: p.facet_area_m2 || 150 });
-      cal = btCalibration(load, saved.calib || null, btTariffFromEcon(false), null);
+      cal = btCalibration(load, saved.calib || null, btTariffFromEcon(false, p.sr), null);
     }
     // a home's heating and hot water are no longer separate answers (the
     // EMI regional profile carries them), so they are named only if set

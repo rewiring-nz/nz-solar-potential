@@ -31,7 +31,11 @@ const PAGE = "https://www.ea.govt.nz/data-and-insights/datasets/retail/regional-
 const CSV_RE = /https:\/\/emidatasets\.blob\.core\.windows\.net\/publicdata\/Datasets\/Retail\/RegionalPowerPrices\/[0-9]{8}_AveragePowerUseAndCosts\.csv/g;
 // where each region's default home is placed for its share of use in peak
 // hours (heating follows the town's climate): latitude and longitude
-const REGION_TOWN = { 34: [-45.03, 168.66] };   // Queenstown (Aurora Energy)
+const REGION_TOWN = {
+  34: [-45.03, 168.66],   // Queenstown (Aurora Energy)
+  35: [-44.70, 169.13],   // Central Otago (Aurora Energy): Wanaka, Cromwell
+  38: [-45.33, 168.72],   // Southland (The Power Company): Kingston
+};
 
 const E = require(join(ROOT, "economics.js"));
 globalThis.Wk = require(join(ROOT, "workings.js")).Wk;

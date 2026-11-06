@@ -133,6 +133,12 @@ def values() -> dict:
         "export_c": (_fmt(_js_const("economics.js", r"home_offpeak_sell_c:\s*([\d.]+)")),
                      "economics.js ECON_DEFAULTS.home_offpeak_sell_c"),
     })
+    # the other network regions the map's areas are priced for
+    other = sorted({str(k) for k in re.findall(r":\s*(\d+)", re.search(r"priceRegionByArea:\s*\{([^}]*)\}",
+                    (ROOT / "site-config.js").read_text()).group(1))} - {code})
+    v["other_regions"] = ("; ".join(f"{rp['regions'][k]['name']} {_fmt(rp['regions'][k]['variable_c'], 2)}c "
+                                    f"and ${_fmt(rp['regions'][k]['daily'], 2)} a day" for k in other),
+                          "regional_prices.js, the regions in SITE.priceRegionByArea")
     M = lambda path, name, dp=None: (_fmt(_module_const(path, name), dp), f"{path} {name}")
     E = lambda path, name, dp=None: (_fmt(_env_default(path, name), dp), f"{path} {name} (default)")
     v.update({
@@ -343,6 +349,7 @@ STEPS: list[dict] = [
          "text": "Home prices are the Electricity Authority's latest for {price_region} ({price_month}): "
                  "{price_c}c a kWh and ${daily_d} a day for a standard-use home, incl. GST. The one price is split "
                  "into {peak_c}c in peak hours and {offpeak_c}c off-peak, so a typical home pays the same average. "
+                 "Areas on another network use its prices: {other_regions}. "
                  "Exported solar earns {export_c}c a kWh in the first year (retailer buy-back rates on Powerswitch). "
                  "The prices are refreshed each month.",
          "facts": [("EA price", "price_c", "c/kWh"), ("Peak", "peak_c", "c/kWh"), ("Off-peak", "offpeak_c", "c/kWh"),
