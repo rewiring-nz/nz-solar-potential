@@ -945,6 +945,15 @@ const BT_CSS = `
 .sx-glance { margin-top: 10px; }
 .sx-glance.sx-cost { margin: 0 0 10px; }
 .sx-billrow { gap: 8px; }
+.sx-prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 4px; margin: 6px 0 2px; }
+.sx-pc { display: flex; flex-direction: column; gap: 1px; background: var(--sx-fill); border-radius: 8px; padding: 5px 6px 4px; cursor: text; min-width: 0; }
+.sx-pc .v { display: flex; align-items: baseline; gap: 1px; font-weight: 600; font-size: 14px; }
+.sx-pc .v i { font-style: normal; font-weight: 500; color: var(--sx-ink-2); font-size: 12px; }
+.sx-pc input { width: 4.2ch; field-sizing: content; min-width: 1.6ch; max-width: 100%; background: none; border: 0; padding: 0; color: var(--sx-ink); font: inherit; -moz-appearance: textfield; }
+.sx-pc input::-webkit-outer-spin-button, .sx-pc input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sx-pc input:focus { outline: none; }
+.sx-pc:focus-within { box-shadow: 0 0 0 2px var(--sx-tint); }
+.sx-pc small { font-size: 11px; color: var(--sx-ink-3); white-space: nowrap; }
 .sx-billrow .sx-field input { width: 52px; }
 .sx-arrow { color: var(--sx-ink-3); }
 .sx-billrow .after { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin-right: -6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1306,6 +1315,19 @@ function renderBillTool(box, ctx) {
     const P = isBiz ? state.business : state.home;
     const field = (id, value, attrs, pre, post, est) =>
       `<label class="sx-field${est ? " est" : ""}">${pre ? `<span>${pre}</span>` : ""}<input id="bt-${id}" type="number" inputmode="decimal" ${attrs} value="${value}">${post ? `<span>${post}</span>` : ""}</label>`;
+    const priceStrip = () => {
+      const pc = (key, label, value, pre, post, step) =>
+        `<label class="sx-pc"><span class="v">${pre ? `<i>${pre}</i>` : ""}<input type="number" inputmode="decimal" min="0" ` +
+        `step="${step}" data-econ="${key}" value="${+(+value || 0).toFixed(2)}" aria-label="${label}">${post ? `<i>${post}</i>` : ""}</span>` +
+        `<small>${label}</small></label>`;
+      return `<div class="sx-prices">` +
+        (tariff.flat ? pc(`${pfx}_buy_c`, "Price", tariff.peak, "", "c", 0.5)
+                     : pc(`${pfx}_peak_c`, "Peak", tariff.peak, "", "c", 0.5) + pc(`${pfx}_offpeak_c`, "Off-peak", tariff.offpeak, "", "c", 0.5)) +
+        pc(`${pfx}_daily`, "Daily charge", tariff.daily, "$", "", 0.05) +
+        pc(`${pfx}_offpeak_sell_c`, "Export", tariff.offpeakSell, "", "c", 0.5) +
+        pc(`${pfx}_peak_sell_c`, "Peak export", tariff.peakSell, "", "c", 0.5) +
+        `</div>`;
+    };
     const row = (label, right, opts) => {
       const o = opts || {};
       return `<div class="sx-row${o.go ? " go" : ""}${o.cls ? " " + o.cls : ""}"${o.go ? ` data-wk="${o.go}" tabindex="0" role="button"` : ""}>` +
@@ -1417,6 +1439,10 @@ function renderBillTool(box, ctx) {
       `<div class="sx-group sx-glance">` +
         (haveGen ? billPair("winter", "Winter bill", "a typical winter month") : "") +
         (haveGen ? billPair("summer", "Summer bill", "a typical summer month") : "") +
+        // THE PRICES THIS BUILDING IS PRICED AT, editable in place: five
+        // numbers, no prose. A home shows its area's home prices, a business
+        // business prices; an edit applies across the map for that type.
+        (haveGen ? priceStrip() : "") +
       `</div>` +
       (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
       (haveGen ? `<button type="button" class="sx-explore" data-explore="1">A day in each season, and how it's worked out <span aria-hidden="true">›</span></button>` : "") +
@@ -1671,6 +1697,13 @@ function renderBillTool(box, ctx) {
       const v = parseFloat(inp.value);
       if (!Number.isFinite(v)) return;
       if (v < 0 && inp.dataset.econ !== "elec_inflation_pct" && inp.dataset.econ !== "cpi_pct") return;
+      // The first edit of a home price while this area's EA prices are in
+      // use takes all of them as the reader's own first, so editing one
+      // price on a Wanaka home keeps Wanaka's others (not Queenstown's).
+      const area = typeof homePricesFor === "function" && /^home_(peak_c|offpeak_c|daily|buy_c)$/.test(inp.dataset.econ)
+        ? homePricesFor(ctx.area) : null;
+      if (area) Object.assign(econ, { home_peak_c: area.peak_c, home_offpeak_c: area.offpeak_c,
+                                      home_daily: area.daily, home_buy_c: area.flat_c });
       econ[inp.dataset.econ] = v;
       if (ctx.onEcon) ctx.onEcon(); else redraw();
     }));
