@@ -19,6 +19,7 @@ candidate that agrees better with the drawn faces. Selection accuracy against
 the markup is the only accepted validation here.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -304,12 +305,93 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
         return (b[0] + px / w * (b[2] - b[0]),
                 b[1] + (1 - py / h) * (b[3] - b[1]))
 
+    if os.environ.get("SOLAR_LINE_WATERSHED", "0") == "1":
+        return watershed_faces(pr, geom, b, w, h), pr
     segs = network_lines(pr, geom, b, w, h, pts)
     if not segs:
         return [], pr
     facets = line_facets(building_id, geom, pts, segs) or []
     ax = building_axis(geom)
     return [regularise(f["geometry"], face_axis(geom, f["geometry"], ax)) for f in facets], pr
+
+
+# ---------------------------------------------------------- watershed faces
+
+# FACES FROM THE LINE MAP WITHOUT TRACING LINES. Thinning the map to a line
+# network needs every fold to be traced end to end: one gap and two faces
+# leak into one. The model's folds are rarely continuous, so on 157 drawn
+# roofs the traced network rebuilt the drawn faces at 0.497 (area-weighted
+# best-match IoU, tools/linemap_bench.py). Flooding the map instead -- seeds
+# where the model is sure there is no fold, grown uphill until they meet --
+# puts every boundary on the strongest activation between two seeds, faint
+# or broken, and needs no topology: 0.598 on the same roofs (92 better by
+# 0.02+, 34 worse; on the drawn lines rasterised, 0.838 against 0.714).
+WS_SEED_P = 0.005      # a seed pixel: the model is this sure there is no fold
+WS_SEED_ERODE_PX = 5   # seeds are pulled back from every fold by 0.5 m
+WS_SEED_MIN_PX = 80    # 0.8 m2: a smaller seed is a gap in a fold, not a face
+WS_SMOOTH_PX = 1.0
+WS_MIN_FACE_M2 = 2.0
+# Tuned on the 157 roofs: seed thresholds 0.15 -> 0.005 took faces per roof
+# from 5.0 to 7.8 (drawn: 8.7) and the score from 0.506 to 0.598; 0.002
+# over-split (9.1 faces, 0.602 but 12 roofs at 0.9+ against 19).
+
+
+def watershed_faces(prob3, geom, bounds, w, h):
+    """(C,H,W) line probabilities -> roof faces covering `geom`, by a seeded
+    watershed on the fold map (see the note above). Regularised like every
+    other reading. [] when there is no second face to find."""
+    from scipy import ndimage as ndi
+    from rasterio import features
+    from rasterio.transform import from_bounds
+    from shapely.geometry import shape
+    from shapely.ops import unary_union
+
+    if geom.geom_type != "Polygon":
+        geom = max(geom.geoms, key=lambda g: g.area)
+    T = from_bounds(*bounds, w, h)
+    mask = features.rasterize([geom], out_shape=(h, w), transform=T).astype(bool)
+    P = ndi.gaussian_filter(np.asarray(prob3, float).max(axis=0), WS_SMOOTH_PX)
+    seeds = ndi.binary_erosion((P < WS_SEED_P) & mask, iterations=WS_SEED_ERODE_PX)
+    mk, n = ndi.label(seeds)
+    if n < 2:
+        return []
+    sizes = ndi.sum(np.ones_like(mk), mk, range(1, n + 1))
+    keep = np.zeros(n + 1, np.int32)
+    k = 0
+    for j, sz in enumerate(sizes, 1):
+        if sz >= WS_SEED_MIN_PX:
+            k += 1
+            keep[j] = k
+    mk = keep[mk]
+    if k < 2:
+        return []
+    try:
+        from skimage.segmentation import watershed
+        lab = watershed(P, mk, mask=mask)
+    except ImportError:
+        # scipy's image-foresting transform on a 16-bit cost: 0.579 against
+        # skimage's 0.598 on the 157 roofs (ties on the flat seeds resolve
+        # differently). Off the roof: highest cost and a marker of its own,
+        # so no flood reaches a roof pixel through the garden.
+        cost = np.where(mask, np.clip(P, 0, 1) * 65000, 65535).astype(np.uint16)
+        lab = ndi.watershed_ift(cost, np.where(mask, mk, -1).astype(np.int32))
+    lab = np.where(mask, lab, 0).astype(np.int32)
+    polys = {}
+    for g, v in features.shapes(lab, mask=lab > 0, transform=T):
+        polys.setdefault(int(v), []).append(shape(g))
+    ax = building_axis(geom)
+    out = []
+    for ps in polys.values():
+        p = unary_union(ps).intersection(geom)
+        if p.is_empty:
+            continue
+        if p.geom_type != "Polygon":
+            p = max(getattr(p, "geoms", [p]), key=lambda q: q.area)
+        if p.geom_type != "Polygon" or p.area < WS_MIN_FACE_M2:
+            continue
+        r = regularise(p, face_axis(geom, p, ax))
+        out.append(r if r is not None and not r.is_empty else p)
+    return out if len(out) >= 2 else []
 
 
 # --------------------------------------------------------------- scorer

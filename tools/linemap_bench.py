@@ -21,6 +21,10 @@ from src.label_geometry import snap_endpoints
 from src import roof_partition as rp
 from src.face_candidates import network_lines
 from concurrent.futures import ProcessPoolExecutor
+# PATCH: Python run at import (here and in every worker) to try a variant
+# without editing the build, e.g. PATCH='import src.line_extract as e; e.THR=0.3'
+if os.environ.get('PATCH'):
+    exec(os.environ['PATCH'])
 L = json.load(open('data/roof_labels.json'))['buildings']
 MODE = os.environ.get('MAP', 'real')
 def faces_from(segs, fp):

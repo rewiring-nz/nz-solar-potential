@@ -8,6 +8,7 @@ laspy[lazrs]>=2.5
 pvlib>=0.11
 numpy>=1.26
 scipy>=1.11
+scikit-image>=0.24  # seeded watershed: src/face_candidates.watershed_faces
 requests>=2.31
 python-dotenv>=1.0
 pillow
