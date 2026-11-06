@@ -432,6 +432,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   (`SOLAR_LINE_WATERSHED=both`, `~/mb15`): panel IoU 0.488 (95%
   -0.005..+0.014; 25 better, 17 worse).
   Off by default; not shipped.
+  Seal at the eave (`SOLAR_SEAL_SNAP_M`, `roof_partition._seal_network`):
+  a line end within the reach of the outline gets a 2 cm link across it,
+  so junctions of two or more lines just inside the outline close their
+  faces. Offline vs drawn faces: drawn lines (vector) 0.695 -> 0.826 at
+  0.4 m; model map 0.488 -> 0.529 at 2.0 m (61 better, 26 worse). In the
+  build (6 Nov, 163 drawn roofs, `~/mb17`, control equal to base): 0.4 m
+  panel IoU +0.002 (95% -0.002..+0.007; 4 better, 4 worse); 2.0 m
+  +0.005 (-0.001..+0.012; 17 better, 12 worse), face IoU 0.594 -> 0.607.
+  Better faces, no measurable panel gain: off by default.
   v71 published 5 Nov (reflection loss, building heights). One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
