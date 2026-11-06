@@ -413,6 +413,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **Waiting for the next full rebuild (not yield-only)**: the sunlight
+  calibration fix (flat roof now reproduces SolarView's 1,362.5 kWh/m2;
+  v71 is 1.9% high flat, 3.5% high on north faces at 25 deg, in the
+  Queenstown district), the heat map shading like panels, sys_kwh_N by fill
+  order, and the PV notes' 16.4% losses. A yield-only rebuild would keep
+  each panel's stored shading_factor, whose beam share comes from the old
+  sun model; rebuild in full.
+- **Judgement calls from the independent review, not yet acted on:**
+  terrain shading is nearly inert in the yield model (pilot horizon on vs
+  open: -0.4% flat, -0.8% north at 25 deg) because one monthly cloud factor
+  and Erbs put ~95% of low-sun light in diffuse; per-town pricing for
+  Wanaka and Cromwell (EA region 35) where the map now uses Queenstown's;
+  the coverage ladder uses plan area against true panel density (about 10%
+  conservative on a 25 deg roof); the three horizon products reach 20 or
+  30 km; colours and economic size ignore a saved battery.
+- **Browser checks before a front-end release:** tools/contrast_check.js,
+  overflow_check.js, econ_check.js, text_check.js (run each on the page).
+
 - **3D view.** Solids are drawn over the map, so a hill or tree between the
   camera and a building does not hide it. Cars in the DSM stand as blobs.
   The sun simulation shades the ground, not the building meshes.
