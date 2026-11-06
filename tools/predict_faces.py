@@ -333,6 +333,19 @@ def main():
             if f_sam else 0.0
         sc_line = score_candidate(f_line, geom, P, to_px, pts, inv_px) \
             if f_line else 0.0
+        # SOLAR_LINE_WATERSHED=both: the seeded-watershed faces from the
+        # same map compete with the line network, and the better score is
+        # the line reading (experiment, off by default)
+        if os.environ.get("SOLAR_LINE_WATERSHED") == "both" and pr is not None:
+            from src.face_candidates import watershed_faces
+            try:
+                f_ws = watershed_faces(pr, geom, b, w, h)
+            except Exception:
+                f_ws = []
+            sc_ws = score_candidate(f_ws, geom, P, to_px, pts, inv_px) \
+                if f_ws else 0.0
+            if sc_ws > sc_line:
+                f_line, sc_line = f_ws, sc_ws
         # LIDAR-FIRST reading: normals region-grown on the point cloud.
         # Where the imagery is blind -- tree shadow (#4735106), cluttered
         # flats -- both imagery families fail their gates and the roof used

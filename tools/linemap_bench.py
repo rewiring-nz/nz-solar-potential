@@ -19,7 +19,7 @@ from shapely.ops import unary_union, polygonize
 from export_training_data import rasterise, LINE_WIDTH_PX
 from src.label_geometry import snap_endpoints
 from src import roof_partition as rp
-from src.face_candidates import network_lines
+from src.face_candidates import network_lines, regularise, face_axis, building_axis, watershed_faces
 from concurrent.futures import ProcessPoolExecutor
 # PATCH: Python run at import (here and in every worker) to try a variant
 # without editing the build, e.g. PATCH='import src.line_extract as e; e.THR=0.3'
@@ -27,6 +27,7 @@ if os.environ.get('PATCH'):
     exec(os.environ['PATCH'])
 L = json.load(open('data/roof_labels.json'))['buildings']
 MODE = os.environ.get('MAP', 'real')
+METHOD = os.environ.get('METHOD', 'lines')  # lines | watershed
 def faces_from(segs, fp):
     segs = [((s[0], s[1]), (s[2], s[3])) for s in segs]
     segs = snap_endpoints(segs)
@@ -53,11 +54,19 @@ def one(f):
         seg = lambda k: [(l['a'], l['b']) for l in lines if l.get('kind') == k]
         m = np.stack([rasterise((h, w), seg(k), b, LINE_WIDTH_PX) for k in ('ridge', 'valley', 'cliff')]) / 255.0
         pr = 1 / (1 + np.exp(-(m * 24 - 12)))
-    try:
+    segs = []
+    if METHOD == 'lines':
+      try:
         segs = network_lines(pr, geom, b, w, h, None)
-    except Exception as e:
+      except Exception:
         segs = []
-    pred = faces_from(segs, geom) if segs else [geom]
+    if METHOD == 'watershed':
+        pred = watershed_faces(pr, geom, b, w, h) or [geom]
+    else:
+        pred = faces_from(segs, geom) if segs else [geom]
+        # the build squares each face to the building's axes (line_faces)
+        ax = building_axis(geom)
+        pred = [regularise(p, face_axis(geom, p, ax)) for p in pred]
     return (i, match(pred, ref), len(segs), len(pred), len(ref))
 if __name__ == '__main__':
     files = sorted(glob.glob(sys.argv[1] + '/*.npz'))
