@@ -35,7 +35,7 @@ jobs:
                    cloud_profiles publish_preview render_docs canonical_map_links face_straighten obstruction_planarity \
                    racking structured_roof s3_rasters installer_rules shading_split \
                    pipeline_web_data pipeline_web_jobs pipeline_web_server pipeline_web_cloud \
-                   map_layer_catalog methodology reference_cases; do
+                   map_layer_catalog methodology reference_cases wholesale; do
             echo "::group::$t"
             python tests/test_$t.py || failed=1
             echo "::endgroup::"
@@ -46,7 +46,7 @@ jobs:
         run: |
           set +e
           failed=0
-          for t in workings generation economics bill_tool low_solar_battery reference_cases; do
+          for t in workings generation economics bill_tool low_solar_battery reference_cases wholesale; do
             echo "::group::$t (js)"
             node tests/test_$t.mjs || failed=1
             echo "::endgroup::"

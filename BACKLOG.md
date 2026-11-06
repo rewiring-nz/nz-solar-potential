@@ -431,6 +431,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 - **Browser checks before a front-end release:** tools/contrast_check.js,
   overflow_check.js, econ_check.js, text_check.js (run each on the page).
 
+- **Wholesale price history (wholesale.html), not yet in the bill model.**
+  Possible uses: export rates from sunlight-hour wholesale prices, the
+  peak/off-peak spread for batteries. Before wiring it in, decide which
+  window (1, 5 or 10 years) stands for the future and say so on the page.
+  Refreshed monthly by .github/workflows/wholesale-prices.yml.
+
 - **3D view.** Solids are drawn over the map, so a hill or tree between the
   camera and a building does not hide it. Cars in the DSM stand as blobs.
   The sun simulation shades the ground, not the building meshes.

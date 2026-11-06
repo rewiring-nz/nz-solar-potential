@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wholesale price history</title>
+<script>
+  try { if (localStorage.getItem("rsp-theme") !== "dark") document.documentElement.classList.add("light"); }
+  catch (e) { document.documentElement.classList.add("light"); }
+</script>
+<style>
+  :root {
+    --bg: #121419; --card: #1b1e25; --ink: #f2f4f7; --ink-2: #b6bdc9; --ink-3: #8d96a3;
+    --line: rgba(255,255,255,0.1); --accent: #ffd24a;
+    --sun: #f5b82e; --peak: #ff8a7a; --night: #8fa8ff; --all: #e8ebf0;
+  }
+  html.light {
+    --bg: #f4f5f7; --card: #fff; --ink: #161a21; --ink-2: #444c58; --ink-3: #5c6470;
+    --line: rgba(15,20,30,0.12); --accent: #8a5d00;
+    --sun: #a86b00; --peak: #c0392b; --night: #3456c8; --all: #222832;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+  a { color: var(--accent); }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lede { color: var(--ink-2); margin: 0 0 16px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+  select, input[type=date], .seg button {
+    font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; }
+  .seg { display: inline-flex; }
+  .seg button { cursor: pointer; border-radius: 0; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+  .seg button[aria-pressed=true] { background: var(--accent); color: #161a21; border-color: var(--accent); }
+  html.light .seg button[aria-pressed=true] { color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .ws-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .ws-card h3 { margin: 0; font-size: 15px; }
+  .ws-sub { margin: 2px 0 8px; color: var(--ink-3); font-size: 12px; }
+  .ws-card dl { margin: 0; }
+  .ws-g { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0;
+          border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .ws-g dt { color: var(--ink-2); font-size: 13px; }
+  .ws-g dt::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                     margin-right: 6px; background: var(--c); }
+  .ws-g dd { margin: 0; font-weight: 650; }
+  .ws-g small { font-weight: 400; color: var(--ink-3); margin-left: 3px; font-size: 11px; }
+  .ws-sun { --c: var(--sun); } .ws-peak { --c: var(--peak); } .ws-night { --c: var(--night); } .ws-all { --c: var(--all); }
+  h2 { font-size: 16px; margin: 24px 0 8px; }
+  .custom { display: grid; grid-template-columns: minmax(200px, 320px) 1fr; gap: 12px; align-items: start; }
+  .custom label { display: block; color: var(--ink-2); font-size: 12px; margin-bottom: 6px; }
+  .custom label input { display: block; margin-top: 2px; }
+  @media (max-width: 600px) { .custom { grid-template-columns: 1fr; } }
+  #ws-chart { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  #ws-chart svg { width: 100%; height: auto; display: block; }
+  .ws-line { stroke: var(--c); stroke-width: 1.4; stroke-linejoin: round; }
+  .ws-line.ws-all { stroke-width: 2; }
+  .ws-gl { stroke: var(--line); }
+  .ws-ax { fill: var(--ink-3); font-size: 11px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 6px 0 0; }
+  .legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; vertical-align: middle;
+                         margin-right: 5px; background: var(--c); }
+  .info { cursor: pointer; border: 1px solid var(--line); background: none; color: var(--ink-2);
+          border-radius: 50%; width: 20px; height: 20px; font: 600 12px/1 Georgia, serif; padding: 0; }
+  #ws-about { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+              padding: 10px 14px; color: var(--ink-2); font-size: 13px; margin: 0 0 16px; }
+  #ws-about[hidden] { display: none; }
+  #ws-about p { margin: 6px 0; }
+  .foot { color: var(--ink-3); font-size: 12px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="rooftop-solar.html">&larr; Back to the map</a></p>
+  <h1>Wholesale price history <button class="info" id="ws-about-btn" aria-expanded="false" aria-controls="ws-about" title="How these are worked out">i</button></h1>
+  <p class="lede">Average wholesale power price at the grid, by time of day, in <strong id="ws-unit">today's dollars</strong>.</p>
+  <div id="ws-about" hidden>
+    <p>The spot price at this grid node for every half-hour since October 1996 (Electricity Authority final prices): what retailers pay for power delivered there, and what a generator feeding in there is paid. Not what homes pay: bills add lines, metering, levies, the retailer's margin and GST.</p>
+    <p>Each average weights every half-hour equally, not by how much a solar panel makes in it. <b>Sunlight hours</b>: the sun above a flat horizon at that town, not allowing for mountains or cloud; a half-hour counts when its middle is lit. <b>Peak</b>: 7–10am and 6–9pm, every day, the hours the bill model prices as peak. <b>Overnight</b>: 11pm–7am.</p>
+    <p><b id="ws-real-name">Today's dollars</b>: each half-hour's price scaled by Stats NZ's consumers price index (all groups) to the latest quarter published; days after that quarter are left as paid. <b>Dollars of the day</b>: the price as paid.</p>
+  </div>
+  <div class="bar">
+    <label>Grid node <select id="ws-node" aria-label="Grid node"></select></label>
+    <span class="seg" role="group" aria-label="Dollars">
+      <button type="button" data-real="1" aria-pressed="true" id="ws-real-btn">Today's dollars</button>
+      <button type="button" data-real="0" aria-pressed="false">Dollars of the day</button>
+    </span>
+  </div>
+  <div class="grid" id="ws-boxes"></div>
+
+  <h2>Any period</h2>
+  <div class="custom">
+    <div>
+      <label>From <input type="date" id="ws-from"></label>
+      <label>To <input type="date" id="ws-to"></label>
+      <div id="ws-custom"></div>
+    </div>
+    <div>
+      <div id="ws-chart"></div>
+      <p class="legend"><span class="ws-sun">Sunlight hours</span><span class="ws-peak">Peak</span><span class="ws-night">Overnight</span><span class="ws-all">All hours</span></p>
+      <p class="legend">Monthly averages, c/kWh.</p>
+    </div>
+  </div>
+  <p class="foot" id="ws-source"></p>
+</main>
+<script src="wholesale.js"></script>
+<script>
+  document.getElementById("ws-about-btn").addEventListener("click", e => {
+    const box = document.getElementById("ws-about"), open = box.hidden;
+    box.hidden = !open; e.currentTarget.setAttribute("aria-expanded", String(open));
+  });
+</script>
+</body>
+</html>

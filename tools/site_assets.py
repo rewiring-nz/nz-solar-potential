@@ -7,4 +7,5 @@ FRONTEND_FILES = (
     "generation.js", "sun_shadows.js", "buildings3d.js", "low_solar.js", "load_profiles.js",
     "map_layers.js", "map_layers.css", "data_explorer.js", "pipeline_ui.js",
     "methodology.js", "methodology.json", "regional_prices.js",
+    "wholesale.html", "wholesale.js", "wholesale_prices.json",
 )

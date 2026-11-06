@@ -38,9 +38,9 @@ class MapLinkTests(unittest.TestCase):
         parser = NavigationParser()
         parser.feed((ROOT / "rooftop-solar.html").read_text(encoding="utf-8"))
         self.assertEqual(parser.links,
-                         ["data-explorer.html", "pipeline.html", "docs/index.html"])
+                         ["data-explorer.html", "wholesale.html", "pipeline.html", "docs/index.html"])
         # docs/index.html is generated from the maintained Markdown source.
-        for path in ["data-explorer.html", "pipeline.html", "docs/index.md"]:
+        for path in ["data-explorer.html", "wholesale.html", "pipeline.html", "docs/index.md"]:
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_local_and_published_links_use_canonical_page(self):

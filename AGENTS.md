@@ -379,6 +379,19 @@ figure for the same thing. Code enforces this:
   Browser checks, run on the page before a front-end release:
   `tools/contrast_check.js`, `tools/overflow_check.js`, `tools/econ_check.js`,
   `tools/text_check.js` (no "undefined"/"NaN" or "Doesn't add up" on screen).
+- `wholesale.html` (script `wholesale.js`) shows historic wholesale prices
+  at FKN0331 (Frankton), CML0331 (Cromwell) and BEN2201 (Benmore): averages
+  over sunlight hours (sun above a flat horizon, pvlib), peak (`economics.js`
+  peak hours), overnight (11pm-7am) and all hours, each half-hour weighted
+  equally, real (Stats NZ CPI all groups, latest quarter) or nominal.
+  `tools/fetch_wholesale_prices.py` writes `wholesale_prices.json` (per day:
+  sum and count per group) from the Electricity Authority's final energy
+  prices; trading periods count half-hours from local midnight (46/50 on
+  clock-change days) and the build refuses a day without every half-hour.
+  `.github/workflows/wholesale-prices.yml` refreshes it monthly, fetching
+  only the newest two months (older days come from the published file;
+  `--full` with the raw cache in `data/wholesale/raw/` rebuilds all).
+  `tests/test_wholesale.py` and `.mjs` check it. The bill model does not use it.
 - Sunlight is calibrated to NIWA SolarView GHI in the Wakatipu basin, else the
   nearest NIWA measured-radiation station, scaled by ERA5 spatial ratios
   (`src/solar_model.py` header).
