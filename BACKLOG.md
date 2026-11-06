@@ -415,6 +415,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   faint lines not traced, lines traced along the eave, and a few outline
   offsets. `tools/linemap_bench.py` reruns this offline in two minutes from
   maps saved with `SOLAR_DUMP_LINEMAP` (the 157 maps: VM `~/mb13/maps.tgz`).
+  It has no LiDAR, so it understates the line reading: `line_facets`
+  merges cells on one plane, and the faces the build makes from drawn
+  lines score 0.688 on its metric (145 roofs) where the bench gives the
+  model's map 0.495. Use it to rank extraction variants, not to predict
+  the build.
+  Seeded watershed in place of the line network
+  (`SOLAR_LINE_WATERSHED=1`, `face_candidates.watershed_faces`; seeds where
+  the smoothed map < 0.005, eroded 5 px, 80 px minimum): offline 0.495 ->
+  0.598 (92 roofs better, 34 worse). In the build (6 Nov, 163 drawn roofs,
+  `~/mb14`): the shipped faces 0.624 -> 0.651 vs drawn faces (41 better,
+  21 worse), the line reading picked on 75 roofs instead of 47, layout
+  face IoU 0.594 -> 0.611, panel IoU 0.484 -> 0.486 (95% -0.008..+0.012;
+  26 better, 24 worse). With the line reading forced, no gain (0.489).
+  Off by default; not shipped.
   v71 published 5 Nov (reflection loss, building heights). One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
