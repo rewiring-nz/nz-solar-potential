@@ -541,6 +541,35 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **Front end on branch `disclaimer-visible` (rewiring-nz/nz-solar-potential),
+  not yet on `main`/live:** disclaimer card fits the dashboard (it overhung
+  by 14 px); text contrast to WCAG AA in both themes (photo badge, chart
+  keys, captions, settings dialog); card money rounded ($10/$100/$1,000);
+  green net-saving box (bill savings less a 6%/15-year loan, editable);
+  money mode ($ button: net saving a year on every building in view); one
+  season at a time in the wide panel; panel economics priced at each roof's
+  full layout (colours moved with the slider) on a smooth cost curve (the
+  stepped bands made 25.5 kW cheaper than 25 kW); "How this map is made"
+  diagram written from the code (`src/methodology.py`, locked by
+  `tests/test_methodology.py`); hand-checkable reference cases
+  (`tests/test_reference_cases.*`); browser checks `tools/contrast_check.js`,
+  `overflow_check.js`, `econ_check.js` (econ_check fails on live main: 81 of
+  81 roofs moved). Publishing is the owner's call.
+- **Comment and doc fixes waiting for a build change** (src/ and config.py
+  bytes feed the build keys): PV_ASSUMPTIONS notes say losses are 14% (they
+  are 16.4%); "1x2m panels" in panel_fitting; synthesize_dsm says houses are
+  hipped (under 60 m2 are gables); WALL_SLOPE_DEG comment; SolarView 0.30 vs
+  0.40; CROSS_CHECK_Z_THRESHOLD comment; solar_model/terrain_horizon
+  docstrings still describe NASA POWER and one shared pilot horizon; the 1 m
+  DEM is configured but never fetched; altitude 310 m used for every region
+  including Auckland; heat map clamps slope at 45 deg while panels go to 55.
+- **Consolidated arrays** (`SOLAR_CONSOLIDATE_ARRAYS=1`, off): on 32 Frankton
+  Road (#4725584) 638 -> 604 panels and still patchy. Its spotty layout is
+  98 faces split by small gables, packed one face at a time; a rule inside
+  a face cannot join them. Next: pack adjacent coplanar faces on one grid.
+- **Reference roof:** 8 Falconer Rise (#4738758), owner 10/10, in
+  `data/roof_cases.json` as fixed; fingerprint to take on the VM.
+
 - **3D view.** Solids are drawn over the map, so a hill or tree between the
   camera and a building does not hide it. Cars in the DSM stand as blobs.
   The sun simulation shades the ground, not the building meshes.
