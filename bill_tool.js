@@ -423,12 +423,17 @@ function btCalibration(load, calib, tariff, seasonDays) {
 const BT_HOUR_COLS = (withB) => [
   { key: "h", label: "Hour" }, { key: "use", label: "Use", unit: "kWh", dp: 2 },
   { key: "solar", label: "Solar", unit: "kWh", dp: 2 }, { key: "direct", label: "Used directly", unit: "kWh", dp: 2 },
-].concat(withB ? [{ key: "fromB", label: "From battery", unit: "kWh", dp: 2 }] : []).concat([
+].concat(withB ? [{ key: "toB", label: "Into battery", unit: "kWh", dp: 2 },
+                  { key: "fromB", label: "From battery", unit: "kWh", dp: 2 }] : []).concat([
   { key: "imp", label: "From the grid", unit: "kWh", dp: 2 }, { key: "exp", label: "Exported", unit: "kWh", dp: 2 },
   { key: "buy", label: "Price", unit: "$/kWh", dp: 3 }, { key: "sell", label: "Export price", unit: "$/kWh", dp: 3 }]);
 const BT_COST_COLS = (col, label, withB) => BT_HOUR_COLS(withB).concat([{ key: col, label, unit: "$", dp: 2 }]);
 const btNear = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
-const btRowOk = r => btNear(r.useCost, r.use * r.buy) && btNear(r.impCost, r.imp * r.buy) && btNear(r.expPay, r.exp * r.sell);
+// each hour's money, and its energy balance: use = solar used directly +
+// from the battery + from the grid; solar = used directly + into the
+// battery + exported
+const btRowOk = r => btNear(r.useCost, r.use * r.buy) && btNear(r.impCost, r.imp * r.buy) && btNear(r.expPay, r.exp * r.sell)
+  && btNear(r.use, r.direct + (r.fromB || 0) + r.imp) && btNear(r.solar, r.direct + (r.toB || 0) + r.exp);
 
 // Run every season through the day simulator; bills and kWh with and
 // without solar (and battery). gen: [season][24] kW in BT_SEASONS order.
@@ -442,18 +447,24 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   BT_SEASONS.forEach((s, i) => { days[s] = btIn(`Days of ${s}`, seasonDays ? seasonDays[i] : BT_SEASON_DAYS[s], "days"); });
   const res = { seasons: {}, year: {}, nodes: {} };
   const perSeason = {};
-  let socB = 0;
-  for (let pass = 0; pass < 2; pass++) {
-    BT_SEASONS.forEach((s, i) => {
-      const L = btSeasonLoad(load, s, cal.scale[s]);
-      const G = gen && gen[i] ? gen[i] : zero;
-      const solar = simulateDay(G, L, { enabled: false, kwh: 0, kw: 0, round_trip_pct: 100, reserve_pct: 0 }, 0);
-      const withB = simulateDay(G, L, batt, socB);
-      socB = withB.socEnd;
-      if (pass === 0) return;   // the first pass only settles the battery's charge
-      perSeason[s] = { L, G, solar, withB };
-    });
-  }
+  // THE BATTERY'S SETTLED DAY. Each season is one typical day that repeats
+  // for that season's days, so the battery starts each day where the same
+  // day left it: the day is run again from its own end until the charge
+  // settles. (It started each season from the previous season's one day.)
+  // On a time-of-use plan the battery saves its charge for peak hours.
+  const dispatch = tariff && !tariff.flat ? { isPeak: h => btIsPeak(h) } : null;
+  BT_SEASONS.forEach((s, i) => {
+    const L = btSeasonLoad(load, s, cal.scale[s]);
+    const G = gen && gen[i] ? gen[i] : zero;
+    const solar = simulateDay(G, L, { enabled: false, kwh: 0, kw: 0, round_trip_pct: 100, reserve_pct: 0 }, 0);
+    let soc = 0, withB = null;
+    for (let k = 0; k < 40; k++) {
+      withB = simulateDay(G, L, batt, soc, dispatch);
+      if (Math.abs(withB.socEnd - soc) < 1e-9) break;
+      soc = withB.socEnd;
+    }
+    perSeason[s] = { L, G, solar, withB };
+  });
   const seasonUnit = u => u === "$/yr" ? "$" : u === "kWh/yr" ? "kWh" : u;
   const yearOf = (label, unit, f) => Wk.sum(label, unit,
     BT_SEASONS.map(s => Wk.product(`${BT_CAP(s)} (${days[s].value} days)`, seasonUnit(unit), [f(s), days[s]])));
@@ -466,7 +477,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
     const mk = (sim, wb) => L.map((l, h) => {
       const r = { h: `${String(h).padStart(2, "0")}:00`, use: l, solar: G[h], direct: Math.min(G[h], l),
                   imp: sim.impH[h], exp: sim.expH[h], buy: P.buyAt(h), sell: P.sellAt(h) };
-      if (wb) r.fromB = sim.selfH[h] - r.direct;
+      if (wb) { r.fromB = sim.selfH[h] - r.direct; r.toB = sim.chargeH ? sim.chargeH[h] : 0; }
       r.useCost = r.use * r.buy; r.impCost = r.imp * r.buy; r.expPay = r.exp * r.sell;
       return r;
     });
@@ -479,6 +490,8 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
     const expB = tab(`Exported with a battery, a ${s} day`, "kWh/day", rowsB, "exp", true);
     const imp = tab(`From the grid with solar, a ${s} day`, "kWh/day", rows, "imp", false);
     const impB = tab(`From the grid with a battery, a ${s} day`, "kWh/day", rowsB, "imp", true);
+    const toB = tab(`Into the battery from solar, a ${s} day`, "kWh/day", rowsB, "toB", true);
+    const fromB = tab(`From the battery, a ${s} day`, "kWh/day", rowsB, "fromB", true);
     const nowDay = Wk.sum(`Bill a ${s} day, today`, "$/day", [
       tab("Electricity, each hour at its price", "$/day", rows, "useCost", false, BT_COST_COLS("useCost", "Cost", false)), P.daily]);
     const solarDay = Wk.diff(`Bill a ${s} day, with solar`, "$/day",
@@ -490,7 +503,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
         tab("From the grid, each hour at its price", "$/day", rowsB, "impCost", true, BT_COST_COLS("impCost", "Cost", true)), P.daily]),
       tab("Paid for exports, each hour at its price", "$/day", rowsB, "expPay", true, BT_COST_COLS("expPay", "Paid", true)));
     const month = (label, d) => Wk.product(label, "$/month", [d, P.month]);
-    S[s] = { use, made, imp, exp, impB, expB, nowDay, solarDay, battDay,
+    S[s] = { use, made, imp, exp, impB, expB, toB, fromB, nowDay, solarDay, battDay,
              nowMonth: month(`${BT_CAP(s)} bill a month, today`, nowDay),
              solarMonth: month(`${BT_CAP(s)} bill a month, with solar`, solarDay),
              battMonth: month(`${BT_CAP(s)} bill a month, with solar and a battery`, battDay) };
@@ -796,7 +809,7 @@ function btYearHours(run, withBatt) {
         const cost = r.impCost - r.expPay + (h === 0 ? P.daily.value : 0);
         const costNow = r.useCost + (h === 0 ? P.daily.value : 0);
         rows.push({ doy, month: m, day: d, h, season: s, use: r.use, solar: r.solar, imp: r.imp, exp: r.exp,
-                    buy: r.buy, sell: r.sell, costNow, cost });
+                    toB: r.toB || 0, fromB: r.fromB || 0, buy: r.buy, sell: r.sell, costNow, cost });
         tot.use += r.use; tot.solar += r.solar; tot.imp += r.imp; tot.exp += r.exp;
         tot.billNow += costNow; tot.bill += cost;
       }
@@ -814,11 +827,11 @@ function btYearHours(run, withBatt) {
 }
 
 function btYearCsv(year) {
-  const head = "date,hour,season,use_kwh,solar_kwh,from_grid_kwh,exported_kwh,price_per_kwh,export_price_per_kwh,bill_today_dollars,bill_with_solar_dollars";
+  const head = "date,hour,season,use_kwh,solar_kwh,from_grid_kwh,exported_kwh,into_battery_kwh,from_battery_kwh,price_per_kwh,export_price_per_kwh,bill_today_dollars,bill_with_solar_dollars";
   const f = (v, dp) => (Math.round(v * 10 ** dp) / 10 ** dp).toString();
   return head + "\n" + year.rows.map(r =>
     [`${String(r.day).padStart(2, "0")} ${BT_MONTH_NAME[r.month]}`, `${String(r.h).padStart(2, "0")}:00`, r.season,
-     f(r.use, 4), f(r.solar, 4), f(r.imp, 4), f(r.exp, 4), f(r.buy, 4), f(r.sell, 4), f(r.costNow, 4), f(r.cost, 4)].join(",")).join("\n") + "\n";
+     f(r.use, 4), f(r.solar, 4), f(r.imp, 4), f(r.exp, 4), f(r.toB || 0, 4), f(r.fromB || 0, 4), f(r.buy, 4), f(r.sell, 4), f(r.costNow, 4), f(r.cost, 4)].join(",")).join("\n") + "\n";
 }
 
 if (typeof module !== "undefined" && module.exports) {
@@ -1076,6 +1089,7 @@ function btMoney(v, step) {
 // grid (or the battery) and solar above use is exported. All four seasons
 // share one scale so they compare at a glance. Peak hours are shaded.
 const BT_SOLAR_COLOUR = "#ffd60a";
+const BT_BATT_COLOUR = "#0d9488";
 function btSeasonChart(s, sd, ymax, withBatt, size) {
   // size {W, H} in viewBox units: the lightbox draws a wider, taller box
   // so the chart fills the screen while its labels stay their normal size.
@@ -1107,6 +1121,15 @@ function btSeasonChart(s, sd, ymax, withBatt, size) {
   const sol = rows.map(r => r.solar);
   svg += `<path d="${pathFor(new Array(24).fill(0), sol)}" fill="${BT_SOLAR_COLOUR}" fill-opacity=".28"/>` +
          `<polyline points="${sol.map((v, h) => `${x(h).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="${BT_SOLAR_COLOUR}" stroke-width="1.8"/>`;
+  // THE BATTERY'S FLOWS. Charging: the part of the spare yellow above the
+  // use that goes into the battery (light teal, between the use and the
+  // solar line). Powering the home: the part of the use the battery covers,
+  // above what solar covers directly (solid teal).
+  if (withBatt && rows.some(r => (r.toB || 0) > 1e-9 || (r.fromB || 0) > 1e-9)) {
+    const use = rows.map(r => r.use), direct = rows.map(r => r.direct);
+    svg += `<path d="${pathFor(use, use.map((u, h) => u + (rows[h].toB || 0)))}" fill="${BT_BATT_COLOUR}" fill-opacity=".35"/>` +
+           `<path d="${pathFor(direct, direct.map((d, h) => d + (rows[h].fromB || 0)))}" fill="${BT_BATT_COLOUR}" fill-opacity=".85"/>`;
+  }
   [[6, "6am"], [12, "noon"], [18, "6pm"]].forEach(([h, t]) => {
     svg += `<text x="${(L + h * (W - L - R) / 24).toFixed(1)}" y="${H - 4}" class="ax" text-anchor="middle">${t}</text>`;
   });
@@ -1335,6 +1358,7 @@ function renderBillTool(box, ctx) {
         `<div class="sx-figs">` +
           fig(`s-use-${s}`, "Use", S[s].use) + fig(`s-made-${s}`, "Solar", S[s].made) +
           fig(`s-imp-${s}`, "From the grid", withBatt ? S[s].impB : S[s].imp) + fig(`s-exp-${s}`, "Exported", withBatt ? S[s].expB : S[s].exp) +
+          (withBatt ? fig(`s-tob-${s}`, "Into battery", S[s].toB) + fig(`s-fromb-${s}`, "From battery", S[s].fromB) : "") +
         `</div>` +
         `<div class="sx-sbill"><span>A month</span>` +
           `<span data-wk="s-now-${s}" tabindex="0" role="button">${btMoney(nowM.value)}</span><span class="sx-arrow">→</span>` +
@@ -1343,7 +1367,9 @@ function renderBillTool(box, ctx) {
         `</div></div>`;
     };
     const keyHtml = `<div class="sx-key">` + usedParts.map(k => `<span><i style="background:${BT_PART_STYLE[k].colour}"></i>${BT_PART_STYLE[k].label}</span>`).join("") +
-      `<span><i style="background:${BT_SOLAR_COLOUR}"></i>Solar</span><span><i class="pk"></i>Peak price</span><span class="u">kWh each hour</span></div>`;
+      `<span><i style="background:${BT_SOLAR_COLOUR}"></i>Solar</span>` +
+      (withBatt ? `<span><i style="background:${BT_BATT_COLOUR}"></i>Battery: charging (light), powering the ${isBiz ? "building" : "home"} (solid)</span>` : "") +
+      `<span><i class="pk"></i>Peak price</span><span class="u">kWh each hour</span></div>`;
     const seasonsHtml = haveGen
       ? `<div class="sx-h sx-h-row" id="bt-seasons"><span>A day in each season</span><button type="button" class="sx-btn sx-big" data-bigseasons="1">Open large <span aria-hidden="true">⤢</span></button></div>` +
         `<div class="sx-foot sx-lead">An average day: what this ${isBiz ? "business" : "home"} uses each hour, coloured by what uses it, and what the roof makes (yellow). Where the yellow covers the colour, the roof is powering the ${isBiz ? "business" : "home"}; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Change anything under Assumptions and every figure here updates.</div>` +
@@ -1356,7 +1382,7 @@ function renderBillTool(box, ctx) {
         `<div class="sx-seasons sx-seasons-tabbed">${BT_SEASONS.map((s, i) => seasonCard(s, i)).join("")}</div>` +
         `<details class="sx-dis" id="bt-adv-year"><summary><span class="t">The whole year, hour by hour</span><span class="sum">8,760 hours · download</span></summary>` +
           `<div class="sx-group sx-year">` +
-            `<div class="sx-row">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"], ["cost", "Bill"]], BT_YEAR_VIEW.measure, "Show")}</div>` +
+            `<div class="sx-row">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"]].concat(withBatt ? [["fromB", "From battery"]] : []).concat([["cost", "Bill"]]), BT_YEAR_VIEW.measure, "Show")}</div>` +
             `<div class="sx-yearbox"><canvas id="bt-year-canvas" width="365" height="24" aria-label="The year, hour by hour"></canvas>` +
               `<div class="sx-year-ax">${BT_MONTH_NAME.map(m => `<span>${m}</span>`).join("")}</div><div class="sx-tip" hidden></div></div>` +
             `<div class="sx-foot" id="bt-year-sum"></div>` +
@@ -1544,6 +1570,8 @@ function renderBillTool(box, ctx) {
       nodeFor[`s-made-${s}`] = () => S[s].made;
       nodeFor[`s-imp-${s}`] = () => withBatt ? S[s].impB : S[s].imp;
       nodeFor[`s-exp-${s}`] = () => withBatt ? S[s].expB : S[s].exp;
+      nodeFor[`s-tob-${s}`] = () => S[s].toB;
+      nodeFor[`s-fromb-${s}`] = () => S[s].fromB;
       nodeFor[`s-now-${s}`] = () => S[s].nowMonth;
       nodeFor[`s-after-${s}`] = () => S[s][after];
       nodeFor[`s-hours-${s}`] = () => withBatt ? S[s].battDay : S[s].solarDay;

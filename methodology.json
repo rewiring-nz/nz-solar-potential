@@ -422,6 +422,19 @@
      ]
     },
     {
+     "title": "Batteries",
+     "text": "A battery charges only from spare solar. On a time-of-use plan it saves its charge for peak hours, giving off-peak only what the coming peak will not need before the sun refills it; on a flat plan it covers any shortfall as it comes. Each season's typical day is repeated until the battery's charge settles, and the charts show it charging and powering the home.",
+     "facts": [],
+     "code": [
+      "economics.js::simulateDay",
+      "bill_tool.js::btRun",
+      "bill_tool.js::btSeasonChart"
+     ],
+     "stages": [
+      "page:economics.js"
+     ]
+    },
+    {
      "title": "Power prices",
      "text": "Home prices are the Electricity Authority's latest for Queenstown (Aurora Energy) (2026-05): 33.55c a kWh and $2.02 a day for a standard-use home, incl. GST. The one price is split into 52c in peak hours and 26c off-peak, so a typical home pays about the same average. Areas on another network use its prices: Central Otago (Aurora Energy) 40.69c and $1.99 a day; Southland (The Power Company) 31.28c and $3.38 a day. Exported solar earns 12c a kWh in the first year (retailer buy-back rates on Powerswitch). The prices are refreshed each month.",
      "facts": [

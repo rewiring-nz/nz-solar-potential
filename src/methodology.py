@@ -345,6 +345,13 @@ STEPS: list[dict] = [
                  "the Electricity Authority's figures for its area, scaled for people and house size; a business "
                  "by its floor area. Solar powers the building first; the rest is exported.",
          "code": ["bill_tool.js::btEvaluate", "economics.js::simulateDay"], "stages": ["page:bill_tool.js"]},
+        {"title": "Batteries",
+         "text": "A battery charges only from spare solar. On a time-of-use plan it saves its charge for "
+                 "peak hours, giving off-peak only what the coming peak will not need before the sun refills "
+                 "it; on a flat plan it covers any shortfall as it comes. Each season's typical day is repeated "
+                 "until the battery's charge settles, and the charts show it charging and powering the home.",
+         "code": ["economics.js::simulateDay", "bill_tool.js::btRun", "bill_tool.js::btSeasonChart"],
+         "stages": ["page:economics.js"]},
         {"title": "Power prices",
          "text": "Home prices are the Electricity Authority's latest for {price_region} ({price_month}): "
                  "{price_c}c a kWh and ${daily_d} a day for a standard-use home, incl. GST. The one price is split "

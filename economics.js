@@ -472,17 +472,42 @@ const BATTERY_DEFAULTS = {
 //
 // Returns the day's kWh split three ways, and the hour each one happened in,
 // because a time-of-use plan prices them differently.
-function simulateDay(genKw, loadKw, batt, socStart) {
+function simulateDay(genKw, loadKw, batt, socStart, opts) {
   const cap = batt && batt.enabled ? Math.max(0, batt.kwh) : 0;
   const floor = cap * (batt ? batt.reserve_pct : 0) / 100;
   const pmax = batt ? Math.max(0, batt.kw) : 0;
   // Round-trip loss is charged on the way in, so a kWh that comes back out
   // is a kWh the house actually uses.
   const eff = Math.sqrt(Math.max(0.01, (batt ? batt.round_trip_pct : 100) / 100));
+  // ON A TIME-OF-USE PLAN THE BATTERY SAVES ITS CHARGE FOR THE PEAK
+  // (opts.isPeak(h) true in peak hours). In a peak hour it covers any
+  // shortfall. Off-peak it gives only what the coming peak hours will not
+  // need before the sun next refills it, so stored solar displaces the
+  // dearest power first and is not spent at 2am leaving the 7am peak to the
+  // grid. Without isPeak (a flat plan) it covers any shortfall as it comes.
+  const isPeak = opts && typeof opts.isPeak === "function" ? opts.isPeak : null;
+  const gap = new Array(24), spare = new Array(24);
+  for (let h = 0; h < 24; h++) {
+    gap[h] = Math.max(0, loadKw[h] - genKw[h]);
+    spare[h] = Math.max(0, genKw[h] - loadKw[h]);
+  }
+  // house-side kWh the peak hours ahead need before solar is next spare
+  const peakNeedAfter = h => {
+    let need = 0;
+    for (let k = 1; k < 24; k++) {
+      const j = (h + k) % 24;
+      if (spare[j] > 1e-9) break;
+      if (isPeak(j)) need += Math.min(gap[j], pmax);
+    }
+    return need;
+  };
   let soc = Math.min(Math.max(socStart, floor), cap);
   const selfH = new Array(24).fill(0);
   const expH = new Array(24).fill(0);
   const impH = new Array(24).fill(0);
+  const chargeH = new Array(24).fill(0);      // spare solar into the battery (kWh in)
+  const dischargeH = new Array(24).fill(0);   // battery to the building (kWh out)
+  const socH = new Array(24).fill(0);         // charge at the end of each hour
   for (let h = 0; h < 24; h++) {
     const g = genKw[h], l = loadKw[h];
     const direct = Math.min(g, l);
@@ -494,18 +519,22 @@ function simulateDay(genKw, loadKw, batt, socStart) {
       const take = Math.min(surplus, pmax, room);
       soc += take * eff;
       surplus -= take;
+      chargeH[h] = take;
     }
     if (cap > 0 && deficit > 0) {
-      const avail = (soc - floor) * eff;           // house-side kWh available
-      const give = Math.min(deficit, pmax, Math.max(0, avail));
+      let avail = Math.max(0, (soc - floor) * eff); // house-side kWh available
+      if (isPeak && !isPeak(h)) avail = Math.max(0, avail - peakNeedAfter(h));
+      const give = Math.min(deficit, pmax, avail);
       soc -= give / eff;
       selfH[h] += give;                            // stored sun, used later
       deficit -= give;
+      dischargeH[h] = give;
     }
     expH[h] = surplus;
     impH[h] = deficit;
+    socH[h] = soc;
   }
-  return { selfH, expH, impH, socEnd: soc };
+  return { selfH, expH, impH, chargeH, dischargeH, socH, socEnd: soc };
 }
 
 // A year of representative days. `genByHour[s][h]` is kW for season s, and

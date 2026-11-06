@@ -146,6 +146,47 @@ c("battery: noon's spare 4 kWh is stored", 0, d.expH[12], "5 made − 1 used = 4
 c("...and powers the evening", 3, d.selfH[19], "3 kWh at 7 pm come from the battery");
 c("...leaving 1 kWh", 1, d.socEnd, "4 stored − 3 used");
 
+// ---- a battery on time of use saves its charge for the peak ------------------
+{
+  // 1 kW used every hour; 6 kW of solar 10am-3pm; peaks 7-10am and 6-9pm;
+  // a 10 kWh battery, 5 kW, no losses, no reserve. Run the day until it settles.
+  const gen = Array.from({ length: 24 }, (_, h) => (h >= 10 && h < 15 ? 6 : 0));
+  const use = new Array(24).fill(1);
+  const bt = { enabled: true, kwh: 10, kw: 5, reserve_pct: 0, round_trip_pct: 100 };
+  const peak = h => (h >= 7 && h < 10) || (h >= 18 && h < 21);
+  const settle = opts => { let soc = 0, d; for (let k = 0; k < 40; k++) { d = E.simulateDay(gen, use, bt, soc, opts); soc = d.socEnd; } return d; };
+  const tou = settle({ isPeak: peak }), any = settle(null);
+  const morning = d => d.dischargeH[7] + d.dischargeH[8] + d.dischargeH[9];
+  c("time of use: the battery powers the whole morning peak", 3, r2(morning(tou)),
+    "10 kWh stored by 3pm; 6 kWh held for 6-9pm and 7-10am; 1 kWh a peak hour");
+  c("...and the evening peak", 3, r2(tou.dischargeH[18] + tou.dischargeH[19] + tou.dischargeH[20]), "18:00-21:00, 1 kWh each");
+  c("covering any shortfall as it comes leaves the morning peak to the grid", 0, r2(morning(any)),
+    "it empties by 1am (3pm + 10 hours at 1 kWh)");
+  c("the battery charges only from spare solar", 10, r2(tou.chargeH.reduce((a, b) => a + b, 0)),
+    "5 kWh spare an hour 10am-3pm, until full");
+  c("what goes in comes out (no losses here)", r2(tou.chargeH.reduce((a, b) => a + b, 0)),
+    r2(tou.dischargeH.reduce((a, b) => a + b, 0)), "a settled day: charge in = charge out");
+}
+
+// ---- a year of battery flows (bill_tool.js btRun, btYearHours) ---------------
+{
+  const gen = ["summer", "autumn", "winter", "spring"].map((s, i) =>
+    Array.from({ length: 24 }, (_, h) => (h >= 9 && h < 17 ? [3, 2, 1, 2.5][i] : 0)));
+  const r = B.btEvaluate({ lat: -45.03, roofM2: 150, kwp: 6, gen },
+    Object.assign({ type: "home" }, B.BT_DEFAULTS.home, { battery: 10 }), null,
+    { peak: 52, offpeak: 26, peakSell: 12, offpeakSell: 12, daily: 2.02 }, null);
+  const Y = B.btYearHours(r.run, true);
+  const daysOf = { summer: 90, autumn: 92, winter: 92, spring: 91 };
+  const seasonSum = Object.keys(daysOf).reduce((t, s) => t + r.nodes.seasons[s].fromB.value * daysOf[s], 0);
+  const yearSum = Y.rows.reduce((t, row) => t + row.fromB, 0);
+  c("a year from the battery = each season's day × its days", r2(seasonSum), r2(yearSum),
+    "the 8,760 hours lay each season's day on the calendar", 0.01);
+  c("the year CSV carries the battery's flows", true,
+    B.btYearCsv(Y).split("\n")[0].includes("into_battery_kwh,from_battery_kwh"), "two columns, kWh each hour");
+  c("battery seasons' workings add up", true, ["summer", "winter"].every(s => Wk.verify(r.nodes.seasons[s].battDay).ok),
+    "each hour: use = direct + battery + grid; solar = direct + into battery + exported");
+}
+
 // ---- workings add up (workings.js) -------------------------------------------
 const a = Wk.input("a", 2, "kWh"), b = Wk.input("b", 3, "kWh");
 const s = Wk.sum("a + b", "kWh", [a, b]), p = Wk.product("a × b", "kWh", [a, b]);
