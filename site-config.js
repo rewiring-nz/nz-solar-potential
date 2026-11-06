@@ -18,6 +18,9 @@ window.SITE = {
   // (tools/publish_served.py). Rolling back is pointing this at an older
   // version folder that is still there (the newest three are kept).
   dataBase: "https://storage.googleapis.com/solar-potential-map-tiles/v71/",
+  // The Electricity Authority network region whose home prices the bill
+  // model uses (regional_prices.js): 34 = Queenstown (Aurora Energy).
+  priceRegion: 34,
   defaultView: { center: [168.6620, -45.0320], zoom: 15.5 },
   // Areas offered in the search box, ranked above street addresses.
   towns: [

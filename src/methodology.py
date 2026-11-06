@@ -118,6 +118,21 @@ def values() -> dict:
                          "economics.js ECON_DEFAULTS.discount_rate_pct"),
         "survey_count": (_fmt(len(c.SURVEYS)), "len(config.SURVEYS)"),
     }
+    # the home prices: the EA's figures for the site's network region
+    rp_text = (ROOT / "regional_prices.js").read_text()
+    rp = json.loads(rp_text.split("const REGIONAL_PRICES = ", 1)[1].split(";\nif ", 1)[0])
+    code = re.search(r"priceRegion:\s*(\d+)", (ROOT / "site-config.js").read_text()).group(1)
+    r = rp["regions"][code]
+    v.update({
+        "price_region": (r["name"], "regional_prices.js, region SITE.priceRegion"),
+        "price_month": (r["month"][:7], "regional_prices.js month (EA)"),
+        "price_c": (_fmt(r["variable_c"], 2), "regional_prices.js variable_c (EA, incl. GST)"),
+        "peak_c": (_fmt(r["peak_c"], 2), "regional_prices.js peak_c"),
+        "offpeak_c": (_fmt(r["offpeak_c"], 2), "regional_prices.js offpeak_c"),
+        "daily_d": (_fmt(r["daily"], 2), "regional_prices.js daily (EA)"),
+        "export_c": (_fmt(_js_const("economics.js", r"home_offpeak_sell_c:\s*([\d.]+)")),
+                     "economics.js ECON_DEFAULTS.home_offpeak_sell_c"),
+    })
     M = lambda path, name, dp=None: (_fmt(_module_const(path, name), dp), f"{path} {name}")
     E = lambda path, name, dp=None: (_fmt(_env_default(path, name), dp), f"{path} {name} (default)")
     v.update({
@@ -324,6 +339,16 @@ STEPS: list[dict] = [
                  "the Electricity Authority's figures for its area, scaled for people and house size; a business "
                  "by its floor area. Solar powers the building first; the rest is exported.",
          "code": ["bill_tool.js::btEvaluate", "economics.js::simulateDay"], "stages": ["page:bill_tool.js"]},
+        {"title": "Power prices",
+         "text": "Home prices are the Electricity Authority's latest for {price_region} ({price_month}): "
+                 "{price_c}c a kWh and ${daily_d} a day for a standard-use home, incl. GST. The one price is split "
+                 "into {peak_c}c in peak hours and {offpeak_c}c off-peak, so a typical home pays the same average. "
+                 "Exported solar earns {export_c}c a kWh in the first year (retailer buy-back rates on Powerswitch). "
+                 "The prices are refreshed each month.",
+         "facts": [("EA price", "price_c", "c/kWh"), ("Peak", "peak_c", "c/kWh"), ("Off-peak", "offpeak_c", "c/kWh"),
+                   ("Daily charge", "daily_d", " $/day"), ("Export", "export_c", "c/kWh")],
+         "code": ["tools/fetch_regional_prices.mjs", "economics.js::applyRegionalPrices", "regional_prices.js"],
+         "stages": ["page:regional_prices.js"]},
         {"title": "Cost and savings",
          "text": "The cost per kW falls with system size (Assumptions & pricing). Over a {life_years}-year life "
                  "power prices rise {elec_infl_pct}% a year, export rates fall {export_decline_pct}% a year and panels "

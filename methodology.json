@@ -422,6 +422,45 @@
      ]
     },
     {
+     "title": "Power prices",
+     "text": "Home prices are the Electricity Authority's latest for Queenstown (Aurora Energy) (2026-05): 33.55c a kWh and $2.02 a day for a standard-use home, incl. GST. The one price is split into 40.24c in peak hours and 30.77c off-peak, so a typical home pays the same average. Exported solar earns 12c a kWh in the first year (retailer buy-back rates on Powerswitch). The prices are refreshed each month.",
+     "facts": [
+      {
+       "label": "EA price",
+       "value": "33.55c/kWh",
+       "source": "regional_prices.js variable_c (EA, incl. GST)"
+      },
+      {
+       "label": "Peak",
+       "value": "40.24c/kWh",
+       "source": "regional_prices.js peak_c"
+      },
+      {
+       "label": "Off-peak",
+       "value": "30.77c/kWh",
+       "source": "regional_prices.js offpeak_c"
+      },
+      {
+       "label": "Daily charge",
+       "value": "2.02 $/day",
+       "source": "regional_prices.js daily (EA)"
+      },
+      {
+       "label": "Export",
+       "value": "12c/kWh",
+       "source": "economics.js ECON_DEFAULTS.home_offpeak_sell_c"
+      }
+     ],
+     "code": [
+      "tools/fetch_regional_prices.mjs",
+      "economics.js::applyRegionalPrices",
+      "regional_prices.js"
+     ],
+     "stages": [
+      "page:regional_prices.js"
+     ]
+    },
+    {
      "title": "Cost and savings",
      "text": "The cost per kW falls with system size (Assumptions & pricing). Over a 30-year life power prices rise 4.0% a year, export rates fall 2.0% a year and panels lose 0.5% a year, shown in today's dollars.",
      "facts": [

@@ -1,0 +1,53 @@
+name: Refresh regional power prices
+
+# The Electricity Authority publishes regional power prices monthly
+# (tools/fetch_regional_prices.mjs). On the 10th of each month this fetches
+# the newest, checks it, and commits regional_prices.js and the methodology
+# diagram that quotes it when the EA has published something new. A commit
+# made with GITHUB_TOKEN does not start other workflows, so this one starts
+# the site deploy itself.
+
+on:
+  schedule:
+    - cron: "0 20 10 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.lock.txt
+      - name: Fetch the EA's latest prices
+        run: node tools/fetch_regional_prices.mjs
+      - name: Rewrite the methodology diagram's figures
+        run: python src/methodology.py
+      - name: Check
+        run: |
+          node tests/test_reference_cases.mjs
+          node tests/test_economics.mjs
+          node tests/test_bill_tool.mjs
+          python tests/test_methodology.py
+      - name: Commit and deploy if the prices changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- regional_prices.js methodology.json; then
+            echo "No new EA month."; exit 0
+          fi
+          git config user.name "regional-prices bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add regional_prices.js methodology.json
+          git commit -m "Regional power prices: the Electricity Authority's latest month [automated]"
+          git push
+          gh workflow run pages.yml --ref main

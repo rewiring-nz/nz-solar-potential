@@ -25,13 +25,17 @@ const ECON_DEFAULTS = {
   // Homes and businesses buy electricity at very different prices, so a
   // single retail rate would flatter one and penalise the other. Export is
   // the same for both today.
-  home_buy_c: 30, home_sell_c: 14,
-  biz_buy_c: 17,  biz_sell_c: 14,
+  home_buy_c: 30, home_sell_c: 12,
+  biz_buy_c: 17,  biz_sell_c: 12,
   // TIME-OF-USE PRICES (the building panel, 17 Oct). Peak hours cost more;
-  // export can be paid differently at peak. Defaults keep a typical home's
-  // average near the old flat 30c. Cents per kWh incl. GST; daily in $.
-  home_peak_c: 34, home_offpeak_c: 26, home_peak_sell_c: 14, home_offpeak_sell_c: 14, home_daily: 2.5,
-  biz_peak_c: 19,  biz_offpeak_c: 14,  biz_peak_sell_c: 14,  biz_offpeak_sell_c: 14,  biz_daily: 8.0,
+  // export can be paid differently at peak. Cents per kWh incl. GST; daily
+  // in $. The home prices here are the fallback and set the peak : off-peak
+  // ratio; where the site names a network region (SITE.priceRegion) the
+  // Electricity Authority's prices for it replace them (below).
+  // Export: 12c a kWh in the first year (Powerswitch's retailer buy-back
+  // rates, powerswitch.org.nz/solar-rates), falling by export_decline_pct.
+  home_peak_c: 34, home_offpeak_c: 26, home_peak_sell_c: 12, home_offpeak_sell_c: 12, home_daily: 2.5,
+  biz_peak_c: 19,  biz_offpeak_c: 14,  biz_peak_sell_c: 12,  biz_offpeak_sell_c: 12,  biz_daily: 8.0,
   // [from, to) hours of the day that are peak: 7-10am and 6-9pm (Josh,
   // 18 Oct); adjustable on the building panel's sliders
   peak_hours: [[7, 10], [18, 21]],
@@ -125,6 +129,26 @@ const SELF_PROFILES = [
   { id: "custom",     label: "Custom",                       kw: null },
 ];
 const THIS_YEAR = new Date().getFullYear();
+// REGIONAL HOME PRICES. regional_prices.js (tools/fetch_regional_prices.mjs,
+// refreshed monthly) holds the Electricity Authority's latest prices for a
+// standard-use home in each network region, already split into peak and
+// off-peak so the default home pays the EA's average. The site's region
+// (SITE.priceRegion) sets the home defaults; without it the figures above
+// stand. Businesses keep the figures above: the EA set is residential.
+function applyRegionalPrices(defaults, prices, code) {
+  const r = prices && code != null ? prices.regions[code] : null;
+  if (!r) return null;
+  defaults.home_peak_c = r.peak_c;
+  defaults.home_offpeak_c = r.offpeak_c;
+  defaults.home_daily = r.daily;
+  defaults.price_source = `Electricity Authority, ${r.name}, ${r.month.slice(0, 7)}: ` +
+    `${r.variable_c}c a kWh and $${r.daily.toFixed(2)} a day for a standard-use home, incl. GST, ` +
+    `split into peak and off-peak so a typical home pays that average`;
+  return r;
+}
+if (typeof REGIONAL_PRICES !== "undefined" && typeof window !== "undefined" && window.SITE) {
+  applyRegionalPrices(ECON_DEFAULTS, REGIONAL_PRICES, window.SITE.priceRegion);
+}
 let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
 econ.cost_tiers[4].max_kw = Infinity;   // JSON round-trip turns Infinity into null
 
@@ -291,7 +315,7 @@ function economicsFor(kwp, kwhYear, roofM2, override) {
 }
 // Node (tests) and browser (preview.html) both, without a build step.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { costAnchors, ECON_DEFAULTS, SELF_PROFILES, costPerKw, systemCost,
+  module.exports = { costAnchors, applyRegionalPrices, ECON_DEFAULTS, SELF_PROFILES, costPerKw, systemCost,
                      isBusiness, sellRate, economicsFor, setEcon: e => { econ = e; },
                      getEcon: () => econ };
 }

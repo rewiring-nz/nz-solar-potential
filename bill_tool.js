@@ -337,7 +337,14 @@ function btTariff(t) {
 function btPriceNodes(tariff) {
   const ed = k => (t && t.pfx ? { key: `econ:${t.pfx}_${k}`, scale: 100, unit: "c/kWh", step: 0.5, dp: 2 } : null);
   const t = btTariff(tariff);
-  const src = `Your plan (Prices), including GST. Peak hours: ${btPeakText()}.`;
+  // where the home prices start from (economics.js applyRegionalPrices), and
+  // whether they are still that or the reader's own
+  const E0 = typeof ECON_DEFAULTS !== "undefined" ? ECON_DEFAULTS : null;
+  const fromEa = t && t.pfx === "home" && E0 && E0.price_source && typeof econ !== "undefined"
+    && econ.home_peak_c === E0.home_peak_c && econ.home_offpeak_c === E0.home_offpeak_c && econ.home_daily === E0.home_daily;
+  const src = (fromEa ? `${E0.price_source}. ` : "Your plan (Prices), including GST. ") +
+    `Peak hours: ${btPeakText()}. Export starts at ${t.offpeakSell}c a kWh ` +
+    `(retailer buy-back rates, powerswitch.org.nz/solar-rates).`;
   const P = {
     peak: btIn("Peak price", t.peak / 100, "$/kWh", { dp: 3, source: src, edit: ed("peak_c") }),
     off: btIn("Off-peak price", t.offpeak / 100, "$/kWh", { dp: 3, source: src, edit: ed("offpeak_c") }),

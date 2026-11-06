@@ -42,7 +42,7 @@ const HOUSE = [11.4, 13000, 234.4];
 check("a house is not classified as a business", () => {
   const e = E.economicsFor(...HOUSE);
   assert(e.biz === false, "classified as business");
-  assert(e.buy === 30 && e.sellNow === 14, `rates ${e.buy}/${e.sellNow}`);
+  assert(e.buy === E.ECON_DEFAULTS.home_buy_c && e.sellNow === E.ECON_DEFAULTS.home_sell_c, `rates ${e.buy}/${e.sellNow}`);
 });
 
 check("annual value is never below everything-exported", () => {

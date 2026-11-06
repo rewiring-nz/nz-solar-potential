@@ -37,6 +37,26 @@ c("...repaid at 5.5% over 30 years, a year", 811.90, r2(B.btAnnuity(11800, 0.055
 c("the repayments add up to more than the loan", true, B.btAnnuity(10000, 0.06, 15) * 15 > 10000,
   "15 × 1,029.63 = 15,444 > 10,000: the difference is the interest");
 
+// ---- regional prices (regional_prices.js, economics.js applyRegionalPrices) ----
+const { REGIONAL_PRICES: RP } = require("../regional_prices.js");
+const q = RP.regions[34];
+c("Queenstown is EA network region 34", "Queenstown (Aurora Energy)", q.name, "regional_prices.js, from the EA's CSV");
+c("peak and off-peak keep the EA's average for a typical home", r2(q.variable_c),
+  r2(q.peak_share * q.peak_c + (1 - q.peak_share) * q.offpeak_c),
+  `${q.peak_share} × ${q.peak_c}c + ${(1 - q.peak_share).toFixed(4)} × ${q.offpeak_c}c = ${q.variable_c}c`, 0.011);
+c("peak is the set ratio above off-peak", r2(RP.peak_ratio), r2(q.peak_c / q.offpeak_c), "34c : 26c = 1.3077", 0.002);
+{
+  const d = JSON.parse(JSON.stringify(E.ECON_DEFAULTS));
+  E.applyRegionalPrices(d, RP, 34);
+  c("the site's region sets the home prices", `${q.peak_c}/${q.offpeak_c}/${q.daily}`,
+    `${d.home_peak_c}/${d.home_offpeak_c}/${d.home_daily}`, "SITE.priceRegion = 34");
+  c("businesses keep their own prices", E.ECON_DEFAULTS.biz_peak_c, d.biz_peak_c, "the EA set is residential");
+}
+c("solar export starts at 12c a kWh", "12/12", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
+  "Powerswitch retailer buy-back rates");
+c("the prices are no more than eight months old", true,
+  (Date.now() - Date.parse(q.month)) / 864e5 < 245, `EA month ${q.month} (the EA publishes about five months behind): run tools/fetch_regional_prices.mjs`);
+
 // ---- money on the card (bill_tool.js btMoney) --------------------------------
 for (const [v, want, why] of [[521.4, "$520", "under $1,000: nearest $10"], [5742, "$5,700", "under $10,000: nearest $100"],
                               [51750, "$52,000", "over $10,000: nearest $1,000"], [-1340, "-$1,300", "negative keeps its sign"]]) {
