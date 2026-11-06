@@ -279,8 +279,14 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   const r = B.btEvaluate(ctx, home(), null, prices);
   const N = r.nodes;
   near(N.solarNet.value, N.solarSave.value - N.solarRepay.value, 1e-9, "net = savings - repayments");
-  const bad = Wk.verify(N.solarNet);
-  if (bad.length) throw new Error("net does not verify: " + JSON.stringify(bad.map(b => b.node.label)));
+  const v = Wk.verify(N.solarNet);
+  if (!v.ok) throw new Error("net does not verify: " + JSON.stringify(v.problems.map(b => b.node.label)));
+  // and the check can fail: a repayment shown wrong is caught
+  const kept = N.solarRepay.value;
+  N.solarRepay.value = kept + 1;
+  const caught = !Wk.verify(N.solarNet).ok;
+  N.solarRepay.value = kept;
+  if (!caught) throw new Error("verify did not catch a wrong repayment");
 });
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

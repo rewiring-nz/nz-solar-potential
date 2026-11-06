@@ -52,7 +52,7 @@ run() {
 
 run "pure functions"        $PY tests/test_pure.py
 if command -v node >/dev/null 2>&1; then
-  for t in economics workings generation bill_tool low_solar_battery; do
+  for t in economics workings generation bill_tool low_solar_battery reference_cases; do
     run "$t (js)"           node tests/test_$t.mjs
   done
   run "map layer legend (js)" node tests/test_map_layers.js
@@ -103,6 +103,7 @@ run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py
 run "diagram vs code"       $PY tools/check_diagram.py
 run "methodology vs code"   $PY tests/test_methodology.py
+run "reference cases"        $PY tests/test_reference_cases.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py
   run "golden buildings"    $PY -W ignore tests/test_golden.py

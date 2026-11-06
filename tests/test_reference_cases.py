@@ -1,0 +1,104 @@
+"""
+Reference cases: small worked examples a person can check with a calculator.
+
+Each case runs the build's own function on inputs simple enough to work out
+by hand, and states the hand working beside the expected answer. The output
+is a table: case, expected, got, and how the expected figure was reached.
+If a case fails, either the code changed what it computes or the working
+was wrong; the table says which number to look at.
+
+The money side (loan, bills, rounding, cost) is in tests/test_reference_cases.mjs.
+
+Run:  python tests/test_reference_cases.py
+"""
+import math
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+import numpy as np                       # noqa: E402
+from shapely.geometry import box         # noqa: E402
+
+import config                            # noqa: E402
+
+rows, failures = [], []
+
+
+def case(name, expected, got, how, tol=1e-6):
+    ok = (abs(expected - got) <= tol) if isinstance(expected, (int, float)) else expected == got
+    rows.append((("ok  " if ok else "FAIL"), name, expected, got, how))
+    if not ok:
+        failures.append(name)
+
+
+# ---- power from panels (src/solar_model.py SolarModel.facet_yield) -----------
+from src.solar_model import SolarModel   # noqa: E402
+
+pv = config.PV_ASSUMPTIONS
+m = SolarModel.__new__(SolarModel)       # no weather needed: sunlight is given
+m.annual_poa_kwh_per_m2 = lambda slope, aspect: 1500.0
+y = m.facet_yield({"slope_deg": 25, "aspect_deg": 0}, 28)
+case("28 panels are 14 kW", 14.0, y["kwp"], "28 × 500 W = 14,000 W")
+
+y1 = m.facet_yield({"slope_deg": 25, "aspect_deg": 0}, 1, shading_factor=0.9)
+hand = 1500 * 0.9 * 0.5 * 0.97 * (1 - 0.1379)
+case("one panel's year, 1,500 kWh/m² of sun, 10% shade", round(hand, 2), round(y1["ac_kwh_year"], 2),
+     "1,500 × 0.9 shade × 0.5 kW × 0.97 inverter × (1 − 0.1379 losses) = 564.46 kWh")
+case("assumptions are the ones in the working above",
+     (500, 97.0, 13.79), (pv["panel_rated_power_w"], pv["inverter_efficiency_pct"], pv["system_derate_pct"]),
+     "config.PV_ASSUMPTIONS")
+case("total losses 16.4%", 16.4, round((1 - 0.97 * (1 - 0.1379)) * 100, 1),
+     "1 − 0.97 × 0.8621 = 0.164")
+case("panel area", 2.2238, round(config.PANEL_WIDTH_M * config.PANEL_HEIGHT_M, 4), "1.134 m × 1.961 m")
+
+# ---- shade blend (SolarModel.kept_sun) -------------------------------------
+m.beam_share = lambda slope, aspect: 0.7
+case("shade: 70% direct sun, half blocked; 90% of sky open", 0.62, round(m.kept_sun(25, 0, 0.5, 0.9), 6),
+     "0.7 × 0.5 + 0.3 × 0.9 = 0.35 + 0.27 = 0.62")
+
+# ---- slope and direction of a roof plane (src/roof_partition.py) ------------
+from src.roof_partition import _fit_plane, _slope_aspect   # noqa: E402
+
+s, a = _slope_aspect((0.5, 0.0, 0.0))
+case("roof rising 0.5 m per m to the east: slope", 26.57, round(s, 2), "atan(0.5) = 26.57°")
+case("...and it faces west", 270.0, round(a, 2), "it falls towards the west: 270°")
+s, a = _slope_aspect((0.0, -1.0, 0.0))
+case("roof rising 1 m per m to the south: slope", 45.0, round(s, 2), "atan(1) = 45°")
+case("...and it faces north", 0.0, round(a, 2), "it falls towards the north: 0°")
+xs, ys = np.meshgrid(np.arange(0, 10.0), np.arange(0, 6.0))
+pts = np.column_stack([xs.ravel() + 1.2e6, ys.ravel() + 5.0e6, 0.25 * xs.ravel() + 3.0])
+pl = _fit_plane(pts)
+case("plane fitted to points on z = 0.25x + 3", 0.25, round(float(pl[0]), 9),
+     "60 points exactly on the plane; the fit returns its slope in x (NZTM-sized coordinates)")
+
+# ---- panels on a face (src/panel_fitting.py fit_panels_on_facet) -----------
+from src.panel_fitting import fit_panels_on_facet   # noqa: E402
+
+
+def panels_on(w, h, slope):
+    f = {"geometry": box(0, 0, w, h), "slope_deg": slope, "aspect_deg": 0.0,
+         "plane": (0, 0, 0), "building_id": 1, "facet_id": 0}
+    return fit_panels_on_facet(f)
+
+
+case("flat 5 × 3 m face", 4, len(panels_on(5, 3, 0)),
+     "0.1 m setback: (5 − 0.2) ÷ 1.134 = 4 across, (3 − 0.2) ÷ 1.961 = 1 row")
+case("flat 10 × 4.4 m face", 16, len(panels_on(10, 4.4, 0)),
+     "(10 − 0.2) ÷ 1.134 = 8 across, (4.4 − 0.2) ÷ 1.961 = 2 rows")
+case("6 × 4.2 m (plan) face at 30°", 10, len(panels_on(6, 4.2, 30)),
+     "slope length 4.2 ÷ cos 30° = 4.85 m: (4.85 − 0.2) ÷ 1.961 = 2 rows of (6 − 0.2) ÷ 1.134 = 5")
+P = [p["geometry"] for p in panels_on(10, 4.4, 0)]
+case("no two panels overlap", 0.0, round(sum(P[i].intersection(P[j]).area
+                                              for i in range(len(P)) for j in range(i + 1, len(P))), 6),
+     "sum of every pair's shared area")
+case("every panel inside the face less its setback", True,
+     all(box(0.1 - 1e-6, 0.1 - 1e-6, 9.9 + 1e-6, 4.3 + 1e-6).contains(p) for p in P), "0.1 m in from each edge")
+
+# ---- report ------------------------------------------------------------------
+w = max(len(r[1]) for r in rows)
+for st, name, exp, got, how in rows:
+    print(f"{st} {name:<{w}}  expected {exp!s:<22} got {got!s:<22} {how}")
+print(f"\n{len(rows) - len(failures)} passed, {len(failures)} failed")
+sys.exit(1 if failures else 0)
