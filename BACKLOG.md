@@ -399,6 +399,22 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   pick on 73 roofs, panel IoU 0.487 (+0.003, 95% -0.005..+0.011; 18 better,
   17 worse); at confidence 0.7+ 32 changes, -0.001. Not worth wiring in:
   the readings it chooses between are all short of the drawn faces.
+  Where the line reading loses (6 Nov, face IoU vs drawn faces, no plane
+  fit): drawn lines as vectors through the line_facets arrangement inside
+  the drawn roof 0.918 (117 of 163 at 0.9+), so faces-from-lines is sound;
+  the same lines rasterised and read back by `network_lines` 0.769 on the
+  drawn roof, 0.714 on the build's crop and outline; the production line
+  model's map 0.497 (157 roofs). The surveyed outline costs little (0.90
+  agreement with the drawn roof; clipping to it moves 0.685 -> 0.687).
+  Two extraction fixes helped the rasterised drawn lines and not the
+  model's map, so neither shipped: keeping a `closure` line only where the
+  map supports it (mean >= 0.3: 0.769 -> 0.805 drawn, 0.497 -> 0.489
+  model), and removing staircase corners after thinning, which split any
+  line at an angle to the pixel grid into discarded 2-pixel paths
+  (0.805 -> 0.810 drawn, 0.494 model). On the model's map the losses are
+  faint lines not traced, lines traced along the eave, and a few outline
+  offsets. `tools/linemap_bench.py` reruns this offline in two minutes from
+  maps saved with `SOLAR_DUMP_LINEMAP` (the 157 maps: VM `~/mb13/maps.tgz`).
   v71 published 5 Nov (reflection loss, building heights). One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
