@@ -322,8 +322,9 @@ figure for the same thing. Code enforces this:
 ### Geometry, sunlight and front end
 - Roof precedence: hand-drawn markup > selected faces > LiDAR fallback.
   Selected faces (`SOLAR_SELECTED_FACES=1`, the default): `tools/predict_faces.py`
-  scores three readings per building (SAM vit_b, a U-Net line detector, and
-  normal-grown LiDAR regions) and writes the winner to
+  scores four readings per building (SAM vit_b, a U-Net line detector,
+  normal-grown LiDAR regions, and the simplest roof form that fits) and
+  writes the winner to
   `data/selected_faces/<id>.json`. A reading scored under 0.60 competes with
   the LiDAR path. Fallback: RANSAC plane partition and straight skeleton
   (`src/roof_skeleton.py`). Ridge snap and the plant-deck rule are off by
@@ -362,8 +363,21 @@ figure for the same thing. Code enforces this:
   field-reported outlines from the build entirely.
 - `src/derive_solar_potential.py` builds the building summary by adding up
   its layout, so totals and layouts match.
-- Shading uses per-building 72-direction horizons (`horizon_b64`,
-  `horizon_beam_pct`) from the 8 m DEM and the 1 m DSM, seen from eave height.
+- Shading on each panel's kWh: a near-field scan of the 1 m DSM from the
+  panel (every 4 degrees, out to 100 m, `src/building_shading.py`) and the
+  building's 72-direction far horizon from the 8 m DEM seen from eave
+  height (`src/building_horizon.py` far_profile), blended by the direct-beam
+  share (`SolarModel.kept_sun`). The baked `horizon_b64` and
+  `horizon_beam_pct` (near field to 300 m) are for display only.
+- The methodology diagram ("How this map is made", `methodology.js`) is
+  written from the code by `src/methodology.py` into `methodology.json`;
+  `tests/test_methodology.py` fails when it is stale, a build stage is not
+  in it, a cited name is gone, or a LINZ layer config names is not described
+  in `data/source_metadata.json` (`tools/fetch_source_metadata.py`).
+- `tests/test_reference_cases.py` and `.mjs` are worked examples checkable
+  by hand (panel kWh, packing, slope, loan, rounding, an hour of solar).
+  Browser checks, run on the page before a front-end release:
+  `tools/contrast_check.js`, `tools/overflow_check.js`, `tools/econ_check.js`.
 - Sunlight is calibrated to NIWA SolarView GHI in the Wakatipu basin, else the
   nearest NIWA measured-radiation station, scaled by ERA5 spatial ratios
   (`src/solar_model.py` header).

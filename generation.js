@@ -58,7 +58,8 @@ function genAssumptionNodes(A) {
     { source: "Typical string inverter. It turns the panels' DC into household AC.",
       edit: { key: "gen:inverter_efficiency_pct", scale: 100, unit: "%", step: 0.5, dp: 2 } });
   const loss = Wk.input("Other system losses", A.system_derate_pct / 100, "share",
-    { dp: 2, source: "PVWatts convention: cell temperature, dirt, wiring, mismatch, panel tolerance and downtime.",
+    { dp: 2, source: "Cell temperature, dirt, wiring, mismatch, panel tolerance and downtime (the PVWatts list), " +
+        "and light reflected off the panel glass (2.76% a year, from PVGIS).",
       note: "Shading is not in this number. It is measured for each panel from the laser scan.",
       edit: { key: "gen:system_derate_pct", scale: 100, unit: "%", step: 0.1, dp: 2 } });
   const kept = Wk.complement("Kept after other losses", loss, { dp: 2 });

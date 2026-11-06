@@ -158,10 +158,10 @@ function systemCost(kwp) { return kwp * costPerKw(kwp); }
 
 // First-year value of the energy: what is used on site displaces electricity
 // at the retail price, what is exported earns the buyback rate. Lifetime
-// applies linear panel degradation over the system life. Deliberately no
-// discount rate or price inflation -- two assumptions that mostly cancel and
-// that nobody can check, and their absence is easier to explain than a
-// number picked to make payback look good.
+// applies linear panel degradation over the system life. economicsFor (this
+// function's caller) applies elec_inflation_pct and discount_rate_pct; it is
+// kept for the tests only. The map's figures come from bill_tool.js, which
+// shows today's dollars (general inflation, cpi_pct, taken out).
 // Business or home?
 //
 // THE COUNCIL ALREADY ANSWERED THIS. Some homes were misclassified as
