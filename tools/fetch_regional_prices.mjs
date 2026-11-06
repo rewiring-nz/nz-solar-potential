@@ -58,9 +58,11 @@ export function peakShare(lat, lon) {
 }
 
 // one price per kWh as peak and off-peak, keeping the default home's average
+// Shown and used to the whole cent, as a plan quotes them; the rounding moves
+// the typical home's average off the EA's by at most half a cent.
 export function splitPrice(variableC, share, ratio) {
   const off = variableC / (share * ratio + (1 - share));
-  return { peak_c: Math.round(off * ratio * 100) / 100, offpeak_c: Math.round(off * 100) / 100 };
+  return { peak_c: Math.round(off * ratio), offpeak_c: Math.round(off) };
 }
 
 async function main() {
@@ -79,7 +81,7 @@ async function main() {
     const code = +v[at("NetworkReportingRegionCode")], month = v[at("MonthEnd")];
     if (!latest[code] || month > latest[code].month) {
       latest[code] = { name: v[at("NetworkReportingRegion")], month,
-                       daily: +v[at("FixedDollarPerDayInclGST")], variable_c: +v[at("VariableDollarPerkWhInclGST")] * 100 };
+                       daily: Math.round(+v[at("FixedDollarPerDayInclGST")] * 100) / 100, variable_c: +v[at("VariableDollarPerkWhInclGST")] * 100 };
     }
   }
   const ratio = E.ECON_DEFAULTS.home_peak_c / E.ECON_DEFAULTS.home_offpeak_c;

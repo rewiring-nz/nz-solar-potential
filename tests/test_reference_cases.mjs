@@ -43,8 +43,8 @@ const q = RP.regions[34];
 c("Queenstown is EA network region 34", "Queenstown (Aurora Energy)", q.name, "regional_prices.js, from the EA's CSV");
 c("peak and off-peak keep the EA's average for a typical home", r2(q.variable_c),
   r2(q.peak_share * q.peak_c + (1 - q.peak_share) * q.offpeak_c),
-  `${q.peak_share} × ${q.peak_c}c + ${(1 - q.peak_share).toFixed(4)} × ${q.offpeak_c}c = ${q.variable_c}c`, 0.011);
-c("peak is the set ratio above off-peak", r2(RP.peak_ratio), r2(q.peak_c / q.offpeak_c), "peak twice off-peak (50c : 25c)", 0.002);
+  `${q.peak_share} × ${q.peak_c}c + ${(1 - q.peak_share).toFixed(4)} × ${q.offpeak_c}c ≈ ${q.variable_c}c (prices to the whole cent)`, 0.5);
+c("peak is twice off-peak, to the cent", RP.peak_ratio, Math.round(q.peak_c / q.offpeak_c * 10) / 10, "50c : 25c, whole cents", 0.05);
 {
   const d = JSON.parse(JSON.stringify(E.ECON_DEFAULTS));
   E.applyRegionalPrices(d, RP, 34);

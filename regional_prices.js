@@ -19,308 +19,308 @@ const REGIONAL_PRICES = {
   "1": {
    "name": "Bay of Islands (Top Energy)",
    "month": "2026-05-31",
-   "daily": 3.5641,
+   "daily": 3.56,
    "variable_c": 39.25,
    "peak_share": 0.2915,
-   "peak_c": 60.78,
-   "offpeak_c": 30.39
+   "peak_c": 61,
+   "offpeak_c": 30
   },
   "2": {
    "name": "Whangārei and Kaipara (Northpower)",
    "month": "2026-05-31",
-   "daily": 3.4553,
+   "daily": 3.46,
    "variable_c": 30.56,
    "peak_share": 0.2915,
-   "peak_c": 47.32,
-   "offpeak_c": 23.66
+   "peak_c": 47,
+   "offpeak_c": 24
   },
   "3": {
    "name": "Waitemata (Vector)",
    "month": "2026-05-31",
-   "daily": 3.0329,
+   "daily": 3.03,
    "variable_c": 27.05,
    "peak_share": 0.2915,
-   "peak_c": 41.89,
-   "offpeak_c": 20.94
+   "peak_c": 42,
+   "offpeak_c": 21
   },
   "4": {
    "name": "Auckland (Vector)",
    "month": "2026-05-31",
-   "daily": 3.0828,
+   "daily": 3.08,
    "variable_c": 26.51,
    "peak_share": 0.2915,
-   "peak_c": 41.05,
-   "offpeak_c": 20.53
+   "peak_c": 41,
+   "offpeak_c": 21
   },
   "5": {
    "name": "Counties (Counties Power)",
    "month": "2026-05-31",
-   "daily": 3.1664,
+   "daily": 3.17,
    "variable_c": 33.35,
    "peak_share": 0.2915,
-   "peak_c": 51.64,
-   "offpeak_c": 25.82
+   "peak_c": 52,
+   "offpeak_c": 26
   },
   "6": {
    "name": "Thames Valley (Powerco)",
    "month": "2026-05-31",
-   "daily": 2.7213,
+   "daily": 2.72,
    "variable_c": 32.6,
    "peak_share": 0.2915,
-   "peak_c": 50.48,
-   "offpeak_c": 25.24
+   "peak_c": 50,
+   "offpeak_c": 25
   },
   "7": {
    "name": "Waikato (WEL Networks)",
    "month": "2026-05-31",
-   "daily": 3.1317,
+   "daily": 3.13,
    "variable_c": 26.51,
    "peak_share": 0.2915,
-   "peak_c": 41.05,
-   "offpeak_c": 20.53
+   "peak_c": 41,
+   "offpeak_c": 21
   },
   "8": {
    "name": "Waipa (Waipa Networks)",
    "month": "2026-05-31",
-   "daily": 1.9802,
+   "daily": 1.98,
    "variable_c": 36.81,
    "peak_share": 0.2915,
    "peak_c": 57,
-   "offpeak_c": 28.5
+   "offpeak_c": 29
   },
   "9": {
    "name": "King Country (The Lines Company)",
    "month": "2026-05-31",
-   "daily": 3.7219,
+   "daily": 3.72,
    "variable_c": 32.88,
    "peak_share": 0.2915,
-   "peak_c": 50.92,
-   "offpeak_c": 25.46
+   "peak_c": 51,
+   "offpeak_c": 25
   },
   "10": {
    "name": "Tauranga (Powerco)",
    "month": "2026-05-31",
-   "daily": 2.6827,
+   "daily": 2.68,
    "variable_c": 34.43,
    "peak_share": 0.2915,
-   "peak_c": 53.32,
-   "offpeak_c": 26.66
+   "peak_c": 53,
+   "offpeak_c": 27
   },
   "11": {
    "name": "Rotorua (Unison Networks)",
    "month": "2026-05-31",
-   "daily": 2.7064,
+   "daily": 2.71,
    "variable_c": 32.9,
    "peak_share": 0.2915,
-   "peak_c": 50.95,
-   "offpeak_c": 25.47
+   "peak_c": 51,
+   "offpeak_c": 25
   },
   "12": {
    "name": "Eastern Bay of Plenty (Horizon Energy)",
    "month": "2026-05-31",
-   "daily": 3.676,
+   "daily": 3.68,
    "variable_c": 29.85,
    "peak_share": 0.2915,
-   "peak_c": 46.22,
-   "offpeak_c": 23.11
+   "peak_c": 46,
+   "offpeak_c": 23
   },
   "13": {
    "name": "Taupō (Unison Networks)",
    "month": "2026-05-31",
-   "daily": 2.723,
+   "daily": 2.72,
    "variable_c": 32.8,
    "peak_share": 0.2915,
-   "peak_c": 50.79,
-   "offpeak_c": 25.4
+   "peak_c": 51,
+   "offpeak_c": 25
   },
   "14": {
    "name": "Tairāwhiti and Wairoa (Firstlight Network)",
    "month": "2026-05-31",
-   "daily": 3.9982,
+   "daily": 4,
    "variable_c": 31.32,
    "peak_share": 0.2915,
-   "peak_c": 48.5,
-   "offpeak_c": 24.25
+   "peak_c": 49,
+   "offpeak_c": 24
   },
   "15": {
    "name": "Hawke's Bay (Unison Networks)",
    "month": "2026-05-31",
-   "daily": 2.7067,
+   "daily": 2.71,
    "variable_c": 31.38,
    "peak_share": 0.2915,
-   "peak_c": 48.59,
-   "offpeak_c": 24.3
+   "peak_c": 49,
+   "offpeak_c": 24
   },
   "16": {
    "name": "Central Hawke's Bay (Centralines)",
    "month": "2026-05-31",
-   "daily": 3.2833,
+   "daily": 3.28,
    "variable_c": 37.46,
    "peak_share": 0.2915,
-   "peak_c": 58.01,
+   "peak_c": 58,
    "offpeak_c": 29
   },
   "17": {
    "name": "Southern Hawke's Bay (Scanpower)",
    "month": "2026-05-31",
-   "daily": 2.0083,
+   "daily": 2.01,
    "variable_c": 36.84,
    "peak_share": 0.2915,
-   "peak_c": 57.05,
-   "offpeak_c": 28.52
+   "peak_c": 57,
+   "offpeak_c": 29
   },
   "18": {
    "name": "Wairarapa (Powerco)",
    "month": "2026-05-31",
-   "daily": 2.6492,
+   "daily": 2.65,
    "variable_c": 37,
    "peak_share": 0.2915,
-   "peak_c": 57.3,
-   "offpeak_c": 28.65
+   "peak_c": 57,
+   "offpeak_c": 29
   },
   "19": {
    "name": "Taranaki (Powerco)",
    "month": "2026-05-31",
-   "daily": 2.5141,
+   "daily": 2.51,
    "variable_c": 33.02,
    "peak_share": 0.2915,
-   "peak_c": 51.13,
-   "offpeak_c": 25.57
+   "peak_c": 51,
+   "offpeak_c": 26
   },
   "20": {
    "name": "Whanganui (Powerco)",
    "month": "2026-05-31",
-   "daily": 2.4155,
+   "daily": 2.42,
    "variable_c": 35.1,
    "peak_share": 0.2915,
-   "peak_c": 54.35,
-   "offpeak_c": 27.18
+   "peak_c": 54,
+   "offpeak_c": 27
   },
   "21": {
    "name": "Manawatū (Powerco)",
    "month": "2026-05-31",
-   "daily": 2.3567,
+   "daily": 2.36,
    "variable_c": 32.56,
    "peak_share": 0.2915,
-   "peak_c": 50.42,
-   "offpeak_c": 25.21
+   "peak_c": 50,
+   "offpeak_c": 25
   },
   "22": {
    "name": "Kāpiti and Horowhenua (Electra)",
    "month": "2026-05-31",
-   "daily": 2.2777,
+   "daily": 2.28,
    "variable_c": 35.23,
    "peak_share": 0.2915,
-   "peak_c": 54.56,
-   "offpeak_c": 27.28
+   "peak_c": 55,
+   "offpeak_c": 27
   },
   "23": {
    "name": "Wellington (Wellington Electricity)",
    "month": "2026-05-31",
-   "daily": 2.678,
+   "daily": 2.68,
    "variable_c": 26.29,
    "peak_share": 0.2915,
-   "peak_c": 40.71,
-   "offpeak_c": 20.36
+   "peak_c": 41,
+   "offpeak_c": 20
   },
   "25": {
    "name": "Tasman (Network Tasman)",
    "month": "2026-05-31",
-   "daily": 2.5902,
+   "daily": 2.59,
    "variable_c": 30.18,
    "peak_share": 0.2915,
-   "peak_c": 46.74,
-   "offpeak_c": 23.37
+   "peak_c": 47,
+   "offpeak_c": 23
   },
   "26": {
    "name": "Marlborough (Marlborough Lines)",
    "month": "2026-05-31",
-   "daily": 4.2884,
+   "daily": 4.29,
    "variable_c": 31.16,
    "peak_share": 0.2915,
-   "peak_c": 48.25,
-   "offpeak_c": 24.13
+   "peak_c": 48,
+   "offpeak_c": 24
   },
   "27": {
    "name": "Buller (Buller Electricity)",
    "month": "2026-05-31",
-   "daily": 3.3336,
+   "daily": 3.33,
    "variable_c": 36.22,
    "peak_share": 0.2915,
-   "peak_c": 56.09,
-   "offpeak_c": 28.04
+   "peak_c": 56,
+   "offpeak_c": 28
   },
   "28": {
    "name": "West Coast (Westpower)",
    "month": "2026-05-31",
-   "daily": 2.2412,
+   "daily": 2.24,
    "variable_c": 40.22,
    "peak_share": 0.2915,
-   "peak_c": 62.28,
-   "offpeak_c": 31.14
+   "peak_c": 62,
+   "offpeak_c": 31
   },
   "29": {
    "name": "North Canterbury (MainPower NZ)",
    "month": "2026-05-31",
-   "daily": 3.837,
+   "daily": 3.84,
    "variable_c": 28.12,
    "peak_share": 0.2915,
-   "peak_c": 43.55,
-   "offpeak_c": 21.77
+   "peak_c": 44,
+   "offpeak_c": 22
   },
   "30": {
    "name": "Central Canterbury (Orion New Zealand)",
    "month": "2026-05-31",
-   "daily": 2.0813,
+   "daily": 2.08,
    "variable_c": 27.68,
    "peak_share": 0.2915,
-   "peak_c": 42.86,
-   "offpeak_c": 21.43
+   "peak_c": 43,
+   "offpeak_c": 21
   },
   "31": {
    "name": "Ashburton (Electricity Ashburton)",
    "month": "2026-05-31",
-   "daily": 1.9568,
+   "daily": 1.96,
    "variable_c": 30.64,
    "peak_share": 0.2915,
-   "peak_c": 47.45,
-   "offpeak_c": 23.72
+   "peak_c": 47,
+   "offpeak_c": 24
   },
   "32": {
    "name": "South Canterbury (Alpine Energy)",
    "month": "2026-05-31",
-   "daily": 3.7548,
+   "daily": 3.75,
    "variable_c": 27.34,
    "peak_share": 0.2915,
-   "peak_c": 42.34,
-   "offpeak_c": 21.17
+   "peak_c": 42,
+   "offpeak_c": 21
   },
   "33": {
    "name": "Waitaki (Network Waitaki)",
    "month": "2026-05-31",
-   "daily": 4.2605,
+   "daily": 4.26,
    "variable_c": 24.73,
    "peak_share": 0.2915,
-   "peak_c": 38.3,
-   "offpeak_c": 19.15
+   "peak_c": 38,
+   "offpeak_c": 19
   },
   "34": {
    "name": "Queenstown (Aurora Energy)",
    "month": "2026-05-31",
-   "daily": 2.0224,
+   "daily": 2.02,
    "variable_c": 33.55,
    "peak_share": 0.2934,
-   "peak_c": 51.88,
-   "offpeak_c": 25.94
+   "peak_c": 52,
+   "offpeak_c": 26
   },
   "35": {
    "name": "Central Otago (Aurora Energy)",
    "month": "2026-05-31",
-   "daily": 1.9908,
+   "daily": 1.99,
    "variable_c": 40.69,
    "peak_share": 0.2934,
-   "peak_c": 62.92,
-   "offpeak_c": 31.46
+   "peak_c": 63,
+   "offpeak_c": 31
   },
   "36": {
    "name": "Otago (OtagoNet)",
@@ -328,44 +328,44 @@ const REGIONAL_PRICES = {
    "daily": 3.24,
    "variable_c": 36.97,
    "peak_share": 0.2915,
-   "peak_c": 57.25,
-   "offpeak_c": 28.63
+   "peak_c": 57,
+   "offpeak_c": 29
   },
   "37": {
    "name": "Dunedin (Aurora Energy)",
    "month": "2026-05-31",
-   "daily": 2.0561,
+   "daily": 2.06,
    "variable_c": 31.63,
    "peak_share": 0.2915,
-   "peak_c": 48.98,
-   "offpeak_c": 24.49
+   "peak_c": 49,
+   "offpeak_c": 24
   },
   "38": {
    "name": "Southland (The Power Company)",
    "month": "2026-05-31",
-   "daily": 3.3807,
+   "daily": 3.38,
    "variable_c": 31.28,
    "peak_share": 0.2934,
-   "peak_c": 48.37,
-   "offpeak_c": 24.18
+   "peak_c": 48,
+   "offpeak_c": 24
   },
   "39": {
    "name": "Invercargill (Electricity Invercargill)",
    "month": "2026-05-31",
-   "daily": 2.7241,
+   "daily": 2.72,
    "variable_c": 27.24,
    "peak_share": 0.2915,
-   "peak_c": 42.18,
-   "offpeak_c": 21.09
+   "peak_c": 42,
+   "offpeak_c": 21
   },
   "40": {
    "name": "Frankton (Lakelands)",
    "month": "2026-05-31",
-   "daily": 2.284,
+   "daily": 2.28,
    "variable_c": 33.18,
    "peak_share": 0.2915,
-   "peak_c": 51.38,
-   "offpeak_c": 25.69
+   "peak_c": 51,
+   "offpeak_c": 26
   }
  }
 };
