@@ -1449,7 +1449,9 @@ function renderBillTool(box, ctx) {
             `</div></div>`;
         }).join("") +
       `</div>` +
-      `<div class="sx-foot">Including GST. ${tariff.flat ? "One price all day." : `Peak prices apply ${btPeakHours().map(hours).join(" and ")}.`} ${isBiz ? "Business" : "Home"} prices, used across the map.</div>` +
+      `<div class="sx-foot">Including GST. ${tariff.flat ? "One price all day." : `Peak prices apply ${btPeakHours().map(hours).join(" and ")}.`} ` +
+        `${isBiz ? "Business energy prices, used across the map. Network and connection charges come on a separate bill that solar does not change, so they are left out."
+                 : "Home prices, used across the map."}</div>` +
       `<details class="sx-dis" id="bt-adv-price"><summary><span class="t">Prices over the years</span>` +
         `<span class="sum">${E.real_prices ? "today's dollars" : "nominal"} · power +${E.elec_inflation_pct}%/yr</span></summary>` +
         `<div class="sx-group">` +

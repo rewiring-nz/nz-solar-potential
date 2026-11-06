@@ -98,6 +98,15 @@ c("peak is twice off-peak, to the cent", RP.peak_ratio, Math.round(q.peak_c / q.
   globalThis.econ = econ0;
   delete globalThis.REGIONAL_PRICES;
 }
+c("a business pays energy prices: 17c peak, 10c off-peak, no daily charge", "17/10/0",
+  `${E.ECON_DEFAULTS.biz_peak_c}/${E.ECON_DEFAULTS.biz_offpeak_c}/${E.ECON_DEFAULTS.biz_daily}`,
+  "network and connection charges are a separate bill that solar does not change");
+{
+  const sh = B.BT_SHAPES.business, pk = h => (h >= 7 && h < 10) || (h >= 18 && h < 21);
+  const share = sh.reduce((t, v, h) => t + (pk(h) ? v : 0), 0);
+  c("a business's flat price", Math.round(share * 17 + (1 - share) * 10), E.ECON_DEFAULTS.biz_buy_c,
+    `${(share * 100).toFixed(0)}% of a typical business's use in peak hours: ${share.toFixed(2)} × 17c + ${(1 - share).toFixed(2)} × 10c`);
+}
 c("solar export starts at 12c a kWh", "12/12", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
   "Powerswitch retailer buy-back rates");
 c("the prices are no more than eight months old", true,
