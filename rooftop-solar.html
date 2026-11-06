@@ -439,7 +439,7 @@
   .roof-saving { cursor: default; }
   .roof-saving .wk-num, .roof-saving .wk-num:hover { text-decoration: none; }
   .roof-saving [data-wk] { cursor: pointer; border-radius: 6px; }
-  .roof-saving [data-wk]:hover, .roof-saving [data-wk]:focus-visible { background: rgba(255,255,255,.12); outline: none; }
+  .roof-saving [data-wk]:hover, .roof-saving [data-wk]:focus-visible { background: rgba(0,0,0,.16); outline: none; }
   .roof-saving .rs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .roof-saving .rs-l { opacity: .92; }
   .roof-saving .rs-v { display: inline-block; padding: 0 4px; margin-left: -4px; }
@@ -3961,7 +3961,14 @@ map.on("load", async () => {
   // goes entirely one way; over thousands of buildings that averages out, and
   // it is the difference between having this at district scale and not.
   function bandSplitFor(pr, pct) {
-    const be = breakEvenFor(pr.building_id);
+    // THE SAME RULE AS THE PANEL COLOURS (panelBandOf): merit order, so a
+    // slice within the self-consumption cutoff is judged at the retail
+    // break-even and one past it at the export break-even. The blended
+    // figure is only the fallback for a roof with no merit pricing yet; using
+    // it here counted a panel "pays back" in the district total that its
+    // colour and the card called "won't pay back".
+    const m = panelEconMerit && panelEconMerit.get(pr.building_id);
+    const blended = breakEvenFor(pr.building_id);
     let panels = 0, kwh = 0;
     let prevP = 0, prevK = 0;
     for (let step = 10; step <= 100; step += 10) {
@@ -3973,6 +3980,8 @@ map.on("load", async () => {
       prevP = cp; prevK = ck;
       if (dp <= 0) continue;
       const perPanel = (dk / dp) * bakedKwhScale();   // marginal yield in this slice
+      const mid = cp - dp / 2;                        // the slice's place in the fill order
+      const be = m ? (mid <= m.cutoff ? m.retailBE : m.exportBE) : blended;
       const band = bandForRatio(perPanel / Math.max(be, 1e-9));
       if (!panelEconShow[band]) continue;
       panels += dp; kwh += dk;
@@ -4455,7 +4464,9 @@ map.on("load", async () => {
       el("e-infl-val").textContent = econ.elec_inflation_pct.toFixed(1) + "%/yr";
       el("e-cpi-val").textContent = econ.cpi_pct.toFixed(1) + "%/yr";
       el("e-invy-val").textContent = econ.inverter_replace_year >= econ.life_years
-        ? "never" : "year " + econ.inverter_replace_year;
+        // the setting is the 0-based year index (economics.js); people count
+        // from year 1, as the card and the workings do ("replaced in year 16")
+        ? "never" : "year " + (econ.inverter_replace_year + 1);
       el("e-invc-val").textContent = econ.inverter_cost_pct + "% of install";
       el("e-loanr-val").textContent = econ.loan_rate_pct.toFixed(1) + "%/yr";
       el("e-loany-val").textContent = econ.loan_years + " years";
@@ -5228,11 +5239,12 @@ map.on("load", async () => {
       const kwh = F.panels.length
         ? panels.reduce((t, q) => t + (q.ac_kwh_year || 0), 0) * bakedKwhScale()
         : decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
-      const gen = Wk.given("Electricity generated a year", kwh, "kWh/yr", [], {
-        formula: "the build's total for these panels",
+      // the build's own total, read from the tiles: an input with its source,
+      // not a "given" whose check only returned its own value
+      const gen = Wk.input("Electricity generated a year", kwh, "kWh/yr", {
+        source: "The build's total for these panels (re-derived from each panel's sunlight before it was published)",
         note: sun === null && props.sr ? "Sunlight data for this roof is still loading. The workings appear when it's ready."
-              : "Zoom in to see the workings for each panel.",
-        check: () => kwh });
+              : "Zoom in to see the workings for each panel." });
       const kwp = Wk.product("System size", "kW", [Wk.input("Panels", count, "panels"),
         Wk.input("Rated power of one panel", assumptions.panel_rated_power_w / 1000, "kW", { dp: 3 })]);
       return { source: "ladder", count, kwp, gen, curve: null };
@@ -6295,9 +6307,11 @@ map.on("load", async () => {
       load = btBuildLoad(prof, { lat, roofM2: p.facet_area_m2 || 150 });
       cal = btCalibration(load, saved.calib || null, btTariffFromEcon(false), null);
     }
+    // a home's heating and hot water are no longer separate answers (the
+    // EMI regional profile carries them), so they are named only if set
     const heat = { heatpump: "heat pump", electric: "electric heaters", gas: "gas heating", none: "no heating" }[prof.heating] || prof.heating;
     const water = { electric: "electric hot water", heatpump: "heat-pump hot water", gas: "gas hot water" }[prof.water] || prof.water;
-    const desc = `${prof.people} ${prof.people === 1 ? "person" : "people"}, ${heat}, ${water}` +
+    const desc = [`${prof.people} ${prof.people === 1 ? "person" : "people"}`, heat, water].filter(Boolean).join(", ") +
       (prof.evs ? `, ${prof.evs} EV${prof.evs > 1 ? "s" : ""}` : "") + (cal && cal.matched ? ", matched to your bills" : "");
     return { bySeason: Object.fromEntries(BT_SEASONS.map(s => [s, btSeasonLoad(load, s, cal ? cal.scale[s] : 1)])), desc };
   }

@@ -377,7 +377,8 @@ figure for the same thing. Code enforces this:
 - `tests/test_reference_cases.py` and `.mjs` are worked examples checkable
   by hand (panel kWh, packing, slope, loan, rounding, an hour of solar).
   Browser checks, run on the page before a front-end release:
-  `tools/contrast_check.js`, `tools/overflow_check.js`, `tools/econ_check.js`.
+  `tools/contrast_check.js`, `tools/overflow_check.js`, `tools/econ_check.js`,
+  `tools/text_check.js` (no "undefined"/"NaN" or "Doesn't add up" on screen).
 - Sunlight is calibrated to NIWA SolarView GHI in the Wakatipu basin, else the
   nearest NIWA measured-radiation station, scaled by ERA5 spatial ratios
   (`src/solar_model.py` header).

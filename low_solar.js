@@ -297,7 +297,9 @@ const LowSolar = (() => {
           Wk.input("A low day: under this share of the roof's average day", threshold, "share", { dp: 0 }),
           Wk.input("The roof's average day", r.mean, "kWh", { dp: 1, source: "This roof's generation curve, spread over 86 years of daily sunlight" }),
           Wk.input("Years of daily sunlight", r.years, "yrs", { source: `ERA5 reanalysis ${r.y0}-${r.y1}, ~25 km cell at ${cell.lat}, ${cell.lon} (Copernicus via Open-Meteo, CC BY 4.0)` })],
-          { formula, check: () => value }) : null;
+          // a simulation over 86 years of days, not arithmetic on the inputs
+          // shown: no check that would only return its own value
+          { formula, note: "Worked out by running the roof through every day of the record." }) : null;
     const structural = r.lowShare > 0.15;
     const longestTxt = r.longest.len ? `${days(r.longest.len)} <small>from ${fmtDate(cell, r.longest.start)}</small>` : "none";
     const fig = (key, label, value, sub) =>
@@ -412,7 +414,7 @@ const LowSolar = (() => {
       Wk.input("Years of daily sunlight", r.years, "yrs", { source: `ERA5 reanalysis ${r.y0}-${r.y1}, ~25 km cell at ${cell.lat}, ${cell.lon}` })], {
         formula: `for each run of low-solar days, the battery starts full at the last spare hour the evening before. Each hour, the home's use minus the roof's output is drawn from it (spare solar refills it) until solar is spare again (the next midday at the latest). The battery needed is the furthest it falls below full. This figure is ${what}` +
           (x.start >= 0 ? ` (${days(x.len)} from ${fmtDate(cell, x.start)})` : ""),
-        check: () => x.kwh });
+        note: "Worked out by running the home and the roof through every hour of each run." });
   }
 
   async function renderFull(box, o) {

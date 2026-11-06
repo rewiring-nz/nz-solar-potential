@@ -34,8 +34,8 @@ c("borrowed for a $10,000 system", 11800, 10000 * (1 + E.ECON_DEFAULTS.inverter_
   "10,000 + 18% for the replacement inverter");
 c("...repaid at 5.5% over 30 years, a year", 811.90, r2(B.btAnnuity(11800, 0.055, 30)),
   "11,800 × 0.055 ÷ (1 − 1.055^−30) = 649 ÷ 0.79936 = 811.90");
-c("the repayments add up to more than the loan", true, B.btAnnuity(10000, 0.06, 15) * 15 > 10000,
-  "15 × 1,029.63 = 15,444 > 10,000: the difference is the interest");
+c("15 years of those repayments", 15444.41, r2(B.btAnnuity(10000, 0.06, 15) * 15),
+  "15 × 1,029.6276 = 15,444.41: $10,000 borrowed plus $5,444.41 interest", 0.01);
 
 // ---- regional prices (regional_prices.js, economics.js applyRegionalPrices) ----
 const { REGIONAL_PRICES: RP } = require("../regional_prices.js");
@@ -62,8 +62,19 @@ for (const [v, want, why] of [[521.4, "$520", "under $1,000: nearest $10"], [574
                               [51750, "$52,000", "over $10,000: nearest $1,000"], [-1340, "-$1,300", "negative keeps its sign"]]) {
   c(`$${v} shown as`, want, B.btMoney(v), why);
 }
-const nb = B.btNetShown(5742, 5330);
-c("green box: savings − repayments add up on screen", 400, nb.net, "$5,700 − $5,300 = $400 (both to the nearest $100)");
+let nb = B.btNetShown(5742, 5330);
+c("green box: $5,742 − $5,330 shown", 410, nb.net, "net $412 → nearest $10 for all three: $5,740 − $5,330 = $410");
+nb = B.btNetShown(10453, 9520);
+c("green box: a small net between large parts", 930, nb.net, "true $933: $10,450 − $9,520 = $930 (the larger step said $0)");
+{
+  let worst = 0, at = null;
+  for (let s = 0; s <= 20000; s += 37) for (let r = 0; r <= 20000; r += 41) {
+    const d = Math.abs(B.btNetShown(s, r).net - (s - r)) / B.btMoneyStep(s - r);
+    if (d > worst) { worst = d; at = [s, r]; }
+  }
+  c("the shown net is never more than one step from the true net", true, worst <= 1,
+    `worst ${worst.toFixed(2)} steps at savings $${at[0]}, repayments $${at[1]} (290,000 pairs)`);
+}
 
 // ---- system cost (economics.js costPerKw, systemCost) ------------------------
 const A = E.costAnchors();
@@ -97,6 +108,18 @@ c("a product's breakdown adds up", 6, p.value, "2 × 3");
 c("verify finds nothing wrong", true, Wk.verify(s).ok && Wk.verify(p).ok, "every step recomputes");
 s.value = 6;
 c("verify catches a changed figure", 1, Wk.verify(s).problems.length, "5 shown as 6");
+
+// ---- no check that only returns its own figure --------------------------------
+{
+  const fs = require("node:fs");
+  const bad = [];
+  for (const f of ["bill_tool.js", "generation.js", "low_solar.js", "workings.js", "economics.js", "rooftop-solar.html"]) {
+    const src = fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
+    for (const m of src.matchAll(/check:\s*\(\)\s*=>\s*([A-Za-z_$][\w$.]*)\s*[}),]/g)) bad.push(`${f}: check: () => ${m[1]}`);
+  }
+  c("no workings check just returns a stored value", "", bad.join("; "),
+    "a check must re-work the figure; one that returns it can never fail");
+}
 
 // ---- report --------------------------------------------------------------------
 const w = Math.max(...rows.map(r => r[1].length));

@@ -120,7 +120,7 @@ check("the bills run on the roof's own generation, to the kWh", () => {
     Object.assign({ type: "home" }, B.BT_DEFAULTS.home, { battery: 10 }), { winter: 450, summer: 160 },
     { peak: 34, offpeak: 26, peakSell: 14, offpeakSell: 12, daily: 2.5 }, null);
   close(r.nodes.genYear.value, g.node.value, 1e-9, "bills' solar vs roof");
-  for (const k of ["solarSave", "battSave", "useYear", "nowBill", "solarBill", "battBill", "solarCost", "allCost", "dayKw", "dayShare"]) {
+  for (const k of ["genYear", "solarSave", "battSave", "useYear", "nowBill", "solarBill", "battBill", "solarCost", "allCost", "dayKw", "dayShare", "solarNet", "battNet", "solarRepay", "allRepay"]) {
     verified(r.nodes[k], k);
   }
   for (const k of ["payback", "lifetime", "net", "irr"]) verified(r.battRet.nodes[k], k);

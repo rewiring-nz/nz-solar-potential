@@ -25,7 +25,7 @@
 
 const BT_SEASONS = ["summer", "autumn", "winter", "spring"];
 const BT_SEASON_DAYS = { summer: 90, autumn: 92, winter: 92, spring: 91 };
-const BT_MONTH_DAYS = 30.4;
+const BT_MONTH_DAYS = 365 / 12;   // 30.42: twelve months make the 365-day year
 
 // Defaults, each with where it comes from. NZ households average about
 // 7,000 kWh a year (MBIE); hot water is roughly a third of it in a home with
@@ -716,7 +716,11 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   if (ctx.genNode && ctx.gen) {
     const f = Wk.same(N.genYear, ctx.genNode, "The bills' solar and the roof's generation", 1e-6);
     if (f) N.genYear.flags.push(f);
-    N.genYear.children.push(ctx.genNode);
+    // said in a note, not added as a child: this node is a SUM of the four
+    // seasons, and a fifth child made its own check read it as double
+    // ("Doesn't add up" on every open roof)
+    N.genYear.note = `The same figure as the roof's generation in the yellow box ` +
+      `(${Math.round(ctx.genNode.value).toLocaleString()} kWh a year).`;
   }
   // PAYING FOR IT WITH A LOAN: one fixed-repayment loan (econ.loan_rate_pct
   // over econ.loan_years, the system's life) for the system AND the
@@ -727,15 +731,23 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const EL = typeof econ !== "undefined" ? econ : {};
   const loanRate = btIn("Loan interest rate", (EL.loan_rate_pct != null ? EL.loan_rate_pct : 5.5) / 100, "share",
     { source: "Assumptions & pricing (econ.loan_rate_pct)", edit: { key: "econ:loan_rate_pct", scale: 100, unit: "%", step: 0.1 } });
-  const loanYears = btIn("Loan term", EL.loan_years != null ? EL.loan_years : 30, "yrs",
+  // at least one year: the workings sheet lets the term be typed, and 0 or
+  // less made the repayments $0
+  const loanYears = btIn("Loan term", Math.max(1, Math.round(EL.loan_years != null ? EL.loan_years : 30)), "yrs",
     { dp: 0, source: "Assumptions & pricing (econ.loan_years)", edit: { key: "econ:loan_years", scale: 1, unit: "yrs", step: 1 } });
   const repayNode = (costN, label) => Wk.given(label, btAnnuity(costN.value, loanRate.value, loanYears.value), "$/yr",
     [costN, loanRate, loanYears],
     { formula: "amount × rate ÷ (1 − (1 + rate)^−years): the fixed yearly repayment that clears the loan in its term",
       check: k => btAnnuity(k[0], k[1], k[2]) });
-  const solarLoan = Wk.sum("Borrowed: the solar system and one replacement inverter", "$", [solarCostN, inverter.node]);
-  const allLoan = Wk.sum("Borrowed: solar, battery, and their replacements", "$",
-    prof.battery > 0 ? [allCostN, inverter.node, battery.node] : [allCostN, inverter.node]);
+  // only replacements that fall inside the system's life are borrowed for,
+  // the same rule btReturns uses (an inverter set to "never" is not)
+  const life = E.life_years != null ? E.life_years : 30;
+  const within = r => r.year < life;
+  const solarParts = [solarCostN].concat(within(inverter) ? [inverter.node] : []);
+  const allParts = [allCostN].concat([inverter, prof.battery > 0 ? battery : null].filter(r => r && within(r)).map(r => r.node));
+  const solarLoan = Wk.sum(solarParts.length > 1 ? "Borrowed: the solar system and one replacement inverter"
+    : "Borrowed: the solar system", "$", solarParts);
+  const allLoan = Wk.sum("Borrowed: solar, battery, and their replacements", "$", allParts);
   const solarRepay = repayNode(solarLoan, "Loan repayments a year, solar");
   const allRepay = repayNode(allLoan, "Loan repayments a year, solar and battery");
   const solarNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.solarSave, solarRepay);
@@ -810,7 +822,7 @@ function btYearCsv(year) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btYearCsv, btRoundMoney, btMoney, btAnnuity, btNetShown };
+                     btYearHours, btYearCsv, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown };
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,11 +1049,15 @@ function btRoundMoney(v, step) {
   const st = step || btMoneyStep(v);
   return Math.sign(v) * Math.round(Math.abs(v) / st) * st;
 }
-// The net a year as shown: savings and repayments rounded to one step (set
-// by the larger), then subtracted, so the green box's parts add up on screen.
-// Money mode's pill for the open roof uses this too, so the two agree.
+// The net a year as shown: savings and repayments rounded to ONE step, then
+// subtracted, so the green box's parts add up on screen. The step is the
+// one the NET deserves, not the larger part's: with the larger part's step a
+// true $142 net showed as $200 and a true $933 as $0 ($10,453 - $9,520 at
+// the nearest $1,000). The shown net is then within half a step of the true
+// one in each part, at most one step in all. Money mode's pill for the open
+// roof uses this too, so the two agree.
 function btNetShown(save, repay) {
-  const st = btMoneyStep(Math.max(Math.abs(save), Math.abs(repay)));
+  const st = btMoneyStep(save - repay);
   return { step: st, net: btRoundMoney(save, st) - btRoundMoney(repay, st) };
 }
 // `step` forces one rounding step on figures shown as a sum, so the parts
@@ -1350,8 +1366,8 @@ function renderBillTool(box, ctx) {
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
       `<div class="sx-group sx-glance">` +
-        (haveGen ? billPair("winter", "Winter bill", "highest month") : "") +
-        (haveGen ? billPair("summer", "Summer bill", "lowest month") : "") +
+        (haveGen ? billPair("winter", "Winter bill", "a typical winter month") : "") +
+        (haveGen ? billPair("summer", "Summer bill", "a typical summer month") : "") +
       `</div>` +
       (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
       (haveGen ? `<button type="button" class="sx-explore" data-explore="1">A day in each season, and how it's worked out <span aria-hidden="true">›</span></button>` : "") +
@@ -1461,7 +1477,8 @@ function renderBillTool(box, ctx) {
       // LOOK: one figure, two short rows, the detail behind an (i). Each
       // figure still opens its workings when tapped.
       const info = `A rough estimate. Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
-        `less the yearly repayments on a loan for the system and a replacement inverter at ${pct} over ${yrs} years. ` +
+        `less the yearly repayments on a loan for ${repN.children[0].label.replace(/^Borrowed: /, "")} ` +
+        `at ${pct} over ${yrs} years. ` +
         `Tap a figure to see how it is worked out.`;
       saveBox.innerHTML = show
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +

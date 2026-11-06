@@ -100,7 +100,7 @@ check("the bill with no solar is imports x price + daily charge", () => {
   const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: null };
   const r = B.btEvaluate(ctx, home(), null, prices);
   const W = r.run.seasons.winter;
-  near(W.nowMonth, (W.loadKwh * 0.30 + 2.5) * 30.4, 0.01, "winter bill");
+  near(W.nowMonth, (W.loadKwh * 0.30 + 2.5) * 365 / 12, 0.01, "winter bill: a month is 365 ÷ 12 days");
   near(W.solarMonth, W.nowMonth, 1e-6, "no gen, no change");
 });
 
@@ -283,6 +283,12 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   const borrowed = N.solarRepay.children[0].value;
   near(borrowed, N.solarCost.value * (1 + E.getEcon().inverter_cost_pct / 100), 1e-6, "system + inverter borrowed");
   near(N.solarRepay.value, B.btAnnuity(borrowed, 0.055, 30), 1e-6, "5.5% over 30 years");
+  // an inverter set to "never" (replaced at or after the system's life) is not borrowed for
+  const keep = globalThis.econ.inverter_replace_year;
+  globalThis.econ.inverter_replace_year = globalThis.econ.life_years;
+  const n2 = B.btEvaluate(ctx, home(), null, prices).nodes;
+  globalThis.econ.inverter_replace_year = keep;
+  near(n2.solarRepay.children[0].value, n2.solarCost.value, 1e-9, "never-replaced inverter not borrowed");
   const v = Wk.verify(N.solarNet);
   if (!v.ok) throw new Error("net does not verify: " + JSON.stringify(v.problems.map(b => b.node.label)));
   // and the check can fail: a repayment shown wrong is caught
