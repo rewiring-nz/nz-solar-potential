@@ -10,7 +10,8 @@
  *
  * PEAK AND OFF-PEAK. The EA gives one price per kWh. The bill model prices
  * peak hours (econ.peak_hours) above the rest, so that one price is split
- * at the peak : off-peak ratio already in ECON_DEFAULTS (34c : 26c), solved
+ * at the peak : off-peak ratio of the home prices in ECON_DEFAULTS (2 : 1; a
+ * Queenstown time-of-use plan in Nov 2026 was 55c : 25c), solved
  * so a default home in that region, with its own share of use in peak
  * hours, pays exactly the EA's average:
  *     share x peak + (1 - share) x offpeak = EA price,  peak = ratio x offpeak.

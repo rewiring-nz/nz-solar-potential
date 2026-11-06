@@ -34,7 +34,9 @@ const ECON_DEFAULTS = {
   // Electricity Authority's prices for it replace them (below).
   // Export: 12c a kWh in the first year (Powerswitch's retailer buy-back
   // rates, powerswitch.org.nz/solar-rates), falling by export_decline_pct.
-  home_peak_c: 34, home_offpeak_c: 26, home_peak_sell_c: 12, home_offpeak_sell_c: 12, home_daily: 2.5,
+  // home peak is twice off-peak: a Queenstown time-of-use plan in Nov 2026
+  // was 55c : 25c (2.2); 34c : 26c (1.31) was far flatter than real plans.
+  home_peak_c: 50, home_offpeak_c: 25, home_peak_sell_c: 12, home_offpeak_sell_c: 12, home_daily: 2.5,
   biz_peak_c: 19,  biz_offpeak_c: 14,  biz_peak_sell_c: 12,  biz_offpeak_sell_c: 12,  biz_daily: 8.0,
   // [from, to) hours of the day that are peak: 7-10am and 6-9pm (Josh,
   // 18 Oct); adjustable on the building panel's sliders

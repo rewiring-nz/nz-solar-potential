@@ -423,7 +423,7 @@
     },
     {
      "title": "Power prices",
-     "text": "Home prices are the Electricity Authority's latest for Queenstown (Aurora Energy) (2026-05): 33.55c a kWh and $2.02 a day for a standard-use home, incl. GST. The one price is split into 40.24c in peak hours and 30.77c off-peak, so a typical home pays the same average. Areas on another network use its prices: Central Otago (Aurora Energy) 40.69c and $1.99 a day; Southland (The Power Company) 31.28c and $3.38 a day. Exported solar earns 12c a kWh in the first year (retailer buy-back rates on Powerswitch). The prices are refreshed each month.",
+     "text": "Home prices are the Electricity Authority's latest for Queenstown (Aurora Energy) (2026-05): 33.55c a kWh and $2.02 a day for a standard-use home, incl. GST. The one price is split into 51.88c in peak hours and 25.94c off-peak, so a typical home pays the same average. Areas on another network use its prices: Central Otago (Aurora Energy) 40.69c and $1.99 a day; Southland (The Power Company) 31.28c and $3.38 a day. Exported solar earns 12c a kWh in the first year (retailer buy-back rates on Powerswitch). The prices are refreshed each month.",
      "facts": [
       {
        "label": "EA price",
@@ -432,12 +432,12 @@
       },
       {
        "label": "Peak",
-       "value": "40.24c/kWh",
+       "value": "51.88c/kWh",
        "source": "regional_prices.js peak_c"
       },
       {
        "label": "Off-peak",
-       "value": "30.77c/kWh",
+       "value": "25.94c/kWh",
        "source": "regional_prices.js offpeak_c"
       },
       {
