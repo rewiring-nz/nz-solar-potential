@@ -306,7 +306,8 @@ def main():
             # offline (tools: network_lines variants scored vs drawn faces)
             _d = Path(os.environ["SOLAR_DUMP_LINEMAP"]); _d.mkdir(parents=True, exist_ok=True)
             np.savez_compressed(_d / f"{bid}.npz", pr=pr.astype("float16"),
-                                b=np.array(b), wkt=np.array(geom.wkt))
+                                b=np.array(b), wkt=np.array(geom.wkt),
+                                pts=np.asarray(pts if pts is not None else np.zeros((0, 3)), dtype="float64"))
         if pr is None:
             ph, pw = (-h) % 16, (-w) % 16
             arr = np.pad(rgb, ((0, ph), (0, pw), (0, 0)))

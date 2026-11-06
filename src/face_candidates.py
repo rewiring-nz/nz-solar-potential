@@ -275,7 +275,6 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
     """The line-network reading: detect -> extract -> polygonize -> faces."""
     import torch
     import os
-    from src.roof_partition import line_facets
 
     h, w = rgb.shape[:2]
     b = bounds
@@ -301,18 +300,25 @@ def line_faces(line_model, device, rgb, geom, bounds, pts, building_id=0):
             pr = pr.copy()
             pr[:, m] = 0.0
 
-    def tw(px, py):
-        return (b[0] + px / w * (b[2] - b[0]),
-                b[1] + (1 - py / h) * (b[3] - b[1]))
+    return faces_from_map(pr, geom, b, pts, building_id), pr
 
+
+def faces_from_map(pr, geom, b, pts, building_id=0):
+    """Faces from a line map (channels x h x w over crop bounds b): the
+    line network, the line_facets arrangement and plane fit on the LiDAR
+    points, then each face squared to the building's axes. line_faces runs
+    this on the model's map; tools/linemap_bench.py on saved maps."""
+    import os
+    from src.roof_partition import line_facets
+    h, w = pr.shape[1:]
     if os.environ.get("SOLAR_LINE_WATERSHED", "0") == "1":
-        return watershed_faces(pr, geom, b, w, h), pr
+        return watershed_faces(pr, geom, b, w, h)
     segs = network_lines(pr, geom, b, w, h, pts)
     if not segs:
-        return [], pr
+        return []
     facets = line_facets(building_id, geom, pts, segs) or []
     ax = building_axis(geom)
-    return [regularise(f["geometry"], face_axis(geom, f["geometry"], ax)) for f in facets], pr
+    return [regularise(f["geometry"], face_axis(geom, f["geometry"], ax)) for f in facets]
 
 
 # ---------------------------------------------------------- watershed faces

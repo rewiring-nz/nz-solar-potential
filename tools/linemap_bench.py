@@ -5,7 +5,9 @@ node, polygonize) -> area-weighted best-match IoU against the drawn faces.
 Maps come from tools/predict_faces.py with SOLAR_DUMP_LINEMAP=<dir> (an .npz
 per roof: the model map, the crop bounds and the outline). MAP=oracle
 rasterises the drawn lines onto the same crop instead, so extraction is
-measured on perfect input. No LiDAR is read: faces are not plane-fitted.
+measured on perfect input. METHOD=build (default) runs
+face_candidates.faces_from_map, the build's chain with the LiDAR plane fit,
+on maps saved with their points; METHOD=lines skips the plane fit.
 Two minutes for 157 roofs on 8 cores.
 
 Usage: MAP=real|oracle python tools/linemap_bench.py MAPDIR [OUT.json]"""
@@ -19,7 +21,7 @@ from shapely.ops import unary_union, polygonize
 from export_training_data import rasterise, LINE_WIDTH_PX
 from src.label_geometry import snap_endpoints
 from src import roof_partition as rp
-from src.face_candidates import network_lines, regularise, face_axis, building_axis, watershed_faces
+from src.face_candidates import network_lines, regularise, face_axis, building_axis, watershed_faces, faces_from_map
 from concurrent.futures import ProcessPoolExecutor
 # PATCH: Python run at import (here and in every worker) to try a variant
 # without editing the build, e.g. PATCH='import src.line_extract as e; e.THR=0.3'
@@ -27,7 +29,9 @@ if os.environ.get('PATCH'):
     exec(os.environ['PATCH'])
 L = json.load(open('data/roof_labels.json'))['buildings']
 MODE = os.environ.get('MAP', 'real')
-METHOD = os.environ.get('METHOD', 'lines')  # lines | watershed
+# build: face_candidates.faces_from_map, the build's own chain (needs maps
+# saved with LiDAR points); lines: no plane fit; watershed
+METHOD = os.environ.get('METHOD', 'build')
 def faces_from(segs, fp):
     segs = [((s[0], s[1]), (s[2], s[3])) for s in segs]
     segs = snap_endpoints(segs)
@@ -60,7 +64,13 @@ def one(f):
         segs = network_lines(pr, geom, b, w, h, None)
       except Exception:
         segs = []
-    if METHOD == 'watershed':
+    if METHOD == 'build':
+        pts = z['pts'] if 'pts' in z.files and len(z['pts']) else None
+        try:
+            pred = faces_from_map(pr, geom, b, pts, int(i)) or [geom]
+        except Exception:
+            pred = [geom]
+    elif METHOD == 'watershed':
         pred = watershed_faces(pr, geom, b, w, h) or [geom]
     else:
         pred = faces_from(segs, geom) if segs else [geom]
