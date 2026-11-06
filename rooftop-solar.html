@@ -381,7 +381,7 @@
     transition: width .16s ease, opacity .16s ease, padding .16s ease; margin-left: 6px; height: 34px; }
   .addr-search.open input { width: 260px; opacity: 1; pointer-events: auto; padding: 7px 10px;
     border: 1px solid #666; }
-  .addr-search input::placeholder { color: #999; }
+  .addr-search input::placeholder { color: var(--ink-3); }
   .addr-results { position: absolute; top: 40px; left: 40px; width: 260px; z-index: 10; }
   /* Secondary actions live out of the way, bottom-left. */
   #corner-actions { position: absolute; bottom: 24px; left: 12px; z-index: 4;
@@ -497,7 +497,7 @@
   .hnote-r { text-align: right; }
   .hnote-r i { margin-left: auto; }
 
-  .inview-subtitle { font-size: 10.5px; color: #aaa; margin-bottom: 8px; }
+  .inview-subtitle { font-size: 10.5px; color: var(--ink-3); margin-bottom: 8px; }
   .inview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .inview-table th { text-align: right; font-weight: 600; color: #ccc; font-size: 11px; padding: 0 0 4px 8px; }
   .inview-table th:first-child { text-align: left; padding-left: 0; }
@@ -756,7 +756,7 @@
     .m-sheet.open { display: block; }
     .m-sheet-head { display: flex; justify-content: space-between; align-items: center;
       font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-    .m-close { background: none; border: none; color: #aaa; font-size: 20px; line-height: 1; cursor: pointer; }
+    .m-close { background: none; border: none; color: var(--ink-3); font-size: 20px; line-height: 1; cursor: pointer; }
     /* Building detail sheet: no thumbnail on mobile (user request). */
     .side-panel .tuning, .side-panel #layout-details, .side-panel .live-view { display: none; }
     /* Keep MapLibre's own chrome clear of the mobile bars. */
@@ -779,7 +779,7 @@
   }
 
   .settings-tab { flex:1; background:none; border:none; border-bottom:2px solid transparent;
-    color:#aaa; padding:9px 6px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+    color:var(--ink-3); padding:9px 6px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
   .settings-tab.active { color:#fff; border-bottom-color:#ffd24a; }
   #settings-modal .slider-row { margin-bottom:9px; }
   #settings-modal .slider-row label { display:flex; justify-content:space-between; font-size:11.5px;
@@ -925,6 +925,15 @@
   html.light .m-sheet { color: var(--ink); background: #f3f5f8; border-color: rgba(15,20,30,0.15); }
   html.light .m-close { color: var(--ink-2); }
   html.light .mobile-details-tab { color: var(--ink); background: #f3f5f8; }
+  /* The dialog's ground is set inline (dark); the light rules recoloured its
+     text but not the ground, leaving labels at 2.1:1. !important beats the
+     inline style. */
+  html.light #settings-modal { background: #fff !important; color: var(--ink) !important;
+    border-color: rgba(15,20,30,0.15) !important; box-shadow: 0 12px 40px rgba(15,20,30,0.25) !important; }
+  html.light #settings-modal > div:first-child { border-bottom-color: rgba(15,20,30,0.12) !important; }
+  .quote-warn { color: #ff9b90; }
+  html.light .quote-warn { color: #b8301f; }
+  html.light .settings-tab.active { color: var(--ink); border-bottom-color: #b37a00; }
   html.light .settings-tab { color: var(--ink-2); }
   html.light #settings-modal .slider-row label { color: var(--ink-2); }
   html.light .cost-tier span { color: var(--ink-2); }
@@ -1147,7 +1156,7 @@
     <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
       border-bottom:1px solid rgba(255,255,255,0.12);">
       <strong style="font-size:14px;">Assumptions &amp; pricing</strong>
-      <button id="settings-close" style="background:none; border:none; color:#aaa; font-size:20px;
+      <button id="settings-close" style="background:none; border:none; color:var(--ink-3); font-size:20px;
         line-height:1; cursor:pointer;">&times;</button>
     </div>
     <div style="display:flex; gap:0; border-bottom:1px solid rgba(255,255,255,0.12);">
@@ -1165,13 +1174,13 @@
       <div class="slider-row"><label><span>System losses</span><span id="a-loss-val"></span></label>
         <input type="range" id="a-loss" min="5" max="30" step="0.5"></div>
       <button class="tuning-reset" id="a-reset">Reset to defaults</button>
-      <div style="font-size:10px; color:#888; margin-top:8px;">Bigger panels cover more roof, so
+      <div style="font-size:10px; color:var(--ink-3); margin-top:8px;">Bigger panels cover more roof, so
         fewer fit.</div>
     </div>
 
     <div class="settings-pane" id="pane-economics" style="display:none; padding:14px;">
       <div style="font-weight:700; margin-bottom:6px;">Installed cost by system size</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:8px;">$ per kW installed. Each system
+      <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:8px;">$ per kW installed. Each system
         uses the rate for its size.</div>
       <div id="cost-tiers"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Electricity prices &mdash; homes</div>
@@ -1192,16 +1201,16 @@
         <input type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
       <div class="slider-row"><label><span>Daily charge</span><span id="e-bdaily-val"></span></label>
         <input type="range" id="e-bdaily" min="0" max="15" step="0.1"></div>
-      <div style="font-size:10.5px; color:#999; margin:6px 0 0;">Prices include GST. Set peak hours,
+      <div style="font-size:10.5px; color:var(--ink-3); margin:6px 0 0;">Prices include GST. Set peak hours,
         peak export and home or business on each building's card.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Buyback rates are expected to
+      <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">Buyback rates are expected to
         fall. Payback and lifetime value use each year's rate.</div>
       <div class="slider-row"><label><span>Export falls by</span><span id="e-edec-val"></span></label>
         <input type="range" id="e-edec" min="0" max="8" step="0.1"></div>
-      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;" id="e-edec-preview"></div>
+      <div style="font-size:10.5px; color:var(--ink-3); margin:-2px 0 6px;" id="e-edec-preview"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
-      <div style="font-size:10.5px; color:#999; margin-bottom:6px;">Worked out hour by hour from the
+      <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">Worked out hour by hour from the
         household on each building's card: who lives there, how water and rooms are heated, and
         any EVs. Other buildings use the defaults for their type.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
@@ -1213,16 +1222,16 @@
         <input type="range" id="e-infl" min="0" max="10" step="0.5"></div>
       <div class="slider-row"><label><span>General inflation</span><span id="e-cpi-val"></span></label>
         <input type="range" id="e-cpi" min="0" max="6" step="0.1"></div>
-      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">All figures are in today's
+      <div style="font-size:10.5px; color:var(--ink-3); margin:-2px 0 6px;">All figures are in today's
         dollars, after general inflation.</div>
-      <div style="font-size:10.5px; color:#999; margin:-2px 0 6px;">Export prices are not
+      <div style="font-size:10.5px; color:var(--ink-3); margin:-2px 0 6px;">Export prices are not
         inflated. The buyback setting above sets them each year.</div>
       <div class="slider-row"><label><span>Inverter replaced in year</span><span id="e-invy-val"></span></label>
         <input type="range" id="e-invy" min="0" max="30" step="1"></div>
       <div class="slider-row"><label><span>Inverter cost</span><span id="e-invc-val"></span></label>
         <input type="range" id="e-invc" min="0" max="40" step="1"></div>
       <button class="tuning-reset" id="e-reset">Reset to defaults</button>
-      <div style="font-size:10px; color:#ff9b90; margin-top:8px;">Indicative, not a quote. Real
+      <div class="quote-warn" style="font-size:10px; margin-top:8px;">Indicative, not a quote. Real
         prices depend on roof access, switchboard work and installer.</div>
     </div>
   </div>
@@ -1236,10 +1245,10 @@
     <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
       <button id="bug-send" style="background:#266db6; color:#fff; border:none; border-radius:6px;
         font-size:12px; font-weight:700; padding:6px 14px; cursor:pointer;">Send</button>
-      <button id="bug-close" style="background:none; color:#aaa; border:none; font-size:12px; cursor:pointer;">Close</button>
+      <button id="bug-close" style="background:none; color:var(--ink-3); border:none; font-size:12px; cursor:pointer;">Close</button>
       <span id="bug-status" style="font-size:11px; color:#7dff5e;"></span>
     </div>
-    <div style="font-size:10px; color:#888; margin-top:5px;">We add the building and map view you're looking at.</div>
+    <div style="font-size:10px; color:var(--ink-3); margin-top:5px;">We add the building and map view you're looking at.</div>
   </div>
   <iframe name="bug-sink" style="display:none;"></iframe>
   <form id="bug-form" action="https://submit.jotform.com/submit/262336538869068" method="POST"
@@ -4233,7 +4242,7 @@ map.on("load", async () => {
       tiersBox.innerHTML = econ.cost_tiers.map((t, i) =>
         `<div class="cost-tier"><span>${t.label}</span>` +
         `<input type="number" data-i="${i}" step="50" min="0" value="${t.rate}"> <span ` +
-        `style="flex:none; color:#888;">$/kW</span></div>`).join("");
+        `style="flex:none; color:var(--ink-3);">$/kW</span></div>`).join("");
       tiersBox.querySelectorAll("input").forEach(inp =>
         inp.addEventListener("input", () => {
           const v = parseFloat(inp.value);
@@ -4768,7 +4777,7 @@ map.on("load", async () => {
         </div>
         <details class="tuning">
           <summary>How the layout works</summary>
-          <div style="font-size:10.5px; color:#aaa; margin-top:6px;">
+          <div style="font-size:10.5px; color:var(--ink-3); margin-top:6px;">
             Panels fill the sunniest roof faces first, row by row. They never go over
             an obstruction, edge or roof join. The default (80%) shows the main arrays
             an installer would quote. 100% adds every other panel that fits.
@@ -5561,7 +5570,7 @@ map.on("load", async () => {
   function renderHorizonChart(box) {
     const p = selectedBuildingProps || {};
     if (!p.horizon_b64) {
-      box.innerHTML = `<div style="font-size:10px; color:#999; text-align:center; padding:16px 0;">` +
+      box.innerHTML = `<div style="font-size:10px; color:var(--ink-3); text-align:center; padding:16px 0;">` +
         `No horizon data for this area yet.</div>`;
       return;
     }
@@ -5645,7 +5654,7 @@ map.on("load", async () => {
       : p.horizon_beam_pct !== undefined
       ? `<div style="font-size:10px; text-align:center; margin-bottom:2px;">From the middle of ${multiSel ? "the largest selected" : "this"} roof, hills, trees and buildings block ` +
         `${yel(pct(Math.max(0, 100 - p.horizon_beam_pct)))} of the year&rsquo;s direct sun` +
-        (multiSel ? ` <span style="color:#999;">(#${p._horizonOf})</span>` : ``) + `</div>`
+        (multiSel ? ` <span style="color:var(--ink-3);">(#${p._horizonOf})</span>` : ``) + `</div>`
       : "";
     box.innerHTML =
       `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
