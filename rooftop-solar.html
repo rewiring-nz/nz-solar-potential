@@ -18,6 +18,7 @@
 <!-- EMI household load profiles (tools/build_load_profiles.py) -->
 <script src="load_profiles.js"></script>
 <script src="bill_tool.js"></script>
+<script src="methodology.js"></script>
 <!-- Hand-editing a roof's panels. Loads after economics.js and wires
      itself only once the map exists (see the _wire call after style load). -->
 <script src="panel_editor.js"></script>
@@ -356,6 +357,57 @@
     border-radius: 11px; padding: 3px 9px; font-size: 12px; font-variant-numeric: tabular-nums; }
   .live-badge b { color: #f5b82e; }
   .live-badge .ed { color: #7fd18e; margin-left: 6px; }
+  /* "How this map is made" (methodology.js draws methodology.json) */
+  #methodology-lightbox { position: fixed; inset: 0; z-index: 4600; background: rgba(0,0,0,.6);
+    display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; overflow: auto; }
+  #methodology-lightbox[hidden] { display: none; }
+  .mth-card { width: min(1100px, 100%); background: #1c1f26; color: var(--ink); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 16px; padding: 18px 22px 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+  html.light .mth-card { background: #fff; border-color: rgba(15,20,30,.12); }
+  .mth-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .mth-head h2 { margin: 0; font-size: 20px; }
+  .mth-close { background: none; border: 0; color: var(--ink-2); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 8px; }
+  .mth-intro { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 6px 0 14px; max-width: 760px; }
+  .mth-flow { display: flex; align-items: stretch; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+  .mth-step { flex: 1 1 0; min-width: 140px; text-align: left; background: var(--surface-2); color: var(--ink);
+    border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 11px; cursor: pointer; font: inherit;
+    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; column-gap: 7px; }
+  .mth-step:hover { border-color: var(--accent); }
+  .mth-step.on { border-color: var(--accent); background: rgba(255,210,74,.12); }
+  html.light .mth-step.on { background: rgba(179,122,0,.09); }
+  .mth-step .mth-n { grid-row: 1; }
+  .mth-step .mth-ic { grid-row: 1; grid-column: 2; justify-self: end; font-size: 18px; }
+  .mth-step .mth-t { grid-column: 1 / -1; font-weight: 700; font-size: 13.5px; margin-top: 6px; }
+  .mth-step .mth-s { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); margin-top: 3px; line-height: 1.4; }
+  .mth-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #111; font-weight: 800; font-size: 12px; }
+  html.light .mth-n { color: #fff; }
+  .mth-arrow { align-self: center; color: var(--ink-3); font-size: 18px; flex: none; }
+  .mth-detail { margin-top: 16px; }
+  .mth-detail h3 { display: flex; align-items: center; gap: 8px; font-size: 17px; margin: 0 0 10px; }
+  .mth-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+  .mth-detail h3 { grid-column: 1 / -1; }
+  .mth-item { background: var(--surface-2); border-radius: 12px; padding: 11px 13px; }
+  .mth-item h4 { margin: 0 0 4px; font-size: 14px; }
+  .mth-item p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
+  .mth-more { margin-top: 8px; font-size: 12.5px; }
+  .mth-more summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .mth-facts { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+  .mth-facts th, .mth-facts td { text-align: left; padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  .mth-facts thead th { color: var(--ink-2); font-weight: 600; border-top: 0; }
+  .mth-src, .mth-stages, .mth-code-h { color: var(--ink-2); }
+  .mth-src { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .mth-code { margin: 2px 0 0; padding-left: 18px; }
+  .mth-code a { color: var(--ink); }
+  .mth-dim { color: var(--ink-3); }
+  .mth-sources { margin-top: 16px; }
+  .mth-foot { font-size: 12px; color: var(--ink-2); margin: 14px 0 0; }
+  @media (max-width: 700px) {
+    .mth-flow { flex-direction: column; }
+    .mth-arrow { transform: rotate(90deg); align-self: flex-start; margin-left: 12px; }
+    .mth-step { min-width: 0; }
+    .mth-card { padding: 14px; }
+  }
   /* The headline saving under the yellow box (bill_tool.js ctx.saveBox).
      White on a green deep enough for 4.5:1+ at both ends of the gradient,
      in both themes. */
@@ -365,6 +417,12 @@
   .roof-saving .rs-l { font-size: 13px; font-weight: 600; }
   .roof-saving .rs-v { font-size: 28px; font-weight: 750; letter-spacing: -0.5px; line-height: 1.15; margin-top: 2px; }
   .roof-saving .rs-v span { font-size: 14px; font-weight: 600; letter-spacing: 0; }
+  /* money mode pills (refreshMoneyPills): the green box's own gradient */
+  .money-pill { background: linear-gradient(135deg, #15803d 0%, #0e6b47 100%); color: #fff;
+    font: 700 11.5px/1 system-ui, sans-serif; padding: 4px 8px; border-radius: 999px; white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,.45); pointer-events: none; }
+  .money-pill.neg { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
+  #toggle-money { padding-left: 9px; padding-right: 9px; font-weight: 800; }
   .roof-saving .rs-n { font-size: 11px; margin-top: 6px; color: #fff; }
   .roof-saving { cursor: default; }
   .roof-saving [data-wk] { cursor: pointer; border-radius: 6px; }
@@ -1081,6 +1139,7 @@
   <!-- one switch for outlines and obstructions; roof markup is on the M key -->
   <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
   <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
+  <button class="corner-btn" id="open-methodology" title="Where the data comes from and how each step works">&#128506;&#65039; How this map is made</button>
   <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
   <button class="corner-btn" id="theme-toggle" title="Switch between light and dark"></button>
@@ -1160,7 +1219,10 @@
     </div>
   </div>
     <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch explainer video</button>
-    <button class="corner-btn" id="toggle-panel-econ" style="align-self:flex-start;" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
+    <div id="econ-row" style="display:flex; gap:6px; align-self:flex-start;">
+      <button class="corner-btn" id="toggle-panel-econ" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
+      <button class="corner-btn" id="toggle-money" title="Money mode: each building's net saving a year, as a label on the map" aria-pressed="false" aria-label="Money mode">$</button>
+    </div>
 </div>
 
   <!-- Settings: assumptions and pricing, tabbed. Everything here is editable
@@ -3033,7 +3095,7 @@ map.on("load", async () => {
       lon: map.getCenter().lng, btype: pr.btype, heightM: pr.height_m,
       roofM2: pr.facet_area_m2 || 150, kwp,
       gen: shape.map(row => row.map(v => v * kwhYear)), seasonDays: null });
-    const out = btPanelEcon(r, count);
+    const out = Object.assign(btPanelEcon(r, count), { netYear: r.netYear });
     if (econCache.size > 20000) econCache.clear();
     econCache.set(key, out);
     return out;
@@ -3070,6 +3132,66 @@ map.on("load", async () => {
       : null;
     repaintPanelColours();
   }
+
+  // MONEY MODE: a green pill on every building in view with its net saving a
+  // year (bill savings less loan repayments), the figure in the card's green
+  // box. Closed roofs are priced by billEconFor, the same bill model the panel
+  // colours use (default household, the area's sunny-side day shape); the open
+  // roof shows its card's own figure. Pills from zoom 16, at most 1,500.
+  let moneyMode = false, moneyOpen = null;
+  const MONEY_MIN_ZOOM = 16, MONEY_MAX_PILLS = 1500;
+  // HTML markers, not a symbol layer: the map style loads no glyphs, and a
+  // marker takes the green box's own CSS gradient.
+  let moneyMarkers = [];
+  function ringCentre(geom) {
+    const ring = geom.type === "Polygon" ? geom.coordinates[0] : geom.coordinates[0][0];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    ring.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+    return [(x0 + x1) / 2, (y0 + y1) / 2];
+  }
+  function refreshMoneyPills() {
+    if (!moneyMode) return;
+    const feats = [];
+    if (map.getZoom() >= MONEY_MIN_ZOOM) {
+      const seen = new Set();
+      for (const f of map.queryRenderedFeatures({ layers: ["buildings-fill"] })) {
+        const pr = f.properties, id = pr.building_id;
+        if (seen.has(id) || feats.length >= MONEY_MAX_PILLS) continue;
+        seen.add(id);
+        if (btypesOff.has(pr.btype || "home")) continue;
+        let net = null;
+        if (moneyOpen && moneyOpen.buildingId === id) net = moneyOpen.netYear;
+        else {
+          const count = Math.round(decileInterp(pr, "fill_panels", pctForBuilding(pr)));
+          const kwhYear = count > 0 ? decileInterp(pr, "fill_kwh", pctForBuilding(pr)) * bakedKwhScale() : 0;
+          const o = kwhYear > 0 ? billEconFor(pr, count, kwhYear) : null;
+          net = o ? o.netYear : null;
+        }
+        if (net == null || !Number.isFinite(net)) continue;
+        feats.push({ at: ringCentre(f.geometry), net });
+      }
+    }
+    moneyMarkers.forEach(m => m.remove());
+    moneyMarkers = feats.map(({ at, net }) => {
+      const el = document.createElement("div");
+      el.className = "money-pill" + (net < 0 ? " neg" : "");
+      const shown = btMoney(Math.abs(net));
+      el.textContent = (net < 0 && shown !== "$0" ? "−" : "") + shown + "/yr";
+      el.title = net < 0 ? "Costs this much more a year than it saves, while the loan is repaid"
+                         : "Net saving a year: bill savings less loan repayments";
+      return new maplibregl.Marker({ element: el }).setLngLat(at).addTo(map);
+    });
+  }
+  function setMoneyMode(on) {
+    moneyMode = on;
+    const b = document.getElementById("toggle-money");
+    b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
+    if (on) refreshMoneyPills();
+    else { moneyMarkers.forEach(m => m.remove()); moneyMarkers = []; }
+  }
+  document.getElementById("toggle-money").addEventListener("click", () => setMoneyMode(!moneyMode));
+  map.on("moveend", () => { if (moneyMode) refreshMoneyPills(); });
+  window.__refreshMoneyPills = () => { if (moneyMode) refreshMoneyPills(); };
 
   // What the roof looks like once bands are switched off. Hiding the red
   // panels must adjust the size, cost and economics, because excluding a
@@ -5376,6 +5498,9 @@ map.on("load", async () => {
               const btType = (btLoadState(buildingId) || {}).type;
               // the household the bills describe, for Resilience's battery
               window.__billLoad = { buildingId, cal: r.cal, load: r.load };
+              // money mode labels the open roof with its card's own figure
+              moneyOpen = { buildingId, netYear: r.netShown };
+              if (moneyMode) refreshMoneyPills();
               settleBldgSys(buildingId, panelEconOpen, btType ? btType === "business"
                 : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)),
                 props.facet_area_m2);
@@ -6504,8 +6629,9 @@ map.on("load", async () => {
       inview.insertAdjacentElement("afterend", dash);
     }
     // ...with the panel economics switch straight under it (Josh, 18 Oct)
+    // (moved with its row, so the money-mode button stays beside it)
     var pe = document.getElementById("toggle-panel-econ");
-    if (pe) dash.insertAdjacentElement("afterend", pe);
+    if (pe) dash.insertAdjacentElement("afterend", pe.parentElement.id === "econ-row" ? pe.parentElement : pe);
     dash.style.display = ""; dash.addEventListener("click", open);
   }
   function open() {

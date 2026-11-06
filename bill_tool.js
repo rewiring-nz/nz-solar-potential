@@ -729,6 +729,10 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const battNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.battSave, allRepay);
   return { load, cal, run, solarCost: solarCostN.value, battCost: battCostN.value,
            solarSave: N.solarSave.value, battSave: N.battSave.value, solarRet, battRet,
+           // the card's headline: net a year while the loan is repaid
+           netYear: (prof.battery > 0 ? battNet : solarNet).value,
+           netShown: btNetShown((prof.battery > 0 ? N.battSave : N.solarSave).value,
+                                (prof.battery > 0 ? allRepay : solarRepay).value).net,
            yearParts, useKwh: Y.nowKwh, genKwh: Y.gen,
            nodes: Object.assign({}, N, { solarCost: solarCostN, battCost: battCostN, allCost: allCostN,
                                          solarRate: rate, battRate, parts: partNodes,
@@ -793,7 +797,7 @@ function btYearCsv(year) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btYearCsv, btRoundMoney, btMoney, btAnnuity };
+                     btYearHours, btYearCsv, btRoundMoney, btMoney, btAnnuity, btNetShown };
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,6 +1023,13 @@ function btMoneyStep(v) {
 function btRoundMoney(v, step) {
   const st = step || btMoneyStep(v);
   return Math.sign(v) * Math.round(Math.abs(v) / st) * st;
+}
+// The net a year as shown: savings and repayments rounded to one step (set
+// by the larger), then subtracted, so the green box's parts add up on screen.
+// Money mode's pill for the open roof uses this too, so the two agree.
+function btNetShown(save, repay) {
+  const st = btMoneyStep(Math.max(Math.abs(save), Math.abs(repay)));
+  return { step: st, net: btRoundMoney(save, st) - btRoundMoney(repay, st) };
 }
 // `step` forces one rounding step on figures shown as a sum, so the parts
 // on screen add up to the total on screen.
@@ -1432,13 +1443,13 @@ function renderBillTool(box, ctx) {
       const yrs = N.loanYears.value, pct = Wk.fmt(N.loanRate.value, "share", 1);
       // one step for all three, set by the largest, so savings - repayments
       // = net on screen as well as in the sums
-      const st = btMoneyStep(Math.max(Math.abs(save1.value), Math.abs(repN.value)));
+      const shownNet = btNetShown(save1.value, repN.value), st = shownNet.step;
       const m = v => btMoney(v, st);
       saveBox.innerHTML = show
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
           `<div class="rs-top" data-wk="net-year" tabindex="0" role="button">` +
           `<div class="rs-l">${ahead ? "This roof could be saving you" : "While the loan is repaid, this roof would cost you"}</div>` +
-          `<div class="rs-v">${m(Math.abs(btRoundMoney(save1.value, st) - btRoundMoney(repN.value, st)))}<span> a year</span></div></div>` +
+          `<div class="rs-v">${m(Math.abs(shownNet.net))}<span> a year</span></div></div>` +
           `<div class="rs-parts">` +
           `<div data-wk="save" tabindex="0" role="button"><b>${m(save1.value)}</b> bill savings from the system${withBatt ? " and battery" : ""}</div>` +
           `<div data-wk="repay" tabindex="0" role="button"><b>&minus;${m(repN.value)}</b> a year in loan repayments for the system cost <small>(${pct} over ${yrs} years)</small></div>` +
