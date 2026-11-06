@@ -1107,6 +1107,30 @@
    "history": [],
    "notes": "",
    "verdicts": []
+  },
+  {
+   "id": 4738758,
+   "region": "hanleys_farm",
+   "first_flagged": "2026-11-07",
+   "defect": "Here is a very rare perfect panel layout, 10 out of 10",
+   "quotes": [
+    "Here is a very rare perfect panel layout, 10 out of 10",
+    "owner: 10/10 layout (8 Falconer Rise); a reference that must not change unreviewed"
+   ],
+   "status": "fixed",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "at": "2026-11-07",
+     "verdict": "fixed",
+     "fingerprint": null
+    },
+    {
+     "at": "2026-11-07",
+     "verdict": "fixed",
+     "fingerprint": null
+    }
+   ]
   }
  ]
 }
