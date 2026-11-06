@@ -356,6 +356,26 @@
     border-radius: 11px; padding: 3px 9px; font-size: 12px; font-variant-numeric: tabular-nums; }
   .live-badge b { color: #f5b82e; }
   .live-badge .ed { color: #7fd18e; margin-left: 6px; }
+  /* The headline saving under the yellow box (bill_tool.js ctx.saveBox).
+     White on a green deep enough for 4.5:1+ at both ends of the gradient,
+     in both themes. */
+  #bldg-saving { margin: var(--s3) 0 0; }
+  .roof-saving { background: linear-gradient(135deg, #15803d 0%, #0e6b47 100%); color: #fff;
+    border-radius: 12px; padding: 12px 14px; }
+  .roof-saving .rs-l { font-size: 13px; font-weight: 600; }
+  .roof-saving .rs-v { font-size: 28px; font-weight: 750; letter-spacing: -0.5px; line-height: 1.15; margin-top: 2px; }
+  .roof-saving .rs-v span { font-size: 14px; font-weight: 600; letter-spacing: 0; }
+  .roof-saving .rs-n { font-size: 11px; margin-top: 6px; color: #fff; }
+  .roof-saving { cursor: default; }
+  .roof-saving [data-wk] { cursor: pointer; border-radius: 6px; }
+  .roof-saving [data-wk]:hover, .roof-saving [data-wk]:focus-visible { background: rgba(255,255,255,.12); outline: none; }
+  .roof-saving .rs-parts { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.3);
+    display: grid; gap: 3px; font-size: 12.5px; }
+  .roof-saving .rs-parts > div { padding: 1px 4px; margin: 0 -4px; }
+  .roof-saving .rs-parts b { font-weight: 750; }
+  .roof-saving .rs-parts small { font-size: 11px; }
+  /* repayments larger than the savings: same layout, a dark slate ground */
+  .roof-saving.behind { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
   .hz-pct { color: #ffd24a; }
   html.light .hz-pct { color: #8a5d00; }
   .est-title { font-size: var(--fs-meta); font-weight: 700; color: var(--ink-3);
@@ -1213,6 +1233,13 @@
       <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">Worked out hour by hour from the
         household on each building's card: who lives there, how water and rooms are heated, and
         any EVs. Other buildings use the defaults for their type.</div>
+      <div style="font-weight:700; margin:14px 0 6px;">Paying with a loan</div>
+      <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">The green box on each
+        building's card: bill savings less the yearly repayments on a loan for the whole system cost.</div>
+      <div class="slider-row"><label><span>Loan interest rate</span><span id="e-loanr-val"></span></label>
+        <input type="range" id="e-loanr" min="0" max="15" step="0.1"></div>
+      <div class="slider-row"><label><span>Loan term</span><span id="e-loany-val"></span></label>
+        <input type="range" id="e-loany" min="1" max="30" step="1"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
       <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
         <input type="range" id="e-life" min="10" max="35" step="1"></div>
@@ -4278,6 +4305,9 @@ map.on("load", async () => {
       el("e-invy-val").textContent = econ.inverter_replace_year >= econ.life_years
         ? "never" : "year " + econ.inverter_replace_year;
       el("e-invc-val").textContent = econ.inverter_cost_pct + "% of install";
+      el("e-loanr-val").textContent = econ.loan_rate_pct.toFixed(1) + "%/yr";
+      el("e-loany-val").textContent = econ.loan_years + " years";
+      el("e-loanr").value = econ.loan_rate_pct; el("e-loany").value = econ.loan_years;
       if (opts && opts.silent) return;
       recomputeInViewSummary();
       if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
@@ -4301,6 +4331,8 @@ map.on("load", async () => {
     bindEcon("e-cpi", "cpi_pct", parseFloat);
     bindEcon("e-invy", "inverter_replace_year", v => parseInt(v, 10));
     bindEcon("e-invc", "inverter_cost_pct", v => parseInt(v, 10));
+    bindEcon("e-loanr", "loan_rate_pct", parseFloat);
+    bindEcon("e-loany", "loan_years", v => parseInt(v, 10));
     function loadEcon(src) {
       econ = JSON.parse(JSON.stringify(src));
       econ.cost_tiers[econ.cost_tiers.length - 1].max_kw = Infinity;
@@ -4732,6 +4764,7 @@ map.on("load", async () => {
         </div>
         <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
         </div>
+        <div id="bldg-saving" hidden></div>
         <div class="sys-size" id="bldg-sys" hidden>
           <div class="sys-head"><label for="bldg-sys-slider">System size</label><span id="bldg-sys-val"></span></div>
           <input type="range" id="bldg-sys-slider" min="0" max="1" step="1" value="1">
@@ -5326,6 +5359,7 @@ map.on("load", async () => {
             roofM2: props.facet_area_m2 || 150,
             kwp: kwp, kwpNode: GEN.kwp, genNode: GEN.gen,
             moreBox: el("bill-more"),
+            saveBox: el("bldg-saving"),
             gen: c ? c.gen : null, seasonDays: c ? c.seasonDays : null,
             // prices and money assumptions are the map's one set (econ)
             onEcon: () => window.__applyEcon ? window.__applyEcon() : refresh(),

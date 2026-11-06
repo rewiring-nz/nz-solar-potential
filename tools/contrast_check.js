@@ -6,7 +6,7 @@
 // large text (24px, or 18.66px bold). It runs once in the light theme and
 // once in the dark one. A see-through ground (a panel over the map photo)
 // is tested over black, white and mid-grey and the worst is reported.
-// Text on a gradient is skipped.
+// Text on a gradient is tested against every colour stop of the gradient.
 //
 // Run before every front-end release: open a building in Panel Layout, run
 // it, switch to Heat Map, run it again, and repeat at phone width. Expected
@@ -26,16 +26,22 @@
       const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) continue;
       if (cs.visibility === "hidden" || +cs.opacity === 0) continue;
       const fg = parse(cs.color); if (!fg || fg[3] === 0) continue;
-      const layers = []; let e = el, grad = false;
+      const layers = []; let e = el, stops = null;
       while (e && e !== document.documentElement) {
         const s = getComputedStyle(e), b = parse(s.backgroundColor);
-        if (s.backgroundImage && s.backgroundImage.includes("gradient")) { grad = true; break; }
+        if (s.backgroundImage && s.backgroundImage.includes("gradient")) {
+          stops = (s.backgroundImage.match(/rgba?\([^)]+\)/g) || []).map(parse);
+          break;
+        }
         if (b && b[3] > 0) { layers.push(b); if (b[3] >= 0.95) break; }
         e = e.parentElement;
       }
-      if (grad) continue;
-      const opaque = layers.length && layers[layers.length - 1][3] >= 0.95;
-      const bases = opaque ? [[255, 255, 255, 1]] : [[0, 0, 0, 1], [255, 255, 255, 1], [128, 128, 128, 1]];
+      const opaque = stops ? stops.every(c => c[3] >= 0.95)
+        : layers.length && layers[layers.length - 1][3] >= 0.95;
+      const behind = [[0, 0, 0, 1], [255, 255, 255, 1], [128, 128, 128, 1]];
+      const bases = stops
+        ? stops.flatMap(c => c[3] >= 0.95 ? [c] : behind.map(b => over(c, b)))
+        : opaque ? [[255, 255, 255, 1]] : behind;
       let worst = 99;
       for (const base of bases) {
         let c = base; for (let i = layers.length - 1; i >= 0; i--) c = over(layers[i], c);

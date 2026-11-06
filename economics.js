@@ -104,6 +104,11 @@ const ECON_DEFAULTS = {
   // defensible public-good framing -- and it is on screen and adjustable, so
   // the choice is visible rather than buried.
   discount_rate_pct: 3.0,
+  // A loan for the whole system cost, for the card's net saving a year
+  // (bill savings less repayments, bill_tool.js btAnnuity). Assumed: a
+  // home-loan top-up at 6% over 15 years. Editable in Assumptions & pricing.
+  loan_rate_pct: 6.0,
+  loan_years: 15,
 };
 // Named daytime-load profiles. The kW figure drives the maths; the names
 // exist so the choice is a recognisable situation rather than a number

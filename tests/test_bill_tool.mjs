@@ -262,5 +262,26 @@ check("the year as CSV has a header and 8,760 hours", () => {
   if (!lines[0].startsWith("date,hour,season")) throw new Error("no header");
 });
 
+check("money on the card is rounded to the estimate's precision", () => {
+  const cases = [[521.4, "$520"], [5742, "$5,700"], [1552, "$1,600"], [9960, "$10,000"],
+                 [51750, "$52,000"], [208639, "$209,000"], [-1340, "-$1,300"], [4, "$0"]];
+  for (const [v, want] of cases) {
+    const got = B.btMoney(v);
+    if (got !== want) throw new Error(`${v}: ${got}, want ${want}`);
+  }
+});
+
+check("loan repayments: the standard fixed repayment, and the net a year", () => {
+  // $10,000 at 6% over 15 years: 1,029.63 a year (cost x r / (1 - (1+r)^-n))
+  near(B.btAnnuity(10000, 0.06, 15), 1029.63, 0.01, "6% over 15 years");
+  near(B.btAnnuity(9000, 0, 10), 900, 1e-9, "zero rate");
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home(), null, prices);
+  const N = r.nodes;
+  near(N.solarNet.value, N.solarSave.value - N.solarRepay.value, 1e-9, "net = savings - repayments");
+  const bad = Wk.verify(N.solarNet);
+  if (bad.length) throw new Error("net does not verify: " + JSON.stringify(bad.map(b => b.node.label)));
+});
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

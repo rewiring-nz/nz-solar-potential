@@ -178,6 +178,13 @@ function btHdd(lat) {
 // off the nodes for the code that only needs numbers.
 const BT_CAP = s => s[0].toUpperCase() + s.slice(1);
 const btIn = (label, value, unit, o) => Wk.input(label, value, unit, o);
+// Fixed yearly repayment on a loan of `cost` at yearly `rate` (a share) over
+// `years`; at a zero rate, the cost spread evenly.
+function btAnnuity(cost, rate, years) {
+  if (!(years > 0)) return 0;
+  if (!(rate > 0)) return cost / years;
+  return cost * rate / (1 - Math.pow(1 + rate, -years));
+}
 // An assumption the reader can change in the workings sheet (WkView): the
 // key says which of the map's settings it is (the page applies it).
 const pctEd = k => ({ key: `econ:${k}`, scale: 100, unit: "%", step: 0.5, dp: 2 });
@@ -703,11 +710,29 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
     if (f) N.genYear.flags.push(f);
     N.genYear.children.push(ctx.genNode);
   }
+  // PAYING FOR IT WITH A LOAN: the yearly repayment on the whole cost, as a
+  // fixed-repayment loan (econ.loan_rate_pct over econ.loan_years), and the
+  // net a year while it is being repaid: bill savings less repayments. The
+  // card's headline is this net figure.
+  const EL = typeof econ !== "undefined" ? econ : {};
+  const loanRate = btIn("Loan interest rate", (EL.loan_rate_pct != null ? EL.loan_rate_pct : 6) / 100, "share",
+    { source: "Assumptions & pricing (econ.loan_rate_pct)", edit: { key: "econ:loan_rate_pct", scale: 100, unit: "%", step: 0.1 } });
+  const loanYears = btIn("Loan term", EL.loan_years != null ? EL.loan_years : 15, "yrs",
+    { dp: 0, source: "Assumptions & pricing (econ.loan_years)", edit: { key: "econ:loan_years", scale: 1, unit: "yrs", step: 1 } });
+  const repayNode = (costN, label) => Wk.given(label, btAnnuity(costN.value, loanRate.value, loanYears.value), "$/yr",
+    [costN, loanRate, loanYears],
+    { formula: "cost × rate ÷ (1 − (1 + rate)^−years): the fixed yearly repayment that clears the loan in its term",
+      check: k => btAnnuity(k[0], k[1], k[2]) });
+  const solarRepay = repayNode(solarCostN, "Loan repayments a year, solar");
+  const allRepay = repayNode(allCostN, "Loan repayments a year, solar and battery");
+  const solarNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.solarSave, solarRepay);
+  const battNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.battSave, allRepay);
   return { load, cal, run, solarCost: solarCostN.value, battCost: battCostN.value,
            solarSave: N.solarSave.value, battSave: N.battSave.value, solarRet, battRet,
            yearParts, useKwh: Y.nowKwh, genKwh: Y.gen,
            nodes: Object.assign({}, N, { solarCost: solarCostN, battCost: battCostN, allCost: allCostN,
                                          solarRate: rate, battRate, parts: partNodes,
+                                         solarRepay, allRepay, solarNet, battNet, loanRate, loanYears,
                                          gen: ctx.genNode || N.genYear, kwp: kwpN }) };
 }
 
@@ -768,7 +793,7 @@ function btYearCsv(year) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btYearCsv };
+                     btYearHours, btYearCsv, btRoundMoney, btMoney, btAnnuity };
 }
 
 // ---------------------------------------------------------------------------
@@ -915,6 +940,10 @@ const BT_CSS = `
 .sx-bigcard { width: min(1600px, 100%); }
 .sx-bigfoot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .sx-seasons-big { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.sx-seasons-tabbed { grid-template-columns: minmax(0, 1fr); }
+.sx-seasons-tabbed .sx-season:not(.on) { display: none; }
+.sx-season-tabs { display: flex; margin: 0 0 8px; }
+.sx-season-tabs button { flex: 1; padding: 6px 4px; }
 .sx-seasons-big .sx-season { padding: 12px 14px 10px; }
 .sx-seasons-big .sx-season-h { font-size: 16px; }
 .sx-seasons-big .sx-figs b { font-size: 15px; }
@@ -978,10 +1007,25 @@ const BT_PART_STYLE = {
   ev: { label: "Electric cars", colour: "#c79bff" },
 };
 
-function btMoney(v) {
-  const neg = v < 0;
-  const s = "$" + Math.round(Math.abs(v)).toLocaleString();
-  return neg ? "-" + s : s;
+// Money on the card is an estimate, so it is shown to the precision it
+// deserves: to the nearest $10 under $1,000, $100 under $10,000, and $1,000
+// above. "$5,742 a year" claimed a precision the inputs do not have; "$5,700"
+// reads as the rough figure it is. Display only: every workings breakdown
+// (Wk) shows and sums the full figures.
+function btMoneyStep(v) {
+  const a = Math.abs(v);
+  return a < 1000 ? 10 : a < 10000 ? 100 : 1000;
+}
+function btRoundMoney(v, step) {
+  const st = step || btMoneyStep(v);
+  return Math.sign(v) * Math.round(Math.abs(v) / st) * st;
+}
+// `step` forces one rounding step on figures shown as a sum, so the parts
+// on screen add up to the total on screen.
+function btMoney(v, step) {
+  const r = btRoundMoney(v, step);
+  const s = "$" + Math.abs(r).toLocaleString();
+  return r < 0 ? "-" + s : s;
 }
 
 // A DAY IN EACH SEASON: the bills' own hour rows drawn as an area chart.
@@ -1115,7 +1159,10 @@ function btEvaluateFor(bid, isBizDefault, ctx) {
 // The latest panel's workings, so a sheet left open while an assumption is
 // changed re-works from the new calculation.
 const BT_LATEST = { nodeFor: {} };
-const BT_YEAR_VIEW = { measure: "use" };   // which measure the year view shows (kept across redraws)
+const BT_YEAR_VIEW = { measure: "use" };
+// The season the panel shows (kept across redraws); today's season at first,
+// southern hemisphere: Dec-Feb summer, Mar-May autumn, Jun-Aug winter.
+const BT_SEASON_TAB = { on: ["summer", "autumn", "winter", "spring"][Math.floor(((new Date().getMonth() + 1) % 12) / 3)] };   // which measure the year view shows (kept across redraws)
 // which of the panel's sections are open, kept across a full rebuild (a price
 // or assumption change re-renders the whole panel through onEcon)
 const BT_OPEN = new Set();
@@ -1219,7 +1266,7 @@ function renderBillTool(box, ctx) {
     const fig = (key, label, n) => `<span data-wk="${key}" tabindex="0" role="button"><small>${label}</small><b>${Wk.fmt(n.value, "kWh", 1)}</b></span>`;
     const seasonCard = (s, i, size) => {
       const nowM = S[s].nowMonth, aft = S[s][after];
-      return `<div class="sx-season">` +
+      return `<div class="sx-season${s === BT_SEASON_TAB.on ? " on" : ""}" data-season="${s}">` +
         `<div class="sx-season-h"><b>${BT_CAP(s)}</b><span>${r.run.days[i]} days</span></div>` +
         `<div class="sx-chartbox">${btSeasonChart(s, SD[s], ymax, withBatt, size)}<div class="sx-tip" hidden></div></div>` +
         `<div class="sx-figs">` +
@@ -1237,7 +1284,13 @@ function renderBillTool(box, ctx) {
     const seasonsHtml = haveGen
       ? `<div class="sx-h sx-h-row" id="bt-seasons"><span>A day in each season</span><button type="button" class="sx-btn sx-big" data-bigseasons="1">Open large <span aria-hidden="true">⤢</span></button></div>` +
         `<div class="sx-foot sx-lead">An average day: what this ${isBiz ? "business" : "home"} uses each hour, coloured by what uses it, and what the roof makes (yellow). Where the yellow covers the colour, the roof is powering the ${isBiz ? "business" : "home"}; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Change anything under Assumptions and every figure here updates.</div>` +
-        keyHtml + `<div class="sx-seasons">${BT_SEASONS.map((s, i) => seasonCard(s, i)).join("")}</div>` +
+        keyHtml +
+        // ONE SEASON AT A TIME in the panel: four cards in its narrow column
+        // made a long strip to scroll. Tabs pick the season (today's, at
+        // first); "Open large" shows all four side by side.
+        `<div class="sx-seg sx-season-tabs" role="tablist" aria-label="Season">${BT_SEASONS.map(s =>
+          `<button type="button" role="tab" data-stab="${s}" aria-selected="${s === BT_SEASON_TAB.on}"${s === BT_SEASON_TAB.on ? ' class="on"' : ""}>${BT_CAP(s)}</button>`).join("")}</div>` +
+        `<div class="sx-seasons sx-seasons-tabbed">${BT_SEASONS.map((s, i) => seasonCard(s, i)).join("")}</div>` +
         `<details class="sx-dis" id="bt-adv-year"><summary><span class="t">The whole year, hour by hour</span><span class="sum">8,760 hours · download</span></summary>` +
           `<div class="sx-group sx-year">` +
             `<div class="sx-row">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"], ["cost", "Bill"]], BT_YEAR_VIEW.measure, "Show")}</div>` +
@@ -1363,7 +1416,37 @@ function renderBillTool(box, ctx) {
     const [top, more] = html.split(SX_SPLIT);
     const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
     if (moreBox) { box.innerHTML = top; moreBox.innerHTML = more; } else box.innerHTML = top + more;
-    const roots = moreBox ? [box, moreBox] : [box];
+    // THE HEADLINE SAVING under the card's yellow box (ctx.saveBox): the same
+    // node as the "Bill savings" cell, so the two always agree and both open
+    // the same workings. Hidden until the roof's sun has loaded, and when the
+    // roof would not lower the bills.
+    const saveBox = ctx.saveBox && ctx.saveBox.isConnected ? ctx.saveBox : null;
+    // The headline is the NET a year while a loan for the system is repaid:
+    // bill savings less repayments, with both shown beneath it. Negative when
+    // the repayments are larger than the savings, and then it says so.
+    if (saveBox) {
+      const netN = withBatt ? N.battNet : N.solarNet, repN = withBatt ? N.allRepay : N.solarRepay;
+      const show = haveGen && netN && Number.isFinite(netN.value);
+      saveBox.hidden = !show;
+      const ahead = show && netN.value >= 0;
+      const yrs = N.loanYears.value, pct = Wk.fmt(N.loanRate.value, "share", 1);
+      // one step for all three, set by the largest, so savings - repayments
+      // = net on screen as well as in the sums
+      const st = btMoneyStep(Math.max(Math.abs(save1.value), Math.abs(repN.value)));
+      const m = v => btMoney(v, st);
+      saveBox.innerHTML = show
+        ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
+          `<div class="rs-top" data-wk="net-year" tabindex="0" role="button">` +
+          `<div class="rs-l">${ahead ? "This roof could be saving you" : "While the loan is repaid, this roof would cost you"}</div>` +
+          `<div class="rs-v">${m(Math.abs(btRoundMoney(save1.value, st) - btRoundMoney(repN.value, st)))}<span> a year</span></div></div>` +
+          `<div class="rs-parts">` +
+          `<div data-wk="save" tabindex="0" role="button"><b>${m(save1.value)}</b> bill savings from the system${withBatt ? " and battery" : ""}</div>` +
+          `<div data-wk="repay" tabindex="0" role="button"><b>&minus;${m(repN.value)}</b> a year in loan repayments for the system cost <small>(${pct} over ${yrs} years)</small></div>` +
+          `</div>` +
+          `<div class="rs-n">Rough estimate. Tap a figure to see how it&rsquo;s worked out.</div></div>`
+        : "";
+    }
+    const roots = [box, moreBox, saveBox].filter(Boolean);
     const qa = sel => roots.flatMap(rt => [...rt.querySelectorAll(sel)]);
     const q1 = sel => qa(sel)[0] || null;
     qa("details.sx-dis[id]").forEach(d => {
@@ -1390,6 +1473,8 @@ function renderBillTool(box, ctx) {
       nodeFor[`s-hours-${s}`] = () => withBatt ? S[s].battDay : S[s].solarDay;
     });
     nodeFor.gen = () => N.genYear;
+    nodeFor["net-year"] = () => withBatt ? N.battNet : N.solarNet;
+    nodeFor.repay = () => withBatt ? N.allRepay : N.solarRepay;
     nodeFor.nowbill = () => N.nowBill;
     nodeFor.solarbill = () => withBatt ? N.battBill : N.solarBill;
     // the getter reads the LATEST calculation: a sheet left open while an
@@ -1584,6 +1669,11 @@ function renderBillTool(box, ctx) {
       requestAnimationFrame(() => lb.querySelector(".clb-x").focus());
     };
     qa("[data-bigseasons]").forEach(b => b.addEventListener("click", openBig));
+    qa("[data-stab]").forEach(b => b.addEventListener("click", () => {
+      BT_SEASON_TAB.on = b.dataset.stab;
+      qa("[data-stab]").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); });
+      qa(".sx-seasons-tabbed .sx-season").forEach(c => c.classList.toggle("on", c.dataset.season === BT_SEASON_TAB.on));
+    }));
 
     // the whole year: drawn when opened, from btYearHours (the bills' own rows)
     let yearData = null;
