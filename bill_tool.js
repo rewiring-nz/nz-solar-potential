@@ -31,6 +31,8 @@ const BT_MONTH_DAYS = 365 / 12;   // 30.42: twelve months make the 365-day year
 // 7,000 kWh a year (MBIE); hot water is roughly a third of it in a home with
 // an electric cylinder and heating a quarter to a third in a cold-climate
 // home with a heat pump (EECA).
+// the battery the green box adds with one tap, kWh
+const BT_BATT_ADD_KWH = 10;
 const BT_DEFAULTS = {
   home: {
     people: 3,
@@ -439,8 +441,11 @@ const btRowOk = r => btNear(r.useCost, r.use * r.buy) && btNear(r.impCost, r.imp
 // without solar (and battery). gen: [season][24] kW in BT_SEASONS order.
 function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   const batt = Object.assign({}, typeof BATTERY_DEFAULTS !== "undefined" ? BATTERY_DEFAULTS : {
-    kw: 5, round_trip_pct: 90, reserve_pct: 10, cost_per_kwh: 1000, life_years: 15 },
+    kw: 5, round_trip_pct: 90, reserve_pct: 10, cost_per_kwh: 900, life_years: 15 },
+    // power grows with size: a battery charges or discharges in two hours or
+    // less (a 10 kWh home battery at 5 kW), never under the default's kW
     { enabled: batteryKwh > 0, kwh: batteryKwh || 0 });
+  batt.kw = Math.max(batt.kw, (batteryKwh || 0) / 2);
   const zero = new Array(24).fill(0);
   const P = btPriceNodes(tariff);
   const days = {};
@@ -649,7 +654,7 @@ function btReturns(cost, save, exportD, opts) {
   const lifeRetail = lifeRows.reduce((t, row) => t + row.retailY, 0);
   const lifeExport = lifeRows.reduce((t, row) => t + row.exportY, 0);
   return { payback, lifetime: lifetime.value, net: net.value, irr: r, years: E.life_years, real,
-           lifeRetail, lifeExport,
+           lifeRetail, lifeExport, rows, cpiPct: E.cpi_pct,
            nodes: { payback: pb, lifetime, replacements: replN, net, irr, first: saveN } };
 }
 // One panel's economics from a bill-model result (btEvaluate): its share of
@@ -703,7 +708,7 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
         source: "Typical NZ installed prices, including GST.",
         check: v => typeof costPerKw === "function" ? costPerKw(v[0]) : 2000 });
   const solarCostN = Wk.product("Solar costs", "$", [kwpN, rate]);
-  const battDef = (typeof BATTERY_DEFAULTS !== "undefined") ? BATTERY_DEFAULTS : { cost_per_kwh: 1000, life_years: 15 };
+  const battDef = (typeof BATTERY_DEFAULTS !== "undefined") ? BATTERY_DEFAULTS : { cost_per_kwh: 900, life_years: 15 };
   const battRate = btIn("Battery cost per kWh", sy.battPerKwh > 0 ? sy.battPerKwh : battDef.cost_per_kwh, "$/kWh",
     { source: sy.battPerKwh > 0 ? "You entered it (System pricing)." : "Typical NZ installed price, including GST." });
   const battCostN = Wk.product("Battery costs", "$", [
@@ -765,18 +770,45 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const allLoan = Wk.sum("Borrowed: solar, battery, and their replacements", "$", allParts);
   const solarRepay = repayNode(solarLoan, "Loan repayments a year, solar");
   const allRepay = repayNode(allLoan, "Loan repayments a year, solar and battery");
-  const solarNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.solarSave, solarRepay);
-  const battNet = Wk.diff("Net saving a year, while repaying the loan", "$/yr", N.battSave, allRepay);
+  // THE HEADLINE IS AN AVERAGE YEAR OVER THE LOAN, IN TODAY'S DOLLARS.
+  // The repayment is fixed in dollars of the day, so with general inflation
+  // (econ.cpi_pct) it costs less each year in today's dollars, while the
+  // bill savings follow power prices (btReturns: prices rise, export rates
+  // fall, panels age, all in today's dollars). Year 1 is the worst year of
+  // the loan; the average of the loan's years, both sides in today's
+  // dollars, is the fair yearly figure. Until 7 Nov the headline set year
+  // 1's savings against the nominal repayment, which understated it.
+  const avgOver = (ret, save, repay, who) => {
+    const L = loanYears.value, rows = ret.rows.slice(0, L);
+    const cpi = 1 + (ret.real ? ret.cpiPct : 0) / 100;
+    const saveAvg = Wk.given(`Bill savings, average a year over the ${L}-year loan`, rows.reduce((t, row) => t + row.saving, 0) / L, "$/yr",
+      [save, ret.nodes.lifetime], {
+        formula: `each year's bill savings (${ret.real ? "in today's dollars" : "in dollars of the day"}), added over the loan's ${L} years, ÷ ${L}`,
+        note: `Year 1 is ${Wk.fmt(save.value, "$")}. Then power prices rise, export rates fall and the panels age, as in the savings over the panels' life.`,
+        check: () => ret.rows.slice(0, L).reduce((t, row) => t + row.saving, 0) / L });
+    const repAvg = Wk.given(`Loan repayments, average a year${ret.real ? ", in today's dollars" : ""}`,
+      repay.value * rows.reduce((t, row, y) => t + Math.pow(cpi, -y), 0) / L, "$/yr", [repay, loanYears], {
+        formula: ret.real ? `the fixed repayment ÷ (1 + ${ret.cpiPct}% inflation)^(year − 1), averaged over the ${L} years`
+                          : "the fixed repayment, every year",
+        note: ret.real ? `The repayment stays ${Wk.fmt(repay.value, "$")} a year in dollars of the day; inflation makes each one worth less in today's dollars.` : "",
+        check: k => k[0] * Array.from({ length: Math.min(k[1], ret.rows.length) }, (_, y) => Math.pow(cpi, -y)).reduce((a, b) => a + b, 0) / k[1] });
+    const net = Wk.diff(`Net saving a year, ${who}: average over the loan`, "$/yr", saveAvg, repAvg);
+    return { saveAvg, repAvg, net };
+  };
+  const solarAvg = avgOver(solarRet, N.solarSave, solarRepay, "solar");
+  const battAvg = battRet ? avgOver(battRet, N.battSave, allRepay, "solar and battery") : null;
+  const solarNet = solarAvg.net, battNet = battAvg ? battAvg.net : solarNet;
+  const pickAvg = prof.battery > 0 ? battAvg : solarAvg;
   return { load, cal, run, solarCost: solarCostN.value, battCost: battCostN.value,
            solarSave: N.solarSave.value, battSave: N.battSave.value, solarRet, battRet,
            // the card's headline: net a year while the loan is repaid
            netYear: (prof.battery > 0 ? battNet : solarNet).value,
-           netShown: btNetShown((prof.battery > 0 ? N.battSave : N.solarSave).value,
-                                (prof.battery > 0 ? allRepay : solarRepay).value).net,
+           netShown: btNetShown(pickAvg.saveAvg.value, pickAvg.repAvg.value).net,
            yearParts, useKwh: Y.nowKwh, genKwh: Y.gen,
            nodes: Object.assign({}, N, { solarCost: solarCostN, battCost: battCostN, allCost: allCostN,
                                          solarRate: rate, battRate, parts: partNodes,
                                          solarRepay, allRepay, solarNet, battNet, loanRate, loanYears,
+                                         saveAvg: pickAvg.saveAvg, repAvg: pickAvg.repAvg,
                                          gen: ctx.genNode || N.genYear, kwp: kwpN }) };
 }
 
@@ -953,7 +985,7 @@ const BT_CSS = `
 .sx-pc input::-webkit-outer-spin-button, .sx-pc input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sx-pc input:focus { outline: none; }
 .sx-pc:focus-within { box-shadow: 0 0 0 2px var(--sx-tint); }
-.sx-pc small { font-size: 11px; color: var(--sx-ink-3); white-space: nowrap; }
+.sx-pc small { font-size: 11px; color: var(--sx-ink-2); white-space: nowrap; }
 .sx-billrow .sx-field input { width: 52px; }
 .sx-arrow { color: var(--sx-ink-3); }
 .sx-billrow .after { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin-right: -6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -993,6 +1025,41 @@ const BT_CSS = `
 .sx-bigcard { width: min(1600px, 100%); }
 .sx-bigfoot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
 .sx-seasons-big { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+/* the lightbox's tabs and its year and year-by-year charts */
+.sx-bigtabs { flex: 1; display: flex; max-width: 620px; }
+.sx-bigtabs button { flex: 1; font-size: 14px; padding: 8px 10px; }
+.sx-chartbtns .sx-explore { margin-top: 8px; }
+.sx-yearbig { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; margin-top: 8px; }
+.sx-yh { position: relative; height: min(56vh, 520px); font-size: 12px; color: var(--sx-ink-2); }
+.sx-yh span { position: absolute; right: 8px; transform: translateY(-50%); }
+.sx-yearbig .sx-yearbox { padding: 0; }
+.sx-yearbig .sx-yearbox canvas { height: min(56vh, 520px); border-radius: 8px; }
+.sx-yearbig .sx-year-ax { font-size: 12.5px; margin-top: 6px; }
+.sx-yearbig .sx-tip { width: 220px; font-size: 12.5px; }
+.sx-ysum { font-size: 14px; color: var(--sx-ink); margin-top: 10px; }
+.sx-ysum .ok { color: #34c759; } .sx-ysum .warn { color: #ff9f0a; }
+.sx-bigrow { margin-top: 10px; }
+.sx-rsum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 10px; }
+.sx-rsum > div { background: var(--sx-fill); border-radius: 12px; padding: 10px 14px; }
+.sx-rsum b { display: block; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sx-rsum > div:first-child b { color: #34c759; }
+.sx-rsum small { font-size: 12.5px; color: var(--sx-ink-2); }
+@media (max-width: 760px) { .sx-rsum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sx-rkey { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--sx-ink-2); margin: 0 4px 6px; }
+.sx-rkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.sx-rkey i.sv { background: #30d158; } .sx-rkey i.rp { background: #8e8e93; } .sx-rkey i.nt { background: #fff; border-radius: 50%; }
+.sx-rkey .u { margin-left: auto; color: var(--sx-ink-3); }
+.sx-returns { width: 100%; height: auto; display: block; }
+.sx-returns .rg { stroke: rgba(255,255,255,.09); } .sx-returns .rz { stroke: rgba(255,255,255,.4); }
+.sx-returns .ra { font-size: 11px; fill: rgba(235,235,245,.66); } .sx-returns .rt { font-size: 12px; font-weight: 600; fill: #f5f5f7; }
+.sx-returns .rs-sv { fill: #30d158; } .sx-returns .rs-rp { fill: #8e8e93; } .sx-returns .rs-nt { fill: #fff; }
+.sx-returns .rs-cp { fill: rgba(48,209,88,.55); } .sx-returns .rs-cn { fill: rgba(255,105,97,.6); }
+.sx-returns .rs-hit { fill: transparent; } .sx-returns .rs-hit:hover { fill: rgba(255,255,255,.07); }
+html.light .sx-returns .rg { stroke: rgba(0,0,0,.08); } html.light .sx-returns .rz { stroke: rgba(0,0,0,.4); }
+html.light .sx-returns .ra { fill: rgba(60,60,67,.75); } html.light .sx-returns .rt { fill: #1d1d1f; }
+html.light .sx-returns .rs-nt { fill: #1d1d1f; } html.light .sx-rkey i.nt { background: #1d1d1f; }
+html.light .sx-returns .rs-sv { fill: #1f9d48; } html.light .sx-returns .rs-hit:hover { fill: rgba(0,0,0,.05); }
+html.light .sx-rsum > div:first-child b { color: #15803d; } html.light .sx-ysum .ok { color: #15803d; } html.light .sx-ysum .warn { color: #b25000; }
 .sx-seasons-tabbed { grid-template-columns: minmax(0, 1fr); }
 .sx-seasons-tabbed .sx-season:not(.on) { display: none; }
 .sx-season-tabs { display: flex; margin: 0 0 8px; }
@@ -1394,26 +1461,16 @@ function renderBillTool(box, ctx) {
       `<span><i style="background:${BT_SOLAR_COLOUR}"></i>Solar</span>` +
       (withBatt ? `<span><i style="background:${BT_BATT_COLOUR}"></i>Battery: charging (light), powering the ${isBiz ? "building" : "home"} (solid)</span>` : "") +
       `<span><i class="pk"></i>Peak price</span><span class="u">kWh each hour</span></div>`;
+    // THE CHARTS LIVE IN THE LIGHTBOX (openBig), big enough to read; the
+    // side panel only offers them. Cramped in the panel's column they were
+    // too small to read.
     const seasonsHtml = haveGen
-      ? `<div class="sx-h sx-h-row" id="bt-seasons"><span>A day in each season</span><button type="button" class="sx-btn sx-big" data-bigseasons="1">Open large <span aria-hidden="true">⤢</span></button></div>` +
-        `<div class="sx-foot sx-lead">An average day: what this ${isBiz ? "business" : "home"} uses each hour, coloured by what uses it, and what the roof makes (yellow). Where the yellow covers the colour, the roof is powering the ${isBiz ? "business" : "home"}; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Change anything under Assumptions and every figure here updates.</div>` +
-        keyHtml +
-        // ONE SEASON AT A TIME in the panel: four cards in its narrow column
-        // made a long strip to scroll. Tabs pick the season (today's, at
-        // first); "Open large" shows all four side by side.
-        `<div class="sx-seg sx-season-tabs" role="tablist" aria-label="Season">${BT_SEASONS.map(s =>
-          `<button type="button" role="tab" data-stab="${s}" aria-selected="${s === BT_SEASON_TAB.on}"${s === BT_SEASON_TAB.on ? ' class="on"' : ""}>${BT_CAP(s)}</button>`).join("")}</div>` +
-        `<div class="sx-seasons sx-seasons-tabbed">${BT_SEASONS.map((s, i) => seasonCard(s, i)).join("")}</div>` +
-        `<details class="sx-dis" id="bt-adv-year"><summary><span class="t">The whole year, hour by hour</span><span class="sum">8,760 hours · download</span></summary>` +
-          `<div class="sx-group sx-year">` +
-            `<div class="sx-row">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"]].concat(withBatt ? [["fromB", "From battery"]] : []).concat([["cost", "Bill"]]), BT_YEAR_VIEW.measure, "Show")}</div>` +
-            `<div class="sx-yearbox"><canvas id="bt-year-canvas" width="365" height="24" aria-label="The year, hour by hour"></canvas>` +
-              `<div class="sx-year-ax">${BT_MONTH_NAME.map(m => `<span>${m}</span>`).join("")}</div><div class="sx-tip" hidden></div></div>` +
-            `<div class="sx-foot" id="bt-year-sum"></div>` +
-            `<div class="sx-row"><button type="button" class="sx-btn" id="bt-year-csv">Download the 8,760 hours (CSV)</button></div>` +
-          `</div>` +
-          `<div class="sx-foot">Each day is its season's average day, because that is how the bills are worked out, so the year adds up to the same totals. Midnight at the bottom, the evening at the top. Day-to-day weather is in Resilience.</div>` +
-        `</details>`
+      ? `<div class="sx-h" id="bt-seasons">Charts</div>` +
+        `<div class="sx-chartbtns">` +
+          `<button type="button" class="sx-explore" data-big="seasons">A day in each season <span aria-hidden="true">⤢</span></button>` +
+          `<button type="button" class="sx-explore" data-big="year">The whole year, hour by hour <span aria-hidden="true">⤢</span></button>` +
+          `<button type="button" class="sx-explore" data-big="returns">Year by year: savings and repayments <span aria-hidden="true">⤢</span></button>` +
+        `</div>`
       : "";
     const methodHtml = haveGen
       ? `<div class="sx-h">How it's worked out</div>` +
@@ -1447,7 +1504,7 @@ function renderBillTool(box, ctx) {
         (haveGen ? priceStrip() : "") +
       `</div>` +
       (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
-      (haveGen ? `<button type="button" class="sx-explore" data-explore="1">A day in each season, and how it's worked out <span aria-hidden="true">›</span></button>` : "") +
+      (haveGen ? `<button type="button" class="sx-explore" data-big="seasons">Charts: each season, the year, year by year <span aria-hidden="true">⤢</span></button>` : "") +
       `</div>` + SX_SPLIT + `<div class="sx sx-more">` + seasonsHtml +
 
       `<div class="sx-h">Over the panels' life</div>` +
@@ -1545,21 +1602,23 @@ function renderBillTool(box, ctx) {
     // bill savings less repayments, with both shown beneath it. Negative when
     // the repayments are larger than the savings, and then it says so.
     if (saveBox) {
-      const netN = withBatt ? N.battNet : N.solarNet, repN = withBatt ? N.allRepay : N.solarRepay;
+      const netN = withBatt ? N.battNet : N.solarNet, repN = N.repAvg, saveN = N.saveAvg;
+      const loanN = withBatt ? N.allRepay : N.solarRepay;
       const show = haveGen && netN && Number.isFinite(netN.value);
       saveBox.hidden = !show;
       const ahead = show && netN.value >= 0;
       const yrs = N.loanYears.value, pct = Wk.fmt(N.loanRate.value, "share", 1);
       // one step for all three, set by the largest, so savings - repayments
       // = net on screen as well as in the sums
-      const shownNet = btNetShown(save1.value, repN.value), st = shownNet.step;
+      const shownNet = btNetShown(saveN.value, repN.value), st = shownNet.step;
       const m = v => btMoney(v, st);
       // LOOK: one figure, two short rows, the detail behind an (i). Each
       // figure still opens its workings when tapped.
-      const info = `A rough estimate. Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
-        `less the yearly repayments on a loan for ${repN.children[0].label.replace(/^Borrowed: /, "")} ` +
-        `at ${pct} over ${yrs} years. ` +
-        `Tap a figure to see how it is worked out.`;
+      const info = `A rough estimate: an average year over the ${yrs}-year loan, in today's dollars. ` +
+        `Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
+        `less the repayments on a loan for ${loanN.children[0].label.replace(/^Borrowed: /, "")} ` +
+        `at ${pct}. The repayment is fixed, so inflation makes it smaller in today's dollars each year, ` +
+        `while the savings follow power prices. Tap a figure to see how it is worked out.`;
       saveBox.innerHTML = show
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
           `<div class="rs-head"><span class="rs-l">${ahead ? "This roof could save you" : "With the loan, this roof costs"}</span>` +
@@ -1567,9 +1626,19 @@ function renderBillTool(box, ctx) {
           `<div class="rs-v" data-wk="net-year">${m(Math.abs(shownNet.net))}<span>/yr</span></div>` +
           `<div class="rs-info" hidden>${info}</div>` +
           `<div class="rs-parts">` +
-          `<div class="rs-row" data-wk="save"><span>Bill savings</span><b>${m(save1.value)}</b></div>` +
+          `<div class="rs-row" data-wk="saveavg"><span>Bill savings</span><b>${m(saveN.value)}</b></div>` +
           `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${m(repN.value)}</b></div>` +
-          `</div></div>`
+          `</div>` +
+          // A BATTERY, one tap: 10 kWh to start (BT_BATT_ADD_KWH), any size
+          // typed in; the figures above then include it and its loan
+          (withBatt
+            ? `<div class="rs-batt"><span>Battery</span><label class="rs-bk"><input type="number" inputmode="decimal" min="1" max="200" step="1" ` +
+              `data-battkwh="1" value="${+prof.battery}" aria-label="Battery size, kWh"><i>kWh</i></label>` +
+              `<b data-wk="battcost">${btMoney(N.battCost.value)}</b>` +
+              `<button type="button" class="rs-bx" data-battadd="0" aria-label="Remove the battery">&times;</button></div>`
+            : `<button type="button" class="rs-add" data-battadd="${BT_BATT_ADD_KWH}">+ Add a battery</button>`) +
+          `<button type="button" class="rs-yby" data-big="returns">Year by year <span aria-hidden="true">›</span></button>` +
+          `</div>`
         : "";
       const ib = saveBox.querySelector(".rs-i");
       if (ib) ib.addEventListener("click", e => {
@@ -1608,7 +1677,8 @@ function renderBillTool(box, ctx) {
     });
     nodeFor.gen = () => N.genYear;
     nodeFor["net-year"] = () => withBatt ? N.battNet : N.solarNet;
-    nodeFor.repay = () => withBatt ? N.allRepay : N.solarRepay;
+    nodeFor.repay = () => N.repAvg;
+    nodeFor.saveavg = () => N.saveAvg;
     nodeFor.nowbill = () => N.nowBill;
     nodeFor.solarbill = () => withBatt ? N.battBill : N.solarBill;
     // the getter reads the LATEST calculation: a sheet left open while an
@@ -1644,6 +1714,17 @@ function renderBillTool(box, ctx) {
       if (k === "type") state.type = v;
       else (state.type === "business" ? state.business : state.home)[k] = (k === "evs" || k === "battery") ? +v : v;
       save(); redraw(`.sx-seg[data-key="${k}"] button[data-v="${v}"]`);
+    }));
+    // the green box's battery: add (10 kWh), resize, remove
+    const setBatt = (kwh, focusSel) => {
+      (state.type === "business" ? state.business : state.home).battery = Math.max(0, Math.min(200, kwh || 0));
+      save(); redraw(focusSel);
+    };
+    qa("[data-battadd]").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation(); setBatt(+b.dataset.battadd, +b.dataset.battadd > 0 ? "input[data-battkwh]" : null);
+    }));
+    qa("input[data-battkwh]").forEach(inp => inp.addEventListener("change", () => {
+      const v = parseFloat(inp.value); if (v > 0) setBatt(v, "input[data-battkwh]");
     }));
     qa(".sx-step button").forEach(b => b.addEventListener("click", () => {
       state.home.people = Math.max(1, Math.min(8, state.home.people + (+b.dataset.d)));
@@ -1710,8 +1791,6 @@ function renderBillTool(box, ctx) {
       if (ctx.onEcon) ctx.onEcon(); else redraw();
     }));
 
-    // the card's way down a layer: the four seasons, large, in the lightbox
-    qa("[data-explore]").forEach(b => b.addEventListener("click", () => openBig()));
 
     // season charts: the hour under the pointer, from the same hour rows
     const bindCharts = (charts, zoom) => charts.forEach(svg => {
@@ -1748,10 +1827,91 @@ function renderBillTool(box, ctx) {
     });
     bindCharts(qa(".sx-chart"), true);
 
-    // ALL FOUR SEASONS LARGE: the same cards, from the same calculation, in
-    // the page's chart lightbox; each figure still opens its workings.
-    const openBig = () => {
+    // THE LIGHTBOX: the card's charts, big enough to read, one tab each --
+    // a day in each season, the whole year hour by hour, and year by year
+    // (savings against repayments). Every figure is from this draw's own
+    // calculation (r), the same nodes the card and the green box show.
+    let yearData = null;
+    const getYear = () => yearData || (yearData = btYearHours(r.run, withBatt));
+    // YEAR BY YEAR, in today's dollars: each year's bill savings (btReturns'
+    // rows) and that year's fixed repayment taken back to today's dollars.
+    // Their average over the loan is the green box's figure (checked below).
+    const returnsRows = () => {
+      const repN = withBatt ? N.allRepay : N.solarRepay;
+      const L = N.loanYears.value, cpi = 1 + (ret.real ? ret.cpiPct : 0) / 100;
+      let cum = 0;
+      return ret.rows.slice(0, Math.max(ret.years, L)).map((row, y) => {
+        const repay = y < L ? repN.value / Math.pow(cpi, y) : 0;
+        cum += row.saving - repay;
+        return { year: row.year, save: row.saving, repay, net: row.saving - repay, cum };
+      });
+    };
+    const niceStep = span => {
+      const raw = Math.max(span, 1) / 4, p = Math.pow(10, Math.floor(Math.log10(raw)));
+      return [1, 2, 2.5, 5, 10].map(k => k * p).find(k => k >= raw);
+    };
+    const kMoney = v => Math.abs(v) >= 1000 ? `${v < 0 ? "−" : ""}$${(Math.abs(v) / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k` : `${v < 0 ? "−" : ""}$${Math.abs(Math.round(v))}`;
+    // two panels sharing the years: each year's savings (up) and repayment
+    // (down) with the net as a dot; under it, the running total
+    const returnsSvg = (rows, W, H) => {
+      const L = 58, R = 14, gap = 44, B = 26, T = 22;
+      const h1 = Math.round((H - T - B - gap) * 0.58), h2 = H - T - B - gap - h1;
+      const n = rows.length, bw = (W - L - R) / n;
+      const x = i => L + i * bw;
+      const panel = (y0, h, lo, hi) => {
+        const st = niceStep(hi - lo), a = Math.floor(lo / st) * st, b = Math.ceil(hi / st) * st;
+        const y = v => y0 + h * (1 - (v - a) / Math.max(b - a, 1e-9));
+        let g = "";
+        for (let v = a; v <= b + 1e-9; v += st) {
+          g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="${Math.abs(v) < 1e-9 ? "rz" : "rg"}"/>` +
+               `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" class="ra">${kMoney(v)}</text>`;
+        }
+        return { y, g };
+      };
+      const p1 = panel(T, h1, Math.min(0, ...rows.map(q => -q.repay)), Math.max(0, ...rows.map(q => q.save)));
+      const y2 = T + h1 + gap;
+      const p2 = panel(y2, h2, Math.min(0, ...rows.map(q => q.cum)), Math.max(0, ...rows.map(q => q.cum)));
+      let svg = p1.g + p2.g;
+      rows.forEach((q, i) => {
+        const cx = x(i) + bw * 0.15, w = bw * 0.7;
+        svg += `<rect x="${cx}" y="${p1.y(q.save)}" width="${w}" height="${Math.max(0, p1.y(0) - p1.y(q.save))}" class="rs-sv"/>`;
+        if (q.repay > 0) svg += `<rect x="${cx}" y="${p1.y(0)}" width="${w}" height="${Math.max(0, p1.y(-q.repay) - p1.y(0))}" class="rs-rp"/>`;
+        svg += `<circle cx="${x(i) + bw / 2}" cy="${p1.y(q.net)}" r="${Math.min(4, bw * 0.22)}" class="rs-nt"/>`;
+        const top = Math.min(p2.y(q.cum), p2.y(0)), hh = Math.abs(p2.y(q.cum) - p2.y(0));
+        svg += `<rect x="${cx}" y="${top}" width="${w}" height="${hh}" class="${q.cum < 0 ? "rs-cn" : "rs-cp"}"/>`;
+        if (q.year === 1 || q.year % 5 === 0) svg += `<text x="${x(i) + bw / 2}" y="${H - 8}" text-anchor="middle" class="ra">${q.year === 1 ? "Year 1" : q.year}</text>`;
+        svg += `<rect x="${x(i)}" y="${T}" width="${bw}" height="${H - T - B}" class="rs-hit"><title>Year ${q.year}: bill savings ${btMoney(q.save)}, ` +
+               `repayment ${btMoney(q.repay)}, net ${btMoney(q.net)}; running total ${btMoney(q.cum)} (today's dollars)</title></rect>`;
+      });
+      svg += `<text x="${L}" y="${T - 10}" class="rt">Each year</text><text x="${L}" y="${y2 - 12}" class="rt">Running total</text>`;
+      return `<svg class="sx-returns" viewBox="0 0 ${W} ${H}" role="img" aria-label="Savings and repayments, year by year, in today's dollars">${svg}</svg>`;
+    };
+    const drawYearInto = (cv, sumEl) => {
+      const Y = getYear(), m = BT_YEAR_VIEW.measure;
+      const val = row => row[m];
+      const vmax = Math.max(1e-9, ...Y.rows.map(val));
+      const ctx2 = cv.getContext("2d");
+      const img = ctx2.createImageData(365, 24);
+      const col = { use: [143, 179, 255], solar: [255, 214, 10], imp: [255, 155, 107], exp: [48, 209, 88], fromB: [13, 148, 136], cost: [255, 105, 97] }[m];
+      Y.rows.forEach(row => {
+        const t = Math.max(0, val(row)) / vmax;
+        const i = ((23 - row.h) * 365 + row.doy) * 4;
+        img.data[i] = Math.round(28 + (col[0] - 28) * t); img.data[i + 1] = Math.round(28 + (col[1] - 28) * t);
+        img.data[i + 2] = Math.round(30 + (col[2] - 30) * t); img.data[i + 3] = 255;
+      });
+      ctx2.putImageData(img, 0, 0);
+      const T = Y.totals;
+      const ok = Y.check.ok
+        ? `<span class="ok">✓ Adds up to the same year as the bills.</span>`
+        : `<span class="warn">Does not add up to the bills (${Y.check.off.join(", ")}${Y.check.daysOff.length ? "; season lengths differ from the calendar" : ""}).</span>`;
+      sumEl.innerHTML = `Use ${Math.round(T.use).toLocaleString()} kWh, solar ${Math.round(T.solar).toLocaleString()} kWh, ` +
+        `from the grid ${Math.round(T.imp).toLocaleString()} kWh, exported ${Math.round(T.exp).toLocaleString()} kWh. ` +
+        `Bills ${btMoney(T.billNow)} today, ${btMoney(T.bill)} ${withBatt ? "with solar and the battery" : "with solar"}. ${ok}`;
+    };
+    const BIG_TABS = [["seasons", "A day in each season"], ["year", "The whole year"], ["returns", "Year by year"]];
+    const openBig = tab0 => {
       if (!haveGen) return;
+      let tab = BIG_TABS.some(t => t[0] === tab0) ? tab0 : "seasons";
       let lb = document.getElementById("chart-lightbox");
       if (!lb) {
         lb = document.createElement("div");
@@ -1764,116 +1924,128 @@ function renderBillTool(box, ctx) {
         if (lb.__return && lb.__return.focus) lb.__return.focus();
       };
       lb.__return = document.activeElement;
-      // FILL THE SCREEN: the four charts share the window's height (two rows
-      // of two, one column on a phone), less the heading, the key and each
-      // season's figures. The viewBox is sized to the chart's on-screen
-      // shape at 1.35 px per unit, so axis text reads at about 11 px.
-      // On a wide screen each season's figures sit in a 150 px column beside
-      // its chart, so the chart takes the card's full height.
-      const twoCol = innerWidth > 760;
-      const cardW = Math.min(1600, innerWidth - 48);
-      const chartPx = twoCol ? (cardW - 44 - 14) / 2 - 28 - 164 : cardW - 44 - 20;
-      const hPx = twoCol ? Math.max(240, (innerHeight - 48 - 170 - 2 * 50) / 2) : 220;
-      const size = { W: Math.round(chartPx / 1.35), H: Math.round(hPx / 1.35) };
-      lb.innerHTML =
-        `<div class="clb-card sx sx-bigcard" role="dialog" aria-modal="true" aria-label="A day in each season">` +
-          `<div class="clb-head"><h3>A day in each season</h3><button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
-          `<div class="sx-foot sx-lead">An average day, hour by hour. Colours: what the ${isBiz ? "business" : "home"} uses. Yellow: what the roof makes. Where the yellow covers the colour, the roof is powering it; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Tap a figure to see how it is worked out.</div>` +
-          keyHtml + `<div class="sx-seasons sx-seasons-big">${BT_SEASONS.map((s, i) => seasonCard(s, i, size)).join("")}</div>` +
-          `<div class="sx-bigfoot"><button type="button" class="sx-btn" data-tomethod="year">The whole year, hour by hour ›</button>` +
-          `<button type="button" class="sx-btn" data-tomethod="method">How it's worked out ›</button></div>` +
-        `</div>`;
+      const render = () => {
+        // FILL THE SCREEN: the card is the window less a margin; charts are
+        // sized to it so axis text reads at about 11 px (1.35 px a unit)
+        const twoCol = innerWidth > 760;
+        const cardW = Math.min(1600, innerWidth - 48);
+        const chartPx = twoCol ? (cardW - 44 - 14) / 2 - 28 - 164 : cardW - 44 - 20;
+        const hPx = twoCol ? Math.max(220, (innerHeight - 48 - 215 - 2 * 50) / 2) : 220;
+        const size = { W: Math.round(chartPx / 1.35), H: Math.round(hPx / 1.35) };
+        const tabs = `<div class="sx-seg sx-bigtabs" role="tablist" aria-label="Chart">${BIG_TABS.map(([k, l]) =>
+          `<button type="button" role="tab" data-btab="${k}" aria-selected="${k === tab}"${k === tab ? ' class="on"' : ""}>${l}</button>`).join("")}</div>`;
+        let body = "";
+        if (tab === "seasons") {
+          body = `<div class="sx-foot sx-lead">An average day, hour by hour. Colours: what the ${isBiz ? "business" : "home"} uses. Yellow: what the roof makes. Where the yellow covers the colour, the roof is powering it; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Tap a figure to see how it is worked out.</div>` +
+            keyHtml + `<div class="sx-seasons sx-seasons-big">${BT_SEASONS.map((s, i) => seasonCard(s, i, size)).join("")}</div>`;
+        } else if (tab === "year") {
+          const hrs = [[0, "midnight"], [6, "6am"], [12, "noon"], [18, "6pm"]];
+          body = `<div class="sx-row sx-bigrow">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"]].concat(withBatt ? [["fromB", "From battery"]] : []).concat([["cost", "Bill"]]), BT_YEAR_VIEW.measure, "Show")}</div>` +
+            `<div class="sx-yearbig"><div class="sx-yh">${hrs.map(([h, l]) => `<span style="top:${((23 - h + 0.5) / 24 * 100).toFixed(2)}%">${l}</span>`).join("")}</div>` +
+            `<div class="sx-yearbox"><canvas width="365" height="24" aria-label="The year, hour by hour"></canvas>` +
+            `<div class="sx-year-ax">${BT_MONTH_NAME.map(m => `<span>${m}</span>`).join("")}</div><div class="sx-tip" hidden></div></div></div>` +
+            `<div class="sx-foot sx-ysum"></div>` +
+            `<div class="sx-foot">Every hour of the year, one column a day: midnight at the bottom, evening at the top; brighter is more. Each day is its season's average day, as the bills are worked out. Day-to-day weather is in Resilience.</div>` +
+            `<div class="sx-bigfoot"><button type="button" class="sx-btn sx-ycsv">Download the 8,760 hours (CSV)</button></div>`;
+        } else {
+          const rows = returnsRows(), L = N.loanYears.value;
+          const loanRows = rows.slice(0, L);
+          const avgNet = loanRows.reduce((t, q) => t + q.net, 0) / L;
+          const agrees = Math.abs(avgNet - (N.saveAvg.value - N.repAvg.value)) < 0.01;
+          const sh = btNetShown(N.saveAvg.value, N.repAvg.value), m = v => btMoney(v, sh.step);
+          const W = Math.round(Math.min(1500, innerWidth - 100) / 1.35), H = Math.round(Math.max(300, innerHeight - 330) / 1.35);
+          const be = rows.find(q => q.cum >= 0 && rows.slice(0, rows.indexOf(q)).some(p => p.cum < 0));
+          body = `<div class="sx-rsum">` +
+              `<div><b>${m(sh.net)}</b><small>a year on average${withBatt ? ", with the battery" : ""}</small></div>` +
+              `<div><b>${m(N.saveAvg.value)}</b><small>bill savings, average</small></div>` +
+              `<div><b>−${m(N.repAvg.value)}</b><small>repayments, average</small></div>` +
+              `<div><b>${btMoney(rows[rows.length - 1].cum)}</b><small>ahead after ${rows.length} years</small></div>` +
+            `</div>` +
+            (agrees ? "" : `<div class="sx-foot warn">The years here do not average to the green box's figure. Please report this.</div>`) +
+            `<div class="sx-rkey"><span><i class="sv"></i>Bill savings</span><span><i class="rp"></i>Loan repayment</span><span><i class="nt"></i>Net</span>` +
+              `<span class="u">today's dollars</span></div>` +
+            returnsSvg(rows, W, H) +
+            `<div class="sx-foot">All in today's dollars. Savings rise with power prices (${E.elec_inflation_pct}% a year) less inflation (${E.cpi_pct}%), ` +
+            `export rates fall ${E.export_decline_pct}% a year and the panels lose ${E.degradation_pct}% a year. The repayment is fixed at ` +
+            `${btMoney((withBatt ? N.allRepay : N.solarRepay).value)} a year for ${L} years, so inflation shrinks it in today's dollars. ` +
+            `The loan covers the replacement inverter${withBatt ? " and battery" : ""}.` +
+            (be ? ` The running total turns positive in year ${be.year}.` : "") + `</div>`;
+        }
+        lb.innerHTML =
+          `<div class="clb-card sx sx-bigcard" role="dialog" aria-modal="true" aria-label="${BIG_TABS.find(t => t[0] === tab)[1]}">` +
+            `<div class="clb-head">${tabs}<button type="button" class="clb-x" aria-label="Close">&times;</button></div>` +
+            body +
+            `<div class="sx-bigfoot"><button type="button" class="sx-btn" data-tomethod="method">How it's worked out ›</button></div>` +
+          `</div>`;
+        lb.querySelectorAll("[data-btab]").forEach(b => b.addEventListener("click", () => {
+          tab = b.dataset.btab; render();
+          const t = lb.querySelector(`[data-btab="${tab}"]`); if (t) t.focus();
+        }));
+        lb.querySelector(".clb-x").addEventListener("click", close);
+        // the method lives in the panel: close, open it there
+        lb.querySelectorAll("[data-tomethod]").forEach(b => b.addEventListener("click", () => {
+          close();
+          const sp = document.getElementById("side-panel");
+          const ex = document.getElementById("side-panel-expand");
+          if (sp && sp.classList.contains("compact") && ex) ex.click();
+          setTimeout(() => {
+            const t = q1("#bt-adv-method");
+            if (!t) return;
+            if (t.tagName === "DETAILS") t.open = true;
+            t.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 80);
+        }));
+        if (tab === "seasons") {
+          const big = [...lb.querySelectorAll(".sx-chart")];
+          bindCharts(big, false);
+          big.forEach(svg => { svg.style.cursor = "crosshair"; });
+        }
+        if (tab === "year") {
+          const cv = lb.querySelector(".sx-yearbox canvas"), sumEl = lb.querySelector(".sx-ysum"), tip = lb.querySelector(".sx-yearbox .sx-tip");
+          drawYearInto(cv, sumEl);
+          lb.querySelectorAll('.sx-seg[data-key="ymeasure"] button').forEach(b => b.addEventListener("click", () => {
+            BT_YEAR_VIEW.measure = b.dataset.v;
+            lb.querySelectorAll('.sx-seg[data-key="ymeasure"] button').forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
+            drawYearInto(cv, sumEl);
+          }));
+          cv.addEventListener("mousemove", ev => {
+            const rect = cv.getBoundingClientRect();
+            const doy = Math.max(0, Math.min(364, Math.floor((ev.clientX - rect.left) / rect.width * 365)));
+            const h = Math.max(0, Math.min(23, 23 - Math.floor((ev.clientY - rect.top) / rect.height * 24)));
+            const row = getYear().rows[doy * 24 + h];
+            const ms = BT_YEAR_VIEW.measure;
+            const v = ms === "cost" ? "$" + row.cost.toFixed(2) : row[ms].toFixed(2) + " kWh";
+            tip.innerHTML = `<b>${row.day} ${BT_MONTH_NAME[row.month]}, ${String(h).padStart(2, "0")}:00</b> (${row.season}) · ${v}`;
+            tip.hidden = false;
+            tip.style.left = Math.min(Math.max(0, ev.clientX - rect.left - 100), rect.width - 220) + "px";
+            tip.style.top = Math.max(0, ev.clientY - rect.top - 44) + "px";
+          });
+          cv.addEventListener("mouseleave", () => { tip.hidden = true; });
+          lb.querySelector(".sx-ycsv").addEventListener("click", () => {
+            const blob = new Blob([btYearCsv(getYear())], { type: "text/csv" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `solar-hours-${ctx.buildingId}.csv`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          });
+        }
+        lb.querySelectorAll("[data-wk]").forEach(elx => {
+          const k = elx.dataset.wk, f = nodeFor[k];
+          if (f && typeof WkView !== "undefined") WkView.bind(elx, () => (BT_LATEST.nodeFor[k] || f)());
+        });
+      };
+      render();
       lb.hidden = false;
       document.body.classList.add("clb-open");
       lb.onclick = e => { if (e.target === lb) close(); };
       lb.onkeydown = e => { if (e.key === "Escape") close(); };
-      lb.querySelector(".clb-x").addEventListener("click", close);
-      // the next layer down lives in the panel: close, open it there
-      lb.querySelectorAll("[data-tomethod]").forEach(b => b.addEventListener("click", () => {
-        close();
-        const sp = document.getElementById("side-panel");
-        const ex = document.getElementById("side-panel-expand");
-        if (sp && sp.classList.contains("compact") && ex) ex.click();
-        setTimeout(() => {
-          const t = q1(b.dataset.tomethod === "year" ? "#bt-adv-year" : "#bt-adv-method");
-          if (!t) return;
-          if (t.tagName === "DETAILS") t.open = true;   // fires its own toggle
-          t.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 80);
-      }));
-      const big = [...lb.querySelectorAll(".sx-chart")];
-      bindCharts(big, false);
-      big.forEach(svg => { svg.style.cursor = "crosshair"; });
-      lb.querySelectorAll("[data-wk]").forEach(elx => {
-        const k = elx.dataset.wk, f = nodeFor[k];
-        if (f && typeof WkView !== "undefined") WkView.bind(elx, () => (BT_LATEST.nodeFor[k] || f)());
-      });
-      requestAnimationFrame(() => lb.querySelector(".clb-x").focus());
+      requestAnimationFrame(() => { const t = lb.querySelector(".sx-bigtabs .on"); if (t) t.focus(); });
     };
-    qa("[data-bigseasons]").forEach(b => b.addEventListener("click", openBig));
-    qa("[data-stab]").forEach(b => b.addEventListener("click", () => {
-      BT_SEASON_TAB.on = b.dataset.stab;
-      qa("[data-stab]").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", String(on)); });
-      qa(".sx-seasons-tabbed .sx-season").forEach(c => c.classList.toggle("on", c.dataset.season === BT_SEASON_TAB.on));
-    }));
+    qa("[data-big]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); openBig(b.dataset.big); }));
+    // read-only, for browser checks: open a chart tab on the open card
+    window.__openBigChart = openBig;
 
-    // the whole year: drawn when opened, from btYearHours (the bills' own rows)
-    let yearData = null;
-    const getYear = () => yearData || (yearData = btYearHours(r.run, withBatt));
-    const drawYear = () => {
-      const cv = q1("#bt-year-canvas");
-      const det = q1("#bt-adv-year");
-      if (!cv || !det || !det.open) return;
-      const Y = getYear(), m = BT_YEAR_VIEW.measure;
-      const val = row => row[m];
-      const vmax = Math.max(1e-9, ...Y.rows.map(val));
-      const ctx2 = cv.getContext("2d");
-      const img = ctx2.createImageData(365, 24);
-      const col = { use: [143, 179, 255], solar: [255, 214, 10], imp: [255, 155, 107], exp: [48, 209, 88], cost: [255, 105, 97] }[m];
-      Y.rows.forEach(row => {
-        const t = Math.max(0, val(row)) / vmax;
-        const i = ((23 - row.h) * 365 + row.doy) * 4;
-        img.data[i] = Math.round(28 + (col[0] - 28) * t); img.data[i + 1] = Math.round(28 + (col[1] - 28) * t);
-        img.data[i + 2] = Math.round(30 + (col[2] - 30) * t); img.data[i + 3] = 255;
-      });
-      ctx2.putImageData(img, 0, 0);
-      const T = Y.totals;
-      const sumEl = q1("#bt-year-sum");
-      if (sumEl) {
-        const ok = Y.check.ok
-          ? `<span class="ok">✓ These add up to the same year as the bills above.</span>`
-          : `<span class="warn">These do not add up to the bills above (${Y.check.off.join(", ")}${Y.check.daysOff.length ? "; season lengths differ from the calendar" : ""}).</span>`;
-        sumEl.innerHTML = `The year: use ${Math.round(T.use).toLocaleString()} kWh, solar ${Math.round(T.solar).toLocaleString()} kWh, ` +
-          `from the grid ${Math.round(T.imp).toLocaleString()} kWh, exported ${Math.round(T.exp).toLocaleString()} kWh; ` +
-          `bills ${btMoney(T.billNow)} today, ${btMoney(T.bill)} ${withBatt ? "with solar and the battery" : "with solar"}. ${ok}`;
-      }
-    };
-    const yd = q1("#bt-adv-year");
-    if (yd) {
-      yd.addEventListener("toggle", drawYear);
-      drawYear();
-      const cv = q1("#bt-year-canvas"), tip = yd.querySelector(".sx-yearbox .sx-tip");
-      cv.addEventListener("mousemove", ev => {
-        const rect = cv.getBoundingClientRect();
-        const doy = Math.max(0, Math.min(364, Math.floor((ev.clientX - rect.left) / rect.width * 365)));
-        const h = Math.max(0, Math.min(23, 23 - Math.floor((ev.clientY - rect.top) / rect.height * 24)));
-        const row = getYear().rows[doy * 24 + h];
-        const unit = BT_YEAR_VIEW.measure === "cost" ? "" : " kWh";
-        const v = BT_YEAR_VIEW.measure === "cost" ? "$" + row.cost.toFixed(2) : row[BT_YEAR_VIEW.measure].toFixed(2);
-        tip.innerHTML = `<b>${row.day} ${BT_MONTH_NAME[row.month]}, ${String(h).padStart(2, "0")}:00</b> (${row.season}) · ${v}${unit}`;
-        tip.hidden = false;
-        tip.style.left = Math.min(Math.max(0, ev.clientX - rect.left - 80), rect.width - 200) + "px";
-      });
-      cv.addEventListener("mouseleave", () => { tip.hidden = true; });
-      q1("#bt-year-csv").addEventListener("click", () => {
-        const blob = new Blob([btYearCsv(getYear())], { type: "text/csv" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `solar-hours-${ctx.buildingId}.csv`;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      });
-    }
     if (ctx.onResult) ctx.onResult(r);
   };
   draw();

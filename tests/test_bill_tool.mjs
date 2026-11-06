@@ -278,7 +278,13 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
   const r = B.btEvaluate(ctx, home(), null, prices);
   const N = r.nodes;
-  near(N.solarNet.value, N.solarSave.value - N.solarRepay.value, 1e-9, "net = savings - repayments");
+  // the headline is an average year over the loan, both sides in today's
+  // dollars: savings from the year-by-year rows, the fixed repayment
+  // deflated by 2% CPI a year (years 1-30, 1.02^-(year-1) averages 0.76148)
+  near(N.solarNet.value, N.saveAvg.value - N.repAvg.value, 1e-9, "net = average savings - average repayments");
+  near(N.repAvg.value, N.solarRepay.value * 0.76148, N.solarRepay.value * 1e-4, "repayments deflated by 2% a year");
+  near(N.saveAvg.value, r.solarRet.rows.slice(0, 30).reduce((t, x) => t + x.saving, 0) / 30, 1e-9, "average of the 30 years' savings");
+  near(r.netShown, B.btNetShown(N.saveAvg.value, N.repAvg.value).net, 1e-9, "the card's figure is that net, rounded");
   // the loan covers the system and its one replacement inverter, over its life
   const borrowed = N.solarRepay.children[0].value;
   near(borrowed, N.solarCost.value * (1 + E.getEcon().inverter_cost_pct / 100), 1e-6, "system + inverter borrowed");

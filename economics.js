@@ -472,7 +472,7 @@ const BATTERY_DEFAULTS = {
   kw: 5,              // charge/discharge power limit
   round_trip_pct: 90, // in-and-out efficiency
   reserve_pct: 10,    // never discharged below this
-  cost_per_kwh: 1000, // installed, NZ, indicative
+  cost_per_kwh: 900,  // installed, NZ, incl. GST: the map's set price
   life_years: 15,     // replaced once inside a 30-year system life
 };
 

@@ -209,11 +209,52 @@
     },
     {
      "title": "Cloud, from measured records",
-     "text": "Each month is scaled to measured sunlight: NIWA's SolarView record for Queenstown where it applies, else the nearest NIWA radiation station (within 1.5°). Differences across the area come from the ERA5 climate record, held between 0.85 and 1.15 of the measured figure.",
+     "text": "Clear-sky sun is cut each month to what ground instruments have measured (pyranometers, which record all the sunlight reaching the ground). Near Queenstown (within about 44 km) that is NIWA's SolarView record for Queenstown, built on decades of measurements at Queenstown Airport. Elsewhere it is the nearest of 28 NIWA radiation stations, up to about 166 km away. Each roof's workings name its station and how far away it is.",
+     "facts": [
+      {
+       "label": "NIWA stations",
+       "value": "28",
+       "source": "src/solar_model.py NIWA_MEASURED_GHI_STATIONS, count"
+      },
+      {
+       "label": "Furthest station used",
+       "value": "166 km",
+       "source": "src/solar_model.py NIWA_STATION_MAX_DIST_DEG x 111 km"
+      }
+     ],
+     "code": [
+      "src/solar_model.py::solarview_calibrated_monthly_factors",
+      "src/solar_model.py::niwa_station_measured_monthly_factors"
+     ],
+     "stages": []
+    },
+    {
+     "title": "Differences between towns",
+     "text": "A station measures one spot. How much sunnier or duller each town is than its station comes from ERA5, a global weather reanalysis (a weather model corrected by satellite and weather observations), in cells about 28 km north to south by 20 km east to west, averaged over 1991–2020. Only its differences between places are used, held between 0.85 and 1.15 of the station's figure; cells averaging over 800 m high are mountains, not towns, and are left out.",
+     "facts": [
+      {
+       "label": "ERA5 cell",
+       "value": "28 km north–south",
+       "source": "climate/era5 cell spacing x 111 km"
+      },
+      {
+       "label": "Years averaged",
+       "value": "1991–2020",
+       "source": "src/solar_model.py _era5_cell year filter"
+      }
+     ],
+     "code": [
+      "src/solar_model.py::era5_spatial_ratio",
+      "src/solar_model.py::_era5_monthly"
+     ],
+     "stages": []
+    },
+    {
+     "title": "What the sunlight data cannot see",
+     "text": "Cloud is a long-term monthly average for a place, the same every day of that month: a typical year, not this year. It is no finer than the station and the ERA5 cell, so it cannot see fog or inversion cloud that sits in one valley or town, such as winter morning fog at Wanaka or Cromwell. Where a town gets more of that than its station, its winter sun is overstated. Hills, trees and buildings are different: they are measured for every roof, from 8 m terrain and the laser scan (Shade, below).",
      "facts": [],
      "code": [
       "src/solar_model.py::solarview_calibrated_monthly_factors",
-      "src/solar_model.py::niwa_station_measured_monthly_factors",
       "src/solar_model.py::era5_spatial_ratio"
      ],
      "stages": []

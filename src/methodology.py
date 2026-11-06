@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import math
 import json
 import re
 import sys
@@ -79,6 +80,28 @@ def _js_const(path: str, pattern: str):
     if not m:
         raise KeyError(f"{path}: {pattern!r} not found")
     return float(m.group(1))
+
+
+def _module_const_list(path: str, name: str):
+    """A top-level list whose items may hold expressions: its length from the
+    AST, without evaluating it."""
+    tree = ast.parse((ROOT / path).read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            return node.value.elts
+    raise KeyError(f"{path}: no top-level list {name}")
+
+
+def _era5_cell_deg() -> float:
+    """The ERA5 grid spacing, from the cell files' names (lat_lon.json)."""
+    lats = sorted({float(f.stem.split("_")[0]) for f in (ROOT / "climate" / "era5").glob("*_*.json")})
+    return min(b - a for a, b in zip(lats, lats[1:]))
+
+
+def _era5_years() -> str:
+    """The years ERA5's monthly means are taken over, from solar_model's filter."""
+    m = re.search(r"\(\s*(\d{4})\s*<=\s*day\.year\s*<=\s*(\d{4})\s*\)", (ROOT / "src/solar_model.py").read_text())
+    return f"{m.group(1)}–{m.group(2)}"
 
 
 def _fmt(v, dp=None):
@@ -159,6 +182,18 @@ def values() -> dict:
         "slope_bin": M("src/solar_model.py", "SLOPE_BIN_DEG"),
         "aspect_bin": M("src/solar_model.py", "ASPECT_BIN_DEG"),
         "station_max_deg": M("src/solar_model.py", "NIWA_STATION_MAX_DIST_DEG", 1),
+        "station_max_km": (_fmt(_module_const("src/solar_model.py", "NIWA_STATION_MAX_DIST_DEG") * 111, 0),
+                           "src/solar_model.py NIWA_STATION_MAX_DIST_DEG x 111 km"),
+        "solarview_km": (_fmt(_module_const("src/solar_model.py", "SOLARVIEW_CAL_MAX_DIST_DEG") * 111, 0),
+                         "src/solar_model.py SOLARVIEW_CAL_MAX_DIST_DEG x 111 km"),
+        "n_stations": (_fmt(len(_module_const_list("src/solar_model.py", "NIWA_MEASURED_GHI_STATIONS"))),
+                       "src/solar_model.py NIWA_MEASURED_GHI_STATIONS, count"),
+        "era5_ns_km": (_fmt(_era5_cell_deg() * 111, 0), "climate/era5 cell spacing x 111 km"),
+        "era5_ew_km": (_fmt(_era5_cell_deg() * 111 * math.cos(math.radians(45)), 0),
+                       "climate/era5 cell spacing x 111 km x cos 45 degrees"),
+        "era5_years": (_era5_years(), "src/solar_model.py _era5_cell year filter"),
+        "era5_max_elev": M("src/solar_model.py", "ERA5_MAX_CELL_ELEV_M"),
+        "dem_m": ("8", "LINZ layer 51768 (data/dem_wide_mosaic.tif), 8 m cells"),
         "era5_lo": (_fmt(_module_const("src/solar_model.py", "ERA5_RATIO_RANGE")[0], 2), "src/solar_model.py ERA5_RATIO_RANGE[0]"),
         "era5_hi": (_fmt(_module_const("src/solar_model.py", "ERA5_RATIO_RANGE")[1], 2), "src/solar_model.py ERA5_RATIO_RANGE[1]"),
         "area_hz_step": M("src/terrain_horizon.py", "AZIMUTH_STEP_DEG"),
@@ -278,12 +313,31 @@ STEPS: list[dict] = [
                  "Ineichen model.",
          "code": ["src/solar_model.py::build_poa_lookup_table", "src/solar_model.py~~model=\"ineichen\""]},
         {"title": "Cloud, from measured records",
-         "text": "Each month is scaled to measured sunlight: NIWA's SolarView record for Queenstown where it "
-                 "applies, else the nearest NIWA radiation station (within {station_max_deg}°). Differences "
-                 "across the area come from the ERA5 climate record, held between {era5_lo} and {era5_hi} of "
-                 "the measured figure.",
+         "text": "Clear-sky sun is cut each month to what ground instruments have measured (pyranometers, which "
+                 "record all the sunlight reaching the ground). Near Queenstown (within about {solarview_km} km) "
+                 "that is NIWA's SolarView record for Queenstown, built on decades of measurements at Queenstown "
+                 "Airport. Elsewhere it is the nearest of {n_stations} NIWA radiation stations, up to about "
+                 "{station_max_km} km away. Each roof's workings name its station and how far away it is.",
+         "facts": [("NIWA stations", "n_stations", ""), ("Furthest station used", "station_max_km", " km")],
          "code": ["src/solar_model.py::solarview_calibrated_monthly_factors",
-                  "src/solar_model.py::niwa_station_measured_monthly_factors", "src/solar_model.py::era5_spatial_ratio"]},
+                  "src/solar_model.py::niwa_station_measured_monthly_factors"]},
+        {"title": "Differences between towns",
+         "text": "A station measures one spot. How much sunnier or duller each town is than its station comes "
+                 "from ERA5, a global weather reanalysis (a weather model corrected by satellite and weather "
+                 "observations), in cells about {era5_ns_km} km north to south by {era5_ew_km} km east to west, "
+                 "averaged over {era5_years}. Only its differences between places are used, held between "
+                 "{era5_lo} and {era5_hi} of the station's figure; cells averaging over {era5_max_elev} m high "
+                 "are mountains, not towns, and are left out.",
+         "facts": [("ERA5 cell", "era5_ns_km", " km north–south"), ("Years averaged", "era5_years", "")],
+         "code": ["src/solar_model.py::era5_spatial_ratio", "src/solar_model.py::_era5_monthly"]},
+        {"title": "What the sunlight data cannot see",
+         "text": "Cloud is a long-term monthly average for a place, the same every day of that month: a typical "
+                 "year, not this year. It is no finer than the station and the ERA5 cell, so it cannot see fog "
+                 "or inversion cloud that sits in one valley or town, such as winter morning fog at Wanaka or "
+                 "Cromwell. Where a town gets more of that than its station, its winter sun is overstated. "
+                 "Hills, trees and buildings are different: they are measured for every roof, from {dem_m} m "
+                 "terrain and the laser scan (Shade, below).",
+         "code": ["src/solar_model.py::solarview_calibrated_monthly_factors", "src/solar_model.py::era5_spatial_ratio"]},
         {"title": "Onto a sloped roof",
          "text": "Sunlight is split into direct and diffuse light (the Erbs method) and turned onto each roof "
                  "slope and direction with the Perez sky model, in {slope_bin}° slope by {aspect_bin}° direction steps.",

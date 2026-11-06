@@ -269,7 +269,7 @@
   }
   .ai-banner-close {
     flex: none; width: 20px; height: 20px; border-radius: 50%; border: none;
-    background: rgba(255,255,255,0.18); color: #fff; cursor: pointer;
+    background: rgba(0,0,0,0.22); color: #fff; cursor: pointer;
     font-size: 14px; line-height: 1; padding: 0;
   }
   .ai-banner-close:hover { background: rgba(255,255,255,0.34); }
@@ -453,6 +453,27 @@
   .roof-saving .rs-row { display: flex; justify-content: space-between; padding: 2px 4px; margin: 0 -4px; }
   .roof-saving .rs-row b { font-weight: 700; font-variant-numeric: tabular-nums; }
   /* repayments larger than the savings: same layout, a dark slate ground */
+  .roof-saving .rs-add { margin-top: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px dashed rgba(255,255,255,.6);
+    background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; }
+  .roof-saving .rs-add:hover, .roof-saving .rs-add:focus-visible { background: rgba(0,0,0,.16); outline: none; }
+  .roof-saving .rs-batt { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,.25); font-size: 13px; }
+  .roof-saving .rs-batt > span { flex: 1; font-weight: 600; }
+  .roof-saving .rs-bk { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,.18); border-radius: 6px; padding: 2px 6px; }
+  .roof-saving .rs-bk input { width: 44px; background: transparent; border: 0; color: #fff; font: inherit; font-weight: 700; text-align: right; }
+  .roof-saving .rs-bk i { font-style: normal; opacity: .85; }
+  .roof-saving .rs-batt b { font-variant-numeric: tabular-nums; padding: 0 4px; }
+  .roof-saving .rs-bx { width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.2); color: #fff;
+    font-size: 15px; line-height: 1; cursor: pointer; }
+  .roof-saving .rs-bx:hover, .roof-saving .rs-bx:focus-visible { background: rgba(0,0,0,.35); outline: none; }
+  .roof-saving .rs-yby { display: block; margin: 6px -4px 0 auto; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent;
+    color: #fff; font: inherit; font-size: 12.5px; font-weight: 600; opacity: .9; cursor: pointer; }
+  .roof-saving .rs-yby:hover, .roof-saving .rs-yby:focus-visible { background: rgba(0,0,0,.18); opacity: 1; outline: none; }
+  .rsp-money { margin-top: 8px; padding: 6px 10px; border-radius: 8px; color: #fff;
+    background: linear-gradient(135deg, #15803d 0%, #0e6b47 100%); }
+  .rsp-money.neg { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
+  .rsp-money b { display: block; font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .rsp-money .rm-l { font-size: 11.5px; opacity: .92; }
   .roof-saving.behind { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
   .hz-pct { color: #ffd24a; }
   html.light .hz-pct { color: #8a5d00; }
@@ -495,6 +516,14 @@
   #page-navigation a:focus-visible, #page-navigation summary:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px; }
   #bug-report-btn { color: #ffb3b3; }
+  #advanced-menu { position: relative; }
+  #advanced-menu > summary { list-style: none; }
+  #advanced-menu > summary::-webkit-details-marker { display: none; }
+  #advanced-menu > summary::after { content: " \25B4"; opacity: .7; }
+  #advanced-menu[open] > summary::after { content: " \25BE"; }
+  #advanced-menu .adv-items { display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+    padding: 6px 0 0 10px; margin-left: 4px; border-left: 2px solid rgba(255,255,255,.25); }
+  html.light #advanced-menu .adv-items { border-left-color: rgba(15,20,30,.2); }
   /* Panel editing. Handles are DOM rather than map layers so they can be real
      buttons -- hit-testing a 22px circle drawn into a tile is far worse. */
   .pe-handle { position:absolute; border:none; cursor:pointer; font-family:inherit;
@@ -1153,20 +1182,29 @@
   <div class="addr-results" id="addr-results"></div>
 </div>
 <div id="corner-actions">
-  <details id="page-navigation">
-    <summary class="corner-btn">Explore &amp; docs</summary>
-    <nav aria-label="Pages">
-      <a href="data-explorer.html">Data explorer</a>
-      <a href="wholesale.html">Wholesale price history</a>
-      <a href="pipeline.html">Pipeline (local server)</a>
-      <a href="docs/index.html">Documentation</a>
-    </nav>
+  <!-- ADVANCED: the less-used switches, folded away so the corner stays
+       short. The corner is anchored at the bottom, so opening it pushes the
+       Advanced button up and its items appear under it. -->
+  <details id="advanced-menu">
+    <summary class="corner-btn">Advanced</summary>
+    <div class="adv-items">
+      <button class="corner-btn" id="toggle-panel-econ" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
+      <details id="page-navigation">
+        <summary class="corner-btn">Explore &amp; docs</summary>
+        <nav aria-label="Pages">
+          <a href="data-explorer.html">Data explorer</a>
+          <a href="wholesale.html">Wholesale price history</a>
+          <a href="pipeline.html">Pipeline (local server)</a>
+          <a href="docs/index.html">Documentation</a>
+        </nav>
+      </details>
+      <!-- one switch for outlines and obstructions; roof markup is on the M key -->
+      <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
+      <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
+      <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
+    </div>
   </details>
-  <!-- one switch for outlines and obstructions; roof markup is on the M key -->
-  <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
-  <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
   <button class="corner-btn" id="open-methodology" title="Where the data comes from and how each step works">&#128506;&#65039; How this map is made</button>
-  <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
   <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
   <button class="corner-btn" id="theme-toggle" title="Switch between light and dark"></button>
 </div>
@@ -1196,6 +1234,7 @@
         <div class="rsp-statbox">
           <div class="rsp-power" id="inview-power">&ndash;</div>
           <div class="rsp-energy" id="inview-energy">&ndash;</div>
+          <div class="rsp-money" id="inview-money" hidden></div>
         </div>
         <div id="econ-bands-global" style="display:none">
           <div id="econ-bands-all-head"></div>
@@ -1246,7 +1285,6 @@
   </div>
     <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch explainer video</button>
     <div id="econ-row" style="display:flex; gap:6px; align-self:flex-start;">
-      <button class="corner-btn" id="toggle-panel-econ" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
       <button class="corner-btn" id="toggle-money" title="Money mode: each building's net saving a year, as a label on the map" aria-pressed="false" aria-label="Money mode">$</button>
     </div>
 </div>
@@ -3118,7 +3156,7 @@ map.on("load", async () => {
     const sun = SUN_DOCS[pr.sr];
     const r = btEvaluateFor(pr.building_id, (pr.btype || "home") !== "home", {
       lat: (sun && sun !== true && sun.lat) || seasonCurves.lat || -41,
-      lon: map.getCenter().lng, btype: pr.btype, heightM: pr.height_m,
+      lon: buildingLon(pr), btype: pr.btype, heightM: pr.height_m,
       roofM2: pr.facet_area_m2 || 150, kwp, area: pr.sr,
       gen: shape.map(row => row.map(v => v * kwhYear)), seasonDays: null });
     const out = Object.assign(btPanelEcon(r, count), { netYear: r.netYear });
@@ -3171,6 +3209,60 @@ map.on("load", async () => {
   // box. Closed roofs are priced by billEconFor, the same bill model the panel
   // colours use (default household, the area's sunny-side day shape); the open
   // roof shows its card's own figure. Pills from zoom 16, at most 1,500.
+  // ONE ROOF'S NET SAVING, BY THE CARD'S OWN CALCULATION. The panels the map
+  // shows on it (liveFeatures, the same filter the card counts), their own
+  // generation and hourly curve (generationForInner), and the bill model
+  // with the same inputs the card passes (billCtxFor). Until 7 Nov a closed
+  // roof was priced from its density-ladder total on an area-average sunny
+  // day, so 43 Ballarat St read $1,600/yr on the map and $1,700/yr once
+  // opened. A roof whose panel tiles are not loaded gets no pill rather than
+  // a different estimate.
+  const moneyCache = new Map();
+  let moneyCacheSig = null;
+  // The household's town (bill_tool.js btEmiRegion) from the region's
+  // sunlight model location, so it never depends on where the map is panned.
+  function buildingLon(pr) {
+    const sun = SUN_DOCS[pr.sr];
+    return (sun && sun !== true && sun.lon != null) ? sun.lon : map.getCenter().lng;
+  }
+  function billCtxFor(pr, m) {
+    const c = m && m.curve;
+    const sun = SUN_DOCS[pr.sr];
+    return {
+      lat: (sun && sun !== true && sun.lat) || (seasonCurves && seasonCurves.lat) || -41,
+      lon: buildingLon(pr),
+      btype: pr.btype, heightM: pr.height_m, area: pr.sr,
+      roofM2: pr.facet_area_m2 || 150,
+      kwp: m.kwp.value, kwpNode: m.kwp, genNode: m.gen,
+      gen: c ? BT_SEASONS.map(n => c.gen[c.seasons.indexOf(n)] || new Array(24).fill(0)) : null,
+      seasonDays: c ? BT_SEASONS.map(n => c.seasonDays[c.seasons.indexOf(n)]) : null,
+    };
+  }
+  function roofMoney(pr) {
+    const id = pr.building_id;
+    const F = liveFeatures(id);
+    if (mode === "layout" && !F.panelCount) return null;
+    let saved = null;
+    try { saved = localStorage.getItem(btStoreKey(id)); } catch (err) { saved = null; }
+    const sig = JSON.stringify([econ, assumptions, mode, coveragePct]);
+    if (sig !== moneyCacheSig) { moneyCache.clear(); moneyCacheSig = sig; }
+    const orders = F.panels.map(p => p.q.fill_order).sort((a, b) => a - b).join(",");
+    const key = `${id}|${orders}|${saved || ""}|${SUN_DOCS[pr.sr] ? 1 : 0}`;
+    if (moneyCache.has(key)) return moneyCache.get(key);
+    const m = generationForInner(id, pr);
+    if (!m || !m.curve || !(m.kwp.value > 0)) return null;
+    // home or business by the card's own default rule (renderBillTool's isBusiness)
+    const biz = pr.btype ? pr.btype !== "home" : isBusiness(m.kwp.value, pr.facet_area_m2, pr.zone_class);
+    const r = btEvaluateFor(id, biz, billCtxFor(pr, m));
+    const net = r.netShown;
+    if (moneyCache.size > 20000) moneyCache.clear();
+    moneyCache.set(key, net);
+    return net;
+  }
+  window.__roofMoney = id => {
+    const f = map.queryRenderedFeatures({ layers: ["buildings-fill"] }).find(x => x.properties.building_id === id);
+    return f ? roofMoney(f.properties) : null;
+  };
   let moneyMode = false, moneyOpen = null;
   const MONEY_MIN_ZOOM = 16, MONEY_MAX_PILLS = 1500;
   // HTML markers, not a symbol layer: the map style loads no glyphs, and a
@@ -3192,16 +3284,28 @@ map.on("load", async () => {
         if (seen.has(id) || feats.length >= MONEY_MAX_PILLS) continue;
         seen.add(id);
         if (btypesOff.has(pr.btype || "home")) continue;
+        // the open roof shows its card's own figure; every other roof is
+        // priced by roofMoney, the card's own calculation
         let net = null;
         if (moneyOpen && moneyOpen.buildingId === id) net = moneyOpen.netYear;
-        else {
-          const count = Math.round(decileInterp(pr, "fill_panels", pctForBuilding(pr)));
-          const kwhYear = count > 0 ? decileInterp(pr, "fill_kwh", pctForBuilding(pr)) * bakedKwhScale() : 0;
-          const o = kwhYear > 0 ? billEconFor(pr, count, kwhYear) : null;
-          net = o ? o.netYear : null;
-        }
+        else net = roofMoney(pr);
         if (net == null || !Number.isFinite(net)) continue;
         feats.push({ at: ringCentre(f.geometry), net });
+      }
+    }
+    // THE AREA'S TOTAL: the pills on screen added up, each as its pill shows
+    // it (netShown is already rounded), so the total is the sum of what is
+    // on the map and nothing else
+    const tot = document.getElementById("inview-money");
+    if (tot) {
+      tot.hidden = false;
+      if (map.getZoom() < MONEY_MIN_ZOOM) tot.innerHTML = `<span class="rm-l">Zoom in to add up the savings</span>`;
+      else {
+        const sum = feats.reduce((t, x) => t + x.net, 0);
+        tot.classList.toggle("neg", sum < 0);
+        tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
+          `<span class="rm-l">net savings, the ${feats.length.toLocaleString()} roof${feats.length === 1 ? "" : "s"} labelled` +
+          `${feats.length >= MONEY_MAX_PILLS ? " (the first " + MONEY_MAX_PILLS.toLocaleString() + ")" : ""}</span>`;
       }
     }
     moneyMarkers.forEach(m => m.remove());
@@ -3219,11 +3323,15 @@ map.on("load", async () => {
     moneyMode = on;
     const b = document.getElementById("toggle-money");
     b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
-    if (on) refreshMoneyPills();
-    else { moneyMarkers.forEach(m => m.remove()); moneyMarkers = []; }
+    if (on) { refreshMoneyPills(); map.once("idle", refreshMoneyPills); }
+    else {
+      moneyMarkers.forEach(m => m.remove()); moneyMarkers = [];
+      const tot = document.getElementById("inview-money"); if (tot) tot.hidden = true;
+    }
   }
   document.getElementById("toggle-money").addEventListener("click", () => setMoneyMode(!moneyMode));
-  map.on("moveend", () => { if (moneyMode) refreshMoneyPills(); });
+  // after a move, once the panel tiles have loaded (roofMoney reads them)
+  map.on("moveend", () => { if (moneyMode) map.once("idle", refreshMoneyPills); });
   window.__refreshMoneyPills = () => { if (moneyMode) refreshMoneyPills(); };
 
   // What the roof looks like once bands are switched off. Hiding the red
@@ -3462,12 +3570,9 @@ map.on("load", async () => {
     const mp = document.getElementById("m-all-power");
     if (mp) { mp.textContent = fmtPower(kwp); document.getElementById("m-all-energy").textContent = fmtEnergy(kwhYear); }
 
-    // Economics are deliberately NOT shown here, only on the individual
-    // building panel. A district-wide dollar figure invites being read
-    // as a forecast for the town, which it is not -- it assumes every single
-    // roof gets built. Per building it is a question someone can actually act
-    // on. The whole per-building loop that summed it is gone with it rather
-    // than being hidden, since it ran on every recompute.
+    // Dollars appear here only in money mode, as the sum of the pills on
+    // screen (refreshMoneyPills writes #inview-money): it says what it adds
+    // up -- the roofs labelled -- not a forecast for the town.
   }
 
   // Heat Map mode shows a short ladder of coverage options instead of a slider.
@@ -4381,7 +4486,11 @@ map.on("load", async () => {
     try {
       const saved = JSON.parse(localStorage.getItem(USER_KEY) || "null");
       if (saved && saved.gen) { Object.assign(assumptions, saved.gen); window.__assumptionsEdited = true; }
-      window.__savedEcon = (saved && saved.econ) || {};   // applied when the prices load, below
+      // applied when the prices load, below. Only values of the default's
+      // own kind come back: a number saved as null (a cleared box) or a
+      // retired key would otherwise set a price to 0 or nonsense.
+      window.__savedEcon = Object.fromEntries(Object.entries((saved && saved.econ) || {}).filter(([k, v]) =>
+        k in ECON_DEFAULTS && (typeof ECON_DEFAULTS[k] === "number" ? Number.isFinite(v) : v != null && typeof v === typeof ECON_DEFAULTS[k])));
     } catch (e) { /* nothing saved */ }
     ["a-w", "a-eff", "a-inv", "a-loss"].forEach(id =>
       el(id).addEventListener("input", () => { applyAssumptions(); saveUser(); }));
@@ -4403,6 +4512,7 @@ map.on("load", async () => {
         afterAssumptions();
         saveUser();
       } else if (kind === "econ") {
+        if (!Number.isFinite(v)) return;
         econ[k] = v;
         if (window.__applyEcon) window.__applyEcon();
         saveUser();
@@ -4481,6 +4591,9 @@ map.on("load", async () => {
     window.__applyEcon = (...a) => { applyEcon(...a); if (window.__saveUserAssumptions) window.__saveUserAssumptions(); };
     const bindEcon = (id, keys, parse) => el(id).addEventListener("input", e => {
       const v = parse(e.target.value);
+      // a cleared box reads NaN: keep the price it had (a NaN saved as null
+      // came back as a price of 0)
+      if (!Number.isFinite(v)) return;
       [].concat(keys).forEach(k => { econ[k] = v; });
       applyEcon();
     });
@@ -5191,6 +5304,8 @@ map.on("load", async () => {
       .then(doc => {
         SUN_DOCS[region] = doc || false;
         if (doc && selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
+        // money pills wait for their region's sunlight (roofMoney)
+        if (doc && window.__refreshMoneyPills) window.__refreshMoneyPills();
       })
       // a network blip: forget it so the next open retries (a 404 above stays false)
       .catch(() => { delete SUN_DOCS[region]; });
@@ -5520,7 +5635,7 @@ map.on("load", async () => {
                                     : isBusiness(kwp, props.facet_area_m2, props.zone_class),
             lat: (GEN && GEN.curve && SUN_DOCS[props.sr] && SUN_DOCS[props.sr].lat) || (seasonCurves && seasonCurves.lat) || -41,
             // the town whose metered load shapes the household's day (bill_tool.js btEmiRegion)
-            lon: map.getCenter().lng,
+            lon: buildingLon(props),
             // what a non-home uses per m2 of floor, and its storeys (bill_tool.js BT_BIZ_KWH_M2)
             btype: props.btype, heightM: props.height_m,
             // its own area's power prices (economics.js homePricesFor)
@@ -5548,6 +5663,17 @@ map.on("load", async () => {
               window.__billLoad = { buildingId, cal: r.cal, load: r.load };
               // money mode labels the open roof with its card's own figure
               moneyOpen = { buildingId, netYear: r.netShown };
+              // THE PILL MUST MATCH THE CARD. Priced again as a closed roof
+              // (roofMoney); a difference is logged and kept for
+              // tools/money_check.js, which fails on it.
+              if (selectedIds.length <= 1 && !liveFeatures(buildingId).edited) {
+                moneyCache.clear();
+                const closed = roofMoney(props);
+                window.__moneyCheck = { buildingId, card: r.netShown, pill: closed };
+                if (closed != null && Math.abs(closed - r.netShown) > 0.5) {
+                  console.error(`[money] #${buildingId}: card ${r.netShown}, map ${closed}`);
+                }
+              }
               if (moneyMode) refreshMoneyPills();
               settleBldgSys(buildingId, panelEconOpen, btType ? btType === "business"
                 : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)),
@@ -6678,10 +6804,10 @@ map.on("load", async () => {
     if (inview && dash.previousElementSibling !== inview) {
       inview.insertAdjacentElement("afterend", dash);
     }
-    // ...with the panel economics switch straight under it (Josh, 18 Oct)
-    // (moved with its row, so the money-mode button stays beside it)
-    var pe = document.getElementById("toggle-panel-econ");
-    if (pe) dash.insertAdjacentElement("afterend", pe.parentElement.id === "econ-row" ? pe.parentElement : pe);
+    // ...with the money-mode row straight under it (panel economics is in
+    // the Advanced menu)
+    var er = document.getElementById("econ-row");
+    if (er) dash.insertAdjacentElement("afterend", er);
     dash.style.display = ""; dash.addEventListener("click", open);
   }
   function open() {

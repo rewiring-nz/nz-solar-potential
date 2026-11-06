@@ -378,7 +378,15 @@ figure for the same thing. Code enforces this:
   by hand (panel kWh, packing, slope, loan, rounding, an hour of solar).
   Browser checks, run on the page before a front-end release:
   `tools/contrast_check.js`, `tools/overflow_check.js`, `tools/econ_check.js`,
-  `tools/text_check.js` (no "undefined"/"NaN" or "Doesn't add up" on screen).
+  `tools/text_check.js` (no "undefined"/"NaN" or "Doesn't add up" on screen),
+  `tools/money_check.js` (a roof's money pill equals its card's figure).
+- The card's green box and the money pills show the net saving of an
+  average year over the loan, in today's dollars: the mean of btReturns'
+  yearly savings less the fixed repayment deflated by `econ.cpi_pct`
+  (`bill_tool.js` btEvaluate `avgOver`). A closed roof is priced by
+  `roofMoney` in `rooftop-solar.html`, the card's own calculation on the
+  panels the map shows; a roof without loaded panel tiles gets no pill.
+  The map's battery price is `BATTERY_DEFAULTS.cost_per_kwh` ($900/kWh).
 - `wholesale.html` (script `wholesale.js`) shows historic wholesale prices
   at FKN0331 (Frankton), CML0331 (Cromwell) and BEN2201 (Benmore): averages
   over sunlight hours (sun above a flat horizon, pvlib), peak (`economics.js`
