@@ -73,6 +73,31 @@ c("peak is twice off-peak, to the cent", RP.peak_ratio, Math.round(q.peak_c / q.
   c("every served area with its own region names a region that exists", true,
     Object.values(site.priceRegionByArea).every(k => RP.regions[k]), "site-config.js against regional_prices.js");
 }
+{
+  // the plan switch: time of use by default; a flat plan is one price all day
+  const fs = require("node:fs"), vm = require("node:vm");
+  const box = { window: {} };
+  vm.runInNewContext(fs.readFileSync(new URL("../site-config.js", import.meta.url), "utf8"), box);
+  globalThis.window = { SITE: box.window.SITE };
+  globalThis.REGIONAL_PRICES = RP;
+  globalThis.homePricesFor = E.homePricesFor;
+  c("the default plan is time of use", "tou", E.ECON_DEFAULTS.plan, "economics.js ECON_DEFAULTS.plan");
+  const econ0 = globalThis.econ;
+  globalThis.econ = Object.assign({}, econ0, { plan: "flat" });
+  const qt = B.btTariffFromEcon(false, "town_south_lake"), wt = B.btTariffFromEcon(false, "wanaka_town");
+  c("flat plan, Queenstown home: one price all day", "34/34", `${qt.peak}/${qt.offpeak}`, `the EA's ${RP.regions[34].variable_c}c to the cent`);
+  c("flat plan, Wanaka home", "41/41", `${wt.peak}/${wt.offpeak}`, `Central Otago's ${RP.regions[35].variable_c}c to the cent`);
+  const ctx0 = { lat: -45.03, roofM2: 150, kwp: 0, gen: null };
+  const homeP = Object.assign({ type: "home" }, B.BT_DEFAULTS.home);
+  const flatBill = B.btEvaluate(ctx0, homeP, null, qt, null).nodes.nowBill;
+  globalThis.econ = Object.assign({}, econ0, { plan: "tou" });
+  const touBill = B.btEvaluate(ctx0, homeP, null, B.btTariffFromEcon(false, "town_south_lake"), null).nodes.nowBill.value;
+  c("no solar: about the same yearly bill on either plan", true, Math.abs(flatBill.value / touBill - 1) < 0.02,
+    `flat $${Math.round(flatBill.value)} vs time of use $${Math.round(touBill)}: the split keeps a typical home's average`);
+  c("the flat plan's workings add up", true, Wk.verify(flatBill).ok, "every step recomputes");
+  globalThis.econ = econ0;
+  delete globalThis.REGIONAL_PRICES;
+}
 c("solar export starts at 12c a kWh", "12/12", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
   "Powerswitch retailer buy-back rates");
 c("the prices are no more than eight months old", true,

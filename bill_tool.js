@@ -352,6 +352,10 @@ function btPriceNodes(tariff) {
       edit: t.pfx ? { key: `econ:${t.pfx}_daily`, scale: 1, unit: "$/day", step: 0.1, dp: 2 } : null }),
     month: btIn("Days in a typical month", BT_MONTH_DAYS, "days", { dp: 1, note: "365 ÷ 12." }),
   };
+  // a flat plan is one price: one node, used for every hour
+  if (t && t.flat) {
+    P.peak = P.off = btIn("Price (flat plan)", t.peak / 100, "$/kWh", { dp: 3, source: src, edit: ed("buy_c") });
+  }
   P.buyAt = h => btIsPeak(h) ? P.peak.value : P.off.value;
   P.sellAt = h => btIsPeak(h) ? P.peakSell.value : P.offSell.value;
   return P;
@@ -820,7 +824,7 @@ function btYearCsv(year) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btYearCsv, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown };
+                     btYearHours, btYearCsv, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -1179,6 +1183,12 @@ function btTariffFromEcon(isBiz, area) {
               offpeakSell: E[p + "_offpeak_sell_c"], daily: E[p + "_daily"], pfx: p };
   const r = !isBiz && typeof homePricesFor === "function" ? homePricesFor(area) : null;
   if (r) Object.assign(t, { peak: r.peak_c, offpeak: r.offpeak_c, daily: r.daily, source: r.source });
+  // A FLAT PLAN: one price all day -- the area's EA price to the cent for a
+  // home, else the map's flat price (home_buy_c / biz_buy_c)
+  if (E.plan === "flat") {
+    const flat = r ? r.flat_c : E[p + "_buy_c"];
+    Object.assign(t, { peak: flat, offpeak: flat, flat: true });
+  }
   return t;
 }
 
@@ -1299,13 +1309,15 @@ function renderBillTool(box, ctx) {
     // the prices THIS building is priced at: its area's EA prices for a home
     // (btTariffFromEcon), else the map's set
     const shown = key => key.endsWith("_peak_c") ? tariff.peak : key.endsWith("_offpeak_c") ? tariff.offpeak
-      : key.endsWith("_daily") ? tariff.daily : E[key];
+      : key.endsWith("_buy_c") ? tariff.peak : key.endsWith("_daily") ? tariff.daily : E[key];
     const price = (label, key) => row(label, field(key, +(shown(key) || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
     const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
     // a payback after the panels' life is no payback
     const pbText = ret.payback == null || ret.payback > ret.years ? `over ${ret.years} yrs · doesn't pay back` : `over ${ret.years} yrs · pays back in ${ret.payback.toFixed(1)}`;
-    const priceSum = `${(shown(pfx + "_peak_c") || 0)}c peak · ${(shown(pfx + "_offpeak_c") || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
+    const priceSum = tariff.flat
+      ? `${(tariff.peak || 0)}c flat · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`
+      : `${(shown(pfx + "_peak_c") || 0)}c peak · ${(shown(pfx + "_offpeak_c") || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
     const SX_SPLIT = "<!--sx-split-->";
     // A day in each season (the next layer down from the card)
@@ -1396,12 +1408,13 @@ function renderBillTool(box, ctx) {
       `<div class="sx-h">Assumptions</div>` +
       `<div class="sx-sub">Electricity prices</div>` +
       `<div class="sx-group">` +
-        price("Peak", pfx + "_peak_c") +
-        price("Off-peak", pfx + "_offpeak_c") +
+        row("Plan", seg("plan", [["tou", "Time of use"], ["flat", "Flat"]], tariff.flat ? "flat" : "tou", "Electricity plan")) +
+        (tariff.flat ? price("Price", pfx + "_buy_c")
+                     : price("Peak", pfx + "_peak_c") + price("Off-peak", pfx + "_offpeak_c")) +
         price("Export, off-peak", pfx + "_offpeak_sell_c") +
         price("Export, peak", pfx + "_peak_sell_c") +
         row("Daily charge", field("daily", +(shown(pfx + "_daily") || 0).toFixed(2), `min="0" step="0.1" data-econ="${pfx}_daily"`, "$", "/day")) +
-        btPeakHours().map(([a, b], i) => {
+        (tariff.flat ? [] : btPeakHours()).map(([a, b], i) => {
           const lo = i === 0 ? 4 : 12, hi = i === 0 ? 13 : 24;
           return `<div class="sx-row sx-peak"><span class="lbl">${i === 0 ? "Morning peak" : "Evening peak"}<small data-peak-label="${i}">${hours([a, b])}</small></span>` +
             `<div class="sx-range" style="--lo:${(a - lo) / (hi - lo) * 100}%;--hi:${(b - lo) / (hi - lo) * 100}%">` +
@@ -1410,7 +1423,7 @@ function renderBillTool(box, ctx) {
             `</div></div>`;
         }).join("") +
       `</div>` +
-      `<div class="sx-foot">Including GST. Peak prices apply ${btPeakHours().map(hours).join(" and ")}. ${isBiz ? "Business" : "Home"} prices, used across the map.</div>` +
+      `<div class="sx-foot">Including GST. ${tariff.flat ? "One price all day." : `Peak prices apply ${btPeakHours().map(hours).join(" and ")}.`} ${isBiz ? "Business" : "Home"} prices, used across the map.</div>` +
       `<details class="sx-dis" id="bt-adv-price"><summary><span class="t">Prices over the years</span>` +
         `<span class="sum">${E.real_prices ? "today's dollars" : "nominal"} · power +${E.elec_inflation_pct}%/yr</span></summary>` +
         `<div class="sx-group">` +
@@ -1569,6 +1582,7 @@ function renderBillTool(box, ctx) {
         return;
       }
       if (k === "real") { econ.real_prices = v === "1"; if (ctx.onEcon) ctx.onEcon(); else redraw(); return; }
+      if (k === "plan") { econ.plan = v; if (ctx.onEcon) ctx.onEcon(); else redraw(); return; }
       if (k === "type") state.type = v;
       else (state.type === "business" ? state.business : state.home)[k] = (k === "evs" || k === "battery") ? +v : v;
       save(); redraw(`.sx-seg[data-key="${k}"] button[data-v="${v}"]`);

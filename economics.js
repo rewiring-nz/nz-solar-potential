@@ -36,6 +36,9 @@ const ECON_DEFAULTS = {
   // rates, powerswitch.org.nz/solar-rates), falling by export_decline_pct.
   // home peak is twice off-peak: a Queenstown time-of-use plan in Nov 2026
   // was 55c : 25c (2.2); 34c : 26c (1.31) was far flatter than real plans.
+  // THE PLAN: "tou" (peak and off-peak, the default) or "flat" (one price all
+  // day: home_buy_c / biz_buy_c). Switched on a building's card, map-wide.
+  plan: "tou",
   home_peak_c: 50, home_offpeak_c: 25, home_peak_sell_c: 12, home_offpeak_sell_c: 12, home_daily: 2.5,
   biz_peak_c: 19,  biz_offpeak_c: 14,  biz_peak_sell_c: 12,  biz_offpeak_sell_c: 12,  biz_daily: 8.0,
   // [from, to) hours of the day that are peak: 7-10am and 6-9pm (Josh,
@@ -143,6 +146,7 @@ function applyRegionalPrices(defaults, prices, code) {
   defaults.home_peak_c = r.peak_c;
   defaults.home_offpeak_c = r.offpeak_c;
   defaults.home_daily = r.daily;
+  defaults.home_buy_c = Math.round(r.variable_c);   // the flat plan: the EA price to the cent
   defaults.price_source = priceSourceText(r);
   return r;
 }
@@ -166,12 +170,12 @@ function homePricesFor(area, opts) {
   const e = o.econ || (typeof econ !== "undefined" ? econ : null);
   if (!prices || !site) return null;
   if (e && (e.home_peak_c !== ECON_DEFAULTS.home_peak_c || e.home_offpeak_c !== ECON_DEFAULTS.home_offpeak_c
-            || e.home_daily !== ECON_DEFAULTS.home_daily)) return null;
+            || e.home_daily !== ECON_DEFAULTS.home_daily || e.home_buy_c !== ECON_DEFAULTS.home_buy_c)) return null;
   const byArea = site.priceRegionByArea || {};
   const code = area != null && byArea[area] != null ? byArea[area] : site.priceRegion;
   const r = code != null ? prices.regions[code] : null;
   return r ? { code: +code, name: r.name, peak_c: r.peak_c, offpeak_c: r.offpeak_c, daily: r.daily,
-               source: priceSourceText(r) } : null;
+               flat_c: Math.round(r.variable_c), source: priceSourceText(r) } : null;
 }
 let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
 econ.cost_tiers[4].max_kw = Infinity;   // JSON round-trip turns Infinity into null
