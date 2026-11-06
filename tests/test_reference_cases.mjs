@@ -107,7 +107,8 @@ c("a business pays energy prices: 17c peak, 10c off-peak, no daily charge", "17/
   c("a business's flat price", Math.round(share * 17 + (1 - share) * 10), E.ECON_DEFAULTS.biz_buy_c,
     `${(share * 100).toFixed(0)}% of a typical business's use in peak hours: ${share.toFixed(2)} × 17c + ${(1 - share).toFixed(2)} × 10c`);
 }
-c("solar export: 12c in the day, 20c at peak", "12/20", `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c}`,
+c("home export: 12c in the day, 23c at peak; business 12c and 15c", "12/23 12/15",
+  `${E.ECON_DEFAULTS.home_offpeak_sell_c}/${E.ECON_DEFAULTS.home_peak_sell_c} ${E.ECON_DEFAULTS.biz_offpeak_sell_c}/${E.ECON_DEFAULTS.biz_peak_sell_c}`,
   "2026 retailer buy-back rates (peak 20-23c, otherwise 10-12c)");
 {
   const keep = globalThis.econ;
