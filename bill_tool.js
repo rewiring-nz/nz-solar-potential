@@ -676,7 +676,8 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
         edit: { key: "sys:solarPerKw", scale: 1, unit: "$/kW", step: 50, dp: 0 } })
     : Wk.given("Solar cost per kW, for a system this size", typeof costPerKw === "function" ? costPerKw(kwpN.value) : 2000, "$/kW",
       [kwpN], { formula: typeof econ !== "undefined"
-        ? econ.cost_tiers.map(t => `${t.label}: $${t.rate.toLocaleString()}/kW`).join("; ") : "flat $2,000/kW",
+        ? "a smooth curve through the size bands, each band's rate at its middle: " +
+          econ.cost_tiers.map(t => `${t.label} $${t.rate.toLocaleString()}/kW`).join("; ") : "flat $2,000/kW",
         source: "Typical NZ installed prices, including GST.",
         check: v => typeof costPerKw === "function" ? costPerKw(v[0]) : 2000 });
   const solarCostN = Wk.product("Solar costs", "$", [kwpN, rate]);

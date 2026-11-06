@@ -3109,9 +3109,14 @@ map.on("load", async () => {
     }
     const pairs = [], merit = new Map();
     inViewBuildingProps().forEach(pr => {
-      const count = Math.round(decileInterp(pr, "fill_panels", pctForBuilding(pr)));
+      // PRICED AT THE ROOF'S FULL LAYOUT, never at the size on screen: a
+      // panel's colour says whether that panel pays for itself, which does not
+      // depend on how many others the slider shows. Priced at the shown size,
+      // a panel turned from yellow to green as the slider moved (3/23 Adelaide
+      // St: $900 a panel at 21 kW, $750 at 35.5 kW).
+      const count = Math.round(decileInterp(pr, "fill_panels", 100));
       if (!(count > 0)) return;
-      const kwhYear = decileInterp(pr, "fill_kwh", pctForBuilding(pr)) * bakedKwhScale();
+      const kwhYear = decileInterp(pr, "fill_kwh", 100) * bakedKwhScale();
       if (!(kwhYear > 0)) return;
       // Merit order: panels are laid sunniest-first and the site's own use is
       // met by the first ones, so those earn the retail price and the rest
@@ -3130,6 +3135,8 @@ map.on("load", async () => {
       if (i >= 0 && i % 2 === 0) pairs[i + 1] = o.costPerPanel / Math.max(o.perKwh, 1e-9);
     }
     panelEconMerit = merit;
+    // read-only, for tools/econ_check.js: a roof's colour pricing
+    window.__econMeritFor = id => { const m = panelEconMerit && panelEconMerit.get(id); return m ? Object.assign({}, m) : null; };
     panelEconMatch = pairs.length
       ? ["match", ["get", "building_id"], ...pairs, PANEL_ECON_FALLBACK_KWH]
       : null;
@@ -5491,11 +5498,12 @@ map.on("load", async () => {
             // the per-panel payback colours price panels with these same figures
             onResult: r => {
               e = { cost: r.solarCost, lifetime: r.solarRet.lifetime };
-              // THIS roof's panel colours are priced from the same figures
-              // the panel shows: cost per panel from the system cost, and
-              // the lifetime value of a kWh used on site vs exported from
-              // the bill model's own lifetime split.
-              const pe = isLayout ? btPanelEcon(r, count) : null;
+              // THIS roof's panel colours: the same full-layout pricing as every
+              // other roof (rebuildEconMatch, billEconFor), so neither the
+              // slider nor opening the roof changes them.
+              const fullN = Math.round(decileInterp(props, "fill_panels", 100));
+              const fullKwh = decileInterp(props, "fill_kwh", 100) * bakedKwhScale();
+              const pe = isLayout && fullN > 0 && fullKwh > 0 ? billEconFor(props, fullN, fullKwh) : null;
               panelEconOpen = pe ? Object.assign({ buildingId }, pe) : null;
               // home or business as the bill tool has it (the reader can switch it there)
               const btType = (btLoadState(buildingId) || {}).type;

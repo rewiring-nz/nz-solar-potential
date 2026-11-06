@@ -111,15 +111,26 @@ check("payback under the system life implies a net gain", () => {
   }
 });
 
-check("cost follows the size bands", () => {
-  close(E.costPerKw(2), 3000, 0, "under 3 kW");
-  close(E.costPerKw(5), 2300, 0, "3-8 kW");
-  close(E.costPerKw(11.4), 1800, 0, "8-25 kW");
-  close(E.costPerKw(30), 1500, 0, "25-50 kW");
+check("each tier's rate holds at the middle of its band", () => {
+  const A = E.costAnchors();
+  close(E.costPerKw(A[0][0]), 3000, 1e-9, "under 3 kW");
+  close(E.costPerKw(A[1][0]), 2300, 1e-9, "3-8 kW");
+  close(E.costPerKw(A[2][0]), 1800, 1e-9, "8-25 kW");
+  close(E.costPerKw(A[3][0]), 1500, 1e-9, "25-50 kW");
   close(E.costPerKw(200), 1200, 0, "over 50 kW");
   // No gap: every size must price.
   for (let kw = 0.5; kw < 300; kw += 0.5) {
     assert(E.costPerKw(kw) > 0, `no rate at ${kw} kW`);
+  }
+});
+
+check("adding panels never lowers the total cost", () => {
+  // the stepped tiers did: 25 kW cost $45,000, 25.5 kW $38,250
+  let prev = 0;
+  for (let kw = 0.5; kw <= 200; kw += 0.5) {
+    const c = E.systemCost(kw);
+    assert(c > prev, `cost falls at ${kw} kW: ${c.toFixed(0)} after ${prev.toFixed(0)}`);
+    prev = c;
   }
 });
 

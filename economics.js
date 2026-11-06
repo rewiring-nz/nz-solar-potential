@@ -127,9 +127,32 @@ const THIS_YEAR = new Date().getFullYear();
 let econ = JSON.parse(JSON.stringify(ECON_DEFAULTS));
 econ.cost_tiers[4].max_kw = Infinity;   // JSON round-trip turns Infinity into null
 
+// THE PRICE PER kW IS A SMOOTH CURVE THROUGH THE TIERS, not a step per tier.
+// Applied to the whole system, a step made the total cost FALL as panels
+// were added (25 kW at $1,800/kW = $45,000; 25.5 kW at $1,500/kW = $38,250),
+// and a panel's cost jumped with the slider. Each tier's rate now sits at the
+// middle of its band (geometric middle; the open-ended ends at two-thirds of
+// the first band's top and 1.4x the last band's start), joined by straight
+// lines and flat beyond the ends. With the default tiers the total cost rises
+// with every kW (tests/test_economics.mjs checks 0-200 kW).
+function costAnchors() {
+  const t = econ.cost_tiers;
+  return t.map((x, i) => {
+    const lo = i ? t[i - 1].max_kw : 0, hi = x.max_kw;
+    const kw = lo === 0 ? hi * 2 / 3 : !Number.isFinite(hi) ? lo * 1.4 : Math.sqrt(lo * hi);
+    return [kw, x.rate];
+  });
+}
 function costPerKw(kwp) {
-  for (const t of econ.cost_tiers) if (kwp < t.max_kw) return t.rate;
-  return econ.cost_tiers[econ.cost_tiers.length - 1].rate;
+  const a = costAnchors();
+  if (kwp <= a[0][0]) return a[0][1];
+  for (let i = 1; i < a.length; i++) {
+    if (kwp <= a[i][0]) {
+      const [k0, r0] = a[i - 1], [k1, r1] = a[i];
+      return r0 + (r1 - r0) * (kwp - k0) / (k1 - k0);
+    }
+  }
+  return a[a.length - 1][1];
 }
 function systemCost(kwp) { return kwp * costPerKw(kwp); }
 
@@ -267,7 +290,7 @@ function economicsFor(kwp, kwhYear, roofM2, override) {
 }
 // Node (tests) and browser (preview.html) both, without a build step.
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { ECON_DEFAULTS, SELF_PROFILES, costPerKw, systemCost,
+  module.exports = { costAnchors, ECON_DEFAULTS, SELF_PROFILES, costPerKw, systemCost,
                      isBusiness, sellRate, economicsFor, setEcon: e => { econ = e; },
                      getEcon: () => econ };
 }
