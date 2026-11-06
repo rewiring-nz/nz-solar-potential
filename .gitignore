@@ -6,6 +6,9 @@ data/*
 # the flagged roofs: tracked, never ignored
 # the drawn lines as a map overlay -- see tools/build_markup_lines.py
 !data/roof_cases.json
+# LINZ's own metadata for every layer config names (tools/fetch_source_metadata.py),
+# read by the methodology diagram
+!data/source_metadata.json
 # 3D terrain: the DSM as Mapbox terrain-RGB tiles, served straight off Pages
 
 # The current pipeline publishes map data to the versioned tiles bucket, not

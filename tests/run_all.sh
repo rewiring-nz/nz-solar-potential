@@ -102,6 +102,7 @@ run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py
 run "diagram vs code"       $PY tools/check_diagram.py
+run "methodology vs code"   $PY tests/test_methodology.py
 if [ $FAST -eq 0 ]; then
   run "synthetic region"    $PY tests/synthetic/run.py
   run "golden buildings"    $PY -W ignore tests/test_golden.py

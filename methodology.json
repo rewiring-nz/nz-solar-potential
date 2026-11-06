@@ -1,0 +1,694 @@
+{
+ "intro": "How each roof's estimate is made, from the data sources to the money. Tap a step for more, and Details for the figures and the code behind them.",
+ "steps": [
+  {
+   "title": "Build the 3D landscape",
+   "icon": "🛰️",
+   "summary": "Building outlines, a laser scan of every roof and tree, and aerial photos, all from LINZ.",
+   "items": [
+    {
+     "title": "Which buildings exist",
+     "text": "Every building outline in an area comes from LINZ's NZ Building Outlines, picked by the suburb, town and council LINZ records on each outline.",
+     "facts": [],
+     "code": [
+      "src/linz_exports.py",
+      "src/localities.py"
+     ],
+     "stages": [
+      "fetch:src/fetch_regions.py"
+     ]
+    },
+    {
+     "title": "A laser scan of the roofs",
+     "text": "LINZ's LiDAR survey for the area: the raw point cloud (from OpenTopography's copy) where it has been published, and LINZ's surface model otherwise. Only points classed as building are used for roofs. The ground model and surface model give trees, neighbours and hills.",
+     "facts": [],
+     "code": [
+      "src/fetch_pointcloud_regions.py::tilename_to_filename",
+      "src/pointcloud_source.py::PointCloudSource",
+      "src/fetch_data.py::fetch_raster"
+     ],
+     "stages": [
+      "fetch:src/fetch_regions.py",
+      "fetch:src/fetch_pointcloud_regions.py"
+     ]
+    },
+    {
+     "title": "Distant hills",
+     "text": "LINZ's national elevation model, out past the area, for hills on the horizon.",
+     "facts": [],
+     "code": [
+      "src/fetch_dem_wide.py"
+     ],
+     "stages": [
+      "fetch:src/fetch_dem_wide.py"
+     ]
+    },
+    {
+     "title": "Aerial photos",
+     "text": "LINZ aerial photos, the newest that cover the area, for roof lines and objects on roofs. The map itself shows LINZ Basemaps' photo.",
+     "facts": [],
+     "code": [
+      "src/fetch_regions.py"
+     ],
+     "stages": [
+      "fetch:src/fetch_regions.py"
+     ]
+    },
+    {
+     "title": "Places with no laser scan",
+     "text": "Where no LiDAR survey exists, roofs are modelled from the outline: a gable or hipped roof at 20° for houses and flat for large buildings. Every such building says so on the map.",
+     "facts": [
+      {
+       "label": "Assumed pitch",
+       "value": "20°",
+       "source": "config.PHOTO_ONLY_PITCH_DEG"
+      }
+     ],
+     "code": [
+      "src/synthesize_dsm.py"
+     ],
+     "stages": [
+      "fetch:src/synthesize_dsm.py"
+     ]
+    },
+    {
+     "title": "Lining the data up",
+     "text": "The photo and the scan were taken in different years and lean differently. Each roof's lean is measured by matching the photos (up to 4 m), and an outline that sits off the scanned roof is slid onto it (up to 2 m) without changing its shape.",
+     "facts": [
+      {
+       "label": "Largest lean looked for",
+       "value": "4 m",
+       "source": "src/register_imagery.py SEARCH_M"
+      },
+      {
+       "label": "Largest outline slide",
+       "value": "2 m",
+       "source": "src/outline_fit.py SHIFT_MAX_M"
+      }
+     ],
+     "code": [
+      "src/register_imagery.py",
+      "src/outline_fit.py"
+     ],
+     "stages": [
+      "register_imagery",
+      "outline_fit"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Read each roof",
+   "icon": "🏠",
+   "summary": "Find the roof's faces, their slope and direction, and anything on them.",
+   "items": [
+    {
+     "title": "Four readings of the roof",
+     "text": "Each roof is read four ways: an image model that outlines shapes in the photo, a model trained on hand-drawn roof lines, the laser scan's flat regions, and the simplest roof form that fits. Each reading is scored on how well its edges match the lines in the photo and how well its faces fit the scan, and the best is kept.",
+     "facts": [],
+     "code": [
+      "tools/predict_faces.py",
+      "src/face_candidates.py::score_candidate"
+     ],
+     "stages": [
+      "fetch:tools/predict_faces.py"
+     ]
+    },
+    {
+     "title": "When the reading is doubtful",
+     "text": "A reading scoring under 0.30 is not used. One under 0.60 competes with faces found from the laser scan alone, and the scan's version wins when it explains the roof better or more simply.",
+     "facts": [
+      {
+       "label": "Lowest score used",
+       "value": "0.30",
+       "source": "src/roof_partition.py SELECTED_MIN_SCORE (default)"
+      },
+      {
+       "label": "Score that needs no contest",
+       "value": "0.60",
+       "source": "src/roof_partition.py SELECTED_TRUST (default)"
+      }
+     ],
+     "code": [
+      "src/roof_partition.py::SELECTED_TRUST",
+      "src/roof_segmentation.py"
+     ],
+     "stages": [
+      "build_layout_geojson"
+     ]
+    },
+    {
+     "title": "Hand-drawn roofs come first",
+     "text": "Where a person has drawn a roof's faces and lines, the drawing is used as it is. Identical roofs in a row of houses share the reading that explains the whole set best.",
+     "facts": [],
+     "code": [
+      "src/roof_partition.py::partition_roof",
+      "src/repeat_roofs.py"
+     ],
+     "stages": [
+      "repeat_roofs"
+     ]
+    },
+    {
+     "title": "Slope and direction",
+     "text": "Each face gets a flat plane fitted to its laser points, ignoring points more than 30 cm off it. Faces steeper than 55° are walls, not roof. A roof whose points fit its planes less than 45% of the time gets no panels.",
+     "facts": [
+      {
+       "label": "Steepest roof face",
+       "value": "55°",
+       "source": "config.MAX_ROOF_SLOPE_DEG"
+      },
+      {
+       "label": "Roof must fit its planes",
+       "value": "45%",
+       "source": "src/build_layout_geojson.py MIN_ROOF_CONFIDENCE, as %"
+      }
+     ],
+     "code": [
+      "src/roof_partition.py::_fit_plane_robust",
+      "src/build_layout_geojson.py::MIN_ROOF_CONFIDENCE"
+     ],
+     "stages": [
+      "patch_roof_confidence"
+     ]
+    },
+    {
+     "title": "Objects on the roof",
+     "text": "Vents, skylights, chimneys and plant are found two ways: laser points standing more than 0.4 m off the roof's plane, and patches of the photo that stand out from the roof around them (within 1.2 m). Panels keep clear of both.",
+     "facts": [
+      {
+       "label": "Height off the plane",
+       "value": "0.4 m",
+       "source": "src/obstruction_detection.py HEIGHT_RESIDUAL_THRESHOLD_M"
+      }
+     ],
+     "code": [
+      "src/obstruction_detection.py::detect_obstructions_combined",
+      "src/obstruction_planarity.py"
+     ],
+     "stages": [
+      "build_layout_geojson"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Sunlight",
+   "icon": "☀️",
+   "summary": "How much sun reaches a roof of each slope and direction over a year.",
+   "items": [
+    {
+     "title": "Clear-sky sun, hour by hour",
+     "text": "The sun's path and clear-sky light for every hour of a year, from the pvlib library's Ineichen model.",
+     "facts": [],
+     "code": [
+      "src/solar_model.py::build_poa_lookup_table",
+      "src/solar_model.py~~model=\"ineichen\""
+     ],
+     "stages": []
+    },
+    {
+     "title": "Cloud, from measured records",
+     "text": "Each month is scaled to measured sunlight: NIWA's SolarView record for Queenstown where it applies, else the nearest NIWA radiation station (within 1.5°). Differences across the area come from the ERA5 climate record, held between 0.85 and 1.15 of the measured figure.",
+     "facts": [],
+     "code": [
+      "src/solar_model.py::solarview_calibrated_monthly_factors",
+      "src/solar_model.py::niwa_station_measured_monthly_factors",
+      "src/solar_model.py::era5_spatial_ratio"
+     ],
+     "stages": []
+    },
+    {
+     "title": "Onto a sloped roof",
+     "text": "Sunlight is split into direct and diffuse light (the Erbs method) and turned onto each roof slope and direction with the Perez sky model, in 5° slope by 10° direction steps.",
+     "facts": [
+      {
+       "label": "Slope step",
+       "value": "5°",
+       "source": "src/solar_model.py SLOPE_BIN_DEG"
+      },
+      {
+       "label": "Direction step",
+       "value": "10°",
+       "source": "src/solar_model.py ASPECT_BIN_DEG"
+      }
+     ],
+     "code": [
+      "src/solar_model.py~~irradiance.erbs",
+      "src/solar_model.py~~model=\"perez\""
+     ],
+     "stages": []
+    }
+   ]
+  },
+  {
+   "title": "Shade",
+   "icon": "🌳",
+   "summary": "Hills, trees and buildings that block the sun, worked out for every panel.",
+   "items": [
+    {
+     "title": "Nearby trees and buildings",
+     "text": "From each panel, the laser scan's surface is searched in every direction (every 4°, out to 100 m) for anything that blocks the sun.",
+     "facts": [
+      {
+       "label": "Directions",
+       "value": "4° apart",
+       "source": "src/building_shading.py BUILDING_AZIMUTH_STEP_DEG"
+      },
+      {
+       "label": "Distance searched",
+       "value": "100 m",
+       "source": "src/building_shading.py BUILDING_MAX_DISTANCE_KM, in m"
+      }
+     ],
+     "code": [
+      "src/building_shading.py::building_shading_factor"
+     ],
+     "stages": [
+      "build_layout_geojson"
+     ]
+    },
+    {
+     "title": "Hills",
+     "text": "Each building's horizon of hills, in 72 directions out to 20 km, seen from its eaves, and the area's own horizon out to 30 km.",
+     "facts": [
+      {
+       "label": "Directions",
+       "value": "72",
+       "source": "src/building_horizon.py N_BINS"
+      },
+      {
+       "label": "Distance",
+       "value": "20 km",
+       "source": "src/building_horizon.py FAR_MAX_KM"
+      }
+     ],
+     "code": [
+      "src/building_horizon.py::far_profile",
+      "src/terrain_horizon.py"
+     ],
+     "stages": [
+      "bake_building_horizons"
+     ]
+    },
+    {
+     "title": "Deep shade",
+     "text": "Direct sun that is blocked is taken off; light from the open sky is reduced by how much sky the panel sees. A panel keeping less than 45% of its direct sun is not placed.",
+     "facts": [
+      {
+       "label": "Deep-shade limit",
+       "value": "45%",
+       "source": "src/build_layout_geojson.py DEEP_SHADE_FACTOR, as %"
+      }
+     ],
+     "code": [
+      "src/solar_model.py::SolarModel",
+      "src/build_layout_geojson.py::DEEP_SHADE_FACTOR"
+     ],
+     "stages": []
+    }
+   ]
+  },
+  {
+   "title": "Panels and power",
+   "icon": "🔆",
+   "summary": "Lay panels sunniest first and work out what each one makes.",
+   "items": [
+    {
+     "title": "Laying out panels",
+     "text": "500 W panels (1.134 × 1.961 m) are packed in rows on each face, 0.10 m from edges and ridges, portrait unless landscape fits 40% more. A face pointing away from the sun with less than 78% of the sunniest face's sun is left bare. Stray panels go: an array needs at least 3.",
+     "facts": [
+      {
+       "label": "Panel",
+       "value": "500 W",
+       "source": "config.PV_ASSUMPTIONS.panel_rated_power_w"
+      },
+      {
+       "label": "Edge setback",
+       "value": "0.10 m",
+       "source": "config.PANEL_EDGE_SETBACK_M"
+      }
+     ],
+     "code": [
+      "src/panel_fitting.py::fit_panels_on_facet",
+      "src/panel_fitting.py::enforce_arrays"
+     ],
+     "stages": [
+      "build_layout_geojson",
+      "gate_panels"
+     ]
+    },
+    {
+     "title": "Sunniest first",
+     "text": "Panels are ranked by how much they make, so a smaller system takes the best spots. The density slider fills in that order.",
+     "facts": [],
+     "code": [
+      "src/panel_fitting.py::assign_fill_ranks",
+      "src/rerank_layouts.py::rerank_area"
+     ],
+     "stages": [
+      "rerank_layouts"
+     ]
+    },
+    {
+     "title": "Power from each panel",
+     "text": "Each panel's sunlight after shade, times its rating, less 16.4% for the inverter, heat, dirt, wiring and glass reflection. The building's total is the sum of its panels.",
+     "facts": [
+      {
+       "label": "Inverter efficiency",
+       "value": "97%",
+       "source": "config.PV_ASSUMPTIONS.inverter_efficiency_pct"
+      },
+      {
+       "label": "Other losses",
+       "value": "13.79%",
+       "source": "config.PV_ASSUMPTIONS.system_derate_pct"
+      },
+      {
+       "label": "Total losses",
+       "value": "16.4%",
+       "source": "1 − inverter_efficiency × (1 − system_derate), config.PV_ASSUMPTIONS"
+      }
+     ],
+     "code": [
+      "src/solar_model.py::SolarModel",
+      "src/apply_yield.py",
+      "src/derive_solar_potential.py::derive"
+     ],
+     "stages": [
+      "derive_solar_potential",
+      "apply_yield"
+     ]
+    },
+    {
+     "title": "Buildings that are gone",
+     "text": "An outline whose building no longer shows in the newest photo is withheld.",
+     "facts": [],
+     "code": [
+      "src/demolished.py"
+     ],
+     "stages": [
+      "demolished"
+     ]
+    },
+    {
+     "title": "Heat map mode",
+     "text": "The heat map colours every 0.4 m of roof by its yearly sunlight, from the same sun and shade model.",
+     "facts": [],
+     "code": [
+      "src/build_heatmap_raster.py::render_building"
+     ],
+     "stages": [
+      "build_heatmap_raster"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Money",
+   "icon": "💲",
+   "summary": "Bills before and after, the cost, and the saving once a loan is repaid.",
+   "items": [
+    {
+     "title": "A household's day",
+     "text": "Each building's use of power hour by hour, for an average day in each season: a home from the Electricity Authority's figures for its area, scaled for people and house size; a business by its floor area. Solar powers the building first; the rest is exported.",
+     "facts": [],
+     "code": [
+      "bill_tool.js::btEvaluate",
+      "economics.js::simulateDay"
+     ],
+     "stages": [
+      "page:bill_tool.js"
+     ]
+    },
+    {
+     "title": "Cost and savings",
+     "text": "The cost per kW falls with system size (Assumptions & pricing). Over a 30-year life power prices rise 4.0% a year, export rates fall 2.0% a year and panels lose 0.5% a year, shown in today's dollars.",
+     "facts": [
+      {
+       "label": "System life",
+       "value": "30 years",
+       "source": "economics.js ECON_DEFAULTS.life_years"
+      },
+      {
+       "label": "Panel ageing",
+       "value": "0.5% a year",
+       "source": "economics.js ECON_DEFAULTS.degradation_pct"
+      }
+     ],
+     "code": [
+      "economics.js::costPerKw",
+      "bill_tool.js::btReturns"
+     ],
+     "stages": [
+      "page:economics.js"
+     ]
+    },
+    {
+     "title": "Net saving with a loan",
+     "text": "The green box: bill savings less the repayments on a loan for the whole cost, at 6.0% over 15 years. Both can be changed.",
+     "facts": [
+      {
+       "label": "Loan rate",
+       "value": "6.0%",
+       "source": "economics.js ECON_DEFAULTS.loan_rate_pct"
+      },
+      {
+       "label": "Loan term",
+       "value": "15 years",
+       "source": "economics.js ECON_DEFAULTS.loan_years"
+      }
+     ],
+     "code": [
+      "bill_tool.js::btAnnuity"
+     ],
+     "stages": [
+      "page:bill_tool.js"
+     ]
+    }
+   ]
+  },
+  {
+   "title": "Checks and publishing",
+   "icon": "✅",
+   "summary": "Every figure is re-worked and checked before it reaches the map.",
+   "items": [
+    {
+     "title": "Every figure shows its workings",
+     "text": "Tap a number on a building's card to see the sum that made it. The map re-works every panel's power from the published inputs and refuses to publish on any mismatch.",
+     "facts": [],
+     "code": [
+      "src/emit_region.py",
+      "workings.js",
+      "tools/predeploy_check.py"
+     ],
+     "stages": [
+      "emit_region",
+      "add_addresses"
+     ]
+    }
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "id": 121752,
+   "title": "Auckland 0.075m Urban Aerial Photos (2024-2025)",
+   "url": "https://data.linz.govt.nz/layer/121752/",
+   "used_for": "aerial photo: roof lines, obstructions; photo from the LiDAR's year, to line the two up",
+   "resolution": "0.075 m pixels",
+   "accuracy": "±0.15 m horizontal (95% confidence)",
+   "captured": "Orthophotography within the Auckland region captured in the 2023-2024 and 2024-2025 flying season."
+  },
+  {
+   "id": 121990,
+   "title": "Auckland Part 1 LiDAR 1m DEM (2024)",
+   "url": "https://data.linz.govt.nz/layer/121990/",
+   "used_for": "LiDAR ground model (bare earth)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the DEM for LiDAR data in Auckland, captured between 30th of April and 27th of June 2024."
+  },
+  {
+   "id": 121992,
+   "title": "Auckland Part 1 LiDAR 1m DSM (2024)",
+   "url": "https://data.linz.govt.nz/layer/121992/",
+   "used_for": "LiDAR surface model (roofs, trees, buildings)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the DSM for LiDAR data in Auckland, captured between 30th of April and 27th of June 2024."
+  },
+  {
+   "id": 121993,
+   "title": "Auckland Part 1 LiDAR Index Tiles (2024)",
+   "url": "https://data.linz.govt.nz/layer/121993/",
+   "used_for": "finding the LiDAR point-cloud tiles",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Index Tiles for LiDAR data in Auckland, captured between 30th of April and 27th of June 2024."
+  },
+  {
+   "id": 51768,
+   "title": "NZ 8m Digital Elevation Model (2012)",
+   "url": "https://data.linz.govt.nz/layer/51768/",
+   "used_for": "distant hills on the horizon",
+   "resolution": null,
+   "accuracy": "±22 m horizontal (90% confidence)",
+   "captured": null
+  },
+  {
+   "id": 101290,
+   "title": "NZ Building Outlines",
+   "url": "https://data.linz.govt.nz/layer/101290/",
+   "used_for": "which buildings exist, and their outlines",
+   "resolution": null,
+   "accuracy": null,
+   "captured": null
+  },
+  {
+   "id": 113764,
+   "title": "NZ Suburbs and Localities",
+   "url": "https://data.linz.govt.nz/layer/113764/",
+   "used_for": "naming and bounding each area",
+   "resolution": null,
+   "accuracy": null,
+   "captured": null
+  },
+  {
+   "id": 123404,
+   "title": "Otago - Kingston LiDAR 1m DEM (2025)",
+   "url": "https://data.linz.govt.nz/layer/123404/",
+   "used_for": "LiDAR ground model (bare earth)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Digital Elevation Model for LiDAR data in Otago - Kingston, captured between 13 March 2025 - 14 March 2025."
+  },
+  {
+   "id": 123405,
+   "title": "Otago - Kingston LiDAR 1m DSM (2025)",
+   "url": "https://data.linz.govt.nz/layer/123405/",
+   "used_for": "LiDAR surface model (roofs, trees, buildings)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Digital Surface Model for LiDAR data in Otago - Kingston, captured between 13 March 2025 - 14 March 2025."
+  },
+  {
+   "id": 123527,
+   "title": "Otago - Kingston LiDAR Tile Index (2025)",
+   "url": "https://data.linz.govt.nz/layer/123527/",
+   "used_for": "finding the LiDAR point-cloud tiles",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Tile Index for LiDAR data in Otago - Kingston, captured between 13 March 2025 - 14 March 2025."
+  },
+  {
+   "id": 105898,
+   "title": "Otago - Queenstown LiDAR 1m DEM (2021)",
+   "url": "https://data.linz.govt.nz/layer/105898/",
+   "used_for": "LiDAR ground model (bare earth)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Digital Elevation Model for LiDAR data in the Otago Region, north of Lake Wakatipu and surrounding Queenstown and Arrowtown, captured between 13 March 2021 – 14 March 2021."
+  },
+  {
+   "id": 105855,
+   "title": "Otago - Queenstown LiDAR 1m DSM (2021)",
+   "url": "https://data.linz.govt.nz/layer/105855/",
+   "used_for": "LiDAR surface model (roofs, trees, buildings)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Digital Surface Model for LiDAR data in the Otago Region, north of Lake Wakatipu and surrounding Queenstown and Arrowtown, captured between 13 March 2021 – 14 March 2021."
+  },
+  {
+   "id": 105905,
+   "title": "Otago - Queenstown LiDAR Tile Index (2021)",
+   "url": "https://data.linz.govt.nz/layer/105905/",
+   "used_for": "finding the LiDAR point-cloud tiles",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Tile Index for LiDAR data in the Otago Region, north of Lake Wakatipu and surrounding Queenstown and Arrowtown, captured between 13 March 2021 – 14 March 2021."
+  },
+  {
+   "id": 113095,
+   "title": "Otago - Wanaka LiDAR 1m DEM (2022-2023)",
+   "url": "https://data.linz.govt.nz/layer/113095/",
+   "used_for": "LiDAR ground model (bare earth)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Digital Elevation Model for LiDAR data in the Otago Region, covering Wānaka, Lake Hāwea, and Luggate, captured between 27 November 2022 – 11 January 2023."
+  },
+  {
+   "id": 113096,
+   "title": "Otago - Wanaka LiDAR 1m DSM (2022-2023)",
+   "url": "https://data.linz.govt.nz/layer/113096/",
+   "used_for": "LiDAR surface model (roofs, trees, buildings)",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Digital Surface Model for LiDAR data in the Otago Region, covering Wānaka, Lake Hāwea, and Luggate, captured between 27 November 2022 – 11 January 2023."
+  },
+  {
+   "id": 113097,
+   "title": "Otago - Wanaka LiDAR Tile Index (2022-2023)",
+   "url": "https://data.linz.govt.nz/layer/113097/",
+   "used_for": "finding the LiDAR point-cloud tiles",
+   "resolution": null,
+   "accuracy": "±0.2 m vertical, ±1 m horizontal (95% confidence)",
+   "captured": "This layer contains the Tile Index for LiDAR data in the Otago Region, covering Wānaka, Lake Hāwea, and Luggate, captured between 27 November 2022 – 11 January 2023."
+  },
+  {
+   "id": 119455,
+   "title": "Otago 0.1m Urban Aerial Photos (2023-2024)",
+   "url": "https://data.linz.govt.nz/layer/119455/",
+   "used_for": "aerial photo: roof lines, obstructions",
+   "resolution": "0.1 m pixels",
+   "accuracy": "±0.2 m horizontal (68% confidence)",
+   "captured": "Orthophotography within the Otago region captured in the 2023-2024 flying season."
+  },
+  {
+   "id": 104460,
+   "title": "Otago 0.3m Rural Aerial Photos (2017-2019)",
+   "url": "https://data.linz.govt.nz/layer/104460/",
+   "used_for": "aerial photo: roof lines, obstructions",
+   "resolution": "0.3 m pixels",
+   "accuracy": "±0.5 m horizontal (95% confidence)",
+   "captured": null
+  },
+  {
+   "id": 106403,
+   "title": "Otago 0.3m Rural Aerial Photos (2019-2021)",
+   "url": "https://data.linz.govt.nz/layer/106403/",
+   "used_for": "aerial photo: roof lines, obstructions",
+   "resolution": "0.3 m pixels",
+   "accuracy": "±0.5 m horizontal (95% confidence)",
+   "captured": null
+  },
+  {
+   "id": 114745,
+   "title": "Queenstown 0.1m Urban Aerial Photos (2021)",
+   "url": "https://data.linz.govt.nz/layer/114745/",
+   "used_for": "photo from the LiDAR's year, to line the two up",
+   "resolution": "0.1 m pixels",
+   "accuracy": null,
+   "captured": "Orthophotography over Queenstown within the Otago Region captured in the flying season of 2020-2021."
+  },
+  {
+   "id": 124754,
+   "title": "Queenstown 0.1m Urban Aerial Photos (2026)",
+   "url": "https://data.linz.govt.nz/layer/124754/",
+   "used_for": "aerial photo: roof lines, obstructions",
+   "resolution": "0.1 m pixels",
+   "accuracy": "±0.15 m horizontal (95% confidence)",
+   "captured": "Orthophotography within the Otago region captured in the 2026 flying season."
+  },
+  {
+   "id": 112781,
+   "title": "Queenstown Lakes 0.1m Urban Aerial Photos (2022-2023)",
+   "url": "https://data.linz.govt.nz/layer/112781/",
+   "used_for": "aerial photo: roof lines, obstructions; photo from the LiDAR's year, to line the two up",
+   "resolution": "0.1 m pixels",
+   "accuracy": "±0.3 m horizontal (95% confidence)",
+   "captured": "Orthophotography within the Queenstown Lakes Region captured in the flying season of 2022-2023."
+  }
+ ],
+ "footer": "Written from the code (src/methodology.py). Every figure here is read from the code or from LINZ's own layer descriptions, and a test fails if the diagram and the code ever disagree."
+}
