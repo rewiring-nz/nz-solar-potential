@@ -301,6 +301,12 @@ def main():
             f_line, pr = line_faces(lm, device, rgb, geom, b, pts, bid)
         except Exception:
             f_line, pr = [], None
+        if os.environ.get("SOLAR_DUMP_LINEMAP") and pr is not None:
+            # the line model's map and crop, for testing line extraction
+            # offline (tools: network_lines variants scored vs drawn faces)
+            _d = Path(os.environ["SOLAR_DUMP_LINEMAP"]); _d.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(_d / f"{bid}.npz", pr=pr.astype("float16"),
+                                b=np.array(b), wkt=np.array(geom.wkt))
         if pr is None:
             ph, pw = (-h) % 16, (-w) % 16
             arr = np.pad(rgb, ((0, ph), (0, pw), (0, 0)))

@@ -388,7 +388,18 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   roles the faces changed on 15 of 32 roofs and the panels on 4: a better
   line score is not reaching the layout. Production stays on v5/v6. The
   limit is now the step from lines to faces and the reading pick, not the
-  detector score. v71 published 5 Nov (reflection loss, building heights). One seed
+  detector score. Error split (6 Nov, 163 drawn roofs, panel IoU blind vs
+  full markup, `~/mb9`): production 0.484 (9 roofs right at 0.8+); drawn
+  lines in place of the detector, normal pick, 0.507 (+0.023, 95%
+  +0.012..+0.035); drawn lines with the line reading always shipped 0.515
+  (+0.031); drawn faces 0.719 (68 right). A perfect detector buys an eighth
+  of the gap: the loss is in turning lines into faces. Vision referee
+  choosing among the four readings (Claude Opus 5.5, photo + LiDAR relief,
+  $10.19 for 163 roofs, `tools/vision_referee.py`, `~/mb10`): changed the
+  pick on 73 roofs, panel IoU 0.487 (+0.003, 95% -0.005..+0.011; 18 better,
+  17 worse); at confidence 0.7+ 32 changes, -0.001. Not worth wiring in:
+  the readings it chooses between are all short of the drawn faces.
+  v71 published 5 Nov (reflection loss, building heights). One seed
   each. Untried: per-channel blend of the two, SAM features as an extra
   U-Net input.
 - **Drawn outlines (3 Nov).** The markup tool moves, reshapes or redraws the
