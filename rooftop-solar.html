@@ -914,8 +914,11 @@
   html.light .dashboard { color: var(--ink); background: #f3f5f8; }
   /* Disclaimer card under the dashboard: same width, always shown. Text is
      12px at 4.5:1+ contrast in both themes. */
+  /* It sits INSIDE the dashboard (after its folding body, so it shows folded
+     or open) and fills the dashboard's width: a fixed 284px content box was
+     314px wide in a 286px space and overhung the dashboard's edge by 14px. */
   .disclaimer-card {
-    width: 284px; box-sizing: content-box; padding: 9px 14px; border-radius: 8px;
+    width: auto; box-sizing: border-box; margin-top: 10px; padding: 9px 12px; border-radius: 8px;
     background: rgba(40,14,14,0.92); border: 1px solid rgba(255,120,120,0.45);
     color: #ffe1e1; font-size: 12px; line-height: 1.45;
   }
@@ -1199,8 +1202,8 @@
       
 
     </div>
-  <!-- Disclaimer sits outside the folding dashboard so it shows whether the
-       dashboard is open or folded. -->
+  <!-- Disclaimer: the dashboard's last child, outside its folding body, so it
+       shows whether the dashboard is open or folded. -->
   <div id="layout-disclaimer" class="disclaimer-card" role="note">
     <strong>Disclaimer:</strong> A rough estimate, made with AI and
     still in testing. Expect mistakes.
