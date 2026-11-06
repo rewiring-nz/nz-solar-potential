@@ -717,8 +717,11 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   const inverter = { year: E.inverter_replace_year, label: "Inverter",
     node: Wk.product(`Inverter replaced in year ${E.inverter_replace_year + 1}`, "$", [solarCostN,
       btIn("Inverter, as a share of the solar cost", E.inverter_cost_pct / 100, "share", { source: "Assumptions & pricing.", edit: pctEd("inverter_cost_pct") })]) };
-  const battery = { year: battDef.life_years, label: "Battery",
-    node: Wk.product(`Battery replaced in year ${battDef.life_years + 1}`, "$", [battCostN, btIn("Once", 1, "")]) };
+  const bYear = E.battery_replace_year != null ? E.battery_replace_year : 14;
+  const battery = { year: bYear, label: "Battery",
+    node: Wk.product(`Battery replaced in year ${bYear + 1}`, "$", [battCostN,
+      btIn("Its price by then, as a share of today's", (E.battery_replace_cost_pct != null ? E.battery_replace_cost_pct : 70) / 100, "share",
+        { source: "Assumptions & pricing: batteries keep getting cheaper.", edit: pctEd("battery_replace_cost_pct") })]) };
   const solarRet = btReturns(solarCostN, N.solarSave, N.solarExportDollars, { replacements: [inverter] });
   const battRet = prof.battery > 0
     ? btReturns(allCostN, N.battSave, N.battExportDollars, { replacements: [inverter, battery] })
@@ -743,11 +746,11 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
       `(${Math.round(ctx.genNode.value).toLocaleString()} kWh a year).`;
   }
   // PAYING FOR IT WITH A LOAN: one fixed-repayment loan (econ.loan_rate_pct
-  // over econ.loan_years, the system's life) for the system AND the
-  // replacements it needs in that life -- the one replacement inverter, and
-  // the battery's replacement where there is one -- so the yearly figure is
-  // the whole cost of the system spread over its life. The card's headline is
-  // bill savings less these repayments.
+  // over econ.loan_years) for what is bought on day one -- the solar system,
+  // and the battery where there is one. Replacements are paid in the year
+  // they fall due (the inverter, the battery), from that year's savings:
+  // borrowing for them on day one paid interest for years on parts not yet
+  // bought.
   const EL = typeof econ !== "undefined" ? econ : {};
   const loanRate = btIn("Loan interest rate", (EL.loan_rate_pct != null ? EL.loan_rate_pct : 5.5) / 100, "share",
     { source: "Assumptions & pricing (econ.loan_rate_pct)", edit: { key: "econ:loan_rate_pct", scale: 100, unit: "%", step: 0.1 } });
@@ -759,15 +762,8 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
     [costN, loanRate, loanYears],
     { formula: "amount × rate ÷ (1 − (1 + rate)^−years): the fixed yearly repayment that clears the loan in its term",
       check: k => btAnnuity(k[0], k[1], k[2]) });
-  // only replacements that fall inside the system's life are borrowed for,
-  // the same rule btReturns uses (an inverter set to "never" is not)
-  const life = E.life_years != null ? E.life_years : 30;
-  const within = r => r.year < life;
-  const solarParts = [solarCostN].concat(within(inverter) ? [inverter.node] : []);
-  const allParts = [allCostN].concat([inverter, prof.battery > 0 ? battery : null].filter(r => r && within(r)).map(r => r.node));
-  const solarLoan = Wk.sum(solarParts.length > 1 ? "Borrowed: the solar system and one replacement inverter"
-    : "Borrowed: the solar system", "$", solarParts);
-  const allLoan = Wk.sum("Borrowed: solar, battery, and their replacements", "$", allParts);
+  const solarLoan = Wk.sum("Borrowed: the solar system", "$", [solarCostN]);
+  const allLoan = Wk.sum("Borrowed: the solar system and battery", "$", [allCostN]);
   const solarRepay = repayNode(solarLoan, "Loan repayments a year, solar");
   const allRepay = repayNode(allLoan, "Loan repayments a year, solar and battery");
   // THE HEADLINE IS AN AVERAGE YEAR OVER THE LOAN, IN TODAY'S DOLLARS.
@@ -792,8 +788,15 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
                           : "the fixed repayment, every year",
         note: ret.real ? `The repayment stays ${Wk.fmt(repay.value, "$")} a year in dollars of the day; inflation makes each one worth less in today's dollars.` : "",
         check: k => k[0] * Array.from({ length: Math.min(k[1], ret.rows.length) }, (_, y) => Math.pow(cpi, -y)).reduce((a, b) => a + b, 0) / k[1] });
-    const net = Wk.diff(`Net saving a year, ${who}: average over the loan`, "$/yr", saveAvg, repAvg);
-    return { saveAvg, repAvg, net };
+    // replacements, paid in their year (btReturns' rows, today's dollars)
+    const replAvg = Wk.given(`Replacements, average a year over the ${L} years`,
+      rows.reduce((t, row) => t - row.out, 0) / L, "$/yr", [ret.nodes.replacements], {
+        formula: `the replacements falling in the loan's ${L} years (in today's dollars), ÷ ${L}`,
+        check: () => ret.rows.slice(0, L).reduce((t, row) => t - row.out, 0) / L });
+    const net = Wk.sum(`Net saving a year, ${who}: average over the loan`, "$/yr", [saveAvg,
+      Wk.product("Less the loan repayments", "$/yr", [repAvg, btIn("", -1, "")]),
+      Wk.product("Less the replacements", "$/yr", [replAvg, btIn("", -1, "")])]);
+    return { saveAvg, repAvg, replAvg, net };
   };
   const solarAvg = avgOver(solarRet, N.solarSave, solarRepay, "solar");
   const battAvg = battRet ? avgOver(battRet, N.battSave, allRepay, "solar and battery") : null;
@@ -803,12 +806,12 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
            solarSave: N.solarSave.value, battSave: N.battSave.value, solarRet, battRet,
            // the card's headline: net a year while the loan is repaid
            netYear: (prof.battery > 0 ? battNet : solarNet).value,
-           netShown: btNetShown(pickAvg.saveAvg.value, pickAvg.repAvg.value).net,
+           netShown: btNetShown(pickAvg.saveAvg.value, pickAvg.repAvg.value, pickAvg.replAvg.value).net,
            yearParts, useKwh: Y.nowKwh, genKwh: Y.gen,
            nodes: Object.assign({}, N, { solarCost: solarCostN, battCost: battCostN, allCost: allCostN,
                                          solarRate: rate, battRate, parts: partNodes,
                                          solarRepay, allRepay, solarNet, battNet, loanRate, loanYears,
-                                         saveAvg: pickAvg.saveAvg, repAvg: pickAvg.repAvg,
+                                         saveAvg: pickAvg.saveAvg, repAvg: pickAvg.repAvg, replAvg: pickAvg.replAvg,
                                          gen: ctx.genNode || N.genYear, kwp: kwpN }) };
 }
 
@@ -1039,7 +1042,8 @@ const BT_CSS = `
 .sx-ysum { font-size: 14px; color: var(--sx-ink); margin-top: 10px; }
 .sx-ysum .ok { color: #34c759; } .sx-ysum .warn { color: #ff9f0a; }
 .sx-bigrow { margin-top: 10px; }
-.sx-rsum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 10px; }
+.sx-loanret { margin-top: 4px; color: var(--sx-ink-2); }
+.sx-rsum { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 12px 0 10px; }
 .sx-rsum > div { background: var(--sx-fill); border-radius: 12px; padding: 10px 14px; }
 .sx-rsum b { display: block; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sx-rsum > div:first-child b { color: #34c759; }
@@ -1047,12 +1051,12 @@ const BT_CSS = `
 @media (max-width: 760px) { .sx-rsum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sx-rkey { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--sx-ink-2); margin: 0 4px 6px; }
 .sx-rkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-.sx-rkey i.sv { background: #30d158; } .sx-rkey i.rp { background: #8e8e93; } .sx-rkey i.nt { background: #fff; border-radius: 50%; }
+.sx-rkey i.sv { background: #30d158; } .sx-rkey i.rp { background: #8e8e93; } .sx-rkey i.rl { background: #ff9f0a; } .sx-rkey i.nt { background: #fff; border-radius: 50%; }
 .sx-rkey .u { margin-left: auto; color: var(--sx-ink-3); }
 .sx-returns { width: 100%; height: auto; display: block; }
 .sx-returns .rg { stroke: rgba(255,255,255,.09); } .sx-returns .rz { stroke: rgba(255,255,255,.4); }
 .sx-returns .ra { font-size: 11px; fill: rgba(235,235,245,.66); } .sx-returns .rt { font-size: 12px; font-weight: 600; fill: #f5f5f7; }
-.sx-returns .rs-sv { fill: #30d158; } .sx-returns .rs-rp { fill: #8e8e93; } .sx-returns .rs-nt { fill: #fff; }
+.sx-returns .rs-sv { fill: #30d158; } .sx-returns .rs-rp { fill: #8e8e93; } .sx-returns .rs-rl { fill: #ff9f0a; } .sx-returns .rs-nt { fill: #fff; }
 .sx-returns .rs-cp { fill: rgba(48,209,88,.55); } .sx-returns .rs-cn { fill: rgba(255,105,97,.6); }
 .sx-returns .rs-hit { fill: transparent; } .sx-returns .rs-hit:hover { fill: rgba(255,255,255,.07); }
 html.light .sx-returns .rg { stroke: rgba(0,0,0,.08); } html.light .sx-returns .rz { stroke: rgba(0,0,0,.4); }
@@ -1147,9 +1151,9 @@ function btRoundMoney(v, step) {
 // the nearest $1,000). The shown net is then within half a step of the true
 // one in each part, at most one step in all. Money mode's pill for the open
 // roof uses this too, so the two agree.
-function btNetShown(save, repay) {
-  const st = btMoneyStep(save - repay);
-  return { step: st, net: btRoundMoney(save, st) - btRoundMoney(repay, st) };
+function btNetShown(save, repay, repl) {
+  const st = btMoneyStep(save - repay - (repl || 0));
+  return { step: st, net: btRoundMoney(save, st) - btRoundMoney(repay, st) - btRoundMoney(repl || 0, st) };
 }
 // `step` forces one rounding step on figures shown as a sum, so the parts
 // on screen add up to the total on screen.
@@ -1484,14 +1488,20 @@ function renderBillTool(box, ctx) {
         row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${N.kwp.value.toFixed(1)} kW${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
       `</div>` +
       `<div class="sx-summary">` +
-        `<div class="sx-cell hero" data-wk="save" tabindex="0" role="button"><div class="l">Bill savings</div>` +
-          `<div class="v">${haveGen ? money(save1) : "–"}</div><div class="s">a year${withBatt ? ", with the battery" : ""}</div></div>` +
+        // ANNUAL FIGURES ARE THE AVERAGE YEAR over the loan, in today's
+        // dollars (btEvaluate avgOver): the same as the green box
+        `<div class="sx-cell hero" data-wk="saveavg" tabindex="0" role="button"><div class="l">Bill savings</div>` +
+          `<div class="v">${haveGen ? money(N.saveAvg) : "–"}</div><div class="s">a year on average${withBatt ? ", with the battery" : ""}</div></div>` +
         `<div class="sx-cell" data-wk="lifetime" tabindex="0" role="button"><div class="l">Total bill savings</div>` +
           `<div class="v">${haveGen ? money(ret.nodes.lifetime) : "–"}</div><div class="s">over ${ret.years} years</div></div>` +
         `<div class="sx-cell" data-wk="net" tabindex="0" role="button"><div class="l">Net savings</div>` +
-          `<div class="v">${haveGen ? money(ret.nodes.net) : "–"}</div><div class="s">${haveGen ? pbText : ""}</div></div>` +
+          `<div class="v">${haveGen ? money(ret.nodes.net) : "–"}</div><div class="s">${haveGen ? "paid upfront, " + pbText : ""}</div></div>` +
+        // THE RETURN TWO WAYS. Paid upfront: the yearly rate the cost earns
+        // (btReturns irr). With a loan nothing is put in, so there is no rate
+        // to earn on it; what the loan gives is the net saving a year.
         `<div class="sx-cell" data-wk="irr" tabindex="0" role="button"><div class="l">Return on investment</div>` +
-          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">a year, ${ret.real ? "after inflation" : "before inflation"}</div></div>` +
+          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">a year ${ret.real ? "after inflation" : "before inflation"}, paid upfront</div>` +
+          (haveGen ? `<div class="s sx-loanret">With a loan: nothing up front, ${btMoney(r.netShown)} a year</div>` : "") + `</div>` +
       `</div>` +
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
@@ -1514,7 +1524,8 @@ function renderBillTool(box, ctx) {
         row("Cost", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost" }) +
         row("Net savings", val(money(ret.nodes.net)), { go: "net", cls: "total" }) +
         row("Pays back in", val(ret.payback == null ? "not within 60 years" : ret.payback > ret.years ? `${ret.payback.toFixed(1)} years, after its ${ret.years}-year life` : ret.payback.toFixed(1) + " years"), { go: "payback" }) +
-        row("Return on investment", val(ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1)), { go: "irr", small: "a year, " + (ret.real ? "after inflation" : "before inflation") }) +
+        row("Return on investment", val(ret.irr == null ? "–" : Wk.fmt(ret.irr, "share", 1)), { go: "irr", small: "a year, " + (ret.real ? "after inflation" : "before inflation") + ", paid upfront" }) +
+        row("With a loan", val(btMoney(r.netShown) + " a year"), { go: "net-year", small: `nothing up front, ${N.loanYears.value} years at ${Wk.fmt(N.loanRate.value, "share", 1)}` }) +
       `</div>` +
       `<div class="sx-h">Assumptions</div>` +
       `<div class="sx-sub">Electricity prices</div>` +
@@ -1610,14 +1621,16 @@ function renderBillTool(box, ctx) {
       const yrs = N.loanYears.value, pct = Wk.fmt(N.loanRate.value, "share", 1);
       // one step for all three, set by the largest, so savings - repayments
       // = net on screen as well as in the sums
-      const shownNet = btNetShown(saveN.value, repN.value), st = shownNet.step;
+      const replN = N.replAvg;
+      const shownNet = btNetShown(saveN.value, repN.value, replN.value), st = shownNet.step;
       const m = v => btMoney(v, st);
       // LOOK: one figure, two short rows, the detail behind an (i). Each
       // figure still opens its workings when tapped.
       const info = `A rough estimate: an average year over the ${yrs}-year loan, in today's dollars. ` +
         `Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
         `less the repayments on a loan for ${loanN.children[0].label.replace(/^Borrowed: /, "")} ` +
-        `at ${pct}. The repayment is fixed, so inflation makes it smaller in today's dollars each year, ` +
+        `at ${pct}, and the replacement inverter${withBatt ? " and battery" : ""} paid for when ${withBatt ? "they fall" : "it falls"} due, spread over the years. ` +
+        `The repayment is fixed, so inflation makes it smaller in today's dollars each year, ` +
         `while the savings follow power prices. Tap a figure to see how it is worked out.`;
       saveBox.innerHTML = show
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
@@ -1628,6 +1641,7 @@ function renderBillTool(box, ctx) {
           `<div class="rs-parts">` +
           `<div class="rs-row" data-wk="saveavg"><span>Bill savings</span><b>${m(saveN.value)}</b></div>` +
           `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${m(repN.value)}</b></div>` +
+          (replN.value > 0.5 ? `<div class="rs-row" data-wk="replavg"><span>Replacements</span><b>&minus;${m(replN.value)}</b></div>` : "") +
           `</div>` +
           // A BATTERY, one tap: 10 kWh to start (BT_BATT_ADD_KWH), any size
           // typed in; the figures above then include it and its loan
@@ -1679,6 +1693,7 @@ function renderBillTool(box, ctx) {
     nodeFor["net-year"] = () => withBatt ? N.battNet : N.solarNet;
     nodeFor.repay = () => N.repAvg;
     nodeFor.saveavg = () => N.saveAvg;
+    nodeFor.replavg = () => N.replAvg;
     nodeFor.nowbill = () => N.nowBill;
     nodeFor.solarbill = () => withBatt ? N.battBill : N.solarBill;
     // the getter reads the LATEST calculation: a sheet left open while an
@@ -1841,9 +1856,9 @@ function renderBillTool(box, ctx) {
       const L = N.loanYears.value, cpi = 1 + (ret.real ? ret.cpiPct : 0) / 100;
       let cum = 0;
       return ret.rows.slice(0, Math.max(ret.years, L)).map((row, y) => {
-        const repay = y < L ? repN.value / Math.pow(cpi, y) : 0;
-        cum += row.saving - repay;
-        return { year: row.year, save: row.saving, repay, net: row.saving - repay, cum };
+        const repay = y < L ? repN.value / Math.pow(cpi, y) : 0, repl = -row.out;
+        cum += row.saving - repay - repl;
+        return { year: row.year, save: row.saving, repay, repl, net: row.saving - repay - repl, cum };
       });
     };
     const niceStep = span => {
@@ -1868,7 +1883,7 @@ function renderBillTool(box, ctx) {
         }
         return { y, g };
       };
-      const p1 = panel(T, h1, Math.min(0, ...rows.map(q => -q.repay)), Math.max(0, ...rows.map(q => q.save)));
+      const p1 = panel(T, h1, Math.min(0, ...rows.map(q => -q.repay - q.repl)), Math.max(0, ...rows.map(q => q.save)));
       const y2 = T + h1 + gap;
       const p2 = panel(y2, h2, Math.min(0, ...rows.map(q => q.cum)), Math.max(0, ...rows.map(q => q.cum)));
       let svg = p1.g + p2.g;
@@ -1876,12 +1891,13 @@ function renderBillTool(box, ctx) {
         const cx = x(i) + bw * 0.15, w = bw * 0.7;
         svg += `<rect x="${cx}" y="${p1.y(q.save)}" width="${w}" height="${Math.max(0, p1.y(0) - p1.y(q.save))}" class="rs-sv"/>`;
         if (q.repay > 0) svg += `<rect x="${cx}" y="${p1.y(0)}" width="${w}" height="${Math.max(0, p1.y(-q.repay) - p1.y(0))}" class="rs-rp"/>`;
+        if (q.repl > 0) svg += `<rect x="${cx}" y="${p1.y(-q.repay)}" width="${w}" height="${Math.max(0, p1.y(-q.repay - q.repl) - p1.y(-q.repay))}" class="rs-rl"/>`;
         svg += `<circle cx="${x(i) + bw / 2}" cy="${p1.y(q.net)}" r="${Math.min(4, bw * 0.22)}" class="rs-nt"/>`;
         const top = Math.min(p2.y(q.cum), p2.y(0)), hh = Math.abs(p2.y(q.cum) - p2.y(0));
         svg += `<rect x="${cx}" y="${top}" width="${w}" height="${hh}" class="${q.cum < 0 ? "rs-cn" : "rs-cp"}"/>`;
         if (q.year === 1 || q.year % 5 === 0) svg += `<text x="${x(i) + bw / 2}" y="${H - 8}" text-anchor="middle" class="ra">${q.year === 1 ? "Year 1" : q.year}</text>`;
         svg += `<rect x="${x(i)}" y="${T}" width="${bw}" height="${H - T - B}" class="rs-hit"><title>Year ${q.year}: bill savings ${btMoney(q.save)}, ` +
-               `repayment ${btMoney(q.repay)}, net ${btMoney(q.net)}; running total ${btMoney(q.cum)} (today's dollars)</title></rect>`;
+               `repayment ${btMoney(q.repay)}${q.repl > 0 ? `, replacements ${btMoney(q.repl)}` : ""}, net ${btMoney(q.net)}; running total ${btMoney(q.cum)} (today's dollars)</title></rect>`;
       });
       svg += `<text x="${L}" y="${T - 10}" class="rt">Each year</text><text x="${L}" y="${y2 - 12}" class="rt">Running total</text>`;
       return `<svg class="sx-returns" viewBox="0 0 ${W} ${H}" role="img" aria-label="Savings and repayments, year by year, in today's dollars">${svg}</svg>`;
@@ -1951,24 +1967,26 @@ function renderBillTool(box, ctx) {
           const rows = returnsRows(), L = N.loanYears.value;
           const loanRows = rows.slice(0, L);
           const avgNet = loanRows.reduce((t, q) => t + q.net, 0) / L;
-          const agrees = Math.abs(avgNet - (N.saveAvg.value - N.repAvg.value)) < 0.01;
-          const sh = btNetShown(N.saveAvg.value, N.repAvg.value), m = v => btMoney(v, sh.step);
+          const agrees = Math.abs(avgNet - (N.saveAvg.value - N.repAvg.value - N.replAvg.value)) < 0.01;
+          const sh = btNetShown(N.saveAvg.value, N.repAvg.value, N.replAvg.value), m = v => btMoney(v, sh.step);
           const W = Math.round(Math.min(1500, innerWidth - 100) / 1.35), H = Math.round(Math.max(300, innerHeight - 330) / 1.35);
           const be = rows.find(q => q.cum >= 0 && rows.slice(0, rows.indexOf(q)).some(p => p.cum < 0));
           body = `<div class="sx-rsum">` +
               `<div><b>${m(sh.net)}</b><small>a year on average${withBatt ? ", with the battery" : ""}</small></div>` +
               `<div><b>${m(N.saveAvg.value)}</b><small>bill savings, average</small></div>` +
               `<div><b>−${m(N.repAvg.value)}</b><small>repayments, average</small></div>` +
+              `<div><b>−${m(N.replAvg.value)}</b><small>replacements, average</small></div>` +
               `<div><b>${btMoney(rows[rows.length - 1].cum)}</b><small>ahead after ${rows.length} years</small></div>` +
             `</div>` +
             (agrees ? "" : `<div class="sx-foot warn">The years here do not average to the green box's figure. Please report this.</div>`) +
-            `<div class="sx-rkey"><span><i class="sv"></i>Bill savings</span><span><i class="rp"></i>Loan repayment</span><span><i class="nt"></i>Net</span>` +
+            `<div class="sx-rkey"><span><i class="sv"></i>Bill savings</span><span><i class="rp"></i>Loan repayment</span><span><i class="rl"></i>Replacements</span><span><i class="nt"></i>Net</span>` +
               `<span class="u">today's dollars</span></div>` +
             returnsSvg(rows, W, H) +
             `<div class="sx-foot">All in today's dollars. Savings rise with power prices (${E.elec_inflation_pct}% a year) less inflation (${E.cpi_pct}%), ` +
             `export rates fall ${E.export_decline_pct}% a year and the panels lose ${E.degradation_pct}% a year. The repayment is fixed at ` +
             `${btMoney((withBatt ? N.allRepay : N.solarRepay).value)} a year for ${L} years, so inflation shrinks it in today's dollars. ` +
-            `The loan covers the replacement inverter${withBatt ? " and battery" : ""}.` +
+            `The replacement inverter${withBatt ? " and battery are" : " is"} paid for in ${withBatt ? "their" : "its"} year` +
+            (withBatt ? `; the battery in year ${(E.battery_replace_year != null ? E.battery_replace_year : 14) + 1} at ${E.battery_replace_cost_pct != null ? E.battery_replace_cost_pct : 70}% of today's price` : "") + `.` +
             (be ? ` The running total turns positive in year ${be.year}.` : "") + `</div>`;
         }
         lb.innerHTML =

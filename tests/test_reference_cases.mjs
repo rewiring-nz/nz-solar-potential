@@ -29,11 +29,31 @@ c("$10,000 loan at 6% over 15 years, a year", 1029.63, r2(B.btAnnuity(10000, 0.0
 c("$9,000 at 0% over 10 years, a year", 900, B.btAnnuity(9000, 0, 10), "9,000 ÷ 10");
 c("the default loan: 5.5% over 30 years", "5.5/30", `${E.ECON_DEFAULTS.loan_rate_pct}/${E.ECON_DEFAULTS.loan_years}`,
   "economics.js ECON_DEFAULTS");
-// a $10,000 system: the loan covers it and its one replacement inverter (18%)
-c("borrowed for a $10,000 system", 11800, 10000 * (1 + E.ECON_DEFAULTS.inverter_cost_pct / 100),
-  "10,000 + 18% for the replacement inverter");
-c("...repaid at 5.5% over 30 years, a year", 811.90, r2(B.btAnnuity(11800, 0.055, 30)),
-  "11,800 × 0.055 ÷ (1 − 1.055^−30) = 649 ÷ 0.79936 = 811.90");
+// A $10,000 SYSTEM (5 kW at $2,000/kW), and a 10 kWh battery at $900/kWh
+{
+  const gen = ["summer", "autumn", "winter", "spring"].map((s, i) =>
+    Array.from({ length: 24 }, (_, h) => (h >= 9 && h < 17 ? [3, 2, 1, 2.5][i] : 0)));
+  const tariff = { peak: 52, offpeak: 26, peakSell: 23, offpeakSell: 12, daily: 2.02 };
+  const home0 = Object.assign({ type: "home" }, B.BT_DEFAULTS.home);
+  const ev = batt => B.btEvaluate({ lat: -45.03, roofM2: 150, kwp: 5, gen }, Object.assign({}, home0, { battery: batt }),
+    null, tariff, { solarPerKw: 2000, battPerKwh: null });
+  const r = ev(0), N = r.nodes;
+  c("borrowed for a $10,000 system", 10000, N.solarRepay.children[0].value,
+    "the system only: replacements are paid in their year, not borrowed for");
+  c("...repaid at 5.5% over 30 years, a year", 688.05, r2(N.solarRepay.value),
+    "10,000 × 0.055 ÷ (1 − 1.055^−30) = 550 ÷ 0.79936 = 688.05");
+  c("...on average a year in today's dollars, at 2% inflation", 523.94, r2(N.repAvg.value),
+    "688.05 × (1 + 1/1.02 + … + 1/1.02^29) ÷ 30 = 688.05 × 0.76148 = 523.94", 0.01);
+  c("the replacement inverter, on average a year", 60, r2(N.replAvg.value),
+    "18% of 10,000 = 1,800 in year 16, ÷ 30 years = 60");
+  const rb = ev(10);
+  c("a 10 kWh battery costs", 9000, rb.nodes.battCost.value, "10 × $900");
+  c("...replaced in year 15 at 70% of today's price", 6300, r2(-rb.battRet.rows[14].out), "9,000 × 0.7");
+  c("...inverter and battery replacements, on average a year", 270, r2(rb.nodes.replAvg.value),
+    "(1,800 + 6,300) ÷ 30 = 270");
+  c("the net a year = savings − repayments − replacements", r2(N.saveAvg.value - N.repAvg.value - N.replAvg.value),
+    r2(N.solarNet.value), "each an average year over the loan, in today's dollars");
+}
 c("15 years of those repayments", 15444.41, r2(B.btAnnuity(10000, 0.06, 15) * 15),
   "15 × 1,029.6276 = 15,444.41: $10,000 borrowed plus $5,444.41 interest", 0.01);
 

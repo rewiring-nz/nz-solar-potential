@@ -281,20 +281,24 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   // the headline is an average year over the loan, both sides in today's
   // dollars: savings from the year-by-year rows, the fixed repayment
   // deflated by 2% CPI a year (years 1-30, 1.02^-(year-1) averages 0.76148)
-  near(N.solarNet.value, N.saveAvg.value - N.repAvg.value, 1e-9, "net = average savings - average repayments");
+  near(N.solarNet.value, N.saveAvg.value - N.repAvg.value - N.replAvg.value, 1e-9, "net = savings - repayments - replacements");
   near(N.repAvg.value, N.solarRepay.value * 0.76148, N.solarRepay.value * 1e-4, "repayments deflated by 2% a year");
   near(N.saveAvg.value, r.solarRet.rows.slice(0, 30).reduce((t, x) => t + x.saving, 0) / 30, 1e-9, "average of the 30 years' savings");
-  near(r.netShown, B.btNetShown(N.saveAvg.value, N.repAvg.value).net, 1e-9, "the card's figure is that net, rounded");
-  // the loan covers the system and its one replacement inverter, over its life
+  near(r.netShown, B.btNetShown(N.saveAvg.value, N.repAvg.value, N.replAvg.value).net, 1e-9, "the card's figure is that net, rounded");
+  // the loan covers only what is bought on day one: the solar system
   const borrowed = N.solarRepay.children[0].value;
-  near(borrowed, N.solarCost.value * (1 + E.getEcon().inverter_cost_pct / 100), 1e-6, "system + inverter borrowed");
+  near(borrowed, N.solarCost.value, 1e-6, "only the system is borrowed for");
   near(N.solarRepay.value, B.btAnnuity(borrowed, 0.055, 30), 1e-6, "5.5% over 30 years");
-  // an inverter set to "never" (replaced at or after the system's life) is not borrowed for
-  const keep = globalThis.econ.inverter_replace_year;
-  globalThis.econ.inverter_replace_year = globalThis.econ.life_years;
-  const n2 = B.btEvaluate(ctx, home(), null, prices).nodes;
-  globalThis.econ.inverter_replace_year = keep;
-  near(n2.solarRepay.children[0].value, n2.solarCost.value, 1e-9, "never-replaced inverter not borrowed");
+  // the replacement inverter is paid in its year (year 16), in today's
+  // dollars: 18% of the system cost, spread over the 30 years
+  near(N.replAvg.value, N.solarCost.value * E.getEcon().inverter_cost_pct / 100 / 30, 1e-6, "inverter: 18% of cost ÷ 30");
+  // a battery: borrowed for with the system, replaced in year 15 at 70% of today's price
+  const rb = B.btEvaluate(ctx, Object.assign(home(), { battery: 10 }), null, prices);
+  near(rb.nodes.battCost.value, 9000, 1e-9, "10 kWh at $900");
+  near(rb.nodes.allRepay.children[0].value, rb.nodes.solarCost.value + 9000, 1e-6, "system and battery borrowed");
+  const bRow = rb.battRet.rows[14];
+  near(-bRow.out, 9000 * 0.7, 1e-6, "battery replaced in year 15 at 70%");
+  near(rb.nodes.replAvg.value, (N.solarCost.value * 0.18 + 6300) / 30, 1e-6, "inverter + battery, ÷ 30");
   const v = Wk.verify(N.solarNet);
   if (!v.ok) throw new Error("net does not verify: " + JSON.stringify(v.problems.map(b => b.node.label)));
   // and the check can fail: a repayment shown wrong is caught

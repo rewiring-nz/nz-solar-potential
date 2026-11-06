@@ -116,6 +116,10 @@ const ECON_DEFAULTS = {
   // includes replacing it; leaving it out flatters every system equally.
   inverter_replace_year: 15,
   inverter_cost_pct: 18,
+  // the battery is replaced once, in year 15, at this share of today's
+  // battery price (batteries keep getting cheaper)
+  battery_replace_year: 14,      // 0-based, as inverter_replace_year: year 15
+  battery_replace_cost_pct: 70,
   // Money later is worth less than money now. Without this the model sums 30
   // years of nominal dollars and calls it savings, which overstates the
   // result badly -- and adding 5% inflation without it would overstate it

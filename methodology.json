@@ -539,7 +539,7 @@
     },
     {
      "title": "Net saving with a loan",
-     "text": "The green box: bill savings less the repayments on a loan for the system and its one replacement inverter, at 5.5% over 30 years. Both can be changed.",
+     "text": "The green box: an average year over the loan, in today's dollars. Bill savings, less the repayments on a loan for the system (and battery) at 5.5% over 30 years, less the replacements: the inverter in year 16, and a battery in year 15 at 70% of today's price, each paid in its year. The repayment is fixed, so 2.0% inflation makes it smaller in today's dollars each year.",
      "facts": [
       {
        "label": "Loan rate",
@@ -550,10 +550,28 @@
        "label": "Loan term",
        "value": "30 years",
        "source": "economics.js ECON_DEFAULTS.loan_years"
+      },
+      {
+       "label": "Battery",
+       "value": "900 $/kWh",
+       "source": "economics.js BATTERY_DEFAULTS.cost_per_kwh"
       }
      ],
      "code": [
-      "bill_tool.js::btAnnuity"
+      "bill_tool.js::btAnnuity",
+      "bill_tool.js::btEvaluate",
+      "bill_tool.js::btReturns"
+     ],
+     "stages": [
+      "page:bill_tool.js"
+     ]
+    },
+    {
+     "title": "Return on investment",
+     "text": "Paid upfront: the yearly rate the cost earns over the system's life, after inflation, replacements included. With a loan nothing is paid up front, so the return is the net saving a year.",
+     "facts": [],
+     "code": [
+      "bill_tool.js::btReturns"
      ],
      "stages": [
       "page:bill_tool.js"

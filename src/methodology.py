@@ -135,6 +135,15 @@ def values() -> dict:
                           "economics.js ECON_DEFAULTS.loan_rate_pct"),
         "loan_years": (_fmt(_js_const("economics.js", r"loan_years:\s*([\d.]+)")),
                        "economics.js ECON_DEFAULTS.loan_years"),
+        "cpi_pct": (_fmt(_js_const("economics.js", r"cpi_pct:\s*([\d.]+)"), 1), "economics.js ECON_DEFAULTS.cpi_pct"),
+        "inv_year": (_fmt(_js_const("economics.js", r"inverter_replace_year:\s*([\d.]+)") + 1),
+                     "economics.js ECON_DEFAULTS.inverter_replace_year + 1"),
+        "batt_year": (_fmt(_js_const("economics.js", r"battery_replace_year:\s*([\d.]+)") + 1),
+                      "economics.js ECON_DEFAULTS.battery_replace_year + 1"),
+        "batt_repl_pct": (_fmt(_js_const("economics.js", r"battery_replace_cost_pct:\s*([\d.]+)")),
+                          "economics.js ECON_DEFAULTS.battery_replace_cost_pct"),
+        "batt_per_kwh": (_fmt(_js_const("economics.js", r"cost_per_kwh:\s*([\d.]+)")),
+                         "economics.js BATTERY_DEFAULTS.cost_per_kwh"),
         "life_years": (_fmt(_js_const("economics.js", r"life_years:\s*([\d.]+)")),
                        "economics.js ECON_DEFAULTS.life_years"),
         "discount_pct": (_fmt(_js_const("economics.js", r"discount_rate_pct:\s*([\d.]+)"), 1),
@@ -431,10 +440,19 @@ STEPS: list[dict] = [
          "facts": [("System life", "life_years", " years"), ("Panel ageing", "degradation_pct", "% a year")],
          "code": ["economics.js::costPerKw", "bill_tool.js::btReturns"], "stages": ["page:economics.js"]},
         {"title": "Net saving with a loan",
-         "text": "The green box: bill savings less the repayments on a loan for the system and its one "
-                 "replacement inverter, at {loan_rate_pct}% over {loan_years} years. Both can be changed.",
-         "facts": [("Loan rate", "loan_rate_pct", "%"), ("Loan term", "loan_years", " years")],
-         "code": ["bill_tool.js::btAnnuity"], "stages": ["page:bill_tool.js"]},
+         "text": "The green box: an average year over the loan, in today's dollars. Bill savings, less the "
+                 "repayments on a loan for the system (and battery) at {loan_rate_pct}% over {loan_years} years, "
+                 "less the replacements: the inverter in year {inv_year}, and a battery in year {batt_year} at "
+                 "{batt_repl_pct}% of today's price, each paid in its year. The repayment is fixed, so "
+                 "{cpi_pct}% inflation makes it smaller in today's dollars each year.",
+         "facts": [("Loan rate", "loan_rate_pct", "%"), ("Loan term", "loan_years", " years"),
+                   ("Battery", "batt_per_kwh", " $/kWh")],
+         "code": ["bill_tool.js::btAnnuity", "bill_tool.js::btEvaluate", "bill_tool.js::btReturns"],
+         "stages": ["page:bill_tool.js"]},
+        {"title": "Return on investment",
+         "text": "Paid upfront: the yearly rate the cost earns over the system's life, after inflation, "
+                 "replacements included. With a loan nothing is paid up front, so the return is the net saving a year.",
+         "code": ["bill_tool.js::btReturns"], "stages": ["page:bill_tool.js"]},
      ]},
     {"title": "Checks and publishing", "icon": "✅",
      "summary": "Every figure is re-worked and checked before it reaches the map.",
