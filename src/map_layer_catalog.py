@@ -505,15 +505,17 @@ def _combined_analysis_layers(
     from src.output_contract import BUILDING_LAYER, LAYOUT_LAYER
 
     layers = []
+    # Listed top to bottom, the order they are drawn in (the catalogue's
+    # layers run from the highest order down; tests/test_map_layer_catalog.py).
     vector_descriptors = (
         ("analysis-panels", "Solar panels", "panel_layouts.pmtiles", LAYOUT_LAYER,
          "panel", "#dc2626", 30, "Combined panel polygons from the emitted layout vector tiles."),
-        ("analysis-facets", "Roof facets", "panel_layouts.pmtiles", LAYOUT_LAYER,
-         "facet", "#f97316", 15, "Combined roof-facet polygons; hue shows facing direction and saturation shows pitch, not solar yield."),
         ("analysis-obstructions", "Roof obstructions", "panel_layouts.pmtiles", LAYOUT_LAYER,
          "obstruction", "#7c3aed", 24, "Combined obstruction polygons from the emitted layout vector tiles."),
         ("analysis-outlines", "Building outlines", "buildings.pmtiles", BUILDING_LAYER,
          "building", "#64748b", 20, "Combined building outlines from the emitted building vector tiles."),
+        ("analysis-facets", "Roof facets", "panel_layouts.pmtiles", LAYOUT_LAYER,
+         "facet", "#f97316", 15, "Combined roof-facet polygons; hue shows facing direction and saturation shows pitch, not solar yield."),
     )
     for layer_id, label, filename, source_layer, kind, colour, order, description in vector_descriptors:
         path = root / filename
