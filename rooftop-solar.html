@@ -671,7 +671,7 @@
   @media (min-width: 701px) {
     .side-panel { transition: width .32s cubic-bezier(.2,.8,.2,1); }
     .side-panel.compact { width: var(--card-w); bottom: auto; max-height: calc(100% - 66px); }
-    .side-panel.compact .sba-full-only, .side-panel.compact .sx-more { display: none !important; }
+    .side-panel.compact .sba-full-only { display: none !important; }
     .side-panel:not(.compact) .sba-compact-only { display: none !important; }
     /* content-box: the panel's own padding is outside this width */
     .side-panel:not(.compact) { width: min(calc(var(--card-w) + var(--more-gap) + var(--more-w)),
@@ -5111,6 +5111,8 @@ map.on("load", async () => {
         <button type="button" class="sba-resilience" onclick="window.__openResilience && window.__openResilience()">
           <span class="rs-ic" aria-hidden="true">&#9728;&#xFE0E;</span><span>Resilience Analysis<small>How many days in a row this building may go without solar, going back decades.</small></span>
           <span aria-hidden="true">&rsaquo;</span></button>
+        <!-- Details and assumptions: the card's last item (bill_tool.js moreBox) -->
+        <div id="bill-more"></div>
         <div class="sba-full-only">
         <!-- The generation chart lives in the expanded column; the corner card
              shows the horizon (Josh, 21 Oct). -->
@@ -5126,7 +5128,6 @@ map.on("load", async () => {
         <!-- Days in a row of low sun, from 86 years of daily records (low_solar.js) -->
         <div class="sba-h3">Low-solar runs <span class="sba-h3-sub">for battery sizing</span></div>
         <div id="low-solar"></div>
-        <div id="bill-more"></div>
         <details class="sba-more">
         <summary>Layout details</summary>
         <div class="panel-cols">

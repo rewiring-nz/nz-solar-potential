@@ -1939,10 +1939,11 @@ function renderBillTool(box, ctx) {
       `<div class="sx-foot">An estimate, not a quote. <details class="sx-why sx-inline"><summary>More</summary>Based on the roof, the local climate and the assumptions above. Tap any result to see the working.</details></div>` +
       methodHtml +
       `</div></details>`;
-    // ONE CARD: the details sit in it, collapsed, not in a second column
+    // ONE CARD: the details sit in it, collapsed, at the bottom of the card
+    // (ctx.moreBox, after the horizon and Resilience), not in a second column
     const [top, more] = html.split(SX_SPLIT);
-    const moreBox = null;
-    box.innerHTML = top + more;
+    const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
+    if (moreBox) { box.innerHTML = top; moreBox.innerHTML = more; } else box.innerHTML = top + more;
     // THE HEADLINE SAVING under the card's yellow box (ctx.saveBox): the same
     // node as the "Bill savings" cell, so the two always agree and both open
     // the same workings. Hidden until the roof's sun has loaded, and when the
