@@ -278,6 +278,10 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   which draws the built layouts before and after (`--cases`, `--movers N`,
   `--ids`, `--before <copy of data/regions>`). `cases.py check --render`
   still calls the old path.
+  `cases.py check` (no render) also fails on the VM after v72: every case
+  roof gives `KeyError(<building id>)`, so it looks the roof up in a table
+  the per-region build no longer fills. The deploy gate's case list
+  (36 tracked, 7 changed in v72) still works and is what to read meanwhile.
 
 - **Re-record the synthetic reference** on the VM: v66 packs panels at
   their true size (1.134 x 1.961 m), so the synthetic region's panel counts
