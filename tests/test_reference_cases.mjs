@@ -215,11 +215,12 @@ c("...leaving 1 kWh", 1, d.socEnd, "4 stored − 3 used");
     Object.assign({ type: "home" }, B.BT_DEFAULTS.home, { battery: 10 }), null,
     { peak: 52, offpeak: 26, peakSell: 12, offpeakSell: 12, daily: 2.02 }, null);
   const Y = B.btYearHours(r.run, true);
-  const daysOf = { summer: 90, autumn: 92, winter: 92, spring: 91 };
-  const seasonSum = Object.keys(daysOf).reduce((t, s) => t + r.nodes.seasons[s].fromB.value * daysOf[s], 0);
-  const yearSum = Y.rows.reduce((t, row) => t + row.fromB, 0);
-  c("a year from the battery = each season's day × its days", r2(seasonSum), r2(yearSum),
-    "the 8,760 hours lay each season's day on the calendar", 0.01);
+  // a settled battery over the year: what comes out (to the home and to the
+  // grid) is what went in less the round-trip loss
+  const into = Y.rows.reduce((t, row) => t + row.toB, 0);
+  const out = Y.rows.reduce((t, row) => t + row.fromB + row.bExp, 0);
+  c("a year's battery: out = in less the round-trip loss", r2(into * 0.9), r2(out),
+    "90% round trip; the year runs twice so it ends where it starts", 0.02 * into);
   c("the year CSV carries the battery's flows", true,
     B.btYearCsv(Y).split("\n")[0].includes("into_battery_kwh,from_battery_kwh"), "two columns, kWh each hour");
   c("battery seasons' workings add up", true, ["summer", "winter"].every(s => Wk.verify(r.nodes.seasons[s].battDay).ok),

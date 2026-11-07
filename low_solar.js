@@ -178,6 +178,28 @@ const LowSolar = (() => {
     return { gen, roof, roofDif, sunMonth, split };
   }
 
+  // ONE REAL YEAR OF WEATHER for the bill tool's year (bill_tool.js
+  // btYearHours): the record's last complete year, each day's output on this
+  // roof (dailyGen: beam and diffuse scaled apart) as a share of the roof's
+  // average day that month. 29 February is left out: the year is 365 days.
+  function weatherYear(cell, curve, difShare) {
+    const { gen, roof } = dailyGen(cell, curve, difShare);
+    const n = cell.mj.length;
+    let y = cell.year[n - 1];
+    const lastOf = yr => { for (let i = n - 1; i >= 0; i--) if (cell.year[i] === yr) return i; return -1; };
+    const last = lastOf(y);
+    if (cell.month[last] !== 11 || new Date(cell.t0 + last * 86400000).getUTCDate() !== 31) y--;
+    const f = [];
+    for (let i = 0; i < n; i++) {
+      if (cell.year[i] !== y) continue;
+      const dt = new Date(cell.t0 + i * 86400000);
+      if (dt.getUTCMonth() === 1 && dt.getUTCDate() === 29) continue;
+      const m = cell.month[i];
+      f.push(roof[m] > 0 ? gen[i] / roof[m] : 1);
+    }
+    return f.length === 365 ? { year: y, f, cell: cell.name } : null;
+  }
+
   function analyse(cell, curve, threshold, difShare) {
     const n = cell.mj.length;
     const { gen, roof, roofDif, sunMonth, split } = dailyGen(cell, curve, difShare);
@@ -487,6 +509,6 @@ const LowSolar = (() => {
     });
   }
 
-  return { render, renderFull, analyse, battery, roofMonthly, monthly, dailyGen, h0, diffuseFraction };
+  return { render, renderFull, analyse, battery, roofMonthly, monthly, dailyGen, weatherYear, getCell, h0, diffuseFraction };
 })();
 if (typeof module !== "undefined") module.exports = LowSolar;

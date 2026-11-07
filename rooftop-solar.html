@@ -6455,6 +6455,14 @@ map.on("load", async () => {
     const out = GEN.curve.seasons.map(n => d[n]);
     return out.every(x => x != null && x >= 0) ? out : null;
   }
+  // ONE REAL YEAR OF WEATHER on the open roof, for the bill tool's whole
+  // year (low_solar.js weatherYear): null where there is no record nearby
+  window.__yearWeather = async () => {
+    if (typeof LowSolar === "undefined" || !LowSolar.weatherYear || !GEN || !GEN.curve) return null;
+    const p = selectedBuildingProps || {}, c = map.getCenter();
+    const cell = await LowSolar.getCell(p._sy != null ? p._sy : c.lat, p._sx != null ? p._sx : c.lng);
+    return cell ? LowSolar.weatherYear(cell, GEN.curve, lowSolarDifShare()) : null;
+  };
   // RESILIENCE (Josh, 24 Oct): the building's sunlight and shading records in
   // one place -- low-solar runs over 86 years (low_solar.js) and the horizon.
   // The household's hourly use in each season, for Resilience's battery

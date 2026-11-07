@@ -419,6 +419,15 @@ STEPS: list[dict] = [
                  "until the battery's charge settles, and the charts show it charging and powering the home.",
          "code": ["economics.js::simulateDay", "bill_tool.js::btRun", "bill_tool.js::btSeasonChart"],
          "stages": ["page:economics.js"]},
+        {"title": "The whole year, day by day",
+         "text": "The year chart has a different day for every day of the year. Each hour's use and solar follow a smooth curve "
+                 "through the year that keeps each season's average day exactly, and each day's sunlight "
+                 "follows a real year's weather at the roof (the last full year of the ERA-five record), rescaled so each "
+                 "season makes what the bills say. The battery carries its charge from one day to the next. "
+                 "Use does not follow the weather. The bills are still worked out on the four average days; "
+                 "the chart shows how far the day-by-day year's grid use differs from them.",
+         "code": ["bill_tool.js::btYearHours", "bill_tool.js::btBlendYear", "low_solar.js::weatherYear"],
+         "stages": ["page:bill_tool.js"]},
         {"title": "Power prices",
          "text": "Home prices are the Electricity Authority's latest for {price_region} ({price_month}): "
                  "{price_c}c a kWh and ${daily_d} a day for a standard-use home, incl. GST. The one price is split "

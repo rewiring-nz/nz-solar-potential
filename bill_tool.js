@@ -578,6 +578,9 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
     note: "The home's average use in the middle of the day. Solar can power this directly." });
   N.dayShare = Wk.quotient("Share of the day's use in the daytime", "share", N.dayKwh, N.avgDay, { dp: 0 });
   res.days = BT_SEASONS.map(s => days[s].value);
+  // what the day simulator was given, so the whole year (btYearHours) runs
+  // the same battery, dispatch and prices
+  res.sim = { batt, dispatch, P };
   res.year = { nowKwh: N.useYear.value, nowBill: N.nowBill.value, solarImport: N.solarImport.value,
                solarExport: N.solarExport.value, solarBill: N.solarBill.value, battImport: N.battImport.value,
                battExport: N.battExport.value, battBill: N.battBill.value, gen: N.genYear.value };
@@ -881,50 +884,127 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
                                          gen: ctx.genNode || N.genYear, kwp: kwpN }) };
 }
 
-// THE YEAR, HOUR BY HOUR. The bills are worked out on an average day in each
-// season, so the year is those days laid end to end on the calendar
-// (December to February summer, March to May autumn, June to August winter,
-// September to November spring: 90, 92, 92 and 91 days). Nothing is worked
-// out again: every hour is a row of its season's bill table, so the year
-// adds up to the same totals as the bills, and `check` says so (or what
-// differs). Day-to-day weather is not in it; Resilience has that.
+// THE YEAR, DAY BY DAY. The bills are worked out on an average day in each
+// season. The year is 365 different days built from them:
+//   SEASONS BLEND. Each hour's use and solar follow a smooth curve through
+//     the year (btYearBasis), so early January differs from late January.
+//     The curve is solved so that each season (December to February summer, March to May autumn,
+//     June to August winter, September to November spring) still adds up to
+//     its average day times its days, hour by hour: the year's use and solar
+//     are the bills' own, and `check` says so.
+//   WEATHER. With `weather` (LowSolar.weatherYear: each day's sunlight on
+//     this roof against its month's average, one real year of ERA5), each
+//     day's solar is scaled by that day's share, rescaled so each season
+//     still makes what the bills say. Without it the days follow the blend.
+//   THE BATTERY carries its charge from one day to the next (the year is run
+//     twice so it starts where it ends).
+// Grid use, exports and bills come out of the 365 days and differ from the
+// bills' average days: a sunny day's spare solar is exported and cannot
+// cover the next grey day. `check.diff` is that difference.
 const BT_MONTH_SEASON = ["summer", "summer", "autumn", "autumn", "autumn", "winter",
                          "winter", "winter", "spring", "spring", "spring", "summer"];
 const BT_MONTH_LEN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const BT_MONTH_NAME = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function btYearHours(run, withBatt) {
-  const N = run.nodes;
-  const P = N.prices;
-  const rows = [];
-  const calDays = {};
-  BT_MONTH_SEASON.forEach((s, m) => { calDays[s] = (calDays[s] || 0) + BT_MONTH_LEN[m]; });
-  const tot = { use: 0, solar: 0, imp: 0, exp: 0, billNow: 0, bill: 0 };
-  let doy = 0;
-  for (let m = 0; m < 12; m++) {
-    const s = BT_MONTH_SEASON[m];
-    const hr = withBatt ? run.seasons[s].rowsB : run.seasons[s].rows;
-    for (let d = 1; d <= BT_MONTH_LEN[m]; d++, doy++) {
-      for (let h = 0; h < 24; h++) {
-        const r = hr[h];
-        const cost = r.impCost - r.expPay + (h === 0 ? P.daily.value : 0);
-        const costNow = r.useCost + (h === 0 ? P.daily.value : 0);
-        rows.push({ doy, month: m, day: d, h, season: s, use: r.use, solar: r.solar, imp: r.imp, exp: r.exp,
-                    toB: r.toB || 0, fromB: r.fromB || 0, bExp: r.bExp || 0, buy: r.buy, sell: r.sell, costNow, cost });
-        tot.use += r.use; tot.solar += r.solar; tot.imp += r.imp; tot.exp += r.exp;
-        tot.billNow += costNow; tot.bill += cost;
-      }
+// A SMOOTH YEAR through the four seasons: a yearly wave and a half-yearly
+// one, the fewest terms that can match four seasons exactly
+// (1, cos θ, sin θ, cos 2θ; θ = 2π × day ÷ 365). Straight lines between the
+// seasons' middle days left a sharp corner at each middle.
+function btYearBasis(d) {
+  const t = 2 * Math.PI * (d + 0.5) / 365;
+  return [1, Math.cos(t), Math.sin(t), Math.cos(2 * t)];
+}
+function btSolve4(M, t) {
+  const A = M.map((row, i) => row.concat([t[i]]));
+  for (let c = 0; c < 4; c++) {
+    let p = c; for (let r = c + 1; r < 4; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]];
+    for (let r = 0; r < 4; r++) if (r !== c) { const f = A[r][c] / A[c][c]; for (let k = c; k < 5; k++) A[r][k] -= f * A[c][k]; }
+  }
+  return A.map((row, i) => row[4] / row[i]);
+}
+// target: [season][24] average-day values; returns [365][24] whose days in
+// each season average to exactly the target, hour by hour
+function btBlendYear(target, seasonOfDay) {
+  const W = Array.from({ length: 365 }, (_, d) => btYearBasis(d));
+  const M = BT_SEASONS.map(() => [0, 0, 0, 0]), n = [0, 0, 0, 0];
+  for (let d = 0; d < 365; d++) { const s = seasonOfDay[d]; n[s]++; for (let k = 0; k < 4; k++) M[s][k] += W[d][k]; }
+  M.forEach((row, s) => row.forEach((_, k) => { row[k] /= n[s]; }));
+  const out = Array.from({ length: 365 }, () => new Array(24).fill(0));
+  for (let h = 0; h < 24; h++) {
+    const C = btSolve4(M, target.map(r => r[h]));
+    const sum = [0, 0, 0, 0];
+    for (let d = 0; d < 365; d++) { out[d][h] = Math.max(0, W[d].reduce((t, w, k) => t + w * C[k], 0)); sum[seasonOfDay[d]] += out[d][h]; }
+    // the wave can dip below zero (summer heating); held at zero, and each
+    // season rescaled so it is still exact
+    for (let d = 0; d < 365; d++) {
+      const s = seasonOfDay[d], want = target[s][h] * n[s];
+      out[d][h] = sum[s] > 0 ? out[d][h] * want / sum[s] : target[s][h];
     }
   }
-  // the year must add up to the bills' own figures
-  const want = {
-    use: N.useYear.value, solar: N.genYear.value,
-    imp: (withBatt ? N.battImport : N.solarImport).value, exp: (withBatt ? N.battExport : N.solarExport).value,
-    billNow: N.nowBill.value, bill: (withBatt ? N.battBill : N.solarBill).value,
+  return out;
+}
+
+function btYearHours(run, withBatt, weather) {
+  const N = run.nodes, P = N.prices;
+  const sim = run.sim || {};
+  const seasonOfDay = [], monthOfDay = [], dayOfMonth = [];
+  for (let m = 0; m < 12; m++) for (let d = 1; d <= BT_MONTH_LEN[m]; d++) {
+    seasonOfDay.push(BT_SEASONS.indexOf(BT_MONTH_SEASON[m])); monthOfDay.push(m); dayOfMonth.push(d);
+  }
+  const calDays = [0, 0, 0, 0]; seasonOfDay.forEach(s => { calDays[s]++; });
+  const load = btBlendYear(BT_SEASONS.map(s => run.seasons[s].load), seasonOfDay);
+  const gen = btBlendYear(BT_SEASONS.map(s => run.seasons[s].gen), seasonOfDay);
+  // the weather: each day's solar scaled by its share, each season rescaled
+  const f = weather && weather.f && weather.f.length === 365 ? weather.f : null;
+  if (f) {
+    const day = gen.map(r => r.reduce((a, b) => a + b, 0));
+    const want = [0, 0, 0, 0], got = [0, 0, 0, 0];
+    for (let d = 0; d < 365; d++) { want[seasonOfDay[d]] += day[d]; got[seasonOfDay[d]] += day[d] * f[d]; }
+    for (let d = 0; d < 365; d++) {
+      const s = seasonOfDay[d], k = got[s] > 0 ? f[d] * want[s] / got[s] : 1;
+      for (let h = 0; h < 24; h++) gen[d][h] *= k;
+    }
+  }
+  const none = { enabled: false, kwh: 0, kw: 0, round_trip_pct: 100, reserve_pct: 0 };
+  const batt = withBatt && sim.batt && sim.batt.enabled ? sim.batt : none;
+  const runYear = soc0 => {
+    let soc = soc0; const days = [];
+    for (let d = 0; d < 365; d++) {
+      const r = simulateDay(gen[d], load[d], batt, soc, batt.enabled ? sim.dispatch : null);
+      days.push(r); soc = r.socEnd;
+    }
+    return { days, soc };
   };
-  const off = Object.keys(want).filter(k => Math.abs(tot[k] - want[k]) > 1e-6 * Math.max(1, Math.abs(want[k])));
-  const daysOff = BT_SEASONS.filter((s, i) => calDays[s] !== run.days[i]);
-  return { rows, totals: tot, want, check: { ok: !off.length, off, daysOff } };
+  let yr = runYear(0);
+  if (batt.enabled) yr = runYear(yr.soc);
+  const rows = [];
+  const tot = { use: 0, solar: 0, imp: 0, exp: 0, billNow: 0, bill: 0 };
+  for (let d = 0; d < 365; d++) {
+    const s = BT_SEASONS[seasonOfDay[d]], r = yr.days[d];
+    for (let h = 0; h < 24; h++) {
+      const use = load[d][h], solar = gen[d][h], buy = P.buyAt(h), sell = P.sellAt(h);
+      const direct = Math.min(use, solar);
+      const row = { doy: d, month: monthOfDay[d], day: dayOfMonth[d], h, season: s, use, solar, imp: r.impH[h], exp: r.expH[h],
+                    toB: batt.enabled ? r.chargeH[h] : 0, fromB: batt.enabled ? r.selfH[h] - direct : 0,
+                    bExp: batt.enabled && r.battExpH ? r.battExpH[h] : 0, buy, sell };
+      row.costNow = use * buy + (h === 0 ? P.daily.value : 0);
+      row.cost = row.imp * buy - row.exp * sell + (h === 0 ? P.daily.value : 0);
+      rows.push(row);
+      tot.use += use; tot.solar += solar; tot.imp += row.imp; tot.exp += row.exp;
+      tot.billNow += row.costNow; tot.bill += row.cost;
+    }
+  }
+  // use, solar and today's bill are the bills' own; grid, exports and the
+  // bill with solar come out of the 365 days
+  const want = {
+    use: N.useYear.value, solar: N.genYear.value, billNow: N.nowBill.value,
+    imp: (withBatt ? N.battImport : N.solarImport).value, exp: (withBatt ? N.battExport : N.solarExport).value,
+    bill: (withBatt ? N.battBill : N.solarBill).value,
+  };
+  const off = ["use", "solar", "billNow"].filter(k => Math.abs(tot[k] - want[k]) > 1e-6 * Math.max(1, Math.abs(want[k])));
+  const daysOff = BT_SEASONS.filter((s, i) => calDays[i] !== run.days[i]);
+  const diff = { imp: tot.imp - want.imp, exp: tot.exp - want.exp, bill: tot.bill - want.bill };
+  return { rows, totals: tot, want, weather: f ? weather : null, check: { ok: !off.length && !daysOff.length, off, daysOff, diff } };
 }
 
 // THE WHOLE YEAR AS A LINE CHART, zoomable: the year (each day's total),
@@ -1017,7 +1097,7 @@ function btYearCsv(year) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
+                     btYearHours, btBlendYear, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -2012,8 +2092,15 @@ function renderBillTool(box, ctx) {
     // a day in each season, the whole year hour by hour, and year by year
     // (savings against repayments). Every figure is from this draw's own
     // calculation (r), the same nodes the card and the green box show.
-    let yearData = null;
-    const getYear = () => yearData || (yearData = btYearHours(r.run, withBatt));
+    // the year's weather loads once, when the year is first shown; the year
+    // is drawn without it until then
+    let yearData = null, yearWeather = null, weatherAsked = false;
+    const getYear = () => yearData || (yearData = btYearHours(r.run, withBatt, yearWeather));
+    const askWeather = redraw => {
+      if (weatherAsked || typeof window === "undefined" || !window.__yearWeather) return;
+      weatherAsked = true;
+      window.__yearWeather().then(w => { if (w) { yearWeather = w; yearData = null; redraw(); } }).catch(() => {});
+    };
     // YEAR BY YEAR, in today's dollars: each year's bill savings (btReturns'
     // rows) and that year's fixed repayment taken back to today's dollars.
     // Their average over the loan is the green box's figure (checked below).
@@ -2074,11 +2161,13 @@ function renderBillTool(box, ctx) {
       const Y = getYear();
       const T = Y.totals;
       const ok = Y.check.ok
-        ? `<span class="ok">✓ Adds up to the same year as the bills.</span>`
+        ? `<span class="ok">✓ The same use and solar as the bills.</span>`
         : `<span class="warn">Does not add up to the bills (${Y.check.off.join(", ")}${Y.check.daysOff.length ? "; season lengths differ from the calendar" : ""}).</span>`;
-      sumEl.innerHTML = `Use ${Math.round(T.use).toLocaleString()} kWh, solar ${Math.round(T.solar).toLocaleString()} kWh, ` +
-        `from the grid ${Math.round(T.imp).toLocaleString()} kWh, exported ${Math.round(T.exp).toLocaleString()} kWh. ` +
-        `Bills ${btMoney(T.billNow)} today, ${btMoney(T.bill)} ${withBatt ? "with solar and the battery" : "with solar"}. ${ok}`;
+      const d = Y.check.diff, kw = v => Math.round(Math.abs(v)).toLocaleString();
+      const vs = Math.abs(d.imp) < 0.5 ? "the same as" : `${kw(d.imp)} kWh ${d.imp > 0 ? "more" : "less"} than`;
+      sumEl.innerHTML = `Use ${Math.round(T.use).toLocaleString()} kWh, solar ${Math.round(T.solar).toLocaleString()} kWh. ${ok} ` +
+        `Day by day the ${isBiz ? "building" : "home"} takes ${Math.round(T.imp).toLocaleString()} kWh from the grid, ${vs} the bills' average days, and exports ${Math.round(T.exp).toLocaleString()} kWh. ` +
+        `Bills ${btMoney(T.billNow)} today, ${btMoney(T.bill)} ${withBatt ? "with solar and the battery" : "with solar"}.`;
     };
     const BIG_TABS = [["seasons", "A day in each season"], ["year", "The whole year"], ["returns", "Year by year"]];
     const openBig = tab0 => {
@@ -2119,7 +2208,7 @@ function renderBillTool(box, ctx) {
               `<span><i class="nl"></i>Net load (below zero when exporting)</span><span class="u sx-yunit"></span></div>` +
             `<div class="sx-chartbox sx-ybox"><div class="sx-yplot"></div><div class="sx-tip" hidden></div></div>` +
             `<div class="sx-foot sx-ysum"></div>` +
-            `<div class="sx-foot">Tap the chart to zoom in there. Each day is its season's average day, as the bills are worked out, so days in a season match and the steps fall at the seasons' edges. Day-to-day weather is in Resilience.</div>` +
+            `<div class="sx-foot sx-yhow"></div>` +
             `<div class="sx-bigfoot"><button type="button" class="sx-btn sx-ycsv">Download the 8,760 hours (CSV)</button></div>`;
         } else {
           const rows = returnsRows(), L = N.loanYears.value;
@@ -2178,7 +2267,14 @@ function renderBillTool(box, ctx) {
         if (tab === "year") {
           const plot = lb.querySelector(".sx-yplot"), tip = lb.querySelector(".sx-ybox .sx-tip");
           const W = Math.round(Math.min(1500, innerWidth - 100) / 1.35), H = Math.round(Math.max(260, innerHeight - 380) / 1.35);
-          yearSum(lb.querySelector(".sx-ysum"));
+          const how = () => {
+            const w = getYear().weather;
+            lb.querySelector(".sx-yhow").textContent = "Tap the chart to zoom in there. Use and solar change day by day from one season's average day to the next. " +
+              (w ? `Each day's sunlight follows the weather of ${w.year} at this roof (ERA5), scaled so each season makes what the bills say. ` : "Day-to-day weather is not in it yet: no sunlight record was found for this place. ") +
+              `The battery carries its charge from one day to the next. Use does not follow the weather: heating is the season's average.`;
+          };
+          yearSum(lb.querySelector(".sx-ysum")); how();
+          askWeather(() => { if (!lb.hidden && tab === "year") { yearSum(lb.querySelector(".sx-ysum")); how(); draw(); } });
           let cur = null;
           const k = v => v.toFixed(v < 10 ? 2 : 1) + " kWh";
           const dayName = d => { const m = btMonthOf(d); return `${d - btMonthStart(m) + 1} ${BT_MONTH_NAME[m]}`; };

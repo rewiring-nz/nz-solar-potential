@@ -234,15 +234,73 @@ check("each season's chart parts add up to its hour rows, and the rows to the da
   }
 });
 
-check("the year, hour by hour, adds up to the bills (with and without a battery)", () => {
+check("the year: use, solar and today's bill are the bills' own (with and without a battery)", () => {
   const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
   for (const batt of [0, 10]) {
     const r = B.btEvaluate(ctx, home({ battery: batt }), null, prices);
-    const Y = B.btYearHours(r.run, batt > 0);
-    if (Y.rows.length !== 8760) throw new Error(`${Y.rows.length} hours`);
-    if (!Y.check.ok) throw new Error(`does not add up: ${Y.check.off.join(", ")} ${Y.check.daysOff.join(", ")}`);
-    near(Y.totals.bill, (batt ? r.run.nodes.battBill : r.run.nodes.solarBill).value, 1e-6, "bill");
+    for (const weather of [null, { f: Array.from({ length: 365 }, (_, d) => 0.3 + 1.4 * ((d * 7919) % 97) / 96) }]) {
+      const Y = B.btYearHours(r.run, batt > 0, weather);
+      if (Y.rows.length !== 8760) throw new Error(`${Y.rows.length} hours`);
+      if (!Y.check.ok) throw new Error(`does not add up: ${Y.check.off.join(", ")} ${Y.check.daysOff.join(", ")}`);
+      near(Y.totals.use, r.run.nodes.useYear.value, 1e-6, "use");
+      near(Y.totals.solar, r.run.nodes.genYear.value, 1e-6, "solar");
+      // the bill with solar comes out of the days: near the bills', not equal
+      const want = (batt ? r.run.nodes.battBill : r.run.nodes.solarBill).value;
+      if (Math.abs(Y.totals.bill - want) > 0.15 * Math.abs(r.run.nodes.nowBill.value))
+        throw new Error(`year bill ${Y.totals.bill.toFixed(0)} far from the bills' ${want.toFixed(0)}`);
+      // energy balance every hour
+      for (const row of Y.rows) {
+        const fromSolar = Math.min(row.use, row.solar);
+        if (Math.abs(row.use - (fromSolar + row.fromB + row.imp)) > 1e-9) throw new Error(`use balance day ${row.doy} ${row.h}:00`);
+        if (Math.abs(row.solar - (fromSolar + row.toB + row.exp - row.bExp)) > 1e-9) throw new Error(`solar balance day ${row.doy} ${row.h}:00`);
+      }
+    }
   }
+});
+
+check("the year blends the seasons: every day differs, each season keeps its average day", () => {
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home(), null, prices);
+  const Y = B.btYearHours(r.run, false);
+  const day = (d, k) => Y.rows.slice(d * 24, d * 24 + 24).reduce((t, x) => t + x[k], 0);
+  // 1 Jan against 31 Jan, and no two neighbouring days the same (bar the
+  // season middles' turning points)
+  for (const k of ["use", "solar"]) {
+    if (Math.abs(day(0, k) - day(30, k)) < 0.01) throw new Error(`${k}: 1 and 31 January match`);
+    let same = 0;
+    for (let d = 1; d < 365; d++) if (Math.abs(day(d, k) - day(d - 1, k)) < 1e-9) same++;
+    if (same > 4) throw new Error(`${k}: ${same} days repeat the day before`);
+  }
+  // no jump at a season's edge bigger than a few days' drift
+  for (const [a, b] of [[58, 59], [150, 151], [242, 243], [333, 334]]) {
+    const jump = Math.abs(day(b, "use") - day(a, "use")), drift = Math.abs(day(a, "use") - day(a - 3, "use")) / 3;
+    if (jump > 3 * drift + 0.05) throw new Error(`use jumps ${jump.toFixed(2)} kWh at day ${b}`);
+  }
+  // each season, hour by hour, is its average day times its days
+  const seasons = { summer: [], autumn: [], winter: [], spring: [] };
+  Y.rows.forEach(x => seasons[x.season].push(x));
+  for (const s of Object.keys(seasons)) for (let h = 0; h < 24; h++) {
+    const rs = seasons[s].filter(x => x.h === h);
+    near(rs.reduce((t, x) => t + x.use, 0) / rs.length, r.run.seasons[s].load[h], 1e-9, `${s} ${h}:00 use`);
+    near(rs.reduce((t, x) => t + x.solar, 0) / rs.length, r.run.seasons[s].gen[h], 1e-9, `${s} ${h}:00 solar`);
+  }
+});
+
+check("the year's weather: a grey day makes less, a season still makes the bills' solar", () => {
+  const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home({ battery: 10 }), null, prices);
+  const f = new Array(365).fill(1); f[20] = 1.6; f[21] = 0.1;
+  const Y = B.btYearHours(r.run, true, { f });
+  const day = d => Y.rows.slice(d * 24, d * 24 + 24).reduce((t, x) => t + x.solar, 0);
+  if (!(day(21) < 0.2 * day(22))) throw new Error("the grey day is not grey");
+  if (!(day(20) > 1.4 * day(19))) throw new Error("the bright day is not bright");
+  const w = Y.rows.filter(x => x.season === "winter").reduce((t, x) => t + x.solar, 0);
+  near(w, r.run.nodes.seasons.winter.made.value * 92, 1e-6, "winter solar");
+  near(Y.rows.filter(x => x.season === "summer").reduce((t, x) => t + x.solar, 0), r.run.nodes.seasons.summer.made.value * 90, 1e-6, "summer solar");
+  // the battery carries charge over midnight: the grey day starts with what
+  // the bright day before left (kept for the morning peak, 7-9am), so it
+  // draws on the battery before its own sun is up
+  if (!(Y.rows.slice(21 * 24, 21 * 24 + 8).some(x => x.fromB > 0))) throw new Error("no battery the grey morning");
 });
 
 check("a change of assumption moves the year and the bills together", () => {

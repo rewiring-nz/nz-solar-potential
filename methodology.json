@@ -476,6 +476,19 @@
      ]
     },
     {
+     "title": "The whole year, day by day",
+     "text": "The year chart has a different day for every day of the year. Each hour's use and solar follow a smooth curve through the year that keeps each season's average day exactly, and each day's sunlight follows a real year's weather at the roof (the last full year of the ERA-five record), rescaled so each season makes what the bills say. The battery carries its charge from one day to the next. Use does not follow the weather. The bills are still worked out on the four average days; the chart shows how far the day-by-day year's grid use differs from them.",
+     "facts": [],
+     "code": [
+      "bill_tool.js::btYearHours",
+      "bill_tool.js::btBlendYear",
+      "low_solar.js::weatherYear"
+     ],
+     "stages": [
+      "page:bill_tool.js"
+     ]
+    },
+    {
      "title": "Power prices",
      "text": "Home prices are the Electricity Authority's latest for Queenstown (Aurora Energy) (2026-05): 33.55c a kWh and $2.02 a day for a standard-use home, incl. GST. The one price is split into 52c in peak hours and 26c off-peak, so a typical home pays about the same average. Areas on another network use its prices: Central Otago (Aurora Energy) 40.69c and $1.99 a day; Southland (The Power Company) 31.28c and $3.38 a day. Businesses pay energy prices, 17c peak and 10c off-peak; their network and connection charges are a separate bill that solar does not change. Exported solar earns 12c a kWh in the day and 23c at peak in the first year (retailer buy-back rates). The prices are refreshed each month.",
      "facts": [
