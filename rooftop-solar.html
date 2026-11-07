@@ -440,7 +440,7 @@
   .roof-saving .wk-num, .roof-saving .wk-num:hover { text-decoration: none; }
   .roof-saving [data-wk] { cursor: pointer; border-radius: 6px; }
   .roof-saving [data-wk]:hover, .roof-saving [data-wk]:focus-visible { background: rgba(0,0,0,.16); outline: none; }
-  .roof-saving .rs-top { display: flex; align-items: center; gap: 10px; }
+  .roof-saving .rs-top { display: flex; align-items: flex-start; gap: 10px; }
   .roof-saving .rs-left { flex: 1 1 auto; min-width: 0; }
   .roof-saving .rs-head { display: flex; align-items: center; gap: 6px; }
   .roof-saving .rs-l { opacity: .92; }
@@ -450,8 +450,11 @@
     background: none; color: #fff; font: italic 700 12px/1 Georgia, serif; cursor: pointer; padding: 0; }
   .roof-saving .rs-i:hover, .roof-saving .rs-i:focus-visible, .roof-saving .rs-i[aria-expanded="true"] { background: rgba(0,0,0,.22); outline: none; }
   .roof-saving .rs-info { font-size: 12px; line-height: 1.45; margin: 6px 0 2px; color: #fff; }
+  /* tucked into the green box's top-right corner: the same 6px gap above
+     and to the side (the box's 12px/14px padding less 6/8), and a radius
+     concentric with the box's 12px corner (12 - 6) */
   .roof-saving .rs-parts { flex: 0 0 auto; display: grid; gap: 1px; font-size: 12px; background: #dcfce7; color: #14532d;
-    border-radius: 8px; padding: 5px 8px; min-width: 150px; }
+    border-radius: 6px; padding: 5px 8px; min-width: 150px; margin: -6px -8px 0 0; }
   .roof-saving .rs-parts [data-wk]:hover, .roof-saving .rs-parts [data-wk]:focus-visible { background: rgba(20,83,45,.10); }
   .roof-saving.behind .rs-parts { background: #e5e7eb; color: #1f2937; }
   .roof-saving.behind .rs-parts [data-wk]:hover { background: rgba(0,0,0,.08); }
