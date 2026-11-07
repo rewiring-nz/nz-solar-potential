@@ -1022,6 +1022,17 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4734679,
+   "region": "my_test_area",
+   "first_flagged": "2026-11-08",
+   "defect": "13 Beach St: this panel layout is terrible -- a flat roof cut into many small faces, panel",
+   "quotes": [
+    "13 Beach St: this panel layout is terrible -- a flat roof cut into many small faces, panels scattered in small islands at odd angles"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }

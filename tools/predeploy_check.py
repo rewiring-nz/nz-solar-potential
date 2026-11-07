@@ -234,9 +234,15 @@ def main():
                 and wl >= ZERO_MIN:
             withheld.append((b, wl, new[b]["no_estimate_reason"]))
 
+    # PANEL COUNTS ARE POINTERS, NOT RESULTS. A count says nothing about
+    # whether a layout is good: a roof can gain panels and get worse, and a
+    # roof that loses all of them may now be right (owner, 8 Nov). The
+    # totals below guard against lost data; the lists name roofs to render.
+    # Accuracy comes from the markup, scored blind, and the owner's scores
+    # on a sample of the live map (tools/review_page.py).
     print(f"\n{len(common)} buildings compared")
-    print(f"  panels   {tot_live:,} -> {tot_new:,}  "
-          f"({tot_new - tot_live:+,}, {100 * (tot_new - tot_live) / max(tot_live, 1):+.1f}%)")
+    print(f"  panels on the map {tot_live:,} -> {tot_new:,} "
+          f"({100 * (tot_new - tot_live) / max(tot_live, 1):+.1f}%): a lost-data check, not accuracy")
 
     def show(title, rows, fmt):
         print(f"\n  {title}: {len(rows)}")
@@ -281,11 +287,10 @@ def main():
                 if c.get("status") == "fixed":
                     regressed.append(c["id"])
         print(f"\n  JOSH'S CASE ROOFS: {len(reg['cases'])} tracked, "
-              f"{len(moved)} changed in this build")
+              f"{len(moved)} with a changed layout: render each, the count says nothing")
         for c, o, n2 in moved:
             tag = "  <-- WAS MARKED FIXED" if c.get("status") == "fixed" else ""
-            print(f"    #{c['id']}  {o} -> {n2} panels  "
-                  f"[{c.get('status')}]  {c['defect'][:40]}{tag}")
+            print(f"    #{c['id']}  [{c.get('status')}]  {c['defect'][:60]}{tag}")
         if regressed:
             print(f"    REGRESSION: {regressed} were confirmed fixed and have "
                   f"moved. Do not deploy without looking at them.")
@@ -310,8 +315,8 @@ def main():
     bad = (len(zeroed) + len(withheld) + len(twice) + len(unchecked) + len(lost_regions) + len(regressed)
            + (len(gone) > GONE_MAX) + bool(total_drop))
     print(f"\n  {'LOOK AT THESE BEFORE DEPLOYING' if bad else 'nothing zeroed or newly withheld'}")
-    print("  A drop is not automatically wrong -- better geometry removes panels")
-    print("  that were overlapping a ridge. This surfaces, it does not judge.")
+    print("  These lists name roofs to render, not verdicts: fewer panels can be a")
+    print("  better layout and more can be a worse one. This surfaces, it does not judge.")
     return 1 if bad else 0
 
 

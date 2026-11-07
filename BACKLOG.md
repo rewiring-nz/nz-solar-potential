@@ -315,6 +315,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Flat commercial roofs cut into many faces (13 Beach St, #4734679,
+  case opened 8 Nov: "This panel layout is terrible").** v72 has 19 faces
+  on it: a SAM reading scored 0.37 (under the 0.60 trust line) and the
+  LiDAR path both cut the decks along roofing seams, parapets and plant,
+  plus slivers at 9-46 degrees over walls. Flat faces already rack along
+  the building's walls (`panel_fitting._edge_aligned_axes`), so the angles
+  agree; the damage is that each face is packed alone with its own
+  setbacks, so one deck becomes 10 arrays of 4-22 panels with stepped
+  edges, some in strips between walls and plant. Same family as 24, 48 and
+  93 Beach St. Next: on flat decks at the same level (within
+  `MERGE_MAX_STEP_M`), pack one grid across the deck and clip it by the
+  obstructions instead of by face seams; judge on the case roofs and the
+  CBD drawn roofs with `tools/layout_ab.py`, then blind.
+
 - **Use the better reading.** On Josh's 131 drawn roofs the pipeline's pick
   scores line F 0.537 (48 roofs right); the best candidate it already drew
   scores 0.688 (77). Trusting the photo reading plus overlap-clip-only
