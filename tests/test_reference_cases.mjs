@@ -184,6 +184,15 @@ d = E.simulateDay(g, l, batt, 0);
 c("battery: noon's spare 4 kWh is stored", 0, d.expH[12], "5 made − 1 used = 4, all into the battery");
 c("...and powers the evening", 3, d.selfH[19], "3 kWh at 7 pm come from the battery");
 c("...leaving 1 kWh", 1, d.socEnd, "4 stored − 3 used");
+// the same day with the real battery's 90% round trip: half the loss each way
+{
+  const b90 = Object.assign({}, batt, { round_trip_pct: 90 });
+  const l2 = z.slice(); l2[12] = 1; l2[19] = 10;
+  const e = E.simulateDay(g, l2, b90, 0);
+  c("90% battery: 4 kWh in holds 4 × √0.9", r2(4 * Math.sqrt(0.9)), r2(e.socH[12]), "4 × 0.9487 = 3.79 kWh of charge");
+  c("...and gives back 4 × 0.9 to the evening", 3.6, e.dischargeH[19], "3.79 × 0.9487 = 3.6 kWh: 10% lost in and out", 1e-9);
+  c("...the rest of the evening from the grid", 10 - 3.6, e.impH[19], "10 used − 3.6 from the battery", 1e-9);
+}
 
 // ---- a battery on time of use saves its charge for the peak ------------------
 {

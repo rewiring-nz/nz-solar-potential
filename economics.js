@@ -494,8 +494,10 @@ function simulateDay(genKw, loadKw, batt, socStart, opts) {
   const cap = batt && batt.enabled ? Math.max(0, batt.kwh) : 0;
   const floor = cap * (batt ? batt.reserve_pct : 0) / 100;
   const pmax = batt ? Math.max(0, batt.kw) : 0;
-  // Round-trip loss is charged on the way in, so a kWh that comes back out
-  // is a kWh the house actually uses.
+  // ROUND-TRIP LOSS, half each way: a kWh of spare solar adds sqrt(0.9) kWh
+  // to the charge, and a kWh to the building takes 1/sqrt(0.9) from it, so a
+  // kWh in returns round_trip_pct of a kWh (90%: tests/test_reference_cases).
+  // chargeH is solar-side kWh, dischargeH and battExpH building/grid-side.
   const eff = Math.sqrt(Math.max(0.01, (batt ? batt.round_trip_pct : 100) / 100));
   // ON A TIME-OF-USE PLAN THE BATTERY SAVES ITS CHARGE FOR THE PEAK
   // (opts.isPeak(h) true in peak hours). In a peak hour it covers any
