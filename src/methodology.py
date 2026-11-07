@@ -441,9 +441,10 @@ STEPS: list[dict] = [
          "code": ["economics.js::costPerKw", "bill_tool.js::btReturns"], "stages": ["page:economics.js"]},
         {"title": "Net saving with a loan",
          "text": "The green box: an average year over the loan, in today's dollars. Bill savings, less the "
-                 "repayments on a loan for the system (and battery) at {loan_rate_pct}% over {loan_years} years, "
-                 "less the replacements: the inverter in year {inv_year}, and a battery in year {batt_year} at "
-                 "{batt_repl_pct}% of today's price, each paid in its year. The repayment is fixed, so "
+                 "repayments on a loan for the system (and battery) at {loan_rate_pct}% over {loan_years} years. "
+                 "Replacements are added to the loan when they fall due and repaid with interest by its end: "
+                 "the inverter in year {inv_year}, and a battery in year {batt_year} at {batt_repl_pct}% of "
+                 "today's price. Paid upfront, they are paid in cash in their year. The repayment is fixed, so "
                  "{cpi_pct}% inflation makes it smaller in today's dollars each year.",
          "facts": [("Loan rate", "loan_rate_pct", "%"), ("Loan term", "loan_years", " years"),
                    ("Battery", "batt_per_kwh", " $/kWh")],

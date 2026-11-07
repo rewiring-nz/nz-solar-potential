@@ -478,6 +478,9 @@ const BATTERY_DEFAULTS = {
   reserve_pct: 10,    // never discharged below this
   cost_per_kwh: 900,  // installed, NZ, incl. GST: the map's set price
   life_years: 15,     // replaced once inside a 30-year system life
+  fade_pct: 2,        // capacity lost a year, as a share of new (bill_tool.js btEvaluate)
+  export_kw: 5,       // the most sent to the grid in an hour, solar and battery together:
+                      // NZ networks commonly limit a home's export to 5 kW
 };
 
 // One representative day. Generation and load are 24 kW values; the battery
@@ -501,6 +504,12 @@ function simulateDay(genKw, loadKw, batt, socStart, opts) {
   // dearest power first and is not spent at 2am leaving the 7am peak to the
   // grid. Without isPeak (a flat plan) it covers any shortfall as it comes.
   const isPeak = opts && typeof opts.isPeak === "function" ? opts.isPeak : null;
+  // PEAK EXPORT (opts.exportPeak, where export pays more at peak than in the
+  // day): in a peak hour, charge the building will not need before the sun
+  // next refills the battery is sold to the grid, up to the battery's power.
+  // Kept, it would sit full and the next day's spare sun would be exported
+  // at the day's lower price instead.
+  const exportPeak = !!(isPeak && opts.exportPeak);
   const gap = new Array(24), spare = new Array(24);
   for (let h = 0; h < 24; h++) {
     gap[h] = Math.max(0, loadKw[h] - genKw[h]);
@@ -516,12 +525,23 @@ function simulateDay(genKw, loadKw, batt, socStart, opts) {
     }
     return need;
   };
+  // house-side kWh every hour ahead needs before solar is next spare
+  const needAfter = h => {
+    let need = 0;
+    for (let k = 1; k < 24; k++) {
+      const j = (h + k) % 24;
+      if (spare[j] > 1e-9) break;
+      need += Math.min(gap[j], pmax);
+    }
+    return need;
+  };
   let soc = Math.min(Math.max(socStart, floor), cap);
   const selfH = new Array(24).fill(0);
   const expH = new Array(24).fill(0);
   const impH = new Array(24).fill(0);
   const chargeH = new Array(24).fill(0);      // spare solar into the battery (kWh in)
   const dischargeH = new Array(24).fill(0);   // battery to the building (kWh out)
+  const battExpH = new Array(24).fill(0);     // battery to the grid at peak (kWh out)
   const socH = new Array(24).fill(0);         // charge at the end of each hour
   for (let h = 0; h < 24; h++) {
     const g = genKw[h], l = loadKw[h];
@@ -545,11 +565,17 @@ function simulateDay(genKw, loadKw, batt, socStart, opts) {
       deficit -= give;
       dischargeH[h] = give;
     }
+    if (exportPeak && cap > 0 && isPeak(h) && deficit <= 1e-12) {
+      const avail = Math.max(0, (soc - floor) * eff - needAfter(h));
+      const lim = batt && batt.export_kw > 0 ? Math.max(0, batt.export_kw - surplus) : Infinity;
+      const sell = Math.min(avail, pmax - dischargeH[h], lim);
+      if (sell > 1e-12) { soc -= sell / eff; surplus += sell; battExpH[h] = sell; }
+    }
     expH[h] = surplus;
     impH[h] = deficit;
     socH[h] = soc;
   }
-  return { selfH, expH, impH, chargeH, dischargeH, socH, socEnd: soc };
+  return { selfH, expH, impH, chargeH, dischargeH, battExpH, socH, socEnd: soc };
 }
 
 // A year of representative days. `genByHour[s][h]` is kW for season s, and

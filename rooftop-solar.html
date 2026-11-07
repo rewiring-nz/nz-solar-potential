@@ -459,8 +459,14 @@
   .roof-saving .rs-batt { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px;
     border-top: 1px solid rgba(255,255,255,.25); font-size: 13px; }
   .roof-saving .rs-batt > span { flex: 1; font-weight: 600; }
-  .roof-saving .rs-bk { display: inline-flex; align-items: center; gap: 4px; background: rgba(0,0,0,.18); border-radius: 6px; padding: 2px 6px; }
-  .roof-saving .rs-bk input { width: 44px; background: transparent; border: 0; color: #fff; font: inherit; font-weight: 700; text-align: right; }
+  .roof-saving .rs-bk { display: inline-flex; align-items: center; background: rgba(0,0,0,.18); border-radius: 8px; padding: 2px; }
+  .roof-saving .rs-bk button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: rgba(255,255,255,.16); color: #fff;
+    font: 700 17px/1 system-ui, sans-serif; cursor: pointer; padding: 0; }
+  .roof-saving .rs-bk button:hover:not(:disabled), .roof-saving .rs-bk button:focus-visible { background: rgba(255,255,255,.3); outline: none; }
+  .roof-saving .rs-bk button:disabled { opacity: .35; cursor: default; }
+  .roof-saving .rs-bk label { display: inline-flex; align-items: baseline; gap: 3px; padding: 0 6px; cursor: text; }
+  .roof-saving .rs-bk input { width: 4ch; background: transparent; border: 0; color: #fff; font: inherit; font-weight: 700; text-align: right; padding: 0; }
+  .roof-saving .rs-bk input:focus { outline: 1px solid rgba(255,255,255,.6); border-radius: 3px; }
   .roof-saving .rs-bk i { font-style: normal; opacity: .85; }
   .roof-saving .rs-batt b { font-variant-numeric: tabular-nums; padding: 0 4px; }
   .roof-saving .rs-bx { width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(0,0,0,.2); color: #fff;
@@ -3267,57 +3273,88 @@ map.on("load", async () => {
   const MONEY_MIN_ZOOM = 16, MONEY_MAX_PILLS = 1500;
   // HTML markers, not a symbol layer: the map style loads no glyphs, and a
   // marker takes the green box's own CSS gradient.
-  let moneyMarkers = [];
   function ringCentre(geom) {
     const ring = geom.type === "Polygon" ? geom.coordinates[0] : geom.coordinates[0][0];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     ring.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
     return [(x0 + x1) / 2, (y0 + y1) / 2];
   }
+  // PRICED A FEW AT A TIME. Each roof runs the card's whole bill model
+  // (about 10 ms; twice with a battery, for its ageing), so a screen of new
+  // roofs priced in one go froze the map for half a second after every
+  // move. Roofs already priced (moneyCache) show at once; the rest are
+  // priced in slices of MONEY_SLICE_MS between frames, their pills added as
+  // they come. A new move abandons the old queue. Markers are kept by roof
+  // and reused, not rebuilt on every refresh.
+  const MONEY_SLICE_MS = 8;
+  let moneyJob = 0;
+  const moneyById = new Map();   // building id -> {marker, el, net}
+  function moneyPill(id, at, net) {
+    let p = moneyById.get(id);
+    if (!p) {
+      const el = document.createElement("div");
+      p = { el, marker: new maplibregl.Marker({ element: el }).setLngLat(at).addTo(map), net: null };
+      moneyById.set(id, p);
+    }
+    if (p.net !== net) {
+      p.net = net;
+      p.el.className = "money-pill" + (net < 0 ? " neg" : "");
+      const shown = btMoney(Math.abs(net));
+      p.el.textContent = (net < 0 && shown !== "$0" ? "−" : "") + shown + "/yr";
+      p.el.title = net < 0 ? "Costs this much more a year than it saves, while the loan is repaid"
+                           : "Net saving a year: bill savings less loan repayments";
+    }
+  }
+  function clearMoneyPills() { moneyById.forEach(p => p.marker.remove()); moneyById.clear(); }
   function refreshMoneyPills() {
     if (!moneyMode) return;
-    const feats = [];
+    const job = ++moneyJob;
+    const want = [];
     if (map.getZoom() >= MONEY_MIN_ZOOM) {
       const seen = new Set();
       for (const f of map.queryRenderedFeatures({ layers: ["buildings-fill"] })) {
         const pr = f.properties, id = pr.building_id;
-        if (seen.has(id) || feats.length >= MONEY_MAX_PILLS) continue;
+        if (seen.has(id) || want.length >= MONEY_MAX_PILLS) continue;
         seen.add(id);
         if (btypesOff.has(pr.btype || "home")) continue;
-        // the open roof shows its card's own figure; every other roof is
-        // priced by roofMoney, the card's own calculation
-        let net = null;
-        if (moneyOpen && moneyOpen.buildingId === id) net = moneyOpen.netYear;
-        else net = roofMoney(pr);
-        if (net == null || !Number.isFinite(net)) continue;
-        feats.push({ at: ringCentre(f.geometry), net });
+        want.push({ id, pr, geom: f.geometry });
       }
     }
+    const keep = new Set(want.map(w => w.id));
+    moneyById.forEach((p, id) => { if (!keep.has(id)) { p.marker.remove(); moneyById.delete(id); } });
+    const nets = new Map();
+    // the open roof shows its card's own figure; every other roof is priced
+    // by roofMoney, the card's own calculation
+    const price = w => {
+      const net = moneyOpen && moneyOpen.buildingId === w.id ? moneyOpen.netYear : roofMoney(w.pr);
+      if (net == null || !Number.isFinite(net)) { const p = moneyById.get(w.id); if (p) { p.marker.remove(); moneyById.delete(w.id); } return; }
+      nets.set(w.id, net);
+      moneyPill(w.id, ringCentre(w.geom), net);
+    };
     // THE AREA'S TOTAL: the pills on screen added up, each as its pill shows
     // it (netShown is already rounded), so the total is the sum of what is
     // on the map and nothing else
-    const tot = document.getElementById("inview-money");
-    if (tot) {
+    const total = left => {
+      const tot = document.getElementById("inview-money");
+      if (!tot) return;
       tot.hidden = false;
-      if (map.getZoom() < MONEY_MIN_ZOOM) tot.innerHTML = `<span class="rm-l">Zoom in to add up the savings</span>`;
-      else {
-        const sum = feats.reduce((t, x) => t + x.net, 0);
-        tot.classList.toggle("neg", sum < 0);
-        tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
-          `<span class="rm-l">net savings, the ${feats.length.toLocaleString()} roof${feats.length === 1 ? "" : "s"} labelled` +
-          `${feats.length >= MONEY_MAX_PILLS ? " (the first " + MONEY_MAX_PILLS.toLocaleString() + ")" : ""}</span>`;
-      }
-    }
-    moneyMarkers.forEach(m => m.remove());
-    moneyMarkers = feats.map(({ at, net }) => {
-      const el = document.createElement("div");
-      el.className = "money-pill" + (net < 0 ? " neg" : "");
-      const shown = btMoney(Math.abs(net));
-      el.textContent = (net < 0 && shown !== "$0" ? "−" : "") + shown + "/yr";
-      el.title = net < 0 ? "Costs this much more a year than it saves, while the loan is repaid"
-                         : "Net saving a year: bill savings less loan repayments";
-      return new maplibregl.Marker({ element: el }).setLngLat(at).addTo(map);
-    });
+      if (map.getZoom() < MONEY_MIN_ZOOM) { tot.innerHTML = `<span class="rm-l">Zoom in to add up the savings</span>`; return; }
+      if (left) { tot.innerHTML = `<span class="rm-l">Adding up the savings&hellip; ${(want.length - left).toLocaleString()} of ${want.length.toLocaleString()} roofs</span>`; return; }
+      let sum = 0; nets.forEach(v => { sum += v; });
+      tot.classList.toggle("neg", sum < 0);
+      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
+        `<span class="rm-l">net savings, the ${nets.size.toLocaleString()} roof${nets.size === 1 ? "" : "s"} labelled` +
+        `${want.length >= MONEY_MAX_PILLS ? " (the first " + MONEY_MAX_PILLS.toLocaleString() + ")" : ""}</span>`;
+    };
+    let i = 0;
+    const slice = () => {
+      if (job !== moneyJob || !moneyMode) return;
+      const t0 = performance.now();
+      while (i < want.length && performance.now() - t0 < MONEY_SLICE_MS) price(want[i++]);
+      total(want.length - i);
+      if (i < want.length) setTimeout(slice, 0);
+    };
+    slice();
   }
   function setMoneyMode(on) {
     moneyMode = on;
@@ -3325,7 +3362,7 @@ map.on("load", async () => {
     b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
     if (on) { refreshMoneyPills(); map.once("idle", refreshMoneyPills); }
     else {
-      moneyMarkers.forEach(m => m.remove()); moneyMarkers = [];
+      moneyJob++; clearMoneyPills();
       const tot = document.getElementById("inview-money"); if (tot) tot.hidden = true;
     }
   }

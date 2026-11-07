@@ -33,6 +33,15 @@ const BT_MONTH_DAYS = 365 / 12;   // 30.42: twelve months make the 365-day year
 // home with a heat pump (EECA).
 // the battery the green box adds with one tap, kWh
 const BT_BATT_ADD_KWH = 10;
+// the green box's battery stepper: 5 kWh steps up to 50 kWh, 10 kWh above;
+// a size typed in between steps moves to the next step in that direction
+const BT_BATT_MIN_KWH = 5, BT_BATT_MAX_KWH = 200;
+function btBattStep(kwh, dir) {
+  const step = v => (v < 50 || (v === 50 && dir < 0)) ? 5 : 10;
+  const st = step(kwh);
+  const next = dir > 0 ? Math.floor(kwh / st + 1e-9) * st + st : Math.ceil(kwh / st - 1e-9) * st - st;
+  return Math.max(BT_BATT_MIN_KWH, Math.min(BT_BATT_MAX_KWH, next));
+}
 const BT_DEFAULTS = {
   home: {
     people: 3,
@@ -426,16 +435,17 @@ const BT_HOUR_COLS = (withB) => [
   { key: "h", label: "Hour" }, { key: "use", label: "Use", unit: "kWh", dp: 2 },
   { key: "solar", label: "Solar", unit: "kWh", dp: 2 }, { key: "direct", label: "Used directly", unit: "kWh", dp: 2 },
 ].concat(withB ? [{ key: "toB", label: "Into battery", unit: "kWh", dp: 2 },
-                  { key: "fromB", label: "From battery", unit: "kWh", dp: 2 }] : []).concat([
+                  { key: "fromB", label: "From battery", unit: "kWh", dp: 2 },
+                  { key: "bExp", label: "Battery to grid", unit: "kWh", dp: 2 }] : []).concat([
   { key: "imp", label: "From the grid", unit: "kWh", dp: 2 }, { key: "exp", label: "Exported", unit: "kWh", dp: 2 },
   { key: "buy", label: "Price", unit: "$/kWh", dp: 3 }, { key: "sell", label: "Export price", unit: "$/kWh", dp: 3 }]);
 const BT_COST_COLS = (col, label, withB) => BT_HOUR_COLS(withB).concat([{ key: col, label, unit: "$", dp: 2 }]);
 const btNear = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 // each hour's money, and its energy balance: use = solar used directly +
 // from the battery + from the grid; solar = used directly + into the
-// battery + exported
+// battery + exported, less what the battery exports at peak
 const btRowOk = r => btNear(r.useCost, r.use * r.buy) && btNear(r.impCost, r.imp * r.buy) && btNear(r.expPay, r.exp * r.sell)
-  && btNear(r.use, r.direct + (r.fromB || 0) + r.imp) && btNear(r.solar, r.direct + (r.toB || 0) + r.exp);
+  && btNear(r.use, r.direct + (r.fromB || 0) + r.imp) && btNear(r.solar, r.direct + (r.toB || 0) + r.exp - (r.bExp || 0));
 
 // Run every season through the day simulator; bills and kWh with and
 // without solar (and battery). gen: [season][24] kW in BT_SEASONS order.
@@ -457,7 +467,8 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   // day left it: the day is run again from its own end until the charge
   // settles. (It started each season from the previous season's one day.)
   // On a time-of-use plan the battery saves its charge for peak hours.
-  const dispatch = tariff && !tariff.flat ? { isPeak: h => btIsPeak(h) } : null;
+  const dispatch = tariff && !tariff.flat
+    ? { isPeak: h => btIsPeak(h), exportPeak: tariff.peakSell > tariff.offpeakSell } : null;
   BT_SEASONS.forEach((s, i) => {
     const L = btSeasonLoad(load, s, cal.scale[s]);
     const G = gen && gen[i] ? gen[i] : zero;
@@ -474,6 +485,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
   const yearOf = (label, unit, f) => Wk.sum(label, unit,
     BT_SEASONS.map(s => Wk.product(`${BT_CAP(s)} (${days[s].value} days)`, seasonUnit(unit), [f(s), days[s]])));
   const hourNote = "Each hour, solar powers the home first. Any spare charges the battery (if there is one), then is exported. " +
+                   (dispatch && dispatch.exportPeak ? "At peak, charge the home will not need before the sun refills the battery is exported, as peak export pays more. " : "") +
                    `The rest comes from the grid. Peak prices apply ${btPeakText()}.`;
   const S = {};
   for (const s of BT_SEASONS) {
@@ -482,7 +494,7 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
     const mk = (sim, wb) => L.map((l, h) => {
       const r = { h: `${String(h).padStart(2, "0")}:00`, use: l, solar: G[h], direct: Math.min(G[h], l),
                   imp: sim.impH[h], exp: sim.expH[h], buy: P.buyAt(h), sell: P.sellAt(h) };
-      if (wb) { r.fromB = sim.selfH[h] - r.direct; r.toB = sim.chargeH ? sim.chargeH[h] : 0; }
+      if (wb) { r.fromB = sim.selfH[h] - r.direct; r.toB = sim.chargeH ? sim.chargeH[h] : 0; r.bExp = sim.battExpH ? sim.battExpH[h] : 0; }
       r.useCost = r.use * r.buy; r.impCost = r.imp * r.buy; r.expPay = r.exp * r.sell;
       return r;
     });
@@ -577,6 +589,11 @@ function btRun(gen, load, cal, tariff, batteryKwh, seasonDays) {
 // (today's) or nominal dollars.
 //   cost, save, exportD: Workings nodes (or numbers, for the tests)
 //   opts.replacements: [{year (0-based), node, label}]
+//   opts.fade: a battery losing capacity with age, {cap(y): its capacity
+//     in year y (0-based) as a share of new, capMin, retailLoss, exportLoss:
+//     the first year's power bought and export income lost at capMin
+//     against new, nodes}. The loss at capacity c is (1 − c) ÷ (1 − capMin)
+//     of that: the bills are worked out at both sizes, straight between.
 function btReturns(cost, save, exportD, opts) {
   const o = opts || {};
   const E = Object.assign({ elec_inflation_pct: 4, export_decline_pct: 2, degradation_pct: 0.5,
@@ -591,10 +608,12 @@ function btReturns(cost, save, exportD, opts) {
   const retail = saveN.value - expN.value;
   const rows = [];
   let cum = 0, payback = null;
+  const fd = o.fade;
   for (let y = 0; y < 60; y++) {
     const defl = real ? Math.pow(cpi, y) : 1;
-    const retailY = retail * Math.pow(rise, y) * Math.pow(deg, y) / defl;
-    const exportY = expN.value * Math.pow(dec, y) * Math.pow(deg, y) / defl;
+    const lost = fd ? (1 - fd.cap(y)) / Math.max(1e-9, 1 - fd.capMin) : 0;
+    const retailY = (retail - (fd ? fd.retailLoss * lost : 0)) * Math.pow(rise, y) * Math.pow(deg, y) / defl;
+    const exportY = (expN.value - (fd ? fd.exportLoss * lost : 0)) * Math.pow(dec, y) * Math.pow(deg, y) / defl;
     const saving = retailY + exportY;
     const out = repl.filter(r => r.year === y).reduce((t, r) => t + r.node.value * (real ? 1 : Math.pow(cpi, y)), 0);
     cum += saving - out;
@@ -609,11 +628,12 @@ function btReturns(cost, save, exportD, opts) {
     { dp: 1, source: "Advanced pricing. The Reserve Bank targets 1–3%." })] : []);
   const note = `Each year: power you no longer buy (prices rise ${E.elec_inflation_pct}% a year) plus export income ` +
                `(rates fall ${E.export_decline_pct}% a year). Both drop ${E.degradation_pct}% a year as the panels age.` +
+               (fd ? ` The battery loses capacity as it ages, and with it some of what it saves; a new one starts full.` : "") +
                (real ? ` Inflation of ${E.cpi_pct}% a year is taken out, to give today's dollars.` : " In the dollars of each year.");
   const cols = [{ key: "year", label: "Year" }, { key: "saving", label: "Bill savings", unit: "$" },
                 { key: "out", label: "Replacements", unit: "$" }, { key: "cum", label: "Running total", unit: "$" }];
   const lifeRows = rows.slice(0, E.life_years);
-  const kids = [saveN, expN].concat(rates);
+  const kids = [saveN, expN].concat(rates).concat(fd ? fd.nodes : []);
   const lifetime = Wk.table(`Savings over the panels' ${E.life_years}-year life`, "$", cols, lifeRows, "saving",
     { children: kids, note });
   const replN = Wk.table("Replacements over the panels' life", "$",
@@ -723,8 +743,28 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
       btIn("Its price by then, as a share of today's", (E.battery_replace_cost_pct != null ? E.battery_replace_cost_pct : 70) / 100, "share",
         { source: "Assumptions & pricing: batteries keep getting cheaper.", edit: pctEd("battery_replace_cost_pct") })]) };
   const solarRet = btReturns(solarCostN, N.solarSave, N.solarExportDollars, { replacements: [inverter] });
+  // THE BATTERY AGES: it loses BATTERY_DEFAULTS.fade_pct of its capacity a
+  // year (of new), and the replacement in year bYear + 1 starts full. The
+  // bills are worked out again at the capacity it has just before it is
+  // replaced; a year in between takes its share of the difference. Only
+  // (100 − reserve_pct)% of the capacity is ever used (simulateDay).
+  let fade = null;
+  if (prof.battery > 0) {
+    const BDf = typeof BATTERY_DEFAULTS !== "undefined" ? BATTERY_DEFAULTS : {};
+    const fadeN = btIn("Battery loses capacity, a year", (BDf.fade_pct != null ? BDf.fade_pct : 2) / 100, "share",
+      { dp: 1, source: "A typical lithium home battery warranty keeps 70% or more after 10 years." });
+    const age = y => (y >= bYear ? y - bYear : y);
+    const cap = y => Math.pow(1 - fadeN.value, age(y));
+    const capMin = Math.pow(1 - fadeN.value, Math.max(1, bYear));
+    const old = btRun(ctx.gen, load, cal, tariff, prof.battery * capMin, ctx.seasonDays).nodes;
+    const retailLoss = (N.battSave.value - N.battExportDollars.value) - (old.battSave.value - old.battExportDollars.value);
+    const exportLoss = N.battExportDollars.value - old.battExportDollars.value;
+    const oldN = Wk.given(`Bill savings a year with the battery at ${Math.round(capMin * 100)}% of its capacity`, old.battSave.value, "$/yr",
+      [fadeN], { note: `Worked out the same way as the first year, with a ${Wk.fmt(prof.battery * capMin, "kWh", 1)} battery: its capacity in year ${bYear}, before it is replaced.` });
+    fade = { cap, capMin, retailLoss, exportLoss, nodes: [fadeN, oldN] };
+  }
   const battRet = prof.battery > 0
-    ? btReturns(allCostN, N.battSave, N.battExportDollars, { replacements: [inverter, battery] })
+    ? btReturns(allCostN, N.battSave, N.battExportDollars, { replacements: [inverter, battery], fade })
     : null;
   const yearParts = {}, partNodes = {};
   for (const part of Object.keys(load.nodes)) {
@@ -747,10 +787,13 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   }
   // PAYING FOR IT WITH A LOAN: one fixed-repayment loan (econ.loan_rate_pct
   // over econ.loan_years) for what is bought on day one -- the solar system,
-  // and the battery where there is one. Replacements are paid in the year
-  // they fall due (the inverter, the battery), from that year's savings:
-  // borrowing for them on day one paid interest for years on parts not yet
-  // bought.
+  // and the battery where there is one. A REPLACEMENT IS ADDED TO THE LOAN IN
+  // THE YEAR IT FALLS DUE (the inverter, the battery) and repaid, with
+  // interest, by the end of the term: someone with nothing up front has no
+  // cash for it then either. Borrowing for it on day one would pay interest
+  // for years on a part not yet bought. One falling after the term is paid
+  // in its year, outside the loan's average. Paid upfront (btReturns: net,
+  // irr) replacements are paid in cash in their year.
   const EL = typeof econ !== "undefined" ? econ : {};
   const loanRate = btIn("Loan interest rate", (EL.loan_rate_pct != null ? EL.loan_rate_pct : 5.5) / 100, "share",
     { source: "Assumptions & pricing (econ.loan_rate_pct)", edit: { key: "econ:loan_rate_pct", scale: 100, unit: "%", step: 0.1 } });
@@ -774,44 +817,67 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   // the loan; the average of the loan's years, both sides in today's
   // dollars, is the fair yearly figure. Until 7 Nov the headline set year
   // 1's savings against the nominal repayment, which understated it.
-  const avgOver = (ret, save, repay, who) => {
+  const avgOver = (ret, save, repay, who, repls) => {
     const L = loanYears.value, rows = ret.rows.slice(0, L);
     const cpi = 1 + (ret.real ? ret.cpiPct : 0) / 100;
+    // general inflation, for the dollars a replacement costs in its year
+    // (btReturns prices it at today's cost rising cpi_pct a year)
+    const cpiT = 1 + ret.cpiPct / 100;
     const saveAvg = Wk.given(`Bill savings, average a year over the ${L}-year loan`, rows.reduce((t, row) => t + row.saving, 0) / L, "$/yr",
       [save, ret.nodes.lifetime], {
         formula: `each year's bill savings (${ret.real ? "in today's dollars" : "in dollars of the day"}), added over the loan's ${L} years, ÷ ${L}`,
         note: `Year 1 is ${Wk.fmt(save.value, "$")}. Then power prices rise, export rates fall and the panels age, as in the savings over the panels' life.`,
         check: () => ret.rows.slice(0, L).reduce((t, row) => t + row.saving, 0) / L });
-    const repAvg = Wk.given(`Loan repayments, average a year${ret.real ? ", in today's dollars" : ""}`,
+    const baseRep = Wk.given(`Repayments on ${who}, average a year${ret.real ? ", in today's dollars" : ""}`,
       repay.value * rows.reduce((t, row, y) => t + Math.pow(cpi, -y), 0) / L, "$/yr", [repay, loanYears], {
         formula: ret.real ? `the fixed repayment ÷ (1 + ${ret.cpiPct}% inflation)^(year − 1), averaged over the ${L} years`
                           : "the fixed repayment, every year",
         note: ret.real ? `The repayment stays ${Wk.fmt(repay.value, "$")} a year in dollars of the day; inflation makes each one worth less in today's dollars.` : "",
         check: k => k[0] * Array.from({ length: Math.min(k[1], ret.rows.length) }, (_, y) => Math.pow(cpi, -y)).reduce((a, b) => a + b, 0) / k[1] });
-    // replacements, paid in their year (btReturns' rows, today's dollars)
-    const replAvg = Wk.given(`Replacements, average a year over the ${L} years`,
-      rows.reduce((t, row) => t - row.out, 0) / L, "$/yr", [ret.nodes.replacements], {
-        formula: `the replacements falling in the loan's ${L} years (in today's dollars), ÷ ${L}`,
-        check: () => ret.rows.slice(0, L).reduce((t, row) => t - row.out, 0) / L });
+    // each year's repayments in the dollars shown, the top-ups included:
+    // the year-by-year chart draws these
+    const sched = rows.map((row, y) => repay.value / Math.pow(cpi, y));
+    // a top-up: cost (today's dollars) in year y (0-based), borrowed at that
+    // year's prices, repaid over the term's remaining years; its average a
+    // year over the whole term in the dollars shown
+    const topUp = (cost, rateV, term, y, add) => {
+      if (!(y < term)) return 0;
+      const pay = btAnnuity(cost * Math.pow(cpiT, y), rateV, term - y);
+      let t = 0;
+      for (let k = y; k < Math.min(term, ret.rows.length); k++) {
+        const v = pay / Math.pow(cpi, k); t += v; if (add) sched[k] += v;
+      }
+      return t / term;
+    };
+    const tops = (repls || []).filter(r => r.year < L).map(r => Wk.given(
+      `${r.label} replacement, added to the loan in year ${r.year + 1}: repayments, average a year`,
+      topUp(r.node.value, loanRate.value, L, r.year, true), "$/yr", [r.node, loanRate, loanYears], {
+        formula: `its cost at year ${r.year + 1}'s prices (today's × (1 + ${ret.cpiPct}%)^${r.year}), repaid over the last ${L - r.year} years of the loan at the same rate` +
+                 (ret.real ? ", each repayment in today's dollars" : "") + `, added up and ÷ ${L}`,
+        note: "Borrowed when it is bought, not on day one, so there is no interest before then.",
+        check: k => topUp(k[0], k[1], k[2], r.year, false) }));
+    const repAvg = tops.length
+      ? Wk.sum(`Loan repayments, average a year${ret.real ? ", in today's dollars" : ""}`, "$/yr", [baseRep].concat(tops))
+      : baseRep;
     const net = Wk.sum(`Net saving a year, ${who}: average over the loan`, "$/yr", [saveAvg,
-      Wk.product("Less the loan repayments", "$/yr", [repAvg, btIn("", -1, "")]),
-      Wk.product("Less the replacements", "$/yr", [replAvg, btIn("", -1, "")])]);
-    return { saveAvg, repAvg, replAvg, net };
+      Wk.product("Less the loan repayments", "$/yr", [repAvg, btIn("", -1, "")])]);
+    return { saveAvg, repAvg, net, sched };
   };
-  const solarAvg = avgOver(solarRet, N.solarSave, solarRepay, "solar");
-  const battAvg = battRet ? avgOver(battRet, N.battSave, allRepay, "solar and battery") : null;
+  const solarAvg = avgOver(solarRet, N.solarSave, solarRepay, "solar", [inverter]);
+  const battAvg = battRet ? avgOver(battRet, N.battSave, allRepay, "solar and battery", [inverter, battery]) : null;
   const solarNet = solarAvg.net, battNet = battAvg ? battAvg.net : solarNet;
   const pickAvg = prof.battery > 0 ? battAvg : solarAvg;
   return { load, cal, run, solarCost: solarCostN.value, battCost: battCostN.value,
            solarSave: N.solarSave.value, battSave: N.battSave.value, solarRet, battRet,
            // the card's headline: net a year while the loan is repaid
            netYear: (prof.battery > 0 ? battNet : solarNet).value,
-           netShown: btNetShown(pickAvg.saveAvg.value, pickAvg.repAvg.value, pickAvg.replAvg.value).net,
+           netShown: btNetShown(pickAvg.saveAvg.value, pickAvg.repAvg.value).net,
+           repaySched: pickAvg.sched,
            yearParts, useKwh: Y.nowKwh, genKwh: Y.gen,
            nodes: Object.assign({}, N, { solarCost: solarCostN, battCost: battCostN, allCost: allCostN,
                                          solarRate: rate, battRate, parts: partNodes,
                                          solarRepay, allRepay, solarNet, battNet, loanRate, loanYears,
-                                         saveAvg: pickAvg.saveAvg, repAvg: pickAvg.repAvg, replAvg: pickAvg.replAvg,
+                                         saveAvg: pickAvg.saveAvg, repAvg: pickAvg.repAvg,
                                          gen: ctx.genNode || N.genYear, kwp: kwpN }) };
 }
 
@@ -844,7 +910,7 @@ function btYearHours(run, withBatt) {
         const cost = r.impCost - r.expPay + (h === 0 ? P.daily.value : 0);
         const costNow = r.useCost + (h === 0 ? P.daily.value : 0);
         rows.push({ doy, month: m, day: d, h, season: s, use: r.use, solar: r.solar, imp: r.imp, exp: r.exp,
-                    toB: r.toB || 0, fromB: r.fromB || 0, buy: r.buy, sell: r.sell, costNow, cost });
+                    toB: r.toB || 0, fromB: r.fromB || 0, bExp: r.bExp || 0, buy: r.buy, sell: r.sell, costNow, cost });
         tot.use += r.use; tot.solar += r.solar; tot.imp += r.imp; tot.exp += r.exp;
         tot.billNow += costNow; tot.bill += cost;
       }
@@ -861,18 +927,97 @@ function btYearHours(run, withBatt) {
   return { rows, totals: tot, want, check: { ok: !off.length, off, daysOff } };
 }
 
+// THE WHOLE YEAR AS A LINE CHART, zoomable: the year (each day's total),
+// a month, a week or a day (each hour). view = {zoom, start}: start is the
+// first day shown (0-based day of the year). Drawn like a season's day: use
+// (blue), solar (yellow), the battery's flows, the net load dotted.
+const BT_YEAR_ZOOMS = { year: 365, month: null, week: 7, day: 1 };
+function btMonthOf(doy) { let m = 0, d = doy; while (m < 11 && d >= BT_MONTH_LEN[m]) d -= BT_MONTH_LEN[m++]; return m; }
+function btMonthStart(m) { return BT_MONTH_LEN.slice(0, m).reduce((a, b) => a + b, 0); }
+function btYearSpan(view) {
+  if (view.zoom === "year") return [0, 365];
+  if (view.zoom === "month") { const m = btMonthOf(view.start), a = btMonthStart(m); return [a, a + BT_MONTH_LEN[m]]; }
+  const n = BT_YEAR_ZOOMS[view.zoom], a = Math.max(0, Math.min(365 - n, view.start));
+  return [a, a + n];
+}
+function btYearPoints(year, view) {
+  const [a, b] = btYearSpan(view);
+  if (view.zoom === "year") {
+    const pts = [];
+    for (let d = a; d < b; d++) {
+      const p = { doy: d, use: 0, solar: 0, imp: 0, exp: 0, toB: 0, fromB: 0, bExp: 0, direct: 0 };
+      for (let h = 0; h < 24; h++) {
+        const r = year.rows[d * 24 + h];
+        for (const k of ["use", "solar", "imp", "exp", "toB", "fromB", "bExp"]) p[k] += r[k];
+        p.direct += Math.min(r.use, r.solar);
+      }
+      pts.push(p);
+    }
+    return { pts, daily: true, a, b };
+  }
+  return { pts: year.rows.slice(a * 24, b * 24).map(r => Object.assign({ direct: Math.min(r.use, r.solar) }, r)), daily: false, a, b };
+}
+function btYearSvg(year, view, W, H, withBatt) {
+  const { pts, daily, a, b } = btYearPoints(year, view);
+  const L = 34, R = 6, T = 8, B = 20, n = pts.length;
+  const x = i => L + (i + 0.5) * (W - L - R) / n;
+  let hi = Math.max(0.5, ...pts.map(p => Math.max(p.use, p.solar))) * 1.06;
+  let lo = Math.min(0, ...pts.map(p => p.imp - p.exp)) * 1.06;
+  const step = (() => { const raw = (hi - lo) / 5, p = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 2, 2.5, 5, 10].map(k => k * p).find(k => k >= raw); })();
+  hi = Math.ceil(hi / step) * step; lo = Math.floor(lo / step) * step;
+  const y = v => T + (H - T - B) * (hi - v) / (hi - lo);
+  const line = vals => vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const area = (loV, hiV) => `M${hiV.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("L")}L` +
+    loV.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).reverse().join("L") + "Z";
+  let svg = "";
+  if (!daily && n <= 24 * 7) {
+    pts.forEach((p, i) => { if (btIsPeak(p.h)) svg += `<rect x="${(x(i) - (W - L - R) / n / 2).toFixed(1)}" y="${T}" width="${((W - L - R) / n + 0.3).toFixed(1)}" height="${H - T - B}" class="pk"/>`; });
+  }
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    const lab = Math.abs(v) < 1e-9 ? "0" : (v < 0 ? "−" : "") + +Math.abs(v).toFixed(2);
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${Math.abs(v) < 1e-9 && lo < 0 ? "zl" : "gl"}"/>` +
+           `<text x="${L - 4}" y="${(y(v) + 3).toFixed(1)}" class="ax" text-anchor="end">${lab}</text>`;
+  }
+  const zero = pts.map(() => 0), use = pts.map(p => p.use), sol = pts.map(p => p.solar);
+  svg += `<path d="${area(zero, use)}" fill="#8fb3ff" fill-opacity=".45"/>` +
+         `<path d="${area(zero, sol)}" fill="${BT_SOLAR_COLOUR}" fill-opacity=".28"/>` +
+         `<polyline points="${line(sol)}" fill="none" stroke="${BT_SOLAR_COLOUR}" stroke-width="1.6"/>`;
+  if (withBatt && pts.some(p => p.toB > 1e-9 || p.fromB > 1e-9)) {
+    const dir = pts.map(p => p.direct);
+    svg += `<path d="${area(use, pts.map(p => p.use + p.toB))}" fill="${BT_BATT_COLOUR}" fill-opacity=".35"/>` +
+           `<path d="${area(dir, pts.map(p => p.direct + p.fromB))}" fill="${BT_BATT_COLOUR}" fill-opacity=".85"/>`;
+  }
+  svg += `<polyline class="net" points="${line(pts.map(p => p.imp - p.exp))}" fill="none"/>`;
+  // the time axis
+  const lab = (i, t) => `<text x="${x(i).toFixed(1)}" y="${H - 5}" class="ax" text-anchor="middle">${t}</text>`;
+  if (daily) BT_MONTH_NAME.forEach((m, k) => { svg += lab(btMonthStart(k) + BT_MONTH_LEN[k] / 2 - 0.5, m); });
+  else if (b - a === 1) [0, 6, 12, 18].forEach(h => { svg += lab(h, h === 0 ? "midnight" : h === 12 ? "noon" : h < 12 ? h + "am" : (h - 12) + "pm"); });
+  else {
+    const every = b - a > 10 ? (b - a > 20 ? 5 : 2) : 1;
+    for (let d = a; d < b; d++) {
+      const m = btMonthOf(d), dm = d - btMonthStart(m) + 1;
+      if (b - a > 10 ? (dm === 1 || dm % every === 0) : true) svg += lab((d - a) * 24 + 11.5, `${dm} ${BT_MONTH_NAME[m]}`);
+      if (d > a) svg += `<line x1="${(L + (d - a) * 24 * (W - L - R) / n).toFixed(1)}" x2="${(L + (d - a) * 24 * (W - L - R) / n).toFixed(1)}" y1="${T}" y2="${H - B}" class="gl"/>`;
+    }
+  }
+  svg += `<line class="cur" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/>` +
+         `<rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
+  return { svg: `<svg viewBox="0 0 ${W} ${H}" class="sx-chart sx-ychart" role="img" aria-label="The year: use and solar, ${daily ? "each day" : "each hour"}">${svg}</svg>`,
+           pts, daily, a, b, L, R, W };
+}
+
 function btYearCsv(year) {
-  const head = "date,hour,season,use_kwh,solar_kwh,from_grid_kwh,exported_kwh,into_battery_kwh,from_battery_kwh,price_per_kwh,export_price_per_kwh,bill_today_dollars,bill_with_solar_dollars";
+  const head = "date,hour,season,use_kwh,solar_kwh,from_grid_kwh,exported_kwh,into_battery_kwh,from_battery_kwh,battery_to_grid_kwh,price_per_kwh,export_price_per_kwh,bill_today_dollars,bill_with_solar_dollars";
   const f = (v, dp) => (Math.round(v * 10 ** dp) / 10 ** dp).toString();
   return head + "\n" + year.rows.map(r =>
     [`${String(r.day).padStart(2, "0")} ${BT_MONTH_NAME[r.month]}`, `${String(r.h).padStart(2, "0")}:00`, r.season,
-     f(r.use, 4), f(r.solar, 4), f(r.imp, 4), f(r.exp, 4), f(r.toB || 0, 4), f(r.fromB || 0, 4), f(r.buy, 4), f(r.sell, 4), f(r.costNow, 4), f(r.cost, 4)].join(",")).join("\n") + "\n";
+     f(r.use, 4), f(r.solar, 4), f(r.imp, 4), f(r.exp, 4), f(r.toB || 0, 4), f(r.fromB || 0, 4), f(r.bExp || 0, 4), f(r.buy, 4), f(r.sell, 4), f(r.costNow, 4), f(r.cost, 4)].join(",")).join("\n") + "\n";
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
+  module.exports = { btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btYearCsv, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
+                     btYearHours, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -1032,18 +1177,19 @@ const BT_CSS = `
 .sx-bigtabs { flex: 1; display: flex; max-width: 620px; }
 .sx-bigtabs button { flex: 1; font-size: 14px; padding: 8px 10px; }
 .sx-chartbtns .sx-explore { margin-top: 8px; }
-.sx-yearbig { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; margin-top: 8px; }
-.sx-yh { position: relative; height: min(56vh, 520px); font-size: 12px; color: var(--sx-ink-2); }
-.sx-yh span { position: absolute; right: 8px; transform: translateY(-50%); }
-.sx-yearbig .sx-yearbox { padding: 0; }
-.sx-yearbig .sx-yearbox canvas { height: min(56vh, 520px); border-radius: 8px; }
-.sx-yearbig .sx-year-ax { font-size: 12.5px; margin-top: 6px; }
-.sx-yearbig .sx-tip { width: 220px; font-size: 12.5px; }
+.sx-yzoom { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sx-ynav { display: inline-flex; align-items: center; gap: 8px; }
+.sx-ynav b { min-width: 9em; text-align: center; font-size: 14px; }
+.sx-ynav .sx-btn { min-width: 34px; padding: 4px 10px; font-size: 16px; }
+.sx-ynav .sx-btn:disabled { opacity: .35; cursor: default; }
+.sx-ybox { margin-top: 6px; }
+.sx-ychart { cursor: zoom-in; }
+.sx-ybox .sx-tip { width: 230px; font-size: 12.5px; }
 .sx-ysum { font-size: 14px; color: var(--sx-ink); margin-top: 10px; }
 .sx-ysum .ok { color: #34c759; } .sx-ysum .warn { color: #ff9f0a; }
 .sx-bigrow { margin-top: 10px; }
 .sx-loanret { margin-top: 4px; color: var(--sx-ink-2); }
-.sx-rsum { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 12px 0 10px; }
+.sx-rsum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 10px; }
 .sx-rsum > div { background: var(--sx-fill); border-radius: 12px; padding: 10px 14px; }
 .sx-rsum b { display: block; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sx-rsum > div:first-child b { color: #34c759; }
@@ -1063,6 +1209,10 @@ html.light .sx-returns .rg { stroke: rgba(0,0,0,.08); } html.light .sx-returns .
 html.light .sx-returns .ra { fill: rgba(60,60,67,.75); } html.light .sx-returns .rt { fill: #1d1d1f; }
 html.light .sx-returns .rs-nt { fill: #1d1d1f; } html.light .sx-rkey i.nt { background: #1d1d1f; }
 html.light .sx-returns .rs-sv { fill: #1f9d48; } html.light .sx-returns .rs-hit:hover { fill: rgba(0,0,0,.05); }
+html.light .sx-chart .pk { fill: rgba(0,0,0,.05); } html.light .sx-chart .gl { stroke: rgba(0,0,0,.09); }
+html.light .sx-chart .ax { fill: rgba(60,60,67,.72); } html.light .sx-chart .cur { stroke: rgba(0,0,0,.45); }
+html.light .sx-chart .net { stroke: #1d1d1f; } html.light .sx-chart .zl { stroke: rgba(0,0,0,.35); }
+html.light .sx-key i.nl { border-top-color: #1d1d1f; }
 html.light .sx-rsum > div:first-child b { color: #15803d; } html.light .sx-ysum .ok { color: #15803d; } html.light .sx-ysum .warn { color: #b25000; }
 .sx-seasons-tabbed { grid-template-columns: minmax(0, 1fr); }
 .sx-seasons-tabbed .sx-season:not(.on) { display: none; }
@@ -1089,6 +1239,9 @@ body.clb-open .wk-sheet { z-index: 4600; }
 .sx-chart .gl { stroke: rgba(255,255,255,.08); stroke-width: .6; }
 .sx-chart .ax { fill: rgba(235,235,245,.45); font-size: 8.5px; font-family: inherit; }
 .sx-chart .cur { stroke: rgba(255,255,255,.55); stroke-width: .8; }
+.sx-chart .net { stroke: rgba(255,255,255,.85); stroke-width: 1.3; stroke-dasharray: 2.5 2; stroke-linejoin: round; }
+.sx-chart .zl { stroke: rgba(255,255,255,.3); stroke-width: .7; }
+.sx-key i.nl { background: none; border-top: 2px dotted rgba(255,255,255,.85); height: 0; border-radius: 0; }
 .sx-tip { position: absolute; top: 0; z-index: 3; width: 170px; background: rgba(28,28,30,.96); border: 0.5px solid var(--sx-sep);
   border-radius: 9px; padding: 7px 9px; font-size: 11.5px; line-height: 1.45; color: var(--sx-ink-2); pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
 .sx-tip b { color: var(--sx-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1108,10 +1261,6 @@ body.clb-open .wk-sheet { z-index: 4600; }
 .sx-sbill .after small { color: var(--sx-ink-3); font-weight: 400; }
 .sx-sbill .sx-hours { margin-left: auto; font-size: 12px; color: var(--sx-ink-3); }
 .sx-year .sx-row { justify-content: flex-start; }
-.sx-yearbox { position: relative; padding: 4px 14px 0; }
-.sx-yearbox canvas { width: 100%; height: 120px; image-rendering: pixelated; border-radius: 6px; display: block; cursor: crosshair; }
-.sx-year-ax { display: grid; grid-template-columns: 31fr 28fr 31fr 30fr 31fr 30fr 31fr 31fr 30fr 31fr 30fr 31fr; font-size: 10px; color: var(--sx-ink-3); margin-top: 3px; }
-.sx-yearbox .sx-tip { width: 200px; top: -6px; }
 #bt-year-sum { margin: 8px 14px 4px; }
 .sx-btn { background: var(--sx-fill-2); border: 0; border-radius: 9px; color: var(--sx-ink); font: 500 13px/1 inherit; font-family: inherit; padding: 8px 12px; cursor: pointer; }
 .sx-btn:hover, .sx-btn:focus-visible { background: #636366; outline: none; }
@@ -1170,12 +1319,14 @@ function btMoney(v, step) {
 // share one scale so they compare at a glance. Peak hours are shaded.
 const BT_SOLAR_COLOUR = "#ffd60a";
 const BT_BATT_COLOUR = "#0d9488";
-function btSeasonChart(s, sd, ymax, withBatt, size) {
+function btSeasonChart(s, sd, ymax, withBatt, size, ymin) {
   // size {W, H} in viewBox units: the lightbox draws a wider, taller box
   // so the chart fills the screen while its labels stay their normal size.
   const W = (size && size.W) || 300, H = (size && size.H) || 132, L = 26, R = 4, T = 6, B = 18;
   const x = h => L + (h + 0.5) * (W - L - R) / 24;
-  const y = v => T + (H - T - B) * (1 - v / ymax);
+  // below zero: room for the net load when the home exports (ymin < 0)
+  const lo0 = Math.min(0, ymin || 0);
+  const y = v => T + (H - T - B) * (ymax - v) / (ymax - lo0);
   const rows = withBatt ? sd.rowsB : sd.rows;
   const parts = Object.keys(sd.partsH).filter(k => sd.partsH[k].some(v => v > 1e-9));
   const base = new Array(24).fill(0);
@@ -1189,10 +1340,13 @@ function btSeasonChart(s, sd, ymax, withBatt, size) {
     svg += `<rect x="${(L + a * (W - L - R) / 24).toFixed(1)}" y="${T}" width="${((b - a) * (W - L - R) / 24).toFixed(1)}" height="${H - T - B}" class="pk"/>`;
   });
   const step = ymax > 6 ? (ymax > 12 ? 5 : 2) : ymax > 2 ? 1 : 0.5;
-  for (let v = step; v < ymax; v += step) {
+  for (let v = Math.ceil(lo0 / step) * step; v < ymax; v += step) {
+    if (Math.abs(v) < 1e-9) continue;
     svg += `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="gl"/>` +
-           `<text x="${L - 4}" y="${(y(v) + 3).toFixed(1)}" class="ax" text-anchor="end">${v}</text>`;
+           `<text x="${L - 4}" y="${(y(v) + 3).toFixed(1)}" class="ax" text-anchor="end">${v < 0 ? "−" + (-v) : v}</text>`;
   }
+  if (lo0 < 0) svg += `<line x1="${L}" x2="${W - R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="zl"/>` +
+                      `<text x="${L - 4}" y="${(y(0) + 3).toFixed(1)}" class="ax" text-anchor="end">0</text>`;
   for (const k of parts) {
     const hi = base.map((b, h) => b + sd.partsH[k][h]);
     svg += `<path d="${pathFor(base, hi)}" fill="${BT_PART_STYLE[k].colour}" fill-opacity=".55"/>`;
@@ -1210,6 +1364,9 @@ function btSeasonChart(s, sd, ymax, withBatt, size) {
     svg += `<path d="${pathFor(use, use.map((u, h) => u + (rows[h].toB || 0)))}" fill="${BT_BATT_COLOUR}" fill-opacity=".35"/>` +
            `<path d="${pathFor(direct, direct.map((d, h) => d + (rows[h].fromB || 0)))}" fill="${BT_BATT_COLOUR}" fill-opacity=".85"/>`;
   }
+  // NET LOAD at the meter: from the grid less exported, each hour; below
+  // zero while the home exports
+  svg += `<polyline class="net" points="${rows.map((r, h) => `${x(h).toFixed(1)},${y(r.imp - r.exp).toFixed(1)}`).join(" ")}" fill="none"/>`;
   [[6, "6am"], [12, "noon"], [18, "6pm"]].forEach(([h, t]) => {
     svg += `<text x="${(L + h * (W - L - R) / 24).toFixed(1)}" y="${H - 4}" class="ax" text-anchor="middle">${t}</text>`;
   });
@@ -1321,7 +1478,7 @@ function btEvaluateFor(bid, isBizDefault, ctx) {
 // The latest panel's workings, so a sheet left open while an assumption is
 // changed re-works from the new calculation.
 const BT_LATEST = { nodeFor: {} };
-const BT_YEAR_VIEW = { measure: "use" };
+const BT_YEAR_VIEW = { zoom: "year", start: 0 };
 // The season the panel shows (kept across redraws); today's season at first,
 // southern hemisphere: Dec-Feb summer, Mar-May autumn, Jun-Aug winter.
 const BT_SEASON_TAB = { on: ["summer", "autumn", "winter", "spring"][Math.floor(((new Date().getMonth() + 1) % 12) / 3)] };   // which measure the year view shows (kept across redraws)
@@ -1443,13 +1600,17 @@ function renderBillTool(box, ctx) {
     const peakOf = sd => Math.max(...(withBatt ? sd.rowsB : sd.rows).map(x => Math.max(x.use, x.solar)));
     const ymaxRaw = Math.max(0.5, ...BT_SEASONS.map(s => peakOf(SD[s]))) * 1.08;
     const ymax = ymaxRaw > 6 ? Math.ceil(ymaxRaw) : Math.ceil(ymaxRaw * 2) / 2;
+    // the most any season exports in an hour sets how far below zero the
+    // charts go (the net-load line), the same for all four
+    const yminRaw = Math.min(0, ...BT_SEASONS.map(s => Math.min(...(withBatt ? SD[s].rowsB : SD[s].rows).map(x => x.imp - x.exp)))) * 1.08;
+    const ymin = yminRaw < -6 ? Math.floor(yminRaw) : Math.floor(yminRaw * 2) / 2;
     const usedParts = Object.keys(r.yearParts).filter(k => r.yearParts[k] > 1);
     const fig = (key, label, n) => `<span data-wk="${key}" tabindex="0" role="button"><small>${label}</small><b>${Wk.fmt(n.value, "kWh", 1)}</b></span>`;
     const seasonCard = (s, i, size) => {
       const nowM = S[s].nowMonth, aft = S[s][after];
       return `<div class="sx-season${s === BT_SEASON_TAB.on ? " on" : ""}" data-season="${s}">` +
         `<div class="sx-season-h"><b>${BT_CAP(s)}</b><span>${r.run.days[i]} days</span></div>` +
-        `<div class="sx-chartbox">${btSeasonChart(s, SD[s], ymax, withBatt, size)}<div class="sx-tip" hidden></div></div>` +
+        `<div class="sx-chartbox">${btSeasonChart(s, SD[s], ymax, withBatt, size, ymin)}<div class="sx-tip" hidden></div></div>` +
         `<div class="sx-figs">` +
           fig(`s-use-${s}`, "Use", S[s].use) + fig(`s-made-${s}`, "Solar", S[s].made) +
           fig(`s-imp-${s}`, "From the grid", withBatt ? S[s].impB : S[s].imp) + fig(`s-exp-${s}`, "Exported", withBatt ? S[s].expB : S[s].exp) +
@@ -1464,6 +1625,7 @@ function renderBillTool(box, ctx) {
     const keyHtml = `<div class="sx-key">` + usedParts.map(k => `<span><i style="background:${BT_PART_STYLE[k].colour}"></i>${BT_PART_STYLE[k].label}</span>`).join("") +
       `<span><i style="background:${BT_SOLAR_COLOUR}"></i>Solar</span>` +
       (withBatt ? `<span><i style="background:${BT_BATT_COLOUR}"></i>Battery: charging (light), powering the ${isBiz ? "building" : "home"} (solid)</span>` : "") +
+      `<span><i class="nl"></i>Net load: from the grid less exported (below zero when exporting)</span>` +
       `<span><i class="pk"></i>Peak price</span><span class="u">kWh each hour</span></div>`;
     // THE CHARTS LIVE IN THE LIGHTBOX (openBig), big enough to read; the
     // side panel only offers them. Cramped in the panel's column they were
@@ -1621,15 +1783,14 @@ function renderBillTool(box, ctx) {
       const yrs = N.loanYears.value, pct = Wk.fmt(N.loanRate.value, "share", 1);
       // one step for all three, set by the largest, so savings - repayments
       // = net on screen as well as in the sums
-      const replN = N.replAvg;
-      const shownNet = btNetShown(saveN.value, repN.value, replN.value), st = shownNet.step;
+      const shownNet = btNetShown(saveN.value, repN.value), st = shownNet.step;
       const m = v => btMoney(v, st);
       // LOOK: one figure, two short rows, the detail behind an (i). Each
       // figure still opens its workings when tapped.
       const info = `A rough estimate: an average year over the ${yrs}-year loan, in today's dollars. ` +
         `Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
         `less the repayments on a loan for ${loanN.children[0].label.replace(/^Borrowed: /, "")} ` +
-        `at ${pct}, and the replacement inverter${withBatt ? " and battery" : ""} paid for when ${withBatt ? "they fall" : "it falls"} due, spread over the years. ` +
+        `at ${pct}. The replacement inverter${withBatt ? " and battery are" : " is"} added to the loan when ${withBatt ? "they fall" : "it falls"} due and repaid, with interest, by the end of it. ` +
         `The repayment is fixed, so inflation makes it smaller in today's dollars each year, ` +
         `while the savings follow power prices. Tap a figure to see how it is worked out.`;
       saveBox.innerHTML = show
@@ -1641,13 +1802,14 @@ function renderBillTool(box, ctx) {
           `<div class="rs-parts">` +
           `<div class="rs-row" data-wk="saveavg"><span>Bill savings</span><b>${m(saveN.value)}</b></div>` +
           `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${m(repN.value)}</b></div>` +
-          (replN.value > 0.5 ? `<div class="rs-row" data-wk="replavg"><span>Replacements</span><b>&minus;${m(replN.value)}</b></div>` : "") +
           `</div>` +
           // A BATTERY, one tap: 10 kWh to start (BT_BATT_ADD_KWH), any size
           // typed in; the figures above then include it and its loan
           (withBatt
-            ? `<div class="rs-batt"><span>Battery</span><label class="rs-bk"><input type="number" inputmode="decimal" min="1" max="200" step="1" ` +
-              `data-battkwh="1" value="${+prof.battery}" aria-label="Battery size, kWh"><i>kWh</i></label>` +
+            ? `<div class="rs-batt"><span>Battery</span><span class="rs-bk">` +
+              `<button type="button" data-battstep="-1" aria-label="Smaller battery"${+prof.battery <= BT_BATT_MIN_KWH ? " disabled" : ""}>&minus;</button>` +
+              `<label><input type="text" inputmode="decimal" data-battkwh="1" value="${+prof.battery}" aria-label="Battery size, kWh"><i>kWh</i></label>` +
+              `<button type="button" data-battstep="1" aria-label="Larger battery"${+prof.battery >= BT_BATT_MAX_KWH ? " disabled" : ""}>+</button></span>` +
               `<b data-wk="battcost">${btMoney(N.battCost.value)}</b>` +
               `<button type="button" class="rs-bx" data-battadd="0" aria-label="Remove the battery">&times;</button></div>`
             : `<button type="button" class="rs-add" data-battadd="${BT_BATT_ADD_KWH}">+ Add a battery</button>`) +
@@ -1693,7 +1855,6 @@ function renderBillTool(box, ctx) {
     nodeFor["net-year"] = () => withBatt ? N.battNet : N.solarNet;
     nodeFor.repay = () => N.repAvg;
     nodeFor.saveavg = () => N.saveAvg;
-    nodeFor.replavg = () => N.replAvg;
     nodeFor.nowbill = () => N.nowBill;
     nodeFor.solarbill = () => withBatt ? N.battBill : N.solarBill;
     // the getter reads the LATEST calculation: a sheet left open while an
@@ -1718,12 +1879,6 @@ function renderBillTool(box, ctx) {
     qa(".sx-seg").forEach(g => g.addEventListener("click", ev => {
       const b = ev.target.closest("button"); if (!b) return;
       const k = g.dataset.key, v = b.dataset.v;
-      if (k === "ymeasure") {
-        BT_YEAR_VIEW.measure = v;
-        g.querySelectorAll("button").forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
-        drawYear();
-        return;
-      }
       if (k === "real") { econ.real_prices = v === "1"; if (ctx.onEcon) ctx.onEcon(); else redraw(); return; }
       if (k === "plan") { econ.plan = v; if (ctx.onEcon) ctx.onEcon(); else redraw(); return; }
       if (k === "type") state.type = v;
@@ -1738,9 +1893,19 @@ function renderBillTool(box, ctx) {
     qa("[data-battadd]").forEach(b => b.addEventListener("click", e => {
       e.stopPropagation(); setBatt(+b.dataset.battadd, +b.dataset.battadd > 0 ? "input[data-battkwh]" : null);
     }));
-    qa("input[data-battkwh]").forEach(inp => inp.addEventListener("change", () => {
-      const v = parseFloat(inp.value); if (v > 0) setBatt(v, "input[data-battkwh]");
+    qa("[data-battstep]").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation();
+      const d = +b.dataset.battstep;
+      setBatt(btBattStep((state.type === "business" ? state.business : state.home).battery, d), `[data-battstep="${d}"]`);
     }));
+    qa("input[data-battkwh]").forEach(inp => {
+      inp.addEventListener("click", e => { e.stopPropagation(); inp.select(); });
+      inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+      inp.addEventListener("change", () => {
+        const v = parseFloat(inp.value);
+        if (v > 0) setBatt(Math.max(BT_BATT_MIN_KWH, v), "input[data-battkwh]"); else redraw("input[data-battkwh]");
+      });
+    });
     qa(".sx-step button").forEach(b => b.addEventListener("click", () => {
       state.home.people = Math.max(1, Math.min(8, state.home.people + (+b.dataset.d)));
       save(); redraw(`.sx-step button[data-d="${b.dataset.d}"]`);
@@ -1828,8 +1993,9 @@ function renderBillTool(box, ctx) {
         tip.innerHTML = `<b>${row.h}–${String(h + 1).padStart(2, "0")}:00 · ${btIsPeak(h) ? "peak" : "off-peak"} ${(row.buy * 100).toFixed(1)}c</b>` +
           `<div>Use <b>${k(row.use)}</b></div><div class="parts">${partsLine}</div>` +
           `<div>Solar <b>${k(row.solar)}</b> · used here <b>${k(row.direct)}</b></div>` +
-          (withBatt ? `<div>From the battery <b>${k(row.fromB || 0)}</b></div>` : "") +
-          `<div>From the grid <b>${k(row.imp)}</b> · exported <b>${k(row.exp)}</b></div>`;
+          (withBatt ? `<div>From the battery <b>${k(row.fromB || 0)}</b>${row.bExp > 0.0005 ? ` · to the grid <b>${k(row.bExp)}</b>` : ""}</div>` : "") +
+          `<div>From the grid <b>${k(row.imp)}</b> · exported <b>${k(row.exp)}</b></div>` +
+          `<div>Net load <b>${row.imp - row.exp < -0.0005 ? "−" + k(row.exp - row.imp) : k(row.imp - row.exp)}</b></div>`;
         tip.hidden = false;
         tip.style.left = Math.min(Math.max(0, px - 80), rect.width - 170) + "px";
       };
@@ -1851,12 +2017,14 @@ function renderBillTool(box, ctx) {
     // YEAR BY YEAR, in today's dollars: each year's bill savings (btReturns'
     // rows) and that year's fixed repayment taken back to today's dollars.
     // Their average over the loan is the green box's figure (checked below).
+    // with a loan: each year's repayments, replacements added to the loan
+    // when due (btEvaluate repaySched); one falling after the term is paid
+    // in its year
     const returnsRows = () => {
-      const repN = withBatt ? N.allRepay : N.solarRepay;
-      const L = N.loanYears.value, cpi = 1 + (ret.real ? ret.cpiPct : 0) / 100;
+      const L = N.loanYears.value;
       let cum = 0;
       return ret.rows.slice(0, Math.max(ret.years, L)).map((row, y) => {
-        const repay = y < L ? repN.value / Math.pow(cpi, y) : 0, repl = -row.out;
+        const repay = y < L ? r.repaySched[y] : 0, repl = y < L ? 0 : -row.out;
         cum += row.saving - repay - repl;
         return { year: row.year, save: row.saving, repay, repl, net: row.saving - repay - repl, cum };
       });
@@ -1902,20 +2070,8 @@ function renderBillTool(box, ctx) {
       svg += `<text x="${L}" y="${T - 10}" class="rt">Each year</text><text x="${L}" y="${y2 - 12}" class="rt">Running total</text>`;
       return `<svg class="sx-returns" viewBox="0 0 ${W} ${H}" role="img" aria-label="Savings and repayments, year by year, in today's dollars">${svg}</svg>`;
     };
-    const drawYearInto = (cv, sumEl) => {
-      const Y = getYear(), m = BT_YEAR_VIEW.measure;
-      const val = row => row[m];
-      const vmax = Math.max(1e-9, ...Y.rows.map(val));
-      const ctx2 = cv.getContext("2d");
-      const img = ctx2.createImageData(365, 24);
-      const col = { use: [143, 179, 255], solar: [255, 214, 10], imp: [255, 155, 107], exp: [48, 209, 88], fromB: [13, 148, 136], cost: [255, 105, 97] }[m];
-      Y.rows.forEach(row => {
-        const t = Math.max(0, val(row)) / vmax;
-        const i = ((23 - row.h) * 365 + row.doy) * 4;
-        img.data[i] = Math.round(28 + (col[0] - 28) * t); img.data[i + 1] = Math.round(28 + (col[1] - 28) * t);
-        img.data[i + 2] = Math.round(30 + (col[2] - 30) * t); img.data[i + 3] = 255;
-      });
-      ctx2.putImageData(img, 0, 0);
+    const yearSum = sumEl => {
+      const Y = getYear();
       const T = Y.totals;
       const ok = Y.check.ok
         ? `<span class="ok">✓ Adds up to the same year as the bills.</span>`
@@ -1955,38 +2111,39 @@ function renderBillTool(box, ctx) {
           body = `<div class="sx-foot sx-lead">An average day, hour by hour. Colours: what the ${isBiz ? "business" : "home"} uses. Yellow: what the roof makes. Where the yellow covers the colour, the roof is powering it; colour above the yellow comes from the grid${withBatt ? " or the battery" : ""}; yellow above the colour is exported. Shaded: peak hours. Tap a figure to see how it is worked out.</div>` +
             keyHtml + `<div class="sx-seasons sx-seasons-big">${BT_SEASONS.map((s, i) => seasonCard(s, i, size)).join("")}</div>`;
         } else if (tab === "year") {
-          const hrs = [[0, "midnight"], [6, "6am"], [12, "noon"], [18, "6pm"]];
-          body = `<div class="sx-row sx-bigrow">${seg("ymeasure", [["use", "Use"], ["solar", "Solar"], ["imp", "From grid"], ["exp", "Exported"]].concat(withBatt ? [["fromB", "From battery"]] : []).concat([["cost", "Bill"]]), BT_YEAR_VIEW.measure, "Show")}</div>` +
-            `<div class="sx-yearbig"><div class="sx-yh">${hrs.map(([h, l]) => `<span style="top:${((23 - h + 0.5) / 24 * 100).toFixed(2)}%">${l}</span>`).join("")}</div>` +
-            `<div class="sx-yearbox"><canvas width="365" height="24" aria-label="The year, hour by hour"></canvas>` +
-            `<div class="sx-year-ax">${BT_MONTH_NAME.map(m => `<span>${m}</span>`).join("")}</div><div class="sx-tip" hidden></div></div></div>` +
+          body = `<div class="sx-row sx-bigrow sx-yzoom">${seg("yzoom", [["year", "Year"], ["month", "Month"], ["week", "Week"], ["day", "Day"]], BT_YEAR_VIEW.zoom, "Zoom")}` +
+              `<span class="sx-ynav"><button type="button" class="sx-btn" data-ymove="-1" aria-label="Earlier">‹</button><b class="sx-ylab"></b>` +
+              `<button type="button" class="sx-btn" data-ymove="1" aria-label="Later">›</button></span></div>` +
+            `<div class="sx-key"><span><i style="background:#8fb3ff"></i>Use</span><span><i style="background:${BT_SOLAR_COLOUR}"></i>Solar</span>` +
+              (withBatt ? `<span><i style="background:${BT_BATT_COLOUR}"></i>Battery: charging (light), powering the ${isBiz ? "building" : "home"} (solid)</span>` : "") +
+              `<span><i class="nl"></i>Net load (below zero when exporting)</span><span class="u sx-yunit"></span></div>` +
+            `<div class="sx-chartbox sx-ybox"><div class="sx-yplot"></div><div class="sx-tip" hidden></div></div>` +
             `<div class="sx-foot sx-ysum"></div>` +
-            `<div class="sx-foot">Every hour of the year, one column a day: midnight at the bottom, evening at the top; brighter is more. Each day is its season's average day, as the bills are worked out. Day-to-day weather is in Resilience.</div>` +
+            `<div class="sx-foot">Tap the chart to zoom in there. Each day is its season's average day, as the bills are worked out, so days in a season match and the steps fall at the seasons' edges. Day-to-day weather is in Resilience.</div>` +
             `<div class="sx-bigfoot"><button type="button" class="sx-btn sx-ycsv">Download the 8,760 hours (CSV)</button></div>`;
         } else {
           const rows = returnsRows(), L = N.loanYears.value;
           const loanRows = rows.slice(0, L);
           const avgNet = loanRows.reduce((t, q) => t + q.net, 0) / L;
-          const agrees = Math.abs(avgNet - (N.saveAvg.value - N.repAvg.value - N.replAvg.value)) < 0.01;
-          const sh = btNetShown(N.saveAvg.value, N.repAvg.value, N.replAvg.value), m = v => btMoney(v, sh.step);
+          const agrees = Math.abs(avgNet - (N.saveAvg.value - N.repAvg.value)) < 0.01;
+          const sh = btNetShown(N.saveAvg.value, N.repAvg.value), m = v => btMoney(v, sh.step);
           const W = Math.round(Math.min(1500, innerWidth - 100) / 1.35), H = Math.round(Math.max(300, innerHeight - 330) / 1.35);
           const be = rows.find(q => q.cum >= 0 && rows.slice(0, rows.indexOf(q)).some(p => p.cum < 0));
           body = `<div class="sx-rsum">` +
               `<div><b>${m(sh.net)}</b><small>a year on average${withBatt ? ", with the battery" : ""}</small></div>` +
               `<div><b>${m(N.saveAvg.value)}</b><small>bill savings, average</small></div>` +
               `<div><b>−${m(N.repAvg.value)}</b><small>repayments, average</small></div>` +
-              `<div><b>−${m(N.replAvg.value)}</b><small>replacements, average</small></div>` +
               `<div><b>${btMoney(rows[rows.length - 1].cum)}</b><small>ahead after ${rows.length} years</small></div>` +
             `</div>` +
             (agrees ? "" : `<div class="sx-foot warn">The years here do not average to the green box's figure. Please report this.</div>`) +
-            `<div class="sx-rkey"><span><i class="sv"></i>Bill savings</span><span><i class="rp"></i>Loan repayment</span><span><i class="rl"></i>Replacements</span><span><i class="nt"></i>Net</span>` +
+            `<div class="sx-rkey"><span><i class="sv"></i>Bill savings</span><span><i class="rp"></i>Loan repayment</span>${rows.some(q => q.repl > 0) ? `<span><i class="rl"></i>Replacements, paid in cash after the loan</span>` : ""}<span><i class="nt"></i>Net</span>` +
               `<span class="u">today's dollars</span></div>` +
             returnsSvg(rows, W, H) +
             `<div class="sx-foot">All in today's dollars. Savings rise with power prices (${E.elec_inflation_pct}% a year) less inflation (${E.cpi_pct}%), ` +
             `export rates fall ${E.export_decline_pct}% a year and the panels lose ${E.degradation_pct}% a year. The repayment is fixed at ` +
             `${btMoney((withBatt ? N.allRepay : N.solarRepay).value)} a year for ${L} years, so inflation shrinks it in today's dollars. ` +
-            `The replacement inverter${withBatt ? " and battery are" : " is"} paid for in ${withBatt ? "their" : "its"} year` +
-            (withBatt ? `; the battery in year ${(E.battery_replace_year != null ? E.battery_replace_year : 14) + 1} at ${E.battery_replace_cost_pct != null ? E.battery_replace_cost_pct : 70}% of today's price` : "") + `.` +
+            `The replacement inverter (year ${(E.inverter_replace_year || 0) + 1})${withBatt ? ` and battery (year ${(E.battery_replace_year != null ? E.battery_replace_year : 14) + 1}, at ${E.battery_replace_cost_pct != null ? E.battery_replace_cost_pct : 70}% of today's price) are` : " is"} ` +
+            `added to the loan when due and repaid with interest by year ${L}, so the repayment steps up then.` +
             (be ? ` The running total turns positive in year ${be.year}.` : "") + `</div>`;
         }
         lb.innerHTML =
@@ -2019,26 +2176,68 @@ function renderBillTool(box, ctx) {
           big.forEach(svg => { svg.style.cursor = "crosshair"; });
         }
         if (tab === "year") {
-          const cv = lb.querySelector(".sx-yearbox canvas"), sumEl = lb.querySelector(".sx-ysum"), tip = lb.querySelector(".sx-yearbox .sx-tip");
-          drawYearInto(cv, sumEl);
-          lb.querySelectorAll('.sx-seg[data-key="ymeasure"] button').forEach(b => b.addEventListener("click", () => {
-            BT_YEAR_VIEW.measure = b.dataset.v;
-            lb.querySelectorAll('.sx-seg[data-key="ymeasure"] button').forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
-            drawYearInto(cv, sumEl);
+          const plot = lb.querySelector(".sx-yplot"), tip = lb.querySelector(".sx-ybox .sx-tip");
+          const W = Math.round(Math.min(1500, innerWidth - 100) / 1.35), H = Math.round(Math.max(260, innerHeight - 380) / 1.35);
+          yearSum(lb.querySelector(".sx-ysum"));
+          let cur = null;
+          const k = v => v.toFixed(v < 10 ? 2 : 1) + " kWh";
+          const dayName = d => { const m = btMonthOf(d); return `${d - btMonthStart(m) + 1} ${BT_MONTH_NAME[m]}`; };
+          const draw = () => {
+            cur = btYearSvg(getYear(), BT_YEAR_VIEW, W, H, withBatt);
+            plot.innerHTML = cur.svg;
+            const z = BT_YEAR_VIEW.zoom;
+            lb.querySelector(".sx-ylab").textContent = z === "year" ? "The year" : z === "month" ? ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][btMonthOf(cur.a)]
+              : z === "week" ? `${dayName(cur.a)} – ${dayName(cur.b - 1)}` : dayName(cur.a);
+            lb.querySelector(".sx-yunit").textContent = cur.daily ? "kWh each day" : "kWh each hour";
+            lb.querySelectorAll("[data-ymove]").forEach(bt => { bt.disabled = z === "year" || (+bt.dataset.ymove < 0 ? cur.a <= 0 : cur.b >= 365); });
+            lb.querySelectorAll('.sx-seg[data-key="yzoom"] button').forEach(x => { x.classList.toggle("on", x.dataset.v === z); x.setAttribute("aria-pressed", String(x.dataset.v === z)); });
+            const svg = plot.querySelector("svg"), line = svg.querySelector(".cur");
+            const at = ev => {
+              const rc = svg.getBoundingClientRect(), u = (ev.clientX - rc.left) / rc.width * cur.W;
+              return Math.max(0, Math.min(cur.pts.length - 1, Math.floor((u - cur.L) / (cur.W - cur.L - cur.R) * cur.pts.length)));
+            };
+            svg.addEventListener("mousemove", ev => {
+              const i = at(ev), p = cur.pts[i], rc = svg.getBoundingClientRect();
+              const xu = cur.L + (i + 0.5) * (cur.W - cur.L - cur.R) / cur.pts.length;
+              line.setAttribute("x1", xu); line.setAttribute("x2", xu); line.style.display = "";
+              const when = cur.daily ? dayName(p.doy) : `${dayName(p.doy)}, ${String(p.h).padStart(2, "0")}:00`;
+              const net = p.imp - p.exp;
+              tip.innerHTML = `<b>${when}</b> (${btMonthOf(p.doy) >= 0 ? BT_MONTH_SEASON[btMonthOf(p.doy)] : ""})` +
+                `<div>Use <b>${k(p.use)}</b> · solar <b>${k(p.solar)}</b></div>` +
+                (withBatt ? `<div>From the battery <b>${k(p.fromB)}</b>${p.bExp > 0.0005 ? ` · to the grid <b>${k(p.bExp)}</b>` : ""}</div>` : "") +
+                `<div>From the grid <b>${k(p.imp)}</b> · exported <b>${k(p.exp)}</b></div>` +
+                `<div>Net load <b>${net < -0.0005 ? "−" + k(-net) : k(net)}</b></div>`;
+              tip.hidden = false;
+              tip.style.left = Math.min(Math.max(0, ev.clientX - rc.left - 110), rc.width - 230) + "px";
+              tip.style.top = Math.max(0, ev.clientY - rc.top - 96) + "px";
+            });
+            svg.addEventListener("mouseleave", () => { tip.hidden = true; line.style.display = "none"; });
+            // tap: one level in, centred on the day tapped
+            svg.addEventListener("click", ev => {
+              const p = cur.pts[at(ev)], next = { year: "month", month: "week", week: "day" }[BT_YEAR_VIEW.zoom];
+              if (!next) return;
+              BT_YEAR_VIEW.zoom = next;
+              BT_YEAR_VIEW.start = next === "week" ? Math.max(0, Math.min(358, p.doy - 3)) : p.doy;
+              draw();
+            });
+          };
+          lb.querySelectorAll('.sx-seg[data-key="yzoom"] button').forEach(bt => bt.addEventListener("click", ev => {
+            ev.stopPropagation();
+            const z = bt.dataset.v, [a0, b0] = btYearSpan(BT_YEAR_VIEW), mid = Math.floor((a0 + b0 - 1) / 2);
+            // from the whole year, start at January; otherwise stay on the
+            // middle of what is shown
+            const at0 = b0 - a0 === 365 ? 0 : mid;
+            BT_YEAR_VIEW.zoom = z;
+            BT_YEAR_VIEW.start = z === "year" ? 0 : z === "week" ? Math.max(0, Math.min(358, at0 - (at0 ? 3 : 0))) : at0;
+            draw();
           }));
-          cv.addEventListener("mousemove", ev => {
-            const rect = cv.getBoundingClientRect();
-            const doy = Math.max(0, Math.min(364, Math.floor((ev.clientX - rect.left) / rect.width * 365)));
-            const h = Math.max(0, Math.min(23, 23 - Math.floor((ev.clientY - rect.top) / rect.height * 24)));
-            const row = getYear().rows[doy * 24 + h];
-            const ms = BT_YEAR_VIEW.measure;
-            const v = ms === "cost" ? "$" + row.cost.toFixed(2) : row[ms].toFixed(2) + " kWh";
-            tip.innerHTML = `<b>${row.day} ${BT_MONTH_NAME[row.month]}, ${String(h).padStart(2, "0")}:00</b> (${row.season}) · ${v}`;
-            tip.hidden = false;
-            tip.style.left = Math.min(Math.max(0, ev.clientX - rect.left - 100), rect.width - 220) + "px";
-            tip.style.top = Math.max(0, ev.clientY - rect.top - 44) + "px";
-          });
-          cv.addEventListener("mouseleave", () => { tip.hidden = true; });
+          lb.querySelectorAll("[data-ymove]").forEach(bt => bt.addEventListener("click", () => {
+            const d = +bt.dataset.ymove, z = BT_YEAR_VIEW.zoom, [a0, b0] = btYearSpan(BT_YEAR_VIEW);
+            if (z === "month") { const m = Math.max(0, Math.min(11, btMonthOf(a0) + d)); BT_YEAR_VIEW.start = btMonthStart(m); }
+            else BT_YEAR_VIEW.start = Math.max(0, Math.min(365 - (b0 - a0), a0 + d * (b0 - a0)));
+            draw();
+          }));
+          draw();
           lb.querySelector(".sx-ycsv").addEventListener("click", () => {
             const blob = new Blob([btYearCsv(getYear())], { type: "text/csv" });
             const a = document.createElement("a");

@@ -382,11 +382,13 @@ figure for the same thing. Code enforces this:
   `tools/money_check.js` (a roof's money pill equals its card's figure).
 - The card's green box and the money pills show the net saving of an
   average year over the loan, in today's dollars: the mean of btReturns'
-  yearly savings, less the fixed repayment deflated by `econ.cpi_pct`, less
-  the replacements (`bill_tool.js` btEvaluate `avgOver`). The loan covers
-  only what is bought on day one (solar, battery); the inverter (year 16)
-  and battery (year 15, `battery_replace_cost_pct` 70% of today's price)
-  are paid in their year. Return on investment is the paid-upfront rate;
+  yearly savings, less the loan repayments deflated by `econ.cpi_pct`
+  (`bill_tool.js` btEvaluate `avgOver`). The loan covers what is bought on
+  day one (solar, battery); the inverter (year 16) and battery (year 15,
+  `battery_replace_cost_pct` 70% of today's price) are added to it when
+  due, at that year's prices, and repaid by the end of the term (one past
+  the term is paid in cash). Paid upfront (btReturns) they are paid in cash
+  in their year. Return on investment is the paid-upfront rate;
   with a loan the card gives the net a year instead. A closed roof is priced by
   `roofMoney` in `rooftop-solar.html`, the card's own calculation on the
   panels the map shows; a roof without loaded panel tiles gets no pill.

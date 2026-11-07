@@ -281,24 +281,31 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   // the headline is an average year over the loan, both sides in today's
   // dollars: savings from the year-by-year rows, the fixed repayment
   // deflated by 2% CPI a year (years 1-30, 1.02^-(year-1) averages 0.76148)
-  near(N.solarNet.value, N.saveAvg.value - N.repAvg.value - N.replAvg.value, 1e-9, "net = savings - repayments - replacements");
-  near(N.repAvg.value, N.solarRepay.value * 0.76148, N.solarRepay.value * 1e-4, "repayments deflated by 2% a year");
+  near(N.solarNet.value, N.saveAvg.value - N.repAvg.value, 1e-9, "net = savings - repayments");
+  const [baseRep, invTop] = N.repAvg.children;
+  near(baseRep.value, N.solarRepay.value * 0.76148, N.solarRepay.value * 1e-4, "repayments deflated by 2% a year");
   near(N.saveAvg.value, r.solarRet.rows.slice(0, 30).reduce((t, x) => t + x.saving, 0) / 30, 1e-9, "average of the 30 years' savings");
-  near(r.netShown, B.btNetShown(N.saveAvg.value, N.repAvg.value, N.replAvg.value).net, 1e-9, "the card's figure is that net, rounded");
+  near(r.netShown, B.btNetShown(N.saveAvg.value, N.repAvg.value).net, 1e-9, "the card's figure is that net, rounded");
+  // the year-by-year repayments average to the same figure
+  near(r.repaySched.reduce((a, b) => a + b, 0) / 30, N.repAvg.value, 1e-9, "the years average to the headline");
   // the loan covers only what is bought on day one: the solar system
   const borrowed = N.solarRepay.children[0].value;
   near(borrowed, N.solarCost.value, 1e-6, "only the system is borrowed for");
   near(N.solarRepay.value, B.btAnnuity(borrowed, 0.055, 30), 1e-6, "5.5% over 30 years");
-  // the replacement inverter is paid in its year (year 16), in today's
-  // dollars: 18% of the system cost, spread over the 30 years
-  near(N.replAvg.value, N.solarCost.value * E.getEcon().inverter_cost_pct / 100 / 30, 1e-6, "inverter: 18% of cost ÷ 30");
+  // the replacement inverter (18% of the cost) is added to the loan in year
+  // 16 and repaid over the last 15 years: cost × 5.5%/(1 − 1.055^−15) ×
+  // Σ 1.02^−j (j < 15) ÷ 30 = cost × 1.305727 ÷ 30 (inflation to year 16
+  // and back cancels)
+  near(invTop.value, N.solarCost.value * 0.18 * 1.305727 / 30, N.solarCost.value * 1e-6, "inverter top-up");
+  if (r.repaySched[15] <= r.repaySched[14]) throw new Error("repayments should step up in year 16");
   // a battery: borrowed for with the system, replaced in year 15 at 70% of today's price
   const rb = B.btEvaluate(ctx, Object.assign(home(), { battery: 10 }), null, prices);
   near(rb.nodes.battCost.value, 9000, 1e-9, "10 kWh at $900");
   near(rb.nodes.allRepay.children[0].value, rb.nodes.solarCost.value + 9000, 1e-6, "system and battery borrowed");
   const bRow = rb.battRet.rows[14];
   near(-bRow.out, 9000 * 0.7, 1e-6, "battery replaced in year 15 at 70%");
-  near(rb.nodes.replAvg.value, (N.solarCost.value * 0.18 + 6300) / 30, 1e-6, "inverter + battery, ÷ 30");
+  // the battery top-up: 6,300 × 5.5%/(1 − 1.055^−16) × Σ 1.02^−j (j < 16) ÷ 30
+  near(rb.nodes.repAvg.children[2].value, 6300 * 1.323773 / 30, 0.01, "battery top-up");
   const v = Wk.verify(N.solarNet);
   if (!v.ok) throw new Error("net does not verify: " + JSON.stringify(v.problems.map(b => b.node.label)));
   // and the check can fail: a repayment shown wrong is caught
@@ -307,6 +314,41 @@ check("loan repayments: the standard fixed repayment, and the net a year", () =>
   const caught = !Wk.verify(N.solarNet).ok;
   N.solarRepay.value = kept;
   if (!caught) throw new Error("verify did not catch a wrong repayment");
+});
+
+check("battery stepper: 5 kWh steps to 50, 10 above, typed sizes snap", () => {
+  const cases = [[10, 1, 15], [10, -1, 5], [5, -1, 5], [13.5, 1, 15], [13.5, -1, 10], [45, 1, 50],
+                 [50, 1, 60], [50, -1, 45], [60, -1, 50], [55, 1, 60], [200, 1, 200]];
+  for (const [k, d, want] of cases) {
+    const got = B.btBattStep(k, d);
+    if (got !== want) throw new Error(`${k} ${d > 0 ? "+" : "−"} gave ${got}, want ${want}`);
+  }
+});
+
+check("a battery exports spare charge at peak, and fades 2% a year", () => {
+  const ctx = { lat: -45, roofM2: 150, kwp: 8, gen: genFor(8) };
+  const tou = { peak: 52, offpeak: 26, peakSell: 23, offpeakSell: 12, daily: 2.02 };
+  const big = B.btEvaluate(ctx, home({ battery: 30 }), null, tou);
+  const sold = B.BT_SEASONS.reduce((t, s) => t + big.run.seasons[s].rowsB.reduce((a, x) => a + (x.bExp || 0), 0), 0);
+  if (!(sold > 0)) throw new Error("a big battery never sold spare charge at peak");
+  for (const s of B.BT_SEASONS) for (const x of big.run.seasons[s].rowsB) {
+    if (x.bExp > 1e-9 && !(x.imp < 1e-9)) throw new Error("sold to the grid while buying from it");
+  }
+  // equal export prices: nothing to gain, so nothing sold
+  const flatSell = B.btEvaluate(ctx, home({ battery: 30 }), null, Object.assign({}, tou, { peakSell: 12 }));
+  const sold0 = B.BT_SEASONS.reduce((t, s) => t + flatSell.run.seasons[s].rowsB.reduce((a, x) => a + (x.bExp || 0), 0), 0);
+  near(sold0, 0, 1e-12, "no peak export when it pays no more");
+  // fade: the battery's yearly saving falls until it is replaced (year 15), then recovers
+  // against the same battery that never fades (power prices rise either way)
+  const kept = E.BATTERY_DEFAULTS.fade_pct;
+  const r = B.btEvaluate(ctx, home({ battery: 10 }), null, tou);
+  E.BATTERY_DEFAULTS.fade_pct = 0;
+  const r0 = B.btEvaluate(ctx, home({ battery: 10 }), null, tou);
+  E.BATTERY_DEFAULTS.fade_pct = kept;
+  const sv = r.battRet.rows, s0 = r0.battRet.rows;
+  near(sv[0].saving, s0[0].saving, 1e-9, "a new battery saves the same in year 1");
+  if (!(sv[13].saving < s0[13].saving)) throw new Error("a worn battery should save less");
+  near(sv[14].saving / s0[14].saving, sv[0].saving / s0[0].saving, 1e-9, "the replacement starts new");
 });
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

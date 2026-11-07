@@ -38,20 +38,22 @@ c("the default loan: 5.5% over 30 years", "5.5/30", `${E.ECON_DEFAULTS.loan_rate
   const ev = batt => B.btEvaluate({ lat: -45.03, roofM2: 150, kwp: 5, gen }, Object.assign({}, home0, { battery: batt }),
     null, tariff, { solarPerKw: 2000, battPerKwh: null });
   const r = ev(0), N = r.nodes;
-  c("borrowed for a $10,000 system", 10000, N.solarRepay.children[0].value,
-    "the system only: replacements are paid in their year, not borrowed for");
+  c("borrowed on day one for a $10,000 system", 10000, N.solarRepay.children[0].value,
+    "the system only: replacements are added to the loan when they fall due");
   c("...repaid at 5.5% over 30 years, a year", 688.05, r2(N.solarRepay.value),
     "10,000 × 0.055 ÷ (1 − 1.055^−30) = 550 ÷ 0.79936 = 688.05");
-  c("...on average a year in today's dollars, at 2% inflation", 523.94, r2(N.repAvg.value),
+  c("...on average a year in today's dollars, at 2% inflation", 523.94, r2(N.repAvg.children[0].value),
     "688.05 × (1 + 1/1.02 + … + 1/1.02^29) ÷ 30 = 688.05 × 0.76148 = 523.94", 0.01);
-  c("the replacement inverter, on average a year", 60, r2(N.replAvg.value),
-    "18% of 10,000 = 1,800 in year 16, ÷ 30 years = 60");
+  c("the replacement inverter, added to the loan in year 16, on average a year", 78.34, r2(N.repAvg.children[1].value),
+    "1,800 borrowed at year 16's prices, repaid over 15 years: 1,800 × 0.055 ÷ (1 − 1.055^−15) = 179.33 a year in today's " +
+    "dollars of year 16; × (1 + 1/1.02 + … + 1/1.02^14) = 13.10625, ÷ 30 = 78.34", 0.01);
+  c("...repayments, all told, on average a year", 602.28, r2(N.repAvg.value), "523.94 + 78.34", 0.02);
   const rb = ev(10);
   c("a 10 kWh battery costs", 9000, rb.nodes.battCost.value, "10 × $900");
   c("...replaced in year 15 at 70% of today's price", 6300, r2(-rb.battRet.rows[14].out), "9,000 × 0.7");
-  c("...inverter and battery replacements, on average a year", 270, r2(rb.nodes.replAvg.value),
-    "(1,800 + 6,300) ÷ 30 = 270");
-  c("the net a year = savings − repayments − replacements", r2(N.saveAvg.value - N.repAvg.value - N.replAvg.value),
+  c("...its replacement added to the loan in year 15, on average a year", 278.0, r2(rb.nodes.repAvg.children[2].value),
+    "6,300 × 0.055 ÷ (1 − 1.055^−16) = 602.17; × (1 + 1/1.02 + … + 1/1.02^15) = 13.84945, ÷ 30 = 278.00", 0.02);
+  c("the net a year = savings − repayments", r2(N.saveAvg.value - N.repAvg.value),
     r2(N.solarNet.value), "each an average year over the loan, in today's dollars");
 }
 c("15 years of those repayments", 15444.41, r2(B.btAnnuity(10000, 0.06, 15) * 15),
