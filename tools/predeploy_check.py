@@ -230,8 +230,12 @@ def main():
             zeroed.append((b, wl, wn))
         elif wl > 0 and (wl - wn) >= DROP_MIN and (wl - wn) / wl >= DROP_FRAC:
             dropped.append((b, wl, wn))
+        # withheld means it lost its estimate: a reason on a roof that still
+        # has panels is a stale local file (the reasons come from this
+        # checkout's data/regions, the panels from the VM's summaries; at
+        # v72 and v73 that listed 309 and 313 roofs that kept every panel)
         if new[b].get("no_estimate_reason") and not live[b].get("no_estimate_reason") \
-                and wl >= ZERO_MIN:
+                and wl >= ZERO_MIN and wn == 0:
             withheld.append((b, wl, new[b]["no_estimate_reason"]))
 
     # PANEL COUNTS ARE POINTERS, NOT RESULTS. A count says nothing about
