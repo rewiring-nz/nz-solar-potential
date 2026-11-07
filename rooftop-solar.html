@@ -440,7 +440,9 @@
   .roof-saving .wk-num, .roof-saving .wk-num:hover { text-decoration: none; }
   .roof-saving [data-wk] { cursor: pointer; border-radius: 6px; }
   .roof-saving [data-wk]:hover, .roof-saving [data-wk]:focus-visible { background: rgba(0,0,0,.16); outline: none; }
-  .roof-saving .rs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .roof-saving .rs-top { display: flex; align-items: center; gap: 10px; }
+  .roof-saving .rs-left { flex: 1 1 auto; min-width: 0; }
+  .roof-saving .rs-head { display: flex; align-items: center; gap: 6px; }
   .roof-saving .rs-l { opacity: .92; }
   .roof-saving .rs-v { display: inline-block; padding: 0 4px; margin-left: -4px; }
   .roof-saving .rs-v span { opacity: .85; margin-left: 2px; }
@@ -448,9 +450,12 @@
     background: none; color: #fff; font: italic 700 12px/1 Georgia, serif; cursor: pointer; padding: 0; }
   .roof-saving .rs-i:hover, .roof-saving .rs-i:focus-visible, .roof-saving .rs-i[aria-expanded="true"] { background: rgba(0,0,0,.22); outline: none; }
   .roof-saving .rs-info { font-size: 12px; line-height: 1.45; margin: 6px 0 2px; color: #fff; }
-  .roof-saving .rs-parts { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.25);
-    display: grid; gap: 2px; font-size: 13px; }
-  .roof-saving .rs-row { display: flex; justify-content: space-between; padding: 2px 4px; margin: 0 -4px; }
+  .roof-saving .rs-parts { flex: 0 0 auto; display: grid; gap: 1px; font-size: 12px; background: #dcfce7; color: #14532d;
+    border-radius: 8px; padding: 5px 8px; min-width: 150px; }
+  .roof-saving .rs-parts [data-wk]:hover, .roof-saving .rs-parts [data-wk]:focus-visible { background: rgba(20,83,45,.10); }
+  .roof-saving.behind .rs-parts { background: #e5e7eb; color: #1f2937; }
+  .roof-saving.behind .rs-parts [data-wk]:hover { background: rgba(0,0,0,.08); }
+  .roof-saving .rs-row { display: flex; justify-content: space-between; gap: 10px; padding: 1px 4px; margin: 0 -4px; }
   .roof-saving .rs-row b { font-weight: 700; font-variant-numeric: tabular-nums; }
   /* repayments larger than the savings: same layout, a dark slate ground */
   .roof-saving .rs-add { margin-top: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px dashed rgba(255,255,255,.6);
@@ -700,7 +705,10 @@
     font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
   .sba-resilience:hover, .sba-resilience:focus-visible { background: rgba(255,176,0,.16); outline: none; }
   .sba-resilience > span:nth-child(2) { flex: 1; }
-  .sba-resilience small { display: block; font-weight: 400; font-size: 11.5px; color: rgba(235,235,245,.6); margin-top: 1px; }
+  .sba-resilience small { display: block; font-weight: 400; font-size: 10.5px; color: rgba(235,235,245,.6); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sba-resilience > span:nth-child(2) { min-width: 0; }
+  @media (max-width: 700px) { .sba-resilience small { white-space: normal; } }
   .rs-ic { color: #ffb000; font-size: 18px; }
   /* The Resilience lightbox fits the window (Josh, 24 Oct: "it is huge on the
      screen"): compact figures, two columns -- charts left, tables right. */
@@ -1419,7 +1427,9 @@
   </form>
 </div>
 <div class="side-panel" id="side-panel">
-  <button class="side-panel-close" id="side-panel-expand" style="right:42px;" title="Show all details" aria-label="Show all details" aria-expanded="false">&#8599;</button>
+  <!-- ONE CARD: the second column (the expanded view) is gone; its controls
+       live in the card, collapsed. The button stays for the scripts, hidden. -->
+  <button class="side-panel-close" id="side-panel-expand" hidden style="display:none" aria-hidden="true" tabindex="-1">&#8599;</button>
   <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
   <div id="side-panel-content"></div>
 </div>
@@ -5096,10 +5106,8 @@ map.on("load", async () => {
           <div id="card-horizon"></div>
         </div>
         <button type="button" class="sba-resilience" onclick="window.__openResilience && window.__openResilience()">
-          <span class="rs-ic" aria-hidden="true">&#9728;&#xFE0E;</span><span>Resilience<small>Low-solar runs, shading and 86 years of sunlight</small></span>
+          <span class="rs-ic" aria-hidden="true">&#9728;&#xFE0E;</span><span>Resilience Analysis<small>How many days in a row this building may go without solar, going back decades.</small></span>
           <span aria-hidden="true">&rsaquo;</span></button>
-        <button type="button" class="sba-expand sba-compact-only" onclick="window.__setPanelCompact(false)">
-          Assumptions and details <span aria-hidden="true">&#8964;</span></button>
         <div class="sba-full-only">
         <!-- The generation chart lives in the expanded column; the corner card
              shows the horizon (Josh, 21 Oct). -->
@@ -5557,8 +5565,12 @@ map.on("load", async () => {
       ? ` <button type="button" class="sys-reset" id="bldg-sys-reset">Use the economic size</button>` : "";
     const auto = S.mode === "hand" || S.mode === "econ" || (S.mode === "map" && !sizingDefault)
       ? ` <button type="button" class="auto-reset" id="bldg-sys-auto" title="Back to this roof's default size">&#8634; Back to auto</button>` : "";
-    let note = `${which} ${econText}${btn}${auto}`;
-    document.getElementById("bldg-sys-note").innerHTML = note;
+    // no prose under the slider: only the way back to the default size once
+    // it has been moved (which/econText/btn are kept for the tests' reading)
+    void which; void econText; void btn;
+    const noteEl = document.getElementById("bldg-sys-note");
+    noteEl.innerHTML = auto.trim();
+    noteEl.hidden = !auto;
   }
 
   function updateFittedStats(buildingId) {
@@ -5847,6 +5859,10 @@ map.on("load", async () => {
   // season's best clear-sky day. Scaled by the panels actually placed at the
   // current density, each panel weighted by its own roof face's orientation.
   const SEASON_COLORS = { summer: "#ff7a00", autumn: "#7dff5e", winter: "#00c8ff", spring: "#ffe600" };
+  // the horizon chart is light: sky, ground, and the sun paths darkened to
+  // read on the sky (each at least 3:1 on it)
+  const HZ_SKY = "#cfe7f7", HZ_HILL = "#1d2127", HZ_NEAR = "#5b6573";
+  const HZ_ARC = { summer: "#c2410c", spring: "#8a6a00", winter: "#0369a1" };
   let seasonCurves = null;
   let maxSlopeBin = null;   // cached from seasonCurves by seasonMaxSlopeBin
   function setSeasonCurves(doc) {
@@ -5978,18 +5994,24 @@ map.on("load", async () => {
       for (let t = 0; t <= 180; t += 2) d += `L${x(t).toFixed(1)} ${y(horizonAt(prof, azOfT(t))).toFixed(1)}`;
       return d + `L${x(180)} ${y(0)}Z`;
     };
+    // LIGHT CHART: a pale sky, the ground near-black. The sun-path colours
+    // are the season colours darkened to read on the sky (HZ_ARC).
     let svg = "";
     // sky guide lines every 15 degrees
     for (let el = 15; el < maxEl; el += 15) {
-      svg += `<line x1="${L}" y1="${y(el)}" x2="${W - R}" y2="${y(el)}" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>` +
-             `<text x="${L - 3}" y="${y(el) + 3}" fill="#666" font-size="8" text-anchor="end">${el}&deg;</text>`;
+      svg += `<line x1="${L}" y1="${y(el)}" x2="${W - R}" y2="${y(el)}" stroke="rgba(20,40,60,0.12)" stroke-width="1"/>` +
+             `<text x="${L - 3}" y="${y(el) + 3}" fill="#3d4b5a" font-size="8" text-anchor="end">${el}&deg;</text>`;
     }
-    if (far) svg += `<path d="${silhouette(far)}" fill="rgba(140,150,165,0.55)"/>`;
-    svg += `<path d="${silhouette(comb)}" fill="rgba(70,78,92,0.95)"/>`;
+    // TREES AND BUILDINGS FIRST, HILLS OVER THEM. The full horizon (comb)
+    // includes the hills, so drawn last it covered them and the whole
+    // silhouette was one colour: the near obstructions never showed. Now
+    // what rises above the hills is the lighter slate, the hills near-black.
+    svg += `<path d="${silhouette(comb)}" fill="${far ? HZ_NEAR : HZ_HILL}"/>`;
+    if (far) svg += `<path d="${silhouette(far)}" fill="${HZ_HILL}"/>`;
     // sun arcs clipped nothing -- drawn over the silhouette so the blocked
     // stretch is visibly "behind" the ground
     arcs.forEach(a => {
-      const col = SEASON_COLORS[a.name];
+      const col = HZ_ARC[a.name];
       let d = "", pen = false;
       a.pts.forEach(q => {
         const t = ((90 - q[0]) % 360 + 360) % 360;
@@ -6008,7 +6030,7 @@ map.on("load", async () => {
       }
     });
     const az_ticks = [[0, "E"], [45, "NE"], [90, "N"], [135, "NW"], [180, "W"]].map(([t, lbl]) =>
-      `<text x="${x(t)}" y="${H - 4}" fill="#888" font-size="8" text-anchor="middle">${lbl}</text>`).join("");
+      `<text x="${x(t)}" y="${H - 4}" fill="#3d4b5a" font-size="8" text-anchor="middle">${lbl}</text>`).join("");
     // A horizon cannot be summed -- it is one roof's view of the sky. With a
     // multi-selection the chart shows the LARGEST building's and says so,
     // rather than quietly implying it describes all of them.
@@ -6031,15 +6053,13 @@ map.on("load", async () => {
         (multiSel ? ` <span style="color:var(--ink-3);">(#${p._horizonOf})</span>` : ``) + `</div>`
       : "";
     box.innerHTML =
-      `<div style="background:#000; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
+      `<div style="background:${HZ_SKY}; border-radius:8px; padding:6px 4px 2px; margin-bottom:4px;">` +
       `<svg width="100%" viewBox="0 0 ${W} ${H}">${svg}${az_ticks}</svg>` +
-      // The key sits inside the black chart box: its colours are the chart
-      // lines' own, and on the light panel the equinox yellow was 1.3:1.
-      `<div style="font-size:9.5px; color:#b8bec8; text-align:center; padding:2px 0 4px;">` +
-      `Sun paths for <span style="color:${SEASON_COLORS.summer}; font-weight:700;">midsummer</span>, ` +
-      `<span style="color:${SEASON_COLORS.spring}; font-weight:700;">equinox</span> and ` +
-      `<span style="color:${SEASON_COLORS.winter}; font-weight:700;">midwinter</span>. ` +
-      `Grey = hills, dark = trees &amp; buildings</div></div>` + beam;
+      // the arcs carry their own names; the two ground shades get a swatch each
+      (far ? `<div style="font-size:9.5px; color:#3d4b5a; display:flex; justify-content:center; gap:12px; padding:1px 0 4px;">` +
+        `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${HZ_HILL};vertical-align:-1px;margin-right:4px"></i>Hills</span>` +
+        `<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${HZ_NEAR};vertical-align:-1px;margin-right:4px"></i>Trees &amp; buildings</span></div>` : "") +
+      `</div>` + beam;
   }
 
   // opts.box / opts.mode / opts.big: the lightbox draws the same chart,

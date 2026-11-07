@@ -402,7 +402,7 @@ function btAveragePrice(load, s, P) {
 // Scale factors per season so the modelled "now" matches what the user told
 // us: their bills (monthly, before solar; either one stands for both), or
 // their yearly use. calib: {winter, summer} | {total} | null.
-function btCalibration(load, calib, tariff, seasonDays) {
+function btCalibration(load, calib, tariff, seasonDays, prevScale) {
   const scale = { summer: 1, autumn: 1, winter: 1, spring: 1 };
   const P = btPriceNodes(tariff);
   const one = s => btIn(`Matching to your bills, ${s}`, 1, "×", { dp: 2, note: "Nothing entered, so our estimate is used as is." });
@@ -420,14 +420,29 @@ function btCalibration(load, calib, tariff, seasonDays) {
     BT_SEASONS.forEach(s => { nodes[s] = k; });
     return done(true, "total");
   }
+  // THE BILL PEOPLE KNOW is their dearest winter month and their cheapest
+  // summer one, not a season's average month. The entered bill is that
+  // month's (btExtremeMonth): its electricity a day, over the month's ratio
+  // to the season's average day, is the average day's. The ratio is taken
+  // from the load as matched so far (prevScale; btEvaluate runs this twice,
+  // so the neighbouring seasons' matches shape the month too).
+  const sc = prevScale || { summer: 1, autumn: 1, winter: 1, spring: 1 };
+  const shape = btMonthEnergy(BT_SEASONS.map(x => btSeasonLoad(load, x, sc[x])), P);
   const fromBill = (bill, s) => {
     if (!(bill > 0)) return null;
     const model = btModelledDay(load, s);
     if (!(model.value > 0)) return null;
-    const entered = btIn(`Your ${s} bill`, bill, "$/month", { source: "You entered it." });
-    const kwh = Wk.quotient(`Electricity your ${s} bill pays for, a day`, "kWh/day",
-      Wk.diff("Bill a day, less the daily charge", "$/day",
-        Wk.quotient("Bill a day", "$/day", entered, P.month), P.daily), btAveragePrice(load, s, P));
+    const ex = btExtremeMonth(shape, s, P.daily.value);
+    const avgDay = btSeasonLoad(load, s, sc[s]).reduce((t, l, h) => t + l * P.buyAt(h), 0);
+    const ratio = Wk.given(`${BT_MONTH_FULL[ex.m]} vs an average ${s} day`, avgDay > 0 ? ex.energy / ex.days / avgDay : 1, "×",
+      [...new Set([P.peak, P.off])], { dp: 3, formula: `the electricity cost of a day in ${BT_MONTH_FULL[ex.m]}, the ${BT_PICK[s].word} ${s} month, ` +
+        `over an average ${s} day's, from the year's days blended smoothly through the seasons` });
+    const entered = btIn(`Your ${BT_PICK[s].word} ${s} bill (${BT_MONTH_FULL[ex.m]})`, bill, "$/month", { source: "You entered it." });
+    const kwh = Wk.quotient(`Electricity an average ${s} day uses`, "kWh/day",
+      Wk.quotient("A day of that month, less the daily charge, over the month's ratio", "$/day",
+        Wk.diff("Bill a day, less the daily charge", "$/day",
+          Wk.quotient("Bill a day", "$/day", entered, btIn(`Days in ${BT_MONTH_FULL[ex.m]}`, ex.days, "days")), P.daily), ratio),
+      btAveragePrice(load, s, P));
     return Wk.clamp(`Matching to your bills, ${s}`, "×",
       Wk.quotient("Your use ÷ our estimate", "×", kwh, model, { dp: 3 }), 0.2, 5, { dp: 3,
         note: "Every part of our estimate is scaled by this, so its bill matches yours." });
@@ -727,7 +742,15 @@ function crossMark(rows, payback) {
 //   sys:    {solarPerKw, battPerKwh} -- the user's own prices, or null for ours
 function btEvaluate(ctx, prof, calib, tariff, sys) {
   const load = btBuildLoad(prof, { lat: ctx.lat, lon: ctx.lon, roofM2: ctx.roofM2, btype: ctx.btype, heightM: ctx.heightM });
-  const cal = btCalibration(load, calib, tariff, ctx.seasonDays);
+  // a bill is one month's (btExtremeMonth), and which month and its share
+  // of the season depend on the matches themselves: repeat until they settle
+  let cal = btCalibration(load, calib, tariff, ctx.seasonDays);
+  for (let k = 0; k < 12 && cal.by === "bills"; k++) {
+    const next = btCalibration(load, calib, tariff, ctx.seasonDays, cal.scale);
+    const moved = BT_SEASONS.some(x => Math.abs(next.scale[x] - cal.scale[x]) > 1e-12 * Math.max(1, cal.scale[x]));
+    cal = next;
+    if (!moved) break;
+  }
   const run = btRun(ctx.gen, load, cal, tariff, prof.battery || 0, ctx.seasonDays);
   const N = run.nodes, Y = run.year;
   const sy = sys || {};
@@ -917,6 +940,68 @@ const BT_MONTH_SEASON = ["summer", "summer", "autumn", "autumn", "autumn", "wint
                          "winter", "winter", "spring", "spring", "spring", "summer"];
 const BT_MONTH_LEN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const BT_MONTH_NAME = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const BT_MONTH_FULL = ["January", "February", "March", "April", "May", "June", "July", "August",
+                       "September", "October", "November", "December"];
+// The bills people remember: the dearest winter month, the cheapest summer one.
+const BT_PICK = { winter: { months: [5, 6, 7], max: true, word: "highest" },
+                  summer: { months: [11, 0, 1], max: false, word: "lowest" } };
+let BT_CAL_DAYS = null;
+function btCalendar() {
+  if (!BT_CAL_DAYS) {
+    const seasonOfDay = [], monthOfDay = [], dayOfMonth = [];
+    for (let m = 0; m < 12; m++) for (let d = 1; d <= BT_MONTH_LEN[m]; d++) {
+      seasonOfDay.push(BT_SEASONS.indexOf(BT_MONTH_SEASON[m])); monthOfDay.push(m); dayOfMonth.push(d);
+    }
+    BT_CAL_DAYS = { seasonOfDay, monthOfDay, dayOfMonth };
+  }
+  return BT_CAL_DAYS;
+}
+// each calendar month's electricity cost before solar (no daily charge):
+// the four seasons' days blended through the year, priced hour by hour
+function btMonthEnergy(seasonLoads, P) {
+  const { seasonOfDay, monthOfDay } = btCalendar();
+  const L = btBlendYear(seasonLoads, seasonOfDay);
+  const cost = new Array(12).fill(0);
+  for (let d = 0; d < 365; d++) for (let h = 0; h < 24; h++) cost[monthOfDay[d]] += L[d][h] * P.buyAt(h);
+  return cost;
+}
+// the highest winter or lowest summer month, by its bill with the daily charge
+function btExtremeMonth(cost, s, daily) {
+  const B = BT_PICK[s];
+  const bill = m => cost[m] + BT_MONTH_LEN[m] * daily;
+  const m = B.months.reduce((a, b) => (B.max ? bill(b) > bill(a) : bill(b) < bill(a)) ? b : a);
+  return { m, days: BT_MONTH_LEN[m], energy: cost[m], bill: bill(m) };
+}
+// THE CARD'S BILLS: that month today and after the install, from the 365
+// days (btYearHours), so the bill after is the same month's with its own
+// sun. {winter: {m, now, after}, summer: {...}}, each a Workings node.
+function btBillMonths(run, withBatt) {
+  const P = run.nodes.prices;
+  const sum = () => {
+    const yr = btYearHours(run, withBatt, null);
+    const now = new Array(12).fill(0), aft = new Array(12).fill(0);
+    for (const r of yr.rows) { now[r.month] += r.costNow; aft[r.month] += r.cost; }
+    return { now, aft };
+  };
+  const t = sum();
+  const out = {};
+  for (const s of ["winter", "summer"]) {
+    const B = BT_PICK[s];
+    const m = B.months.reduce((a, b) => (B.max ? t.now[b] > t.now[a] : t.now[b] < t.now[a]) ? b : a);
+    const name = BT_MONTH_FULL[m];
+    out[s] = {
+      m,
+      now: Wk.given(`Your ${B.word} ${s} bill, today (${name})`, t.now[m], "$/month", [...new Set([P.peak, P.off, P.daily])],
+        { formula: `${name}'s ${BT_MONTH_LEN[m]} days, each hour's use at its price, plus the daily charge; ` +
+            `the ${B.word} of ${B.months.map(k => BT_MONTH_FULL[k]).join(", ")}`, check: () => sum().now[m] }),
+      after: Wk.given(`${name}'s bill after the install${withBatt ? ", with the battery" : ""}`, t.aft[m], "$/month",
+        [...new Set([P.peak, P.off, P.peakSell, P.offSell, P.daily])],
+        { formula: `${name}'s ${BT_MONTH_LEN[m]} days, hour by hour: power from the grid at its price, less exports at theirs, plus the daily charge` +
+            (withBatt ? "; the battery carries its charge from day to day" : ""), check: () => sum().aft[m] }),
+    };
+  }
+  return out;
+}
 // A SMOOTH YEAR through the four seasons: a yearly wave and a half-yearly
 // one, the fewest terms that can match four seasons exactly
 // (1, cos θ, sin θ, cos 2θ; θ = 2π × day ÷ 365). Straight lines between the
@@ -959,10 +1044,7 @@ function btBlendYear(target, seasonOfDay) {
 function btYearHours(run, withBatt, weather) {
   const N = run.nodes, P = N.prices;
   const sim = run.sim || {};
-  const seasonOfDay = [], monthOfDay = [], dayOfMonth = [];
-  for (let m = 0; m < 12; m++) for (let d = 1; d <= BT_MONTH_LEN[m]; d++) {
-    seasonOfDay.push(BT_SEASONS.indexOf(BT_MONTH_SEASON[m])); monthOfDay.push(m); dayOfMonth.push(d);
-  }
+  const { seasonOfDay, monthOfDay, dayOfMonth } = btCalendar();
   const calDays = [0, 0, 0, 0]; seasonOfDay.forEach(s => { calDays[s]++; });
   const load = btBlendYear(BT_SEASONS.map(s => run.seasons[s].load), seasonOfDay);
   const gen = btBlendYear(BT_SEASONS.map(s => run.seasons[s].gen), seasonOfDay);
@@ -1107,7 +1189,7 @@ function btYearCsv(year) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
+  module.exports = { btBillMonths, btExtremeMonth, BT_PICK, btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
                      btYearHours, btBlendYear, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
 }
@@ -1217,7 +1299,23 @@ const BT_CSS = `
 .sx-glance { margin-top: 10px; }
 .sx-glance.sx-cost { margin: 0 0 10px; }
 .sx-billrow { gap: 8px; }
-.sx-prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 4px; margin: 6px 0 2px; }
+/* Today | After install: one grid for the head and both bills, so the labels
+   sit over their columns */
+.sx-billrow, .sx-billhead { display: grid; grid-template-columns: minmax(0, 1fr) 76px 12px 84px; align-items: center; }
+.sx-billrow .sx-field { justify-self: start; }
+.sx-billrow .after { justify-self: end; }
+.sx-billhead { min-height: 0; padding-top: 6px; padding-bottom: 0; font-size: 11px; font-weight: 600; color: var(--sx-ink-3);
+  text-transform: uppercase; letter-spacing: .04em; }
+.sx-billhead > span { white-space: nowrap; }
+.sx-billhead > span:last-child { text-align: right; justify-self: end; }
+.sx-billhead + .sx-row::before { display: none; }
+.sx-costdrop { margin: 0 0 10px; }
+.sx-costdrop > summary .t { font-size: 15px; }
+.sx-costdrop > summary .sum { color: var(--sx-ink-2); font-size: 13px; }
+.sx-costdrop > summary .sum b { color: var(--sx-ink); font-size: 16px; font-weight: 700; }
+.sx-moredrop { margin-top: 12px; }
+.sx-moredrop > .sx-more { padding-top: 4px; }
+.sx-prices { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 4px; margin: 6px 0 2px; }
 .sx-pc { display: flex; flex-direction: column; gap: 1px; background: var(--sx-fill); border-radius: 8px; padding: 5px 6px 4px; cursor: text; min-width: 0; }
 .sx-pc .v { display: flex; align-items: baseline; gap: 1px; font-weight: 600; font-size: 14px; }
 .sx-pc .v i { font-style: normal; font-weight: 500; color: var(--sx-ink-2); font-size: 12px; }
@@ -1612,12 +1710,14 @@ function renderBillTool(box, ctx) {
     const ret = withBatt ? r.battRet : r.solarRet;
     const save1 = withBatt ? N.battSave : N.solarSave;
     const after = withBatt ? "battMonth" : "solarMonth";
+    // the card's two bills: the highest winter and lowest summer month
+    const BM = haveGen ? btBillMonths(r.run, withBatt) : null;
     const E = typeof econ !== "undefined" ? econ : {};
     const pfx = isBiz ? "biz" : "home";
     const calibBy = r.cal.by;
     const money = n => btMoney(n.value);
     const entered = state.calib && !state.calib.total
-      ? [["summer", S.summer.nowMonth], ["winter", S.winter.nowMonth]].filter(([k]) => state.calib[k] > 0) : [];
+      ? [["summer", BM ? BM.summer.now : S.summer.nowMonth], ["winter", BM ? BM.winter.now : S.winter.nowMonth]].filter(([k]) => state.calib[k] > 0) : [];
     const off = entered.filter(([k, n]) => Math.abs(n.value - state.calib[k]) > 0.03 * state.calib[k]);
     // No "matched to your bill" note once a bill is entered: it was easy to
     // forget and read as a stamp of accuracy (Josh, 18 Oct). Only the hint
@@ -1631,9 +1731,7 @@ function renderBillTool(box, ctx) {
           low.length ? `Your ${low.join(" and ")} bill is lower than we can match for this building. Check the prices and daily charge.` : "",
           high.length ? `Your ${high.join(" and ")} bill is higher than we can match for this building. Check the prices.` : ""
         ].filter(Boolean).join(" ")}</span>`
-      : (!entered.length && calibBy !== "total")
-        ? "Today's bills are our estimate for this building. Type in your own and everything updates."
-        : "";
+      : "";
     const P = isBiz ? state.business : state.home;
     const field = (id, value, attrs, pre, post, est) =>
       `<label class="sx-field${est ? " est" : ""}">${pre ? `<span>${pre}</span>` : ""}<input id="bt-${id}" type="number" inputmode="decimal" ${attrs} value="${value}">${post ? `<span>${post}</span>` : ""}</label>`;
@@ -1662,14 +1760,17 @@ function renderBillTool(box, ctx) {
     };
     // the corner card's bill rows: today's bill is typed in right there;
     // the with-solar bill opens how it is worked out
-    const billPair = (s, label, sub) => {
+    // TODAY | AFTER INSTALL: today's bill is typed in right there (it is
+    // that month's, BT_PICK); the bill after opens how it is worked out
+    const billHead = `<div class="sx-row sx-billhead"><span class="lbl"></span><span>Today</span><span class="sx-arrow"></span><span>After install</span></div>`;
+    const billPair = (s, label) => {
       const mine = state.calib && !state.calib.total && state.calib[s] > 0;
-      return `<div class="sx-row sx-billrow"><span class="lbl">${label}<small>${sub}</small></span>` +
-        field(`billq-${s}`, Math.round(S[s].nowMonth.value), `min="0" step="10" data-bill="${s}" aria-label="${label} today, dollars a month"`, "$", "", !mine) +
+      return `<div class="sx-row sx-billrow"><span class="lbl">${label}</span>` +
+        field(`billq-${s}`, Math.round(BM[s].now.value), `min="0" step="10" data-bill="${s}" aria-label="${label}, today, dollars a month"`, "$", "", !mine) +
         `<span class="sx-arrow" aria-hidden="true">→</span>` + afterBill(s) + `</div>`;
     };
     const afterBill = s => {
-      const n = S[s][after];
+      const n = BM[s].after;
       return `<span class="val after" data-wk="after-${s}" tabindex="0" role="button">` +
         (n.value < -0.5 ? `<b>${btMoney(-n.value)}</b> <small>credit</small>` : `<b>${btMoney(n.value)}</b>`) + `</span>`;
     };
@@ -1680,8 +1781,6 @@ function renderBillTool(box, ctx) {
     const price = (label, key) => row(label, field(key, +(shown(key) || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
     const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
-    // a payback after the panels' life is no payback
-    const pbText = ret.payback == null || ret.payback > ret.years ? `over ${ret.years} yrs · doesn't pay back` : `over ${ret.years} yrs · pays back in ${ret.payback.toFixed(1)}`;
     const priceSum = tariff.flat
       ? `${(tariff.peak || 0)}c flat · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`
       : `${(shown(pfx + "_peak_c") || 0)}c peak · ${(shown(pfx + "_offpeak_c") || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
@@ -1719,17 +1818,6 @@ function renderBillTool(box, ctx) {
       (withBatt ? `<span><i style="background:${BT_BATT_COLOUR}"></i>Battery: charging (light), powering the ${isBiz ? "building" : "home"} (solid)</span>` : "") +
       `<span><i class="nl"></i>Net load: from the grid less exported (below zero when exporting)</span>` +
       `<span><i class="pk"></i>Peak price</span><span class="u">kWh each hour</span></div>`;
-    // THE CHARTS LIVE IN THE LIGHTBOX (openBig), big enough to read; the
-    // side panel only offers them. Cramped in the panel's column they were
-    // too small to read.
-    const seasonsHtml = haveGen
-      ? `<div class="sx-h" id="bt-seasons">Charts</div>` +
-        `<div class="sx-chartbtns">` +
-          `<button type="button" class="sx-explore" data-big="seasons">A day in each season <span aria-hidden="true">⤢</span></button>` +
-          `<button type="button" class="sx-explore" data-big="year">The whole year, hour by hour <span aria-hidden="true">⤢</span></button>` +
-          `<button type="button" class="sx-explore" data-big="returns">Year by year: savings and repayments <span aria-hidden="true">⤢</span></button>` +
-        `</div>`
-      : "";
     const methodHtml = haveGen
       ? `<div class="sx-h">How it's worked out</div>` +
         `<details class="sx-dis" id="bt-adv-method"><summary><span class="t">The method, with the numbers used now</span><span class="sum">updates with every change</span></summary>` +
@@ -1738,9 +1826,18 @@ function renderBillTool(box, ctx) {
     const html =
       `<div class="sx">` +
       // the corner card leads with what it costs (Josh, 18 Oct)
-      `<div class="sx-group sx-glance sx-cost">` +
-        row("Costs about", val(money(withBatt ? N.allCost : N.solarCost), `<small>${N.kwp.value.toFixed(1)} kW${withBatt ? " + battery" : ""}</small>`), { go: "allcost" }) +
-      `</div>` +
+      // COSTS ABOUT opens to the two prices it is built from, each editable
+      `<details class="sx-dis sx-costdrop" id="bt-costs"><summary><span class="t">Costs about</span>` +
+        `<span class="sum"><b>${money(withBatt ? N.allCost : N.solarCost)}</b> <small>${N.kwp.value.toFixed(1)} kW${withBatt ? ` + ${+prof.battery} kWh` : ""}</small></span></summary>` +
+        `<div class="sx-group">` +
+          row("Solar price", field("solarrate", Math.round(N.solarRate.value), `min="0" step="50" data-sys="solarPerKw"`, "$", "/kW", !(state.sys.solarPerKw > 0)),
+            { small: state.sys.solarPerKw > 0 ? "yours" : "typical for this size" }) +
+          row("Solar", val(money(N.solarCost)), { go: "solarcost", small: N.kwp.value.toFixed(1) + " kW" }) +
+          row("Battery price", field("battrate", Math.round(N.battRate.value), `min="0" step="50" data-sys="battPerKwh"`, "$", "/kWh", !(state.sys.battPerKwh > 0)),
+            { small: state.sys.battPerKwh > 0 ? "yours" : "typical" }) +
+          (withBatt ? row("Battery", val(money(N.battCost)), { go: "battcost", small: `${+prof.battery} kWh` }) : "") +
+          row("Total", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost", cls: "total" }) +
+        `</div></details>` +
       `<div class="sx-summary">` +
         // ANNUAL FIGURES ARE THE AVERAGE YEAR over the loan, in today's
         // dollars (btEvaluate avgOver): the same as the green box
@@ -1749,27 +1846,26 @@ function renderBillTool(box, ctx) {
         `<div class="sx-cell" data-wk="lifetime" tabindex="0" role="button"><div class="l">Total bill savings</div>` +
           `<div class="v">${haveGen ? money(ret.nodes.lifetime) : "–"}</div><div class="s">over ${ret.years} years</div></div>` +
         `<div class="sx-cell" data-wk="net" tabindex="0" role="button"><div class="l">Net savings</div>` +
-          `<div class="v">${haveGen ? money(ret.nodes.net) : "–"}</div><div class="s">${haveGen ? "paid upfront, " + pbText : ""}</div></div>` +
+          `<div class="v">${haveGen ? money(ret.nodes.net) : "–"}</div><div class="s">over ${ret.years} years</div></div>` +
         // THE RETURN TWO WAYS. Paid upfront: the yearly rate the cost earns
         // (btReturns irr). With a loan nothing is put in, so there is no rate
         // to earn on it; what the loan gives is the net saving a year.
         `<div class="sx-cell" data-wk="irr" tabindex="0" role="button"><div class="l">Return on investment</div>` +
-          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">a year ${ret.real ? "after inflation" : "before inflation"}, paid upfront</div>` +
-          (haveGen ? `<div class="s sx-loanret">With a loan: nothing up front, ${btMoney(r.netShown)} a year</div>` : "") + `</div>` +
+          `<div class="v">${haveGen && ret.irr != null ? Wk.fmt(ret.irr, "share", 1) : "–"}</div><div class="s">a year</div></div>` +
       `</div>` +
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
       `<div class="sx-group sx-glance">` +
-        (haveGen ? billPair("winter", "Winter bill", "a typical winter month") : "") +
-        (haveGen ? billPair("summer", "Summer bill", "a typical summer month") : "") +
+        (haveGen ? billHead + billPair("winter", "Your highest winter bill") + billPair("summer", "Your lowest summer bill") : "") +
         // THE PRICES THIS BUILDING IS PRICED AT, editable in place: five
         // numbers, no prose. A home shows its area's home prices, a business
         // business prices; an edit applies across the map for that type.
         (haveGen ? priceStrip() : "") +
+        (haveGen ? row("Plan", seg("plan", [["tou", "Time of use"], ["flat", "Flat"]], tariff.flat ? "flat" : "tou", "Electricity plan")) : "") +
       `</div>` +
-      (haveGen ? `<div class="sx-foot sx-glance-foot">A month: today → ${withBatt ? "with solar and battery" : "with solar"}.${matchNote ? " " + matchNote : ""}</div>` : "") +
-      (haveGen ? `<button type="button" class="sx-explore" data-big="seasons">Charts: each season, the year, year by year <span aria-hidden="true">⤢</span></button>` : "") +
-      `</div>` + SX_SPLIT + `<div class="sx sx-more">` + seasonsHtml +
+      (haveGen && matchNote ? `<div class="sx-foot sx-glance-foot">${matchNote}</div>` : "") +
+      (haveGen ? `<button type="button" class="sx-explore" data-big="seasons">Load Profile Charts <span aria-hidden="true">⤢</span></button>` : "") +
+      `</div>` + SX_SPLIT + `<details class="sx-dis sx-moredrop" id="bt-more"><summary><span class="t">Details and assumptions</span><span class="sum">life, prices, use</span></summary><div class="sx sx-more">` +
 
       `<div class="sx-h">Over the panels' life</div>` +
       `<div class="sx-group">` +
@@ -1784,7 +1880,6 @@ function renderBillTool(box, ctx) {
       `<div class="sx-h">Assumptions</div>` +
       `<div class="sx-sub">Electricity prices</div>` +
       `<div class="sx-group">` +
-        row("Plan", seg("plan", [["tou", "Time of use"], ["flat", "Flat"]], tariff.flat ? "flat" : "tou", "Electricity plan")) +
         (tariff.flat ? price("Price", pfx + "_buy_c")
                      : price("Peak", pfx + "_peak_c") + price("Off-peak", pfx + "_offpeak_c")) +
         price("Export, off-peak", pfx + "_offpeak_sell_c") +
@@ -1841,23 +1936,13 @@ function renderBillTool(box, ctx) {
         `<details class="sx-why sx-foot"><summary>How this is used</summary>These answers set how much power the home uses, and when. If you enter your bills or yearly use, we scale the estimate to match.</details>` +
       `</details>` +
 
-      `<div class="sx-sub">System cost</div>` +
-      `<div class="sx-group">` +
-        row("Solar price", field("solarrate", Math.round(N.solarRate.value), `min="0" step="50" data-sys="solarPerKw"`, "$", "/kW", !(state.sys.solarPerKw > 0)),
-          { small: state.sys.solarPerKw > 0 ? "yours" : "typical for this size" }) +
-        row("Solar", val(money(N.solarCost)), { go: "solarcost", small: N.kwp.value.toFixed(1) + " kW" }) +
-        row("Battery", seg("battery", [[0, "None"], [5, "5"], [10, "10"], [13.5, "13.5"]].concat(isBiz ? [[30, "30"]] : []), P.battery, "Battery size, kWh"), { small: "kWh" }) +
-        (withBatt ? row("Battery price", field("battrate", Math.round(N.battRate.value), `min="0" step="50" data-sys="battPerKwh"`, "$", "/kWh", !(state.sys.battPerKwh > 0)),
-          { small: state.sys.battPerKwh > 0 ? "yours" : "typical" }) +
-          row("Battery", val(money(N.battCost)), { go: "battcost" }) : "") +
-        row("Total", val(money(withBatt ? N.allCost : N.solarCost)), { go: "allcost", cls: "total" }) +
-      `</div>` +
       `<div class="sx-foot">An estimate, not a quote. <details class="sx-why sx-inline"><summary>More</summary>Based on the roof, the local climate and the assumptions above. Tap any result to see the working.</details></div>` +
       methodHtml +
-      `</div>`;
+      `</div></details>`;
+    // ONE CARD: the details sit in it, collapsed, not in a second column
     const [top, more] = html.split(SX_SPLIT);
-    const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
-    if (moreBox) { box.innerHTML = top; moreBox.innerHTML = more; } else box.innerHTML = top + more;
+    const moreBox = null;
+    box.innerHTML = top + more;
     // THE HEADLINE SAVING under the card's yellow box (ctx.saveBox): the same
     // node as the "Bill savings" cell, so the two always agree and both open
     // the same workings. Hidden until the roof's sun has loaded, and when the
@@ -1879,22 +1964,20 @@ function renderBillTool(box, ctx) {
       const m = v => btMoney(v, st);
       // LOOK: one figure, two short rows, the detail behind an (i). Each
       // figure still opens its workings when tapped.
-      const info = `A rough estimate: an average year over the ${yrs}-year loan, in today's dollars. ` +
-        `Bill savings from ${withBatt ? "the system and battery" : "the system"}, ` +
-        `less the repayments on a loan for ${loanN.children[0].label.replace(/^Borrowed: /, "")} ` +
-        `at ${pct}. The replacement inverter${withBatt ? " and battery are" : " is"} added to the loan when ${withBatt ? "they fall" : "it falls"} due and repaid, with interest, by the end of it. ` +
-        `The repayment is fixed, so inflation makes it smaller in today's dollars each year, ` +
-        `while the savings follow power prices. Tap a figure to see how it is worked out.`;
+      const info = `An average year over a ${yrs}-year loan at ${pct}, in today's dollars, ` +
+        `replacements included. Tap a figure to see how it is worked out.`;
       saveBox.innerHTML = show
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
+          // the figure on the left, how it is made up in a light box on the right
+          `<div class="rs-top"><div class="rs-left">` +
           `<div class="rs-head"><span class="rs-l">${ahead ? "This roof could save you" : "With the loan, this roof costs"}</span>` +
           `<button type="button" class="rs-i" aria-label="About this figure" aria-expanded="false">i</button></div>` +
-          `<div class="rs-v" data-wk="net-year">${m(Math.abs(shownNet.net))}<span>/yr</span></div>` +
-          `<div class="rs-info" hidden>${info}</div>` +
+          `<div class="rs-v" data-wk="net-year">${m(Math.abs(shownNet.net))}<span>/yr</span></div></div>` +
           `<div class="rs-parts">` +
           `<div class="rs-row" data-wk="saveavg"><span>Bill savings</span><b>${m(saveN.value)}</b></div>` +
           `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${m(repN.value)}</b></div>` +
-          `</div>` +
+          `</div></div>` +
+          `<div class="rs-info" hidden>${info}</div>` +
           // A BATTERY, one tap: 10 kWh to start (BT_BATT_ADD_KWH), any size
           // typed in; the figures above then include it and its loan
           (withBatt
@@ -1926,7 +2009,7 @@ function renderBillTool(box, ctx) {
     // every result opens its workings
     const nodeFor = {
       save: () => save1, lifetime: () => ret.nodes.lifetime, net: () => ret.nodes.net, irr: () => ret.nodes.irr,
-      "after-summer": () => S.summer[after], "after-winter": () => S.winter[after],
+      "after-summer": () => BM ? BM.summer.after : S.summer[after], "after-winter": () => BM ? BM.winter.after : S.winter[after],
       daykw: () => N.dayKw, dayshare: () => N.dayShare, use: () => N.useYear,
       solarcost: () => N.solarCost, battcost: () => N.battCost, allcost: () => withBatt ? N.allCost : N.solarCost,
       repl: () => ret.nodes.replacements, payback: () => ret.nodes.payback,

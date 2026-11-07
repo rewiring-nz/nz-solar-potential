@@ -114,15 +114,17 @@ check("a battery lowers the bill further, and costs more", () => {
 check("entered bills set the 'now' bills exactly", () => {
   const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: genFor(6) };
   const r = B.btEvaluate(ctx, home(), { winter: 420, summer: 190 }, prices);
-  near(r.run.seasons.winter.nowMonth, 420, 0.5, "winter");
-  near(r.run.seasons.summer.nowMonth, 190, 0.5, "summer");
+  // the bills are the highest winter and lowest summer month (BT_PICK)
+  const bm = B.btBillMonths(r.run, false);
+  near(bm.winter.now.value, 420, 0.01, "winter");
+  near(bm.summer.now.value, 190, 0.01, "summer");
   if (!r.cal.matched) throw new Error("not flagged as matched");
 });
 
 check("one bill alone scales the whole year", () => {
   const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: null };
   const r = B.btEvaluate(ctx, home(), { winter: 400 }, prices);
-  near(r.run.seasons.winter.nowMonth, 400, 0.5, "winter");
+  near(B.btBillMonths(r.run, false).winter.now.value, 400, 0.01, "winter");
   near(r.cal.scale.summer, r.cal.scale.winter, 1e-9, "same scale");
 });
 
@@ -158,8 +160,27 @@ check("an entered bill is matched exactly under time-of-use prices", () => {
   const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: genFor(6) };
   const r = B.btEvaluate(ctx, home(), { winter: 500, summer: 180 },
                          { peak: 38, offpeak: 24, peakSell: 16, offpeakSell: 12, daily: 2.2 });
-  near(r.run.seasons.winter.nowMonth, 500, 1e-6, "winter");
-  near(r.run.seasons.summer.nowMonth, 180, 1e-6, "summer");
+  const bm = B.btBillMonths(r.run, false);
+  near(bm.winter.now.value, 500, 0.01, "winter");
+  near(bm.summer.now.value, 180, 0.01, "summer");
+});
+
+check("the bills are the highest winter and lowest summer month, today and after", () => {
+  const ctx = { lat: -45, roofM2: 150, kwp: 6, gen: genFor(6) };
+  const r = B.btEvaluate(ctx, home(), null, prices);
+  const yr = B.btYearHours(r.run, false, null);
+  const now = new Array(12).fill(0), aft = new Array(12).fill(0);
+  for (const x of yr.rows) { now[x.month] += x.costNow; aft[x.month] += x.cost; }
+  const bm = B.btBillMonths(r.run, false);
+  near(bm.winter.now.value, Math.max(now[5], now[6], now[7]), 1e-9, "highest of June-August");
+  near(bm.summer.now.value, Math.min(now[11], now[0], now[1]), 1e-9, "lowest of December-February");
+  near(bm.winter.after.value, aft[bm.winter.m], 1e-9, "the same month after");
+  // the season's average month sits between the highest and lowest months
+  if (!(bm.winter.now.value >= r.run.seasons.winter.nowMonth - 1e-9)) throw new Error("highest winter month under the season's average");
+  for (const n of [bm.winter.now, bm.winter.after, bm.summer.now, bm.summer.after]) {
+    const bad = Wk.verify ? Wk.verify(n) : [];
+    if (bad && bad.length) throw new Error(`${n.label} does not re-check`);
+  }
 });
 
 check("yearly use entered sets the year's use exactly", () => {
