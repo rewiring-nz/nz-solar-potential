@@ -3298,7 +3298,11 @@ map.on("load", async () => {
     }
     if (p.net !== net) {
       p.net = net;
-      p.el.className = "money-pill" + (net < 0 ? " neg" : "");
+      // classList, never className: the Marker put maplibregl-marker on this
+      // element, and losing it drops position:absolute, so the pill
+      // stretched into a bar across the whole map
+      p.el.classList.add("money-pill");
+      p.el.classList.toggle("neg", net < 0);
       const shown = btMoney(Math.abs(net));
       p.el.textContent = (net < 0 && shown !== "$0" ? "−" : "") + shown + "/yr";
       p.el.title = net < 0 ? "Costs this much more a year than it saves, while the loan is repaid"
