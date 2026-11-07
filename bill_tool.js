@@ -1970,7 +1970,7 @@ function renderBillTool(box, ctx) {
         ? `<div class="roof-saving${ahead ? "" : " behind"}">` +
           // the figure on the left, how it is made up in a light box on the right
           `<div class="rs-top"><div class="rs-left">` +
-          `<div class="rs-head"><span class="rs-l">${ahead ? "This roof could save you" : "With the loan, this roof costs"}</span>` +
+          `<div class="rs-head"><span class="rs-l">${ahead ? "This roof could save about" : "With the loan, this roof costs"}</span>` +
           `<button type="button" class="rs-i" aria-label="About this figure" aria-expanded="false">i</button></div>` +
           `<div class="rs-v" data-wk="net-year">${m(Math.abs(shownNet.net))}<span>/yr</span></div></div>` +
           `<div class="rs-parts">` +
