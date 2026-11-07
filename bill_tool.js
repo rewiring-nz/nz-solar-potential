@@ -68,7 +68,6 @@ const BT_DEFAULTS = {
   ev_kwh_per_km: 0.165,
   // business electricity per m2 of footprint per year, before heating and cars
   biz_min_kwh: 6000,
-  storey_m: 3.6,                // floor-to-floor height used to count storeys from the LiDAR height
 };
 
 // EMI profiles (load_profiles.js): on the page a global, in the tests required.
@@ -123,21 +122,34 @@ function btCouncilKwh(reg) {
 
 // A NON-HOME BUILDING'S ELECTRICITY, PER m2 OF FLOOR A YEAR, BEFORE SPACE
 // HEATING (heating is added by degree-days below). Floor = roof area x storeys,
-// storeys from the building's LiDAR height (height_m, src/emit_region.py).
-//   business  100  BRANZ BEES: NZ commercial buildings use 100-300 kWh/m2 of
-//                  total energy a year, heating included; power points and
-//                  lighting are the largest electricity uses (SR260, SR277).
-//   school     35  UK schools 39-43 kWh/m2 of electricity (CIBSE 2025), the
-//                  Australian Green Star standard-practice benchmark 54.
-//   hospital  150  medical centres and rest homes run all day and night; an
-//                  estimate, not a published NZ benchmark.
-//   community  40  halls, churches, clubs: occasional use; an estimate.
+// storeys from the building's LiDAR height (height_m, src/emit_region.py)
+// over the type's floor-to-floor height (storey_m). heated: the share of the
+// floor kept warm.
+//   business   100  BRANZ BEES (SR297/1, 2014), NZ office and retail
+//                   premises: median electricity 115 kWh/m2 (office) and
+//                   146 (retail) a year with heating and cooling, of which
+//                   the median HVAC is 23 (Tables 19, 69); 96 for general
+//                   retail, 398 where food is cooked or chilled.
+//   industrial  35  sheds, workshops and stores: 35 kWh/m2 of electricity
+//                   for a workshop or storage warehouse (CIBSE TM46); BEES's
+//                   office/warehouse sites about 25. Tall single floors
+//                   (6 m a storey) and little of the floor heated.
+//   school      35  UK schools 39-43 kWh/m2 of electricity (CIBSE 2025), the
+//                   Australian Green Star standard-practice benchmark 54.
+//   hospital   150  medical centres and rest homes run all day and night; an
+//                   estimate, not a published NZ benchmark.
+//   community   40  halls, churches, clubs: occasional use; an estimate.
 const BT_BIZ_KWH_M2 = {
-  business: { kwh: 100, source: "BRANZ BEES: NZ commercial buildings use 100–300 kWh/m² of total energy a year, heating included." },
-  school: { kwh: 35, source: "Schools use 39–43 kWh/m² of electricity a year in the UK (CIBSE 2025); 54 is Australia's Green Star benchmark." },
-  hospital: { kwh: 150, source: "An estimate for medical centres and rest homes, which run day and night." },
-  community: { kwh: 40, source: "An estimate for halls, churches and clubs, used part of the week." },
+  business: { kwh: 100, storey_m: 3.6, heated: 0.6,
+    source: "BRANZ BEES: NZ offices use a median 115 kWh/m² of electricity a year and shops 146, heating and cooling included (median 23)." },
+  industrial: { kwh: 35, storey_m: 6, heated: 0.15,
+    source: "CIBSE TM46: workshops and storage warehouses use 35 kWh/m² of electricity a year; BEES office/warehouse sites about 25." },
+  school: { kwh: 35, storey_m: 3.6, heated: 0.6, source: "Schools use 39–43 kWh/m² of electricity a year in the UK (CIBSE 2025); 54 is Australia's Green Star benchmark." },
+  hospital: { kwh: 150, storey_m: 3.6, heated: 0.6, source: "An estimate for medical centres and rest homes, which run day and night." },
+  community: { kwh: 40, storey_m: 3.6, heated: 0.6, source: "An estimate for halls, churches and clubs, used part of the week." },
 };
+const btBizKind = btype => BT_BIZ_KWH_M2[btype] ? btype : "business";
+const btStoreys = (hM, kind) => hM ? Math.max(1, Math.min(40, Math.round(hM / BT_BIZ_KWH_M2[kind].storey_m))) : 1;
 
 // Season multipliers on each part's daily kWh.
 const BT_SEASONAL = {
@@ -221,25 +233,25 @@ function btBuildLoad(p, opts) {
     { dp: 1, source: "A heat pump gives about 2.5 units of heat per unit of electricity. A plug-in heater gives 1." });
   let heatWinter;
   if (p.type === "business") {
-    const kind = BT_BIZ_KWH_M2[opts && opts.btype] ? opts.btype : "business";
+    const kind = btBizKind(opts && opts.btype), K = BT_BIZ_KWH_M2[kind];
     const hM = opts && opts.heightM > 0 ? opts.heightM : null;
-    const storeys = Wk.given("Storeys", hM ? Math.max(1, Math.min(40, Math.round(hM / D.storey_m))) : 1, "",
+    const storeys = Wk.given("Storeys", btStoreys(hM, kind), "",
       hM ? [btIn("Height above the ground", hM, "m", { dp: 1, source: "Measured from the laser scan." }),
-            btIn("Floor-to-floor height", D.storey_m, "m", { dp: 1 })] : [],
+            btIn(`Floor-to-floor height (${kind})`, K.storey_m, "m", { dp: 1 })] : [],
       { dp: 0, formula: hM ? "height ÷ floor-to-floor height, rounded, 1 to 40" : "no height measured: one storey",
-        check: () => hM ? Math.max(1, Math.min(40, Math.round(hM / D.storey_m))) : 1 });
+        check: () => btStoreys(hM, kind) });
     var floorM2 = Wk.product("Floor area", "m²", [roof, storeys]);
     const year = Wk.maxOf("Electricity a year, before heating and cars", "kWh/yr", [
       btIn("Smallest business", D.biz_min_kwh, "kWh/yr"),
-      Wk.product("By floor area", "kWh/yr", [btIn(`Electricity per m² of floor (${kind})`, BT_BIZ_KWH_M2[kind].kwh, "kWh/m²",
-        { dp: 0, source: BT_BIZ_KWH_M2[kind].source }), floorM2])]);
+      Wk.product("By floor area", "kWh/yr", [btIn(`Electricity per m² of floor (${kind})`, K.kwh, "kWh/m²",
+        { dp: 0, source: K.source }), floorM2])]);
     const day = Wk.quotient("A typical day", "kWh/day", year, btIn("Days in a year", 365, "days"));
     for (const s of BT_SEASONS) nodes.appliance[s] = Wk.product(`Working-day use, ${s}`, "kWh/day",
       [day, seasonal("appliance", s, "Lighting is used more in the darker months.")]);
     shapes.appliance = BT_SHAPES.business;
     const base = Wk.product("Heat pump heating on the coldest days", "kWh/day", [hdd, perKwhHdd,
       Wk.quotient("Floor vs a 150 m² house", "×", floorM2, btIn("Typical house", 150, "m²")),
-      btIn("Share of the floor heated", 0.6, "share", { dp: 0 })]);
+      btIn("Share of the floor heated", K.heated, "share", { dp: 2 })]);
     heatWinter = p.heating === "heatpump" ? base
       : p.heating === "electric" ? Wk.product("Electric heaters on the coldest days", "kWh/day", [base, resistive])
       : null;
@@ -302,10 +314,10 @@ function btBuildLoad(p, opts) {
     parts[k] = {};
     for (const s of BT_SEASONS) parts[k][s] = nodes[k][s].value;
   }
-  const bizKind = p.type === "business" ? (BT_BIZ_KWH_M2[opts && opts.btype] ? opts.btype : "business") : null;
+  const bizKind = p.type === "business" ? btBizKind(opts && opts.btype) : null;
   const hM = opts && opts.heightM > 0 ? opts.heightM : null;
   return { parts, nodes, shapes, hdd: hdd.value, bizKind, heightKnown: !!hM,
-           storeys: p.type === "business" && hM ? Math.max(1, Math.min(40, Math.round(hM / D.storey_m))) : 1,
+           storeys: p.type === "business" ? btStoreys(hM, bizKind) : 1,
            region: p.type === "business" ? null : btEmiRegion(lat, opts && opts.lon) };
 }
 
@@ -1475,7 +1487,7 @@ function btMethodHtml(r, prof, isBiz) {
     : "Nothing entered, so the estimate is used as is. Enter a bill or your yearly use and every figure is scaled to match.";
   const reg = r.load.region;
   const useParts = isBiz
-    ? `A ${r.load.bizKind || "business"} uses ${BT_BIZ_KWH_M2[r.load.bizKind || "business"].kwh} kWh per m² of floor a year before heating (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day. Its floor is its roof area × ${r.load.storeys} storey${r.load.storeys === 1 ? "" : "s"}${r.load.storeys > 1 || r.load.heightKnown ? ", counted from its height in the laser scan" : ""}.`
+    ? `${({ business: "A business", industrial: "A workshop or store", school: "A school", hospital: "A medical centre or rest home", community: "A hall, church or club" })[r.load.bizKind || "business"]} uses ${BT_BIZ_KWH_M2[r.load.bizKind || "business"].kwh} kWh per m² of floor a year before heating (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day. Its floor is its roof area × ${r.load.storeys} storey${r.load.storeys === 1 ? "" : "s"}${r.load.storeys > 1 || r.load.heightKnown ? ", counted from its height in the laser scan" : ""}.`
     : `A home's use is the Electricity Authority's figure for the average home in ${btCouncilKwh(reg).label} (${Math.round(btCouncilKwh(reg).kwh).toLocaleString()} kWh a year, 2025), scaled for ${prof.people} ${prof.people === 1 ? "person" : "people"} against an average of ${BT_AVG_PEOPLE}, and for the size of the house: a roof under 100 m² uses 30% less than a typical one, 100–140 m² 15% less, 220–300 m² 15% more, 300–400 m² 30% more, over 400 m² 50% more. ` +
       `Each season's day, and how it is spread over the hours, follows the metered half-hourly load of ${reg.label} over the last year (EMI): hot water and heating run when homes actually run them, overnight on ripple control and at the morning and evening peaks.`;
   const heatText = !isBiz ? ""

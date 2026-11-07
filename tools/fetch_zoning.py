@@ -53,28 +53,10 @@ ZONE_SOURCES = {
     },
 }
 
-# Which zones mean a business tariff. Residential zones, rural living and the
-# lifestyle precincts are homes; town centres, industrial, commercial, the
-# airport and the resort zones are not. Where a zone genuinely holds both
-# (Business Mixed Use, Settlements) the building falls back to the geometry
-# test rather than being asserted either way.
-BUSINESS_ZONES = {
-    "Airport", "Arrowtown Town Centre", "Queenstown Town Centre",
-    "Wanaka Town Centre", "Local Shopping Centre", "General Industrial and Service",
-    "Coneburn Industrial", "Three Parks Commercial", "Three Parks Business",
-    "Active Sports and Recreation", "Community Purposes", "Civic Spaces",
-    "Gibbston Resort", "Jacks Point Resort", "Millbrook Resort",
-    "Waterfall Park Resort", "Hogans Gully Resort", "The Hills Resort",
-    "Rural Visitor", "Te Pūtahi Ladies Mile",
-}
-HOME_ZONES = {
-    "High Density Residential", "High Density Residential A",
-    "Medium Density Residential", "Medium Density Residential A",
-    "Large Lot Residential A", "Large Lot Residential B",
-    "Arrowtown Residential Historic Management", "Rural Residential",
-    "Rural Lifestyle", "Wakatipu Basin Lifestyle Precinct",
-    "Wakatipu Basin Rural Amenity Zone", "Rural", "Gibbston Character",
-}
+# Which zones mean which building type lives in src/building_types.py
+# (zone_class), the one place the build and this fetch read it from.
+from src.building_types import BUSINESS_ZONES, HOME_ZONES, INDUSTRIAL_ZONES  # noqa: E402,F401
+from src.building_types import zone_class as classify  # noqa: E402
 
 
 def _get(url, params, tries=3):
@@ -125,14 +107,6 @@ def fetch_zones(src, bbox):
     g["zone_name"] = g[src["field"]].astype(str).map(
         lambda c: codes.get(c, f"code {c}"))
     return g
-
-
-def classify(name):
-    if name in BUSINESS_ZONES:
-        return "business"
-    if name in HOME_ZONES:
-        return "home"
-    return "mixed"      # caller falls back to geometry
 
 
 def main(argv):

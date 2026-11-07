@@ -29,6 +29,7 @@ clause with a measured effect, rather than as a second opinion somewhere else.
 BTYPES = [
     ("home",      "Homes"),
     ("business",  "Businesses"),
+    ("industrial", "Industry"),
     ("school",    "Schools"),
     ("hospital",  "Hospitals"),
     ("community", "Community"),
@@ -51,12 +52,52 @@ _USE_RULES = [
                    "museum", "gallery", "sport", "stadium", "gym", "pool",
                    "fire station", "police", "courthouse", "civic",
                    "council", "recreation", "club")),
+    ("industrial", ("warehouse", "industrial", "factory", "depot",
+                    "workshop", "storage")),
     ("business", ("supermarket", "shop", "retail", "mall", "commercial",
-                  "office", "warehouse", "industrial", "factory", "hotel",
-                  "motel", "airport", "terminal", "depot", "bank", "market",
+                  "office", "hotel",
+                  "motel", "airport", "terminal", "bank", "market",
                   "petrol", "service station", "dairy", "restaurant", "cafe",
                   "bar", "brewery", "winery")),
 ]
+
+
+# DISTRICT-PLAN ZONES (tools/fetch_zoning.py fetches each building's zone
+# name). A zone says what may legally be built there. Industrial zones hold
+# sheds, workshops and yards, which use about a third of the electricity per
+# m2 of an office or shop (bill_tool.js BT_BIZ_KWH_M2), so they are their own
+# type. Resort zones (Jacks Point, Millbrook, ...) are mostly houses around a
+# lodge or clubhouse: the Jacks Point and Millbrook Resort zones held 1,485
+# buildings called businesses in v72, with a median roof of 185-200 m2. They
+# are "mixed", so size decides. Business Mixed Use and Settlements are mixed too.
+INDUSTRIAL_ZONES = {
+    "General Industrial and Service", "Coneburn Industrial", "Three Parks Business",
+}
+BUSINESS_ZONES = {
+    "Airport", "Arrowtown Town Centre", "Queenstown Town Centre",
+    "Wanaka Town Centre", "Local Shopping Centre", "Three Parks Commercial",
+    "Active Sports and Recreation", "Community Purposes", "Civic Spaces",
+    "Rural Visitor", "Te Pūtahi Ladies Mile",
+}
+HOME_ZONES = {
+    "High Density Residential", "High Density Residential A",
+    "Medium Density Residential", "Medium Density Residential A",
+    "Large Lot Residential A", "Large Lot Residential B",
+    "Arrowtown Residential Historic Management", "Rural Residential",
+    "Rural Lifestyle", "Wakatipu Basin Lifestyle Precinct",
+    "Wakatipu Basin Rural Amenity Zone", "Rural", "Gibbston Character",
+}
+
+
+def zone_class(name):
+    """home / business / industrial for a zone name, else mixed (size decides)."""
+    if name in INDUSTRIAL_ZONES:
+        return "industrial"
+    if name in BUSINESS_ZONES:
+        return "business"
+    if name in HOME_ZONES:
+        return "home"
+    return "mixed"
 
 
 def classify(use=None, name=None, roof_m2=None, kwp=None, zone_class=None):
@@ -69,7 +110,7 @@ def classify(use=None, name=None, roof_m2=None, kwp=None, zone_class=None):
         for btype, words in _USE_RULES:
             if any(w in text for w in words):
                 return btype
-    if zone_class in ("business", "home"):
+    if zone_class in ("business", "home", "industrial"):
         return zone_class
     # No named use and no clear zone: size decides.
     if (roof_m2 or 0) >= BIZ_MIN_ROOF_M2 or (kwp or 0) >= BIZ_MIN_KW:

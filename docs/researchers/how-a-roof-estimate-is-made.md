@@ -282,9 +282,9 @@ Every roof is priced by the bill tool: a power bill with and without solar, then
 
 ### Home or business
 
-The council's district plan zone decides (Queenstown Lakes District Council). Where a zone allows both, or there is no zoning, a roof over 400 m² or a system over 100 kW counts as a business.
+The council's district plan zone decides (Queenstown Lakes District Council): town centres, shopping, commercial and civic zones are businesses, industrial zones industrial. Where a zone allows both (resort zones such as Jacks Point and Millbrook, which are mostly houses; Business Mixed Use; Settlements), or there is no zoning, a roof over 400 m² or a system over 100 kW counts as a business.
 
-**Source:** `tools/fetch_zoning.py · economics.js`
+**Source:** `tools/fetch_zoning.py · src/building_types.py · economics.js`
 
 ### What it costs
 
@@ -294,7 +294,7 @@ $3,000/kW under 3 kW; $2,000 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25�
 
 ### Household use
 
-A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A non-home building uses electricity per m² of floor before heating, by type: business 100 kWh (BRANZ BEES: NZ commercial buildings 100–300 kWh/m² of total energy), school 35 (UK 39–43, Australian Green Star 54), hospital or medical 150 and community 40 (both estimates), at least 6,000 kWh a year. Its floor is its roof area × storeys, the storeys counted from its height above the ground in the LiDAR surface (`height_m`, 3.6 m a storey). Heating by degree-days scales with the floor too. Use is spread across the working day. Bills you enter scale the modelled use to match.
+A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A non-home building uses electricity per m² of floor before heating, by type: business 100 kWh (BRANZ BEES SR297/1: NZ office premises a median 115 kWh/m² of electricity and retail 146, heating and cooling included, median HVAC 23), industrial 35 (CIBSE TM46 workshop and storage warehouse; BEES office/warehouse sites about 25), school 35 (UK 39–43, Australian Green Star 54), hospital or medical 150 and community 40 (both estimates), at least 6,000 kWh a year. Its floor is its roof area × storeys, the storeys counted from its height above the ground in the LiDAR surface (`height_m`): 3.6 m a storey, 6 m for industrial. Heating by degree-days scales with the heated floor: 60% of it, 15% for industrial (an estimate: sheds are mostly unheated). Use is spread across the working day. Bills you enter scale the modelled use to match.
 
 **Source:** `bill_tool.js`
 

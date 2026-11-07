@@ -218,6 +218,22 @@ check("a school uses less per m2 than a business", () => {
   if (!(B.btDailyKwh(s, "autumn") < B.btDailyKwh(b, "autumn") * 0.5)) throw new Error("school not lighter");
 });
 
+check("a shed is one tall storey at 35 kWh/m2, with little of it heated", () => {
+  const P = { type: "business", heating: "heatpump", evs: 0 };
+  const shed = B.btBuildLoad(Object.assign({}, P, { heating: "none" }), { lat: -45, roofM2: 1000, btype: "industrial", heightM: 7.5 });
+  near(shed.storeys, 1, 0, "a 7.5 m shed is one storey (6 m a storey)");
+  near(B.btDailyKwh(shed, "autumn") * 365, 1000 * 35, 1000 * 35 * 0.15, "35 kWh/m2 a year");
+  const office = B.btBuildLoad(Object.assign({}, P, { heating: "none" }), { lat: -45, roofM2: 1000, btype: "business", heightM: 7.5 });
+  near(office.storeys, 2, 0, "the same height is two office storeys");
+  // heating: a quarter of the business's share of the floor, per m2 of floor
+  const heat = (btype, h) => {
+    const w = B.btBuildLoad(P, { lat: -45, roofM2: 1000, btype, heightM: h });
+    const n = B.btBuildLoad(Object.assign({}, P, { heating: "none" }), { lat: -45, roofM2: 1000, btype, heightM: h });
+    return B.btDailyKwh(w, "winter") - B.btDailyKwh(n, "winter");
+  };
+  near(heat("industrial", 4) / heat("business", 4), 0.15 / 0.6, 1e-6, "heated share 0.15 vs 0.6");
+});
+
 // THE EXPLORER (season charts, the year hour by hour) draws from the bills'
 // own hour rows; these hold it to the same figures.
 check("each season's chart parts add up to its hour rows, and the rows to the day's use", () => {

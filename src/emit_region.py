@@ -193,10 +193,15 @@ def _tippecanoe(out, layer, src, zmin, zmax, extra):
 
 
 def _zones_by_id(paths):
-    """{building_id: zone_class} from tools/fetch_zoning.py, or {}."""
+    """{building_id: zone_class} from tools/fetch_zoning.py, or {}. The class
+    is worked out here from the zone name (building_types.zone_class), not
+    read from the file, so a change to which zones count as what applies at
+    the next emit without fetching the zones again."""
+    from src.building_types import zone_class
     f = paths["dir"] / "building_zones.json"
     try:
-        return {int(b): v[1] for b, v in json.loads(f.read_text())["zones"].items()}
+        return {int(b): (zone_class(v[0]) if v[0] else v[1])
+                for b, v in json.loads(f.read_text())["zones"].items()}
     except (OSError, ValueError, KeyError):
         return {}
 

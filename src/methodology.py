@@ -410,7 +410,7 @@ STEPS: list[dict] = [
         {"title": "A household's day",
          "text": "Each building's use of power hour by hour, for an average day in each season: a home from "
                  "the Electricity Authority's figures for its area, scaled for people and house size; a business "
-                 "by its floor area. Solar powers the building first; the rest is exported.",
+                 "by its floor area and its type: offices and shops from New Zealand's commercial building survey, sheds and workshops at about a third of that. Solar powers the building first; the rest is exported.",
          "code": ["bill_tool.js::btEvaluate", "economics.js::simulateDay"], "stages": ["page:bill_tool.js"]},
         {"title": "Batteries",
          "text": "A battery charges only from spare solar. On a time-of-use plan it saves its charge for "
