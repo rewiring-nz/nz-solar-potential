@@ -96,11 +96,10 @@ bash quickstart.sh queenstown-lakes-district/arrowtown/arrowtown
 ```
 
 For a fast end-to-end sanity check within a locality, the
-[web pipeline panel](web-pipeline.md#use-it) can select Stats NZ 2023
-meshblocks. It stores a selection as a separate nested work area and applies a
-deterministic whole-building ownership rule; meshblocks are not independent
-pipeline runs. Selection estimates and timing records are explained in that
-guide.
+[web pipeline panel](web-pipeline.md#use-it) can select cells from an n×n
+grid clipped to the locality boundary. It stores a selection as a separate
+nested work area and applies a deterministic whole-building ownership rule.
+Selection estimates and timing records are explained in that guide.
 
 The first stage resolves the id against LINZ and writes
 `data/regions/<id>/building_outlines.geojson` and `locality.json` (the LINZ

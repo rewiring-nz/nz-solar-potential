@@ -7,8 +7,9 @@ git, gcloud or pipeline launch from the panel would then fail. Running these
 calculations here keeps PROJ out of the server process.
 
 Usage (JSON on stdout):
-    python -m tools.pipeline_webui.geo_worker km2 '<[w, s, e, n]>'
-    python -m tools.pipeline_webui.geo_worker size <locality-id>   # LINZ_API_KEY in env
+    python tools/pipeline_webui/geo_worker.py km2 '<[w, s, e, n]>'
+    python tools/pipeline_webui/geo_worker.py size <locality-id>   # LINZ_API_KEY in env
+    python tools/pipeline_webui/geo_worker.py catalog <data-dir>
 """
 from __future__ import annotations
 
@@ -40,27 +41,50 @@ def _size(region: str) -> dict:
 
 
 def _selection(request_path: str, data: str) -> dict:
-    from src.meshblock_selection import materialise
+    from src.grid_selection import materialise
     result = materialise(Path(request_path), Path(data), os.environ.get("LINZ_API_KEY", ""))
     from src.localities import bbox_km2
     footprints = result.get("acquisition_footprints") or [result["bbox"]]
+    selection_count = len(result["grid_ids"])
     return {"region": result["selection_id"], "buildings": result["buildings"],
             "bbox": result["bbox"], "bbox_km2": round(bbox_km2(result["bbox"]), 3),
             "acquisition_footprints": footprints,
             "acquisition_km2": round(sum(bbox_km2(bbox) for bbox in footprints), 3),
-            "meshblock_count": len(result["meshblock_ids"])}
+            "selection_count": selection_count}
 
 
-def run(args: list[str], env: dict | None = None, python: str = sys.executable) -> dict:
+def _catalog(data: str) -> dict:
+    from src.map_layer_catalog import build_local_catalog
+    return build_local_catalog(Path(data))
+
+
+def run(args: list[str], env: dict | None = None, python: str = sys.executable,
+        timeout: int = TIMEOUT_SECONDS) -> dict:
     """Run one calculation in a child process; raise LookupError with its message on failure."""
-    proc = subprocess.run(
-        [python, "-m", "tools.pipeline_webui.geo_worker", *args], cwd=ROOT,
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
-        env={**os.environ, **(env or {})}, check=False)
+    try:
+        # On macOS, launching a child from this threaded server must use
+        # posix_spawn: PROJ's registered fork handler can segfault in SQLite.
+        # Direct script invocation removes the need to change the child's cwd.
+        command = [python, str(ROOT / "tools" / "pipeline_webui" / "geo_worker.py"), *args]
+        proc = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout,
+            env={**os.environ, **(env or {})}, check=False,
+            # Python-created descriptors are non-inheritable; this lets CPython
+            # use posix_spawn on macOS instead of forking a PROJ-loaded process.
+            close_fds=sys.platform != "darwin")
+    except subprocess.TimeoutExpired:
+        raise LookupError("area calculation timed out") from None
+    except OSError as exc:
+        raise LookupError(f"area calculation could not start ({type(exc).__name__})") from None
     try:
         out = json.loads(proc.stdout.strip().splitlines()[-1])
     except (IndexError, ValueError):
-        raise LookupError(f"area calculation failed (exit {proc.returncode})") from None
+        if proc.returncode < 0:
+            detail = f"terminated by signal {-proc.returncode}"
+        else:
+            detail = f"exited with status {proc.returncode}"
+        raise LookupError(f"area calculation worker returned no result ({detail})") from None
     if "error" in out:
         raise LookupError(out["error"])
     return out
@@ -75,12 +99,14 @@ def main(argv: list[str]) -> int:
             out = _size(argv[1])
         elif len(argv) == 3 and argv[0] == "selection":
             out = _selection(argv[1], argv[2])
+        elif len(argv) == 2 and argv[0] == "catalog":
+            out = _catalog(argv[1])
         else:
             out = {"error": "usage: geo_worker km2 <bbox-json> | size <region> | "
-                            "selection <request-json> <data-dir>"}
+                            "selection <request-json> <data-dir> | catalog <data-dir>"}
     except LookupError as exc:
         out = {"error": str(exc)}
-    except Exception as exc:  # noqa: BLE001 - other failures can carry a keyed URL: type only
+    except Exception as exc:
         out = {"error": f"area lookup failed ({type(exc).__name__})"}
     print(json.dumps(out))
     return 1 if "error" in out else 0

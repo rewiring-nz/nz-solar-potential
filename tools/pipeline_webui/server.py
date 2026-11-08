@@ -34,8 +34,9 @@ from tools.pipeline_serve import RangeHandler
 from tools.render_docs import render_docs
 from tools.pipeline_webui import cloud as C
 from tools.pipeline_webui import estimate as E
+from tools.pipeline_webui import geo_worker as GW
+from tools.pipeline_webui import grid_proxy as GP
 from tools.pipeline_webui import locality_proxy as LP
-from tools.pipeline_webui import meshblock_proxy as MB
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
 from tools.pipeline_webui.common import DATA, ROOT, git_short
@@ -67,8 +68,8 @@ class App:
         self.remote = remote or RM.RemoteCatalog()
         self.estimates = estimates or E.EstimateStore(
             self.data, E.linz_size_lookup(api_key_fn),
-            meshblock_lookup=lambda region, linz_id: MB.meshblocks(
-                region, linz_id, self.api_key(), self.data, self.http_get, exact=True),
+            grid_lookup=lambda region, linz_id, grid_size: GP.grid_cells(
+                region, linz_id, self.api_key(), self.http_get, grid_size),
             api_key_fn=self.api_key, cloud=self.cloud)
         self.jobs = jobs or JobManager(self.data, self.root, python,
                                        cloud_builder=C.cloud_command,
@@ -183,7 +184,7 @@ class WebHandler(RangeHandler):
         if head == "layers" and method == "GET" and len(parts) == 1:
             source = (query.get("source") or ["local"])[0]
             if source == "local":
-                return 200, MLC.build_local_catalog(app.data)
+                return 200, GW.run(["catalog", str(app.data)])
             if source in {"developer", "published"}:
                 return 200, MLC.unavailable_catalog(source)
             raise HttpError(400, "source must be local, developer or published")
@@ -206,10 +207,11 @@ class WebHandler(RangeHandler):
             if len(parts) == 1:
                 bbox = LP.parse_bbox((query.get("bbox") or [""])[0])
                 return 200, LP.localities_in_bbox(bbox, app.api_key(), app.data, app.http_get)
-        if head == "meshblocks" and method == "GET" and len(parts) == 1:
+        if head == "grid-cells" and method == "GET" and len(parts) == 1:
             region = (query.get("region") or [""])[0]
             linz_id = (query.get("linz_id") or [""])[0]
-            return 200, MB.meshblocks(region, linz_id, app.api_key(), app.data, app.http_get)
+            grid_size = (query.get("grid_size") or ["4"])[0]
+            return 200, GP.grid_cells(region, linz_id, app.api_key(), app.http_get, grid_size)
         if head == "estimate":
             if method == "POST" and len(parts) == 1:
                 estimate_id = app.estimates.start(

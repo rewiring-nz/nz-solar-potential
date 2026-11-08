@@ -14,10 +14,10 @@ sys.path.insert(0, str(ROOT))
 
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import locality_proxy as LP
-from tools.pipeline_webui import meshblock_proxy as MB
+from tools.pipeline_webui import grid_proxy as GP
 from tools.pipeline_webui import region_catalog as RC
-from tools.pipeline_webui.common import write_json_atomic
-from src import meshblock_selection as MS
+from tools.pipeline_webui.common import web_dir, write_json_atomic
+from src import grid_selection as GS
 from src.dataset_timing import format_duration, measure, phase, transfer
 
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "linz_localities_wfs.json").read_text())
@@ -129,7 +129,7 @@ def test_locality_errors_never_carry_the_key():
     assert all(r["bbox"] is None for r in results[1:])
 
 
-def test_meshblocks_are_spatially_filtered_to_the_parent_and_cached():
+def test_grid_cells_are_clipped_to_the_locality_and_configurable():
     region = "queenstown-lakes-district/queenstown/sunshine-bay"
     parent = {
         "type": "Feature", "properties": {"id": 2338, "name": "Sunshine Bay",
@@ -140,70 +140,72 @@ def test_meshblocks_are_spatially_filtered_to_the_parent_and_cached():
         ]},
     }
 
-    class FakeMeshblocks:
+    class FakeLocality:
         def __init__(self):
             self.calls = []
 
         def __call__(self, url, params, timeout):
             self.calls.append(params)
-            if params["typeName"].endswith("113764"):
-                return FakeResponse({"features": [parent]})
-            return FakeResponse({"features": [
-                {"properties": {"MB2023": "1234567"}, "geometry": {
-                    "type": "Polygon", "coordinates": [[[1, 1], [1.5, 1.00001], [2, 1],
-                                                         [2, 2], [1, 2], [1, 1]]]}},
-                {"properties": {"MB2023": "7654321"}, "geometry": {
-                    "type": "Polygon", "coordinates": [[[4.5, 4.5], [5.5, 4.5], [5.5, 5.5], [4.5, 5.5], [4.5, 4.5]]]}},
-            ]})
+            return FakeResponse({"features": [parent]})
 
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
-        data, fake = Path(tmp), FakeMeshblocks()
-        fc = MB.meshblocks(region, 2338, KEY, data, fake, now=1000)
-        assert [f["properties"]["meshblock_id"] for f in fc["features"]] == ["1234567"]
-        assert fc["dataset"] == {
-            "name": "Stats NZ Meshblock 2023 (generalised)", "layer_id": 111228,
-            "version": "2023 generalised", "native_crs": "EPSG:2193",
-            "response_crs": "EPSG:4326", "id_field": "MB2023",
-        }
-        calls = len(fake.calls)
-        assert MB.meshblocks(region, 2338, KEY, data, fake, now=2000) == fc
-        exact = MB.meshblocks(region, 2338, KEY, data, fake, now=2000, exact=True)
-        assert exact["features"][0]["geometry"] == {
-            "type": "Polygon", "coordinates": [[[1, 1], [1.5, 1.00001], [2, 1],
-                                                 [2, 2], [1, 2], [1, 1]]]}
-        assert exact["features"][0]["geometry"] != fc["features"][0]["geometry"]
-        assert len(fake.calls) == calls
+        fake = FakeLocality()
+        fc = GP.grid_cells(region, 2338, KEY, fake, grid_size=3)
+        assert fc["grid_size"] == 3
+        assert len(fc["features"]) == 9
+        assert fc["features"][0]["properties"]["grid_id"] == "r01c01"
+        assert fc["features"][4]["geometry"]["type"] == "Polygon"
+        assert len(fake.calls) == 1
         try:
-            MB.meshblocks("not/a/locality", 2338, KEY, data, fake)
-        except MB.MeshblockError as exc:
+            GP.grid_cells(region, 2338, KEY, fake, grid_size=11)
+        except LP.LocalityError as exc:
+            assert exc.status == 400
+        else:
+            raise AssertionError("out-of-range grid size accepted")
+        try:
+            GP.grid_cells("not/a/locality", 2338, KEY, fake)
+        except LP.LocalityError as exc:
             assert exc.status == 400
         else:
             raise AssertionError("non-locality parent accepted")
 
 
-def test_meshblock_selection_validation_identity_and_boundary_ownership():
+def test_grid_selection_validation_identity_and_boundary_ownership():
     region = "queenstown-lakes-district/queenstown/sunshine-bay"
-    dataset = {"layer_id": 111228, "version": "2023 generalised"}
-    assert MS.selection_id(region, ["200", "100"], dataset) == MS.selection_id(
-        region, ["100", "200"], dataset)
-    for bad in (None, {}, {"parent_region": region, "parent_linz_id": 2338, "meshblock_ids": []},
-                {"parent_region": "pilot", "parent_linz_id": 2338, "meshblock_ids": ["100"]}):
+    assert GS.selection_id(region, ["r01c02", "r01c01"], 4) == GS.selection_id(
+        region, ["r01c01", "r01c02"], 4)
+    for bad in (None, {}, {"parent_region": region, "parent_linz_id": 2338, "grid_ids": []},
+                {"parent_region": "pilot", "parent_linz_id": 2338, "grid_ids": ["r01c01"],
+                 "grid_size": 4}):
         try:
             E.validate_selection(bad)
         except E.EstimateError:
             pass
         else:
             raise AssertionError(f"invalid selection accepted: {bad}")
+    grid_selection = E.validate_selection({
+        "parent_region": region, "parent_linz_id": 2338,
+        "grid_size": 4, "grid_ids": ["r01c01"]})
+    assert grid_selection["grid_ids"] == ["r01c01"]
+    assert GS.selection_id(region, ["r01c01"], 4).startswith(region + "/grid-")
+    try:
+        E.validate_selection({
+            "parent_region": region, "parent_linz_id": 2338,
+            "grid_size": 11, "grid_ids": ["r01c01"]})
+    except E.EstimateError:
+        pass
+    else:
+        raise AssertionError("out-of-range grid selection accepted")
 
     import pyproj
     from shapely.geometry import box, mapping
     to_nztm = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
     boundary_lon = 168.66
     low, high = (168.65, 168.66), (168.66, 168.67)
-    blocks = [
-        {"properties": {"meshblock_id": "100"},
+    cells = [
+        {"properties": {"grid_id": "r01c01"},
          "geometry": mapping(box(low[0], -45.05, low[1], -45.04))},
-        {"properties": {"meshblock_id": "200"},
+        {"properties": {"grid_id": "r01c02"},
          "geometry": mapping(box(high[0], -45.05, high[1], -45.04))},
     ]
     x0, y0 = to_nztm(boundary_lon, -45.05)
@@ -213,41 +215,40 @@ def test_meshblock_selection_validation_identity_and_boundary_ownership():
         [x - 2, y - 2], [x + 2, y - 2], [x + 2, y + 2], [x - 2, y + 2], [x - 2, y - 2]]]}
     outline = {"type": "Feature", "properties": {"id": 77}, "geometry": whole_building}
     fc = {"type": "FeatureCollection", "features": [outline]}
-    owned_low = MS.select_buildings(fc, blocks, ["100"])
-    owned_high = MS.select_buildings(fc, blocks, ["200"])
+    owned_low = GS.select_buildings(fc, cells, ["r01c01"])
+    owned_high = GS.select_buildings(fc, cells, ["r01c02"])
     assert owned_low["features"] == [outline]
     assert owned_high["features"] == []
     assert owned_low["features"][0]["geometry"] == whole_building
 
 
-def test_meshblock_materialisation_is_parent_scoped_and_resumable():
+def test_grid_materialisation_is_parent_scoped_and_resumable():
     import pyproj
     from shapely.geometry import box, mapping
     from shapely.ops import transform
 
     region = "queenstown-lakes-district/queenstown/sunshine-bay"
-    dataset = {"layer_id": 111228, "version": "2023 generalised"}
     to_nztm = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
-    block = {"type": "Feature", "properties": {"meshblock_id": "1234567"},
+    cell = {"type": "Feature", "properties": {"grid_id": "r01c01"},
              "geometry": mapping(box(168.65, -45.05, 168.66, -45.04))}
-    outside = {"type": "Feature", "properties": {"meshblock_id": "7654321"},
+    outside = {"type": "Feature", "properties": {"grid_id": "r01c02"},
                "geometry": mapping(box(168.66, -45.05, 168.67, -45.04))}
     x, y = to_nztm(168.655, -45.045)
-    outline = {"type": "Feature", "properties": {"id": 77},
+    outline = {"type": "Feature", "properties": {"building_id": 77},
                "geometry": mapping(box(x - 3, y - 3, x + 3, y + 3))}
     props = {"id": 2338, "name": "Sunshine Bay", "name_ascii": "Sunshine Bay",
              "major_name": "Queenstown", "major_name_ascii": "Queenstown",
              "territorial_authority": "Queenstown-Lakes District",
              "territorial_authority_ascii": "Queenstown-Lakes District"}
-    original_resolve, original_wfs = MS.localities.resolve, MS.localities._wfs
-    MS.localities.resolve = lambda _key, _region: props
+    original_resolve, original_wfs = GS.localities.resolve, GS.localities._wfs
+    GS.localities.resolve = lambda _key, _region: props
     calls = []
 
     def fake_wfs(_key, _layer, _cql, **_kwargs):
         calls.append(_cql)
         return [outline]
 
-    MS.localities._wfs = fake_wfs
+    GS.localities._wfs = fake_wfs
     try:
         with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
             data = Path(tmp)
@@ -257,27 +258,71 @@ def test_meshblock_materialisation_is_parent_scoped_and_resumable():
             request = data / "selection-request.json"
             request.write_text(json.dumps({
                 "parent_region": region, "parent_linz_id": 2338,
-                "meshblock_ids": ["1234567"], "dataset": dataset,
-                "meshblocks": [block, outside],
+                "grid_size": 4, "grid_ids": ["r01c01"],
+                "areas": [cell, outside],
             }))
-            manifest = MS.materialise(request, data, KEY)
-            assert manifest["selection_id"].startswith(region + "/meshblocks-")
+            manifest = GS.materialise(request, data, KEY)
+            assert manifest["selection_id"].startswith(region + "/grid-")
             area = data / "regions" / manifest["selection_id"]
             assert area.parent == data / "regions" / region
-            assert manifest["meshblock_ids"] == ["1234567"]
+            assert manifest["grid_ids"] == ["r01c01"]
             assert manifest["building_ids"] == ["77"]
-            assert manifest["building_selection_rule"] == MS.OWNERSHIP_RULE
+            assert manifest["building_selection_rule"] == GS.OWNERSHIP_RULE
             written = json.loads((area / "building_outlines.geojson").read_text())["features"]
             assert len(written) == 1, written
             assert written == json.loads(json.dumps([outline]))
             assert parent_file.read_text() == original_parent
-            assert MS.materialise(request, data, KEY) == json.loads(json.dumps(manifest))
+            assert GS.materialise(request, data, KEY) == json.loads(json.dumps(manifest))
             acquisitions = json.loads((area / "acquisition_timings.json").read_text())["acquisitions"]
             assert [item["outcome"] for item in acquisitions] == [
                 "downloaded", "reused_from_cache"]
             assert len(calls) == 1
     finally:
-        MS.localities.resolve, MS.localities._wfs = original_resolve, original_wfs
+        GS.localities.resolve, GS.localities._wfs = original_resolve, original_wfs
+
+
+def test_empty_grid_selection_reports_actionable_worker_error():
+    import contextlib
+    import io
+    from tools.pipeline_webui import geo_worker
+
+    props = {
+        "id": 2338, "name": "Sunshine Bay", "major_name": "Queenstown",
+        "territorial_authority": "Queenstown-Lakes District",
+    }
+    original_resolve, original_wfs = GS.localities.resolve, GS.localities._wfs
+    GS.localities.resolve = lambda _key, _region: props
+    GS.localities._wfs = lambda *_args, **_kwargs: []
+    try:
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+            data = Path(tmp)
+            request = data / "selection-request.json"
+            request.write_text(json.dumps({
+                "parent_region": "queenstown-lakes-district/queenstown/sunshine-bay",
+                "parent_linz_id": 2338,
+                "grid_size": 4,
+                "grid_ids": ["r01c01"],
+                "areas": [{
+                    "type": "Feature",
+                    "properties": {"grid_id": "r01c01"},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[168.65, -45.05], [168.66, -45.05],
+                                         [168.66, -45.04], [168.65, -45.04],
+                                         [168.65, -45.05]]],
+                    },
+                }],
+            }))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                status = geo_worker.main(["selection", str(request), str(data)])
+            assert status == 1
+            result = json.loads(output.getvalue().strip().splitlines()[-1])
+            assert result["error"] == (
+                "no LINZ building outlines were found in the selected grid cells; "
+                "choose cells containing buildings")
+    finally:
+        GS.localities.resolve, GS.localities._wfs = original_resolve, original_wfs
 
 
 def test_dataset_timing_format_and_failure_record():
@@ -375,7 +420,7 @@ def test_wide_dem_uses_only_disjoint_selection_coverage():
     with patch.dict(sys.modules, {"rasterio": rasterio, "rasterio.merge": raster_merge,
                                   "dotenv": dotenv}):
         wide_dem = importlib.import_module("src.fetch_dem_wide")
-        region = "qld/queenstown/frankton/meshblocks-0123456789abcdef"
+        region = "qld/queenstown/frankton/grid-0123456789abcdef"
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "regions" / region / "locality.json"
             path.parent.mkdir(parents=True)
@@ -476,20 +521,28 @@ PROJ_PACKAGES = ("pyproj", "rasterio", "fiona", "osgeo", "pyogrio", "geopandas")
 def test_server_process_never_loads_proj():
     """PROJ in the server makes every later fork crash on macOS; it runs in geo_worker."""
     import subprocess
+    # Keep this test's own subprocess safe if an earlier test imported PROJ.
     probe = f"""
 import sys, tempfile, pathlib
 sys.path.insert(0, {str(ROOT)!r})
 import config
 from tools.pipeline_webui import server, estimate as E
+from tools.pipeline_webui import geo_worker
+from src.grid_selection import selection_id
+selection_id("queenstown-lakes-district/queenstown/sunshine-bay",
+             ["r01c01"], 4)
 region = next(iter(config.REGIONS))
 with tempfile.TemporaryDirectory() as d:
     size = E.region_size(region, pathlib.Path(d), None)
-assert size["bbox_km2"] > 0, size
+    assert size["bbox_km2"] > 0, size
+    catalog = geo_worker.run(["catalog", d])
+    assert catalog["availability"] == {{"source": "local", "local_cache": True}}
 loaded = sorted({{m.split(".")[0] for m in sys.modules}} & set({PROJ_PACKAGES!r}))
 print("LOADED", loaded)
 """
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
-                         timeout=120, check=False)
+                         timeout=120, check=False,
+                         close_fds=sys.platform != "darwin")
     assert out.returncode == 0, out.stderr[-2000:]
     assert "LOADED []" in out.stdout, out.stdout
 
@@ -522,13 +575,49 @@ def test_geo_worker_keeps_the_key_out_of_arguments_and_errors():
     assert KEY not in buf.getvalue() and "RuntimeError" in buf.getvalue()
 
 
+def test_geo_worker_uses_spawn_safe_launch_arguments():
+    import subprocess
+    from unittest.mock import patch
+    from tools.pipeline_webui import geo_worker as G
+
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout='{"ok": true}\n', stderr="")
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured.update(args=args, kwargs=kwargs)
+        return completed
+
+    with patch.object(G.subprocess, "run", side_effect=fake_run):
+        assert G.run(["probe"]) == {"ok": True}
+
+    assert captured["args"] == [
+        sys.executable, str(ROOT / "tools" / "pipeline_webui" / "geo_worker.py"), "probe"]
+    assert "cwd" not in captured["kwargs"]
+    assert captured["kwargs"]["close_fds"] is (sys.platform != "darwin")
+
+
+def test_estimate_store_preserves_safe_worker_errors():
+    from unittest.mock import patch
+
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        store = E.EstimateStore(Path(tmp), disk_free=10**12)
+        with patch.object(E, "estimate", side_effect=LookupError(
+                "area calculation worker returned no result (terminated by signal 11)")):
+            estimate_id = store.start(["pilot"], background=False)
+        record = store.get(estimate_id)
+        assert record["status"] == "error"
+        assert record["error"] == "area calculation worker returned no result (terminated by signal 11)"
+
+
 if __name__ == "__main__":
     for test in (test_catalog_states_and_links, test_bbox_validation,
                  test_localities_drop_water_mark_homonyms_and_cache,
                  test_locality_errors_never_carry_the_key,
-                 test_meshblocks_are_spatially_filtered_to_the_parent_and_cached,
-                 test_meshblock_selection_validation_identity_and_boundary_ownership,
-                 test_meshblock_materialisation_is_parent_scoped_and_resumable,
+                 test_grid_cells_are_clipped_to_the_locality_and_configurable,
+                 test_grid_selection_validation_identity_and_boundary_ownership,
+                 test_grid_materialisation_is_parent_scoped_and_resumable,
+                 test_empty_grid_selection_reports_actionable_worker_error,
                  test_dataset_timing_format_and_failure_record,
                  test_disjoint_raster_fetch_creates_a_resumable_parts_directory,
                  test_wide_dem_uses_only_disjoint_selection_coverage,
@@ -536,6 +625,8 @@ if __name__ == "__main__":
                  test_calibration_uses_finished_runs_only,
                  test_estimate_store_lifecycle_and_blockers,
                  test_server_process_never_loads_proj,
-                 test_geo_worker_keeps_the_key_out_of_arguments_and_errors):
+                 test_geo_worker_keeps_the_key_out_of_arguments_and_errors,
+                 test_geo_worker_uses_spawn_safe_launch_arguments,
+                 test_estimate_store_preserves_safe_worker_errors):
         test()
     print("pipeline web data tests passed")

@@ -97,6 +97,14 @@ note.
 
 ## Fetch (step 02)
 
+### `LINZ export creation timed out`
+
+Raster-export creation waits up to 120 seconds for LINZ, matching the
+council-outline exporter. Retry the build if LINZ does not respond in time;
+completed raster mosaics are reused. Creation requests are not automatically
+retried because LINZ may have created a job before its response timed out.
+See [src/fetch_data.py](../../src/fetch_data.py).
+
 ### HTTP 401 from the Exports API
 
 The key works for web services but cannot create exports. LINZ cannot add
@@ -133,6 +141,16 @@ The run carries on with the 1 m DSM: coarser geometry and gates, and the heat
 map may be empty. Check `lidar_tile_index_layer`, `pointcloud_bulk_url` and
 `pointcloud_tile_year` all describe the same survey. Never point at another
 survey's store. See [src/fetch_pointcloud_regions.py](../../src/fetch_pointcloud_regions.py).
+
+## Layout workers
+
+### `Error in sys.excepthook`
+
+Older layout workers left Rasterio datasets open until interpreter teardown,
+after their Python callbacks were unavailable. Current workers close their
+DSM and imagery handles through a multiprocessing finalizer before teardown.
+Update the checkout and retry the build; no extra Python package is needed.
+See [src/build_layout_geojson.py](../../src/build_layout_geojson.py).
 
 ## Map build and preview
 

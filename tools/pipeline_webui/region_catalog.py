@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.region_ids import is_locality_id, is_meshblock_selection_id, list_regions, validate
+from src.region_ids import is_grid_selection_id, is_locality_id, list_regions, validate
 from tools.pipeline_webui.common import DATA, read_json, web_dir
 
 SUMMARY_FIELDS = ("built_at", "git", "n", "n_est", "panel_count", "kwp", "kwh", "elevation", "centroid")
@@ -79,7 +79,8 @@ def _legacy_bbox(region: str):
 def region_properties(region: str, data: Path = DATA, runs: dict | None = None) -> tuple[dict, dict | None]:
     """(properties, geometry) for one region id."""
     data = Path(data)
-    kind = ("meshblock-selection" if is_meshblock_selection_id(region)
+    selection = read_json(data / "regions" / region / "selection.json") or {}
+    kind = ("grid-selection" if is_grid_selection_id(region)
             else "locality" if is_locality_id(region) else "legacy")
     props: dict[str, Any] = {"region": region, "kind": kind}
     locality = read_json(data / "regions" / region / "locality.json") or {}
@@ -91,13 +92,13 @@ def region_properties(region: str, data: Path = DATA, runs: dict | None = None) 
             "buildings": locality.get("buildings"), "bbox_km2": locality.get("bbox_km2"),
             "prepared_utc": locality.get("prepared_utc"),
         })
-    selection = read_json(data / "regions" / region / "selection.json") or {}
-    if kind == "meshblock-selection":
+    if kind == "grid-selection":
+        grid_ids = selection.get("grid_ids") or []
         props.update({
-            "name": f"{linz.get('name') or locality.get('parent_region')} (meshblock selection)",
+            "name": f"{linz.get('name') or locality.get('parent_region')} (grid selection)",
             "parent_region": selection.get("parent_region"),
-            "meshblock_count": len(selection.get("meshblock_ids") or []),
-            "meshblock_ids": selection.get("meshblock_ids") or [],
+            "selection_count": len(grid_ids),
+            "grid_size": selection.get("grid_size"),
             "selection_id": selection.get("selection_id"),
         })
     summary = read_json(data / "out" / region / "summary.json") or {}
@@ -115,7 +116,7 @@ def region_properties(region: str, data: Path = DATA, runs: dict | None = None) 
         props["state"] = "downloaded"
 
     geometry = None
-    if kind == "meshblock-selection":
+    if kind == "grid-selection":
         geometry = selection.get("geometry")
     if linz.get("id") is not None:
         cached = read_json(web_dir(data) / "cache" / "localities" / f"{int(linz['id'])}.geojson")
@@ -138,8 +139,8 @@ def region_properties(region: str, data: Path = DATA, runs: dict | None = None) 
 
 def region_ids(data: Path = DATA) -> list[str]:
     data = Path(data)
-    ids = (set(list_regions(data / "regions", include_meshblock_selections=True))
-           | set(list_regions(data / "out", "summary.json", include_meshblock_selections=True)))
+    ids = (set(list_regions(data / "regions", include_grid_selections=True))
+           | set(list_regions(data / "out", "summary.json", include_grid_selections=True)))
     return sorted(ids)
 
 

@@ -18,6 +18,10 @@ instead, follow [Your own VM](quickstart-cloud.md#your-own-vm-profiles).
   [preview hosting](team-access.md#preview-hosting-administration) is set up.
 - `SOLAR_CLOUD_PROFILE` is unset.
 
+The cloud quickstart builds a complete configured region; partial-area grid
+selection is an optional local web-pipeline feature and needs no additional
+key or dataset.
+
 ## Steps
 
 1. Check access at no cost:

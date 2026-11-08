@@ -130,7 +130,7 @@ def fetch_raster_chunked(bbox_wgs84, api_key, layer_id, name, out_dir, format_ke
 
 
 def acquisition_footprints(name, bbox):
-    """Multiple buffered footprints for a meshblock selection, else its bbox."""
+    """Multiple buffered footprints for a grid selection, else its bbox."""
     record_path = REGIONS_DIR / name / "locality.json"
     try:
         footprints = json.loads(record_path.read_text()).get("acquisition_footprints")

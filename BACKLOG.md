@@ -1,5 +1,12 @@
 # Backlog
 
+Completed local web-build reliability follow-up: raster-export creation allows
+120 seconds for LINZ and reports timeouts without automatically duplicating
+export jobs. Layout workers close Rasterio handles before interpreter teardown.
+Regression tests cover both paths; a Sunshine Bay grid selection is verified
+through the HTTP estimate/job endpoints and final map-contract validation,
+without a separate preview server.
+
 Completed #48: roof facets are filled by facing direction, with pitch encoded
 as saturation (full at 45°), and a distinct colour for missing/invalid geometry
 data. The shared legend, catalogue styling and rooftop map use the same
@@ -56,6 +63,11 @@ estimate and typed `yes`; and shows selected and queued work per lane (local,
 cloud). Cloud mode of `tools/pipeline.py` accepts several space-separated
 regions. Remaining: a hosted backend with team auth (the panel still runs on
 each developer's computer with their own `gcloud` credentials).
+Completed follow-up to #12: optional locality sub-area selection uses a
+configurable 2×2–10×10 grid clipped to LINZ locality boundaries, with
+deterministic whole-building ownership and nested selection work areas. It
+uses the existing LINZ boundary and credentials; no additional dataset or
+API key is required.
 
 Completed: unattended quickstart and pipeline runs. A failed deploy gate on a
 developer preview or build-only `tools/remote_build.sh` run now prints

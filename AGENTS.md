@@ -60,15 +60,17 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   token; records under `data/pipeline_web/`. The server process never loads
   PROJ (pyproj, rasterio, fiona, GDAL, geopandas): once PROJ has opened
   `proj.db`, every later fork from the threaded server segfaults in the child on
-  macOS ("Python quit unexpectedly"). Area calculations run in
-  `tools/pipeline_webui/geo_worker.py`; a test in
+  macOS ("Python quit unexpectedly"). Area calculations and local layer-catalogue
+  generation run in `tools/pipeline_webui/geo_worker.py`; a test in
   `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html`. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
-- The web pipeline can select Stats NZ 2023 meshblocks within a LINZ locality
-  for one local-only pipeline run. Selections have nested identities and
-  outputs; acquisition timings are per-run in `data/pipeline_runs/` (selection
-  outline preparation is recorded under the selection area). See
+- The web pipeline can select a user-sized bounding-box grid (2x2 through
+  10x10, default 4x4) within a LINZ locality for one local-only pipeline run.
+  Grid selection uses the LINZ locality boundary and needs no additional API
+  key or downloaded dataset. Selections have nested identities and outputs;
+  acquisition timings are per-run in `data/pipeline_runs/` (outline preparation
+  is recorded under the selection area). See
   [web pipeline guide](docs/data-maintainers/web-pipeline.md#use-it).
 - Local pipeline execution uses `src/local_queue.py` and
   `tools/pipeline_queue.py`: loopback coordinator, JSON state and one worker
@@ -244,6 +246,9 @@ figure for the same thing. Code enforces this:
 ### Pipeline
 - Each region builds in its own Python process, because decoded point-cloud
   tiles stay in memory.
+- Layout workers close their DSM and imagery datasets through a multiprocessing
+  finalizer before interpreter teardown, avoiding Rasterio callback errors
+  during spawned-worker shutdown (`src/build_layout_geojson.py`).
 - `src/build_plan.py` is the single per-region step plan (prepare:
   `outline_fit`, `repeat_roofs`; stages through `run_stage.py`; finish:
   `add_addresses`, `emit_region`). The local executor in `tools/pipeline.py`,

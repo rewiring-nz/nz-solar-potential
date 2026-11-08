@@ -574,15 +574,16 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
                 return False, (f"LINZ locality {area!r} could not be prepared: {reason} "
                                "Find a valid region id with: python tools/find_area.py <name> "
                                "(docs/data-maintainers/choosing-an-area.md)."), {"name": area}
-        elif region_ids.is_meshblock_selection_id(area):
+        elif region_ids.is_grid_selection_id(area):
             selection_path = DATA / "regions" / area / "selection.json"
             selection = json.loads(selection_path.read_text()) if selection_path.is_file() else {}
-            if selection.get("selection_id") != area or not selection.get("meshblock_ids"):
-                raise ValueError("meshblock selection manifest is missing or does not match this area")
+            if (selection.get("selection_id") != area
+                    or not selection.get("grid_ids")):
+                raise ValueError("area selection manifest is missing or does not match this area")
         with contextlib.redirect_stdout(io.StringIO()):
             import config
             from src.surveys import survey_for
-            if region_ids.is_locality_id(area) or region_ids.is_meshblock_selection_id(area):
+            if region_ids.is_locality_id(area) or region_ids.is_grid_selection_id(area):
                 record = json.loads((DATA / "regions" / area / "locality.json").read_text())
                 bbox = [float(v) for v in record["bbox"]]
             elif area in config.REGIONS:
@@ -1839,8 +1840,8 @@ def main() -> int:
             # A shared cloud build takes several space-separated regions in one VM session.
             from src import region_ids
             for one_region in args.region.split():
-                if region_ids.is_meshblock_selection_id(one_region):
-                    parser.error("meshblock selection builds currently run locally only")
+                if region_ids.is_grid_selection_id(one_region):
+                    parser.error("partial area-selection builds currently run locally only")
                 _safe_area(one_region)
             if selected_profile_name and len(args.region.split()) > 1:
                 parser.error("a --profile run takes one region")
@@ -1849,8 +1850,8 @@ def main() -> int:
             area = _safe_area(args.region or _default_region(config))
             if args.mode == "cloud":
                 from src import region_ids
-                if region_ids.is_meshblock_selection_id(area):
-                    parser.error("meshblock selection builds currently run locally only")
+                if region_ids.is_grid_selection_id(area):
+                    parser.error("partial area-selection builds currently run locally only")
     except ValueError as exc:
         parser.error(str(exc))
     if args.mode == "local" or args.region:

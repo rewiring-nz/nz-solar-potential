@@ -47,10 +47,10 @@
   let writable = false;
   const selected = new Map();       // region_id -> label
   const localityFeatures = new Map(); // linz_id -> feature
-  const meshblockFeatures = new Map(); // MB2023 -> feature
-  const selectedMeshblocks = new Map(); // MB2023 -> label
+  const gridFeatures = new Map(); // grid-cell id -> feature
+  const selectedGridCells = new Map(); // selected grid-cell id -> label
   let selectedParent = null;
-  let meshblockMode = false;
+  let gridMode = false;
   let currentEstimate = null;
   let selectionRevision = 0;
   let stream = null;
@@ -93,8 +93,8 @@
   // ---- target toggle ---------------------------------------------------
   document.querySelectorAll("#targets button").forEach((b) => b.addEventListener("click", () => setTarget(b.dataset.target)));
   function setTarget(name) {
-    if (meshblockMode && name !== "local") {
-      banner("Meshblock selection builds currently run locally only. Return to locality selection before changing target.");
+    if (gridMode && name !== "local") {
+      banner("Grid selection builds currently run locally only. Return to locality selection before changing target.");
       return;
     }
     const changed = name !== target;
@@ -181,7 +181,7 @@
 
   map.on("load", () => {
     map.addSource("localities", { type: "geojson", data: empty, promoteId: "linz_id" });
-    map.addSource("meshblocks", { type: "geojson", data: empty, promoteId: "meshblock_id" });
+    map.addSource("grid-cells", { type: "geojson", data: empty, promoteId: "grid_id" });
     map.addSource("regions", { type: "geojson", data: empty });
     map.addLayer({ id: "localities-fill", type: "fill", source: "localities",
       paint: { "fill-color": "#1565c0",
@@ -191,16 +191,16 @@
     map.addLayer({ id: "localities-label", type: "symbol", source: "localities", minzoom: 12,
       layout: { "text-field": ["get", "name"], "text-size": 12 },
       paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1 } });
-    map.addLayer({ id: "meshblocks-fill", type: "fill", source: "meshblocks",
+    map.addLayer({ id: "grid-cells-fill", type: "fill", source: "grid-cells",
       paint: { "fill-color": "#00acc1",
                "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.48, 0.12] } });
-    map.addLayer({ id: "meshblocks-line", type: "line", source: "meshblocks",
+    map.addLayer({ id: "grid-cells-line", type: "line", source: "grid-cells",
       paint: { "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#006064", "#80deea"],
                "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 1] } });
-    map.addLayer({ id: "meshblocks-label", type: "symbol", source: "meshblocks", minzoom: 12,
-      layout: { "text-field": ["get", "meshblock_id"], "text-size": 10 },
+    map.addLayer({ id: "grid-cells-label", type: "symbol", source: "grid-cells", minzoom: 12,
+      layout: { "text-field": ["get", "grid_id"], "text-size": 10 },
       paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1 } });
-    const regionColour = ["case", ["==", ["get", "kind"], "meshblock-selection"], "#7e57c2", stateColour];
+    const regionColour = ["case", ["==", ["get", "kind"], "grid-selection"], "#00897b", stateColour];
     map.addLayer({ id: "regions-fill", type: "fill", source: "regions", filter: ["==", ["geometry-type"], "Polygon"],
       paint: { "fill-color": regionColour, "fill-opacity": 0.25 } });
     map.addLayer({ id: "regions-line", type: "line", source: "regions", filter: ["==", ["geometry-type"], "Polygon"],
@@ -211,9 +211,9 @@
       ...MapLayers.basemaps(map),
       ...[
         { id: "localities", label: "Locality selection boundaries", ids: ["localities-fill", "localities-line", "localities-label"], colour: "#90caf9" },
-        { id: "meshblocks", label: "Stats NZ meshblocks (2023)", ids: ["meshblocks-fill", "meshblocks-line", "meshblocks-label"], colour: "#00acc1" },
+        { id: "grid-cells", label: "Grid cells", ids: ["grid-cells-fill", "grid-cells-line", "grid-cells-label"], colour: "#00acc1" },
         { id: "regions", label: "Prepared / built areas", ids: ["regions-fill", "regions-line", "regions-point"], colour: "#2e7d32",
-          description: "Green: complete locality; purple: partial meshblock selection; amber: prepared; red: last run failed. These boundaries are not cached dataset coverage." },
+          description: "Green: complete locality; teal: partial grid selection; amber: prepared; red: last run failed." },
       ].map(entry => Object.assign(entry, {
         group: "operations",
         getVisible: () => map.getLayoutProperty(entry.ids[0], "visibility") !== "none",
@@ -223,19 +223,19 @@
     ]);
 
     map.on("click", "localities-fill", (e) => {
-      if (layerLegend.queryId || meshblockMode) return;
+      if (layerLegend.queryId || gridMode) return;
       if (!e.features.length) return;
       const p = e.features[0].properties;
       toggleSelection(p.region_id, p.name + (p.town && p.town !== p.name ? ", " + p.town : ""),
                       false, { region_id: p.region_id, linz_id: p.linz_id, name: p.name });
     });
-    map.on("click", "meshblocks-fill", (e) => {
-      if (layerLegend.queryId || !meshblockMode || !e.features.length) return;
-      toggleMeshblock(e.features[0].properties.meshblock_id);
+    map.on("click", "grid-cells-fill", (e) => {
+      if (layerLegend.queryId || !gridMode || !e.features.length) return;
+      toggleGridCell(e.features[0].properties.grid_id);
     });
     map.on("click", "regions-fill", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
     map.on("click", "regions-point", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
-    ["localities-fill", "meshblocks-fill", "regions-fill", "regions-point"].forEach((id) => {
+    ["localities-fill", "grid-cells-fill", "regions-fill", "regions-point"].forEach((id) => {
       map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
     });
@@ -246,7 +246,8 @@
   function showRegionPopup(feature, lngLat) {
     const p = feature.properties;
     const html = `<b>${esc(p.name || p.region)}</b><br><span class="pill ${esc(p.state)}">${esc(p.state)}</span>
-      ${p.kind === "meshblock-selection" ? `<br><span class="warn">Partial selection: ${fmtInt(p.meshblock_count)} meshblocks within ${esc(p.parent_region)}; not complete parent coverage.</span>` : ""}
+      ${p.kind === "grid-selection"
+        ? `<br><span class="warn">Partial selection: ${fmtInt(p.selection_count)} grid cells within ${esc(p.parent_region)}; not complete parent coverage.</span>` : ""}
       ${p.n != null ? fmtInt(p.n) + " buildings" : ""}
       ${p.alias ? "<br>Developer: " + esc(p.alias) + (p.run ? " · run " + esc(p.run) : "") : ""}
       ${p.data_version ? "<br>Live data v" + esc(p.data_version) : ""}<br>
@@ -314,7 +315,8 @@
     $("region-list").innerHTML = items.length ? items.map((p) => `
       <div class="item" data-region="${esc(p.region)}" data-alias="${esc(p.alias || "")}">
         <h3 class="fly">${esc(p.name || p.region)} <span class="pill ${esc(p.state)}">${esc(p.state)}</span>
-          ${p.kind === "meshblock-selection" ? '<span class="pill" style="background:#7e57c2">partial selection</span>' : ""}</h3>
+          ${p.kind === "grid-selection"
+            ? `<span class="pill" style="background:#00897b">partial selection</span>` : ""}</h3>
         <div class="muted">${esc(p.region)}${p.council ? " · " + esc(p.council) : ""}${p.alias ? " · developer " + esc(p.alias) : ""}</div>
         <div class="muted">${p.n != null ? fmtInt(p.n) + " buildings · " : ""}${p.kwh ? fmtInt(Math.round(p.kwh / 1000)) + " MWh/yr · " : ""}${p.built_at ? "built " + esc(p.built_at.slice(0, 10)) : ""}</div>
         <div class="links">
@@ -371,22 +373,22 @@
   // ---- new build tab ---------------------------------------------------
   function toggleSelection(region, label, forceOn, parent) {
     if (!writable || !region) return;
-    if (meshblockMode && parent && selectedParent &&
+    if (gridMode && parent && selectedParent &&
         parent.region_id !== selectedParent.region_id) {
-      meshblockMode = false;
-      selectedMeshblocks.clear();
-      meshblockFeatures.clear();
-      if (map.getSource("meshblocks")) map.getSource("meshblocks").setData(empty);
+      gridMode = false;
+      selectedGridCells.clear();
+      gridFeatures.clear();
+      if (map.getSource("grid-cells")) map.getSource("grid-cells").setData(empty);
     }
     if (selected.has(region) && !forceOn) selected.delete(region);
     else selected.set(region, label || region);
     if (parent) selectedParent = parent;
     if (selectedParent && !selected.has(selectedParent.region_id)) {
       selectedParent = null;
-      meshblockMode = false;
-      selectedMeshblocks.clear();
-      meshblockFeatures.clear();
-      if (map.getSource("meshblocks")) map.getSource("meshblocks").setData(empty);
+      gridMode = false;
+      selectedGridCells.clear();
+      gridFeatures.clear();
+      if (map.getSource("grid-cells")) map.getSource("grid-cells").setData(empty);
     }
     currentEstimate = null;
     selectionRevision++;
@@ -396,97 +398,108 @@
   }
 
   function renderSelection() {
-    $("meshblock-btn").disabled = !writable || !selectedParent || selected.size !== 1;
-    $("meshblock-btn").textContent = meshblockMode ? "Back to locality selection" : "Choose meshblocks for this locality";
-    $("meshblock-controls").hidden = !meshblockMode;
+    $("grid-btn").disabled = !writable || !selectedParent || selected.size !== 1;
+    $("grid-btn").textContent = gridMode ? "Back to locality selection" : "Choose grid cells";
+    $("grid-controls").hidden = !gridMode;
+    $("grid-size-row").hidden = !gridMode;
+    $("grid-size").value = String($("grid-size").dataset.value || "4");
     const chips = [...selected.entries()].map(([id, label]) =>
       `<span class="chip" title="${esc(id)}">${esc(label)}<button data-id="${esc(id)}" aria-label="Remove">×</button></span>`);
-    $("selection").innerHTML = meshblockMode
-      ? `<b>${selectedMeshblocks.size} meshblock(s) selected</b> within ${esc(selectedParent.name)}<br>` +
-        [...selectedMeshblocks.keys()].map((id) => `<span class="chip">${esc(id)}</span>`).join("")
+    $("selection").innerHTML = gridMode
+      ? `<b>${selectedGridCells.size} grid cell(s) selected</b> within ${esc(selectedParent.name)}<br>` +
+        [...selectedGridCells.keys()].map((id) => `<span class="chip">${esc(id)}</span>`).join("")
       : chips.length ? `<b>Selected for a ${esc(TARGETS[target].label.toLowerCase())} build:</b><br>` +
         chips.join("") : "<p class='muted'>Nothing selected.</p>";
     $("selection").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => toggleSelection(b.dataset.id)));
-    $("meshblock-count").textContent = meshblockFeatures.size
-      ? `${selectedMeshblocks.size} of ${meshblockFeatures.size} meshblocks` : "";
-    $("estimate-btn").disabled = !writable || (meshblockMode ? !selectedMeshblocks.size : !selected.size) ||
-      (meshblockMode && target !== "local");
+    $("grid-count").textContent = gridFeatures.size
+      ? `${selectedGridCells.size} of ${gridFeatures.size} grid cells` : "";
+    $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
+      (gridMode && target !== "local");
   }
 
-  function syncMeshblockState() {
-    if (!map.getSource("meshblocks")) return;
-    meshblockFeatures.forEach((f, id) =>
-      map.setFeatureState({ source: "meshblocks", id }, { selected: selectedMeshblocks.has(id) }));
-    $("meshblock-count").textContent = `${selectedMeshblocks.size} of ${meshblockFeatures.size} meshblocks`;
+  function syncGridState() {
+    if (!map.getSource("grid-cells")) return;
+    gridFeatures.forEach((f, id) =>
+      map.setFeatureState({ source: "grid-cells", id }, { selected: selectedGridCells.has(id) }));
+    $("grid-count").textContent = `${selectedGridCells.size} of ${gridFeatures.size} grid cells`;
   }
 
-  function toggleMeshblock(id) {
-    if (!meshblockMode || !id) return;
-    if (selectedMeshblocks.has(id)) selectedMeshblocks.delete(id);
-    else selectedMeshblocks.set(id, id);
+  function toggleGridCell(id) {
+    if (!gridMode || !id) return;
+    if (selectedGridCells.has(id)) selectedGridCells.delete(id);
+    else selectedGridCells.set(id, id);
     currentEstimate = null;
     selectionRevision++;
     $("estimate").innerHTML = "";
     renderSelection();
-    syncMeshblockState();
+    syncGridState();
   }
 
-  async function loadMeshblocks(parent) {
-    const fc = await api(`meshblocks?region=${encodeURIComponent(parent.region_id)}&linz_id=${encodeURIComponent(parent.linz_id)}`);
-    if (!fc.features.length) throw new Error("no Stats NZ meshblocks intersect this locality");
-    meshblockFeatures.clear();
-    fc.features.forEach((f) => meshblockFeatures.set(f.properties.meshblock_id, f));
-    map.getSource("meshblocks").setData(fc);
-    selectedMeshblocks.clear();
-    meshblockMode = true;
+  async function loadGridCells(parent, gridSize = 4) {
+    const fc = await api(`grid-cells?region=${encodeURIComponent(parent.region_id)}&linz_id=${encodeURIComponent(parent.linz_id)}&grid_size=${gridSize}`);
+    if (!fc.features.length) throw new Error("no grid cells intersect this locality");
+    $("grid-size").dataset.value = String(gridSize);
+    gridFeatures.clear();
+    fc.features.forEach((f) => gridFeatures.set(f.properties.grid_id, f));
+    map.getSource("grid-cells").setData(fc);
+    selectedGridCells.clear();
+    gridMode = true;
     currentEstimate = null;
     selectionRevision++;
     $("estimate").innerHTML = "";
     renderSelection();
-    syncMeshblockState();
+    syncGridState();
     const feature = localityFeatures.get(parent.linz_id);
     if (feature) flyTo(feature);
   }
 
-  $("meshblock-btn").addEventListener("click", async () => {
-    if (meshblockMode) {
-      meshblockMode = false;
-      selectedMeshblocks.clear();
+  $("grid-btn").addEventListener("click", async () => {
+    if (gridMode) {
+      gridMode = false;
+      selectedGridCells.clear();
       currentEstimate = null;
       selectionRevision++;
       $("estimate").innerHTML = "";
       renderSelection();
-      syncMeshblockState();
+      syncGridState();
       return;
     }
     if (!selectedParent || selected.size !== 1) return;
     if (target !== "local") {
-      banner("Meshblock selection builds currently run locally only. Choose Local to continue.");
+      banner("Grid selection builds currently run locally only. Choose Local to continue.");
       return;
     }
     try {
-      $("meshblock-count").textContent = "Loading locality meshblocks…";
-      await loadMeshblocks(selectedParent);
+      $("grid-count").textContent = "Loading grid…";
+      await loadGridCells(selectedParent);
     } catch (e) {
-      $("meshblock-count").textContent = "";
-      banner("Could not load meshblocks: " + esc(e.message));
+      $("grid-count").textContent = "";
+      banner("Could not load grid: " + esc(e.message));
     }
   });
-  $("meshblock-all").addEventListener("click", () => {
-    meshblockFeatures.forEach((_, id) => selectedMeshblocks.set(id, id));
-    currentEstimate = null;
-    selectionRevision++;
-    $("estimate").innerHTML = "";
-    renderSelection();
-    syncMeshblockState();
+  $("grid-size").addEventListener("change", async () => {
+    if (!selectedParent || !gridMode) return;
+    try {
+      await loadGridCells(selectedParent, Number($("grid-size").value));
+    } catch (e) {
+      banner("Could not load grid cells: " + esc(e.message));
+    }
   });
-  $("meshblock-none").addEventListener("click", () => {
-    selectedMeshblocks.clear();
+  $("grid-all").addEventListener("click", () => {
+    gridFeatures.forEach((_, id) => selectedGridCells.set(id, id));
     currentEstimate = null;
     selectionRevision++;
     $("estimate").innerHTML = "";
     renderSelection();
-    syncMeshblockState();
+    syncGridState();
+  });
+  $("grid-none").addEventListener("click", () => {
+    selectedGridCells.clear();
+    currentEstimate = null;
+    selectionRevision++;
+    $("estimate").innerHTML = "";
+    renderSelection();
+    syncGridState();
   });
 
   let searchTimer = null;
@@ -521,9 +534,12 @@
     $("estimate-btn").disabled = true;
     $("estimate").innerHTML = `<p class='muted'>Estimating a ${esc(TARGETS[target].label.toLowerCase())} build… (counting buildings with LINZ can take a minute for new areas)</p>`;
     try {
-      const body = meshblockMode
-        ? { selection: { parent_region: selectedParent.region_id, parent_linz_id: selectedParent.linz_id,
-                         meshblock_ids: [...selectedMeshblocks.keys()] }, target }
+      const body = gridMode
+        ? { selection: {
+              parent_region: selectedParent.region_id, parent_linz_id: selectedParent.linz_id,
+              grid_size: Number($("grid-size").value),
+              grid_ids: [...selectedGridCells.keys()],
+            }, target }
         : { regions: [...selected.keys()], target };
       const { estimate_id } = await api("estimate", { method: "POST", body });
       let est;
@@ -541,15 +557,15 @@
         $("estimate").innerHTML = `<p class="block">${esc(e.message)}</p>`;
       }
     } finally {
-      $("estimate-btn").disabled = !writable || (meshblockMode ? !selectedMeshblocks.size : !selected.size) ||
-        (meshblockMode && target !== "local");
+      $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
+        (gridMode && target !== "local");
     }
   });
 
   function renderEstimate(est) {
     const t = est.totals;
     const rows = est.regions.map((r) => `<tr>
-        <td>${esc(r.meshblock_count ? `${selectedParent.name} · ${r.meshblock_count} meshblocks`
+        <td>${esc(r.grid_size ? `${selectedParent.name} · ${r.selection_count} grid cells (${r.grid_size}×${r.grid_size})`
                                       : selected.get(r.region) || r.region)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
           ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}</td>
@@ -607,10 +623,10 @@
       selected.clear();
       selectionRevision++;
       selectedParent = null;
-      meshblockMode = false;
-      selectedMeshblocks.clear();
-      meshblockFeatures.clear();
-      if (map.getSource("meshblocks")) map.getSource("meshblocks").setData(empty);
+      gridMode = false;
+      selectedGridCells.clear();
+      gridFeatures.clear();
+      if (map.getSource("grid-cells")) map.getSource("grid-cells").setData(empty);
       renderSelection();
       syncSelectionState();
       $("estimate").innerHTML = "";

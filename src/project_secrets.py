@@ -1,7 +1,7 @@
 """Where the project's keys come from: the environment, else Secret Manager.
 
 Order, first hit wins:
-  1. the process environment (LINZ_API_KEY), which is also where a local
+  1. the process environment, which is also where a local
      .env lands once python-dotenv has loaded it;
   2. Google Secret Manager, secret `linz-api-key` in project
      solar-potential-map-512020, read with the gcloud CLI as whoever is signed in --

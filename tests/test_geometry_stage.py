@@ -38,6 +38,58 @@ def test_all_empty_keeps_the_input():
     assert blg._geometry_stage(1, lambda f: [dict(x, geometry=Polygon()) for x in f], faces) is faces
 
 
+def test_worker_closes_aliased_rasters_once():
+    from unittest.mock import Mock, patch
+    dsm, photo = Mock(), Mock()
+    with patch.dict(blg._CTX, {"dsm_ds": dsm, "imagery_ds": photo, "photo_ds": photo},
+                    clear=True):
+        blg._close_worker_rasters()
+        blg._close_worker_rasters()
+        dsm.close.assert_called_once_with()
+        photo.close.assert_called_once_with()
+        assert not blg._CTX
+
+
+def test_worker_registers_raster_cleanup_before_interpreter_teardown():
+    import os
+    import tempfile
+    from unittest.mock import Mock, patch
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = Path(tmp)
+        paths = {key: directory / key for key in
+                 ("dsm", "imagery", "reference_imagery", "outlines")}
+        for path in paths.values():
+            path.touch()
+        paths["dir"] = directory
+        datasets = [Mock(), Mock(), Mock()]
+        registered = []
+        real_finalize = blg.Finalize
+
+        def register(*args, **kwargs):
+            finalizer = real_finalize(*args, **kwargs)
+            registered.append(finalizer)
+            return finalizer
+
+        with (patch.dict(blg._CTX, {}, clear=True),
+              patch.dict(os.environ, {"SOLAR_PIPELINE_PHOTO": "map"}),
+              patch.object(blg, "area_paths", return_value=paths),
+              patch.object(blg.rasterio, "open", side_effect=datasets),
+              patch.object(blg, "_hz_load_far_dem", return_value=(None, None, None)),
+              patch.object(blg.gpd, "read_file"),
+              patch.object(blg, "fitted_outlines"),
+              patch.object(blg, "PointCloudSource"),
+              patch.object(blg, "Finalize", side_effect=register) as finalize):
+            try:
+                blg._init_worker("test", Mock())
+                finalize.assert_called_once_with(None, blg._close_worker_rasters, exitpriority=10)
+                registered[0]()
+                for dataset in datasets:
+                    dataset.close.assert_called_once_with()
+            finally:
+                for finalizer in registered:
+                    finalizer()
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

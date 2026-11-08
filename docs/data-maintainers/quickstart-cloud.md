@@ -46,6 +46,10 @@ id overrides it.
 Keep the launcher connected until publication: the detached build alone
 does not make the whole workflow survive a disconnect.
 
+The cloud quickstart builds complete configured regions. Partial-area grid
+selection is available only in the local web-pipeline panel and uses the
+LINZ locality boundary; it needs no additional API key or dataset.
+
 Logs are in `data/cloud_quickstart_runs/<run-id>.log` (`[QS-01]` to
 `[QS-06]`). Shared mode supports `build` and `preflight` only.
 

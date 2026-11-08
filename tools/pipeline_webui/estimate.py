@@ -189,7 +189,7 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
              lookup: SizeLookup | None = None, defaults: dict | None = None,
              disk_free: int | None = None, survey_fn: Callable = _survey,
              now: float | None = None, cloud=None, selection: dict | None = None,
-             meshblock_lookup: Callable | None = None,
+             grid_lookup: Callable | None = None,
              api_key_fn: Callable[[], str] | None = None) -> dict:
     if target not in TARGETS:
         raise EstimateError(f"unknown target: {target}")
@@ -204,46 +204,51 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
     selection_info = None
     if selection is not None:
         if target != "local":
-            raise EstimateError("meshblock selection builds currently run locally only")
+            raise EstimateError("partial area-selection builds currently run locally only")
         selection = validate_selection(selection)
-        if meshblock_lookup is None or api_key_fn is None:
-            raise EstimateError("meshblock selection is not configured on this server", 503)
-        collection = meshblock_lookup(selection["parent_region"], selection["parent_linz_id"])
-        dataset = collection.get("dataset") or {}
+        if grid_lookup is None or api_key_fn is None:
+            raise EstimateError("area selection is not configured on this server", 503)
+        collection = grid_lookup(selection["parent_region"], selection["parent_linz_id"],
+                                 selection["grid_size"])
         features = collection.get("features") or []
-        found = {str((f.get("properties") or {}).get("meshblock_id")) for f in features}
-        if not set(selection["meshblock_ids"]).issubset(found):
-            raise EstimateError("selection contains a meshblock outside the selected locality", 409)
-        from src.meshblock_selection import selection_id
-        area = selection_id(selection["parent_region"], selection["meshblock_ids"], dataset)
+        found = {str((f.get("properties") or {}).get("grid_id")) for f in features}
+        if collection.get("grid_size") != selection["grid_size"]:
+            raise EstimateError("grid definition changed; reload the locality grid", 409)
+        if not set(selection["grid_ids"]).issubset(found):
+            raise EstimateError("selection contains an area outside the selected locality", 409)
+        from src.grid_selection import selection_id
+        area = selection_id(selection["parent_region"], selection["grid_ids"],
+                            selection["grid_size"])
         request_path = web_dir(data) / "selections" / f"{file_slug(area)}.json"
-        write_json_atomic(request_path, {
+        request = {
             "parent_region": selection["parent_region"],
             "parent_linz_id": selection["parent_linz_id"],
-            "meshblock_ids": selection["meshblock_ids"],
-            "dataset": dataset, "meshblocks": features,
-        })
+            "grid_size": selection["grid_size"],
+            "grid_ids": selection["grid_ids"],
+            "areas": features,
+        }
+        write_json_atomic(request_path, request)
         from tools.pipeline_webui import geo_worker
         resolved = geo_worker.run(
             ["selection", str(request_path), str(data)],
             env={"LINZ_API_KEY": api_key_fn()})
         size = {"buildings": resolved["buildings"], "bbox": resolved["bbox"],
                 "bbox_km2": resolved.get("acquisition_km2", resolved["bbox_km2"]),
-                "source": "meshblock selection"}
+                "source": "grid selection"}
         cache_dir = data
         row = estimate_region(resolved["region"], size,
                               survey_fn(size["bbox"], resolved["region"]),
                               cache_dir, defaults, spb)
-        row["meshblock_count"] = resolved["meshblock_count"]
-        row["meshblock_ids"] = selection["meshblock_ids"]
+        row["selection_count"] = resolved["selection_count"]
+        row["grid_size"] = selection["grid_size"]
+        row["grid_ids"] = selection["grid_ids"]
         row["parent_region"] = selection["parent_region"]
-        row["dataset"] = dataset
         row["acquisition_footprints"] = resolved.get("acquisition_footprints", [])
         rows.append(row)
         selection_info = {"parent_region": selection["parent_region"],
-                          "parent_linz_id": selection["parent_linz_id"],
-                          "meshblock_ids": selection["meshblock_ids"],
-                          "dataset": dataset, "selection_id": resolved["region"]}
+                          "grid_ids": selection["grid_ids"],
+                          "grid_size": selection["grid_size"],
+                          "selection_id": resolved["region"]}
     else:
         regions = validate_regions(regions)
         # The VM fetches its own inputs, so a cloud estimate counts nothing as cached here.
@@ -350,15 +355,15 @@ def validate_regions(regions) -> list[str]:
 
 
 def validate_selection(selection: dict) -> dict:
-    """Validate one locality parent and a non-empty list of meshblock IDs."""
+    """Validate one locality parent and a non-empty set of grid cells."""
     if not isinstance(selection, dict):
-        raise EstimateError("meshblock selection must be an object")
+        raise EstimateError("area selection must be an object")
     try:
         parent = validate(selection.get("parent_region"))
     except ValueError as exc:
         raise EstimateError(str(exc)) from None
     if not is_locality_id(parent):
-        raise EstimateError("meshblock selection parent must be one LINZ locality")
+        raise EstimateError("area selection parent must be one LINZ locality")
     linz_id = selection.get("parent_linz_id")
     if isinstance(linz_id, bool):
         raise EstimateError("parent_linz_id must be a positive LINZ locality id")
@@ -368,26 +373,35 @@ def validate_selection(selection: dict) -> dict:
         raise EstimateError("parent_linz_id must be a positive LINZ locality id") from None
     if linz_id < 1:
         raise EstimateError("parent_linz_id must be a positive LINZ locality id")
-    ids = selection.get("meshblock_ids")
+    try:
+        grid_size = int(selection.get("grid_size"))
+    except (TypeError, ValueError):
+        raise EstimateError("grid_size must be from 2 through 10") from None
+    if not 2 <= grid_size <= 10:
+        raise EstimateError("grid_size must be from 2 through 10")
+    ids = selection.get("grid_ids")
     if not isinstance(ids, list) or not ids:
-        raise EstimateError("choose at least one meshblock")
-    if len(ids) > 5000 or any(not isinstance(value, str) or
-                              not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", value)
-                              for value in ids):
-        raise EstimateError("meshblock selection contains invalid IDs or is too large")
+        raise EstimateError("choose at least one grid cell")
+    valid = all(isinstance(value, str) and
+                (match := re.fullmatch(r"r(\d{2})c(\d{2})", value)) is not None
+                and 1 <= int(match.group(1)) <= grid_size
+                and 1 <= int(match.group(2)) <= grid_size for value in ids)
+    if len(ids) > 5000 or not valid:
+        raise EstimateError("grid selection contains invalid IDs or is too large")
     return {"parent_region": parent, "parent_linz_id": linz_id,
-            "meshblock_ids": sorted(set(ids))}
+            "grid_ids": sorted(set(ids)),
+            "grid_size": grid_size}
 
 
 class EstimateStore:
     """Estimates computed in a background thread and kept for TTL_SECONDS."""
 
     def __init__(self, data: Path = DATA, lookup: SizeLookup | None = None,
-                 meshblock_lookup: Callable | None = None,
+                 grid_lookup: Callable | None = None,
                  api_key_fn: Callable[[], str] | None = None, **estimate_kwargs):
         self.data = Path(data)
         self.lookup = lookup
-        self.meshblock_lookup = meshblock_lookup
+        self.grid_lookup = grid_lookup
         self.api_key_fn = api_key_fn
         self.kwargs = estimate_kwargs
         self.dir = web_dir(self.data) / "estimates"
@@ -401,10 +415,10 @@ class EstimateStore:
               selection: dict | None = None) -> str:
         if selection is not None:
             if regions:
-                raise EstimateError("choose either full areas or a meshblock selection")
+                raise EstimateError("choose either full areas or a grid selection")
             selection = validate_selection(selection)
             if target != "local":
-                raise EstimateError("meshblock selection builds currently run locally only")
+                raise EstimateError("partial area-selection builds currently run locally only")
             regions = []
         else:
             regions = validate_regions(regions)
@@ -420,11 +434,14 @@ class EstimateStore:
         def work():
             try:
                 result = estimate(regions, self.data, target, self.lookup, selection=selection,
-                                  meshblock_lookup=self.meshblock_lookup,
+                                  grid_lookup=self.grid_lookup,
                                   api_key_fn=self.api_key_fn, **self.kwargs)
                 result["estimate_id"] = estimate_id
             except EstimateError as exc:
                 result = {"estimate_id": estimate_id, "status": "error", "error": str(exc)}
+            except LookupError as exc:
+                result = {"estimate_id": estimate_id, "status": "error",
+                          "error": str(exc) or "area lookup failed"}
             except Exception as exc:
                 result = {"estimate_id": estimate_id, "status": "error",
                           "error": f"estimate failed ({type(exc).__name__})"}

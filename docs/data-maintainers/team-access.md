@@ -25,7 +25,7 @@ personal project (`downloads-417521`).
 | Developer previews | `gs://rewiring-solar-previews` (public read; `devel/` deleted after 14 days) | the Google Group |
 | Build inputs and models | `gs://solar-potential-map-data` (private) | the Google Group |
 | Build machine | VM `claude-doing-things`, australia-southeast1-b | the Google Group |
-| API keys | Google Secret Manager (`linz-api-key`) | read: the Google Group and the VM |
+| API key | Google Secret Manager (`linz-api-key`) | read: the Google Group and the VM |
 
 ## Roles the group holds
 
@@ -50,6 +50,8 @@ bash quickstart.sh --mode cloud --cloud preflight
 
 The pipeline reads `LINZ_API_KEY` from the environment or `.env`, else from
 Secret Manager as you ([src/project_secrets.py](../../src/project_secrets.py)).
+The web pipeline's optional locality-grid selection also uses this LINZ key;
+it needs no separate key or downloaded dataset.
 
 Use [profile setup](quickstart-cloud.md#your-own-vm-profiles) only when
 you intend to administer a separate VM.

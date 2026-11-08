@@ -23,7 +23,8 @@ The default area is `queenstown-lakes-district/queenstown/sunshine-bay`
 
 2. Install the tools, Python environment and LINZ key with
    [Local setup](local-setup.md). Continue when its environment check prints
-   `ready`.
+   `ready`. This is the only API key needed; the web pipeline's optional
+   locality grid uses the LINZ boundary and needs no extra dataset or key.
 
 3. Run the pipeline:
 

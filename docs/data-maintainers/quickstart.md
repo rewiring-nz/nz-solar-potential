@@ -17,6 +17,8 @@ cd nz-solar-potential
 Follow [Local setup](local-setup.md) for your system tools,
 Python environment and LINZ key. Return here when the environment check
 prints `ready` and credentials are configured.
+The LINZ key is the only API key needed. The web pipeline's optional grid
+selection uses the LINZ locality boundary and needs no extra dataset or key.
 
 ## 3. Run the pipeline
 

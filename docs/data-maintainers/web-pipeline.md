@@ -85,32 +85,31 @@ because it owns the port if its command is unrelated.
   - warnings, such as no LiDAR or a large area
   - blockers, such as no survey coverage or too little disk
 
-  Selecting a locality also enables **Meshblocks**. The parent polygon is a
-  LINZ suburb/locality boundary; the council name groups localities and is not
-  the boundary being built. The meshblock overlay uses Stats NZ Meshblock 2023
-  (generalised), served by LINZ layer 111228 (`MB2023`, native EPSG:2193;
-  WFS geometry returned in EPSG:4326). Candidate meshblocks are filtered to
-  those intersecting the parent locality. Select or clear individual blocks,
-  or use **Select all** / **Deselect all**. An empty selection cannot be
-  estimated. Changing the parent or selected blocks invalidates the previous
-  estimate.
+  Selecting a locality also enables **Choose grid cells**. The parent polygon
+  is the LINZ suburb/locality boundary; the council name groups localities and
+  is not the boundary being built. The panel divides the boundary's bounding
+  box into 2×2 through 10×10 cells (default 4×4) and clips each cell to the
+  locality polygon. It uses the LINZ key and boundary already needed for area
+  search; no additional API key or dataset is required. Select
+  individual cells or use **Select all** / **Deselect all**. An empty
+  selection cannot be estimated. Changing the parent or grid size invalidates
+  the previous estimate.
 
   The estimate reports the selected building count, the sum of disjoint
   buffered acquisition footprints, download estimate, runtime, disk estimate
-  and warnings. These are planning estimates, not limits. A meshblock build
+  and warnings. These are planning estimates, not limits. A partial-area build
   runs locally only; it cannot start a Developer or Published build. It runs
-  the normal pipeline as one work area, not one pipeline per block.
+  the normal pipeline as one work area, not one pipeline per selected cell.
 
   Buildings are selected as whole LINZ building-outline features. For each
   outline, the pipeline finds its representative point in EPSG:2193 and assigns
-  it to the lexically lowest `MB2023` ID whose polygon covers that point.
-  The map simplifies meshblock polygons for display; ownership uses the cached
-  source geometry. Only buildings owned by a selected block are included;
-  boundaries never clip buildings and ties cannot duplicate them. This is a
-  stable rule for an identical parent, dataset version and selection.
+  it to the lexically lowest selected-area ID whose polygon covers that point.
+  Only buildings owned by a selected grid cell are included; boundaries never
+  clip buildings and ties cannot duplicate them. This is a stable rule for an
+  identical parent, grid size and selection.
 
   A selection has a deterministic ID below its parent:
-  `data/regions/<parent>/meshblocks-<16-hex-id>/`. Its `selection.json`
+  `data/regions/<parent>/grid-<16-hex-id>/`. Its `selection.json`
   records the parent, selected IDs, boundary dataset/version and geometry,
   ownership rule, building IDs and acquisition footprints. Pipeline artefacts
   are written below that selection directory, and emitted artefacts below the
@@ -228,10 +227,10 @@ exports and LiDAR tiles are summarized per dataset. The shared 8 m terrain DEM
 keeps disjoint selection footprints, each with the normal 30 km terrain
 buffer, rather than downloading the enclosing rectangle.
 Unavailable and failed acquisitions are recorded too; failure records contain
-the exception type, not a potentially sensitive URL or error message. Meshblock
+the exception type, not a potentially sensitive URL or error message. Grid
 outline preparation happens during Estimate, before the pipeline run, and its
 timing is stored in
-`data/regions/<parent>/meshblocks-<id>/acquisition_timings.json`.
+`data/regions/<parent>/grid-<16-hex-id>/acquisition_timings.json`.
 
 ## Security
 
@@ -242,7 +241,6 @@ timing is stored in
 - Build requests must come from the panel's own page as JSON.
 - The LINZ key stays on the server. Locality requests go through it, and
   errors name only the failure type.
-
 - Anyone with the link can also start paid builds on the shared VM; each
   still needs the typed `yes` against the shown cost.
 
@@ -257,10 +255,12 @@ The panel is not a hosted service; it runs on your computer with your
 | "Cannot listen on 127.0.0.1:8766 (Address already in use)" | If the message names an earlier pipeline panel, run the `kill <pid>` it prints ([Start it](#start-it)). If another program holds the port, start the panel with `--port N` or `--port 0`. |
 | "This link's token is out of date" | The panel was restarted; open the new link. |
 | "No LINZ API key found" | Set `LINZ_API_KEY` as in [local setup](local-setup.md). |
+| "Could not load grid" | Check the LINZ locality and API key, then retry. |
+| "No LINZ building outlines were found in the selected grid cells" | Some grid cells contain no mapped buildings; select cells that cover buildings. |
 | "zoom in" when choosing areas | The view is wider than 1°; zoom in. |
 | "a CLI build is running in this checkout" | Wait for it, or stop it and see [Local task queue](pipeline-reference.md#local-task-queue) before removing a stale lock. |
 | An area failed | Open its report from the Jobs tab and follow [Troubleshooting](troubleshooting.md). |
-| macOS "Python quit unexpectedly" after Estimate | A panel older than this fix loaded PROJ in the server, and the next git, gcloud or build process it started crashed. Stop the panel and start it again on current code. Area calculations now run in a separate process (`tools/pipeline_webui/geo_worker.py`). |
+| macOS "Python quit unexpectedly" after Estimate | The panel process loaded PROJ before starting a child process; on macOS, PROJ's SQLite fork handler can crash that child. Stop an older panel and restart it on current code to clear the loaded library state. Area calculations and local layer-catalogue generation run in a separate process (`tools/pipeline_webui/geo_worker.py`). |
 | VM status `UNKNOWN` | The message shows gcloud's error; usually `gcloud auth login` or missing access to the project ([team access](team-access.md)). |
 | "cannot publish: … unpushed commit(s)" | Push or reset those commits, then estimate again. |
 | A cloud job stopped at the code sync | The VM was busy with another build; wait for it, then start again. |

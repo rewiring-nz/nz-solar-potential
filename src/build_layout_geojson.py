@@ -25,6 +25,7 @@ import signal
 import sys
 import time
 import multiprocessing
+from multiprocessing.util import Finalize
 from concurrent.futures import ProcessPoolExecutor, wait
 from pathlib import Path
 
@@ -158,10 +159,23 @@ def _on_timeout(signum, frame):
 _CTX = {}
 
 
+def _close_worker_rasters():
+    seen = set()
+    for key in ("dsm_ds", "imagery_ds", "photo_ds"):
+        dataset = _CTX.pop(key, None)
+        if dataset is not None and id(dataset) not in seen:
+            seen.add(id(dataset))
+            dataset.close()
+
+
 def _init_worker(area, model):
     """One heavy context per process. The SolarModel is built ONCE in the parent
     and shipped in (0.5 MB, picklable): constructing it per worker would fire a
     NASA POWER request per process."""
+    _close_worker_rasters()
+    # Close GDAL handles before interpreter teardown, while Rasterio's
+    # Python callbacks are still available in spawned workers.
+    Finalize(None, _close_worker_rasters, exitpriority=10)
     paths = area_paths(area)
     dsm_ds = rasterio.open(paths["dsm"])
     # Only the slice this region's rays can reach. The pool spawns rather than

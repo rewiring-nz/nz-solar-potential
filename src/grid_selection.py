@@ -1,4 +1,4 @@
-"""Materialise a set of Stats NZ meshblocks as one isolated pipeline area."""
+"""Materialise selected grid cells as one isolated pipeline area."""
 
 from __future__ import annotations
 
@@ -9,32 +9,40 @@ import time
 from pathlib import Path
 
 from src import localities, region_ids
-from src.region_build import write_json_atomic
 
 OWNERSHIP_RULE = (
     "Transform whole LINZ building outlines to EPSG:2193; assign each outline "
-    "to the lowest MB2023 ID whose polygon covers its representative point. "
+    "to the lowest selected-area ID whose polygon covers its representative point. "
     "Include it only when that owner is selected; never clip its geometry."
 )
-_MB_ID = re.compile(r"[A-Za-z0-9._-]{1,32}")
 
 
-def selection_id(parent_region: str, meshblock_ids: list[str], dataset: dict) -> str:
+def _building_identity(feature: dict):
+    properties = feature.get("properties") or {}
+    for identity in (properties.get("building_id"), properties.get("id"), feature.get("id")):
+        if identity is not None:
+            return identity
+    return None
+
+
+def selection_id(parent_region: str, grid_ids: list[str], grid_size: int) -> str:
     parent_region = region_ids.validate(parent_region)
     if not region_ids.is_locality_id(parent_region):
-        raise ValueError("meshblock selections require a locality parent")
-    ids = sorted(set(str(value) for value in meshblock_ids))
-    if not ids or any(not _MB_ID.fullmatch(value) for value in ids):
-        raise ValueError("select at least one valid meshblock")
-    identity = {"parent": parent_region, "meshblocks": ids,
-                "layer": dataset.get("layer_id"), "version": dataset.get("version")}
+        raise ValueError("grid selections require a locality parent")
+    ids = sorted(set(str(value) for value in grid_ids))
+    if not 2 <= grid_size <= 10 or not ids or any(
+            (match := re.fullmatch(r"r(\d{2})c(\d{2})", value)) is None
+            or not 1 <= int(match.group(1)) <= grid_size
+            or not 1 <= int(match.group(2)) <= grid_size for value in ids):
+        raise ValueError("select at least one valid grid cell")
+    identity = {"parent": parent_region, "grid_size": grid_size, "cells": ids}
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return f"{parent_region}/meshblocks-{digest[:16]}"
+    return f"{parent_region}/grid-{digest[:16]}"
 
 
-def select_buildings(outlines: dict, all_meshblocks: list[dict],
+def select_buildings(outlines: dict, grid_cells: list[dict],
                      selected_ids: list[str]) -> dict:
-    """Keep whole outlines assigned deterministically to selected blocks."""
+    """Keep whole outlines assigned deterministically to selected grid cells."""
     import pyproj
     from shapely.geometry import shape
     from shapely.ops import transform
@@ -43,15 +51,15 @@ def select_buildings(outlines: dict, all_meshblocks: list[dict],
     transform_to_nztm = pyproj.Transformer.from_crs(
         "EPSG:4326", "EPSG:2193", always_xy=True).transform
     blocks = []
-    for feature in all_meshblocks:
+    for feature in grid_cells:
         props = feature.get("properties") or {}
-        block_id = str(props.get("meshblock_id") or "")
+        block_id = str(props.get("grid_id") or "")
         geometry = feature.get("geometry")
         if block_id and geometry:
             blocks.append((block_id, transform(transform_to_nztm, shape(geometry))))
     blocks.sort(key=lambda item: item[0])
     if not selected.issubset({block_id for block_id, _ in blocks}):
-        raise ValueError("one or more selected meshblocks are not in the resolved parent boundaries")
+        raise ValueError("one or more selected areas are not in the resolved parent boundary")
 
     features = []
     for feature in outlines.get("features", []):
@@ -88,7 +96,7 @@ def acquisition_footprints(outlines: dict, buffer_m: float = localities.OUTLINE_
     return sorted(footprints, key=lambda bbox: (bbox[0], bbox[1]))
 
 
-def _selection_outlines(parent: str, meshblocks: list[dict], selected_ids: list[str],
+def _selection_outlines(parent: str, areas: list[dict], selected_ids: list[str],
                         api_key: str, timing_path: Path) -> tuple[dict, dict]:
     import config
     import pyproj
@@ -103,12 +111,12 @@ def _selection_outlines(parent: str, meshblocks: list[dict], selected_ids: list[
             "EPSG:4326", "EPSG:2193", always_xy=True).transform
         selected_polygons = [
             transform(to_nztm, shape(feature["geometry"]))
-            for feature in meshblocks
-            if str((feature.get("properties") or {}).get("meshblock_id")) in selected_ids
+            for feature in areas
+            if str((feature.get("properties") or {}).get("grid_id")) in selected_ids
             and feature.get("geometry")
         ]
         if not selected_polygons:
-            raise ValueError("selected meshblock geometries are missing")
+            raise ValueError("selected grid cell geometries are missing")
 
         union = unary_union(selected_polygons)
         components = list(union.geoms) if hasattr(union, "geoms") else [union]
@@ -119,34 +127,47 @@ def _selection_outlines(parent: str, meshblocks: list[dict], selected_ids: list[
             cql = f"{locality_filter} AND BBOX(shape,{x0},{y0},{x1},{y1},'EPSG:2193')"
             for feature in localities._wfs(api_key, config.LINZ_BUILDING_OUTLINES_LAYER,
                                            cql, timeout=600):
-                identity = (feature.get("properties") or {}).get("id")
+                identity = _building_identity(feature)
                 if identity is not None:
                     candidates[str(identity)] = feature
         outlines = {
             "type": "FeatureCollection", "features": list(candidates.values()),
             "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::2193"}},
         }
-        selected_outlines = select_buildings(outlines, meshblocks, selected_ids)
+        selected_outlines = select_buildings(outlines, areas, selected_ids)
         if not selected_outlines["features"]:
-            raise ValueError("the selected meshblocks contain no LINZ building outlines")
+            raise LookupError(
+                "no LINZ building outlines were found in the selected grid cells; "
+                "choose cells containing buildings")
         return parent_props, selected_outlines
 
 
 def materialise(request_path: Path, data: Path, api_key: str) -> dict:
-    """Fetch only selected meshblock footprints and persist one resumable build area."""
+    """Fetch only selected grid-cell footprints and persist one resumable build area."""
+    from src.region_build import write_json_atomic
+
     try:
         request = json.loads(Path(request_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         request = None
     if not isinstance(request, dict):
-        raise ValueError("meshblock selection request is missing or invalid")
+        raise ValueError("area selection request is missing or invalid")
     parent = region_ids.validate(request.get("parent_region"))
     if not region_ids.is_locality_id(parent):
-        raise ValueError("meshblock selections require a locality parent")
-    dataset = request.get("dataset") or {}
-    meshblocks = request.get("meshblocks") or []
-    selected_ids = sorted(set(request.get("meshblock_ids") or []))
-    selected_id = selection_id(parent, selected_ids, dataset)
+        raise ValueError("area selections require a locality parent")
+    grid_size = request.get("grid_size")
+    try:
+        grid_size = int(grid_size)
+    except (TypeError, ValueError):
+        raise ValueError("grid_size must be from 2 through 10") from None
+    if not 2 <= grid_size <= 10:
+        raise ValueError("grid_size must be from 2 through 10")
+    areas = request.get("areas") or []
+    selected_ids = sorted(set(request.get("grid_ids") or []))
+    try:
+        selected_id = selection_id(parent, selected_ids, grid_size)
+    except ValueError as exc:
+        raise ValueError(f"area selection is invalid: {exc}") from None
     area_dir = Path(data) / "regions" / selected_id
     selection_path = area_dir / "selection.json"
     try:
@@ -165,27 +186,27 @@ def materialise(request_path: Path, data: Path, api_key: str) -> dict:
 
     import config
     parent_props, selected_outlines = _selection_outlines(
-        parent, meshblocks, selected_ids, api_key, area_dir / "acquisition_timings.json")
+        parent, areas, selected_ids, api_key, area_dir / "acquisition_timings.json")
     from shapely.geometry import mapping, shape
     from shapely.ops import unary_union
     bbox = localities.outlines_bbox_wgs84(selected_outlines)
     footprints = acquisition_footprints(selected_outlines)
-    selected_features = [f for f in meshblocks
-                         if str((f.get("properties") or {}).get("meshblock_id")) in selected_ids]
+    selected_features = [f for f in areas
+                         if str((f.get("properties") or {}).get("grid_id")) in selected_ids]
     if len(selected_features) != len(selected_ids):
-        raise ValueError("one or more selected meshblock boundaries are missing")
+        raise ValueError("one or more selected area boundaries are missing")
 
     selection_geometry = mapping(unary_union([shape(f["geometry"]) for f in selected_features]))
     manifest = {
         "selection_id": selected_id,
         "parent_region": parent,
         "parent_linz_id": request["parent_linz_id"],
-        "meshblock_ids": selected_ids,
-        "dataset": dataset,
+        "grid_size": grid_size,
+        "grid_ids": selected_ids,
         "geometry": selection_geometry,
         "building_selection_rule": OWNERSHIP_RULE,
         "buildings": len(selected_outlines["features"]),
-        "building_ids": sorted(str((f.get("properties") or {}).get("id"))
+        "building_ids": sorted(str(_building_identity(f))
                                for f in selected_outlines["features"]),
         "bbox": bbox, "acquisition_footprints": footprints,
     }
@@ -200,10 +221,8 @@ def materialise(request_path: Path, data: Path, api_key: str) -> dict:
         "bbox_note": "Selected building extent plus the locality outline buffer",
         "bbox_km2": round(localities.bbox_km2(bbox), 2),
         "parent_region": parent,
-        "meshblock_selection": {
-            "selection_id": selected_id, "meshblock_count": len(selected_ids),
-            "dataset": dataset,
-        },
+        "area_selection": {"selection_id": selected_id,
+                           "selection_count": len(selected_ids)},
         "prepared_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     area_dir.mkdir(parents=True, exist_ok=True)

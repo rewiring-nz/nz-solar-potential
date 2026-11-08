@@ -51,7 +51,8 @@ LINZ_API_KEY=your-key
 ```
 
 `.env` sits beside `config.py` and Git ignores it. Never commit the key or
-paste it into issues or chat.
+paste it into issues or chat. The web pipeline's optional locality grid uses
+the LINZ boundary and needs no additional API key or dataset.
 
 VS Code may say terminal environment injection is disabled. Ignore it: the
 fetch scripts read `.env` themselves.

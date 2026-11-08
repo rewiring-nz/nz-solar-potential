@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+EXPORT_CREATE_TIMEOUT_S = 120
 
 
 def fetch_building_outlines(bbox_nztm2000, api_key, layer_id=config.LINZ_BUILDING_OUTLINES_LAYER):
@@ -87,7 +88,16 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
     }
     headers = {"Authorization": f"key {api_key}", "Content-Type": "application/json"}
 
-    resp = requests.post("https://data.linz.govt.nz/services/api/v1/exports/", headers=headers, json=body, timeout=30)
+    try:
+        resp = requests.post("https://data.linz.govt.nz/services/api/v1/exports/",
+                             headers=headers, json=body, timeout=EXPORT_CREATE_TIMEOUT_S)
+    except requests.Timeout:
+        raise RuntimeError(
+            f"LINZ export creation timed out after {EXPORT_CREATE_TIMEOUT_S} seconds "
+            f"for layer {layer_id} ({name}). Retry the build; completed rasters are "
+            "reused. The request is not automatically repeated because LINZ may "
+            "have created the export before the response timed out."
+        ) from None
     if resp.status_code == 401:
         raise SystemExit(
             "401 from the LINZ Exports API: this LINZ_API_KEY may use the web "

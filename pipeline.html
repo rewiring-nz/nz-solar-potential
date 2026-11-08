@@ -100,12 +100,19 @@
       <div id="search-results"></div>
       <p class="muted">Choose a suburb/locality as the parent area (the council is shown for context), or zoom in (level 10 or closer) and click areas on the map.</p>
       <div id="selection"></div>
-      <p><button class="small" id="meshblock-btn" disabled>Choose meshblocks for this locality</button></p>
-      <div id="meshblock-controls" hidden>
-        <p class="muted">Meshblock boundaries are Stats NZ 2023 generalised; the locality boundary remains the parent area.</p>
-        <button class="small" id="meshblock-all">Select all</button>
-        <button class="small" id="meshblock-none">Deselect all</button>
-        <span id="meshblock-count" class="muted"></span>
+      <p><button class="small" id="grid-btn" disabled>Choose grid cells</button></p>
+      <div id="grid-controls" hidden>
+        <p class="muted">Select cells from a grid over the locality boundary.</p>
+        <label id="grid-size-row" hidden>Grid divisions per side
+          <select id="grid-size">
+            <option>2</option><option>3</option><option selected>4</option>
+            <option>5</option><option>6</option><option>7</option>
+            <option>8</option><option>9</option><option>10</option>
+          </select>
+        </label>
+        <button class="small" id="grid-all">Select all</button>
+        <button class="small" id="grid-none">Deselect all</button>
+        <span id="grid-count" class="muted"></span>
       </div>
       <p><button class="primary" id="estimate-btn" disabled>Estimate</button></p>
       <div id="estimate"></div>

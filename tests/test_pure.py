@@ -252,6 +252,38 @@ def test_export_cleanup_never_raises():
         assert reclaim(Path("/nonexistent/x.zip"), Path("/nonexistent/d"), m) == 0
 
 
+def test_raster_export_creation_allows_slow_linz_responses():
+    from unittest.mock import Mock, patch
+    from src import fetch_data
+    response = Mock(status_code=401)
+    with patch.object(fetch_data.requests, "post", return_value=response) as post:
+        try:
+            fetch_data.fetch_raster([168.6, -45.1, 168.7, -45.0], "test-key", 123, "dsm")
+        except SystemExit as exc:
+            assert "export/download" in str(exc)
+        else:
+            raise AssertionError("export permission refusal was ignored")
+    assert post.call_args.kwargs["timeout"] == 120
+    assert post.call_count == 1
+
+
+def test_raster_export_creation_timeout_is_actionable_and_not_retried():
+    from unittest.mock import patch
+    from src import fetch_data
+    with patch.object(fetch_data.requests, "post",
+                      side_effect=fetch_data.requests.ReadTimeout("test-key")) as post:
+        try:
+            fetch_data.fetch_raster([168.6, -45.1, 168.7, -45.0], "test-key", 123, "dsm")
+        except RuntimeError as exc:
+            message = str(exc)
+            assert "120 seconds" in message and "layer 123 (dsm)" in message
+            assert "Retry the build" in message and "not automatically repeated" in message
+            assert "test-key" not in message
+        else:
+            raise AssertionError("export timeout was ignored")
+    assert post.call_count == 1
+
+
 def test_wide_dem_bbox_has_requested_metric_buffer():
     import pyproj
     from src.fetch_dem_wide import wide_dem_bbox_wgs84
