@@ -88,8 +88,10 @@ EDGE_GAP_KEEP_FRACTION = float(os.environ.get("SOLAR_EDGE_GAP_KEEP", "0.75"))
 # count came back. Measured on 160 rectangular pitched faces over 6 panels,
 # the effect is small: the wide gap reached the framed layout on 107 of them,
 # and 110 with SOLAR_FRAME_TIGHT=1, which scores phases at the tight gaps and
-# decides the edge gap once, at the chosen phase.
-FRAME_TIGHT = os.environ.get("SOLAR_FRAME_TIGHT", "0") == "1"
+# decides the edge gap once, at the chosen phase. On by default: with
+# SOLAR_FRAME_MARKUP, judged blind on the 26 pilot roofs the pair changes:
+# better on 4, worse on 1, the same or unsure on 18 (9 Nov).
+FRAME_TIGHT = os.environ.get("SOLAR_FRAME_TIGHT", "1") == "1"
 SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least this many more
 # panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
 # with facet size, so it blocked a genuine extra row on a small roof while waving through a

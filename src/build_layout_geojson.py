@@ -561,7 +561,8 @@ def _build_one_at(building_id, nudge_m):
             # take panels, around the drawn obstructions and fold lines, so a
             # gable's sunny side is not racked to suit its shady side or a face
             # marked "no panels here", and the markup governs the grid too.
-            if os.environ.get("SOLAR_FRAME_MARKUP", "0") == "1":
+            # On by default since the blind check noted in panel_fitting.
+            if os.environ.get("SOLAR_FRAME_MARKUP", "1") == "1":
                 _counted = [f for f in facets if not f.get("no_panel")
                             and not away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest)]
                 _fobs, _fko = None, None
