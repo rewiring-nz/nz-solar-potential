@@ -3300,6 +3300,16 @@ map.on("load", async () => {
   // they come. A new move abandons the old queue. Markers are kept by roof
   // and reused, not rebuilt on every refresh.
   const MONEY_SLICE_MS = 8;
+  // The next slice is posted as a MessageChannel message, not setTimeout(0):
+  // a chain of timeouts is throttled (measured 72 ms a step on the live map
+  // in Chrome, against 0.02 ms for a message), which made a screen of 230
+  // roofs take 27 s to price at about 15 ms of work each. A message is still
+  // its own task, so the map draws between slices.
+  const moneyNext = (() => {
+    const ch = new MessageChannel(), q = [];
+    ch.port1.onmessage = () => { const f = q.shift(); if (f) f(); };
+    return f => { q.push(f); ch.port2.postMessage(0); };
+  })();
   let moneyJob = 0;
   const moneyById = new Map();   // building id -> {marker, el, net}
   function moneyPill(id, at, net) {
@@ -3376,7 +3386,7 @@ map.on("load", async () => {
       const t0 = performance.now();
       while (i < want.length && performance.now() - t0 < MONEY_SLICE_MS) price(want[i++]);
       total(want.length - i);
-      if (i < want.length) setTimeout(slice, 0);
+      if (i < want.length) moneyNext(slice);
     };
     slice();
   }
