@@ -213,6 +213,16 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Ship
 
+- **Finding bad layouts automatically: not solved.** `tools/layout_faults.py`
+  measures each served roof against LINZ's open LiDAR (panels off their
+  array's plane, over open air, faces that misfit the surface) and for
+  implausible face shapes. Against the owner's blind scores on the 40 random
+  v72 roofs, the LiDAR measures predict nothing useful (the build fits to
+  the same LiDAR; the faults seen are against the photo). Face shape looked
+  promising on those 40 but failed on the 25 frame-fix roofs. Options:
+  a vision-model referee on the review renders, calibrated on the 65 scored
+  roofs (paid; ask first), or more blind scores before another detector.
+
 - **The roof set: get 100 roofs right, then scale.** `data/roof_set.json`
   (`tools/make_roof_set.py`): 100 development roofs (35 flagged, 9 from the
   v68 render review, 25 new of the failing kinds, 31 already drawn) and 30
