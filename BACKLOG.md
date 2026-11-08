@@ -219,9 +219,13 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   implausible face shapes. Against the owner's blind scores on the 40 random
   v72 roofs, the LiDAR measures predict nothing useful (the build fits to
   the same LiDAR; the faults seen are against the photo). Face shape looked
-  promising on those 40 but failed on the 25 frame-fix roofs. Options:
-  a vision-model referee on the review renders, calibrated on the 65 scored
-  roofs (paid; ask first), or more blind scores before another detector.
+  promising on those 40 but failed on the 25 frame-fix roofs.
+  A vision referee (`tools/layout_referee.py`, Opus 5.5 at low effort,
+  about $0.006 a render) tracks the owner better and held up on the
+  second set: rank correlation 0.47 and AUC 0.71 on the 40, AUC 0.65 on
+  the 50 frame-fix drawings. It is harsher than the owner and over-tags
+  outline and missed. Next: show it the plain photo beside the drawing,
+  try medium effort, then decide whether to screen the district with it.
 
 - **The roof set: get 100 roofs right, then scale.** `data/roof_set.json`
   (`tools/make_roof_set.py`): 100 development roofs (35 flagged, 9 from the
