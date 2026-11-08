@@ -446,5 +446,11 @@ check("a battery exports spare charge at peak, and fades 2% a year", () => {
   near(sv[14].saving / s0[14].saving, sv[0].saving / s0[0].saving, 1e-9, "the replacement starts new");
 });
 
+check("an estimated bill is rounded; an entered one is shown as entered", () => {
+  const got = [B.btBillShown(153.4, false), B.btBillShown(2348, false), B.btBillShown(12480, false), B.btBillShown(2348, true)];
+  const want = [150, 2300, 12000, 2348];
+  if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`${got} != ${want}`);
+});
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) process.exit(1);

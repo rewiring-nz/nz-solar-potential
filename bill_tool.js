@@ -1189,7 +1189,7 @@ function btYearCsv(year) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { btBillMonths, btExtremeMonth, BT_PICK, btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
+  module.exports = { btBillMonths, btExtremeMonth, BT_PICK, btBillShown, btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
                      btYearHours, btBlendYear, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
 }
@@ -1496,6 +1496,14 @@ function btNetShown(save, repay, repl) {
 }
 // `step` forces one rounding step on figures shown as a sum, so the parts
 // on screen add up to the total on screen.
+// A bill in the "today" field: one you entered exactly as entered; an
+// estimate rounded like every other modelled dollar figure (btMoneyStep:
+// $10 under $1,000, $100 under $10,000, $1,000 above). The estimate rests on
+// averages for the building type and size, not the building's own meter, so
+// exact dollars would claim an accuracy it does not have.
+function btBillShown(v, entered) {
+  return entered ? Math.round(v) : btRoundMoney(v);
+}
 function btMoney(v, step) {
   const r = btRoundMoney(v, step);
   const s = "$" + Math.abs(r).toLocaleString();
@@ -1756,7 +1764,7 @@ function renderBillTool(box, ctx) {
     const val = (text, sub) => `<span class="val"><b>${text}</b>${sub ? ` ${sub}` : ""}</span>`;
     const billIn = s => {
       const mine = state.calib && !state.calib.total && state.calib[s] > 0;
-      return field(`bill-${s}`, Math.round(S[s].nowMonth.value), `min="0" step="10" data-bill="${s}" aria-label="${s} bill today, dollars a month"`, "$", "", !mine);
+      return field(`bill-${s}`, btBillShown(S[s].nowMonth.value, mine), `min="0" step="10" data-bill="${s}" aria-label="${s} bill today, dollars a month"`, "$", "", !mine);
     };
     // the corner card's bill rows: today's bill is typed in right there;
     // the with-solar bill opens how it is worked out
@@ -1766,7 +1774,7 @@ function renderBillTool(box, ctx) {
     const billPair = (s, label) => {
       const mine = state.calib && !state.calib.total && state.calib[s] > 0;
       return `<div class="sx-row sx-billrow"><span class="lbl">${label}</span>` +
-        field(`billq-${s}`, Math.round(BM[s].now.value), `min="0" step="10" data-bill="${s}" aria-label="${label}, today, dollars a month"`, "$", "", !mine) +
+        field(`billq-${s}`, btBillShown(BM[s].now.value, mine), `min="0" step="10" data-bill="${s}" aria-label="${label}, today, dollars a month"`, "$", "", !mine) +
         `<span class="sx-arrow" aria-hidden="true">→</span>` + afterBill(s) + `</div>`;
     };
     const afterBill = s => {
