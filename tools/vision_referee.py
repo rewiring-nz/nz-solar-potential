@@ -43,9 +43,9 @@ CACHE = Path.home() / "ab" / "referee"
 PX = 384
 CELL_M = 0.25
 MAX_CANDS = 4
-# USD per million tokens, input / output (Sonnet-class); used only for the
-# run's own budget stop, which errs high
-PRICE = {"claude-sonnet-5-5": (3.0, 15.0), "claude-opus-5-5": (15.0, 75.0), "claude-haiku-5-5": (1.0, 5.0)}
+# USD per million tokens, input / output (list prices); used only for the
+# run's own budget stop
+PRICE = {"claude-sonnet-5-5": (2.0, 10.0), "claude-opus-5-5": (4.0, 20.0), "claude-haiku-5-5": (0.1, 0.5)}
 LETTERS = "ABCDEFG"
 
 
@@ -213,13 +213,16 @@ def _b64(im):
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def ask(client, model, images):
+def ask(client, model, images, effort=None):
     content = [{"type": "text", "text": PROMPT}]
     for label, im in images:
         content.append({"type": "text", "text": "Reference:" if label == "reference" else f"Drawing {label}:"})
         content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": _b64(im)}})
-    r = client.messages.create(model=model, max_tokens=700, messages=[{"role": "user", "content": content}])
-    text = r.content[0].text.strip()
+    # Thinking models return thinking blocks before the answer, and their
+    # thinking counts against max_tokens: read the text block, leave room.
+    extra = {"output_config": {"effort": effort}} if effort else {}
+    r = client.messages.create(model=model, max_tokens=16000, messages=[{"role": "user", "content": content}], **extra)
+    text = next((b.text for b in r.content if b.type == "text"), "").strip()
     try:
         ans = json.loads(text[text.rindex("{"):text.rindex("}") + 1])
         ans["reasoning"] = text[:text.rindex("{")].strip()[:1500]
@@ -261,7 +264,7 @@ def cmd_run(a):
             print(f"budget reached (${spent:.2f}); stopping"); break
         try:
             ims = render(bid, region, cands, names, pc=pc)
-            ans, tin, tout = ask(client, a.model, ims)
+            ans, tin, tout = ask(client, a.model, ims, a.effort)
         except Exception as e:
             print(bid, "error", repr(e)[:200]); continue
         cost = tin / 1e6 * pin + tout / 1e6 * pout
@@ -313,6 +316,7 @@ def main():
     u = sub.add_parser("run"); u.add_argument("--cands", default=str(CANDS))
     u.add_argument("--tag", default="", help="cache name prefix, to keep runs apart")
     u.add_argument("--max-usd", type=float, default=5.0); u.add_argument("--model", default="claude-sonnet-5-5")
+    u.add_argument("--effort", choices=["low", "medium", "high"], help="output_config effort (thinking models)")
     s = sub.add_parser("score"); s.add_argument("--cands", default=str(CANDS))
     s.add_argument("--oracle", default=str(Path.home() / "ab" / "oracle2.json")); s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--tag", default="")
