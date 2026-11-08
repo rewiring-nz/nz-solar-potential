@@ -36,3 +36,8 @@ def test_solar_is_not_an_obstruction(tmp_path, monkeypatch):
 def test_void_flag_ignores_solar(tmp_path, monkeypatch):
     _labels(tmp_path, monkeypatch, {"lines": [], "obstructions": [SOLAR], "problem": "absent"})
     assert rls.drawn_solar_polys(1) == []
+
+
+if __name__ == "__main__":
+    from tests.fixture_runner import run
+    run(globals())

@@ -201,6 +201,7 @@ def main():
                 "complete": bool(v.get("complete")),
                 "problem": v.get("problem"),
                 "outline": v.get("outline"),
+                "olines": v.get("olines") or [],
             }
 
     truth = {}

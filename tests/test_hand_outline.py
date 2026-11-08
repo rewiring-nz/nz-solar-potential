@@ -53,3 +53,8 @@ def test_void_flag_ignores_outline(tmp_path, monkeypatch):
     _with_labels(tmp_path, monkeypatch,
                  {"1": {"lines": [], "outline": DRAWN, "problem": "absent"}})
     assert rls.hand_outline(1) is None
+
+
+if __name__ == "__main__":
+    from tests.fixture_runner import run
+    run(globals())

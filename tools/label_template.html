@@ -421,7 +421,8 @@ ROOFS.forEach(r=>{
                  && !(loc.nopanel||[]).length && !loc.problem && !loc.outline)){
     data[r.id] = {lines: r.saved.lines||[], obstructions: r.saved.obstructions||[],
                   nopanel: r.saved.nopanel||[], complete: !!r.saved.complete,
-                  problem: r.saved.problem||null, outline: r.saved.outline||null};
+                  problem: r.saved.problem||null, outline: r.saved.outline||null,
+                  olines: r.saved.olines||[]};
   }
 });
 let pending=null, drag=null, sel=null, shift=false, space=false;
@@ -1545,6 +1546,9 @@ document.getElementById("download").onclick=()=>{
       out.buildings[r.id]={area:r.area,address:r.address,
         // a drawn outline replaces the surveyed one in the build
         ...(d.outline ? {outline:d.outline} : {}),
+        // the single outline lines the drawn outline was cut from, so a
+        // re-opened roof can still add or remove a part along them
+        ...((d.olines||[]).length ? {olines:d.olines} : {}),
         lines:(d.lines||[]).map(l=>({...l, points:[l.a, l.b]})),
         obstructions:(d.obstructions||[]).map(o=>({...o, ring:obsRing(o)})),
         nopanel:d.nopanel||[], complete:!!d.complete, problem:d.problem||null,
