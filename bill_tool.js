@@ -1325,6 +1325,14 @@ const BT_CSS = `
 .sx-pc:focus-within { box-shadow: 0 0 0 2px var(--sx-tint); }
 .sx-pc small { font-size: 11px; color: var(--sx-ink-2); white-space: nowrap; }
 .sx-billrow .sx-field input { width: 52px; }
+/* The group is assumptions the reader should check, so it is headed in
+   light red and today's bills, the figure most worth replacing with their
+   own, carry the same tint (dark red type keeps 7:1 contrast on it). */
+.sx-assume-bar { background: #fde2e2; color: #8a1c1c; font-size: 11.5px; font-weight: 650; letter-spacing: .01em;
+  padding: 6px 14px; }
+.sx-billrow .sx-field { background: #fde2e2; color: #8a1c1c; }
+.sx-billrow .sx-field input, .sx-billrow .sx-field.est input { color: #5f1212; }
+.sx-billrow .sx-field:focus-within { box-shadow: 0 0 0 2px #e05a5a; }
 .sx-arrow { color: var(--sx-ink-3); }
 .sx-billrow .after { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin-right: -6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sx-billrow .after:hover, .sx-billrow .after:focus-visible { background: rgba(255,255,255,.05); outline: none; }
@@ -1864,6 +1872,8 @@ function renderBillTool(box, ctx) {
       (haveGen ? "" : `<div class="sx-foot">Loading this roof's sun&hellip;</div>`) +
       // the corner card's few key facts (shown only while compact)
       `<div class="sx-group sx-glance">` +
+        // a bar across the top of the group: these are assumptions to check
+        (haveGen ? `<div class="sx-assume-bar">Energy use and bill assumptions</div>` : "") +
         (haveGen ? billHead + billPair("winter", "Your highest winter bill") + billPair("summer", "Your lowest summer bill") : "") +
         // THE PRICES THIS BUILDING IS PRICED AT, editable in place: five
         // numbers, no prose. A home shows its area's home prices, a business

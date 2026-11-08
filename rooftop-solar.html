@@ -622,6 +622,16 @@
   #bldg-sys-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff;
     border: 2px solid #16181d; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
   .sys-note { font-size: 11.5px; line-height: 1.4; color: rgba(235,235,245,.55); margin-top: 7px; }
+  /* Inside the yellow box: the system's size is set where it is shown, in the
+     box's own black-on-yellow. */
+  .rsp-statbox .sys-size { background: none; margin: 8px 0 0; padding: 0; text-align: left; }
+  .rsp-statbox .sys-head, html.light .rsp-statbox .sys-head { font-size: 11.5px; color: rgba(22,24,29,.86); margin-bottom: 5px; }
+  .rsp-statbox .sys-head label, html.light .rsp-statbox .sys-head label { color: #16181d; }
+  .rsp-statbox #bldg-sys-slider { height: 6px;
+    background: linear-gradient(to right, #16181d 0 calc(var(--fill, 50) * 1%), rgba(22,24,29,.2) calc(var(--fill, 50) * 1%) 100%); }
+  .rsp-statbox #bldg-sys-slider:focus-visible { outline-color: #16181d; }
+  .rsp-statbox .sys-note, html.light .rsp-statbox .sys-note { color: rgba(22,24,29,.86); margin-top: 5px; text-align: center; }
+  .rsp-statbox .auto-reset, html.light .rsp-statbox .auto-reset { background: rgba(22,24,29,.1); border-color: rgba(22,24,29,.35); color: #16181d; }
   .auto-reset { background: rgba(255,176,0,.14); border: 1px solid rgba(255,176,0,.45); color: #ffb000;
     border-radius: 999px; padding: 1px 8px; margin-right: 6px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
   .auto-reset:hover { background: rgba(255,176,0,.26); }
@@ -5112,6 +5122,11 @@ map.on("load", async () => {
           <div class="rsp-statbox">
             <div class="rsp-power"><span id="bldg-fitted-power">&ndash;</span><span class="rsp-count" id="bldg-fitted-panels">&ndash;</span></div>
             <div class="rsp-energy" id="bldg-fitted-energy">&ndash;</div>
+            <div class="sys-size" id="bldg-sys" hidden>
+              <div class="sys-head"><label for="bldg-sys-slider">System size</label><span id="bldg-sys-val"></span></div>
+              <input type="range" id="bldg-sys-slider" min="0" max="1" step="1" value="1">
+              <div class="sys-note" id="bldg-sys-note"></div>
+            </div>
           </div>
           <div class="sba-cap"><span id="bldg-density-note">${panelDensityPct}%</span> panel density &middot; set with the slider</div>
           <div class="rsp-assumption" id="bldg-unmodelled" style="display:none;"></div>
@@ -5120,11 +5135,6 @@ map.on("load", async () => {
         <div class="live-view" id="bldg-live" role="img" aria-label="Live view of this roof"></div>
         </div>
         <div id="bldg-saving" hidden></div>
-        <div class="sys-size" id="bldg-sys" hidden>
-          <div class="sys-head"><label for="bldg-sys-slider">System size</label><span id="bldg-sys-val"></span></div>
-          <input type="range" id="bldg-sys-slider" min="0" max="1" step="1" value="1">
-          <div class="sys-note" id="bldg-sys-note"></div>
-        </div>
         <div id="bldg-econ" style="display:none;"></div>
         <div id="card-horizon-wrap" hidden>
           <div class="sba-h3">The horizon from this roof</div>
