@@ -845,6 +845,12 @@
     color: #fff; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1;
   }
   .side-panel-close:hover { background: rgba(255,255,255,0.2); }
+  .side-panel-share { right: 42px; display: grid; place-items: center; padding: 0; }
+  .share-note { position: absolute; top: 42px; right: 10px; z-index: 3; background: #0a1f44; color: #fff;
+    font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+  .share-note label { display: grid; gap: 4px; }
+  .share-note input { width: min(320px, 70vw); font: 12px/1.3 ui-monospace, Menlo, monospace; padding: 4px 6px;
+    border: 0; border-radius: 4px; color: #111; background: #fff; }
   .side-panel .popup h4 { color: var(--ink); padding-right: 34px; font-size: var(--fs-title);
     font-weight: 700; letter-spacing: -0.2px; margin: 0 0 2px; }
   .side-panel .popup .assumptions { color: #bbb; border-top-color: rgba(255,255,255,0.15); max-width: none; }
@@ -1441,7 +1447,9 @@
   <!-- ONE CARD: the second column (the expanded view) is gone; its controls
        live in the card, collapsed. The button stays for the scripts, hidden. -->
   <button class="side-panel-close" id="side-panel-expand" hidden style="display:none" aria-hidden="true" tabindex="-1">&#8599;</button>
+  <button class="side-panel-close side-panel-share" id="side-panel-share" title="Copy a link to this roof" aria-label="Copy a link to this roof"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg></button>
   <button class="side-panel-close" id="side-panel-close" title="Close">&times;</button>
+  <div class="share-note" id="share-note" role="status" hidden></div>
   <div id="side-panel-content"></div>
 </div>
 <button class="mobile-details-tab" id="mobile-details-tab">Building details &#9650;</button>
@@ -5132,6 +5140,7 @@ map.on("load", async () => {
           <div class="sba-h3">The horizon from this roof</div>
           <div id="card-horizon"></div>
         </div>
+        <div id="card-seasons" hidden></div>
         <button type="button" class="sba-resilience" onclick="window.__openResilience && window.__openResilience()">
           <span class="rs-ic" aria-hidden="true">&#9728;&#xFE0E;</span><span>Resilience Analysis<small>How many days in a row this building may go without solar, going back decades.</small></span>
           <span aria-hidden="true">&rsaquo;</span></button>
@@ -5684,6 +5693,7 @@ map.on("load", async () => {
             kwp: kwp, kwpNode: GEN.kwp, genNode: GEN.gen,
             moreBox: el("bill-more"),
             saveBox: el("bldg-saving"),
+            seasonBox: el("card-seasons"),
             gen: c ? c.gen : null, seasonDays: c ? c.seasonDays : null,
             // prices and money assumptions are the map's one set (econ)
             onEcon: () => window.__applyEcon ? window.__applyEcon() : refresh(),
@@ -6724,6 +6734,127 @@ map.on("load", async () => {
     if (selectedPanelBuildingId !== -1) renderSeasonCurves(selectedPanelBuildingId);
   });
   document.getElementById("side-panel-close").addEventListener("click", clearSelection);
+
+  // ---- shareable links -----------------------------------------------------
+  // The address bar carries the view (?lat=&lng=&z=) and the open roof (&b=),
+  // so a copied URL reopens the same place with the same card. startView()
+  // reads lat/lng/z at load; b is opened below once its tile is drawn.
+  // Embedded (rewiring.nz/every-roof) the visible address bar is the host
+  // page's, which this frame cannot read or set. The map posts each view to
+  // the host; a host running the embed snippet (docs/embedding.md) mirrors it
+  // into its own address bar, forwards its query to the frame on load, and
+  // replies with its URL, which the share button then uses. Without the
+  // snippet the button gives this page's own URL, which works anywhere.
+  const embedded = window.parent !== window;
+  let shareHost = null;
+  const startB = parseInt(new URLSearchParams(location.search).get("b"), 10);
+  let deepLinkPending = startB > 0;
+  function viewQuery(forShare) {
+    const old = new URLSearchParams(location.search);
+    const q = new URLSearchParams();
+    const panelOpen = selectedPanelBuildingId !== -1
+      && document.getElementById("side-panel").classList.contains("visible");
+    let c = map.getCenter(), z = map.getZoom();
+    // A shared roof opens centred, close enough to see its panels.
+    if (forShare && panelOpen && selectedBuildingProps && isFinite(selectedBuildingProps._sx)) {
+      c = { lng: selectedBuildingProps._sx, lat: selectedBuildingProps._sy };
+      z = Math.max(z, 18);
+    }
+    q.set("lat", c.lat.toFixed(5));
+    q.set("lng", c.lng.toFixed(5));
+    q.set("z", z.toFixed(1));
+    if (panelOpen) q.set("b", String(selectedPanelBuildingId));
+    else if (deepLinkPending) q.set("b", String(startB));
+    // Keep anything else in the URL, less the start-location forms the
+    // coordinates now override.
+    for (const [k, v] of old) {
+      if (["lat", "lng", "z", "b", "location"].includes(k)) continue;
+      if (!v && START_LOCATIONS[k.toLowerCase().replace(/[^a-z-]/g, "")]) continue;
+      q.append(k, v);
+    }
+    return "?" + q.toString();
+  }
+  let syncTimer = 0;
+  function syncURL() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      const qs = viewQuery(false);
+      try { history.replaceState(history.state, "", location.pathname + qs + location.hash); } catch (err) { /* sandboxed */ }
+      if (embedded) {
+        try { window.parent.postMessage({ type: "rewiring-solar:view", query: qs }, "*"); } catch (err) { /* no host */ }
+      }
+    }, 400);
+  }
+  map.on("moveend", syncURL);
+  // Opening, closing or switching the card: the panel's class or its content changes.
+  const sync = new MutationObserver(syncURL);
+  sync.observe(document.getElementById("side-panel"), { attributes: true, attributeFilter: ["class"] });
+  sync.observe(document.getElementById("side-panel-content"), { childList: true });
+
+  if (deepLinkPending) {
+    let tries = 0;
+    const openLinked = () => {
+      if (!map.getLayer("buildings-fill")) return;   // its source has not arrived yet
+      const f = map.queryRenderedFeatures({ layers: ["buildings-fill"] })
+        .find(x => x.properties.building_id === startB);
+      if (f) {
+        map.off("idle", openLinked);
+        deepLinkPending = false;
+        const [lng, lat] = ringCentre(f.geometry);
+        selectBuilding(startB);
+        showBuildingPanel(f.properties, { lng, lat }, f.geometry);
+        return;
+      }
+      // Zoomed out, the roof may not be drawn: come in once and look again.
+      if (++tries === 1 && map.getZoom() < 17) { map.jumpTo({ zoom: 18 }); return; }
+      if (tries > 4) { map.off("idle", openLinked); deepLinkPending = false; syncURL(); }
+    };
+    map.on("idle", openLinked);
+  }
+
+  window.addEventListener("message", e => {
+    if (e.source !== window.parent || !e.data || e.data.type !== "rewiring-solar:host") return;
+    try {
+      const u = new URL(e.data.url);
+      if (u.origin === e.origin && /^https?:$/.test(u.protocol)) shareHost = u.origin + u.pathname;
+    } catch (err) { /* not a URL */ }
+  });
+  if (embedded) {
+    try { window.parent.postMessage({ type: "rewiring-solar:hello" }, "*"); } catch (err) { /* no host */ }
+  }
+
+  const shareBtn = document.getElementById("side-panel-share");
+  const shareNote = document.getElementById("share-note");
+  let shareNoteTimer = 0;
+  shareBtn.addEventListener("click", async () => {
+    const url = (shareHost || location.origin + location.pathname) + viewQuery(true);
+    let ok = false;
+    try { await navigator.clipboard.writeText(url); ok = true; } catch (err) { /* blocked in a frame without clipboard-write */ }
+    if (!ok) {
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      ta.remove();
+    }
+    clearTimeout(shareNoteTimer);
+    if (ok) {
+      shareNote.textContent = "Link copied";
+      shareNoteTimer = setTimeout(() => { shareNote.hidden = true; }, 1800);
+    } else {
+      // Nothing could write the clipboard: show the link to copy by hand.
+      shareNote.innerHTML = '<label>Copy this link<input readonly></label>';
+      const inp = shareNote.querySelector("input");
+      inp.value = url;
+      shareNoteTimer = setTimeout(() => { shareNote.hidden = true; }, 15000);
+      requestAnimationFrame(() => { inp.focus(); inp.select(); });
+    }
+    shareNote.hidden = false;
+  });
+
   document.getElementById("mobile-details-tab").addEventListener("click", () => {
     document.getElementById("side-panel").classList.add("expanded");
   });
