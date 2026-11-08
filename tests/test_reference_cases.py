@@ -83,6 +83,9 @@ def panels_on(w, h, slope):
     return fit_panels_on_facet(f)
 
 
+import src.panel_fitting as PF   # noqa: E402
+_gap = PF.EDGE_GAP
+PF.EDGE_GAP = False   # the 0.1 m packing cases; the size-dependent gap is checked below
 case("flat 5 × 3 m face", 4, len(panels_on(5, 3, 0)),
      "0.1 m setback: (5 − 0.2) ÷ 1.134 = 4 across, (3 − 0.2) ÷ 1.961 = 1 row")
 case("flat 10 × 4.4 m face", 16, len(panels_on(10, 4.4, 0)),
@@ -97,8 +100,6 @@ case("every panel inside the face less its setback", True,
      all(box(0.1 - 1e-6, 0.1 - 1e-6, 9.9 + 1e-6, 4.3 + 1e-6).contains(p) for p in P), "0.1 m in from each edge")
 
 # ---- size-dependent edge gap (SOLAR_EDGE_GAP=1) ---------------------------
-import src.panel_fitting as PF   # noqa: E402
-_gap = PF.EDGE_GAP
 PF.EDGE_GAP = True
 case("edge gap: flat 12 × 6.8 m face takes the 0.4 m gap", 27, len(panels_on(12, 6.8, 0)),
      "30 at 0.1 m is over 6, so try 0.4 m: (12 − 0.8) ÷ 1.134 = 9 across, (6.8 − 0.8) ÷ 1.961 = 3 rows "
@@ -112,6 +113,9 @@ case("edge gap: a small 5 × 3 m face keeps the 0.1 m gap", 4, len(panels_on(5, 
      "4 panels at 0.1 m is not over 6, so the wide gap is never tried")
 case("edge gap: an 8 m × 2.1 m (plan) strip at 25° keeps its row", 6, len(panels_on(8, 2.1, 25)),
      "slope length 2.1 ÷ cos 25° = 2.32 m: one row of (8 − 0.2) ÷ 1.134 = 6, not over 6")
+case("edge gap: 6 × 4.2 m (plan) face at 30° takes the wide gap", 8, len(panels_on(6, 4.2, 30)),
+     "10 at 0.1 m; at 0.4/0.4 m (no outline, so edge on all sides): (6 − 0.8) ÷ 1.134 = 4 across, "
+     "(4.85 − 0.8) ÷ 1.961 = 2 rows = 8, keeping 80% ≥ 75%")
 PF.EDGE_GAP = _gap
 
 # ---- the heat map shades the way panels do (src/build_heatmap_raster.py) ------

@@ -357,7 +357,7 @@
    "items": [
     {
      "title": "Laying out panels",
-     "text": "500 W panels (1.134 × 1.961 m) are packed in rows on each face, 0.10 m from edges and ridges, portrait unless landscape fits 40% more. A face pointing away from the sun with less than 78% of the sunniest face's sun is left bare. Stray panels go: an array needs at least 3.",
+     "text": "500 W panels (1.134 × 1.961 m) are packed in rows on each face, 0.10 m from edges and ridges on a small face; a face that fits more than 6 keeps 0.40 m from the roof edge and 0.30 m from ridges, unless that keeps under 75% of its panels. Portrait unless landscape fits 40% more. A face pointing away from the sun with less than 78% of the sunniest face's sun is left bare. Stray panels go: an array needs at least 3.",
      "facts": [
       {
        "label": "Panel",

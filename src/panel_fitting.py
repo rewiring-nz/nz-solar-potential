@@ -66,7 +66,7 @@ FLAT_SLOPE_DEG = float(os.environ.get("SOLAR_FLAT_SLOPE_DEG", "5.0"))  # below t
 # landscape across the slope. Above 5 degrees a LiDAR face's slope direction is real (half a metre
 # of fall over 6 m), and installers rack it as pitched: rails along the eave, portrait up the slope.
 FACET_RECTANGULARITY_MIN = 0.7  # facet area / its own bounding rectangle's area
-EDGE_GAP = os.environ.get("SOLAR_EDGE_GAP", "0") == "1"  # size-dependent edge gap, see below
+EDGE_GAP = os.environ.get("SOLAR_EDGE_GAP", "1") == "1"  # size-dependent edge gap, see below
 EDGE_GAP_WIDE_M = float(os.environ.get("SOLAR_EDGE_GAP_WIDE_M", "0.4"))  # outer-edge gap on a large face
 RIDGE_GAP_WIDE_M = float(os.environ.get("SOLAR_RIDGE_GAP_WIDE_M", "0.3"))  # ridge/hip gap on a large face
 EDGE_GAP_SMALL_PANELS = int(os.environ.get("SOLAR_EDGE_GAP_SMALL_PANELS", "6"))
@@ -79,7 +79,8 @@ EDGE_GAP_KEEP_FRACTION = float(os.environ.get("SOLAR_EDGE_GAP_KEEP", "0.75"))
 # EDGE_GAP_SMALL_PANELS at the tight gaps is packed with the wide gaps, unless
 # the wide gaps keep under EDGE_GAP_KEEP_FRACTION of its panels (a two-row strip
 # losing a row); a small face keeps the tight gaps, so a 2.1 m section that
-# takes one panel still gets it.
+# takes one panel still gets it. Judged blind on the 31 pilot development roofs
+# it changed: preferred on 10, the 0.1 m layout on 4, no difference on 17.
 SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least this many more
 # panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
 # with facet size, so it blocked a genuine extra row on a small roof while waving through a

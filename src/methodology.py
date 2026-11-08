@@ -222,6 +222,14 @@ def values() -> dict:
         "grid_cm": (_fmt(_module_const("src/panel_fitting.py", "RASTER_RESOLUTION_M") * 100, 0),
                     "src/panel_fitting.py RASTER_RESOLUTION_M, in cm"),
         "min_array": M("src/panel_fitting.py", "ARRAY_MIN_PANELS"),
+        "edge_gap_wide_m": (_fmt(_env_default("src/panel_fitting.py", "EDGE_GAP_WIDE_M"), 2),
+                            "src/panel_fitting.py EDGE_GAP_WIDE_M (default)"),
+        "ridge_gap_wide_m": (_fmt(_env_default("src/panel_fitting.py", "RIDGE_GAP_WIDE_M"), 2),
+                             "src/panel_fitting.py RIDGE_GAP_WIDE_M (default)"),
+        "edge_gap_small": (_fmt(int(_env_default("src/panel_fitting.py", "EDGE_GAP_SMALL_PANELS"))),
+                           "src/panel_fitting.py EDGE_GAP_SMALL_PANELS (default)"),
+        "edge_gap_keep_pct": (_fmt(_env_default("src/panel_fitting.py", "EDGE_GAP_KEEP_FRACTION") * 100, 0),
+                              "src/panel_fitting.py EDGE_GAP_KEEP_FRACTION (default), as %"),
         "heat_res_m": M("src/build_heatmap_raster.py", "HR_RES_M", 1),
         "home_cap_kw": (_fmt(_js_const("rooftop-solar.html", r"HOME_SYSTEM_CAP_KW\s*=\s*([\d.]+)")),
                         "rooftop-solar.html HOME_SYSTEM_CAP_KW"),
@@ -378,7 +386,9 @@ STEPS: list[dict] = [
      "items": [
         {"title": "Laying out panels",
          "text": "{panel_w} W panels ({panel_w_m} × {panel_h_m} m) are packed in rows on each face, "
-                 "{edge_setback_m} m from edges and ridges, portrait unless landscape fits {landscape_pct}% more. "
+                 "{edge_setback_m} m from edges and ridges on a small face; a face that fits more than {edge_gap_small} "
+                 "keeps {edge_gap_wide_m} m from the roof edge and {ridge_gap_wide_m} m from ridges, unless that keeps "
+                 "under {edge_gap_keep_pct}% of its panels. Portrait unless landscape fits {landscape_pct}% more. "
                  "A face pointing away from the sun with less than {sun_side_pct}% of the sunniest face's sun is left "
                  "bare. Stray panels go: an array needs at least {min_array}.",
          "facts": [("Panel", "panel_w", " W"), ("Edge setback", "edge_setback_m", " m")],

@@ -166,7 +166,7 @@ A tilted face is unrolled before packing: the up-slope direction is stretched by
 
 ### Clearances
 
-Obstructions and drawn fold lines are cut out first. Then panels keep 0.1 m from the roof edge and 0.1 m from ridges, hips and valleys. A fold gentler than 9° keeps only 0.05 m.
+Obstructions and drawn fold lines are cut out first. Then panels keep 0.1 m from the roof edge and 0.1 m from ridges, hips and valleys. A face that fits more than 6 panels keeps 0.4 m from the roof edge and 0.3 m from ridges instead, because a traced edge is often a few tenths of a metre out and a large array can spare its outer column or row; it falls back to 0.1 m when the wider gap would keep under 75% of the face's panels or change its orientation, so a narrow section still gets its row. A fold gentler than 9° keeps only 0.05 m.
 
 **Source:** `config.py (PANEL_EDGE_SETBACK_M, RIDGE_SETBACK_M) · src/panel_fitting.py`
 
