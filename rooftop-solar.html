@@ -3326,16 +3326,23 @@ map.on("load", async () => {
   function refreshMoneyPills() {
     if (!moneyMode) return;
     const job = ++moneyJob;
-    const want = [];
+    let want = [];
     if (map.getZoom() >= MONEY_MIN_ZOOM) {
       const seen = new Set();
       for (const f of map.queryRenderedFeatures({ layers: ["buildings-fill"] })) {
         const pr = f.properties, id = pr.building_id;
-        if (seen.has(id) || want.length >= MONEY_MAX_PILLS) continue;
+        if (seen.has(id)) continue;
         seen.add(id);
         if (btypesOff.has(pr.btype || "home")) continue;
         want.push({ id, pr, geom: f.geometry });
       }
+      // CENTRE OUT: priced nearest the middle of the view first, where the
+      // eye is; the rendered features come tile by tile, so in their own
+      // order the pills crept in from an edge. The cap keeps the nearest.
+      const mid = map.project(map.getCenter());
+      want.forEach(w => { const q = map.project(ringCentre(w.geom)); w.d = (q.x - mid.x) ** 2 + (q.y - mid.y) ** 2; });
+      want.sort((a, b) => a.d - b.d);
+      want = want.slice(0, MONEY_MAX_PILLS);
     }
     const keep = new Set(want.map(w => w.id));
     moneyById.forEach((p, id) => { if (!keep.has(id)) { p.marker.remove(); moneyById.delete(id); } });
@@ -3361,7 +3368,7 @@ map.on("load", async () => {
       tot.classList.toggle("neg", sum < 0);
       tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
         `<span class="rm-l">net savings, the ${nets.size.toLocaleString()} roof${nets.size === 1 ? "" : "s"} labelled` +
-        `${want.length >= MONEY_MAX_PILLS ? " (the first " + MONEY_MAX_PILLS.toLocaleString() + ")" : ""}</span>`;
+        `${want.length >= MONEY_MAX_PILLS ? " (the " + MONEY_MAX_PILLS.toLocaleString() + " nearest the middle)" : ""}</span>`;
     };
     let i = 0;
     const slice = () => {
