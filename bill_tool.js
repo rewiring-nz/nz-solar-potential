@@ -11,8 +11,9 @@
 //
 // THE MODEL (pure: numbers in, numbers out; tests/test_bill_tool.mjs):
 //   load   = the household's use (EMI: its regional council's average home,
-//            shaped hour by hour and season by season by its town's metered
-//            half-hourly load -- load_profiles.js, tools/build_load_profiles.py)
+//            season by season by its town's metered half-hourly load, hour by
+//            hour by metered homes' periods -- load_profiles.js,
+//            tools/build_load_profiles.py)
 //            plus electric cars; a business, its floor area's use and heating,
 //            shaped across the working day;
 //   solar  = the roof's own average day per season (window.__genProfile, the
@@ -284,7 +285,9 @@ function btBuildLoad(p, opts) {
         btIn(`${BT_CAP(s)} vs the year`, reg.season_factor[s], "×",
           { dp: 2, source: `EMI metered half-hourly load, ${reg.label}, ${BT_EMI_DATA.source.split(";")[0].replace(/^.*Grid_export /, "")}.` })]);
     }
-    shapes.home = reg.shape;
+    // a home's hours: the town's timing at metered homes' period levels
+    // (home_shape; the town's own load also carries shops and hotels)
+    shapes.home = reg.home_shape || reg.shape;
   }
   if (p.type === "business") {
     // one line for the business, not lights and heating apart: its working
@@ -1626,7 +1629,7 @@ function btMethodHtml(r, prof, isBiz) {
   const useParts = isBiz
     ? `${({ business: "A business", industrial: "A workshop or store", school: "A school", hospital: "A medical centre or rest home", community: "A hall, church or club" })[r.load.bizKind || "business"]} uses ${BT_BIZ_KWH_M2[r.load.bizKind || "business"].kwh} kWh per m² of floor a year before heating (at least ${D.biz_min_kwh.toLocaleString()} kWh), spread across the working day. Its floor is its roof area × ${r.load.storeys} storey${r.load.storeys === 1 ? "" : "s"}${r.load.storeys > 1 || r.load.heightKnown ? ", counted from its height in the laser scan" : ""}.`
     : `A home's use is the Electricity Authority's figure for the average home in ${btCouncilKwh(reg).label} (${Math.round(btCouncilKwh(reg).kwh).toLocaleString()} kWh a year, 2025), scaled for ${prof.people} ${prof.people === 1 ? "person" : "people"} against an average of ${BT_AVG_PEOPLE}, and for the size of the house: a roof under 100 m² uses 30% less than a typical one, 100–140 m² 15% less, 220–300 m² 15% more, 300–400 m² 30% more, over 400 m² 50% more. ` +
-      `Each season's day, and how it is spread over the hours, follows the metered half-hourly load of ${reg.label} over the last year (EMI): hot water and heating run when homes actually run them, overnight on ripple control and at the morning and evening peaks.`;
+      `How much a day in each season uses follows the metered load of ${reg.label} over the last year (EMI). How it is spread over the hours follows metered homes (GREEN Grid study): low overnight, a morning peak, a dip in the middle of the day and a larger evening peak.`;
   const heatText = !isBiz ? ""
     : prof.heating === "gas" || prof.heating === "none"
     ? "Rooms are not heated with electricity."

@@ -22,7 +22,7 @@
  * commits the file when the EA has published a new month.
  */
 import { createRequire } from "node:module";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -104,6 +104,25 @@ async function main() {
               (q ? `Queenstown ${q.month}: ${q.variable_c}c -> ${q.peak_c}c peak / ${q.offpeak_c}c off-peak, $${q.daily}/day` : ""));
 }
 
+// --resplit: the EA's prices as already fetched, split again for the current
+// home shape (after load_profiles.js changes), without fetching anything.
+function resplit() {
+  const file = join(ROOT, "regional_prices.js");
+  const { REGIONAL_PRICES: RP } = require(file);
+  const ratio = E.ECON_DEFAULTS.home_peak_c / E.ECON_DEFAULTS.home_offpeak_c;
+  for (const [code, r] of Object.entries(RP.regions)) {
+    const [lat, lon] = REGION_TOWN[code] || [-41.3, 174.8];
+    const share = peakShare(lat, lon);
+    Object.assign(r, { peak_share: Math.round(share * 10000) / 10000 }, splitPrice(r.variable_c, share, ratio));
+  }
+  const head = readFileSync(file, "utf8").split("const REGIONAL_PRICES")[0];
+  writeFileSync(file, head + "const REGIONAL_PRICES = " + JSON.stringify(RP, null, 1) + ";\n" +
+    "if (typeof module !== \"undefined\" && module.exports) module.exports = { REGIONAL_PRICES };\n");
+  const q = RP.regions[34];
+  console.log(`re-split ${Object.keys(RP.regions).length} regions; Queenstown ${q.variable_c}c -> ${q.peak_c}c peak / ${q.offpeak_c}c off-peak (peak share ${q.peak_share})`);
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  main().catch(e => { console.error(e.message); process.exit(1); });
+  if (process.argv.includes("--resplit")) resplit();
+  else main().catch(e => { console.error(e.message); process.exit(1); });
 }

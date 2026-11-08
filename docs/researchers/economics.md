@@ -17,8 +17,10 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
    its regional council (EMI, 2025; Otago 7,829 kWh a year), scaled for how
    many people live there and for the size of the house (by roof area:
    under 100 m² 30% less, 100–140 m² 15% less, 140–220 m² typical,
-   220–300 m² 15% more, 300–400 m² 30% more, over 400 m² 50% more), plus electric cars. Each season's day and its
-   hour-by-hour shape follow the town's metered half-hourly load (EMI). A
+   220–300 m² 15% more, 300–400 m² 30% more, over 400 m² 50% more), plus electric cars. How much each season's day
+   uses follows the town's metered half-hourly load (EMI); its spread over
+   the hours follows metered homes (GREEN Grid study, 2015): low overnight,
+   a morning peak, a midday dip and a larger evening peak. A
    non-home building uses electricity per m² of floor by type (business 100,
    school 35, hospital 150, community 40 kWh/m² a year, at least 6,000 kWh)
    on a floor of roof area × storeys from its LiDAR height, plus heating
