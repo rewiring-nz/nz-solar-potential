@@ -2023,8 +2023,16 @@ const SELECTED_NONE = ["==", ["get", "building_id"], -1];
 // itself stays completely clear.
 const FOCUS_DIM_OPACITY = 0.48;   // 0.30 first, too weak to separate the roof
 const FOCUS_FADE_MS = 420;
-const FOCUS_GAP_M = 2.5;      // clear margin before the ramp starts
-const FOCUS_RAMP_PX = 26;     // width of the blurred edge band
+// The clear area hugs the roof: a wider margin of bright ground around a
+// house with paving or terraces reads as the building's footprint and makes
+// the true outline look shrunken. The ramp is a fixed width in metres, so its
+// inner half (FOCUS_RAMP_M / 2) ends at the roof edge at every zoom.
+const FOCUS_GAP_M = 0.8;      // clear margin before the ramp starts
+const FOCUS_RAMP_M = 1.6;     // width of the blurred edge band, on the ground
+// Metres to screen pixels at this latitude band (Web Mercator at 45 deg S:
+// 110,692 m per tile-pixel at zoom 0), as a zoom expression.
+const focusRampPx = (k) => ["interpolate", ["exponential", 2], ["zoom"],
+  12, k * FOCUS_RAMP_M * 4096 / 110692, 22, k * FOCUS_RAMP_M * 4194304 / 110692];
 
 function ringOutward(ring, metres) {
   // Offset each vertex along the average of its two adjacent edge normals, in
@@ -2990,11 +2998,11 @@ map.on("load", async () => {
   });
   map.addLayer({
     id: "focus-ramp", type: "line", source: "focus-edge",
-    // Half the band sits inside the offset ring, which is already clear of the
-    // roof by FOCUS_GAP_M -- so the ramp darkens the ground around the
-    // building without touching the building itself.
-    paint: { "line-color": "#05070c", "line-width": FOCUS_RAMP_PX,
-             "line-blur": FOCUS_RAMP_PX * 0.8, "line-opacity": 0,
+    // Half the band sits inside the offset ring, which is clear of the roof
+    // by FOCUS_GAP_M (half the band's width) -- so the ramp darkens the
+    // ground around the building without touching the building itself.
+    paint: { "line-color": "#05070c", "line-width": focusRampPx(1),
+             "line-blur": focusRampPx(0.8), "line-opacity": 0,
              "line-opacity-transition": { duration: FOCUS_FADE_MS, delay: 0 } }
   });
 
