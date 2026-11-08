@@ -102,7 +102,11 @@ Guides now live in matching persona subdirectories, with historical notes
 under `docs/ai-agents/archive/`; references follow the moves. Documentation
 maintenance includes removing obsolete code paths and redundant explanations.
 
-Live: data version 69 (2 Nov). 32,838 buildings, 35 regions, 1,300,366
+Live: data version 73 (published 8 Nov). 35 regions, 1,329,375 panels,
+762.2 GWh. Building on the VM: v74, with the size-dependent edge gap on
+(`SOLAR_EDGE_GAP=1`, `src/panel_fitting.py`).
+
+v69 (2 Nov): 32,838 buildings, 35 regions, 1,300,366
 panels (+1,123), 777.0 GWh. Carries the v68 review fixes below (weak shared
 readings compete, copies keep their roof, a tiny sunny side does not bare
 the roof). Built in 10 h 40 min. Gate run on the VM: 0 zeroed, 0 newly
@@ -215,7 +219,7 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   held back at random from the whole map. Marking page:
   https://claude.ai/artifact/RroCQEBj9kA7BntDryKt4V (saves each roof online
   as it is drawn; B shows the build's faces as a reference). 91 roofs need
-  drawing, development roofs first. Next, after v69 is live:
+  drawing, development roofs first. Next:
   - ingest the drawn roofs into `data/roof_labels.json`;
   - give `tools/markup_benchmark.py` a `--set dev|holdout` option and add
     panel checks (installer rules: margins, no panel across a line, whole
@@ -230,22 +234,21 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   - *Demolished buildings still drawn.* Built: the `demolished` stage
     (`src/demolished.py`) screens every outline against both photos and asks
     a vision referee about the 987 it keeps; "gone" or "replaced" withholds
-    the roof with reason `demolished`. Not yet in a build. Before the next
-    one:
+    the roof with reason `demolished`. In every build since v68 (v68
+    withheld 216):
     - All 987 answered ($4.60 in all). 247 would be withheld (194 gone,
       53 replaced), all reviewed on contact sheets and judged right
       (`demolished-review/`, outside the repo). Borderline but kept:
       4736289, 4739163, 4736316. 4728200 and 5370424 have a blank survey
-      photo and were judged on today's photo alone. Ready for the next
-      district build.
+      photo and were judged on today's photo alone.
     - The deploy gate will list them under NEWLY WITHHELD; that drop is
       expected.
   - *Three "nothing is there" labels show a standing building* in both
     photos: 4718482, 4718539, 4744515 (in `config.DEMOLISHED_BUILDING_IDS`,
     so off the map entirely). Check them in the labelling tool.
   - *Identical roofs, different answers.* Fixed in code
-    (`src/repeat_roofs.py`, `SOLAR_REPEAT_ROOFS`, on by default); waits for
-    the next district build.
+    (`src/repeat_roofs.py`, `SOLAR_REPEAT_ROOFS`, on by default); in every
+    build since v68.
     - 6/60 Hallenstein St: the LiDAR shows six of the eight townhouses with
       an 8–10° strip along the north-east edge, 0.7 m higher there and
       falling south-west, so the size slider is right to drop it first. The
@@ -257,16 +260,16 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
     - District: 592 sets of identical roofs, 1,547 buildings. 204 sets keep
       their own readings because the shared one fit the LiDAR worse.
   - *Outline outside the roof edge.* Fixed in code
-    (`src/outline_fit.py`, `SOLAR_OUTLINE_FIT`, on by default); waits for
-    the next district build. 41 Ballarat
+    (`src/outline_fit.py`, `SOLAR_OUTLINE_FIT`, on by default); in every
+    build since v68. 41 Ballarat
     St's outline sits 1.25 m south-east of its LiDAR roof; slid onto it, the
     hips meet at the photo's apex and no panel is over the yard. District:
     853 of 24,138 outlines slide (3.5%, median 0.9 m); 18% in
     town_west_fernhill, where the survey photo agrees with the slide. The
     3D view and the map outline follow the slid outline. Eaves (outline
     the right place, roof wider) are not changed.
-  - *Commercial roofs on Beach St.* Fixed in code, not yet built; needs
-    the next district build and Josh's look.
+  - *Commercial roofs on Beach St.* Fixed in code and in every build
+    since v68; needs Josh's look.
     - 48 Beach St `5370368`: the plant room (3.9 m up, 22 m2) is now an
       obstruction (`STRUCTURE_MIN_M`); 10 panels came off it. Still open:
       small colour blobs on the clear white roof (the small-object
@@ -312,9 +315,6 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   - Coverage kWp uses plan area x kW/m2: low by cos(slope).
   - The region-centre horizon is still a floor under every building's beam
     (the lookup table is built with it).
-- **Install cost falls at each size tier** (`economics.js:124`): 7.99 kW
-  costs more than 8.0 kW. Needs a pricing call: marginal tiers raise every
-  quote; interpolated rates keep the levels.
 - **Misread faces may carry the wrong aspect.** v64 racks panels square to
   the walls, but the face's direction used for sun is unchanged. The same
   misread faces (low 6–13° faces read 21–46° across the walls) likely have
@@ -361,18 +361,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   15 worse), and the step score does not separate good readings from bad
   (Spearman 0.06 vs line F); re-test with the point cloud and
   `SOLAR_MARKUP_FRAME=lidar` before using either.
-- **Seam fixes behind switches, judged on the Mac (all off).**
-  - `SOLAR_DANGLE_JOIN_M=1.0`: a drawn end within 1 m of another drawn line
+- **Seam fixes behind switches, judged on the Mac.** The dangle join and
+  DSM box tops are on; the empty-face refit and curved split are off.
+  - `SOLAR_DANGLE_JOIN_M` (default 1.0, on; `src/roof_line_source.py`): a drawn end within 1 m of another drawn line
     is joined to it; each part of the cut must fit its own plane (70% of
     returns within 0.15 m). On the 54 marked roofs with such an end, 9
     change: drawn lines found rise on 8, seam steps 12 -> 10, panels
-    2,096 -> 2,123. 19 Camp St's triangle becomes its own 1.1 deg face. Turn on.
-  - `?SOLAR_OBST_TOP_DSM=1` (3D view): over 6,254 boxes in three regions the
+    2,096 -> 2,123. 19 Camp St's triangle becomes its own 1.1 deg face.
+  - DSM box tops in the 3D view (on in this deployment: `site-config.js`
+    `obstTopFromDsm: true`; `?SOLAR_OBST_TOP_DSM=1` elsewhere): over 6,254 boxes in three regions the
     box top's distance from the DSM falls from 0.80 to 0.49 m (area-weighted).
-    Not yet checked in the browser. Turn on after a look in 3D.
-  - `SOLAR_EMPTY_FACE_REFIT=1`: no panel change; 3 of 450 sampled roofs change
+    Still to be looked at in the 3D view.
+  - `SOLAR_EMPTY_FACE_REFIT=1` (default off): no panel change; 3 of 450 sampled roofs change
     before the 20 m2 floor, seam steps 10 -> 9. Low value; fine to turn on.
-  - `SOLAR_CURVED_SPLIT=1`: fires on 19 Camp St only, of about 456 roofs; the
+  - `SOLAR_CURVED_SPLIT=1` (default off): fires on 19 Camp St only, of about 456 roofs; the
     cut is a straight line across the face that nobody drew. Leave off.
 - **Composite roofs.** `src/composite_roof.py` (a house as its wings, joined
   with straight valleys) is off (`SOLAR_COMPOSITE_ROOFS`). On 139 Shotover
@@ -428,8 +430,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 - **Calibration point.** Re-check the SolarView cloud factor against the
   Queenstown Aero normal.
-- **System derate** looks 4–5 points optimistic against PVGIS
-  (`src/validate_against_pvgis.py`). A change is a `--yield-only` rebuild.
+- **System derate.** Recalibrated to 13.79% (5 Nov, glass reflection
+  folded in; 16.4% total with the inverter, `config.PV_ASSUMPTIONS`). The
+  map sits about 5% above PVGIS (1,276 vs 1,215 kWh/kWp,
+  `src/validate_against_pvgis.py`), deliberately: PVGIS uses generic
+  temperature and system losses. A derate-only change is a `--yield-only`
+  rebuild; it leaves each panel's stored shading_factor valid.
 - **Station mapping outside the Wakatipu.** Low-solar days are mapped onto
   the Queenstown Aero station record only for Queenstown, Glenorchy and
   Kingston. Wanaka and Cromwell are not mapped.

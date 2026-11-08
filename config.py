@@ -362,9 +362,11 @@ PANEL_EDGE_SETBACK_M = 0.1  # edge and ridge setbacks are 0.1 m (22 Sep); measur
 # was reported back as making edges "clearly wrong" on ordinary roofs, so it was 0.3 until
 # 22 Sep, when it went back to 0.1 (the value above). The fallback below equals it, so the
 # narrow-facet retry currently changes nothing.
-PANEL_EDGE_SETBACK_FALLBACK_M = 0.1  # retried only for a facet that fits zero panels at the
-# primary setback above -- keeps narrow facets panelable without loosening the default for
-# everything else.
+PANEL_EDGE_SETBACK_FALLBACK_M = 0.1  # the tighter rung of the setback ladder
+# (src/panel_fitting.py _ladder): every facet is packed at both setbacks, generous first, and
+# the tighter fit is kept only when it holds at least SETBACK_LADDER_MIN_GAIN_PANELS (2) more
+# panels, so narrow facets stay panelable without loosening the default for everything else.
+# While it equals PANEL_EDGE_SETBACK_M the ladder has one rung and this changes nothing.
 RIDGE_SETBACK_M = 0.1  # was 0.25 until 22 Sep. Extra clearance specifically along a boundary shared with another real
 # roof plane on the same building (a real ridge, hip, or valley) -- separate from, and on top of,
 # PANEL_EDGE_SETBACK_M's outer-edge clearance. Two adjacent facets each erode this far back from
@@ -453,23 +455,25 @@ PV_ASSUMPTIONS = {
     #
     # This departs from PVWatts, whose 14% default EXCLUDES the inverter (a
     # separate parameter there, default 96%) and EXCLUDES cell temperature.
-    # Ours is 14% for everything after the panel nameplate. Shading is still
+    # Ours is 16.4% for everything after the panel nameplate. Shading is still
     # excluded and modelled per panel from the LiDAR, which is the one part we
     # do better than a generic loss figure.
     #
-    # What the 14% covers: cell temperature, soiling, mismatch, wiring and
-    # connections, nameplate tolerance, availability, and inverter conversion.
+    # What the 16.4% covers: cell temperature, soiling, mismatch, wiring and
+    # connections, nameplate tolerance, availability, inverter conversion, and
+    # light reflected off the panel glass.
     # Light-induced degradation is ~0 because the modelled panel is n-type
     # i-TOPCon, where LID is not the p-type boron-oxygen mechanism.
     #
     # History, since this has moved three times and each move changed a public
     # number: 14% (no temperature, ~5% optimistic against PVGIS) -> 19%
     # (p-type loss budget, over-corrected) -> 15% (recalibrated for the n-type
-    # panel) -> 14% total incl. inverter, here. Against the 19% era this is
-    # +9.4% generation, and against 15% it is +4.2%.
+    # panel) -> 14% total incl. inverter (+9.4% generation against the 19%
+    # era, +4.2% against 15%) -> 16.4% with glass reflection, the current value.
     #
-    # It now sits ~8% above PVGIS's effective 0.791. Deliberate: PVGIS applies
-    # a generic loss default, ours is specific to the module actually modelled.
+    # It sits about 5% above PVGIS (1,276 vs 1,215 kWh/kWp, measured below).
+    # Deliberate: PVGIS applies a generic loss default, ours is specific to the
+    # module actually modelled.
     # REFLECTION OFF THE GLASS is in it too (since 5 Nov 2026). The sky
     # model projects sunlight onto each face but nothing took off the light
     # the panel glass reflects at low angles; PVGIS puts that at 2.76% a year

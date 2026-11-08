@@ -14,10 +14,13 @@
 #                                                # stale buildings, resume the
 #                                                # rest (see the plan below)
 #   ./src/run_district_build.sh --force          # rebuild everything
-#   ./src/run_district_build.sh --yield-only     # the sun changed, the roofs
+#   ./src/run_district_build.sh --yield-only     # the derate or panel constants
+#                                                # changed, the roofs and each
+#                                                # panel's stored shading_factor
 #                                                # did not: recompute every kWh
-#                                                # from stored geometry, no LiDAR
-#                                                # (src/apply_yield.py)
+#                                                # (src/apply_yield.py). A sun-model
+#                                                # or calibration change needs a
+#                                                # full rebuild.
 #   ./src/run_district_build.sh --regions "a b"  # just these regions
 #
 # Interrupting this and re-running it continues where it stopped.

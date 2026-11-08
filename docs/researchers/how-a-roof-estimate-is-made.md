@@ -64,7 +64,7 @@ Each footprint is cut into flat faces a panel could lie on. Hand-drawn roofs win
 
 #### Pick the reading
 
-In order: hand-drawn markup; then the selected faces, the best-scoring of three precomputed readings (photo segmentation, a roof-line detector trained on the markup, and LiDAR regions grown by surface direction); then a fit to the LiDAR alone. A selected reading scored under 0.60 must compete with the LiDAR fit and loses if the LiDAR fit explains the returns clearly better.
+In order: hand-drawn markup; then the selected faces, chosen from four precomputed readings (photo segmentation, a roof-line detector trained on the markup, LiDAR regions grown by surface direction, and the simplest roof form that fits). The simplest form is taken when it is confident (0.55 or more) and the other three all score under 0.50; otherwise the pick goes by score among the first three (`tools/predict_faces.py`). Then a fit to the LiDAR alone. A selected reading scored under 0.30 (`SELECTED_MIN_SCORE`) is not used; one under 0.60 (`SELECTED_TRUST`) must compete with the LiDAR fit and loses if the LiDAR fit explains the returns clearly better.
 
 **Source:** `src/roof_segmentation.py · src/roof_partition.py · tools/predict_faces.py`
 
@@ -146,7 +146,7 @@ A patch whose returns lie on this face's plane, or a neighbour's, is roof. So is
 
 #### Confidence gate
 
-Roof confidence is the area-weighted share of roof points within 0.30 m of the faces. Under 45%, the faces are drawn but no panels are proposed. A building that cannot be modelled stays on the map with a reason: too steep, too little survey, no usable surface, covered by obstructions, no room for a panel, demolished, too complex, or modelling failed. A building that runs past 10 minutes is dropped and reported by id.
+Roof confidence is the area-weighted share of roof points within 0.30 m of the faces. Under 45%, the faces are drawn but no panels are proposed. A building that cannot be modelled stays on the map with a reason: too steep, too little survey, no usable surface, covered by obstructions, no room for a panel, demolished, too complex, or modelling failed. A building that runs past its time budget is dropped and reported by id: 10 minutes, rising by 0.6 s per m² of footprint over 1,500 m² to a 30-minute cap (`src/build_layout_geojson.py`).
 
 **Source:** `src/build_layout_geojson.py · src/roof_segmentation.py · src/derive_solar_potential.py`
 
@@ -168,7 +168,7 @@ A tilted face is unrolled before packing: the up-slope direction is stretched by
 
 ### Clearances
 
-Obstructions and drawn fold lines are cut out first. Then panels keep 0.1 m from the roof edge and 0.1 m from ridges, hips and valleys. A face that fits more than 6 panels keeps 0.4 m from the roof edge and 0.3 m from ridges instead, because a traced edge is often a few tenths of a metre out and a large array can spare its outer column or row; it falls back to 0.1 m when the wider gap would keep under 75% of the face's panels or change its orientation, so a narrow section still gets its row. A fold gentler than 9° keeps only 0.05 m.
+Obstructions and drawn fold lines are cut out first. Then panels keep 0.1 m from the roof edge and 0.1 m from ridges, hips and valleys. A face that fits more than 6 panels keeps 0.4 m from the roof edge and 0.3 m from ridges instead, because a traced edge is often a few tenths of a metre out and a large array can spare its outer column or row; it falls back to 0.1 m when the wider gap would keep under 75% of the face's panels or change its orientation, so a narrow section still gets its row. A fit is kept only when it holds at least 2 more panels than the one before it, starting from none (`SETBACK_LADDER_MIN_GAIN_PANELS`), so a face whose best fit is a single panel gets none. A fold gentler than 9° keeps only 0.05 m.
 
 **Source:** `config.py (PANEL_EDGE_SETBACK_M, RIDGE_SETBACK_M) · src/panel_fitting.py`
 
@@ -290,13 +290,13 @@ The council's district plan zone decides (Queenstown Lakes District Council): to
 
 ### What it costs
 
-$3,000/kW under 3 kW; $2,000 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW, including GST. A battery is $1,000/kWh.
+$3,000/kW under 3 kW; $2,300 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW, including GST. Each rate sits at the middle of its band and the per-kW rate runs in a straight line between them (`costPerKw`), so the total rises with every kW. A battery is $900/kWh.
 
 **Source:** `economics.js (cost_tiers)`
 
 ### Household use
 
-A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A non-home building uses electricity per m² of floor before heating, by type: business 100 kWh (BRANZ BEES SR297/1: NZ office premises a median 115 kWh/m² of electricity and retail 146, heating and cooling included, median HVAC 23), industrial 35 (CIBSE TM46 workshop and storage warehouse; BEES office/warehouse sites about 25), school 35 (UK 39–43, Australian Green Star 54), hospital or medical 150 and community 40 (both estimates), at least 6,000 kWh a year. Its floor is its roof area × storeys, the storeys counted from its height above the ground in the LiDAR surface (`height_m`): 3.6 m a storey, 6 m for industrial. Heating by degree-days scales with the heated floor: 60% of it, 15% for industrial (an estimate: sheds are mostly unheated). Use is spread across the working day. The card's two bills are the highest winter month (the dearest of June, July and August) and the lowest summer month (the cheapest of December, January and February), today and after the install, each worked out over that month's days from the year's days blended smoothly through the seasons (`bill_tool.js` `btBillMonths`). A bill you enter is taken as that month's and scales the modelled use to match it exactly. An estimated bill is shown rounded like every modelled dollar figure ($10 under $1,000, $100 under $10,000, $1,000 above): it rests on averages for the building's type and size, not its own meter. A bill you enter is shown as entered.
+A home's year is the Electricity Authority's average for its regional council (EMI Residential consumption league table, 2025; Otago 7,829 kWh), scaled for its people against an average home of 2.6 (40% of use held fixed, an estimate) and for the size of the house by roof area (under 100 m² 30% less, 100–140 m² 15% less, 140–220 m² typical, 220–300 m² 15% more, 300–400 m² 30% more, over 400 m² 50% more; `BT_HOUSE_SIZE_BANDS`). Each season's day, and its spread over the hours, is the metered half-hourly load of the town's grid exit points over the last year (EMI Grid_export; Queenstown: Frankton), which carries real timing: hot water overnight on ripple control and at the morning and evening peaks. EMI publishes no half-hourly split between homes and businesses, so the shape is the town's load. `tools/build_load_profiles.py` writes `load_profiles.js`. Electric cars are added on top. Default: 3 people, no car. A non-home building uses electricity per m² of floor before heating, by type: business 100 kWh (BRANZ BEES SR297/1: NZ office premises a median 115 kWh/m² of electricity and retail 146, heating and cooling included, median HVAC 23), industrial 35 (CIBSE TM46 workshop and storage warehouse; BEES office/warehouse sites about 25), school 35 (UK 39–43, Australian Green Star 54), hospital or medical 150 and community 40 (both estimates), at least 6,000 kWh a year. Its floor is its roof area × storeys, the storeys counted from its height above the ground in the LiDAR surface (`height_m`): 3.6 m a storey, 6 m for industrial. Heating by degree-days scales with the heated floor: 60% of it, 15% for industrial (an estimate: sheds are mostly unheated). Use is spread across the working day. The card's two bills are the highest winter month (the dearest of June, July and August) and the lowest summer month (the cheapest of December, January and February), today and after the install, each worked out over that month's days from the year's days blended smoothly through the seasons (`bill_tool.js` `btBillMonths`). A bill you enter is taken as that month's and scales the modelled use to match it exactly. An estimated bill is shown rounded like every modelled dollar figure ($10 under $1,000, $100 under $10,000, $1,000 above): it rests on averages for the building's type and size, not its own meter. A bill you enter is shown as entered.
 
 **Source:** `bill_tool.js`
 
@@ -314,7 +314,7 @@ For an average day in each season, the roof's own generation curve serves the lo
 
 ### Over 30 years
 
-Power prices rise 4% a year; export falls 2% a year; panels lose 0.5% a year. The inverter is replaced after 15 years at 18% of the solar cost, and a battery after 15 years. Figures are in today's dollars (2% general inflation taken out). Results: payback year, net savings and return on investment.
+Power prices rise 4% a year; export falls 2% a year; panels lose 0.5% a year. The inverter is replaced in year 16 (after 15 years) at 18% of the solar cost, and a battery in year 15 (after 14 years) at 70% of today's battery price. Figures are in today's dollars (2% general inflation taken out). Results: payback year, net savings and return on investment.
 
 **Source:** `bill_tool.js (btReturns)`
 

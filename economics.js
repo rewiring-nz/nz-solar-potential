@@ -80,12 +80,12 @@ const ECON_DEFAULTS = {
   // rather than a house. LINZ outlines carry no building-use attribute.
   biz_min_roof_m2: 400,
   biz_min_kw: 100,
-  // Export earns less over time: it falls at a steady rate from 14c rather
-  // than via dated anchors.
+  // Export earns less over time: it falls at a steady rate from the
+  // first-year export price (12c daytime) rather than via dated anchors.
   //
-  // 2%/yr from 14c: 12.9c in 2030, 11.7c in 2035, 10.5c in 2040, 8.6c in
-  // 2050. Above the 12c/9c first sketched, and deliberately so -- at 3%
-  // a compound decline reaches 5.6c by the end of a 30-year system, and
+  // 2%/yr from 12c in 2026: 11.1c in 2030, 10.0c in 2035, 9.0c in 2040,
+  // 7.4c in 2050. Deliberately not faster -- at 3%
+  // a compound decline reaches 4.8c by the end of a 30-year system, and
   // unlike the old anchored schedule it never levels off. 2% keeps the tail
   // from doing more work than a buyback forecast can honestly carry.
   export_decline_pct: 2.0,

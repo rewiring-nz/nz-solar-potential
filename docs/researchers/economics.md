@@ -44,17 +44,17 @@ Tests: `node tests/test_bill_tool.mjs` and `node tests/test_economics.mjs`.
 
 | Assumption | Default |
 |---|---|
-| Install cost | $3,000/kW under 3 kW; $2,300 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW (incl. GST) |
-| Home prices | 34c/kWh peak, 26c off-peak, $2.50/day |
-| Business prices | 19c/kWh peak, 14c off-peak, $8.00/day |
-| Export price | 14c/kWh, falling 2% a year |
+| Install cost | $3,000/kW under 3 kW; $2,300 for 3–8 kW; $1,800 for 8–25 kW; $1,500 for 25–50 kW; $1,200 over 50 kW (incl. GST). Each rate sits at the middle of its band and the per-kW rate runs in a straight line between them (`costPerKw`), so the total rises with every kW |
+| Home prices | 50c/kWh peak, 25c off-peak, $2.50/day; flat plan 30c. The Electricity Authority's prices replace these where the site names a network region (`SITE.priceRegion`) |
+| Business prices | 22c/kWh peak, 12c off-peak, no daily charge (energy prices only; network charges are a separate bill solar does not change); flat plan 18c |
+| Export price | 12c/kWh in the day; at peak 23c for a home and 15c for a business; falling 2% a year |
 | Peak hours | 7–10am and 6–9pm |
 | Power price rise | 4% a year |
 | General inflation (to today's dollars) | 2% a year |
 | Panel output loss | 0.5% a year |
 | System life | 30 years |
-| Inverter | replaced after 15 years at 18% of the solar cost |
-| Battery | $1,000/kWh, 5 kW, 90% round trip, 10% reserve, replaced after 15 years; charges from solar only, never the grid |
+| Inverter | replaced in year 16 (after 15 years) at 18% of the solar cost |
+| Battery | $900/kWh, 5 kW, 90% round trip, 10% reserve, replaced in year 15 (after 14 years) at 70% of today's price; charges from solar only, never the grid |
 | Household | 3 people (EMI regional average home and the town's metered load shape), no car, no battery |
 
 ## Home or business

@@ -37,8 +37,10 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
 
 - `bash src/run_dev_loop.sh pilot`: quick pilot-region check.
 - `bash src/run_district_build.sh`: district build. Incremental by default;
-  `--force` rebuilds everything; `--yield-only` when only the solar model
-  changed.
+  `--force` rebuilds everything; `--yield-only` only when each panel's
+  stored `shading_factor` stays valid (a change to the system derate or the
+  panel constants). A sun-model or calibration change alters the beam share
+  baked into `shading_factor`, so it needs a full rebuild.
 - `tools/pipeline.py [region]` (also run by `quickstart.sh`): builds one
   region, then emits and combines the map data under `data/`, replacing the
   current map data. Logs: `data/pipeline_runs/<run-id>/run.log` and
