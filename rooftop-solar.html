@@ -3381,10 +3381,15 @@ map.on("load", async () => {
         `${want.length >= MONEY_MAX_PILLS ? " (the " + MONEY_MAX_PILLS.toLocaleString() + " nearest the middle)" : ""}</span>`;
     };
     let i = 0;
+    // one pass over the loaded layout tiles for the whole screen (liveFeatures)
+    const idx = want.length ? layoutIndexBuild() : null;
     const slice = () => {
       if (job !== moneyJob || !moneyMode) return;
       const t0 = performance.now();
-      while (i < want.length && performance.now() - t0 < MONEY_SLICE_MS) price(want[i++]);
+      layoutIndex = idx;
+      try {
+        while (i < want.length && performance.now() - t0 < MONEY_SLICE_MS) price(want[i++]);
+      } finally { layoutIndex = null; }
       total(want.length - i);
       if (i < want.length) moneyNext(slice);
     };
@@ -5211,10 +5216,29 @@ map.on("load", async () => {
     return [(lng + 180) / 360 * n,
             (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n];
   };
+  // A filtered querySourceFeatures scans every loaded layout tile: about
+  // 70 ms a call on a town-centre screen, which was nearly all of a money
+  // pill's cost (the bill model is a few ms). Pricing a screen of roofs
+  // reads ONE unfiltered pass grouped by building (layoutIndexBuild) and
+  // looks each roof up in it; everything else still queries directly.
+  let layoutIndex = null;
+  function layoutIndexBuild() {
+    const idx = new Map();
+    let all = [];
+    try { all = map.querySourceFeatures("layout", { sourceLayer: "layout" }); } catch (err) { all = []; }
+    for (const f of all) {
+      const b = f.properties && f.properties.building_id;
+      if (b == null) continue;
+      let a = idx.get(b); if (!a) idx.set(b, a = []);
+      a.push(f);
+    }
+    return idx;
+  }
   function liveFeatures(bid) {
     const out = { facets: [], obstructions: [], panels: [], edited: false };
     let raw = [];
-    try {
+    if (layoutIndex) raw = layoutIndex.get(bid) || [];
+    else try {
       raw = map.querySourceFeatures("layout", { sourceLayer: "layout",
         filter: ["==", ["get", "building_id"], bid] });
     } catch (err) { raw = []; }
