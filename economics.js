@@ -26,9 +26,11 @@ const ECON_DEFAULTS = {
   // single retail rate would flatter one and penalise the other. Export is
   // the same for both today.
   home_buy_c: 30, home_sell_c: 12,
-  // a business's flat plan: its time-of-use prices weighted by a typical
-  // business's use in peak hours (26%): 0.26 x 17c + 0.74 x 10c = 12c
-  biz_buy_c: 12,  biz_sell_c: 12,
+  // a business's flat plan: 18c, set directly rather than weighted from the
+  // time-of-use prices (0.26 x 22c + 0.74 x 12c = 15c): a single-rate
+  // commercial plan is priced above the time-of-use average, because the
+  // retailer carries the peak risk.
+  biz_buy_c: 18,  biz_sell_c: 12,
   // TIME-OF-USE PRICES (the building panel, 17 Oct). Peak hours cost more;
   // export can be paid differently at peak. Cents per kWh incl. GST; daily
   // in $. The home prices here are the fallback and set the peak : off-peak
@@ -49,9 +51,9 @@ const ECON_DEFAULTS = {
   home_peak_c: 50, home_offpeak_c: 25, home_peak_sell_c: 23, home_offpeak_sell_c: 12, home_daily: 2.5,
   // A BUSINESS PAYS ENERGY PRICES: its network and connection charges come
   // on a separate bill that solar does not change, so they are left out
-  // (daily 0) and the energy rate is far below a home's: 17c peak, 10c
+  // (daily 0) and the energy rate is far below a home's: 22c peak, 12c
   // off-peak.
-  biz_peak_c: 17,  biz_offpeak_c: 10,  biz_peak_sell_c: 15,  biz_offpeak_sell_c: 12,  biz_daily: 0,
+  biz_peak_c: 22,  biz_offpeak_c: 12,  biz_peak_sell_c: 15,  biz_offpeak_sell_c: 12,  biz_daily: 0,
   // [from, to) hours of the day that are peak: 7-10am and 6-9pm (Josh,
   // 18 Oct); adjustable on the building panel's sliders
   peak_hours: [[7, 10], [18, 21]],

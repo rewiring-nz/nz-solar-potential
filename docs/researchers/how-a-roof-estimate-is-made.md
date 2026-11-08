@@ -300,7 +300,7 @@ A home's year is the Electricity Authority's average for its regional council (E
 
 ### Prices
 
-Time-of-use. Homes: 34c peak, 26c off-peak, $2.50 a day. Businesses: 19c peak, 14c off-peak, $8.00 a day. Export: 14c. Peak is 7–10am and 6–9pm.
+Time-of-use (`economics.js` `ECON_DEFAULTS`). Homes: 50c peak, 25c off-peak, $2.50 a day, replaced by the Electricity Authority's prices where the site names a network region; flat plan 30c. Businesses pay energy prices only, their network and connection charges being a separate bill solar does not change: 22c peak, 12c off-peak, no daily charge; flat plan 18c, set above the time-of-use average because a single-rate commercial plan carries the retailer's peak risk. Export: 12c in the day; at peak 23c for a home and 15c for a business. Peak is 7–10am and 6–9pm.
 
 **Source:** `economics.js`
 
