@@ -66,6 +66,20 @@ FLAT_SLOPE_DEG = float(os.environ.get("SOLAR_FLAT_SLOPE_DEG", "5.0"))  # below t
 # landscape across the slope. Above 5 degrees a LiDAR face's slope direction is real (half a metre
 # of fall over 6 m), and installers rack it as pitched: rails along the eave, portrait up the slope.
 FACET_RECTANGULARITY_MIN = 0.7  # facet area / its own bounding rectangle's area
+EDGE_GAP = os.environ.get("SOLAR_EDGE_GAP", "0") == "1"  # size-dependent edge gap, see below
+EDGE_GAP_WIDE_M = float(os.environ.get("SOLAR_EDGE_GAP_WIDE_M", "0.4"))  # outer-edge gap on a large face
+RIDGE_GAP_WIDE_M = float(os.environ.get("SOLAR_RIDGE_GAP_WIDE_M", "0.3"))  # ridge/hip gap on a large face
+EDGE_GAP_SMALL_PANELS = int(os.environ.get("SOLAR_EDGE_GAP_SMALL_PANELS", "6"))
+EDGE_GAP_KEEP_FRACTION = float(os.environ.get("SOLAR_EDGE_GAP_KEEP", "0.75"))
+# A traced edge or ridge is off by a few tenths of a metre (0.3 m photo, outline
+# offsets, ridge lines from LiDAR), so a panel packed 0.1 m from it often sits
+# over the ridge or past the eave. A large array can give up its outermost
+# column or row to stand clear of that error and still be most of the system;
+# a small face cannot. So with SOLAR_EDGE_GAP=1 a face that fits more than
+# EDGE_GAP_SMALL_PANELS at the tight gaps is packed with the wide gaps, unless
+# the wide gaps keep under EDGE_GAP_KEEP_FRACTION of its panels (a two-row strip
+# losing a row); a small face keeps the tight gaps, so a 2.1 m section that
+# takes one panel still gets it.
 SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least this many more
 # panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
 # with facet size, so it blocked a genuine extra row on a small roof while waving through a
@@ -787,6 +801,49 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
             shapely_transform(lambda x, y, z=None: to_surface(x, y), k)
             for k in fold_keepouts])
 
+    relief = (shapely_transform(lambda x, y, z=None: to_surface(x, y), shallow)
+              if shallow is not None else None)
+
+    def _ridge_surface(r_sb):
+        if r_sb == ridge_setback:
+            return surface_ridge
+        out = surface_poly.buffer(-r_sb)
+        if relief is not None:
+            out = unary_union([out, surface_poly.buffer(-SHALLOW_SEAM_SETBACK_M)
+                                               .intersection(relief)])
+            if out.geom_type not in ("Polygon", "MultiPolygon"):
+                out = surface_poly.buffer(-r_sb)
+        return out
+
+    args = (surface_poly, surface_building, surface_keepout, frame, aspect_deg, slope_deg,
+            panel_width, panel_height, resolution, to_world, facet, sibling_facets)
+    best = _ladder(surface_ridge, setback, fallback_setback, *args)
+    if EDGE_GAP and len(best) > EDGE_GAP_SMALL_PANELS:
+        edge_w = max(setback, EDGE_GAP_WIDE_M)
+        wide = _ladder(_ridge_surface(max(ridge_setback, RIDGE_GAP_WIDE_M)), edge_w, edge_w, *args)
+        # ...and only in the same orientation: the wider gap must not turn a
+        # portrait array into a landscape one to claw panels back.
+        if (len(wide) >= EDGE_GAP_KEEP_FRACTION * len(best)
+                and _long_axis_deg(wide[0]["geometry"]) is not None
+                and abs(((_long_axis_deg(wide[0]["geometry"])
+                          - _long_axis_deg(best[0]["geometry"])) + 90) % 180 - 90) < 10):
+            best = wide
+    return best
+
+
+def _long_axis_deg(poly):
+    """Bearing (0-180) of a panel's long side in plan."""
+    xy = list(poly.exterior.coords)[:4]
+    if len(xy) < 3:
+        return None
+    sides = [(xy[i + 1][0] - xy[i][0], xy[i + 1][1] - xy[i][1]) for i in range(len(xy) - 1)]
+    dx, dy = max(sides, key=lambda d: d[0] ** 2 + d[1] ** 2)
+    return math.degrees(math.atan2(dy, dx)) % 180
+
+
+def _ladder(surface_ridge, setback, fallback_setback, surface_poly, surface_building,
+            surface_keepout, frame, aspect_deg, slope_deg, panel_width, panel_height,
+            resolution, to_world, facet, sibling_facets):
     best = []
     for sb in sorted({setback, fallback_setback}, reverse=True):
         if surface_building is not None:
