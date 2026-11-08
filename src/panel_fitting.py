@@ -78,9 +78,18 @@ EDGE_GAP_KEEP_FRACTION = float(os.environ.get("SOLAR_EDGE_GAP_KEEP", "0.75"))
 # a small face cannot. So with SOLAR_EDGE_GAP=1 a face that fits more than
 # EDGE_GAP_SMALL_PANELS at the tight gaps is packed with the wide gaps, unless
 # the wide gaps keep under EDGE_GAP_KEEP_FRACTION of its panels (a two-row strip
-# losing a row); a small face keeps the tight gaps, so a 2.1 m section that
-# takes one panel still gets it. Judged blind on the 31 pilot development roofs
+# losing a row); a small face keeps the tight gaps, so a narrow section keeps
+# the row it fits (a face still needs the ladder's 2-panel start and an array
+# ARRAY_MIN_PANELS long, so a lone single panel is not placed). Judged blind on the 31 pilot development roofs
 # it changed: preferred on 10, the 0.1 m layout on 4, no difference on 17.
+# The grid search in register_frame picks each face group's phase by the most
+# panels. With the edge gap decided inside each trial, the search favoured a
+# phase where the wide gap kept under EDGE_GAP_KEEP_FRACTION and the tight
+# count came back. Measured on 160 rectangular pitched faces over 6 panels,
+# the effect is small: the wide gap reached the framed layout on 107 of them,
+# and 110 with SOLAR_FRAME_TIGHT=1, which scores phases at the tight gaps and
+# decides the edge gap once, at the chosen phase.
+FRAME_TIGHT = os.environ.get("SOLAR_FRAME_TIGHT", "0") == "1"
 SETBACK_LADDER_MIN_GAIN_PANELS = 2  # a tighter edge setback has to win at least this many more
 # panels to be worth taking. Two, not a percentage: a percentage sounds principled but scales
 # with facet size, so it blocked a genuine extra row on a small roof while waving through a
@@ -228,7 +237,7 @@ def building_frame(facets, building_polygon):
             "portrait": True}
 
 
-def register_frame(frame, facets, obstructions=None, **fit_kwargs):
+def register_frame(frame, facets, obstructions=None, counted=None, **fit_kwargs):
     """Let the LARGEST face choose the frame's registration and orientation.
 
     A locked grid loses up to a column and a row on every face wherever the
@@ -241,7 +250,15 @@ def register_frame(frame, facets, obstructions=None, **fit_kwargs):
     """
     if not facets:
         return frame
-    big = max(facets, key=lambda f: f["geometry"].area)
+    # counted: the faces the final fit will panel (build_layout_geojson leaves
+    # drawn no-panel and away-from-sun faces bare). Every face is still a
+    # sibling for the seam clearances, but only these choose the frame.
+    pool = facets if counted is None else [f for f in facets if any(f is c for c in counted)]
+    if not pool:
+        return frame
+    if FRAME_TIGHT:
+        fit_kwargs = dict(fit_kwargs, edge_gap=False)
+    big = max(pool, key=lambda f: f["geometry"].area)
     best = None
     for portrait in (True, False):
         trial = dict(frame, portrait=portrait, _search=True)
@@ -250,7 +267,7 @@ def register_frame(frame, facets, obstructions=None, **fit_kwargs):
         # the other three can lose more than it gains. The registration
         # (origin) still comes from the largest face.
         total = 0; big_placed = []
-        for f in facets:
+        for f in pool:
             try:
                 placed = fit_panels_on_facet(f, obstructions=obstructions, frame=trial,
                                              sibling_facets=[o for o in facets if o is not f], **fit_kwargs)
@@ -275,7 +292,7 @@ def register_frame(frame, facets, obstructions=None, **fit_kwargs):
     # phases in whole cells over one true pitch (_pack_orientation)
     w_cells, h_cells = int(np.ceil(pw / res)), int(np.ceil(ph / res))
     groups = {}
-    for f in facets:
+    for f in pool:
         groups.setdefault(frame_group(frame, f.get("aspect_deg"), f.get("slope_deg")), []).append(f)
     phases = {}
     for gk, members in groups.items():
@@ -702,7 +719,7 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
                          setback=config.PANEL_EDGE_SETBACK_M, resolution=RASTER_RESOLUTION_M,
                          obstructions=None, sibling_facets=None, ridge_setback=config.RIDGE_SETBACK_M,
                          fallback_setback=config.PANEL_EDGE_SETBACK_FALLBACK_M, frame=None,
-                         fold_keepouts=None):
+                         fold_keepouts=None, edge_gap=None):
     """Returns list of panel dicts: {geometry (world XY Polygon), facet_id fields}.
     obstructions: optional list of world-XY Polygons (e.g. from
     obstruction_detection.detect_obstructions) to exclude from the usable
@@ -819,7 +836,7 @@ def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=co
     args = (surface_poly, surface_building, surface_keepout, frame, aspect_deg, slope_deg,
             panel_width, panel_height, resolution, to_world, facet, sibling_facets)
     best = _ladder(surface_ridge, setback, fallback_setback, *args)
-    if EDGE_GAP and len(best) > EDGE_GAP_SMALL_PANELS:
+    if (EDGE_GAP if edge_gap is None else edge_gap) and len(best) > EDGE_GAP_SMALL_PANELS:
         edge_w = max(setback, EDGE_GAP_WIDE_M)
         wide = _ladder(_ridge_surface(max(ridge_setback, RIDGE_GAP_WIDE_M)), edge_w, edge_w, *args)
         # ...and only in the same orientation: the wider gap must not turn a

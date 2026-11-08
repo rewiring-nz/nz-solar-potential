@@ -552,14 +552,31 @@ def _build_one_at(building_id, nudge_m):
     # line up across the roof instead of each face choosing its own.
     # SOLAR_FRAME=0 lays out the old way (each face its own grid) for A/B runs
     _frame = building_frame(facets, row_geom) if facets and os.environ.get("SOLAR_FRAME", "1") != "0" else None
-    if _frame is not None:
-        try:
-            _frame = register_frame(_frame, facets)
-        except Exception as exc:
-            _note_fallback("register_frame", building_id, exc)
     # the building's sunniest real face, for the sunny-side rule (SUN_SIDE_REL)
     _sunniest = max([sun_share(model, f["slope_deg"], f["aspect_deg"]) for f in facets
                      if not f.get("no_panel") and f["geometry"].area >= SUN_SIDE_MIN_FACE_M2] or [1.0])
+    if _frame is not None:
+        try:
+            # SOLAR_FRAME_MARKUP=1: the frame is chosen on the faces that will
+            # take panels, around the drawn obstructions and fold lines, so a
+            # gable's sunny side is not racked to suit its shady side or a face
+            # marked "no panels here", and the markup governs the grid too.
+            if os.environ.get("SOLAR_FRAME_MARKUP", "0") == "1":
+                _counted = [f for f in facets if not f.get("no_panel")
+                            and not away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest)]
+                _fobs, _fko = None, None
+                try:
+                    from src.roof_line_source import drawn_obstruction_polys, drawn_line_keepouts
+                    _fobs = drawn_obstruction_polys(building_id) or None
+                    _fko = drawn_line_keepouts(building_id) or None
+                except Exception:
+                    pass
+                _frame = register_frame(_frame, facets, obstructions=_fobs, counted=_counted,
+                                        fold_keepouts=_fko)
+            else:
+                _frame = register_frame(_frame, facets)
+        except Exception as exc:
+            _note_fallback("register_frame", building_id, exc)
     # ...unless the roof has nothing on its sunny side after all (obstructions,
     # shade, a face too narrow to rack): then, as an installer would, its
     # next-best side is used, still above SUN_SIDE_ABS. A second pass, only
