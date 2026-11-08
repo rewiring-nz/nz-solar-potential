@@ -312,14 +312,24 @@ function genCurve(sun, weights, total, tshade) {
 }
 
 // Bin weights for the curve from the panels genFromPanels priced.
+// A panel added in the editor has no tilt or direction of its own:
+// genFromPanels prices it at the mean sunlight of the panels that have one
+// (avgOpen). Its weight is spread over their bins in proportion to how many
+// of them sit in each (n_b / N), so sum_b w_b x annual_b = sh x f x avgOpen,
+// the figure it was priced at, and its hourly shape is the roof's mix. Put
+// on the first panel's bin instead, an east-and-west roof gave every added
+// panel the morning (or afternoon) shape of whichever panel came first.
 function genWeightsFromPanels(perPanel, A) {
   const kwpEach = 1 * A.panel_rated_power_w / 1000;
   const f = kwpEach * (A.inverter_efficiency_pct / 100) * (1 - A.system_derate_pct / 100);
   const w = {};
-  const roofAvgBin = perPanel.find(q => q.has);
+  const nBin = {};
+  let nHas = 0;
+  for (const q of perPanel) if (q.has) { const b = `${q.sb}_${q.ab}`; nBin[b] = (nBin[b] || 0) + 1; nHas++; }
   for (const q of perPanel) {
-    const bin = q.has ? `${q.sb}_${q.ab}` : (roofAvgBin ? `${roofAvgBin.sb}_${roofAvgBin.ab}` : null);
-    if (bin) w[bin] = (w[bin] || 0) + q.sh * f;
+    if (q.has) { const b = `${q.sb}_${q.ab}`; w[b] = (w[b] || 0) + q.sh * f; continue; }
+    if (!nHas) continue;
+    for (const b in nBin) w[b] = (w[b] || 0) + q.sh * f * nBin[b] / nHas;
   }
   return w;
 }

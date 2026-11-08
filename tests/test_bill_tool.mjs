@@ -446,6 +446,36 @@ check("a battery exports spare charge at peak, and fades 2% a year", () => {
   near(sv[14].saving / s0[14].saving, sv[0].saving / s0[0].saving, 1e-9, "the replacement starts new");
 });
 
+check("the card's Bill savings cell and the green box show the same string", () => {
+  // saveAvg $1,234, repayments $1,000: the net is $234, so the step is $10
+  // (btNetShown). Rounded at saveAvg's own step ($100) the cell read $1,200
+  // while the box read $1,230.
+  const p = B.btShownParts(1234, 1000);
+  const box = B.btMoney(1234, B.btNetShown(1234, 1000).step);
+  if (p.save !== box) throw new Error(`cell ${p.save}, box ${box}`);
+  if (p.save !== "$1,230") throw new Error(`cell ${p.save}, want $1,230`);
+  if (p.repay !== "$1,000" || p.netAbs !== "$230") throw new Error(`${p.repay} / ${p.netAbs}`);
+});
+
+check("a loan longer than the panels' life counts no savings after the life", () => {
+  const keep = { life_years: econ.life_years, loan_years: econ.loan_years };
+  Object.assign(econ, { life_years: 15, loan_years: 30 });
+  try {
+    const ctx = { lat: -45.03, roofM2: 150, kwp: 6, gen: genFor(6) };
+    const r = B.btEvaluate(ctx, home(), null, prices);
+    const N = r.nodes, rows = r.solarRet.rows;
+    near(r.solarRet.years, 15, 0, "panel life");
+    const lifeSum = rows.slice(0, 15).reduce((t, x) => t + x.saving, 0);
+    near(N.saveAvg.value, lifeSum / 30, 1e-9, "the 15 life years' savings, over the 30-year term");
+    if (!(N.saveAvg.value < rows.slice(0, 30).reduce((t, x) => t + x.saving, 0) / 30 - 1))
+      throw new Error("years 16-30 should not be counted");
+    // the inverter falls due in year 16, after the panels: no top-up
+    if (N.repAvg.children && N.repAvg.children.some(c => /Inverter replacement/.test(c.label || "")))
+      throw new Error("no inverter top-up after the panels' life");
+    near(r.repaySched.reduce((a, b) => a + b, 0) / 30, N.repAvg.value, 1e-9, "the years average to the headline");
+  } finally { Object.assign(econ, keep); }
+});
+
 check("an estimated bill is rounded; an entered one is shown as entered", () => {
   const got = [B.btBillShown(153.4, false), B.btBillShown(2348, false), B.btBillShown(12480, false), B.btBillShown(2348, true)];
   const want = [150, 2300, 12000, 2348];

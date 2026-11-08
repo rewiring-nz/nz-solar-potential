@@ -855,17 +855,23 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
   // the loan; the average of the loan's years, both sides in today's
   // dollars, is the fair yearly figure. Until 7 Nov the headline set year
   // 1's savings against the nominal repayment, which understated it.
+  // A LOAN LONGER THAN THE PANELS' LIFE: the repayments run the whole term
+  // (the debt outlives the panels), but a year past the life saves nothing
+  // (btReturns marks it row.life = 0) and buys no replacement part. So the
+  // savings count only the life's years and are still divided by the term.
   const avgOver = (ret, save, repay, who, repls) => {
     const L = loanYears.value, rows = ret.rows.slice(0, L);
+    const lifeSave = rs => rs.reduce((t, row) => t + (row.life ? row.saving : 0), 0);
     const cpi = 1 + (ret.real ? ret.cpiPct : 0) / 100;
     // general inflation, for the dollars a replacement costs in its year
     // (btReturns prices it at today's cost rising cpi_pct a year)
     const cpiT = 1 + ret.cpiPct / 100;
-    const saveAvg = Wk.given(`Bill savings, average a year over the ${L}-year loan`, rows.reduce((t, row) => t + row.saving, 0) / L, "$/yr",
+    const saveAvg = Wk.given(`Bill savings, average a year over the ${L}-year loan`, lifeSave(rows) / L, "$/yr",
       [save, ret.nodes.lifetime], {
-        formula: `each year's bill savings (${ret.real ? "in today's dollars" : "in dollars of the day"}), added over the loan's ${L} years, ÷ ${L}`,
+        formula: `each year's bill savings (${ret.real ? "in today's dollars" : "in dollars of the day"}), added over the loan's ${L} years, ÷ ${L}` +
+                 (L > ret.years ? `; the years after the panels' ${ret.years}-year life save nothing` : ""),
         note: `Year 1 is ${Wk.fmt(save.value, "$")}. Then power prices rise, export rates fall and the panels age, as in the savings over the panels' life.`,
-        check: () => ret.rows.slice(0, L).reduce((t, row) => t + row.saving, 0) / L });
+        check: () => lifeSave(ret.rows.slice(0, L)) / L });
     const baseRep = Wk.given(`Repayments on ${who}, average a year${ret.real ? ", in today's dollars" : ""}`,
       repay.value * rows.reduce((t, row, y) => t + Math.pow(cpi, -y), 0) / L, "$/yr", [repay, loanYears], {
         formula: ret.real ? `the fixed repayment ÷ (1 + ${ret.cpiPct}% inflation)^(year − 1), averaged over the ${L} years`
@@ -887,7 +893,7 @@ function btEvaluate(ctx, prof, calib, tariff, sys) {
       }
       return t / term;
     };
-    const tops = (repls || []).filter(r => r.year < L).map(r => Wk.given(
+    const tops = (repls || []).filter(r => r.year < Math.min(L, ret.years)).map(r => Wk.given(
       `${r.label} replacement, added to the loan in year ${r.year + 1}: repayments, average a year`,
       topUp(r.node.value, loanRate.value, L, r.year, true), "$/yr", [r.node, loanRate, loanYears], {
         formula: `its cost at year ${r.year + 1}'s prices (today's × (1 + ${ret.cpiPct}%)^${r.year}), repaid over the last ${L - r.year} years of the loan at the same rate` +
@@ -1191,7 +1197,7 @@ function btYearCsv(year) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { btBillMonths, btExtremeMonth, BT_PICK, btBillShown, btBattStep, BT_SEASONS, BT_DEFAULTS, BT_SHAPES, btHdd, btBuildLoad, btSeasonLoad,
                      btDailyKwh, btCalibration, btRun, btReturns, btEvaluate, btModelledDay, btPanelEcon,
-                     btYearHours, btBlendYear, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btTariffFromEcon };
+                     btYearHours, btBlendYear, btYearCsv, btYearSvg, btYearPoints, btYearSpan, btRoundMoney, btMoney, btMoneyStep, btAnnuity, btNetShown, btShownParts, btTariffFromEcon };
 }
 
 // ---------------------------------------------------------------------------
@@ -1502,6 +1508,15 @@ function btNetShown(save, repay, repl) {
   const st = btMoneyStep(save - repay - (repl || 0));
   return { step: st, net: btRoundMoney(save, st) - btRoundMoney(repay, st) - btRoundMoney(repl || 0, st) };
 }
+// The average year's three figures as text, all at the net's step
+// (btNetShown). The card's "Bill savings" cell, the green box and the
+// lightbox all show these strings, so the same figure never shows two
+// values: with saveAvg's own step $1,234 showed as $1,200 in the cell and
+// $1,230 in the box (net $234, step $10).
+function btShownParts(save, repay) {
+  const n = btNetShown(save, repay), m = v => btMoney(v, n.step);
+  return { step: n.step, net: n.net, save: m(save), repay: m(repay), netAbs: m(Math.abs(n.net)), netText: m(n.net) };
+}
 // `step` forces one rounding step on figures shown as a sum, so the parts
 // on screen add up to the total on screen.
 // A bill in the "today" field: one you entered exactly as entered; an
@@ -1619,7 +1634,7 @@ function btMethodHtml(r, prof, isBiz) {
     `<p><b>Solar.</b> The roof's own average day in each season, from its tilt, direction and shading (the curve on the building card): ${go("gen", Math.round(N.genYear.value).toLocaleString() + " kWh a year")}.</p>` +
     `<p><b>Hour by hour.</b> For an average day in each season (${BT_SEASONS.map((s, i) => `${s} ${days[i]} days`).join(", ")}), each hour the solar powers the ${isBiz ? "building" : "home"} first. ${battText} The rest comes from the grid.</p>` +
     `<p><b>Bills.</b> Power from the grid at ${c(P.peak.value)} a kWh in peak hours (${btPeakText()}) and ${c(P.off.value)} off-peak; exports earn ${c(P.peakSell.value)} at peak and ${c(P.offSell.value)} off-peak; plus $${P.daily.value.toFixed(2)} a day. A month is ${P.month.value.toFixed(1)} days. A year: ${go("nowbill", btMoney(N.nowBill.value) + " today")}, ${go("solarbill", btMoney((prof.battery > 0 ? N.battBill : N.solarBill).value) + (prof.battery > 0 ? " with solar and the battery" : " with solar"))}.</p>` +
-    `<p><b>Over the years.</b> Power prices rise ${E.elec_inflation_pct}% a year, export rates fall ${E.export_decline_pct}% a year and panels lose ${E.degradation_pct}% of their output a year, over a ${E.life_years}-year life. The inverter is replaced in year ${(E.inverter_replace_year || 0) + 1} at ${E.inverter_cost_pct}% of the solar cost${prof.battery > 0 ? `, the battery after ${BD.life_years || 15} years` : ""}. Money is shown ${E.real_prices ? `in today's dollars (general inflation ${E.cpi_pct}% a year taken out)` : "in each year's own dollars"}.</p>` +
+    `<p><b>Over the years.</b> Power prices rise ${E.elec_inflation_pct}% a year, export rates fall ${E.export_decline_pct}% a year and panels lose ${E.degradation_pct}% of their output a year, over a ${E.life_years}-year life. The inverter is replaced in year ${(E.inverter_replace_year || 0) + 1} at ${E.inverter_cost_pct}% of the solar cost${prof.battery > 0 ? `, the battery in year ${(E.battery_replace_year != null ? E.battery_replace_year : 14) + 1}` : ""}. Money is shown ${E.real_prices ? `in today's dollars (general inflation ${E.cpi_pct}% a year taken out)` : "in each year's own dollars"}.</p>` +
     `<p class="sx-foot">Every figure in this panel comes from these steps. Tap any number to see its working. The full method is listed under Docs.</p>` +
     `</div>`;
 }
@@ -1722,6 +1737,9 @@ function renderBillTool(box, ctx) {
                          prof, state.calib, tariff, state.sys);
     last = r;
     const N = r.nodes, S = N.seasons;
+    // the average year as shown, once for the cell, the green box and the
+    // lightbox (btShownParts)
+    const shown3 = btShownParts(N.saveAvg.value, N.repAvg.value);
     const withBatt = prof.battery > 0;
     const ret = withBatt ? r.battRet : r.solarRet;
     const save1 = withBatt ? N.battSave : N.solarSave;
@@ -1770,19 +1788,18 @@ function renderBillTool(box, ctx) {
              `<span class="lbl">${label}${o.small ? `<small>${o.small}</small>` : ""}</span>${right}</div>`;
     };
     const val = (text, sub) => `<span class="val"><b>${text}</b>${sub ? ` ${sub}` : ""}</span>`;
-    const billIn = s => {
-      const mine = state.calib && !state.calib.total && state.calib[s] > 0;
-      return field(`bill-${s}`, btBillShown(S[s].nowMonth.value, mine), `min="0" step="10" data-bill="${s}" aria-label="${s} bill today, dollars a month"`, "$", "", !mine);
-    };
     // the corner card's bill rows: today's bill is typed in right there;
     // the with-solar bill opens how it is worked out
     // TODAY | AFTER INSTALL: today's bill is typed in right there (it is
     // that month's, BT_PICK); the bill after opens how it is worked out
     const billHead = `<div class="sx-row sx-billhead"><span class="lbl"></span><span>Today</span><span class="sx-arrow"></span><span>After install</span></div>`;
+    // an entered bill shows the number typed (state.calib), not the model's
+    // matched figure: the calibration is clamped (btCalibration, 0.2-5x) and can miss, and
+    // matchNote says so when it does
     const billPair = (s, label) => {
       const mine = state.calib && !state.calib.total && state.calib[s] > 0;
       return `<div class="sx-row sx-billrow"><span class="lbl">${label}</span>` +
-        field(`billq-${s}`, btBillShown(BM[s].now.value, mine), `min="0" step="10" data-bill="${s}" aria-label="${label}, today, dollars a month"`, "$", "", !mine) +
+        field(`billq-${s}`, btBillShown(mine ? state.calib[s] : BM[s].now.value, mine), `min="0" step="10" data-bill="${s}" aria-label="${label}, today, dollars a month"`, "$", "", !mine) +
         `<span class="sx-arrow" aria-hidden="true">→</span>` + afterBill(s) + `</div>`;
     };
     const afterBill = s => {
@@ -1791,15 +1808,16 @@ function renderBillTool(box, ctx) {
         (n.value < -0.5 ? `<b>${btMoney(-n.value)}</b> <small>credit</small>` : `<b>${btMoney(n.value)}</b>`) + `</span>`;
     };
     // the prices THIS building is priced at: its area's EA prices for a home
-    // (btTariffFromEcon), else the map's set
-    const shown = key => key.endsWith("_peak_c") ? tariff.peak : key.endsWith("_offpeak_c") ? tariff.offpeak
+    // (btTariffFromEcon), else the map's set. The export prices come from the
+    // tariff too: btTariffFromEcon lifts a peak export below the off-peak one
+    // up to it, and the field shows the price the bills use.
+    const shown = key => key.endsWith("_offpeak_sell_c") ? tariff.offpeakSell
+      : key.endsWith("_peak_sell_c") ? tariff.peakSell
+      : key.endsWith("_peak_c") ? tariff.peak : key.endsWith("_offpeak_c") ? tariff.offpeak
       : key.endsWith("_buy_c") ? tariff.peak : key.endsWith("_daily") ? tariff.daily : E[key];
     const price = (label, key) => row(label, field(key, +(shown(key) || 0).toFixed(2), `min="0" step="0.5" data-econ="${key}"`, "", "c/kWh"));
     const totalUse = Object.values(r.yearParts).reduce((a, b) => a + b, 0) || 1;
     const parts = Object.entries(r.yearParts).filter(([, v]) => v > 1);
-    const priceSum = tariff.flat
-      ? `${(tariff.peak || 0)}c flat · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`
-      : `${(shown(pfx + "_peak_c") || 0)}c peak · ${(shown(pfx + "_offpeak_c") || 0)}c off-peak · ${(E[pfx + "_offpeak_sell_c"] || 0)}c export`;
 
     const SX_SPLIT = "<!--sx-split-->";
     // A day in each season (the next layer down from the card)
@@ -1856,9 +1874,9 @@ function renderBillTool(box, ctx) {
         `</div></details>` +
       `<div class="sx-summary">` +
         // ANNUAL FIGURES ARE THE AVERAGE YEAR over the loan, in today's
-        // dollars (btEvaluate avgOver): the same as the green box
+        // dollars (btEvaluate avgOver), at the green box's step (btShownParts)
         `<div class="sx-cell hero" data-wk="saveavg" tabindex="0" role="button"><div class="l">Bill savings</div>` +
-          `<div class="v">${haveGen ? money(N.saveAvg) : "–"}</div><div class="s">a year on average${withBatt ? ", with the battery" : ""}</div></div>` +
+          `<div class="v">${haveGen ? shown3.save : "–"}</div><div class="s">a year on average${withBatt ? ", with the battery" : ""}</div></div>` +
         `<div class="sx-cell" data-wk="lifetime" tabindex="0" role="button"><div class="l">Total bill savings</div>` +
           `<div class="v">${haveGen ? money(ret.nodes.lifetime) : "–"}</div><div class="s">over ${ret.years} years</div></div>` +
         `<div class="sx-cell" data-wk="net" tabindex="0" role="button"><div class="l">Net savings</div>` +
@@ -1963,24 +1981,23 @@ function renderBillTool(box, ctx) {
     const moreBox = ctx.moreBox && ctx.moreBox.isConnected ? ctx.moreBox : null;
     if (moreBox) { box.innerHTML = top; moreBox.innerHTML = more; } else box.innerHTML = top + more;
     // THE HEADLINE SAVING under the card's yellow box (ctx.saveBox): the same
-    // node as the "Bill savings" cell, so the two always agree and both open
-    // the same workings. Hidden until the roof's sun has loaded, and when the
+    // node as the "Bill savings" cell, shown at the same step (shown3), so
+    // the two always agree and both open the same workings. Hidden until the roof's sun has loaded, and when the
     // roof would not lower the bills.
     const saveBox = ctx.saveBox && ctx.saveBox.isConnected ? ctx.saveBox : null;
     // The headline is the NET a year while a loan for the system is repaid:
     // bill savings less repayments, with both shown beneath it. Negative when
     // the repayments are larger than the savings, and then it says so.
     if (saveBox) {
-      const netN = withBatt ? N.battNet : N.solarNet, repN = N.repAvg, saveN = N.saveAvg;
+      const netN = withBatt ? N.battNet : N.solarNet;
       const loanN = withBatt ? N.allRepay : N.solarRepay;
       const show = haveGen && netN && Number.isFinite(netN.value);
       saveBox.hidden = !show;
       const ahead = show && netN.value >= 0;
       const yrs = N.loanYears.value, pct = Wk.fmt(N.loanRate.value, "share", 1);
-      // one step for all three, set by the largest, so savings - repayments
-      // = net on screen as well as in the sums
-      const shownNet = btNetShown(saveN.value, repN.value), st = shownNet.step;
-      const m = v => btMoney(v, st);
+      // one step for all three, the one the net deserves (btNetShown), so
+      // savings - repayments = net on screen as well as in the sums;
+      // computed once for the card (shown3)
       // LOOK: one figure, two short rows, the detail behind an (i). Each
       // figure still opens its workings when tapped.
       const info = `An average year over a ${yrs}-year loan at ${pct}, in today's dollars, ` +
@@ -1991,10 +2008,10 @@ function renderBillTool(box, ctx) {
           `<div class="rs-top"><div class="rs-left">` +
           `<div class="rs-head"><span class="rs-l">${ahead ? "This roof could save about" : "With the loan, this roof costs"}</span>` +
           `<button type="button" class="rs-i" aria-label="About this figure" aria-expanded="false">i</button></div>` +
-          `<div class="rs-v" data-wk="net-year">${m(Math.abs(shownNet.net))}<span>/yr</span></div></div>` +
+          `<div class="rs-v" data-wk="net-year">${shown3.netAbs}<span>/yr</span></div></div>` +
           `<div class="rs-parts">` +
-          `<div class="rs-row" data-wk="saveavg"><span>Bill savings</span><b>${m(saveN.value)}</b></div>` +
-          `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${m(repN.value)}</b></div>` +
+          `<div class="rs-row" data-wk="saveavg"><span>Bill savings</span><b>${shown3.save}</b></div>` +
+          `<div class="rs-row" data-wk="repay"><span>Loan repayments</span><b>&minus;${shown3.repay}</b></div>` +
           `</div></div>` +
           `<div class="rs-info" hidden>${info}</div>` +
           // A BATTERY, one tap: 10 kWh to start (BT_BATT_ADD_KWH), any size
@@ -2225,9 +2242,11 @@ function renderBillTool(box, ctx) {
       const L = N.loanYears.value;
       let cum = 0;
       return ret.rows.slice(0, Math.max(ret.years, L)).map((row, y) => {
+        // a year past the panels' life saves nothing (btEvaluate avgOver)
+        const save = row.life ? row.saving : 0;
         const repay = y < L ? r.repaySched[y] : 0, repl = y < L ? 0 : -row.out;
-        cum += row.saving - repay - repl;
-        return { year: row.year, save: row.saving, repay, repl, net: row.saving - repay - repl, cum };
+        cum += save - repay - repl;
+        return { year: row.year, save, repay, repl, net: save - repay - repl, cum };
       });
     };
     const niceStep = span => {
@@ -2329,13 +2348,12 @@ function renderBillTool(box, ctx) {
           const loanRows = rows.slice(0, L);
           const avgNet = loanRows.reduce((t, q) => t + q.net, 0) / L;
           const agrees = Math.abs(avgNet - (N.saveAvg.value - N.repAvg.value)) < 0.01;
-          const sh = btNetShown(N.saveAvg.value, N.repAvg.value), m = v => btMoney(v, sh.step);
           const W = Math.round(Math.min(1500, innerWidth - 100) / 1.35), H = Math.round(Math.max(300, innerHeight - 330) / 1.35);
           const be = rows.find(q => q.cum >= 0 && rows.slice(0, rows.indexOf(q)).some(p => p.cum < 0));
           body = `<div class="sx-rsum">` +
-              `<div><b>${m(sh.net)}</b><small>a year on average${withBatt ? ", with the battery" : ""}</small></div>` +
-              `<div><b>${m(N.saveAvg.value)}</b><small>bill savings, average</small></div>` +
-              `<div><b>−${m(N.repAvg.value)}</b><small>repayments, average</small></div>` +
+              `<div><b>${shown3.netText}</b><small>a year on average${withBatt ? ", with the battery" : ""}</small></div>` +
+              `<div><b>${shown3.save}</b><small>bill savings, average</small></div>` +
+              `<div><b>−${shown3.repay}</b><small>repayments, average</small></div>` +
               `<div><b>${btMoney(rows[rows.length - 1].cum)}</b><small>ahead after ${rows.length} years</small></div>` +
             `</div>` +
             (agrees ? "" : `<div class="sx-foot warn">The years here do not average to the green box's figure. Please report this.</div>`) +

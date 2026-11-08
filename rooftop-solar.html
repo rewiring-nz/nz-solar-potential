@@ -635,7 +635,6 @@
   .auto-reset { background: rgba(255,176,0,.14); border: 1px solid rgba(255,176,0,.45); color: #ffb000;
     border-radius: 999px; padding: 1px 8px; margin-right: 6px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
   .auto-reset:hover { background: rgba(255,176,0,.26); }
-  .sys-reset { background: none; border: 0; padding: 0; font: inherit; color: #ffb000; cursor: pointer; text-decoration: underline; }
   /* Leader lines from just inside each end of the track, so the two extremes
      of the slider say what they actually mean rather than leaving "0-100%" to
      be interpreted. Set in a tiny bit from the true ends so the line does not
@@ -1032,7 +1031,6 @@
   html.light .sys-head label { color: var(--ink); }
   html.light .sys-note { color: var(--ink-2); }
   html.light .auto-reset { color: var(--ink); }
-  html.light .sys-reset { color: var(--ink); }
   html.light .hnote i { background: rgba(15,20,30,0.45); }
   html.light .inview-subtitle { color: var(--ink-2); }
   html.light .inview-table th { color: var(--ink-2); }
@@ -2008,18 +2006,17 @@ function pctForBuilding(pr) { return sizingDefault ? defaultPctFor(pr) : panelDe
 // THE OPEN BUILDING'S OWN SYSTEM SIZE: the first k panels in the roof's fill
 // order, set on the building card's slider. It opens showing exactly what the
 // map showed (Josh, 22 Oct: clicking a fully covered roof and seeing it drop
-// to 14 kW "makes no sense"); the economic size -- panels that pay for
-// themselves, at most 14 kW for one house -- is worked out alongside and
-// offered with one tap (Josh, 20 Oct asked for it as the default; 22 Oct
-// reversed that).
-//   mode: "map" (the density slider), "econ" (the economic size), "hand"
-//   settled: the economic size has been worked out at the current prices
-let bldgSys = null;   // { buildingId, orders, ranks, kwh, k, mode, settled, sig, econK, capK, econSize }
+// to 14 kW "makes no sense"). There is no "economic size" offer: the button
+// for it was taken off the card, so the size is the map's, the default or
+// set by hand.
+//   mode: "default" (cappedHome's household size, else every panel),
+//         "map" (the density slider), "hand" (the card's slider)
+let bldgSys = null;   // { buildingId, orders, ranks, k, mode }
 const HOME_SYSTEM_CAP_KW = 14;
 // The household cap is for ONE household. A residential building with more
 // roof than this is a block of units (or bigger) -- 12 Brunswick St, 562
 // panels, was capped at 14 kW because its land use says "home" (Josh, 21 Oct:
-// "clearly a business ... you are sizing the economic size to household size").
+// "clearly a business ... you are sizing it to household size").
 const HOME_CAP_MAX_ROOF_M2 = 350;
 function bldgSysMaxOrder() { return bldgSys && bldgSys.k > 0 ? bldgSys.orders[bldgSys.k - 1] : -Infinity; }
 // Whether a panel is within the system being shown: the open building's own
@@ -3235,9 +3232,8 @@ map.on("load", async () => {
 
   // MONEY MODE: a green pill on every building in view with its net saving a
   // year (bill savings less loan repayments), the figure in the card's green
-  // box. Closed roofs are priced by billEconFor, the same bill model the panel
-  // colours use (default household, the area's sunny-side day shape); the open
-  // roof shows its card's own figure. Pills from zoom 16, at most 1,500.
+  // box. Every roof, the open one included, is priced by roofMoney below;
+  // billEconFor prices only the panel colours. Pills from zoom 16, at most 1,500.
   // ONE ROOF'S NET SAVING, BY THE CARD'S OWN CALCULATION. The panels the map
   // shows on it (liveFeatures, the same filter the card counts), their own
   // generation and hourly curve (generationForInner), and the bill model
@@ -3292,7 +3288,7 @@ map.on("load", async () => {
     const f = map.queryRenderedFeatures({ layers: ["buildings-fill"] }).find(x => x.properties.building_id === id);
     return f ? roofMoney(f.properties) : null;
   };
-  let moneyMode = false, moneyOpen = null;
+  let moneyMode = false;
   const MONEY_MIN_ZOOM = 16, MONEY_MAX_PILLS = 1500;
   // HTML markers, not a symbol layer: the map style loads no glyphs, and a
   // marker takes the green box's own CSS gradient.
@@ -3367,10 +3363,12 @@ map.on("load", async () => {
     const keep = new Set(want.map(w => w.id));
     moneyById.forEach((p, id) => { if (!keep.has(id)) { p.marker.remove(); moneyById.delete(id); } });
     const nets = new Map();
-    // the open roof shows its card's own figure; every other roof is priced
-    // by roofMoney, the card's own calculation
+    // every roof, the open one included, is priced by roofMoney, the card's
+    // own calculation (onResult checks the two agree for a single, unedited
+    // roof). A stored card figure went stale once the card closed or prices
+    // changed, and in a multi-selection it was the combined system's net.
     const price = w => {
-      const net = moneyOpen && moneyOpen.buildingId === w.id ? moneyOpen.netYear : roofMoney(w.pr);
+      const net = roofMoney(w.pr);
       if (net == null || !Number.isFinite(net)) { const p = moneyById.get(w.id); if (p) { p.marker.remove(); moneyById.delete(w.id); } return; }
       nets.set(w.id, net);
       moneyPill(w.id, ringCentre(w.geom), net);
@@ -3807,12 +3805,6 @@ map.on("load", async () => {
   document.addEventListener("click", e => {
     if (!e.target || e.target.id !== "bldg-sys-auto" || !bldgSys) return;
     bldgSysToDefault();
-    applyPanelDensityPaint();
-    if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
-  });
-  document.addEventListener("click", e => {
-    if (!e.target || e.target.id !== "bldg-sys-reset" || !bldgSys) return;
-    Object.assign(bldgSys, { mode: "econ", k: bldgSys.econSize != null ? bldgSys.econSize : bldgSys.k });
     applyPanelDensityPaint();
     if (selectedPanelBuildingId !== -1) updateFittedStats(selectedPanelBuildingId);
   });
@@ -5525,18 +5517,15 @@ map.on("load", async () => {
     return [...by.values()].sort((a, b) => a.order - b.order);
   }
   // The open roof gets its own system size once its panel tiles are loaded
-  // (until then it follows the density slider). It starts as every panel, so
-  // the first pricing is the full system's -- the same convention the panel
-  // colours use (rebuildEconMatch) -- and settleBldgSys then cuts it to the
-  // panels that pay for themselves.
+  // (until then it follows the density slider): the count the map is showing
+  // for it.
   function ensureBldgSys(bid) {
     if (mode !== "layout" || selectedIds.length > 1 || layoutExcludedBuildingId === bid) return;
     if (bldgSys && bldgSys.buildingId === bid) return;
     const all = allPanelsOf(bid);
     if (!all.length) { if (bldgSys) { bldgSys = null; applyPanelDensityPaint(); } return; }
     // A roof opens showing exactly what the map showed (Josh, 22 Oct:
-    // "what it shows should stay as what it shows when clicked"); the
-    // economic size is worked out alongside and offered, not applied.
+    // "what it shows should stay as what it shows when clicked").
     const ranks = all.map(q => q.rank);
     const pr0 = selectedBuildingProps && selectedBuildingProps.building_id === bid ? selectedBuildingProps : null;
     if (pr0) noteBigHomes(pr0);
@@ -5546,49 +5535,8 @@ map.on("load", async () => {
     const k0 = all.filter(q => withinSize({ building_id: bid, fill_order: q.order,
                                             fill_rank: q.rank, btype: q.btype })).length;
     bldgSys = { buildingId: bid, orders: all.map(q => q.order), ranks,
-                kwh: all.map(q => q.kwh), arrs: all.map(q => q.arr),
-                k: k0, mode: sizingDefault ? "default" : "map", settled: false, sig: null };
+                k: k0, mode: sizingDefault ? "default" : "map" };
     applyPanelDensityPaint();
-  }
-  // The economic default, from the bill model's own pricing of the FULL
-  // system: a panel pays for itself when its yearly output clears its share of
-  // the cost at the rate it earns -- retail for the panels that cover the
-  // power used on site, export for the rest (the same merit order the panel
-  // colours use, panelBandOf). Homes stop at HOME_SYSTEM_CAP_KW; businesses
-  // have no cap. Worked out again whenever the prices or the household change
-  // (sig), until someone moves the slider.
-  function settleBldgSys(buildingId, o, isBiz, roofM2) {
-    const S = bldgSys;
-    if (!S || S.buildingId !== buildingId || !o) return;
-    const sig = JSON.stringify([typeof btLoadState === "function" ? btLoadState(buildingId) : null, econ,
-                                assumptions.panel_rated_power_w, bakedKwhScale(), S.k]);
-    if (S.settled && sig === S.sig) return;
-    let econK = 0;
-    // i is fill_order - 1; the map paints fill_order <= cutoff at the retail break-even
-    const sc = bakedKwhScale();
-    S.kwh.forEach((kwh, i) => { if (kwh * sc >= (i + 1 <= o.cutoff ? o.retailBE : o.exportBE)) econK++; });
-    const oneHome = !isBiz && (roofM2 || 0) < HOME_CAP_MAX_ROOF_M2;
-    const capK = oneHome ? Math.floor(HOME_SYSTEM_CAP_KW * 1000 / assumptions.panel_rated_power_w) : Infinity;
-    const wasEcon = S.mode === "econ";
-    Object.assign(S, { settled: true, sig, econK, capK, isBiz, oneHome, econSize: wholeArrays(S, Math.min(econK, capK)) });
-    if (wasEcon && S.k !== S.econSize) {             // keep following it once chosen
-      S.k = S.econSize; S.sig = null;
-      applyPanelDensityPaint();
-      setTimeout(() => updateFittedStats(buildingId), 0);
-    } else {
-      renderBldgSys(buildingId);
-    }
-  }
-  // Cutting the fill order at an exact count can leave a part of a row on the
-  // roof. Round down to the last whole array when that keeps at least 75% of
-  // the size; otherwise the exact count stands (a single big array cut by the
-  // home cap). The slider itself still moves panel by panel.
-  function wholeArrays(S, k) {
-    if (!S.arrs || k <= 0 || k >= S.orders.length || S.arrs[k - 1] == null) return k;
-    if (S.arrs[k] !== S.arrs[k - 1]) return k;            // already at a boundary
-    let j = k - 1;
-    while (j > 0 && S.arrs[j - 1] === S.arrs[k - 1]) j--;  // start of the cut array
-    return j >= 0.75 * k ? j : k;
   }
   // The card's slider and note for the open roof's system size.
   function renderBldgSys(buildingId, count) {
@@ -5603,26 +5551,10 @@ map.on("load", async () => {
     sl.style.setProperty("--fill", S.orders.length ? (100 * S.k / S.orders.length) : 0);
     document.getElementById("bldg-sys-val").textContent =
       `${S.k.toLocaleString()} of ${S.orders.length.toLocaleString()} panels`;
-    const kw = n => (n * assumptions.panel_rated_power_w / 1000).toFixed(1) + " kW";
-    let econText = "";
-    if (S.settled) {
-      econText = S.econK === 0 ? "No panel here pays for itself at these prices."
-        : `Economic size: ${S.econSize.toLocaleString()} panels (${kw(S.econSize)})` +
-          (S.econK > S.capK ? `, ${HOME_SYSTEM_CAP_KW} kW at most for a home` : S.econK === S.orders.length ? ", all of them pay for themselves" : "") + ".";
-    } else econText = "Working out which panels pay for themselves&hellip;";
-    const which = S.mode === "econ" ? "Showing the economic size."
-      : S.mode === "hand" ? "Set by hand."
-      : S.mode === "default" ? (S.k < S.orders.length && cappedHome(selectedBuildingProps)
-          ? `Showing the household size: the best panels up to ${HOME_SYSTEM_CAP_KW} kW.`
-          : "Showing every panel that fits.")
-      : `Showing the map's ${panelDensityPct}% panel density.`;
-    const btn = S.settled && S.econK > 0 && !(S.mode === "econ")
-      ? ` <button type="button" class="sys-reset" id="bldg-sys-reset">Use the economic size</button>` : "";
-    const auto = S.mode === "hand" || S.mode === "econ" || (S.mode === "map" && !sizingDefault)
-      ? ` <button type="button" class="auto-reset" id="bldg-sys-auto" title="Back to this roof's default size">&#8634; Back to auto</button>` : "";
     // no prose under the slider: only the way back to the default size once
-    // it has been moved (which/econText/btn are kept for the tests' reading)
-    void which; void econText; void btn;
+    // it has been moved
+    const auto = S.mode === "hand" || (S.mode === "map" && !sizingDefault)
+      ? ` <button type="button" class="auto-reset" id="bldg-sys-auto" title="Back to this roof's default size">&#8634; Back to auto</button>` : "";
     const noteEl = document.getElementById("bldg-sys-note");
     noteEl.innerHTML = auto.trim();
     noteEl.hidden = !auto;
@@ -5765,12 +5697,8 @@ map.on("load", async () => {
               const fullKwh = decileInterp(props, "fill_kwh", 100) * bakedKwhScale();
               const pe = isLayout && fullN > 0 && fullKwh > 0 ? billEconFor(props, fullN, fullKwh) : null;
               panelEconOpen = pe ? Object.assign({ buildingId }, pe) : null;
-              // home or business as the bill tool has it (the reader can switch it there)
-              const btType = (btLoadState(buildingId) || {}).type;
               // the household the bills describe, for Resilience's battery
               window.__billLoad = { buildingId, cal: r.cal, load: r.load };
-              // money mode labels the open roof with its card's own figure
-              moneyOpen = { buildingId, netYear: r.netShown };
               // THE PILL MUST MATCH THE CARD. Priced again as a closed roof
               // (roofMoney); a difference is logged and kept for
               // tools/money_check.js, which fails on it.
@@ -5783,9 +5711,7 @@ map.on("load", async () => {
                 }
               }
               if (moneyMode) refreshMoneyPills();
-              settleBldgSys(buildingId, panelEconOpen, btType ? btType === "business"
-                : (props.btype ? props.btype !== "home" : isBusiness(kwp, props.facet_area_m2, props.zone_class)),
-                props.facet_area_m2);
+              renderBldgSys(buildingId);
             },
           });
         };

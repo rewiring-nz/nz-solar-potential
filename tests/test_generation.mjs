@@ -127,6 +127,20 @@ check("the bills run on the roof's own generation, to the kWh", () => {
   if (flagsIn(r.nodes.genYear).length) throw new Error(flagsIn(r.nodes.genYear)[0]);
 });
 
+check("an editor-added panel's curve weight is the roof's mix, at what it was priced", () => {
+  // three panels east (bin a), one west (bin b), one added: the added one's
+  // weight goes 3/4 to a and 1/4 to b, so sum w x annual = sh x f x avgOpen
+  const A1 = { panel_rated_power_w: 400, inverter_efficiency_pct: 96, system_derate_pct: 14 };
+  const f = 0.4 * 0.96 * 0.86;
+  const pp = [{ has: true, sb: 1, ab: 2, sh: 0.9 }, { has: true, sb: 1, ab: 2, sh: 0.9 },
+              { has: true, sb: 1, ab: 2, sh: 0.9 }, { has: true, sb: 1, ab: 6, sh: 0.8 },
+              { has: false, sb: null, ab: null, sh: 0.5 }];
+  const w = G.genWeightsFromPanels(pp, A1);
+  const near = (a, b, what) => { if (Math.abs(a - b) > 1e-12) throw new Error(`${what}: ${a} vs ${b}`); };
+  near(w["1_2"], 3 * 0.9 * f + 0.5 * f * 0.75, "east bin");
+  near(w["1_6"], 0.8 * f + 0.5 * f * 0.25, "west bin");
+});
+
 check("Python rounding is reproduced (halves to even)", () => {
   if (G.genRoundHalfEven(2.5) !== 2 || G.genRoundHalfEven(3.5) !== 4 || G.genRoundHalfEven(2.4) !== 2) throw new Error("rounding");
 });
