@@ -169,8 +169,12 @@ figure for the same thing. Code enforces this:
   hook (`.claude/hooks/block_vm_start.py` in the parent folder) blocks a bare
   `gcloud compute instances start|resume|create`.
   (2) `tools/vm_idle_stop.sh`, the VMs' `startup-script` metadata, powers a VM
-  off after 30 minutes with load under 1.0 and no project process running;
-  `touch /tmp/keep-awake` holds it up until the next reboot.
+  off after 30 minutes with load under 1.0 and no project process running
+  (build, fetch, copy). A running job needs no keep-awake; do not touch it
+  when launching one. `touch /tmp/keep-awake` holds an idle VM up for 12
+  hours from the touch, then it is ignored and deleted. A change to the
+  script reaches the VM only when the owner re-installs it as
+  `startup-script` metadata and the VM next boots.
 - **Never change code on the VM while it is building.** Each stage is a new
   process, so a mid-build change mixes code across regions without trace.
   The VM's `~/solar-map` is a git checkout: push, then `tools/sync_vm.sh` (or

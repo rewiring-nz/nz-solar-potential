@@ -19,8 +19,16 @@
 # checks in a row (30 min) power the VM off. A boot starts the count at zero,
 # so a VM started and then not used also stops after 30 minutes.
 #
-# To keep the VM up while idle on purpose: touch /tmp/keep-awake (removed by
-# the next reboot); the watchdog then only logs.
+# To keep the VM up while idle on purpose: touch /tmp/keep-awake. It holds the
+# VM up for 12 hours from the touch, then is ignored and deleted. A running
+# job needs no keep-awake: the process check sees it.
+#
+# 8 Nov 2026: the VM sat idle 22 hours of a 35-hour run. Two faults. The
+# process check used `pgrep -E`, which procps pgrep rejects (it already reads
+# the pattern as an extended regex), so every check saw no process at all and
+# a quiet download could have been powered off. Sessions worked round that by
+# touching /tmp/keep-awake at each job launch, and nothing removed it, so once
+# the build ended the watchdog only logged for the rest of the run.
 set -u
 cat > /usr/local/bin/idle-stop-check <<'EOF'
 #!/bin/bash
@@ -28,7 +36,11 @@ STATE=/run/idle-stop.count
 LOG=/var/log/idle-stop.log
 load=$(cut -d' ' -f2 /proc/loadavg)
 # project work only: Ubuntu keeps system Python daemons running at all times
-busy=$(pgrep -f -c -E 'solar-map|\.venv/bin/python|pdal|gdal|ogr2ogr|rsync|scp|gsutil|gcloud storage|tippecanoe|pmtiles|wget|curl .*-o' || true)
+# pgrep reads the pattern as an extended regex; exit 1 is no match, 2+ an
+# error, which counts as busy and is logged so a broken check shows.
+busy=$(pgrep -f -c 'solar-map|\.venv/bin/python|pdal|gdal|ogr2ogr|rsync|scp|gsutil|gcloud storage|tippecanoe|pmtiles|wget|curl .*-o' 2>>$LOG)
+rc=$?
+if [ $rc -ge 2 ]; then echo "$(date -u +%FT%TZ) pgrep failed (exit $rc): counted busy" >> $LOG; busy=1; fi
 if awk "BEGIN{exit !($load < 1.0)}" && [ "${busy:-0}" -eq 0 ]; then
   n=$(( $(cat $STATE 2>/dev/null || echo 0) + 1 ))
 else
@@ -37,7 +49,10 @@ fi
 echo $n > $STATE
 echo "$(date -u +%FT%TZ) load=$load busy=$busy idle_checks=$n" >> $LOG
 if [ $n -ge 6 ]; then
-  if [ -e /tmp/keep-awake ]; then echo "$(date -u +%FT%TZ) idle but /tmp/keep-awake set" >> $LOG; exit 0; fi
+  if [ -n "$(find /tmp/keep-awake -mmin -720 2>/dev/null)" ]; then
+    echo "$(date -u +%FT%TZ) idle but /tmp/keep-awake set" >> $LOG; exit 0
+  fi
+  [ -e /tmp/keep-awake ] && { echo "$(date -u +%FT%TZ) /tmp/keep-awake older than 12 h: ignored" >> $LOG; rm -f /tmp/keep-awake; }
   echo "$(date -u +%FT%TZ) idle 30 min: powering off" >> $LOG
   /sbin/shutdown -h now
 fi
