@@ -1033,6 +1033,17 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4747641,
+   "region": "frankton_quail_rise",
+   "first_flagged": "2026-11-08",
+   "defect": "4 Abbottswood Lane (Josh, 8 Nov): roof lines and panel layout clearly wrong, outline not a",
+   "quotes": [
+    "4 Abbottswood Lane (Josh, 8 Nov): roof lines and panel layout clearly wrong, outline not aligned with the roof, array orientation changes between faces, and panels run over the ridges."
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
