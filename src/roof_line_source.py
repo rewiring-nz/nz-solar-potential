@@ -253,6 +253,28 @@ def _labels():
     return _LABELS_CACHE[0]
 
 
+def hand_outline(building_id):
+    """The building outline drawn in the labelling tool (its outline tool),
+    in the LiDAR frame, else None.
+
+    The surveyed LINZ outline is wrong on some drawn roofs: 12 of the first
+    144 were flagged bad_outline, and outline_fit only slides an outline, it
+    cannot reshape one. A drawn outline is hand markup, so it replaces both the
+    surveyed and the fitted outline wherever the build reads outlines
+    (outline_fit.fitted_outlines)."""
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS or not lab.get("outline"):
+        return None
+    from shapely.geometry import Polygon
+    try:
+        q = Polygon([(p[0], p[1]) for p in lab["outline"]]).buffer(0)
+    except Exception:
+        return None
+    if q.geom_type == "MultiPolygon":
+        q = max(q.geoms, key=lambda g: g.area)
+    return q if q.area > 1 else None
+
+
 def _to_lidar_frame(buildings):
     """Move markup traced on the map's leaning photo back onto the LiDAR.
 
@@ -354,6 +376,8 @@ def drawn_obstruction_polys(building_id):
         return []
     out = []
     for o in lab.get("obstructions") or []:
+        if o.get("solar"):          # existing panels are roof, not blockage
+            continue
         ring = o.get("ring")
         if not ring or len(ring) < 3:
             continue
@@ -366,6 +390,31 @@ def drawn_obstruction_polys(building_id):
                 out.append(poly)
         except Exception:
             continue
+    return out
+
+
+def drawn_solar_polys(building_id):
+    """Existing solar arrays marked in the labelling tool, as world polygons.
+
+    An existing array sits on the best-placed part of the roof and is panel
+    area, not an obstruction; the photo detector flags it as one because it
+    looks nothing like the roofing around it. The build subtracts these from
+    every obstruction set, detected or drawn.
+    """
+    if building_id is None:
+        return []
+    lab = _labels().get(str(building_id))
+    if not lab or lab.get("problem") in VOID_FLAGS:
+        return []
+    from shapely.geometry import Polygon
+    out = []
+    for o in lab.get("obstructions") or []:
+        ring = o.get("ring")
+        if not o.get("solar") or not ring or len(ring) < 3:
+            continue
+        poly = Polygon([(q[0], q[1]) for q in ring]).buffer(0)
+        if not poly.is_empty and poly.area > 0.05:
+            out.append(poly)
     return out
 
 

@@ -74,6 +74,9 @@ run "geometry stages"       $PY tests/test_geometry_stage.py
 run "image lean"            $PY tests/test_register_imagery.py
 run "demolished buildings"  $PY tests/test_demolished.py
 run "identical roofs, outline fit" $PY tests/test_repeat_roofs.py
+run "drawn outline"         $PY tests/test_hand_outline.py
+run "drawn existing solar"  $PY tests/test_drawn_solar.py
+run "ingest keeps outlines" $PY tests/test_ingest_outline.py
 run "plane refresh"         $PY tests/test_plane_refresh.py
 run "sunken regions"        $PY tests/test_sunken.py
 run "staircases"            $PY tests/test_staircase.py

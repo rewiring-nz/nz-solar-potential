@@ -179,6 +179,17 @@ def check_building(bid, rec, known):
         if outside(p):
             problems.append(f"no-panel tag {i}: outside this roof's crop")
 
+    # a drawn outline replaces the surveyed one in the build
+    # (roof_line_source.hand_outline), so it must be a real ring on this roof
+    ol = rec.get("outline")
+    if ol is not None:
+        if not isinstance(ol, list) or len(ol) < 4:
+            problems.append("outline: fewer than three corners")
+        elif ring_area(ol) <= 1.0:
+            problems.append("outline: encloses under 1 m2")
+        elif any(outside(p) for p in ol):
+            problems.append("outline: outside this roof's crop")
+
     prob = rec.get("problem")
     if prob is not None and prob not in VALID_PROBLEMS:
         problems.append(f"unknown problem flag {prob!r}")
@@ -189,7 +200,7 @@ def check_building(bid, rec, known):
     # threw away 20 drawn lines on the first batch that used the flag.
     if prob in ("absent", "not_building", "unclear") and lines:
         problems.append(f"flagged {prob} but also carries {len(lines)} drawn lines")
-    if not prob and not (lines or rec.get("obstructions") or rec.get("nopanel")):
+    if not prob and not (lines or rec.get("obstructions") or rec.get("nopanel") or ol):
         problems.append("nothing marked on it")
     return problems
 

@@ -192,7 +192,7 @@ def main():
     if lp.exists():
         for k, v in json.loads(lp.read_text()).get("buildings", {}).items():
             if not (v.get("lines") or v.get("obstructions")
-                    or v.get("nopanel") or v.get("problem")):
+                    or v.get("nopanel") or v.get("problem") or v.get("outline")):
                 continue
             _saved[int(k)] = {
                 "lines": v.get("lines") or [],
@@ -200,6 +200,8 @@ def main():
                 "nopanel": v.get("nopanel") or [],
                 "complete": bool(v.get("complete")),
                 "problem": v.get("problem"),
+                "outline": v.get("outline"),
+                "olines": v.get("olines") or [],
             }
 
     truth = {}
@@ -222,6 +224,17 @@ def main():
                 pr = f.get("properties") or {}
                 if pr.get("building_id") is not None and pr.get("address"):
                     addr[int(pr["building_id"])] = pr["address"]
+        except Exception:
+            pass
+    # ...and from data/addresses.json ([address, lon, lat, building_id] for
+    # every district address point), which covers roofs outside the built
+    # file: 30 of the 130-roof set had no address and showed only an id.
+    addr_path = DATA_DIR / "addresses.json"
+    if addr_path.exists():
+        try:
+            for row in json.loads(addr_path.read_text()):
+                if row[3] is not None and int(row[3]) not in addr:
+                    addr[int(row[3])] = row[0]
         except Exception:
             pass
 
