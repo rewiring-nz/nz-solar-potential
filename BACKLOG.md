@@ -361,9 +361,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   coherence (switches `SOLAR_SELECTED_TRUST`/`MIN_SCORE`,
   `SOLAR_FACET_COHERENCE`) scores 64 roofs / 0.601, but breaks messy
   commercial roofs (12 Stanley St, 42 Suburb St, 4734994, 5372596). No score
-  or shape statistic separates good readings from bad. Next: the vision
-  referee (`tools/vision_referee.py`) only where the photo and LiDAR readings
-  disagree (a few hundred roofs, a few dollars).
+  or shape statistic separates good readings from bad. Vision referee
+  (`tools/vision_referee.py`, photo + LiDAR relief, choosing among up to 4
+  readings), scored on 130 drawn roofs (roofs with line F >= 0.7): pipeline
+  pick 47, Sonnet 5.5 58 (35 better, 19 worse), Opus 5.5 at low effort 60
+  (35 better, 13 worse; mean line F 0.536 -> 0.594; $1.79, about $0.014 a
+  roof), best reading shown 73. Gating on its stated confidence makes it
+  worse. Next: decide whether to run it in the build where readings differ
+  (behind a switch, A/B'd), or improve what it is shown first.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
