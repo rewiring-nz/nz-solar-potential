@@ -234,7 +234,10 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   https://claude.ai/artifact/RroCQEBj9kA7BntDryKt4V (saves each roof online
   as it is drawn; B shows the build's faces as a reference). 91 roofs need
   drawing, development roofs first. Next:
-  - ingest the drawn roofs into `data/roof_labels.json`;
+  - ingest the drawn roofs into `data/roof_labels.json`: done 10 Nov for
+    the 53 drawn on 4-5 Nov (197 roofs held; 14 of the held-back 30 now
+    drawn and usable). Faces come from the page's own facesFor, run on
+    the 130-roof bundle's outlines;
   - give `tools/markup_benchmark.py` a `--set dev|holdout` option and add
     panel checks (installer rules: margins, no panel across a line, whole
     groups, orientation);
