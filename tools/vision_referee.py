@@ -3,6 +3,7 @@
     python tools/vision_referee.py render <building_id> <region> [--cands DIR]   # the images, to look at
     python tools/vision_referee.py run   [--cands DIR] [--max-usd 5] [--model M]  # ask, cached
     python tools/vision_referee.py score [--cands DIR] [--oracle FILE]            # against Josh's markup
+    python tools/vision_referee.py apply [--model M --tag T]                      # picks -> data/referee_faces
 
 The pipeline draws several readings of each roof -- the LiDAR partition, a
 precomputed photo reading, plain hip/gable forms -- and picks one by how
@@ -308,6 +309,31 @@ def cmd_score(a):
         print(f"  referee only when confident >= {t}: {m(sel):.3f} (>=0.7: {sum(x >= 0.7 for x in sel)})")
 
 
+def cmd_apply(a):
+    """Write the referee's picks as the readings the build uses with
+    SOLAR_READING_REFEREE=1 (src/reading_referee.py). A pick of "final" is
+    the build's own answer and writes nothing; an existing file for a roof
+    the referee now leaves alone is removed. Spends nothing: cached answers only."""
+    from src import reading_referee as RR
+    wrote = kept = removed = 0
+    for f in sorted(CACHE.glob(f"{a.tag}{a.model}_*.json")):
+        d = json.loads(f.read_text())
+        bid, name = d["id"], d.get("choice_name")
+        cf = Path(a.cands) / f"{bid}.json"
+        if not name or not cf.exists():
+            continue
+        if name == "final":
+            if RR.path(bid).exists():
+                RR.path(bid).unlink(); removed += 1
+            kept += 1
+            continue
+        _, _, cands = _load_cands(cf)
+        if RR.write(bid, cands.get(name) or [], name, a.model):
+            wrote += 1
+    print(f"{wrote} roofs take the referee's pick, {kept} keep the build's own, {removed} files removed "
+          f"-> {RR.REFEREE_FACES_DIR}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -320,8 +346,10 @@ def main():
     s = sub.add_parser("score"); s.add_argument("--cands", default=str(CANDS))
     s.add_argument("--oracle", default=str(Path.home() / "ab" / "oracle2.json")); s.add_argument("--model", default="claude-sonnet-5-5")
     s.add_argument("--tag", default="")
+    p = sub.add_parser("apply"); p.add_argument("--cands", default=str(CANDS))
+    p.add_argument("--model", default="claude-opus-5-5"); p.add_argument("--tag", default="op_")
     a = ap.parse_args()
-    {"render": cmd_render, "run": cmd_run, "score": cmd_score}[a.cmd](a)
+    {"render": cmd_render, "run": cmd_run, "score": cmd_score, "apply": cmd_apply}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -1304,7 +1304,10 @@ def selected_doc(building_id):
     when it has neither."""
     if building_id is None:
         return None
-    dirs = ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR]
+    # the vision referee's pick comes first when it is on (src/reading_referee.py)
+    from src.reading_referee import REFEREE_FACES_DIR, USE_READING_REFEREE
+    dirs = (([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
+            + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])
     for d in dirs:
         fp = d / f"{building_id}.json"
         if not fp.exists():

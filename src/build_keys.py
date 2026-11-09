@@ -116,6 +116,10 @@ def reading_hash(building_id):
     r = DATA / "repeat_faces" / f"{building_id}.json"
     if os.environ.get("SOLAR_REPEAT_ROOFS", "1") == "1" and r.exists():
         p = r
+    # the vision referee's pick comes first when it is on (src/reading_referee.py)
+    v = DATA / "referee_faces" / f"{building_id}.json"
+    if os.environ.get("SOLAR_READING_REFEREE", "0") == "1" and v.exists():
+        p = v
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 
