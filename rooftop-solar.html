@@ -55,7 +55,9 @@
   .toggle-row { display: flex; gap: 8px; margin: 8px 0 20px; }
   .toggle-btn {
     flex: 1; padding: 6px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; cursor: pointer;
-    border: 1px solid #555; background: #6f6f6f; color: #000; transition: all 0.15s;
+    /* Light text on dark grey: black on #6f6f6f measured 4.18:1, under the
+       4.5:1 tools/contrast_check.js asks for. */
+    border: 1px solid #555; background: #3a3f47; color: #eef1f5; transition: all 0.15s;
   }
   .toggle-btn.active { background: #0a1f44; color: #fff; border-color: #0a1f44; }
   #toggle-heatmap-dash.active {
@@ -868,7 +870,7 @@
     .m-power { font-size: 18px; font-weight: 800; line-height: 1.15; }
     .m-energy { font-size: 10.5px; font-weight: 700; color: #fff; opacity: 0.85; }
     .m-addr { font-size: 11px; font-weight: 700; color: #fff; margin-bottom: 1px; }
-    .m-empty { font-size: 12px; color: #777; font-style: italic; padding: 3px 0; }
+    .m-empty { font-size: 12px; color: #c4cad1; font-style: italic; padding: 3px 0; }
     #m-bottom {
       display: flex; flex-direction: column; align-items: center; gap: 8px;
       position: absolute; left: 8px; right: 8px; bottom: 10px; z-index: 6;
@@ -895,6 +897,10 @@
     .side-panel .tuning, .side-panel #layout-details, .side-panel .live-view { display: none; }
     /* Keep MapLibre's own chrome clear of the mobile bars. */
     .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: 104px; }
+    /* The corner buttons sit above the map credits (104px + 24px tall), so
+       neither the mobile pills nor the Heat Map / Panel Layout bar cover
+       Report an issue or Dark mode. */
+    #corner-actions { bottom: 136px; }
     .maplibregl-ctrl-top-right { top: 150px; }
     .side-panel {
       top: auto; left: 0; right: 0; bottom: 0; width: auto; max-width: none;
@@ -902,6 +908,11 @@
       transform: translateY(100%); transition: transform 0.25s ease;
     }
     .side-panel.visible.expanded { transform: translateY(0); }
+    /* An open sheet owns the bottom of the screen: the mode bar, the
+       Building details pill and the corner buttons sat on top of its last
+       rows (or showed through it). The sheet's own x closes it. */
+    body:has(#side-panel.visible.expanded) #m-bottom,
+    body:has(#side-panel.visible.expanded) #corner-actions { display: none; }
     #side-panel.visible + .mobile-details-tab { display: block; }
     #side-panel.visible.expanded + .mobile-details-tab { display: none; }
     .mobile-details-tab {
@@ -1054,6 +1065,7 @@
   html.light .side-panel .slider-row label { color: var(--ink-2); }
   html.light #zoom-hint { color: var(--ink); background: #f3f5f8; }
   html.light .m-box { color: var(--ink); background: #f3f5f8; }
+  html.light .m-empty { color: var(--ink-2); }
   html.light .m-label { color: var(--ink-2); }
   html.light .m-energy { color: var(--ink); }
   html.light .m-addr { color: var(--ink); }
@@ -3137,7 +3149,9 @@ map.on("load", async () => {
     if (sig !== econCacheSig) { econCache.clear(); econCacheSig = sig; }
     let saved = null;
     try { saved = localStorage.getItem(btStoreKey(pr.building_id)); } catch (err) { saved = null; }
-    const key = `${pr.building_id}|${count}|${Math.round(kwhYear)}|${saved || ""}`;
+    // keyed on whether the town's sunlight table is in: it sets lat and lon
+    const sunIn = SUN_DOCS[pr.sr] && SUN_DOCS[pr.sr] !== true;
+    const key = `${pr.building_id}|${count}|${Math.round(kwhYear)}|${saved || ""}|${sunIn ? 1 : 0}`;
     if (econCache.has(key)) return econCache.get(key);
     const kwp = count * assumptions.panel_rated_power_w / 1000;
     const sun = SUN_DOCS[pr.sr];
@@ -3233,7 +3247,10 @@ map.on("load", async () => {
     const sig = JSON.stringify([econ, assumptions, mode, coveragePct]);
     if (sig !== moneyCacheSig) { moneyCache.clear(); moneyCacheSig = sig; }
     const orders = F.panels.map(p => p.q.fill_order).sort((a, b) => a - b).join(",");
-    const key = `${id}|${orders}|${saved || ""}|${SUN_DOCS[pr.sr] ? 1 : 0}`;
+    // SUN_DOCS[region] is true while its table is still loading: a price made
+    // then is the fallback one and must not be reused once the table is in.
+    const sunIn = SUN_DOCS[pr.sr] && SUN_DOCS[pr.sr] !== true;
+    const key = `${id}|${orders}|${saved || ""}|${sunIn ? 1 : 0}`;
     if (moneyCache.has(key)) return moneyCache.get(key);
     const m = generationForInner(id, pr);
     if (!m || !m.curve || !(m.kwp.value > 0)) return null;

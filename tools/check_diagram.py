@@ -11,7 +11,7 @@ number the diagram actually prints, which must still be that number). The check
 fails if any symbol has moved or any quoted figure has changed.
 
 That second kind matters more than it looks. The system derate moved three times
-in one day -- 19% to 15% to 11.34% -- and each move silently invalidated any
+in one day -- 19% to 15% to 11.34%, then 13.79% with glass reflection -- and each move silently invalidated any
 document quoting the old figure. This turns that into a failing check instead of
 a stale page nobody notices.
 
@@ -91,7 +91,7 @@ VALUES = {
     "config.PV_ASSUMPTIONS.panel_rated_power_w": 500,
     "config.PV_ASSUMPTIONS.panel_efficiency_pct": 22.5,
     "config.PV_ASSUMPTIONS.inverter_efficiency_pct": 97.0,
-    "config.PV_ASSUMPTIONS.system_derate_pct": 11.34,
+    "config.PV_ASSUMPTIONS.system_derate_pct": 13.79,
     "src.build_layout_geojson.MIN_ROOF_CONFIDENCE": 0.45,
     "src.build_layout_geojson.DEEP_SHADE_FACTOR": 0.45,
     "src.build_layout_geojson.BIG_ROOF_M2": 1000.0,
@@ -104,12 +104,12 @@ VALUES = {
 
 # Derived figures the diagram states in prose, each with how it is computed.
 DERIVED = {
-    "DC-to-AC factor 0.860": lambda c: round(
+    "DC-to-AC factor 0.836": lambda c: round(
         (c.PV_ASSUMPTIONS["inverter_efficiency_pct"] / 100)
-        * (1 - c.PV_ASSUMPTIONS["system_derate_pct"] / 100), 3) == 0.860,
-    "total system loss 14.0%": lambda c: abs(
+        * (1 - c.PV_ASSUMPTIONS["system_derate_pct"] / 100), 3) == 0.836,
+    "total system loss 16.4%": lambda c: abs(
         100 * (1 - (c.PV_ASSUMPTIONS["inverter_efficiency_pct"] / 100)
-               * (1 - c.PV_ASSUMPTIONS["system_derate_pct"] / 100)) - 14.0) < 0.05,
+               * (1 - c.PV_ASSUMPTIONS["system_derate_pct"] / 100)) - 16.4) < 0.05,
     "panel area 2.22 m2": lambda c: abs(
         c.PANEL_WIDTH_M * c.PANEL_HEIGHT_M - 2.224) < 0.005,
 }

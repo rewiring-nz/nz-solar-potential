@@ -102,9 +102,9 @@ Guides now live in matching persona subdirectories, with historical notes
 under `docs/ai-agents/archive/`; references follow the moves. Documentation
 maintenance includes removing obsolete code paths and redundant explanations.
 
-Live: data version 73 (published 8 Nov). 35 regions, 1,329,375 panels,
-762.2 GWh. Building on the VM: v74, with the size-dependent edge gap on
-(`SOLAR_EDGE_GAP=1`, `src/panel_fitting.py`).
+Live: data version 74 (published 9 Nov). 35 regions, 1,256,226 panels,
+720.4 GWh, with the size-dependent edge gap on (`SOLAR_EDGE_GAP=1`,
+`src/panel_fitting.py`).
 
 v69 (2 Nov): 32,838 buildings, 35 regions, 1,300,366
 panels (+1,123), 777.0 GWh. Carries the v68 review fixes below (weak shared
