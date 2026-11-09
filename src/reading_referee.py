@@ -20,8 +20,9 @@ compete with the LiDAR path.
 Off by default. The first A/B (markup_benchmark, blind, all drawn roofs,
 picks from candidates dumped 24 Oct) showed no gain: line F 0.586 off,
 0.582 on, 63 roofs right either way; on the 64 roofs it changed, 14 better
-and 20 worse. The build's own pick had improved since the dump, so the
-referee's picks need asking again from fresh candidates before another A/B.
+and 20 worse. Re-asked on candidates
+from the current build: 0.586 off, 0.591 on, 63 roofs right either way;
+on the 48 roofs it changed, 14 better and 15 worse. No gain; it stays off.
 """
 import json
 import os

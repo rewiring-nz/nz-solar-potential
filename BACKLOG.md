@@ -374,8 +374,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   both ways, faces right 33 -> 36); of the 64 roofs it changes, 14 better,
   20 worse. The picks were made from candidates dumped on 24 Oct, and
   today's own pick (63) already beats that day's (47), so the referee was
-  choosing against an older final. Off. Next: re-dump candidates from
-  today's build and re-ask (about $1.80), then A/B again.
+  choosing against an older final. Re-asked on candidates from today's
+  build ($1.79): its pick scores 62 roofs right against the build's own 63
+  (best shown 78); built blind with the switch on, line F 0.586 -> 0.591,
+  63 roofs right both ways, faces right 33 -> 36; of the 48 roofs it
+  changes, 14 better, 15 worse. No gain: the switch stays off. The build's
+  own pick has caught up with what the referee adds; the gap left is
+  between the pick and the best drawing shown (63 vs 78), which neither
+  finds.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
