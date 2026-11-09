@@ -367,8 +367,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   pick 47, Sonnet 5.5 58 (35 better, 19 worse), Opus 5.5 at low effort 60
   (35 better, 13 worse; mean line F 0.536 -> 0.594; $1.79, about $0.014 a
   roof), best reading shown 73. Gating on its stated confidence makes it
-  worse. Next: decide whether to run it in the build where readings differ
-  (behind a switch, A/B'd), or improve what it is shown first.
+  worse. In the build behind `SOLAR_READING_REFEREE=1`
+  (`src/reading_referee.py`; `tools/vision_referee.py apply` writes the
+  picks to `data/referee_faces/`): built blind with today's code on the
+  drawn roofs, it makes no gain (line F 0.586 -> 0.582, 63 roofs right
+  both ways, faces right 33 -> 36); of the 64 roofs it changes, 14 better,
+  20 worse. The picks were made from candidates dumped on 24 Oct, and
+  today's own pick (63) already beats that day's (47), so the referee was
+  choosing against an older final. Off. Next: re-dump candidates from
+  today's build and re-ask (about $1.80), then A/B again.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of

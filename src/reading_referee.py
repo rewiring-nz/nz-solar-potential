@@ -15,8 +15,13 @@ data/referee_faces/<id>.json in the selected-faces schema (source
 "referee", score 1.0). With SOLAR_READING_REFEREE=1 the build reads that
 file before the repeat-roof and selected readings
 (roof_partition.selected_doc), and at score 1.0 it is trusted: it does not
-compete with the LiDAR path. Off by default until an A/B on the build's own
-output (tools/markup_benchmark.py, blind) shows it helps.
+compete with the LiDAR path.
+
+Off by default. The first A/B (markup_benchmark, blind, all drawn roofs,
+picks from candidates dumped 24 Oct) showed no gain: line F 0.586 off,
+0.582 on, 63 roofs right either way; on the 64 roofs it changed, 14 better
+and 20 worse. The build's own pick had improved since the dump, so the
+referee's picks need asking again from fresh candidates before another A/B.
 """
 import json
 import os
