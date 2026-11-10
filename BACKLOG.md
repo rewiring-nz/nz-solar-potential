@@ -499,19 +499,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
-- **Zoomed-out savings need the cells rebuilt (10 Nov).** The code is in:
-  emit_region sums each cell's roofs into money groups and combine_regions
-  packs them as `mg`; the map prices them below zoom 13. Live cells (v74)
-  have no `mg`, so the total still says "zoom in" there until emit_region
-  and combine_regions are re-run for every region and the tiles published.
-  Re-emit directly (emit_region per region, then combine_regions), not
-  through run_district_build.sh: the build re-lays every stale building
-  first, and since 9 Nov that is every building.
-  Measured by building the groups from live roofs: within 2% of the per-roof
-  sum (Queenstown 0.3-1.5%, Wanaka 0.0-1.9%) at all three cell sizes. One
-  average roof per cell was 7% high in Queenstown and 23% low for Wanaka
-  homes (their tariff); without height, businesses were 30% low. Check the
-  pmtiles size after the rebuild: `mg` is about 1 kB per finest cell.
+- **Zoomed-out savings: live in v75 (11 Nov).** Cells carry money groups
+  (`mg`); the total prices them below zoom 13. Live: $14.95M/yr over ~14,966
+  roofs at zoom 11.5 over Queenstown; $37.2M (zoom 8.5) and $37.3M (zoom 5.5)
+  over the district's 31,611 roofs. Each cell size ships only at its band's
+  zooms (building_cells.pmtiles 7.9 MB); one zoom-9 tile over central
+  Queenstown is 780 kB, the largest. v75 re-emitted v74's layouts: no roof
+  changed. Re-emit directly (emit_region per region, then combine_regions),
+  not through run_district_build.sh, while every building is stale.
 - **Waiting for the next full rebuild (not yield-only)**: the sunlight
   calibration fix (flat roof now reproduces SolarView's 1,362.5 kWh/m2;
   v71 is 1.9% high flat, 3.5% high on north faces at 25 deg, in the
@@ -541,6 +536,31 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Scale
 
+- **National, with fast roof updates: the plan (11 Nov).** Measured on the
+  Queenstown district (35 regions, 32,838 buildings, one 16-core VM): a full
+  re-lay took 10.7 h (v72), about 14 core-seconds a building. Wanaka
+  (8,565 buildings) by stage: layout 2,400-2,900 s, gate_panels ~1,800 s,
+  heat-map raster ~2,300 s, emit ~550 s. At that rate New Zealand's ~2M
+  buildings are ~7,800 core-hours a full re-lay, about NZ$490 of spot VMs,
+  plus the face readings (predict_faces, ~10 s a building in one process)
+  once. Two things make a roof change take hours, not days:
+  1. **Re-run only what a change touches.** Today one build key per
+     building covers all the geometry code, so any change re-lays everything
+     (on 10 Nov every building was stale). The heat-map raster reads only
+     the LiDAR and the building's shading, not the faces (its header), so a
+     roof-line change should not re-run it; the panel gate's LiDAR checks
+     belong at fit time. Give each stage its own key per building and skip a
+     building whose new faces equal its stored faces: a roof-line change then
+     re-lays only the roofs whose faces moved, and only layout and emit run.
+  2. **Run it on the fleet.** `tools/fleet.sh` + `src/gcs_queue.py` spread
+     regions over spot workers; the regional CPU quota (100) caps it at six
+     16-core workers, ~80 h for a national full re-lay. A quota request (e.g.
+     800 CPUs) brings that to ~10 h at the same cost. The fleet has never
+     run (dress rehearsal below).
+  Rollout of a roof change: the drawn roofs blind (minutes), one district
+  (hours), then national in the background, busiest areas first; each
+  building already carries its model version (`mv`), so a half-rolled-out
+  map stays consistent per building.
 - **Dress rehearsal on one city** (docs/ai-agents/archive/national-rehearsal.md). The fleet
   (`tools/fleet.sh`, `src/gcs_queue.py`) has never run as a fleet. LINZ and
   OpenTopography fetch rates are unknown (`tools/measure_fetch_rate.py`). The
