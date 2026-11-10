@@ -106,6 +106,7 @@ def _combine_cells(regions, out_root, dest_tmp):
             acc = sums[key]
             for k, x in v.items():
                 acc[k] += x
+    BAND_ZOOMS = {lod: (lo, hi) for lod, lo, hi in CELL_BANDS}
     feats = []
     for key in sorted(sums):
         z, x, y, btype = key.split("/")
@@ -134,7 +135,13 @@ def _combine_cells(regions, out_root, dest_tmp):
         mg = _money_groups(v)
         if mg:
             props["mg"] = json.dumps(mg, separators=(",", ":"))
+        # Each cell size goes only into the tile zooms its band is drawn at
+        # (the page's cells-fill-<lod> layers: minzoom from, maxzoom to), not
+        # every zoom: with the money groups, the finest cells packed into
+        # every zoom made the zoom 5-9 tiles about 1 MB each.
+        lo, hi = BAND_ZOOMS[z]
         feats.append({"type": "Feature", "properties": props,
+                      "tippecanoe": {"minzoom": lo, "maxzoom": hi},
                       "geometry": {"type": "Polygon", "coordinates": [[
                           [w, s], [e, s], [e, n], [w, n], [w, s]]]}})
     src = dest_tmp / "_cells.geojson"
@@ -155,7 +162,7 @@ def _combine_cells(regions, out_root, dest_tmp):
         for pct in COVERAGE_STEPS:
             p[f"dens_{pct}"] = round((p.get(f"kwh_{pct}") or 0.0) / km2)   # kWh/yr per km2
         p["dens_fit"] = round((p.get("fitted_kwh") or 0.0) / km2)
-        pts.append({"type": "Feature", "properties": p,
+        pts.append({"type": "Feature", "properties": p, "tippecanoe": f["tippecanoe"],
                     "geometry": {"type": "Point", "coordinates": [(w + e) / 2, (s_ + n) / 2]}})
     src_pts = dest_tmp / "_cellpts.geojson"
     src_pts.write_text(json.dumps({"type": "FeatureCollection", "features": pts},

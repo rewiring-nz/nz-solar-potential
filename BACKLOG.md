@@ -504,6 +504,9 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   packs them as `mg`; the map prices them below zoom 13. Live cells (v74)
   have no `mg`, so the total still says "zoom in" there until emit_region
   and combine_regions are re-run for every region and the tiles published.
+  Re-emit directly (emit_region per region, then combine_regions), not
+  through run_district_build.sh: the build re-lays every stale building
+  first, and since 9 Nov that is every building.
   Measured by building the groups from live roofs: within 2% of the per-roof
   sum (Queenstown 0.3-1.5%, Wanaka 0.0-1.9%) at all three cell sizes. One
   average roof per cell was 7% high in Queenstown and 23% low for Wanaka
@@ -515,7 +518,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   Queenstown district), the heat map shading like panels, sys_kwh_N by fill
   order, and the PV notes' 16.4% losses. A yield-only rebuild would keep
   each panel's stored shading_factor, whose beam share comes from the old
-  sun model; rebuild in full.
+  sun model; rebuild in full. Since v74 (8 Nov) the geometry code changed
+  too (edge gap and both frame-search fixes on by default, the drawn-outline
+  markup), so on 10 Nov tools/patch_stale_selected.py marked every building
+  in all 35 served regions stale: the next build is a full re-lay of every
+  region, many VM hours, not a patch. Plan it at the start of a month's VM
+  budget (data/vm_budget.json).
 - **Judgement calls from the independent review, not yet acted on:**
   terrain shading is nearly inert in the yield model (pilot horizon on vs
   open: -0.4% flat, -0.8% north at 25 deg) because one monthly cloud factor
