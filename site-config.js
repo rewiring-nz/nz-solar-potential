@@ -13,11 +13,11 @@ window.SITE = {
   // Bumped on every DEPLOY of this site's data: the ?v= param is the only
   // thing that makes a browser re-fetch solar_potential.geojson and the
   // pmtiles, whose URLs are otherwise identical across builds.
-  dataVersion: "74",
+  dataVersion: "75",
   // Where the data lives: one folder per release in the tiles bucket
   // (tools/publish_served.py). Rolling back is pointing this at an older
   // version folder that is still there (the newest three are kept).
-  dataBase: "https://storage.googleapis.com/solar-potential-map-tiles/v74/",
+  dataBase: "https://storage.googleapis.com/solar-potential-map-tiles/v75/",
   // The Electricity Authority network region whose home prices the bill
   // model uses (regional_prices.js): 34 = Queenstown (Aurora Energy).
   priceRegion: 34,
