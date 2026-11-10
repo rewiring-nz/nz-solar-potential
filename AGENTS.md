@@ -402,6 +402,11 @@ figure for the same thing. Code enforces this:
   with a loan the card gives the net a year instead. A closed roof is priced by
   `roofMoney` in `rooftop-solar.html`, the card's own calculation on the
   panels the map shows; a roof without loaded panel tiles gets no pill.
+  From zoom 13 to 16 there are no pills and the area's total adds up
+  `roofMoneyEstimate`: the same bill model at the roof's size on the map,
+  from its baked kWh and panel count with the area's sunny-side day shape
+  (sum within 0.4% of the cards' figures, measured on 397 roofs). Below zoom
+  13 there are no buildings to price and it says so.
   The map's battery price is `BATTERY_DEFAULTS.cost_per_kwh` ($900/kWh).
 - `wholesale.html` (script `wholesale.js`) shows historic wholesale prices
   at FKN0331 (Frankton), CML0331 (Cromwell) and BEN2201 (Benmore): averages
