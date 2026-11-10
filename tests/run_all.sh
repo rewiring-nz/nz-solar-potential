@@ -73,6 +73,7 @@ run "small obstructions"    $PY tests/test_small_obstructions.py
 run "geometry stages"       $PY tests/test_geometry_stage.py
 run "image lean"            $PY tests/test_register_imagery.py
 run "demolished buildings"  $PY tests/test_demolished.py
+run "money groups"          $PY tests/test_money_groups.py
 run "identical roofs, outline fit" $PY tests/test_repeat_roofs.py
 run "reading referee switch" $PY tests/test_reading_referee.py
 run "drawn outline"         $PY tests/test_hand_outline.py

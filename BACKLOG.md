@@ -499,6 +499,16 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **Zoomed-out savings need the cells rebuilt (10 Nov).** The code is in:
+  emit_region sums each cell's roofs into money groups and combine_regions
+  packs them as `mg`; the map prices them below zoom 13. Live cells (v74)
+  have no `mg`, so the total still says "zoom in" there until emit_region
+  and combine_regions are re-run for every region and the tiles published.
+  Measured by building the groups from live roofs: within 2% of the per-roof
+  sum (Queenstown 0.3-1.5%, Wanaka 0.0-1.9%) at all three cell sizes. One
+  average roof per cell was 7% high in Queenstown and 23% low for Wanaka
+  homes (their tariff); without height, businesses were 30% low. Check the
+  pmtiles size after the rebuild: `mg` is about 1 kB per finest cell.
 - **Waiting for the next full rebuild (not yield-only)**: the sunlight
   calibration fix (flat roof now reproduces SolarView's 1,362.5 kWh/m2;
   v71 is 1.9% high flat, 3.5% high on north faces at 25 deg, in the

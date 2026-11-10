@@ -32,6 +32,7 @@ Usage: python src/emit_region.py <region> [--out data/out]
 
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -444,6 +445,7 @@ def emit(region, out_root=OUT_ROOT):
             for pct in COVERAGE_STEPS:
                 kwp = area * (pct / 100.0) * density_kw
                 per_pct.append((pct, kwp, kwp * _best_poa(p, pct) * derate))
+        mg = money_group(p, region)
         # ONE CELL PER (grid, cell, type): the sums stay exact per type at
         # every zoom, and summing every type gives the old all-buildings total,
         # so a frontend that does not know about types reads the same numbers.
@@ -464,6 +466,10 @@ def emit(region, out_root=OUT_ROOT):
             for d in range(10, 101, 10):
                 cell[f"fill_panels_{d}"] = cell.get(f"fill_panels_{d}", 0.0) + (p.get(f"fill_panels_{d}") or 0.0)
                 cell[f"fill_kwh_{d}"] = cell.get(f"fill_kwh_{d}", 0.0) + (p.get(f"fill_kwh_{d}") or 0.0)
+            if mg is not None:
+                for fld, x in mg[1].items():
+                    k = f"mg:{mg[0]}:{fld}"
+                    cell[k] = cell.get(k, 0.0) + x
             if per_pct:
                 cell["n_est"] += 1
                 for pct, kwp, kwh in per_pct:
@@ -611,6 +617,35 @@ def emit(region, out_root=OUT_ROOT):
           + f", {len(detail)} detail tiles, {n_heat} heat-map tiles, "
           f"{summary['panel_count']:,} panels, {summary['kwh']/1e3:,.0f} MWh")
     return summary
+
+
+# MONEY GROUPS: what the map needs to price a cell's roofs below the building
+# zoom. The bill model is not linear in a roof's size (a home's use is met by
+# its first panels, the rest export; a household's system is capped), a
+# business's use comes from its floor area (roof x storeys, from its height),
+# and prices are the area's own tariff. Priced as one average roof, a cell
+# came out 7% high over central Queenstown and 23% low for Wanaka's homes
+# (their tariff), businesses 30% low (no height). So each cell also sums its
+# roofs by (sun region, size band, and for non-homes 1 m height band), and
+# the map prices each group's average roof: within 2.5% of the per-roof sum
+# for every type, on 4,900 Queenstown roofs at all three cell sizes (10 Nov).
+# Keys are "<sr>|<size band>|<height band>"; size bands are half-octaves of
+# the roof's full layout, floor(2 log2 panels).
+MG_LADDER = range(10, 101, 10)
+
+
+def money_group(p, sr):
+    """(key, sums) for one building's money group, or None if unpriceable."""
+    full = p.get("fill_panels_100")
+    if not full:
+        return None
+    sb = int(math.floor(2 * math.log2(max(1.0, full))))
+    hb = "" if (p.get("btype") or "home") == "home" else str(int(math.floor(p.get("height_m") or 0)))
+    sums = {"n": 1, "a": p.get("facet_area_m2") or 0.0, "h": p.get("height_m") or 0.0}
+    for d in MG_LADDER:
+        sums[f"p{d}"] = p.get(f"fill_panels_{d}") or 0.0
+        sums[f"k{d}"] = p.get(f"fill_kwh_{d}") or 0.0
+    return f"{sr}|{sb}|{hb}", sums
 
 
 def main():

@@ -406,7 +406,12 @@ figure for the same thing. Code enforces this:
   `roofMoneyEstimate`: the same bill model at the roof's size on the map,
   from its baked kWh and panel count with the area's sunny-side day shape
   (sum within 0.4% of the cards' figures, measured on 397 roofs). Below zoom
-  13 there are no buildings to price and it says so.
+  13 it prices cells with `cellMoneyEstimate`: each cell's `mg` money groups
+  (its roofs summed by sun region, size band and, for non-homes, 1 m height
+  band; `money_group` in src/emit_region.py) priced as their average roof
+  (within 2% of the per-roof sum in Queenstown and Wanaka at every cell
+  size). Cells built before the groups existed have no `mg`, and the total
+  says to zoom in.
   The map's battery price is `BATTERY_DEFAULTS.cost_per_kwh` ($900/kWh).
 - `wholesale.html` (script `wholesale.js`) shows historic wholesale prices
   at FKN0331 (Frankton), CML0331 (Cromwell) and BEN2201 (Benmore): averages
