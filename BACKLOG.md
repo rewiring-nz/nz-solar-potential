@@ -227,6 +227,21 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   outline and missed. Next: show it the plain photo beside the drawing,
   try medium effort, then decide whether to screen the district with it.
 
+- **Line detector retrained on every town (10 Nov).** The build's
+  detectors (`roof_lines_v5`/`v6`, Sep) learned from Queenstown-central roofs
+  only: the other towns' photos are not on the Mac. Exported on the VM from
+  all 164 usable drawn roofs, the 14 drawn held-back roofs pinned as
+  validation (`--val-ids`), trained on the Mac. Mean F1 (ridge, valley,
+  cliff) on those 14: v5 0.090, v6 0.071, v8 0.143; new model on 149 roofs
+  0.252 (ridge 0.46, valley 0.24, cliff 0.06, hip 0.26),
+  `data/models/roof_lines_v9_eval.pt`. Same recipe on subsets: the 64
+  Queenstown-central roofs alone 0.088; 37 random roofs 0.20/0.14; 75
+  random 0.21/0.19. Variety of towns is what carried over; more random
+  drawings still help, more gently. Not yet in the build: v5 drives the
+  calibrated line extractor and v6 the evidence map, so v9 needs the blind
+  benchmark (predict_faces on the VM, then markup_benchmark) before it
+  replaces either. Cliffs stay near zero: steps are a LiDAR question.
+
 - **The roof set: get 100 roofs right, then scale.** `data/roof_set.json`
   (`tools/make_roof_set.py`): 100 development roofs (35 flagged, 9 from the
   v68 render review, 25 new of the failing kinds, 31 already drawn) and 30
