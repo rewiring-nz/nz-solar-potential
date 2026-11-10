@@ -26,7 +26,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
-OUT = ROOT / "data" / "selected_faces"
+# SOLAR_SELECTED_DIR writes the readings elsewhere (a benchmark arm), so a
+# trial never overwrites the readings the build uses.
+OUT = Path(os.environ.get("SOLAR_SELECTED_DIR") or ROOT / "data" / "selected_faces")
+# Line models by role (see ROLE SPLIT below). A trial swaps one in by file
+# name under data/models/; a 4-kind model (ridge, valley, cliff, hip) in the
+# extractor role is read for its first three kinds, the ones v5 gives.
+LINES_EXTRACT = os.environ.get("SOLAR_LINES_EXTRACT", "roof_lines_v5.pt")
+LINES_EVIDENCE = os.environ.get("SOLAR_LINES_EVIDENCE", "roof_lines_v6.pt")
 PAD_M = 4.0
 
 
@@ -70,17 +77,21 @@ def main():
     sam = sam_model_registry["vit_b"](checkpoint=str(ROOT / "data/sam_vit_b.pth"))
     sam.to(device)
     predictor = SamPredictor(sam)
-    ck = torch.load(ROOT / "data/models/roof_lines_v5.pt",
+    ck = torch.load(ROOT / "data/models" / LINES_EXTRACT,
                     map_location="cpu", weights_only=False)
-    lm = T.build_unet(ck.get("pretrained", False), out_channels=3)
+    n_out = ck["state_dict"]["out.bias"].shape[0]
+    lm = T.build_unet(ck.get("pretrained", False), out_channels=n_out)
     lm.load_state_dict(ck["state_dict"])
     lm.to(device).eval()
+    if n_out > 3:
+        _lm4 = lm
+        lm = lambda x: _lm4(x)[:, :3]
     # ROLE SPLIT: v5 drives the line-extraction stack (its statistics are
     # what every threshold downstream was calibrated on -- v6 there
     # collapsed LINE agreement 0.754 -> 0.422); v6, which finally SEES
     # hips (combined crease F1 0.736 vs 0.446), is the EVIDENCE model:
     # the scorer's eyes and the form contest's seam support.
-    ck6 = torch.load(ROOT / "data/models/roof_lines_v6.pt",
+    ck6 = torch.load(ROOT / "data/models" / LINES_EVIDENCE,
                      map_location="cpu", weights_only=False)
     lm6 = T.build_unet(ck6.get("pretrained", False), out_channels=4)
     try:
