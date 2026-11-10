@@ -241,6 +241,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   calibrated line extractor and v6 the evidence map, so v9 needs the blind
   benchmark (predict_faces on the VM, then markup_benchmark) before it
   replaces either. Cliffs stay near zero: steps are a LiDAR question.
+  Blind benchmark (11 Nov, 179 drawn roofs, VM): v9 as the evidence map
+  only ties v6 (line_f 0.573 both, 79 lines right, face IoU 0.614 vs
+  0.613; 2 better, 2 worse); v9 for both roles is worse (line_f 0.561, 74
+  right, face IoU 0.617; 16 better, 30 worse, change -0.012 [-0.029,
+  +0.004]). Pixel F1 on held-back roofs did not carry over to faces: the
+  build stays on v5/v6. The faces' errors are not in the line detector.
 
 - **The roof set: get 100 roofs right, then scale.** `data/roof_set.json`
   (`tools/make_roof_set.py`): 100 development roofs (35 flagged, 9 from the
@@ -499,24 +505,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
-- **Buildings with no outline show as raw survey spikes in 3D (11 Nov).**
-  The large block on Beach St / Rees St, Queenstown CBD (NZTM ~1258205,
-  5004375, now a finished flat roof with a striped glass skylight) has no
-  LINZ outline: the outlines come from the 2021 photos, which show it under
-  construction with a tower crane. With no outline there is no solid, and
-  `flatten_buildings` (tools/build_terrain_tiles.py) presses only outlined
-  footprints, so the 3D view drapes the 2021 DSM there, crane and scaffold
-  included, as a spiky mesh. Not glass: the skylight did not exist when the
-  survey was flown. The fix is general: find raised, building-sized LiDAR
-  blobs that no outline covers (nDSM > ~3 m, smooth, >= ~80 m2, outside
-  outlines + 2 m) and either press them to the ground in terrain_ground or
-  give them a simple box solid; a building that changed since the survey
-  gets no estimate either way. A first pass on pilot finds 49 such blobs,
-  many on hillside where the ground estimate (a 41 m opening) fails, so the
-  detector needs the ground DEM, not an opening, before it is trusted.
-  `flatten_buildings` also skips an outline whose 2-5 m ground ring is all
-  other buildings (a wall-to-wall CBD block): it should fall back to the
-  nearest street ground rather than leave the roof in the terrain.
+- **Buildings with no outline: pressed flat in the 3D ground (11 Nov, code
+  only, not yet in a build).** The large block on Beach St / Rees St,
+  Queenstown CBD (NZTM ~1258205, 5004375; a finished flat roof with a glass
+  skylight today) has no LINZ outline: the outlines come from the 2021
+  photos, which show it under construction with a tower crane. No outline,
+  no solid, and `flatten_buildings` pressed only outlined footprints, so
+  the 3D view draped the 2021 survey there, crane and scaffold included, as
+  spikes. Not glass: the skylight did not exist when the survey was flown.
+  `unoutlined_structures` (tools/build_terrain_tiles.py) now finds such
+  structures by a top that is flat at 5 m, walled, raised, unoutlined and
+  not green in the photo, and presses it to the ground beside it. On pilot
+  it finds 6, all real (two construction sites, three houses, a moored
+  boat); without the photo test it found 61, mostly tree crowns.
+  `flatten_buildings` also falls back to ground up to 15 m out when a
+  footprint's 2-5 m ring is all other buildings (none on pilot).
+  Goes live with the next terrain_ground tile build
+  (`tools/build_terrain_tiles.py --ground`, VM). Next: draw such a
+  structure as a plain box solid rather than leave it flat; an estimate
+  needs an outline (the roof may have changed since the survey).
 - **Zoomed-out savings: live in v75 (11 Nov).** Cells carry money groups
   (`mg`); the total prices them below zoom 13. Live: $14.95M/yr over ~14,966
   roofs at zoom 11.5 over Queenstown; $37.2M (zoom 8.5) and $37.3M (zoom 5.5)

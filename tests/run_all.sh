@@ -66,6 +66,7 @@ run "cloud preview publishing" $PY tests/test_publish_preview.py
 run "static documentation"  $PY tests/test_render_docs.py
 run "canonical map links"   $PY tests/test_canonical_map_links.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
+run "terrain ground"        $PY tests/test_terrain_ground.py
 run "seam steps"            $PY tests/test_seam_steps.py
 run "seam fixes"            $PY tests/test_seam_fixes.py
 run "roof levels"           $PY tests/test_roof_levels.py
