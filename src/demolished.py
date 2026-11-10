@@ -20,7 +20,9 @@ current photo, the gone ones had an outline-edge strength (median over the
 outline of the strongest across-line gradient within 0.5 m, over the
 window's median gradient) of at most 2.55, where 90% of standing roofs had
 2.9 or more; edge on at most 44% of the outline, against 49% or more for
-90% of standing roofs; and an inside texture of 0.27 or more. A road over
+90% of standing roofs; and an inside texture of 0.27 or more. A building
+replaced on another footprint fails the texture test (its new roof is
+smooth), so a weak edge alone also screens (SCREEN_WEAK_*). A road over
 the site defeats the edge test -- 18 Beetham St's lane markings run along
 its outline -- but the brightness change catches it.
 
@@ -78,6 +80,19 @@ SCREEN_STRUCT = 0.15       # gradient correlation inside the outline, survey pho
 SCREEN_EDGE_FRAC = 0.7     # share of the outline with an edge over 3x the window's median gradient
 SCREEN_TEXTURE = 0.5       # median gradient inside the outline / the window's median gradient
 SCREEN_LUM = 60.0          # ...or a change in mean brightness inside the outline (0-255)
+# ...or no wall along the outline in the map's photo, whatever the surface
+# inside: a building replaced on another footprint has a smooth new roof
+# across the old line, which the texture test reads as standing. Gone roofs
+# measured edge strength 2.55 or less and edge on 44% or less of the outline;
+# 90% of standing roofs had 2.9+ and 49%+ (header). On the 14,075 outlines
+# with both photos this sends 142 more roofs to the referee; 6 of 24 sampled
+# were gone or replaced, the rest standing, shaded or under trees.
+SCREEN_WEAK_EDGE = 2.55    # median across-line edge strength in the map's photo
+SCREEN_WEAK_FRAC = 0.5     # share of the outline with an edge in the map's photo
+# Bumped when the screen changes: a cached record without "screen" (a roof the
+# screen let through) is screened again under a new version; screened roofs
+# keep their records and cached verdicts.
+SCREEN_VERSION = 2
 # the referee
 REFEREE_MODEL = "claude-sonnet-5-5"
 REFEREE_PRICE = (3.0, 15.0)        # USD per million tokens in / out, for the budget stop
@@ -168,6 +183,7 @@ def screened(ev):
     if not ev or ev["struct"] >= SCREEN_STRUCT:
         return False
     return bool((ev["edgefrac_cur"] < SCREEN_EDGE_FRAC and ev["tex_cur"] > SCREEN_TEXTURE)
+                or (ev["edge_cur"] < SCREEN_WEAK_EDGE and ev["edgefrac_cur"] < SCREEN_WEAK_FRAC)
                 or abs(ev["lum_ref"] - ev["lum_cur"]) > SCREEN_LUM)
 
 
@@ -311,14 +327,15 @@ def detect(region, paths):
         s = shifts.get(str(bid)) or [0.0, 0.0, 0.0]
         key = input_key(g, s)
         old = cache.get(str(bid))
-        if old and old.get("key") == key:
+        if old and old.get("key") == key and ("screen" in old or old.get("sv") == SCREEN_VERSION):
             rec = old
         else:
             try:
                 ev = evidence(g, ref_ds, tiles, s)
             except Exception:
                 ev = None
-            rec = {"key": key, "screen": ev, "verdict": None} if screened(ev) else {"key": key}
+            rec = ({"key": key, "screen": ev, "verdict": None} if screened(ev)
+                   else {"key": key, "sv": SCREEN_VERSION})
         recs[str(bid)] = rec
         if "screen" not in rec:
             continue

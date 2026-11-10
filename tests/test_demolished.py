@@ -78,6 +78,19 @@ def test_a_road_over_the_site_is_screened_by_its_brightness():
     assert dm.screened(ev), ev
 
 
+def test_a_replacement_on_another_footprint_is_screened():
+    # a bigger house over the old one, a similar tone: its smooth roof covers
+    # the old outline, so the texture and brightness tests pass it, but no
+    # wall runs along the old line
+    a = _ground(9)
+    a[R0 - 30:R1 + 30, C0 - 30:C1 + 60] = 190
+    ev = dm.evidence(ROOF, SURVEY, _Display(a.astype(np.uint8)), [0, 0, 0])
+    assert ev["tex_cur"] < dm.SCREEN_TEXTURE, ev
+    assert abs(ev["lum_ref"] - ev["lum_cur"]) < dm.SCREEN_LUM, ev
+    assert ev["edge_cur"] < dm.SCREEN_WEAK_EDGE and ev["edgefrac_cur"] < dm.SCREEN_WEAK_FRAC, ev
+    assert dm.screened(ev), ev
+
+
 def test_an_unchanged_building_is_not():
     assert not dm.screened(dm.evidence(ROOF, SURVEY, _Display(_scene(210)), [0, 0, 0]))
 
