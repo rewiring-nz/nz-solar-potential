@@ -378,6 +378,22 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   | simple form where confident | 0.575 | 79 | 44 |
   | simple form forced everywhere (`SOLAR_HYP_FORCE=1`, trust 0) | 0.504 | 52 | 36 |
 
+  Straight seams (`src/face_rectify.py`, 11 Nov, off: SOLAR_RECTIFY_FACES=1).
+  Stage probe on the five: the faces leave segmentation already traced,
+  `fit_seams` multiplies their vertices (36 -> 528 on 4750978) and
+  `straighten_faces` refuses three of the five outright. The new last stage
+  paints the faces on a 0.1 m grid, fits each shared seam with straight
+  lines (split only at a real bend, snapped to the walls or 45 deg),
+  re-cuts the roof along them, and keeps the result only if every face
+  stays near its area and the LiDAR fits no worse. It straightens two of
+  the five (4751237: 55 -> 27 vertices, one straight ridge); on the other
+  three the faces themselves are wrong and it refuses. Benchmark, same
+  178 roofs, off -> on: line F 0.590 -> 0.591, lines right 82 -> 82, faces
+  right 43 -> 42; it changed 104 roofs and cut their vertices 29% (5,865
+  -> 4,149). Line F counts a seam within 0.75 m as right, so it does not
+  see wobble; whether it reads as less messy needs a blind side-by-side.
+  The larger error is face structure, not seam wobble.
+
   One flat/gable/hip/pyramid per rectangular part is too crude to lead:
   real roofs join forms (gable plus hip ends, dormers, L and T ridges) that
   it does not model. Next: keep the readings and regularise their faces
