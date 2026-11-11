@@ -365,6 +365,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Faces messier than real roofs (11 Nov, five Wakatipu Heights houses).**
+  All five readings scored under the 0.60 trust line (four ended on the
+  LiDAR path, one on SAM), so faces follow DSM pixels: jagged edges,
+  slivers, ridges off the walls, where the photo shows plain gables and
+  hips. Benchmark, 178 drawn roofs (lines right = line F >= 0.7, faces
+  right = face IoU >= 0.8):
+
+  | Arm | line F | lines right | faces right |
+  | --- | --- | --- | --- |
+  | production | 0.573 | 79 | 43 |
+  | simple form where confident | 0.575 | 79 | 44 |
+  | simple form forced everywhere (`SOLAR_HYP_FORCE=1`, trust 0) | 0.504 | 52 | 36 |
+
+  One flat/gable/hip/pyramid per rectangular part is too crude to lead:
+  real roofs join forms (gable plus hip ends, dormers, L and T ridges) that
+  it does not model. Next: keep the readings and regularise their faces
+  (straight edges, ridges and valleys snapped to wall directions, slivers
+  merged), and extend the simple form to joined parts, judged one rule at a
+  time on the benchmark and renders.
 - **Flat commercial roofs cut into many faces (13 Beach St, #4734679,
   case opened 8 Nov: "This panel layout is terrible").** v72 has 19 faces
   on it: a SAM reading scored 0.37 (under the 0.60 trust line) and the
@@ -505,6 +524,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **Panels skewed on the map by tile rounding (11 Nov; fixed in code, not
+  yet served).** Built panels are square in the layouts, but the map drew
+  many as rhombi. Cause: the z15-16 panel tiles were cut at tippecanoe's
+  default detail (12), about 0.1 m per tile unit at z16, and the map
+  overzooms z16, so each corner was rounded and simplified by up to
+  0.1 m. On frankton_arm_lake 71% of panels came out more than 2 deg off
+  square (up to 10 deg). `src/emit_region.py` now cuts that pass at
+  `--full-detail=16` (0.007 m): over the 35 re-emitted regions 2.9% of
+  panels are off by more than 2 deg (panels cut at a tile edge), for 13%
+  more bytes (panel_layouts.pmtiles 80.1 MB). Serving it is a new
+  version.
 - **Buildings with no outline: pressed flat in the 3D ground (11 Nov; v77
   live).** The large block on Beach St / Rees St,
   Queenstown CBD (NZTM ~1258205, 5004375; a finished flat roof with a glass
