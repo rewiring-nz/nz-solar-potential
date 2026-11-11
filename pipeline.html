@@ -3,28 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solar pipeline panel</title>
+<title>Build data</title>
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <script src="map_layers.js"></script>
 <link href="map_layers.css" rel="stylesheet">
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
-  :root { --side: 400px; --ok: #2e7d32; --bad: #c62828; --warn: #ef6c00; --sel: #1565c0; }
+  :root { --side: 420px; --ok: #2e7d32; --bad: #c62828; --warn: #ef6c00; --sel: #1565c0; }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: #222; }
   #app { display: flex; height: 100vh; }
-  #side { width: var(--side); display: flex; flex-direction: column; border-right: 1px solid #ccc; background: #fafafa; }
+  #side { width: var(--side); display: flex; flex-direction: column; border-right: 1px solid #ccc; background: #fafafa; min-height: 0; }
   #map { flex: 1; }
-  header { padding: 10px 12px 0; }
-  header h1 { font-size: 16px; margin: 0 0 6px; }
+  header { padding: 10px 12px; }
+  header h1 { font-size: 18px; margin: 0 0 6px; }
   #banner { display: none; margin: 6px 12px; padding: 8px; border-radius: 4px; background: #fff3e0; border: 1px solid var(--warn); }
   #banner.show { display: block; }
-  nav { display: flex; border-bottom: 1px solid #ccc; padding: 0 8px; }
-  nav button { border: 0; background: none; padding: 8px 12px; cursor: pointer; font: inherit; border-bottom: 3px solid transparent; }
-  nav button.active { border-bottom-color: var(--sel); font-weight: 600; }
-  .tab { display: none; flex: 1; overflow: auto; padding: 10px 12px; }
-  .tab.active { display: block; }
+  .links { margin-bottom: 8px; }
+  #workflow { flex: 1; overflow: auto; padding: 0 12px 12px; }
+  .stage { margin: 0 0 8px; background: #fff; border: 1px solid #d5d9de; border-radius: 6px; }
+  .stage > summary { padding: 10px; cursor: pointer; font-weight: 650; }
+  .stage-body { padding: 0 10px 10px; }
+  #area-status { margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #ddd; border-radius: 4px; }
+  .area-record { margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; }
+  .area-record:first-child { border-top: 0; }
   .item { padding: 8px; margin-bottom: 6px; background: #fff; border: 1px solid #ddd; border-radius: 4px; }
   .item h3 { font-size: 14px; margin: 0 0 2px; cursor: pointer; }
   .muted { color: #666; font-size: 12px; }
@@ -74,16 +77,21 @@
   .lane { margin-bottom: 12px; }
   .lane h3 { margin: 6px 0; font-size: 14px; }
   .row-actions { float: right; }
+  @media (max-width: 720px) {
+    #app { flex-direction: column; height: 100dvh; }
+    #side { width: 100%; height: 62dvh; border-right: 0; border-bottom: 1px solid #ccc; }
+    #map { min-height: 38dvh; }
+    #hint { left: 10px; top: auto; bottom: calc(38dvh + 8px); max-width: calc(100vw - 20px); }
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <aside id="side">
     <header>
-      <h1>Solar pipeline panel</h1>
+      <h1>Build data</h1>
       <div class="links" aria-label="Pages">
         <a href="rooftop-solar.html">Rooftop solar</a>
-        <a href="data-explorer.html?source=local">Data explorer</a>
         <a href="docs/index.html">Docs</a>
       </div>
       <div id="targets" role="group" aria-label="Target">
@@ -95,23 +103,21 @@
       <div class="muted" id="vm-info"></div>
     </header>
     <div id="banner"></div>
-    <nav>
-      <button data-tab="regions" class="active">Regions</button>
-      <button data-tab="build">New build</button>
-      <button data-tab="queue">Queue <span id="queue-count"></span></button>
-      <button data-tab="jobs">Jobs</button>
-    </nav>
-    <section class="tab active" id="tab-regions">
-      <p class="muted"><span id="regions-desc">Areas built or prepared in this checkout.</span> Click a name to fly there.
-        <button class="small" id="regions-refresh">Refresh</button></p>
-      <div id="regions-meta"></div>
-      <div id="region-list"></div>
-    </section>
-    <section class="tab" id="tab-build">
+    <main id="workflow">
+    <details class="stage" id="stage-build" open>
+      <summary>New build</summary>
+      <div class="stage-body">
       <input type="search" id="search" placeholder="Search suburbs and localities…" autocomplete="off">
       <div id="search-results"></div>
       <p class="muted">Choose a suburb/locality as the parent area (the council is shown for context), or zoom in (level 10 or closer) and click areas on the map.</p>
       <div id="selection"></div>
+      <div id="area-status" aria-live="polite">
+        <b>Existing data for this area</b>
+        <button class="small" id="area-refresh">Refresh</button>
+        <div id="area-status-meta" class="muted"></div>
+        <div id="area-status-records"></div>
+        <p class="muted">Cached dataset coverage is shown separately in Layers &amp; legend; a file extent does not guarantee complete valid data.</p>
+      </div>
       <p><button class="small" id="grid-btn" disabled>Choose grid cells</button></p>
       <div id="grid-controls" hidden>
         <p class="muted">Select cells from a grid over the locality boundary.</p>
@@ -128,18 +134,26 @@
       </div>
       <p><button class="primary" id="estimate-btn" disabled>Estimate</button></p>
       <div id="estimate"></div>
-    </section>
-    <section class="tab" id="tab-queue">
-      <p class="muted">Selected and queued work. Local builds and cloud builds run in separate lanes,
+      </div>
+    </details>
+    <details class="stage" id="stage-queue">
+      <summary>Queue <span id="queue-count"></span></summary>
+      <div class="stage-body">
+      <p class="muted">Running and waiting work. Local builds and cloud builds run in separate lanes,
         each one job at a time; developer and published builds share the one VM.</p>
       <div id="queue-updates" class="warn" role="status"></div>
       <div id="queue-list"></div>
-    </section>
-    <section class="tab" id="tab-jobs">
+      </div>
+    </details>
+    <details class="stage" id="stage-jobs">
+      <summary>Jobs <span id="job-count"></span></summary>
+      <div class="stage-body">
       <div id="job-detail"></div>
-      <h3>Recent jobs</h3>
+      <h3>Recent completed jobs</h3>
       <div id="job-list"></div>
-    </section>
+      </div>
+    </details>
+    </main>
   </aside>
   <div id="map"></div>
 </div>

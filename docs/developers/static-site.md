@@ -1,8 +1,11 @@
 # Static site and documentation
 
-The canonical map is `rooftop-solar.html`. `preview.html` is a compatibility
-redirect preserving the query string and fragment. `data-explorer.html` is
-the separate dataset explorer. All three workflows link to `docs/index.html`.
+The canonical map is `rooftop-solar.html`. `preview.html` redirects there,
+preserving the query string and fragment. The former `data-explorer.html` URL
+redirects to `pipeline.html` for compatibility; detailed local dataset
+inspection is part of the Build data workspace. The Build data panel requires
+its local backend and is not an operational build interface on static hosting.
+The map and Build data page link to `docs/index.html`.
 
 ## Render locally
 

@@ -84,8 +84,9 @@ class DocumentationTests(unittest.TestCase):
                 "docs/guide.html", "docs/images/roof.png", "docs/index.html",
                 "docs/researchers/how-a-roof-estimate-is-made.html"))
             self.assertIn('href="../rooftop-solar.html"', page)
-            self.assertIn('href="../data-explorer.html"', page)
             nav = page.split("</nav>", 1)[0]
+            self.assertIn('href="../pipeline.html">Build data</a>', nav)
+            self.assertNotIn("data-explorer.html", nav)
             self.assertIn(">Docs</a>", nav)
             self.assertNotIn(">Documentation</a>", nav)
             self.assertNotIn(">Method</a>", nav)

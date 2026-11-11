@@ -105,7 +105,7 @@ class PublishPreviewTests(unittest.TestCase):
         )
         uploaded = [command[-1] for command in commands]
         for name in ("rooftop-solar.html", "preview.html", "data-explorer.html",
-                     "data_explorer.js", "map_layers.js", "map_layers.css", "docs/index.html"):
+                     "map_layers.js", "map_layers.css", "docs/index.html"):
             self.assertIn(f"gs://rewiring-solar-previews/devel/alice/{name}", uploaded)
         self.assertFalse(any(path.endswith(".md") for path in uploaded))
         self.assertTrue(

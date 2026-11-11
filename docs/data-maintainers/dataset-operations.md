@@ -175,7 +175,7 @@ tool requiring root-level pilot inputs, not the regional preview path; see
 
 ## 7. Publish
 
-The site (`rooftop-solar.html`, `data-explorer.html` and their scripts) and
+The site (`rooftop-solar.html`, the Build data page and their scripts) and
 rendered documentation are deployed by the
 [static Pages workflow](../developers/static-site.md). The data is served
 from the Google Cloud tiles bucket, one folder

@@ -65,14 +65,21 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   macOS ("Python quit unexpectedly"). Area calculations and local layer-catalogue
   generation run in `tools/pipeline_webui/geo_worker.py`; a test in
   `tests/test_pipeline_web_data.py` checks this.
-  Package `tools/pipeline_webui/`; page `pipeline.html`. See
+  Package `tools/pipeline_webui/`; page `pipeline.html` (titled **Build data**).
+  Area selection, target-specific existing-data status, estimates, active
+  queue and completed job history share one workspace with expandable
+  **New build**, **Queue** and **Jobs** sections. Prepared/built area overlays
+  and the grouped dataset legend remain on the map; area status links to
+  available previews and reports. The former `data-explorer.html` URL redirects
+  to this page. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
 - The web queue and job details share stage-weighted progress
   (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
   reaches 100%; cloud runs without stage telemetry remain indeterminate.
-  Queue polling is every five seconds and retains up to three terminal
-  outcomes per lane for ten minutes. Disconnected views retain last-known
-  cards with a warning instead of displaying stale progress as live.
+  Queue polling is every five seconds. The Queue section shows active and
+  waiting work; terminal jobs appear once in the newest-first Jobs history.
+  Disconnected views retain last-known cards with a warning instead of
+  displaying stale progress as live.
 - The web pipeline can select a user-sized bounding-box grid (2x2 through
   10x10, default 4x4) within a LINZ locality for one local-only pipeline run.
   Grid selection uses the LINZ locality boundary and needs no additional API
@@ -451,11 +458,12 @@ figure for the same thing. Code enforces this:
   is the pricing model; `economics.js` holds cost tiers, prices and the
   battery simulation it uses.
 - The refit API exists only in `src/live_server.py`; static hosting lacks it.
-- `map_layers.js` and `map_layers.css` provide the shared pipeline/data-explorer
-  legend and aerial/OpenStreetMap switch. The analysis stack is panels above
-  solar-analysis building outlines above the heat map. Explorer layers toggle
-  independently and support feature-attribute queries. `rooftop-solar.html`
-  retains the simple map's analysis modes; `preview.html` redirects to it.
+- `map_layers.js` and `map_layers.css` provide the shared Build data legend,
+  catalogue layer styling and aerial/OpenStreetMap switch. The analysis stack
+  is panels above solar-analysis building outlines above the heat map. Build
+  data catalogue layers toggle independently and support feature-attribute
+  queries. `rooftop-solar.html` retains the simple map's analysis modes;
+  `preview.html` redirects to it.
   The shared facet style encodes aspect as hue and slope as saturation, with a
   compass legend in both catalogue-based layers and the rooftop map.
 

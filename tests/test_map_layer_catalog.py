@@ -384,13 +384,16 @@ def test_preview_server_computes_local_catalog_only_on_its_explicit_route():
             server.server_close()
 
 
-def test_publication_allowlists_ship_explorer_assets_but_never_local_catalogue():
+def test_publication_keeps_legacy_explorer_redirect_but_not_its_former_app():
     from tools.publish_preview import FRONTEND_FILES
     from tools.served_outputs import SERVED_FILES
 
     for name in ("rooftop-solar.html", "preview.html", "data-explorer.html",
-                 "data_explorer.js", "map_layers.js", "map_layers.css"):
+                 "map_layers.js", "map_layers.css"):
         assert name in FRONTEND_FILES
+    assert "data_explorer.js" not in FRONTEND_FILES
+    assert "location.replace(\"pipeline.html\" + location.search + location.hash)" in (
+        Path(__file__).resolve().parents[1] / "data-explorer.html").read_text(encoding="utf-8")
     assert "map_layers.json" in SERVED_FILES
     assert "local_map_layers.json" not in (*FRONTEND_FILES, *SERVED_FILES)
 
@@ -403,5 +406,5 @@ if __name__ == "__main__":
     test_static_catalog_warns_when_selected_cell_file_is_malformed()
     test_local_catalog_does_not_infer_combined_layers_from_region_summaries()
     test_preview_server_computes_local_catalog_only_on_its_explicit_route()
-    test_publication_allowlists_ship_explorer_assets_but_never_local_catalogue()
+    test_publication_keeps_legacy_explorer_redirect_but_not_its_former_app()
     print("map layer catalogue tests passed")

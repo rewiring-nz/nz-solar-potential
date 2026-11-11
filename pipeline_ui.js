@@ -1,4 +1,4 @@
-// Pipeline web panel (pipeline.html). Talks to tools/pipeline_web.py on
+// Build data panel (pipeline.html). Talks to tools/pipeline_web.py on
 // loopback. The per-launch token arrives in the URL fragment, is kept in
 // sessionStorage and removed from the address bar.
 (function () {
@@ -11,12 +11,9 @@
   const QUEUE_POLL_MS = 5000;
   const VM_POLL_MS = 60000;
   const TARGETS = {
-    local: { label: "Local", regions: "Areas built or prepared in this checkout.",
-             start: "Start build" },
-    developer: { label: "Developer", regions: "Every developer's preview on the shared VM's preview bucket.",
-                 start: "Start developer build on the VM" },
-    published: { label: "Published", regions: "Areas on the live map (production).",
-                 start: "Build, gate and publish" },
+    local: { label: "Local", start: "Start build" },
+    developer: { label: "Developer", start: "Start developer build on the VM" },
+    published: { label: "Published", start: "Build, gate and publish" },
   };
 
   const tokenMatch = location.hash.match(/token=([A-Za-z0-9_-]+)/);
@@ -47,6 +44,8 @@
   let writable = false;
   const selected = new Map();       // region_id -> label
   const localityFeatures = new Map(); // linz_id -> feature
+  const regionRecords = new Map(); // region_id -> area status and links
+  let regionStatusMeta = "";
   const gridFeatures = new Map(); // grid-cell id -> feature
   const selectedGridCells = new Map(); // selected grid-cell id -> label
   let selectedParent = null;
@@ -60,7 +59,9 @@
   let stream = null;
   let shownJob = null;
   let queueLoading = false;
+  let queueInitialized = false;
   let queueUpdatedAt = null;
+  let jobsSignature = null;
   let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
 
   async function api(path, opts = {}) {
@@ -86,11 +87,10 @@
     b.classList.toggle("show", !!html);
   }
 
-  // ---- tabs ------------------------------------------------------------
-  document.querySelectorAll("nav button").forEach((btn) => btn.addEventListener("click", () => showTab(btn.dataset.tab)));
-  function showTab(name) {
-    document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
-    document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + name));
+  function showSection(name) {
+    const section = $("stage-" + name);
+    section.open = true;
+    section.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (name === "jobs") loadJobs();
     if (name === "queue") loadQueue();
     updateHint();
@@ -108,13 +108,14 @@
     localStorage.setItem("pipelineTarget", name);
     document.querySelectorAll("#targets button").forEach((b) => b.classList.toggle("active", b.dataset.target === name));
     document.body.className = "target-" + name;
-    $("regions-desc").textContent = TARGETS[name].regions;
     if (changed) {
       selectionRevision++;
       currentEstimate = null;
       $("estimate").innerHTML = "";
+      regionRecords.clear();
+      regionStatusMeta = `Checking ${esc(TARGETS[name].label.toLowerCase())} area records…`;
       renderSelection();
-      if (map.getSource("regions")) loadRegions(true);
+      if (map.getSource("regions")) loadRegions(false);
     }
     loadVm(false);
   }
@@ -136,27 +137,7 @@
   const tileProtocol = new pmtiles.Protocol();
   maplibregl.addProtocol("pmtiles", tileProtocol.tile);
   const map = new maplibregl.Map({
-    container: "map",
-    style: {
-      version: 8,
-      sources: {
-        satellite: {
-          type: "raster",
-          tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
-          tileSize: 256, attribution: "Esri World Imagery",
-        },
-        // Same LINZ Basemaps source and public key as preview.html.
-        "linz-aerial": {
-          type: "raster",
-          tiles: ["https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01m0keqqjx0anrxjrt7grvtqxh"],
-          tileSize: 256, minzoom: 14, maxzoom: 21, attribution: "LINZ Basemaps",
-        },
-      },
-      layers: [
-        { id: "satellite", type: "raster", source: "satellite" },
-        { id: "linz-aerial", type: "raster", source: "linz-aerial" },
-      ],
-    },
+    container: "map", style: MapLayers.aerialStyle(),
     center: [172.5, -41.5], zoom: 5,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -246,7 +227,7 @@
       map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
     });
     map.on("moveend", scheduleLocalities);
-    loadRegions(true);
+    loadRegions(false);
   });
 
   function showRegionPopup(feature, lngLat) {
@@ -263,9 +244,8 @@
   }
 
   function updateHint() {
-    const onBuild = $("tab-build").classList.contains("active");
     const z = map.getZoom();
-    $("hint").textContent = !writable ? "" : onBuild && z < LOCALITY_MIN_ZOOM
+    $("hint").textContent = !writable ? "" : z < LOCALITY_MIN_ZOOM
       ? "Zoom in further to choose areas on the map" : "";
     $("hint").style.display = $("hint").textContent ? "block" : "none";
   }
@@ -298,49 +278,32 @@
       map.setFeatureState({ source: "localities", id }, { selected: selected.has(f.properties.region_id) }));
   }
 
-  // ---- regions tab -----------------------------------------------------
-  $("regions-refresh").addEventListener("click", () => { loadRegions(false, true); loadVm(true); });
+  $("area-refresh").addEventListener("click", () => {
+    loadRegions(false, true);
+    loadVm(true);
+  });
 
   async function loadRegions(fit, refresh) {
     loadLayers();
     const source = target;
     let fc;
-    $("regions-meta").innerHTML = source === "local" ? "" : "<p class='muted'>Reading the bucket…</p>";
+    $("area-status-meta").textContent = source === "local" ? "Checking this checkout…" : "Checking the selected target…";
     try {
       fc = await api("regions" + (source === "local" ? "" : "?source=" + source + (refresh ? "&refresh=1" : "")));
     } catch (e) {
-      $("regions-meta").innerHTML = "";
-      $("region-list").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+      if (source !== target) return;
+      regionRecords.clear();
+      regionStatusMeta = `<span class="block">Area status unavailable: ${esc(e.message)}</span>`;
+      if (map.getSource("regions")) map.getSource("regions").setData(empty);
+      renderAreaStatus();
       return;
     }
     if (source !== target) return;  // the toggle moved on while this loaded
-    $("regions-meta").innerHTML = regionsMeta(fc);
+    regionRecords.clear();
+    fc.features.forEach((feature) => regionRecords.set(feature.properties.region, feature.properties));
+    regionStatusMeta = regionsMeta(fc);
     if (map.getSource("regions")) map.getSource("regions").setData(fc);
-    const items = fc.features.map((f) => f.properties)
-      .sort((a, b) => String(b.built_at || "").localeCompare(String(a.built_at || "")));
-    $("region-list").innerHTML = items.length ? items.map((p) => `
-      <div class="item" data-region="${esc(p.region)}" data-alias="${esc(p.alias || "")}">
-        <h3 class="fly">${esc(p.name || p.region)} <span class="pill ${esc(p.state)}">${esc(p.state)}</span>
-          ${p.kind === "grid-selection"
-            ? `<span class="pill" style="background:#00897b">partial selection</span>` : ""}</h3>
-        <div class="muted">${esc(p.region)}${p.council ? " · " + esc(p.council) : ""}${p.alias ? " · developer " + esc(p.alias) : ""}</div>
-        <div class="muted">${p.n != null ? fmtInt(p.n) + " buildings · " : ""}${p.kwh ? fmtInt(Math.round(p.kwh / 1000)) + " MWh/yr · " : ""}${p.built_at ? "built " + esc(p.built_at.slice(0, 10)) : ""}</div>
-        <div class="links">
-          ${p.state === "built" ? `<a href="${esc(p.preview_url)}" target="_blank" rel="noopener">${p.source === "published" ? "Open live map" : "Open preview"}</a>` : ""}
-          ${p.report_url ? `<a href="${esc(p.report_url)}" target="_blank" rel="noopener">Last report (${esc(p.last_run_status || "?")})</a>` : ""}
-          ${writable ? `<button class="small rebuild">Rebuild</button>` : ""}
-        </div>
-      </div>`).join("") : `<p class='muted'>${source === "local" ? "Nothing built yet. Use New build." : "Nothing found."}</p>`;
-    document.querySelectorAll("#region-list .item").forEach((el) => {
-      const feature = fc.features.find((f) => f.properties.region === el.dataset.region &&
-        (!f.properties.alias || f.properties.alias === el.dataset.alias));
-      el.querySelector(".fly").addEventListener("click", () => flyTo(feature));
-      const rb = el.querySelector(".rebuild");
-      if (rb) rb.addEventListener("click", () => {
-        toggleSelection(feature.properties.region, feature.properties.name || feature.properties.region, true);
-        showTab("build");
-      });
-    });
+    renderAreaStatus();
     if (fit && fc.features.length) {
       const bounds = new maplibregl.LngLatBounds();
       fc.features.forEach((f) => extend(bounds, f.geometry));
@@ -353,14 +316,45 @@
     const warnHtml = warn.length ? `<details><summary class="warn">${warn.length} warning(s)</summary>
       ${warn.map((w) => `<div class="warn">${esc(w)}</div>`).join("")}</details>` : "";
     if (fc.source === "published") {
-      return `<div class="muted">Live data v${esc(fc.data_version || "?")} · versions in the bucket: ${esc((fc.versions || []).join(", ") || "?")}
-        · <a href="${esc(fc.site)}" target="_blank" rel="noopener">live map</a></div>${warnHtml}`;
+      return `<div class="muted">Live data v${esc(fc.data_version || "?")} · <a href="${esc(fc.site)}" target="_blank" rel="noopener">live map</a></div>${warnHtml}`;
     }
     if (fc.source === "developer") {
-      return `<div class="muted">${(fc.aliases || []).map((a) =>
-        `<a href="${esc(a.preview_url)}" target="_blank" rel="noopener">${esc(a.alias)}</a> (${fmtInt(a.regions)})`).join(" · ") || "No developer previews."}</div>${warnHtml}`;
+      return `<div class="muted">Developer preview area records from the shared VM.</div>${warnHtml}`;
     }
-    return "";
+    return `<div class="muted">Local area records in this checkout. Cached datasets are listed in Layers &amp; legend.</div>${warnHtml}`;
+  }
+
+  function renderAreaStatus() {
+    const labels = gridMode && selectedParent
+      ? [[selectedParent.region_id, selectedParent.name]]
+      : [...selected.entries()];
+    const entries = labels.map(([id, label]) => {
+      const record = regionRecords.get(id);
+      if (!record) {
+        const missing = target === "local"
+          ? "No prepared or built area record in this checkout."
+          : `No built area record found for ${esc(TARGETS[target].label)}.`;
+        return `<div class="area-record"><b>${esc(label)}</b><div class="muted">${missing}</div></div>`;
+      }
+      const state = record.state === "built" ? "Built"
+        : record.state === "failed" ? "Last run failed"
+          : record.state === "downloaded" ? "Inputs prepared; no built summary found"
+            : "Area record available";
+      const parts = [];
+      if (record.n != null) parts.push(`${fmtInt(record.n)} buildings`);
+      if (record.built_at) parts.push(`built ${esc(String(record.built_at).slice(0, 10))}`);
+      if (record.last_run_status) parts.push(`last run ${esc(record.last_run_status)}`);
+      if (record.alias) parts.push(`developer ${esc(record.alias)}`);
+      return `<div class="area-record"><b>${esc(label)}</b> <span class="pill ${esc(record.state || "")}">${state}</span>
+        ${parts.length ? `<div class="muted">${parts.join(" · ")}</div>` : ""}
+        <div class="links">${record.preview_url
+          ? `<a href="${esc(record.preview_url)}" target="_blank" rel="noopener">${target === "published" ? "Open live map" : "Open preview"}</a>` : ""}
+          ${record.report_url ? `<a href="${esc(record.report_url)}" target="_blank" rel="noopener">Last report</a>` : ""}</div></div>`;
+    });
+    $("area-status-records").innerHTML = labels.length
+      ? entries.join("")
+      : `<p class="muted">Select an area to see what is prepared or built for this target.</p>`;
+    $("area-status-meta").innerHTML = regionStatusMeta;
   }
 
   function extend(bounds, geom) {
@@ -376,7 +370,7 @@
     map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
   }
 
-  // ---- new build tab ---------------------------------------------------
+  // ---- new build ------------------------------------------------------
   function toggleSelection(region, label, forceOn, parent) {
     if (!writable || !region) return;
     if (gridMode && parent && selectedParent &&
@@ -417,6 +411,7 @@
       : chips.length ? `<b>Selected for a ${esc(TARGETS[target].label.toLowerCase())} build:</b><br>` +
         chips.join("") : "<p class='muted'>Nothing selected.</p>";
     $("selection").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => toggleSelection(b.dataset.id)));
+    renderAreaStatus();
     $("grid-count").textContent = gridFeatures.size
       ? `${selectedGridCells.size} of ${gridFeatures.size} grid cells` : "";
     $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
@@ -687,14 +682,14 @@
       renderSelection();
       syncSelectionState();
       $("estimate").innerHTML = "";
-      showTab("queue");
+      showSection("queue");
     } catch (e) {
       $("estimate").insertAdjacentHTML("beforeend", `<p class="block">${esc(e.message)}</p>`);
       $("start-btn").disabled = false;
     }
   }
 
-  // ---- queue tab -------------------------------------------------------
+  // ---- queue ----------------------------------------------------------
   async function loadQueue() {
     if (queueLoading) return;
     queueLoading = true;
@@ -713,21 +708,22 @@
     const lanes = res.lanes || {};
     const total = Object.values(lanes).reduce((n, l) => n + l.jobs.length, 0);
     $("queue-count").textContent = total ? "(" + total + ")" : "";
-    const sel = selected.size ? `<div class="item"><b>Selected, not started (${esc(TARGETS[target].label)}):</b>
-      ${[...selected.values()].map((l) => `<span class="chip">${esc(l)}</span>`).join("")}
-      <div class="muted">${currentEstimate ? "Estimated; confirm on New build." : "Estimate on New build to start."}</div></div>` : "";
+    if (!queueInitialized) {
+      $("stage-queue").open = total > 0;
+      queueInitialized = true;
+    }
     const focused = document.activeElement;
     const focusKey = focused && $("queue-list").contains(focused) && (focused.dataset.q ? ["q", focused.dataset.q] :
       focused.dataset.job ? ["job", focused.dataset.job] : null);
     const focusLabel = focused && focused.textContent;
-    $("queue-list").innerHTML = sel + Object.entries(lanes).map(([name, lane]) => `
+    $("queue-list").innerHTML = Object.entries(lanes).map(([name, lane]) => `
       <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}</h3>
-        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable)).join("") || "<p class='muted'>Idle.</p>"}
-        ${(lane.recent || []).length ? "<h4>Recently finished (last 10 minutes)</h4>" +
-          lane.recent.map(j => PipelineProgress.renderQueueCard(j, false, writable)).join("") : ""}</div>`).join("");
-    $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => { showTab("jobs"); showJob(el.dataset.job); }));
+        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable)).join("") || "<p class='muted'>No active or queued builds.</p>"}
+      </div>`).join("");
+    $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
     $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () =>
       cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue)));
+    if ($("stage-jobs").open) loadJobs();
     if (focusKey) {
       const replacement = [...$("queue-list").querySelectorAll("[data-q], [data-job]")]
         .find(el => el.dataset[focusKey[0]] === focusKey[1] && el.textContent === focusLabel);
@@ -745,23 +741,34 @@
     catch (e) { alert(e.message); if (btn) btn.disabled = false; }
   }
 
-  // ---- jobs tab --------------------------------------------------------
+  // ---- job history and detail ----------------------------------------
   async function loadJobs() {
     let res;
     try { res = await api("jobs"); } catch (e) {
+      jobsSignature = null;
       $("job-list").innerHTML = `<p class="block">${esc(e.message)}</p>`;
       return;
     }
-    $("job-list").innerHTML = res.jobs.map((j) => `
+    const history = res.jobs
+      .filter((j) => ["succeeded", "failed", "cancelled", "interrupted"].includes(j.status))
+      .sort((a, b) => String(b.finished || b.created || "").localeCompare(String(a.finished || a.created || "")));
+    const signature = history.map((j) => `${j.job_id}:${j.status}:${j.finished || ""}`).join("|");
+    if (signature === jobsSignature) return;
+    jobsSignature = signature;
+    $("job-count").textContent = history.length ? `(${history.length})` : "";
+    $("job-list").innerHTML = history.map((j) => `
       <div class="item"><h3><button class="job-title" data-job="${esc(j.job_id)}">${esc(PipelineProgress.jobTitle(j))}</button>
         <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
-        <div class="muted">${esc(j.created)} · ${esc(j.job_id)}</div></div>`).join("") || "<p class='muted'>No jobs yet.</p>";
+        <div class="muted">${esc(j.finished || j.created)} · ${esc(j.job_id)}</div></div>`).join("") || "<p class='muted'>No completed jobs yet.</p>";
     $("job-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
-    const active = Object.values(res.active_jobs || {}).find(Boolean) || res.active_job;
-    if (!shownJob && active) showJob(active);
   }
+  $("stage-jobs").addEventListener("toggle", () => {
+    if ($("stage-jobs").open) loadJobs();
+  });
 
   async function showJob(jobId) {
+    $("stage-jobs").open = true;
+    $("stage-jobs").scrollIntoView({ behavior: "smooth", block: "nearest" });
     shownJob = jobId;
     if (stream) { stream.close(); stream = null; }
     $("job-detail").innerHTML = `<div id="job-updates" class="warn" role="status"></div><div id="job-summary"></div><div id="log"></div>`;
@@ -877,7 +884,7 @@
       setInterval(loadQueue, QUEUE_POLL_MS);
       setInterval(() => loadVm(false), VM_POLL_MS);
     }
-    if (map.getSource("regions")) loadRegions(false);  // re-render with Rebuild buttons
+    if (map.getSource("regions")) loadRegions(false);
   }
   init();
 })();

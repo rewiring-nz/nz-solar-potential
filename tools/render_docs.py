@@ -124,8 +124,7 @@ def render_docs(root: Path) -> tuple[str, ...]:
             f"<title>{html.escape(title)} · NZ solar documentation</title>"
             f"<style>{STYLE}</style><body><nav aria-label=\"Site\">"
             f'<a href="{to_root}rooftop-solar.html">Rooftop solar</a>'
-            f'<a href="{to_root}data-explorer.html">Data explorer</a>'
-            f'<a href="{to_root}pipeline.html">Pipeline</a>'
+            f'<a href="{to_root}pipeline.html">Build data</a>'
             f'<a href="{to_root}docs/index.html">Docs</a></nav><main>{body}</main>'
             "</body></html>\n"
         )

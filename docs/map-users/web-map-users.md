@@ -30,10 +30,9 @@ If automatic browser opening fails, copy the printed URL into your browser.
 developer-preview link when sharing a build with someone else.
 
 The simple map is `rooftop-solar.html`; old `preview.html` links redirect to
-it, preserving their query string and fragment. Open **Explore & docs** in
-the map's bottom-left controls to reach the data explorer, pipeline panel or
-documentation. The pipeline panel requires its local backend; it cannot run
-builds from static hosting.
+it, preserving their query string and fragment. Open **Tools & docs** in the
+map's bottom-left controls to reach **Build data** or the documentation. Build
+data requires its local backend; it cannot run builds from static hosting.
 
 ## Look at a building
 
@@ -53,10 +52,10 @@ builds from static hosting.
 
 ## Layers and legend
 
-Detailed dataset controls live on the separate [data explorer](../../data-explorer.html),
-not on the simple rooftop map. Open **Layers & legend** below the explorer's
-map navigation controls. The shared legend also appears in the
-[pipeline panel](../data-maintainers/web-pipeline.md).
+Detailed dataset controls for local build decisions live in the
+[Build data workspace](../data-maintainers/web-pipeline.md). Open
+**Layers & legend** below the map navigation controls. The workspace shares
+the grouped layer legend and map-layer definitions with the canonical map.
 Groups can be collapsed, and checkboxes show or hide overlays. Basemap radio
 buttons choose **Aerial (Esri / LINZ)** or **OpenStreetMap** without clearing
 the other layers. Both basemaps need internet access.
@@ -65,10 +64,10 @@ The stack, from top to bottom, is:
 
 1. **Rooftop solar analysis**: panel layouts, solar-analysis building outlines,
    then the solar heat map. Panels paint above outlines; outlines paint above
-   the heat map. Explorer layers toggle independently: panels and the heat map
-   can both be enabled. Roof facets and obstructions from the analysis dataset
-   also toggle independently. The simple rooftop map retains its existing
-   mutually exclusive Heat Map and Panel Layout modes.
+   the heat map. In Build data, catalogue layers toggle independently; panels
+   and the heat map can both be enabled. Roof facets and obstructions from the
+   analysis dataset also toggle independently. The simple rooftop map retains
+   its existing mutually exclusive Heat Map and Panel Layout modes.
 2. **Derived datasets**: available intermediate calculation outputs.
 3. **Source datasets**: available dataset footprints. A faint fill and dashed
    outline show a cached file's extent, not guaranteed valid-data coverage.
@@ -81,11 +80,10 @@ without hiding other layers. Raster overlays do not expose pixel-value
 queries; source footprints expose cache metadata rather than raw point-cloud
 points or raster samples.
 
-On a local server, **Local cache and calculations** lists cached sources and
-available calculations in that checkout. **Published map** lists only
-artifacts supplied with the selected map build, not the builder's local
-caches. Older published builds without a catalogue report its unavailability;
-the simple rooftop map still works.
+On the local Build data server, **Local** lists cached sources and available
+calculations in that checkout. Remote Developer and Published source
+catalogues are not currently available in the panel. Cached extents show file
+coverage only, not guaranteed valid-data coverage.
 
 ## Read the numbers
 

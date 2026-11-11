@@ -1,14 +1,15 @@
-# Web pipeline panel
+# Build data
 
-A local web page for the pipeline: choose suburbs and localities on a map,
-see an estimate, choose optional inputs, and follow the build. A toggle at the top picks
-the target:
+The local **Build data** workspace keeps area selection, existing data status,
+estimates and job progress beside one map. Expand **New build**, **Queue** and
+**Jobs** to follow a build without switching pages. A target toggle at the top
+picks where the work applies:
 
 | Target | Shows | A build runs | Costs |
 | --- | --- | --- | --- |
-| **Local** | Areas built in this checkout | `tools/pipeline.py <region>` on this computer, as the [quickstart](quickstart.md) does | Nothing in the cloud |
-| **Developer** | Every developer's previews in `gs://rewiring-solar-previews/devel/<alias>/` | `tools/pipeline.py "<regions>" --mode cloud --cloud build` on the shared build VM, publishing to your own `devel/<alias>/` preview, as the [cloud quickstart](quickstart-cloud.md) does | Google Cloud, shown before you start |
-| **Published** | The live map's data version and its areas | `tools/remote_build.sh --regions "<regions>" --publish` on the shared build VM; it publishes only if the [deploy gate](../../tools/predeploy_check.py) passes | Google Cloud, shown before you start |
+| **Local** | Prepared and built areas in this checkout, plus its cached datasets | `tools/pipeline.py <region>` on this computer, as the [quickstart](quickstart.md) does | Nothing in the cloud |
+| **Developer** | Built areas in developer previews on the shared VM | `tools/pipeline.py "<regions>" --mode cloud --cloud build` on the shared build VM, publishing to your own `devel/<alias>/` preview, as the [cloud quickstart](quickstart-cloud.md) does | Google Cloud, shown before you start |
+| **Published** | Built areas in the live map data version | `tools/remote_build.sh --regions "<regions>" --publish` on the shared build VM; it publishes only if the [deploy gate](../../tools/predeploy_check.py) passes | Google Cloud, shown before you start |
 
 The panel never publishes past a failed gate: `--reviewed` is left to the
 command line, after someone has rendered and judged the gate's list.
@@ -65,19 +66,15 @@ because it owns the port if its command is unrelated.
 
 ## Use it
 
-- **Regions** depends on the target:
-  - Local lists every area built or prepared in this checkout (green:
-    built; amber: inputs downloaded, not built; red: the last run failed),
-    with links to its map preview and last `report.md`.
-  - Developer lists each alias's preview areas with a link to that preview.
-  - Published shows the live data version, the versions kept in the
-    bucket, and the live areas.
-
-  Cloud listings are read from the public buckets and cached for 10
-  minutes; **Refresh** reads them again. **Rebuild** adds the area to a new
-  build for the current target.
 - **New build**: search for a suburb or locality, or zoom in to level 10 or
-  closer and click areas on the map. **Estimate** shows, per area:
+  closer and click areas on the map. **Existing data for this area** reports
+  the selected target's known area state and links to available previews or
+  reports. A built summary, prepared inputs and a failed last run are distinct
+  states; no area record does not mean that no shared cached dataset covers
+  the area. Local cached dataset extents are shown separately in **Layers &
+  legend**; an extent does not guarantee complete valid data. **Refresh**
+  rereads area status and, for cloud targets, VM status. **Estimate** shows,
+  per area:
   - building count
   - download size
   - time
@@ -136,18 +133,17 @@ because it owns the port if its command is unrelated.
   checking the cost-acknowledgment box. Local builds start directly from the
   button. The paid AI referee is off unless you tick it; the estimate shows
   its upper cost.
-- **Queue**: what is selected but not started, and each lane's running and
-  waiting jobs, titled by locality rather than job ID. Running cards show
+- **Queue**: each lane's running and waiting jobs, titled by locality rather
+  than job ID. Running cards show
   the current stage and area, approximate progress, elapsed time, estimated
   remaining time and the age of the last log/status activity. Waiting jobs
   show their lane position, wait reason and estimated runtime, not a moving
   bar or a promised start time. **Remove** drops a waiting job; **Cancel**
-  stops a running one. Each lane retains up to three finished jobs from the
-  last ten minutes, with detail/log, report and available preview links.
-  Older outcomes remain under **Jobs**.
-- **Jobs**: progress, an estimated time left, per-area status with links to
-  each run's report, and the live log. **Cancel** stops the area being
-  built; finished areas are kept.
+  stops a running one. Completed jobs are shown only in **Jobs** so each job
+  appears in one stage at a time.
+- **Jobs**: completed job history, newest first. Select a job to see progress,
+  per-area status and report links, and to open its live log. **Cancel** stops
+  a running build; finished areas are kept.
 
 Queue cards refresh every five seconds and use the same progress calculation
 as job details. Completed and deliberately skipped stages advance progress,
@@ -176,9 +172,9 @@ minutes; a build can only start from the estimate that was shown.
 
 ### Map layers
 
-**Layers & legend**, below the navigation controls, uses the same component
-as [the map preview](../map-users/web-map-users.md#layers-and-legend).
-It groups analysis, derived and source datasets above the basemap. Panels
+**Layers & legend**, below the navigation controls, reuses the shared component
+and layer styling used by the canonical map. It groups analysis, derived and
+source datasets above the basemap. Panels
 paint above solar-analysis building outlines, which paint above the heat map.
 Basemap selection switches between the existing Esri/LINZ aerial combination
 and OpenStreetMap without resetting overlays.
@@ -191,7 +187,7 @@ shown as cached. Layer data is loaded on demand when enabled.
 
 Prepared/built region and locality-selection boundaries are separate **Build
 areas** overlays. Their status colours are not evidence that all sources were
-downloaded. **Refresh**, region refreshes and completed panel jobs refresh
+downloaded. **Refresh**, area-status refreshes and completed jobs refresh
 the catalogue; existing dataset visibility is retained where the dataset
 still exists.
 
@@ -295,7 +291,7 @@ The panel is not a hosted service; it runs on your computer with your
 | "No LINZ building outlines were found in the selected grid cells" | Some grid cells contain no mapped buildings; select cells that cover buildings. |
 | "zoom in" when choosing areas | The view is wider than 1°; zoom in. |
 | "a CLI build is running in this checkout" | Wait for it, or stop it and see [Local task queue](pipeline-reference.md#local-task-queue) before removing a stale lock. |
-| An area failed | Open its report from the Jobs tab and follow [Troubleshooting](troubleshooting.md). |
+| An area failed | Open its report from the Jobs section and follow [Troubleshooting](troubleshooting.md). |
 | macOS "Python quit unexpectedly" after Estimate | The panel process loaded PROJ before starting a child process; on macOS, PROJ's SQLite fork handler can crash that child. Stop an older panel and restart it on current code to clear the loaded library state. Area calculations and local layer-catalogue generation run in a separate process (`tools/pipeline_webui/geo_worker.py`). |
 | VM status `UNKNOWN` | The message shows gcloud's error; usually `gcloud auth login` or missing access to the project ([team access](team-access.md)). |
 | "cannot publish: … unpushed commit(s)" | Push or reset those commits, then estimate again. |

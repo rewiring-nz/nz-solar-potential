@@ -17,7 +17,7 @@ from tools.pipeline_webui.remote_catalog import LIVE_SITE, _with_view
 
 
 class MapLinkTests(unittest.TestCase):
-    def test_rooftop_navigation_links_to_explorer_pipeline_and_docs(self):
+    def test_rooftop_navigation_links_to_build_data_and_docs(self):
         class NavigationParser(HTMLParser):
             def __init__(self):
                 super().__init__()
@@ -38,9 +38,9 @@ class MapLinkTests(unittest.TestCase):
         parser = NavigationParser()
         parser.feed((ROOT / "rooftop-solar.html").read_text(encoding="utf-8"))
         self.assertEqual(parser.links,
-                         ["data-explorer.html", "wholesale.html", "pipeline.html", "docs/index.html"])
+                         ["wholesale.html", "pipeline.html", "docs/index.html"])
         # docs/index.html is generated from the maintained Markdown source.
-        for path in ["data-explorer.html", "wholesale.html", "pipeline.html", "docs/index.md"]:
+        for path in ["wholesale.html", "pipeline.html", "docs/index.md"]:
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_local_and_published_links_use_canonical_page(self):
@@ -64,6 +64,21 @@ class MapLinkTests(unittest.TestCase):
                                 text=True, check=True, cwd=ROOT)
         self.assertEqual(result.stdout,
                          "rooftop-solar.html?lat=-45.03&lng=168.67&z=15.5&layers=panels#building=123")
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required to execute the redirect")
+    def test_former_explorer_url_redirects_to_build_data(self):
+        page = (ROOT / "data-explorer.html").read_text(encoding="utf-8")
+        script = re.search(r"<script>(.*?)</script>", page, flags=re.DOTALL).group(1)
+        command = (
+            "const vm=require('node:vm');let target;"
+            "vm.runInNewContext(" + json.dumps(script) + ","
+            "{location:{search:'?source=local',hash:'#token=abc',"
+            "replace:value=>target=value}});"
+            "process.stdout.write(target);"
+        )
+        result = subprocess.run(["node", "-e", command], capture_output=True,
+                                text=True, check=True, cwd=ROOT)
+        self.assertEqual(result.stdout, "pipeline.html?source=local#token=abc")
 
 
 if __name__ == "__main__":

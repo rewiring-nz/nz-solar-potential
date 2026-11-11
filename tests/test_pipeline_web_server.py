@@ -147,6 +147,9 @@ def test_static_files_keep_pipeline_serve_rules():
         try:
             status, body = c.request("GET", "/pipeline.html", token=None)
             assert status == 200 and b"pipeline_ui.js" in body and b"pipeline_progress.js" in body
+            assert b"<title>Build data</title>" in body
+            assert b'id="stage-build"' in body and b'id="stage-queue"' in body and b'id="stage-jobs"' in body
+            assert b'data-tab="regions"' not in body and b'id="region-list"' not in body
             assert c.request("GET", "/pipeline_progress.js", token=None)[0] == 200
             assert c.request("GET", "/.env", token=None)[0] == 404
             assert c.request("GET", "/api/health", token=None, headers={"Host": "evil.example"})[0] == 404
