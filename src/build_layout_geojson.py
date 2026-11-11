@@ -51,6 +51,7 @@ from src.obstruction_detection import detect_obstructions_combined
 from src.obstruction_planarity import drop_edge_hugging, drop_roof_like
 from src.solar_model import SolarModel
 from src.curved_faces import split_curved_faces
+from src.face_rectify import rectify_faces
 from src.face_straighten import absorb_slivers, fit_seams, merge_coplanar_faces, seams_to_plane_lines, straighten_faces
 from src.building_shading import building_shading_factor, facet_sun, facet_sun_context
 from src.building_horizon import (far_profile as _hz_far_profile,
@@ -492,6 +493,9 @@ def _build_one_at(building_id, nudge_m):
     facets = _reshape(absorb_slivers, pc_source)
     facets = _reshape(seams_to_plane_lines, pc_source)
     facets = _reshape(fit_seams, pc_source)
+    # ...and seams rebuilt as straight lines where the faces allow it
+    # (src/face_rectify.py; SOLAR_RECTIFY_FACES=1).
+    facets = _reshape(rectify_faces, pc_source)
     facets = _reshape(straighten_faces)
     # ...and a face that curves in plan gets a plane per section (src/curved_faces.py,
     # off unless SOLAR_CURVED_SPLIT=1).

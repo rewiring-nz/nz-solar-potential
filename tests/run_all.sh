@@ -90,6 +90,7 @@ run "shading split"         $PY tests/test_shading_split.py
 run "photo roof shape"      $PY tests/test_photo_shape.py
 run "structured roofs"       $PY tests/test_structured_roof.py
 run "face straighten"        $PY tests/test_face_straighten.py
+run "face rectify"           $PY tests/test_face_rectify.py
 run "obstruction planes"     $PY tests/test_obstruction_planarity.py
 run "racking"                $PY tests/test_racking.py
 run "project secrets"       $PY tests/test_project_secrets.py
