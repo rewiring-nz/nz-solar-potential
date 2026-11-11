@@ -119,9 +119,17 @@ def test_api_end_to_end():
             events = res.read().decode()
             conn.close()
             assert "event: log" in events and "event: end" in events and "built " + region in events
+            summaries = [json.loads(block.split("data: ", 1)[1])
+                         for block in events.split("\n\n") if block.startswith("event: status\n")]
+            assert summaries and all("progress_known" in s and "elapsed_s" in s
+                                     and "current_stage" in s and "last_activity_at" in s
+                                     for s in summaries)
             status, view = c.request("GET", f"/api/jobs/{job['job_id']}")
             assert view["status"] == "succeeded", view
             assert view["include_imagery"] is False
+            status, queue = c.request("GET", "/api/queue")
+            assert status == 200
+            assert queue["lanes"]["local"]["recent"][0]["job_id"] == job["job_id"]
             status, log = c.request("GET", f"/api/jobs/{job['job_id']}/log?offset=0")
             assert status == 200 and log["eof"]
             assert "confirm" not in view.get("approved", {})
@@ -138,7 +146,8 @@ def test_static_files_keep_pipeline_serve_rules():
         server, c = _serve(Path(tmp))
         try:
             status, body = c.request("GET", "/pipeline.html", token=None)
-            assert status == 200 and b"pipeline_ui.js" in body
+            assert status == 200 and b"pipeline_ui.js" in body and b"pipeline_progress.js" in body
+            assert c.request("GET", "/pipeline_progress.js", token=None)[0] == 200
             assert c.request("GET", "/.env", token=None)[0] == 404
             assert c.request("GET", "/api/health", token=None, headers={"Host": "evil.example"})[0] == 404
             assert c.request("POST", "/pipeline.html", {}, token=None)[0] == 405

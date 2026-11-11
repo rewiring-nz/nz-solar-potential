@@ -1,5 +1,13 @@
 # Backlog
 
+Completed pipeline queue progress UX: shared queue/detail progress and timing,
+current stage and area, readable locality titles, pending-job positions and
+wait reasons, and the last three outcomes per lane for ten minutes. Unknown
+cloud/preparation progress is indeterminate; only success reaches 100%, and
+failed or cancelled work is not counted as complete. Overdue estimates and
+disconnected updates are explicit, with last-known cards retained. Backend,
+HTTP/SSE and JavaScript presentation tests cover the progress contract.
+
 Completed local-queue imagery-option recovery: tasks persist and validate
 `include_imagery`, forward both checkbox states to the pipeline worker, and
 default older task records to including imagery. Real worker-process tests

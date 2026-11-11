@@ -137,11 +137,33 @@ because it owns the port if its command is unrelated.
   button. The paid AI referee is off unless you tick it; the estimate shows
   its upper cost.
 - **Queue**: what is selected but not started, and each lane's running and
-  waiting jobs. **Remove** drops a waiting job; **Cancel** stops a running
-  one.
+  waiting jobs, titled by locality rather than job ID. Running cards show
+  the current stage and area, approximate progress, elapsed time, estimated
+  remaining time and the age of the last log/status activity. Waiting jobs
+  show their lane position, wait reason and estimated runtime, not a moving
+  bar or a promised start time. **Remove** drops a waiting job; **Cancel**
+  stops a running one. Each lane retains up to three finished jobs from the
+  last ten minutes, with detail/log, report and available preview links.
+  Older outcomes remain under **Jobs**.
 - **Jobs**: progress, an estimated time left, per-area status with links to
   each run's report, and the live log. **Cancel** stops the area being
   built; finished areas are kept.
+
+Queue cards refresh every five seconds and use the same progress calculation
+as job details. Completed and deliberately skipped stages advance progress,
+weighted by historical stage durations when available; interrupted, failed
+and unrun stages do not count as complete. Percentages can remain still
+during a long stage and are approximate, not elapsed-time animations.
+Only a successful job reaches 100%, after final combining or publishing.
+Preparation and cloud builds without measured stage telemetry show an
+indeterminate indicator instead of an invented percentage. Cloud stage
+details are not currently streamed from the VM.
+
+An exhausted runtime estimate reads **Taking longer than estimated**, not
+zero seconds remaining. **Last activity** measures log/status writes, not a
+worker heartbeat; a quiet stage is not necessarily stuck. If updates fail,
+the last known cards remain visible with a disconnected warning; progress
+bars are hidden until updates reconnect so stale work does not appear live.
 
 Estimates are planning assumptions, not limits; actual time and download can
 be higher. The time per building comes from the median of this checkout's

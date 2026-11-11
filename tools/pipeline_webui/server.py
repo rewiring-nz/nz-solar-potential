@@ -310,9 +310,12 @@ class WebHandler(RangeHandler):
                     self.wfile.write(f"id: {offset}\nevent: log\n{data}\n\n".encode("utf-8"))
                 view = jobs.view(job_id)
                 summary = json.dumps({k: view.get(k) for k in
-                                      ("status", "progress", "eta_s", "current_index", "runs",
+                                      ("status", "progress", "progress_known", "eta_s", "eta_overdue",
+                                       "elapsed_s", "last_activity_at", "current_stage",
+                                       "current_region", "area_number", "current_index", "runs",
                                        "final_combine", "waiting", "queue_position",
-                                       "preview_url", "gate_result", "published_version")},
+                                       "preview_url", "gate_result", "published_version", "error",
+                                       "reports")},
                                      default=str)
                 if summary != last_status:
                     last_status = summary

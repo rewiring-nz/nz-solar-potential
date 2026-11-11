@@ -67,6 +67,12 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html`. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
+- The web queue and job details share stage-weighted progress
+  (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
+  reaches 100%; cloud runs without stage telemetry remain indeterminate.
+  Queue polling is every five seconds and retains up to three terminal
+  outcomes per lane for ten minutes. Disconnected views retain last-known
+  cards with a warning instead of displaying stale progress as live.
 - The web pipeline can select a user-sized bounding-box grid (2x2 through
   10x10, default 4x4) within a LINZ locality for one local-only pipeline run.
   Grid selection uses the LINZ locality boundary and needs no additional API

@@ -32,6 +32,7 @@ import statistics
 import subprocess
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -40,10 +41,12 @@ from tools.pipeline_webui.cloud import parse_cloud_line
 from tools.pipeline_webui.common import DATA, ROOT, read_json, web_dir, write_json_atomic
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
-STEP_DONE = {"PASS", "DEGRADED", "FAIL", "SKIPPED", "NOT RUN", "INTERRUPTED"}
+STEP_DONE = {"PASS", "DEGRADED", "SKIPPED"}
 CANCEL_GRACE_S = 30.0
 LOG_CHUNK = 256 * 1024
 LIST_LIMIT = 50
+RECENT_QUEUE_S = 600
+RECENT_QUEUE_LIMIT = 3
 RUN_DIR_PREFIX = "PIPELINE_RUN_DIR="
 
 LOCK_POLL_S = 5.0
@@ -113,11 +116,53 @@ def progress(job: dict, statuses: list[dict | None], weights: dict[str, float]) 
         return 1.0
     total = 0.0
     for i, run in enumerate(job.get("runs") or []):
-        if run.get("status") in ("succeeded", "failed", "cancelled"):
+        if run.get("status") == "succeeded":
             total += 1.0
         else:
             total += run_fraction(statuses[i] if i < len(statuses) else None, weights)
-    return round(min(total / len(regions), 1.0), 4)
+    return round(min(total / len(regions), 0.99), 4)
+
+
+def progress_summary(job: dict, statuses: list[dict | None], weights: dict[str, float],
+                     now: float) -> dict:
+    runs = job.get("runs") or []
+    current = next((i for i, run in enumerate(runs) if run.get("status") == "running"), None)
+    status = statuses[current] if current is not None and current < len(statuses) else None
+    step = next((s for s in (status or {}).get("steps", []) if s.get("status") == "RUNNING"),
+                None)
+    known = job.get("status") == "succeeded" or any(
+        (s or {}).get("steps") or r.get("status") == "succeeded"
+        for r, s in zip(runs, statuses))
+    cloud = job.get("target", "local") != "local"
+    if job.get("waiting"):
+        stage = "Waiting for workspace"
+    elif (job.get("final_combine") or {}).get("status") == "running":
+        stage = "Combining map outputs"
+    elif cloud:
+        stage = "Running on the shared VM"
+    elif step:
+        stage = step.get("label") or step["key"]
+    else:
+        stage = ("Preparing area" if current is not None else
+                 "Finalizing build" if runs and all(r.get("status") in TERMINAL for r in runs)
+                 else "Preparing build")
+    started = job.get("started_clock")
+    finished = job.get("finished")
+    end = datetime.fromisoformat(finished).timestamp() if finished else now
+    elapsed = max(0, round(end - started)) if started is not None else 0
+    estimate = job.get("estimated_total_s")
+    active = job.get("status") == "running"
+    eta = max(0, round(float(estimate) - elapsed)) if active and estimate is not None else None
+    return {
+        "progress": progress(job, statuses, weights),
+        "progress_known": bool(known and not cloud) or job.get("status") == "succeeded",
+        "current_stage": stage if active else None,
+        "current_region": runs[current]["region"] if current is not None and not cloud else None,
+        "area_number": current + 1 if current is not None and not cloud else None,
+        "elapsed_s": elapsed,
+        "eta_s": 0 if job.get("status") in TERMINAL else eta,
+        "eta_overdue": active and eta == 0,
+    }
 
 
 class Lane:
@@ -222,6 +267,21 @@ class JobManager:
         """Each lane's running job and its queued jobs, in run order."""
         with self.lock:
             snapshot = {n: (lane.active, list(lane.queue)) for n, lane in self.lanes.items()}
+        weights = step_weights(self.data)
+        now = time.time()
+        recent = [j for j in self.list() if j.get("status") in TERMINAL and j.get("finished")
+                  and now - datetime.fromisoformat(j["finished"]).timestamp() <= RECENT_QUEUE_S]
+        recent.sort(key=lambda j: j["finished"], reverse=True)
+
+        def compact(job: dict) -> dict:
+            view = self._view(job, weights, now)
+            return {k: view.get(k) for k in (
+                "job_id", "target", "regions", "status", "created", "started", "finished",
+                "estimated_total_s", "current_index", "waiting", "approved", "queue_position",
+                "progress", "progress_known", "current_stage", "current_region", "area_number",
+                "elapsed_s", "eta_s", "eta_overdue", "last_activity_at", "preview_url",
+                "gate_result", "published_version", "error", "reports")}
+
         out = {}
         for name, (active, queued) in snapshot.items():
             jobs = []
@@ -230,11 +290,15 @@ class JobManager:
                     job = self.load(job_id)
                 except JobError:
                     continue
-                jobs.append({k: job.get(k) for k in (
-                    "job_id", "target", "regions", "status", "created", "started",
-                    "estimated_total_s", "current_index", "waiting", "approved")})
+                job = compact(job)
+                job["queue_position"] = queued.index(job_id) + 1 if job_id in queued else None
+                jobs.append(job)
+            finished = [j for j in recent
+                        if (j.get("lane") or lane_for(j.get("target", "local"))) == name
+                        and j["job_id"] not in ([active] if active else []) + queued]
             out[name] = {"targets": list(LANES[name]), "active": active,
-                         "jobs": jobs, "queued": len(queued)}
+                         "jobs": jobs, "queued": len(queued),
+                         "recent": [compact(j) for j in finished[:RECENT_QUEUE_LIMIT]]}
         return out
 
     # ---- lifecycle -----------------------------------------------------
@@ -559,23 +623,36 @@ class JobManager:
 
     def view(self, job_id: str) -> dict:
         job = self.load(job_id)
-        statuses = [self.run_status(r) for r in job.get("runs", [])]
-        for run, status in zip(job.get("runs", []), statuses):
-            run["status_json"] = status
-            if run.get("run_dir"):
-                run["report_url"] = "/" + Path(run["run_dir"]).as_posix().lstrip("/") + "/report.md" \
-                    if not Path(run["run_dir"]).is_absolute() else None
-        job["progress"] = progress(job, statuses, step_weights(self.data))
-        elapsed = time.time() - job["started_clock"] if job.get("started_clock") else 0
-        if job.get("status") in TERMINAL:
-            job["eta_s"] = 0
-        elif job.get("estimated_total_s") is not None:
-            job["eta_s"] = max(round(float(job["estimated_total_s"]) - elapsed), 0)
+        job = self._view(job, step_weights(self.data), time.time())
         job["active"] = job_id in self.active_jobs().values()
         with self.lock:
             lane = self.lanes.get(job.get("lane") or "local")
             job["queue_position"] = (lane.queue.index(job_id) + 1
                                      if lane and job_id in lane.queue else None)
+        return job
+
+    def _view(self, job: dict, weights: dict[str, float], now: float) -> dict:
+        statuses = [self.run_status(r) for r in job.get("runs", [])]
+        activity = [job["started_clock"]] if job.get("started_clock") is not None else []
+        job["reports"] = []
+        for run, status in zip(job.get("runs", []), statuses):
+            run["status_json"] = status
+            if run.get("run_dir"):
+                path = Path(run["run_dir"])
+                path = path if path.is_absolute() else self.root / path
+                if path.resolve().is_relative_to(self.data.resolve()):
+                    relative = path.resolve().relative_to(self.root.resolve()) \
+                        if path.resolve().is_relative_to(self.root.resolve()) else None
+                    run["report_url"] = "/" + relative.as_posix() + "/report.md" if relative else None
+                    if run["report_url"]:
+                        job["reports"].append({"region": run["region"], "url": run["report_url"]})
+                    if status:
+                        activity.append((path / "status.json").stat().st_mtime)
+        log = self._job_dir(job["job_id"]) / "stdout.log"
+        if log.exists():
+            activity.append(log.stat().st_mtime)
+        job["last_activity_at"] = max(activity) if activity else None
+        job.update(progress_summary(job, statuses, weights, now))
         return job
 
     def log(self, job_id: str, offset: int = 0) -> dict:

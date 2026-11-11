@@ -14,7 +14,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.pipeline_webui.jobs import JobError, JobManager, progress, run_fraction
+from tools.pipeline_webui.jobs import JobError, JobManager, progress, progress_summary, run_fraction
 from tools.pipeline_webui.common import write_json_atomic
 
 # A stand-in for tools/pipeline.py: announces its run directory, writes
@@ -307,6 +307,94 @@ def test_progress_weights_finished_steps():
     assert progress(job, [None, status], {}) == 0.75
 
 
+def test_progress_does_not_count_abandoned_steps_or_finish_before_combine():
+    status = {"steps": [{"key": "a", "status": "PASS"},
+                        {"key": "b", "status": "INTERRUPTED"},
+                        {"key": "c", "status": "NOT RUN"},
+                        {"key": "d", "status": "FAIL"}]}
+    assert run_fraction(status, {}) == 0.25
+    job = {"regions": ["x", "y"], "status": "cancelled",
+           "runs": [{"status": "succeeded"}, {"status": "cancelled"}]}
+    assert progress(job, [None, None], {}) == 0.5
+    job["runs"][1]["status"] = "succeeded"
+    job["status"] = "running"
+    job["final_combine"] = {"status": "running"}
+    assert progress(job, [None, None], {}) == 0.99
+    assert progress_summary(job, [None, None], {}, time.time())["current_stage"] == "Combining map outputs"
+    job["status"] = "succeeded"
+    assert progress(job, [None, None], {}) == 1
+
+
+def test_progress_summary_reports_stage_unknown_progress_and_overdue_eta():
+    job = {"regions": ["x", "y"], "status": "running", "started_clock": 100,
+           "estimated_total_s": 100, "runs": [{"region": "x", "status": "running"},
+                                             {"region": "y", "status": "queued"}]}
+    status = {"steps": [{"key": "a", "status": "PASS"},
+                        {"key": "b", "label": "Building panel layouts", "status": "RUNNING"}]}
+    summary = progress_summary(job, [status, None], {"a": 30, "b": 90}, 150)
+    assert summary == {
+        "progress": 0.125, "progress_known": True, "current_stage": "Building panel layouts",
+        "current_region": "x", "area_number": 1, "elapsed_s": 50, "eta_s": 50,
+        "eta_overdue": False,
+    }, summary
+    assert progress_summary(job, [None, None], {}, 210)["eta_overdue"]
+    assert not progress_summary(job, [None, None], {}, 150)["progress_known"]
+    job["waiting"] = "a CLI build holds the workspace"
+    assert progress_summary(job, [None, None], {}, 150)["current_stage"] == "Waiting for workspace"
+    job["waiting"] = None
+    job["target"] = "developer"
+    summary = progress_summary(job, [status, None], {}, 150)
+    assert not summary["progress_known"] and summary["area_number"] is None
+    assert summary["current_stage"] == "Running on the shared VM"
+    job["status"] = "failed"
+    job["finished"] = "1970-01-01T00:02:40Z"
+    assert progress_summary(job, [status, None], {}, 900)["elapsed_s"] == 60
+    job["status"] = "queued"
+    job["started_clock"] = None
+    job["finished"] = None
+    assert progress_summary(job, [None, None], {}, 900)["eta_s"] is None
+
+
+def test_queue_and_detail_share_progress_and_recent_outcomes():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        m = _manager(Path(tmp))
+        # Persist records without starting processes so timing and ordering are deterministic.
+        now = time.time()
+        running = {"job_id": "aaa", "target": "local", "lane": "local", "regions": ["x"],
+                   "status": "running", "started_clock": now - 50, "estimated_total_s": 100,
+                   "runs": [{"region": "x", "status": "running", "run_dir": None}]}
+        run_dir = m.data / "pipeline_runs" / "test"
+        write_json_atomic(run_dir / "status.json", {"steps": [
+            {"key": "a", "status": "PASS"}, {"key": "b", "label": "Layout", "status": "RUNNING"}]})
+        running["runs"][0]["run_dir"] = str(run_dir)
+        m._save(running)
+        queued = {**running, "job_id": "bbb", "status": "queued", "started_clock": None,
+                  "runs": [{"region": "y", "status": "queued", "run_dir": None}]}
+        m._save(queued)
+        m.lanes["local"].active = "aaa"
+        m.lanes["local"].queue = ["bbb"]
+        with patch("tools.pipeline_webui.jobs.time.time", return_value=now):
+            queue = m.queue()["local"]
+            detail = m.view("aaa")
+        for key in ("progress", "progress_known", "current_stage", "current_region", "area_number",
+                    "elapsed_s", "eta_s", "eta_overdue", "last_activity_at", "reports"):
+            assert queue["jobs"][0][key] == detail[key], key
+        assert queue["jobs"][0]["progress"] == 0.5
+        assert queue["jobs"][0]["reports"][0]["url"].endswith("/test/report.md")
+        assert "status_json" not in json.dumps(queue)
+        assert queue["jobs"][1]["queue_position"] == 1
+        assert queue["jobs"][1]["eta_s"] is None
+        m.lanes["local"].active = None
+        finished = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+        for job_id in ("aaa", "ccc", "ddd", "eee"):
+            m._save({**running, "job_id": job_id, "status": "failed", "finished": finished})
+        m._save({**running, "job_id": "fff", "status": "succeeded",
+                 "finished": "2000-01-01T00:00:00Z"})
+        recent = m.queue()["local"]["recent"]
+        assert len(recent) == 3 and all(j["job_id"] != "fff" for j in recent)
+        assert all(j["status"] == "failed" for j in recent)
+
+
 if __name__ == "__main__":
     for test in (test_regions_run_in_order_failures_continue_and_combine_runs,
                  test_single_region_success_needs_no_extra_combine,
@@ -316,6 +404,9 @@ if __name__ == "__main__":
                  test_workspace_lock_makes_local_jobs_wait_and_stale_jobs_recover,
                  test_cloud_lane_runs_beside_local_and_records_outputs,
                  test_queued_job_can_be_removed_and_cloud_needs_a_builder,
-                 test_progress_weights_finished_steps):
+                 test_progress_weights_finished_steps,
+                 test_progress_does_not_count_abandoned_steps_or_finish_before_combine,
+                 test_progress_summary_reports_stage_unknown_progress_and_overdue_eta,
+                 test_queue_and_detail_share_progress_and_recent_outcomes):
         test()
     print("pipeline web job tests passed")

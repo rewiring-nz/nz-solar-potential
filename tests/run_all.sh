@@ -56,6 +56,7 @@ if command -v node >/dev/null 2>&1; then
     run "$t (js)"           node tests/test_$t.mjs
   done
   run "map layer legend (js)" node tests/test_map_layers.js
+  run "pipeline progress (js)" node tests/test_pipeline_progress.js
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
 fi

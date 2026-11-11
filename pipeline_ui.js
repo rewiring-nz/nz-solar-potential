@@ -59,6 +59,8 @@
   let refereeUsdUpper = 0;
   let stream = null;
   let shownJob = null;
+  let queueLoading = false;
+  let queueUpdatedAt = null;
   let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
 
   async function api(path, opts = {}) {
@@ -694,30 +696,43 @@
 
   // ---- queue tab -------------------------------------------------------
   async function loadQueue() {
+    if (queueLoading) return;
+    queueLoading = true;
     let res;
     try { res = await api("queue"); } catch (e) {
-      $("queue-list").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+      $("queue-updates").textContent = "Updates disconnected. " +
+        (queueUpdatedAt ? "Showing last known state from " + queueUpdatedAt + ". " : "") + e.message;
+      $("queue-list").dataset.stale = "true";
       return;
+    } finally {
+      queueLoading = false;
     }
+    queueUpdatedAt = new Date().toLocaleTimeString();
+    $("queue-updates").textContent = "";
+    $("queue-list").dataset.stale = "false";
     const lanes = res.lanes || {};
     const total = Object.values(lanes).reduce((n, l) => n + l.jobs.length, 0);
     $("queue-count").textContent = total ? "(" + total + ")" : "";
     const sel = selected.size ? `<div class="item"><b>Selected, not started (${esc(TARGETS[target].label)}):</b>
       ${[...selected.values()].map((l) => `<span class="chip">${esc(l)}</span>`).join("")}
       <div class="muted">${currentEstimate ? "Estimated; confirm on New build." : "Estimate on New build to start."}</div></div>` : "";
+    const focused = document.activeElement;
+    const focusKey = focused && $("queue-list").contains(focused) && (focused.dataset.q ? ["q", focused.dataset.q] :
+      focused.dataset.job ? ["job", focused.dataset.job] : null);
+    const focusLabel = focused && focused.textContent;
     $("queue-list").innerHTML = sel + Object.entries(lanes).map(([name, lane]) => `
       <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}</h3>
-        ${lane.jobs.map((j) => {
-          const running = j.job_id === lane.active;
-          const cost = j.approved && j.approved.cloud_cost_nzd && j.approved.cloud_cost_nzd !== "0" ? " · up to NZD " + esc(j.approved.cloud_cost_nzd) : "";
-          return `<div class="item"><span class="row-actions">${writable ? `<button class="small" data-q="${esc(j.job_id)}" data-running="${running}">${running ? "Cancel" : "Remove"}</button>` : ""}</span>
-            <h3 data-job="${esc(j.job_id)}"><span class="pill ${esc(j.target)}">${esc(j.target)}</span> <span class="pill ${esc(j.status)}">${running ? "running" : "queued"}</span> ${esc(j.job_id)}</h3>
-            <div class="muted">${esc((j.regions || []).join(", "))}</div>
-            <div class="muted">${j.estimated_total_s != null ? "about " + fmtDur(j.estimated_total_s) : ""}${cost}${j.waiting ? " · " + esc(j.waiting) : ""}</div></div>`;
-        }).join("") || "<p class='muted'>Idle.</p>"}</div>`).join("");
+        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable)).join("") || "<p class='muted'>Idle.</p>"}
+        ${(lane.recent || []).length ? "<h4>Recently finished (last 10 minutes)</h4>" +
+          lane.recent.map(j => PipelineProgress.renderQueueCard(j, false, writable)).join("") : ""}</div>`).join("");
     $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => { showTab("jobs"); showJob(el.dataset.job); }));
     $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () =>
       cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue)));
+    if (focusKey) {
+      const replacement = [...$("queue-list").querySelectorAll("[data-q], [data-job]")]
+        .find(el => el.dataset[focusKey[0]] === focusKey[1] && el.textContent === focusLabel);
+      if (replacement) replacement.focus({ preventScroll: true });
+    }
   }
 
   async function cancelJob(jobId, running, btn) {
@@ -738,8 +753,9 @@
       return;
     }
     $("job-list").innerHTML = res.jobs.map((j) => `
-      <div class="item"><h3 data-job="${esc(j.job_id)}">${esc(j.created)} <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
-        <div class="muted">${esc(j.regions.join(", "))}</div></div>`).join("") || "<p class='muted'>No jobs yet.</p>";
+      <div class="item"><h3><button class="job-title" data-job="${esc(j.job_id)}">${esc(PipelineProgress.jobTitle(j))}</button>
+        <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
+        <div class="muted">${esc(j.created)} · ${esc(j.job_id)}</div></div>`).join("") || "<p class='muted'>No jobs yet.</p>";
     $("job-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
     const active = Object.values(res.active_jobs || {}).find(Boolean) || res.active_job;
     if (!shownJob && active) showJob(active);
@@ -748,12 +764,13 @@
   async function showJob(jobId) {
     shownJob = jobId;
     if (stream) { stream.close(); stream = null; }
-    $("job-detail").innerHTML = `<div id="job-summary"></div><div id="log"></div>`;
+    $("job-detail").innerHTML = `<div id="job-updates" class="warn" role="status"></div><div id="job-summary"></div><div id="log"></div>`;
     let job;
     try { job = await api("jobs/" + encodeURIComponent(jobId)); } catch (e) {
-      $("job-summary").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+      if (shownJob === jobId) $("job-summary").innerHTML = `<p class="block">${esc(e.message)}</p>`;
       return;
     }
+    if (shownJob !== jobId) return;
     renderJob(job);
     const log = $("log");
     let lines = [];
@@ -764,14 +781,38 @@
       log.textContent = lines.join("\n");
       if (atBottom) log.scrollTop = log.scrollHeight;
     };
-    stream = new EventSource(`/api/jobs/${encodeURIComponent(jobId)}/stream?token=${encodeURIComponent(token)}`);
-    stream.addEventListener("log", (e) => append(e.data));
-    stream.addEventListener("status", (e) => renderJob(Object.assign(job, JSON.parse(e.data))));
-    stream.addEventListener("end", () => {
-      stream.close(); stream = null;
-      api("jobs/" + encodeURIComponent(jobId)).then(renderJob).catch(() => {});
+    const source = new EventSource(`/api/jobs/${encodeURIComponent(jobId)}/stream?token=${encodeURIComponent(token)}`);
+    stream = source;
+    source.addEventListener("open", () => {
+      if (stream !== source) return;
+      $("job-updates").textContent = "";
+      $("job-summary").dataset.stale = "false";
+    });
+    source.addEventListener("error", () => {
+      if (stream !== source) return;
+      $("job-updates").textContent = "Updates disconnected. Showing last known state; reconnecting…";
+      $("job-summary").dataset.stale = "true";
+    });
+    source.addEventListener("log", (e) => { if (stream === source) append(e.data); });
+    source.addEventListener("status", (e) => {
+      if (stream === source) renderJob(Object.assign(job, JSON.parse(e.data)));
+    });
+    source.addEventListener("end", async () => {
+      source.close();
+      if (stream !== source) return;
+      stream = null;
+      try {
+        const final = await api("jobs/" + encodeURIComponent(jobId));
+        if (shownJob === jobId) renderJob(final);
+      } catch (e) {
+        if (shownJob === jobId) {
+          $("job-updates").textContent = "Could not refresh final status: " + e.message;
+          $("job-summary").dataset.stale = "true";
+        }
+      }
       loadRegions(false);
       loadJobs();
+      loadQueue();
     });
   }
 
@@ -782,22 +823,20 @@
     const runs = (job.runs || []).map((r) => {
       const st = r.status_json || {};
       const step = (st.steps || []).find((s) => s.status === "RUNNING");
-      const report = r.run_dir ? "/" + r.run_dir.replace(/^\/+/, "") + "/report.md" : null;
+      const report = r.report_url;
       return `<tr><td>${esc(r.region)}${step ? `<div class="muted">${esc(step.label || step.key)}</div>` : ""}</td>
         <td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td>
         <td>${report ? `<a href="${esc(report)}" target="_blank" rel="noopener">report</a>` : ""}</td></tr>`;
     }).join("");
     const fc = job.final_combine || {};
     el.innerHTML = `
-      <h3>Job ${esc(job.job_id)} <span class="pill ${esc(job.target || "local")}">${esc(job.target || "local")}</span> <span class="pill ${esc(job.status)}">${esc(job.status)}</span></h3>
-      ${job.queue_position ? `<div class="muted">Queued: position ${esc(job.queue_position)} in its lane.</div>` : ""}
-      ${job.waiting ? `<div class="warn">${esc(job.waiting)}</div>` : ""}
+      <h3>${esc(PipelineProgress.jobTitle(job))} <span class="pill ${esc(job.target || "local")}">${esc(job.target || "local")}</span> <span class="pill ${esc(job.status)}">${esc(job.status)}</span></h3>
+      <div class="muted job-id">Job ${esc(job.job_id)}</div>
       ${job.approved && job.approved.cloud_cost_text ? `<div class="muted">Approved: ${esc(job.approved.cloud_cost_text)}</div>` : ""}
       ${job.gate_result ? `<div>Deploy gate: <span class="pill ${job.gate_result === "pass" ? "PASS" : "FAIL"}">${esc(job.gate_result)}</span></div>` : ""}
       ${job.published_version ? `<div><b>Published data v${esc(job.published_version)}</b></div>` : ""}
-      <progress max="1" value="${Number(job.progress || 0)}"></progress>
-      <div class="muted">${Math.round((job.progress || 0) * 100)}%${running && job.eta_s != null ? " · about " + fmtDur(job.eta_s) + " left (estimate)" : ""}
-        ${job.paid_referee ? " · paid referee on" : ""}</div>
+      ${PipelineProgress.renderProgress(job)}
+      ${job.paid_referee ? '<div class="muted">Paid referee on</div>' : ""}
       <table>${runs}</table>
       ${fc.status && fc.status !== "not needed" ? `<div class="muted">Map combine: ${esc(fc.status)}</div>` : ""}
       ${job.error ? `<div class="block">${esc(job.error)}</div>` : ""}
