@@ -247,8 +247,20 @@ GROUND_Q = 25          # as buildings3d.js GROUND_Q: skips hedges, cars, neighbo
 # 1 m), of at least UNOUT_SEED_M2, no outline over it, walled on most of its
 # edge (UNOUT_WALL_FRAC of its edge cells stand UNOUT_STEP_M over the lowest
 # cell just outside), standing UNOUT_RAISE_M over the ground beside it, and
-# not green in the photo (under UNOUT_GREEN_FRAC of its cells). The patch
-# and UNOUT_PAD_M around it are pressed to that ground.
+# not green in the photo (under UNOUT_GREEN_FRAC of its cells).
+#
+# The patch is only where the structure is flat; its rough rim, scaffold and
+# the crane stand beside or inside it. So from the patch the structure grows
+# through every connected cell UNOUT_RAISE_M over the ground, not green and
+# not under an outline, out to UNOUT_GROW_M (widened in steps while the
+# shape still grows: a walled structure stops, a hillside climbs to the cap
+# and keeps the first step); holes are filled, UNOUT_PAD_M
+# added (not over green), and the ground re-read from a ring UNOUT_RING_M outside that whole
+# shape (other outlines and green cells excluded). Seeds inside a structure
+# already found are skipped. Measured on the Beach St block: the flat patch
+# alone pressed part of the deck and left the rim and the crane 8-15 m up,
+# and one patch's 1-4 m ring sat on the deck's own rim (ground 324.7 m, the
+# street ~316 m).
 #
 # Measured on pilot (1,270 outlines): with flatness at 5 m, tree crowns pass
 # every height test, and neither 1 m texture nor a plane fit separates them
@@ -264,6 +276,10 @@ UNOUT_RAISE_M = 2.5
 UNOUT_GREEN_FRAC = 0.2
 UNOUT_GREEN_EXG = 0.05  # excess green (2G-R-B)/(R+G+B) of a green cell
 UNOUT_PAD_M = 3.0       # past the patch: walls, eaves and the 5 m smoothing
+UNOUT_GROW_M = (12.0, 18.0, 24.0, 30.0, 36.0, 42.0, 48.0)  # growth past the flat patch, widened while it still grows
+UNOUT_SETTLED = 0.05    # a step adding under 5% has stopped growing: walled (Beach St
+                        # block 2.9%, construction site 0.2%; up a slope 35-50%)
+UNOUT_RING_M = (3.0, 10.0)  # ground ring outside the grown structure
 UNOUT_HULL_IN_M = 20.0  # only inside the region's own outlines: past them
                         # the DSM's margin holds the next region's buildings
 
@@ -272,6 +288,27 @@ def green_cells(rgb):
     """True where a photo cell (bands R, G, B, on the DSM grid) is vegetation."""
     R, G, B = (np.asarray(c, dtype="float32") for c in rgb[:3])
     return (2 * G - R - B) / (R + G + B + 1.0) > UNOUT_GREEN_EXG
+
+
+def _grow(seed, g, zz, ok, cov, gr, reach, rin, rout):
+    """The structure around `seed`: connected cells UNOUT_RAISE_M over the
+    ground `g`, not under an outline or green, within `reach` cells, holes
+    filled; grown from `g`, the ground re-read outside it, grown again.
+    Returns (body, ground)."""
+    from scipy import ndimage as ndi
+    near = ndi.binary_dilation(seed, iterations=reach)
+    body = seed
+    for _ in range(2):
+        raised = near & ok & ~cov & ~gr & (zz > g + UNOUT_RAISE_M)
+        lab, _n = ndi.label(raised | seed)
+        ids = np.unique(lab[seed])
+        body = ndi.binary_fill_holes(np.isin(lab, ids[ids > 0]) | seed)
+        ring = (ndi.binary_dilation(body, iterations=rout)
+                & ~ndi.binary_dilation(body, iterations=rin) & ~cov & ~gr & ok)
+        if ring.sum() < 4:
+            break
+        g = float(np.percentile(zz[ring], GROUND_Q))
+    return body, g
 
 
 def unoutlined_structures(z, tr, covered, inside, green=None):
@@ -299,17 +336,26 @@ def unoutlined_structures(z, tr, covered, inside, green=None):
         return []
     area = ndi.sum(flat, lab, np.arange(1, n + 1)) * px * px
     out = []
-    pad = int(math.ceil(2 * UNOUT_PAD_M / px)) + 5
+    taken = np.zeros(z.shape, bool)
+    reaches = [int(math.ceil(m / px)) for m in UNOUT_GROW_M]
+    reach = reaches[0]
+    pad = reaches[-1] + int(math.ceil((UNOUT_PAD_M + UNOUT_RING_M[1]) / px)) + 2
     grow = max(1, int(round(UNOUT_PAD_M / px)))
+    rin = max(1, int(round(UNOUT_RING_M[0] / px)))
+    rout = max(rin + 1, int(round(UNOUT_RING_M[1] / px)))
     for i, sl in enumerate(ndi.find_objects(lab)):
         if sl is None or area[i] < UNOUT_SEED_M2:
             continue
         r0, c0 = max(0, sl[0].start - pad), max(0, sl[1].start - pad)
         r1, c1 = min(z.shape[0], sl[0].stop + pad), min(z.shape[1], sl[1].stop + pad)
         seed = lab[r0:r1, c0:c1] == i + 1
-        if green[r0:r1, c0:c1][seed].mean() >= UNOUT_GREEN_FRAC:
+        if taken[r0:r1, c0:c1][seed].mean() > 0.5:
+            continue
+        gr = green[r0:r1, c0:c1]
+        if gr[seed].mean() >= UNOUT_GREEN_FRAC:
             continue
         zz, cov = zf[r0:r1, c0:c1], covered[r0:r1, c0:c1]
+        ok = fin[r0:r1, c0:c1]
         edge = seed & ~ndi.binary_erosion(seed)
         ring = ndi.binary_dilation(seed, iterations=4) & ~ndi.binary_dilation(seed)
         lo = ndi.minimum_filter(np.where(ring, zz, np.inf), size=9)
@@ -317,13 +363,22 @@ def unoutlined_structures(z, tr, covered, inside, green=None):
         step = step[np.isfinite(step)]
         if step.size == 0 or (step > UNOUT_STEP_M).mean() < UNOUT_WALL_FRAC:
             continue
-        gvals = zz[ring & ~cov & fin[r0:r1, c0:c1]]
+        gvals = zz[ring & ~cov & ok]
         if gvals.size < 4:
             continue
-        g = float(np.percentile(gvals, GROUND_Q))
+        g = g0 = float(np.percentile(gvals, GROUND_Q))
         if np.median(zz[seed]) < g + UNOUT_RAISE_M:
             continue
-        m = ndi.binary_dilation(seed, iterations=grow) & ~cov
+        body, g = _grow(seed, g, zz, ok, cov, gr, reach, rin, rout)
+        for far in reaches[1:]:     # bounded by walls: stops growing as reach rises
+            b2, g2 = _grow(seed, g, zz, ok, cov, gr, far, rin, rout)
+            if (b2 != body).sum() <= UNOUT_SETTLED * body.sum():
+                break
+            body, g = b2, g2
+        else:
+            body, g = _grow(seed, g0, zz, ok, cov, gr, reach, rin, rout)
+        m = (ndi.binary_dilation(body, iterations=grow) & ~cov & ~gr) | body
+        taken[r0:r1, c0:c1] |= m
         out.append((r0, c0, m, g))
     return out
 

@@ -505,8 +505,8 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
-- **Buildings with no outline: pressed flat in the 3D ground (11 Nov, code
-  only, not yet in a build).** The large block on Beach St / Rees St,
+- **Buildings with no outline: pressed flat in the 3D ground (11 Nov; v76
+  live with the first version, v77 pending with the grown shape).** The large block on Beach St / Rees St,
   Queenstown CBD (NZTM ~1258205, 5004375; a finished flat roof with a glass
   skylight today) has no LINZ outline: the outlines come from the 2021
   photos, which show it under construction with a tower crane. No outline,
@@ -520,8 +520,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   boat); without the photo test it found 61, mostly tree crowns.
   `flatten_buildings` also falls back to ground up to 15 m out when a
   footprint's 2-5 m ring is all other buildings (none on pilot).
-  Goes live with the next terrain_ground tile build
-  (`tools/build_terrain_tiles.py --ground`, VM). Next: draw such a
+  v76 (live 11 Nov) carried the first version: 341 structures over the 35
+  served regions, but on the Beach St block it pressed only the flat
+  patch, leaving the rim and the crane core 8-15 m up, still spiky in 3D,
+  and one patch's 1-4 m ground ring sat on the deck's own rim (ground
+  324.7 m, street ~316 m). The structure now grows from the patch through
+  connected raised, unoutlined, non-green cells, widened 12 m to 48 m in
+  6 m steps until a step adds under 5% (walled; a slope keeps growing and
+  keeps the 12 m shape), and its ground is read 3-10 m outside the whole
+  shape. On pilot the block is pressed whole to 315.3 m; the other five
+  sites are unchanged in kind. Tests: tests/test_terrain_ground.py (9).
+  Ships as v77: rebuild terrain_ground on the VM
+  (`tools/build_terrain_tiles.py --ground --out <dir> <served regions>`),
+  copy v76 to v77 with the new terrain_ground, switch site-config.js. Next: draw such a
   structure as a plain box solid rather than leave it flat; an estimate
   needs an outline (the roof may have changed since the survey).
 - **Zoomed-out savings: live in v75 (11 Nov).** Cells carry money groups

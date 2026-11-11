@@ -78,6 +78,58 @@ def test_green_cells_reads_excess_green():
     assert btt.green_cells(rgb).tolist() == [[True, False]]
 
 
+def test_the_rough_rim_and_crane_go_with_the_deck_but_a_tree_beside_it_stays():
+    z = _ground()
+    z[DECK] += 12.0
+    rng = np.random.default_rng(3)
+    rim = np.zeros(z.shape, bool)
+    rim[36:74, 26:79] = True
+    rim[DECK] = False
+    z[rim] = 100.0 + rng.uniform(4.0, 14.0, rim.sum())   # scaffold: high, rough
+    z[38, 50] = 160.0                                     # crane on the rim
+    tree = (slice(40, 52), slice(80, 90))
+    z[tree] = 108.0
+    green = np.zeros(z.shape, bool)
+    green[tree] = True
+    found = _run(z, green=green)
+    assert len(found) == 1, len(found)
+    r0, c0, m, g = found[0]
+    full = np.zeros(z.shape, bool)
+    full[r0:r0 + m.shape[0], c0:c0 + m.shape[1]] = m
+    assert full[rim].mean() > 0.95, full[rim].mean()
+    assert full[38, 50]
+    assert full[tree].mean() < 0.2, full[tree].mean()
+    assert abs(g - 100.0) < 0.5, g
+
+
+def _mask(found, shape):
+    full = np.zeros(shape, bool)
+    for r0, c0, m, g in found:
+        full[r0:r0 + m.shape[0], c0:c0 + m.shape[1]] |= m
+    return full
+
+
+def test_a_rough_wing_far_past_the_flat_part_goes_with_it():
+    z = _ground()
+    z[40:70, 15:50] += 12.0
+    rng = np.random.default_rng(5)
+    wing = (slice(40, 70), slice(50, 75))                 # 25 m, never flat
+    z[wing] = 100.0 + rng.uniform(6.0, 20.0, z[wing].shape)
+    found = _run(z)
+    assert len(found) == 1, len(found)
+    assert _mask(found, z.shape)[wing].mean() > 0.95
+
+
+def test_growth_up_a_hillside_stops_at_the_first_step():
+    z = _ground()
+    yy, xx = np.mgrid[0:N, 0:N]
+    hill = xx >= 50
+    z[hill] += 0.4 * (xx[hill] - 50)                      # the slope rises from flat ground
+    z[40:70, 20:60] = 112.0                               # a deck cut into its foot
+    full = _mask(_run(z), z.shape)
+    assert full[40:70, 20:55].mean() > 0.9
+    assert not full[:, 60 + 12 + 3 + 2:].any(), np.where(full)[1].max()   # 12 m step + 3 m pad
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
