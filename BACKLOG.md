@@ -524,8 +524,7 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
-- **Panels skewed on the map by tile rounding (11 Nov; fixed in code, not
-  yet served).** Built panels are square in the layouts, but the map drew
+- **Panels skewed on the map by tile rounding (11 Nov; fixed, v78 live).** Built panels are square in the layouts, but the map drew
   many as rhombi. Cause: the z15-16 panel tiles were cut at tippecanoe's
   default detail (12), about 0.1 m per tile unit at z16, and the map
   overzooms z16, so each corner was rounded and simplified by up to
@@ -533,8 +532,7 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   square (up to 10 deg). `src/emit_region.py` now cuts that pass at
   `--full-detail=16` (0.007 m): over the 35 re-emitted regions 2.9% of
   panels are off by more than 2 deg (panels cut at a tile edge), for 13%
-  more bytes (panel_layouts.pmtiles 80.1 MB). Serving it is a new
-  version.
+  more bytes (panel_layouts.pmtiles 80.1 MB). Served from v78 (11 Nov).
 - **Buildings with no outline: pressed flat in the 3D ground (11 Nov; v77
   live).** The large block on Beach St / Rees St,
   Queenstown CBD (NZTM ~1258205, 5004375; a finished flat roof with a glass
