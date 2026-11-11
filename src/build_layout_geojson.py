@@ -44,6 +44,7 @@ from src.roof_segmentation import segment_building_best, roof_confidence, _note_
 from src.ridge_snap import snap_ridges_to_crest
 from src.plane_seams import snap_seams_to_plane_intersections
 from src.roof_levels import split_lower_levels
+from src.face_steps import split_steps
 from src.plane_refresh import refresh_planes
 from src.pointcloud_source import PointCloudSource
 from src.panel_fitting import fit_panels_on_facet, drop_minor_arrays, drop_scraps, assign_fill_ranks, building_frame, register_frame, enforce_arrays, shape_arrays, centre_panels
@@ -488,6 +489,10 @@ def _build_one_at(building_id, nudge_m):
     # ...and again after the seams moved geometry under unchanged planes.
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
     facets = _reshape(split_lower_levels, pc_source, dsm=_dsm_ev, photo=_CTX.get("photo_ds"))
+    # ...and a face whose returns lie on two planes a step apart (or, with
+    # SOLAR_STEP_SPLIT=2, folded) becomes two faces (src/face_steps.py; off
+    # unless SOLAR_STEP_SPLIT is set).
+    facets = _reshape(split_steps, pc_source)
     # ...and last, the edges between faces straightened together, so a ridge
     # is a line rather than the zig-zag the returns left (src/face_straighten.py).
     facets = _reshape(merge_coplanar_faces)
