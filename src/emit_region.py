@@ -549,12 +549,21 @@ def emit(region, out_root=OUT_ROOT):
     # PANEL_MIN_ZOOM), so z15 ships whole too. Measured on wanaka_town: whole
     # z15 tiles median 100 kB, max 912 kB, against 299 kB max at z16. z13-14
     # keep the budget; they carry facets and the heat-map weights only.
+    #
+    # ...AND AT FULL PRECISION. At tippecanoe's default detail (12) a z16
+    # tile unit is about 0.1 m here, and the map overzooms z16, so every
+    # panel corner is rounded and simplified by up to 0.1 m: on
+    # frankton_arm_lake 71% of the build's square panels came out skewed by
+    # more than 2 deg (up to 10 deg), the wobbly panels seen on the map.
+    # --full-detail=16 (0.007 m) leaves 2% (panels cut at a tile edge) for
+    # 13% more bytes.
     props = [a for k in LAYOUT_PROPS for a in ("-y", k)]
     _tippecanoe(tmp / "_layout_lo.pmtiles", "layout", lo_tmp, 13, 14,
                 ["--drop-densest-as-needed", "--detect-shared-borders",
                  "--maximum-tile-bytes=200000", *props])
     _tippecanoe(tmp / "_layout_hi.pmtiles", "layout", lay_tmp, 15, 16,
-                ["--detect-shared-borders", "--no-feature-limit", "--no-tile-size-limit", *props])
+                ["--detect-shared-borders", "--no-feature-limit", "--no-tile-size-limit",
+                 "--full-detail=16", *props])
     subprocess.run(["tile-join", "-q", "-pk", "--force", "-o", str(tmp / "panel_layouts.pmtiles"),
                     str(tmp / "_layout_lo.pmtiles"), str(tmp / "_layout_hi.pmtiles")],
                    check=True, cwd=ROOT)
