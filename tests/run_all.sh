@@ -66,6 +66,7 @@ run "cloud preview publishing" $PY tests/test_publish_preview.py
 run "static documentation"  $PY tests/test_render_docs.py
 run "canonical map links"   $PY tests/test_canonical_map_links.py
 run "ridge snap"            $PY tests/test_ridge_snap.py
+run "terrain ground"        $PY tests/test_terrain_ground.py
 run "seam steps"            $PY tests/test_seam_steps.py
 run "seam fixes"            $PY tests/test_seam_fixes.py
 run "roof levels"           $PY tests/test_roof_levels.py
@@ -73,6 +74,7 @@ run "small obstructions"    $PY tests/test_small_obstructions.py
 run "geometry stages"       $PY tests/test_geometry_stage.py
 run "image lean"            $PY tests/test_register_imagery.py
 run "demolished buildings"  $PY tests/test_demolished.py
+run "money groups"          $PY tests/test_money_groups.py
 run "identical roofs, outline fit" $PY tests/test_repeat_roofs.py
 run "reading referee switch" $PY tests/test_reading_referee.py
 run "drawn outline"         $PY tests/test_hand_outline.py
@@ -88,6 +90,7 @@ run "shading split"         $PY tests/test_shading_split.py
 run "photo roof shape"      $PY tests/test_photo_shape.py
 run "structured roofs"       $PY tests/test_structured_roof.py
 run "face straighten"        $PY tests/test_face_straighten.py
+run "face rectify"           $PY tests/test_face_rectify.py
 run "obstruction planes"     $PY tests/test_obstruction_planarity.py
 run "racking"                $PY tests/test_racking.py
 run "project secrets"       $PY tests/test_project_secrets.py

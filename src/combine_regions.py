@@ -80,6 +80,22 @@ def _tile_join(inputs, out, workdir):
         round_no += 1
 
 
+def _money_groups(v):
+    """A cell's summed "mg:<key>:<field>" entries as sorted compact rows."""
+    groups = defaultdict(dict)
+    for k, x in v.items():
+        if k.startswith("mg:"):
+            _, key, fld = k.split(":")
+            groups[key][fld] = x
+    rows = []
+    for key in sorted(groups):
+        g = groups[key]
+        rows.append([key, int(g.get("n", 0)), round(g.get("a", 0.0)), round(g.get("h", 0.0), 1)]
+                    + [round(g.get(f"p{d}", 0.0), 1) for d in range(10, 101, 10)]
+                    + [round(g.get(f"k{d}", 0.0)) for d in range(10, 101, 10)])
+    return rows
+
+
 def _combine_cells(regions, out_root, dest_tmp):
     sums = defaultdict(lambda: defaultdict(float))
     for r in regions:
@@ -90,6 +106,7 @@ def _combine_cells(regions, out_root, dest_tmp):
             acc = sums[key]
             for k, x in v.items():
                 acc[k] += x
+    BAND_ZOOMS = {lod: (lo, hi) for lod, lo, hi in CELL_BANDS}
     feats = []
     for key in sorted(sums):
         z, x, y, btype = key.split("/")
@@ -113,7 +130,18 @@ def _combine_cells(regions, out_root, dest_tmp):
             if f"fill_panels_{d}" in v:
                 props[f"fill_panels_{d}"] = round(v[f"fill_panels_{d}"], 1)
                 props[f"fill_kwh_{d}"] = round(v[f"fill_kwh_{d}"], 0)
+        # the money groups (emit_region: "MONEY GROUPS"), one compact list per
+        # cell: [key, n, roof m2, height sum, panels 10..100, kWh 10..100]
+        mg = _money_groups(v)
+        if mg:
+            props["mg"] = json.dumps(mg, separators=(",", ":"))
+        # Each cell size goes only into the tile zooms its band is drawn at
+        # (the page's cells-fill-<lod> layers: minzoom from, maxzoom to), not
+        # every zoom: with the money groups, the finest cells packed into
+        # every zoom made the zoom 5-9 tiles about 1 MB each.
+        lo, hi = BAND_ZOOMS[z]
         feats.append({"type": "Feature", "properties": props,
+                      "tippecanoe": {"minzoom": lo, "maxzoom": hi},
                       "geometry": {"type": "Polygon", "coordinates": [[
                           [w, s], [e, s], [e, n], [w, n], [w, s]]]}})
     src = dest_tmp / "_cells.geojson"
@@ -128,12 +156,13 @@ def _combine_cells(regions, out_root, dest_tmp):
     pts = []
     for f in feats:
         p = dict(f["properties"])
+        p.pop("mg", None)   # the cells carry it for sums; the heat map needs none
         w, s_, e, n = tile_bounds(*[int(v) for v in p["cell"].split("/")[1:]], p["lod"])
         km2 = max(p.get("km2") or 0.001, 0.001)
         for pct in COVERAGE_STEPS:
             p[f"dens_{pct}"] = round((p.get(f"kwh_{pct}") or 0.0) / km2)   # kWh/yr per km2
         p["dens_fit"] = round((p.get("fitted_kwh") or 0.0) / km2)
-        pts.append({"type": "Feature", "properties": p,
+        pts.append({"type": "Feature", "properties": p, "tippecanoe": f["tippecanoe"],
                     "geometry": {"type": "Point", "coordinates": [(w + e) / 2, (s_ + n) / 2]}})
     src_pts = dest_tmp / "_cellpts.geojson"
     src_pts.write_text(json.dumps({"type": "FeatureCollection", "features": pts},

@@ -245,6 +245,27 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   outline and missed. Next: show it the plain photo beside the drawing,
   try medium effort, then decide whether to screen the district with it.
 
+- **Line detector retrained on every town (10 Nov).** The build's
+  detectors (`roof_lines_v5`/`v6`, Sep) learned from Queenstown-central roofs
+  only: the other towns' photos are not on the Mac. Exported on the VM from
+  all 164 usable drawn roofs, the 14 drawn held-back roofs pinned as
+  validation (`--val-ids`), trained on the Mac. Mean F1 (ridge, valley,
+  cliff) on those 14: v5 0.090, v6 0.071, v8 0.143; new model on 149 roofs
+  0.252 (ridge 0.46, valley 0.24, cliff 0.06, hip 0.26),
+  `data/models/roof_lines_v9_eval.pt`. Same recipe on subsets: the 64
+  Queenstown-central roofs alone 0.088; 37 random roofs 0.20/0.14; 75
+  random 0.21/0.19. Variety of towns is what carried over; more random
+  drawings still help, more gently. Not yet in the build: v5 drives the
+  calibrated line extractor and v6 the evidence map, so v9 needs the blind
+  benchmark (predict_faces on the VM, then markup_benchmark) before it
+  replaces either. Cliffs stay near zero: steps are a LiDAR question.
+  Blind benchmark (11 Nov, 179 drawn roofs, VM): v9 as the evidence map
+  only ties v6 (line_f 0.573 both, 79 lines right, face IoU 0.614 vs
+  0.613; 2 better, 2 worse); v9 for both roles is worse (line_f 0.561, 74
+  right, face IoU 0.617; 16 better, 30 worse, change -0.012 [-0.029,
+  +0.004]). Pixel F1 on held-back roofs did not carry over to faces: the
+  build stays on v5/v6. The faces' errors are not in the line detector.
+
 - **The roof set: get 100 roofs right, then scale.** `data/roof_set.json`
   (`tools/make_roof_set.py`): 100 development roofs (35 flagged, 9 from the
   v68 render review, 25 new of the failing kinds, 31 already drawn) and 30
@@ -362,6 +383,41 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Faces messier than real roofs (11 Nov, five Wakatipu Heights houses).**
+  All five readings scored under the 0.60 trust line (four ended on the
+  LiDAR path, one on SAM), so faces follow DSM pixels: jagged edges,
+  slivers, ridges off the walls, where the photo shows plain gables and
+  hips. Benchmark, 178 drawn roofs (lines right = line F >= 0.7, faces
+  right = face IoU >= 0.8):
+
+  | Arm | line F | lines right | faces right |
+  | --- | --- | --- | --- |
+  | production | 0.573 | 79 | 43 |
+  | simple form where confident | 0.575 | 79 | 44 |
+  | simple form forced everywhere (`SOLAR_HYP_FORCE=1`, trust 0) | 0.504 | 52 | 36 |
+
+  Straight seams (`src/face_rectify.py`, 11 Nov, off: SOLAR_RECTIFY_FACES=1).
+  Stage probe on the five: the faces leave segmentation already traced,
+  `fit_seams` multiplies their vertices (36 -> 528 on 4750978) and
+  `straighten_faces` refuses three of the five outright. The new last stage
+  paints the faces on a 0.1 m grid, fits each shared seam with straight
+  lines (split only at a real bend, snapped to the walls or 45 deg),
+  re-cuts the roof along them, and keeps the result only if every face
+  stays near its area and the LiDAR fits no worse. It straightens two of
+  the five (4751237: 55 -> 27 vertices, one straight ridge); on the other
+  three the faces themselves are wrong and it refuses. Benchmark, same
+  178 roofs, off -> on: line F 0.590 -> 0.591, lines right 82 -> 82, faces
+  right 43 -> 42; it changed 104 roofs and cut their vertices 29% (5,865
+  -> 4,149). Line F counts a seam within 0.75 m as right, so it does not
+  see wobble; whether it reads as less messy needs a blind side-by-side.
+  The larger error is face structure, not seam wobble.
+
+  One flat/gable/hip/pyramid per rectangular part is too crude to lead:
+  real roofs join forms (gable plus hip ends, dormers, L and T ridges) that
+  it does not model. Next: keep the readings and regularise their faces
+  (straight edges, ridges and valleys snapped to wall directions, slivers
+  merged), and extend the simple form to joined parts, judged one rule at a
+  time on the benchmark and renders.
 - **Flat commercial roofs cut into many faces (13 Beach St, #4734679,
   case opened 8 Nov: "This panel layout is terrible").** v72 has 19 faces
   on it: a SAM reading scored 0.37 (under the 0.60 trust line) and the
@@ -502,13 +558,67 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **Panels skewed on the map by tile rounding (11 Nov; fixed, v78 live).** Built panels are square in the layouts, but the map drew
+  many as rhombi. Cause: the z15-16 panel tiles were cut at tippecanoe's
+  default detail (12), about 0.1 m per tile unit at z16, and the map
+  overzooms z16, so each corner was rounded and simplified by up to
+  0.1 m. On frankton_arm_lake 71% of panels came out more than 2 deg off
+  square (up to 10 deg). `src/emit_region.py` now cuts that pass at
+  `--full-detail=16` (0.007 m): over the 35 re-emitted regions 2.9% of
+  panels are off by more than 2 deg (panels cut at a tile edge), for 13%
+  more bytes (panel_layouts.pmtiles 80.1 MB). Served from v78 (11 Nov).
+- **Buildings with no outline: pressed flat in the 3D ground (11 Nov; v77
+  live).** The large block on Beach St / Rees St,
+  Queenstown CBD (NZTM ~1258205, 5004375; a finished flat roof with a glass
+  skylight today) has no LINZ outline: the outlines come from the 2021
+  photos, which show it under construction with a tower crane. No outline,
+  no solid, and `flatten_buildings` pressed only outlined footprints, so
+  the 3D view draped the 2021 survey there, crane and scaffold included, as
+  spikes. Not glass: the skylight did not exist when the survey was flown.
+  `unoutlined_structures` (tools/build_terrain_tiles.py) now finds such
+  structures by a top that is flat at 5 m, walled, raised, unoutlined and
+  not green in the photo, and presses it to the ground beside it. On pilot
+  it finds 6, all real (two construction sites, three houses, a moored
+  boat); without the photo test it found 61, mostly tree crowns.
+  `flatten_buildings` also falls back to ground up to 15 m out when a
+  footprint's 2-5 m ring is all other buildings (none on pilot).
+  v76 (live 11 Nov) carried the first version: 341 structures over the 35
+  served regions, but on the Beach St block it pressed only the flat
+  patch, leaving the rim and the crane core 8-15 m up, still spiky in 3D,
+  and one patch's 1-4 m ground ring sat on the deck's own rim (ground
+  324.7 m, street ~316 m). The structure now grows from the patch through
+  connected raised, unoutlined, non-green cells, widened 12 m to 48 m in
+  6 m steps until a step adds under 5% (walled; a slope keeps growing and
+  keeps the 12 m shape), and its ground is read 3-10 m outside the whole
+  shape. On pilot the block is pressed whole to 315.3 m; the other five
+  sites are unchanged in kind. Tests: tests/test_terrain_ground.py (9).
+  v77 (live 11 Nov) is v76 with terrain_ground rebuilt this way
+  (`tools/build_terrain_tiles.py --ground --out <dir> <served regions>`):
+  335 structures over the 35 served regions; the block samples flat at
+  315.3 m in the served tiles (324.7-329.7 m in v76) and renders flat in
+  3D. Next: draw such a
+  structure as a plain box solid rather than leave it flat; an estimate
+  needs an outline (the roof may have changed since the survey).
+- **Zoomed-out savings: live in v75 (11 Nov).** Cells carry money groups
+  (`mg`); the total prices them below zoom 13. Live: $14.95M/yr over ~14,966
+  roofs at zoom 11.5 over Queenstown; $37.2M (zoom 8.5) and $37.3M (zoom 5.5)
+  over the district's 31,611 roofs. Each cell size ships only at its band's
+  zooms (building_cells.pmtiles 7.9 MB); one zoom-9 tile over central
+  Queenstown is 780 kB, the largest. v75 re-emitted v74's layouts: no roof
+  changed. Re-emit directly (emit_region per region, then combine_regions),
+  not through run_district_build.sh, while every building is stale.
 - **Waiting for the next full rebuild (not yield-only)**: the sunlight
   calibration fix (flat roof now reproduces SolarView's 1,362.5 kWh/m2;
   v71 is 1.9% high flat, 3.5% high on north faces at 25 deg, in the
   Queenstown district), the heat map shading like panels, sys_kwh_N by fill
   order, and the PV notes' 16.4% losses. A yield-only rebuild would keep
   each panel's stored shading_factor, whose beam share comes from the old
-  sun model; rebuild in full.
+  sun model; rebuild in full. Since v74 (8 Nov) the geometry code changed
+  too (edge gap and both frame-search fixes on by default, the drawn-outline
+  markup), so on 10 Nov tools/patch_stale_selected.py marked every building
+  in all 35 served regions stale: the next build is a full re-lay of every
+  region, many VM hours, not a patch. Plan it at the start of a month's VM
+  budget (data/vm_budget.json).
 - **Judgement calls from the independent review, not yet acted on:**
   terrain shading is nearly inert in the yield model (pilot horizon on vs
   open: -0.4% flat, -0.8% north at 25 deg) because one monthly cloud factor
@@ -526,6 +636,31 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Scale
 
+- **National, with fast roof updates: the plan (11 Nov).** Measured on the
+  Queenstown district (35 regions, 32,838 buildings, one 16-core VM): a full
+  re-lay took 10.7 h (v72), about 14 core-seconds a building. Wanaka
+  (8,565 buildings) by stage: layout 2,400-2,900 s, gate_panels ~1,800 s,
+  heat-map raster ~2,300 s, emit ~550 s. At that rate New Zealand's ~2M
+  buildings are ~7,800 core-hours a full re-lay, about NZ$490 of spot VMs,
+  plus the face readings (predict_faces, ~10 s a building in one process)
+  once. Two things make a roof change take hours, not days:
+  1. **Re-run only what a change touches.** Today one build key per
+     building covers all the geometry code, so any change re-lays everything
+     (on 10 Nov every building was stale). The heat-map raster reads only
+     the LiDAR and the building's shading, not the faces (its header), so a
+     roof-line change should not re-run it; the panel gate's LiDAR checks
+     belong at fit time. Give each stage its own key per building and skip a
+     building whose new faces equal its stored faces: a roof-line change then
+     re-lays only the roofs whose faces moved, and only layout and emit run.
+  2. **Run it on the fleet.** `tools/fleet.sh` + `src/gcs_queue.py` spread
+     regions over spot workers; the regional CPU quota (100) caps it at six
+     16-core workers, ~80 h for a national full re-lay. A quota request (e.g.
+     800 CPUs) brings that to ~10 h at the same cost. The fleet has never
+     run (dress rehearsal below).
+  Rollout of a roof change: the drawn roofs blind (minutes), one district
+  (hours), then national in the background, busiest areas first; each
+  building already carries its model version (`mv`), so a half-rolled-out
+  map stays consistent per building.
 - **Dress rehearsal on one city** (docs/ai-agents/archive/national-rehearsal.md). The fleet
   (`tools/fleet.sh`, `src/gcs_queue.py`) has never run as a fleet. LINZ and
   OpenTopography fetch rates are unknown (`tools/measure_fetch_rate.py`). The

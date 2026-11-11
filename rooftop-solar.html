@@ -3160,7 +3160,7 @@ map.on("load", async () => {
       lon: buildingLon(pr), btype: pr.btype, heightM: pr.height_m,
       roofM2: pr.facet_area_m2 || 150, kwp, area: pr.sr,
       gen: shape.map(row => row.map(v => v * kwhYear)), seasonDays: null });
-    const out = Object.assign(btPanelEcon(r, count), { netYear: r.netYear });
+    const out = Object.assign(btPanelEcon(r, count), { netYear: r.netYear, netShown: r.netShown });
     if (econCache.size > 20000) econCache.clear();
     econCache.set(key, out);
     return out;
@@ -3208,7 +3208,8 @@ map.on("load", async () => {
   // MONEY MODE: a green pill on every building in view with its net saving a
   // year (bill savings less loan repayments), the figure in the card's green
   // box. Every roof, the open one included, is priced by roofMoney below;
-  // billEconFor prices only the panel colours. Pills from zoom 16, at most 1,500.
+  // billEconFor prices only the panel colours. Pills from zoom 16, at most 1,500;
+  // from zoom 13 to 16 the area's total adds up roofMoneyEstimate instead.
   // ONE ROOF'S NET SAVING, BY THE CARD'S OWN CALCULATION. The panels the map
   // shows on it (liveFeatures, the same filter the card counts), their own
   // generation and hourly curve (generationForInner), and the bill model
@@ -3262,6 +3263,62 @@ map.on("load", async () => {
     moneyCache.set(key, net);
     return net;
   }
+  // A ROOF'S NET SAVING FROM ITS YEARLY TOTALS, for zooms where its panel
+  // tiles are not loaded (below MONEY_MIN_ZOOM). The same bill model and
+  // household as the card, at the roof's size on the map (pctForBuilding:
+  // the default size or the density slider), from the size's baked kWh and
+  // panel count; only the day's shape is the area's sunny-side average
+  // (econShape) rather than the roof's own panels. Measured against the
+  // card's own figure on 397 central Queenstown roofs at zoom 16.5 (10 Nov):
+  // the sum within 0.4%, each roof's median 1.1% low, 80% between 5.1% low
+  // and 1.6% high.
+  function roofMoneyEstimate(pr) {
+    ensureSun(pr.sr);   // as roofMoney: the card prices with the town's sunlight table
+    const pct = pctForBuilding(pr);
+    const count = Math.round(decileInterp(pr, "fill_panels", pct));
+    const kwhYear = decileInterp(pr, "fill_kwh", pct) * bakedKwhScale();
+    if (!(count > 0) || !(kwhYear > 0)) return null;
+    const o = billEconFor(pr, count, kwhYear);
+    return o && Number.isFinite(o.netShown) ? o.netShown : null;
+  }
+  // A CELL'S NET SAVING, below BUILDING_MIN_Z where only cells are served.
+  // The cell's money groups (src/emit_region.py, "MONEY GROUPS": its roofs
+  // summed by sun region, size band and, for non-homes, 1 m height band) are
+  // each priced as their average roof through roofMoneyEstimate, times their
+  // count. One average roof per cell was 7% high over central Queenstown and
+  // 23% low for Wanaka's homes; by group it is within 2.5% of the per-roof
+  // sum for every type (4,900 roofs, all three cell sizes, 10 Nov). A cell
+  // from before the groups were built has none, and gives null.
+  // Returns { net, roofs }.
+  const MG_LADDER = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  function cellMoneyEstimate(cp) {
+    if (!cp.mg) return null;
+    let rows;
+    try { rows = typeof cp.mg === "string" ? JSON.parse(cp.mg) : cp.mg; } catch (err) { return null; }
+    const btype = cp.btype || "home";
+    let sum = 0, roofs = 0, any = false;
+    for (const row of rows) {
+      const [key, n, area, hSum] = row;
+      if (!(n > 0)) continue;
+      const sr = key.split("|")[0];
+      ensureSun(sr);
+      const avg = { building_id: `cell:${cp.cell}|${btype}|${key}`, btype, sr,
+                    facet_area_m2: area / n, height_m: hSum > 0 ? hSum / n : undefined };
+      MG_LADDER.forEach((d, i) => {
+        avg[`fill_panels_${d}`] = row[4 + i] / n;
+        avg[`fill_kwh_${d}`] = row[14 + i] / n;
+      });
+      const net = roofMoneyEstimate(avg);
+      if (net == null) continue;
+      sum += net * n; roofs += n; any = true;
+    }
+    return any ? { net: sum, roofs } : null;
+  }
+  window.__moneyEst = { roof: pr => roofMoneyEstimate(pr), cell: cp => cellMoneyEstimate(cp) };
+  window.__roofMoneyEstimate = id => {
+    const f = map.queryRenderedFeatures({ layers: ["buildings-fill"] }).find(x => x.properties.building_id === id);
+    return f ? roofMoneyEstimate(f.properties) : null;
+  };
   window.__roofMoney = id => {
     const f = map.queryRenderedFeatures({ layers: ["buildings-fill"] }).find(x => x.properties.building_id === id);
     return f ? roofMoney(f.properties) : null;
@@ -3338,6 +3395,29 @@ map.on("load", async () => {
       want.sort((a, b) => a.d - b.d);
       want = want.slice(0, MONEY_MAX_PILLS);
     }
+    // BETWEEN THE BUILDING ZOOM AND MONEY_MIN_ZOOM: no pills (too many to
+    // read, and no panel tiles to price them by), but the area's total still
+    // adds up every roof in view, each from its yearly totals.
+    const z = map.getZoom();
+    const estimating = z < MONEY_MIN_ZOOM && z >= BUILDING_MIN_Z;
+    // a fresh list: the cached one can predate the tiles drawing
+    if (estimating) invalidateInView();
+    const est = estimating ? inViewBuildingProps() : [];
+    // BELOW THE BUILDING ZOOM: the cells in view, each priced from its money
+    // groups (cellMoneyEstimate), deduplicated as cellSummary does
+    const cellsMode = z < BUILDING_MIN_Z;
+    const cellEst = [];
+    if (cellsMode) {
+      const seenCell = new Set();
+      for (const c of map.queryRenderedFeatures({ layers: [`cells-fill-${cellLodFor(z)}`] })) {
+        const k = c.properties.cell + "|" + (c.properties.btype || "");
+        if (seenCell.has(k)) continue;
+        seenCell.add(k);
+        if (btypesOff.has(c.properties.btype || "home") || !c.properties.mg) continue;
+        cellEst.push({ k, cp: c.properties });
+      }
+    }
+    let cellRoofs = 0;
     const keep = new Set(want.map(w => w.id));
     moneyById.forEach((p, id) => { if (!keep.has(id)) { p.marker.remove(); moneyById.delete(id); } });
     const nets = new Map();
@@ -3358,17 +3438,48 @@ map.on("load", async () => {
       const tot = document.getElementById("inview-money");
       if (!tot) return;
       tot.hidden = false;
-      if (map.getZoom() < MONEY_MIN_ZOOM) { tot.innerHTML = `<span class="rm-l">Zoom in to add up the savings</span>`; return; }
-      if (left) { tot.innerHTML = `<span class="rm-l">Adding up the savings&hellip; ${(want.length - left).toLocaleString()} of ${want.length.toLocaleString()} roofs</span>`; return; }
+      // cells from before the money groups were built cannot be priced
+      if (cellsMode && !cellEst.length) { tot.innerHTML = `<span class="rm-l">Zoom in to add up the savings</span>`; return; }
+      const n = cellsMode ? cellEst.length : estimating ? est.length : want.length;
+      if (left) { tot.innerHTML = `<span class="rm-l">Adding up the savings&hellip; ${(n - left).toLocaleString()} of ${n.toLocaleString()} ${cellsMode ? "areas" : "roofs"}</span>`; return; }
       let sum = 0; nets.forEach(v => { sum += v; });
       tot.classList.toggle("neg", sum < 0);
-      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
-        `<span class="rm-l">net savings, the ${nets.size.toLocaleString()} roof${nets.size === 1 ? "" : "s"} labelled` +
-        `${want.length >= MONEY_MAX_PILLS ? " (the " + MONEY_MAX_PILLS.toLocaleString() + " nearest the middle)" : ""}</span>`;
+      const nRoofs = cellsMode ? cellRoofs : nets.size;
+      const roofs = `${nRoofs.toLocaleString()} roof${nRoofs === 1 ? "" : "s"}`;
+      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` + (cellsMode
+        ? `<span class="rm-l">net savings, about ${roofs} in and around the view, from each area's roofs by size; zoom in for each roof's own figure</span>`
+        : estimating
+        ? `<span class="rm-l">net savings, the ${roofs} in view, each from its yearly total; zoom in for each roof's own figure</span>`
+        : `<span class="rm-l">net savings, the ${roofs} labelled` +
+          `${want.length >= MONEY_MAX_PILLS ? " (the " + MONEY_MAX_PILLS.toLocaleString() + " nearest the middle)" : ""}</span>`);
     };
     let i = 0;
     // one pass over the loaded layout tiles for the whole screen (liveFeatures)
     const idx = want.length ? layoutIndexBuild() : null;
+    let j = 0;
+    const estSlice = () => {
+      if (job !== moneyJob || !moneyMode) return;
+      const t0 = performance.now();
+      while (j < est.length && performance.now() - t0 < MONEY_SLICE_MS) {
+        const pr = est[j++], net = roofMoneyEstimate(pr);
+        if (net != null && Number.isFinite(net)) nets.set(pr.building_id, net);
+      }
+      total(est.length - j);
+      if (j < est.length) moneyNext(estSlice);
+    };
+    if (estimating) { estSlice(); return; }
+    let ci = 0;
+    const cellSlice = () => {
+      if (job !== moneyJob || !moneyMode) return;
+      const t0 = performance.now();
+      while (ci < cellEst.length && performance.now() - t0 < MONEY_SLICE_MS) {
+        const { k, cp } = cellEst[ci++], o = cellMoneyEstimate(cp);
+        if (o && Number.isFinite(o.net)) { nets.set(k, o.net); cellRoofs += o.roofs; }
+      }
+      total(cellEst.length - ci);
+      if (ci < cellEst.length) moneyNext(cellSlice);
+    };
+    if (cellsMode) { cellSlice(); return; }
     const slice = () => {
       if (job !== moneyJob || !moneyMode) return;
       const t0 = performance.now();
