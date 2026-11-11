@@ -284,12 +284,31 @@ class LocalQueueTests(unittest.TestCase):
         self.assertEqual(state["tasks"][0]["status"], "interrupted")
 
     def test_pipeline_pool_runs_task_and_keeps_numbered_logs(self):
-        workspace = self.fixture("pool")
-        args = argparse.Namespace(python=sys.executable, workers=2, queue_dir=str(self.directory / "queue"),
-                                  port=None, no_open_browser=True, step_offset=0)
-        self.assertEqual(run_local(args, "pilot", workspace), 0)
-        state = json.loads((Path(args.queue_dir) / "state.json").read_text())
-        self.assertEqual(state["tasks"][0]["status"], "succeeded")
+        for include_imagery in (True, False):
+            with self.subTest(include_imagery=include_imagery):
+                workspace = self.fixture(
+                    f"pool-{include_imagery}",
+                    f"assert args.include_imagery is {include_imagery!r}\nreturn 0")
+                args = argparse.Namespace(
+                    python=sys.executable, workers=2,
+                    queue_dir=str(self.directory / f"queue-{include_imagery}"),
+                    port=None, no_open_browser=True, step_offset=0,
+                    include_imagery=include_imagery)
+                self.assertEqual(run_local(args, "pilot", workspace), 0)
+                state = json.loads((Path(args.queue_dir) / "state.json").read_text())
+                self.assertEqual(state["tasks"][0]["status"], "succeeded")
+                self.assertIs(state["tasks"][0]["task"]["options"]["include_imagery"],
+                              include_imagery)
+
+    def test_imagery_option_defaults_for_legacy_tasks_and_rejects_non_booleans(self):
+        from src.local_queue import validate_task
+        task = self.task()
+        task["options"].pop("include_imagery", None)
+        self.assertIs(validate_task(task)["options"]["include_imagery"], True)
+        for value in (None, 0, 1, "false"):
+            task["options"]["include_imagery"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(QueueError, "include_imagery"):
+                validate_task(task)
 
     def test_pipeline_default_routes_through_queue_and_rejects_bad_workers(self):
         from tools.pipeline import main

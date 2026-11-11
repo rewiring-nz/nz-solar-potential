@@ -8,6 +8,7 @@ stops reading the plan or hard-codes a list again, and pin the paid-referee
 question's default of no.
 """
 import io
+import os
 import re
 import subprocess
 import sys
@@ -114,6 +115,44 @@ def test_paid_referee_honours_a_decision_already_made():
     assert _confirm(env={build_plan.REFEREE_SWITCH: "1"}, tty=False)[0] is True
     assert _confirm("yes\n", env={build_plan.REFEREE_SWITCH: "0"})[0] is False
     assert _confirm("yes\n", env={build_plan.STAGE_SWITCH: "0"})[0] is False
+
+
+def test_stage_markers_track_imagery_choice():
+    import tempfile
+    from unittest.mock import patch
+    from src import run_stage
+
+    with tempfile.TemporaryDirectory() as tmp:
+        with patch.object(run_stage, "STATE_DIR", Path(tmp)), \
+                patch.object(run_stage, "_git_sha", return_value="test"), \
+                patch.object(run_stage, "_declared_inputs", return_value=[]), \
+                patch.object(run_stage, "stage_code_hash", return_value="code"):
+            with patch.dict(os.environ, {"SOLAR_INCLUDE_IMAGERY": "1"}):
+                run_stage.write_marker("build_layout_geojson", "r", 1)
+                assert run_stage.is_done("build_layout_geojson", "r")[0]
+            with patch.dict(os.environ, {"SOLAR_INCLUDE_IMAGERY": "0"}):
+                done, reason = run_stage.is_done("build_layout_geojson", "r")
+                assert not done and reason == "imagery selection changed since the marker"
+                run_stage.write_marker("build_layout_geojson", "r", 1)
+                assert run_stage.is_done("build_layout_geojson", "r")[0]
+
+
+def test_imagery_opt_out_ignores_cached_photos():
+    import tempfile
+    from unittest.mock import patch
+    from src.imagery_sources import selected_imagery_paths
+
+    with tempfile.TemporaryDirectory() as tmp:
+        area = Path(tmp)
+        imagery = area / "imagery_mosaic.tif"
+        reference = area / "reference_imagery_mosaic.tif"
+        imagery.touch()
+        reference.touch()
+        paths = {"imagery": imagery, "reference_imagery": reference}
+        with patch.dict(os.environ, {"SOLAR_INCLUDE_IMAGERY": "0"}):
+            assert selected_imagery_paths(paths) == (None, None)
+        with patch.dict(os.environ, {"SOLAR_INCLUDE_IMAGERY": "1"}):
+            assert selected_imagery_paths(paths) == (imagery, reference)
 
 
 if __name__ == "__main__":

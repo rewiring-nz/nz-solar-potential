@@ -37,10 +37,12 @@ Watch for this trap: LINZ WFS returns `lon,lat` where the spec says
 `lat,lon`, and the wrong order returns a valid response with zero
 buildings. The planner first checks a box known to hold thousands.
 
-**Data sources are keyed by location.** `src/surveys.py` resolves each
-region's box against `config.SURVEYS`. A region covered by no listed survey
-raises an error naming the surveys that exist, instead of quietly fetching
-the wrong capture.
+**Data sources are keyed by location.** `src/surveys.py` searches LINZ layer
+metadata for sources whose published extents contain the region, selects the
+newest matching LiDAR and imagery layers, and caches metadata under ignored
+`data/sources/linz/`. If no LiDAR DSM covers the area, the build warns and uses
+the synthetic-surface path rather than silently selecting another region's
+data.
 
 **Search** addresses are sharded by prefix when large, so search scales
 past a flat index.

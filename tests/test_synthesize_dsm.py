@@ -44,10 +44,18 @@ def test_flat_roofs_are_level():
 def test_no_lidar_towns_resolve_to_a_synthetic_survey():
     # A no-LiDAR region that missed its survey box would warn and be skipped
     # at fetch time, so it would never reach the map.
+    import tempfile
     import config
     from src.surveys import survey_for
-    for name in ("cromwell_west", "cromwell_east", "bannockburn", "glenorchy", "kinloch"):
-        assert survey_for(config.REGIONS[name], name).get("elevation") == "synthetic", name
+
+    def empty_catalog(_url):
+        return []
+
+    with tempfile.TemporaryDirectory() as cache:
+        for name in ("cromwell_west", "cromwell_east", "bannockburn", "glenorchy", "kinloch"):
+            result = survey_for(config.REGIONS[name], name, data_dir=Path(cache),
+                                get_json=empty_catalog, now=100)
+            assert result.get("elevation") == "synthetic", name
 
 
 def test_small_buildings_get_a_gable_along_their_long_axis():

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -22,6 +23,8 @@ FAKE = r'''
 import json, os, signal, sys, time
 from pathlib import Path
 data, region = Path(sys.argv[1]), sys.argv[2]
+if os.environ.get("SOLAR_SURVEY_OVERRIDES"):
+    print("SURVEY_OVERRIDES=" + os.environ["SOLAR_SURVEY_OVERRIDES"], flush=True)
 run = data / "pipeline_runs" / ("run-" + region.replace("/", "_"))
 run.mkdir(parents=True, exist_ok=True)
 print("PIPELINE_RUN_DIR=" + str(run), flush=True)
@@ -67,7 +70,8 @@ def _manager(tmp: Path, grace: float = 5.0) -> JobManager:
 
 def _estimate(*regions):
     return {"estimate_id": "0123456789abcdef", "regions": [{"region": r} for r in regions],
-            "totals": {"total_s": 100}, "paid_referee": {"usd_upper": 1.0}}
+            "totals": {"total_s": 100}, "paid_referee": {"usd_upper": 1.0},
+            "options": {"include_imagery": True, "paid_referee": False}}
 
 
 def _wait(manager, job_id, timeout=30):
@@ -104,10 +108,60 @@ def test_regions_run_in_order_failures_continue_and_combine_runs():
 def test_single_region_success_needs_no_extra_combine():
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         m = _manager(Path(tmp))
-        job = _wait(m, m.start(_estimate("a"), paid_referee=True))
+        est = _estimate("a")
+        est["options"]["paid_referee"] = True
+        job = _wait(m, m.start(est, paid_referee=True))
         assert job["status"] == "succeeded" and job["progress"] == 1.0 and job["eta_s"] == 0
         assert job["final_combine"]["status"] == "not needed"
         assert job["paid_referee"] is True and job["approved"]["paid_referee_usd_upper"] == 1.0
+
+
+def test_source_choice_is_pinned_to_job_and_command():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        m = _manager(Path(tmp))
+        commands = []
+        original = m.command_builder
+
+        def capture(*args):
+            command = original(*args)
+            commands.append(command)
+            return command
+
+        m.command_builder = capture
+        estimate = _estimate("a")
+        estimate["options"]["include_imagery"] = False
+        estimate["regions"][0]["source_layers"] = {
+            "dsm_layer": 123194, "imagery_layer": 123118,
+        }
+        job = _wait(m, m.start(estimate))
+        assert job["include_imagery"] is False
+        assert "--no-imagery" in commands[0]
+        assert job["survey_overrides"]["a"] == estimate["regions"][0]["source_layers"]
+        assert '"dsm_layer": 123194' in m.log(job["job_id"])["text"]
+
+
+def test_job_environment_overrides_preserve_parent_environment():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        m = _manager(Path(tmp))
+        probe = [
+            sys.executable, "-c",
+            "import json, os; print(json.dumps({key: os.environ.get(key) "
+            "for key in ('PATH', 'SOLAR_TEST_PARENT', 'SOLAR_TEST_OVERRIDE', "
+            "'PYTHONUNBUFFERED')}))",
+        ]
+        with patch.dict(os.environ, {"PATH": tmp, "SOLAR_TEST_PARENT": "inherited",
+                                     "SOLAR_TEST_OVERRIDE": "parent"}):
+            for overrides in (None, {}, {"SOLAR_TEST_OVERRIDE": "child"}):
+                process = m._popen(probe, None, overrides)
+                stdout, _ = process.communicate(timeout=10)
+                assert process.returncode == 0, stdout
+                environment = json.loads(stdout)
+                assert environment == {
+                    "PATH": tmp,
+                    "SOLAR_TEST_PARENT": "inherited",
+                    "SOLAR_TEST_OVERRIDE": "child" if overrides else "parent",
+                    "PYTHONUNBUFFERED": "1",
+                }, environment
 
 
 def test_cancel_sends_sigint_and_skips_the_rest():
@@ -256,6 +310,8 @@ def test_progress_weights_finished_steps():
 if __name__ == "__main__":
     for test in (test_regions_run_in_order_failures_continue_and_combine_runs,
                  test_single_region_success_needs_no_extra_combine,
+                 test_source_choice_is_pinned_to_job_and_command,
+                 test_job_environment_overrides_preserve_parent_environment,
                  test_cancel_sends_sigint_and_skips_the_rest,
                  test_workspace_lock_makes_local_jobs_wait_and_stale_jobs_recover,
                  test_cloud_lane_runs_beside_local_and_records_outputs,

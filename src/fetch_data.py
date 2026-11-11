@@ -250,15 +250,23 @@ def main():
     out_path.write_text(json.dumps(buildings))
     print(f"Saved {len(buildings['features'])} buildings to {out_path}")
 
+    from src.surveys import survey_for
+    survey = survey_for(config.PILOT_BBOX, "pilot")
+    if survey.get("elevation") == "synthetic" or not survey.get("dsm_layer"):
+        raise RuntimeError("no covering LINZ DSM is available for the pilot area")
     print(f"Fetching DSM for bbox {config.PILOT_BBOX} (WGS84)...")
-    fetch_raster(config.PILOT_BBOX, api_key, config.LINZ_DSM_LAYER, "dsm")
+    fetch_raster(config.PILOT_BBOX, api_key, survey["dsm_layer"], "dsm")
 
     from src.fetch_dem_wide import ensure_dem_wide
     print("Ensuring wide 8m DEM for distant terrain...")
     ensure_dem_wide(api_key)
 
-    print(f"Fetching aerial imagery for bbox {config.PILOT_BBOX} (WGS84)...")
-    fetch_raster(config.PILOT_BBOX, api_key, config.LINZ_IMAGERY_LAYER, "imagery", format_key="raster")
+    if survey.get("imagery_layer"):
+        print(f"Fetching aerial imagery for bbox {config.PILOT_BBOX} (WGS84)...")
+        fetch_raster(config.PILOT_BBOX, api_key, survey["imagery_layer"],
+                     "imagery", format_key="raster")
+    else:
+        print("No covering LINZ aerial imagery was found; continuing without imagery.")
 
 
 if __name__ == "__main__":

@@ -12,10 +12,11 @@ are excluded, matching the default area finder. Coastal bays, islands and
 conservation land remain candidates because they can contain buildings.
 
 **This is a coverage catalogue, not a build queue or a claim of readiness.**
-Building counts and survey coverage have not been checked here. Some candidates
-have no buildings; others need a configured survey before they can be built.
-Use `tools/find_area.py <name> --council <council> --details` to check a candidate
-before building. Legacy bounding-box regions are not part of this list.
+Building counts and LINZ source coverage have not been checked here. Some
+candidates have no buildings; others may have no LiDAR and use the explicitly
+marked synthetic-surface path. Use `tools/find_area.py <name> --council
+<council> --details` to check a candidate before building. Legacy
+bounding-box regions are not part of this list.
 
 Region ids use the same helpers as the pipeline, including `no-town`,
 ASCII slugs and LINZ-id suffixes for name collisions. A multi-council

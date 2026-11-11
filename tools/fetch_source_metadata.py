@@ -5,8 +5,8 @@ The methodology diagram on the map (methodology.json, built by
 src/methodology.py) states each source's title, capture dates and accuracy.
 Those figures are LINZ's, not ours, so they are read from the LINZ Data
 Service layer metadata and stored in data/source_metadata.json, never typed
-by hand. tests/test_methodology.py fails when config names a layer this file
-does not describe, so a new survey cannot reach the map undescribed.
+by hand. Area-specific survey layers are discovered and cached at runtime;
+this committed file covers only stable national layers.
 
 Accuracy is parsed from the layer's own description text; where LINZ states
 none, the field is null and the diagram says "not stated by LINZ".
@@ -29,21 +29,12 @@ import config  # noqa: E402
 
 OUT = ROOT / "data" / "source_metadata.json"
 API = "https://data.linz.govt.nz/services/api/v1.x/layers/{}/"
-SURVEY_KEYS = ("dsm_layer", "dem_layer", "imagery_layer",
-               "reference_imagery_layer", "lidar_tile_index_layer")
-
-
 def layer_ids() -> dict[int, list[str]]:
-    """Every LINZ layer id config names, with where it is named."""
+    """Stable national LINZ layer IDs, with where each is named."""
     ids: dict[int, list[str]] = {}
     for name in ("LINZ_BUILDING_OUTLINES_LAYER", "LINZ_SUBURBS_LOCALITIES_LAYER",
                  "LINZ_WIDE_DEM_LAYER"):
         ids.setdefault(int(getattr(config, name)), []).append(f"config.{name}")
-    for s in config.SURVEYS:
-        for k in SURVEY_KEYS:
-            v = s.get(k)
-            if v:
-                ids.setdefault(int(v), []).append(f"config.SURVEYS[{s['name']}].{k}")
     return ids
 
 

@@ -304,6 +304,9 @@ def main():
 
     # Pass 2: imagery (the long pole), region by region.
     for name in wanted:
+        if os.environ.get("SOLAR_INCLUDE_IMAGERY", "1") == "0":
+            print(f"[{name}] aerial imagery excluded by request; skipping imagery downloads")
+            continue
         bbox = area_bbox_wgs84(name)   # task.json, config, or the outlines on disk
         footprints = acquisition_footprints(name, bbox)
         out_dir = REGIONS_DIR / name

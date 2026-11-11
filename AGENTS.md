@@ -309,6 +309,12 @@ figure for the same thing. Code enforces this:
   `locality.json` `outline_source`).
 - LINZ WFS fetches use WFS 1.0.0 with `typeName` and `maxFeatures`; 2.0.0
   returned empty results.
+- Regional DSM, DEM, LiDAR-index and aerial-photo layers are discovered from
+  LINZ metadata by `src/surveys.py`, not maintained as a registry in `config.py`.
+  The local metadata cache is `data/sources/linz/survey_layer_catalog.json`
+  (ignored by Git); web estimates pin selected layer IDs through local and
+  cloud execution. Without a verified raw point-cloud bulk source, builds use
+  the covering DSM and disable cached point-cloud tiles for that run.
 - Missing aerial imagery does not stop a build: the fetcher warns and the
   build skips photo-based obstruction detection.
 - `src/s3_rasters.py` probes LERC decoding with system GDAL and Rasterio;

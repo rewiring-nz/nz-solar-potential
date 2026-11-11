@@ -1,5 +1,16 @@
 # Backlog
 
+Completed local-queue imagery-option recovery: tasks persist and validate
+`include_imagery`, forward both checkbox states to the pipeline worker, and
+default older task records to including imagery. Real worker-process tests
+cover both choices and validation rejects non-boolean values.
+
+Completed web-job environment recovery: source-layer overrides merge into
+the panel's environment instead of replacing it, retaining `PATH` and other
+inherited settings for GDAL and subsequent stages. Regression tests exercise
+default, empty and partial overrides and run source-choice pinning through
+the job-test entry point.
+
 Completed local web-build reliability follow-up: raster-export creation allows
 120 seconds for LINZ and reports timeouts without automatically duplicating
 export jobs. Layout workers close Rasterio handles before interpreter teardown.
@@ -50,19 +61,26 @@ restore), output-equivalence tests between engines, a VM cost confirmation
 on `fleet.sh up`, and re-recording `tests/synthetic/reference.json` on Linux
 (stale on HEAD since the 20 Oct record: 606 → 459 panels).
 
-Completed local slice of #12: web pipeline panel (`tools/pipeline_web.py`,
+Completed local slice of #12: web pipeline panel (`tools/pipeline.py`,
 `pipeline.html`, [guide](docs/data-maintainers/web-pipeline.md)). Loopback,
 token-protected; picks LINZ suburbs/localities on a map, estimates buildings,
-download, time and disk, needs a typed `yes`, builds regions in sequence with
-live progress and cancel, then combines all built regions. `tools/pipeline.py`
-now writes `status.json` and accepts `--no-preview-server`.
+download, time and disk, offers source checkboxes that recalculate the
+estimate, builds regions in sequence with live progress and cancel, then
+combines all built regions. `tools/pipeline.py` writes `status.json` and
+accepts `--no-preview-server`.
 Cloud slice of #12: the panel's Local / Developer / Published toggle lists
 local areas, every developer's previews and the live data version; starts
 developer previews and gated publishes on the shared VM after an NZD cost
-estimate and typed `yes`; and shows selected and queued work per lane (local,
-cloud). Cloud mode of `tools/pipeline.py` accepts several space-separated
-regions. Remaining: a hosted backend with team auth (the panel still runs on
-each developer's computer with their own `gcloud` credentials).
+estimate acknowledged by checkbox; and shows selected and queued work per
+lane (local, cloud). Cloud mode of `tools/pipeline.py` accepts several
+space-separated regions. Remaining: a hosted backend with team auth (the
+panel still runs on each developer's computer with their own `gcloud`
+credentials).
+Completed source-discovery follow-up to #12: covering LINZ elevation and
+imagery layers are discovered from metadata and cached locally rather than
+listed as regional surveys in `config.py`. Estimates pin the selected layers
+for the job; where a raw point-cloud bulk source cannot be verified, the
+estimate warns and the build uses the DSM.
 Completed follow-up to #12: optional locality sub-area selection uses a
 configurable 2×2–10×10 grid clipped to LINZ locality boundaries, with
 deterministic whole-building ownership and nested selection work areas. It

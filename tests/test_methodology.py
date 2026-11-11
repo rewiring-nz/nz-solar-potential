@@ -6,7 +6,7 @@ Fails when:
   * a build stage in src/build_plan.py is in no item of the diagram;
   * an item cites a file or a top-level function/constant that is gone;
   * an item names a build stage the plan does not have;
-  * config names a LINZ layer that data/source_metadata.json does not describe.
+  * a stable national LINZ layer is missing from data/source_metadata.json.
 
 Run:  python tests/test_methodology.py
 """
@@ -114,7 +114,7 @@ for name, fn in [("methodology.json is current", t_current),
                  ("every build stage is in the diagram", t_every_stage_placed),
                  ("every code reference resolves", t_code_refs_resolve),
                  ("every fetch and page reference exists", t_fetch_and_page_refs),
-                 ("every LINZ layer config names is described", t_every_layer_described)]:
+                 ("every national LINZ layer is described", t_every_layer_described)]:
     check(name, fn)
 
 print(f"\n{5 - len(failures)} passed, {len(failures)} failed")

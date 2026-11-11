@@ -127,32 +127,58 @@ def _survey(bbox, region: str) -> dict:
     try:
         sv = survey_for(bbox, region)
     except LookupError as exc:
-        return {"name": None, "elevation": None, "error": str(exc)}
-    return {"name": sv.get("name", "default"), "elevation": sv.get("elevation") or "lidar"}
+        return {"name": None, "elevation": None, "error": str(exc),
+                "imagery_available": False}
+    return {
+        "name": sv.get("name", "default"),
+        "elevation": sv.get("elevation") or "lidar",
+        "imagery_available": bool(sv.get("imagery_layer") or sv.get("imagery_s3")),
+        "reference_imagery_available": bool(
+            sv.get("reference_imagery_layer") or sv.get("reference_imagery_s3")),
+        "source_layers": {key: sv.get(key) for key in
+                          ("dsm_layer", "dem_layer", "lidar_tile_index_layer",
+                           "imagery_layer", "reference_imagery_layer",
+                           "pointcloud_bulk_url", "pointcloud_tile_year")},
+        "warning": sv.get("warning"),
+    }
 
 
 def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults: dict,
-                    seconds_per_building: float) -> dict:
+                    seconds_per_building: float, include_imagery: bool = True) -> dict:
     """Pure arithmetic for one region (see estimate_defaults.json for units)."""
     rdir = Path(data) / "regions" / region
     n = size.get("buildings")
     km2 = float(size.get("bbox_km2") or 0)
+    source_layers = survey.get("source_layers", {})
+    pointcloud_available = bool(source_layers.get("pointcloud_bulk_url"))
     cached = {
         "outlines": (rdir / "building_outlines.geojson").exists(),
-        "lidar": (rdir / "pointcloud_tiles.txt").exists(),
+        "lidar": pointcloud_available and (rdir / "pointcloud_tiles.txt").exists(),
         "dsm": (rdir / "dsm_mosaic.tif").exists(),
         "imagery": (rdir / "imagery_mosaic.tif").exists(),
         "reference_imagery": (rdir / "reference_imagery_mosaic.tif").exists(),
     }
     warnings, blockers = [], []
     synthetic = survey.get("elevation") == "synthetic"
+    imagery_available = survey.get("imagery_available", True)
+    reference_imagery_available = survey.get("reference_imagery_available", imagery_available)
     if survey.get("error"):
-        blockers.append("No survey covers this area: " + survey["error"])
+        blockers.append("LINZ source metadata could not be resolved: " + survey["error"])
     if synthetic:
         warnings.append("No LiDAR here: builds on a modelled surface and every roof pitch is guessed.")
-    imagery_gb = 0.0 if cached["imagery"] else km2 * defaults["imagery_gb_per_km2"]
-    reference_gb = 0.0 if cached["reference_imagery"] else km2 * defaults["reference_imagery_gb_per_km2"]
-    lidar_gb = 0.0 if (cached["lidar"] or synthetic) else km2 * defaults["lidar_gb_per_km2"]
+    if survey.get("warning"):
+        warnings.append(survey["warning"])
+    if not include_imagery:
+        warnings.append("Aerial imagery excluded: image-based registration and obstruction checks will be skipped.")
+    elif not imagery_available and not survey.get("error"):
+        warnings.append("No aerial imagery source is configured for this area.")
+    imagery_gb = (0.0 if cached["imagery"] or not include_imagery or not imagery_available
+                  else km2 * defaults["imagery_gb_per_km2"])
+    reference_gb = (0.0 if cached["reference_imagery"] or not include_imagery
+                    or not reference_imagery_available
+                    else km2 * defaults["reference_imagery_gb_per_km2"])
+    lidar_gb = (0.0 if (cached["lidar"] or synthetic or not pointcloud_available)
+                else km2 * defaults["lidar_gb_per_km2"])
     dsm_gb = 0.0 if (cached["dsm"] or synthetic) else km2 * defaults["dsm_gb_per_km2"]
     download_gb = imagery_gb + reference_gb + dsm_gb + lidar_gb
     download_s = download_gb * 8000 / max(defaults["download_mbps"], 0.1)
@@ -168,7 +194,11 @@ def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults:
     return {
         "region": region, "buildings": n, "bbox": size.get("bbox"), "bbox_km2": round(km2, 3),
         "size_source": size.get("source"), "survey": survey.get("name"),
+        "source_layers": source_layers,
         "elevation": survey.get("elevation"), "cached": cached,
+        "imagery_available": imagery_available,
+        "reference_imagery_available": reference_imagery_available,
+        "include_imagery": include_imagery,
         "download_gb": round(download_gb, 3), "download_s": round(download_s),
         "dsm_gb": round(dsm_gb, 3),
         "compute_s": round(compute_s), "total_s": round(download_s + compute_s),
@@ -190,9 +220,14 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
              disk_free: int | None = None, survey_fn: Callable = _survey,
              now: float | None = None, cloud=None, selection: dict | None = None,
              grid_lookup: Callable | None = None,
-             api_key_fn: Callable[[], str] | None = None) -> dict:
+             api_key_fn: Callable[[], str] | None = None,
+             include_imagery: bool = True, paid_referee: bool = False) -> dict:
     if target not in TARGETS:
         raise EstimateError(f"unknown target: {target}")
+    if not isinstance(include_imagery, bool) or not isinstance(paid_referee, bool):
+        raise EstimateError("source choices must be true or false")
+    if paid_referee and not include_imagery:
+        raise EstimateError("the paid AI referee requires aerial imagery")
     is_cloud = target != "local"
     if is_cloud and cloud is None:
         raise EstimateError("cloud targets are not configured on this server")
@@ -238,7 +273,7 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         cache_dir = data
         row = estimate_region(resolved["region"], size,
                               survey_fn(size["bbox"], resolved["region"]),
-                              cache_dir, defaults, spb)
+                              cache_dir, defaults, spb, include_imagery)
         row["selection_count"] = resolved["selection_count"]
         row["grid_size"] = selection["grid_size"]
         row["grid_ids"] = selection["grid_ids"]
@@ -267,7 +302,7 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
                          "download_s": 0, "compute_s": 0, "total_s": 0, "disk_gb": 0, "cached": {}})
             continue
         rows.append(estimate_region(region, size, survey_fn(size["bbox"], region), cache_dir,
-                                    defaults, spb))
+                                    defaults, spb, include_imagery))
     totals = {k: round(sum(r.get(k) or 0 for r in rows), 3)
               for k in ("buildings", "download_gb", "download_s", "compute_s", "total_s", "disk_gb")}
     warnings, blockers = [], []
@@ -290,14 +325,18 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
                 "note": "Builds in one checkout run one at a time."} if not is_cloud else
                {"vm": f"{cloud_block['project']}/{cloud_block['zone']}/{cloud_block['vm']}",
                 "note": "Developer and published builds share one VM and run one at a time."})
+    referee = referee_note(rows)
+    referee["selected"] = paid_referee
+    referee["selected_usd_upper"] = referee["usd_upper"] if paid_referee else 0.0
     return {
         "estimate_id": secrets.token_hex(8), "status": "ready", "target": target,
         "regions": rows, "totals": totals, "warnings": warnings,
         "blockers": blockers + [f"{r['region']}: {b}" for r in rows for b in r["blockers"]],
         "machine": machine, "cloud": cloud_block,
         "selection": selection_info,
+        "options": {"include_imagery": include_imagery, "paid_referee": paid_referee},
         "cloud_cost_nzd": cloud_block["cost_nzd"] if cloud_block else "0",
-        "paid_referee": referee_note(rows),
+        "paid_referee": referee,
         "assumptions": {k: v for k, v in defaults.items() if not k.startswith("_")},
         "assumption_notes": defaults.get("_notes"), "calibration": calibration,
         "disclaimer": DISCLAIMER, "created": now, "expires_at": now + TTL_SECONDS,
@@ -412,7 +451,12 @@ class EstimateStore:
         return self.dir / f"{estimate_id}.json"
 
     def start(self, regions, target: str = "local", background: bool = True,
-              selection: dict | None = None) -> str:
+              selection: dict | None = None, include_imagery: bool = True,
+              paid_referee: bool = False) -> str:
+        if not isinstance(include_imagery, bool) or not isinstance(paid_referee, bool):
+            raise EstimateError("source choices must be true or false")
+        if paid_referee and not include_imagery:
+            raise EstimateError("the paid AI referee requires aerial imagery")
         if selection is not None:
             if regions:
                 raise EstimateError("choose either full areas or a grid selection")
@@ -428,6 +472,8 @@ class EstimateStore:
         now = time.time()
         write_json_atomic(self._path(estimate_id), {"estimate_id": estimate_id, "status": "pending",
                                                     "regions": regions, "selection": selection,
+                                                    "include_imagery": include_imagery,
+                                                    "paid_referee": paid_referee,
                                                     "created": now,
                                                     "expires_at": now + TTL_SECONDS})
 
@@ -435,7 +481,9 @@ class EstimateStore:
             try:
                 result = estimate(regions, self.data, target, self.lookup, selection=selection,
                                   grid_lookup=self.grid_lookup,
-                                  api_key_fn=self.api_key_fn, **self.kwargs)
+                                  api_key_fn=self.api_key_fn,
+                                  include_imagery=include_imagery,
+                                  paid_referee=paid_referee, **self.kwargs)
                 result["estimate_id"] = estimate_id
             except EstimateError as exc:
                 result = {"estimate_id": estimate_id, "status": "error", "error": str(exc)}

@@ -42,6 +42,7 @@ Re-running that loop after a crash resumes where it stopped.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -101,12 +102,17 @@ def is_done(stage, region):
     if not m.exists():
         return False, "no marker"
     try:
-        recorded = json.loads(m.read_text()).get("code")
+        marker = json.loads(m.read_text())
+        recorded = marker.get("code")
     except ValueError:
+        marker = {}
         recorded = None
     if recorded != stage_code_hash(stage):
         return False, ("marker predates code hashing" if recorded is None
                        else "code changed since the marker")
+    imagery = "0" if os.environ.get("SOLAR_INCLUDE_IMAGERY") == "0" else "1"
+    if marker.get("include_imagery", "1") != imagery:
+        return False, "imagery selection changed since the marker"
     m_time = m.stat().st_mtime
     for p in _declared_inputs(stage, region):
         if p.exists() and p.stat().st_mtime > m_time + 1.0:
@@ -123,6 +129,7 @@ def write_marker(stage, region, seconds):
         "seconds": round(seconds, 1),
         "commit": _git_sha(),
         "code": stage_code_hash(stage),
+        "include_imagery": ("0" if os.environ.get("SOLAR_INCLUDE_IMAGERY") == "0" else "1"),
     }, indent=1))
 
 

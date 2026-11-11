@@ -261,14 +261,17 @@ def test_server_cloud_approval_and_queue():
                     break
                 time.sleep(0.05)
             assert est["status"] == "ready" and est["target"] == "developer", est
-            body = {"estimate_id": est["estimate_id"], "confirm": "yes", "paid_referee": False,
+            body = {"estimate_id": est["estimate_id"],
+                    "include_imagery": est["options"]["include_imagery"],
+                    "paid_referee": est["options"]["paid_referee"],
                     "target": "developer"}
+            assert c.request("POST", "/api/jobs", body)[0] == 400, "cloud cost needs checkbox approval"
+            body["cloud_cost_acknowledged"] = True
             assert c.request("POST", "/api/jobs", body)[0] == 400, "cost must be echoed back"
             body["cost_nzd"] = "0.01"
             assert c.request("POST", "/api/jobs", body)[0] == 400
             body["cost_nzd"] = est["cloud"]["cost_nzd"]
             assert c.request("POST", "/api/jobs", {**body, "target": "published"})[0] == 409
-            assert c.request("POST", "/api/jobs", {**body, "confirm": "y"})[0] == 400
             status, job = c.request("POST", "/api/jobs", body)
             assert status == 202, job
             status, queue = c.request("GET", "/api/queue")
@@ -289,7 +292,10 @@ def test_server_cloud_approval_and_queue():
             assert pub_est["status"] == "ready" and not pub_est["blockers"], pub_est
             cloud._runner.answers["rev-list"] = "3"  # a commit lands after the estimate
             status, err = c.request("POST", "/api/jobs", {
-                "estimate_id": pub_est["estimate_id"], "confirm": "yes", "target": "published",
+                "estimate_id": pub_est["estimate_id"], "target": "published",
+                "include_imagery": pub_est["options"]["include_imagery"],
+                "paid_referee": pub_est["options"]["paid_referee"],
+                "cloud_cost_acknowledged": True,
                 "cost_nzd": pub_est["cloud"]["cost_nzd"]})
             assert status == 409 and "unpushed" in err["error"], err
             health = c.request("GET", "/api/health", token=None)[1]

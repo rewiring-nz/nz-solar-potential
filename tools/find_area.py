@@ -32,7 +32,7 @@ def _survey(bbox, region):
     try:
         sv = survey_for(bbox, region)
     except LookupError:
-        return "none configured (see config.SURVEYS)"
+        return "LINZ source metadata unavailable"
     name = sv.get("name", "default")
     return f"{name} (no LiDAR: synthetic surface)" if sv.get("elevation") == "synthetic" else name
 

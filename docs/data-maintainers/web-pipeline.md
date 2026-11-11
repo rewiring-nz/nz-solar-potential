@@ -1,7 +1,7 @@
 # Web pipeline panel
 
 A local web page for the pipeline: choose suburbs and localities on a map,
-see an estimate, type `yes`, and follow the build. A toggle at the top picks
+see an estimate, choose optional inputs, and follow the build. A toggle at the top picks
 the target:
 
 | Target | Shows | A build runs | Costs |
@@ -83,7 +83,19 @@ because it owns the port if its command is unrelated.
   - time
   - disk use
   - warnings, such as no LiDAR or a large area
-  - blockers, such as no survey coverage or too little disk
+  - blockers, such as unavailable LINZ metadata or too little disk
+
+  Aerial imagery is included by default and can be unchecked. That skips its
+  download, alignment, image-based obstruction checks, and paid AI referee;
+  outlines, elevation and LiDAR remain unchanged. The estimate recalculates
+  when the imagery or paid-referee choice changes, and the resulting choices
+  are pinned to the job. The paid AI referee is off by default and is only
+  available when imagery is included.
+
+  Covering LINZ elevation and imagery layers are discovered from public layer
+  metadata, cached under ignored `data/sources/linz/`, and pinned from estimate
+  through execution. Areas with no covering LiDAR DSM use the warned synthetic
+  surface path; they are not blocked by a static survey list.
 
   Selecting a locality also enables **Choose grid cells**. The parent polygon
   is the LINZ suburb/locality boundary; the council name groups localities and
@@ -120,8 +132,10 @@ because it owns the port if its command is unrelated.
   published as complete coverage.
 
   For Developer and Published the estimate also shows the Google Cloud
-  cost (see [Cloud builds](#cloud-builds)). To start, type `yes`. The paid
-  AI referee is off unless you tick it; the estimate shows its upper cost.
+  cost (see [Cloud builds](#cloud-builds)). The Start button is enabled after
+  checking the cost-acknowledgment box. Local builds start directly from the
+  button. The paid AI referee is off unless you tick it; the estimate shows
+  its upper cost.
 - **Queue**: what is selected but not started, and each lane's running and
   waiting jobs. **Remove** drops a waiting job; **Cancel** stops a running
   one.
@@ -191,9 +205,9 @@ Local builds:
   basis and the VM. VM hours are the estimated build time × 1.5, between 8
   and 16 (the spot VM stops itself 16 hours after starting). Unit prices
   come from `config.CLOUD_SHARED_BUILD`. The figure is an estimate, not a
-  spending cap; actual charges can be higher. Starting needs a typed `yes`,
-  and the server checks that the start request carries the same cost the
-  estimate showed.
+  spending cap; actual charges can be higher. Starting needs the unchecked
+  cost-acknowledgment box to be selected, and the server checks that the start
+  request carries the same cost the estimate showed.
 - **Code.** The VM builds `main` as pushed to GitHub, not uncommitted or
   unpushed changes in this checkout. If the VM is already building, its
   code sync refuses and the job stops before building anything.
@@ -242,7 +256,7 @@ timing is stored in
 - The LINZ key stays on the server. Locality requests go through it, and
   errors name only the failure type.
 - Anyone with the link can also start paid builds on the shared VM; each
-  still needs the typed `yes` against the shown cost.
+  still needs the cost-acknowledgment checkbox against the shown estimate.
 
 The panel is not a hosted service; it runs on your computer with your
 `gcloud` credentials.

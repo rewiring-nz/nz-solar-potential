@@ -12,8 +12,8 @@ HOW IT IS MEASURED. Not against the LiDAR: a height grid and a photo are
 different instruments, and matching their edges locked onto trees and
 shadows (neighbouring roofs agreed on direction 38-49% of the time, against
 33% for chance). Instead, against a PHOTO THAT SITS ON THE LIDAR -- the
-survey's own-year capture (config SURVEYS `reference_imagery_layer`; 2021
-for the 2021 Queenstown LiDAR). Photo against photo is the same instrument:
+survey's own-year capture (`reference_imagery_layer`, resolved from LINZ
+metadata; 2021 for the 2021 Queenstown LiDAR). Photo against photo is the same instrument:
 on 150 town-centre buildings the lean was a median 0.63 m (p90 1.67 m) and
 89% of neighbouring pairs leaned the same way.
 
@@ -350,11 +350,16 @@ def _labelled_ids():
 
 
 def register(region):
+    paths = area_paths(region)
+    if os.environ.get("SOLAR_INCLUDE_IMAGERY", "1") == "0":
+        write_json_atomic(paths["dir"] / "image_shift.json", {})
+        print(f"[{region}] aerial imagery excluded; no image shifts")
+        return {}
+
     import rasterio
     import geopandas as gpd
     from src.surveys import survey_for
     from src.region_build import area_bbox_wgs84
-    paths = area_paths(region)
     out_path = paths["dir"] / "image_shift.json"
     try:
         sv = survey_for(area_bbox_wgs84(region), region)

@@ -105,6 +105,7 @@ run "pipeline web panel data" $PY tests/test_pipeline_web_data.py
 run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py
+run "dynamic LINZ source discovery" $PY tests/test_surveys.py
 run "diagram vs code"       $PY tools/check_diagram.py
 run "methodology vs code"   $PY tests/test_methodology.py
 run "reference cases"        $PY tests/test_reference_cases.py

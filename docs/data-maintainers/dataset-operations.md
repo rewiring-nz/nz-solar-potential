@@ -34,17 +34,16 @@ the [execution reference](../developers/tooling-execution.md#stage-plans-across-
 
 ## Source data
 
-Layer IDs per survey are in `config.SURVEYS`.
+Regional DSM, DEM, LiDAR-index and aerial-photo layers are discovered from
+LINZ metadata by `src/surveys.py` and cached locally under ignored
+`data/sources/linz/`. Estimates pin the selected layer IDs for the job.
 
 | Data | Source | Used for |
 | --- | --- | --- |
 | Building outlines, layer [101290](https://data.linz.govt.nz/layer/101290) | LINZ Data Service (WFS 1.0.0) | The buildings estimated. `src/fetch_data.py`, `src/fetch_regions.py` |
-| LiDAR 1 m DSM: Queenstown 2021 ([105855](https://data.linz.govt.nz/layer/105855)), Wanaka 2022 ([113096](https://data.linz.govt.nz/layer/113096)), Kingston 2025 ([123405](https://data.linz.govt.nz/layer/123405)), Auckland 2024 (121992) | LINZ Exports API | Roof and obstacle heights, shading, heat map |
-| LiDAR bare-earth DEM: 105898, 113095, 123404 | LINZ | Configured but not fetched; horizons use the wide DEM |
-| LiDAR tile index: 105905, 113097, 123527, 121993 | LINZ | Maps an area to point-cloud tiles. `src/fetch_pointcloud_regions.py` |
-| Raw point clouds: [NZ21_Otago](https://opentopography.s3.sdsc.edu/pc-bulk/NZ21_Otago), [NZ22_Wanaka](https://opentopography.s3.sdsc.edu/pc-bulk/NZ22_Wanaka), NZ24_Auckland | OpenTopography | Point-level roof evidence. Kingston has none and uses its DSM |
-| Aerial imagery: Queenstown 2026 (124754), Wanaka 2022–23 (112781), Kingston (106403), Cromwell (119455), Glenorchy (104460), Auckland (121752) | LINZ | Roof lines and obstructions. Optional: builds carry on without it |
-| Survey-year imagery: Queenstown 2021 (114745), Wanaka (112781), Auckland (121752) | LINZ | Measuring each building's photo lean. `src/register_imagery.py` |
+| Regional LiDAR 1 m DSM and bare-earth DEM | LINZ Exports API; covering layers are selected from LINZ metadata | Roof and obstacle heights, shading and heat map |
+| LiDAR tile index and raw point cloud | LINZ metadata and a verified public bulk source when available | Point-level roof evidence; otherwise the build uses its DSM without stale tile manifests |
+| Regional aerial imagery and survey-year reference imagery | LINZ metadata; coverage and year are checked against the selected area and DSM | Roof lines, obstructions and photo alignment. Imagery is optional |
 | NZ 8 m DEM, layer [51768](https://data.linz.govt.nz/layer/51768) | LINZ | Distant horizons. Fetched to `data/dem_wide_mosaic.tif` by `src/fetch_dem_wide.py` |
 | NZ Addresses, layer [123113](https://data.linz.govt.nz/layer/123113) | LINZ | Address labels and search. `src/add_addresses.py` |
 | Measured sunlight | NIWA SolarView GHI (Wakatipu basin); else the nearest NIWA measured-radiation station | Sunlight calibration. `src/solar_model.py` |

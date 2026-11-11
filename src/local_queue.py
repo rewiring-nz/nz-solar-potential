@@ -57,9 +57,13 @@ def validate_task(task: Any) -> dict[str, Any]:
     task = dict(task, workspace=str(Path(task["workspace"]).resolve()))
     options = task["options"]
     required = {"port", "no_open_browser", "step_offset", "paid_referee"}
-    # no_preview_server is optional so queue state written before it existed stays valid.
-    if not isinstance(options, dict) or not required <= set(options) <= required | {"no_preview_server"}:
+    optional = {"no_preview_server", "include_imagery"}
+    if not isinstance(options, dict) or not required <= set(options) <= required | optional:
         raise QueueError("Invalid pipeline options.")
+    options = dict(options, include_imagery=options.get("include_imagery", True))
+    task["options"] = options
+    if type(options["include_imagery"]) is not bool:
+        raise QueueError("include_imagery must be boolean.")
     if type(options.get("no_preview_server", False)) is not bool:
         raise QueueError("no_preview_server must be boolean.")
     port = options["port"]

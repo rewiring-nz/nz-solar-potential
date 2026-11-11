@@ -81,11 +81,7 @@ def setup(regions):
                 (pc / t.name).symlink_to(t)
                 break
     (data / "selected_faces").mkdir(exist_ok=True)
-    union = [min(config.REGIONS[r][0] for r in regions), min(config.REGIONS[r][1] for r in regions),
-             max(config.REGIONS[r][2] for r in regions), max(config.REGIONS[r][3] for r in regions)]
-    extra = "\n\n# --- no-LiDAR trial (tools/research/no_lidar_trial.py); never committed ---\n"
     for r in regions:
-        extra += f"REGIONS[{r + '_nl'!r}] = {list(config.REGIONS[r])!r}\n"
         d = data / "regions" / f"{r}_nl"
         d.mkdir(parents=True, exist_ok=True)
         for f in ("building_outlines.geojson", "building_outlines_dedup.geojson"):
@@ -94,12 +90,6 @@ def setup(regions):
         if img.exists() or img.is_symlink():
             img.unlink()
         img.symlink_to(LIVE / "data" / "regions" / r / "photo03_mosaic.vrt")
-    extra += ("SURVEYS.insert(0, {\"name\": \"no-lidar-trial\", \"bbox\": %r, \"elevation\": \"synthetic\", "
-              "\"dsm_layer\": None, \"dem_layer\": None, \"lidar_tile_index_layer\": None, "
-              "\"imagery_layer\": 104460, \"reference_imagery_layer\": None, "
-              "\"pointcloud_bulk_url\": None, \"pointcloud_tile_year\": None})\n" % union)
-    with open(TRIAL / "config.py", "a") as f:
-        f.write(extra)
     print("trial set up at", TRIAL)
 
 

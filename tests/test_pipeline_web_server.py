@@ -91,7 +91,8 @@ def test_api_end_to_end():
             assert c.request("POST", "/api/estimate", {"regions": [region]},
                              headers={"Origin": "http://evil.example"})[0] == 403
             assert c.request("POST", "/api/estimate", {"regions": [region]}, token=None)[0] == 403
-            status, started = c.request("POST", "/api/estimate", {"regions": [region]},
+            status, started = c.request("POST", "/api/estimate", {
+                "regions": [region], "include_imagery": False, "paid_referee": False},
                                         headers={"Origin": f"http://127.0.0.1:{c.port}"})
             assert status == 202
             for _ in range(100):
@@ -100,13 +101,14 @@ def test_api_end_to_end():
                     break
                 time.sleep(0.05)
             assert est["status"] == "ready" and est["totals"]["buildings"] == 5, est
+            assert est["options"] == {"include_imagery": False, "paid_referee": False}
 
-            body = {"estimate_id": est["estimate_id"], "confirm": "no"}
-            assert c.request("POST", "/api/jobs", body)[0] == 400
-            body["confirm"] = "yes"
-            body["paid_referee"] = "yes"
-            assert c.request("POST", "/api/jobs", body)[0] == 400
-            body["paid_referee"] = False
+            body = {"estimate_id": est["estimate_id"],
+                    "include_imagery": est["options"]["include_imagery"],
+                    "paid_referee": est["options"]["paid_referee"],
+                    "target": est["target"]}
+            assert c.request("POST", "/api/jobs", {
+                **body, "include_imagery": True})[0] == 409, "source choices are pinned to estimate"
             status, job = c.request("POST", "/api/jobs", body)
             assert status == 202, job
 
@@ -119,8 +121,10 @@ def test_api_end_to_end():
             assert "event: log" in events and "event: end" in events and "built " + region in events
             status, view = c.request("GET", f"/api/jobs/{job['job_id']}")
             assert view["status"] == "succeeded", view
+            assert view["include_imagery"] is False
             status, log = c.request("GET", f"/api/jobs/{job['job_id']}/log?offset=0")
             assert status == 200 and log["eof"]
+            assert "confirm" not in view.get("approved", {})
             status, listing = c.request("GET", "/api/jobs")
             assert listing["jobs"][0]["job_id"] == job["job_id"]
             assert c.request("POST", f"/api/jobs/{job['job_id']}/cancel", {})[0] == 409

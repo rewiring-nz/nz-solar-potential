@@ -35,7 +35,7 @@ REGIONS = {
     "pilot":               [168.655, -45.045, 168.675, -45.025],  # central Queenstown pilot
     # Kingston and Wanaka, added 22 Sep. Split to stay
     # inside the measured 3,000-building ceiling; each sits wholly inside its
-    # own LiDAR survey's real extent (see SURVEYS below), which is why the
+    # LINZ LiDAR survey's actual extent, which is why the
     # bboxes are clipped rather than drawn round the townships.
     "kingston":            [168.687, -45.359, 168.749, -45.320],   # 380
     "wanaka_town":         [169.110, -44.715, 169.185, -44.670],   # 8,945
@@ -83,7 +83,7 @@ REGIONS = {
     "frankton_east_lake":  [168.7478, -45.0307, 168.7564, -45.0215],  # 24
     "kelvin_south":        [168.7528, -45.0519, 168.7718, -45.0405],  # 15
     # Cromwell and Bannockburn, 29 Sep: no LiDAR, so built on a synthetic
-    # surface (SURVEYS "otago-cromwell-no-lidar"). Boxes from the 2nd-98th
+    # surface after LINZ metadata coverage checks. Boxes from the 2nd-98th
     # percentile of LINZ outline centroids +150 m, Cromwell split at its
     # median longitude to stay under the 3,000-building ceiling.
     "cromwell_west":       [169.1549, -45.0694, 169.1983, -45.0190],  # 2,699
@@ -103,7 +103,8 @@ REGIONS = {
     # Mt Eden, Auckland (14 Oct): the suburb's 8,935 outlines (LINZ suburbs
     # layer 113764), 2nd-98th percentile of centroids +150 m, split at the
     # median into four boxes under the 3,000-building ceiling. Counts are
-    # every outline in each box, neighbours' included. Survey auckland-2024.
+    # every outline in each box, neighbours' included. LINZ metadata confirms
+    # Auckland LiDAR coverage at build time.
     "akl_mt_eden_nw":      [174.7398, -36.8858, 174.7512, -36.8685],  # 2,884
     "akl_mt_eden_ne":      [174.7512, -36.8856, 174.7647, -36.8683],  # 2,884
     "akl_mt_eden_sw":      [174.7401, -36.9000, 174.7512, -36.8858],  # 2,884
@@ -160,181 +161,19 @@ DEMOLISHED_BUILDING_IDS = {
     # current imagery and found to be bare ground or a cleared site.
     4718482, 4718539, 4744515, 5370808, 5372438, 5372729, 5372956,
 }
-LINZ_LIDAR_TILE_INDEX_LAYER = 105905
-
-# Raw LiDAR point cloud: which OpenTopography bulk store the tiles come from,
-# and the survey year embedded in each tile filename. Hard-coded in the fetcher
-# until 31 Aug, which silently pointed Wellington at the Otago store.
-POINTCLOUD_BULK_URL = "https://opentopography.s3.sdsc.edu/pc-bulk/NZ21_Otago"
-POINTCLOUD_TILE_YEAR = "2021"  # "Otago - Queenstown LiDAR Tile Index (2021)" -- maps a
-# bbox to the CL2_*.copc.laz point-cloud tile names, which are then fetched from OpenTopography's
-# public bulk store (LINZ hosts the derived DSM/DEM rasters but not the raw point cloud)
-
-# LINZ layer IDs (confirmed to exist and cover the pilot bbox)
+# LINZ layers used nationally, rather than a regional survey source.
 LINZ_BUILDING_OUTLINES_LAYER = 101290
 # "NZ Suburbs and Localities": the official areas a region is named after
 # (src/localities.py). Building outlines carry the matching suburb_locality,
 # town_city and territorial_authority attributes.
 LINZ_SUBURBS_LOCALITIES_LAYER = 113764
-LINZ_DSM_LAYER = 105855  # "Otago - Queenstown LiDAR 1m DSM (2021)"
-LINZ_DEM_LAYER = 105898  # "Otago - Queenstown LiDAR 1m DEM (2021)" -- bare earth, for shading horizon
 LINZ_WIDE_DEM_LAYER = 51768  # "NZ 8m Digital Elevation Model (2012)" -- distant terrain context
 # What the live map shows at roof zooms: LINZ Basemaps' aerial tiles (the
 # public key the page itself uses). Drawings are shifted onto this photo.
 LINZ_BASEMAPS_KEY = "c01m0keqqjx0anrxjrt7grvtqxh"
 LINZ_BASEMAPS_LAYER = "aerial"
-LINZ_IMAGERY_LAYER = 124754  # "Queenstown 0.1m Urban Aerial Photos (2026)" -- captured 12 Feb-3 Mar
-# 2026, replacing the 2021 capture this pilot originally used. More current (new/changed rooftop
-# equipment, growth) at the cost of no longer matching the DSM/building-outline capture year exactly
-# (both still 2021) -- worth revisiting if that skew ever shows up as a real building-outline/roof
-# misalignment, but the two are already independently-sourced datasets with their own tolerances.
-
-# WHICH SURVEY COVERS WHERE. The constants above are the Queenstown answer to
-# a national question -- New Zealand's LiDAR is a patchwork of regional
-# captures flown in different years and published as separate LINZ layers, so
-# the right layer is a property of the PLACE, not of the pipeline. Hard-coded,
-# it pointed the Wellington deploy at the Otago point-cloud store until
-# 31 August: every download 404'd and regions fell back silently to the 1 m
-# DSM.
-#
-# src/surveys.py resolves a region's bbox against this list; a region covered
-# by none of it is an error naming what is known, rather than a plausible
-# wrong answer. With the list absent, every lookup returns the constants above
-# and nothing changes -- which is how this landed without a re-fetch.
-#
-# Coverage must CONTAIN a region, not merely overlap it: a region straddling
-# two captures needs splitting, and that is a decision for a person.
-SURVEYS = [
-    {
-        "name": "otago-queenstown-2021",
-        # THE LAYER'S OWN EXTENT, read from the LINZ API, not a generous box
-        # drawn around the district. The first version of this claimed
-        # [168.2, -45.6, 169.5, -44.4] on the reasoning that it covered
-        # "Queenstown Lakes". It does not: the DSM, DEM and tile index all
-        # stop at [168.61, -45.11, 168.87, -44.93]. Asked to build Kingston
-        # and Wanaka, the registry would have said "covered", the fetch would
-        # have returned nothing over either, and the build would have fallen
-        # back to whatever it could find -- the exact silent-wrong-data
-        # failure this registry exists to prevent.
-        "bbox": [168.61, -45.11, 168.87, -44.93],
-        "dsm_layer": LINZ_DSM_LAYER,
-        "dem_layer": LINZ_DEM_LAYER,
-        "imagery_layer": LINZ_IMAGERY_LAYER,
-        # The photo from the LiDAR's own year: it sits on the LiDAR, so its
-        # shift against the map's photo is each building's lean
-        # (src/register_imagery.py). "Queenstown 0.1m Urban Aerial Photos (2021)".
-        "reference_imagery_layer": 114745,
-        "lidar_tile_index_layer": LINZ_LIDAR_TILE_INDEX_LAYER,
-        "pointcloud_bulk_url": POINTCLOUD_BULK_URL,
-        "pointcloud_tile_year": POINTCLOUD_TILE_YEAR,
-    },
-    {
-        # Wanaka, Albert Town, Hawea. 11,955 buildings counted 22 Sep.
-        "name": "otago-wanaka-2022",
-        "bbox": [169.092, -44.757, 169.289, -44.606],
-        "dsm_layer": 113096,
-        "dem_layer": 113095,
-        "lidar_tile_index_layer": 113097,
-        # Queenstown Lakes 0.1m Urban Aerial Photos (2022-2023), whose extent
-        # matches this survey's exactly.
-        "imagery_layer": 112781,
-        "reference_imagery_layer": 112781,   # same survey period as the LiDAR
-        # CONFIRMED by HEAD, not guessed: the Wanaka tile index gives
-        # CA12_1000_5035, and CL2_CA12_2022_1000_5035.laz is 6.6 MB at this
-        # store. Listing the bulk prefixes is forbidden, so every candidate
-        # was probed against a real tile name from the LINZ index.
-        "pointcloud_bulk_url": "https://opentopography.s3.sdsc.edu/pc-bulk/NZ22_Wanaka",
-        "pointcloud_tile_year": "2022",
-    },
-    {
-        # Kingston, at the south end of Lake Wakatipu. 380 buildings.
-        "name": "otago-kingston-2025",
-        "bbox": [168.687, -45.359, 168.749, -45.320],
-        "dsm_layer": 123405,
-        "dem_layer": 123404,
-        "lidar_tile_index_layer": 123527,
-        # Otago 0.3m Rural Aerial Photos (2019-2021) -- the only LINZ layer
-        # whose extent contains Kingston. Three times coarser than the 0.1 m
-        # Queenstown uses, so imagery-derived cuts will be weaker here; the
-        # LiDAR does the load-bearing work either way.
-        "imagery_layer": 106403,
-        "reference_imagery_layer": None,     # no photo from the LiDAR's year (2025)
-        # NO RAW POINT CLOUD. The Kingston survey is 2025 and OpenTopography
-        # has not published it -- every candidate store and year was probed
-        # against a real tile name (CD11_1000_0326) and all 404. So this
-        # region builds from the 1 m DSM of that same 2025 survey: a real
-        # LiDAR product, but gridded, against the ~4.9 returns/m2 Queenstown
-        # gets. Roofs here will be read less finely, and that is worth
-        # revisiting when OpenTopography catches up.
-        "pointcloud_bulk_url": None,
-        "pointcloud_tile_year": "2025",
-    },
-    {
-        # Cromwell and Bannockburn: NO LIDAR. Every published Otago survey
-        # stops short of the Cromwell basin -- Central Otago 2022-23's nearest
-        # tile is 3 km from Bannockburn and 7.5 km from Cromwell, and neither
-        # Central Otago 2021 nor Otago 2016 reaches it (LINZ tile indexes and
-        # the nz-elevation store, 29 Sep 2026). The surface is synthesised from
-        # the outlines and the 8 m DEM with the roof pitch guessed
-        # (src/synthesize_dsm.py); every building says so on the map.
-        "name": "otago-cromwell-no-lidar",
-        "bbox": [169.12, -45.11, 169.23, -45.01],
-        "elevation": "synthetic",
-        "dsm_layer": None,
-        "dem_layer": None,
-        "lidar_tile_index_layer": None,
-        # Otago 0.1m Urban Aerial Photos (2023-2024): covers both towns'
-        # built-up areas (index tiles checked at each); edge buildings may
-        # have none, which only costs them photo-found obstructions.
-        "imagery_layer": 119455,
-        "reference_imagery_layer": None,     # no LiDAR frame to measure lean against
-        "pointcloud_bulk_url": None,
-        "pointcloud_tile_year": None,
-    },
-    {
-        # Auckland Part 1 LiDAR (2024), Woolpert; covers the isthmus (Mt Eden,
-        # Epsom, Remuera). LINZ layers: DSM 121992, DEM 121990, index tiles
-        # 121993; photos Auckland 0.075m Urban (2024-2025) 121752, flown the
-        # same year as the LiDAR. Rasters come from LINZ's open S3 copies
-        # (src/s3_rasters.py), resampled to 0.1 m for the photo; the point
-        # cloud from OpenTopography, CONFIRMED by HEAD: index tile
-        # BA32_1000_4101 -> NZ24_Auckland/CL2_BA32_2024_1000_4101.laz, 32.8 MB.
-        "name": "auckland-2024",
-        "bbox": [174.3677505, -37.3346925, 175.0281809, -36.5514359],
-        "dsm_layer": 121992,
-        "dem_layer": 121990,
-        "lidar_tile_index_layer": 121993,
-        "imagery_layer": 121752,
-        "reference_imagery_layer": 121752,
-        "dsm_s3": "https://nz-elevation.s3.ap-southeast-2.amazonaws.com/auckland/auckland-part-1_2024/dsm_1m/2193/",
-        "imagery_s3": "https://nz-imagery.s3.ap-southeast-2.amazonaws.com/auckland/auckland_2024_0.075m/rgb/2193/",
-        "pointcloud_bulk_url": "https://opentopography.s3.sdsc.edu/pc-bulk/NZ24_Auckland",
-        "pointcloud_tile_year": "2024",
-    },
-    {
-        # Glenorchy, Kinloch and the Rees Valley: NO LIDAR. The westernmost
-        # Otago survey (Queenstown 2016/2021) stops at 168.576; these sit near
-        # 168.35-168.42 (nz-elevation STAC, 11 Oct 2026). Synthetic surface,
-        # as for Cromwell. Widened north to -44.77 on 13 Oct for
-        # glenorchy_north.
-        "name": "otago-glenorchy-no-lidar",
-        "bbox": [168.33, -44.875, 168.425, -44.77],
-        "elevation": "synthetic",
-        "dsm_layer": None,
-        "dem_layer": None,
-        "lidar_tile_index_layer": None,
-        # Otago 0.3m Rural Aerial Photos (2017-2019): the only current-era
-        # layer reaching the head of the lake. The 2019-2021 0.3 m set starts
-        # at 168.64, and no urban 0.1 m capture covers either settlement
-        # (nz-imagery STAC tile bboxes checked at both; its index tiles,
-        # layer 103861, checked at all three regions' edges on 13 Oct). Old and coarse, so
-        # photo-found obstructions will be weak; it costs nothing else.
-        "imagery_layer": 104460,
-        "reference_imagery_layer": None,
-        "pointcloud_bulk_url": None,
-        "pointcloud_tile_year": None,
-    },
-]
+# Regional DSM, DEM, LiDAR and aerial-photo layers are discovered from LINZ
+# metadata and cached locally by src/surveys.py.
 
 # Where no LiDAR exists (a survey with "elevation": "synthetic"): the one
 # pitch every house roof is assumed to have, and the footprint from which a

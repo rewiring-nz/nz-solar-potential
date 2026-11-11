@@ -72,7 +72,7 @@ if ! command -v gcloud >/dev/null 2>&1; then
   exit 1
 fi
 
-REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; PREVIEW_USER=""; REFEREE=""; INTERACTIVE=0
+REGIONS=""; FETCH=0; PUBLISH=0; REVIEWED=""; KEEP=0; MODE=""; REF=main; PREVIEW_USER=""; REFEREE=""; INTERACTIVE=0; INCLUDE_IMAGERY=1; SURVEY_OVERRIDES_B64=""; DISABLE_POINTCLOUD=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --regions)      REGIONS="$2"; shift 2 ;;
@@ -87,6 +87,9 @@ while [ $# -gt 0 ]; do
     --preview-user) PREVIEW_USER="$2"; shift 2 ;;
     --paid-referee)    REFEREE=1; shift ;;
     --no-paid-referee) REFEREE=0; shift ;;
+    --no-imagery)      INCLUDE_IMAGERY=0; shift ;;
+    --survey-overrides-b64) SURVEY_OVERRIDES_B64="$2"; shift 2 ;;
+    --no-pointcloud)   DISABLE_POINTCLOUD=1; shift ;;
     *) echo "unknown argument: $1"; exit 2 ;;
   esac
 done
@@ -153,7 +156,17 @@ VM_USER="${VM_USER:-j}" SYNC_VM="$VM" SYNC_ZONE="$ZONE" SYNC_PROJECT="$PROJECT" 
   tools/sync_vm.sh --ref "$REF" || exit 1
 
 echo "=== build on the VM ==="
-steps="cd ~/solar-map && export SOLAR_DEMOLISHED_REFEREE=$REFEREE"
+steps="cd ~/solar-map && export SOLAR_DEMOLISHED_REFEREE=$REFEREE SOLAR_INCLUDE_IMAGERY=$INCLUDE_IMAGERY"
+if [ -n "$SURVEY_OVERRIDES_B64" ]; then
+  case "$SURVEY_OVERRIDES_B64" in *[!A-Za-z0-9+/=]*) echo "invalid encoded survey overrides"; exit 2 ;; esac
+  steps="$steps SOLAR_SURVEY_OVERRIDES_B64=$SURVEY_OVERRIDES_B64"
+fi
+if [ "$DISABLE_POINTCLOUD" -eq 1 ]; then
+  steps="$steps SOLAR_DISABLE_POINTCLOUD=1"
+fi
+if [ "$INCLUDE_IMAGERY" -eq 0 ]; then
+  steps="$steps SOLAR_DEMOLISHED=0 SOLAR_SELECTED_FACES=0"
+fi
 [ $FETCH -eq 1 ] && steps="$steps && .venv/bin/python src/fetch_regions.py $REGIONS"
 steps="$steps && bash src/run_district_build.sh $MODE${REGIONS:+ --regions \"$REGIONS\"}"
 SSH "rm -f ~/remote_build.log; nohup bash -c '($steps) >> ~/remote_build.log 2>&1; echo REMOTE_BUILD_RC=\$? >> ~/remote_build.log' >/dev/null 2>&1 &"

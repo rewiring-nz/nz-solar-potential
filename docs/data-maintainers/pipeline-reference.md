@@ -22,8 +22,9 @@ A region is one of:
 
 Related settings:
 
-- `config.SURVEYS`: each survey's layers and coverage. A region must sit
-  wholly inside one survey.
+- `src/surveys.py`: discovers covering LINZ sources from public layer
+  metadata and keeps its metadata cache under ignored `data/sources/linz/`.
+  The selected layer IDs are recorded in the estimate and pinned for the job.
 - `config.CLOUD_SHARED_BUILD["local_region"]`: the local/profile default
   region, a locality id. Shared-cloud mode defaults to
   `config.CLOUD_SHARED_BUILD["regions"]`. Both sit in the block that build

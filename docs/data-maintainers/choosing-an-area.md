@@ -54,7 +54,8 @@ outlines and reports:
 - the bounding box the build fetches: the buildings' extent plus 150 m, not
   the locality polygon, which in rural areas reaches far into empty land;
 - its area and an imagery-download estimate (about 0.35 GB per km²);
-- the LiDAR survey in `config.SURVEYS` that covers it, or that none does.
+- the newest covering LiDAR source discovered from LINZ metadata, or whether
+  the area needs a synthetic surface.
 
 Lakes and inland bays are hidden unless you pass `--include-water`; they
 rarely contain buildings.
@@ -65,10 +66,9 @@ attribute table by `territorial_authority`.
 
 ## Check the area can be built
 
-- **Survey coverage.** The area must sit inside a survey in
-  `config.SURVEYS`. `find_area.py --details` names the survey. A survey
-  marked `"elevation": "synthetic"` builds on a modelled surface and every
-  building carries `pitch_guessed`.
+- **Survey coverage.** `find_area.py --details` reports the covering LiDAR
+  source selected from LINZ metadata. When none covers the whole build bbox,
+  the area uses a modelled surface and every building carries `pitch_guessed`.
 - **Size.** Build small areas locally; district builds belong on the build VM
   (see [Dataset operations](dataset-operations.md)). Rural localities with few
   buildings can still have a large bounding box and imagery download, so check

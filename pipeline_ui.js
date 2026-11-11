@@ -53,6 +53,10 @@
   let gridMode = false;
   let currentEstimate = null;
   let selectionRevision = 0;
+  let includeImagery = true;
+  let paidReferee = false;
+  let sourceImageryAvailable = true;
+  let refereeUsdUpper = 0;
   let stream = null;
   let shownJob = null;
   let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
@@ -529,18 +533,22 @@
     }, 300);
   });
 
-  $("estimate-btn").addEventListener("click", async () => {
+  async function estimateCurrent() {
     const requestRevision = selectionRevision;
     $("estimate-btn").disabled = true;
-    $("estimate").innerHTML = `<p class='muted'>Estimating a ${esc(TARGETS[target].label.toLowerCase())} build… (counting buildings with LINZ can take a minute for new areas)</p>`;
+    currentEstimate = null;
+    $("estimate").innerHTML = `${sourceChoicesHtml(true)}
+      <p class='muted'>Estimating a ${esc(TARGETS[target].label.toLowerCase())} build… (counting buildings with LINZ can take a minute for new areas)</p>`;
+    bindSourceChoices();
     try {
       const body = gridMode
         ? { selection: {
               parent_region: selectedParent.region_id, parent_linz_id: selectedParent.linz_id,
               grid_size: Number($("grid-size").value),
               grid_ids: [...selectedGridCells.keys()],
-            }, target }
-        : { regions: [...selected.keys()], target };
+            }, target, include_imagery: includeImagery, paid_referee: paidReferee }
+        : { regions: [...selected.keys()], target,
+            include_imagery: includeImagery, paid_referee: paidReferee };
       const { estimate_id } = await api("estimate", { method: "POST", body });
       let est;
       for (;;) {
@@ -551,16 +559,55 @@
       if (est.status === "error") throw new Error(est.error);
       if (est.target !== target || requestRevision !== selectionRevision) return;
       currentEstimate = est;
+      sourceImageryAvailable = est.regions.some((region) => region.imagery_available !== false);
+      refereeUsdUpper = est.paid_referee?.usd_upper || 0;
       renderEstimate(est);
     } catch (e) {
       if (requestRevision === selectionRevision) {
-        $("estimate").innerHTML = `<p class="block">${esc(e.message)}</p>`;
+        $("estimate").innerHTML = `${sourceChoicesHtml(false)}
+          <p class="block">${esc(e.message)}</p>`;
+        bindSourceChoices();
       }
     } finally {
-      $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
-        (gridMode && target !== "local");
+      if (requestRevision === selectionRevision) {
+        $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
+          (gridMode && target !== "local");
+      }
     }
-  });
+  }
+
+  $("estimate-btn").addEventListener("click", estimateCurrent);
+
+  function sourceChoicesHtml(disabled) {
+    const imageryDisabled = !sourceImageryAvailable || disabled;
+    const refereeDisabled = !sourceImageryAvailable || !includeImagery || disabled;
+    return `<div class="source-options">
+      <b>Inputs</b>
+      <label><input type="checkbox" id="include-imagery"${includeImagery ? " checked" : ""}
+        ${imageryDisabled ? " disabled" : ""}> Include aerial imagery (free; improves alignment and image-based checks)</label>
+      ${!sourceImageryAvailable ? `<div class="muted">No aerial imagery source is available for this selection.</div>` : ""}
+      <label><input type="checkbox" id="referee"${paidReferee ? " checked" : ""}
+        ${refereeDisabled ? " disabled" : ""}> Use the paid AI referee (up to US$${esc(
+          refereeUsdUpper)}; only requested when imagery is included)</label>
+      ${disabled ? `<div class="muted">Recalculating estimate…</div>` : ""}
+    </div>`;
+  }
+
+  function bindSourceChoices() {
+    const imagery = $("include-imagery");
+    const referee = $("referee");
+    if (imagery) imagery.addEventListener("change", () => {
+      includeImagery = imagery.checked;
+      if (!includeImagery) paidReferee = false;
+      selectionRevision++;
+      estimateCurrent();
+    });
+    if (referee) referee.addEventListener("change", () => {
+      paidReferee = referee.checked;
+      selectionRevision++;
+      estimateCurrent();
+    });
+  }
 
   function renderEstimate(est) {
     const t = est.totals;
@@ -577,6 +624,7 @@
     const ref = est.paid_referee || {};
     const blocked = (est.blockers || []).length > 0;
     $("estimate").innerHTML = `
+      ${sourceChoicesHtml(false)}
       <table><tr><th>Area / selection</th><th class="num">Buildings</th><th class="num">Footprint</th><th class="num">Download</th><th class="num">Time</th></tr>
       ${rows}
       <tr><th>Total</th><th class="num">${fmtInt(t.buildings)}</th><th class="num">—</th><th class="num">${fmtGb(t.download_gb)}</th><th class="num">${fmtDur(t.total_s)}</th></tr></table>
@@ -586,16 +634,19 @@
       ${(est.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
       <p class="muted">${esc(est.disclaimer)}</p>
       ${blocked ? "" : `<div class="confirm">
-        <label><input type="checkbox" id="referee"> Use the paid AI referee (up to US$${esc(ref.usd_upper)}; ${esc(ref.text || "")})</label>
-        <p>${est.target === "local" ? "Type <b>yes</b> to start this build:"
-          : `Type <b>yes</b> to accept a cloud cost of up to <b>NZD ${esc(est.cloud.cost_nzd)}</b> (not a spending cap)${est.target === "published" ? " and publish to the live map if the gate passes" : ""}:`}</p>
-        <input type="text" id="confirm" autocomplete="off" placeholder="yes">
+        ${est.target === "local" ? "<p>Start this build on this computer?</p>"
+          : `<label><input type="checkbox" id="cloud-cost-ack"> I understand this build may cost up to NZD ${esc(est.cloud.cost_nzd)}; this is an estimate, not a spending cap.${est.target === "published" ? " It will publish to the live map if the gate passes." : ""}</label>`}
         <p><button class="primary" id="start-btn" disabled>${esc(TARGETS[est.target].start)}</button></p>
       </div>`}`;
+    bindSourceChoices();
     if (blocked) return;
-    $("confirm").addEventListener("input", () => {
-      $("start-btn").disabled = $("confirm").value.trim().toLowerCase() !== "yes";
-    });
+    const cloudAck = $("cloud-cost-ack");
+    const startButton = $("start-btn");
+    const updateStartButton = () => {
+      startButton.disabled = est.target !== "local" && !cloudAck.checked;
+    };
+    if (cloudAck) cloudAck.addEventListener("change", updateStartButton);
+    updateStartButton();
     $("start-btn").addEventListener("click", startJob);
   }
 
@@ -617,8 +668,12 @@
     $("start-btn").disabled = true;
     try {
       const res = await api("jobs", { method: "POST", body: {
-        estimate_id: currentEstimate.estimate_id, confirm: $("confirm").value.trim(),
-        paid_referee: $("referee").checked, target: currentEstimate.target,
+        estimate_id: currentEstimate.estimate_id,
+        include_imagery: currentEstimate.options.include_imagery,
+        paid_referee: currentEstimate.options.paid_referee,
+        cloud_cost_acknowledged: currentEstimate.target === "local"
+          || $("cloud-cost-ack").checked,
+        target: currentEstimate.target,
         cost_nzd: currentEstimate.cloud ? currentEstimate.cloud.cost_nzd : undefined } });
       selected.clear();
       selectionRevision++;

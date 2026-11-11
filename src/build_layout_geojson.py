@@ -58,6 +58,7 @@ from src.building_horizon import (far_profile as _hz_far_profile,
                                   eave_height as _hz_eave_height,
                                   load_far_dem as _hz_load_far_dem)
 from src.region_build import area_paths, area_centroid_wgs84, areas_from_argv
+from src.imagery_sources import selected_imagery_paths
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DEEP_SHADE_FACTOR = 0.45  # a panel keeping less than this share of the year's direct beam is
@@ -186,6 +187,7 @@ def _init_worker(area, model):
         DATA_DIR / "dem_wide_mosaic.tif", dsm_ds.bounds)
     _CTX.update({"dem_wide_band": _dw_band, "dem_wide_transform": _dw_tr,
                  "dem_wide_nodata": _dw_nd})
+    imagery_path, photo_path = selected_imagery_paths(paths)
     _CTX.update({
         # outlines slid onto the roof the LiDAR sees where clearly off
         # (src/outline_fit.py, SOLAR_OUTLINE_FIT)
@@ -193,13 +195,12 @@ def _init_worker(area, model):
                                paths["dir"]).set_index("building_id", drop=False),
         "dsm_ds": dsm_ds,
         "dsm_band": dsm_ds.read(1),
-        "imagery_ds": rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None,
+        "imagery_ds": rasterio.open(imagery_path) if imagery_path else None,
         # The photo that sits on the LiDAR (the survey year's own capture):
         # anything that samples colour INSIDE a LiDAR-derived shape reads
         # this one, or a 2-3 m strip samples the wall beside it through the
         # map photo's lean (src/register_imagery.py).
-        "photo_ds": (rasterio.open(paths["reference_imagery"]) if paths["reference_imagery"].exists()
-                     else rasterio.open(paths["imagery"]) if paths["imagery"].exists() else None),
+        "photo_ds": rasterio.open(photo_path) if photo_path else None,
         "pc_source": PointCloudSource(),
         "model": model,
         "to_wgs84": pyproj.Transformer.from_crs("EPSG:2193", "EPSG:4326",

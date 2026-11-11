@@ -437,7 +437,8 @@ def test_wide_dem_uses_only_disjoint_selection_coverage():
 def test_estimate_arithmetic_and_cache_effects():
     defaults = E.load_defaults()
     size = {"buildings": 1000, "bbox": [0, 0, 0.01, 0.01], "bbox_km2": 2.0, "source": "test"}
-    lidar = {"name": "x", "elevation": "lidar"}
+    lidar = {"name": "x", "elevation": "lidar",
+             "source_layers": {"pointcloud_bulk_url": "https://example.test/pointcloud"}}
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         data = Path(tmp)
         fresh = E.estimate_region("r", size, lidar, data, defaults, 0.5)
@@ -445,6 +446,13 @@ def test_estimate_arithmetic_and_cache_effects():
                              + defaults["dsm_gb_per_km2"] + defaults["lidar_gb_per_km2"])
         assert abs(fresh["download_gb"] - round(expected_gb, 3)) < 1e-9
         assert fresh["compute_s"] == round(defaults["fixed_overhead_s"] + 500)
+        without_imagery = E.estimate_region("r", size, lidar, data, defaults, 0.5,
+                                            include_imagery=False)
+        expected_without_imagery = 2.0 * (defaults["dsm_gb_per_km2"]
+                                          + defaults["lidar_gb_per_km2"])
+        assert abs(without_imagery["download_gb"]
+                   - round(expected_without_imagery, 3)) < 1e-9
+        assert any("excluded" in warning for warning in without_imagery["warnings"])
         for name in ("building_outlines.geojson", "pointcloud_tiles.txt", "dsm_mosaic.tif",
                      "imagery_mosaic.tif",
                      "reference_imagery_mosaic.tif"):

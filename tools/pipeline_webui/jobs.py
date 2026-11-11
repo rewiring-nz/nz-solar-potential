@@ -23,6 +23,8 @@ cleanup, so SIGTERM and SIGKILL are only escalations after CANCEL_GRACE_S.
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import secrets
 import signal
@@ -236,7 +238,8 @@ class JobManager:
         return out
 
     # ---- lifecycle -----------------------------------------------------
-    def start(self, estimate: dict, paid_referee: bool = False) -> str:
+    def start(self, estimate: dict, paid_referee: bool = False,
+              cloud_cost_acknowledged: bool = False) -> str:
         """Queue a job from an approved estimate; it runs when its lane is free."""
         target = estimate.get("target", "local")
         lane_name = lane_for(target)
@@ -245,13 +248,30 @@ class JobManager:
         regions = [r["region"] for r in estimate.get("regions", [])]
         if not regions:
             raise JobError("the estimate names no regions")
+        options = estimate.get("options") or {}
+        include_imagery = options.get("include_imagery", True)
+        if not isinstance(include_imagery, bool):
+            raise JobError("the estimate has invalid source choices")
+        if paid_referee != options.get("paid_referee", paid_referee):
+            raise JobError("the estimate's paid-extra choice changed")
+        if paid_referee and not include_imagery:
+            raise JobError("the paid AI referee requires aerial imagery")
         cloud = estimate.get("cloud") or {}
+        survey_overrides = {
+            row["region"]: row["source_layers"]
+            for row in estimate.get("regions", [])
+            if isinstance(row.get("source_layers"), dict)
+        }
         job_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
         job = {
             "job_id": job_id, "estimate_id": estimate.get("estimate_id"),
             "regions": regions, "target": target, "lane": lane_name,
             "paid_referee": bool(paid_referee),
-            "approved": {"confirm": "yes", "at": _now(),
+            "include_imagery": include_imagery,
+            "survey_overrides": survey_overrides,
+            "approved": {"at": _now(),
+                         "cloud_cost_acknowledged": (target == "local"
+                                                     or cloud_cost_acknowledged),
                          "estimate_totals": estimate.get("totals"),
                          "paid_referee_usd_upper": (estimate.get("paid_referee") or {}).get("usd_upper")
                          if paid_referee else 0.0,
@@ -311,7 +331,7 @@ class JobManager:
             [str(c) for c in cmd], cwd=self.root, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
             start_new_session=True,
-            env={**(env or os.environ), "PYTHONUNBUFFERED": "1"})
+            env={**os.environ, **(env or {}), "PYTHONUNBUFFERED": "1"})
 
     def _launch(self, lane: Lane, cmd: list, log, env: dict | None = None) -> subprocess.Popen:
         """Start a lane's process; a cancel that arrived just before still stops it."""
@@ -383,7 +403,11 @@ class JobManager:
                             self._save(job)
 
                     cmd = self.command_builder(self.python, run["region"], job["paid_referee"])
-                    code = self._stream(self._launch(lane, cmd, log), log, on_line)
+                    if not job.get("include_imagery", True):
+                        cmd.append("--no-imagery")
+                    env = ({"SOLAR_SURVEY_OVERRIDES": json.dumps(job["survey_overrides"])}
+                           if job.get("survey_overrides") else None)
+                    code = self._stream(self._launch(lane, cmd, log, env), log, on_line)
                     with self.lock:
                         lane.process = None
                     run["exit_code"] = code
@@ -445,6 +469,17 @@ class JobManager:
 
                     cmd = self.cloud_builder(job["target"], self.python, job["regions"],
                                              job["paid_referee"])
+                    if not job.get("include_imagery", True):
+                        cmd.append("--no-imagery")
+                    overrides = job.get("survey_overrides") or {}
+                    if overrides:
+                        encoded = base64.b64encode(
+                            json.dumps(overrides, separators=(",", ":")).encode("utf-8")
+                        ).decode("ascii")
+                        cmd.extend(["--survey-overrides-b64", encoded])
+                        if all(not layer_set.get("pointcloud_bulk_url")
+                               for layer_set in overrides.values()):
+                            cmd.append("--no-pointcloud")
                     env = self.cloud_env() if self.cloud_env else None
                     code = self._stream(self._launch(lane, cmd, log, env), log, on_line)
                     with self.lock:

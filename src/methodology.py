@@ -14,10 +14,10 @@ diagram must describe what the code does, so nothing in it is typed twice:
     plan is in no item, so a new stage cannot ship undescribed.
   * EVERY CODE REFERENCE RESOLVES. Items cite "path::symbol"; the test fails
     when the file or the top-level name has gone.
-  * SOURCES ARE LINZ'S WORDS. Accuracy, resolution and capture dates come from
-    data/source_metadata.json (tools/fetch_source_metadata.py, LINZ's own
-    layer metadata). The test fails when config names a layer that file does
-    not describe.
+  * NATIONAL SOURCES ARE LINZ'S WORDS. Accuracy, resolution and capture dates
+    come from data/source_metadata.json (tools/fetch_source_metadata.py,
+    LINZ's own layer metadata). Area-specific survey layers are discovered
+    from LINZ metadata at runtime and cached under ignored data/.
   * THE FILE IS CURRENT. The test rebuilds the file and fails if the
     committed methodology.json differs.
 
@@ -148,7 +148,6 @@ def values() -> dict:
                        "economics.js ECON_DEFAULTS.life_years"),
         "discount_pct": (_fmt(_js_const("economics.js", r"discount_rate_pct:\s*([\d.]+)"), 1),
                          "economics.js ECON_DEFAULTS.discount_rate_pct"),
-        "survey_count": (_fmt(len(c.SURVEYS)), "len(config.SURVEYS)"),
     }
     # the home prices: the EA's figures for the site's network region
     rp_text = (ROOT / "regional_prices.js").read_text()
@@ -498,19 +497,15 @@ def _fill(text: str, vals: dict, where: str) -> str:
 
 
 def sources() -> list[dict]:
-    """Every LINZ layer the build reads, with LINZ's own statements."""
+    """National LINZ layers with stable roles, and LINZ's own statements.
+
+    Regional elevation and imagery layers vary by area; they are selected and
+    recorded at runtime rather than enumerated in version-controlled config.
+    """
     meta = json.loads(META.read_text())
     c = _config()
     out = []
     used = {}
-    for s in c.SURVEYS:
-        for k, what in (("dsm_layer", "LiDAR surface model (roofs, trees, buildings)"),
-                        ("dem_layer", "LiDAR ground model (bare earth)"),
-                        ("lidar_tile_index_layer", "finding the LiDAR point-cloud tiles"),
-                        ("imagery_layer", "aerial photo: roof lines, obstructions"),
-                        ("reference_imagery_layer", "photo from the LiDAR's year, to line the two up")):
-            if s.get(k):
-                used.setdefault(str(s[k]), set()).add(what)
     used.setdefault(str(c.LINZ_BUILDING_OUTLINES_LAYER), set()).add("which buildings exist, and their outlines")
     used.setdefault(str(c.LINZ_SUBURBS_LOCALITIES_LAYER), set()).add("naming and bounding each area")
     used.setdefault(str(c.LINZ_WIDE_DEM_LAYER), set()).add("distant hills on the horizon")

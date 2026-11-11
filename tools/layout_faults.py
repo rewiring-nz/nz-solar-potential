@@ -72,7 +72,7 @@ TO_NZTM = Transformer.from_crs(4326, 2193, always_xy=True).transform
 
 ELEV = "https://nz-elevation.s3.ap-southeast-2.amazonaws.com/otago/"
 # Tried in order; the first whose tiles cover the roof is used. Queenstown 2021
-# and Wanaka 2022-23 are the surveys the build reads (config.SURVEYS).
+# and Wanaka 2022-23 are the survey captures represented by this analysis.
 SURVEYS = ["queenstown_2021", "wanaka_2022-2023", "kingston_2025",
            "central-otago_2022-2023", "central-otago_2021", "cardrona_2025",
            "queenstown_2016", "otago_2016"]

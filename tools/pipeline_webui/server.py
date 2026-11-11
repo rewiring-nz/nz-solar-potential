@@ -10,8 +10,9 @@ server's own origin, so another page in the browser cannot start a build.
 Three targets: local (this checkout), developer (shared VM, published to the
 preview bucket under devel/<alias>/) and published (shared VM, then the deploy
 gate, then the live site). Viewing developer and published regions reads
-public bucket JSON; starting a cloud job needs a typed yes plus the estimate's
-cloud cost echoed back, so a job can only start against the cost shown.
+public bucket JSON; starting a cloud job needs an explicit cost-acknowledgment
+checkbox plus the estimate's cloud cost echoed back, so a job can only start
+against the cost shown.
 """
 
 from __future__ import annotations
@@ -216,7 +217,9 @@ class WebHandler(RangeHandler):
             if method == "POST" and len(parts) == 1:
                 estimate_id = app.estimates.start(
                     body.get("regions"), body.get("target", "local"),
-                    selection=body.get("selection"))
+                    selection=body.get("selection"),
+                    include_imagery=body.get("include_imagery", True),
+                    paid_referee=body.get("paid_referee", False))
                 return 202, {"estimate_id": estimate_id, "status": "pending"}
             if method == "GET" and len(parts) == 2:
                 return 200, app.estimates.get(parts[1])
@@ -252,25 +255,33 @@ class WebHandler(RangeHandler):
         raise HttpError(404, "no such API route")
 
     def _start_job(self, body: dict) -> dict:
-        if str(body.get("confirm", "")).strip().lower() != "yes":
-            raise HttpError(400, "type yes to confirm the estimate")
         record = self.app.estimates.usable(str(body.get("estimate_id") or ""))
         target = record.get("target", "local")
         if body.get("target", target) != target:
             raise HttpError(409, "the estimate was made for another target; estimate again")
+        options = record.get("options") or {}
+        paid = body.get("paid_referee", False)
+        if not isinstance(paid, bool) or paid != options.get("paid_referee", False):
+            raise HttpError(409, "the estimate's paid-extra choice changed; estimate again")
+        if not isinstance(body.get("include_imagery", options.get("include_imagery", True)), bool) \
+                or body.get("include_imagery", options.get("include_imagery", True)) != \
+                options.get("include_imagery", True):
+            raise HttpError(409, "the estimate's source choices changed; estimate again")
         if target != "local":
             cloud = record.get("cloud") or {}
+            if body.get("cloud_cost_acknowledged") is not True:
+                raise HttpError(400, "acknowledge the cloud cost shown in the estimate")
             if not cloud.get("cost_nzd") or str(body.get("cost_nzd")) != str(cloud["cost_nzd"]):
                 raise HttpError(400, "confirm the cloud cost shown in the estimate")
-        paid = body.get("paid_referee", False)
-        if not isinstance(paid, bool):
-            raise HttpError(400, "paid_referee must be true or false")
         if target == "published":
             # The checkout can change after the estimate; remote_build.sh commits and pushes main.
             blockers = self.app.cloud.publish_blockers()
             if blockers:
                 raise HttpError(409, "cannot publish: " + " ".join(blockers))
-        job_id = self.app.jobs.start(record, paid_referee=paid)
+        job_id = self.app.jobs.start(
+            record, paid_referee=paid,
+            cloud_cost_acknowledged=(target == "local"
+                                     or body.get("cloud_cost_acknowledged") is True))
         RC.invalidate()
         return {"job_id": job_id, "status": "queued"}
 

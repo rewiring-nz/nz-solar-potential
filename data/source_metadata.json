@@ -1,328 +1,43 @@
 {
- "101290": {
-  "accuracy_statements": [],
-  "captured": null,
-  "confidence_pct": null,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": null,
-  "named_in": [
-   "config.LINZ_BUILDING_OUTLINES_LAYER"
-  ],
-  "title": "NZ Building Outlines",
-  "url": "https://data.linz.govt.nz/layer/101290/",
-  "vertical_accuracy_m": null
- },
- "104460": {
-  "accuracy_statements": [
-   "The final spatial accuracy is \u00b10.5 m @ 95% confidence level."
-  ],
-  "captured": null,
-  "confidence_pct": 95.0,
-  "ground_resolution_m": 0.3,
-  "horizontal_accuracy_m": 0.5,
-  "named_in": [
-   "config.SURVEYS[otago-glenorchy-no-lidar].imagery_layer"
-  ],
-  "title": "Otago 0.3m Rural Aerial Photos (2017-2019)",
-  "url": "https://data.linz.govt.nz/layer/104460/",
-  "vertical_accuracy_m": null
- },
- "105855": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Digital Surface Model for LiDAR data in the Otago Region, north of Lake Wakatipu and surrounding Queenstown and Arrowtown, captured between 13 March 2021 \u2013 14 March 2021.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-queenstown-2021].dsm_layer"
-  ],
-  "title": "Otago - Queenstown LiDAR 1m DSM (2021)",
-  "url": "https://data.linz.govt.nz/layer/105855/",
-  "vertical_accuracy_m": 0.2
- },
- "105898": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Digital Elevation Model for LiDAR data in the Otago Region, north of Lake Wakatipu and surrounding Queenstown and Arrowtown, captured between 13 March 2021 \u2013 14 March 2021.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-queenstown-2021].dem_layer"
-  ],
-  "title": "Otago - Queenstown LiDAR 1m DEM (2021)",
-  "url": "https://data.linz.govt.nz/layer/105898/",
-  "vertical_accuracy_m": 0.2
- },
- "105905": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Tile Index for LiDAR data in the Otago Region, north of Lake Wakatipu and surrounding Queenstown and Arrowtown, captured between 13 March 2021 \u2013 14 March 2021.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-queenstown-2021].lidar_tile_index_layer"
-  ],
-  "title": "Otago - Queenstown LiDAR Tile Index (2021)",
-  "url": "https://data.linz.govt.nz/layer/105905/",
-  "vertical_accuracy_m": 0.2
- },
- "106403": {
-  "accuracy_statements": [
-   "The final spatial accuracy is \u00b10.5 m @ 95% confidence level."
-  ],
-  "captured": null,
-  "confidence_pct": 95.0,
-  "ground_resolution_m": 0.3,
-  "horizontal_accuracy_m": 0.5,
-  "named_in": [
-   "config.SURVEYS[otago-kingston-2025].imagery_layer"
-  ],
-  "title": "Otago 0.3m Rural Aerial Photos (2019-2021)",
-  "url": "https://data.linz.govt.nz/layer/106403/",
-  "vertical_accuracy_m": null
- },
- "112781": {
-  "accuracy_statements": [
-   "The final spatial accuracy is \u00b10.3m at 95% confidence level in clear flat areas."
-  ],
-  "captured": "Orthophotography within the Queenstown Lakes Region captured in the flying season of 2022-2023.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": 0.1,
-  "horizontal_accuracy_m": 0.3,
-  "named_in": [
-   "config.SURVEYS[otago-wanaka-2022].imagery_layer",
-   "config.SURVEYS[otago-wanaka-2022].reference_imagery_layer"
-  ],
-  "title": "Queenstown Lakes 0.1m Urban Aerial Photos (2022-2023)",
-  "url": "https://data.linz.govt.nz/layer/112781/",
-  "vertical_accuracy_m": null
- },
- "113095": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Digital Elevation Model for LiDAR data in the Otago Region, covering W\u0101naka, Lake H\u0101wea, and Luggate, captured between 27 November 2022 \u2013 11 January 2023.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-wanaka-2022].dem_layer"
-  ],
-  "title": "Otago - Wanaka LiDAR 1m DEM (2022-2023)",
-  "url": "https://data.linz.govt.nz/layer/113095/",
-  "vertical_accuracy_m": 0.2
- },
- "113096": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Digital Surface Model for LiDAR data in the Otago Region, covering W\u0101naka, Lake H\u0101wea, and Luggate, captured between 27 November 2022 \u2013 11 January 2023.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-wanaka-2022].dsm_layer"
-  ],
-  "title": "Otago - Wanaka LiDAR 1m DSM (2022-2023)",
-  "url": "https://data.linz.govt.nz/layer/113096/",
-  "vertical_accuracy_m": 0.2
- },
- "113097": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Tile Index for LiDAR data in the Otago Region, covering W\u0101naka, Lake H\u0101wea, and Luggate, captured between 27 November 2022 \u2013 11 January 2023.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-wanaka-2022].lidar_tile_index_layer"
-  ],
-  "title": "Otago - Wanaka LiDAR Tile Index (2022-2023)",
-  "url": "https://data.linz.govt.nz/layer/113097/",
-  "vertical_accuracy_m": 0.2
- },
- "113764": {
-  "accuracy_statements": [],
-  "captured": null,
-  "confidence_pct": null,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": null,
-  "named_in": [
-   "config.LINZ_SUBURBS_LOCALITIES_LAYER"
-  ],
-  "title": "NZ Suburbs and Localities",
-  "url": "https://data.linz.govt.nz/layer/113764/",
-  "vertical_accuracy_m": null
- },
- "114745": {
-  "accuracy_statements": [],
-  "captured": "Orthophotography over Queenstown within the Otago Region captured in the flying season of 2020-2021.",
-  "confidence_pct": null,
-  "ground_resolution_m": 0.1,
-  "horizontal_accuracy_m": null,
-  "named_in": [
-   "config.SURVEYS[otago-queenstown-2021].reference_imagery_layer"
-  ],
-  "title": "Queenstown 0.1m Urban Aerial Photos (2021)",
-  "url": "https://data.linz.govt.nz/layer/114745/",
-  "vertical_accuracy_m": null
- },
- "119455": {
-  "accuracy_statements": [
-   "With a spatial accuracy of +/- 0.2m @ 68% confidence level Also available on: \u2022 Basemaps \u2022 NZ Imagery - Registry of Open Data on AWS Index tiles for this dataset are available as layer Otago 0.1m Urban Aerial Photos Index Tiles (2023-2024)"
-  ],
-  "captured": "Orthophotography within the Otago region captured in the 2023-2024 flying season.",
-  "confidence_pct": 68.0,
-  "ground_resolution_m": 0.1,
-  "horizontal_accuracy_m": 0.2,
-  "named_in": [
-   "config.SURVEYS[otago-cromwell-no-lidar].imagery_layer"
-  ],
-  "title": "Otago 0.1m Urban Aerial Photos (2023-2024)",
-  "url": "https://data.linz.govt.nz/layer/119455/",
-  "vertical_accuracy_m": null
- },
- "121752": {
-  "accuracy_statements": [
-   "With a spatial accuracy of -/+ 0.15 m @ 95% confidence level in clear flat open spaces (2 signma) over area of interest."
-  ],
-  "captured": "Orthophotography within the Auckland region captured in the 2023-2024 and 2024-2025 flying season.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": 0.075,
-  "horizontal_accuracy_m": 0.15,
-  "named_in": [
-   "config.SURVEYS[auckland-2024].imagery_layer",
-   "config.SURVEYS[auckland-2024].reference_imagery_layer"
-  ],
-  "title": "Auckland 0.075m Urban Aerial Photos (2024-2025)",
-  "url": "https://data.linz.govt.nz/layer/121752/",
-  "vertical_accuracy_m": null
- },
- "121990": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the DEM for LiDAR data in Auckland, captured between 30th of April and 27th of June 2024.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[auckland-2024].dem_layer"
-  ],
-  "title": "Auckland Part 1 LiDAR 1m DEM (2024)",
-  "url": "https://data.linz.govt.nz/layer/121990/",
-  "vertical_accuracy_m": 0.2
- },
- "121992": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the DSM for LiDAR data in Auckland, captured between 30th of April and 27th of June 2024.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[auckland-2024].dsm_layer"
-  ],
-  "title": "Auckland Part 1 LiDAR 1m DSM (2024)",
-  "url": "https://data.linz.govt.nz/layer/121992/",
-  "vertical_accuracy_m": 0.2
- },
- "121993": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Index Tiles for LiDAR data in Auckland, captured between 30th of April and 27th of June 2024.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[auckland-2024].lidar_tile_index_layer"
-  ],
-  "title": "Auckland Part 1 LiDAR Index Tiles (2024)",
-  "url": "https://data.linz.govt.nz/layer/121993/",
-  "vertical_accuracy_m": 0.2
- },
- "123404": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Digital Elevation Model for LiDAR data in Otago - Kingston, captured between 13 March 2025 - 14 March 2025.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-kingston-2025].dem_layer"
-  ],
-  "title": "Otago - Kingston LiDAR 1m DEM (2025)",
-  "url": "https://data.linz.govt.nz/layer/123404/",
-  "vertical_accuracy_m": 0.2
- },
- "123405": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Digital Surface Model for LiDAR data in Otago - Kingston, captured between 13 March 2025 - 14 March 2025.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-kingston-2025].dsm_layer"
-  ],
-  "title": "Otago - Kingston LiDAR 1m DSM (2025)",
-  "url": "https://data.linz.govt.nz/layer/123405/",
-  "vertical_accuracy_m": 0.2
- },
- "123527": {
-  "accuracy_statements": [
-   "Vertical Accuracy Specification is +/- 0.2m (95%) Horizontal Accuracy Specification is +/- 1.0m (95%) Vertical datum is NZVD2016."
-  ],
-  "captured": "This layer contains the Tile Index for LiDAR data in Otago - Kingston, captured between 13 March 2025 - 14 March 2025.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 1.0,
-  "named_in": [
-   "config.SURVEYS[otago-kingston-2025].lidar_tile_index_layer"
-  ],
-  "title": "Otago - Kingston LiDAR Tile Index (2025)",
-  "url": "https://data.linz.govt.nz/layer/123527/",
-  "vertical_accuracy_m": 0.2
- },
- "124754": {
-  "accuracy_statements": [
-   "With a spatial accuracy of +/-0.15 m @ 95% confidence level in clear flat open spaces (2 sigma)."
-  ],
-  "captured": "Orthophotography within the Otago region captured in the 2026 flying season.",
-  "confidence_pct": 95.0,
-  "ground_resolution_m": 0.1,
-  "horizontal_accuracy_m": 0.15,
-  "named_in": [
-   "config.SURVEYS[otago-queenstown-2021].imagery_layer"
-  ],
-  "title": "Queenstown 0.1m Urban Aerial Photos (2026)",
-  "url": "https://data.linz.govt.nz/layer/124754/",
-  "vertical_accuracy_m": null
- },
- "51768": {
-  "accuracy_statements": [
-   "Spatial accuracy is nominally the same as for the LINZ source data: 90% of well-defined points are within \u00b122 metres horizontally and within \u00b110 metres vertically."
-  ],
-  "captured": null,
-  "confidence_pct": 90.0,
-  "ground_resolution_m": null,
-  "horizontal_accuracy_m": 22.0,
-  "named_in": [
-   "config.LINZ_WIDE_DEM_LAYER"
-  ],
-  "title": "NZ 8m Digital Elevation Model (2012)",
-  "url": "https://data.linz.govt.nz/layer/51768/",
-  "vertical_accuracy_m": null
- }
+  "101290": {
+    "accuracy_statements": [],
+    "captured": null,
+    "confidence_pct": null,
+    "ground_resolution_m": null,
+    "horizontal_accuracy_m": null,
+    "named_in": [
+      "config.LINZ_BUILDING_OUTLINES_LAYER"
+    ],
+    "title": "NZ Building Outlines",
+    "url": "https://data.linz.govt.nz/layer/101290/",
+    "vertical_accuracy_m": null
+  },
+  "113764": {
+    "accuracy_statements": [],
+    "captured": null,
+    "confidence_pct": null,
+    "ground_resolution_m": null,
+    "horizontal_accuracy_m": null,
+    "named_in": [
+      "config.LINZ_SUBURBS_LOCALITIES_LAYER"
+    ],
+    "title": "NZ Suburbs and Localities",
+    "url": "https://data.linz.govt.nz/layer/113764/",
+    "vertical_accuracy_m": null
+  },
+  "51768": {
+    "accuracy_statements": [
+      "Spatial accuracy is nominally the same as for the LINZ source data: 90% of well-defined points are within ±22 metres horizontally and within ±10 metres vertically."
+    ],
+    "captured": null,
+    "confidence_pct": 90.0,
+    "ground_resolution_m": null,
+    "horizontal_accuracy_m": 22.0,
+    "named_in": [
+      "config.LINZ_WIDE_DEM_LAYER"
+    ],
+    "title": "NZ 8m Digital Elevation Model (2012)",
+    "url": "https://data.linz.govt.nz/layer/51768/",
+    "vertical_accuracy_m": null
+  }
 }

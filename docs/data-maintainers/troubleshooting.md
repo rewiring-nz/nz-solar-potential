@@ -29,6 +29,18 @@ For status commands, lock locations and deliberate crash recovery, use
 The local coordinator requires no cloud credentials; a later fetch failure
 may still require a LINZ key.
 
+### `Namespace` has no attribute `include_imagery`
+
+The local queue must persist the imagery choice and pass it to the pipeline
+worker. Older tasks without that option default to including imagery.
+Update the checkout with the queue-option fix, restart the web panel, create
+a new estimate and submit again. Reinstalling dependencies does not fix this
+error. Completed outline downloads remain cached.
+
+If a worker crashes between numbered steps, the run report may remain
+`RUNNING` even though the job failed. Read the job's `stdout.log` or the
+queue's attempt log for the traceback; pending steps did not run.
+
 ## Don't delete `data/`
 
 `data/` holds tracked files you cannot fetch again: roof labels, benchmark and
@@ -37,6 +49,21 @@ as a troubleshooting step. See [Cleaning up](pipeline-reference.md#cleaning-up)
 before removing generated inputs or untracked work.
 
 ## Preflight (step 01)
+
+### GDAL is installed but a web build reports missing commands
+
+Check `command -v gdalbuildvrt gdal_translate` in the terminal used to start
+the panel. If both resolve there, reinstalling requirements or Homebrew tools
+does not address the failure. Web jobs must inherit the panel's environment,
+including `PATH`, when adding the source layers pinned by the estimate.
+Update the checkout with the environment-inheritance fix in
+[the job runner](../../tools/pipeline_webui/jobs.py), stop and restart the
+panel from that terminal, then create a fresh estimate and retry.
+Existing panel processes do not reload Python changes.
+
+If either command is genuinely missing, follow the system-tool setup in
+[Local setup](local-setup.md); Python requirements do not install GDAL CLI
+tools. No cached data needs to be deleted for this preflight failure.
 
 ### LERC raster dependency check
 
@@ -83,17 +110,17 @@ On Windows Git Bash use `.venv/Scripts/python.exe`. Always run pip as
 Export `LINZ_API_KEY` in the shell, or add `LINZ_API_KEY=...` to `.env`. See
 [LINZ credentials](local-setup.md#linz-credentials).
 
-### `No usable source survey for this bbox`
+### LINZ source metadata or coverage could not be resolved
 
-The region must be in `config.REGIONS`, as `[west, south, east, north]` in
-WGS84, and wholly inside one `config.SURVEYS` entry with a DSM layer. Split a
-region that straddles two surveys.
+Confirm the locality boundary and LINZ metadata service are available. The
+resolver selects a DSM whose published extent contains the complete build
+bbox; it does not use a partial or neighboring survey. If no DSM covers the
+area, the build warns and uses a synthetic surface with guessed roof pitches.
 
-For a new survey: set the DSM layer; add imagery and reference-imagery layers
-only if they exist. A point-cloud bulk URL also needs the survey's LiDAR
-tile-index layer and tile year; use `null` if there is no point cloud. A wrong
-year or store quietly drops the run to DSM only, so read step 02's coverage
-note.
+Area-specific layers are discovered automatically and cached under
+`data/sources/linz/`. Retry after a transient LINZ failure; if the selected
+metadata appears incorrect, inspect the cached metadata and the LINZ layer
+extent before changing the resolver.
 
 ## Fetch (step 02)
 

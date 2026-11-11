@@ -77,12 +77,12 @@ from src import build_plan  # noqa: E402  (the shared stage plan every build eng
 _STEP_INFO: dict[str, tuple[str, str, str]] = {
     "preflight": (
         "Preflight: validate area and runtime",
-        "config.py region; selected Python environment; GDAL/Rasterio LERC decoding; LINZ_API_KEY presence",
+        "Region boundary; discovered LINZ source metadata; selected Python environment; GDAL/Rasterio LERC decoding; LINZ_API_KEY presence",
         "Run metadata; confirmed raster dependencies, area name and WGS84 bbox",
     ),
     "fetch": (
         "Fetch outlines, elevation, imagery, and point cloud",
-        "Area bbox; configured LINZ survey layers; LINZ API; point-cloud tile index/store",
+        "Area bbox; LINZ layers selected from source metadata; LINZ API; verified point-cloud tile source when available",
         "data/regions/<area>/building_outlines.geojson; dsm_mosaic.tif; optional imagery_mosaic.tif; data/dem_wide_mosaic.tif; data/pointcloud/ tiles",
     ),
     "vision": (
@@ -593,8 +593,8 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
                     f"unknown region {area!r}: use a LINZ locality id from "
                     f"'python tools/find_area.py <name>', or a config.REGIONS name")
             survey = survey_for(bbox, area)
-        if not survey.get("dsm_layer"):
-            raise ValueError("the selected survey has no DSM layer configured")
+        if survey.get("elevation") != "synthetic" and not survey.get("dsm_layer"):
+            raise ValueError("LINZ metadata did not identify a covering DSM layer")
         if survey.get("pointcloud_bulk_url") and not survey.get("lidar_tile_index_layer"):
             raise ValueError("a point-cloud bulk store is configured without a tile-index layer")
         survey_meta = {k: survey.get(k) for k in (
@@ -602,7 +602,10 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
             "reference_imagery_layer", "lidar_tile_index_layer",
             "pointcloud_bulk_url", "pointcloud_tile_year")}
     except Exception as exc:
-        return False, f"No usable region/survey: {type(exc).__name__}: {exc}. A region is a LINZ locality id (docs/data-maintainers/choosing-an-area.md) or a config.REGIONS name; source layers come from config.SURVEYS.", {"name": area}
+        return False, (
+            f"Could not resolve source data for {area}: {type(exc).__name__}: {exc}. "
+            "Check LINZ metadata access and the area boundary, then retry."
+        ), {"name": area}
     free_gb = shutil.disk_usage(DATA).free / 1e9 if DATA.exists() else shutil.disk_usage(ROOT).free / 1e9
     details = (
         f"Region {area}; WGS84 bbox {bbox}; Python {sys.version.split()[0]}; "
@@ -652,7 +655,9 @@ def _evaluate_fetch(area_dir: Path, output: str) -> tuple[str, str]:
     if outlines_count == 0:
         return "FAIL", "Fetch returned zero building outlines; there is no building set to estimate. Check the bbox and LINZ coverage."
     notes = []
-    if not (area_dir / "imagery_mosaic.tif").is_file():
+    if "aerial imagery excluded by request" in output.lower():
+        notes.append("aerial imagery excluded by request; image-based registration and photo checks were skipped")
+    elif not (area_dir / "imagery_mosaic.tif").is_file():
         notes.append("aerial imagery unavailable; vision precompute and image-based obstruction evidence will be unavailable")
     total, found, listed = _pointcloud_summary(area_dir)
     if not listed:
@@ -1290,6 +1295,8 @@ def _run_shared_cloud_build(
         "--preview-user", config["preview_user"],
         "--paid-referee" if config.get("paid_referee") else "--no-paid-referee",
     ]
+    if not config.get("include_imagery", True):
+        command.append("--no-imagery")
     if config.get("interactive"):
         command.append("--interactive")
     from src import region_ids
@@ -1803,6 +1810,9 @@ def _argument_parser(default_area: str) -> argparse.ArgumentParser:
                         help="start the local preview server but do not open a browser tab")
     parser.add_argument("--no-preview-server", action="store_true",
                         help="do not start a preview server at the end (tools/pipeline_web.py serves the map)")
+    parser.add_argument("--no-imagery", dest="include_imagery", action="store_false",
+                        default=True,
+                        help="skip aerial imagery acquisition and image-dependent build steps")
     referee = parser.add_mutually_exclusive_group()
     referee.add_argument("--paid-referee", dest="paid_referee_flag", action="store_true", default=None,
                          help="approve the paid demolition referee without asking")
@@ -1931,6 +1941,7 @@ def main() -> int:
                         approval = _confirm_shared_cloud_cost(shared, log, args.yes)
                         shared["paid_referee"] = _decide_paid_referee(
                             args, len(shared["regions"].split()))
+                        shared["include_imagery"] = args.include_imagery
                         shared["interactive"] = args.interactive
                         return f"{approval.rstrip('.')}; {_referee_note(shared['paid_referee'])}"
                     return "Preflight only; no cloud work or cost approval required."
@@ -2099,8 +2110,14 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
         return 2
 
     env = os.environ.copy()
-    env["SOLAR_SELECTED_FACES"] = "1"
+    env["SOLAR_SELECTED_FACES"] = "1" if args.include_imagery else "0"
     env["PYTHONUNBUFFERED"] = "1"
+    env["SOLAR_INCLUDE_IMAGERY"] = "1" if args.include_imagery else "0"
+    survey_layers = area_meta.get("survey_layers") or {}
+    env["SOLAR_DISABLE_POINTCLOUD"] = (
+        "0" if survey_layers.get("pointcloud_bulk_url") else "1")
+    if not args.include_imagery:
+        env["SOLAR_DEMOLISHED"] = "0"
     # The paid demolition referee runs only when approved at the start.
     env[build_plan.REFEREE_SWITCH] = "1" if getattr(args, "paid_referee", False) else "0"
     commands: dict[str, list[str] | None] = {
@@ -2151,6 +2168,11 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
             continue
         command = commands[key]
         record = run.records[number - 1]
+        if key == "demolished" and not args.include_imagery:
+            run.begin(number)
+            run.finish(number, "SKIPPED",
+                       "Aerial imagery excluded; photo-based demolition checks were skipped.", None)
+            continue
         if key in prepare and not build_plan.prepare_enabled(prepare[key], env):
             run.begin(number)
             run.finish(number, "SKIPPED", f"{prepare[key].switch}=0; {prepare[key].warning}.", None)
@@ -2159,7 +2181,8 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
             (DATA / "selected_faces").mkdir(parents=True, exist_ok=True)
             vision_files = [DATA / "sam_vit_b.pth", DATA / "models/roof_lines_v5.pt", DATA / "models/roof_lines_v6.pt"]
             line_models_ready = all(p.is_file() for p in vision_files[1:])
-            has_imagery = (area_dir / "imagery_mosaic.tif").is_file()
+            has_imagery = (args.include_imagery
+                           and (area_dir / "imagery_mosaic.tif").is_file())
             modules_probe = subprocess.run([str(py), "-c", "import torch, segment_anything"], cwd=ROOT,
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) \
                 if line_models_ready and has_imagery else None

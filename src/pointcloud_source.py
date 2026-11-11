@@ -47,6 +47,14 @@ class PointCloudSource:
     in memory after that."""
 
     def __init__(self, directory=POINTCLOUD_DIR, max_cached_tiles=None):
+        import os
+
+        if os.environ.get("SOLAR_DISABLE_POINTCLOUD") == "1":
+            self.tile_paths = []
+            self._bounds = {}
+            self._cache = OrderedDict()
+            self._max_cached = max_cached_tiles or MAX_CACHED_TILES
+            return
         # *.laz matches both the pilot's original *.copc.laz tiles and the
         # plain .laz tiles fetch_pointcloud_regions.py pulls from
         # OpenTopography's bulk store -- laspy reads either identically.
@@ -163,6 +171,9 @@ def survey_tile_stats(bbox_nztm=None, directory=POINTCLOUD_DIR):
     machine on Wellington's. The memory a worker needs is its tile cache times
     the size of a decoded tile, and the header already says how many points a
     tile holds. (0.0, 0.0) where there are no tiles."""
+    import os
+    if os.environ.get("SOLAR_DISABLE_POINTCLOUD") == "1":
+        return 0.0, 0.0
     biggest, pts, area = 0, 0, 0.0
     for path in sorted(Path(directory).glob("*.laz")):
         if path.name.startswith("."):
