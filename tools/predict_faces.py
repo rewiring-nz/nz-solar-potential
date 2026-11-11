@@ -361,7 +361,12 @@ def main():
         # reached a deploy. It waits for evidence, not for agreement.
         _weak = (os.environ.get("SOLAR_HYP_WEAK") == "1"
                  and max(sc_sam, sc_line, sc_lid) < 0.45)
-        if f_hyp and (conf_hyp >= 0.55
+        # SOLAR_HYP_FORCE=1 (experiment, off): the simple form wins wherever
+        # one exists, to measure what structure-first reading scores against
+        # the markup with every gate removed.
+        if f_hyp and os.environ.get("SOLAR_HYP_FORCE") == "1":
+            pick, faces, score = "hypothesis", f_hyp, sc_hyp
+        elif f_hyp and (conf_hyp >= 0.55
                       and (max(sc_sam, sc_line, sc_lid) < 0.50
                            or (os.environ.get("SOLAR_HYP_COMPETE") == "1"
                                and sc_hyp > max(sc_sam, sc_line, sc_lid)))
