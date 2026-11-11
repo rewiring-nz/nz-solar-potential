@@ -426,6 +426,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   see wobble; whether it reads as less messy needs a blind side-by-side.
   The larger error is face structure, not seam wobble.
 
+  Ceiling of per-wall roof forms (12 Nov, drawn roofs less the 30 held
+  back, 155 scored). Each outline wall either rises as an eave or ends as a
+  gable, every slope at one pitch, the roof the lower envelope of those
+  slopes; the eave/gable choice is made per roof by an oracle that sees the
+  markup, so this is the best such a model can do. Lines right / faces
+  right, production vs ceiling:
+
+  | Drawn roofs | n | production | ceiling |
+  | --- | --- | --- | --- |
+  | one level (no drawn step) | 46 | 25 / 24 | 36 / 25 |
+  | 1-3 steps | 33 | 17 / 11 | 4 / 6 |
+  | 4+ steps | 76 | 29 / 4 | 11 / 6 |
+
+  So forms fitted to the outline can add at most ~11 roofs, all single-level;
+  109 of 155 drawn roofs have steps between levels, where production already
+  beats any outline form. On the 4+ step roofs production is under-split
+  (22 of 76 built with under two-thirds of the drawn faces; face IoU 0.53).
+  Drawn line found within 0.75 m by production, by kind: ridge 64% of
+  7,224 m, valley 53% of 3,401 m, step 47% of 5,275 m (a step drawn on the
+  outline counts as missed here, so the step figure is a floor). Steps are
+  a third of all drawn line and are height jumps the LiDAR sees directly.
+
   One flat/gable/hip/pyramid per rectangular part is too crude to lead:
   real roofs join forms (gable plus hip ends, dormers, L and T ridges) that
   it does not model. Next: keep the readings and regularise their faces
