@@ -532,7 +532,7 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   sites are unchanged in kind. Tests: tests/test_terrain_ground.py (9).
   v77 (live 11 Nov) is v76 with terrain_ground rebuilt this way
   (`tools/build_terrain_tiles.py --ground --out <dir> <served regions>`):
-  375 structures over the 35 served regions; the block samples flat at
+  335 structures over the 35 served regions; the block samples flat at
   315.3 m in the served tiles (324.7-329.7 m in v76) and renders flat in
   3D. Next: draw such a
   structure as a plain box solid rather than leave it flat; an estimate
