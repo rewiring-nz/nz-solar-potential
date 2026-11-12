@@ -448,6 +448,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   outline counts as missed here, so the step figure is a floor). Steps are
   a third of all drawn line and are height jumps the LiDAR sees directly.
 
+  Step split (`src/face_steps.py`, 12 Nov, on by default, SOLAR_STEP_SPLIT=0
+  off): a face whose returns lie on two planes at least 0.45 m apart along
+  their boundary is cut there. Blind, 178 drawn roofs, vs without: line F
+  0.590 -> 0.595, faces right 43 -> 46, lines right 82 -> 81; 37 roofs moved
+  (line F up 20 / down 8, face IoU up 20 / down 6). Folds as well
+  (SOLAR_STEP_SPLIT=2) add nothing. Where the drawn steps go (drawn roofs
+  less the held-back, 0.5 m samples, built roof tested 0.75 m each side):
+  found 2,354 m; roof both sides but no seam 1,592 m; roof on one side only
+  676 m; no roof either side 295 m. Of the steps inside one built face
+  (1,098 m measured), half show under 0.3 m of height change in the LiDAR
+  (each side's local plane carried to the line): invisible in this survey.
+  Gate counts on the stepped drawn roofs: 660 faces read as one plane, so
+  faces rarely span a visible step. Next: the one-sided steps, where a level
+  the markup has is missing from the build.
+  Golden roofs (`tests/test_golden.py`, recorded for v52 on Linux) fail 28 of
+  28 with or without this change: stale since before 12 Nov, re-record on
+  the VM at the next build.
+
   One flat/gable/hip/pyramid per rectangular part is too crude to lead:
   real roofs join forms (gable plus hip ends, dormers, L and T ridges) that
   it does not model. Next: keep the readings and regularise their faces
