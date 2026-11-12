@@ -460,8 +460,13 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   (1,098 m measured), half show under 0.3 m of height change in the LiDAR
   (each side's local plane carried to the line): invisible in this survey.
   Gate counts on the stepped drawn roofs: 660 faces read as one plane, so
-  faces rarely span a visible step. Next: the one-sided steps, where a level
-  the markup has is missing from the build.
+  faces rarely span a visible step. One-sided steps: 523 m border drawn
+  roof the build leaves out, but drawn roof missing from the build is 4.4%
+  of drawn area (3,892 of 88,223 m2) and half of it is three large pilot
+  roofs (4725584, 4740503, 4726050); 374 m are drawn on the outline. So no
+  step rule gives a large gain; the larger measured lever is still choosing
+  the better reading (below: best reading already drawn 77 roofs right vs
+  the pick's 48).
   Golden roofs (`tests/test_golden.py`, recorded for v52 on Linux) fail 28 of
   28 with or without this change: stale since before 12 Nov, re-record on
   the VM at the next build.
