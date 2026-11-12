@@ -4,6 +4,7 @@
     python tools/vision_referee.py run   [--cands DIR] [--max-usd 5] [--model M]  # ask, cached
     python tools/vision_referee.py score [--cands DIR] [--oracle FILE]            # against Josh's markup
     python tools/vision_referee.py apply [--model M --tag T]                      # picks -> data/referee_faces
+    python tools/vision_referee.py pair  --from-tag T --tag T2 [--holdout F]      # head to head, order swapped
 
 The pipeline draws several readings of each roof -- the LiDAR partition, a
 precomputed photo reading, plain hip/gable forms -- and picks one by how
@@ -232,6 +233,86 @@ def ask(client, model, images, effort=None):
     return ans, r.usage.input_tokens, r.usage.output_tokens
 
 
+PAIR_PROMPT = """You are checking roof drawings for a rooftop solar map of Queenstown, New Zealand.
+
+The first image shows one building's roof from above: the aerial photo (left) and a LiDAR relief image (right). In the relief, colour is the direction each bit of roof faces (hue) and how steep it is (stronger colour = steeper); each flat roof plane is one even colour, and ridges, hips, valleys and steps are where the colour changes sharply. Grey is flat. North is up.
+
+The next two images show two candidate drawings of the roof's faces (white/magenta outlines), each on the photo and on the relief. They differ somewhere: find where, and decide which is right there.
+
+A good drawing has one outline per roof plane, with its edges on the real ridges, hips, valleys and steps -- matching the colour boundaries in the relief and the visible roof lines in the photo -- and no extra lines across a single plane. Missing a real ridge or step is as wrong as drawing one that is not there.
+
+Judge mainly by the relief (it is exact about planes; the photo can lean or be shadowed) and use the photo to confirm. Say where the two differ and which is right there, in a few sentences, then end with one line of JSON:
+{"choice": "A" or "B", "confidence": <0 to 1>, "why": "<one short sentence>"}"""
+
+
+def ask_pair(client, model, images, effort=None):
+    """images: [reference, A, B] as from render(); the pair prompt."""
+    content = [{"type": "text", "text": PAIR_PROMPT}]
+    for label, im in images:
+        content.append({"type": "text", "text": "Reference:" if label == "reference" else f"Drawing {label}:"})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": _b64(im)}})
+    extra = {"output_config": {"effort": effort}} if effort else {}
+    r = client.messages.create(model=model, max_tokens=16000, messages=[{"role": "user", "content": content}], **extra)
+    text = next((b.text for b in r.content if b.type == "text"), "").strip()
+    try:
+        ans = json.loads(text[text.rindex("{"):text.rindex("}") + 1])
+        ans["reasoning"] = text[:text.rindex("{")].strip()[:1500]
+    except Exception:
+        ans = {"choice": None, "raw": text}
+    return ans, r.usage.input_tokens, r.usage.output_tokens
+
+
+def cmd_pair(a):
+    """Head to head: the build's final faces against one challenger (the
+    four-way referee's pick, from its cache under --from-tag), asked twice
+    with the order swapped. The challenger takes the roof only if it wins
+    both times, so a lean towards whichever drawing is shown first cannot
+    decide it. Cached per roof under --tag."""
+    import anthropic
+    from src import project_secrets
+    from src.pointcloud_source import PointCloudSource
+    client = anthropic.Anthropic(api_key=project_secrets.anthropic_api_key())
+    pin, pout = PRICE.get(a.model, (15.0, 75.0))
+    skip = set(json.loads(Path(a.holdout).read_text())) if a.holdout else set()
+    skip = {str(s) for s in skip}
+    pc = PointCloudSource()
+    spent = 0.0
+    for f in sorted(CACHE.glob(f"{a.from_tag}{a.model}_*.json")):
+        d = json.loads(f.read_text())
+        bid, ch = d["id"], d.get("choice_name")
+        if str(bid) in skip or not ch or ch == "final":
+            continue
+        out = CACHE / f"{a.tag}{a.model}_{bid}.json"
+        if out.exists():
+            continue
+        if spent >= a.max_usd:
+            print(f"budget reached (${spent:.2f}); stopping"); break
+        cf = Path(a.cands) / f"{bid}.json"
+        if not cf.exists():
+            continue
+        _, region, cands = _load_cands(cf)
+        if "final" not in cands or ch not in cands:
+            continue
+        votes, cost = [], 0.0
+        try:
+            for names in (["final", ch], [ch, "final"]):
+                ims = render(bid, region, cands, names, pc=pc)
+                ans, tin, tout = ask_pair(client, a.model, ims, a.effort)
+                cost += tin / 1e6 * pin + tout / 1e6 * pout
+                c = str(ans.get("choice") or "").strip().upper()[:1]
+                votes.append({"order": names, "answer": ans,
+                              "winner": names[LETTERS.index(c)] if c in "AB" and c else None})
+        except Exception as e:
+            print(bid, "error", repr(e)[:200]); continue
+        spent += cost
+        wins = [v["winner"] for v in votes]
+        name = ch if wins == [ch, ch] else "final"
+        out.write_text(json.dumps({"id": bid, "region": region, "names": ["final", ch], "votes": votes,
+                                   "choice_name": name, "usd": round(cost, 4)}))
+        print(f"{bid}: final vs {ch} -> {wins} => {name}  ${cost:.3f}  total ${spent:.2f}", flush=True)
+    print(f"RUN_DONE spent ${spent:.2f}")
+
+
 def cmd_render(a):
     bid, region, cands = _load_cands(Path(a.cands) / f"{a.building_id}.json")
     names = pick_candidates(cands)
@@ -348,8 +429,13 @@ def main():
     s.add_argument("--tag", default="")
     p = sub.add_parser("apply"); p.add_argument("--cands", default=str(CANDS))
     p.add_argument("--model", default="claude-opus-5-5"); p.add_argument("--tag", default="op_")
+    q = sub.add_parser("pair"); q.add_argument("--cands", default=str(CANDS))
+    q.add_argument("--from-tag", required=True, help="cache tag of the four-way run whose picks challenge")
+    q.add_argument("--tag", required=True); q.add_argument("--holdout", help="JSON list of ids never asked")
+    q.add_argument("--max-usd", type=float, default=5.0); q.add_argument("--model", default="claude-opus-5-5")
+    q.add_argument("--effort", choices=["low", "medium", "high"], default="medium")
     a = ap.parse_args()
-    {"render": cmd_render, "run": cmd_run, "score": cmd_score, "apply": cmd_apply}[a.cmd](a)
+    {"render": cmd_render, "run": cmd_run, "score": cmd_score, "apply": cmd_apply, "pair": cmd_pair}[a.cmd](a)
 
 
 if __name__ == "__main__":
