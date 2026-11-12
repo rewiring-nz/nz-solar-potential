@@ -541,7 +541,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   changes, 14 better, 15 worse. No gain: the switch stays off. The build's
   own pick has caught up with what the referee adds; the gap left is
   between the pick and the best drawing shown (63 vs 78), which neither
-  finds.
+  finds. Head to head (`vision_referee.py pair`, Opus 5.5 at medium effort):
+  on the 47 roofs where the four-way pick differed from the build's, the
+  build's faces against that pick, asked twice with the order swapped, the
+  pick taking the roof only if it wins both ($1.93, $0.045 a roof). Scored
+  on the same candidates: line F 0.586 -> 0.598, roofs right 63 -> 64; of
+  the 33 roofs it changes, 18 better, 11 worse (four-way: 19 better, 19
+  worse). The two orders agreed on 42 of 47, and the first-shown drawing
+  won 46 of 94, so there is no order lean; where they split, the challenger
+  was worse on 3 of 4. Kept as a tool, not wired in: one roof gained, at
+  about $0.03 a roof across a district. The gap to the best drawing shown
+  (64 vs 78) is not one a referee closes.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
