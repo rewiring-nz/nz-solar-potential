@@ -100,9 +100,9 @@ Faces are rebuilt as a clean tiling with no gaps or overlaps. Neighbours on the 
 
 #### Lower roof levels and courtyards
 
-A wide, flat lower level gets its own face. Courtyards and open decks are removed so no panel sits over them.
+A wide, flat lower level gets its own face. A face whose LiDAR points lie on two planes with a height step of 0.45 m or more between them is split along the step, so each level has its own face. Steps smaller than about 0.3 m are not visible in the survey and stay inside one face. Courtyards and open decks are removed so no panel sits over them.
 
-**Source:** `src/roof_levels.py · src/roof_partition.py`
+**Source:** `src/roof_levels.py · src/face_steps.py · src/roof_partition.py`
 
 #### Match the map photo
 

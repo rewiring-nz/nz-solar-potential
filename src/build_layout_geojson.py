@@ -490,8 +490,8 @@ def _build_one_at(building_id, nudge_m):
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
     facets = _reshape(split_lower_levels, pc_source, dsm=_dsm_ev, photo=_CTX.get("photo_ds"))
     # ...and a face whose returns lie on two planes a step apart (or, with
-    # SOLAR_STEP_SPLIT=2, folded) becomes two faces (src/face_steps.py; off
-    # unless SOLAR_STEP_SPLIT is set).
+    # SOLAR_STEP_SPLIT=2, folded) becomes two faces (src/face_steps.py;
+    # SOLAR_STEP_SPLIT=0 turns it off).
     facets = _reshape(split_steps, pc_source)
     # ...and last, the edges between faces straightened together, so a ridge
     # is a line rather than the zig-zag the returns left (src/face_straighten.py).

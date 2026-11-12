@@ -1,8 +1,8 @@
 """Split a face whose returns lie on two planes: a step between roof levels, or a fold.
 
-    SOLAR_STEP_SPLIT=1   splits at height steps only
+    SOLAR_STEP_SPLIT=1   splits at height steps only (the default)
     SOLAR_STEP_SPLIT=2   also at folds (a ridge or valley inside one face)
-    unset or 0           off
+    SOLAR_STEP_SPLIT=0   off
 
 WHY. On the drawn roofs (12 Nov, 155 scored, BACKLOG "Faces messier than real
 roofs") production is under-split on stepped roofs: 22 of the 76 roofs with
@@ -28,6 +28,16 @@ The face is split along the label boundary when
     boundary; a fold is where they meet (difference near zero).
 Pieces are tried again, to MAX_DEPTH, so a three-level face splits twice.
 Edges are left to the later seam stages (fit_seams, straighten_faces).
+
+MEASURED (12 Nov, 178 drawn roofs, blind, against the build without it):
+line F 0.590 -> 0.595, faces right (IoU >= 0.8) 43 -> 46, lines right
+(F >= 0.7) 82 -> 81. It changed 37 roofs: line F up on 20, down on 8; face
+IoU up on 20, down on 6. Stricter gates (off-plane share 0.12, gain 0.15,
+piece 4 m2) changed 24 and moved the totals half as far. Folds
+(SOLAR_STEP_SPLIT=2) changed one more roof and nothing in the totals. Of the
+drawn steps that lie inside one built face (1,098 m), half show under 0.3 m
+of height change in the LiDAR (each side's local plane carried to the drawn
+line) -- this survey cannot see them, and no LiDAR rule will.
 """
 
 import os
@@ -36,14 +46,14 @@ import numpy as np
 
 GRID_M = 0.25
 OFF_M = 0.35          # a return this far off the first plane is evidence of a second
-MIN_OFF_SHARE = 0.12  # share of a face's returns that must be off before a split is tried
+MIN_OFF_SHARE = 0.05  # share of a face's returns that must be off before a split is tried
 INLIER_M = 0.15
 MIN_INLIER = 0.60
 MIN_PIECE_INLIER = 0.40  # the other piece may still span two levels
-GAIN = 0.15           # two planes must explain this much more of the face than one
+GAIN = 0.06           # two planes must explain this much more of the face than one
 MIN_POINTS = 60
 MIN_PIECE_POINTS = 20
-MIN_PIECE_M2 = 4.0
+MIN_PIECE_M2 = 3.0
 MIN_WIDTH_M = 1.2
 STEP_MIN_M = 0.45     # planes this far apart along the boundary make a step
 FOLD_MAX_M = 0.25     # ...and this close make a fold
@@ -62,7 +72,7 @@ def _no(why):
 
 
 def mode():
-    v = os.environ.get("SOLAR_STEP_SPLIT", "0")
+    v = os.environ.get("SOLAR_STEP_SPLIT", "1")
     return int(v) if v in ("1", "2") else 0
 
 

@@ -1,4 +1,4 @@
-"""face_steps: a face over two roof levels a step apart is cut along the step;
+"""face_steps (on by default): a face over two roof levels a step apart is cut along the step;
 a plain plane, a ridge (with steps only) and drawn faces are left alone; with
 folds on, a face over a ridge is cut along the ridge."""
 import os
@@ -89,6 +89,14 @@ def test_small_level_is_not_a_face():
     z = lambda x, y: 10 + T * y - np.where((x > 5) & (x < 6) & (y > 3) & (y < 4.5), 1.0, 0.0)
     faces = [_face(box(0, 0, 12, 8))]
     assert fs.split_steps(faces, Cloud(z)) is faces
+
+
+def test_on_by_default():
+    os.environ.pop("SOLAR_STEP_SPLIT")
+    try:
+        assert fs.mode() == 1
+    finally:
+        os.environ["SOLAR_STEP_SPLIT"] = "1"
 
 
 def test_drawn_faces_and_off():
