@@ -1,5 +1,13 @@
 # Backlog
 
+Completed local regional snapshots: Build data can capture one idle emitted
+region into an independent copy and verify its inventory, sizes and SHA-256
+checksums. Authenticated background operations persist status; capture holds
+the workspace lock, rejects links and detected source changes, and never
+rebuilds, publishes or deletes data. Manifests preserve emitted summaries and
+unknown provenance. CLI parity and cloud-free integrity/HTTP tests are included.
+Remaining: staging, comparisons, approval, activation and retention.
+
 Completed pipeline queue progress UX: shared queue/detail progress and timing,
 current stage and area, readable locality titles, pending-job positions and
 wait reasons, and the last three outcomes per lane for ten minutes. Unknown

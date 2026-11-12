@@ -180,8 +180,62 @@ def test_port_in_use_message_says_how_to_stop_an_old_panel():
     assert "--port 8767" in unknown and "kill" not in unknown
 
 
+def test_snapshot_web_workflow():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        server, c = _serve(Path(tmp))
+        source = Path(tmp) / "data" / "out" / "pilot"
+        source.mkdir(parents=True)
+        (source / "summary.json").write_text('{"region":"pilot","n":1}')
+        (source / "buildings.pmtiles").write_bytes(b"synthetic fixture")
+
+        def wait_operation(identifier):
+            for _ in range(200):
+                code, operation = c.request("GET", f"/api/snapshots/operations/{identifier}")
+                assert code == 200, operation
+                if operation["status"] != "running":
+                    return operation
+                time.sleep(0.02)
+            raise AssertionError("snapshot operation did not finish")
+
+        try:
+            assert c.request("POST", "/api/snapshots", {"region": "pilot"}, token=None)[0] == 403
+            assert c.request("POST", "/api/snapshots", {"region": "pilot"},
+                             headers={"Origin": "http://evil.example"})[0] == 403
+            assert c.request("POST", "/api/snapshots", {"region": "../pilot"})[0] == 400
+            code, listing = c.request("GET", "/api/snapshots")
+            assert code == 200 and "pilot" in listing["regions"], listing
+            code, operation = c.request("POST", "/api/snapshots", {"region": "pilot"})
+            assert code == 202, operation
+            result = wait_operation(operation["operation_id"])
+            assert result["status"] == "succeeded", result
+            assert result["artifact_count"] == 2
+            identifier = result["snapshot_id"]
+            (source / "buildings.pmtiles").write_bytes(b"new build")
+            code, operation = c.request("POST", f"/api/snapshots/{identifier}/verify", {})
+            assert code == 202
+            assert wait_operation(operation["operation_id"])["status"] == "succeeded"
+            artifact = Path(tmp) / "data" / "regional_snapshots" / identifier / "artifacts" / "buildings.pmtiles"
+            artifact.write_bytes(b"corruption")
+            code, operation = c.request("POST", f"/api/snapshots/{identifier}/verify", {})
+            assert code == 202
+            result = wait_operation(operation["operation_id"])
+            assert result["status"] == "failed" and "verification failed" in result["error"]
+            lock = Path(tmp) / "data" / "pipeline-workspace.lock"
+            lock.mkdir()
+            try:
+                assert c.request("POST", "/api/snapshots", {"region": "pilot"})[0] == 409
+            finally:
+                lock.rmdir()
+            code, html = c.request("GET", "/pipeline.html", token=None)
+            assert code == 200 and b'id="snapshot-capture"' in html
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
     test_api_end_to_end()
     test_static_files_keep_pipeline_serve_rules()
     test_port_in_use_message_says_how_to_stop_an_old_panel()
+    test_snapshot_web_workflow()
     print("pipeline web server tests passed")

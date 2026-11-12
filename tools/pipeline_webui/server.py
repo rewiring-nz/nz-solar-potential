@@ -40,6 +40,9 @@ from tools.pipeline_webui import grid_proxy as GP
 from tools.pipeline_webui import locality_proxy as LP
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
+from tools.pipeline_webui.snapshots import Snapshots
+from tools.regional_snapshots import SnapshotError, snapshot_id
+from src.region_ids import list_regions, validate
 from tools.pipeline_webui.common import DATA, ROOT, git_short
 from tools.pipeline_webui.jobs import JobError, JobManager, TERMINAL
 
@@ -55,7 +58,8 @@ class App:
     def __init__(self, token: str, data: Path = DATA, root: Path = ROOT, python: str = sys.executable,
                  api_key_fn: Callable[[], str] | None = None, http_get: Callable | None = None,
                  estimates: E.EstimateStore | None = None, jobs: JobManager | None = None,
-                 cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None):
+                 cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None,
+                 snapshot_root: Path | None = None):
         self.token = token
         self.data = Path(data)
         self.root = Path(root)
@@ -76,6 +80,7 @@ class App:
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
+        self.snapshots = Snapshots(self.data, snapshot_root)
 
     def api_key(self) -> str:
         key = self.api_key_fn()
@@ -166,7 +171,7 @@ class WebHandler(RangeHandler):
                 self._send_json(status, payload)
         except HttpError as exc:
             self._send_json(exc.status, {"error": str(exc)})
-        except (E.EstimateError, LP.LocalityError, JobError) as exc:
+        except (E.EstimateError, LP.LocalityError, JobError, SnapshotError) as exc:
             self._send_json(exc.status, {"error": str(exc)})
         except Exception as exc:  # never echo text that could carry a keyed URL
             self._send_json(500, {"error": f"server error ({type(exc).__name__})"})
@@ -182,6 +187,26 @@ class WebHandler(RangeHandler):
     def _route(self, method: str, parts: list[str], query: dict, body: dict):
         app = self.app
         head = parts[0] if parts else ""
+        if head == "snapshots":
+            if parts == ["snapshots"] and method == "GET":
+                return 200, {
+                    "snapshots": app.snapshots.store.list(),
+                    "regions": list_regions(app.data / "out", "summary.json",
+                                            include_grid_selections=True),
+                }
+            if parts == ["snapshots"] and method == "POST":
+                if app.jobs.active_jobs().get("local") or app.jobs.workspace_owner() is not None:
+                    raise HttpError(409, "Wait for the local build or snapshot to finish before capturing")
+                region = body.get("region")
+                try:
+                    validate(region)
+                except ValueError as exc:
+                    raise HttpError(400, str(exc)) from exc
+                return 202, app.snapshots.start("capture", region)
+            if len(parts) == 3 and parts[1] == "operations" and method == "GET":
+                return 200, app.snapshots.get(parts[2])
+            if len(parts) == 3 and parts[2] == "verify" and method == "POST":
+                return 202, app.snapshots.start("verify", snapshot_id(parts[1]))
         if head == "layers" and method == "GET" and len(parts) == 1:
             source = (query.get("source") or ["local"])[0]
             if source == "local":
@@ -403,9 +428,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="interpreter for pipeline runs (default: this one)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="print the link instead of opening it")
+    parser.add_argument("--snapshot-root", type=Path,
+                        help="local snapshot storage (default: data/regional_snapshots)")
     args = parser.parse_args(argv)
     render_docs(ROOT)
-    app = App(secrets.token_urlsafe(24), python=args.python)
+    app = App(secrets.token_urlsafe(24), python=args.python, snapshot_root=args.snapshot_root)
     try:
         server = make_server(app, args.port)
     except OSError as exc:

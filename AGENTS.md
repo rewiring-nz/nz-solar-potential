@@ -73,6 +73,14 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   available previews and reports. The former `data-explorer.html` URL redirects
   to this page. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
+- **Local snapshots** in Build data preserve an emitted region without
+  rebuilding or publishing (`tools/regional_snapshots.py`,
+  `tools/pipeline_webui/snapshots.py`). Capture uses the workspace lock and
+  copies into ignored `data/regional_snapshots/<id>/` (configurable with
+  `--snapshot-root`); verification checks inventory, sizes and SHA-256.
+  Incomplete copies remain hidden from completed listings. These contain
+  emitted regional artifacts only, not raw sources or a standalone release;
+  staging, activation and retention are not implemented by snapshots.
 - The web queue and job details share stage-weighted progress
   (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
   reaches 100%; cloud runs without stage telemetry remain indeterminate.

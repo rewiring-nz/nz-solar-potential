@@ -105,6 +105,19 @@
     </header>
     <div id="banner"></div>
     <main id="workflow">
+    <details class="stage" id="stage-snapshots">
+      <summary>Local snapshots</summary>
+      <div class="stage-body">
+        <p>Preserve one emitted region without rebuilding or publishing. Copies are independent of later builds; they are not standalone deployed maps.</p>
+        <label for="snapshot-region">Built region (including partial selections)</label>
+        <select id="snapshot-region" style="width:100%" disabled></select>
+        <p><button class="primary" id="snapshot-capture" disabled>Capture local snapshot</button>
+          <button class="small" id="snapshot-refresh">Refresh snapshots</button></p>
+        <p class="muted">Local only, regardless of the target above. Builds must be idle. Copies use additional disk; nothing is automatically deleted.</p>
+        <div id="snapshot-status" role="status" aria-live="polite"></div>
+        <div id="snapshot-list"></div>
+      </div>
+    </details>
     <details class="stage" id="stage-build" open>
       <summary>New build</summary>
       <div class="stage-body">

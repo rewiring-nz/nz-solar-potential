@@ -54,6 +54,9 @@ If a step fails, find its number in [Troubleshooting](troubleshooting.md).
 
 ## Next steps
 
+- Preserve the inspected region using **Local snapshots** in the
+  [Build data panel](web-pipeline.md). Capture and verify an independent local
+  copy without rebuilding or publishing.
 - [Build another region](howto-build-a-region.md).
 - [Run the quickstart in the cloud](howto-cloud-quickstart.md) for a
   shareable preview.

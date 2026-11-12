@@ -90,6 +90,87 @@
     b.classList.toggle("show", !!html);
   }
 
+  // Snapshots always operate on local emitted outputs, independently of target.
+  let snapshotBusy = false;
+  async function loadSnapshots() {
+    if (!writable) return;
+    try {
+      const data = await api("snapshots");
+      const select = $("snapshot-region");
+      const previous = select.value;
+      select.innerHTML = data.regions.map((region) =>
+        `<option value="${esc(region)}">${esc(region)}</option>`).join("");
+      if (data.regions.includes(previous)) select.value = previous;
+      select.disabled = snapshotBusy || !data.regions.length;
+      $("snapshot-capture").disabled = snapshotBusy || !data.regions.length;
+      $("snapshot-list").innerHTML = data.snapshots.length ? data.snapshots.map((item) =>
+        `<div class="item"><b>${esc(item.region_id || "Unknown region")}</b>
+          <div class="muted job-id">${esc(item.snapshot_id)}</div>
+          <div class="muted">Captured: ${esc(item.created_at || "unknown")}<br>
+          Built: ${esc(item.built_at || "unknown")}. Integrity not checked by listing.</div>
+          ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
+          <button class="small" data-verify-snapshot="${esc(item.snapshot_id)}"
+            ${snapshotBusy ? "disabled" : ""}>Verify snapshot</button></div>`).join("")
+        : '<p class="muted">No completed snapshots. Build a region, then capture it here.</p>';
+      $("snapshot-list").querySelectorAll("[data-verify-snapshot]").forEach((button) =>
+        button.addEventListener("click", () => runSnapshot(
+          `snapshots/${encodeURIComponent(button.dataset.verifySnapshot)}/verify`, {})));
+    } catch (error) {
+      $("snapshot-status").textContent = `Cannot load snapshots: ${error.message}`;
+      $("snapshot-capture").disabled = true;
+    }
+  }
+
+  async function followSnapshot(identifier) {
+    snapshotBusy = true;
+    $("snapshot-capture").disabled = true;
+    $("snapshot-region").disabled = true;
+    $("snapshot-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    try {
+      let operation;
+      do {
+        operation = await api(`snapshots/operations/${encodeURIComponent(identifier)}`);
+        $("snapshot-status").textContent = operation.status === "running"
+          ? `${operation.action === "capture" ? "Copying and verifying" : "Verifying"} local snapshot...`
+          : operation.status === "succeeded"
+            ? `${operation.action === "capture" ? "Captured and verified" : "Verified"} ${operation.snapshot_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
+            : `${operation.status}: ${operation.error || "Operation did not complete."}`;
+        if (operation.status === "running") await new Promise((resolve) => setTimeout(resolve, 750));
+      } while (operation.status === "running");
+    } catch (error) {
+      $("snapshot-status").textContent = `Status unavailable: ${error.message}. Refresh snapshots to reconnect; do not capture again blindly.`;
+    } finally {
+      snapshotBusy = false;
+      await loadSnapshots();
+    }
+  }
+
+  async function runSnapshot(path, body) {
+    if (!writable || snapshotBusy) return;
+    snapshotBusy = true;
+    $("snapshot-capture").disabled = true;
+    $("snapshot-status").textContent = "Starting local snapshot operation...";
+    try {
+      const operation = await api(path, { method: "POST", body });
+      sessionStorage.setItem("snapshotOperation", operation.operation_id);
+      await followSnapshot(operation.operation_id);
+    } catch (error) {
+      $("snapshot-status").textContent = `Snapshot operation refused: ${error.message}`;
+    } finally {
+      snapshotBusy = false;
+      await loadSnapshots();
+    }
+  }
+
+  $("snapshot-capture").addEventListener("click", () =>
+    runSnapshot("snapshots", { region: $("snapshot-region").value }));
+  $("snapshot-refresh").addEventListener("click", async () => {
+    if (snapshotBusy) return;
+    const operation = sessionStorage.getItem("snapshotOperation");
+    if (operation) await followSnapshot(operation);
+    else await loadSnapshots();
+  });
+
   function showSection(name) {
     const section = $("stage-" + name);
     section.open = true;
@@ -966,6 +1047,9 @@
     renderSelection();
     updateHint();
     if (writable) {
+      loadSnapshots();
+      const snapshotOperation = sessionStorage.getItem("snapshotOperation");
+      if (snapshotOperation) followSnapshot(snapshotOperation);
       loadJobs();
       loadQueue();
       setInterval(loadQueue, QUEUE_POLL_MS);

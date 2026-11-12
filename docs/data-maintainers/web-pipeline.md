@@ -33,6 +33,7 @@ It prints a link such as
 | `--port N` | Listen on another loopback port (default 8766; the map preview uses 8765). |
 | `--python PATH` | Interpreter for pipeline runs (default: the one running the panel). |
 | `--no-open-browser` | Print the link without opening it. |
+| `--snapshot-root PATH` | Store local snapshots here instead of ignored `data/regional_snapshots/`. Use an untracked location outside working outputs. |
 
 `Ctrl+C` stops the panel. Running builds are cancelled first and queued
 ones are dropped. Cancelling a cloud build stops the local command; the VM
@@ -65,6 +66,43 @@ listener is gone by repeating the `lsof` command. Do not stop a process just
 because it owns the port if its command is unrelated.
 
 ## Use it
+
+- **Local snapshots**: expand this section, choose a built region and select
+  **Capture local snapshot**. This is always local, regardless of the target
+  toggle. It copies only that region's emitted `data/out/<region>/` artifacts;
+  it does not rebuild, upload, approve, deploy or change the current map.
+  Partial selections can be preserved too, but are not complete parent regions.
+  Wait for local builds to finish and keep external emit/cleanup commands idle.
+  Capture holds the normal workspace lock and rejects detected source changes.
+  The manifest records creation time separately from the original build time,
+  preserves the emitted summary and leaves missing provenance unknown.
+  **Verify snapshot** checks the full artifact inventory, sizes and SHA-256
+  checksums, including unexpected files. Listing a snapshot is not verification
+  or a quality approval. Copies consume additional disk; nothing is automatically
+  deleted. They contain no raw sources or shared release assets and are not
+  standalone deployable maps.
+
+  Capture/verification run in the background. Their status persists under
+  `data/pipeline_web/snapshot_operations/`; **Refresh snapshots** reconnects to
+  the last operation in the tab. Finished copies live under
+  `data/regional_snapshots/<snapshot-id>/`. Failed or interrupted copies stay
+  under `.incomplete-<snapshot-id>/` and never appear as completed snapshots.
+  After a process crash, inspect the operation and workspace-lock owner before
+  manually removing a stale lock; do not remove a lock held by another process.
+  Treat completed snapshots as read-only; editing them causes verification
+  failure. Publication and retention are later steps.
+
+  The same operations are available without the panel:
+
+  ```sh
+  .venv/bin/python tools/regional_snapshots.py capture pilot
+  .venv/bin/python tools/regional_snapshots.py list
+  .venv/bin/python tools/regional_snapshots.py verify <snapshot-id>
+  ```
+
+  `--snapshot-root PATH` selects the same custom storage for either entry point.
+  Existing emitted data is sufficient; snapshot operations do not require LINZ
+  or cloud credentials.
 
 - **New build**: search for a suburb or locality, or zoom in to level 10 or
   closer and click areas on the map. **Existing data for this area** reports
