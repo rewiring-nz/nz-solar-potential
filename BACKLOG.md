@@ -397,6 +397,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Faces straight from the raw LiDAR points (13 Nov, prototype, not in the
+  build).** `../point-roof-prototype/recon.py` (outside the repo): slide the
+  outline onto the roof-height returns; grow planes on the returns (not the
+  rasterised grid); roof lines are the planes' exact intersections plus fitted
+  step lines; cut the outline by every line; one graph cut gives each cell a
+  plane or "no roof here"; flat planes that meet without a step are one deck.
+  No trained model, no photo, about 0.3 s a roof. The survey supports it:
+  9 returns/m2, about 2 cm of noise across a plane. Blind on the 70 drawn
+  pilot roofs, production -> prototype: line F 0.583 -> 0.629, lines right
+  33 -> 38, faces right 26 -> 28, face IoU 0.651 -> 0.682. Its smoothness
+  weight was picked on these 70 (0.4-4.0 gives 0.59-0.63), and production's
+  detectors trained on many of them; other towns and the held-back 30 are
+  unscored (their point clouds are on the VM). No owner verdict yet.
+  Known gaps: roofs with sparse scan lines, balcony terraces, cones, low hips
+  under 5 deg (merged as flat).
+- **The benchmark's truth drops drawn lines (13 Nov).** `markup_benchmark`
+  takes the roof's lines from the label's derived faces, and a drawn line
+  that closes no face is not in them. Over 150 drawn roofs (held-back
+  excluded) 22% of drawn line length is missing from the truth; 45 roofs
+  lose over 20%, 17 over half (15B Frankton Rd 4725546: 10 lines drawn, 2
+  faces). A build that finds those lines is scored down. Score against the
+  lines as drawn as well (`evalrecon.py` `dl_f`: production 0.620, prototype
+  0.671 on the 70), and repair face derivation for open-ended lines.
+
 - **Faces messier than real roofs (11 Nov, five Wakatipu Heights houses).**
   All five readings scored under the 0.60 trust line (four ended on the
   LiDAR path, one on SAM), so faces follow DSM pixels: jagged edges,
