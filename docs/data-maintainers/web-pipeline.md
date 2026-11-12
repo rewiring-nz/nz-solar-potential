@@ -139,7 +139,13 @@ because it owns the port if its command is unrelated.
   remaining time and the age of the last log/status activity. Waiting jobs
   show their lane position, wait reason and estimated runtime, not a moving
   bar or a promised start time. **Remove** drops a waiting job; **Cancel**
-  stops a running one. Completed jobs are shown only in **Jobs** so each job
+  stops a running one. Click an area's title on a queue or completed-job card
+  to zoom to its boundary and highlight it briefly; multi-area jobs show each
+  area as a separate link. If a grid-selection boundary is not available yet,
+  the map shows its parent locality. Selecting an area also shows its
+  matching active or queued job, or the latest recently completed job, with a
+  link to its details. Use **Details / log** to open a completed job's report
+  and log view. Completed jobs are shown only in **Jobs** so each job
   appears in one stage at a time.
 - **Jobs**: completed job history, newest first. Select a job to see progress,
   per-area status and report links, and to open its live log. **Cancel** stops

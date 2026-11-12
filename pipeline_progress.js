@@ -23,6 +23,22 @@
     return regions.length ? regionTitle(regions[0]) +
       (regions.length > 1 ? " + " + (regions.length - 1) + " more" : "") : "Build";
   }
+  function renderAreaTitles(job) {
+    const regions = job.regions || [];
+    if (!regions.length) return esc(jobTitle(job));
+    return regions.map((region) =>
+      `<button class="job-title" data-map-region="${esc(region)}"
+        aria-label="Show ${esc(regionTitle(region))} on map">${esc(regionTitle(region))}</button>`
+    ).join("<span class=\"muted\"> · </span>");
+  }
+  function matchingJobsForRegion(jobs, recent, region, target) {
+    const matches = (job) => (job.target || "local") === target &&
+      (job.regions || []).some((jobRegion) =>
+        jobRegion === region || jobRegion.startsWith(region + "/grid-"));
+    const active = jobs.filter(matches)
+      .sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1));
+    return active.length ? active : recent.filter(matches).slice(0, 1);
+  }
   function renderProgress(job, now = Date.now() / 1000) {
     if (job.status === "queued") {
       return `<div class="muted">Queued${job.queue_position ? " #" + esc(job.queue_position) : ""} · ${
@@ -71,7 +87,7 @@
     return `<div class="item">
       ${writable && !done ? `<span class="row-actions"><button class="small" data-q="${esc(job.job_id)}"
         data-running="${active}">${active ? "Cancel" : "Remove"}</button></span>` : ""}
-      <h3><button class="job-title" data-job="${esc(job.job_id)}">${esc(jobTitle(job))}</button></h3>
+      <h3 class="job-area-titles">${renderAreaTitles(job)}</h3>
       <span class="pill ${esc(job.target || "local")}">${esc(job.target || "local")}</span>
       <span class="pill ${esc(job.status)}">${esc(job.status)}</span>
       <div class="muted job-id">${esc(job.job_id)}</div>
@@ -84,7 +100,7 @@
           `<a href="${safeLink(r.url)}" target="_blank" rel="noopener">${esc(regionTitle(r.region))} report</a>`).join("")}
       </div></div>`;
   }
-  const api = { jobTitle, renderProgress, renderQueueCard };
+  const api = { jobTitle, matchingJobsForRegion, renderAreaTitles, renderProgress, renderQueueCard };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PipelineProgress = api;
 })(globalThis);

@@ -205,6 +205,9 @@ class WebHandler(RangeHandler):
             if parts[1:] == ["search"]:
                 return 200, {"results": LP.search((query.get("q") or [""])[0], app.api_key(),
                                                   app.http_get)}
+            if parts[1:] == ["feature"]:
+                return 200, LP.feature_for_region((query.get("region") or [""])[0],
+                                                  app.api_key(), app.data, app.http_get)
             if len(parts) == 1:
                 bbox = LP.parse_bbox((query.get("bbox") or [""])[0])
                 return 200, LP.localities_in_bbox(bbox, app.api_key(), app.data, app.http_get)

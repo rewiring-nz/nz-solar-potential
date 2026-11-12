@@ -18,12 +18,14 @@ region catalogue. The API key never appears in a response or error text.
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Callable
 
 import config
 from src import localities as L
+from src.region_ids import is_grid_selection_id, is_locality_id
 from tools.pipeline_webui.common import DATA, read_json, web_dir, write_json_atomic
 
 MAX_BBOX_DEGREES = 1.0
@@ -165,6 +167,60 @@ def search(text: str, api_key: str, http_get: Callable | None = None) -> list[di
                   key=lambda p: (-(p.get("population_estimate") or 0), p.get("name") or ""))
     return [dict(_summary(p, L.display_region_id(p, ambiguous)), bbox=bboxes[id(p)])
             for p in land[:SEARCH_LIMIT]]
+
+
+def feature_for_region(region: str, api_key: str, data: Path = DATA,
+                       http_get: Callable | None = None) -> dict:
+    """Resolve a build area to its LINZ locality geometry for map navigation."""
+    if is_grid_selection_id(region):
+        region = region.rsplit("/", 1)[0]
+    if not is_locality_id(region):
+        raise LocalityError("this build area has no LINZ locality boundary", 404)
+
+    council_slug, town_slug, suburb_slug = region.split("/")
+    suburb_slugs = [suburb_slug]
+    without_linz_suffix = re.sub(r"-\d+$", "", suburb_slug)
+    if without_linz_suffix != suburb_slug:
+        suburb_slugs.append(without_linz_suffix)
+    found = []
+    for candidate_slug in suburb_slugs:
+        name_pattern = "%" + "%".join(candidate_slug.split("-")) + "%"
+        clauses = [
+            f"name_ascii ILIKE {_quote(name_pattern)}",
+            f"territorial_authority_ascii ILIKE {_quote('%' + '%'.join(council_slug.split('-')) + '%')}",
+        ]
+        if town_slug == L.NO_TOWN:
+            clauses.append("(major_name_ascii IS NULL OR major_name_ascii = '')")
+        else:
+            clauses.append(
+                f"major_name_ascii ILIKE {_quote('%' + '%'.join(town_slug.split('-')) + '%')}")
+        found = _wfs(api_key, " AND ".join(clauses), L.LOCALITY_FIELDS, http_get)
+        ambiguous = L.ambiguous_ids([item["properties"] for item in found])
+        raw = next((item for item in found
+                    if L.display_region_id(item["properties"], ambiguous) == region), None)
+        if raw is not None:
+            break
+    else:
+        raise LocalityError("no LINZ locality boundary found for this build area", 404)
+
+    linz_id = int(raw["properties"]["id"])
+    cache_file = web_dir(data) / "cache" / "localities" / f"{linz_id}.geojson"
+    cached = read_json(cache_file)
+    if isinstance(cached, dict) and cached.get("properties", {}).get("linz_id") == linz_id:
+        feature = cached
+        feature["properties"]["region_id"] = region
+        return feature
+
+    features = _wfs(api_key, f"id = {linz_id}", L.LOCALITY_FIELDS, http_get, geometry=True)
+    raw_geometry = next((item for item in features
+                         if (item.get("properties") or {}).get("id") == linz_id), None)
+    if raw_geometry is None or not raw_geometry.get("geometry"):
+        raise LocalityError("LINZ did not return a boundary for this build area", 404)
+    props = _summary(raw_geometry["properties"], region)
+    feature = {"type": "Feature", "id": linz_id, "properties": props,
+               "geometry": _simplify(raw_geometry["geometry"])}
+    write_json_atomic(cache_file, feature)
+    return feature
 
 
 def _bbox(geometry: dict | None) -> list[float] | None:

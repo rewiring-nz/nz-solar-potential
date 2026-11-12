@@ -55,10 +55,30 @@ assert.match(html, /value="100"/);
 assert.match(html, /Duration 18 min/);
 assert.doesNotMatch(html, /remaining|Last activity/);
 assert.match(P.renderQueueCard({ ...job, status: "succeeded" }, false, true), /Open preview/);
+assert.match(P.renderQueueCard(job, true, true), /data-map-region="christchurch-city\/christchurch\/christchurch-central"/);
+assert.match(P.renderQueueCard(job, true, true), /aria-label="Show Christchurch Central, Christchurch on map"/);
+assert.doesNotMatch(P.renderQueueCard(job, true, true), />Map:/);
+assert.match(P.renderQueueCard(job, true, true), /data-map-region="x\/y\/riccarton"/);
 assert.match(P.renderQueueCard(job, true, true), /data-running="true">Cancel/);
 assert.doesNotMatch(P.renderQueueCard(job, true, false), /data-q=/);
+assert.match(P.renderAreaTitles(job), /Christchurch Central, Christchurch/);
+assert.match(P.renderAreaTitles(job), /data-map-region="x\/y\/riccarton"/);
 assert.equal(P.jobTitle({ regions: ["x/queenstown/sunshine-bay/grid-abcdef"] }),
   "Sunshine Bay, Queenstown (grid selection)");
+const areaJobs = [
+  { job_id: "queued", target: "local", status: "queued",
+    regions: ["queenstown-lakes-district/queenstown/sunshine-bay/grid-0123456789abcdef"] },
+  { job_id: "running-other-target", target: "developer", status: "running",
+    regions: ["queenstown-lakes-district/queenstown/sunshine-bay"] },
+];
+assert.equal(P.matchingJobsForRegion(areaJobs, [
+  { job_id: "recent", target: "local", status: "succeeded",
+    regions: ["queenstown-lakes-district/queenstown/sunshine-bay"] },
+], "queenstown-lakes-district/queenstown/sunshine-bay", "local")[0].job_id, "queued");
+assert.equal(P.matchingJobsForRegion([], [
+  { job_id: "recent", target: "local", status: "succeeded",
+    regions: ["queenstown-lakes-district/queenstown/sunshine-bay"] },
+], "queenstown-lakes-district/queenstown/sunshine-bay", "local")[0].job_id, "recent");
 
 html = P.renderQueueCard({ ...job, regions: ["<script>"], current_stage: "<img>",
   preview_url: "javascript:alert(1)", reports: [{ region: "<img>", url: "//evil.test" }] }, true, true);

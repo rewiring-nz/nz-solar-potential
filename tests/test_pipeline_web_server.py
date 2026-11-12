@@ -83,6 +83,10 @@ def test_api_end_to_end():
             assert c.request("GET", "/api/localities?bbox=160,-46,170,-40")[0] == 413
             status, found = c.request("GET", "/api/localities/search?q=Frank")
             assert status == 200 and found["results"]
+            status, feature = c.request("GET", "/api/localities/feature?region=queenstown-lakes-district%2Fqueenstown%2Ffrankton-1001")
+            assert status == 200 and feature["properties"]["region_id"].endswith("/frankton-1001")
+            assert feature["geometry"]["type"] in ("Polygon", "MultiPolygon")
+            assert c.request("GET", "/api/localities/feature?region=pilot")[0] == 404
             assert c.request("GET", "/api/nope")[0] == 404
 
             region = "queenstown-lakes-district/queenstown/frankton"
@@ -149,8 +153,13 @@ def test_static_files_keep_pipeline_serve_rules():
             assert status == 200 and b"pipeline_ui.js" in body and b"pipeline_progress.js" in body
             assert b"<title>Build data</title>" in body
             assert b'id="stage-build"' in body and b'id="stage-queue"' in body and b'id="stage-jobs"' in body
+            assert b'id="map-action-status"' in body
             assert b'data-tab="regions"' not in body and b'id="region-list"' not in body
-            assert c.request("GET", "/pipeline_progress.js", token=None)[0] == 200
+            status, progress = c.request("GET", "/pipeline_progress.js", token=None)
+            assert status == 200 and b"data-map-region" in progress and b"matchingJobsForRegion" in progress
+            status, ui = c.request("GET", "/pipeline_ui.js", token=None)
+            assert status == 200 and ui.count(b"renderAreaTitles(") >= 2
+            assert b'$("job-list").querySelectorAll("[data-map-region]")' in ui
             assert c.request("GET", "/.env", token=None)[0] == 404
             assert c.request("GET", "/api/health", token=None, headers={"Host": "evil.example"})[0] == 404
             assert c.request("POST", "/pipeline.html", {}, token=None)[0] == 405

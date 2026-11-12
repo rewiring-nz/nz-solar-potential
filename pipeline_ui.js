@@ -45,7 +45,10 @@
   const selected = new Map();       // region_id -> label
   const localityFeatures = new Map(); // linz_id -> feature
   const regionRecords = new Map(); // region_id -> area status and links
+  const regionFeatures = new Map(); // region_id -> area geometry
   let regionStatusMeta = "";
+  let queueJobs = [];
+  let recentQueueJobs = [];
   const gridFeatures = new Map(); // grid-cell id -> feature
   const selectedGridCells = new Map(); // selected grid-cell id -> label
   let selectedParent = null;
@@ -170,6 +173,7 @@
     map.addSource("localities", { type: "geojson", data: empty, promoteId: "linz_id" });
     map.addSource("grid-cells", { type: "geojson", data: empty, promoteId: "grid_id" });
     map.addSource("regions", { type: "geojson", data: empty });
+    map.addSource("job-focus", { type: "geojson", data: empty });
     map.addLayer({ id: "localities-fill", type: "fill", source: "localities",
       paint: { "fill-color": "#1565c0",
                "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.4, 0.05] } });
@@ -194,6 +198,13 @@
       paint: { "line-color": regionColour, "line-width": 2 } });
     map.addLayer({ id: "regions-point", type: "circle", source: "regions", filter: ["==", ["geometry-type"], "Point"],
       paint: { "circle-color": stateColour, "circle-radius": 7, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+    map.addLayer({ id: "job-focus-fill", type: "fill", source: "job-focus",
+      paint: { "fill-color": "#ffeb3b", "fill-opacity": 0.12 } });
+    map.addLayer({ id: "job-focus-line", type: "line", source: "job-focus",
+      paint: { "line-color": "#ffeb3b", "line-width": 5 } });
+    map.addLayer({ id: "job-focus-point", type: "circle", source: "job-focus",
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: { "circle-color": "#ffeb3b", "circle-radius": 11, "circle-stroke-color": "#212121", "circle-stroke-width": 2 } });
     layerLegend.setEntries([
       ...MapLayers.basemaps(map),
       ...[
@@ -293,6 +304,7 @@
     } catch (e) {
       if (source !== target) return;
       regionRecords.clear();
+      regionFeatures.clear();
       regionStatusMeta = `<span class="block">Area status unavailable: ${esc(e.message)}</span>`;
       if (map.getSource("regions")) map.getSource("regions").setData(empty);
       renderAreaStatus();
@@ -300,7 +312,11 @@
     }
     if (source !== target) return;  // the toggle moved on while this loaded
     regionRecords.clear();
-    fc.features.forEach((feature) => regionRecords.set(feature.properties.region, feature.properties));
+    regionFeatures.clear();
+    fc.features.forEach((feature) => {
+      regionRecords.set(feature.properties.region, feature.properties);
+      regionFeatures.set(feature.properties.region, feature);
+    });
     regionStatusMeta = regionsMeta(fc);
     if (map.getSource("regions")) map.getSource("regions").setData(fc);
     renderAreaStatus();
@@ -330,11 +346,15 @@
       : [...selected.entries()];
     const entries = labels.map(([id, label]) => {
       const record = regionRecords.get(id);
+      const areaJobs = matchingAreaJobs(id);
+      const jobHtml = areaJobs.map((job) =>
+        `<button class="small" data-open-job="${esc(job.job_id)}">Open ${esc(job.status)} job: ${esc(PipelineProgress.jobTitle(job))}</button>`
+      ).join(" ");
       if (!record) {
         const missing = target === "local"
           ? "No prepared or built area record in this checkout."
           : `No built area record found for ${esc(TARGETS[target].label)}.`;
-        return `<div class="area-record"><b>${esc(label)}</b><div class="muted">${missing}</div></div>`;
+        return `<div class="area-record"><b>${esc(label)}</b><div class="muted">${missing}</div>${jobHtml}</div>`;
       }
       const state = record.state === "built" ? "Built"
         : record.state === "failed" ? "Last run failed"
@@ -347,14 +367,24 @@
       if (record.alias) parts.push(`developer ${esc(record.alias)}`);
       return `<div class="area-record"><b>${esc(label)}</b> <span class="pill ${esc(record.state || "")}">${state}</span>
         ${parts.length ? `<div class="muted">${parts.join(" · ")}</div>` : ""}
+        ${jobHtml}
         <div class="links">${record.preview_url
           ? `<a href="${esc(record.preview_url)}" target="_blank" rel="noopener">${target === "published" ? "Open live map" : "Open preview"}</a>` : ""}
           ${record.report_url ? `<a href="${esc(record.report_url)}" target="_blank" rel="noopener">Last report</a>` : ""}</div></div>`;
     });
-    $("area-status-records").innerHTML = labels.length
+    const recordsHtml = labels.length
       ? entries.join("")
       : `<p class="muted">Select an area to see what is prepared or built for this target.</p>`;
+    if ($("area-status-records").innerHTML !== recordsHtml) {
+      $("area-status-records").innerHTML = recordsHtml;
+      $("area-status-records").querySelectorAll("[data-open-job]").forEach((button) =>
+        button.addEventListener("click", () => showJob(button.dataset.openJob)));
+    }
     $("area-status-meta").innerHTML = regionStatusMeta;
+  }
+
+  function matchingAreaJobs(region) {
+    return PipelineProgress.matchingJobsForRegion(queueJobs, recentQueueJobs, region, target);
   }
 
   function extend(bounds, geom) {
@@ -368,6 +398,51 @@
     const bounds = new maplibregl.LngLatBounds();
     extend(bounds, feature.geometry);
     map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
+  }
+
+  let jobFocusTimer = null;
+  async function showAreaOnMap(region) {
+    const mapRegion = region.replace(/\/grid-[0-9a-f]{16}$/, "");
+    let feature = regionFeatures.get(region) || regionFeatures.get(mapRegion);
+    let usingParentBoundary = region !== mapRegion && !feature;
+    if (!feature) {
+      feature = [...localityFeatures.values()].find((item) => item.properties.region_id === mapRegion);
+    }
+    if (!feature) {
+      try {
+        feature = await api("localities/feature?region=" + encodeURIComponent(region));
+        if (feature.properties && feature.properties.linz_id != null) {
+          localityFeatures.set(feature.properties.linz_id, feature);
+          if (map.getSource("localities")) {
+            map.getSource("localities").setData({
+              type: "FeatureCollection", features: [...localityFeatures.values()],
+            });
+          }
+        } else {
+          regionFeatures.set(region, feature);
+        }
+      } catch (error) {
+        $("map-action-status").textContent = `Area boundary unavailable: ${error.message}`;
+        return;
+      }
+    }
+    if (!feature || !feature.geometry) {
+      $("map-action-status").textContent = "No map boundary is available for this build area.";
+      return;
+    }
+    $("map-action-status").textContent = "";
+    const source = map.getSource("job-focus");
+    if (!source) {
+      map.once("load", () => showAreaOnMap(region));
+      return;
+    }
+    $("map-action-status").textContent = usingParentBoundary
+      ? "The grid selection boundary is not available yet; showing its parent locality."
+      : "";
+    source.setData({ type: "FeatureCollection", features: [feature] });
+    clearTimeout(jobFocusTimer);
+    jobFocusTimer = setTimeout(() => source.setData(empty), 8000);
+    flyTo(feature);
   }
 
   // ---- new build ------------------------------------------------------
@@ -706,6 +781,8 @@
     $("queue-updates").textContent = "";
     $("queue-list").dataset.stale = "false";
     const lanes = res.lanes || {};
+    queueJobs = Object.values(lanes).flatMap((lane) => lane.jobs || []);
+    recentQueueJobs = Object.values(lanes).flatMap((lane) => lane.recent || []);
     const total = Object.values(lanes).reduce((n, l) => n + l.jobs.length, 0);
     $("queue-count").textContent = total ? "(" + total + ")" : "";
     if (!queueInitialized) {
@@ -721,9 +798,12 @@
         ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable)).join("") || "<p class='muted'>No active or queued builds.</p>"}
       </div>`).join("");
     $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
+    $("queue-list").querySelectorAll("[data-map-region]").forEach((button) =>
+      button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
     $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () =>
       cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue)));
     if ($("stage-jobs").open) loadJobs();
+    renderAreaStatus();
     if (focusKey) {
       const replacement = [...$("queue-list").querySelectorAll("[data-q], [data-job]")]
         .find(el => el.dataset[focusKey[0]] === focusKey[1] && el.textContent === focusLabel);
@@ -757,10 +837,13 @@
     jobsSignature = signature;
     $("job-count").textContent = history.length ? `(${history.length})` : "";
     $("job-list").innerHTML = history.map((j) => `
-      <div class="item"><h3><button class="job-title" data-job="${esc(j.job_id)}">${esc(PipelineProgress.jobTitle(j))}</button>
+      <div class="item"><h3 class="job-area-titles">${PipelineProgress.renderAreaTitles(j)}
         <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
-        <div class="muted">${esc(j.finished || j.created)} · ${esc(j.job_id)}</div></div>`).join("") || "<p class='muted'>No completed jobs yet.</p>";
+        <div class="muted">${esc(j.finished || j.created)} · ${esc(j.job_id)}</div>
+        <button class="job-title small" data-job="${esc(j.job_id)}">Details / log</button></div>`).join("") || "<p class='muted'>No completed jobs yet.</p>";
     $("job-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
+    $("job-list").querySelectorAll("[data-map-region]").forEach((button) =>
+      button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
   }
   $("stage-jobs").addEventListener("toggle", () => {
     if ($("stage-jobs").open) loadJobs();
@@ -837,7 +920,9 @@
     }).join("");
     const fc = job.final_combine || {};
     el.innerHTML = `
-      <h3>${esc(PipelineProgress.jobTitle(job))} <span class="pill ${esc(job.target || "local")}">${esc(job.target || "local")}</span> <span class="pill ${esc(job.status)}">${esc(job.status)}</span></h3>
+      <h3 class="job-area-titles">${PipelineProgress.renderAreaTitles(job)}
+        <span class="pill ${esc(job.target || "local")}">${esc(job.target || "local")}</span>
+        <span class="pill ${esc(job.status)}">${esc(job.status)}</span></h3>
       <div class="muted job-id">Job ${esc(job.job_id)}</div>
       ${job.approved && job.approved.cloud_cost_text ? `<div class="muted">Approved: ${esc(job.approved.cloud_cost_text)}</div>` : ""}
       ${job.gate_result ? `<div>Deploy gate: <span class="pill ${job.gate_result === "pass" ? "PASS" : "FAIL"}">${esc(job.gate_result)}</span></div>` : ""}
@@ -852,6 +937,8 @@
       ${job.status === "succeeded" && (job.target || "local") === "local" ? `<p><a href="/preview.html" target="_blank" rel="noopener">Open the map preview</a></p>` : ""}`;
     const cancel = $("cancel-btn");
     if (cancel) cancel.addEventListener("click", () => cancelJob(job.job_id, job.status === "running", cancel));
+    el.querySelectorAll("[data-map-region]").forEach((button) =>
+      button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
   }
 
   // ---- start-up --------------------------------------------------------

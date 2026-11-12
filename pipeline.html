@@ -54,6 +54,7 @@
   .job-progress.succeeded progress { accent-color: var(--ok); }
   .job-title { border: 0; padding: 0; background: none; color: var(--sel); text-align: left; font: inherit; cursor: pointer; }
   .job-title:hover { text-decoration: underline; }
+  .job-area-titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
   .job-id { overflow-wrap: anywhere; }
   #queue-updates, #job-updates { margin-bottom: 6px; }
   [data-stale=true] { opacity: .7; }
@@ -142,6 +143,7 @@
       <p class="muted">Running and waiting work. Local builds and cloud builds run in separate lanes,
         each one job at a time; developer and published builds share the one VM.</p>
       <div id="queue-updates" class="warn" role="status"></div>
+      <div id="map-action-status" class="warn" role="status"></div>
       <div id="queue-list"></div>
       </div>
     </details>

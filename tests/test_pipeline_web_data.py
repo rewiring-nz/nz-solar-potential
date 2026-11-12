@@ -129,6 +129,25 @@ def test_locality_errors_never_carry_the_key():
     assert all(r["bbox"] is None for r in results[1:])
 
 
+def test_locality_feature_resolves_grid_parent_and_caches_geometry():
+    region = "queenstown-lakes-district/queenstown/frankton-1001"
+    grid = region + "/grid-0123456789abcdef"
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        data = Path(tmp)
+        fake = FakeLinz()
+        feature = LP.feature_for_region(grid, KEY, data, fake)
+        assert feature["properties"]["region_id"] == region
+        assert feature["properties"]["linz_id"] == 1001
+        assert feature["geometry"]["type"] == "Polygon"
+        assert LP.feature_for_region(region, KEY, data, fake) == feature
+        try:
+            LP.feature_for_region("pilot", KEY, data, fake)
+        except LP.LocalityError as exc:
+            assert exc.status == 404
+        else:
+            raise AssertionError("legacy areas must not be resolved as LINZ localities")
+
+
 def test_grid_cells_are_clipped_to_the_locality_and_configurable():
     region = "queenstown-lakes-district/queenstown/sunshine-bay"
     parent = {
@@ -622,6 +641,7 @@ if __name__ == "__main__":
     for test in (test_catalog_states_and_links, test_bbox_validation,
                  test_localities_drop_water_mark_homonyms_and_cache,
                  test_locality_errors_never_carry_the_key,
+                 test_locality_feature_resolves_grid_parent_and_caches_geometry,
                  test_grid_cells_are_clipped_to_the_locality_and_configurable,
                  test_grid_selection_validation_identity_and_boundary_ownership,
                  test_grid_materialisation_is_parent_scoped_and_resumable,
