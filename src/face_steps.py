@@ -53,6 +53,12 @@ MAX_SLOPE_DEG = 60.0
 RANSAC_TRIES = 200
 SLIVER_M2 = 1.0
 STATS = {"faces": 0, "steps": 0, "folds": 0}
+REJECT = {}   # why a face was not split, by gate, for tuning
+
+
+def _no(why):
+    REJECT[why] = REJECT.get(why, 0) + 1
+    return None
 
 
 def mode():
@@ -117,7 +123,7 @@ def _two_planes(pts):
         return None
     off = np.abs(_res(pts, p1)) > OFF_M
     if off.mean() < MIN_OFF_SHARE or off.sum() < MIN_PIECE_POINTS:
-        return None
+        return _no("few off plane")
     p2 = _ransac(pts[off])
     if p2 is None:
         return None
@@ -199,42 +205,42 @@ def _split_one(f, pc_source, kinds):
     poly = f["geometry"]
     pts = pc_source.points_in_bbox(*poly.bounds, building_only=True)
     if pts is None or len(pts) < MIN_POINTS:
-        return None
+        return _no("few returns")
     pts = pts[shapely.contains_xy(poly, pts[:, 0], pts[:, 1])]
     if len(pts) < MIN_POINTS:
-        return None
+        return _no("few returns")
     one = _inl(pts, _fit(pts))
     tp = _two_planes(pts)
     if tp is None:
-        return None
+        return _no("one plane")
     p1, p2, lab = tp
     cut = _cut(poly, pts, lab)
     if cut is None:
-        return None
+        return _no("no cut")
     planes, inl, n = [], [], []
     for piece in cut:
         pp = pts[shapely.contains_xy(piece, pts[:, 0], pts[:, 1])]
         if (len(pp) < MIN_PIECE_POINTS or piece.area < MIN_PIECE_M2
                 or _width(piece) < MIN_WIDTH_M):
-            return None
+            return _no("small piece")
         # each piece scored on its dominant plane: a piece still holding two
         # levels scores lower here and is split again on the next pass
         pl = _ransac(pp)
         if pl is None or _slope(pl) > MAX_SLOPE_DEG:
-            return None
+            return _no("steep piece")
         planes.append(pl); inl.append(_inl(pp, pl)); n.append(len(pp))
     if min(inl) < MIN_PIECE_INLIER or max(inl) < MIN_INLIER:
-        return None
+        return _no("piece off plane")
     if sum(i * k for i, k in zip(inl, n)) / sum(n) < one + GAIN:
-        return None
+        return _no("small gain")
     gaps = [g for b, pl in zip(cut[1:], planes[1:])
             if (g := _boundary_gap(cut[0], b, planes[0], pl)) is not None]
     if not gaps:
-        return None
+        return _no("no boundary")
     gap = min(gaps)
     kind = "step" if gap >= STEP_MIN_M else ("fold" if gap <= FOLD_MAX_M else None)
     if kind not in kinds:
-        return None
+        return _no("not a step" if gap < STEP_MIN_M else "kind off")
     out = []
     for piece, pl in zip(cut, planes):
         slope, aspect = _slope_aspect(tuple(pl))
