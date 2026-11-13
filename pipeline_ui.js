@@ -95,7 +95,7 @@
   async function loadSnapshots() {
     if (!writable) return;
     try {
-      const data = await api("snapshots");
+      const [data, staging] = await Promise.all([api("snapshots"), api("staging")]);
       const select = $("snapshot-region");
       const previous = select.value;
       select.innerHTML = data.regions.map((region) =>
@@ -110,11 +110,29 @@
           Built: ${esc(item.built_at || "unknown")}. Integrity not checked by listing.</div>
           ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
           <button class="small" data-verify-snapshot="${esc(item.snapshot_id)}"
-            ${snapshotBusy ? "disabled" : ""}>Verify snapshot</button></div>`).join("")
+            ${snapshotBusy ? "disabled" : ""}>Verify snapshot</button>
+          <button class="small" data-stage-snapshot="${esc(item.snapshot_id)}"
+            ${snapshotBusy || item.error ? "disabled" : ""}>Stage locally</button></div>`).join("")
         : '<p class="muted">No completed snapshots. Build a region, then capture it here.</p>';
       $("snapshot-list").querySelectorAll("[data-verify-snapshot]").forEach((button) =>
         button.addEventListener("click", () => runSnapshot(
           `snapshots/${encodeURIComponent(button.dataset.verifySnapshot)}/verify`, {})));
+      $("snapshot-list").querySelectorAll("[data-stage-snapshot]").forEach((button) =>
+        button.addEventListener("click", () => runSnapshot("staging", {
+          snapshot_id: button.dataset.stageSnapshot,
+        })));
+      $("staging-list").innerHTML = staging.staged.length ? staging.staged.map((item) =>
+        `<div class="item"><b>${esc(item.region_id || "Unknown region")}</b>
+          <div class="muted job-id">Staging / source snapshot: ${esc(item.staging_id)}</div>
+          <div class="muted">Staged: ${esc(item.staged_at || "unknown")}<br>
+          Built: ${esc(item.built_at || "unknown")}. Not approved or deployed. Listing is not verification.</div>
+          ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
+          <button class="small" data-verify-staged="${esc(item.staging_id)}"
+            ${snapshotBusy ? "disabled" : ""}>Verify staged copy</button></div>`).join("")
+        : '<p class="muted">No completed staged copies.</p>';
+      $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) =>
+        button.addEventListener("click", () => runSnapshot(
+          `staging/${encodeURIComponent(button.dataset.verifyStaged)}/verify`, {})));
     } catch (error) {
       $("snapshot-status").textContent = `Cannot load snapshots: ${error.message}`;
       $("snapshot-capture").disabled = true;
@@ -126,14 +144,22 @@
     $("snapshot-capture").disabled = true;
     $("snapshot-region").disabled = true;
     $("snapshot-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    $("staging-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
     try {
       let operation;
       do {
         operation = await api(`snapshots/operations/${encodeURIComponent(identifier)}`);
+        const labels = {
+          capture: ["Copying and verifying local snapshot", "Captured and verified"],
+          verify: ["Verifying local snapshot", "Verified snapshot"],
+          stage: ["Copying and verifying local staging", "Staged and verified"],
+          verify_staged: ["Verifying staged copy", "Verified staged copy"],
+        };
+        const label = labels[operation.action] || ["Running operation", "Completed"];
         $("snapshot-status").textContent = operation.status === "running"
-          ? `${operation.action === "capture" ? "Copying and verifying" : "Verifying"} local snapshot...`
+          ? `${label[0]}...`
           : operation.status === "succeeded"
-            ? `${operation.action === "capture" ? "Captured and verified" : "Verified"} ${operation.snapshot_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
+            ? `${label[1]} ${operation.staging_id || operation.snapshot_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
             : `${operation.status}: ${operation.error || "Operation did not complete."}`;
         if (operation.status === "running") await new Promise((resolve) => setTimeout(resolve, 750));
       } while (operation.status === "running");

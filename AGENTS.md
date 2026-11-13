@@ -80,7 +80,13 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   `--snapshot-root`); verification checks inventory, sizes and SHA-256.
   Incomplete copies remain hidden from completed listings. These contain
   emitted regional artifacts only, not raw sources or a standalone release;
-  staging, activation and retention are not implemented by snapshots.
+  approval, activation and retention are not implemented by snapshots.
+- **Stage locally** copies verified snapshots into independent ignored
+  `data/regional_staging/<id>/` (`tools/regional_staging.py`; `--staging-root`
+  overrides it). Source manifests are preserved and checksum-bound to a staging
+  manifest. Repeating staging verifies and reuses the same copy; incomplete
+  copies reserve their IDs and are never listed as complete. Staged verification
+  needs no original snapshot. No deployment, cloud calls or automatic cleanup.
 - The web queue and job details share stage-weighted progress
   (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
   reaches 100%; cloud runs without stage telemetry remain indeterminate.

@@ -59,7 +59,7 @@ class App:
                  api_key_fn: Callable[[], str] | None = None, http_get: Callable | None = None,
                  estimates: E.EstimateStore | None = None, jobs: JobManager | None = None,
                  cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None,
-                 snapshot_root: Path | None = None):
+                 snapshot_root: Path | None = None, staging_root: Path | None = None):
         self.token = token
         self.data = Path(data)
         self.root = Path(root)
@@ -80,7 +80,7 @@ class App:
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
-        self.snapshots = Snapshots(self.data, snapshot_root)
+        self.snapshots = Snapshots(self.data, snapshot_root, staging_root)
 
     def api_key(self) -> str:
         key = self.api_key_fn()
@@ -187,6 +187,13 @@ class WebHandler(RangeHandler):
     def _route(self, method: str, parts: list[str], query: dict, body: dict):
         app = self.app
         head = parts[0] if parts else ""
+        if head == "staging":
+            if parts == ["staging"] and method == "GET":
+                return 200, {"staged": app.snapshots.staging.list()}
+            if parts == ["staging"] and method == "POST":
+                return 202, app.snapshots.start("stage", snapshot_id(body.get("snapshot_id")))
+            if len(parts) == 3 and parts[2] == "verify" and method == "POST":
+                return 202, app.snapshots.start("verify_staged", snapshot_id(parts[1]))
         if head == "snapshots":
             if parts == ["snapshots"] and method == "GET":
                 return 200, {
@@ -430,9 +437,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="print the link instead of opening it")
     parser.add_argument("--snapshot-root", type=Path,
                         help="local snapshot storage (default: data/regional_snapshots)")
+    parser.add_argument("--staging-root", type=Path,
+                        help="local staging storage (default: data/regional_staging)")
     args = parser.parse_args(argv)
     render_docs(ROOT)
-    app = App(secrets.token_urlsafe(24), python=args.python, snapshot_root=args.snapshot_root)
+    app = App(secrets.token_urlsafe(24), python=args.python, snapshot_root=args.snapshot_root,
+              staging_root=args.staging_root)
     try:
         server = make_server(app, args.port)
     except OSError as exc:

@@ -1,12 +1,21 @@
 # Backlog
 
+Completed local snapshot staging: **Stage locally** in Build data verifies a
+snapshot and copies it into a separate local staging store, preserving the
+original manifest with a checksum-bound staging record. Repeated staging reuses
+a verified completed copy; interrupted copies stay incomplete, and corrupted
+copies are never overwritten. Independent staged verification, persistent web
+status and CLI parity are covered by cloud-free tests. No build, approval,
+deployment, cloud access or automatic deletion occurs.
+Remaining: destination comparison, approval, activation and retention.
+
 Completed local regional snapshots: Build data can capture one idle emitted
 region into an independent copy and verify its inventory, sizes and SHA-256
 checksums. Authenticated background operations persist status; capture holds
 the workspace lock, rejects links and detected source changes, and never
 rebuilds, publishes or deletes data. Manifests preserve emitted summaries and
 unknown provenance. CLI parity and cloud-free integrity/HTTP tests are included.
-Remaining: staging, comparisons, approval, activation and retention.
+Remaining: comparisons, approval, activation and retention.
 
 Completed pipeline queue progress UX: shared queue/detail progress and timing,
 current stage and area, readable locality titles, pending-job positions and

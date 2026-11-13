@@ -34,6 +34,7 @@ It prints a link such as
 | `--python PATH` | Interpreter for pipeline runs (default: the one running the panel). |
 | `--no-open-browser` | Print the link without opening it. |
 | `--snapshot-root PATH` | Store local snapshots here instead of ignored `data/regional_snapshots/`. Use an untracked location outside working outputs. |
+| `--staging-root PATH` | Store staged copies here instead of ignored `data/regional_staging/`. Must not overlap snapshot storage or emitted outputs. |
 
 `Ctrl+C` stops the panel. Running builds are cancelled first and queued
 ones are dropped. Cancelling a cloud build stops the local command; the VM
@@ -90,7 +91,7 @@ because it owns the port if its command is unrelated.
   After a process crash, inspect the operation and workspace-lock owner before
   manually removing a stale lock; do not remove a lock held by another process.
   Treat completed snapshots as read-only; editing them causes verification
-  failure. Publication and retention are later steps.
+  failure. Approval, publication and retention are later steps.
 
   The same operations are available without the panel:
 
@@ -103,6 +104,39 @@ because it owns the port if its command is unrelated.
   `--snapshot-root PATH` selects the same custom storage for either entry point.
   Existing emitted data is sufficient; snapshot operations do not require LINZ
   or cloud credentials.
+
+- **Local staging** (inside **Local snapshots**): select **Stage locally** on a
+  snapshot. The server verifies the source, copies it into
+  `data/regional_staging/<snapshot-id>/snapshot/`, checks source stability and
+  verifies the copy before exposing it as complete. A separate staging manifest
+  records the source snapshot ID, source manifest checksum and staging time;
+  original metadata and unknown values are preserved byte-for-byte.
+  **Verify staged copy** works even if the working build or original snapshot is
+  no longer present. Staging is always local and is not approval, upload to the
+  cloud or deployment; the map and published configuration remain unchanged.
+
+  Repeating **Stage locally** verifies and reuses an identical completed copy
+  rather than duplicating it. Corrupted staged copies or changed source metadata
+  fail explicitly and are never overwritten. Failed/interrupted transfers remain
+  as `.incomplete-<snapshot-id>/` and reserve that ID; automatic resume and cleanup
+  are not implemented. Inspect the error and confirm no copy is running before
+  manually removing only that incomplete directory. Do not edit completed copies.
+  Source and staging consume separate disk space. Partial selections remain
+  partial data; staging does not qualify them for publication.
+
+  Staging shares the panel's persistent operation status and refresh/reconnect
+  controls. The same operations are available on the command line:
+
+  ```sh
+  .venv/bin/python tools/regional_staging.py stage <snapshot-id>
+  .venv/bin/python tools/regional_staging.py list
+  .venv/bin/python tools/regional_staging.py verify <snapshot-id>
+  ```
+
+  Pass matching `--snapshot-root PATH` and `--staging-root PATH` options when
+  using custom stores. Keep custom locations outside Git and working outputs.
+  Only checksum/inventory work and file copies run; no source acquisition,
+  geometry, solar processing or workspace build lock is needed for staging.
 
 - **New build**: search for a suburb or locality, or zoom in to level 10 or
   closer and click areas on the map. **Existing data for this area** reports

@@ -210,6 +210,19 @@ def test_snapshot_web_workflow():
             assert result["status"] == "succeeded", result
             assert result["artifact_count"] == 2
             identifier = result["snapshot_id"]
+            assert c.request("POST", "/api/staging", {"snapshot_id": identifier}, token=None)[0] == 403
+            assert c.request("POST", "/api/staging", {"snapshot_id": identifier},
+                             headers={"Origin": "http://evil.example"})[0] == 403
+            assert c.request("POST", "/api/staging", {"snapshot_id": "../bad"})[0] == 400
+            code, operation = c.request("POST", "/api/staging", {"snapshot_id": identifier})
+            assert code == 202, operation
+            staged = wait_operation(operation["operation_id"])
+            assert staged["status"] == "succeeded" and staged["staging_id"] == identifier, staged
+            code, operation = c.request("POST", "/api/staging", {"snapshot_id": identifier})
+            assert code == 202
+            assert wait_operation(operation["operation_id"])["status"] == "succeeded"
+            code, listing = c.request("GET", "/api/staging")
+            assert code == 200 and len(listing["staged"]) == 1
             (source / "buildings.pmtiles").write_bytes(b"new build")
             code, operation = c.request("POST", f"/api/snapshots/{identifier}/verify", {})
             assert code == 202
@@ -220,6 +233,15 @@ def test_snapshot_web_workflow():
             assert code == 202
             result = wait_operation(operation["operation_id"])
             assert result["status"] == "failed" and "verification failed" in result["error"]
+            code, operation = c.request("POST", f"/api/staging/{identifier}/verify", {})
+            assert code == 202
+            assert wait_operation(operation["operation_id"])["status"] == "succeeded"
+            staged_artifact = (Path(tmp) / "data" / "regional_staging" / identifier
+                               / "snapshot" / "artifacts" / "buildings.pmtiles")
+            staged_artifact.write_bytes(b"corruption")
+            code, operation = c.request("POST", f"/api/staging/{identifier}/verify", {})
+            assert code == 202
+            assert wait_operation(operation["operation_id"])["status"] == "failed"
             lock = Path(tmp) / "data" / "pipeline-workspace.lock"
             lock.mkdir()
             try:
@@ -227,7 +249,7 @@ def test_snapshot_web_workflow():
             finally:
                 lock.rmdir()
             code, html = c.request("GET", "/pipeline.html", token=None)
-            assert code == 200 and b'id="snapshot-capture"' in html
+            assert code == 200 and b'id="snapshot-capture"' in html and b'id="staging-list"' in html
         finally:
             server.shutdown()
             server.server_close()
