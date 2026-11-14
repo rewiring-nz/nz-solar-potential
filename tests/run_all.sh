@@ -108,6 +108,7 @@ run "quickstart map preview" $PY tests/test_quickstart_map.py
 run "shared build plan"     $PY tests/test_build_plan.py
 run "pipeline web panel data" $PY tests/test_pipeline_web_data.py
 run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
+run "pipeline per-area queue" $PY tests/test_pipeline_web_batch.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "regional snapshots"     $PY tests/test_regional_snapshots.py
 run "regional staging"       $PY tests/test_regional_staging.py

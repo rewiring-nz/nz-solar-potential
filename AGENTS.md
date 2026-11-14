@@ -109,7 +109,12 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   Disconnected views retain last-known cards with a warning instead of
   displaying stale progress as live.
 - The web pipeline can select a user-sized bounding-box grid (2x2 through
-  10x10, default 4x4) within a LINZ locality for one local-only pipeline run.
+  10x10, default 4x4) within a LINZ locality. Web submissions enqueue one
+  independently cancellable job per selected region or cell, sequentially in
+  its target lane (`JobManager.start_batch`). Cells are materialised separately
+  while retaining the whole grid for stable building ownership. Cloud estimates
+  sum per-job allowances. The last job in a multi-area local submission combines
+  existing emitted outputs once without rebuilding geometry/yields.
   Grid selection uses the LINZ locality boundary and needs no additional API
   key or downloaded dataset. Selections have nested identities and outputs;
   acquisition timings are per-run in `data/pipeline_runs/` (outline preparation

@@ -283,8 +283,10 @@ because it owns the port if its command is unrelated.
   The estimate reports the selected building count, the sum of disjoint
   buffered acquisition footprints, download estimate, runtime, disk estimate
   and warnings. These are planning estimates, not limits. A partial-area build
-  runs locally only; it cannot start a Developer or Published build. It runs
-  the normal pipeline as one work area, not one pipeline per selected cell.
+  runs locally only; it cannot start a Developer or Published build. Each
+  selected cell is estimated and built as its own work area and queue job.
+  The estimate lists each cell separately and totals their costs/resources;
+  shared source caches may reduce actual downloads on later jobs.
 
   Buildings are selected as whole LINZ building-outline features. For each
   outline, the pipeline finds its representative point in EPSG:2193 and assigns
@@ -293,24 +295,32 @@ because it owns the port if its command is unrelated.
   clip buildings and ties cannot duplicate them. This is a stable rule for an
   identical parent, grid size and selection.
 
-  A selection has a deterministic ID below its parent:
+  Each selected cell has a deterministic selection ID below its parent:
   `data/regions/<parent>/grid-<16-hex-id>/`. Its `selection.json`
   records the parent, selected IDs, boundary dataset/version and geometry,
   ownership rule, building IDs and acquisition footprints. Pipeline artefacts
   are written below that selection directory, and emitted artefacts below the
   matching `data/out/` directory; the parent locality's files are not changed.
-  The run combines only the selection into the local map data, so that map
-  output represents the selected work area, not complete parent coverage.
+  Each run initially combines its own cell into the local map data. The last
+  job of a multi-area local submission combines existing emitted regions/cells
+  once, without rerunning geometry or yields. Cancelling that final job also
+  cancels its combine. Partial outputs remain partial, not complete parent coverage.
   Selections are excluded from normal complete-area listings and are never
   published as complete coverage.
 
   For Developer and Published the estimate also shows the Google Cloud
-  cost (see [Cloud builds](#cloud-builds)). The Start button is enabled after
-  checking the cost-acknowledgment box. Local builds start directly from the
-  button. The paid AI referee is off unless you tick it; the estimate shows
-  its upper cost.
+  cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
+  VM/startup/storage allowances rather than assuming a single combined run.
+  The queue button is enabled after checking the cost-acknowledgment box.
+  Local builds queue directly from **Add to queue**. The paid AI referee is
+  off unless you tick it; the estimate shows its upper cost.
 - **Queue**: each lane's running and waiting jobs, titled by locality rather
-  than job ID. Running cards show
+  than job ID. Submitting two regions creates two jobs; submitting two grid
+  cells creates two jobs, rather than one grouped selection. Jobs from a
+  submission are added together in order (grid cells in row/column ID order)
+  and run sequentially within their lane. Each job has independent progress,
+  logs and cancellation; failure of one does not prevent the next from running.
+  Existing multi-area job history remains readable. Running cards show
   the current stage and area, approximate progress, elapsed time, estimated
   remaining time and the age of the last log/status activity. Waiting jobs
   show their lane position, wait reason and estimated runtime, not a moving

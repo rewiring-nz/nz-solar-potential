@@ -11,9 +11,9 @@
   const QUEUE_POLL_MS = 5000;
   const VM_POLL_MS = 60000;
   const TARGETS = {
-    local: { label: "Local", start: "Start build" },
-    developer: { label: "Developer", start: "Start developer build on the VM" },
-    published: { label: "Published", start: "Build, gate and publish" },
+    local: { label: "Local", start: "Add to queue" },
+    developer: { label: "Developer", start: "Add developer builds to queue" },
+    published: { label: "Published", start: "Queue builds, gate and publish" },
   };
 
   const tokenMatch = location.hash.match(/token=([A-Za-z0-9_-]+)/);
@@ -939,7 +939,7 @@
   function renderEstimate(est) {
     const t = est.totals;
     const rows = est.regions.map((r) => `<tr>
-        <td>${esc(r.grid_size ? `${selectedParent.name} · ${r.selection_count} grid cells (${r.grid_size}×${r.grid_size})`
+        <td>${esc(r.grid_size ? `${selectedParent.name} · ${r.grid_ids.join(", ")} (${r.grid_size}×${r.grid_size})`
                                       : selected.get(r.region) || r.region)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
           ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}</td>
@@ -961,7 +961,8 @@
       ${(est.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
       <p class="muted">${esc(est.disclaimer)}</p>
       ${blocked ? "" : `<div class="confirm">
-        ${est.target === "local" ? "<p>Start this build on this computer?</p>"
+        <p>${fmtInt(est.regions.length)} separate job(s), executed one after another in the target queue. Each can be cancelled independently.</p>
+        ${est.target === "local" ? "<p>Queue these builds on this computer?</p>"
           : `<label><input type="checkbox" id="cloud-cost-ack"> I understand this build may cost up to NZD ${esc(est.cloud.cost_nzd)}; this is an estimate, not a spending cap.${est.target === "published" ? " It will publish to the live map if the gate passes." : ""}</label>`}
         <p><button class="primary" id="start-btn" disabled>${esc(TARGETS[est.target].start)}</button></p>
       </div>`}`;
@@ -994,7 +995,7 @@
   async function startJob() {
     $("start-btn").disabled = true;
     try {
-      const res = await api("jobs", { method: "POST", body: {
+      await api("jobs", { method: "POST", body: {
         estimate_id: currentEstimate.estimate_id,
         include_imagery: currentEstimate.options.include_imagery,
         paid_referee: currentEstimate.options.paid_referee,

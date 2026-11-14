@@ -1,5 +1,13 @@
 # Backlog
 
+Completed per-area web build queue: each selected region or locality grid cell
+is submitted as a separate sequential job, with independent progress, logs and
+cancellation. Grid estimates materialise one cell per work area while preserving
+whole-grid ownership rules; per-job source choices, timing and cost approvals
+are pinned. Cloud estimates sum separate-job allowances. Multi-area local batches
+combine existing emitted outputs once at the end without geometry/yield rebuilds.
+Queue/HTTP regression tests cover order, failures, cancellation and cell isolation.
+
 Completed local publication lifecycle: Build data assembles immutable candidates
 from staged complete regions, carries forward unrelated active regions, pins
 frontend/data, compares metadata with traffic-light states, records checksum- and

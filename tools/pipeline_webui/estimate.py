@@ -19,6 +19,7 @@ import shutil
 import statistics
 import threading
 import time
+from decimal import Decimal
 from pathlib import Path
 from typing import Callable
 
@@ -252,38 +253,36 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         if not set(selection["grid_ids"]).issubset(found):
             raise EstimateError("selection contains an area outside the selected locality", 409)
         from src.grid_selection import selection_id
-        area = selection_id(selection["parent_region"], selection["grid_ids"],
-                            selection["grid_size"])
-        request_path = web_dir(data) / "selections" / f"{file_slug(area)}.json"
-        request = {
-            "parent_region": selection["parent_region"],
-            "parent_linz_id": selection["parent_linz_id"],
-            "grid_size": selection["grid_size"],
-            "grid_ids": selection["grid_ids"],
-            "areas": features,
-        }
-        write_json_atomic(request_path, request)
         from tools.pipeline_webui import geo_worker
-        resolved = geo_worker.run(
-            ["selection", str(request_path), str(data)],
-            env={"LINZ_API_KEY": api_key_fn()})
-        size = {"buildings": resolved["buildings"], "bbox": resolved["bbox"],
-                "bbox_km2": resolved.get("acquisition_km2", resolved["bbox_km2"]),
-                "source": "grid selection"}
-        cache_dir = data
-        row = estimate_region(resolved["region"], size,
-                              survey_fn(size["bbox"], resolved["region"]),
-                              cache_dir, defaults, spb, include_imagery)
-        row["selection_count"] = resolved["selection_count"]
-        row["grid_size"] = selection["grid_size"]
-        row["grid_ids"] = selection["grid_ids"]
-        row["parent_region"] = selection["parent_region"]
-        row["acquisition_footprints"] = resolved.get("acquisition_footprints", [])
-        rows.append(row)
+        for grid_id in selection["grid_ids"]:
+            area = selection_id(selection["parent_region"], [grid_id], selection["grid_size"])
+            request_path = web_dir(data) / "selections" / f"{file_slug(area)}.json"
+            request = {
+                "parent_region": selection["parent_region"],
+                "parent_linz_id": selection["parent_linz_id"],
+                "grid_size": selection["grid_size"],
+                "grid_ids": [grid_id],
+                # All cells define boundary ownership, even for a one-cell job.
+                "areas": features,
+            }
+            write_json_atomic(request_path, request)
+            resolved = geo_worker.run(
+                ["selection", str(request_path), str(data)],
+                env={"LINZ_API_KEY": api_key_fn()})
+            size = {"buildings": resolved["buildings"], "bbox": resolved["bbox"],
+                    "bbox_km2": resolved.get("acquisition_km2", resolved["bbox_km2"]),
+                    "source": "grid selection"}
+            row = estimate_region(resolved["region"], size,
+                                  survey_fn(size["bbox"], resolved["region"]),
+                                  data, defaults, spb, include_imagery)
+            row.update(selection_count=1, grid_size=selection["grid_size"], grid_ids=[grid_id],
+                       parent_region=selection["parent_region"],
+                       acquisition_footprints=resolved.get("acquisition_footprints", []))
+            rows.append(row)
         selection_info = {"parent_region": selection["parent_region"],
                           "grid_ids": selection["grid_ids"],
                           "grid_size": selection["grid_size"],
-                          "selection_id": resolved["region"]}
+                          "selection_ids": [row["region"] for row in rows]}
     else:
         regions = validate_regions(regions)
         # The VM fetches its own inputs, so a cloud estimate counts nothing as cached here.
@@ -310,6 +309,17 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
     if is_cloud:
         free_gb = None
         cloud_block = cloud_estimate(cloud, target, totals["total_s"])
+        for row in rows:
+            row["cloud"] = {**cloud_block, **cloud.cost(target, row["total_s"])}
+        if len(rows) > 1:
+            amount = sum(Decimal(row["cloud"]["cost_nzd"]) for row in rows)
+            cloud_block.update(
+                cost_nzd=str(amount), vm_hours=sum(row["cloud"]["vm_hours"] for row in rows),
+                cost_text=(f"Estimated Google Cloud cost: up to NZD {amount} for "
+                           f"{len(rows)} separate sequential jobs. This is an estimate, not a "
+                           "spending cap; actual charges can be higher."),
+                cost_basis="Each job includes its own VM/startup/storage allowance. " +
+                           " ".join(f"{row['region']}: {row['cloud']['cost_basis']}" for row in rows))
         warnings.extend(cloud_block.pop("warnings"))
         blockers.extend(cloud_block["blockers"])
     else:

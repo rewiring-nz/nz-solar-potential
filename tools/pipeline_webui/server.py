@@ -322,12 +322,12 @@ class WebHandler(RangeHandler):
             blockers = self.app.cloud.publish_blockers()
             if blockers:
                 raise HttpError(409, "cannot publish: " + " ".join(blockers))
-        job_id = self.app.jobs.start(
+        job_ids = self.app.jobs.start_batch(
             record, paid_referee=paid,
             cloud_cost_acknowledged=(target == "local"
                                      or body.get("cloud_cost_acknowledged") is True))
         RC.invalidate()
-        return {"job_id": job_id, "status": "queued"}
+        return {"job_id": job_ids[0], "job_ids": job_ids, "status": "queued"}
 
     def _stream(self, job_id: str) -> None:
         """Server-sent events: `log` chunks, then `status` when anything changes."""
