@@ -112,7 +112,6 @@ run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
 run "pipeline per-area queue" $PY tests/test_pipeline_web_batch.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "pipeline area catalogue, status" $PY tests/test_pipeline_web_catalog.py
-run "regional snapshots"     $PY tests/test_regional_snapshots.py
 run "regional staging"       $PY tests/test_regional_staging.py
 run "local releases"         $PY tests/test_local_releases.py
 run "local release HTTP"     $PY tests/test_local_release_web.py

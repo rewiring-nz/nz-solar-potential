@@ -21,7 +21,7 @@ import argparse
 import hmac
 import http.server
 import json
-import re
+import threading
 import secrets
 import signal
 import sys
@@ -43,9 +43,9 @@ from tools.pipeline_webui import national_catalog as NC
 from tools.pipeline_webui import region_status as RS
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
-from tools.pipeline_webui.snapshots import Snapshots
-from tools.regional_snapshots import SnapshotError, snapshot_id
-from src.region_ids import list_regions, validate
+from tools.pipeline_webui.artifacts import Artifacts
+from tools.artifact_common import ArtifactError, artifact_id
+from src.region_ids import is_grid_selection_id, validate
 from tools.pipeline_webui.common import DATA, ROOT, git_short
 from tools.pipeline_webui.jobs import JobError, JobManager, TERMINAL
 
@@ -55,6 +55,33 @@ STREAM_POLL_S = 0.5
 STREAM_MAX_S = 6 * 3600
 
 
+def covers(region: str, other: str) -> bool:
+    """True when `other` is `region` or one of its grid cells."""
+    return other == region or other.startswith(region + "/grid-")
+
+
+def stage_refusal(app: "App", region: str) -> str | None:
+    """Why `region` cannot be staged now, or None.
+
+    Staging copies data/out/<region>, which only local builds write, so only
+    the local lane's queued and running jobs block it. Cloud builds never
+    change local outputs."""
+    if is_grid_selection_id(region):
+        return "Grid cells are local build pieces; stage whole regions only"
+    if not (app.data / "out" / region / "summary.json").is_file():
+        return f"{region} is not built"
+    for job in app.jobs.queue()["local"]["jobs"]:
+        if any(covers(region, r) for r in job.get("regions") or []):
+            return f"{region} is in the build queue; stage it once its job finishes or is removed"
+    row = RS.status(app.data, app.artifacts, use_cache=False)["regions"].get(region) or {}
+    latest = row.get("latest_local_status")
+    if latest not in (None, "succeeded"):
+        return f"{region}'s latest local build {latest}; rebuild it first"
+    if region in app.artifacts.staging_regions():
+        return f"{region} is already being staged"
+    return None
+
+
 class App:
     """Everything a request handler needs, injectable for tests."""
 
@@ -62,7 +89,7 @@ class App:
                  api_key_fn: Callable[[], str] | None = None, http_get: Callable | None = None,
                  estimates: E.EstimateStore | None = None, jobs: JobManager | None = None,
                  cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None,
-                 snapshot_root: Path | None = None, staging_root: Path | None = None,
+                 staging_root: Path | None = None,
                  release_root: Path | None = None):
         self.token = token
         self.data = Path(data)
@@ -84,7 +111,10 @@ class App:
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
-        self.snapshots = Snapshots(self.data, snapshot_root, staging_root, release_root, self.root, python)
+        self.artifacts = Artifacts(self.data, staging_root, release_root, self.root, python)
+        # Held while checking and starting a staging copy or queueing a build,
+        # so a region cannot be queued and staged at the same time.
+        self.stage_gate = threading.Lock()
         self.catalog_refresher = NC.Refresher(self.data, self.api_key_fn, self.http_get)
 
     def api_key(self) -> str:
@@ -203,7 +233,7 @@ class WebHandler(RangeHandler):
                 self._send_json(status, payload)
         except HttpError as exc:
             self._send_json(exc.status, {"error": str(exc)})
-        except (E.EstimateError, LP.LocalityError, JobError, SnapshotError, NC.CatalogError) as exc:
+        except (E.EstimateError, LP.LocalityError, JobError, ArtifactError, NC.CatalogError) as exc:
             self._send_json(exc.status, {"error": str(exc)})
         except Exception as exc:  # never echo text that could carry a keyed URL
             self._send_json(500, {"error": f"server error ({type(exc).__name__})"})
@@ -234,43 +264,33 @@ class WebHandler(RangeHandler):
                 if method == "GET":
                     return 200, app.catalog_refresher.status()
             if parts == ["catalog", "status"] and method == "GET":
-                return 200, RS.status(app.data, app.snapshots)
+                return 200, RS.status(app.data, app.artifacts)
         if head == "releases":
             if len(parts) == 1 and method == "GET":
-                return 200, app.snapshots.releases.list()
+                return 200, app.artifacts.releases.list()
             if len(parts) == 4 and parts[1] == "incomplete" and parts[3] == "log" and method == "GET":
-                return 200, app.snapshots.releases.incomplete_log(parts[2])
+                return 200, app.artifacts.releases.incomplete_log(parts[2])
             actions = {"create", "verify", "compare", "approve", "activate", "publish", "rollback", "policy", "cleanup"}
             if len(parts) == 2 and parts[1] in actions and method == "POST":
-                return 202, app.snapshots.start(f"release_{parts[1]}", body)
+                return 202, app.artifacts.start(f"release_{parts[1]}", body)
         if head == "staging":
             if parts == ["staging"] and method == "GET":
-                return 200, {"staged": app.snapshots.staging.list()}
+                return 200, {"staged": app.artifacts.staging.list()}
             if parts == ["staging"] and method == "POST":
-                return 202, app.snapshots.start("stage", snapshot_id(body.get("snapshot_id")))
-            if len(parts) == 3 and parts[2] == "verify" and method == "POST":
-                return 202, app.snapshots.start("verify_staged", snapshot_id(parts[1]))
-        if head == "snapshots":
-            if parts == ["snapshots"] and method == "GET":
-                return 200, {
-                    "snapshots": app.snapshots.store.list(),
-                    "regions": list_regions(app.data / "out", "summary.json"),
-                }
-            if parts == ["snapshots"] and method == "POST":
-                if app.jobs.active_jobs().get("local") or app.jobs.workspace_owner() is not None:
-                    raise HttpError(409, "Wait for the local build or snapshot to finish before capturing")
                 region = body.get("region")
                 try:
                     validate(region)
                 except ValueError as exc:
                     raise HttpError(400, str(exc)) from exc
-                if re.search(r"/grid-[0-9a-f]{16}$", region):
-                    raise HttpError(400, "Grid cells are local build pieces; snapshot and stage whole regions only")
-                return 202, app.snapshots.start("capture", region)
-            if len(parts) == 3 and parts[1] == "operations" and method == "GET":
-                return 200, app.snapshots.get(parts[2])
+                with app.stage_gate:
+                    refusal = stage_refusal(app, region)
+                    if refusal:
+                        raise HttpError(409, refusal)
+                    return 202, app.artifacts.start("stage", region)
             if len(parts) == 3 and parts[2] == "verify" and method == "POST":
-                return 202, app.snapshots.start("verify", snapshot_id(parts[1]))
+                return 202, app.artifacts.start("verify_staged", artifact_id(parts[1]))
+        if head == "operations" and len(parts) == 2 and method == "GET":
+            return 200, app.artifacts.get(parts[1])
         if head == "layers" and method == "GET" and len(parts) == 1:
             source = (query.get("source") or ["local"])[0]
             if source == "local":
@@ -370,10 +390,17 @@ class WebHandler(RangeHandler):
             blockers = self.app.cloud.publish_blockers()
             if blockers:
                 raise HttpError(409, "cannot publish: " + " ".join(blockers))
-        job_ids = self.app.jobs.start_batch(
-            record, paid_referee=paid,
-            cloud_cost_acknowledged=(target == "local"
-                                     or body.get("cloud_cost_acknowledged") is True))
+        with self.app.stage_gate:
+            if target == "local":
+                staging = self.app.artifacts.staging_regions()
+                busy = [r["region"] for r in record.get("regions") or []
+                        if any(covers(s, r["region"]) for s in staging)]
+                if busy:
+                    raise HttpError(409, f"{busy[0]} is being staged; queue it once staging finishes")
+            job_ids = self.app.jobs.start_batch(
+                record, paid_referee=paid,
+                cloud_cost_acknowledged=(target == "local"
+                                         or body.get("cloud_cost_acknowledged") is True))
         RC.invalidate()
         RS.invalidate()
         return {"job_id": job_ids[0], "job_ids": job_ids, "status": "queued"}
@@ -434,7 +461,7 @@ class WebHandler(RangeHandler):
             return True
         try:
             if path in ("/local-deploy", "/local-deploy/"):
-                active = self.app.snapshots.releases.state()["active"]
+                active = self.app.artifacts.releases.state()["active"]
                 if not active:
                     raise HttpError(404, "No local release has been activated")
                 self.send_response(302)
@@ -444,12 +471,12 @@ class WebHandler(RangeHandler):
                 self.end_headers()
                 return True
             parts = urllib.parse.unquote(path).split("/")
-            identifier = snapshot_id(parts[2])
-            manifest = self.app.snapshots.releases.manifest(identifier)
+            identifier = artifact_id(parts[2])
+            manifest = self.app.artifacts.releases.manifest(identifier)
             relative = "/".join(parts[3:]) or "rooftop-solar.html"
             if relative not in {item["path"] for item in manifest["site_inventory"]}:
                 raise HttpError(404, "File is not part of this release")
-            site = self.app.snapshots.releases.path(identifier) / "site"
+            site = self.app.artifacts.releases.path(identifier) / "site"
             target = site / relative
             if any(p.is_symlink() for p in (target, *target.parents)) or not target.resolve().is_relative_to(site):
                 raise HttpError(404, "Invalid release file")
@@ -465,7 +492,7 @@ class WebHandler(RangeHandler):
                     super().do_GET()
             finally:
                 self.directory, self.path = previous_directory, previous_path
-        except (SnapshotError, HttpError, OSError, ValueError) as exc:
+        except (ArtifactError, HttpError, OSError, ValueError) as exc:
             self.send_error(getattr(exc, "status", 404), str(exc))
         return True
 
@@ -497,6 +524,7 @@ def make_server(app: App, port: int = DEFAULT_PORT,
     handler = lambda *a, **kw: handler_cls(*a, directory=str(app.root), **kw)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     server.daemon_threads = True
+    server.app = app
     return server
 
 
@@ -543,15 +571,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="interpreter for pipeline runs (default: this one)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="print the link instead of opening it")
-    parser.add_argument("--snapshot-root", type=Path,
-                        help="local snapshot storage (default: data/regional_snapshots)")
     parser.add_argument("--staging-root", type=Path,
                         help="local staging storage (default: data/regional_staging)")
     parser.add_argument("--release-root", type=Path,
                         help="local release storage (default: data/local_releases)")
     args = parser.parse_args(argv)
     render_docs(ROOT)
-    app = App(secrets.token_urlsafe(24), python=args.python, snapshot_root=args.snapshot_root,
+    app = App(secrets.token_urlsafe(24), python=args.python,
               staging_root=args.staging_root, release_root=args.release_root)
     try:
         server = make_server(app, args.port)

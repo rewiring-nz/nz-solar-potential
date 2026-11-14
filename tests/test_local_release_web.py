@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from test_local_releases import POLICY, emitted, fixture_assembler
 from test_pipeline_web_server import _serve
-from tools.regional_snapshots import SnapshotStore
 from tools.regional_staging import StagingStore
 from tools.local_releases import AssemblyError, LocalReleases
 
@@ -25,8 +24,7 @@ class ReleaseWebTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name).resolve()
         self.data = self.root / "data"
-        self.snapshots = SnapshotStore(self.data)
-        self.staging = StagingStore(self.snapshots)
+        self.staging = StagingStore(self.data)
         # Only assembly is replaced; HTTP, copying, verification, review and switching are real.
         self.patcher = patch.object(LocalReleases, "_assemble", staticmethod(fixture_assembler))
         self.patcher.start()
@@ -40,7 +38,7 @@ class ReleaseWebTests(unittest.TestCase):
         self.assertEqual(code, 202, result)
         for _ in range(200):
             code, operation = self.client.request(
-                "GET", "/api/snapshots/operations/" + result["operation_id"])
+                "GET", "/api/operations/" + result["operation_id"])
             self.assertEqual(code, 200)
             if operation["status"] != "running":
                 return operation
@@ -54,9 +52,7 @@ class ReleaseWebTests(unittest.TestCase):
 
     def stage(self, region="pilot", building="1"):
         emitted(self.data, region, building)
-        identifier = self.snapshots.capture(region)["snapshot_id"]
-        self.staging.stage(identifier)
-        return identifier
+        return self.staging.stage(region)["staging_id"]
 
     def test_api_review_switch_rollback_and_pinned_preview(self):
         self.assertEqual(self.client.request("GET", "/api/releases", token=None)[0], 403)
@@ -118,8 +114,8 @@ class ReleaseWebTests(unittest.TestCase):
 
         with patch.object(LocalReleases, "_assemble", staticmethod(fail)):
             # The server retains its bound assembler; create a fresh manager with the failure fixture.
-            from tools.pipeline_webui.snapshots import Snapshots
-            manager = Snapshots(self.data, frontend=ROOT)
+            from tools.pipeline_webui.artifacts import Artifacts
+            manager = Artifacts(self.data, frontend=ROOT)
             identifier = self.stage()
             operation = manager.start("release_create", {"staging_ids": [identifier], "generation": 0})
             for _ in range(200):

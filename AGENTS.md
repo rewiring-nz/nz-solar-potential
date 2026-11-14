@@ -73,29 +73,27 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   `pipeline_tree.js` (`tests/test_pipeline_tree.js`); a sticky selection bar
   offers Build…, Push to staging (local, regions only), Cancel queued and
   Clear; **Queue** and **Jobs** sit over the map. Catalogue refresh,
-  snapshots and local releases are on the **⚙ Config** view. The tree comes
+  local staging and local releases are on the **⚙ Config** view. The tree comes
   from a prebuilt national catalogue
   (`python -m tools.pipeline_webui.national_catalog`, about 80 s, 3,227
   localities with buildings; water types dropped) cached in ignored
-  `data/pipeline_web/cache/`; per-area status joins runs, jobs, snapshots,
+  `data/pipeline_web/cache/`; per-area status joins runs, jobs,
   staging and selections in `tools/pipeline_webui/region_status.py`
   (`/api/catalog*`, `tests/test_pipeline_web_catalog.py`). The former
   `data-explorer.html` URL redirects to this page. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
-- **Local snapshots** in Build data preserve an emitted region without
-  rebuilding or publishing (`tools/regional_snapshots.py`,
-  `tools/pipeline_webui/snapshots.py`). Capture uses the workspace lock and
-  copies into ignored `data/regional_snapshots/<id>/` (configurable with
-  `--snapshot-root`); verification checks inventory, sizes and SHA-256.
-  Incomplete copies remain hidden from completed listings. These contain
-  emitted regional artifacts only, not raw sources or a standalone release;
-  approval, activation and retention are not implemented by snapshots.
-- **Stage locally** copies verified snapshots into independent ignored
-  `data/regional_staging/<id>/` (`tools/regional_staging.py`; `--staging-root`
-  overrides it). Source manifests are preserved and checksum-bound to a staging
-  manifest. Repeating staging verifies and reuses the same copy; incomplete
-  copies reserve their IDs and are never listed as complete. Staged verification
-  needs no original snapshot. No deployment, cloud calls or automatic cleanup.
+- **Push to staging** copies a built region's `data/out/<region>/` straight
+  into a frozen, checksummed copy in ignored
+  `data/regional_staging/<id>/artifacts/` (`tools/regional_staging.py`,
+  `tools/pipeline_webui/artifacts.py`; `--staging-root` overrides it). There
+  is no separate snapshot step. A region can be staged when it is built, its
+  latest local build succeeded and no queued or running local job covers it
+  or its cells (`stage_refusal` in `tools/pipeline_webui/server.py`); other
+  builds may run, and a region being staged cannot be queued. The copy takes
+  a per-region lock, not the workspace lock, and fails if the source
+  inventory changes during the copy. Grid cells are never staged. Older
+  `<id>/snapshot/` copies stay readable; `data/regional_snapshots/` is unused.
+  No deployment, cloud calls or automatic cleanup.
 - **Local releases** in Build data (`tools/local_releases.py`) assemble verified
   complete staged regions into ignored `data/local_releases/` (`--release-root`).
   Unchanged active regions are carried forward. The frozen-input combine mode

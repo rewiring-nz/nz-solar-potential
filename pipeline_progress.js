@@ -95,8 +95,17 @@
     else if (job.eta_s != null) parts.push(fmtDur(job.eta_s) + " left");
     return parts.join(" · ");
   }
+  // Short local finish time for collapsed history rows, e.g. "14 Nov 20:41".
+  function finishedLabel(job) {
+    const when = job.finished || job.created;
+    const d = when ? new Date(typeof when === "number" ? when * 1000 : when) : null;
+    if (!d || isNaN(d)) return "";
+    return d.toLocaleDateString("en-NZ", { day: "numeric", month: "short" }) + " " +
+      d.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
+  }
   function renderQueueCard(job, active, writable, now, open) {
     const done = terminal(job);
+    const when = done ? finishedLabel(job) : "";
     const cost = job.approved && job.approved.cloud_cost_nzd && job.approved.cloud_cost_nzd !== "0" ?
       "Approved estimate: up to NZD " + esc(job.approved.cloud_cost_nzd) : "";
     const preview = safeLink(job.preview_url) ||
@@ -105,7 +114,8 @@
     return `<details class="qrow ${esc(job.status)}" data-qjob="${esc(job.job_id)}"${open ? " open" : ""}>
       <summary title="${esc(jobTitle(job))}">
         <span class="qname">${esc(jobTitle(job))}</span>
-        <span class="qsum">${esc(queueSummary(job))}</span>
+        <span class="qsum">${esc(done ? (job.elapsed_s != null ? fmtDur(job.elapsed_s) : "") : queueSummary(job))}</span>
+        ${when ? `<span class="qsum" title="${esc(job.finished || job.created)}">${esc(when)}</span>` : ""}
         ${targetName !== "local" ? `<span class="pill ${esc(targetName)}">${esc(targetName)}</span>` : ""}
         <span class="pill ${esc(job.status)}">${esc(job.status)}</span>
         ${writable && !done ? `<button class="small" data-q="${esc(job.job_id)}"
@@ -123,7 +133,7 @@
           `<a href="${safeLink(r.url)}" target="_blank" rel="noopener">${esc(regionTitle(r.region))} report</a>`).join("")}
       </div></div></details>`;
   }
-  const api = { jobTitle, matchingJobsForRegion, queueSummary, renderAreaTitles, renderProgress, renderQueueCard };
+  const api = { finishedLabel, jobTitle, matchingJobsForRegion, queueSummary, renderAreaTitles, renderProgress, renderQueueCard };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PipelineProgress = api;
 })(globalThis);

@@ -147,13 +147,17 @@ def _sortable(stamp) -> str:
     return str(stamp or "").replace("+00:00", "Z")
 
 
-def _staging(snapshots) -> tuple[dict[str, dict], dict[str, str]]:
+def _staging(artifacts) -> tuple[dict[str, dict], dict[str, str], set[str]]:
     staged: dict[str, dict] = {}
     live: dict[str, str] = {}
-    if snapshots is None:
-        return staged, live
+    if artifacts is None:
+        return staged, live, set()
     try:
-        for item in snapshots.staging.list():
+        staging_now = artifacts.staging_regions()
+    except Exception:
+        staging_now = set()
+    try:
+        for item in artifacts.staging.list():
             region = item.get("region_id")
             if region and _sortable(item.get("staged_at")) >= _sortable((staged.get(region) or {}).get("staged_at")):
                 staged[region] = {"staging_id": item.get("staging_id"), "staged_at": item.get("staged_at"),
@@ -161,13 +165,13 @@ def _staging(snapshots) -> tuple[dict[str, dict], dict[str, str]]:
     except Exception:
         pass
     try:
-        active = snapshots.releases.state().get("active")
+        active = artifacts.releases.state().get("active")
         if active:
-            for region in snapshots.releases.manifest(active).get("region_builds") or {}:
+            for region in artifacts.releases.manifest(active).get("region_builds") or {}:
                 live[region] = active
     except Exception:
         pass
-    return staged, live
+    return staged, live, staging_now
 
 
 def _grids(data: Path, history: dict[str, list[dict]], built: dict[str, dict]) -> dict[str, dict]:
@@ -214,7 +218,7 @@ def _grids(data: Path, history: dict[str, list[dict]], built: dict[str, dict]) -
     return out
 
 
-def status(data: Path = DATA, snapshots=None, use_cache: bool = True) -> dict:
+def status(data: Path = DATA, artifacts=None, use_cache: bool = True) -> dict:
     """{model, calibration, regions: {id: {...}}, grids: {locality id: {...}}}."""
     data = Path(data)
     key = str(data)
@@ -230,13 +234,16 @@ def status(data: Path = DATA, snapshots=None, use_cache: bool = True) -> dict:
         summary = read_json(data / "out" / region / "summary.json")
         if isinstance(summary, dict):
             built[region] = summary
-    staged, live = _staging(snapshots)
+    staged, live, staging_now = _staging(artifacts)
     regions: dict[str, dict] = {}
     for region in set(local) | set(history) | set(staged) | set(live):
         summary = built.get(region) or {}
         tries = history.get(region) or []
         latest = tries[0] if tries else None
         good = next((t for t in tries if t.get("status") == "succeeded"), None)
+        # Only local builds write data/out, so only they decide whether the
+        # built output is a trustworthy thing to stage.
+        local_try = next((t for t in tries if (t.get("target") or "local") == "local"), None)
         row = {
             "latest": latest,
             "history": tries[:20],
@@ -246,7 +253,9 @@ def status(data: Path = DATA, snapshots=None, use_cache: bool = True) -> dict:
             "stale": is_stale(summary.get("model"), model) if summary else None,
             "options": ({k: good.get(k) for k in ("include_imagery", "paid_referee", "target")}
                         if good and good.get("job_id") else None),
+            "latest_local_status": (local_try or {}).get("status"),
             "staged": staged.get(region), "live": live.get(region),
+            "staging_now": region in staging_now,
             "preview_url": (local.get(region) or {}).get("preview_url"),
         }
         regions[region] = row

@@ -12,8 +12,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.local_releases import AssemblyError, CORE_FILES, POLICY_KEYS, LocalReleases, SnapshotError
-from tools.regional_snapshots import SnapshotStore
+from tools.local_releases import AssemblyError, CORE_FILES, POLICY_KEYS, LocalReleases, ArtifactError
 from tools.regional_staging import StagingStore
 from src.output_contract import CONTRACT_VERSION, CELL_REQUIRED
 
@@ -73,15 +72,12 @@ class ReleaseTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.data = Path(self.temp.name).resolve() / "data"
-        self.snapshots = SnapshotStore(self.data)
-        self.staging = StagingStore(self.snapshots)
+        self.staging = StagingStore(self.data)
         self.store = LocalReleases(self.staging, assembler=fixture_assembler)
 
     def stage(self, region="pilot", building="1", n=1):
         emitted(self.data, region, building, n)
-        identifier = self.snapshots.capture(region)["snapshot_id"]
-        self.staging.stage(identifier)
-        return identifier
+        return self.staging.stage(region)["staging_id"]
 
     def candidate(self):
         return self.store.create([self.stage()], 0)["release_id"]
@@ -97,7 +93,6 @@ class ReleaseTests(unittest.TestCase):
         manifest = self.store.verify(identifier)
         shutil.rmtree(self.data / "out")
         shutil.rmtree(self.staging.root)
-        shutil.rmtree(self.snapshots.root)
         self.assertEqual(self.store.verify(identifier), manifest)
         config = (self.store.path(identifier) / "site/site-config.js").read_text()
         self.assertIn('dataBase: "./"', config)
@@ -109,7 +104,7 @@ class ReleaseTests(unittest.TestCase):
         self.deploy(first)
         replacement = self.stage(n=2)
         second = self.store.create([replacement], 1)["release_id"]
-        self.assertEqual(self.store.verify(second)["region_builds"]["other"]["snapshot_id"], b)
+        self.assertEqual(self.store.verify(second)["region_builds"]["other"]["staging_id"], b)
         comparison = self.store.compare(second)
         self.assertFalse(comparison["automatic_eligible"])
         self.assertTrue(any(r["status"] == "unknown" for r in comparison["metrics"]))
@@ -121,16 +116,16 @@ class ReleaseTests(unittest.TestCase):
 
     def test_unknown_metadata_requires_reason_and_policy_is_explicit(self):
         identifier = self.candidate()
-        with self.assertRaisesRegex(SnapshotError, "review reason"):
+        with self.assertRaisesRegex(ArtifactError, "review reason"):
             self.store.approve(identifier, 0)
         self.store.approve(identifier, 0, "Inspected")
-        with self.assertRaisesRegex(SnapshotError, "retention"):
+        with self.assertRaisesRegex(ArtifactError, "retention"):
             self.store.activate(identifier, 0)
-        with self.assertRaises(SnapshotError):
+        with self.assertRaises(ArtifactError):
             self.store.set_policy({"rollback_hours": 1})
-        with self.assertRaises(SnapshotError):
+        with self.assertRaises(ArtifactError):
             self.store.set_policy(dict(POLICY, rollback_hours=0))
-        with self.assertRaises(SnapshotError):
+        with self.assertRaises(ArtifactError):
             self.store.cleanup()
 
     def test_concurrent_baseline_conflict_never_loses_regions(self):
@@ -138,10 +133,10 @@ class ReleaseTests(unittest.TestCase):
         second = self.store.create([self.stage("other", "2")], 0)["release_id"]
         self.store.approve(second, 0, "Inspected")
         self.deploy(first)
-        with self.assertRaisesRegex(SnapshotError, "changed"):
+        with self.assertRaisesRegex(ArtifactError, "changed"):
             self.store.activate(second, 0)
         self.assertTrue(self.store.compare(second)["stale"])
-        with self.assertRaisesRegex(SnapshotError, "stale"):
+        with self.assertRaisesRegex(ArtifactError, "stale"):
             self.store.approve(second, 1, "Inspected")
         refreshed = self.store.create([self.stage("other", "2")], 1)
         self.assertEqual(set(refreshed["region_builds"]), {"pilot", "other"})
@@ -152,7 +147,7 @@ class ReleaseTests(unittest.TestCase):
         self.store.set_policy(POLICY)
         artifact = self.store.path(identifier) / "site/data/buildings.pmtiles"
         artifact.write_bytes(b"corruption")
-        with self.assertRaisesRegex(SnapshotError, "integrity"):
+        with self.assertRaisesRegex(ArtifactError, "integrity"):
             self.store.activate(identifier, 0)
         self.assertIsNone(self.store.state()["active"])
 
@@ -164,34 +159,33 @@ class ReleaseTests(unittest.TestCase):
         manifest = json.loads(path.read_text())
         manifest["extra"] = True
         path.write_text(json.dumps(manifest))
-        with self.assertRaisesRegex(SnapshotError, "exact candidate"):
+        with self.assertRaisesRegex(ArtifactError, "exact candidate"):
             self.store.activate(identifier, 0)
 
     def test_partial_duplicate_overlapping_and_incompatible_rejected(self):
         partial = "council/town/suburb/grid-0123456789abcdef"
-        identifier = self.stage(partial)
-        with self.assertRaisesRegex(SnapshotError, "Partial"):
-            self.store.create([identifier], 0)
+        emitted(self.data, partial, "9")
+        with self.assertRaisesRegex(ArtifactError, "Grid cells"):
+            self.staging.stage(partial)
         a = self.stage()
-        with self.assertRaisesRegex(SnapshotError, "only one"):
+        with self.assertRaisesRegex(ArtifactError, "only one"):
             self.store.create([a, a], 0)
         b = self.stage("other", "1")
-        with self.assertRaisesRegex(SnapshotError, "ownership"):
+        with self.assertRaisesRegex(ArtifactError, "ownership"):
             self.store.create([a, b], 0)
         source = emitted(self.data, "wrong", "3")
         summary = json.loads((source / "summary.json").read_text())
         summary["contract"] = 999
         (source / "summary.json").write_text(json.dumps(summary))
-        wrong = self.snapshots.capture("wrong")["snapshot_id"]
-        self.staging.stage(wrong)
-        with self.assertRaisesRegex(SnapshotError, "incompatible"):
+        wrong = self.staging.stage("wrong")["staging_id"]
+        with self.assertRaisesRegex(ArtifactError, "incompatible"):
             self.store.create([wrong], 0)
 
     def test_failed_assembly_never_ready_or_active(self):
         def fail(*args):
-            raise SnapshotError("fixture failure")
+            raise ArtifactError("fixture failure")
         self.store.assembler = fail
-        with self.assertRaisesRegex(SnapshotError, "fixture"):
+        with self.assertRaisesRegex(ArtifactError, "fixture"):
             self.candidate()
         self.assertEqual(self.store.list()["releases"], [])
         self.assertIsNone(self.store.state()["active"])
@@ -205,7 +199,7 @@ class ReleaseTests(unittest.TestCase):
             self.store.activate(second, 1)
             self.assertEqual(self.store.cleanup()["eligible"], [])
         with patch("tools.local_releases.now", return_value="2026-12-02T00:00:00Z"):
-            with self.assertRaisesRegex(SnapshotError, "unexpired"):
+            with self.assertRaisesRegex(ArtifactError, "unexpired"):
                 self.store.rollback(2)
             preview = self.store.cleanup()
             self.assertTrue(any(item["id"] == first for item in preview["eligible"]))
@@ -221,15 +215,15 @@ class ReleaseTests(unittest.TestCase):
     def test_process_lock_blocks_other_writers_and_cleanup(self):
         self.store.root.mkdir(parents=True)
         with self.store.locked():
-            with self.assertRaisesRegex(SnapshotError, "busy"):
+            with self.assertRaisesRegex(ArtifactError, "busy"):
                 self.store.set_policy(POLICY)
-            with self.assertRaisesRegex(SnapshotError, "busy"):
-                self.snapshots.capture("pilot")
+            with self.assertRaisesRegex(ArtifactError, "busy"):
+                self.staging.stage("pilot")
 
     def test_custom_roots_do_not_overlap(self):
-        with self.assertRaises(SnapshotError):
+        with self.assertRaises(ArtifactError):
             LocalReleases(self.staging, self.staging.root)
-        with self.assertRaises(SnapshotError):
+        with self.assertRaises(ArtifactError):
             LocalReleases(self.staging, self.data)
 
     def test_auto_review_and_cli_persisted_state(self):
@@ -238,8 +232,7 @@ class ReleaseTests(unittest.TestCase):
         document.update(sources={"elevation": "fixture"}, coverage={"complete": True},
                         boundary_version="fixture-v1")
         (source / "summary.json").write_text(json.dumps(document))
-        identifier = self.snapshots.capture("pilot")["snapshot_id"]
-        self.staging.stage(identifier)
+        identifier = self.staging.stage("pilot")["staging_id"]
         candidate = self.store.create([identifier], 0)["release_id"]
         self.store.set_policy(POLICY)
         self.assertTrue(self.store.compare(candidate)["automatic_eligible"])
@@ -256,12 +249,11 @@ class ReleaseTests(unittest.TestCase):
         document = json.loads((source / "summary.json").read_text())
         document["assumptions"]["panel_rated_power_w"] = 600
         (source / "summary.json").write_text(json.dumps(document))
-        identifier = self.snapshots.capture("other")["snapshot_id"]
-        self.staging.stage(identifier)
-        with self.assertRaisesRegex(SnapshotError, "Mixed PV"):
+        identifier = self.staging.stage("other")["staging_id"]
+        with self.assertRaisesRegex(ArtifactError, "Mixed PV"):
             self.store.create([first, identifier], 0)
-        (self.staging.root / first / "snapshot/artifacts/cells.json").write_text("corrupt")
-        with self.assertRaises(SnapshotError):
+        (self.staging.root / first / "artifacts/cells.json").write_text("corrupt")
+        with self.assertRaises(ArtifactError):
             self.store.create([first], 0)
 
     def test_malformed_metadata_fails_explicitly(self):
@@ -270,10 +262,10 @@ class ReleaseTests(unittest.TestCase):
         document = json.loads(path.read_text())
         document.pop("site_inventory")
         path.write_text(json.dumps(document))
-        with self.assertRaisesRegex(SnapshotError, "schema"):
+        with self.assertRaisesRegex(ArtifactError, "schema"):
             self.store.verify(identifier)
         self.store.root.joinpath("state.json").write_text('{"schema_version":1}')
-        with self.assertRaisesRegex(SnapshotError, "schema"):
+        with self.assertRaisesRegex(ArtifactError, "schema"):
             self.store.list()
 
     def test_cross_process_lock_and_bounded_rollback_window(self):
@@ -300,7 +292,7 @@ class ReleaseTests(unittest.TestCase):
         second = self.store.create([self.stage(n=2)], 1)["release_id"]
         self.store.publish(second, 1, "Inspected")
         (self.store.path(first) / "site/data/buildings.pmtiles").write_text("corrupt")
-        with self.assertRaisesRegex(SnapshotError, "integrity"):
+        with self.assertRaisesRegex(ArtifactError, "integrity"):
             self.store.rollback(2)
         self.assertEqual(self.store.state()["active"], second)
         self.assertEqual(self.store.state()["generation"], 2)
@@ -310,27 +302,26 @@ class ReleaseTests(unittest.TestCase):
         self.store.set_policy(POLICY)
         with patch("tools.local_releases.now", return_value="2090-01-01T00:00:00Z"):
             plan = self.store.cleanup()
-            self.assertEqual({row["kind"] for row in plan["eligible"]}, {"snapshot", "staging"})
+            self.assertEqual({row["kind"] for row in plan["eligible"]}, {"staging"})
             self.assertFalse(plan["deleted"])
         with patch("tools.local_releases.now", return_value="2090-01-02T00:00:00Z"):
             self.store.set_policy(POLICY)
             self.assertFalse(self.store.cleanup(True)["deleted"], "policy resets the grace period")
         with patch("tools.local_releases.now", return_value="2090-01-03T00:00:00Z"):
             result = self.store.cleanup(True)
-            self.assertEqual(set(result["deleted"]), {"snapshot:" + unused, "staging:" + unused})
+            self.assertEqual(set(result["deleted"]), {"staging:" + unused})
             self.assertFalse((self.staging.root / unused).exists())
-            self.assertFalse((self.snapshots.root / unused).exists())
-        self.staging.root.rmdir()
+        shutil.rmtree(self.staging.root)
         outside = self.data / "unmanaged"
         outside.mkdir()
         self.staging.root.symlink_to(outside, target_is_directory=True)
-        with self.assertRaisesRegex(SnapshotError, "linked storage"):
+        with self.assertRaisesRegex(ArtifactError, "linked storage"):
             self.store.cleanup(True)
         self.assertTrue(outside.is_dir())
 
     def test_extreme_policy_values_are_explicit_errors(self):
         for value in (float("inf"), float("nan"), 1e308, True):
-            with self.assertRaises(SnapshotError):
+            with self.assertRaises(ArtifactError):
                 self.store.set_policy(dict(POLICY, grace_hours=value))
 
     def test_explicit_incomplete_coverage_cannot_auto_approve(self):
@@ -339,13 +330,12 @@ class ReleaseTests(unittest.TestCase):
         document.update(sources={"elevation": "fixture"}, coverage={"complete": False},
                         boundary_version="fixture-v1")
         (source / "summary.json").write_text(json.dumps(document))
-        identifier = self.snapshots.capture("pilot")["snapshot_id"]
-        self.staging.stage(identifier)
+        identifier = self.staging.stage("pilot")["staging_id"]
         candidate = self.store.create([identifier], 0)["release_id"]
         comparison = self.store.compare(candidate)
         self.assertFalse(comparison["automatic_eligible"])
         self.assertEqual(next(row["status"] for row in comparison["metrics"] if row["field"] == "coverage"), "fail")
-        with self.assertRaisesRegex(SnapshotError, "review reason"):
+        with self.assertRaisesRegex(ArtifactError, "review reason"):
             self.store.approve(candidate, 0)
 
 
@@ -354,33 +344,28 @@ class AssemblyIntegrationTests(unittest.TestCase):
     def test_real_frozen_assembly(self):
         with tempfile.TemporaryDirectory() as temporary:
             data = Path(temporary).resolve() / "data"
-            snapshots = SnapshotStore(data)
-            staging = StagingStore(snapshots)
+            staging = StagingStore(data)
             identifiers = []
             for region, building in (("pilot", "1"), ("other", "2")):
                 emitted(data, region, building, real_tiles=True)
-                identifier = snapshots.capture(region)["snapshot_id"]
-                staging.stage(identifier)
-                identifiers.append(identifier)
+                identifiers.append(staging.stage(region)["staging_id"])
             store = LocalReleases(staging)
             try:
                 result = store.create(identifiers, 0)
-            except SnapshotError:
+            except ArtifactError:
                 self.fail(next((store.root / "releases").glob("*/assembly.log")).read_text())
             manifest = store.verify(result["release_id"])
             self.assertEqual(set(manifest["region_builds"]), {"pilot", "other"})
             combined = json.loads((store.path(result["release_id"]) / "site/data/build_summary.json").read_text())
             self.assertEqual(combined["totals"]["n"], 2)
 
-    def test_snapshotted_invalid_tiles_fail_contract_gate(self):
+    def test_staged_invalid_tiles_fail_contract_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
             data = Path(temporary).resolve() / "data"
-            snapshots = SnapshotStore(data)
-            staging = StagingStore(snapshots)
+            staging = StagingStore(data)
             source = emitted(data, "pilot", "1")
             (source / "buildings.pmtiles").write_bytes(b"not valid PMTiles")
-            identifier = snapshots.capture("pilot")["snapshot_id"]
-            staging.stage(identifier)
+            identifier = staging.stage("pilot")["staging_id"]
             store = LocalReleases(staging)
             with self.assertRaisesRegex(AssemblyError, "Assembly failed") as caught:
                 store.create([identifier], 0)

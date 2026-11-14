@@ -102,49 +102,22 @@
   function showView() {
     const config = location.hash === "#config";
     document.body.classList.toggle("config", config);
-    if (config) { loadCatalogInfo(); loadSnapshots(); }
+    if (config) { loadCatalogInfo(); loadStaging(); }
     else setTimeout(() => map.resize(), 0);
   }
 
-  // Snapshots always operate on local emitted outputs, independently of target.
-  let snapshotBusy = false;
+  // Staging copies local emitted outputs (data/out), independently of target.
+  let artifactBusy = false;
   const releaseChoices = new Set();
   let releaseState = null;
   let releaseRecords = [];
-  async function loadSnapshots() {
+  async function loadStaging() {
     if (!writable) return;
     try {
-      const [data, staging] = await Promise.all([api("snapshots"), api("staging")]);
-      const select = $("snapshot-region");
-      const previous = select.value;
-      // Grid cells are local build pieces; only whole regions are snapshotted and staged.
-      data.regions = data.regions.filter((region) => !/\/grid-[0-9a-f]{16}$/.test(region));
-      select.innerHTML = data.regions.map((region) =>
-        `<option value="${esc(region)}">${esc(region)}</option>`).join("");
-      if (data.regions.includes(previous)) select.value = previous;
-      select.disabled = snapshotBusy || !data.regions.length;
-      $("snapshot-capture").disabled = snapshotBusy || !data.regions.length;
-      $("snapshot-list").innerHTML = data.snapshots.length ? data.snapshots.map((item) =>
-        `<div class="item"><b>${esc(item.region_id || "Unknown region")}</b>
-          <div class="muted job-id">${esc(item.snapshot_id)}</div>
-          <div class="muted">Captured: ${esc(item.created_at || "unknown")}<br>
-          Built: ${esc(item.built_at || "unknown")}. Integrity not checked by listing.</div>
-          ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
-          <button class="small" data-verify-snapshot="${esc(item.snapshot_id)}"
-            ${snapshotBusy ? "disabled" : ""}>Verify snapshot</button>
-          <button class="small" data-stage-snapshot="${esc(item.snapshot_id)}"
-            ${snapshotBusy || item.error ? "disabled" : ""}>Stage locally</button></div>`).join("")
-        : '<p class="muted">No completed snapshots. Build a region, then capture it here.</p>';
-      $("snapshot-list").querySelectorAll("[data-verify-snapshot]").forEach((button) =>
-        button.addEventListener("click", () => runSnapshot(
-          `snapshots/${encodeURIComponent(button.dataset.verifySnapshot)}/verify`, {})));
-      $("snapshot-list").querySelectorAll("[data-stage-snapshot]").forEach((button) =>
-        button.addEventListener("click", () => runSnapshot("staging", {
-          snapshot_id: button.dataset.stageSnapshot,
-        })));
+      const staging = await api("staging");
       $("staging-list").innerHTML = staging.staged.length ? staging.staged.map((item) =>
         `<div class="item"><b>${esc(item.region_id || "Unknown region")}</b>
-          <div class="muted job-id">Staging / source snapshot: ${esc(item.staging_id)}</div>
+          <div class="muted job-id">${esc(item.staging_id)}</div>
           <div class="muted">Staged: ${esc(item.staged_at || "unknown")}<br>
           Built: ${esc(item.built_at || "unknown")}. Not approved or deployed. Listing is not verification.</div>
           <label><input type="checkbox" data-release-choice="${esc(item.staging_id)}"
@@ -152,10 +125,10 @@
             Include this version in a local candidate</label><br>
           ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
           <button class="small" data-verify-staged="${esc(item.staging_id)}"
-            ${snapshotBusy ? "disabled" : ""}>Verify staged copy</button></div>`).join("")
+            ${artifactBusy ? "disabled" : ""}>Verify staged copy</button></div>`).join("")
         : '<p class="muted">No completed staged copies.</p>';
       $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) =>
-        button.addEventListener("click", () => runSnapshot(
+        button.addEventListener("click", () => runOperation(
           `staging/${encodeURIComponent(button.dataset.verifyStaged)}/verify`, {})));
       const available = new Set(staging.staged.filter((item) => !item.error).map((item) => item.staging_id));
       for (const id of releaseChoices) if (!available.has(id)) releaseChoices.delete(id);
@@ -167,25 +140,19 @@
         }));
       await loadReleases();
     } catch (error) {
-      $("snapshot-status").textContent = `Cannot load snapshots: ${error.message}`;
-      $("snapshot-capture").disabled = true;
+      $("staging-status").textContent = `Cannot load staged copies: ${error.message}`;
     }
   }
 
-  async function followSnapshot(identifier) {
-    snapshotBusy = true;
+  async function followOperation(identifier) {
+    artifactBusy = true;
     releaseButtons();
-    $("snapshot-capture").disabled = true;
-    $("snapshot-region").disabled = true;
-    $("snapshot-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
     $("staging-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
     try {
       let operation;
       do {
-        operation = await api(`snapshots/operations/${encodeURIComponent(identifier)}`);
+        operation = await api(`operations/${encodeURIComponent(identifier)}`);
         const labels = {
-          capture: ["Copying and verifying local snapshot", "Captured and verified"],
-          verify: ["Verifying local snapshot", "Verified snapshot"],
           stage: ["Copying and verifying local staging", "Staged and verified"],
           verify_staged: ["Verifying staged copy", "Verified staged copy"],
           release_create: ["Assembling isolated local candidate", "Candidate ready"],
@@ -199,13 +166,13 @@
           release_cleanup: ["Checking retention and cleanup", "Cleanup completed"],
         };
         const label = labels[operation.action] || ["Running operation", "Completed"];
-        const statusElement = operation.action.startsWith("release_") ? $("release-status") : $("snapshot-status");
+        const statusElement = operation.action.startsWith("release_") ? $("release-status") : $("staging-status");
         statusElement.textContent = operation.status === "running"
           ? `${label[0]}...`
           : operation.status === "succeeded"
             ? operation.action.startsWith("release_")
               ? `${operation.action.replace("release_", "")}: completed locally.`
-              : `${label[1]} ${operation.staging_id || operation.snapshot_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
+              : `${label[1]} ${operation.region_id || ""} ${operation.staging_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
             : `${operation.status}: ${operation.error || "Operation did not complete."}`;
         if (operation.result) renderReleaseResult(operation);
         if (operation.failed_release_id) {
@@ -228,44 +195,40 @@
         if (operation.status === "running") await new Promise((resolve) => setTimeout(resolve, 750));
       } while (operation.status === "running");
     } catch (error) {
-      $("snapshot-status").textContent = `Status unavailable: ${error.message}. Refresh snapshots to reconnect; do not capture again blindly.`;
+      $("staging-status").textContent = `Status unavailable: ${error.message}. Refresh to reconnect.`;
     } finally {
-      snapshotBusy = false;
-      await loadSnapshots();
+      artifactBusy = false;
+      await loadStaging();
     }
   }
 
-  async function runSnapshot(path, body) {
-    if (!writable || snapshotBusy) return;
-    snapshotBusy = true;
+  async function runOperation(path, body) {
+    if (!writable || artifactBusy) return;
+    artifactBusy = true;
     releaseButtons();
-    $("snapshot-capture").disabled = true;
-    const status = path.startsWith("releases/") ? $("release-status") : $("snapshot-status");
+    const status = path.startsWith("releases/") ? $("release-status") : $("staging-status");
     status.textContent = "Starting local operation...";
     try {
       const operation = await api(path, { method: "POST", body });
-      sessionStorage.setItem("snapshotOperation", operation.operation_id);
-      await followSnapshot(operation.operation_id);
+      sessionStorage.setItem("artifactOperation", operation.operation_id);
+      await followOperation(operation.operation_id);
     } catch (error) {
-      const status = path.startsWith("releases/") ? $("release-status") : $("snapshot-status");
       status.textContent = `Operation refused: ${error.message}`;
     } finally {
-      snapshotBusy = false;
-      await loadSnapshots();
+      artifactBusy = false;
+      await loadStaging();
     }
   }
 
-  $("snapshot-capture").addEventListener("click", () =>
-    runSnapshot("snapshots", { region: $("snapshot-region").value }));
-  $("snapshot-refresh").addEventListener("click", async () => {
-    if (snapshotBusy) return;
-    const operation = sessionStorage.getItem("snapshotOperation");
-    if (operation) await followSnapshot(operation);
-    else await loadSnapshots();
+  $("staging-refresh").addEventListener("click", async () => {
+    if (artifactBusy) return;
+    const operation = sessionStorage.getItem("artifactOperation");
+    if (operation) await followOperation(operation);
+    else await loadStaging();
   });
 
   function releaseButtons() {
-    const disabled = !writable || snapshotBusy || !releaseState;
+    const disabled = !writable || artifactBusy || !releaseState;
     $("release-create").disabled = disabled || !releaseChoices.size;
     $("release-select").disabled = disabled || !releaseRecords.length;
     document.querySelectorAll("[data-release-action]").forEach((button) => {
@@ -334,33 +297,33 @@
     releasePreview();
   });
   $("release-refresh").addEventListener("click", async () => {
-    if (snapshotBusy) return;
-    const operation = sessionStorage.getItem("snapshotOperation");
-    if (operation) await followSnapshot(operation);
+    if (artifactBusy) return;
+    const operation = sessionStorage.getItem("artifactOperation");
+    if (operation) await followOperation(operation);
     else await loadReleases();
   });
   $("release-create").addEventListener("click", () => {
-    if (releaseState) runSnapshot("releases/create", {staging_ids: [...releaseChoices], generation: releaseState.generation});
+    if (releaseState) runOperation("releases/create", {staging_ids: [...releaseChoices], generation: releaseState.generation});
   });
   document.querySelectorAll("[data-release-action]").forEach((button) =>
     button.addEventListener("click", () => {
-      if (releaseState) runSnapshot(`releases/${button.dataset.releaseAction}`, {
+      if (releaseState) runOperation(`releases/${button.dataset.releaseAction}`, {
         release_id: $("release-select").value, generation: releaseState.generation,
         reason: $("release-reason").value,
       });
     }));
   $("release-rollback").addEventListener("click", () => {
-    if (releaseState) runSnapshot("releases/rollback", {generation: releaseState.generation});
+    if (releaseState) runOperation("releases/rollback", {generation: releaseState.generation});
   });
   $("release-policy").addEventListener("click", () => {
     const policy = {};
     document.querySelectorAll("[data-retention]").forEach((input) => { policy[input.dataset.retention] = Number(input.value); });
-    runSnapshot("releases/policy", {policy});
+    runOperation("releases/policy", {policy});
   });
   $("release-cleanup-confirm").addEventListener("change", releaseButtons);
-  $("release-cleanup-preview").addEventListener("click", () => runSnapshot("releases/cleanup", {apply:false}));
+  $("release-cleanup-preview").addEventListener("click", () => runOperation("releases/cleanup", {apply:false}));
   $("release-cleanup-apply").addEventListener("click", () => {
-    if ($("release-cleanup-confirm").checked) runSnapshot("releases/cleanup", {apply:true});
+    if ($("release-cleanup-confirm").checked) runOperation("releases/cleanup", {apply:true});
   });
 
   // ---- national catalogue (Config) -------------------------------------
@@ -1031,13 +994,26 @@
   $("sel-sum").addEventListener("toggle", (e) => {
     if (e.target.tagName === "DETAILS") selListOpen = e.target.open;
   }, true);
+  // Mirrors the server rule (stage_refusal in tools/pipeline_webui/server.py):
+  // a whole region, built, whose latest local build succeeded and which no
+  // queued or running local job includes.
+  function stageRefusal(leaf) {
+    if (leaf.kind === "cell") return "grid cell";
+    const view = views.get(leaf.id).view;
+    if (view.staging_now) return "being staged";
+    if (!view.built) return "not built";
+    if (view.latest_local_status && view.latest_local_status !== "succeeded") return "last build " + view.latest_local_status;
+    if (PipelineProgress.matchingJobsForRegion(queueJobs, [], leaf.id, "local")
+      .some((j) => j.status === "queued" || j.status === "running")) return "in queue";
+    return null;
+  }
   function renderActions() {
     const leaves = selectedLeaves();
     const buildings = leaves.reduce((n, l) => n + (l.buildings || 0), 0);
     const rough = leaves.reduce((n, l) => n + (T.roughSeconds(l.buildings, status.calibration) || 0), 0);
     const counts = {};
     leaves.forEach((l) => { const s = views.get(l.id).state; counts[s] = (counts[s] || 0) + 1; });
-    const stageable = leaves.filter((l) => l.kind !== "cell" && views.get(l.id).view.built);
+    const stageable = leaves.filter((l) => !stageRefusal(l));
     const cancellable = leaves.filter((l) => activeJobsFor(l.id).length);
     const html = leaves.length
       ? `<details><summary><b>${fmtInt(leaves.length)} selected</b> · ${fmtInt(buildings)} buildings
@@ -1059,7 +1035,7 @@
     $("act-build").disabled = !writable || !leaves.length;
     $("act-stage").disabled = !writable || !stageable.length || target !== "local" || pushing;
     $("act-stage").title = target !== "local" ? "Staging is local; switch the target to Local."
-      : "Capture a local snapshot of each built region, then stage it. Grid cells are never staged.";
+      : "Copy each built region into a frozen, checked staged copy. Regions in the build queue, failed builds and grid cells are skipped.";
     $("act-cancel").disabled = !writable || !cancellable.length;
     $("act-clear").disabled = !leaves.length;
   }
@@ -1086,11 +1062,11 @@
     loadStatus();
   });
 
-  // Push to staging: capture then stage each built region, one at a time.
+  // Push to staging: copy each eligible region into a staged copy, one at a time.
   let pushing = false;
-  async function followOperation(id) {
+  async function waitForOperation(id) {
     for (;;) {
-      const op = await api(`snapshots/operations/${encodeURIComponent(id)}`);
+      const op = await api(`operations/${encodeURIComponent(id)}`);
       if (op.status !== "running") {
         if (op.status !== "succeeded") throw new Error(op.error || op.status);
         return op;
@@ -1100,30 +1076,36 @@
   }
   $("act-stage").addEventListener("click", async () => {
     const leaves = selectedLeaves();
-    const regions = leaves.filter((l) => l.kind !== "cell" && views.get(l.id).view.built);
-    const skipped = leaves.length - regions.length;
-    if (!confirm(`Capture and stage ${regions.length} built region(s) locally?` +
-      (skipped ? ` ${skipped} selected item(s) are not built or are grid cells and will be skipped.` : "") +
-      " Builds must be idle; each copy uses extra disk.")) return;
+    const skipped = {};
+    const regions = leaves.filter((l) => {
+      const why = stageRefusal(l);
+      if (why) skipped[why] = (skipped[why] || 0) + 1;
+      return !why;
+    });
+    const skippedText = Object.entries(skipped).map(([why, n]) => `${n} ${why}`).join(", ");
+    if (!confirm(`Stage ${regions.length} built region(s) locally?` +
+      (skippedText ? ` Skipping: ${skippedText}.` : "") +
+      " Each staged copy uses extra disk.")) return;
     pushing = true;
-    snapshotBusy = true;
+    artifactBusy = true;
     renderActions();
     const failures = [];
     for (const [i, leaf] of regions.entries()) {
       $("act-notes").textContent = `Staging ${i + 1} of ${regions.length}: ${leaf.name}…`;
       try {
-        const capture = await followOperation((await api("snapshots", { method: "POST", body: { region: leaf.id } })).operation_id);
-        await followOperation((await api("staging", { method: "POST", body: { snapshot_id: capture.snapshot_id } })).operation_id);
+        await waitForOperation((await api("staging", { method: "POST", body: { region: leaf.id } })).operation_id);
       } catch (e) {
         failures.push(`${leaf.name}: ${e.message}`);
-        if (e.status === 409 && /active|busy/i.test(e.message)) break;
+        if (e.status === 409 && /another staging or release operation/i.test(e.message)) break;
       }
     }
     pushing = false;
-    snapshotBusy = false;
-    $("act-notes").innerHTML = failures.length
-      ? `<span class="block">${failures.length} not staged.</span> ${failures.map(esc).join("; ")}`
-      : `Staged ${regions.length} region(s). Assemble a release in <a href="#config">Config</a>.`;
+    artifactBusy = false;
+    const staged = regions.length - failures.length;
+    $("act-notes").innerHTML = `Staged ${staged} region(s)` +
+      (skippedText ? ` · skipped ${esc(skippedText)}` : "") +
+      (failures.length ? `. <span class="block">${failures.length} failed:</span> ${failures.map(esc).join("; ")}` : "") +
+      `. Assemble a release in <a href="#config">Config</a>.`;
     statusSignature = "";
     loadStatus();
   });
@@ -1393,6 +1375,7 @@
   }
 
   // ---- job history and detail ----------------------------------------
+  const openHistoryJobs = new Set();
   async function loadJobs() {
     let res;
     try { res = await api("jobs"); } catch (e) {
@@ -1407,15 +1390,18 @@
     if (signature === jobsSignature) return;
     jobsSignature = signature;
     $("job-count").textContent = history.length ? `(${history.length})` : "";
-    $("job-list").innerHTML = history.slice(0, 50).map((j) => `
-      <div class="item"><h3 class="job-area-titles">${PipelineProgress.renderAreaTitles(j)}
-        <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
-        <div class="muted">${esc(j.finished || j.created)} · ${esc(j.job_id)}</div>
-        <button class="job-title small" data-job="${esc(j.job_id)}">Details / log</button></div>`).join("") || "<p class='muted'>No completed jobs yet.</p>";
+    $("job-list").innerHTML = history.slice(0, 50).map((j) =>
+      PipelineProgress.renderQueueCard(j, false, false, undefined, openHistoryJobs.has(j.job_id))
+    ).join("") || "<p class='muted'>No completed jobs yet.</p>";
     $("job-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
     $("job-list").querySelectorAll("[data-map-region]").forEach((button) =>
       button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
   }
+  $("job-list").addEventListener("toggle", (e) => {
+    const row = e.target.closest && e.target.closest("[data-qjob]");
+    if (!row || row !== e.target) return;
+    if (row.open) openHistoryJobs.add(row.dataset.qjob); else openHistoryJobs.delete(row.dataset.qjob);
+  }, true);
   $("stage-jobs").addEventListener("toggle", () => {
     if ($("stage-jobs").open) loadJobs();
   });
@@ -1541,8 +1527,8 @@
       await loadStatus();
       await loadCatalog();
       loadGeometry();
-      const snapshotOperation = sessionStorage.getItem("snapshotOperation");
-      if (snapshotOperation) followSnapshot(snapshotOperation);
+      const artifactOperation = sessionStorage.getItem("artifactOperation");
+      if (artifactOperation) followOperation(artifactOperation);
       loadJobs();
       loadQueue();
       setInterval(() => { loadQueue(); loadStatus(); }, QUEUE_POLL_MS);

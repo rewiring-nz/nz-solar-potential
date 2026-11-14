@@ -54,11 +54,10 @@ If a step fails, find its number in [Troubleshooting](troubleshooting.md).
 
 ## Next steps
 
-- Preserve the inspected region using **Local snapshots** in the
-  [Build data panel](web-pipeline.md). Capture and verify an independent local
-  copy without rebuilding or publishing.
-  Then use **Stage locally** to verify and copy the snapshot into separate
-  local staging; this does not deploy or change the map. In **Local releases**,
+- Preserve the inspected region with **Push to staging** in the
+  [Build data panel](web-pipeline.md). This copies its built output into a
+  frozen, checksummed local copy without rebuilding or publishing; it does not
+  deploy or change the map. In **Local releases**,
   select staged versions, assemble and preview a candidate, compare it with the
   local deployment, then approve and activate it. Unselected deployed regions
   are preserved. Configure retention explicitly before activation; rollback

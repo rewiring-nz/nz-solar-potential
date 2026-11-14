@@ -185,7 +185,7 @@
       <div id="sel-sum"></div>
       <div class="btns">
         <button class="btn primary" id="act-build" disabled>Build…</button>
-        <button class="btn" id="act-stage" disabled title="Capture a local snapshot of each built region, then stage it. Grid cells are never staged.">Push to staging</button>
+        <button class="btn" id="act-stage" disabled title="Copy each built region into a frozen, checked staged copy. Regions in the build queue, failed builds and grid cells are skipped.">Push to staging</button>
         <button class="btn" id="act-cancel" disabled>Cancel queued</button>
         <button class="btn" id="act-clear" disabled>Clear</button>
       </div>
@@ -229,20 +229,15 @@
     <p><button class="primary" id="catalog-refresh">Refresh from LINZ</button></p>
     <div id="catalog-progress" role="status" aria-live="polite"></div>
   </section>
-  <details class="stage" id="stage-snapshots" open>
-    <summary>Local snapshots and staging</summary>
+  <details class="stage" id="stage-staging" open>
+    <summary>Local staging</summary>
     <div class="stage-body">
-      <p>Preserve one emitted region without rebuilding or publishing. <b>Push to staging</b> in the area list
-        captures and stages several regions in one step; this section handles single snapshots and checks.</p>
-      <label for="snapshot-region">Built region (including partial selections)</label>
-      <select id="snapshot-region" style="width:100%" disabled></select>
-      <p><button class="primary" id="snapshot-capture" disabled>Capture local snapshot</button>
-        <button class="small" id="snapshot-refresh">Refresh snapshots</button></p>
-      <p class="muted">Local only, regardless of the target. Builds must be idle. Copies use additional disk; nothing is automatically deleted.</p>
-      <div id="snapshot-status" role="status" aria-live="polite"></div>
-      <div id="snapshot-list"></div>
-      <h3>Local staging</h3>
-      <p class="muted">Staging is a verified, independent copy; it is not approval or deployment. Staged versions may come from different build options and code versions.</p>
+      <p>Each staged copy is a frozen, checksummed copy of one region's emitted output, made by
+        <b>Push to staging</b> in the area list. A region can be staged once it is built, its latest local build
+        succeeded and no queued or running local job includes it. Staging is not approval or deployment.
+        Staged versions may come from different build options and code versions.</p>
+      <p><button class="small" id="staging-refresh">Refresh</button></p>
+      <div id="staging-status" role="status" aria-live="polite"></div>
       <div id="staging-list"></div>
     </div>
   </details>
@@ -273,7 +268,6 @@
         <p class="muted">All windows are hours, greater than zero. One previous release is protected during its rollback window. No cleanup runs automatically. Expired data is marked, then deletable after the grace period. Active and unexpired candidates protect their regional inputs.</p>
         <label>Rollback window <input type="number" min="0.001" step="any" data-retention="rollback_hours"></label>
         <label>Unprotected candidate/history lifetime <input type="number" min="0.001" step="any" data-retention="candidate_hours"></label>
-        <label>Unused snapshot lifetime <input type="number" min="0.001" step="any" data-retention="snapshot_hours"></label>
         <label>Unused staging lifetime <input type="number" min="0.001" step="any" data-retention="staging_hours"></label>
         <label>Incomplete copy lifetime <input type="number" min="0.001" step="any" data-retention="incomplete_hours"></label>
         <label>Cleanup grace period <input type="number" min="0.001" step="any" data-retention="grace_hours"></label>

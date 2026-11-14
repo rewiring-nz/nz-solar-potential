@@ -57,11 +57,10 @@ effect before you trust the map.</p>
 <p>If a step fails, find its number in <a href="troubleshooting.html">Troubleshooting</a>.</p>
 <h2 id="next-steps">Next steps</h2>
 <ul>
-<li>Preserve the inspected region using <strong>Local snapshots</strong> in the
-<a href="web-pipeline.html">Build data panel</a>. Capture and verify an independent local
-copy without rebuilding or publishing.
-Then use <strong>Stage locally</strong> to verify and copy the snapshot into separate
-local staging; this does not deploy or change the map. In <strong>Local releases</strong>,
+<li>Preserve the inspected region with <strong>Push to staging</strong> in the
+<a href="web-pipeline.html">Build data panel</a>. This copies its built output into a
+frozen, checksummed local copy without rebuilding or publishing; it does not
+deploy or change the map. In <strong>Local releases</strong>,
 select staged versions, assemble and preview a candidate, compare it with the
 local deployment, then approve and activate it. Unselected deployed regions
 are preserved. Configure retention explicitly before activation; rollback

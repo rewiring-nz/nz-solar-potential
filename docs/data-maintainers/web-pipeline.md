@@ -3,7 +3,7 @@
 The local **Build data** workspace is one list of areas beside a map. Tick
 areas, build them, follow the queue and stage the results without leaving
 the list: each row's status updates in place. Advanced, rarely used settings
-(the national area catalogue, snapshots, local releases and retention) are on
+(the national area catalogue, local staging, local releases and retention) are on
 the **⚙ Config** page. A target toggle at the top picks where the work
 applies:
 
@@ -35,9 +35,8 @@ It prints a link such as
 | `--port N` | Listen on another loopback port (default 8766; the map preview uses 8765). |
 | `--python PATH` | Interpreter for pipeline runs (default: the one running the panel). |
 | `--no-open-browser` | Print the link without opening it. |
-| `--snapshot-root PATH` | Store local snapshots here instead of ignored `data/regional_snapshots/`. Use an untracked location outside working outputs. |
-| `--staging-root PATH` | Store staged copies here instead of ignored `data/regional_staging/`. Must not overlap snapshot storage or emitted outputs. |
-| `--release-root PATH` | Store isolated local candidates, deployment state and purge records here instead of ignored `data/local_releases/`. Must not overlap snapshots, staging or working outputs. |
+| `--staging-root PATH` | Store staged copies here instead of ignored `data/regional_staging/`. Use an untracked location outside emitted outputs. |
+| `--release-root PATH` | Store isolated local candidates, deployment state and purge records here instead of ignored `data/local_releases/`. Must not overlap staging or working outputs. |
 
 `Ctrl+C` stops the panel. Running builds are cancelled first and queued
 ones are dropped. Cancelling a cloud build stops the local command; the VM
@@ -98,8 +97,7 @@ completed build and every earlier attempt (latest first).
 Status colours are shared by the list dots, the map fill and the legend:
 *Not built*, *Queued*, *Running*, *Built*, *Staged*, *Live* and *Failed*.
 Click a legend entry to hide or show areas in that state.
-Status is per target: Local reads this checkout's runs, snapshots and
-staging; Developer and Published read the cloud data catalogue. Local areas
+Status is per target: Local reads this checkout's runs and staging; Developer and Published read the cloud data catalogue. Local areas
 that are not in the national catalogue (for example `pilot`) are listed under
 **Other local areas**.
 
@@ -110,10 +108,14 @@ selection allows. Click the selection count to list the selected areas and
 untick any of them; the list stays open until you close it.
 
 - **Build…** opens the build dialog for every selected area.
-- **Push to staging** (Local only) captures a [local snapshot](#config-page)
-  of each selected built region and stages it. Unbuilt areas and grid cells
-  are skipped. Builds must be idle. Staged regions may come from different
-  input settings and code or data versions.
+- **Push to staging** (Local only) copies each selected region's built
+  output into a frozen, checksummed [staged copy](#config-page). A region can
+  be staged when it is built, its latest local build succeeded and no queued
+  or running local job includes it or its grid cells. Other builds may keep
+  running. Regions that do not qualify are skipped and the result lists why;
+  the button's tooltip gives the same reasons. While a region is being
+  staged, it cannot be queued. Grid cells are never staged. Staged regions
+  may come from different input settings and code or data versions.
 - **Cancel queued** removes the selection's waiting jobs.
 - **Clear** unticks everything.
 
@@ -164,7 +166,7 @@ until the locality is built whole.
 When every estimated cell has built, the locality row offers **Combine**.
 That queues an ordinary whole-locality build. It reuses the downloaded
 sources but reruns geometry and yields. Once it succeeds, the cells are
-hidden again. Cells are never snapshotted, staged or published.
+hidden again. Cells are never staged or published.
 
 Each locality boundary is the LINZ suburb/locality polygon, not a council
 boundary. The grid divides its bounding box and clips each cell to the
@@ -223,9 +225,11 @@ The **Queue** and **Jobs** panels sit over the map.
   attempts, with links to their job details. Use **Details / log** to open a
   completed job's report and log view. Completed jobs are shown only in
   **Jobs** so each job appears in one stage at a time.
-- **Jobs**: completed job history, newest first. Select a job to see progress,
-  per-area status and report links, and to open its live log. **Cancel** stops
-  a running build; finished areas are kept.
+- **Jobs**: completed job history, newest first. Like the queue, each job is
+  one line (areas, duration, finish time, target if not local, and status);
+  select it to expand, then **Details / log** for per-area status, report
+  links and the live log. **Cancel** stops a running build; finished areas
+  are kept.
 
 Queue cards refresh every five seconds and use the same progress calculation
 as job details. Completed and deliberately skipped stages advance progress,
@@ -270,76 +274,46 @@ minutes; a build can only start from the estimate that was shown.
   `POST /api/catalog/refresh` (poll it with `GET`) and
   `GET /api/catalog/status` for per-area status on the selected target.
 
-- **Local snapshots**: expand this section, choose a built region and select
-  **Capture local snapshot**. This is always local, regardless of the target
-  toggle. It copies only that region's emitted `data/out/<region>/` artifacts;
-  it does not rebuild, upload, approve, deploy or change the current map.
-  Partial selections can be preserved too, but are not complete parent regions.
-  Wait for local builds to finish and keep external emit/cleanup commands idle.
-  Capture holds the normal workspace lock and rejects detected source changes.
-  The manifest records creation time separately from the original build time,
-  preserves the emitted summary and leaves missing provenance unknown.
-  **Verify snapshot** checks the full artifact inventory, sizes and SHA-256
-  checksums, including unexpected files. Listing a snapshot is not verification
-  or a quality approval. Copies consume additional disk; nothing is automatically
-  deleted. They contain no raw sources or shared release assets and are not
-  standalone deployable maps.
+- **Local staging**: lists staged copies; use **Push to staging** on the
+  area list to create them. Staging is always local, regardless of the target
+  toggle. It copies only the region's emitted `data/out/<region>/` artifacts
+  into `data/regional_staging/<staging-id>/artifacts/`; it does not rebuild,
+  upload, approve, deploy or change the current map. The copy is checked
+  against the source inventory before and after copying, so a rebuild that
+  changes the output mid-copy fails the staging rather than mixing builds.
+  The manifest records the staging time separately from the original build
+  time, preserves the emitted summary and leaves missing provenance unknown.
 
-  Capture/verification run in the background. Their status persists under
-  `data/pipeline_web/snapshot_operations/`; **Refresh snapshots** reconnects to
-  the last operation in the tab. Finished copies live under
-  `data/regional_snapshots/<snapshot-id>/`. Failed or interrupted copies stay
-  under `.incomplete-<snapshot-id>/` and never appear as completed snapshots.
-  After a process crash, inspect the operation and workspace-lock owner before
-  manually removing a stale lock; do not remove a lock held by another process.
-  Treat completed snapshots as read-only; editing them causes verification
-  failure. Use **Local releases** below for comparison, local activation and retention.
+  **Verify** checks the full artifact inventory, sizes and SHA-256 checksums,
+  including unexpected files, and works after the working build has changed.
+  Listing a copy is not verification or a quality approval. Copies consume
+  additional disk and contain no raw sources or shared release assets; they
+  are not standalone deployable maps. Do not edit completed copies.
 
-  The same operations are available without the panel:
+  Staging and verification run in the background. Their status persists under
+  `data/pipeline_web/artifact_operations/`; **Refresh** reconnects to the last
+  operation in the tab. Failed or interrupted copies stay under
+  `.incomplete-<staging-id>/` and never appear as completed copies; explicit
+  retention cleanup is under **Local releases**. A region being staged holds
+  a lock under `data/regional_staging/.locks/`; after a crash, check its
+  `owner.json` process ID before removing a stale lock.
 
-  ```sh
-  .venv/bin/python tools/regional_snapshots.py capture pilot
-  .venv/bin/python tools/regional_snapshots.py list
-  .venv/bin/python tools/regional_snapshots.py verify <snapshot-id>
-  ```
+  Copies made by earlier versions (`<staging-id>/snapshot/artifacts/`) remain
+  readable and usable in releases. The former `data/regional_snapshots/`
+  folder is no longer used; delete it by hand once no older checkout needs it.
 
-  `--snapshot-root PATH` selects the same custom storage for either entry point.
-  Existing emitted data is sufficient; snapshot operations do not require LINZ
-  or cloud credentials.
-
-- **Local staging** (inside **Local snapshots**): select **Stage locally** on a
-  snapshot. The server verifies the source, copies it into
-  `data/regional_staging/<snapshot-id>/snapshot/`, checks source stability and
-  verifies the copy before exposing it as complete. A separate staging manifest
-  records the source snapshot ID, source manifest checksum and staging time;
-  original metadata and unknown values are preserved byte-for-byte.
-  **Verify staged copy** works even if the working build or original snapshot is
-  no longer present. Staging is always local and is not approval, upload to the
-  cloud or deployment; the map and published configuration remain unchanged.
-
-  Repeating **Stage locally** verifies and reuses an identical completed copy
-  rather than duplicating it. Corrupted staged copies or changed source metadata
-  fail explicitly and are never overwritten. Failed/interrupted transfers remain
-  as `.incomplete-<snapshot-id>/` and reserve that ID; automatic resume is not
-  implemented. Explicit retention cleanup is available under **Local releases**.
-  Inspect the error and confirm no copy is running before
-  manually removing only that incomplete directory. Do not edit completed copies.
-  Source and staging consume separate disk space. Partial selections remain
-  partial data; staging does not qualify them for publication.
-
-  Staging shares the panel's persistent operation status and refresh/reconnect
-  controls. The same operations are available on the command line:
+  The same operations are available on the command line:
 
   ```sh
-  .venv/bin/python tools/regional_staging.py stage <snapshot-id>
+  .venv/bin/python tools/regional_staging.py stage pilot
   .venv/bin/python tools/regional_staging.py list
-  .venv/bin/python tools/regional_staging.py verify <snapshot-id>
+  .venv/bin/python tools/regional_staging.py verify <staging-id>
   ```
 
-  Pass matching `--snapshot-root PATH` and `--staging-root PATH` options when
-  using custom stores. Keep custom locations outside Git and working outputs.
-  Only checksum/inventory work and file copies run; no source acquisition,
-  geometry, solar processing or workspace build lock is needed for staging.
+  `--staging-root PATH` selects custom storage. The command line does not
+  check the build queue; run it only when that region is not being built.
+  Existing emitted data is sufficient; no LINZ or cloud credentials, source
+  acquisition or workspace build lock are needed.
 
 - **Local releases**: this is a filesystem-only publication rehearsal. It
   never uploads, starts a VM, switches the published site's configuration or
@@ -370,7 +344,7 @@ minutes; a build can only start from the estimate that was shown.
      The current shared assumptions document requires equal PV assumptions
      across regions; incompatible contracts, partial regions and overlapping
      building ownership are blocked, not review overrides.
-  5. Under **Retention and cleanup**, explicitly configure all six positive
+  5. Under **Retention and cleanup**, explicitly configure all five positive
      windows in hours and save. No destructive defaults are supplied. Choose
      windows suitable for the local disk and review schedule.
   6. Choose **Approve and activate locally**. An all-pass comparison is approved
@@ -390,33 +364,33 @@ minutes; a build can only start from the estimate that was shown.
      that window. Existing browser tabs remain pinned to their original release.
 
   Candidates live in `data/local_releases/releases/<release-id>/`. Their manifest
-  records regional snapshot IDs/checksums, emitted summaries, output contract,
+  records regional staging IDs/checksums, emitted summaries, output contract,
   copied frontend hashes and assembly-source hashes. Assembly uses the current
   checkout's producer; hashes describe it, but do not archive its dependencies
-  or make missing source datasets reproducible. Staging and snapshots can be
+  or make missing source datasets reproducible. Staged copies can be
   verified independently; a release also keeps its own regional copies.
   Local releases omit shared terrain/terrain-ground tiles and hand-drawn markup
   overlays: 3D is explicitly disabled, with no fallback to working/cloud data.
   Basemap imagery and frontend CDNs still require network access.
 
   **Preview cleanup / mark eligible** lists unprotected expired releases,
-  unused snapshots/staging and abandoned incomplete copies, and starts their
+  unused staged copies and abandoned incomplete copies, and starts their
   configured grace period. It deletes nothing. After the grace period, tick
   the permanent-deletion confirmation and choose **Delete eligible artifacts
   after grace**. Eligibility/references are checked again under a process lock.
   Active and unexpired rollback releases are protected; retained candidates
-  protect their regional snapshot/staging IDs. Only managed child directories
+  protect their regional staging IDs. Only managed child directories
   are removed. Lightweight purge metadata remains under `purged/`; raw source
   caches and tracked curated assets are outside this cleanup. No scheduled
   cleanup runs, and changing policy resets existing grace marks.
 
-  Release operations share the persistent snapshot-operation status and
+  Release operations share the persistent artifact-operation status and
   refresh/reconnect behavior. Failed assembly stays `.incomplete-<release-id>/`;
   its error names `assembly.log`, and **Read assembly log** shows its last 64 KiB
   in the panel. It is never activated. After a crash, inspect
   owner PIDs in `data/.artifact-lifecycle-lock`, the release root's
   `.lifecycle-lock` and any workspace lock before removing only a demonstrably
-  stale lock. Managed capture/stage/release/cleanup writers serialize across
+  stale lock. Managed stage/release/cleanup writers serialize across
   processes; keep uncoordinated external artifact edits idle.
 
   CLI equivalents (use `--generation` from `list`; IDs below are placeholders):
@@ -426,7 +400,7 @@ minutes; a build can only start from the estimate that was shown.
   .venv/bin/python tools/local_releases.py create <staging-id> --generation 0
   .venv/bin/python tools/local_releases.py verify <release-id>
   .venv/bin/python tools/local_releases.py compare <release-id>
-  .venv/bin/python tools/local_releases.py policy --policy-json '{"rollback_hours":24,"candidate_hours":72,"snapshot_hours":72,"staging_hours":72,"incomplete_hours":24,"grace_hours":24}'
+  .venv/bin/python tools/local_releases.py policy --policy-json '{"rollback_hours":24,"candidate_hours":72,"staging_hours":72,"incomplete_hours":24,"grace_hours":24}'
   .venv/bin/python tools/local_releases.py publish <release-id> --generation 0 --reason "Inspected candidate against working output"
   .venv/bin/python tools/local_releases.py rollback --generation 1
   .venv/bin/python tools/local_releases.py cleanup
@@ -435,11 +409,11 @@ minutes; a build can only start from the estimate that was shown.
 
   The example windows are illustrative, not defaults. `approve` and `activate`
   are separate CLI/API actions when review and switching need separate steps.
-  Pass matching `--data`, `--snapshot-root`, `--staging-root` and `--release-root`
+  Pass matching `--data`, `--staging-root` and `--release-root`
   when using custom stores. The same data root must coordinate all writers.
   The authenticated API uses `GET /api/releases` and background
   `POST /api/releases/{create,verify,compare,approve,activate,publish,rollback,policy,cleanup}`.
-  Poll the returned `/api/snapshots/operations/<operation-id>` for the result.
+  Poll the returned `/api/operations/<operation-id>` for the result.
   Local approvals are rehearsal records, not independent-user authorization
   or a production review service.
 
