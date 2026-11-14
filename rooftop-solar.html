@@ -2669,7 +2669,11 @@ const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
 // A bucket URL ending in "/" moves every tile, detail and index fetch there
 // without touching the page: Pages caps a file at 100 MB and Auckland's
 // panel tiles alone are ~1.5 GB (docs/maintainers/scale-architecture.md).
-const DATA_BASE = (window.SITE && window.SITE.dataBase) || "";
+// On a local server, ?localdata=1 reads the data built beside the page
+// instead of the published release, to look at a local build.
+const DATA_BASE = (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)
+                   && new URLSearchParams(location.search).has("localdata"))
+  ? "" : ((window.SITE && window.SITE.dataBase) || "");
 let coveragePct = 25;   // Heat Map default (Josh, 18 Oct)
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 // Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between

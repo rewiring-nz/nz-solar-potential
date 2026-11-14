@@ -397,21 +397,260 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
-- **Faces straight from the raw LiDAR points (13 Nov, prototype, not in the
-  build).** `../point-roof-prototype/recon.py` (outside the repo): slide the
-  outline onto the roof-height returns; grow planes on the returns (not the
-  rasterised grid); roof lines are the planes' exact intersections plus fitted
-  step lines; cut the outline by every line; one graph cut gives each cell a
-  plane or "no roof here"; flat planes that meet without a step are one deck.
-  No trained model, no photo, about 0.3 s a roof. The survey supports it:
+- **Photo-first reading wired into the layout (14 Nov, behind
+  `SOLAR_VISION_ROOF=1`, off; branch `point-roof`; awaiting the owner's
+  blind picks).** `src/vision_roof.py`: `prep` writes gridded crops, a
+  reader (PROMPT) traces faces, obstructions and not-roof areas, `ingest`
+  turns a reading into `data/vision_faces/<id>.json`. The reading leads
+  every machine reading (`roof_partition.selected_doc`), its traced roof
+  edge replaces the surveyed outline (`outline_fit.fitted_outlines`), its
+  obstructions are added to the detector's (`build_layout_geojson`), and it
+  is slid onto the LiDAR for pitch; hand markup still wins. Run on the 24
+  noted houses with readers in the session: 19 readings used, 5 rated under
+  0.4 fell back to point faces. The 0.5 bar from the benchmark test did not
+  carry over: this run's prompt asked for an honest confidence and the
+  ratings came out about 0.1 lower, so 0.4 was used; the bar needs setting
+  against markup with the final prompt. Blind per-aspect page against
+  production, each drawn where the map would draw it:
+  https://claude.ai/artifact/L5GMXXbg9tANuwgZCC7rV6 (key
+  `data/blind_check/answer_key_14nov_photo_first_houses.json`; the agent
+  called photo-first better on lines on 17, same on 6, production on 1).
+  **Owner's blind picks (14 Nov,
+  `data/blind_check/owner_14nov_photo_first_houses.json`), photo-first /
+  production / same of 24: roof lines 20 / 3 / 1, obstructions 16 / 3 / 5,
+  panel layout 21 / 3 / 0** (point faces against production on the same
+  houses, 13 Nov: 12 / 8 / 4, 3 / 4 / 13, 8 / 9 / 7). On the 19 houses built
+  from a photo reading: lines 16 / 2 / 1, panels 17 / 2. Production won all
+  three on 4740401 and 5371209. The 5 point-face fallbacks also won 4 on
+  lines, where they had not on 13 Nov: the only change for them is the
+  drawing moved back onto the photo. The agent's lines call matched the
+  owner on 15 of 24. This says better than production, not right: the
+  count of roofs with nothing wrong (2 of 24 for point faces) is not yet
+  measured for photo-first, and these 24 houses were the development set.
+  **Fresh houses (14 Nov, awaiting picks):** 24 random pilot `home`
+  outlines over 60 m2, none used before, same prompt and 0.4 bar: 16 photo
+  readings, 8 fell back to point faces. Page
+  https://claude.ai/artifact/RqdBtssi2zt7n8TVgVMvMA, key
+  `data/blind_check/answer_key_14nov_photo_first_fresh.json`; the agent
+  called lines photo-first 10, same 13, production 1. Seen in the renders:
+  4750932 takes no panels on its main roof under the photo reading.
+  **Owner's picks on the fresh 24
+  (`data/blind_check/owner_14nov_photo_first_fresh.json`), photo-first /
+  production / same: roof lines 20 / 0 / 4, obstructions 16 / 0 / 7 (1
+  unsure), panel layout 16 / 0 / 7 (1 unsure).** On the 16 built from a
+  photo reading: lines 16 of 16, obstructions and panels 15 of 16. The 8
+  point-face fallbacks: lines 4 better, 4 same; six of them noted "both
+  terrible" or "both bad" — the unread photos are the open gap. Also noted:
+  panels not lined up with each other across faces (4725495), empty space
+  left without panels (4750932). Agent's lines call matched 12 of 24.
+  **Which reader, and what it costs (14 Nov, the same 24 hand-drawn dev
+  roofs, line F / lines right of 24):** through the API
+  (`src/vision_roof.py read`, effort high): `claude-fable-5-2` 0.727 / 16 at
+  $0.335 a roof (4.7k tokens in, 7.4k out); `claude-opus-5-5` 0.563 / 13 at
+  $0.062. As agents in the session: Fable 0.664 / 15, Sonnet 0.487 / 11,
+  Haiku 0.489 / 9. Production 0.575 / 11, point faces 0.621 / 11. Only the
+  top model reads roofs better than production; the Batch API halves its
+  price to about $0.17 a roof. Spent on this test: $9.64.
+  **Does the small model want more labels?** `tools/train_face_regions.py`
+  from scratch, 80 epochs, on 24 / 48 / 96 hand-drawn roofs, same 35 held
+  out: boundary F1 0.146 / 0.216 / 0.246. Still rising, slowly, from a low
+  base: a from-scratch U-Net is not the student.
+  **Open-model survey (agent web research, 14 Nov, not verified here):** no
+  published SAM fine-tune or open weights for roof planes at this
+  resolution; the best published RGB-only roof-plane result is AP50 0.57
+  (DINOv3 backbone, 2.1M Dutch 3DBAG masks). Suggested student: a pretrained
+  DINOv2/DINOv3 backbone with instance and boundary heads and a LiDAR side
+  branch, pretrained on free Dutch 3DBAG roof planes with 8 cm photos, then
+  fine-tuned on a few thousand teacher labels; estimated 30-60 GPU hours.
+  **A pretrained encoder lifts the student (14 Nov, scratchpad experiment,
+  not in the repo yet).** Same data, loss, metric and 35 held-out roofs as
+  `tools/train_face_regions.py`; ResNet-18 (ImageNet weights already on
+  the Mac) as the photo encoder at 512 px, U-Net decoder, LiDAR channels in
+  a side branch, 60 epochs: held-out boundary F1 0.413 on 96 hand-drawn
+  roofs (0.349 on 24, 0.313 on 48: noisy at these sizes), against 0.280
+  for the same network without pretrained weights and 0.246 for the old
+  U-Net. Photo only: 0.400, so the LiDAR branch adds little as built.
+  **500 pilot houses sent to the teacher (14 Nov):** `vision_roof.py
+  batch-submit`, `claude-fable-5-2`, estimate $85 (batches
+  msgbatch_01X5MiLBYLx8Dv2HKMp84mGA, msgbatch_019WPqbxFVTcvYQEtE2mJent).
+  Result: 492 readings for $84.98; 318 rated 0.5 or over became training
+  samples (photo-frame faces through `export_face_regions.roof_sample`).
+  **Student scored as roof faces on the 35 held-out hand-drawn pilot roofs
+  (maps -> `face_regions.learned_faces` -> benchmark arithmetic), line F /
+  lines right / face IoU:** hand 96 only 0.434 / 12 / 0.613; teacher 318
+  only 0.528 / 16 / 0.707; hand 96 + teacher 318 0.534 / 18 / 0.677.
+  Production on the same roofs 0.562 / 18 / 0.687, point faces 0.609 / 19 /
+  0.720. Teacher labels train the student as well as hand labels do, and
+  318 of them moved it 0.10; it is still under production. 30 minutes of
+  training on the Mac. Not yet tried: more labels (the pilot has only ~630
+  houses; other towns' photos are on the VM), a stronger open backbone
+  (DINOv2/DINOv3 need a download), the Dutch 3DBAG pretraining, the 174
+  lower-confidence readings. Spend to date on this work: $94.62.
+  **Direction channels fixed in augmentation, all paid labels used (14 Nov,
+  no further spend).** `tools/train_face_regions.dihedral` flips and rotates
+  the pixels but leaves the LiDAR downhill-direction channels (5, 6)
+  pointing the old way, so 7 of 8 augmented copies teach a wrong slope
+  direction. Fix (scratchpad `curve/pre.py`, mode `prefix`; not yet in the
+  repo trainer): a flip sets c5 = 1 - c5, each quarter turn sets
+  (c5, c6) = (1 - c6, c5). With the fix, same 35 held-out roofs, line F /
+  lines right / face IoU / faces right: hand 96 + teacher 318 0.546 / 18 /
+  0.662 / 11; hand 96 + 461 teacher readings rated 0.4 or over + session
+  readings (568) **0.626 / 21 / 0.697 / 13**. That is above production
+  (0.562 / 18 / 0.687) and point faces (0.609 / 19 / 0.720) on lines, between
+  them on face IoU. Boundary F1 on the maps did not move (0.438, 0.430), so
+  map F1 is a poor guide to the polygons. One training run each, 35 roofs:
+  a difference of 3 roofs is within what a rerun could move; the owner's
+  blind page decides. 40 minutes of training on the Mac, free to run per
+  roof.
+  **Blind page out, awaiting the owner (14 Nov):** 24 pilot homes the
+  student never saw (131 unseen homes, seed 14), production against the
+  student's faces through the vision-roof path (union of faces as roof edge,
+  slid onto the LiDAR, no obstructions from the student; trial readings read
+  through `SOLAR_VISION_FACES_DIR`). https://claude.ai/artifact/7w1gfP3rhP3vQUyajZ8hJq,
+  key `data/blind_check/answer_key_14nov_free_model_houses.json`. Agent's
+  line calls recorded first (`source_14nov_free_model_houses.json`): student
+  14, same 9, production 1. Layout health on the 24, production -> student:
+  panels 920 -> 875, clean roofs 50% -> 25% (12.6% of student panels count
+  as off the building because the health check measures against the
+  surveyed outline and the reading's roof edge is slid onto the LiDAR; an
+  earlier note here had the two columns swapped). Student lines are raster-traced and wobble; they
+  are not yet straightened or snapped to plane intersections. The student
+  lives in the scratchpad (`curve/pre.py`, `pre_prefix_568.pt`); it moves
+  into `tools/train_face_regions.py` and `src/face_regions.py` if the owner
+  prefers it. DINOv2 ViT-S student: stopped unscored. At 644 px on the Mac
+  it had not finished 5 of 40 epochs in 4 hours; it needs a GPU.
+  **Owner's blind picks (14 Nov,
+  `data/blind_check/owner_14nov_free_model_houses.json`), student /
+  production / same: lines 13 / 6 / 5, obstructions 12 / 6 / 6, panels
+  13 / 6 / 5.** The agent's line calls matched 13 of 24. For comparison the
+  paid reader on its own fresh page won lines 20 / 0 / 4. So the free
+  student is ahead of production but well short of its teacher, and the
+  owner's notes say "not great" or "terrible" on 9 of the 24, including
+  houses the student won. Production won 4725572, 4735022, 4735041, 4735396,
+  5370893, 5371131: on the renders (agent's reading, not a measurement) the
+  student's lines there wobble, or it split a plain face or merged two.
+  More teacher labels are the paid route to close the gap to the reader.
+  **Student in the build (14 Nov, uncommitted on `point-roof`).**
+  `tools/train_face_regions.py`: `EncoderNet` and the direction-channel fix
+  in `dihedral` (the training loop for EncoderNet is still the scratchpad
+  `curve/pre.py`). `src/face_regions.py`: loads
+  `data/models/face_regions_v3.pt` (57 MB, untracked; not yet on the VM or
+  in a bucket), `straight_faces` (header there: 35 held-out drawn roofs,
+  raster 0.626 / 21 / 0.697 / 13, straight 0.619 / 20 / 0.716 / 16, so
+  neutral on lines and better on faces; a loose plane-intersection rule
+  scored 0.560 and averaging over symmetries 0.553, both rejected).
+  `tools/student_faces.py <region>` reads every home (zone class home,
+  unmarked, no vision reading; 2.2 core-seconds a roof) into
+  `data/student_faces/`. `SOLAR_VISION_ROOF` now defaults on: a vision
+  reading, else a student reading, leads `selected_doc`, the roof edge and
+  the build key, and `register_imagery.drawing_shifts` moves such a roof's
+  drawing back by its own recorded slide. The 318 paid readings rated 0.5 or
+  over are in `data/vision_faces/` on this Mac. Fast tests pass. Not judged:
+  the straightened faces by the owner; any town but central Queenstown;
+  non-homes (left on production).
+  **District rebuild blocked (14 Nov):** `tools/vm_start.sh --status` (on
+  branch `vm-spending-limits`, not merged to main) reads 132 VM hours this
+  month against the cap of 120 in `data/vm_budget.json`; only the owner
+  raises it. A rebuild needs about 15 h (10.7 h re-lay measured for v72, 1 h
+  of readings on 16 cores, margin), about NZ$15. Steps once raised: commit
+  and push `point-roof`, start the VM, `tools/sync_vm.sh --ref point-roof`,
+  copy `face_regions_v3.pt` and `data/vision_faces/` up,
+  `tools/student_faces.py` per served region, `run_district_build.sh --force
+  --regions "<served + pilot>"`, `tools/deploy_from_vm.sh`, then `--push`.
+  **Pilot built locally for a preview (14 Nov):** every stage of the plan
+  run through `src/run_stage.py`, then `emit_region` and `combine_regions`
+  (23 minutes; `tools/pipeline.py` stops at preflight here because the GDAL
+  command-line tools are not installed on this Mac). 318 homes from vision
+  readings, 368 from the student, the rest as before. View with the
+  `solar-preview` server at
+  `http://localhost:8000/solar-map/rooftop-solar.html?localdata=1`: on a
+  local server `?localdata=1` reads the data beside the page instead of the
+  published release (`rooftop-solar.html`, DATA_BASE). The other 23 regions
+  in that local set are older local copies, not the live v78.
+  **Cost rules out a reader call per building** (owner, 14 Nov: millions of
+  buildings nationally; roughly 5-10 cents each, unchecked against the
+  price list). Direction: the reader labels a few thousand roofs once and a
+  small local model is trained on those labels and run free on the VM;
+  whether the small model keeps the reader's quality is untested.
+  Not done: lines snapped to LiDAR plane intersections; `emit_region` moving
+  a vision roof's drawing back by its stored slide (the review renders do);
+  a reader that calls the API instead of session agents (paid; estimate
+  before any district run); other towns. Fast tests pass.
+- **Roof read from the photo by a vision model (14 Nov, first test).** Owner's pinned notes on the 24 point-roof houses
+  (`data/blind_check/owner_notes_13nov_point_roof_houses.json`): 2 of 24
+  right; wrong roof lines on 15, an obstruction missed or a panel over one
+  on 12, panels over empty space, a balcony, a valley or a ridge on 9, the
+  outline off the photo on 8. Two causes found for the outline: the review
+  page drew the layout in the LiDAR frame without moving it back onto the
+  photo (emit does this from `image_shift.json`; `tools/layout_ab.py` output
+  does not), and `point_roof.register` slid 4734808 1.5 m where the measured
+  lean is 0.7 m. Test of the photo-first route: a Claude vision reader traced
+  24 hand-drawn pilot dev roofs from a gridded photo crop alone (never shown
+  the markup), scored with the benchmark's arithmetic: line F 0.664 (lines
+  right 15) against point faces 0.621 (11) and production 0.575 (11); face
+  IoU 0.655 / 0.665 / 0.644. The reader's own confidence separates its
+  results: at 0.5 or over (15 roofs) line F 0.81, 11 right; under 0.5 (9
+  roofs: dark, blurred, shadowed or overexposed photos) 0.41, where point
+  faces score 0.56. Vision where confident and point faces elsewhere: 0.72,
+  14 right. One untuned prompt, one read per roof, no snapping to LiDAR or
+  image edges. Next: snap traced lines to the LiDAR plane intersections and
+  take pitch from the returns inside each traced face; use the reader's
+  obstructions and not-roof areas; wire as a reading and judge blind on
+  houses. A district-wide run is a paid API cost to confirm first.
+
+- **Faces straight from the raw LiDAR points (13 Nov, behind
+  `SOLAR_POINT_ROOF=1`, off; branch `point-roof`).** `src/point_roof.py`:
+  slide the outline onto the roof-height returns; grow planes on the returns
+  (not the rasterised grid); roof lines are the planes' exact intersections
+  plus fitted step lines; cut the outline by every line; one graph cut gives
+  each cell a plane or "no roof here"; flat planes that meet without a step
+  are one deck. No trained model, no photo, about 0.3 s a roof for the
+  faces. `python src/point_roof.py <region> --ids ...` writes
+  `data/point_faces/<id>.json` (selected-faces schema plus the slide);
+  `roof_partition.selected_doc` reads it first and
+  `outline_fit.fitted_outlines` applies its slide. The survey supports it:
   9 returns/m2, about 2 cm of noise across a plane. Blind on the 70 drawn
-  pilot roofs, production -> prototype: line F 0.583 -> 0.629, lines right
-  33 -> 38, faces right 26 -> 28, face IoU 0.651 -> 0.682. Its smoothness
-  weight was picked on these 70 (0.4-4.0 gives 0.59-0.63), and production's
-  detectors trained on many of them; other towns and the held-back 30 are
-  unscored (their point clouds are on the VM). No owner verdict yet.
-  Known gaps: roofs with sparse scan lines, balcony terraces, cones, low hips
-  under 5 deg (merged as flat).
+  pilot roofs through `tools/layout_ab.py`, production -> switch on: line F
+  0.584 -> 0.614, lines right 33 -> 36, faces right 25 -> 24, face IoU
+  0.651 -> 0.674; by roof, line F better on 21, worse on 21. Layout of the
+  70: 335 s -> 87 s. A wash on the benchmark. Its smoothness weight was
+  picked on these 70, and production's detectors trained on many of them;
+  other towns and the held-back 30 are unscored (their point clouds are on
+  the VM). Blind side-by-side for the owner, the 30 roofs whose seams differ
+  most: https://claude.ai/artifact/JZUYsLVV85GS4yQuX95t8b (answers in its
+  `answers` collection; key and the agent's calls, recorded first, in
+  `data/blind_check/answer_key_13nov_point_roof.json`: points 19,
+  production 5, same 6).
+  Owner's verdict (13 Nov, `data/blind_check/owner_13nov_point_roof.json`):
+  points better on 14 (2 of them from the scores, no pick made), production
+  on 3, same on 12, unsure 1. Mean score out of 10 on the 24 roofs scored
+  both ways: production 2.3, points 4.1; points scored higher on 16, lower
+  on 1, equal on 7. The agent agreed on 13 of the 17 decided. On r30
+  (5371108) the pick says production and the scores say points (3 vs 5).
+  Fault tags, production / points, of 24: obstructions 14 / 10, roof lines
+  14 / 8, panels across a ridge 3 / 5, outline 3 / 3, over empty area 2 / 0.
+  So the owner prefers the point faces where the benchmark called a wash
+  (line F better on 21, worse on 21), and at 4.1 out of 10 they are still
+  far from good: obstructions are now the most common fault, then lines.
+  Second page, as the owner asked (the first had too many commercial roofs,
+  and one overall pick was hard where one drawing had the better panels and
+  the other the better lines): 24 random pilot houses (zone class home,
+  70-350 m2, seed 1311), one pick each for roof lines, obstructions and
+  panel layout (`tools/review_page.py --aspects`):
+  https://claude.ai/artifact/A38LDAsCTByYVNhBz5xXni (key
+  `data/blind_check/answer_key_13nov_point_roof_houses.json`; picks in
+  `owner_13nov_point_roof_houses.json`). Owner's picks, points / production
+  / same: roof lines 12 / 8 / 4; obstructions 3 / 4 / 13 (4 can't tell);
+  panel layout 8 / 9 / 7. On houses the point faces have a small edge on
+  lines and none on panels. The agent called 20 of the 24 "same" from a
+  contact sheet and matched the owner's lines pick on 6: thumbnails do not
+  show what the owner sees.
+  A pick does not say what is wrong, so the same 24 houses are on a page
+  where the owner pins the fault on the point build's drawing and describes
+  it (`tools/annotate_page.py`, pins as image fractions, map bounds in
+  `data/blind_check/notes_key_13nov_point_roof_houses.json`):
+  https://claude.ai/artifact/DbWrnP9P7qBQfBpUux872M (`notes` collection).
+  The 8 houses where production's lines won come first. Awaiting notes.
 - **The benchmark's truth drops drawn lines (13 Nov).** `markup_benchmark`
   takes the roof's lines from the label's derived faces, and a drawn line
   that closes no face is not in them. Over 150 drawn roofs (held-back

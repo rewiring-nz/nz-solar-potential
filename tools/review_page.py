@@ -13,7 +13,10 @@ published.
 
 pairs.json: [{"id": 5374556, "a": "v69.jpg", "a_label": "v69",
               "b": "v70.jpg", "b_label": "v70", "mine": "v70"}, ...]
-("b" may be left out to rate one drawing.) Writes out/index.html,
+("b" may be left out to rate one drawing.) With --aspects the owner does
+not score or pick an overall winner: each pair gets one pick per aspect
+(roof lines, obstructions, panel layout), because one drawing is often
+better on one and worse on another. Writes out/index.html,
 out/img/*.jpg and out/answer_key.json. Publish index.html with img/ as
 supporting files and the db capability; answers go to the "answers"
 collection, are kept in the viewer's browser too, and "Copy my answers"
@@ -24,6 +27,15 @@ import json
 import random
 import shutil
 from pathlib import Path
+
+# One pick per aspect (--aspects). An overall "which is better" was hard to
+# give where one drawing had the better panels and the other the better
+# lines or obstructions (owner, 13 Nov point-roof review).
+ASPECTS = [
+    ("lines", "Roof lines", "Faces, ridges, valleys and edges match the real roof"),
+    ("obstructions", "Obstructions", "Vents, skylights, chimneys and plant are found, and nothing else"),
+    ("panels", "Panel layout", "Panels sit where an installer would put them"),
+]
 
 FAULTS = [
     ("outline", "Building outline wrong"),
@@ -91,6 +103,9 @@ textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px s
 .nav { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
 .status { font-size: 0.9rem; color: var(--muted); min-height: 1.5em; }
 .status.err { color: var(--accent); }
+.aspect { margin: 10px 0 0; }
+.aspect .lbl b { color: var(--fg); }
+.aspect .verdicts { margin-top: 4px; }
 .done-card { background: var(--pick-bg); border: 1px solid var(--pick); border-radius: 8px; padding: 14px 16px; }
 @media (max-width: 680px) { .sides { grid-template-columns: 1fr; } .verdicts { grid-template-columns: 1fr 1fr; } }
 </style>
@@ -114,6 +129,7 @@ textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px s
   <section class="stage" aria-live="polite">
     <div class="pairhead"><b id="title">Roof 1</b><span class="status" id="status"></span></div>
     <div class="sides" id="sides"></div>
+    <div id="aspects"></div>
     <div class="verdicts" id="verdicts" role="group" aria-label="Which fits better">
       <button data-v="a">A fits better</button>
       <button data-v="same">About the same</button>
@@ -133,6 +149,7 @@ textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px s
 <script>
 const ITEMS = __ITEMS__;
 const FAULTS = __FAULTS__;
+const ASPECTS = __ASPECTS__;   // [] = score out of 10, fault chips and one overall pick
 const STORE = "__STORE__";
 const answers = {};   // key -> {choice, score:{a,b}, faults:{a:[],b:[]}, note}
 let cur = 0, db = null;
@@ -144,12 +161,13 @@ function sidesOf(it) { return it.b ? ["a", "b"] : ["a"]; }
 function complete(it) {
   const v = answers[it.key];
   if (!v) return false;
+  if (ASPECTS.length && it.b) return ASPECTS.every(([k]) => v.aspects && v.aspects[k]);
   if (sidesOf(it).some(s => !(v.score && v.score[s]))) return false;
   return !it.b || !!v.choice;
 }
 function entry(k) {
   const v = answers[k] = answers[k] || {};
-  v.score = v.score || {}; v.faults = v.faults || {};
+  v.score = v.score || {}; v.faults = v.faults || {}; v.aspects = v.aspects || {};
   return v;
 }
 
@@ -165,6 +183,10 @@ function render() {
       <div class="lbl">How good is it, out of 10?</div><div class="scores"></div>
       <div class="lbl">What's wrong with it?</div><div class="chips"></div>`;
     d.querySelector("img").src = it[s];
+    if (ASPECTS.length && two) {
+      d.querySelectorAll(".lbl, .scores, .chips").forEach(e => e.remove());
+      box.appendChild(d); return;
+    }
     const sc = d.querySelector(".scores");
     for (let n = 1; n <= 10; n++) {
       const b = document.createElement("button"); b.textContent = n;
@@ -187,7 +209,20 @@ function render() {
     });
     box.appendChild(d);
   });
-  $("verdicts").hidden = !two;
+  const asp = $("aspects"); asp.innerHTML = "";
+  if (ASPECTS.length && two) ASPECTS.forEach(([k, label, hint]) => {
+    const row = document.createElement("div"); row.className = "aspect";
+    row.innerHTML = `<div class="lbl"><b>${label}</b> · ${hint}</div><div class="verdicts" role="group" aria-label="${label}"></div>`;
+    [["a", "A better"], ["same", "About the same"], ["b", "B better"], ["unsure", "Can't tell"]].forEach(([val, text]) => {
+      const b = document.createElement("button"); b.textContent = text;
+      const on = !!(v.aspects && v.aspects[k] === val);
+      b.className = on ? "on" : ""; b.setAttribute("aria-pressed", on);
+      b.onclick = () => { entry(it.key).aspects[k] = val; save(it.key); render(); };
+      row.querySelector(".verdicts").appendChild(b);
+    });
+    asp.appendChild(row);
+  });
+  $("verdicts").hidden = !two || ASPECTS.length > 0;
   document.querySelectorAll("#verdicts button").forEach(b => b.classList.toggle("on", b.dataset.v === v.choice));
   if (document.activeElement !== $("note")) $("note").value = v.note || "";
   const n = ITEMS.filter(complete).length;
@@ -249,6 +284,10 @@ INTRO_PAIRS = ("Each roof is drawn twice, by two versions of the build; which is
                "hidden and shuffled. Score each drawing out of 10 against the real roof in "
                "the photo, tick what's wrong with it, and pick the one that fits better. "
                "More panels is not automatically better.")
+INTRO_ASPECTS = ("Each roof is drawn twice, by two versions of the build; which is which is "
+                 "hidden and shuffled. For each of the three things below, say which drawing "
+                 "is closer to the real roof in the photo. They can differ: one drawing can "
+                 "have the better roof lines and the other the better panels.")
 INTRO_ONE = ("Each roof is drawn as the map shows it now. Score the drawing out of 10 "
              "against the real roof in the photo and tick what's wrong with it.")
 
@@ -259,6 +298,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--title", default="Roof review")
     ap.add_argument("--seed", type=int, default=11)
+    ap.add_argument("--aspects", action="store_true",
+                    help="one pick per aspect (roof lines, obstructions, panel layout) "
+                         "instead of scores, fault chips and one overall pick")
     a = ap.parse_args()
     src = json.loads(Path(a.pairs).read_text())
     out = Path(a.out).expanduser()
@@ -281,7 +323,9 @@ def main():
                     "mine": p.get("mine")})
     store = "review-" + "".join(c if c.isalnum() else "-" for c in a.title.lower())
     html = (PAGE.replace("__TITLE__", a.title)
-            .replace("__INTRO__", INTRO_PAIRS if any(i.get("b") for i in items) else INTRO_ONE)
+            .replace("__INTRO__", (INTRO_ASPECTS if a.aspects else INTRO_PAIRS)
+                     if any(i.get("b") for i in items) else INTRO_ONE)
+            .replace("__ASPECTS__", json.dumps(ASPECTS if a.aspects else []))
             .replace("__ITEMS__", json.dumps(items))
             .replace("__FAULTS__", json.dumps(FAULTS))
             .replace("__STORE__", store))

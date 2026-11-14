@@ -179,6 +179,8 @@ def fitted_outlines(gdf, region_dir, use=None):
     drawn in the labelling tool replaces the surveyed and the fitted one:
     hand markup wins (roof_line_source.hand_outline)."""
     from src.roof_line_source import hand_outline
+    from src.point_roof import point_shift
+    from src.vision_roof import vision_outline
     col = gdf.geometry.name
     ids = gdf["building_id"] if "building_id" in gdf.columns else gdf.index
     fits = {}
@@ -195,7 +197,18 @@ def fitted_outlines(gdf, region_dir, use=None):
         if drawn is not None:
             new.append(drawn)
             continue
+        # the roof edge a vision reading traced on the photo replaces the
+        # surveyed outline, already in the LiDAR frame (src/vision_roof.py)
+        seen = None if int(bid) in marked else vision_outline(bid)
+        if seen is not None:
+            new.append(seen)
+            continue
         s = None if int(bid) in marked else accepted(fits.get(str(int(bid))))
+        # faces made from the raw returns carry the slide they were made
+        # with; the outline must be in their frame (src/point_roof.py)
+        ps = None if int(bid) in marked else point_shift(bid)
+        if ps is not None:
+            s = ps if (ps[0] or ps[1]) else None
         new.append(translate(g, s[0], s[1]) if s else g)
     gdf[col] = new
     return gdf

@@ -346,7 +346,18 @@ figure for the same thing. Code enforces this:
   `dataVersion`).
 
 ### Geometry, sunlight and front end
-- Roof precedence: hand-drawn markup > selected faces > LiDAR fallback.
+- Roof precedence: hand-drawn markup > photo reading > selected faces >
+  LiDAR fallback. A photo reading (`SOLAR_VISION_ROOF=1`, the default;
+  `src/vision_roof.py`) is a file per building in `data/vision_faces/` (a
+  paid vision model's reading of the photo, kept when rated 0.5 or higher)
+  or, failing that, `data/student_faces/` (a local model trained on those
+  readings, `src/face_regions.py` `straight_faces`, written for homes by
+  `tools/student_faces.py <region>` before the build). Both folders are
+  ignored by Git and are copied to the VM by hand; the model is
+  `data/models/face_regions_v3.pt`. In the owner's blind check on 24 unseen
+  homes the local model's raw regions beat the selected faces on lines
+  13 to 6; the straightened version in the build is not yet judged, and
+  the local model is untested outside central Queenstown.
   A building outline drawn in `mark_roofs.html` (its outline tools; the
   label's `outline` ring) replaces the surveyed and the fitted outline in
   `outline_fit.fitted_outlines` (`roof_line_source.hand_outline`).

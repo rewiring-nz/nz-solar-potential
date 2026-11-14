@@ -1306,7 +1306,14 @@ def selected_doc(building_id):
         return None
     # the vision referee's pick comes first when it is on (src/reading_referee.py)
     from src.reading_referee import REFEREE_FACES_DIR, USE_READING_REFEREE
-    dirs = (([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
+    # faces from the raw LiDAR returns lead every other machine reading when
+    # they are on (src/point_roof.py)
+    from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
+    # a confident reading of the photo leads them all (src/vision_roof.py)
+    from src.vision_roof import STUDENT_FACES_DIR, USE_VISION_ROOF, VISION_FACES_DIR
+    dirs = (([VISION_FACES_DIR, STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
+            + ([POINT_FACES_DIR] if USE_POINT_ROOF else [])
+            + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])
     for d in dirs:
         fp = d / f"{building_id}.json"
