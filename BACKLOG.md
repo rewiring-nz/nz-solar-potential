@@ -435,6 +435,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Faces straight from the raw LiDAR points (13 Nov, prototype, not in the
+  build).** `../point-roof-prototype/recon.py` (outside the repo): slide the
+  outline onto the roof-height returns; grow planes on the returns (not the
+  rasterised grid); roof lines are the planes' exact intersections plus fitted
+  step lines; cut the outline by every line; one graph cut gives each cell a
+  plane or "no roof here"; flat planes that meet without a step are one deck.
+  No trained model, no photo, about 0.3 s a roof. The survey supports it:
+  9 returns/m2, about 2 cm of noise across a plane. Blind on the 70 drawn
+  pilot roofs, production -> prototype: line F 0.583 -> 0.629, lines right
+  33 -> 38, faces right 26 -> 28, face IoU 0.651 -> 0.682. Its smoothness
+  weight was picked on these 70 (0.4-4.0 gives 0.59-0.63), and production's
+  detectors trained on many of them; other towns and the held-back 30 are
+  unscored (their point clouds are on the VM). No owner verdict yet.
+  Known gaps: roofs with sparse scan lines, balcony terraces, cones, low hips
+  under 5 deg (merged as flat).
+- **The benchmark's truth drops drawn lines (13 Nov).** `markup_benchmark`
+  takes the roof's lines from the label's derived faces, and a drawn line
+  that closes no face is not in them. Over 150 drawn roofs (held-back
+  excluded) 22% of drawn line length is missing from the truth; 45 roofs
+  lose over 20%, 17 over half (15B Frankton Rd 4725546: 10 lines drawn, 2
+  faces). A build that finds those lines is scored down. Score against the
+  lines as drawn as well (`evalrecon.py` `dl_f`: production 0.620, prototype
+  0.671 on the 70), and repair face derivation for open-ended lines.
+
 - **Faces messier than real roofs (11 Nov, five Wakatipu Heights houses).**
   All five readings scored under the 0.60 trust line (four ended on the
   LiDAR path, one on SAM), so faces follow DSM pixels: jagged edges,
@@ -555,7 +579,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   changes, 14 better, 15 worse. No gain: the switch stays off. The build's
   own pick has caught up with what the referee adds; the gap left is
   between the pick and the best drawing shown (63 vs 78), which neither
-  finds.
+  finds. Head to head (`vision_referee.py pair`, Opus 5.5 at medium effort):
+  on the 47 roofs where the four-way pick differed from the build's, the
+  build's faces against that pick, asked twice with the order swapped, the
+  pick taking the roof only if it wins both ($1.93, $0.045 a roof). Scored
+  on the same candidates: line F 0.586 -> 0.598, roofs right 63 -> 64; of
+  the 33 roofs it changes, 18 better, 11 worse (four-way: 19 better, 19
+  worse). The two orders agreed on 42 of 47, and the first-shown drawing
+  won 46 of 94, so there is no order lean; where they split, the challenger
+  was worse on 3 of 4. Kept as a tool, not wired in: one roof gained, at
+  about $0.03 a roof across a district. The gap to the best drawing shown
+  (64 vs 78) is not one a referee closes.
 - **Faces that don't meet in 3D.** `tools/layout_health.py` `seam_step`
   flags shared edges where the two faces' planes step over 0.4 m apart and
   the DSM shows one continuous roof. On the live Queenstown layouts: 6.8% of
