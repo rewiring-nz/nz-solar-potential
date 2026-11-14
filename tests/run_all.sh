@@ -57,6 +57,7 @@ if command -v node >/dev/null 2>&1; then
   done
   run "map layer legend (js)" node tests/test_map_layers.js
   run "pipeline progress (js)" node tests/test_pipeline_progress.js
+  run "pipeline area tree (js)" node tests/test_pipeline_tree.js
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
 fi
@@ -110,6 +111,7 @@ run "pipeline web panel data" $PY tests/test_pipeline_web_data.py
 run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
 run "pipeline per-area queue" $PY tests/test_pipeline_web_batch.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
+run "pipeline area catalogue, status" $PY tests/test_pipeline_web_catalog.py
 run "regional snapshots"     $PY tests/test_regional_snapshots.py
 run "regional staging"       $PY tests/test_regional_staging.py
 run "local releases"         $PY tests/test_local_releases.py

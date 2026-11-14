@@ -1,9 +1,11 @@
 # Build data
 
-The local **Build data** workspace keeps area selection, existing data status,
-estimates and job progress beside one map. Expand **New build**, **Queue** and
-**Jobs** to follow a build without switching pages. A target toggle at the top
-picks where the work applies:
+The local **Build data** workspace is one list of areas beside a map. Tick
+areas, build them, follow the queue and stage the results without leaving
+the list: each row's status updates in place. Advanced, rarely used settings
+(the national area catalogue, snapshots, local releases and retention) are on
+the **⚙ Config** page. A target toggle at the top picks where the work
+applies:
 
 | Target | Shows | A build runs | Costs |
 | --- | --- | --- | --- |
@@ -68,6 +70,200 @@ listener is gone by repeating the `lsof` command. Do not stop a process just
 because it owns the port if its command is unrelated.
 
 ## Use it
+
+### Areas
+
+The list is a tree of LINZ building-outline levels: **council** (territorial
+authority) › **town or city** › **suburb or locality**. Only areas with
+buildings appear; water such as lakes and inland bays is left out. The tree
+starts collapsed to councils. Each row is one line: tick box, name, building
+count and a status dot; click ▸ to expand a row and see its options, its last
+completed build and every earlier attempt (latest first).
+
+- **Search** matches council, town and locality names; several words narrow
+  the match (`queenstown fern`).
+- **Filters** are fixed choices: *Built OK*, *Failed*, *Queued / running*,
+  *Never built*, *Stale* (a rebuild would change some buildings),
+  *Built without imagery*, *Built with imagery*, *Built with paid referee* and
+  *Built, not staged*. Several filters must all pass.
+- **Sort**: *Geographic (tree)* keeps the hierarchy; the others (last
+  completed, last attempt, status, buildings, name) list matching localities
+  flat, with their council and town shown beneath.
+- **Select all matching** ticks every area that passes the search and filters.
+- Ticking a council or town ticks every locality inside it; untick
+  individual localities afterwards. A partly ticked parent shows a dash.
+- Clicking an area's name zooms the map to it. Clicking an area on the map at
+  zoom 10 or closer ticks or unticks it.
+
+Status colours are shared by the list dots, the map fill and the legend:
+*Not built*, *Queued*, *Running*, *Built*, *Staged*, *Live* and *Failed*.
+Click a legend entry to hide or show areas in that state.
+Status is per target: Local reads this checkout's runs, snapshots and
+staging; Developer and Published read the cloud data catalogue. Local areas
+that are not in the national catalogue (for example `pilot`) are listed under
+**Other local areas**.
+
+The sticky bar under the list sums the selection (areas, buildings and a
+rough compute time from this checkout's measured rate; downloads are extra and
+appear in the Build… estimate) and offers the actions the
+selection allows:
+
+- **Build…** opens the build dialog for every selected area.
+- **Push to staging** (Local only) captures a [local snapshot](#config-page)
+  of each selected built region and stages it. Unbuilt areas and grid cells
+  are skipped. Builds must be idle. Staged regions may come from different
+  input settings and code or data versions.
+- **Cancel queued** removes the selection's waiting jobs.
+- **Clear** unticks everything.
+
+### Build
+
+The build dialog estimates every selected area and applies one set of
+options to all of them. Per area it shows:
+
+- building count
+- download size
+- time
+- disk use
+- warnings, such as no LiDAR or a large area
+- blockers, such as unavailable LINZ metadata or too little disk
+
+Aerial imagery is included by default and can be unchecked. That skips its
+download, alignment, image-based obstruction checks, and paid AI referee;
+outlines, elevation and LiDAR remain unchanged. The estimate recalculates
+when the imagery or paid-referee choice changes, and the resulting choices
+are pinned to the job. The paid AI referee is off by default and is only
+available when imagery is included.
+
+Covering LINZ elevation and imagery layers are discovered from public layer
+metadata, cached under ignored `data/sources/linz/`, and pinned from estimate
+through execution. Areas with no covering LiDAR DSM use the warned synthetic
+surface path; they are not blocked by a static survey list.
+
+For Developer and Published the estimate also shows the Google Cloud
+cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
+VM/startup/storage allowances rather than assuming a single combined run.
+The queue button is enabled after checking the cost-acknowledgment box.
+Local builds queue directly from **Add to queue**. The paid AI referee is
+off unless you tick it; the estimate shows its upper cost.
+
+### Grid cells
+
+Grid cells are a build option, not a list level. Use them for a quick
+developer check of a small area, or for a locality too large to build on one
+computer in reasonable time. In the build dialog (Local only), **Split each
+locality into grid cells** offers *Off* (default), *Auto* or a fixed 2×2
+to 10×10 grid. *Auto* splits only localities over 12,000 buildings, into
+N×N cells with N = ceil(√(buildings / 12,000)), clamped to 2–10, so each cell
+holds roughly 12,000 buildings or fewer. Cells with no buildings are dropped.
+The cells then appear as a fourth level under their locality, and stay there
+until the locality is built whole.
+
+When every estimated cell has built, the locality row offers **Combine**.
+That queues an ordinary whole-locality build. It reuses the downloaded
+sources but reruns geometry and yields. Once it succeeds, the cells are
+hidden again. Cells are never snapshotted, staged or published.
+
+Each locality boundary is the LINZ suburb/locality polygon, not a council
+boundary. The grid divides its bounding box and clips each cell to the
+polygon. It needs no additional API key or dataset.
+
+The estimate reports the selected building count, the sum of disjoint
+buffered acquisition footprints, download estimate, runtime, disk estimate
+and warnings. These are planning estimates, not limits. A partial-area build
+runs locally only; it cannot start a Developer or Published build. Each
+selected cell is estimated and built as its own work area and queue job.
+The estimate lists each cell separately and totals their costs/resources;
+shared source caches may reduce actual downloads on later jobs.
+
+Buildings are selected as whole LINZ building-outline features. For each
+outline, the pipeline finds its representative point in EPSG:2193 and assigns
+it to the lexically lowest selected-area ID whose polygon covers that point.
+Only buildings owned by a selected grid cell are included; boundaries never
+clip buildings and ties cannot duplicate them. This is a stable rule for an
+identical parent, grid size and selection.
+
+Each selected cell has a deterministic selection ID below its parent:
+`data/regions/<parent>/grid-<16-hex-id>/`. Its `selection.json`
+records the parent, selected IDs, boundary dataset/version and geometry,
+ownership rule, building IDs and acquisition footprints. Pipeline artefacts
+are written below that selection directory, and emitted artefacts below the
+matching `data/out/` directory; the parent locality's files are not changed.
+Each run initially combines its own cell into the local map data. The last
+job of a multi-area local submission combines existing emitted regions/cells
+once, without rerunning geometry or yields. Cancelling that final job also
+cancels its combine. Partial outputs remain partial, not complete parent coverage.
+Selections are excluded from normal complete-area listings and are never
+published as complete coverage.
+
+### Queue and jobs
+
+The **Queue** and **Jobs** panels sit over the map.
+
+- **Queue**: each lane's running and waiting jobs, titled by locality rather
+  than job ID. Submitting two regions creates two jobs; submitting two grid
+  cells creates two jobs, rather than one grouped selection. Jobs from a
+  submission are added together in order (grid cells in row/column ID order)
+  and run sequentially within their lane. Each job has independent progress,
+  logs and cancellation; failure of one does not prevent the next from running.
+  Existing multi-area job history remains readable. Running cards show
+  the current stage and area, approximate progress, elapsed time, estimated
+  remaining time and the age of the last log/status activity. Waiting jobs
+  show their lane position, wait reason and estimated runtime, not a moving
+  bar or a promised start time. **Remove** drops a waiting job; **Cancel**
+  stops a running one. Click an area's title on a queue or completed-job card
+  to zoom to its boundary and highlight it briefly; multi-area jobs show each
+  area as a separate link. If a grid-selection boundary is not available yet,
+  the map shows its parent locality. Expanding an area's row also shows its
+  attempts, with links to their job details. Use **Details / log** to open a
+  completed job's report and log view. Completed jobs are shown only in
+  **Jobs** so each job appears in one stage at a time.
+- **Jobs**: completed job history, newest first. Select a job to see progress,
+  per-area status and report links, and to open its live log. **Cancel** stops
+  a running build; finished areas are kept.
+
+Queue cards refresh every five seconds and use the same progress calculation
+as job details. Completed and deliberately skipped stages advance progress,
+weighted by historical stage durations when available; interrupted, failed
+and unrun stages do not count as complete. Percentages can remain still
+during a long stage and are approximate, not elapsed-time animations.
+Only a successful job reaches 100%, after final combining or publishing.
+Preparation and cloud builds without measured stage telemetry show an
+indeterminate indicator instead of an invented percentage. Cloud stage
+details are not currently streamed from the VM.
+
+An exhausted runtime estimate reads **Taking longer than estimated**, not
+zero seconds remaining. **Last activity** measures log/status writes, not a
+worker heartbeat; a quiet stage is not necessarily stuck. If updates fail,
+the last known cards remain visible with a disconnected warning; progress
+bars are hidden until updates reconnect so stale work does not appear live.
+
+Estimates are planning assumptions, not limits; actual time and download can
+be higher. The time per building comes from the median of this checkout's
+last ten finished runs, or the defaults in
+[`estimate_defaults.json`](../../tools/pipeline_webui/estimate_defaults.json),
+which record where each figure was measured. An estimate expires after 30
+minutes; a build can only start from the estimate that was shown.
+
+### Config page
+
+**⚙ Config** holds settings that are rarely needed.
+
+- **National area catalogue**: the council › town › locality list, building
+  counts, areas and simplified boundaries come from LINZ and are cached under
+  ignored `data/pipeline_web/cache/` (`national_catalog.json` and
+  `national_localities.geojson`). The list opens from that cache. **Refresh
+  from LINZ** rebuilds it in the background, in about a minute and a half;
+  do this when LINZ publishes new outlines or locality boundaries. The same
+  build runs from the command line:
+
+  ```sh
+  .venv/bin/python -m tools.pipeline_webui.national_catalog
+  ```
+
+  The authenticated API is `GET /api/catalog`, `GET /api/catalog/geometry`,
+  `POST /api/catalog/refresh` (poll it with `GET`) and
+  `GET /api/catalog/status` for per-area status on the selected target.
 
 - **Local snapshots**: expand this section, choose a built region and select
   **Capture local snapshot**. This is always local, regardless of the target
@@ -242,123 +438,6 @@ because it owns the port if its command is unrelated.
   Local approvals are rehearsal records, not independent-user authorization
   or a production review service.
 
-- **New build**: search for a suburb or locality, or zoom in to level 10 or
-  closer and click areas on the map. **Existing data for this area** reports
-  the selected target's known area state and links to available previews or
-  reports. A built summary, prepared inputs and a failed last run are distinct
-  states; no area record does not mean that no shared cached dataset covers
-  the area. Local cached dataset extents are shown separately in **Layers &
-  legend**; an extent does not guarantee complete valid data. **Refresh**
-  rereads area status and, for cloud targets, VM status. **Estimate** shows,
-  per area:
-  - building count
-  - download size
-  - time
-  - disk use
-  - warnings, such as no LiDAR or a large area
-  - blockers, such as unavailable LINZ metadata or too little disk
-
-  Aerial imagery is included by default and can be unchecked. That skips its
-  download, alignment, image-based obstruction checks, and paid AI referee;
-  outlines, elevation and LiDAR remain unchanged. The estimate recalculates
-  when the imagery or paid-referee choice changes, and the resulting choices
-  are pinned to the job. The paid AI referee is off by default and is only
-  available when imagery is included.
-
-  Covering LINZ elevation and imagery layers are discovered from public layer
-  metadata, cached under ignored `data/sources/linz/`, and pinned from estimate
-  through execution. Areas with no covering LiDAR DSM use the warned synthetic
-  surface path; they are not blocked by a static survey list.
-
-  Selecting a locality also enables **Choose grid cells**. The parent polygon
-  is the LINZ suburb/locality boundary; the council name groups localities and
-  is not the boundary being built. The panel divides the boundary's bounding
-  box into 2×2 through 10×10 cells (default 4×4) and clips each cell to the
-  locality polygon. It uses the LINZ key and boundary already needed for area
-  search; no additional API key or dataset is required. Select
-  individual cells or use **Select all** / **Deselect all**. An empty
-  selection cannot be estimated. Changing the parent or grid size invalidates
-  the previous estimate.
-
-  The estimate reports the selected building count, the sum of disjoint
-  buffered acquisition footprints, download estimate, runtime, disk estimate
-  and warnings. These are planning estimates, not limits. A partial-area build
-  runs locally only; it cannot start a Developer or Published build. Each
-  selected cell is estimated and built as its own work area and queue job.
-  The estimate lists each cell separately and totals their costs/resources;
-  shared source caches may reduce actual downloads on later jobs.
-
-  Buildings are selected as whole LINZ building-outline features. For each
-  outline, the pipeline finds its representative point in EPSG:2193 and assigns
-  it to the lexically lowest selected-area ID whose polygon covers that point.
-  Only buildings owned by a selected grid cell are included; boundaries never
-  clip buildings and ties cannot duplicate them. This is a stable rule for an
-  identical parent, grid size and selection.
-
-  Each selected cell has a deterministic selection ID below its parent:
-  `data/regions/<parent>/grid-<16-hex-id>/`. Its `selection.json`
-  records the parent, selected IDs, boundary dataset/version and geometry,
-  ownership rule, building IDs and acquisition footprints. Pipeline artefacts
-  are written below that selection directory, and emitted artefacts below the
-  matching `data/out/` directory; the parent locality's files are not changed.
-  Each run initially combines its own cell into the local map data. The last
-  job of a multi-area local submission combines existing emitted regions/cells
-  once, without rerunning geometry or yields. Cancelling that final job also
-  cancels its combine. Partial outputs remain partial, not complete parent coverage.
-  Selections are excluded from normal complete-area listings and are never
-  published as complete coverage.
-
-  For Developer and Published the estimate also shows the Google Cloud
-  cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
-  VM/startup/storage allowances rather than assuming a single combined run.
-  The queue button is enabled after checking the cost-acknowledgment box.
-  Local builds queue directly from **Add to queue**. The paid AI referee is
-  off unless you tick it; the estimate shows its upper cost.
-- **Queue**: each lane's running and waiting jobs, titled by locality rather
-  than job ID. Submitting two regions creates two jobs; submitting two grid
-  cells creates two jobs, rather than one grouped selection. Jobs from a
-  submission are added together in order (grid cells in row/column ID order)
-  and run sequentially within their lane. Each job has independent progress,
-  logs and cancellation; failure of one does not prevent the next from running.
-  Existing multi-area job history remains readable. Running cards show
-  the current stage and area, approximate progress, elapsed time, estimated
-  remaining time and the age of the last log/status activity. Waiting jobs
-  show their lane position, wait reason and estimated runtime, not a moving
-  bar or a promised start time. **Remove** drops a waiting job; **Cancel**
-  stops a running one. Click an area's title on a queue or completed-job card
-  to zoom to its boundary and highlight it briefly; multi-area jobs show each
-  area as a separate link. If a grid-selection boundary is not available yet,
-  the map shows its parent locality. Selecting an area also shows its
-  matching active or queued job, or the latest recently completed job, with a
-  link to its details. Use **Details / log** to open a completed job's report
-  and log view. Completed jobs are shown only in **Jobs** so each job
-  appears in one stage at a time.
-- **Jobs**: completed job history, newest first. Select a job to see progress,
-  per-area status and report links, and to open its live log. **Cancel** stops
-  a running build; finished areas are kept.
-
-Queue cards refresh every five seconds and use the same progress calculation
-as job details. Completed and deliberately skipped stages advance progress,
-weighted by historical stage durations when available; interrupted, failed
-and unrun stages do not count as complete. Percentages can remain still
-during a long stage and are approximate, not elapsed-time animations.
-Only a successful job reaches 100%, after final combining or publishing.
-Preparation and cloud builds without measured stage telemetry show an
-indeterminate indicator instead of an invented percentage. Cloud stage
-details are not currently streamed from the VM.
-
-An exhausted runtime estimate reads **Taking longer than estimated**, not
-zero seconds remaining. **Last activity** measures log/status writes, not a
-worker heartbeat; a quiet stage is not necessarily stuck. If updates fail,
-the last known cards remain visible with a disconnected warning; progress
-bars are hidden until updates reconnect so stale work does not appear live.
-
-Estimates are planning assumptions, not limits; actual time and download can
-be higher. The time per building comes from the median of this checkout's
-last ten finished runs, or the defaults in
-[`estimate_defaults.json`](../../tools/pipeline_webui/estimate_defaults.json),
-which record where each figure was measured. An estimate expires after 30
-minutes; a build can only start from the estimate that was shown.
 
 ## What a build does
 

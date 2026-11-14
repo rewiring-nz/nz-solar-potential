@@ -66,12 +66,21 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   generation run in `tools/pipeline_webui/geo_worker.py`; a test in
   `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html` (titled **Build data**).
-  Area selection, target-specific existing-data status, estimates, active
-  queue and completed job history share one workspace with expandable
-  **New build**, **Queue** and **Jobs** sections. Prepared/built area overlays
-  and the grouped dataset legend remain on the map; area status links to
-  available previews and reports. The former `data-explorer.html` URL redirects
-  to this page. See
+  The page is one tick-box tree, council › town › locality (LINZ
+  `territorial_authority`, locality `major_name`, `suburb_locality`), whose
+  rows show each area's state in place for the selected target; status
+  colours the map. Search, fixed filters and sorts are pure logic in
+  `pipeline_tree.js` (`tests/test_pipeline_tree.js`); a sticky selection bar
+  offers Build…, Push to staging (local, regions only), Cancel queued and
+  Clear; **Queue** and **Jobs** sit over the map. Catalogue refresh,
+  snapshots and local releases are on the **⚙ Config** view. The tree comes
+  from a prebuilt national catalogue
+  (`python -m tools.pipeline_webui.national_catalog`, about 80 s, 3,227
+  localities with buildings; water types dropped) cached in ignored
+  `data/pipeline_web/cache/`; per-area status joins runs, jobs, snapshots,
+  staging and selections in `tools/pipeline_webui/region_status.py`
+  (`/api/catalog*`, `tests/test_pipeline_web_catalog.py`). The former
+  `data-explorer.html` URL redirects to this page. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
 - **Local snapshots** in Build data preserve an emitted region without
   rebuilding or publishing (`tools/regional_snapshots.py`,
@@ -108,8 +117,12 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   waiting work; terminal jobs appear once in the newest-first Jobs history.
   Disconnected views retain last-known cards with a warning instead of
   displaying stale progress as live.
-- The web pipeline can select a user-sized bounding-box grid (2x2 through
-  10x10, default 4x4) within a LINZ locality. Web submissions enqueue one
+- The web pipeline's build dialog can split localities into a bounding-box
+  grid (Off by default; Auto splits only localities over 12,000 buildings into
+  N = ceil(sqrt(buildings/12,000)) per side, clamped 2-10; or fixed 2x2-10x10),
+  local target only. Cells show as a fourth tree level until a whole-locality
+  build (**Combine**, offered once every estimated cell has built) succeeds;
+  cells are never staged. Web submissions enqueue one
   independently cancellable job per selected region or cell, sequentially in
   its target lane (`JobManager.start_batch`). Cells are materialised separately
   while retaining the whole grid for stable building ownership. Cloud estimates

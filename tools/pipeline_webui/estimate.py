@@ -254,6 +254,7 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
             raise EstimateError("selection contains an area outside the selected locality", 409)
         from src.grid_selection import selection_id
         from tools.pipeline_webui import geo_worker
+        empty_cells = []
         for grid_id in selection["grid_ids"]:
             area = selection_id(selection["parent_region"], [grid_id], selection["grid_size"])
             request_path = web_dir(data) / "selections" / f"{file_slug(area)}.json"
@@ -269,6 +270,11 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
             resolved = geo_worker.run(
                 ["selection", str(request_path), str(data)],
                 env={"LINZ_API_KEY": api_key_fn()})
+            # The status view counts a grid complete when every cell with buildings has built.
+            write_json_atomic(request_path, {**request, "buildings": resolved["buildings"]})
+            if not resolved["buildings"]:
+                empty_cells.append(grid_id)
+                continue
             size = {"buildings": resolved["buildings"], "bbox": resolved["bbox"],
                     "bbox_km2": resolved.get("acquisition_km2", resolved["bbox_km2"]),
                     "source": "grid selection"}
@@ -282,7 +288,10 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         selection_info = {"parent_region": selection["parent_region"],
                           "grid_ids": selection["grid_ids"],
                           "grid_size": selection["grid_size"],
+                          "empty_grid_ids": empty_cells,
                           "selection_ids": [row["region"] for row in rows]}
+        if not rows:
+            raise EstimateError("the selected grid cells contain no buildings")
     else:
         regions = validate_regions(regions)
         # The VM fetches its own inputs, so a cloud estimate counts nothing as cached here.

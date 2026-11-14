@@ -21,6 +21,7 @@ import argparse
 import hmac
 import http.server
 import json
+import re
 import secrets
 import signal
 import sys
@@ -38,6 +39,8 @@ from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import geo_worker as GW
 from tools.pipeline_webui import grid_proxy as GP
 from tools.pipeline_webui import locality_proxy as LP
+from tools.pipeline_webui import national_catalog as NC
+from tools.pipeline_webui import region_status as RS
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
 from tools.pipeline_webui.snapshots import Snapshots
@@ -82,6 +85,7 @@ class App:
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
         self.snapshots = Snapshots(self.data, snapshot_root, staging_root, release_root, self.root, python)
+        self.catalog_refresher = NC.Refresher(self.data, self.api_key_fn, self.http_get)
 
     def api_key(self) -> str:
         key = self.api_key_fn()
@@ -122,6 +126,17 @@ class WebHandler(RangeHandler):
             # A refused POST's body may be unread; close rather than parse it as a request.
             self.close_connection = True
             self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file_json(self, path: Path) -> None:
+        if not path.is_file():
+            raise HttpError(404, "no locality boundaries yet; refresh the national catalogue from Config")
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/geo+json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
@@ -172,7 +187,7 @@ class WebHandler(RangeHandler):
                 self._send_json(status, payload)
         except HttpError as exc:
             self._send_json(exc.status, {"error": str(exc)})
-        except (E.EstimateError, LP.LocalityError, JobError, SnapshotError) as exc:
+        except (E.EstimateError, LP.LocalityError, JobError, SnapshotError, NC.CatalogError) as exc:
             self._send_json(exc.status, {"error": str(exc)})
         except Exception as exc:  # never echo text that could carry a keyed URL
             self._send_json(500, {"error": f"server error ({type(exc).__name__})"})
@@ -188,6 +203,22 @@ class WebHandler(RangeHandler):
     def _route(self, method: str, parts: list[str], query: dict, body: dict):
         app = self.app
         head = parts[0] if parts else ""
+        if head == "catalog":
+            if parts == ["catalog"] and method == "GET":
+                catalog = NC.load(app.data)
+                if catalog is None:
+                    raise HttpError(404, "no national catalogue yet; refresh it from Config")
+                return 200, catalog
+            if parts == ["catalog", "geometry"] and method == "GET":
+                self._send_file_json(NC.geometry_path(app.data))
+                return 200, None
+            if parts == ["catalog", "refresh"]:
+                if method == "POST":
+                    return 202, app.catalog_refresher.start()
+                if method == "GET":
+                    return 200, app.catalog_refresher.status()
+            if parts == ["catalog", "status"] and method == "GET":
+                return 200, RS.status(app.data, app.snapshots)
         if head == "releases":
             if len(parts) == 1 and method == "GET":
                 return 200, app.snapshots.releases.list()
@@ -207,8 +238,7 @@ class WebHandler(RangeHandler):
             if parts == ["snapshots"] and method == "GET":
                 return 200, {
                     "snapshots": app.snapshots.store.list(),
-                    "regions": list_regions(app.data / "out", "summary.json",
-                                            include_grid_selections=True),
+                    "regions": list_regions(app.data / "out", "summary.json"),
                 }
             if parts == ["snapshots"] and method == "POST":
                 if app.jobs.active_jobs().get("local") or app.jobs.workspace_owner() is not None:
@@ -218,6 +248,8 @@ class WebHandler(RangeHandler):
                     validate(region)
                 except ValueError as exc:
                     raise HttpError(400, str(exc)) from exc
+                if re.search(r"/grid-[0-9a-f]{16}$", region):
+                    raise HttpError(400, "Grid cells are local build pieces; snapshot and stage whole regions only")
                 return 202, app.snapshots.start("capture", region)
             if len(parts) == 3 and parts[1] == "operations" and method == "GET":
                 return 200, app.snapshots.get(parts[2])
@@ -327,6 +359,7 @@ class WebHandler(RangeHandler):
             cloud_cost_acknowledged=(target == "local"
                                      or body.get("cloud_cost_acknowledged") is True))
         RC.invalidate()
+        RS.invalidate()
         return {"job_id": job_ids[0], "job_ids": job_ids, "status": "queued"}
 
     def _stream(self, job_id: str) -> None:
@@ -369,6 +402,7 @@ class WebHandler(RangeHandler):
                     self.wfile.write(b"event: end\ndata: {}\n\n")
                     self.wfile.flush()
                     RC.invalidate()
+                    RS.invalidate()
                     return
                 if not chunk["text"]:
                     time.sleep(STREAM_POLL_S)
