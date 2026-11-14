@@ -59,7 +59,8 @@ class App:
                  api_key_fn: Callable[[], str] | None = None, http_get: Callable | None = None,
                  estimates: E.EstimateStore | None = None, jobs: JobManager | None = None,
                  cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None,
-                 snapshot_root: Path | None = None, staging_root: Path | None = None):
+                 snapshot_root: Path | None = None, staging_root: Path | None = None,
+                 release_root: Path | None = None):
         self.token = token
         self.data = Path(data)
         self.root = Path(root)
@@ -80,7 +81,7 @@ class App:
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
-        self.snapshots = Snapshots(self.data, snapshot_root, staging_root)
+        self.snapshots = Snapshots(self.data, snapshot_root, staging_root, release_root, self.root, python)
 
     def api_key(self) -> str:
         key = self.api_key_fn()
@@ -187,6 +188,14 @@ class WebHandler(RangeHandler):
     def _route(self, method: str, parts: list[str], query: dict, body: dict):
         app = self.app
         head = parts[0] if parts else ""
+        if head == "releases":
+            if len(parts) == 1 and method == "GET":
+                return 200, app.snapshots.releases.list()
+            if len(parts) == 4 and parts[1] == "incomplete" and parts[3] == "log" and method == "GET":
+                return 200, app.snapshots.releases.incomplete_log(parts[2])
+            actions = {"create", "verify", "compare", "approve", "activate", "publish", "rollback", "policy", "cleanup"}
+            if len(parts) == 2 and parts[1] in actions and method == "POST":
+                return 202, app.snapshots.start(f"release_{parts[1]}", body)
         if head == "staging":
             if parts == ["staging"] and method == "GET":
                 return 200, {"staged": app.snapshots.staging.list()}
@@ -367,7 +376,56 @@ class WebHandler(RangeHandler):
             return
 
     # ---- verbs ---------------------------------------------------------
+    def _local_release(self, head_only: bool = False) -> bool:
+        path = urllib.parse.urlsplit(self.path).path
+        if path not in ("/local-deploy", "/local-deploy/") and not path.startswith("/local-releases/"):
+            return False
+        if self._refused():
+            return True
+        try:
+            if path in ("/local-deploy", "/local-deploy/"):
+                active = self.app.snapshots.releases.state()["active"]
+                if not active:
+                    raise HttpError(404, "No local release has been activated")
+                self.send_response(302)
+                self.send_header("Location", f"/local-releases/{active}/rooftop-solar.html")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return True
+            parts = urllib.parse.unquote(path).split("/")
+            identifier = snapshot_id(parts[2])
+            manifest = self.app.snapshots.releases.manifest(identifier)
+            relative = "/".join(parts[3:]) or "rooftop-solar.html"
+            if relative not in {item["path"] for item in manifest["site_inventory"]}:
+                raise HttpError(404, "File is not part of this release")
+            site = self.app.snapshots.releases.path(identifier) / "site"
+            target = site / relative
+            if any(p.is_symlink() for p in (target, *target.parents)) or not target.resolve().is_relative_to(site):
+                raise HttpError(404, "Invalid release file")
+            # A request handler is per connection, so changing its static root
+            # cannot affect another client's release-pinned reads.
+            previous_directory, previous_path = self.directory, self.path
+            try:
+                self.directory = str(site)
+                self.path = "/" + relative
+                if head_only:
+                    super().do_HEAD()
+                else:
+                    super().do_GET()
+            finally:
+                self.directory, self.path = previous_directory, previous_path
+        except (SnapshotError, HttpError, OSError, ValueError) as exc:
+            self.send_error(getattr(exc, "status", 404), str(exc))
+        return True
+
+    def do_HEAD(self) -> None:
+        if not self._local_release(head_only=True):
+            super().do_HEAD()
+
     def do_GET(self) -> None:
+        if self._local_release():
+            return
         if urllib.parse.urlsplit(self.path).path.startswith("/api/"):
             if not self._refused():
                 self._api("GET")
@@ -439,10 +497,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="local snapshot storage (default: data/regional_snapshots)")
     parser.add_argument("--staging-root", type=Path,
                         help="local staging storage (default: data/regional_staging)")
+    parser.add_argument("--release-root", type=Path,
+                        help="local release storage (default: data/local_releases)")
     args = parser.parse_args(argv)
     render_docs(ROOT)
     app = App(secrets.token_urlsafe(24), python=args.python, snapshot_root=args.snapshot_root,
-              staging_root=args.staging_root)
+              staging_root=args.staging_root, release_root=args.release_root)
     try:
         server = make_server(app, args.port)
     except OSError as exc:

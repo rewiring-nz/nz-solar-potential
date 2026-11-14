@@ -87,6 +87,20 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   manifest. Repeating staging verifies and reuses the same copy; incomplete
   copies reserve their IDs and are never listed as complete. Staged verification
   needs no original snapshot. No deployment, cloud calls or automatic cleanup.
+- **Local releases** in Build data (`tools/local_releases.py`) assemble verified
+  complete staged regions into ignored `data/local_releases/` (`--release-root`).
+  Unchanged active regions are carried forward. The frozen-input combine mode
+  validates the region contract without re-emitting mutable inputs; geometry and
+  yields are not rerun. Candidates pin copied frontend/data and record source
+  hashes. Comparison/review binds the manifest and active generation; activation
+  atomically replaces local state. Automatic approval requires all-pass metrics;
+  warnings/unknowns require a recorded manual reason. Grid selections, overlapping
+  building ownership, mixed assumptions and incompatible contracts are blocked.
+  Terrain and markup overlays are omitted; local 3D is explicitly disabled.
+  Rollback protects one previous release for an explicit window. Cleanup requires
+  configured lifetimes, a mark/grace phase and explicit apply; no scheduled purge
+  or cloud action occurs. Capture/stage/release/cleanup share the process lock
+  `data/.artifact-lifecycle-lock`. See the web-pipeline guide for recovery and CLI.
 - The web queue and job details share stage-weighted progress
   (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
   reaches 100%; cloud runs without stage telemetry remain indeterminate.

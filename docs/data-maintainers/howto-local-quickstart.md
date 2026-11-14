@@ -58,7 +58,11 @@ If a step fails, find its number in [Troubleshooting](troubleshooting.md).
   [Build data panel](web-pipeline.md). Capture and verify an independent local
   copy without rebuilding or publishing.
   Then use **Stage locally** to verify and copy the snapshot into separate
-  local staging; this does not deploy or change the map.
+  local staging; this does not deploy or change the map. In **Local releases**,
+  select staged versions, assemble and preview a candidate, compare it with the
+  local deployment, then approve and activate it. Unselected deployed regions
+  are preserved. Configure retention explicitly before activation; rollback
+  and grace-period cleanup are available without cloud calls or another build.
 - [Build another region](howto-build-a-region.md).
 - [Run the quickstart in the cloud](howto-cloud-quickstart.md) for a
   shareable preview.

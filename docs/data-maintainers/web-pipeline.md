@@ -35,6 +35,7 @@ It prints a link such as
 | `--no-open-browser` | Print the link without opening it. |
 | `--snapshot-root PATH` | Store local snapshots here instead of ignored `data/regional_snapshots/`. Use an untracked location outside working outputs. |
 | `--staging-root PATH` | Store staged copies here instead of ignored `data/regional_staging/`. Must not overlap snapshot storage or emitted outputs. |
+| `--release-root PATH` | Store isolated local candidates, deployment state and purge records here instead of ignored `data/local_releases/`. Must not overlap snapshots, staging or working outputs. |
 
 `Ctrl+C` stops the panel. Running builds are cancelled first and queued
 ones are dropped. Cancelling a cloud build stops the local command; the VM
@@ -91,7 +92,7 @@ because it owns the port if its command is unrelated.
   After a process crash, inspect the operation and workspace-lock owner before
   manually removing a stale lock; do not remove a lock held by another process.
   Treat completed snapshots as read-only; editing them causes verification
-  failure. Approval, publication and retention are later steps.
+  failure. Use **Local releases** below for comparison, local activation and retention.
 
   The same operations are available without the panel:
 
@@ -118,8 +119,9 @@ because it owns the port if its command is unrelated.
   Repeating **Stage locally** verifies and reuses an identical completed copy
   rather than duplicating it. Corrupted staged copies or changed source metadata
   fail explicitly and are never overwritten. Failed/interrupted transfers remain
-  as `.incomplete-<snapshot-id>/` and reserve that ID; automatic resume and cleanup
-  are not implemented. Inspect the error and confirm no copy is running before
+  as `.incomplete-<snapshot-id>/` and reserve that ID; automatic resume is not
+  implemented. Explicit retention cleanup is available under **Local releases**.
+  Inspect the error and confirm no copy is running before
   manually removing only that incomplete directory. Do not edit completed copies.
   Source and staging consume separate disk space. Partial selections remain
   partial data; staging does not qualify them for publication.
@@ -137,6 +139,108 @@ because it owns the port if its command is unrelated.
   using custom stores. Keep custom locations outside Git and working outputs.
   Only checksum/inventory work and file copies run; no source acquisition,
   geometry, solar processing or workspace build lock is needed for staging.
+
+- **Local releases**: this is a filesystem-only publication rehearsal. It
+  never uploads, starts a VM, switches the published site's configuration or
+  changes the working map under `data/`, regardless of the target toggle.
+  Keep using the separate Developer/Published build workflow for cloud work.
+
+  1. In **Local staging**, tick exactly one version of each complete region
+     to replace. Grid selections cannot replace a complete region.
+  2. Choose **Create local candidate**. All other active regions are carried
+     forward. Creation copies regional inputs and the frontend, validates the
+     frozen region contract, and assembles shared map assets using
+     `combine_regions.py --frozen-inputs --skip-markup-lines`. It does not fetch
+     sources, re-emit mutable regions or rerun geometry/yields. Tile joining,
+     checksum verification, shared cells and seasonal-curve assembly still use
+     CPU and additional disk.
+  3. Open **Preview candidate**. This immutable release URL remains pinned
+     even if another release becomes active. **Verify release** checks the full
+     site and regional inventories. Compare candidate previews with the active
+     map; integrity verification does not establish roof/model quality.
+  4. Choose **Compare with local deployment**. Green/pass means recorded and
+     compatible, amber/warning means changed, red/fail means a coverage
+     regression, and grey/unknown means metadata is missing. Increases are not
+     assumed to be quality improvements. Different regional source datasets are
+     allowed; source and boundary metadata is compared when present, never
+     invented for older outputs. Unknown/new fields are preserved in summaries.
+     Automatic review requires explicit `coverage.complete: true`; false is a
+     failure, while absent/unrecognized completeness metadata is unknown.
+     The current shared assumptions document requires equal PV assumptions
+     across regions; incompatible contracts, partial regions and overlapping
+     building ownership are blocked, not review overrides.
+  5. Under **Retention and cleanup**, explicitly configure all six positive
+     windows in hours and save. No destructive defaults are supplied. Choose
+     windows suitable for the local disk and review schedule.
+  6. Choose **Approve and activate locally**. An all-pass comparison is approved
+     by the automatic policy. Warnings, regressions or unknowns require the
+     recorded **Manual review reason**. The optional **Approve candidate**
+     button records a review without activating. Both records bind the exact
+     candidate manifest, comparison-policy version and baseline generation.
+     Integrity failures cannot be overridden.
+  7. Open **Open local deployed map**. `/local-deploy/` resolves once to an
+     immutable release URL; reload that entry URL to follow a later activation.
+     A single atomic state replacement switches the complete site, rather than
+     copying files over a live deployment. Stale candidates cannot overwrite a
+     newer deployment: refresh and create a new candidate, which preserves
+     unrelated regional updates.
+  8. **Roll back local deployment** verifies and switches to the one previous
+     release inside its configured window. Repeated rollbacks do not extend
+     that window. Existing browser tabs remain pinned to their original release.
+
+  Candidates live in `data/local_releases/releases/<release-id>/`. Their manifest
+  records regional snapshot IDs/checksums, emitted summaries, output contract,
+  copied frontend hashes and assembly-source hashes. Assembly uses the current
+  checkout's producer; hashes describe it, but do not archive its dependencies
+  or make missing source datasets reproducible. Staging and snapshots can be
+  verified independently; a release also keeps its own regional copies.
+  Local releases omit shared terrain/terrain-ground tiles and hand-drawn markup
+  overlays: 3D is explicitly disabled, with no fallback to working/cloud data.
+  Basemap imagery and frontend CDNs still require network access.
+
+  **Preview cleanup / mark eligible** lists unprotected expired releases,
+  unused snapshots/staging and abandoned incomplete copies, and starts their
+  configured grace period. It deletes nothing. After the grace period, tick
+  the permanent-deletion confirmation and choose **Delete eligible artifacts
+  after grace**. Eligibility/references are checked again under a process lock.
+  Active and unexpired rollback releases are protected; retained candidates
+  protect their regional snapshot/staging IDs. Only managed child directories
+  are removed. Lightweight purge metadata remains under `purged/`; raw source
+  caches and tracked curated assets are outside this cleanup. No scheduled
+  cleanup runs, and changing policy resets existing grace marks.
+
+  Release operations share the persistent snapshot-operation status and
+  refresh/reconnect behavior. Failed assembly stays `.incomplete-<release-id>/`;
+  its error names `assembly.log`, and **Read assembly log** shows its last 64 KiB
+  in the panel. It is never activated. After a crash, inspect
+  owner PIDs in `data/.artifact-lifecycle-lock`, the release root's
+  `.lifecycle-lock` and any workspace lock before removing only a demonstrably
+  stale lock. Managed capture/stage/release/cleanup writers serialize across
+  processes; keep uncoordinated external artifact edits idle.
+
+  CLI equivalents (use `--generation` from `list`; IDs below are placeholders):
+
+  ```sh
+  .venv/bin/python tools/local_releases.py list
+  .venv/bin/python tools/local_releases.py create <staging-id> --generation 0
+  .venv/bin/python tools/local_releases.py verify <release-id>
+  .venv/bin/python tools/local_releases.py compare <release-id>
+  .venv/bin/python tools/local_releases.py policy --policy-json '{"rollback_hours":24,"candidate_hours":72,"snapshot_hours":72,"staging_hours":72,"incomplete_hours":24,"grace_hours":24}'
+  .venv/bin/python tools/local_releases.py publish <release-id> --generation 0 --reason "Inspected candidate against working output"
+  .venv/bin/python tools/local_releases.py rollback --generation 1
+  .venv/bin/python tools/local_releases.py cleanup
+  .venv/bin/python tools/local_releases.py cleanup --apply
+  ```
+
+  The example windows are illustrative, not defaults. `approve` and `activate`
+  are separate CLI/API actions when review and switching need separate steps.
+  Pass matching `--data`, `--snapshot-root`, `--staging-root` and `--release-root`
+  when using custom stores. The same data root must coordinate all writers.
+  The authenticated API uses `GET /api/releases` and background
+  `POST /api/releases/{create,verify,compare,approve,activate,publish,rollback,policy,cleanup}`.
+  Poll the returned `/api/snapshots/operations/<operation-id>` for the result.
+  Local approvals are rehearsal records, not independent-user authorization
+  or a production review service.
 
 - **New build**: search for a suburb or locality, or zoom in to level 10 or
   closer and click areas on the map. **Existing data for this area** reports

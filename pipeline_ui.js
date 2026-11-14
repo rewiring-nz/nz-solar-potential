@@ -92,6 +92,9 @@
 
   // Snapshots always operate on local emitted outputs, independently of target.
   let snapshotBusy = false;
+  const releaseChoices = new Set();
+  let releaseState = null;
+  let releaseRecords = [];
   async function loadSnapshots() {
     if (!writable) return;
     try {
@@ -126,6 +129,9 @@
           <div class="muted job-id">Staging / source snapshot: ${esc(item.staging_id)}</div>
           <div class="muted">Staged: ${esc(item.staged_at || "unknown")}<br>
           Built: ${esc(item.built_at || "unknown")}. Not approved or deployed. Listing is not verification.</div>
+          <label><input type="checkbox" data-release-choice="${esc(item.staging_id)}"
+            ${releaseChoices.has(item.staging_id) ? "checked" : ""} ${item.error ? "disabled" : ""}>
+            Include this version in a local candidate</label><br>
           ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
           <button class="small" data-verify-staged="${esc(item.staging_id)}"
             ${snapshotBusy ? "disabled" : ""}>Verify staged copy</button></div>`).join("")
@@ -133,6 +139,15 @@
       $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) =>
         button.addEventListener("click", () => runSnapshot(
           `staging/${encodeURIComponent(button.dataset.verifyStaged)}/verify`, {})));
+      const available = new Set(staging.staged.filter((item) => !item.error).map((item) => item.staging_id));
+      for (const id of releaseChoices) if (!available.has(id)) releaseChoices.delete(id);
+      $("staging-list").querySelectorAll("[data-release-choice]").forEach((input) =>
+        input.addEventListener("change", () => {
+          if (input.checked) releaseChoices.add(input.dataset.releaseChoice);
+          else releaseChoices.delete(input.dataset.releaseChoice);
+          releaseButtons();
+        }));
+      await loadReleases();
     } catch (error) {
       $("snapshot-status").textContent = `Cannot load snapshots: ${error.message}`;
       $("snapshot-capture").disabled = true;
@@ -141,6 +156,7 @@
 
   async function followSnapshot(identifier) {
     snapshotBusy = true;
+    releaseButtons();
     $("snapshot-capture").disabled = true;
     $("snapshot-region").disabled = true;
     $("snapshot-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
@@ -154,13 +170,43 @@
           verify: ["Verifying local snapshot", "Verified snapshot"],
           stage: ["Copying and verifying local staging", "Staged and verified"],
           verify_staged: ["Verifying staged copy", "Verified staged copy"],
+          release_create: ["Assembling isolated local candidate", "Candidate ready"],
+          release_compare: ["Comparing with active local release", "Comparison ready"],
+          release_verify: ["Verifying candidate files", "Candidate verified"],
+          release_approve: ["Recording local review", "Review recorded"],
+          release_activate: ["Switching local deployment", "Local deployment switched"],
+          release_publish: ["Reviewing and switching local deployment", "Local deployment switched"],
+          release_rollback: ["Rolling back local deployment", "Local rollback completed"],
+          release_policy: ["Saving retention policy", "Policy saved"],
+          release_cleanup: ["Checking retention and cleanup", "Cleanup completed"],
         };
         const label = labels[operation.action] || ["Running operation", "Completed"];
-        $("snapshot-status").textContent = operation.status === "running"
+        const statusElement = operation.action.startsWith("release_") ? $("release-status") : $("snapshot-status");
+        statusElement.textContent = operation.status === "running"
           ? `${label[0]}...`
           : operation.status === "succeeded"
-            ? `${label[1]} ${operation.staging_id || operation.snapshot_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
+            ? operation.action.startsWith("release_")
+              ? `${operation.action.replace("release_", "")}: completed locally.`
+              : `${label[1]} ${operation.staging_id || operation.snapshot_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
             : `${operation.status}: ${operation.error || "Operation did not complete."}`;
+        if (operation.result) renderReleaseResult(operation);
+        if (operation.failed_release_id) {
+          $("release-result").innerHTML = '<button class="small" id="release-failure-log">Read assembly log</button><pre id="release-log" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';
+          $("release-failure-log").addEventListener("click", async () => {
+            try {
+              const log = await api(`releases/incomplete/${encodeURIComponent(operation.failed_release_id)}/log`);
+              $("release-log").textContent = (log.truncated ? "Last 64 KiB:\n" : "") + log.text;
+            } catch (error) {
+              $("release-log").textContent = `Log unavailable: ${error.message}`;
+            }
+          });
+        }
+        if (operation.status === "succeeded" && operation.action === "release_create") {
+          await loadReleases();
+          $("release-select").value = operation.result.release_id;
+          $("release-reason").value = "";
+          releasePreview();
+        }
         if (operation.status === "running") await new Promise((resolve) => setTimeout(resolve, 750));
       } while (operation.status === "running");
     } catch (error) {
@@ -174,14 +220,17 @@
   async function runSnapshot(path, body) {
     if (!writable || snapshotBusy) return;
     snapshotBusy = true;
+    releaseButtons();
     $("snapshot-capture").disabled = true;
-    $("snapshot-status").textContent = "Starting local snapshot operation...";
+    const status = path.startsWith("releases/") ? $("release-status") : $("snapshot-status");
+    status.textContent = "Starting local operation...";
     try {
       const operation = await api(path, { method: "POST", body });
       sessionStorage.setItem("snapshotOperation", operation.operation_id);
       await followSnapshot(operation.operation_id);
     } catch (error) {
-      $("snapshot-status").textContent = `Snapshot operation refused: ${error.message}`;
+      const status = path.startsWith("releases/") ? $("release-status") : $("snapshot-status");
+      status.textContent = `Operation refused: ${error.message}`;
     } finally {
       snapshotBusy = false;
       await loadSnapshots();
@@ -195,6 +244,105 @@
     const operation = sessionStorage.getItem("snapshotOperation");
     if (operation) await followSnapshot(operation);
     else await loadSnapshots();
+  });
+
+  function releaseButtons() {
+    const disabled = !writable || snapshotBusy || !releaseState;
+    $("release-create").disabled = disabled || !releaseChoices.size;
+    $("release-select").disabled = disabled || !releaseRecords.length;
+    document.querySelectorAll("[data-release-action]").forEach((button) => {
+      button.disabled = disabled || !$("release-select").value;
+    });
+    $("release-policy").disabled = disabled;
+    $("release-cleanup-preview").disabled = disabled || !releaseState.policy;
+    $("release-cleanup-apply").disabled = disabled || !releaseState.policy || !$("release-cleanup-confirm").checked;
+    $("release-rollback").disabled = disabled || !releaseState.previous ||
+      !releaseState.rollback_until || Date.parse(releaseState.rollback_until) <= Date.now();
+  }
+
+  function releasePreview() {
+    const id = $("release-select").value;
+    $("release-preview").innerHTML = id
+      ? `<a href="/local-releases/${encodeURIComponent(id)}/rooftop-solar.html" target="_blank" rel="noopener">Preview exact release</a>` : "";
+  }
+
+  async function loadReleases() {
+    if (!writable) return;
+    try {
+      const result = await api("releases");
+      releaseState = result.state;
+      releaseRecords = result.releases;
+      const previous = $("release-select").value;
+      $("release-select").innerHTML = releaseRecords.map((item) =>
+        `<option value="${esc(item.release_id)}">${esc(item.created_at)} · ${Object.keys(item.region_builds).length} regions · ${esc(item.release_id.slice(0, 8))}</option>`).join("");
+      if (releaseRecords.some((r) => r.release_id === previous)) $("release-select").value = previous;
+      else if (releaseRecords.length) $("release-select").value = releaseRecords[releaseRecords.length - 1].release_id;
+      $("release-active").innerHTML = releaseState.active
+        ? `Active: ${esc(releaseState.active)} · generation ${releaseState.generation}<br>
+           <a href="/local-deploy/" target="_blank" rel="noopener">Open local deployed map</a><br>
+           Rollback expires: ${esc(releaseState.rollback_until || "none")}`
+        : "No local deployment. The first candidate contains only the selected complete regions.";
+      document.querySelectorAll("[data-retention]").forEach((input) => {
+        if (!input.value && releaseState.policy) input.value = releaseState.policy[input.dataset.retention];
+      });
+      releasePreview();
+    } catch (error) {
+      releaseState = null;
+      $("release-status").textContent = `Releases unavailable: ${error.message}`;
+    }
+    releaseButtons();
+  }
+
+  function renderReleaseResult(operation) {
+    const data = operation.result;
+    if (operation.action === "release_compare") {
+      $("release-result").innerHTML = `<p>${data.stale ? "STALE: create a new candidate against the current deployment." :
+        data.automatic_eligible ? "Eligible for automatic approval." : "Manual review reason required; unknown values are not passes."}</p>
+        ${data.warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join("")}
+        <table><thead><tr><th>Region / metric</th><th>Active</th><th>Candidate</th><th>Status / reason</th></tr></thead><tbody>
+        ${data.metrics.map((m) => `<tr><td>${esc(m.region)}<br>${esc(m.field)}</td>
+          <td>${esc(m.previous == null ? "unknown / new" : JSON.stringify(m.previous))}</td>
+          <td>${esc(m.proposed == null ? "unknown" : JSON.stringify(m.proposed))}</td>
+          <td><span class="${m.status === "fail" ? "block" : m.status === "warning" ? "warn" : m.status === "pass" ? "pill PASS" : "muted"}">${esc(m.status)}</span> ${esc(m.reason)}</td></tr>`).join("")}
+        </tbody></table>`;
+    } else {
+      $("release-result").innerHTML = `<pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(data, null, 2))}</pre>`;
+    }
+  }
+
+  $("release-select").addEventListener("change", () => {
+    $("release-result").textContent = "";
+    $("release-reason").value = "";
+    releasePreview();
+  });
+  $("release-refresh").addEventListener("click", async () => {
+    if (snapshotBusy) return;
+    const operation = sessionStorage.getItem("snapshotOperation");
+    if (operation) await followSnapshot(operation);
+    else await loadReleases();
+  });
+  $("release-create").addEventListener("click", () => {
+    if (releaseState) runSnapshot("releases/create", {staging_ids: [...releaseChoices], generation: releaseState.generation});
+  });
+  document.querySelectorAll("[data-release-action]").forEach((button) =>
+    button.addEventListener("click", () => {
+      if (releaseState) runSnapshot(`releases/${button.dataset.releaseAction}`, {
+        release_id: $("release-select").value, generation: releaseState.generation,
+        reason: $("release-reason").value,
+      });
+    }));
+  $("release-rollback").addEventListener("click", () => {
+    if (releaseState) runSnapshot("releases/rollback", {generation: releaseState.generation});
+  });
+  $("release-policy").addEventListener("click", () => {
+    const policy = {};
+    document.querySelectorAll("[data-retention]").forEach((input) => { policy[input.dataset.retention] = Number(input.value); });
+    runSnapshot("releases/policy", {policy});
+  });
+  $("release-cleanup-confirm").addEventListener("change", releaseButtons);
+  $("release-cleanup-preview").addEventListener("click", () => runSnapshot("releases/cleanup", {apply:false}));
+  $("release-cleanup-apply").addEventListener("click", () => {
+    if ($("release-cleanup-confirm").checked) runSnapshot("releases/cleanup", {apply:true});
   });
 
   function showSection(name) {

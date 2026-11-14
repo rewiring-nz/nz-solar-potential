@@ -149,7 +149,7 @@ class StagingTests(unittest.TestCase):
             nonlocal attempted
             if not attempted:
                 attempted = True
-                with self.assertRaisesRegex(SnapshotError, "incomplete or running"):
+                with self.assertRaisesRegex(SnapshotError, "busy"):
                     StagingStore(self.snapshots).stage(self.identifier)
             return original(source, destination, *args, **kwargs)
 

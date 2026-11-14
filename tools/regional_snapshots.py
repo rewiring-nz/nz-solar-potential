@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -38,6 +39,23 @@ def snapshot_id(value: str) -> str:
     if not isinstance(value, str) or not _ID.fullmatch(value):
         raise SnapshotError("Invalid snapshot ID")
     return value
+
+
+@contextmanager
+def artifact_lock(data: Path):
+    """Serialize managed artifact writers and cleanup across local processes."""
+    lock = Path(data) / ".artifact-lifecycle-lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock.mkdir()
+    except FileExistsError as exc:
+        raise SnapshotError("Artifact lifecycle is busy; after a crash inspect .artifact-lifecycle-lock", 409) from exc
+    try:
+        (lock / "owner.json").write_text(json.dumps({"pid": os.getpid(), "started_at": now()}))
+        yield
+    finally:
+        (lock / "owner.json").unlink(missing_ok=True)
+        lock.rmdir()
 
 
 def inventory(directory: Path) -> list[dict[str, Any]]:
@@ -81,6 +99,10 @@ class SnapshotStore:
             raise SnapshotError("Snapshot storage must be separate from emitted outputs")
 
     def capture(self, region: str, identifier: str | None = None) -> dict:
+        with artifact_lock(self.data):
+            return self._capture(region, identifier)
+
+    def _capture(self, region: str, identifier: str | None = None) -> dict:
         try:
             validate(region)
         except ValueError as exc:

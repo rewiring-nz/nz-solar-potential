@@ -328,7 +328,7 @@ def _combine_curves(summaries, dest_tmp):
 
 
 def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
-            build_markup_lines=True):
+            build_markup_lines=True, frozen_inputs=False):
     t0 = time.time()
     out_root, dest = Path(out_root), Path(dest)
     if regions is None:
@@ -339,6 +339,12 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
     if not regions:
         raise SystemExit(f"no emitted regions under {out_root}")
     for r in regions:
+        if frozen_inputs:
+            from src.output_contract import validate_region
+            problems = validate_region(out_root / r)
+            if problems:
+                raise SystemExit(f"{r}: invalid frozen input: " + "; ".join(problems[:10]))
+            continue
         dd = area_paths(r)["dir"] / "building_outlines_dedup.geojson"
         if dd.exists() and dd.stat().st_mtime > (out_root / r / "summary.json").stat().st_mtime:
             print(f"[{r}] ownership changed since it was emitted; re-emitting")
@@ -444,9 +450,11 @@ def main():
     ap.add_argument("--dest", default=str(DATA_DIR))
     ap.add_argument("--skip-markup-lines", action="store_true",
                     help="do not regenerate the repository-wide markup overlay")
+    ap.add_argument("--frozen-inputs", action="store_true",
+                    help="assemble exact emitted snapshots without checking or re-emitting working regions")
     a = ap.parse_args()
     combine(a.regions, a.out_root, a.dest,
-            build_markup_lines=not a.skip_markup_lines)
+            build_markup_lines=not a.skip_markup_lines, frozen_inputs=a.frozen_inputs)
     return 0
 
 

@@ -121,6 +121,44 @@
         <div id="staging-list"></div>
       </div>
     </details>
+    <details class="stage" id="stage-releases">
+      <summary>Local releases</summary>
+      <div class="stage-body">
+        <p>Choose staged versions in <b>Local snapshots → Local staging</b>, then assemble an isolated map. Existing deployed regions are preserved unless replaced. No cloud publishing.</p>
+        <button class="primary" id="release-create" disabled>Create local candidate</button>
+        <button class="small" id="release-refresh">Refresh releases</button>
+        <div id="release-active" class="muted"></div>
+        <p><label for="release-select">Candidate / retained release</label>
+          <select id="release-select" style="width:100%" disabled></select></p>
+        <div class="links" id="release-preview"></div>
+        <p>
+          <button class="small" data-release-action="verify" disabled>Verify release</button>
+          <button class="small" data-release-action="compare" disabled>Compare with local deployment</button>
+        </p>
+        <label for="release-reason">Manual review reason (required for warnings or unknown metadata)</label>
+        <input type="text" id="release-reason" placeholder="What was inspected and why the changes are acceptable">
+        <p><button class="small" data-release-action="approve" disabled>Approve candidate</button>
+          <button class="primary" data-release-action="publish" disabled>Approve and activate locally</button></p>
+        <p class="muted">Automatic review accepts only all-pass comparisons. Warnings and unknowns require the manual reason above. Integrity and stale-baseline failures cannot be overridden. Terrain and hand-drawn markup overlays are not included in local releases.</p>
+        <p><button class="small" id="release-rollback" disabled>Roll back local deployment</button></p>
+        <div id="release-status" role="status" aria-live="polite"></div>
+        <div id="release-result" style="overflow:auto;max-height:360px"></div>
+        <details>
+          <summary>Retention and cleanup (explicit configuration required)</summary>
+          <p class="muted">All windows are hours, greater than zero. One previous release is protected during its rollback window. No cleanup runs automatically. Expired data is marked, then deletable after the grace period. Active and unexpired candidates protect their regional inputs.</p>
+          <label>Rollback window <input type="number" min="0.001" step="any" data-retention="rollback_hours"></label>
+          <label>Unprotected candidate/history lifetime <input type="number" min="0.001" step="any" data-retention="candidate_hours"></label>
+          <label>Unused snapshot lifetime <input type="number" min="0.001" step="any" data-retention="snapshot_hours"></label>
+          <label>Unused staging lifetime <input type="number" min="0.001" step="any" data-retention="staging_hours"></label>
+          <label>Incomplete copy lifetime <input type="number" min="0.001" step="any" data-retention="incomplete_hours"></label>
+          <label>Cleanup grace period <input type="number" min="0.001" step="any" data-retention="grace_hours"></label>
+          <p><button class="small" id="release-policy" disabled>Save local retention policy</button></p>
+          <p><button class="small" id="release-cleanup-preview" disabled>Preview cleanup / mark eligible</button></p>
+          <label><input type="checkbox" id="release-cleanup-confirm"> I confirm eligible local artifacts will be permanently deleted.</label>
+          <p><button class="small" id="release-cleanup-apply" disabled>Delete eligible artifacts after grace</button></p>
+        </details>
+      </div>
+    </details>
     <details class="stage" id="stage-build" open>
       <summary>New build</summary>
       <div class="stage-body">

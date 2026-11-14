@@ -1644,6 +1644,7 @@ function animate3D(pitchTo, exagFrom, exagTo, ms, zoomHold, ticket) {
 let switching3D = false;   // the switch-on sequence owns the camera until its tilt starts
 
 async function setTerrain3D(on) {
+  if (on && window.SITE && window.SITE.terrainAvailable === false) return;
   terrain3d = on;
   const ticket = ++terrainSwitching;
   // 3D IS FOR LOOKING AT THE PANELS ON THE ROOF. The solids carry the layout
@@ -1782,6 +1783,10 @@ class ThreeDControl {
     const d = document.createElement("div");
     d.className = "maplibregl-ctrl maplibregl-ctrl-group";
     d.innerHTML = `<button id="btn-3d" type="button" title="3D view">3D</button>`;
+    if (window.SITE && window.SITE.terrainAvailable === false) {
+      d.firstElementChild.disabled = true;
+      d.firstElementChild.title = "3D terrain is not included in this local release";
+    }
     d.addEventListener("click", e => { e.preventDefault(); setTerrain3D(!terrain3d); });
     this._c = d;
     return d;
@@ -2669,7 +2674,7 @@ const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
 // A bucket URL ending in "/" moves every tile, detail and index fetch there
 // without touching the page: Pages caps a file at 100 MB and Auckland's
 // panel tiles alone are ~1.5 GB (docs/maintainers/scale-architecture.md).
-const DATA_BASE = (window.SITE && window.SITE.dataBase) || "";
+const DATA_BASE = new URL((window.SITE && window.SITE.dataBase) || "./", location.href).href;
 let coveragePct = 25;   // Heat Map default (Josh, 18 Oct)
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 // Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between
@@ -2733,8 +2738,10 @@ function lruTouch(cache, key, max) {
 }
 
 map.on("load", async () => {
-  if (window.SunShadows) SunShadows.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
-  if (window.Buildings3D) Buildings3D.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+  if (!window.SITE || window.SITE.terrainAvailable !== false) {
+    if (window.SunShadows) SunShadows.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+    if (window.Buildings3D) Buildings3D.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+  }
   // Kick off everything that does NOT depend on the buildings file before
   // awaiting it. solar_potential.geojson is 19MB (4MB gzipped) and its parse
   // is the gate on first paint; the panel tiles and the heat-map manifest
@@ -6968,6 +6975,7 @@ map.on("load", async () => {
   // and only when someone asks to see them.
   let markupOn = false, markupLoaded = false;
   async function ensureMarkupLayer() {
+    if (window.SITE && window.SITE.markupAvailable === false) return false;
     if (markupLoaded) return true;
     try {
       const r = await fetch(`${DATA_BASE}data/markup_lines.geojson?v=${DATA_VERSION}`);

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.regional_snapshots import SnapshotError, SnapshotStore, inventory, now, snapshot_id
+from tools.regional_snapshots import SnapshotError, SnapshotStore, artifact_lock, inventory, now, snapshot_id
 
 
 def manifest_hash(directory: Path) -> str:
@@ -32,6 +32,10 @@ class StagingStore:
                 raise SnapshotError("Staging storage must be separate from snapshots and emitted outputs")
 
     def stage(self, identifier: str) -> dict:
+        with artifact_lock(self.snapshots.data):
+            return self._stage(identifier)
+
+    def _stage(self, identifier: str) -> dict:
         identifier = snapshot_id(identifier)
         try:
             original = self.snapshots.verify(identifier)

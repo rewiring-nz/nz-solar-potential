@@ -1,5 +1,18 @@
 # Backlog
 
+Completed local publication lifecycle: Build data assembles immutable candidates
+from staged complete regions, carries forward unrelated active regions, pins
+frontend/data, compares metadata with traffic-light states, records checksum- and
+generation-bound reviews, and atomically activates a local deployment. All-pass
+candidates support automatic review; unknowns/warnings require a manual reason.
+Stale candidates and integrity/contract failures are blocked. Bounded rollback
+and explicit mark/grace/apply retention protect live/referenced data and retain
+purge metadata. CLI parity, frozen-input real tile assembly and authenticated
+HTTP tests cover the local loop without cloud calls or geometry/yield rebuilds.
+Terrain and markup overlays are explicitly unavailable in these local releases.
+Remaining scale tracks: cloud storage/reviewer adapters, source-cache scheduling,
+urban prioritization and richer producer-recorded source/completeness metadata.
+
 Completed local snapshot staging: **Stage locally** in Build data verifies a
 snapshot and copies it into a separate local staging store, preserving the
 original manifest with a checksum-bound staging record. Repeated staging reuses
@@ -7,7 +20,7 @@ a verified completed copy; interrupted copies stay incomplete, and corrupted
 copies are never overwritten. Independent staged verification, persistent web
 status and CLI parity are covered by cloud-free tests. No build, approval,
 deployment, cloud access or automatic deletion occurs.
-Remaining: destination comparison, approval, activation and retention.
+Comparison, approval, activation and retention are now covered by local releases.
 
 Completed local regional snapshots: Build data can capture one idle emitted
 region into an independent copy and verify its inventory, sizes and SHA-256
@@ -15,7 +28,7 @@ checksums. Authenticated background operations persist status; capture holds
 the workspace lock, rejects links and detected source changes, and never
 rebuilds, publishes or deletes data. Manifests preserve emitted summaries and
 unknown provenance. CLI parity and cloud-free integrity/HTTP tests are included.
-Remaining: comparisons, approval, activation and retention.
+Comparison, approval, activation and retention are now covered by local releases.
 
 Completed pipeline queue progress UX: shared queue/detail progress and timing,
 current stage and area, readable locality titles, pending-job positions and
