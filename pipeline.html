@@ -105,8 +105,18 @@
   .job-title:hover { text-decoration: underline; }
   .job-area-titles { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
   .job-id { overflow-wrap: anywhere; }
-  .lane h3 { margin: 6px 0; font-size: 13px; }
-  .row-actions { float: right; }
+  .lane h3 { margin: 6px 0 2px; font-size: 13px; }
+  .lane h3 .muted { font-weight: normal; font-size: 11px; }
+  .qrow { border-bottom: 1px solid #f0f2f4; font-size: 12px; }
+  .qrow > summary { display: flex; align-items: center; gap: 6px; padding: 3px 2px; min-height: 22px; cursor: pointer; list-style: none; }
+  .qrow > summary::-webkit-details-marker { display: none; }
+  .qrow > summary::before { content: "▸"; color: var(--muted); width: 10px; flex: none; }
+  .qrow[open] > summary::before { content: "▾"; }
+  .qrow > summary:hover { background: #f8fafc; }
+  .qrow .qname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qrow .qsum { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .qrow.running .qname { font-weight: 600; }
+  .qbody { padding: 2px 6px 8px 16px; background: #fafbfc; }
   [data-stale=true] { opacity: .7; }
   [data-stale=true] progress { visibility: hidden; }
   #log { background: #111; color: #ddd; font: 11px/1.35 ui-monospace, Menlo, monospace; padding: 6px; height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
@@ -282,7 +292,7 @@
     <fieldset id="build-options">
       <legend>Options (apply to every selected area)</legend>
       <label><input type="checkbox" id="opt-imagery" checked> Include aerial imagery (free; improves alignment and image-based checks)</label>
-      <label><input type="checkbox" id="opt-referee"> Use the paid AI referee (only with imagery)</label>
+      <label><input type="checkbox" id="opt-referee" autocomplete="off"> Use the paid AI referee (only with imagery)</label>
     </fieldset>
     <fieldset id="build-grid">
       <legend>Grid (local builds only)</legend>

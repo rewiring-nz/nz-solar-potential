@@ -106,7 +106,8 @@ that are not in the national catalogue (for example `pilot`) are listed under
 The sticky bar under the list sums the selection (areas, buildings and a
 rough compute time from this checkout's measured rate; downloads are extra and
 appear in the Build… estimate) and offers the actions the
-selection allows:
+selection allows. Click the selection count to list the selected areas and
+untick any of them; the list stays open until you close it.
 
 - **Build…** opens the build dialog for every selected area.
 - **Push to staging** (Local only) captures a [local snapshot](#config-page)
@@ -144,8 +145,9 @@ For Developer and Published the estimate also shows the Google Cloud
 cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
 VM/startup/storage allowances rather than assuming a single combined run.
 The queue button is enabled after checking the cost-acknowledgment box.
-Local builds queue directly from **Add to queue**. The paid AI referee is
-off unless you tick it; the estimate shows its upper cost.
+Local builds queue directly from **Add to queue**. Paid options, such as the
+AI referee, start unticked every time the dialog opens, whatever was chosen
+before; the estimate shows their upper cost when ticked.
 
 ### Grid cells
 
@@ -206,12 +208,15 @@ The **Queue** and **Jobs** panels sit over the map.
   submission are added together in order (grid cells in row/column ID order)
   and run sequentially within their lane. Each job has independent progress,
   logs and cancellation; failure of one does not prevent the next from running.
-  Existing multi-area job history remains readable. Running cards show
-  the current stage and area, approximate progress, elapsed time, estimated
-  remaining time and the age of the last log/status activity. Waiting jobs
-  show their lane position, wait reason and estimated runtime, not a moving
-  bar or a promised start time. **Remove** drops a waiting job; **Cancel**
-  stops a running one. Click an area's title on a queue or completed-job card
+  Existing multi-area job history remains readable. Each job is one line —
+  its areas, a short summary (*42% · 25 min left*, *Queued #2 · ≈ 12 min*),
+  its status and **Remove**/**Cancel** — and clicking the line expands it,
+  like a region row; expanded jobs stay open across refreshes. Expanded
+  running jobs show the current stage and area, approximate progress,
+  elapsed time, estimated remaining time and the age of the last log/status
+  activity. Waiting jobs show their lane position, wait reason and estimated
+  runtime, not a moving bar or a promised start time. **Remove** drops a
+  waiting job; **Cancel** stops a running one. Click an area's title on a queue or completed-job card
   to zoom to its boundary and highlight it briefly; multi-area jobs show each
   area as a separate link. If a grid-selection boundary is not available yet,
   the map shows its parent locality. Expanding an area's row also shows its

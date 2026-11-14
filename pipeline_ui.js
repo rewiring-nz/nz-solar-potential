@@ -1026,6 +1026,11 @@
     return PipelineProgress.matchingJobsForRegion(queueJobs, [], id, target)
       .filter((j) => j.status === "queued" || j.status === "running");
   }
+  let selListOpen = false;
+  let selSumHtml = null;
+  $("sel-sum").addEventListener("toggle", (e) => {
+    if (e.target.tagName === "DETAILS") selListOpen = e.target.open;
+  }, true);
   function renderActions() {
     const leaves = selectedLeaves();
     const buildings = leaves.reduce((n, l) => n + (l.buildings || 0), 0);
@@ -1034,7 +1039,7 @@
     leaves.forEach((l) => { const s = views.get(l.id).state; counts[s] = (counts[s] || 0) + 1; });
     const stageable = leaves.filter((l) => l.kind !== "cell" && views.get(l.id).view.built);
     const cancellable = leaves.filter((l) => activeJobsFor(l.id).length);
-    $("sel-sum").innerHTML = leaves.length
+    const html = leaves.length
       ? `<details><summary><b>${fmtInt(leaves.length)} selected</b> · ${fmtInt(buildings)} buildings
           ${target === "local" && rough ? ` · <span title="Processing time only; Build… adds download time and size">≈ ${fmtDur(rough)} compute</span>` : ""}
           · ${T.STATES.filter((s) => counts[s]).map((s) => `${counts[s]} ${T.STATE_LABELS[s].toLowerCase()}`).join(", ")}</summary>
@@ -1043,6 +1048,14 @@
             <span class="name" data-zoom-sel="${esc(l.id)}">${esc(l.name)}</span>
             <span class="crumb">${esc(T.breadcrumb(tree, l.id))}</span> ${stateHtml(views.get(l.id).state)}</div>`).join("")}</div></details>`
       : '<span class="muted">Tick areas in the list or click them on the map.</span>';
+    // Status and queue polls call this every few seconds; rewriting identical
+    // HTML would reset the list's scroll position.
+    if (html !== selSumHtml) {
+      $("sel-sum").innerHTML = html;
+      selSumHtml = html;
+      const list = $("sel-sum").querySelector("details");
+      if (list) list.open = selListOpen;
+    }
     $("act-build").disabled = !writable || !leaves.length;
     $("act-stage").disabled = !writable || !stageable.length || target !== "local" || pushing;
     $("act-stage").title = target !== "local" ? "Staging is local; switch the target to Local."
@@ -1127,6 +1140,8 @@
       : `Build ${ids.length} selected area(s) · ${TARGETS[target].label}`;
     $("build-grid").hidden = target !== "local" || combine || !ids.some((id) => (tree.leaves.get(id) || {}).kind === "locality");
     if (combine) $("opt-grid").value = "off";
+    // Paid options start off every time the dialog opens; browsers may restore old form state.
+    $("opt-referee").checked = false;
     $("opt-referee").disabled = !$("opt-imagery").checked;
     const dialog = $("build-dialog");
     if (!dialog.open) dialog.showModal();
@@ -1309,6 +1324,13 @@
   });
 
   // ---- queue ----------------------------------------------------------
+  // Polling re-renders the queue; remember which rows the user expanded.
+  const openQueueJobs = new Set();
+  $("queue-list").addEventListener("toggle", (e) => {
+    const row = e.target.closest && e.target.closest("[data-qjob]");
+    if (!row || row !== e.target) return;
+    if (row.open) openQueueJobs.add(row.dataset.qjob); else openQueueJobs.delete(row.dataset.qjob);
+  }, true);
   async function loadQueue() {
     if (queueLoading) return;
     queueLoading = true;
@@ -1338,14 +1360,18 @@
       focused.dataset.job ? ["job", focused.dataset.job] : null);
     const focusLabel = focused && focused.textContent;
     $("queue-list").innerHTML = Object.entries(lanes).map(([name, lane]) => `
-      <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}</h3>
-        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable)).join("") || "<p class='muted'>No active or queued builds.</p>"}
+      <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}
+        <span class="muted">· ${lane.jobs.length ? lane.jobs.length + " job(s)" : "idle"}</span></h3>
+        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable,
+          undefined, openQueueJobs.has(j.job_id))).join("")}
       </div>`).join("");
     $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
     $("queue-list").querySelectorAll("[data-map-region]").forEach((button) =>
       button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
-    $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () =>
-      cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue)));
+    $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault();  // the button sits in the row summary; don't toggle the row
+      cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue);
+    }));
     if ($("stage-jobs").open) loadJobs();
     renderActions();
     if (focusKey) {

@@ -115,6 +115,22 @@ class WebHandler(RangeHandler):
             args = (args[0].split("?", 1)[0],) + args[1:]
         super().log_message(fmt, *args)
 
+    # Page code changes between reloads while developing; make browsers
+    # revalidate it (a cheap 304 when unchanged) instead of guessing freshness.
+    _REVALIDATE = (".html", ".js", ".css")
+
+    def send_header(self, keyword, value):
+        if keyword.lower() == "cache-control":
+            self._cache_header_sent = True
+        super().send_header(keyword, value)
+
+    def end_headers(self) -> None:
+        path = urllib.parse.urlsplit(self.path).path
+        if not getattr(self, "_cache_header_sent", False) and path.endswith(self._REVALIDATE):
+            self.send_header("Cache-Control", "no-cache")
+        self._cache_header_sent = False
+        super().end_headers()
+
     # ---- plumbing ------------------------------------------------------
     def _send_json(self, status: int, obj) -> None:
         body = json.dumps(obj, default=str).encode("utf-8")

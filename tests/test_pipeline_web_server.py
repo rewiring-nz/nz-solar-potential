@@ -165,6 +165,13 @@ def test_static_files_keep_pipeline_serve_rules():
             assert c.request("POST", "/pipeline.html", {}, token=None)[0] == 405
             status, _ = c.request("GET", "/pipeline.html", token=None, headers={"Range": "bytes=0-9"})
             assert status == 206
+            for path in ("/pipeline.html", "/pipeline_ui.js"):
+                conn = http.client.HTTPConnection("127.0.0.1", c.port, timeout=30)
+                conn.request("GET", path)
+                res = conn.getresponse()
+                res.read()
+                conn.close()
+                assert res.getheader("Cache-Control") == "no-cache", path
         finally:
             server.shutdown()
             server.server_close()
