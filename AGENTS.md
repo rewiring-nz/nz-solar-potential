@@ -177,6 +177,21 @@ figure for the same thing. Code enforces this:
   `scp` (the tools/ scripts do). It is a spot VM that stops itself 40 hours
   after starting (max-run-duration 144000 s); resume a cut-off build with
   `src/run_district_build.sh --force --regions "<the rest>"`.
+- **VM spending limits.** October 2026: 376 VM hours, 151 of them idle,
+  about $500 billed. Two limits in code:
+  (1) `tools/vm_start.sh` is the only way to start a build VM. It sums the
+  month's uptime of every build VM from Cloud Monitoring and refuses once it
+  reaches `data/vm_budget.json` `hours_per_month`; only the owner raises it.
+  `tools/remote_build.sh` starts through it, and a Claude Code PreToolUse
+  hook (`.claude/hooks/block_vm_start.py` in the parent folder) blocks a bare
+  `gcloud compute instances start|resume|create`.
+  (2) `tools/vm_idle_stop.sh`, the VMs' `startup-script` metadata, powers a VM
+  off after 30 minutes with load under 1.0 and no project process running
+  (build, fetch, copy). A running job needs no keep-awake; do not touch it
+  when launching one. `touch /tmp/keep-awake` holds an idle VM up for 12
+  hours from the touch, then it is ignored and deleted. A change to the
+  script reaches the VM only when the owner re-installs it as
+  `startup-script` metadata and the VM next boots.
 - **Never change code on the VM while it is building.** Each stage is a new
   process, so a mid-build change mixes code across regions without trace.
   The VM's `~/solar-map` is a git checkout: push, then `tools/sync_vm.sh` (or
