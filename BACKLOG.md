@@ -610,6 +610,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   `~/v79a_layouts` on the VM for before/after renders. Still
   to do: `tools/deploy_from_vm.sh`, render the gate's list, `--push`, stop
   the VM, record the hours.
+  **Second gate, 15 Nov 09:10 UTC: failed again, not published; live is
+  still v78.** Build finished 08:50 UTC (10 regions clean, 12 patched,
+  13 full): 32,838 buildings, 1,238,166 panels (v78 1,256,226, -1.4%);
+  5,658 student readings kept (7,289 before the three rules). Gate:
+  11 zeroed (was 21; 9 student, 2 no reading), 120 big drops (was 165;
+  69 student, 19 vision, 32 no reading; 110 of the 120 are the same roofs
+  as the first gate), 1 newly withheld (4721200, a glasshouse). So the three
+  rules fixed the zeroed roofs they targeted but barely touched the drops.
+  Renders against `~/v68_layouts` (the nearest saved layouts to v78; no v78
+  layouts were kept): `docs/review/gate2_15nov_zeroed.jpg` (all 11) and
+  `docs/review/gate2_15nov_drops_sample.jpg` (every fifth drop, 24). Not
+  yet judged by the owner. Unmeasured reading of the sheets: several zeroed
+  roofs are overgrown or a glasshouse, but 4720927 (plain hip garage),
+  4734693, 5371115 lose panels a plain roof should hold; many drops keep
+  the same faces and place fewer panels on them (4742404 52->22, 4735028
+  44->21, 4733218 48->26), cause not yet found; 32 drops have no photo
+  reading at all, so something else on this branch changed them since v78.
+  New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
+  7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
   run through `src/run_stage.py`, then `emit_region` and `combine_regions`
   (23 minutes; `tools/pipeline.py` stops at preflight here because the GDAL
