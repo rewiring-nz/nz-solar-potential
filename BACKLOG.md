@@ -719,6 +719,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   region, 606 -> 415 panels): the references predate the branch's
   panel-fitting and reading work and have not been re-recorded. To do:
   re-record on the VM once the branch's layouts are accepted.
+  **District build with the fix launched (15 Nov 23:12 UTC = 16 Nov midday
+  NZ)** on the owner's word. VM started 23:09 UTC through `vm_start.sh`
+  (about 153.4 of 165 h used before). `point-roof` at cc9334eb synced. Every
+  changed line acts only on faces marked `from_reading`, so
+  `tools/rekey_unaffected.py --from-hash 0cd1aeb44b88 --apply` carried the
+  build keys of the 26,851 buildings with no photo reading to the new code
+  hash (bfbc016ffcd4); the 5,987 with a reading rebuild. Keys before the
+  carry are in `~/v79b_keys` on the VM; the published layouts in
+  `~/v79b_layouts`. `run_district_build.sh --regions "<data/out less
+  akl_*>"`, log `~/readings_fix_build.out`. Regions over a tenth stale build
+  in full (about 20,700 buildings), so the estimate is 6-8 h. Still to do:
+  the deploy gate against v79, renders of what it flags, the owner's word
+  before any publish, stop the VM, record the hours.
   New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
   7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
