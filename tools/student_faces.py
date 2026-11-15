@@ -35,6 +35,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 MIN_AREA_M2 = 30.0     # a shed is not read
+# The reading gives way to the one the build would otherwise use
+# (data/repeat_faces, else data/selected_faces) when it explains clearly
+# less of the roof's LiDAR returns: the share within PLANE_BAND_M of their
+# own face's plane, both readings on the same returns. In the 15 Nov build
+# Wanaka homes whose faces missed the planes were withheld as low
+# confidence (5374704: a gabled house read as one face; 4720927: a pyramid
+# at 45-52 degrees). On the 24 homes of the owner's blind check a margin of
+# 0.20 gives way on 5: 2 the owner gave to production, 2 called the same,
+# 1 given to the model; of 368 central Queenstown homes, 68.
+YIELD_MARGIN = 0.20
+PLANE_BAND_M = 0.15    # roof_partition.INLIER_BAND_M
+MIN_SHARE_PTS = 30
 BRIDGE_M = 0.15
 _W = {}
 
@@ -49,6 +61,48 @@ def _init(region):
     except (OSError, ValueError):
         _W["fits"] = {}
     _W["pc"] = PointCloudSource(max_cached_tiles=3)
+
+
+def _share(faces, pts):
+    """Share of the returns inside `faces` within PLANE_BAND_M of the plane
+    fitted to their own face."""
+    import numpy as np
+    import shapely
+    from src.face_regions import _plane
+    n = ok = 0
+    for f in faces:
+        q = pts[shapely.contains_xy(f, pts[:, 0], pts[:, 1])]
+        n += len(q)
+        eq = _plane(q)
+        if eq is not None:
+            ok += int((np.abs(q[:, 0] * eq[0] + q[:, 1] * eq[1] + eq[2] - q[:, 2]) < PLANE_BAND_M).sum())
+    return ok / n if n else 0.0
+
+
+def _incumbent(bid, slide):
+    """Faces of the reading the build uses without this one, as stored and
+    slid with the outline; [] when there is none."""
+    from shapely.affinity import translate
+    from shapely.geometry import Polygon
+    from src.roof_partition import REPEAT_FACES_DIR, SELECTED_FACES_DIR
+    for d in (REPEAT_FACES_DIR, SELECTED_FACES_DIR):
+        try:
+            rings = json.loads((d / f"{bid}.json").read_text()).get("faces") or []
+        except (OSError, ValueError):
+            continue
+        faces = []
+        for r in rings:
+            try:
+                p = Polygon(r).buffer(0)
+            except (ValueError, TypeError):
+                continue
+            if p.geom_type == "Polygon" and p.area >= 1.0:
+                faces.append(p)
+        sets = [faces]
+        if slide[0] or slide[1]:
+            sets.append([translate(f, slide[0], slide[1]) for f in faces])
+        return sets
+    return []
 
 
 def _one(job):
@@ -70,11 +124,19 @@ def _one(job):
         edge = max(edge.geoms, key=lambda q: q.area) if hasattr(edge, "geoms") else edge
         faces = [f for f in faces if f.representative_point().within(edge.buffer(0.05))]
         ring = lambda q: [[round(x + dx, 2), round(y + dy, 2)] for x, y in q.exterior.coords]
+        from shapely.affinity import translate
+        dst = Path(out) / f"{bid}.json"
+        if pts is not None and len(pts) >= MIN_SHARE_PTS:
+            mine = _share([translate(f, dx, dy) for f in faces], pts)
+            theirs = max((_share(fs, pts) for fs in _incumbent(bid, (dx, dy))), default=0.0)
+            if mine < theirs - YIELD_MARGIN:
+                dst.unlink(missing_ok=True)
+                return bid, -1
         doc = {"source": "student", "score": 1.0, "shift": [dx, dy], "outline": ring(edge),
                "faces": [ring(f) for f in faces], "obstructions": []}
         tmp = Path(out) / f"{bid}.json.tmp"
         tmp.write_text(json.dumps(doc))
-        os.replace(tmp, Path(out) / f"{bid}.json")
+        os.replace(tmp, dst)
         return bid, len(faces)
     except Exception as e:                       # one roof never stops a region
         return bid, f"{type(e).__name__}: {e}"
@@ -121,20 +183,22 @@ def main():
             continue
         jobs.append((bid, g.wkb, str(out)))
     print(f"{a.region}: {len(jobs)} of {len(gdf)} buildings to read ({len(zones)} zoned)", flush=True)
-    done = empty = failed = 0
+    done = empty = failed = gave = 0
     with mp.get_context("spawn").Pool(a.jobs, initializer=_init, initargs=(a.region,)) as pool:
         for n, (bid, r) in enumerate(pool.imap_unordered(_one, jobs, chunksize=4), 1):
             if isinstance(r, str):
                 failed += 1
                 if failed <= 5:
                     print(f"  #{bid}: {r}", flush=True)
+            elif r == -1:
+                gave += 1
             elif r:
                 done += 1
             else:
                 empty += 1
             if n % 500 == 0:
                 print(f"  {n}...", flush=True)
-    print(f"{a.region}: {done} roofs read -> {out}; {empty} with no faces, {failed} failed")
+    print(f"{a.region}: {done} roofs read -> {out}; {gave} gave way, {empty} with no faces, {failed} failed")
     return 0
 
 
