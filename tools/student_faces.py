@@ -47,6 +47,12 @@ MIN_AREA_M2 = 30.0     # a shed is not read
 YIELD_MARGIN = 0.20
 PLANE_BAND_M = 0.15    # roof_partition.INLIER_BAND_M
 MIN_SHARE_PTS = 30
+# The model reads the photo and the LiDAR surface together and was trained
+# with both. A roof with almost no building-class returns (built since the
+# survey, or left unclassified) is not read: three Wanaka homes that lost
+# every panel in the 15 Nov build held 0.03-0.46 returns per m2 of outline,
+# where homes with readings hold 4-5 (5th percentile 2.2-4.3 by region).
+MIN_RETURNS_PER_M2 = 1.0
 BRIDGE_M = 0.15
 _W = {}
 
@@ -115,17 +121,23 @@ def _one(job):
         geom = _wkb.loads(wkb)
         x0, y0, x1, y1 = geom.bounds
         pts = _W["pc"].points_in_bbox(x0 - 2, y0 - 2, x1 + 2, y1 + 2, building_only=True)
+        dst = Path(out) / f"{bid}.json"
+        import shapely
+        on_roof = 0 if pts is None or not len(pts) else int(shapely.contains_xy(geom, pts[:, 0], pts[:, 1]).sum())
+        if on_roof < MIN_RETURNS_PER_M2 * geom.area:
+            dst.unlink(missing_ok=True)
+            return bid, -2
         dx, dy = accepted(_W["fits"].get(str(bid))) or (0.0, 0.0)
         faces = [f for f in fr.straight_faces(geom, _W["img"], pts, (dx, dy))
                  if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
         if not faces:
+            dst.unlink(missing_ok=True)
             return bid, 0
         edge = unary_union([f.buffer(BRIDGE_M) for f in faces]).buffer(-BRIDGE_M)
         edge = max(edge.geoms, key=lambda q: q.area) if hasattr(edge, "geoms") else edge
         faces = [f for f in faces if f.representative_point().within(edge.buffer(0.05))]
         ring = lambda q: [[round(x + dx, 2), round(y + dy, 2)] for x, y in q.exterior.coords]
         from shapely.affinity import translate
-        dst = Path(out) / f"{bid}.json"
         if pts is not None and len(pts) >= MIN_SHARE_PTS:
             mine = _share([translate(f, dx, dy) for f in faces], pts)
             theirs = max((_share(fs, pts) for fs in _incumbent(bid, (dx, dy))), default=0.0)
@@ -183,7 +195,7 @@ def main():
             continue
         jobs.append((bid, g.wkb, str(out)))
     print(f"{a.region}: {len(jobs)} of {len(gdf)} buildings to read ({len(zones)} zoned)", flush=True)
-    done = empty = failed = gave = 0
+    done = empty = failed = gave = thin = 0
     with mp.get_context("spawn").Pool(a.jobs, initializer=_init, initargs=(a.region,)) as pool:
         for n, (bid, r) in enumerate(pool.imap_unordered(_one, jobs, chunksize=4), 1):
             if isinstance(r, str):
@@ -192,13 +204,15 @@ def main():
                     print(f"  #{bid}: {r}", flush=True)
             elif r == -1:
                 gave += 1
+            elif r == -2:
+                thin += 1
             elif r:
                 done += 1
             else:
                 empty += 1
             if n % 500 == 0:
                 print(f"  {n}...", flush=True)
-    print(f"{a.region}: {done} roofs read -> {out}; {gave} gave way, {empty} with no faces, {failed} failed")
+    print(f"{a.region}: {done} roofs read -> {out}; {gave} gave way, {thin} with too few returns, {empty} with no faces, {failed} failed")
     return 0
 
 
