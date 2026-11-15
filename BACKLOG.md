@@ -627,6 +627,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   the same faces and place fewer panels on them (4742404 52->22, 4735028
   44->21, 4733218 48->26), cause not yet found; 32 drops have no photo
   reading at all, so something else on this branch changed them since v78.
+  **Published as v79 on the owner's word (15 Nov), gate failed and
+  reviewed;** `site-config.js` on main points at v79 (commit 24c44ff3), roll
+  back by pointing it at v78. Main does not yet hold the code that built
+  v79 (branch `point-roof`).
+  **Where the lost panels went (measured on this Mac, 15 Nov).** On the 120
+  flagged roofs the face area is unchanged from v78 (median ratio 1.00) but
+  panels cover a median 27% of it against 44%. 19 flagged pilot roofs with
+  a paid reading, rebuilt three ways (`tools/layout_ab.py`): no reading
+  1,310 panels; the reading's faces without its obstructions 1,010; the
+  full reading 749. So about half the loss is the reading's face shapes and
+  half the obstructions it names (`vision_obstructions`, which the LiDAR
+  checks never test). Two mechanisms seen in renders, not yet judged by the
+  owner: (a) v78 packs rows to within 0.11-0.15 m of the face edge, so a
+  ridge drawn 0.4 m off drops a whole row (4735028: a 4.0 m face became
+  3.59 m, 22 -> 11); (b) one small obstruction mid-face leaves the far half
+  of the face empty (4735028 other face 22 -> 10; 4735398 three named
+  strips, 35 -> 21, and the photo shows nothing under two of them). Not the
+  cause: height-step splitting (SOLAR_STEP_SPLIT 0 and 1 give the same
+  counts on four no-reading roofs). Still unexplained: the 32 drops with no
+  reading; 10 of them carry hand markup, and 4725599 builds 199 here but
+  132 on the VM. Next: decide whether photo-named obstructions need a LiDAR
+  or size check, and why the fitter abandons the far side of an obstruction.
   New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
   7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
