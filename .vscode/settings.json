@@ -14,10 +14,5 @@
     "**/.venv-sam/**": true,
     "**/validation/**": true,
     "**/__pycache__/**": true
-  },
-  "chat.tools.terminal.autoApprove": {
-    "command": true
-  },
-  "chat.agent.maxRequests": 200,
-  "python.terminal.useEnvFile": true
+  }
 }
