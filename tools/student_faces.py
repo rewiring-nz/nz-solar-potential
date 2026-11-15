@@ -14,8 +14,14 @@ and both blind checks were homes. Roofs with hand-drawn markup are skipped
 
 Writes data/student_faces/<id>.json in the vision reading's format: faces
 with straight shared edges, their union as the roof edge, all slid onto
-the roof the LiDAR sees (point_roof.register) with the slide recorded, so
-the build and the map treat it as they do a vision reading.
+the roof the LiDAR sees with the slide recorded, so the build and the map
+treat it as they do a vision reading. The slide is the build's own outline
+fit (src/outline_fit.py, accepted slides only), not point_roof.register:
+the model reads inside the surveyed outline, so its roof moves exactly as
+that outline does. register slid 87 of 368 central Queenstown homes and
+differed from the outline fit by over 1 m on 41; under trees it slid roofs
+off the building (4735042, 4735619: a face over the wall, 57-67 degrees,
+no panels).
 
 Usage: python tools/student_faces.py <region> [--ids ...] [--jobs N] [--all-zones]
 """
@@ -38,6 +44,10 @@ def _init(region):
     from src.region_build import area_paths
     from src.pointcloud_source import PointCloudSource
     _W["img"] = rasterio.open(area_paths(region)["imagery"])
+    try:
+        _W["fits"] = json.loads((area_paths(region)["dir"] / "outline_fit.json").read_text())
+    except (OSError, ValueError):
+        _W["fits"] = {}
     _W["pc"] = PointCloudSource(max_cached_tiles=3)
 
 
@@ -45,12 +55,13 @@ def _one(job):
     bid, wkb, out = job
     from shapely import wkb as _wkb
     from shapely.ops import unary_union
-    from src import face_regions as fr, point_roof as pr
+    from src import face_regions as fr
+    from src.outline_fit import accepted
     try:
         geom = _wkb.loads(wkb)
         x0, y0, x1, y1 = geom.bounds
         pts = _W["pc"].points_in_bbox(x0 - 2, y0 - 2, x1 + 2, y1 + 2, building_only=True)
-        dx, dy = pr.register(geom)
+        dx, dy = accepted(_W["fits"].get(str(bid))) or (0.0, 0.0)
         faces = [f for f in fr.straight_faces(geom, _W["img"], pts, (dx, dy))
                  if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
         if not faces:

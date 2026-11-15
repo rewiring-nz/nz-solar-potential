@@ -548,15 +548,50 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   over are in `data/vision_faces/` on this Mac. Fast tests pass. Not judged:
   the straightened faces by the owner; any town but central Queenstown;
   non-homes (left on production).
-  **District rebuild blocked (14 Nov):** `tools/vm_start.sh --status` (on
-  branch `vm-spending-limits`, not merged to main) reads 132 VM hours this
-  month against the cap of 120 in `data/vm_budget.json`; only the owner
-  raises it. A rebuild needs about 15 h (10.7 h re-lay measured for v72, 1 h
-  of readings on 16 cores, margin), about NZ$15. Steps once raised: commit
-  and push `point-roof`, start the VM, `tools/sync_vm.sh --ref point-roof`,
-  copy `face_regions_v3.pt` and `data/vision_faces/` up,
-  `tools/student_faces.py` per served region, `run_district_build.sh --force
-  --regions "<served + pilot>"`, `tools/deploy_from_vm.sh`, then `--push`.
+  **District rebuild launched (14 Nov, 10:40 UTC):** the owner raised the
+  month's VM cap from 120 to 150 hours (`data/vm_budget.json` on branch
+  `vm-spending-limits`, not merged to main; 131 used at the start). Estimate
+  about 15 h, NZ$15 (10.7 h re-lay measured for v72, readings, margin).
+  `point-roof` pushed (bec030ce) and synced to the VM; `face_regions_v3.pt`
+  and the 329 files of `data/vision_faces/` copied up. On the VM
+  `/tmp/chain.sh` (log `~/solar-map/photo_roof_chain.out`) runs
+  `tools/student_faces.py` on every served region, then
+  `run_district_build.sh --force --regions "<data/out less akl_*>"`.
+  **First launch failed (3.3 VM hours):** the VM's checkout had
+  `src/face_rectify.py` deleted in its working tree, so
+  `build_layout_geojson` failed at import in every region; the build stopped
+  before the fan-in and nothing was combined. The readings finished (7,289
+  student files). File restored with `git checkout`, build relaunched at
+  13:58 UTC (`/tmp/chain2.sh`, log `photo_roof_chain2.out`). Check
+  `git status` on the VM for deleted tracked files before a build.
+  **Student coverage gaps seen in that run:** every home fails with "need at
+  least one array to concatenate" in arrowtown_hills, glenorchy,
+  glenorchy_north, kingston and kinloch, and many in arrowtown_east (176),
+  wanaka_albert_town (121), hawea (67) and wanaka_town (85): cause not
+  traced (no point-cloud returns for the roof is the likely one). Cromwell
+  and Bannockburn have no buildings zoned "home", so none are read. All of
+  these stay on the selected faces.
+  **Build finished, gate failed, not published (15 Nov 00:31 UTC):** 35
+  regions, 32,838 buildings, 1,236,935 panels (live v78: 1,256,226, -1.5%).
+  Gate against v78: 21 roofs zeroed, 165 big drops, 3 newly withheld, 34 of
+  38 case roofs changed. Of the zeroed, 19 use a student reading; of the big
+  drops, 115 student, 19 vision, 31 neither (7,289 student and 329 vision
+  readings in the build). Renders of all 21 zeroed and 30 of the drops:
+  `docs/review/gate_15nov_zeroed.jpg`, `gate_15nov_drops_sample.jpg`. Agent's
+  reading, not a measurement: several zeroed roofs are plain, well-lit
+  houses with faces drawn and no panels (5374704, 4735665, 4720927); on
+  others the student's faces sit off the building (4738118, 4735619,
+  5372972) or are missing (4720448, 4720457); a share of the drops show the
+  same off-building faces (4725815, 4727777, 4736995). Cause not traced: the
+  recorded slide (`shift`) is the first suspect. The student reading scores
+  1.0 always, so nothing competes with a bad one. The VM's served set is
+  pulled into `data/` on this Mac: the whole build is viewable at
+  `http://localhost:8000/solar-map/rooftop-solar.html?localdata=1`. VM
+  stopped at 00:58 UTC after 14.4 h this start; month at about 145.5 of 150
+  h. Publishing needs the owner's word on the gate list
+  (`tools/deploy_from_vm.sh --push-reviewed`, VM started again). Still
+  to do: `tools/deploy_from_vm.sh`, render the gate's list, `--push`, stop
+  the VM, record the hours.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
   run through `src/run_stage.py`, then `emit_region` and `combine_regions`
   (23 minutes; `tools/pipeline.py` stops at preflight here because the GDAL
