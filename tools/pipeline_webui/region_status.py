@@ -157,11 +157,11 @@ def _staging(artifacts) -> tuple[dict[str, dict], dict[str, str], set[str]]:
     except Exception:
         staging_now = set()
     try:
-        for item in artifacts.staging.list():
+        for item in artifacts.staging.current_list():
             region = item.get("region_id")
-            if region and _sortable(item.get("staged_at")) >= _sortable((staged.get(region) or {}).get("staged_at")):
+            if region:
                 staged[region] = {"staging_id": item.get("staging_id"), "staged_at": item.get("staged_at"),
-                                  "built_at": item.get("built_at")}
+                                  "built_at": item.get("built_at"), "error": item.get("error")}
     except Exception:
         pass
     try:

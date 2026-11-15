@@ -1,9 +1,15 @@
 # Backlog
 
-Cloud staging submission (#66): Build data can estimate and submit selected
-local staged versions to a private immutable cloud prefix, with cost approval,
-create-only uploads and remote integrity checks. Cloud-free adapter and HTTP
-tests pass. A real Southshore submission (61 artifacts, 4,858,152 bytes) was
+Cloud staging submission (#66): the area list offers Push to local staging
+and Push to remote staging. Local batches update one current staging set
+atomically; Config groups current copies under expandable councils. Remote
+uploads use one verified-byte/destination Upload/Cancel confirmation, without
+typed yes or a cost estimate. Local retention defaults are populated; current
+staging and pinned candidates remain protected. Focused staging, HTTP, release
+and mocked browser checks pass. The full local run found synthetic and golden
+geometry-output mismatches; the golden remainder was interrupted, and no
+baselines were rewritten. No real cloud action ran for these UX refinements.
+A prior real Southshore submission (61 artifacts, 4,858,152 bytes) was
 verified in the configured private bucket in 3 minutes 30 seconds; its objects
 remain stored and incur ongoing charges. Cloud release assembly, activation and
 production promotion remain future work.

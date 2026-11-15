@@ -114,19 +114,18 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(self.store.rollback(2)["active"], first)
         self.assertEqual(self.store.state()["generation"], 3)
 
-    def test_unknown_metadata_requires_reason_and_policy_is_explicit(self):
+    def test_unknown_metadata_requires_reason_and_default_policy_is_available(self):
         identifier = self.candidate()
         with self.assertRaisesRegex(ArtifactError, "review reason"):
             self.store.approve(identifier, 0)
         self.store.approve(identifier, 0, "Inspected")
-        with self.assertRaisesRegex(ArtifactError, "retention"):
-            self.store.activate(identifier, 0)
+        self.assertEqual(self.store.state()["policy"]["rollback_hours"], 720)
+        self.assertEqual(self.store.activate(identifier, 0)["active"], identifier)
         with self.assertRaises(ArtifactError):
             self.store.set_policy({"rollback_hours": 1})
         with self.assertRaises(ArtifactError):
             self.store.set_policy(dict(POLICY, rollback_hours=0))
-        with self.assertRaises(ArtifactError):
-            self.store.cleanup()
+        self.assertEqual(self.store.cleanup()["eligible"], [])
 
     def test_concurrent_baseline_conflict_never_loses_regions(self):
         first = self.candidate()
@@ -299,10 +298,11 @@ class ReleaseTests(unittest.TestCase):
 
     def test_unused_artifact_cleanup_policy_reset_and_link_rejection(self):
         unused = self.stage()
+        current = self.stage()
         self.store.set_policy(POLICY)
         with patch("tools.local_releases.now", return_value="2090-01-01T00:00:00Z"):
             plan = self.store.cleanup()
-            self.assertEqual({row["kind"] for row in plan["eligible"]}, {"staging"})
+            self.assertEqual({(row["kind"], row["id"]) for row in plan["eligible"]}, {("staging", unused)})
             self.assertFalse(plan["deleted"])
         with patch("tools.local_releases.now", return_value="2090-01-02T00:00:00Z"):
             self.store.set_policy(POLICY)
@@ -311,6 +311,7 @@ class ReleaseTests(unittest.TestCase):
             result = self.store.cleanup(True)
             self.assertEqual(set(result["deleted"]), {"staging:" + unused})
             self.assertFalse((self.staging.root / unused).exists())
+            self.assertTrue((self.staging.root / current).exists())
         shutil.rmtree(self.staging.root)
         outside = self.data / "unmanaged"
         outside.mkdir()

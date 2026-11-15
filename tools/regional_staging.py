@@ -13,7 +13,7 @@ directly from data/out (schema 1, artifacts under snapshot/) remain readable.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import hashlib
 import json
 import os
@@ -92,14 +92,109 @@ class StagingStore:
 
     # ---- staging ---------------------------------------------------------
     def stage(self, region: str, identifier: str | None = None) -> dict:
+        return self.stage_many([region], {region: identifier} if identifier else None)[0]
+
+    def stage_many(self, regions: list[str], identifiers: dict[str, str] | None = None,
+                   progress=None) -> list[dict]:
+        if not isinstance(regions, list) or not regions or len(regions) > 100:
+            raise ArtifactError("Select between one and 100 regions to stage")
+        if any(not isinstance(region, str) for region in regions):
+            raise ArtifactError("Region IDs must be text")
+        if len(set(regions)) != len(regions):
+            raise ArtifactError("A region was selected more than once")
+        for region in regions:
+            try:
+                validate(region)
+            except ValueError as exc:
+                raise ArtifactError(str(exc)) from exc
+            if is_grid_selection_id(region):
+                raise ArtifactError("Grid cells are local build pieces; stage whole regions only")
+        ids = {region: artifact_id((identifiers or {}).get(region) or uuid.uuid4().hex)
+               for region in regions}
+        manifests = []
+        with ExitStack() as locks:
+            for region in sorted(regions):
+                locks.enter_context(self.region_lock(region))
+            with artifact_lock(self.data):
+                self._persist_current_if_missing()
+                for index, region in enumerate(regions, 1):
+                    if progress:
+                        progress(region, index - 1, len(regions))
+                    manifests.append(self._stage(region, ids[region]))
+                    if progress:
+                        progress(region, index, len(regions))
+                self._set_current_many({manifest["region_id"]: manifest["staging_id"]
+                                        for manifest in manifests})
+        return manifests
+    def current(self) -> dict:
+        """The one mutable staging set, pointing at immutable regional copies."""
+        path = self.root / "current.json"
+        if path.is_file():
+            document = _read(path)
+            regions = document.get("regions")
+            if (document.get("schema_version") != 1 or type(document.get("generation")) is not int or
+                    document["generation"] < 0 or not isinstance(regions, dict)):
+                raise ArtifactError("Invalid current staging set", 409)
+            for region, identifier in regions.items():
+                try:
+                    validate(region)
+                    artifact_id(identifier)
+                except (ValueError, ArtifactError) as exc:
+                    raise ArtifactError("Invalid current staging entry", 409) from exc
+            return document
+
+        # Older checkouts had only immutable copies. Treat the newest copy per
+        # region as current until the first update writes the set manifest.
+        regions = {}
+        for item in self.list():
+            region = item.get("region_id")
+            if region and not item.get("error"):
+                previous = regions.get(region)
+                if previous is None or (item.get("staged_at") or "", item["staging_id"]) > (
+                        previous.get("staged_at") or "", previous["staging_id"]):
+                    regions[region] = item
+        return {"schema_version": 1, "generation": 0,
+                "regions": {region: item["staging_id"] for region, item in regions.items()}}
+
+    def current_ids(self) -> set[str]:
+        return set(self.current()["regions"].values())
+
+    def current_list(self) -> list[dict]:
+        identifiers = self.current()["regions"]
+        by_id = {item.get("staging_id"): item for item in self.list()}
+        records = []
+        for region, identifier in sorted(identifiers.items()):
+            item = by_id.get(identifier)
+            if item is None:
+                records.append({"staging_id": identifier, "region_id": region,
+                                "error": "Current staged copy is missing", "verification": "unreadable"})
+            else:
+                records.append(item)
+        return records
+
+    def _set_current_many(self, updates: dict[str, str]) -> None:
+        current = self.current()
+        regions = dict(current["regions"])
+        regions.update(updates)
+        document = {"schema_version": 1, "generation": current["generation"] + 1,
+                    "updated_at": now(), "regions": dict(sorted(regions.items()))}
+        self._write_current(document)
+
+    def _persist_current_if_missing(self) -> None:
+        path = self.root / "current.json"
+        if not path.exists():
+            current = self.current()
+            self._write_current(current)
+
+    def _write_current(self, document: dict) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        path = self.root / "current.json"
+        temporary = path.with_name(f".current-{uuid.uuid4().hex}.tmp")
         try:
-            validate(region)
-        except ValueError as exc:
-            raise ArtifactError(str(exc)) from exc
-        if is_grid_selection_id(region):
-            raise ArtifactError("Grid cells are local build pieces; stage whole regions only")
-        with self.region_lock(region), artifact_lock(self.data):
-            return self._stage(region, artifact_id(identifier or uuid.uuid4().hex))
+            temporary.write_text(json.dumps(document, indent=2), encoding="utf-8")
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _stage(self, region: str, identifier: str) -> dict:
         try:
@@ -199,7 +294,7 @@ class StagingStore:
             return []
         records = []
         for directory in sorted(self.root.iterdir()):
-            if directory.name.startswith("."):
+            if directory.name.startswith(".") or not directory.is_dir():
                 continue
             try:
                 artifact_id(directory.name)

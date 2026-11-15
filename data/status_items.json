@@ -25,8 +25,8 @@
     {
       "chip": "Verified",
       "title": "Push locally staged regions to cloud staging",
-      "body": "The Build data panel uploaded and verified Southshore's 61 staged artifacts in the private cloud staging bucket. It does not activate or publish a map.",
-      "note": "The retained copy incurs storage charges. Cloud release assembly and production promotion remain future work."
+      "body": "The area list now adds or updates one current local staging set and uploads selected current versions through one Upload/Cancel summary. Config groups staging by council and has populated local retention defaults. Targeted tests and mocked browser checks pass; no real upload ran for the UX refinements.",
+      "note": "The prior Southshore cloud copy remains stored and incurs charges. Cloud release assembly, production promotion and remote cleanup remain future work. The full local suite found synthetic and golden geometry mismatches; its golden remainder was interrupted."
     },
     {
       "chip": "Ready",

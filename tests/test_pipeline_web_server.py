@@ -160,7 +160,7 @@ def test_static_files_keep_pipeline_serve_rules():
             status, progress = c.request("GET", "/pipeline_progress.js", token=None)
             assert status == 200 and b"data-map-region" in progress and b"matchingJobsForRegion" in progress
             status, ui = c.request("GET", "/pipeline_ui.js", token=None)
-            assert status == 200 and ui.count(b"renderAreaTitles(") >= 2
+            assert status == 200 and ui.count(b"renderAreaTitles(") >= 1
             assert b'$("job-list").querySelectorAll("[data-map-region]")' in ui
             assert c.request("GET", "/.env", token=None)[0] == 404
             assert c.request("GET", "/api/health", token=None, headers={"Host": "evil.example"})[0] == 404
@@ -242,15 +242,16 @@ def test_staging_web_workflow():
             finally:
                 RS.status = real_status
 
-            code, operation = c.request("POST", "/api/staging", {"region": "pilot"})
+            code, operation = c.request("POST", "/api/staging", {"regions": ["pilot"]})
             assert code == 202, operation
             staged = wait_operation(operation["operation_id"])
             assert staged["status"] == "succeeded", staged
-            assert staged["region_id"] == "pilot" and staged["artifact_count"] == 2
-            identifier = staged["staging_id"]
+            assert staged["result"]["regions"] == ["pilot"]
+            identifier = staged["result"]["staging_ids"][0]
             lock.rmdir()
             code, listing = c.request("GET", "/api/staging")
             assert code == 200 and [s["staging_id"] for s in listing["staged"]] == [identifier]
+            assert listing["generation"] == 1
             assert listing["staged"][0]["verification"] == "not checked"
             assert listing["staged"][0]["artifact_count"] == 2
             assert listing["staged"][0]["bytes"] == len(b'{"region":"pilot","n":1}') + len(b"synthetic fixture")
@@ -261,6 +262,8 @@ def test_staging_web_workflow():
             code, operation = c.request("POST", f"/api/staging/{identifier}/verify", {})
             assert code == 202
             assert wait_operation(operation["operation_id"])["status"] == "succeeded"
+            code, listing = c.request("GET", "/api/staging")
+            assert code == 200 and listing["staged"][0]["verification"].startswith("verified "), listing
             (data / "regional_staging" / identifier / "artifacts" / "buildings.pmtiles").write_bytes(b"corruption")
             code, operation = c.request("POST", f"/api/staging/{identifier}/verify", {})
             assert code == 202
@@ -295,7 +298,7 @@ def test_staging_web_workflow():
             server.server_close()
 
 
-def test_cloud_submission_requires_quote_and_explicit_cost_approval():
+def test_cloud_submission_requires_summary_and_explicit_upload_confirmation():
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         server, c = _serve(Path(tmp))
         app = server.app
@@ -323,24 +326,16 @@ def test_cloud_submission_requires_quote_and_explicit_cost_approval():
             assert staged["status"] == "succeeded", staged
             identifier = staged["staging_id"]
 
-            code, quote = c.request("POST", "/api/staging/cloud-estimate", {
+            code, summary = c.request("POST", "/api/staging/cloud-summary", {
                 "staging_ids": [identifier],
             })
-            assert code == 200 and quote["bucket"] == "gs://solar-potential-map-data", quote
-            denied, _ = c.request("POST", "/api/staging/cloud-submit", {
-                "staging_ids": [identifier], "quote_id": quote["quote_id"],
-                "cost_nzd": quote["cost_nzd"],
-            })
+            assert code == 200 and summary["bucket"] == "gs://solar-potential-map-data", summary
+            assert summary["bytes"] > 0 and summary["staging"][0]["staging_id"] == identifier
+            denied, _ = c.request("POST", "/api/staging/cloud-submit", {"staging_ids": [identifier]})
             assert denied == 400 and runner.calls == []
-            stale, _ = c.request("POST", "/api/staging/cloud-submit", {
-                "staging_ids": [identifier], "quote_id": quote["quote_id"],
-                "cost_nzd": "999.00", "cloud_cost_acknowledged": True,
-            })
-            assert stale == 409 and runner.calls == []
 
             code, operation = c.request("POST", "/api/staging/cloud-submit", {
-                "staging_ids": [identifier], "quote_id": quote["quote_id"],
-                "cost_nzd": quote["cost_nzd"], "cloud_cost_acknowledged": True,
+                "staging_ids": [identifier], "upload_confirmed": True,
             })
             assert code == 202, operation
             result = wait_operation(operation["operation_id"])
@@ -355,11 +350,16 @@ def test_cloud_submission_requires_quote_and_explicit_cost_approval():
             assert history["operations"][0]["verified_artifacts"] == 1
             assert c.request("GET", "/api/operations", token=None)[0] == 403
 
+            emitted = app.artifacts.staging.stage("pilot")
+            newer = emitted["staging_id"]
+            stale_summary, stale_body = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "upload_confirmed": True,
+            })
+            assert stale_summary == 409 and "no longer the current" in stale_body["error"], stale_body
             runner.objects.clear()
             runner.fail_once = True
             code, failed = c.request("POST", "/api/staging/cloud-submit", {
-                "staging_ids": [identifier], "quote_id": quote["quote_id"],
-                "cost_nzd": quote["cost_nzd"], "cloud_cost_acknowledged": True,
+                "staging_ids": [newer], "upload_confirmed": True,
             })
             assert code == 202, failed
             failure = wait_operation(failed["operation_id"])
@@ -386,5 +386,5 @@ if __name__ == "__main__":
     test_static_files_keep_pipeline_serve_rules()
     test_port_in_use_message_says_how_to_stop_an_old_panel()
     test_staging_web_workflow()
-    test_cloud_submission_requires_quote_and_explicit_cost_approval()
+    test_cloud_submission_requires_summary_and_explicit_upload_confirmation()
     print("pipeline web server tests passed")

@@ -274,58 +274,56 @@ minutes; a build can only start from the estimate that was shown.
   `POST /api/catalog/refresh` (poll it with `GET`) and
   `GET /api/catalog/status` for per-area status on the selected target.
 
-- **Local staging**: lists staged copies; use **Push to staging** on the
-  area list to create them. Staging is always local, regardless of the target
-  toggle. It copies only the region's emitted `data/out/<region>/` artifacts
-  into `data/regional_staging/<staging-id>/artifacts/`; it does not rebuild,
-  upload, approve, deploy or change the current map. The copy is checked
-  against the source inventory before and after copying, so a rebuild that
-  changes the output mid-copy fails the staging rather than mixing builds.
-  The manifest records the staging time separately from the original build
-  time, preserves the emitted summary and leaves missing provenance unknown.
+- **Local staging**: the area list is where areas are selected and acted on.
+  **Push to local staging** adds each eligible built area to the current set or
+  replaces that area's current pointer with a new frozen copy. Other staged
+  areas stay in the set. The atomic
+  `data/regional_staging/current.json` maps each region to its current immutable
+  `data/regional_staging/<staging-id>/artifacts/` copy. Staging is local,
+  regardless of the target toggle; it does not rebuild, upload, approve,
+  deploy or change the current map. The copy is checked against the source
+  inventory before and after copying, so a rebuild that changes the output
+  mid-copy fails rather than mixing builds. Manifests preserve emitted
+  summaries and leave missing provenance unknown. A local staging batch accepts
+  up to 100 areas.
 
-  **Verify** checks the full artifact inventory, sizes and SHA-256 checksums,
-  including unexpected files, and works after the working build has changed.
-  Listing a copy is not verification or a quality approval. Copies consume
-  additional disk and contain no raw sources or shared release assets; they
-  are not standalone deployable maps. Do not edit completed copies.
-
-  Staging and verification run in the background. Their status persists under
-  `data/pipeline_web/artifact_operations/`; **Refresh** reconnects to the last
-  operation in the tab. Failed or interrupted copies stay under
-  `.incomplete-<staging-id>/` and never appear as completed copies; explicit
-  retention cleanup is under **Local releases**. A region being staged holds
-  a lock under `data/regional_staging/.locks/`; after a crash, check its
+  Config shows only the current copy per area, grouped under expandable
+  councils. **Verify current copy** checks the full inventory, sizes and
+  SHA-256 checksums, including unexpected files. Listing is not verification or
+  quality approval. Frozen copies contain no raw sources or shared release
+  assets and are not standalone deployable maps. Older immutable copies remain
+  available for candidates that pin them and are removed only by explicit local
+  retention cleanup. Failed or interrupted copies stay under
+  `.incomplete-<staging-id>/`; they never become current. A region being staged
+  holds a lock under `data/regional_staging/.locks/`; after a crash, check its
   `owner.json` process ID before removing a stale lock.
 
-  Copies made by earlier versions (`<staging-id>/snapshot/artifacts/`) remain
-  readable and usable in releases. The former `data/regional_snapshots/`
-  folder is no longer used; delete it by hand once no older checkout needs it.
+  **Push to remote staging** uploads the selected areas' current local staged
+  versions to the private bucket configured by
+  `CLOUD_SHARED_BUILD.artifact_staging_bucket` (default
+  `gs://solar-potential-map-data`), under
+  `pipeline-staging/submissions/<staging-id>/`. It requires `gcloud` access.
+  One final Upload/Cancel dialog shows the verified total bytes in GB, the
+  private destination and the selected areas; it warns that transfer and
+  ongoing storage may incur charges. It does not show a cost estimate or ask
+  for typed `yes`; select up to 100 areas per upload. The server rechecks that
+  each selected immutable ID is still
+  current before uploading. It creates objects without overwriting, checks the
+  remote inventory, sizes, SHA-256 metadata and server-computed MD5, and writes
+  the submission manifest last. The artifact lifecycle lock prevents local
+  cleanup during transfer. Failed partial transfers are not complete; retrying
+  the same staging ID reuses matching objects. Gcloud runs per object, so a
+  large number of objects can take minutes.
 
-  **Push to cloud** sends selected staged copies from this computer to the
-  private bucket configured by `CLOUD_SHARED_BUILD.artifact_staging_bucket`
-  (default `gs://solar-potential-map-data`), under
-  `pipeline-staging/submissions/<staging-id>/`. It requires `gcloud` access to
-  that bucket. The estimate shows the selected bytes, destination and a
-  first-30-days storage/transfer estimate; type `yes` to approve it. The
-  estimate is not a spending cap, and storage continues to accrue because cloud
-  cleanup is not implemented. The operation re-verifies each local staged
-  copy, creates cloud objects without overwriting existing objects, checks the
-  remote inventory, sizes, recorded SHA-256 values and the server-computed MD5,
-  then writes the submission manifest last. The local artifact lifecycle lock
-  is held during transfer so cleanup cannot remove its inputs. Failed partial
-  transfers are not complete submissions; retrying the same staging ID resumes
-  matching objects. Gcloud runs per object, so transfers with many objects can
-  take minutes even when the total size is small. The
-  The cloud push history beside the button shows upload and verification counts,
-  success, failure and interruption, and reconnects after a reload. It shows
-  the latest 50 operations recorded by this checkout under
-  `data/pipeline_web/artifact_operations/`, not an inventory of the bucket.
-  On failure, resolve the reported error, then estimate and retry the same
-  staged version. The local retention controls apply only to local artifacts;
-  they do not set cloud expiry or delete cloud submissions.
-  Cloud submission does not rebuild, assemble a release, approve, activate,
-  change a preview pointer or publish to the served tiles bucket. The public
+  The remote staging history shows live upload and verification counts plus
+  success, failure and interruption, and reconnects after reload. It is the
+  latest 50 operations recorded by this checkout under
+  `data/pipeline_web/artifact_operations/`, not a bucket inventory. Resolve a
+  failure, then select the current area again and upload. Local retention does
+  not set cloud expiry or delete cloud objects; cloud cleanup is not
+  implemented. Remote staging does not assemble, approve, activate, switch a
+  production pointer or publish to the served tiles bucket. A future A/B
+  staging-to-production pointer switch is not implemented. The public
   developer-preview bucket is not used.
 
   The same operations are available on the command line:
@@ -346,9 +344,9 @@ minutes; a build can only start from the estimate that was shown.
   changes the working map under `data/`, regardless of the target toggle.
   Keep using the separate Developer/Published build workflow for cloud work.
 
-  1. In **Local staging**, tick exactly one version of each complete region
-     to replace. Grid selections cannot replace a complete region.
-  2. Choose **Create local candidate**. All other active regions are carried
+    1. **Create local candidate** uses all current staged versions. Grid
+      selections cannot replace a complete region.
+    2. Choose **Create local candidate**. All other active regions are carried
      forward. Creation copies regional inputs and the frontend, validates the
      frozen region contract, and assembles shared map assets using
      `combine_regions.py --frozen-inputs --skip-markup-lines`. It does not fetch
@@ -370,9 +368,10 @@ minutes; a build can only start from the estimate that was shown.
      The current shared assumptions document requires equal PV assumptions
      across regions; incompatible contracts, partial regions and overlapping
      building ownership are blocked, not review overrides.
-  5. Under **Local retention and cleanup**, explicitly configure all five positive
-     windows in hours and save. No destructive defaults are supplied. Choose
-     windows suitable for the local disk and review schedule.
+    5. Under **Local retention and cleanup**, review the populated defaults:
+      30 days for rollback, candidates and unused staged copies, 7 days for
+      incomplete copies and 3 days' grace. Change and save them if needed. No
+      cleanup runs automatically; marking and permanent deletion remain explicit.
   6. Choose **Approve and activate locally**. An all-pass comparison is approved
      by the automatic policy. Warnings, regressions or unknowns require the
      recorded **Manual review reason**. The optional **Approve candidate**

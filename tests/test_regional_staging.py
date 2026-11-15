@@ -48,6 +48,56 @@ class StagingTests(unittest.TestCase):
         second = self.store.stage("pilot")["staging_id"]
         self.assertNotEqual(first, second)
         self.assertEqual(len(self.store.list()), 2)
+        self.assertEqual([item["staging_id"] for item in self.store.current_list()], [second])
+        self.assertEqual(self.store.current()["regions"], {"pilot": second})
+        self.assertEqual(self.store.current()["generation"], 2)
+
+    def test_current_staging_set_adds_areas_and_preserves_unmodified_areas(self):
+        first = self.store.stage("pilot")["staging_id"]
+        other = self.data / "out" / "other"
+        other.mkdir(parents=True)
+        (other / "summary.json").write_text('{"region":"other"}')
+        second = self.store.stage("other")["staging_id"]
+        third = self.store.stage("pilot")["staging_id"]
+        self.assertEqual(self.store.current()["regions"], {"other": second, "pilot": third})
+        self.assertEqual({item["staging_id"] for item in self.store.current_list()}, {second, third})
+        self.assertTrue((self.store.root / first).is_dir(), "older immutable copies stay available for pinned candidates")
+
+    def test_batch_switches_current_set_once_and_failure_keeps_previous_set(self):
+        other = self.data / "out" / "other"
+        other.mkdir(parents=True)
+        (other / "summary.json").write_text('{"region":"other"}')
+        progress = []
+        manifests = self.store.stage_many(["pilot", "other"],
+                                          progress=lambda region, done, total: progress.append((region, done, total)))
+        self.assertEqual(self.store.current()["generation"], 1)
+        self.assertEqual(set(self.store.current()["regions"]), {"pilot", "other"})
+        self.assertEqual(progress[-1][1:], (2, 2))
+        self.assertEqual(len(manifests), 2)
+
+        failed_data = self.data.parent / "failed-data"
+        failed_source = failed_data / "out" / "pilot"
+        failed_source.mkdir(parents=True)
+        (failed_source / "summary.json").write_text('{"region":"pilot"}')
+        second = failed_data / "out" / "other"
+        second.mkdir(parents=True)
+        (second / "summary.json").write_text('{"region":"other"}')
+        failed_store = StagingStore(failed_data)
+        original_copy = shutil.copyfile
+        calls = 0
+
+        def fail_second_region(source, destination):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("disk full")
+            return original_copy(source, destination)
+
+        with patch("tools.regional_staging.shutil.copyfile", side_effect=fail_second_region):
+            with self.assertRaises(ArtifactError):
+                failed_store.stage_many(["pilot", "other"])
+        self.assertEqual(failed_store.current()["regions"], {})
+        self.assertEqual(failed_store.current_list(), [])
 
     def test_repeated_id_does_not_overwrite(self):
         identifier = "a" * 32

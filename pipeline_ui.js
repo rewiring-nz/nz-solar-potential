@@ -110,8 +110,8 @@
   let artifactBusy = false;
   let cloudRunning = false;
   let cloudHistoryLoading = false;
-  const releaseChoices = new Set();
-  let cloudQuote = null;
+  let currentStaged = [];
+  let cloudUploadSummary = null;
   let releaseState = null;
   let releaseRecords = [];
   async function loadCloudOperations() {
@@ -122,6 +122,7 @@
       cloudRunning = operations.some((operation) => operation.status === "running");
       $("cloud-push-history").innerHTML = operations.length ? operations.map((operation) => {
         const ids = (operation.value && operation.value.staging_ids) || [];
+        const totalBytes = operation.value && operation.value.upload_summary && operation.value.upload_summary.bytes;
         let detail = operation.error || "";
         if (operation.status === "running") {
           if (operation.phase === "verifying_local") detail = "Verifying local staged copy";
@@ -132,16 +133,20 @@
         } else if (operation.status === "succeeded") {
           detail = ((operation.result && operation.result.submissions) || []).map((item) => item.region_id || item.submission_id).join(", ") + ": verified; not deployed";
         } else {
-          detail += " Re-estimate and retry the same staged version after resolving the error; matching uploaded objects are reused.";
+          detail += " Resolve the error, then retry the same staged version; matching uploaded objects are reused.";
         }
         return `<div class="item"><b class="${operation.status === "failed" || operation.status === "interrupted" ? "block" : ""}">${esc(operation.status)}</b> · ${esc(operation.started_at || "unknown time")}
-          <div>${esc(detail)}</div><div class="muted job-id">${esc(ids.join(", "))}</div>
+          <div>${esc(detail)}</div><div class="muted">${totalBytes == null ? "" : `${fmtGb(totalBytes / 1_000_000_000)} · `}${esc(ids.length)} area(s)</div>
           <div class="muted">Last update: ${esc(operation.finished_at || operation.progress_at || operation.started_at || "unknown")}</div></div>`;
       }).join("") : '<p class="muted">No cloud pushes recorded in this checkout.</p>';
       const latest = operations[0];
       const message = cloudRunning ? "Cloud push in progress." : latest
         ? `Latest cloud push ${latest.status}${latest.error ? `: ${latest.error}` : "."}` : "";
       if ($("cloud-push-status").textContent !== message) $("cloud-push-status").textContent = message;
+      $("act-cloud-status").textContent = cloudRunning ? cloudProgress(operations.find((item) => item.status === "running"))
+        : latest && ["failed", "interrupted"].includes(latest.status)
+          ? `Latest remote staging upload ${latest.status}: ${latest.error || "check Config for details."}`
+          : latest && latest.status === "succeeded" ? "Latest remote staging upload verified; it was not deployed." : "";
     } catch (error) {
       $("cloud-push-status").textContent = `Cloud push status unavailable: ${error.message}. Showing last known history; reconnecting.`;
     } finally {
@@ -149,40 +154,44 @@
       releaseButtons();
     }
   }
+
+  function cloudProgress(operation) {
+    if (!operation) return "Remote staging upload in progress.";
+    if (operation.phase === "verifying_local") return `Verifying local staged copy ${operation.staging_id || ""}…`;
+    if (operation.phase === "uploading") return `Uploading ${operation.staging_id || ""}: ${operation.uploaded_artifacts || 0} of ${operation.artifact_count || 0} artifacts.`;
+    if (operation.phase === "verifying_remote") return `Verifying remote copy ${operation.staging_id || ""} (${operation.verification_step === "before_manifest" ? "before manifest" : "final check"}): ${operation.verified_artifacts || 0} of ${operation.artifact_count || 0} artifacts.`;
+    return "Remote staging upload in progress.";
+  }
   async function loadStaging() {
     if (!writable) return;
     try {
       const staging = await api("staging");
-      $("staging-list").innerHTML = staging.staged.length ? staging.staged.map((item) =>
-        `<div class="item"><b>${esc(item.region_id || "Unknown region")}</b>
-          <div class="muted job-id">${esc(item.staging_id)}</div>
-          <div class="muted">Staged: ${esc(item.staged_at || "unknown")}<br>
-          Built: ${esc(item.built_at || "unknown")}<br>
-          Size: ${fmtInt(item.bytes || 0)} bytes · ${fmtInt(item.artifact_count || 0)} artifacts<br>
-          Verification: <span data-staged-verification="${esc(item.staging_id)}">${esc(item.verification || "not checked")}</span>. Not approved or deployed.</div>
-          <label><input type="checkbox" data-release-choice="${esc(item.staging_id)}"
-            ${releaseChoices.has(item.staging_id) ? "checked" : ""} ${item.error ? "disabled" : ""}>
-            Select this staged version</label><br>
-          ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
-          <button class="small" data-verify-staged="${esc(item.staging_id)}"
-            ${artifactBusy ? "disabled" : ""}>Verify staged copy</button></div>`).join("")
-        : '<p class="muted">No completed staged copies.</p>';
+      currentStaged = staging.staged;
+      const councils = new Map();
+      for (const item of currentStaged) {
+        const council = (item.region_id || "Unknown council").split("/")[0];
+        if (!councils.has(council)) councils.set(council, []);
+        councils.get(council).push(item);
+      }
+      $("staging-list").innerHTML = currentStaged.length ? [...councils].map(([council, items]) => {
+        const bytes = items.reduce((total, item) => total + (item.bytes || 0), 0);
+        return `<details class="stage-council"><summary>${esc(council)} · ${items.length} area(s) · ${fmtGb(bytes / 1_000_000_000)}</summary>
+          <div class="stage-council-areas">${items.map((item) => {
+            const parts = (item.region_id || "").split("/");
+            const area = parts.slice(1).join(" / ") || item.region_id || "Unknown area";
+            const status = item.error ? "unreadable" : item.verification || "not checked";
+            return `<details class="qrow"><summary><span class="qname">${esc(area)}</span>
+              <span class="qsum">${fmtGb((item.bytes || 0) / 1_000_000_000)} · ${esc(status)}</span></summary>
+              <div class="qbody"><div class="muted">Current staging ID: <span class="job-id">${esc(item.staging_id)}</span><br>
+                Staged: ${esc(item.staged_at || "unknown")} · Built: ${esc(item.built_at || "unknown")}<br>
+                ${fmtInt(item.bytes || 0)} bytes · ${fmtInt(item.artifact_count || 0)} artifacts</div>
+                ${item.error ? `<p class="block">${esc(item.error)}</p>` : `<button class="small" data-verify-staged="${esc(item.staging_id)}" ${artifactBusy ? "disabled" : ""}>Verify current copy</button>`}</div>
+            </details>`;
+          }).join("")}</div></details>`;
+      }).join("") : '<p class="muted">No areas in current local staging.</p>';
       $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) =>
         button.addEventListener("click", () => runOperation(
           `staging/${encodeURIComponent(button.dataset.verifyStaged)}/verify`, {})));
-      const available = new Set(staging.staged.filter((item) => !item.error).map((item) => item.staging_id));
-      for (const id of releaseChoices) if (!available.has(id)) releaseChoices.delete(id);
-      $("staging-list").querySelectorAll("[data-release-choice]").forEach((input) =>
-        input.addEventListener("change", () => {
-          if (input.checked) releaseChoices.add(input.dataset.releaseChoice);
-          else releaseChoices.delete(input.dataset.releaseChoice);
-          cloudQuote = null;
-          $("staging-cloud-estimate").textContent = "";
-          $("staging-list").querySelectorAll("[data-staged-verification]").forEach((status) => {
-            status.textContent = "not checked";
-          });
-          releaseButtons();
-        }));
       await loadReleases();
     } catch (error) {
       $("staging-status").textContent = `Cannot load staged copies: ${error.message}`;
@@ -213,17 +222,23 @@
         };
         const label = labels[operation.action] || ["Running operation", "Completed"];
         const statusElement = operation.action.startsWith("release_") ? $("release-status") : $("staging-status");
+        const batchProgress = operation.action === "stage_batch"
+          ? `${operation.completed_regions || 0} of ${operation.region_count || 0} areas staged${operation.region_id ? ` · ${operation.region_id}` : ""}.`
+          : null;
         statusElement.textContent = operation.status === "running"
           ? operation.action === "cloud_submit"
-            ? `${operation.phase === "verifying_local" ? "Verifying local copy" : operation.phase === "verifying_remote" ? "Verifying cloud copy" : label[0]}: ${operation.uploaded_artifacts || 0} of ${operation.artifact_count || 0} artifacts uploaded.`
-            : `${label[0]}...`
+            ? cloudProgress(operation)
+            : operation.action === "stage_batch" ? `Updating current local staging set: ${batchProgress}` : `${label[0]}...`
           : operation.status === "succeeded"
             ? operation.action.startsWith("release_")
               ? `${operation.action.replace("release_", "")}: completed locally.`
               : operation.action === "cloud_submit"
                 ? `Cloud Staging verified: ${(operation.result.submissions || []).map((s) => `${s.region_id} (${s.submission_id})`).join(", ")}. Not approved or deployed.`
+                : operation.action === "stage_batch"
+                  ? `Current local staging set updated with ${(operation.result.regions || []).length} area(s).`
                 : `${label[1]} ${operation.region_id || ""} ${operation.staging_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
             : `${operation.status}: ${operation.error || "Operation did not complete."}`;
+        if (operation.action === "stage_batch") $("act-notes").textContent = statusElement.textContent;
         if (operation.result && operation.action.startsWith("release_")) renderReleaseResult(operation);
         if (operation.failed_release_id) {
           $("release-result").innerHTML = '<button class="small" id="release-failure-log">Read assembly log</button><pre id="release-log" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';
@@ -252,61 +267,64 @@
     }
   }
 
-  function cloudPushButtons() {
-    $("staging-estimate-cloud").disabled = !writable || artifactBusy || cloudRunning || !releaseChoices.size;
-    const yes = $("staging-cloud-yes");
-    $("staging-cloud-push").disabled = !writable || artifactBusy || cloudRunning || !cloudQuote ||
-      !yes || yes.value.trim().toLowerCase() !== "yes";
+  function selectedCurrentStaging() {
+    return selectedLeaves().map((leaf) => ({leaf, staged: views.get(leaf.id).view.staged}))
+      .filter(({staged}) => staged && !staged.error && staged.staging_id);
   }
 
-  $("staging-estimate-cloud").addEventListener("click", async () => {
-    if (!writable || artifactBusy || cloudRunning || !releaseChoices.size) return;
-    cloudQuote = null;
-    cloudPushButtons();
-    const status = $("staging-cloud-estimate");
-    status.textContent = "Verifying selected local staging and estimating cloud storage...";
+  function cloudPushButtons() {
+    const count = selectedCurrentStaging().length;
+    $("act-cloud-stage").disabled = !writable || artifactBusy || cloudRunning || !count || count > 100 || target !== "local";
+    $("act-cloud-stage").title = count > 100 ? "Remote staging uploads are limited to 100 areas per confirmation." :
+      target !== "local" ? "Remote staging uses the current local staging set; switch the target to Local." :
+        "Upload selected areas' current local staged versions to private remote staging.";
+  }
+
+  $("act-cloud-stage").addEventListener("click", async () => {
+    if (!writable || artifactBusy || cloudRunning) return;
+    const selectedVersions = selectedCurrentStaging();
+    if (!selectedVersions.length || selectedVersions.length > 100) return;
+    const ids = selectedVersions.map(({staged}) => staged.staging_id);
+    $("act-cloud-status").textContent = "Verifying selected current staged versions…";
     try {
-      const quote = await api("staging/cloud-estimate", {
-        method: "POST", body: { staging_ids: [...releaseChoices] },
-      });
-      cloudQuote = quote;
-      const verified = new Set(quote.staging.map((item) => item.staging_id));
-      $("staging-list").querySelectorAll("[data-staged-verification]").forEach((status) => {
-        if (verified.has(status.dataset.stagedVerification)) status.textContent = "verified for this estimate";
-      });
-      status.innerHTML = `<div class="cost"><b>Estimated cost: up to NZD ${esc(quote.cost_nzd)}</b>
-        <div>Destination: <code>${esc(quote.destination)}</code> in ${esc(quote.bucket)}</div>
-        <div>${esc(quote.cost_basis)}</div><p>${esc(quote.cost_warning)}</p>
-        <div>${quote.staging.map((item) => `${esc(item.region_id || "Unknown region")}: ${fmtInt(item.bytes)} bytes, ${fmtInt(item.artifact_count)} artifacts`).join("<br>")}</div>
-        <label>Type <b>yes</b> to accept the cost: <input type="text" id="staging-cloud-yes" autocomplete="off" size="5"></label></div>`;
-      $("staging-cloud-yes").addEventListener("input", cloudPushButtons);
+      cloudUploadSummary = await api("staging/cloud-summary", {method: "POST", body: {staging_ids: ids}});
+      const summary = cloudUploadSummary;
+      $("cloud-confirm-summary").innerHTML = `<p><b>Confirm upload of ${(summary.bytes / 1_000_000_000).toFixed(2)} GB</b>
+        across ${summary.staging.length} area(s) to private GCS staging?</p>
+        <p>Destination: <code>${esc(summary.destination)}</code><br>
+        ${summary.staging.map((item) => `${esc(item.region_id)} · ${(item.bytes / 1_000_000_000).toFixed(2)} GB`).join("<br>")}</p>`;
+      $("cloud-confirm-dialog").showModal();
     } catch (error) {
-      status.textContent = `Cloud estimate refused: ${error.message}`;
+      cloudUploadSummary = null;
+      $("act-cloud-status").textContent = `Remote staging upload not started: ${error.message}`;
     }
-    cloudPushButtons();
   });
 
-  $("staging-cloud-push").addEventListener("click", async () => {
-    if (!writable || artifactBusy || cloudRunning || !cloudQuote ||
-      (($('staging-cloud-yes') || {}).value || "").trim().toLowerCase() !== "yes") return;
+  $("cloud-confirm-cancel").addEventListener("click", () => {
+    cloudUploadSummary = null;
+    $("cloud-confirm-dialog").close();
+    $("act-cloud-status").textContent = "Remote staging upload cancelled.";
+  });
+
+  $("cloud-confirm-upload").addEventListener("click", async () => {
+    if (!cloudUploadSummary || artifactBusy || cloudRunning) return;
+    const ids = cloudUploadSummary.staging.map((item) => item.staging_id);
+    $("cloud-confirm-dialog").close();
     artifactBusy = true;
     releaseButtons();
-    $("cloud-push-status").textContent = "Starting cloud submission...";
+    $("act-cloud-status").textContent = "Starting remote staging upload…";
     try {
-      const operation = await api("staging/cloud-submit", { method: "POST", body: {
-        staging_ids: cloudQuote.staging.map((item) => item.staging_id),
-        quote_id: cloudQuote.quote_id, cost_nzd: cloudQuote.cost_nzd,
-        cloud_cost_acknowledged: true,
+      await api("staging/cloud-submit", {method: "POST", body: {
+        staging_ids: ids, upload_confirmed: true,
       } });
-      cloudRunning = operation.status === "running";
-      cloudQuote = null;
+      cloudRunning = true;
+      cloudUploadSummary = null;
       await loadCloudOperations();
     } catch (error) {
-      $("cloud-push-status").textContent = `Cloud submission refused: ${error.message}`;
+      $("act-cloud-status").textContent = `Remote staging upload not started: ${error.message}`;
     } finally {
       artifactBusy = false;
       releaseButtons();
-      await loadStaging();
     }
   });
 
@@ -337,10 +355,15 @@
 
   function releaseButtons() {
     const disabled = !writable || artifactBusy || cloudRunning || !releaseState;
+    const stageable = selectedLeaves().filter((leaf) => !stageRefusal(leaf));
+    $("act-stage").disabled = !writable || target !== "local" || artifactBusy || cloudRunning || pushing ||
+      !stageable.length || stageable.length > 100;
+    if (stageable.length > 100) $("act-stage").title = "Push no more than 100 areas per local staging batch.";
+    $("act-build").disabled = !writable || !selectedLeaves().length || artifactBusy || cloudRunning;
     $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) => {
       button.disabled = !writable || artifactBusy || cloudRunning;
     });
-    $("release-create").disabled = disabled || !releaseChoices.size;
+    $("release-create").disabled = disabled || !currentStaged.some((item) => !item.error);
     $("release-select").disabled = disabled || !releaseRecords.length;
     document.querySelectorAll("[data-release-action]").forEach((button) => {
       button.disabled = disabled || !$("release-select").value;
@@ -374,7 +397,7 @@
         ? `Active: ${esc(releaseState.active)} · generation ${releaseState.generation}<br>
            <a href="/local-deploy/" target="_blank" rel="noopener">Open local deployed map</a><br>
            Rollback expires: ${esc(releaseState.rollback_until || "none")}`
-        : "No local deployment. The first candidate contains only the selected complete regions.";
+        : "No local deployment. The first candidate contains the current complete staged regions.";
       document.querySelectorAll("[data-retention]").forEach((input) => {
         if (!input.value && releaseState.policy) input.value = releaseState.policy[input.dataset.retention];
       });
@@ -415,7 +438,10 @@
     else await loadReleases();
   });
   $("release-create").addEventListener("click", () => {
-    if (releaseState) runOperation("releases/create", {staging_ids: [...releaseChoices], generation: releaseState.generation});
+    if (releaseState) runOperation("releases/create", {
+      staging_ids: currentStaged.filter((item) => !item.error).map((item) => item.staging_id),
+      generation: releaseState.generation,
+    });
   });
   document.querySelectorAll("[data-release-action]").forEach((button) =>
     button.addEventListener("click", () => {
@@ -1126,6 +1152,7 @@
     const counts = {};
     leaves.forEach((l) => { const s = views.get(l.id).state; counts[s] = (counts[s] || 0) + 1; });
     const stageable = leaves.filter((l) => !stageRefusal(l));
+    const stageBatchTooLarge = stageable.length > 100;
     const cancellable = leaves.filter((l) => activeJobsFor(l.id).length);
     const html = leaves.length
       ? `<details><summary><b>${fmtInt(leaves.length)} selected</b> · ${fmtInt(buildings)} buildings
@@ -1145,11 +1172,13 @@
       if (list) list.open = selListOpen;
     }
     $("act-build").disabled = !writable || !leaves.length;
-    $("act-stage").disabled = !writable || !stageable.length || target !== "local" || pushing;
-    $("act-stage").title = target !== "local" ? "Staging is local; switch the target to Local."
-      : "Copy each built region into a frozen, checked staged copy. Regions in the build queue, failed builds and grid cells are skipped.";
+    $("act-stage").disabled = !writable || !stageable.length || stageBatchTooLarge || target !== "local" || pushing || artifactBusy || cloudRunning;
+    $("act-stage").title = stageBatchTooLarge ? "Push no more than 100 areas per local staging batch."
+      : target !== "local" ? "Staging is local; switch the target to Local."
+        : "Add each eligible area to the current local staging set; newer copies replace that area's current version.";
     $("act-cancel").disabled = !writable || !cancellable.length;
     $("act-clear").disabled = !leaves.length;
+    cloudPushButtons();
   }
 
   $("sel-sum").addEventListener("click", (e) => {
@@ -1174,11 +1203,16 @@
     loadStatus();
   });
 
-  // Push to staging: copy each eligible region into a staged copy, one at a time.
+  // Add each eligible area to the current local staging set.
   let pushing = false;
   async function waitForOperation(id) {
     for (;;) {
       const op = await api(`operations/${encodeURIComponent(id)}`);
+      $("act-notes").textContent = op.status === "running"
+        ? `Updating local staging set: ${op.completed_regions || 0} of ${op.region_count || 0} areas` +
+          (op.region_id ? ` · ${op.region_id}` : "") + "…"
+        : op.status === "succeeded" ? `Current local staging set updated with ${(op.result.regions || []).length} area(s).`
+          : `${op.status}: ${op.error || "Local staging did not complete."}`;
       if (op.status !== "running") {
         if (op.status !== "succeeded") throw new Error(op.error || op.status);
         return op;
@@ -1187,6 +1221,7 @@
     }
   }
   $("act-stage").addEventListener("click", async () => {
+    if (!writable || artifactBusy || cloudRunning || pushing) return;
     const leaves = selectedLeaves();
     const skipped = {};
     const regions = leaves.filter((l) => {
@@ -1195,31 +1230,29 @@
       return !why;
     });
     const skippedText = Object.entries(skipped).map(([why, n]) => `${n} ${why}`).join(", ");
-    if (!confirm(`Stage ${regions.length} built region(s) locally?` +
+    if (!confirm(`Push ${regions.length} built area(s) to local staging?` +
       (skippedText ? ` Skipping: ${skippedText}.` : "") +
-      " Each staged copy uses extra disk.")) return;
+      " This adds or updates each area's current frozen copy; other staged areas remain.")) return;
+    if (!regions.length) return;
     pushing = true;
     artifactBusy = true;
     renderActions();
-    const failures = [];
-    for (const [i, leaf] of regions.entries()) {
-      $("act-notes").textContent = `Staging ${i + 1} of ${regions.length}: ${leaf.name}…`;
-      try {
-        await waitForOperation((await api("staging", { method: "POST", body: { region: leaf.id } })).operation_id);
-      } catch (e) {
-        failures.push(`${leaf.name}: ${e.message}`);
-        if (e.status === 409 && /another staging or release operation/i.test(e.message)) break;
-      }
+    try {
+      const operation = await api("staging", {method: "POST", body: {regions: regions.map((leaf) => leaf.id)}});
+      sessionStorage.setItem("artifactOperation", operation.operation_id);
+      await waitForOperation(operation.operation_id);
+      if (skippedText) $("act-notes").textContent += ` Skipped: ${skippedText}.`;
+      $("act-notes").innerHTML = `${esc($("act-notes").textContent)} The current set is visible in <a href="#config">Config</a>.`;
+    } catch (error) {
+      $("act-notes").textContent = `Local staging batch failed; the current set was not switched: ${error.message}`;
+    } finally {
+      pushing = false;
+      artifactBusy = false;
+      renderActions();
+      statusSignature = "";
+      loadStatus();
+      if (location.hash === "#config") loadStaging();
     }
-    pushing = false;
-    artifactBusy = false;
-    const staged = regions.length - failures.length;
-    $("act-notes").innerHTML = `Staged ${staged} region(s)` +
-      (skippedText ? ` · skipped ${esc(skippedText)}` : "") +
-      (failures.length ? `. <span class="block">${failures.length} failed:</span> ${failures.map(esc).join("; ")}` : "") +
-      `. Assemble a release in <a href="#config">Config</a>.`;
-    statusSignature = "";
-    loadStatus();
   });
 
   // ---- build dialog ----------------------------------------------------

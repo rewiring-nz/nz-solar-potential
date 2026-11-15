@@ -282,35 +282,53 @@ class WebHandler(RangeHandler):
                 return 202, app.artifacts.start(f"release_{parts[1]}", body)
         if head == "staging":
             if parts == ["staging"] and method == "GET":
-                return 200, {"staged": app.artifacts.staging.list()}
+                return 200, {"staged": app.artifacts.current_staging(),
+                             "generation": app.artifacts.staging.current()["generation"]}
+            if parts == ["staging", "cloud-summary"] and method == "POST":
+                try:
+                    return 200, app.artifacts.cloud_staging.upload_summary(body.get("staging_ids"))
+                except ArtifactError as exc:
+                    raise HttpError(exc.status, str(exc)) from exc
             if parts == ["staging", "cloud-estimate"] and method == "POST":
                 try:
                     return 200, app.artifacts.cloud_staging.estimate(body.get("staging_ids"))
                 except ArtifactError as exc:
                     raise HttpError(exc.status, str(exc)) from exc
             if parts == ["staging", "cloud-submit"] and method == "POST":
-                if body.get("cloud_cost_acknowledged") is not True:
-                    raise HttpError(400, "type yes to approve the cloud cost shown in the estimate")
+                if body.get("upload_confirmed") is not True:
+                    raise HttpError(400, "confirm the upload in the batch summary")
                 try:
-                    quote = app.artifacts.cloud_staging.verify_quote(
-                        body.get("staging_ids"), body.get("quote_id"), body.get("cost_nzd"))
-                    value = {"staging_ids": body["staging_ids"], "quote_id": quote["quote_id"],
-                             "cost_nzd": quote["cost_nzd"], "cloud_cost_acknowledged": True}
+                    summary = app.artifacts.cloud_staging.upload_summary(body.get("staging_ids"))
+                    value = {"staging_ids": [item["staging_id"] for item in summary["staging"]],
+                             "upload_confirmed": True, "upload_summary": summary}
                     return 202, app.artifacts.start("cloud_submit", value)
                 except (ArtifactError, KeyError) as exc:
                     status = exc.status if isinstance(exc, ArtifactError) else 400
                     raise HttpError(status, str(exc)) from exc
             if parts == ["staging"] and method == "POST":
-                region = body.get("region")
-                try:
-                    validate(region)
-                except ValueError as exc:
-                    raise HttpError(400, str(exc)) from exc
+                regions = body.get("regions")
+                single = regions is None
+                if single:
+                    regions = [body.get("region")]
+                if not isinstance(regions, list) or not regions or len(regions) > 100:
+                    raise HttpError(400, "select between one and 100 regions")
+                if any(not isinstance(region, str) for region in regions):
+                    raise HttpError(400, "region IDs must be text")
+                if len(set(regions)) != len(regions):
+                    raise HttpError(400, "a region was selected more than once")
+                for region in regions:
+                    try:
+                        validate(region)
+                    except (TypeError, ValueError) as exc:
+                        raise HttpError(400, str(exc)) from exc
                 with app.stage_gate:
-                    refusal = stage_refusal(app, region)
-                    if refusal:
-                        raise HttpError(409, refusal)
-                    return 202, app.artifacts.start("stage", region)
+                    for region in regions:
+                        refusal = stage_refusal(app, region)
+                        if refusal:
+                            raise HttpError(409, refusal)
+                    if single:
+                        return 202, app.artifacts.start("stage", regions[0])
+                    return 202, app.artifacts.start("stage_batch", {"regions": regions})
             if len(parts) == 3 and parts[2] == "verify" and method == "POST":
                 return 202, app.artifacts.start("verify_staged", artifact_id(parts[1]))
         if head == "operations" and method == "GET":

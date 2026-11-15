@@ -72,6 +72,28 @@ class CloudStaging:
         quote["quote_id"] = hashlib.sha256(encoded).hexdigest()
         return quote
 
+    def upload_summary(self, staging_ids: list[str]) -> dict:
+        """Verify the current staged versions and report bytes and destination only."""
+        identifiers = self._ids(staging_ids)
+        with artifact_lock(self.staging.data):
+            current = self.staging.current()["regions"]
+            rows = []
+            total_bytes = 0
+            total_objects = 0
+            for identifier in identifiers:
+                manifest = self.staging.verify(identifier)
+                region = manifest.get("region_id")
+                if current.get(region) != identifier:
+                    raise ArtifactError(
+                        f"{region} is no longer the current local staged version; refresh the area list", 409)
+                size = sum(item["bytes"] for item in manifest["artifacts"])
+                total_bytes += size
+                total_objects += len(manifest["artifacts"])
+                rows.append({"staging_id": identifier, "region_id": region,
+                             "artifact_count": len(manifest["artifacts"]), "bytes": size})
+            return {"bucket": self.bucket, "destination": f"{self.root}/<staging-id>/",
+                    "staging": rows, "bytes": total_bytes, "artifact_count": total_objects}
+
     def verify_quote(self, staging_ids: list[str], quote_id: str, cost_nzd: str) -> dict:
         quote = self.estimate(staging_ids)
         if quote.get("quote_id") != quote_id or str(quote["cost_nzd"]) != str(cost_nzd):
@@ -79,13 +101,21 @@ class CloudStaging:
         return quote
 
     def submit(self, staging_ids: list[str], progress: Callable[..., None] | None = None,
-               quote_id: str | None = None, cost_nzd: str | None = None) -> dict:
+               quote_id: str | None = None, cost_nzd: str | None = None,
+               require_current: bool = False) -> dict:
         identifiers = self._ids(staging_ids)
         with artifact_lock(self.staging.data):
             if quote_id is not None or cost_nzd is not None:
                 if not isinstance(quote_id, str) or not isinstance(cost_nzd, str):
                     raise ArtifactError("Cloud submission requires its approved estimate", 400)
                 self.verify_quote(identifiers, quote_id, cost_nzd)
+            if require_current:
+                current = self.staging.current()["regions"]
+                for identifier in identifiers:
+                    region = self.staging.verify(identifier).get("region_id")
+                    if current.get(region) != identifier:
+                        raise ArtifactError(
+                            f"{region} is no longer the current local staged version; refresh the area list", 409)
             results = []
             for identifier in identifiers:
                 if progress:

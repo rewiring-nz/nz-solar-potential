@@ -47,7 +47,12 @@ class Artifacts:
         """Regions being staged now, including one whose copy has not yet locked it."""
         with self.lock:
             current = self.current
-        pending = {current["value"]} if current and current["action"] == "stage" else set()
+        if current and current["action"] == "stage":
+            pending = {current["value"]}
+        elif current and current["action"] == "stage_batch":
+            pending = set(current["value"].get("regions") or [])
+        else:
+            pending = set()
         return pending | self.staging.staging_regions()
 
     def get(self, identifier: str) -> dict:
@@ -65,19 +70,43 @@ class Artifacts:
         records.sort(key=lambda record: str(record.get("started_at") or ""), reverse=True)
         return records[:50]
 
+    def current_staging(self) -> list[dict]:
+        items = self.staging.current_list()
+        verified = {}
+        operations = []
+        for path in self.operations.glob("*.json"):
+            record = read_json(path)
+            if isinstance(record, dict) and record.get("status") == "succeeded":
+                operations.append(record)
+        operations.sort(key=lambda record: str(record.get("finished_at") or ""), reverse=True)
+        for record in operations:
+            stamp = record.get("finished_at") or "verified"
+            if record.get("action") == "verify_staged" and record.get("staging_id"):
+                verified.setdefault(record["staging_id"], f"verified {stamp}")
+            elif record.get("action") == "cloud_submit":
+                for submission in (record.get("result") or {}).get("submissions", []):
+                    identifier = submission.get("staging_id")
+                    if identifier:
+                        verified.setdefault(identifier, f"verified locally and remotely {stamp}")
+        for item in items:
+            if not item.get("error"):
+                item["verification"] = verified.get(item.get("staging_id"), "not checked")
+        return items
+
     def start(self, action: str, value: str | dict) -> dict:
-        if action not in {"stage", "verify_staged", "release_create",
+        if action not in {"stage", "stage_batch", "verify_staged", "release_create",
                           "release_verify", "release_compare", "release_approve", "release_activate",
                           "release_rollback", "release_policy", "release_cleanup", "release_publish",
                           "cloud_submit"}:
             raise ArtifactError("Unknown operation")
-        if (action.startswith("release_") or action == "cloud_submit") and not isinstance(value, dict):
+        if (action.startswith("release_") or action in {"stage_batch", "cloud_submit"}) and not isinstance(value, dict):
             raise ArtifactError("Operation request must be an object")
-        if action == "cloud_submit" and (value.get("cloud_cost_acknowledged") is not True
+        if action == "stage_batch" and (not isinstance(value.get("regions"), list) or not value["regions"]):
+            raise ArtifactError("Local staging batch needs one or more regions", 400)
+        if action == "cloud_submit" and (value.get("upload_confirmed") is not True
                                           or self.cloud_staging is None
-                                          or not isinstance(value.get("quote_id"), str)
-                                          or not isinstance(value.get("cost_nzd"), str)):
-            raise ArtifactError("Cloud submission needs an explicit cost approval and configured storage", 400)
+                                          or not isinstance(value.get("staging_ids"), list)):
+            raise ArtifactError("Cloud submission needs an explicit upload confirmation and configured storage", 400)
         with self.lock:
             if self.busy:
                 raise ArtifactError("Another staging or release operation is running", 409)
@@ -101,9 +130,20 @@ class Artifacts:
                     record.update(status="running", phase=phase, progress_at=now(), **state)
                     write_json_atomic(self.operations / f"{record['operation_id']}.json", record)
 
-                result = self.cloud_staging.submit(value["staging_ids"], progress,
-                                                   value["quote_id"], value["cost_nzd"])
+                result = self.cloud_staging.submit(value["staging_ids"], progress, require_current=True)
                 record.update(status="succeeded", phase="complete", result=result)
+                return
+            if action == "stage_batch":
+                def progress(region: str, completed: int, total: int) -> None:
+                    record.update(status="running", phase="staging", region_id=region,
+                                  completed_regions=completed, region_count=total, progress_at=now())
+                    write_json_atomic(self.operations / f"{record['operation_id']}.json", record)
+
+                manifests = self.staging.stage_many(value["regions"], progress=progress)
+                record.update(status="succeeded", phase="complete",
+                              result={"regions": [manifest["region_id"] for manifest in manifests],
+                                      "staging_ids": [manifest["staging_id"] for manifest in manifests],
+                                      "generation": self.staging.current()["generation"]})
                 return
             manifest = self.staging.stage(value) if action == "stage" else self.staging.verify(value)
             record.update(status="succeeded", staging_id=manifest["staging_id"],

@@ -30,6 +30,8 @@ from tools.site_assets import FRONTEND_FILES
 
 POLICY_KEYS = ("rollback_hours", "candidate_hours", "staging_hours",
                "incomplete_hours", "grace_hours")
+DEFAULT_POLICY = {"rollback_hours": 720, "candidate_hours": 720,
+                  "staging_hours": 720, "incomplete_hours": 168, "grace_hours": 72}
 CORE_FILES = ("buildings.pmtiles", "panel_layouts.pmtiles", "building_cells.pmtiles",
               "build_summary.json", "assumptions.json", "seasonal_curves.json")
 
@@ -137,7 +139,7 @@ class LocalReleases:
         path = self.root / "state.json"
         if not path.exists():
             return {"schema_version": 1, "generation": 0, "active": None, "previous": None,
-                    "rollback_until": None, "policy": None, "approvals": {}, "history": [],
+                    "rollback_until": None, "policy": dict(DEFAULT_POLICY), "approvals": {}, "history": [],
                     "purge_marks": {}}
         state = read_document(path)
         if (state.get("schema_version") != 1 or type(state.get("generation")) is not int or
@@ -161,6 +163,8 @@ class LocalReleases:
                 raise ArtifactError("Invalid local release approval", 409)
         for value in state["purge_marks"].values():
             parse_time(value)
+        if state["policy"] is None:
+            state["policy"] = dict(DEFAULT_POLICY)
         if state["policy"] is not None:
             # Policies saved before snapshots were folded into staging carry
             # a snapshot window; it no longer governs anything.
@@ -551,8 +555,9 @@ class LocalReleases:
                     candidates.append(("release", path.name, path))
                 else:
                     referenced.update(staged_id(v) for v in manifest["region_builds"].values())
+            referenced.update(self.staging.current_ids())
             for path in sorted(self.staging.root.glob("*")):
-                if path.name.startswith("."):
+                if path.name.startswith(".") or path.name == "current.json":
                     continue
                 artifact_id(path.name)
                 if path.is_symlink():
