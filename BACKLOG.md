@@ -732,6 +732,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   in full (about 20,700 buildings), so the estimate is 6-8 h. Still to do:
   the deploy gate against v79, renders of what it flags, the owner's word
   before any publish, stop the VM, record the hours.
+  **Reader extended to the pilot homes the student drew (16 Nov, in
+  progress).** The owner's blind picks on fresh houses put the reader's
+  lines ahead of production on 20 of 24 and the student's on 13 of 24, so
+  the student's homes are being re-read by the reader, run as agents in the
+  session (no API charge; about 19k tokens a roof, six roofs to an agent).
+  First 60 of the 299 pilot homes holding a student reading: 45 rated 0.4 or
+  over and ingested, 15 under and left on the student. Built both ways
+  (student -> reader): panels on the 45, 1,535 -> 1,353; sample render
+  `docs/review/reader_vs_free_model_16nov_sample.jpg` (agent's reading, not
+  a measurement: the reader's lines are cleaner on most, and it finds
+  ridges and hips the student misses; some of its obstruction outlines are
+  too large). The other 239 are being read in waves. Readings are in the
+  scratchpad (`teach1/`, `teach2/`) until all are in; then into
+  `data/vision_faces/`, up to the VM, and a patch build. Tried and dropped
+  the same day: moving a reading's seams onto the LiDAR plane crossings
+  (`seams_to_plane_lines` on the 24 census roofs: lines within 0.3 / 0.75 /
+  1.5 m unchanged at 42 / 67 / 78%).
   New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
   7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
