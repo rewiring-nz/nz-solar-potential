@@ -664,6 +664,29 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   (array-first placement, rows on each face's own eave, obstructions held
   to a measured standard, seams on plane intersections, and a benchmark of
   owner-drawn layouts to iterate against on this Mac).
+  **Error census on the drawn roofs (16 Nov, this Mac, pilot only: the
+  other regions hold no imagery here; held-back roofs excluded).** Each
+  drawn roof built blind (SOLAR_HIDE_LABELS=1) and sorted by what is wrong;
+  "right" is line F >= 0.7 at 0.75 m and face IoU >= 0.8.
+  LiDAR path alone, 70 roofs: 19 right; 20 have the right lines placed
+  0.3-1.5 m off; 13 invent lines; 6 miss lines; 12 mixed or other. 35% of
+  its line length matches no drawn line within 1.5 m. By size: 1-2 faces 9
+  of 25 right, 3-4 faces 6 of 12, 5-8 faces 3 of 17, 9+ faces 1 of 16.
+  Paid reader on the 24 it read on 14 Nov, same roofs three ways: the
+  reading as read 10 right (lines within 0.3 / 0.75 / 1.5 m: 45 / 68 / 78%;
+  87% of its lines real); the LiDAR path 6 right; **the same readings
+  after the build 4 right** (35 / 58 / 71%). Of the 10 read right, 6 come
+  out of the build worse: 4735378 and 5371118 are two-face roofs whose
+  straight ridge (line F 1.0 and 0.89) is rebuilt as a zig-zag (0.03 and
+  0.41); 5370320 goes from 2 faces to 5. Renders:
+  `docs/review/census_16nov_reader_as_read.jpg`,
+  `docs/review/census_16nov_reader_after_build.jpg`. Caveats: the markup
+  was traced on a leaning photo, so some of the 0.3 m misses are the
+  ruler; the free model was trained on these roofs so it cannot be scored
+  on them; these 70 are mostly central-town buildings, not houses. The paid
+  reader could not be run on the other 46: the API key's credit is spent
+  (no charge made). Next: find the build stage that bends a reading's
+  seams and let a reading through intact; then the reader on all 70.
   New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
   7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
