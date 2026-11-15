@@ -248,6 +248,51 @@ def _fit_plane_robust(pts, iterations=6):
     return plane
 
 
+# A reading's face that the trimmed fit calls "not one plane" is tried once
+# more against the plane most of its returns lie on. The trimmed fit starts
+# from a least-squares plane through everything, so plant, a parapet or an
+# overhanging tree on a third of a flat roof tilts it and it never recovers:
+# 10B Church St (#5370320), a 200 m2 flat face read correctly, fitted 9 deg
+# with 23% of returns on plane, where a 1 deg plane holds 64% and the other
+# 35% stand above it. What separates that from a face spanning two planes is
+# the side the rest fall on: things stand ON a roof, a second roof plane falls
+# AWAY below (52 Camp St #4735104, a missed ridge: 41% below). Seeded, so a
+# roof builds the same every time.
+DOMINANT_SAMPLES = 300
+DOMINANT_MAX_BELOW = 0.15
+
+
+def _dominant_plane(pts):
+    """The plane most of the returns lie on, when the rest stand above it;
+    None when there is none (too few on it, or a share falls below)."""
+    if len(pts) < MIN_POINTS_PER_FACE:
+        return None
+    rng = np.random.default_rng(0)
+    best, best_n = None, 0
+    for _ in range(DOMINANT_SAMPLES):
+        q = pts[rng.choice(len(pts), 3, replace=False)]
+        try:
+            pl = _fit_plane(q)
+        except Exception:
+            continue
+        if not np.all(np.isfinite(pl)):
+            continue
+        r = pts[:, 2] - (pl[0] * pts[:, 0] + pl[1] * pts[:, 1] + pl[2])
+        n = int((np.abs(r) < INLIER_BAND_M).sum())
+        if n > best_n:
+            best, best_n = pl, n
+    if best is None or best_n < MIN_POINTS_PER_FACE:
+        return None
+    r = pts[:, 2] - (best[0] * pts[:, 0] + best[1] * pts[:, 1] + best[2])
+    plane = _fit_plane(pts[np.abs(r) < INLIER_BAND_M])
+    r = pts[:, 2] - (plane[0] * pts[:, 0] + plane[1] * pts[:, 1] + plane[2])
+    if (np.abs(r) < INLIER_BAND_M).mean() < SELECTED_MIN_PLANE_INLIER:
+        return None
+    if (r < -INLIER_BAND_M).mean() > DOMINANT_MAX_BELOW:
+        return None
+    return plane
+
+
 def _inlier_fraction(pts, plane):
     r = pts[:, 2] - (plane[0] * pts[:, 0] + plane[1] * pts[:, 1] + plane[2])
     return float((np.abs(r - np.median(r)) < INLIER_BAND_M).mean())
@@ -1522,6 +1567,9 @@ def facets_from_selected_faces(building_id, footprint, pts):
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         inside = pts
+    # a face traced from the photo is marked, so the build's LiDAR stages
+    # leave its lines alone (build_layout_geojson, KEEP_READINGS)
+    _read = doc.get("source") in ("vision", "student")
     out = []
     pending = []
     for ring in doc.get("faces") or []:
@@ -1546,6 +1594,9 @@ def facets_from_selected_faces(building_id, footprint, pts):
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
             else None
+        if (_read and plane is not None
+                and _inlier_fraction(sub, plane) < SELECTED_MIN_PLANE_INLIER):
+            plane = _dominant_plane(sub) or plane
         if _dbg:
             print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners forced={forced} "
                   f"pts={len(sub)} inlier={_inlier_fraction(sub, plane) if plane is not None else None}")
@@ -1579,7 +1630,7 @@ def facets_from_selected_faces(building_id, footprint, pts):
             "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
             "slope_deg": slope, "aspect_deg": aspect,
             "area_m2": float(poly.area), "point_count": int(len(sub)),
-            "from_selected": True,
+            "from_selected": True, **({"from_reading": True} if _read else {}),
         })
     # PLAIN POLYGONS, because that is what this function's pending list holds.
     #
@@ -1617,6 +1668,7 @@ def facets_from_selected_faces(building_id, footprint, pts):
             "slope_deg": best["slope_deg"], "aspect_deg": best["aspect_deg"],
             "area_m2": float(poly.area), "point_count": 0,
             "from_selected": True, "plane_borrowed": True,
+            **({"from_reading": True} if _read else {}),
         })
     # COVERAGE IS A GUARANTEE ON THIS PATH TOO. Until 18 Sep only
     # partition_roof filled the residue, so a vision reading that covered

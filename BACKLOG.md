@@ -687,6 +687,38 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   reader could not be run on the other 46: the API key's credit is spent
   (no charge made). Next: find the build stage that bends a reading's
   seams and let a reading through intact; then the reader on all 70.
+  **Readings now pass through the build intact (16 Nov, code on
+  `point-roof`, not yet in a district build).** Three stages were damaging
+  them, each traced on the six roofs above. (1) The LiDAR reshape stages in
+  `build_layout_geojson` (`split_steps`, `split_lower_levels`, then
+  `merge_coplanar_faces`) cut a face where the returns step and merged the
+  piece into the face across the ridge: 4735378's two 52 m2 faces left as
+  63 and 40 m2. A roof holding reading faces now skips them, as a plain
+  form does; planes are still refreshed. (2) The like-plane merge at the end
+  of `_attach_building_geometry` merged faces the reader drew apart
+  (5371137: 20 faces read, 13 left). Reading faces now stand through it as
+  drawn faces do. (3) The trimmed plane fit starts from least squares, so
+  plant or a tree over a third of a flat face tilts it and the face is
+  thrown away as "not one plane" and re-cut (5370320: 9 deg, 23% on plane,
+  where a 1 deg plane holds 64% and the rest stand above). A reading face
+  that fails is retried on the plane most returns lie on, and kept when
+  under 15% of returns fall below it (`_dominant_plane`); a missed ridge
+  still fails (4735104: 41% below). `SOLAR_KEEP_READINGS=0` turns (1) and
+  (2) off. Same 24 roofs, built blind: **4 right before, 9 after; the
+  readings as read score 10.** Lines within 0.3 / 0.75 / 1.5 m: 35 / 58 /
+  71% before, 42 / 67 / 78% after (as read 45 / 68 / 78%). Panels on the 24:
+  2,413 to 2,598. The one still lost is 4735104, where the reader missed a
+  ridge and residual fill places it badly. Renders:
+  `docs/review/readings_16nov_before_fix.jpg`,
+  `docs/review/readings_16nov_after_fix.jpg`. Not measured: the 5,658
+  student-read homes on the live map (trained on these roofs, so no fair
+  score here; needs a district build and a blind check), and whether the
+  student's readings deserve the same trust as the paid reader's.
+  Tests: fast suite passes. The full suite fails on this branch with or
+  without this change, identically (28 golden buildings and the synthetic
+  region, 606 -> 415 panels): the references predate the branch's
+  panel-fitting and reading work and have not been re-recorded. To do:
+  re-record on the VM once the branch's layouts are accepted.
   New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
   7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan

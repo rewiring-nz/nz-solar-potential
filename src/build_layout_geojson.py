@@ -476,6 +476,18 @@ def _build_one_at(building_id, nudge_m):
     # SOLAR_KEEP_FORMS=0 runs every stage as before.
     _form = (os.environ.get("SOLAR_KEEP_FORMS", "1") != "0"
              and bool(facets) and all(f.get("structured") for f in facets))
+    # A ROOF READ FROM THE PHOTO KEEPS ITS LINES TOO (src/vision_roof.py).
+    # The reader places a ridge where the photo shows it; the stages below
+    # then cut a face where the returns step (a dormer, a chimney, the far
+    # eave) and merge the cut piece into the face across the ridge, so a
+    # straight ridge leaves as a zig-zag. On the 24 drawn pilot roofs read on
+    # 14 Nov, 10 readings matched the drawing as read and 4 after these
+    # stages (16 Nov census): 4735378's two 52 m2 faces left as 63 and 40 m2,
+    # line match 1.0 -> 0.03. Planes are still refreshed. Faces the reading
+    # did not supply (residual fill) are straight partition cuts already.
+    # SOLAR_KEEP_READINGS=0 runs every stage as before.
+    _form = _form or (os.environ.get("SOLAR_KEEP_READINGS", "1") != "0"
+                      and any(f.get("from_reading") for f in facets))
     _reshape = (lambda stage, *a, **k: facets) if _form else \
         (lambda stage, *a, **k: _geometry_stage(building_id, stage, facets, *a, **k))
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)

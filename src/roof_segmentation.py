@@ -1479,8 +1479,15 @@ def _attach_building_geometry(facets, building_geom, pc_source=None, building_id
     #      roof face is dropped (residual coverage rules already fill);
     #   3. no line without a reason -- adjacent faces whose planes agree
     #      merge, because a boundary must separate two DIFFERENT planes.
-    machine = [f for f in facets if not f.get("from_labels")]
-    authored = [f for f in facets if f.get("from_labels")]
+    # A face read from the photo stands as the reader traced it, like a drawn
+    # one (src/vision_roof.py). The like-plane merge below took 8 Sydney St
+    # (#5371137) from the 20 faces read, which match the 20 drawn, to 13: the
+    # flat decks between its gables merged into one 178 m2 face. 16 Nov census,
+    # 24 drawn pilot roofs. SOLAR_KEEP_READINGS=0 puts readings back through it.
+    _kr = os.environ.get("SOLAR_KEEP_READINGS", "1") != "0"
+    _stands = lambda f: f.get("from_labels") or (_kr and f.get("from_reading"))
+    machine = [f for f in facets if not _stands(f)]
+    authored = [f for f in facets if _stands(f)]
     # the overlap pass differences each facet against a GROWING union --
     # quadratic in facets with heavyweight geometry ops. On #4722059
     # (the district's biggest roof, hundreds of facets) it blew through a
