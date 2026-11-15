@@ -204,10 +204,20 @@ class StagingStore:
             try:
                 artifact_id(directory.name)
                 manifest = _read(directory / "manifest.json")
-                records.append({key: manifest.get(key) for key in (
-                    "staging_id", "region_id", "staged_at", "built_at", "producer_ref", "schema_version")})
+                record = {key: manifest.get(key) for key in (
+                    "staging_id", "region_id", "staged_at", "built_at", "producer_ref", "schema_version")}
+                if manifest.get("schema_version") == LEGACY_SCHEMA:
+                    artifacts = _read(directory / "snapshot" / "manifest.json").get("artifacts") or []
+                else:
+                    artifacts = manifest.get("artifacts") or []
+                record.update(artifact_count=len(artifacts),
+                              bytes=sum(item.get("bytes", 0) for item in artifacts
+                                        if isinstance(item, dict) and isinstance(item.get("bytes"), int)),
+                              verification="not checked")
+                records.append(record)
             except (ArtifactError, OSError, ValueError) as exc:
-                records.append({"staging_id": directory.name, "error": str(exc)})
+                records.append({"staging_id": directory.name, "error": str(exc),
+                                "verification": "unreadable"})
         return records
 
 

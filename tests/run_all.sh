@@ -113,6 +113,7 @@ run "pipeline per-area queue" $PY tests/test_pipeline_web_batch.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
 run "pipeline area catalogue, status" $PY tests/test_pipeline_web_catalog.py
 run "regional staging"       $PY tests/test_regional_staging.py
+run "cloud staging"          $PY tests/test_cloud_staging.py
 run "local releases"         $PY tests/test_local_releases.py
 run "local release HTTP"     $PY tests/test_local_release_web.py
 run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py

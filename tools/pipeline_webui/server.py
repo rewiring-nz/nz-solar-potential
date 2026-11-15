@@ -35,6 +35,7 @@ from src import map_layer_catalog as MLC
 from tools.pipeline_serve import RangeHandler
 from tools.render_docs import render_docs
 from tools.pipeline_webui import cloud as C
+from tools import cloud_staging as CS
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import geo_worker as GW
 from tools.pipeline_webui import grid_proxy as GP
@@ -45,6 +46,7 @@ from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
 from tools.pipeline_webui.artifacts import Artifacts
 from tools.artifact_common import ArtifactError, artifact_id
+from tools.regional_staging import StagingStore
 from src.region_ids import is_grid_selection_id, validate
 from tools.pipeline_webui.common import DATA, ROOT, git_short
 from tools.pipeline_webui.jobs import JobError, JobManager, TERMINAL
@@ -111,7 +113,12 @@ class App:
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
-        self.artifacts = Artifacts(self.data, staging_root, release_root, self.root, python)
+        cloud_config = self.cloud.config()
+        cloud_staging = CS.CloudStaging(
+            StagingStore(self.data, staging_root), cloud_config["artifact_staging_bucket"],
+            cloud_config["preview_cost_model"], gcloud=self.cloud.gcloud())
+        self.artifacts = Artifacts(self.data, staging_root, release_root, self.root, python,
+                                   cloud_staging=cloud_staging)
         # Held while checking and starting a staging copy or queueing a build,
         # so a region cannot be queued and staged at the same time.
         self.stage_gate = threading.Lock()
@@ -276,6 +283,23 @@ class WebHandler(RangeHandler):
         if head == "staging":
             if parts == ["staging"] and method == "GET":
                 return 200, {"staged": app.artifacts.staging.list()}
+            if parts == ["staging", "cloud-estimate"] and method == "POST":
+                try:
+                    return 200, app.artifacts.cloud_staging.estimate(body.get("staging_ids"))
+                except ArtifactError as exc:
+                    raise HttpError(exc.status, str(exc)) from exc
+            if parts == ["staging", "cloud-submit"] and method == "POST":
+                if body.get("cloud_cost_acknowledged") is not True:
+                    raise HttpError(400, "type yes to approve the cloud cost shown in the estimate")
+                try:
+                    quote = app.artifacts.cloud_staging.verify_quote(
+                        body.get("staging_ids"), body.get("quote_id"), body.get("cost_nzd"))
+                    value = {"staging_ids": body["staging_ids"], "quote_id": quote["quote_id"],
+                             "cost_nzd": quote["cost_nzd"], "cloud_cost_acknowledged": True}
+                    return 202, app.artifacts.start("cloud_submit", value)
+                except (ArtifactError, KeyError) as exc:
+                    status = exc.status if isinstance(exc, ArtifactError) else 400
+                    raise HttpError(status, str(exc)) from exc
             if parts == ["staging"] and method == "POST":
                 region = body.get("region")
                 try:
@@ -289,8 +313,11 @@ class WebHandler(RangeHandler):
                     return 202, app.artifacts.start("stage", region)
             if len(parts) == 3 and parts[2] == "verify" and method == "POST":
                 return 202, app.artifacts.start("verify_staged", artifact_id(parts[1]))
-        if head == "operations" and len(parts) == 2 and method == "GET":
-            return 200, app.artifacts.get(parts[1])
+        if head == "operations" and method == "GET":
+            if len(parts) == 1:
+                return 200, {"operations": app.artifacts.cloud_operations()}
+            if len(parts) == 2:
+                return 200, app.artifacts.get(parts[1])
         if head == "layers" and method == "GET" and len(parts) == 1:
             source = (query.get("source") or ["local"])[0]
             if source == "local":

@@ -93,7 +93,21 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   a per-region lock, not the workspace lock, and fails if the source
   inventory changes during the copy. Grid cells are never staged. Older
   `<id>/snapshot/` copies stay readable; `data/regional_snapshots/` is unused.
-  No deployment, cloud calls or automatic cleanup.
+  Local staging itself makes no cloud calls, deploys nothing and runs no
+  automatic cleanup.
+- **Push to cloud** submits selected, locally staged versions through
+  `tools/cloud_staging.py` to the private bucket in
+  `config.CLOUD_SHARED_BUILD["artifact_staging_bucket"]`, under the immutable
+  `pipeline-staging/submissions/<staging-id>/` prefix. It re-verifies the local
+  copy under the artifact lifecycle lock, uploads create-only, checks remote
+  inventory/size/SHA metadata and server-computed MD5, and writes its manifest
+  last. The Build data panel shows a first-30-days cost
+  estimate and requires typed `yes`; it is not a spending cap, and retained
+  objects continue to incur storage cost. This operation does not build,
+  assemble, approve, activate, change a preview pointer or publish to the
+  served tiles bucket. The panel shows live upload and verification counts and
+  the latest 50 locally recorded push outcomes; this is not a bucket inventory.
+  Local retention controls do not apply to cloud objects. No cloud cleanup is implemented.
 - **Local releases** in Build data (`tools/local_releases.py`) assemble verified
   complete staged regions into ignored `data/local_releases/` (`--release-root`).
   Unchanged active regions are carried forward. The frozen-input combine mode

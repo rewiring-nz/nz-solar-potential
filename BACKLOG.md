@@ -1,5 +1,13 @@
 # Backlog
 
+Cloud staging submission (#66): Build data can estimate and submit selected
+local staged versions to a private immutable cloud prefix, with cost approval,
+create-only uploads and remote integrity checks. Cloud-free adapter and HTTP
+tests pass. A real Southshore submission (61 artifacts, 4,858,152 bytes) was
+verified in the configured private bucket in 3 minutes 30 seconds; its objects
+remain stored and incur ongoing charges. Cloud release assembly, activation and
+production promotion remain future work.
+
 Completed per-area web build queue: each selected region or locality grid cell
 is submitted as a separate sequential job, with independent progress, logs and
 cancellation. Grid estimates materialise one cell per work area while preserving

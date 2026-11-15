@@ -23,6 +23,12 @@
 
   "open": [
     {
+      "chip": "Verified",
+      "title": "Push locally staged regions to cloud staging",
+      "body": "The Build data panel uploaded and verified Southshore's 61 staged artifacts in the private cloud staging bucket. It does not activate or publish a map.",
+      "note": "The retained copy incurs storage charges. Cloud release assembly and production promotion remain future work."
+    },
+    {
       "chip": "Ready",
       "title": "District rebuild on the three fixes",
       "body": "The drawn-face exemption, the cut-frame correction and the working clipper are committed and measured but not yet in a district build. About 4&frac12; hours on the VM, then the deploy gate.",

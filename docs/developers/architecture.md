@@ -66,6 +66,10 @@ using the frozen-input combine mode, records comparisons/approvals and atomicall
 switches local state. The authenticated web panel exposes the same operations.
 Complete-region replacements carry forward unrelated active regions. Staging and
 release stores do not mutate working outputs or cloud deployments.
+`tools/cloud_staging.py` separately submits verified local staging copies to a
+private, immutable cloud prefix. It does not assemble, approve or activate a
+cloud release; the submission manifest is written only after remote object
+verification.
 See [Build data](../data-maintainers/web-pipeline.md) for generation checks,
 retention, capability limits and recovery.
 

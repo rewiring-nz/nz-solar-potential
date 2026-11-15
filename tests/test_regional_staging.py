@@ -185,7 +185,11 @@ class StagingTests(unittest.TestCase):
         self.assertEqual(verified["producer_ref"], "abc")
         self.assertEqual(len(verified["artifacts"]), 2)
         self.assertEqual(self.store.artifacts_path(identifier), inner / "artifacts")
-        self.assertEqual(self.store.list()[0]["schema_version"], 1)
+        listing = self.store.list()[0]
+        self.assertEqual(listing["schema_version"], 1)
+        self.assertEqual(listing["artifact_count"], 2)
+        self.assertEqual(listing["bytes"], sum(item["bytes"] for item in verified["artifacts"]))
+        self.assertEqual(listing["verification"], "not checked")
         (inner / "artifacts" / "detail" / "one.json").write_text("corrupt")
         with self.assertRaises(ArtifactError):
             self.store.verify(identifier)

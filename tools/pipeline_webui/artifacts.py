@@ -10,14 +10,16 @@ from pathlib import Path
 from tools.artifact_common import ArtifactError, artifact_id, now
 from tools.regional_staging import StagingStore
 from tools.local_releases import AssemblyError, LocalReleases
+from tools.cloud_staging import CloudStaging
 from tools.pipeline_webui.common import read_json, write_json_atomic, web_dir
 
 
 class Artifacts:
     def __init__(self, data: Path, staging_root: Path | None = None,
                  release_root: Path | None = None, frontend: Path | None = None,
-                 python: str | None = None):
+                 python: str | None = None, cloud_staging: CloudStaging | None = None):
         self.staging = StagingStore(data, staging_root)
+        self.cloud_staging = cloud_staging
         options = {}
         if frontend is not None:
             options["frontend"] = frontend
@@ -33,9 +35,10 @@ class Artifacts:
             if isinstance(record, dict) and record.get("status") == "running":
                 try:
                     os.kill(int(record["pid"]), 0)
-                except (KeyError, ValueError, ProcessLookupError):
+                except (KeyError, TypeError, ValueError, ProcessLookupError):
                     record.update(status="interrupted",
-                                  error="Panel stopped during operation; inspect any staging lock before retrying.")
+                                  finished_at=now(),
+                                  error="Panel stopped during operation; check the artifact lifecycle lock before retrying.")
                     write_json_atomic(path, record)
                 except PermissionError:
                     pass  # Another process owns the operation.
@@ -53,13 +56,28 @@ class Artifacts:
             raise ArtifactError("Unknown operation", 404)
         return record
 
+    def cloud_operations(self) -> list[dict]:
+        records = []
+        for path in self.operations.glob("*.json"):
+            record = read_json(path)
+            if isinstance(record, dict) and record.get("action") == "cloud_submit":
+                records.append(record)
+        records.sort(key=lambda record: str(record.get("started_at") or ""), reverse=True)
+        return records[:50]
+
     def start(self, action: str, value: str | dict) -> dict:
         if action not in {"stage", "verify_staged", "release_create",
                           "release_verify", "release_compare", "release_approve", "release_activate",
-                          "release_rollback", "release_policy", "release_cleanup", "release_publish"}:
+                          "release_rollback", "release_policy", "release_cleanup", "release_publish",
+                          "cloud_submit"}:
             raise ArtifactError("Unknown operation")
-        if action.startswith("release_") and not isinstance(value, dict):
-            raise ArtifactError("Release request must be an object")
+        if (action.startswith("release_") or action == "cloud_submit") and not isinstance(value, dict):
+            raise ArtifactError("Operation request must be an object")
+        if action == "cloud_submit" and (value.get("cloud_cost_acknowledged") is not True
+                                          or self.cloud_staging is None
+                                          or not isinstance(value.get("quote_id"), str)
+                                          or not isinstance(value.get("cost_nzd"), str)):
+            raise ArtifactError("Cloud submission needs an explicit cost approval and configured storage", 400)
         with self.lock:
             if self.busy:
                 raise ArtifactError("Another staging or release operation is running", 409)
@@ -78,6 +96,15 @@ class Artifacts:
             if action.startswith("release_"):
                 self._release_operation(record, action, value)
                 return
+            if action == "cloud_submit":
+                def progress(phase: str, **state) -> None:
+                    record.update(status="running", phase=phase, progress_at=now(), **state)
+                    write_json_atomic(self.operations / f"{record['operation_id']}.json", record)
+
+                result = self.cloud_staging.submit(value["staging_ids"], progress,
+                                                   value["quote_id"], value["cost_nzd"])
+                record.update(status="succeeded", phase="complete", result=result)
+                return
             manifest = self.staging.stage(value) if action == "stage" else self.staging.verify(value)
             record.update(status="succeeded", staging_id=manifest["staging_id"],
                           region_id=manifest.get("region_id"),
@@ -87,6 +114,8 @@ class Artifacts:
             record.update(status="failed", error=str(exc))
             if isinstance(exc, AssemblyError):
                 record["failed_release_id"] = exc.release_id
+        except Exception as exc:
+            record.update(status="failed", error=f"Unexpected operation error ({type(exc).__name__})")
         finally:
             record["finished_at"] = now()
             try:

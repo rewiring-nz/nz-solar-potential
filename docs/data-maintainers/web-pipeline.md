@@ -302,6 +302,32 @@ minutes; a build can only start from the estimate that was shown.
   readable and usable in releases. The former `data/regional_snapshots/`
   folder is no longer used; delete it by hand once no older checkout needs it.
 
+  **Push to cloud** sends selected staged copies from this computer to the
+  private bucket configured by `CLOUD_SHARED_BUILD.artifact_staging_bucket`
+  (default `gs://solar-potential-map-data`), under
+  `pipeline-staging/submissions/<staging-id>/`. It requires `gcloud` access to
+  that bucket. The estimate shows the selected bytes, destination and a
+  first-30-days storage/transfer estimate; type `yes` to approve it. The
+  estimate is not a spending cap, and storage continues to accrue because cloud
+  cleanup is not implemented. The operation re-verifies each local staged
+  copy, creates cloud objects without overwriting existing objects, checks the
+  remote inventory, sizes, recorded SHA-256 values and the server-computed MD5,
+  then writes the submission manifest last. The local artifact lifecycle lock
+  is held during transfer so cleanup cannot remove its inputs. Failed partial
+  transfers are not complete submissions; retrying the same staging ID resumes
+  matching objects. Gcloud runs per object, so transfers with many objects can
+  take minutes even when the total size is small. The
+  The cloud push history beside the button shows upload and verification counts,
+  success, failure and interruption, and reconnects after a reload. It shows
+  the latest 50 operations recorded by this checkout under
+  `data/pipeline_web/artifact_operations/`, not an inventory of the bucket.
+  On failure, resolve the reported error, then estimate and retry the same
+  staged version. The local retention controls apply only to local artifacts;
+  they do not set cloud expiry or delete cloud submissions.
+  Cloud submission does not rebuild, assemble a release, approve, activate,
+  change a preview pointer or publish to the served tiles bucket. The public
+  developer-preview bucket is not used.
+
   The same operations are available on the command line:
 
   ```sh
@@ -344,7 +370,7 @@ minutes; a build can only start from the estimate that was shown.
      The current shared assumptions document requires equal PV assumptions
      across regions; incompatible contracts, partial regions and overlapping
      building ownership are blocked, not review overrides.
-  5. Under **Retention and cleanup**, explicitly configure all five positive
+  5. Under **Local retention and cleanup**, explicitly configure all five positive
      windows in hours and save. No destructive defaults are supplied. Choose
      windows suitable for the local disk and review schedule.
   6. Choose **Approve and activate locally**. An all-pass comparison is approved

@@ -239,6 +239,17 @@
       <p><button class="small" id="staging-refresh">Refresh</button></p>
       <div id="staging-status" role="status" aria-live="polite"></div>
       <div id="staging-list"></div>
+      <p>
+        <button class="small" id="staging-estimate-cloud" disabled>Estimate cloud push</button>
+        <button class="primary" id="staging-cloud-push" disabled>Push to cloud</button>
+      </p>
+      <div id="staging-cloud-estimate" role="status" aria-live="polite"></div>
+      <div id="cloud-push-status" role="status" aria-live="polite"></div>
+      <details open>
+        <summary>Cloud push history (this checkout)</summary>
+        <div id="cloud-push-history"></div>
+      </details>
+      <p class="muted"><b>Remote retention:</b> cloud submissions are retained and continue to incur storage charges. No cloud cleanup or expiry is configured by this panel.</p>
     </div>
   </details>
   <details class="stage" id="stage-releases">
@@ -264,7 +275,7 @@
       <div id="release-status" role="status" aria-live="polite"></div>
       <div id="release-result" style="overflow:auto;max-height:360px"></div>
       <details>
-        <summary>Retention and cleanup (explicit configuration required)</summary>
+        <summary>Local retention and cleanup (explicit configuration required)</summary>
         <p class="muted">All windows are hours, greater than zero. One previous release is protected during its rollback window. No cleanup runs automatically. Expired data is marked, then deletable after the grace period. Active and unexpired candidates protect their regional inputs.</p>
         <label>Rollback window <input type="number" min="0.001" step="any" data-retention="rollback_hours"></label>
         <label>Unprotected candidate/history lifetime <input type="number" min="0.001" step="any" data-retention="candidate_hours"></label>

@@ -102,15 +102,53 @@
   function showView() {
     const config = location.hash === "#config";
     document.body.classList.toggle("config", config);
-    if (config) { loadCatalogInfo(); loadStaging(); }
+    if (config) { loadCatalogInfo(); loadStaging(); loadCloudOperations(); }
     else setTimeout(() => map.resize(), 0);
   }
 
   // Staging copies local emitted outputs (data/out), independently of target.
   let artifactBusy = false;
+  let cloudRunning = false;
+  let cloudHistoryLoading = false;
   const releaseChoices = new Set();
+  let cloudQuote = null;
   let releaseState = null;
   let releaseRecords = [];
+  async function loadCloudOperations() {
+    if (!writable || cloudHistoryLoading) return;
+    cloudHistoryLoading = true;
+    try {
+      const {operations} = await api("operations");
+      cloudRunning = operations.some((operation) => operation.status === "running");
+      $("cloud-push-history").innerHTML = operations.length ? operations.map((operation) => {
+        const ids = (operation.value && operation.value.staging_ids) || [];
+        let detail = operation.error || "";
+        if (operation.status === "running") {
+          if (operation.phase === "verifying_local") detail = "Verifying local staged copy";
+          else if (operation.phase === "uploading") detail = `Uploading: ${operation.uploaded_artifacts || 0} of ${operation.artifact_count || 0} artifacts`;
+          else if (operation.phase === "verifying_remote") detail = `Verifying cloud copy (${operation.verification_step === "before_manifest" ? "before manifest" : "final check"}): ${operation.verified_artifacts || 0} of ${operation.artifact_count || 0} artifacts`;
+          else detail = "Starting cloud push";
+          if (operation.staging_id) detail += ` · ${operation.staging_id}`;
+        } else if (operation.status === "succeeded") {
+          detail = ((operation.result && operation.result.submissions) || []).map((item) => item.region_id || item.submission_id).join(", ") + ": verified; not deployed";
+        } else {
+          detail += " Re-estimate and retry the same staged version after resolving the error; matching uploaded objects are reused.";
+        }
+        return `<div class="item"><b class="${operation.status === "failed" || operation.status === "interrupted" ? "block" : ""}">${esc(operation.status)}</b> · ${esc(operation.started_at || "unknown time")}
+          <div>${esc(detail)}</div><div class="muted job-id">${esc(ids.join(", "))}</div>
+          <div class="muted">Last update: ${esc(operation.finished_at || operation.progress_at || operation.started_at || "unknown")}</div></div>`;
+      }).join("") : '<p class="muted">No cloud pushes recorded in this checkout.</p>';
+      const latest = operations[0];
+      const message = cloudRunning ? "Cloud push in progress." : latest
+        ? `Latest cloud push ${latest.status}${latest.error ? `: ${latest.error}` : "."}` : "";
+      if ($("cloud-push-status").textContent !== message) $("cloud-push-status").textContent = message;
+    } catch (error) {
+      $("cloud-push-status").textContent = `Cloud push status unavailable: ${error.message}. Showing last known history; reconnecting.`;
+    } finally {
+      cloudHistoryLoading = false;
+      releaseButtons();
+    }
+  }
   async function loadStaging() {
     if (!writable) return;
     try {
@@ -119,10 +157,12 @@
         `<div class="item"><b>${esc(item.region_id || "Unknown region")}</b>
           <div class="muted job-id">${esc(item.staging_id)}</div>
           <div class="muted">Staged: ${esc(item.staged_at || "unknown")}<br>
-          Built: ${esc(item.built_at || "unknown")}. Not approved or deployed. Listing is not verification.</div>
+          Built: ${esc(item.built_at || "unknown")}<br>
+          Size: ${fmtInt(item.bytes || 0)} bytes · ${fmtInt(item.artifact_count || 0)} artifacts<br>
+          Verification: <span data-staged-verification="${esc(item.staging_id)}">${esc(item.verification || "not checked")}</span>. Not approved or deployed.</div>
           <label><input type="checkbox" data-release-choice="${esc(item.staging_id)}"
             ${releaseChoices.has(item.staging_id) ? "checked" : ""} ${item.error ? "disabled" : ""}>
-            Include this version in a local candidate</label><br>
+            Select this staged version</label><br>
           ${item.error ? `<p class="block">${esc(item.error)}</p>` : ""}
           <button class="small" data-verify-staged="${esc(item.staging_id)}"
             ${artifactBusy ? "disabled" : ""}>Verify staged copy</button></div>`).join("")
@@ -136,6 +176,11 @@
         input.addEventListener("change", () => {
           if (input.checked) releaseChoices.add(input.dataset.releaseChoice);
           else releaseChoices.delete(input.dataset.releaseChoice);
+          cloudQuote = null;
+          $("staging-cloud-estimate").textContent = "";
+          $("staging-list").querySelectorAll("[data-staged-verification]").forEach((status) => {
+            status.textContent = "not checked";
+          });
           releaseButtons();
         }));
       await loadReleases();
@@ -155,6 +200,7 @@
         const labels = {
           stage: ["Copying and verifying local staging", "Staged and verified"],
           verify_staged: ["Verifying staged copy", "Verified staged copy"],
+          cloud_submit: ["Pushing and verifying cloud Staging", "Cloud submission verified"],
           release_create: ["Assembling isolated local candidate", "Candidate ready"],
           release_compare: ["Comparing with active local release", "Comparison ready"],
           release_verify: ["Verifying candidate files", "Candidate verified"],
@@ -168,13 +214,17 @@
         const label = labels[operation.action] || ["Running operation", "Completed"];
         const statusElement = operation.action.startsWith("release_") ? $("release-status") : $("staging-status");
         statusElement.textContent = operation.status === "running"
-          ? `${label[0]}...`
+          ? operation.action === "cloud_submit"
+            ? `${operation.phase === "verifying_local" ? "Verifying local copy" : operation.phase === "verifying_remote" ? "Verifying cloud copy" : label[0]}: ${operation.uploaded_artifacts || 0} of ${operation.artifact_count || 0} artifacts uploaded.`
+            : `${label[0]}...`
           : operation.status === "succeeded"
             ? operation.action.startsWith("release_")
               ? `${operation.action.replace("release_", "")}: completed locally.`
-              : `${label[1]} ${operation.region_id || ""} ${operation.staging_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
+              : operation.action === "cloud_submit"
+                ? `Cloud Staging verified: ${(operation.result.submissions || []).map((s) => `${s.region_id} (${s.submission_id})`).join(", ")}. Not approved or deployed.`
+                : `${label[1]} ${operation.region_id || ""} ${operation.staging_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
             : `${operation.status}: ${operation.error || "Operation did not complete."}`;
-        if (operation.result) renderReleaseResult(operation);
+        if (operation.result && operation.action.startsWith("release_")) renderReleaseResult(operation);
         if (operation.failed_release_id) {
           $("release-result").innerHTML = '<button class="small" id="release-failure-log">Read assembly log</button><pre id="release-log" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';
           $("release-failure-log").addEventListener("click", async () => {
@@ -202,8 +252,66 @@
     }
   }
 
+  function cloudPushButtons() {
+    $("staging-estimate-cloud").disabled = !writable || artifactBusy || cloudRunning || !releaseChoices.size;
+    const yes = $("staging-cloud-yes");
+    $("staging-cloud-push").disabled = !writable || artifactBusy || cloudRunning || !cloudQuote ||
+      !yes || yes.value.trim().toLowerCase() !== "yes";
+  }
+
+  $("staging-estimate-cloud").addEventListener("click", async () => {
+    if (!writable || artifactBusy || cloudRunning || !releaseChoices.size) return;
+    cloudQuote = null;
+    cloudPushButtons();
+    const status = $("staging-cloud-estimate");
+    status.textContent = "Verifying selected local staging and estimating cloud storage...";
+    try {
+      const quote = await api("staging/cloud-estimate", {
+        method: "POST", body: { staging_ids: [...releaseChoices] },
+      });
+      cloudQuote = quote;
+      const verified = new Set(quote.staging.map((item) => item.staging_id));
+      $("staging-list").querySelectorAll("[data-staged-verification]").forEach((status) => {
+        if (verified.has(status.dataset.stagedVerification)) status.textContent = "verified for this estimate";
+      });
+      status.innerHTML = `<div class="cost"><b>Estimated cost: up to NZD ${esc(quote.cost_nzd)}</b>
+        <div>Destination: <code>${esc(quote.destination)}</code> in ${esc(quote.bucket)}</div>
+        <div>${esc(quote.cost_basis)}</div><p>${esc(quote.cost_warning)}</p>
+        <div>${quote.staging.map((item) => `${esc(item.region_id || "Unknown region")}: ${fmtInt(item.bytes)} bytes, ${fmtInt(item.artifact_count)} artifacts`).join("<br>")}</div>
+        <label>Type <b>yes</b> to accept the cost: <input type="text" id="staging-cloud-yes" autocomplete="off" size="5"></label></div>`;
+      $("staging-cloud-yes").addEventListener("input", cloudPushButtons);
+    } catch (error) {
+      status.textContent = `Cloud estimate refused: ${error.message}`;
+    }
+    cloudPushButtons();
+  });
+
+  $("staging-cloud-push").addEventListener("click", async () => {
+    if (!writable || artifactBusy || cloudRunning || !cloudQuote ||
+      (($('staging-cloud-yes') || {}).value || "").trim().toLowerCase() !== "yes") return;
+    artifactBusy = true;
+    releaseButtons();
+    $("cloud-push-status").textContent = "Starting cloud submission...";
+    try {
+      const operation = await api("staging/cloud-submit", { method: "POST", body: {
+        staging_ids: cloudQuote.staging.map((item) => item.staging_id),
+        quote_id: cloudQuote.quote_id, cost_nzd: cloudQuote.cost_nzd,
+        cloud_cost_acknowledged: true,
+      } });
+      cloudRunning = operation.status === "running";
+      cloudQuote = null;
+      await loadCloudOperations();
+    } catch (error) {
+      $("cloud-push-status").textContent = `Cloud submission refused: ${error.message}`;
+    } finally {
+      artifactBusy = false;
+      releaseButtons();
+      await loadStaging();
+    }
+  });
+
   async function runOperation(path, body) {
-    if (!writable || artifactBusy) return;
+    if (!writable || artifactBusy || cloudRunning) return;
     artifactBusy = true;
     releaseButtons();
     const status = path.startsWith("releases/") ? $("release-status") : $("staging-status");
@@ -228,7 +336,10 @@
   });
 
   function releaseButtons() {
-    const disabled = !writable || artifactBusy || !releaseState;
+    const disabled = !writable || artifactBusy || cloudRunning || !releaseState;
+    $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) => {
+      button.disabled = !writable || artifactBusy || cloudRunning;
+    });
     $("release-create").disabled = disabled || !releaseChoices.size;
     $("release-select").disabled = disabled || !releaseRecords.length;
     document.querySelectorAll("[data-release-action]").forEach((button) => {
@@ -239,6 +350,7 @@
     $("release-cleanup-apply").disabled = disabled || !releaseState.policy || !$("release-cleanup-confirm").checked;
     $("release-rollback").disabled = disabled || !releaseState.previous ||
       !releaseState.rollback_until || Date.parse(releaseState.rollback_until) <= Date.now();
+    cloudPushButtons();
   }
 
   function releasePreview() {
@@ -1529,6 +1641,8 @@
       loadGeometry();
       const artifactOperation = sessionStorage.getItem("artifactOperation");
       if (artifactOperation) followOperation(artifactOperation);
+      loadCloudOperations();
+      setInterval(loadCloudOperations, QUEUE_POLL_MS);
       loadJobs();
       loadQueue();
       setInterval(() => { loadQueue(); loadStatus(); }, QUEUE_POLL_MS);

@@ -14,5 +14,6 @@
     "**/.venv-sam/**": true,
     "**/validation/**": true,
     "**/__pycache__/**": true
-  }
+  },
+  "python.terminal.useEnvFile": true
 }

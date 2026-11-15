@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from test_pipeline_web_data import KEY, FakeLinz
+from test_cloud_staging import FakeGcloud
 from test_pipeline_web_jobs import _manager
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import region_status as RS
@@ -250,6 +251,9 @@ def test_staging_web_workflow():
             lock.rmdir()
             code, listing = c.request("GET", "/api/staging")
             assert code == 200 and [s["staging_id"] for s in listing["staged"]] == [identifier]
+            assert listing["staged"][0]["verification"] == "not checked"
+            assert listing["staged"][0]["artifact_count"] == 2
+            assert listing["staged"][0]["bytes"] == len(b'{"region":"pilot","n":1}') + len(b"synthetic fixture")
             code, status = c.request("GET", "/api/catalog/status")
             assert code == 200 and status["regions"]["pilot"]["staged"]["staging_id"] == identifier
 
@@ -291,9 +295,96 @@ def test_staging_web_workflow():
             server.server_close()
 
 
+def test_cloud_submission_requires_quote_and_explicit_cost_approval():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        server, c = _serve(Path(tmp))
+        app = server.app
+        data = Path(tmp) / "data"
+        source = data / "out" / "pilot"
+        source.mkdir(parents=True)
+        (source / "summary.json").write_text('{"region":"pilot"}')
+        runner = FakeGcloud()
+        app.artifacts.cloud_staging._runner = runner
+        app.artifacts.cloud_staging._gcloud = "/fake/gcloud"
+
+        def wait_operation(identifier):
+            for _ in range(200):
+                code, operation = c.request("GET", f"/api/operations/{identifier}")
+                assert code == 200, operation
+                if operation["status"] != "running":
+                    return operation
+                time.sleep(0.02)
+            raise AssertionError("cloud staging operation did not finish")
+
+        try:
+            code, started = c.request("POST", "/api/staging", {"region": "pilot"})
+            assert code == 202, started
+            staged = wait_operation(started["operation_id"])
+            assert staged["status"] == "succeeded", staged
+            identifier = staged["staging_id"]
+
+            code, quote = c.request("POST", "/api/staging/cloud-estimate", {
+                "staging_ids": [identifier],
+            })
+            assert code == 200 and quote["bucket"] == "gs://solar-potential-map-data", quote
+            denied, _ = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "quote_id": quote["quote_id"],
+                "cost_nzd": quote["cost_nzd"],
+            })
+            assert denied == 400 and runner.calls == []
+            stale, _ = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "quote_id": quote["quote_id"],
+                "cost_nzd": "999.00", "cloud_cost_acknowledged": True,
+            })
+            assert stale == 409 and runner.calls == []
+
+            code, operation = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "quote_id": quote["quote_id"],
+                "cost_nzd": quote["cost_nzd"], "cloud_cost_acknowledged": True,
+            })
+            assert code == 202, operation
+            result = wait_operation(operation["operation_id"])
+            assert result["status"] == "succeeded" and result["phase"] == "complete", result
+            submission = result["result"]["submissions"][0]
+            assert submission["status"] == "complete" and submission["region_id"] == "pilot"
+            assert len(runner.objects) == 2
+            assert app.artifacts.releases.state().get("active") is None
+            code, history = c.request("GET", "/api/operations")
+            assert code == 200 and len(history["operations"]) == 1, history
+            assert history["operations"][0]["operation_id"] == operation["operation_id"]
+            assert history["operations"][0]["verified_artifacts"] == 1
+            assert c.request("GET", "/api/operations", token=None)[0] == 403
+
+            runner.objects.clear()
+            runner.fail_once = True
+            code, failed = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "quote_id": quote["quote_id"],
+                "cost_nzd": quote["cost_nzd"], "cloud_cost_acknowledged": True,
+            })
+            assert code == 202, failed
+            failure = wait_operation(failed["operation_id"])
+            assert failure["status"] == "failed" and "Cloud upload failed" in failure["error"], failure
+            code, history = c.request("GET", "/api/operations")
+            assert code == 200 and any(item["operation_id"] == failed["operation_id"] and
+                                       item["status"] == "failed" for item in history["operations"]), history
+            from tools.pipeline_webui.artifacts import Artifacts
+            interrupted_path = app.artifacts.operations / ("f" * 32 + ".json")
+            interrupted_path.write_text(json.dumps({"operation_id": "f" * 32, "action": "cloud_submit",
+                                                    "status": "running", "pid": None}))
+            (app.artifacts.operations / "broken.json").write_text("{")
+            restarted = Artifacts(data)
+            assert any(item["operation_id"] == failed["operation_id"] and item["status"] == "failed"
+                       for item in restarted.cloud_operations())
+            assert restarted.get("f" * 32)["status"] == "interrupted"
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
     test_api_end_to_end()
     test_static_files_keep_pipeline_serve_rules()
     test_port_in_use_message_says_how_to_stop_an_old_panel()
     test_staging_web_workflow()
+    test_cloud_submission_requires_quote_and_explicit_cost_approval()
     print("pipeline web server tests passed")
