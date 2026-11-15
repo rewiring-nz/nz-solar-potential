@@ -649,6 +649,21 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   reading; 10 of them carry hand markup, and 4725599 builds 199 here but
   132 on the VM. Next: decide whether photo-named obstructions need a LiDAR
   or size check, and why the fitter abandons the far side of an obstruction.
+  **Owner's verdict on v79 (16 Nov): panel placement is still not an order
+  of magnitude better.** Examples: 9 Melbourne St (4725494) has a staggered
+  array and an empty far side; 7 Melbourne St has staggered panels on its
+  sawtooth bays ("solar installers would never install staggered like
+  this"). Traced on 4725494: the 183 m2 face carries 15 obstructions
+  totalling 62 m2 and the grid keeps every free slot around them, hence the
+  stagger (55 panels on v78, 38 now); the 133 m2 south-east face (25 deg,
+  aspect 133) is emptied by `away_from_sun` at 0.74 of the roof's best 0.96,
+  as it was on v78. Also measured: on 329 paid-reading roofs the drawn seam
+  sits a median 0.35 m from where the two LiDAR planes meet (343 of 922
+  seams over 0.5 m). The two small fitter fixes were stopped before any
+  code changed; a plan for panel placement was put to the owner instead
+  (array-first placement, rows on each face's own eave, obstructions held
+  to a measured standard, seams on plane intersections, and a benchmark of
+  owner-drawn layouts to iterate against on this Mac).
   New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
   7.9 h this start, about 153.4 of the month's 165.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
