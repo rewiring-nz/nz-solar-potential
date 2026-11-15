@@ -352,7 +352,9 @@ figure for the same thing. Code enforces this:
   paid vision model's reading of the photo, kept when rated 0.5 or higher)
   or, failing that, `data/student_faces/` (a local model trained on those
   readings, `src/face_regions.py` `straight_faces`, written for homes by
-  `tools/student_faces.py <region>` before the build). Both folders are
+  `tools/student_faces.py <region>` before the build; it slides with the
+  outline fit, gives way to a selected reading that fits the returns
+  clearly better, and skips roofs with almost no returns). Both folders are
   ignored by Git and are copied to the VM by hand; the model is
   `data/models/face_regions_v3.pt`. In the owner's blind check on 24 unseen
   homes the local model's raw regions beat the selected faces on lines

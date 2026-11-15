@@ -588,8 +588,26 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   pulled into `data/` on this Mac: the whole build is viewable at
   `http://localhost:8000/solar-map/rooftop-solar.html?localdata=1`. VM
   stopped at 00:58 UTC after 14.4 h this start; month at about 145.5 of 150
-  h. Publishing needs the owner's word on the gate list
-  (`tools/deploy_from_vm.sh --push-reviewed`, VM started again). Still
+  h.
+  **Owner: fix first (15 Nov); a panel drop is not in itself bad, some
+  roofs carried too many.** Three causes traced, three rules in
+  `tools/student_faces.py` (no `src/` change, so only roofs whose reading
+  changes rebuild):
+  (1) the reading was slid by `point_roof.register`, which under trees slid
+  it off the building (4735042, 4735619: a face over the wall at 57-67
+  degrees); it now takes the build's accepted outline-fit slide. Pilot: 71
+  of 368 homes change, renders in
+  `docs/review/slide_fix_15nov_pilot_movers.jpg`; several remaining drops
+  are south faces at 26-36 degrees that rightly hold no panels.
+  (2) a reading gives way when its plane-fit share is over 0.20 below the
+  incumbent reading's (68 of 368 pilot homes; on the owner's 24 blind homes
+  5: 2 production wins, 2 same, 1 model win).
+  (3) no reading under 1 building-class return per m2 (three zeroed Wanaka
+  homes held 0.03-0.46; Kinloch has none at all, so it is not read).
+  Month's cap raised to 165 h on the owner's word. Re-read and incremental
+  build launched 01:42 UTC (`/tmp/chain3.sh`, log
+  `photo_roof_chain3.out`); the 15 Nov layouts are kept in
+  `~/v79a_layouts` on the VM for before/after renders. Still
   to do: `tools/deploy_from_vm.sh`, render the gate's list, `--push`, stop
   the VM, record the hours.
   **Pilot built locally for a preview (14 Nov):** every stage of the plan
