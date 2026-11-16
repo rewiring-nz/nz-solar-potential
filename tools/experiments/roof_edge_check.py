@@ -38,7 +38,7 @@ def one(row):
             if name == 'outline': r = r0
             else:
                 e, _ = RE.fit_edges(pr, translate(poly, *r0['shift']))
-                pr.REGISTER = False; r = pr.reconstruct(bid, e); pr.REGISTER = True
+                r = dict(r0, faces=RE.extend_to_edge(r0['faces'], e))
             org = (r['poly'].centroid.x, r['poly'].centroid.y)
             k = PL.photo_lean(r['faces'], org, _I); ln = PL.leaned(PL.absorb_slivers(r['faces']), org, k[0], k[1]) if k else [f['poly'] for f in r['faces']]
             go = close(ln); gl = M._lines(ln, go)

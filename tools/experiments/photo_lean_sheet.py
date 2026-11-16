@@ -22,7 +22,7 @@ for row, bid in enumerate(ids):
     b = (cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2)
     px = np.moveaxis(img.read([1, 2, 3], window=from_bounds(*b, transform=img.transform), boundless=True), 0, -1)
     _p = O[bid] if O[bid].geom_type == 'Polygon' else max(O[bid].geoms, key=lambda g: g.area)
-    e, _ = RE.fit_edges(pr, translate(_p, *r['shift'])); pr.REGISTER = False; r2 = pr.reconstruct(bid, e); pr.REGISTER = True
+    e, _ = RE.fit_edges(pr, translate(_p, *r['shift'])); r2 = dict(r, faces=RE.extend_to_edge(r['faces'], e))
     org2 = (r2['poly'].centroid.x, r2['poly'].centroid.y); k2 = PL.photo_lean(r2['faces'], org2, img)
     sets = [('Your markup', drawn, '#00e070', st), ('LiDAR roof as placed now', [f['poly'] for f in r['faces']], '#ff2040', []),
             ('Leaned to the photo, surveyed outline', PL.leaned(PL.absorb_slivers(r['faces']), org, k[0], k[1]), '#ff2040', []),

@@ -397,6 +397,27 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Roof edge from the returns: owner prefers it; faces extended, not
+  re-partitioned; tree rule (16 Nov, experiment).** Owner's verdict on
+  `docs/review/three_houses_16nov_roof_edge.jpg`: the edge from the LiDAR
+  is better than the surveyed outline. Three rules added to
+  `tools/experiments/roof_edge.py` since the entry below: (1) a wall is
+  fitted only when its strip expects 10 or more returns (1 Shotover
+  Street's 2.4 m wall expected 5 and moved 1 m inwards on noise); unfitted
+  walls take the roof's median move. (2) `extend_to_edge`: the faces found
+  on the surveyed outline are kept and run out to the fitted edge, the
+  eave strip cut by each seam carried straight on; re-partitioning on the
+  moved outline redrew a hip end on Shotover that was right. (3) Owner: a
+  tree over the roof edge makes the returns a bad guide. A wall with
+  vegetation returns at or above its roof height over 20% of its length,
+  on the roof side, is not fitted: 46 of 525 walls on 14 of the 50 marked
+  roofs (counting every vegetation return within reach stopped 192 of 365:
+  garden shrubs). The tree rule is untested against a known overhang.
+  Inner lines on the 50, surveyed outline / extended to the fitted edge:
+  right at 0.3 m 28 / 24, at 0.75 m 33 / 33; the drop is seams carried
+  through the eave strip, which the markup (outer edge = surveyed outline)
+  does not have. Not in the build or the map.
+
 - **Roof edge wall by wall from the returns (16 Nov, experiment; owner
   confirmed the markup's outer edge is the surveyed outline the tool gave,
   so the markup cannot judge roof edges).** `roof_edge.fit_edges`: the
