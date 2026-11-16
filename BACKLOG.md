@@ -445,7 +445,11 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   readings added to the 568: held-out line F / lines right / face IoU /
   faces right 0.528 / 16 / 0.643 / 10 against 0.626 / 21 / 0.697 / 13 for
   `face_regions_v3` (re-scored the same day, reproduced). Second run of
-  each in progress to size run-to-run variation.
+  each: 714 roofs 0.507 / 18 / 0.648 / 7; 568 roofs 0.559 / 18 / 0.655 /
+  13. So one data set moves 0.07 in line F between runs, v3 was the better
+  of two draws, and 146 more readings did not help (both 714 runs sit
+  under both 568 runs). Parked: the three-house study comes first, and
+  these scores use the outline slide shown above to be misplaced.
 
 - **Reader readings for 234 more pilot homes, and why they hold fewer panels
   (16 Nov).** 299 pilot homes the free model had drawn were read by the paid
