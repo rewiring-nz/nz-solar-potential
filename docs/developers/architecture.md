@@ -59,6 +59,20 @@ The direct layout-to-derive edge represents paths without demolition screening.
 
 ## Module boundaries
 
+Local publication is separate from build execution. `tools/regional_staging.py`
+copies a built region's emitted output into an independently verified, frozen
+staged copy; `tools/local_releases.py` assembles an isolated site
+using the frozen-input combine mode, records comparisons/approvals and atomically
+switches local state. The authenticated web panel exposes the same operations.
+Complete-region replacements carry forward unrelated active regions. Staging and
+release stores do not mutate working outputs or cloud deployments.
+`tools/cloud_staging.py` separately submits verified local staging copies to a
+private, immutable cloud prefix. It does not assemble, approve or activate a
+cloud release; the submission manifest is written only after remote object
+verification.
+See [Build data](../data-maintainers/web-pipeline.md) for generation checks,
+retention, capability limits and recovery.
+
 - `config.py`: model constants, source layer IDs, regions, exclusions, and
   the PV assumptions shown in the UI (`PV_ASSUMPTIONS`).
 - `src/fetch_data.py`, `src/fetch_regions.py`: fetch inputs.

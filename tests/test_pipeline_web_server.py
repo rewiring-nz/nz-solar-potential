@@ -16,8 +16,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from test_pipeline_web_data import KEY, FakeLinz
+from test_cloud_staging import FakeGcloud
 from test_pipeline_web_jobs import _manager
 from tools.pipeline_webui import estimate as E
+from tools.pipeline_webui import region_status as RS
 from tools.pipeline_webui.server import App, make_server, port_in_use_message
 
 TOKEN = "test-token-abc"
@@ -158,13 +160,20 @@ def test_static_files_keep_pipeline_serve_rules():
             status, progress = c.request("GET", "/pipeline_progress.js", token=None)
             assert status == 200 and b"data-map-region" in progress and b"matchingJobsForRegion" in progress
             status, ui = c.request("GET", "/pipeline_ui.js", token=None)
-            assert status == 200 and ui.count(b"renderAreaTitles(") >= 2
+            assert status == 200 and ui.count(b"renderAreaTitles(") >= 1
             assert b'$("job-list").querySelectorAll("[data-map-region]")' in ui
             assert c.request("GET", "/.env", token=None)[0] == 404
             assert c.request("GET", "/api/health", token=None, headers={"Host": "evil.example"})[0] == 404
             assert c.request("POST", "/pipeline.html", {}, token=None)[0] == 405
             status, _ = c.request("GET", "/pipeline.html", token=None, headers={"Range": "bytes=0-9"})
             assert status == 206
+            for path in ("/pipeline.html", "/pipeline_ui.js"):
+                conn = http.client.HTTPConnection("127.0.0.1", c.port, timeout=30)
+                conn.request("GET", path)
+                res = conn.getresponse()
+                res.read()
+                conn.close()
+                assert res.getheader("Cache-Control") == "no-cache", path
         finally:
             server.shutdown()
             server.server_close()
@@ -180,8 +189,202 @@ def test_port_in_use_message_says_how_to_stop_an_old_panel():
     assert "--port 8767" in unknown and "kill" not in unknown
 
 
+def test_staging_web_workflow():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        server, c = _serve(Path(tmp))
+        app = server.app
+        data = Path(tmp) / "data"
+        source = data / "out" / "pilot"
+        source.mkdir(parents=True)
+        (source / "summary.json").write_text('{"region":"pilot","n":1}')
+        (source / "buildings.pmtiles").write_bytes(b"synthetic fixture")
+
+        def wait_operation(identifier):
+            for _ in range(200):
+                code, operation = c.request("GET", f"/api/operations/{identifier}")
+                assert code == 200, operation
+                if operation["status"] != "running":
+                    return operation
+                time.sleep(0.02)
+            raise AssertionError("staging operation did not finish")
+
+        try:
+            assert c.request("POST", "/api/staging", {"region": "pilot"}, token=None)[0] == 403
+            assert c.request("POST", "/api/staging", {"region": "pilot"},
+                             headers={"Origin": "http://evil.example"})[0] == 403
+            assert c.request("POST", "/api/staging", {"region": "../pilot"})[0] == 400
+            code, refused = c.request("POST", "/api/staging", {"region": "council/town/suburb"})
+            assert code == 409 and "not built" in refused["error"], refused
+            code, refused = c.request("POST", "/api/staging",
+                                      {"region": "council/town/suburb/grid-0123456789abcdef"})
+            assert code == 409 and "Grid cells" in refused["error"], refused
+
+            # A build that is merely running elsewhere does not block staging;
+            # the region itself being in the local queue does.
+            lock = data / "pipeline-workspace.lock"
+            lock.mkdir()
+            queued = {"local": {"jobs": [{"job_id": "j", "status": "queued", "target": "local",
+                                          "regions": ["pilot/grid-0123456789abcdef"]}]},
+                      "cloud": {"jobs": []}}
+            real_queue = app.jobs.queue
+            app.jobs.queue = lambda: queued
+            try:
+                code, refused = c.request("POST", "/api/staging", {"region": "pilot"})
+                assert code == 409 and "build queue" in refused["error"], refused
+            finally:
+                app.jobs.queue = real_queue
+
+            real_status = RS.status
+            RS.status = lambda *a, **k: {"regions": {"pilot": {"latest_local_status": "failed"}}}
+            try:
+                code, refused = c.request("POST", "/api/staging", {"region": "pilot"})
+                assert code == 409 and "failed" in refused["error"], refused
+            finally:
+                RS.status = real_status
+
+            code, operation = c.request("POST", "/api/staging", {"regions": ["pilot"]})
+            assert code == 202, operation
+            staged = wait_operation(operation["operation_id"])
+            assert staged["status"] == "succeeded", staged
+            assert staged["result"]["regions"] == ["pilot"]
+            identifier = staged["result"]["staging_ids"][0]
+            lock.rmdir()
+            code, listing = c.request("GET", "/api/staging")
+            assert code == 200 and [s["staging_id"] for s in listing["staged"]] == [identifier]
+            assert listing["generation"] == 1
+            assert listing["staged"][0]["verification"] == "not checked"
+            assert listing["staged"][0]["artifact_count"] == 2
+            assert listing["staged"][0]["bytes"] == len(b'{"region":"pilot","n":1}') + len(b"synthetic fixture")
+            code, status = c.request("GET", "/api/catalog/status")
+            assert code == 200 and status["regions"]["pilot"]["staged"]["staging_id"] == identifier
+
+            (source / "buildings.pmtiles").write_bytes(b"new build")
+            code, operation = c.request("POST", f"/api/staging/{identifier}/verify", {})
+            assert code == 202
+            assert wait_operation(operation["operation_id"])["status"] == "succeeded"
+            code, listing = c.request("GET", "/api/staging")
+            assert code == 200 and listing["staged"][0]["verification"].startswith("verified "), listing
+            (data / "regional_staging" / identifier / "artifacts" / "buildings.pmtiles").write_bytes(b"corruption")
+            code, operation = c.request("POST", f"/api/staging/{identifier}/verify", {})
+            assert code == 202
+            result = wait_operation(operation["operation_id"])
+            assert result["status"] == "failed" and "verification failed" in result["error"], result
+            assert c.request("GET", "/api/snapshots")[0] == 404
+
+            # While a region is being staged, it cannot be queued.
+            (data / "regional_staging" / ".locks" / "pilot").mkdir(parents=True)
+            try:
+                code, refused = c.request("POST", "/api/staging", {"region": "pilot"})
+                assert code == 409 and "already being staged" in refused["error"], refused
+                code, started = c.request("POST", "/api/estimate", {
+                    "regions": ["pilot"], "include_imagery": False, "paid_referee": False})
+                assert code == 202, started
+                for _ in range(100):
+                    code, est = c.request("GET", f"/api/estimate/{started['estimate_id']}")
+                    if est["status"] != "pending":
+                        break
+                    time.sleep(0.05)
+                assert est["status"] == "ready", est
+                code, refused = c.request("POST", "/api/jobs", {
+                    "estimate_id": est["estimate_id"], "include_imagery": False,
+                    "paid_referee": False, "target": est["target"]})
+                assert code == 409 and "being staged" in refused["error"], refused
+            finally:
+                (data / "regional_staging" / ".locks" / "pilot").rmdir()
+            code, html = c.request("GET", "/pipeline.html", token=None)
+            assert code == 200 and b'id="staging-list"' in html and b"snapshot" not in html
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+def test_cloud_submission_requires_summary_and_explicit_upload_confirmation():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        server, c = _serve(Path(tmp))
+        app = server.app
+        data = Path(tmp) / "data"
+        source = data / "out" / "pilot"
+        source.mkdir(parents=True)
+        (source / "summary.json").write_text('{"region":"pilot"}')
+        runner = FakeGcloud()
+        app.artifacts.cloud_staging._runner = runner
+        app.artifacts.cloud_staging._gcloud = "/fake/gcloud"
+
+        def wait_operation(identifier):
+            for _ in range(200):
+                code, operation = c.request("GET", f"/api/operations/{identifier}")
+                assert code == 200, operation
+                if operation["status"] != "running":
+                    return operation
+                time.sleep(0.02)
+            raise AssertionError("cloud staging operation did not finish")
+
+        try:
+            code, started = c.request("POST", "/api/staging", {"region": "pilot"})
+            assert code == 202, started
+            staged = wait_operation(started["operation_id"])
+            assert staged["status"] == "succeeded", staged
+            identifier = staged["staging_id"]
+
+            code, summary = c.request("POST", "/api/staging/cloud-summary", {
+                "staging_ids": [identifier],
+            })
+            assert code == 200 and summary["bucket"] == "gs://solar-potential-map-data", summary
+            assert summary["bytes"] > 0 and summary["staging"][0]["staging_id"] == identifier
+            denied, _ = c.request("POST", "/api/staging/cloud-submit", {"staging_ids": [identifier]})
+            assert denied == 400 and runner.calls == []
+
+            code, operation = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "upload_confirmed": True,
+            })
+            assert code == 202, operation
+            result = wait_operation(operation["operation_id"])
+            assert result["status"] == "succeeded" and result["phase"] == "complete", result
+            submission = result["result"]["submissions"][0]
+            assert submission["status"] == "complete" and submission["region_id"] == "pilot"
+            assert len(runner.objects) == 2
+            assert app.artifacts.releases.state().get("active") is None
+            code, history = c.request("GET", "/api/operations")
+            assert code == 200 and len(history["operations"]) == 1, history
+            assert history["operations"][0]["operation_id"] == operation["operation_id"]
+            assert history["operations"][0]["verified_artifacts"] == 1
+            assert c.request("GET", "/api/operations", token=None)[0] == 403
+
+            emitted = app.artifacts.staging.stage("pilot")
+            newer = emitted["staging_id"]
+            stale_summary, stale_body = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [identifier], "upload_confirmed": True,
+            })
+            assert stale_summary == 409 and "no longer the current" in stale_body["error"], stale_body
+            runner.objects.clear()
+            runner.fail_once = True
+            code, failed = c.request("POST", "/api/staging/cloud-submit", {
+                "staging_ids": [newer], "upload_confirmed": True,
+            })
+            assert code == 202, failed
+            failure = wait_operation(failed["operation_id"])
+            assert failure["status"] == "failed" and "Cloud upload failed" in failure["error"], failure
+            code, history = c.request("GET", "/api/operations")
+            assert code == 200 and any(item["operation_id"] == failed["operation_id"] and
+                                       item["status"] == "failed" for item in history["operations"]), history
+            from tools.pipeline_webui.artifacts import Artifacts
+            interrupted_path = app.artifacts.operations / ("f" * 32 + ".json")
+            interrupted_path.write_text(json.dumps({"operation_id": "f" * 32, "action": "cloud_submit",
+                                                    "status": "running", "pid": None}))
+            (app.artifacts.operations / "broken.json").write_text("{")
+            restarted = Artifacts(data)
+            assert any(item["operation_id"] == failed["operation_id"] and item["status"] == "failed"
+                       for item in restarted.cloud_operations())
+            assert restarted.get("f" * 32)["status"] == "interrupted"
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 if __name__ == "__main__":
     test_api_end_to_end()
     test_static_files_keep_pipeline_serve_rules()
     test_port_in_use_message_says_how_to_stop_an_old_panel()
+    test_staging_web_workflow()
+    test_cloud_submission_requires_summary_and_explicit_upload_confirmation()
     print("pipeline web server tests passed")

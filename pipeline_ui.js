@@ -1,19 +1,24 @@
 // Build data panel (pipeline.html). Talks to tools/pipeline_web.py on
 // loopback. The per-launch token arrives in the URL fragment, is kept in
 // sessionStorage and removed from the address bar.
+//
+// One area tree (council > town > locality, plus grid cells while a gridded
+// build is open) whose rows update in place; a selection bar acts on the
+// ticked rows; the map colours each locality by its state for the target.
 (function () {
   "use strict";
 
-  const LOCALITY_MIN_ZOOM = 10;
-  const LOCALITY_DEBOUNCE_MS = 400;
+  const T = PipelineTree;
   const LOG_MAX_LINES = 5000;
   const ESTIMATE_POLL_MS = 1000;
   const QUEUE_POLL_MS = 5000;
   const VM_POLL_MS = 60000;
+  const FLAT_ROW_LIMIT = 500;
+  const AUTO_EXPAND_LIMIT = 300;
   const TARGETS = {
-    local: { label: "Local", start: "Start build" },
-    developer: { label: "Developer", start: "Start developer build on the VM" },
-    published: { label: "Published", start: "Build, gate and publish" },
+    local: { label: "Local", start: "Add to queue" },
+    developer: { label: "Developer", start: "Add developer builds to queue" },
+    published: { label: "Published", start: "Queue builds, gate and publish" },
   };
 
   const tokenMatch = location.hash.match(/token=([A-Za-z0-9_-]+)/);
@@ -25,6 +30,7 @@
   // Opening a new link in the same tab changes only the fragment, which does not reload the page.
   window.addEventListener("hashchange", () => {
     if (/token=[A-Za-z0-9_-]+/.test(location.hash)) location.reload();
+    else showView();
   });
 
   const $ = (id) => document.getElementById(id);
@@ -40,32 +46,35 @@
   };
   const fmtGb = (g) => (g == null ? "?" : g < 1 ? Math.round(g * 1000) + " MB" : g.toFixed(1) + " GB");
   const fmtArea = (km2) => (km2 == null ? "?" : Number(km2).toFixed(2) + " km²");
+  const fmtDate = (s) => (s ? String(s).replace("T", " ").slice(0, 16) : "");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   let writable = false;
-  const selected = new Map();       // region_id -> label
-  const localityFeatures = new Map(); // linz_id -> feature
-  const regionRecords = new Map(); // region_id -> area status and links
-  const regionFeatures = new Map(); // region_id -> area geometry
-  let regionStatusMeta = "";
+  let maxRegions = 25;
+  let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
+  let catalog = null;           // national catalogue, or null when not built yet
+  let status = { regions: {}, grids: {}, calibration: null };
+  let statusSignature = "";
+  const remote = new Map();     // region id -> developer/published area record
+  let remoteMeta = "";
+  let tree = T.buildTree([], [], {});
+  const byLinz = new Map();     // LINZ locality id -> locality leaf
+  const views = new Map();      // leaf id -> {view, state}
+  const selected = new Set();
+  const expanded = new Set();
+  const openDetail = new Set();
+  const activeFilters = new Set();
+  const hiddenStates = new Set();
+  let query = "";
+  let highlighted = null;
   let queueJobs = [];
   let recentQueueJobs = [];
-  const gridFeatures = new Map(); // grid-cell id -> feature
-  const selectedGridCells = new Map(); // selected grid-cell id -> label
-  let selectedParent = null;
-  let gridMode = false;
-  let currentEstimate = null;
-  let selectionRevision = 0;
-  let includeImagery = true;
-  let paidReferee = false;
-  let sourceImageryAvailable = true;
-  let refereeUsdUpper = 0;
   let stream = null;
   let shownJob = null;
   let queueLoading = false;
   let queueInitialized = false;
   let queueUpdatedAt = null;
   let jobsSignature = null;
-  let target = TARGETS[localStorage.getItem("pipelineTarget")] ? localStorage.getItem("pipelineTarget") : "local";
 
   async function api(path, opts = {}) {
     const headers = { "X-Pipeline-Token": token };
@@ -90,36 +99,449 @@
     b.classList.toggle("show", !!html);
   }
 
-  function showSection(name) {
-    const section = $("stage-" + name);
-    section.open = true;
-    section.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    if (name === "jobs") loadJobs();
-    if (name === "queue") loadQueue();
-    updateHint();
+  function showView() {
+    const config = location.hash === "#config";
+    document.body.classList.toggle("config", config);
+    if (config) { loadCatalogInfo(); loadStaging(); loadCloudOperations(); }
+    else setTimeout(() => map.resize(), 0);
   }
+
+  // Staging copies local emitted outputs (data/out), independently of target.
+  let artifactBusy = false;
+  let cloudRunning = false;
+  let cloudHistoryLoading = false;
+  let currentStaged = [];
+  let cloudUploadSummary = null;
+  let releaseState = null;
+  let releaseRecords = [];
+  async function loadCloudOperations() {
+    if (!writable || cloudHistoryLoading) return;
+    cloudHistoryLoading = true;
+    try {
+      const {operations} = await api("operations");
+      cloudRunning = operations.some((operation) => operation.status === "running");
+      $("cloud-push-history").innerHTML = operations.length ? operations.map((operation) => {
+        const ids = (operation.value && operation.value.staging_ids) || [];
+        const totalBytes = operation.value && operation.value.upload_summary && operation.value.upload_summary.bytes;
+        let detail = operation.error || "";
+        if (operation.status === "running") {
+          if (operation.phase === "verifying_local") detail = "Verifying local staged copy";
+          else if (operation.phase === "uploading") detail = `Uploading: ${operation.uploaded_artifacts || 0} of ${operation.artifact_count || 0} artifacts`;
+          else if (operation.phase === "verifying_remote") detail = `Verifying cloud copy (${operation.verification_step === "before_manifest" ? "before manifest" : "final check"}): ${operation.verified_artifacts || 0} of ${operation.artifact_count || 0} artifacts`;
+          else detail = "Starting cloud push";
+          if (operation.staging_id) detail += ` · ${operation.staging_id}`;
+        } else if (operation.status === "succeeded") {
+          detail = ((operation.result && operation.result.submissions) || []).map((item) => item.region_id || item.submission_id).join(", ") + ": verified; not deployed";
+        } else {
+          detail += " Resolve the error, then retry the same staged version; matching uploaded objects are reused.";
+        }
+        return `<div class="item"><b class="${operation.status === "failed" || operation.status === "interrupted" ? "block" : ""}">${esc(operation.status)}</b> · ${esc(operation.started_at || "unknown time")}
+          <div>${esc(detail)}</div><div class="muted">${totalBytes == null ? "" : `${fmtGb(totalBytes / 1_000_000_000)} · `}${esc(ids.length)} area(s)</div>
+          <div class="muted">Last update: ${esc(operation.finished_at || operation.progress_at || operation.started_at || "unknown")}</div></div>`;
+      }).join("") : '<p class="muted">No cloud pushes recorded in this checkout.</p>';
+      const latest = operations[0];
+      const message = cloudRunning ? "Cloud push in progress." : latest
+        ? `Latest cloud push ${latest.status}${latest.error ? `: ${latest.error}` : "."}` : "";
+      if ($("cloud-push-status").textContent !== message) $("cloud-push-status").textContent = message;
+      $("act-cloud-status").textContent = cloudRunning ? cloudProgress(operations.find((item) => item.status === "running"))
+        : latest && ["failed", "interrupted"].includes(latest.status)
+          ? `Latest remote staging upload ${latest.status}: ${latest.error || "check Config for details."}`
+          : latest && latest.status === "succeeded" ? "Latest remote staging upload verified; it was not deployed." : "";
+    } catch (error) {
+      $("cloud-push-status").textContent = `Cloud push status unavailable: ${error.message}. Showing last known history; reconnecting.`;
+    } finally {
+      cloudHistoryLoading = false;
+      releaseButtons();
+    }
+  }
+
+  function cloudProgress(operation) {
+    if (!operation) return "Remote staging upload in progress.";
+    if (operation.phase === "verifying_local") return `Verifying local staged copy ${operation.staging_id || ""}…`;
+    if (operation.phase === "uploading") return `Uploading ${operation.staging_id || ""}: ${operation.uploaded_artifacts || 0} of ${operation.artifact_count || 0} artifacts.`;
+    if (operation.phase === "verifying_remote") return `Verifying remote copy ${operation.staging_id || ""} (${operation.verification_step === "before_manifest" ? "before manifest" : "final check"}): ${operation.verified_artifacts || 0} of ${operation.artifact_count || 0} artifacts.`;
+    return "Remote staging upload in progress.";
+  }
+  async function loadStaging() {
+    if (!writable) return;
+    try {
+      const staging = await api("staging");
+      currentStaged = staging.staged;
+      const councils = new Map();
+      for (const item of currentStaged) {
+        const council = (item.region_id || "Unknown council").split("/")[0];
+        if (!councils.has(council)) councils.set(council, []);
+        councils.get(council).push(item);
+      }
+      $("staging-list").innerHTML = currentStaged.length ? [...councils].map(([council, items]) => {
+        const bytes = items.reduce((total, item) => total + (item.bytes || 0), 0);
+        return `<details class="stage-council"><summary>${esc(council)} · ${items.length} area(s) · ${fmtGb(bytes / 1_000_000_000)}</summary>
+          <div class="stage-council-areas">${items.map((item) => {
+            const parts = (item.region_id || "").split("/");
+            const area = parts.slice(1).join(" / ") || item.region_id || "Unknown area";
+            const status = item.error ? "unreadable" : item.verification || "not checked";
+            return `<details class="qrow"><summary><span class="qname">${esc(area)}</span>
+              <span class="qsum">${fmtGb((item.bytes || 0) / 1_000_000_000)} · ${esc(status)}</span></summary>
+              <div class="qbody"><div class="muted">Current staging ID: <span class="job-id">${esc(item.staging_id)}</span><br>
+                Staged: ${esc(item.staged_at || "unknown")} · Built: ${esc(item.built_at || "unknown")}<br>
+                ${fmtInt(item.bytes || 0)} bytes · ${fmtInt(item.artifact_count || 0)} artifacts</div>
+                ${item.error ? `<p class="block">${esc(item.error)}</p>` : `<button class="small" data-verify-staged="${esc(item.staging_id)}" ${artifactBusy ? "disabled" : ""}>Verify current copy</button>`}</div>
+            </details>`;
+          }).join("")}</div></details>`;
+      }).join("") : '<p class="muted">No areas in current local staging.</p>';
+      $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) =>
+        button.addEventListener("click", () => runOperation(
+          `staging/${encodeURIComponent(button.dataset.verifyStaged)}/verify`, {})));
+      await loadReleases();
+    } catch (error) {
+      $("staging-status").textContent = `Cannot load staged copies: ${error.message}`;
+    }
+  }
+
+  async function followOperation(identifier) {
+    artifactBusy = true;
+    releaseButtons();
+    $("staging-list").querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    try {
+      let operation;
+      do {
+        operation = await api(`operations/${encodeURIComponent(identifier)}`);
+        const labels = {
+          stage: ["Copying and verifying local staging", "Staged and verified"],
+          verify_staged: ["Verifying staged copy", "Verified staged copy"],
+          cloud_submit: ["Pushing and verifying cloud Staging", "Cloud submission verified"],
+          release_create: ["Assembling isolated local candidate", "Candidate ready"],
+          release_compare: ["Comparing with active local release", "Comparison ready"],
+          release_verify: ["Verifying candidate files", "Candidate verified"],
+          release_approve: ["Recording local review", "Review recorded"],
+          release_activate: ["Switching local deployment", "Local deployment switched"],
+          release_publish: ["Reviewing and switching local deployment", "Local deployment switched"],
+          release_rollback: ["Rolling back local deployment", "Local rollback completed"],
+          release_policy: ["Saving retention policy", "Policy saved"],
+          release_cleanup: ["Checking retention and cleanup", "Cleanup completed"],
+        };
+        const label = labels[operation.action] || ["Running operation", "Completed"];
+        const statusElement = operation.action.startsWith("release_") ? $("release-status") : $("staging-status");
+        const batchProgress = operation.action === "stage_batch"
+          ? `${operation.completed_regions || 0} of ${operation.region_count || 0} areas staged${operation.region_id ? ` · ${operation.region_id}` : ""}.`
+          : null;
+        statusElement.textContent = operation.status === "running"
+          ? operation.action === "cloud_submit"
+            ? cloudProgress(operation)
+            : operation.action === "stage_batch" ? `Updating current local staging set: ${batchProgress}` : `${label[0]}...`
+          : operation.status === "succeeded"
+            ? operation.action.startsWith("release_")
+              ? `${operation.action.replace("release_", "")}: completed locally.`
+              : operation.action === "cloud_submit"
+                ? `Cloud Staging verified: ${(operation.result.submissions || []).map((s) => `${s.region_id} (${s.submission_id})`).join(", ")}. Not approved or deployed.`
+                : operation.action === "stage_batch"
+                  ? `Current local staging set updated with ${(operation.result.regions || []).length} area(s).`
+                : `${label[1]} ${operation.region_id || ""} ${operation.staging_id}: ${fmtInt(operation.artifact_count)} artifacts, ${fmtInt(operation.bytes)} bytes.`
+            : `${operation.status}: ${operation.error || "Operation did not complete."}`;
+        if (operation.action === "stage_batch") $("act-notes").textContent = statusElement.textContent;
+        if (operation.result && operation.action.startsWith("release_")) renderReleaseResult(operation);
+        if (operation.failed_release_id) {
+          $("release-result").innerHTML = '<button class="small" id="release-failure-log">Read assembly log</button><pre id="release-log" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';
+          $("release-failure-log").addEventListener("click", async () => {
+            try {
+              const log = await api(`releases/incomplete/${encodeURIComponent(operation.failed_release_id)}/log`);
+              $("release-log").textContent = (log.truncated ? "Last 64 KiB:\n" : "") + log.text;
+            } catch (error) {
+              $("release-log").textContent = `Log unavailable: ${error.message}`;
+            }
+          });
+        }
+        if (operation.status === "succeeded" && operation.action === "release_create") {
+          await loadReleases();
+          $("release-select").value = operation.result.release_id;
+          $("release-reason").value = "";
+          releasePreview();
+        }
+        if (operation.status === "running") await new Promise((resolve) => setTimeout(resolve, 750));
+      } while (operation.status === "running");
+    } catch (error) {
+      $("staging-status").textContent = `Status unavailable: ${error.message}. Refresh to reconnect.`;
+    } finally {
+      artifactBusy = false;
+      await loadStaging();
+    }
+  }
+
+  function selectedCurrentStaging() {
+    return selectedLeaves().map((leaf) => ({leaf, staged: views.get(leaf.id).view.staged}))
+      .filter(({staged}) => staged && !staged.error && staged.staging_id);
+  }
+
+  function cloudPushButtons() {
+    const count = selectedCurrentStaging().length;
+    $("act-cloud-stage").disabled = !writable || artifactBusy || cloudRunning || !count || count > 100 || target !== "local";
+    $("act-cloud-stage").title = count > 100 ? "Remote staging uploads are limited to 100 areas per confirmation." :
+      target !== "local" ? "Remote staging uses the current local staging set; switch the target to Local." :
+        "Upload selected areas' current local staged versions to private remote staging.";
+  }
+
+  $("act-cloud-stage").addEventListener("click", async () => {
+    if (!writable || artifactBusy || cloudRunning) return;
+    const selectedVersions = selectedCurrentStaging();
+    if (!selectedVersions.length || selectedVersions.length > 100) return;
+    const ids = selectedVersions.map(({staged}) => staged.staging_id);
+    $("act-cloud-status").textContent = "Verifying selected current staged versions…";
+    try {
+      cloudUploadSummary = await api("staging/cloud-summary", {method: "POST", body: {staging_ids: ids}});
+      const summary = cloudUploadSummary;
+      $("cloud-confirm-summary").innerHTML = `<p><b>Confirm upload of ${(summary.bytes / 1_000_000_000).toFixed(2)} GB</b>
+        across ${summary.staging.length} area(s) to private GCS staging?</p>
+        <p>Destination: <code>${esc(summary.destination)}</code><br>
+        ${summary.staging.map((item) => `${esc(item.region_id)} · ${(item.bytes / 1_000_000_000).toFixed(2)} GB`).join("<br>")}</p>`;
+      $("cloud-confirm-dialog").showModal();
+    } catch (error) {
+      cloudUploadSummary = null;
+      $("act-cloud-status").textContent = `Remote staging upload not started: ${error.message}`;
+    }
+  });
+
+  $("cloud-confirm-cancel").addEventListener("click", () => {
+    cloudUploadSummary = null;
+    $("cloud-confirm-dialog").close();
+    $("act-cloud-status").textContent = "Remote staging upload cancelled.";
+  });
+
+  $("cloud-confirm-upload").addEventListener("click", async () => {
+    if (!cloudUploadSummary || artifactBusy || cloudRunning) return;
+    const ids = cloudUploadSummary.staging.map((item) => item.staging_id);
+    $("cloud-confirm-dialog").close();
+    artifactBusy = true;
+    releaseButtons();
+    $("act-cloud-status").textContent = "Starting remote staging upload…";
+    try {
+      await api("staging/cloud-submit", {method: "POST", body: {
+        staging_ids: ids, upload_confirmed: true,
+      } });
+      cloudRunning = true;
+      cloudUploadSummary = null;
+      await loadCloudOperations();
+    } catch (error) {
+      $("act-cloud-status").textContent = `Remote staging upload not started: ${error.message}`;
+    } finally {
+      artifactBusy = false;
+      releaseButtons();
+    }
+  });
+
+  async function runOperation(path, body) {
+    if (!writable || artifactBusy || cloudRunning) return;
+    artifactBusy = true;
+    releaseButtons();
+    const status = path.startsWith("releases/") ? $("release-status") : $("staging-status");
+    status.textContent = "Starting local operation...";
+    try {
+      const operation = await api(path, { method: "POST", body });
+      sessionStorage.setItem("artifactOperation", operation.operation_id);
+      await followOperation(operation.operation_id);
+    } catch (error) {
+      status.textContent = `Operation refused: ${error.message}`;
+    } finally {
+      artifactBusy = false;
+      await loadStaging();
+    }
+  }
+
+  $("staging-refresh").addEventListener("click", async () => {
+    if (artifactBusy) return;
+    const operation = sessionStorage.getItem("artifactOperation");
+    if (operation) await followOperation(operation);
+    else await loadStaging();
+  });
+
+  function releaseButtons() {
+    const disabled = !writable || artifactBusy || cloudRunning || !releaseState;
+    const stageable = selectedLeaves().filter((leaf) => !stageRefusal(leaf));
+    $("act-stage").disabled = !writable || target !== "local" || artifactBusy || cloudRunning || pushing ||
+      !stageable.length || stageable.length > 100;
+    if (stageable.length > 100) $("act-stage").title = "Push no more than 100 areas per local staging batch.";
+    $("act-build").disabled = !writable || !selectedLeaves().length || artifactBusy || cloudRunning;
+    $("staging-list").querySelectorAll("[data-verify-staged]").forEach((button) => {
+      button.disabled = !writable || artifactBusy || cloudRunning;
+    });
+    $("release-create").disabled = disabled || !currentStaged.some((item) => !item.error);
+    $("release-select").disabled = disabled || !releaseRecords.length;
+    document.querySelectorAll("[data-release-action]").forEach((button) => {
+      button.disabled = disabled || !$("release-select").value;
+    });
+    $("release-policy").disabled = disabled;
+    $("release-cleanup-preview").disabled = disabled || !releaseState.policy;
+    $("release-cleanup-apply").disabled = disabled || !releaseState.policy || !$("release-cleanup-confirm").checked;
+    $("release-rollback").disabled = disabled || !releaseState.previous ||
+      !releaseState.rollback_until || Date.parse(releaseState.rollback_until) <= Date.now();
+    cloudPushButtons();
+  }
+
+  function releasePreview() {
+    const id = $("release-select").value;
+    $("release-preview").innerHTML = id
+      ? `<a href="/local-releases/${encodeURIComponent(id)}/rooftop-solar.html" target="_blank" rel="noopener">Preview exact release</a>` : "";
+  }
+
+  async function loadReleases() {
+    if (!writable) return;
+    try {
+      const result = await api("releases");
+      releaseState = result.state;
+      releaseRecords = result.releases;
+      const previous = $("release-select").value;
+      $("release-select").innerHTML = releaseRecords.map((item) =>
+        `<option value="${esc(item.release_id)}">${esc(item.created_at)} · ${Object.keys(item.region_builds).length} regions · ${esc(item.release_id.slice(0, 8))}</option>`).join("");
+      if (releaseRecords.some((r) => r.release_id === previous)) $("release-select").value = previous;
+      else if (releaseRecords.length) $("release-select").value = releaseRecords[releaseRecords.length - 1].release_id;
+      $("release-active").innerHTML = releaseState.active
+        ? `Active: ${esc(releaseState.active)} · generation ${releaseState.generation}<br>
+           <a href="/local-deploy/" target="_blank" rel="noopener">Open local deployed map</a><br>
+           Rollback expires: ${esc(releaseState.rollback_until || "none")}`
+        : "No local deployment. The first candidate contains the current complete staged regions.";
+      document.querySelectorAll("[data-retention]").forEach((input) => {
+        if (!input.value && releaseState.policy) input.value = releaseState.policy[input.dataset.retention];
+      });
+      releasePreview();
+    } catch (error) {
+      releaseState = null;
+      $("release-status").textContent = `Releases unavailable: ${error.message}`;
+    }
+    releaseButtons();
+  }
+
+  function renderReleaseResult(operation) {
+    const data = operation.result;
+    if (operation.action === "release_compare") {
+      $("release-result").innerHTML = `<p>${data.stale ? "STALE: create a new candidate against the current deployment." :
+        data.automatic_eligible ? "Eligible for automatic approval." : "Manual review reason required; unknown values are not passes."}</p>
+        ${data.warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join("")}
+        <table><thead><tr><th>Region / metric</th><th>Active</th><th>Candidate</th><th>Status / reason</th></tr></thead><tbody>
+        ${data.metrics.map((m) => `<tr><td>${esc(m.region)}<br>${esc(m.field)}</td>
+          <td>${esc(m.previous == null ? "unknown / new" : JSON.stringify(m.previous))}</td>
+          <td>${esc(m.proposed == null ? "unknown" : JSON.stringify(m.proposed))}</td>
+          <td><span class="${m.status === "fail" ? "block" : m.status === "warning" ? "warn" : m.status === "pass" ? "pill PASS" : "muted"}">${esc(m.status)}</span> ${esc(m.reason)}</td></tr>`).join("")}
+        </tbody></table>`;
+    } else {
+      $("release-result").innerHTML = `<pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(JSON.stringify(data, null, 2))}</pre>`;
+    }
+  }
+
+  $("release-select").addEventListener("change", () => {
+    $("release-result").textContent = "";
+    $("release-reason").value = "";
+    releasePreview();
+  });
+  $("release-refresh").addEventListener("click", async () => {
+    if (artifactBusy) return;
+    const operation = sessionStorage.getItem("artifactOperation");
+    if (operation) await followOperation(operation);
+    else await loadReleases();
+  });
+  $("release-create").addEventListener("click", () => {
+    if (releaseState) runOperation("releases/create", {
+      staging_ids: currentStaged.filter((item) => !item.error).map((item) => item.staging_id),
+      generation: releaseState.generation,
+    });
+  });
+  document.querySelectorAll("[data-release-action]").forEach((button) =>
+    button.addEventListener("click", () => {
+      if (releaseState) runOperation(`releases/${button.dataset.releaseAction}`, {
+        release_id: $("release-select").value, generation: releaseState.generation,
+        reason: $("release-reason").value,
+      });
+    }));
+  $("release-rollback").addEventListener("click", () => {
+    if (releaseState) runOperation("releases/rollback", {generation: releaseState.generation});
+  });
+  $("release-policy").addEventListener("click", () => {
+    const policy = {};
+    document.querySelectorAll("[data-retention]").forEach((input) => { policy[input.dataset.retention] = Number(input.value); });
+    runOperation("releases/policy", {policy});
+  });
+  $("release-cleanup-confirm").addEventListener("change", releaseButtons);
+  $("release-cleanup-preview").addEventListener("click", () => runOperation("releases/cleanup", {apply:false}));
+  $("release-cleanup-apply").addEventListener("click", () => {
+    if ($("release-cleanup-confirm").checked) runOperation("releases/cleanup", {apply:true});
+  });
+
+  // ---- national catalogue (Config) -------------------------------------
+  let catalogPoll = null;
+  async function loadCatalogInfo() {
+    if (!writable) return;
+    try {
+      const refresh = await api("catalog/refresh");
+      renderCatalogRefresh(refresh);
+    } catch (e) { /* the refresh status is optional */ }
+    $("catalog-info").innerHTML = catalog
+      ? `<p>${fmtInt(catalog.regions.length)} localities with buildings · built ${esc(fmtDate(catalog.built_at))} UTC
+          in ${esc(Math.round(catalog.build_seconds || 0))} s.</p>`
+      : `<p class="warn">No catalogue yet: the area list shows only areas already built in this checkout.</p>`;
+  }
+
+  function renderCatalogRefresh(state) {
+    const el = $("catalog-progress");
+    $("catalog-refresh").disabled = !writable || state.status === "running";
+    if (state.status === "running") {
+      el.innerHTML = `Refreshing: ${esc(state.stage || "starting")}${state.total
+        ? ` (${fmtInt(state.done)} of ${fmtInt(state.total)})` : ""}…
+        <progress ${state.total ? `value="${state.done}" max="${state.total}"` : ""}></progress>`;
+    } else if (state.status === "failed") {
+      el.innerHTML = `<span class="block">Refresh failed: ${esc(state.error)}</span>`;
+    } else if (state.status === "succeeded") {
+      el.textContent = `Refreshed: ${fmtInt(state.regions)} localities.`;
+    } else {
+      el.textContent = "";
+    }
+    return state.status;
+  }
+
+  async function followCatalogRefresh() {
+    clearTimeout(catalogPoll);
+    let state;
+    try { state = await api("catalog/refresh"); } catch (e) {
+      $("catalog-progress").innerHTML = `<span class="block">${esc(e.message)}</span>`;
+      return;
+    }
+    if (renderCatalogRefresh(state) === "running") {
+      catalogPoll = setTimeout(followCatalogRefresh, 1500);
+      return;
+    }
+    if (state.status === "succeeded") {
+      await loadCatalog();
+      loadGeometry();
+      loadCatalogInfo();
+    }
+  }
+
+  $("catalog-refresh").addEventListener("click", async () => {
+    $("catalog-refresh").disabled = true;
+    try {
+      renderCatalogRefresh(await api("catalog/refresh", { method: "POST", body: {} }));
+      followCatalogRefresh();
+    } catch (e) {
+      $("catalog-progress").innerHTML = `<span class="block">${esc(e.message)}</span>`;
+      $("catalog-refresh").disabled = false;
+    }
+  });
 
   // ---- target toggle ---------------------------------------------------
   document.querySelectorAll("#targets button").forEach((b) => b.addEventListener("click", () => setTarget(b.dataset.target)));
   function setTarget(name) {
-    if (gridMode && name !== "local") {
-      banner("Grid selection builds currently run locally only. Return to locality selection before changing target.");
-      return;
-    }
     const changed = name !== target;
     target = name;
     localStorage.setItem("pipelineTarget", name);
     document.querySelectorAll("#targets button").forEach((b) => b.classList.toggle("active", b.dataset.target === name));
-    document.body.className = "target-" + name;
+    Object.keys(TARGETS).forEach((t) => document.body.classList.toggle("target-" + t, t === name));
     if (changed) {
-      selectionRevision++;
-      currentEstimate = null;
-      $("estimate").innerHTML = "";
-      regionRecords.clear();
-      regionStatusMeta = `Checking ${esc(TARGETS[name].label.toLowerCase())} area records…`;
-      renderSelection();
-      if (map.getSource("regions")) loadRegions(false);
+      remote.clear();
+      remoteMeta = "";
+      if (name !== "local") {
+        for (const id of [...selected]) if ((tree.leaves.get(id) || {}).kind === "cell") selected.delete(id);
+      }
+      rebuildTree();
     }
+    loadRemote(false);
+    loadLayers();
     loadVm(false);
   }
 
@@ -133,6 +555,28 @@
     } catch (e) {
       $("vm-info").innerHTML = `<span class="block">VM status: ${esc(e.message)}</span>`;
     }
+  }
+
+  // Developer and published states come from the VM or live site.
+  async function loadRemote(refresh) {
+    if (target === "local" || !writable) return;
+    const source = target;
+    try {
+      const fc = await api("regions?source=" + source + (refresh ? "&refresh=1" : ""));
+      if (source !== target) return;
+      remote.clear();
+      fc.features.forEach((f) => remote.set(f.properties.region, f.properties));
+      const warnings = fc.warnings || [];
+      remoteMeta = (fc.source === "published"
+        ? `Live data v${esc(fc.data_version || "?")}`
+        : "Developer previews on the shared VM") +
+        (warnings.length ? ` · <span class="warn" title="${esc(warnings.join("\n"))}">${warnings.length} warning(s)</span>` : "");
+    } catch (e) {
+      if (source !== target) return;
+      remote.clear();
+      remoteMeta = `<span class="block">${esc(TARGETS[source].label)} area states unavailable: ${esc(e.message)}</span>`;
+    }
+    rebuildTree();
   }
 
   // ---- map -------------------------------------------------------------
@@ -149,6 +593,7 @@
   let layerRequest = 0;
   let layersTarget = null;
   async function loadLayers() {
+    if (!writable) return;
     const source = target;
     const request = ++layerRequest;
     if (layersTarget !== source) {
@@ -167,37 +612,33 @@
     }
   }
 
-  const stateColour = ["match", ["get", "state"], "built", "#2e7d32", "failed", "#c62828", "#ef6c00"];
+  const stateColour = ["match", ["coalesce", ["feature-state", "state"], "none"],
+    ...T.STATES.flatMap((s) => [s, T.STATE_COLOURS[s]]), T.STATE_COLOURS.none];
+  const isOn = (key) => ["boolean", ["feature-state", key], false];
+  let mapReady = false;
 
   map.on("load", () => {
     map.addSource("localities", { type: "geojson", data: empty, promoteId: "linz_id" });
     map.addSource("grid-cells", { type: "geojson", data: empty, promoteId: "grid_id" });
-    map.addSource("regions", { type: "geojson", data: empty });
     map.addSource("job-focus", { type: "geojson", data: empty });
     map.addLayer({ id: "localities-fill", type: "fill", source: "localities",
-      paint: { "fill-color": "#1565c0",
-               "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.4, 0.05] } });
+      paint: { "fill-color": stateColour,
+               "fill-opacity": ["case", isOn("hidden"), 0,
+                 isOn("selected"), 0.6,
+                 ["==", ["coalesce", ["feature-state", "state"], "none"], "none"], 0.08, 0.45] } });
     map.addLayer({ id: "localities-line", type: "line", source: "localities",
-      paint: { "line-color": "#90caf9", "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 1] } });
-    map.addLayer({ id: "localities-label", type: "symbol", source: "localities", minzoom: 12,
-      layout: { "text-field": ["get", "name"], "text-size": 12 },
-      paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1 } });
+      paint: { "line-color": ["case", isOn("selected"), "#111", stateColour],
+               "line-opacity": ["case", isOn("hidden"), 0, 1],
+               "line-width": ["case", isOn("selected"), 2.5, 0.6] } });
     map.addLayer({ id: "grid-cells-fill", type: "fill", source: "grid-cells",
-      paint: { "fill-color": "#00acc1",
-               "fill-opacity": ["case", ["boolean", ["feature-state", "selected"], false], 0.48, 0.12] } });
+      paint: { "fill-color": stateColour,
+               "fill-opacity": ["case", isOn("selected"), 0.6, 0.3] } });
     map.addLayer({ id: "grid-cells-line", type: "line", source: "grid-cells",
-      paint: { "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#006064", "#80deea"],
-               "line-width": ["case", ["boolean", ["feature-state", "selected"], false], 3, 1] } });
-    map.addLayer({ id: "grid-cells-label", type: "symbol", source: "grid-cells", minzoom: 12,
+      paint: { "line-color": ["case", isOn("selected"), "#111", "#ffffff"],
+               "line-width": ["case", isOn("selected"), 2.5, 1] } });
+    map.addLayer({ id: "grid-cells-label", type: "symbol", source: "grid-cells", minzoom: 11,
       layout: { "text-field": ["get", "grid_id"], "text-size": 10 },
       paint: { "text-color": "#fff", "text-halo-color": "#000", "text-halo-width": 1 } });
-    const regionColour = ["case", ["==", ["get", "kind"], "grid-selection"], "#00897b", stateColour];
-    map.addLayer({ id: "regions-fill", type: "fill", source: "regions", filter: ["==", ["geometry-type"], "Polygon"],
-      paint: { "fill-color": regionColour, "fill-opacity": 0.25 } });
-    map.addLayer({ id: "regions-line", type: "line", source: "regions", filter: ["==", ["geometry-type"], "Polygon"],
-      paint: { "line-color": regionColour, "line-width": 2 } });
-    map.addLayer({ id: "regions-point", type: "circle", source: "regions", filter: ["==", ["geometry-type"], "Point"],
-      paint: { "circle-color": stateColour, "circle-radius": 7, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
     map.addLayer({ id: "job-focus-fill", type: "fill", source: "job-focus",
       paint: { "fill-color": "#ffeb3b", "fill-opacity": 0.12 } });
     map.addLayer({ id: "job-focus-line", type: "line", source: "job-focus",
@@ -208,10 +649,9 @@
     layerLegend.setEntries([
       ...MapLayers.basemaps(map),
       ...[
-        { id: "localities", label: "Locality selection boundaries", ids: ["localities-fill", "localities-line", "localities-label"], colour: "#90caf9" },
-        { id: "grid-cells", label: "Grid cells", ids: ["grid-cells-fill", "grid-cells-line", "grid-cells-label"], colour: "#00acc1" },
-        { id: "regions", label: "Prepared / built areas", ids: ["regions-fill", "regions-line", "regions-point"], colour: "#2e7d32",
-          description: "Green: complete locality; teal: partial grid selection; amber: prepared; red: last run failed." },
+        { id: "localities", label: "Area status", ids: ["localities-fill", "localities-line"], colour: T.STATE_COLOURS.built,
+          description: "Each locality coloured by its state for the selected target; see the status legend." },
+        { id: "grid-cells", label: "Grid cells", ids: ["grid-cells-fill", "grid-cells-line", "grid-cells-label"], colour: "#ffffff" },
       ].map(entry => Object.assign(entry, {
         group: "operations",
         getVisible: () => map.getLayoutProperty(entry.ids[0], "visibility") !== "none",
@@ -221,170 +661,70 @@
     ]);
 
     map.on("click", "localities-fill", (e) => {
-      if (layerLegend.queryId || gridMode) return;
-      if (!e.features.length) return;
-      const p = e.features[0].properties;
-      toggleSelection(p.region_id, p.name + (p.town && p.town !== p.name ? ", " + p.town : ""),
-                      false, { region_id: p.region_id, linz_id: p.linz_id, name: p.name });
+      if (layerLegend.queryId || !e.features.length) return;
+      if (map.queryRenderedFeatures(e.point, { layers: ["grid-cells-fill"] }).length) return;
+      const leaf = byLinz.get(e.features[0].id);
+      if (!leaf || e.features[0].state.hidden) return;
+      toggleLeaves(T.leavesOf(leaf));
+      revealRow(leaf.id);
     });
     map.on("click", "grid-cells-fill", (e) => {
-      if (layerLegend.queryId || !gridMode || !e.features.length) return;
-      toggleGridCell(e.features[0].properties.grid_id);
+      if (layerLegend.queryId || !e.features.length) return;
+      const leaf = gridShown && tree.leaves.get(gridShown.cells.get(e.features[0].properties.grid_id));
+      if (!leaf) return;
+      toggleLeaves([leaf]);
+      revealRow(leaf.id);
     });
-    map.on("click", "regions-fill", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
-    map.on("click", "regions-point", (e) => { if (!layerLegend.queryId) showRegionPopup(e.features[0], e.lngLat); });
-    ["localities-fill", "grid-cells-fill", "regions-fill", "regions-point"].forEach((id) => {
+    ["localities-fill", "grid-cells-fill"].forEach((id) => {
       map.on("mouseenter", id, () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
     });
-    map.on("moveend", scheduleLocalities);
-    loadRegions(false);
+    mapReady = true;
+    loadGeometry();
   });
 
-  function showRegionPopup(feature, lngLat) {
-    const p = feature.properties;
-    const html = `<b>${esc(p.name || p.region)}</b><br><span class="pill ${esc(p.state)}">${esc(p.state)}</span>
-      ${p.kind === "grid-selection"
-        ? `<br><span class="warn">Partial selection: ${fmtInt(p.selection_count)} grid cells within ${esc(p.parent_region)}; not complete parent coverage.</span>` : ""}
-      ${p.n != null ? fmtInt(p.n) + " buildings" : ""}
-      ${p.alias ? "<br>Developer: " + esc(p.alias) + (p.run ? " · run " + esc(p.run) : "") : ""}
-      ${p.data_version ? "<br>Live data v" + esc(p.data_version) : ""}<br>
-      <a href="${esc(p.preview_url)}" target="_blank" rel="noopener">Open preview</a>
-      ${p.report_url ? ` · <a href="${esc(p.report_url)}" target="_blank" rel="noopener">Report</a>` : ""}`;
-    new maplibregl.Popup().setLngLat(lngLat).setHTML(html).addTo(map);
-  }
-
-  function updateHint() {
-    const z = map.getZoom();
-    $("hint").textContent = !writable ? "" : z < LOCALITY_MIN_ZOOM
-      ? "Zoom in further to choose areas on the map" : "";
-    $("hint").style.display = $("hint").textContent ? "block" : "none";
-  }
-
-  let localityTimer = null;
-  function scheduleLocalities() {
-    updateHint();
-    clearTimeout(localityTimer);
-    if (!writable || map.getZoom() < LOCALITY_MIN_ZOOM) return;
-    localityTimer = setTimeout(loadLocalities, LOCALITY_DEBOUNCE_MS);
-  }
-
-  async function loadLocalities() {
-    const b = map.getBounds();
-    const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(3)).join(",");
+  async function loadGeometry() {
+    if (!mapReady || !writable) return;
     try {
-      const fc = await api("localities?bbox=" + bbox);
-      fc.features.forEach((f) => localityFeatures.set(f.properties.linz_id, f));
-      map.getSource("localities").setData({ type: "FeatureCollection", features: [...localityFeatures.values()] });
-      syncSelectionState();
-    } catch (e) {
-      $("hint").textContent = e.status === 413 ? "Zoom in to choose areas" : "Localities: " + e.message;
-      $("hint").style.display = "block";
-    }
+      const res = await fetch("/api/catalog/geometry", { headers: { "X-Pipeline-Token": token } });
+      if (!res.ok) return;
+      map.getSource("localities").setData(await res.json());
+      mapStates.clear();
+      syncMap();
+    } catch (e) { /* the tree still works without boundaries */ }
   }
 
-  function syncSelectionState() {
-    if (!map.getSource("localities")) return;
-    localityFeatures.forEach((f, id) =>
-      map.setFeatureState({ source: "localities", id }, { selected: selected.has(f.properties.region_id) }));
-  }
-
-  $("area-refresh").addEventListener("click", () => {
-    loadRegions(false, true);
-    loadVm(true);
-  });
-
-  async function loadRegions(fit, refresh) {
-    loadLayers();
-    const source = target;
-    let fc;
-    $("area-status-meta").textContent = source === "local" ? "Checking this checkout…" : "Checking the selected target…";
-    try {
-      fc = await api("regions" + (source === "local" ? "" : "?source=" + source + (refresh ? "&refresh=1" : "")));
-    } catch (e) {
-      if (source !== target) return;
-      regionRecords.clear();
-      regionFeatures.clear();
-      regionStatusMeta = `<span class="block">Area status unavailable: ${esc(e.message)}</span>`;
-      if (map.getSource("regions")) map.getSource("regions").setData(empty);
-      renderAreaStatus();
-      return;
+  // Feature-state changes only where a locality's colour or selection moved.
+  const mapStates = new Map();
+  function syncMap() {
+    if (!mapReady) return;
+    for (const [linz, leaf] of byLinz) {
+      const s = mapState(leaf);
+      const key = s.state + (s.selected ? "+" : "") + (s.hidden ? "-" : "");
+      if (mapStates.get(linz) === key) continue;
+      mapStates.set(linz, key);
+      map.setFeatureState({ source: "localities", id: linz }, s);
     }
-    if (source !== target) return;  // the toggle moved on while this loaded
-    regionRecords.clear();
-    regionFeatures.clear();
-    fc.features.forEach((feature) => {
-      regionRecords.set(feature.properties.region, feature.properties);
-      regionFeatures.set(feature.properties.region, feature);
-    });
-    regionStatusMeta = regionsMeta(fc);
-    if (map.getSource("regions")) map.getSource("regions").setData(fc);
-    renderAreaStatus();
-    if (fit && fc.features.length) {
-      const bounds = new maplibregl.LngLatBounds();
-      fc.features.forEach((f) => extend(bounds, f.geometry));
-      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 0 });
-    }
-  }
-
-  function regionsMeta(fc) {
-    const warn = (fc.warnings || []);
-    const warnHtml = warn.length ? `<details><summary class="warn">${warn.length} warning(s)</summary>
-      ${warn.map((w) => `<div class="warn">${esc(w)}</div>`).join("")}</details>` : "";
-    if (fc.source === "published") {
-      return `<div class="muted">Live data v${esc(fc.data_version || "?")} · <a href="${esc(fc.site)}" target="_blank" rel="noopener">live map</a></div>${warnHtml}`;
-    }
-    if (fc.source === "developer") {
-      return `<div class="muted">Developer preview area records from the shared VM.</div>${warnHtml}`;
-    }
-    return `<div class="muted">Local area records in this checkout. Cached datasets are listed in Layers &amp; legend.</div>${warnHtml}`;
-  }
-
-  function renderAreaStatus() {
-    const labels = gridMode && selectedParent
-      ? [[selectedParent.region_id, selectedParent.name]]
-      : [...selected.entries()];
-    const entries = labels.map(([id, label]) => {
-      const record = regionRecords.get(id);
-      const areaJobs = matchingAreaJobs(id);
-      const jobHtml = areaJobs.map((job) =>
-        `<button class="small" data-open-job="${esc(job.job_id)}">Open ${esc(job.status)} job: ${esc(PipelineProgress.jobTitle(job))}</button>`
-      ).join(" ");
-      if (!record) {
-        const missing = target === "local"
-          ? "No prepared or built area record in this checkout."
-          : `No built area record found for ${esc(TARGETS[target].label)}.`;
-        return `<div class="area-record"><b>${esc(label)}</b><div class="muted">${missing}</div>${jobHtml}</div>`;
+    if (gridShown) {
+      for (const [gridId, id] of gridShown.cells) {
+        const v = views.get(id);
+        map.setFeatureState({ source: "grid-cells", id: gridId },
+          { state: v ? v.state : "none", selected: selected.has(id) });
       }
-      const state = record.state === "built" ? "Built"
-        : record.state === "failed" ? "Last run failed"
-          : record.state === "downloaded" ? "Inputs prepared; no built summary found"
-            : "Area record available";
-      const parts = [];
-      if (record.n != null) parts.push(`${fmtInt(record.n)} buildings`);
-      if (record.built_at) parts.push(`built ${esc(String(record.built_at).slice(0, 10))}`);
-      if (record.last_run_status) parts.push(`last run ${esc(record.last_run_status)}`);
-      if (record.alias) parts.push(`developer ${esc(record.alias)}`);
-      return `<div class="area-record"><b>${esc(label)}</b> <span class="pill ${esc(record.state || "")}">${state}</span>
-        ${parts.length ? `<div class="muted">${parts.join(" · ")}</div>` : ""}
-        ${jobHtml}
-        <div class="links">${record.preview_url
-          ? `<a href="${esc(record.preview_url)}" target="_blank" rel="noopener">${target === "published" ? "Open live map" : "Open preview"}</a>` : ""}
-          ${record.report_url ? `<a href="${esc(record.report_url)}" target="_blank" rel="noopener">Last report</a>` : ""}</div></div>`;
-    });
-    const recordsHtml = labels.length
-      ? entries.join("")
-      : `<p class="muted">Select an area to see what is prepared or built for this target.</p>`;
-    if ($("area-status-records").innerHTML !== recordsHtml) {
-      $("area-status-records").innerHTML = recordsHtml;
-      $("area-status-records").querySelectorAll("[data-open-job]").forEach((button) =>
-        button.addEventListener("click", () => showJob(button.dataset.openJob)));
     }
-    $("area-status-meta").innerHTML = regionStatusMeta;
   }
 
-  function matchingAreaJobs(region) {
-    return PipelineProgress.matchingJobsForRegion(queueJobs, recentQueueJobs, region, target);
+  // A gridded locality shows its cells' progress until they are combined.
+  function mapState(leaf) {
+    const cells = leaf.children && leaf.children.length ? leaf.children : null;
+    let state = (views.get(leaf.id) || {}).state || "none";
+    if (cells) {
+      const states = cells.map((c) => (views.get(c.id) || {}).state);
+      state = states.includes("running") ? "running" : states.includes("queued") ? "queued"
+        : states.includes("failed") ? "failed" : state === "none" && states.some((s) => s === "built") ? "built" : state;
+    }
+    const sel = T.leavesOf(leaf).some((l) => selected.has(l.id));
+    return { state, selected: sel, hidden: hiddenStates.has(state) };
   }
 
   function extend(bounds, geom) {
@@ -400,31 +740,53 @@
     map.fitBounds(bounds, { padding: 60, maxZoom: 16 });
   }
 
+  function zoomToNode(node) {
+    const boxes = (node.bbox ? [node] : T.leavesOf(node.kind === "cell" ? node : node))
+      .map((l) => l.bbox || (l.kind === "cell" && tree.leaves.get(l.parent_region) || {}).bbox).filter(Boolean);
+    if (node.kind === "locality" && node.grid) showGrid(node);
+    if (!boxes.length || node.kind === "cell" || node.legacy) {
+      if (node.kind === "cell" || node.kind === "locality") showAreaOnMap(node.id);
+      return;
+    }
+    const b = boxes.reduce((a, x) => [Math.min(a[0], x[0]), Math.min(a[1], x[1]), Math.max(a[2], x[2]), Math.max(a[3], x[3])]);
+    map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 50, maxZoom: 15 });
+  }
+
+  // Grid cells of one locality, drawn while its row is in use.
+  let gridShown = null;
+  async function showGrid(locality) {
+    const grid = locality.grid;
+    if (!grid || !mapReady || (gridShown && gridShown.id === locality.id)) return;
+    try {
+      const fc = await api(`grid-cells?region=${encodeURIComponent(locality.id)}&linz_id=${encodeURIComponent(
+        grid.parent_linz_id || locality.linz_id)}&grid_size=${grid.grid_size}`);
+      const cells = new Map();
+      for (const [gridId, cell] of Object.entries(grid.cells)) cells.set(gridId, cell.region);
+      fc.features = fc.features.filter((f) => cells.has(f.properties.grid_id));
+      gridShown = { id: locality.id, cells };
+      map.getSource("grid-cells").setData(fc);
+      syncMap();
+    } catch (e) {
+      $("map-action-status").textContent = `Grid cells unavailable: ${e.message}`;
+    }
+  }
+
   let jobFocusTimer = null;
   async function showAreaOnMap(region) {
-    const mapRegion = region.replace(/\/grid-[0-9a-f]{16}$/, "");
-    let feature = regionFeatures.get(region) || regionFeatures.get(mapRegion);
-    let usingParentBoundary = region !== mapRegion && !feature;
-    if (!feature) {
-      feature = [...localityFeatures.values()].find((item) => item.properties.region_id === mapRegion);
+    const parentId = region.replace(/\/grid-[0-9a-f]{16}$/, "");
+    const leaf = tree.leaves.get(region) || tree.leaves.get(parentId);
+    if (leaf && leaf.kind === "locality" && leaf.bbox && region === parentId) {
+      const b = leaf.bbox;
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 50, maxZoom: 15 });
+      revealRow(leaf.id);
+      return;
     }
-    if (!feature) {
-      try {
-        feature = await api("localities/feature?region=" + encodeURIComponent(region));
-        if (feature.properties && feature.properties.linz_id != null) {
-          localityFeatures.set(feature.properties.linz_id, feature);
-          if (map.getSource("localities")) {
-            map.getSource("localities").setData({
-              type: "FeatureCollection", features: [...localityFeatures.values()],
-            });
-          }
-        } else {
-          regionFeatures.set(region, feature);
-        }
-      } catch (error) {
-        $("map-action-status").textContent = `Area boundary unavailable: ${error.message}`;
-        return;
-      }
+    let feature;
+    try {
+      feature = await api("localities/feature?region=" + encodeURIComponent(region));
+    } catch (error) {
+      $("map-action-status").textContent = `Area boundary unavailable: ${error.message}`;
+      return;
     }
     if (!feature || !feature.geometry) {
       $("map-action-status").textContent = "No map boundary is available for this build area.";
@@ -432,339 +794,670 @@
     }
     $("map-action-status").textContent = "";
     const source = map.getSource("job-focus");
-    if (!source) {
-      map.once("load", () => showAreaOnMap(region));
-      return;
-    }
-    $("map-action-status").textContent = usingParentBoundary
-      ? "The grid selection boundary is not available yet; showing its parent locality."
-      : "";
+    if (!source) return;
     source.setData({ type: "FeatureCollection", features: [feature] });
     clearTimeout(jobFocusTimer);
     jobFocusTimer = setTimeout(() => source.setData(empty), 8000);
     flyTo(feature);
+    if (tree.leaves.has(region)) revealRow(region);
   }
 
-  // ---- new build ------------------------------------------------------
-  function toggleSelection(region, label, forceOn, parent) {
-    if (!writable || !region) return;
-    if (gridMode && parent && selectedParent &&
-        parent.region_id !== selectedParent.region_id) {
-      gridMode = false;
-      selectedGridCells.clear();
-      gridFeatures.clear();
-      if (map.getSource("grid-cells")) map.getSource("grid-cells").setData(empty);
+  // ---- tree data -------------------------------------------------------
+  async function loadCatalog() {
+    try {
+      catalog = await api("catalog");
+      $("catalog-meta").textContent = `${fmtInt(catalog.regions.length)} localities`;
+      $("catalog-meta").title = "National catalogue built " + fmtDate(catalog.built_at) + " UTC";
+      if ($("banner").dataset.catalog) { banner(""); delete $("banner").dataset.catalog; }
+    } catch (e) {
+      catalog = null;
+      $("catalog-meta").textContent = "";
+      if (e.status === 404) {
+        banner(`No national area catalogue yet, so only areas already built here are listed.
+          <a href="#config">Build it in Config</a> (about a minute and a half).`);
+        $("banner").dataset.catalog = "1";
+      }
     }
-    if (selected.has(region) && !forceOn) selected.delete(region);
-    else selected.set(region, label || region);
-    if (parent) selectedParent = parent;
-    if (selectedParent && !selected.has(selectedParent.region_id)) {
-      selectedParent = null;
-      gridMode = false;
-      selectedGridCells.clear();
-      gridFeatures.clear();
-      if (map.getSource("grid-cells")) map.getSource("grid-cells").setData(empty);
+    rebuildTree();
+  }
+
+  async function loadStatus() {
+    if (!writable) return;
+    let next;
+    try { next = await api("catalog/status"); } catch (e) { return; }
+    const signature = JSON.stringify(next);
+    if (signature === statusSignature) return;
+    statusSignature = signature;
+    status = next;
+    const gridsChanged = Object.keys(next.grids || {}).sort().join() !==
+      [...tree.leaves.values()].filter((l) => l.grid).map((l) => l.id).sort().join();
+    if (gridsChanged) rebuildTree();
+    else { computeViews(); render(); }
+  }
+
+  function rebuildTree() {
+    const ids = new Set(Object.keys(status.regions || {}));
+    remote.forEach((_, id) => ids.add(id));
+    tree = T.buildTree(catalog ? catalog.regions : [], [...ids], status.grids || {});
+    byLinz.clear();
+    for (const leaf of tree.leaves.values()) {
+      if (leaf.kind === "locality" && leaf.linz_id != null) byLinz.set(leaf.linz_id, leaf);
     }
-    currentEstimate = null;
-    selectionRevision++;
-    $("estimate").innerHTML = "";
-    renderSelection();
-    syncSelectionState();
+    for (const id of [...selected]) if (!tree.leaves.has(id)) selected.delete(id);
+    if (gridShown && !(tree.leaves.get(gridShown.id) || {}).grid) {
+      gridShown = null;
+      if (mapReady) map.getSource("grid-cells").setData(empty);
+    }
+    computeViews();
+    render();
   }
 
-  function renderSelection() {
-    $("grid-btn").disabled = !writable || !selectedParent || selected.size !== 1;
-    $("grid-btn").textContent = gridMode ? "Back to locality selection" : "Choose grid cells";
-    $("grid-controls").hidden = !gridMode;
-    $("grid-size-row").hidden = !gridMode;
-    $("grid-size").value = String($("grid-size").dataset.value || "4");
-    const chips = [...selected.entries()].map(([id, label]) =>
-      `<span class="chip" title="${esc(id)}">${esc(label)}<button data-id="${esc(id)}" aria-label="Remove">×</button></span>`);
-    $("selection").innerHTML = gridMode
-      ? `<b>${selectedGridCells.size} grid cell(s) selected</b> within ${esc(selectedParent.name)}<br>` +
-        [...selectedGridCells.keys()].map((id) => `<span class="chip">${esc(id)}</span>`).join("")
-      : chips.length ? `<b>Selected for a ${esc(TARGETS[target].label.toLowerCase())} build:</b><br>` +
-        chips.join("") : "<p class='muted'>Nothing selected.</p>";
-    $("selection").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => toggleSelection(b.dataset.id)));
-    renderAreaStatus();
-    $("grid-count").textContent = gridFeatures.size
-      ? `${selectedGridCells.size} of ${gridFeatures.size} grid cells` : "";
-    $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
-      (gridMode && target !== "local");
+  function computeViews() {
+    views.clear();
+    for (const leaf of tree.leaves.values()) {
+      const view = T.rowView(status.regions[leaf.id], remote.get(leaf.id), target);
+      views.set(leaf.id, { view, state: T.lifecycle(view) });
+    }
   }
 
-  function syncGridState() {
-    if (!map.getSource("grid-cells")) return;
-    gridFeatures.forEach((f, id) =>
-      map.setFeatureState({ source: "grid-cells", id }, { selected: selectedGridCells.has(id) }));
-    $("grid-count").textContent = `${selectedGridCells.size} of ${gridFeatures.size} grid cells`;
+  // ---- tree rendering --------------------------------------------------
+  const filtering = () => !!query || activeFilters.size > 0 || hiddenStates.size > 0;
+  function visible(leaf) {
+    const v = views.get(leaf.id);
+    if (!v || hiddenStates.has(v.state)) return false;
+    return T.matchesQuery(tree, leaf, query) && T.passesFilters(v.view, v.state, activeFilters);
   }
 
-  function toggleGridCell(id) {
-    if (!gridMode || !id) return;
-    if (selectedGridCells.has(id)) selectedGridCells.delete(id);
-    else selectedGridCells.set(id, id);
-    currentEstimate = null;
-    selectionRevision++;
-    $("estimate").innerHTML = "";
-    renderSelection();
-    syncGridState();
+  function rollup(leaves) {
+    const counts = {};
+    leaves.forEach((l) => { const s = views.get(l.id).state; counts[s] = (counts[s] || 0) + 1; });
+    const bar = T.STATES.filter((s) => counts[s]).map((s) =>
+      `<span style="flex:${counts[s]};background:${T.STATE_COLOURS[s]}"></span>`).join("");
+    const title = T.STATES.filter((s) => counts[s]).map((s) => `${T.STATE_LABELS[s]}: ${counts[s]}`).join(", ");
+    const built = (counts.built || 0) + (counts.staged || 0) + (counts.published || 0);
+    return `<span class="meta"><span class="rollup" title="${esc(title)}">${bar}</span> ${fmtInt(leaves.length)} · ${fmtInt(built)} built</span>`;
   }
 
-  async function loadGridCells(parent, gridSize = 4) {
-    const fc = await api(`grid-cells?region=${encodeURIComponent(parent.region_id)}&linz_id=${encodeURIComponent(parent.linz_id)}&grid_size=${gridSize}`);
-    if (!fc.features.length) throw new Error("no grid cells intersect this locality");
-    $("grid-size").dataset.value = String(gridSize);
-    gridFeatures.clear();
-    fc.features.forEach((f) => gridFeatures.set(f.properties.grid_id, f));
-    map.getSource("grid-cells").setData(fc);
-    selectedGridCells.clear();
-    gridMode = true;
-    currentEstimate = null;
-    selectionRevision++;
-    $("estimate").innerHTML = "";
-    renderSelection();
-    syncGridState();
-    const feature = localityFeatures.get(parent.linz_id);
-    if (feature) flyTo(feature);
+  function stateHtml(state) {
+    return `<span class="state"><span class="dot ${state}" style="background:${T.STATE_COLOURS[state]}"></span>${esc(T.STATE_LABELS[state])}</span>`;
   }
 
-  $("grid-btn").addEventListener("click", async () => {
-    if (gridMode) {
-      gridMode = false;
-      selectedGridCells.clear();
-      currentEstimate = null;
-      selectionRevision++;
-      $("estimate").innerHTML = "";
-      renderSelection();
-      syncGridState();
+  function tagsHtml(leaf, v) {
+    const tags = [];
+    if (v.view.stale) tags.push('<span class="tag stale" title="Built with an older solar model">stale</span>');
+    if (v.view.options && v.view.options.include_imagery === false) tags.push('<span class="tag" title="Built without aerial imagery">no imagery</span>');
+    if (leaf.grid) tags.push(`<span class="tag" title="Building as grid cells">grid ${leaf.grid.built_cells}/${Object.keys(leaf.grid.cells).length}</span>`);
+    if (leaf.legacy) tags.push('<span class="tag" title="Not in the national catalogue">local</span>');
+    return tags.join("");
+  }
+
+  function groupRow(node, depth, leaves, open) {
+    const all = T.leavesOf(node).filter(visible);
+    const check = T.checkState(node, selected, visible);
+    const total = T.leavesOf(node).reduce((n, l) => n + (l.buildings || 0), 0);
+    return `<div class="row lvl-${Math.min(depth, 2)}" style="--depth:${depth}" data-id="${esc(node.id)}" role="treeitem" aria-expanded="${open}">
+      <span class="twisty" data-twisty="${esc(node.id)}" aria-label="${open ? "Collapse" : "Expand"}">${open ? "▾" : "▸"}</span>
+      <input type="checkbox" data-group="${esc(node.id)}" ${check === "all" ? "checked" : ""} ${check === "some" ? "data-indet" : ""}
+        ${writable && all.length ? "" : "disabled"} aria-label="Select ${esc(node.name)}">
+      <span class="name" data-zoom="${esc(node.id)}" title="Zoom to ${esc(node.name)}">${esc(node.name)}${node.grid ? tagsHtml(node, views.get(node.id)) : ""}</span>
+      ${rollup(leaves)}
+      <span class="meta">${total ? fmtInt(total) : ""}</span></div>`;
+  }
+
+  function leafRow(leaf, depth, crumb) {
+    const v = views.get(leaf.id);
+    const open = openDetail.has(leaf.id);
+    return `<div class="row lvl-3${highlighted === leaf.id ? " hl" : ""}" style="--depth:${depth}" data-id="${esc(leaf.id)}" role="treeitem">
+      <span class="twisty" data-twisty="${esc(leaf.id)}" aria-label="Details">${open ? "▾" : "▸"}</span>
+      <input type="checkbox" data-leaf="${esc(leaf.id)}" ${selected.has(leaf.id) ? "checked" : ""} ${writable ? "" : "disabled"}
+        aria-label="Select ${esc(leaf.name)}">
+      <span class="name" data-zoom="${esc(leaf.id)}" title="${esc(leaf.id)}">${esc(leaf.name)}${tagsHtml(leaf, v)}
+        ${crumb ? `<div class="crumb">${esc(T.breadcrumb(tree, leaf.id))}</div>` : ""}</span>
+      ${stateHtml(v.state)}
+      <span class="meta">${leaf.buildings != null ? fmtInt(leaf.buildings) : ""}</span></div>
+      ${open ? detailHtml(leaf, depth) : ""}`;
+  }
+
+  function optionsText(o) {
+    if (!o) return "";
+    return [o.include_imagery === false ? "no imagery" : o.include_imagery ? "imagery" : null,
+            o.paid_referee ? "paid referee" : null].filter(Boolean).join(", ");
+  }
+
+  function detailHtml(leaf, depth) {
+    const { view, state } = views.get(leaf.id);
+    const rough = T.roughSeconds(leaf.buildings, status.calibration);
+    const facts = [];
+    if (leaf.buildings != null) facts.push(["Buildings", fmtInt(leaf.buildings) + (leaf.area_km2 != null ? ` · ${fmtArea(leaf.area_km2)}` : "")]);
+    if (rough != null && target === "local") facts.push(["Rough build time", "≈ " + fmtDur(rough) + " (estimate gives the real figure)"]);
+    facts.push(["Status", stateHtml(state)]);
+    if (view.built_at) facts.push(["Last built", esc(fmtDate(view.built_at)) + (view.options ? ` · ${esc(optionsText(view.options))}` : "")]);
+    if (view.n != null) facts.push(["Result", `${fmtInt(view.n)} buildings${view.kwp != null ? ` · ${fmtInt(Math.round(view.kwp))} kWp` : ""}`]);
+    if (view.stale) facts.push(["Model", '<span class="warn">Built with an older solar model; rebuild with Yield only to refresh.</span>']);
+    if (view.staged) facts.push(["Staged", esc(fmtDate(view.staged.staged_at)) + (state === "built" ? ' <span class="warn">(older than the latest build)</span>' : "")]);
+    if (view.live) facts.push(["Live", "In the active local release " + esc(view.live)]);
+    if (leaf.grid) {
+      const g = leaf.grid;
+      const n = Object.keys(g.cells).length;
+      const ready = g.built_cells === n && !g.active_cells;
+      facts.push(["Grid", `${g.grid_size} × ${g.grid_size}: ${fmtInt(g.built_cells)} of ${fmtInt(n)} estimated cells built
+        ${g.active_cells ? ` · ${g.active_cells} active` : ""}
+        <button class="small" data-combine="${esc(leaf.id)}" ${writable && ready && target === "local" ? "" : "disabled"}
+          title="${ready ? "Build the locality whole; it reuses the cells' downloads" : "Available when every estimated cell has built"}">Combine</button>`]);
+    }
+    const links = [];
+    if (view.preview_url) links.push(`<a href="${esc(view.preview_url)}" target="_blank" rel="noopener">${target === "published" ? "Open live map" : "Open preview"}</a>`);
+    const history = view.history.slice(0, 8).map((h) => `<tr>
+        <td>${esc(fmtDate(h.at))}</td><td><span class="pill ${esc(h.status)}">${esc(h.status)}</span></td>
+        <td>${esc(optionsText(h))}</td><td>${esc(h.git || "")}</td>
+        <td>${h.report_url ? `<a href="${esc(h.report_url)}" target="_blank" rel="noopener">report</a>` : ""}
+          ${h.job_id ? `<button class="small job-title" data-job="${esc(h.job_id)}">job</button>` : ""}</td></tr>`).join("");
+    return `<div class="detail" style="--depth:${depth}">
+      <dl>${facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+      ${links.length ? `<div class="links">${links.join(" ")}</div>` : ""}
+      ${history ? `<table><tr><th>Attempt</th><th>Status</th><th>Options</th><th>Code</th><th></th></tr>${history}</table>
+        ${view.history.length > 8 ? `<div class="muted">${view.history.length - 8} older attempt(s) not shown.</div>` : ""}`
+        : `<div class="muted">No ${esc(TARGETS[target].label.toLowerCase())} attempts recorded.</div>`}</div>`;
+  }
+
+  function renderNode(node, depth, out, autoOpen) {
+    const isGroup = node.kind !== "locality" && node.kind !== "cell" || (node.children && node.children.length);
+    if (!isGroup) {
+      if (visible(node)) out.push(leafRow(node, depth, false));
       return;
     }
-    if (!selectedParent || selected.size !== 1) return;
-    if (target !== "local") {
-      banner("Grid selection builds currently run locally only. Choose Local to continue.");
-      return;
+    const leaves = T.leavesOf(node).filter(visible);
+    if (!leaves.length) return;
+    const open = expanded.has(node.id) || autoOpen;
+    out.push(groupRow(node, depth, leaves, open));
+    if (!open) return;
+    if (node.kind === "locality") out.push(detailHtml(node, depth + 1));
+    node.children.forEach((child) => renderNode(child, depth + 1, out, autoOpen));
+  }
+
+  function render() {
+    const sort = $("sort").value;
+    const out = [];
+    const all = [...tree.leaves.values()].filter((l) => !(l.children && l.children.length));
+    const shown = all.filter(visible);
+    if (sort === "geo") {
+      const autoOpen = filtering() && shown.length <= AUTO_EXPAND_LIMIT;
+      tree.nodes.forEach((n) => renderNode(n, 0, out, autoOpen));
+    } else {
+      const items = shown.map((leaf) => Object.assign({ leaf }, views.get(leaf.id)));
+      items.sort((a, b) => T.SORTS[sort](a, b) || String(a.leaf.name).localeCompare(String(b.leaf.name)));
+      items.slice(0, FLAT_ROW_LIMIT).forEach((i) => out.push(leafRow(i.leaf, 0, true)));
+      if (items.length > FLAT_ROW_LIMIT) {
+        out.push(`<p class="muted" style="padding:6px 10px">Showing the first ${FLAT_ROW_LIMIT} of ${fmtInt(items.length)};
+          search or filter to narrow the list.</p>`);
+      }
     }
-    try {
-      $("grid-count").textContent = "Loading grid…";
-      await loadGridCells(selectedParent);
-    } catch (e) {
-      $("grid-count").textContent = "";
-      banner("Could not load grid: " + esc(e.message));
+    if (!out.length) {
+      out.push(`<p class="muted" style="padding:10px">${tree.leaves.size ? "No areas match the search and filters."
+        : writable ? "Loading areas…" : "Open the link printed by tools/pipeline_web.py to list areas."}</p>`);
     }
-  });
-  $("grid-size").addEventListener("change", async () => {
-    if (!selectedParent || !gridMode) return;
-    try {
-      await loadGridCells(selectedParent, Number($("grid-size").value));
-    } catch (e) {
-      banner("Could not load grid cells: " + esc(e.message));
+    const box = $("tree");
+    const focused = document.activeElement;
+    const focusKey = focused && box.contains(focused)
+      ? ["data-leaf", "data-group", "data-zoom", "data-twisty"].find((a) => focused.hasAttribute(a)) : null;
+    const focusValue = focusKey && focused.getAttribute(focusKey);
+    box.innerHTML = out.join("");
+    box.querySelectorAll("[data-indet]").forEach((cb) => { cb.indeterminate = true; });
+    if (focusKey) {
+      const again = box.querySelector(`[${focusKey}="${CSS.escape(focusValue)}"]`);
+      if (again) again.focus({ preventScroll: true });
     }
-  });
-  $("grid-all").addEventListener("click", () => {
-    gridFeatures.forEach((_, id) => selectedGridCells.set(id, id));
-    currentEstimate = null;
-    selectionRevision++;
-    $("estimate").innerHTML = "";
-    renderSelection();
-    syncGridState();
-  });
-  $("grid-none").addEventListener("click", () => {
-    selectedGridCells.clear();
-    currentEstimate = null;
-    selectionRevision++;
-    $("estimate").innerHTML = "";
-    renderSelection();
-    syncGridState();
+    renderLegend(all);
+    renderActions();
+    syncMap();
+  }
+
+  function renderLegend(all) {
+    const counts = {};
+    all.forEach((l) => { const s = views.get(l.id).state; counts[s] = (counts[s] || 0) + 1; });
+    $("status-legend").innerHTML = `<b>${esc(TARGETS[target].label)} status</b>` + T.STATES.map((s) =>
+      `<button class="item${hiddenStates.has(s) ? " off" : ""}" data-state="${s}" aria-pressed="${!hiddenStates.has(s)}"
+         title="Show or hide ${esc(T.STATE_LABELS[s].toLowerCase())} areas in the list and map">
+        <span class="dot" style="background:${T.STATE_COLOURS[s]}"></span>${esc(T.STATE_LABELS[s])}
+        <span class="muted" style="margin-left:auto">${fmtInt(counts[s] || 0)}</span></button>`).join("") +
+      (remoteMeta ? `<div class="muted">${remoteMeta}</div>` : "");
+  }
+
+  $("status-legend").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-state]");
+    if (!b) return;
+    const s = b.dataset.state;
+    if (hiddenStates.has(s)) hiddenStates.delete(s); else hiddenStates.add(s);
+    render();
   });
 
+  function revealRow(id) {
+    (tree.parents.get(id) || []).forEach((p) => expanded.add(p.id));
+    highlighted = id;
+    if (hiddenStates.size || activeFilters.size || query) {
+      const leaf = tree.leaves.get(id);
+      if (leaf && !visible(leaf)) $("act-notes").textContent = "That area is hidden by the current search or filters.";
+    }
+    render();
+    const row = $("tree").querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function toggleLeaves(leaves) {
+    if (!writable) return;
+    const on = !leaves.every((l) => selected.has(l.id));
+    leaves.forEach((l) => (on ? selected.add(l.id) : selected.delete(l.id)));
+    if (on && target !== "local") leaves.filter((l) => l.kind === "cell").forEach((l) => selected.delete(l.id));
+  }
+
+  const findNode = (id) => tree.leaves.get(id) || (function search(nodes) {
+    for (const n of nodes) {
+      if (n.id === id) return n;
+      if (n.children && n.kind !== "locality") { const hit = search(n.children); if (hit) return hit; }
+    }
+    return null;
+  })(tree.nodes);
+
+  $("tree").addEventListener("click", (e) => {
+    const el = e.target.closest("[data-twisty], [data-zoom], [data-combine], [data-job]");
+    if (!el) return;
+    if (el.dataset.twisty) {
+      const node = findNode(el.dataset.twisty);
+      const set = node && (node.kind === "cell" || (node.kind === "locality" && !(node.children && node.children.length)))
+        ? openDetail : expanded;
+      const id = el.dataset.twisty;
+      if (set.has(id)) set.delete(id); else set.add(id);
+      if (node && node.grid && set.has(id)) showGrid(node);
+      render();
+    } else if (el.dataset.zoom) {
+      const node = findNode(el.dataset.zoom);
+      if (node) { highlighted = node.id; zoomToNode(node); render(); }
+    } else if (el.dataset.combine) {
+      openBuild([el.dataset.combine], { combine: true });
+    } else if (el.dataset.job) {
+      showJob(el.dataset.job);
+    }
+  });
+
+  $("tree").addEventListener("change", (e) => {
+    const el = e.target;
+    if (el.dataset.leaf) {
+      if (el.checked) selected.add(el.dataset.leaf); else selected.delete(el.dataset.leaf);
+    } else if (el.dataset.group) {
+      const node = findNode(el.dataset.group);
+      if (!node) return;
+      const leaves = T.leavesOf(node).filter(visible);
+      if (T.checkState(node, selected, visible) === "all") leaves.forEach((l) => selected.delete(l.id));
+      else toggleLeaves(leaves.filter((l) => !selected.has(l.id)));
+    }
+    render();
+  });
+
+  // ---- tools: search, filters, sort ------------------------------------
+  $("filters").innerHTML = T.FILTERS.map(([key, label]) =>
+    `<button class="chip" data-filter="${key}" aria-pressed="false">${esc(label)}</button>`).join("");
+  $("filters").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-filter]");
+    if (!b) return;
+    const key = b.dataset.filter;
+    if (activeFilters.has(key)) activeFilters.delete(key); else activeFilters.add(key);
+    b.classList.toggle("on", activeFilters.has(key));
+    b.setAttribute("aria-pressed", activeFilters.has(key));
+    render();
+  });
   let searchTimer = null;
-  $("search").addEventListener("input", () => {
+  $("q").addEventListener("input", () => {
     clearTimeout(searchTimer);
-    const q = $("search").value.trim();
-    if (q.length < 2) { $("search-results").innerHTML = ""; return; }
-    searchTimer = setTimeout(async () => {
-      try {
-        const res = await api("localities/search?q=" + encodeURIComponent(q));
-        $("search-results").innerHTML = res.results.map((r, i) =>
-          `<div data-i="${i}"><b>${esc(r.name)}</b> <span class="muted">${esc(r.type || "")}${r.town && r.town !== r.name ? ", " + esc(r.town) : ""} · ${esc(r.council || "")}</span></div>`).join("")
-          || "<div class='muted'>No matches</div>";
-        $("search-results").querySelectorAll("[data-i]").forEach((el) => el.addEventListener("click", () => {
-          const r = res.results[+el.dataset.i];
-          toggleSelection(r.region_id, r.name + (r.town && r.town !== r.name ? ", " + r.town : ""),
-                          true, { region_id: r.region_id, linz_id: r.linz_id, name: r.name });
-          $("search-results").innerHTML = "";
-          $("search").value = "";
-          const cached = localityFeatures.get(r.linz_id);
-          if (cached) flyTo(cached);
-          else if (r.bbox) map.fitBounds([[r.bbox[0], r.bbox[1]], [r.bbox[2], r.bbox[3]]], { padding: 60, maxZoom: 16 });
-        }));
-      } catch (e) {
-        $("search-results").innerHTML = `<div class="block">${esc(e.message)}</div>`;
-      }
-    }, 300);
+    searchTimer = setTimeout(() => { query = $("q").value.trim(); render(); }, 150);
+  });
+  $("sort").value = localStorage.getItem("pipelineSort") || "geo";
+  $("sort").addEventListener("change", () => { localStorage.setItem("pipelineSort", $("sort").value); render(); });
+  $("collapse-all").addEventListener("click", () => { expanded.clear(); openDetail.clear(); render(); });
+  $("select-matching").addEventListener("click", () => {
+    const leaves = [...tree.leaves.values()].filter((l) => !(l.children && l.children.length) && visible(l))
+      .filter((l) => target === "local" || l.kind !== "cell");
+    if (leaves.length > 200 && !confirm(`Select all ${fmtInt(leaves.length)} matching areas?`)) return;
+    leaves.forEach((l) => selected.add(l.id));
+    render();
   });
 
-  async function estimateCurrent() {
-    const requestRevision = selectionRevision;
-    $("estimate-btn").disabled = true;
-    currentEstimate = null;
-    $("estimate").innerHTML = `${sourceChoicesHtml(true)}
-      <p class='muted'>Estimating a ${esc(TARGETS[target].label.toLowerCase())} build… (counting buildings with LINZ can take a minute for new areas)</p>`;
-    bindSourceChoices();
-    try {
-      const body = gridMode
-        ? { selection: {
-              parent_region: selectedParent.region_id, parent_linz_id: selectedParent.linz_id,
-              grid_size: Number($("grid-size").value),
-              grid_ids: [...selectedGridCells.keys()],
-            }, target, include_imagery: includeImagery, paid_referee: paidReferee }
-        : { regions: [...selected.keys()], target,
-            include_imagery: includeImagery, paid_referee: paidReferee };
-      const { estimate_id } = await api("estimate", { method: "POST", body });
-      let est;
-      for (;;) {
-        est = await api("estimate/" + estimate_id);
-        if (est.status !== "pending") break;
-        await new Promise((r) => setTimeout(r, ESTIMATE_POLL_MS));
+  // ---- selection bar ---------------------------------------------------
+  const selectedLeaves = () => [...selected].map((id) => tree.leaves.get(id)).filter(Boolean);
+  function activeJobsFor(id) {
+    return PipelineProgress.matchingJobsForRegion(queueJobs, [], id, target)
+      .filter((j) => j.status === "queued" || j.status === "running");
+  }
+  let selListOpen = false;
+  let selSumHtml = null;
+  $("sel-sum").addEventListener("toggle", (e) => {
+    if (e.target.tagName === "DETAILS") selListOpen = e.target.open;
+  }, true);
+  // Mirrors the server rule (stage_refusal in tools/pipeline_webui/server.py):
+  // a whole region, built, whose latest local build succeeded and which no
+  // queued or running local job includes.
+  function stageRefusal(leaf) {
+    if (leaf.kind === "cell") return "grid cell";
+    const view = views.get(leaf.id).view;
+    if (view.staging_now) return "being staged";
+    if (!view.built) return "not built";
+    if (view.latest_local_status && view.latest_local_status !== "succeeded") return "last build " + view.latest_local_status;
+    if (PipelineProgress.matchingJobsForRegion(queueJobs, [], leaf.id, "local")
+      .some((j) => j.status === "queued" || j.status === "running")) return "in queue";
+    return null;
+  }
+  function renderActions() {
+    const leaves = selectedLeaves();
+    const buildings = leaves.reduce((n, l) => n + (l.buildings || 0), 0);
+    const rough = leaves.reduce((n, l) => n + (T.roughSeconds(l.buildings, status.calibration) || 0), 0);
+    const counts = {};
+    leaves.forEach((l) => { const s = views.get(l.id).state; counts[s] = (counts[s] || 0) + 1; });
+    const stageable = leaves.filter((l) => !stageRefusal(l));
+    const stageBatchTooLarge = stageable.length > 100;
+    const cancellable = leaves.filter((l) => activeJobsFor(l.id).length);
+    const html = leaves.length
+      ? `<details><summary><b>${fmtInt(leaves.length)} selected</b> · ${fmtInt(buildings)} buildings
+          ${target === "local" && rough ? ` · <span title="Processing time only; Build… adds download time and size">≈ ${fmtDur(rough)} compute</span>` : ""}
+          · ${T.STATES.filter((s) => counts[s]).map((s) => `${counts[s]} ${T.STATE_LABELS[s].toLowerCase()}`).join(", ")}</summary>
+          <div style="max-height:140px;overflow:auto">${leaves.map((l) => `<div>
+            <button class="small" data-unselect="${esc(l.id)}" aria-label="Remove ${esc(l.name)}">✕</button>
+            <span class="name" data-zoom-sel="${esc(l.id)}">${esc(l.name)}</span>
+            <span class="crumb">${esc(T.breadcrumb(tree, l.id))}</span> ${stateHtml(views.get(l.id).state)}</div>`).join("")}</div></details>`
+      : '<span class="muted">Tick areas in the list or click them on the map.</span>';
+    // Status and queue polls call this every few seconds; rewriting identical
+    // HTML would reset the list's scroll position.
+    if (html !== selSumHtml) {
+      $("sel-sum").innerHTML = html;
+      selSumHtml = html;
+      const list = $("sel-sum").querySelector("details");
+      if (list) list.open = selListOpen;
+    }
+    $("act-build").disabled = !writable || !leaves.length;
+    $("act-stage").disabled = !writable || !stageable.length || stageBatchTooLarge || target !== "local" || pushing || artifactBusy || cloudRunning;
+    $("act-stage").title = stageBatchTooLarge ? "Push no more than 100 areas per local staging batch."
+      : target !== "local" ? "Staging is local; switch the target to Local."
+        : "Add each eligible area to the current local staging set; newer copies replace that area's current version.";
+    $("act-cancel").disabled = !writable || !cancellable.length;
+    $("act-clear").disabled = !leaves.length;
+    cloudPushButtons();
+  }
+
+  $("sel-sum").addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-unselect]");
+    const zoom = e.target.closest("[data-zoom-sel]");
+    if (rm) { selected.delete(rm.dataset.unselect); render(); }
+    else if (zoom) { const leaf = tree.leaves.get(zoom.dataset.zoomSel); if (leaf) { zoomToNode(leaf); revealRow(leaf.id); } }
+  });
+  $("act-clear").addEventListener("click", () => { selected.clear(); render(); });
+  $("act-build").addEventListener("click", () => openBuild([...selected], {}));
+  $("act-cancel").addEventListener("click", async () => {
+    const jobs = new Map();
+    selectedLeaves().forEach((l) => activeJobsFor(l.id).forEach((j) => jobs.set(j.job_id, j)));
+    const running = [...jobs.values()].filter((j) => j.status === "running").length;
+    if (!confirm(`Cancel ${jobs.size} job(s)${running ? `, including ${running} running (finished regions are kept)` : ""}?`)) return;
+    let failed = 0;
+    for (const id of jobs.keys()) {
+      try { await api(`jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: {} }); } catch (e) { failed++; }
+    }
+    $("act-notes").textContent = failed ? `${failed} job(s) could not be cancelled.` : `Cancelled ${jobs.size} job(s).`;
+    loadQueue();
+    loadStatus();
+  });
+
+  // Add each eligible area to the current local staging set.
+  let pushing = false;
+  async function waitForOperation(id) {
+    for (;;) {
+      const op = await api(`operations/${encodeURIComponent(id)}`);
+      $("act-notes").textContent = op.status === "running"
+        ? `Updating local staging set: ${op.completed_regions || 0} of ${op.region_count || 0} areas` +
+          (op.region_id ? ` · ${op.region_id}` : "") + "…"
+        : op.status === "succeeded" ? `Current local staging set updated with ${(op.result.regions || []).length} area(s).`
+          : `${op.status}: ${op.error || "Local staging did not complete."}`;
+      if (op.status !== "running") {
+        if (op.status !== "succeeded") throw new Error(op.error || op.status);
+        return op;
       }
-      if (est.status === "error") throw new Error(est.error);
-      if (est.target !== target || requestRevision !== selectionRevision) return;
-      currentEstimate = est;
-      sourceImageryAvailable = est.regions.some((region) => region.imagery_available !== false);
-      refereeUsdUpper = est.paid_referee?.usd_upper || 0;
-      renderEstimate(est);
-    } catch (e) {
-      if (requestRevision === selectionRevision) {
-        $("estimate").innerHTML = `${sourceChoicesHtml(false)}
-          <p class="block">${esc(e.message)}</p>`;
-        bindSourceChoices();
-      }
-    } finally {
-      if (requestRevision === selectionRevision) {
-        $("estimate-btn").disabled = !writable || (gridMode ? !selectedGridCells.size : !selected.size) ||
-          (gridMode && target !== "local");
-      }
+      await sleep(750);
     }
   }
+  $("act-stage").addEventListener("click", async () => {
+    if (!writable || artifactBusy || cloudRunning || pushing) return;
+    const leaves = selectedLeaves();
+    const skipped = {};
+    const regions = leaves.filter((l) => {
+      const why = stageRefusal(l);
+      if (why) skipped[why] = (skipped[why] || 0) + 1;
+      return !why;
+    });
+    const skippedText = Object.entries(skipped).map(([why, n]) => `${n} ${why}`).join(", ");
+    if (!confirm(`Push ${regions.length} built area(s) to local staging?` +
+      (skippedText ? ` Skipping: ${skippedText}.` : "") +
+      " This adds or updates each area's current frozen copy; other staged areas remain.")) return;
+    if (!regions.length) return;
+    pushing = true;
+    artifactBusy = true;
+    renderActions();
+    try {
+      const operation = await api("staging", {method: "POST", body: {regions: regions.map((leaf) => leaf.id)}});
+      sessionStorage.setItem("artifactOperation", operation.operation_id);
+      await waitForOperation(operation.operation_id);
+      if (skippedText) $("act-notes").textContent += ` Skipped: ${skippedText}.`;
+      $("act-notes").innerHTML = `${esc($("act-notes").textContent)} The current set is visible in <a href="#config">Config</a>.`;
+    } catch (error) {
+      $("act-notes").textContent = `Local staging batch failed; the current set was not switched: ${error.message}`;
+    } finally {
+      pushing = false;
+      artifactBusy = false;
+      renderActions();
+      statusSignature = "";
+      loadStatus();
+      if (location.hash === "#config") loadStaging();
+    }
+  });
 
-  $("estimate-btn").addEventListener("click", estimateCurrent);
+  // ---- build dialog ----------------------------------------------------
+  let build = null;  // {ids, combine, revision, estimates, batches}
+  let buildRevision = 0;
 
-  function sourceChoicesHtml(disabled) {
-    const imageryDisabled = !sourceImageryAvailable || disabled;
-    const refereeDisabled = !sourceImageryAvailable || !includeImagery || disabled;
-    return `<div class="source-options">
-      <b>Inputs</b>
-      <label><input type="checkbox" id="include-imagery"${includeImagery ? " checked" : ""}
-        ${imageryDisabled ? " disabled" : ""}> Include aerial imagery (free; improves alignment and image-based checks)</label>
-      ${!sourceImageryAvailable ? `<div class="muted">No aerial imagery source is available for this selection.</div>` : ""}
-      <label><input type="checkbox" id="referee"${paidReferee ? " checked" : ""}
-        ${refereeDisabled ? " disabled" : ""}> Use the paid AI referee (up to US$${esc(
-          refereeUsdUpper)}; only requested when imagery is included)</label>
-      ${disabled ? `<div class="muted">Recalculating estimate…</div>` : ""}
-    </div>`;
+  function openBuild(ids, { combine }) {
+    if (!writable || !ids.length) return;
+    build = { ids, combine: !!combine };
+    $("build-title").textContent = combine
+      ? `Combine ${tree.leaves.get(ids[0]).name}: build it whole`
+      : `Build ${ids.length} selected area(s) · ${TARGETS[target].label}`;
+    $("build-grid").hidden = target !== "local" || combine || !ids.some((id) => (tree.leaves.get(id) || {}).kind === "locality");
+    if (combine) $("opt-grid").value = "off";
+    // Paid options start off every time the dialog opens; browsers may restore old form state.
+    $("opt-referee").checked = false;
+    $("opt-referee").disabled = !$("opt-imagery").checked;
+    const dialog = $("build-dialog");
+    if (!dialog.open) dialog.showModal();
+    estimateBuild();
   }
 
-  function bindSourceChoices() {
-    const imagery = $("include-imagery");
-    const referee = $("referee");
-    if (imagery) imagery.addEventListener("change", () => {
-      includeImagery = imagery.checked;
-      if (!includeImagery) paidReferee = false;
-      selectionRevision++;
-      estimateCurrent();
-    });
-    if (referee) referee.addEventListener("change", () => {
-      paidReferee = referee.checked;
-      selectionRevision++;
-      estimateCurrent();
-    });
+  ["opt-imagery", "opt-referee", "opt-grid"].forEach((id) => $(id).addEventListener("change", () => {
+    if (!$("opt-imagery").checked) $("opt-referee").checked = false;
+    $("opt-referee").disabled = !$("opt-imagery").checked;
+    if (build) estimateBuild();
+  }));
+  $("build-cancel").addEventListener("click", () => { buildRevision++; $("build-dialog").close(); });
+  $("build-dialog").addEventListener("close", () => { buildRevision++; build = null; });
+
+  // Batches for /api/estimate: whole regions by up to max_regions, and one
+  // grid selection per locality (new grids list every cell).
+  async function planBatches(ids, gridChoice) {
+    const regions = [];
+    const selections = new Map();
+    for (const id of ids) {
+      const leaf = tree.leaves.get(id);
+      if (!leaf) continue;
+      if (leaf.kind === "cell") {
+        const parent = tree.leaves.get(leaf.parent_region);
+        const key = leaf.parent_region + "@" + parent.grid.grid_size;
+        if (!selections.has(key)) {
+          selections.set(key, { parent_region: leaf.parent_region, parent_linz_id: parent.grid.parent_linz_id || parent.linz_id,
+                                grid_size: parent.grid.grid_size, grid_ids: [] });
+        }
+        selections.get(key).grid_ids.push(leaf.grid_id);
+        continue;
+      }
+      const size = target !== "local" || gridChoice === "off" || leaf.linz_id == null ? null
+        : gridChoice === "auto" ? T.autoGridSize(leaf.buildings) : Number(gridChoice);
+      if (!size) { regions.push(id); continue; }
+      const fc = await api(`grid-cells?region=${encodeURIComponent(id)}&linz_id=${leaf.linz_id}&grid_size=${size}`);
+      selections.set(id + "@" + size, { parent_region: id, parent_linz_id: leaf.linz_id, grid_size: fc.grid_size || size,
+                                        grid_ids: fc.features.map((f) => f.properties.grid_id) });
+    }
+    const batches = [];
+    for (let i = 0; i < regions.length; i += maxRegions) batches.push({ regions: regions.slice(i, i + maxRegions) });
+    selections.forEach((selection) => batches.push({ selection }));
+    return batches;
   }
 
-  function renderEstimate(est) {
-    const t = est.totals;
-    const rows = est.regions.map((r) => `<tr>
-        <td>${esc(r.grid_size ? `${selectedParent.name} · ${r.selection_count} grid cells (${r.grid_size}×${r.grid_size})`
-                                      : selected.get(r.region) || r.region)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
+  async function estimateBuild() {
+    const revision = ++buildRevision;
+    const current = () => revision === buildRevision && build;
+    $("start-btn").disabled = true;
+    $("build-foot-note").textContent = "";
+    const options = { target, include_imagery: $("opt-imagery").checked, paid_referee: $("opt-referee").checked };
+    const progress = (text) => { $("estimate").innerHTML = `<p class="muted">${esc(text)}</p><progress></progress>`; };
+    progress("Planning…");
+    const estimates = [];
+    const errors = [];
+    try {
+      const batches = await planBatches(build.ids, build.combine ? "off" : $("opt-grid").value);
+      for (const [i, batch] of batches.entries()) {
+        if (!current()) return;
+        progress(`Estimating batch ${i + 1} of ${batches.length}… (counting buildings with LINZ can take a minute for new areas; grid cells are counted one by one)`);
+        try {
+          const { estimate_id } = await api("estimate", { method: "POST", body: Object.assign({}, batch, options) });
+          let est;
+          for (;;) {
+            est = await api("estimate/" + estimate_id);
+            if (est.status !== "pending") break;
+            await sleep(ESTIMATE_POLL_MS);
+            if (!current()) return;
+          }
+          if (est.status === "error") throw new Error(est.error);
+          estimates.push(est);
+        } catch (e) {
+          errors.push(`Batch ${i + 1}: ${e.message}`);
+        }
+      }
+    } catch (e) {
+      errors.push(e.message);
+    }
+    if (!current()) return;
+    build.estimates = estimates;
+    renderEstimates(estimates, errors);
+  }
+
+  function rowLabel(r) {
+    if (r.grid_size) {
+      const parent = tree.leaves.get(r.parent_region);
+      return `${parent ? parent.name : r.parent_region} · cell ${(r.grid_ids || []).join(", ")} (${r.grid_size}×${r.grid_size})`;
+    }
+    const leaf = tree.leaves.get(r.region);
+    return leaf ? `${leaf.name} <span class="crumb">${esc(T.breadcrumb(tree, r.region))}</span>` : esc(r.region);
+  }
+
+  function renderEstimates(estimates, errors) {
+    const ok = estimates.filter((e) => !(e.blockers || []).length);
+    const blocked = estimates.length - ok.length;
+    const rows = estimates.flatMap((est) => est.regions.map((r) => `<tr>
+        <td>${r.grid_size ? esc(rowLabel(r)) : rowLabel(r)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
           ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}</td>
-        <td class="num">${fmtInt(r.buildings)}</td>
-        <td class="num">${fmtArea(r.bbox_km2)}${r.acquisition_footprints
-          ? `<div class="muted">${r.acquisition_footprints.length} buffered footprint(s)</div>` : ""}</td>
-        <td class="num">${fmtGb(r.download_gb)}</td>
-        <td class="num">${fmtDur(r.total_s)}</td></tr>`).join("");
-    const ref = est.paid_referee || {};
-    const blocked = (est.blockers || []).length > 0;
+        <td class="num">${fmtInt(r.buildings)}</td><td class="num">${fmtArea(r.bbox_km2)}</td>
+        <td class="num">${fmtGb(r.download_gb)}</td><td class="num">${fmtDur(r.total_s)}</td></tr>`)).join("");
+    const sum = (f) => ok.reduce((n, e) => n + (f(e) || 0), 0);
+    const jobs = sum((e) => e.regions.length);
+    const totals = { buildings: sum((e) => e.totals.buildings), download: sum((e) => e.totals.download_gb),
+                     time: sum((e) => e.totals.total_s), disk: sum((e) => e.totals.disk_gb) };
+    const cost = Math.round(sum((e) => e.cloud && e.cloud.cost_nzd) * 100) / 100;
+    const first = estimates[0];
+    const referee = sum((e) => e.paid_referee && e.paid_referee.usd_upper);
+    const empty = estimates.flatMap((e) => (e.selection && e.selection.empty_grid_ids) || []);
+    let costBlock = "";
+    if (first && target === "local") {
+      costBlock = `<div class="muted">Disk about ${fmtGb(totals.disk)} (${esc(first.machine.disk_free_gb)} GB free). Cloud cost: $0 (runs on this computer).</div>`;
+    } else if (first) {
+      const c = first.cloud || {};
+      costBlock = `<div class="cost"><b>Cloud cost estimate: up to NZD ${esc(cost)}</b> for ${fmtInt(ok.length)} batch(es)
+        <div>${esc(c.cost_text)}</div><div class="muted">${esc(c.cost_basis)}</div>
+        <div class="muted">VM ${esc(c.project)}/${esc(c.zone)}/${esc(c.vm)} is <b>${esc(c.vm_status || "unknown")}</b>; it builds <b>${esc(c.ref)}</b> as pushed.
+          ${target === "published" ? "<b>Publishes to the live map if the deploy gate passes.</b>" : ""}</div>
+        <p><b>This is an estimate, not a spending cap; actual charges can be higher.</b></p>
+        <label>Type <b>yes</b> to accept the cost: <input type="text" id="cost-yes" autocomplete="off" size="5"></label></div>`;
+    }
     $("estimate").innerHTML = `
-      ${sourceChoicesHtml(false)}
-      <table><tr><th>Area / selection</th><th class="num">Buildings</th><th class="num">Footprint</th><th class="num">Download</th><th class="num">Time</th></tr>
-      ${rows}
-      <tr><th>Total</th><th class="num">${fmtInt(t.buildings)}</th><th class="num">—</th><th class="num">${fmtGb(t.download_gb)}</th><th class="num">${fmtDur(t.total_s)}</th></tr></table>
-      ${costHtml(est)}
-      <div class="muted">Rate ${esc(est.calibration.seconds_per_building)} s/building from ${est.calibration.source === "history" ? esc(est.calibration.runs_used) + " recent runs" : "defaults"}.</div>
-      ${(est.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
-      ${(est.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
-      <p class="muted">${esc(est.disclaimer)}</p>
-      ${blocked ? "" : `<div class="confirm">
-        ${est.target === "local" ? "<p>Start this build on this computer?</p>"
-          : `<label><input type="checkbox" id="cloud-cost-ack"> I understand this build may cost up to NZD ${esc(est.cloud.cost_nzd)}; this is an estimate, not a spending cap.${est.target === "published" ? " It will publish to the live map if the gate passes." : ""}</label>`}
-        <p><button class="primary" id="start-btn" disabled>${esc(TARGETS[est.target].start)}</button></p>
-      </div>`}`;
-    bindSourceChoices();
-    if (blocked) return;
-    const cloudAck = $("cloud-cost-ack");
-    const startButton = $("start-btn");
-    const updateStartButton = () => {
-      startButton.disabled = est.target !== "local" && !cloudAck.checked;
-    };
-    if (cloudAck) cloudAck.addEventListener("change", updateStartButton);
-    updateStartButton();
-    $("start-btn").addEventListener("click", startJob);
+      ${errors.map((e) => `<div class="block">${esc(e)}</div>`).join("")}
+      ${estimates.length ? `<table><tr><th>Area / cell</th><th class="num">Buildings</th><th class="num">Footprint</th><th class="num">Download</th><th class="num">Time</th></tr>
+        ${rows}<tr><th>Total (startable)</th><th class="num">${fmtInt(totals.buildings)}</th><th></th>
+        <th class="num">${fmtGb(totals.download)}</th><th class="num">${fmtDur(totals.time)}</th></tr></table>` : ""}
+      ${empty.length ? `<div class="muted">${empty.length} empty grid cell(s) skipped.</div>` : ""}
+      ${referee ? `<div class="muted">Paid referee: up to US$${esc(Math.round(referee * 100) / 100)}.</div>` : ""}
+      ${costBlock}
+      ${first ? `<div class="muted">Rate ${esc(first.calibration.seconds_per_building)} s/building from ${first.calibration.source === "history"
+        ? esc(first.calibration.runs_used) + " recent runs" : "defaults"}. ${esc(first.disclaimer)}</div>` : ""}
+      ${estimates.flatMap((e) => e.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
+      ${estimates.flatMap((e) => e.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
+      ${blocked ? `<p class="block">${blocked} batch(es) are blocked and will not be queued.</p>` : ""}`;
+    $("build-foot-note").textContent = jobs ? `${fmtInt(jobs)} job(s), run one after another; each can be cancelled.` : "";
+    $("start-btn").textContent = TARGETS[target].start;
+    const yes = $("cost-yes");
+    const update = () => { $("start-btn").disabled = !jobs || (target !== "local" && (!yes || yes.value.trim().toLowerCase() !== "yes")); };
+    if (yes) yes.addEventListener("input", update);
+    update();
   }
 
-  function costHtml(est) {
-    const t = est.totals;
-    if (est.target === "local") {
-      return `<div class="muted">Disk about ${fmtGb(t.disk_gb)} (${esc(est.machine.disk_free_gb)} GB free). Cloud cost: $0 (runs on this computer).</div>`;
-    }
-    const c = est.cloud || {};
-    return `<div class="cost"><b>Cloud cost estimate: up to NZD ${esc(c.cost_nzd)}</b> (${esc(c.vm_hours)} VM hours)
-      <div>${esc(c.cost_text)}</div>
-      <div class="muted">${esc(c.cost_basis)}</div>
-      <div class="muted">VM ${esc(c.project)}/${esc(c.zone)}/${esc(c.vm)} is <b>${esc(c.vm_status || "unknown")}</b>; it builds <b>${esc(c.ref)}</b> as pushed.
-        ${c.preview_url ? `Preview: <a href="${esc(c.preview_url)}" target="_blank" rel="noopener">${esc(c.preview_user)}</a>.` : ""}
-        ${est.target === "published" ? "<b>Publishes to the live map if the deploy gate passes.</b>" : ""}</div></div>`;
-  }
-
-  async function startJob() {
+  $("start-btn").addEventListener("click", async () => {
+    if (!build || !build.estimates) return;
+    const ok = build.estimates.filter((e) => !(e.blockers || []).length);
+    const accepted = (($("cost-yes") || {}).value || "").trim().toLowerCase() === "yes";
+    if (target !== "local" && !accepted) return;
+    const combine = build.combine;
     $("start-btn").disabled = true;
-    try {
-      const res = await api("jobs", { method: "POST", body: {
-        estimate_id: currentEstimate.estimate_id,
-        include_imagery: currentEstimate.options.include_imagery,
-        paid_referee: currentEstimate.options.paid_referee,
-        cloud_cost_acknowledged: currentEstimate.target === "local"
-          || $("cloud-cost-ack").checked,
-        target: currentEstimate.target,
-        cost_nzd: currentEstimate.cloud ? currentEstimate.cloud.cost_nzd : undefined } });
-      selected.clear();
-      selectionRevision++;
-      selectedParent = null;
-      gridMode = false;
-      selectedGridCells.clear();
-      gridFeatures.clear();
-      if (map.getSource("grid-cells")) map.getSource("grid-cells").setData(empty);
-      renderSelection();
-      syncSelectionState();
-      $("estimate").innerHTML = "";
-      showSection("queue");
-    } catch (e) {
-      $("estimate").insertAdjacentHTML("beforeend", `<p class="block">${esc(e.message)}</p>`);
-      $("start-btn").disabled = false;
+    const errors = [];
+    let queued = 0;
+    for (const est of ok) {
+      try {
+        const res = await api("jobs", { method: "POST", body: {
+          estimate_id: est.estimate_id,
+          include_imagery: est.options.include_imagery,
+          paid_referee: est.options.paid_referee,
+          cloud_cost_acknowledged: est.target === "local" || accepted,
+          target: est.target,
+          cost_nzd: est.cloud ? est.cloud.cost_nzd : undefined } });
+        queued += (res.job_ids || []).length;
+      } catch (e) {
+        errors.push(e.message);
+      }
     }
-  }
+    if (errors.length) {
+      $("estimate").insertAdjacentHTML("beforeend", errors.map((e) => `<p class="block">${esc(e)}</p>`).join(""));
+      $("start-btn").disabled = false;
+    } else {
+      $("build-dialog").close();
+    }
+    if (queued) {
+      $("act-notes").textContent = `Queued ${queued} job(s).`;
+      if (!combine) selected.clear();
+      $("stage-queue").open = true;
+      statusSignature = "";
+      loadQueue();
+      loadStatus();
+    }
+  });
 
   // ---- queue ----------------------------------------------------------
+  // Polling re-renders the queue; remember which rows the user expanded.
+  const openQueueJobs = new Set();
+  $("queue-list").addEventListener("toggle", (e) => {
+    const row = e.target.closest && e.target.closest("[data-qjob]");
+    if (!row || row !== e.target) return;
+    if (row.open) openQueueJobs.add(row.dataset.qjob); else openQueueJobs.delete(row.dataset.qjob);
+  }, true);
   async function loadQueue() {
     if (queueLoading) return;
     queueLoading = true;
@@ -794,16 +1487,20 @@
       focused.dataset.job ? ["job", focused.dataset.job] : null);
     const focusLabel = focused && focused.textContent;
     $("queue-list").innerHTML = Object.entries(lanes).map(([name, lane]) => `
-      <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}</h3>
-        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable)).join("") || "<p class='muted'>No active or queued builds.</p>"}
+      <div class="lane"><h3>${name === "local" ? "Local lane (this computer)" : "Cloud lane (shared VM)"}
+        <span class="muted">· ${lane.jobs.length ? lane.jobs.length + " job(s)" : "idle"}</span></h3>
+        ${lane.jobs.map(j => PipelineProgress.renderQueueCard(j, j.job_id === lane.active, writable,
+          undefined, openQueueJobs.has(j.job_id))).join("")}
       </div>`).join("");
     $("queue-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
     $("queue-list").querySelectorAll("[data-map-region]").forEach((button) =>
       button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
-    $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () =>
-      cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue)));
+    $("queue-list").querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault();  // the button sits in the row summary; don't toggle the row
+      cancelJob(b.dataset.q, b.dataset.running === "true", b).then(loadQueue);
+    }));
     if ($("stage-jobs").open) loadJobs();
-    renderAreaStatus();
+    renderActions();
     if (focusKey) {
       const replacement = [...$("queue-list").querySelectorAll("[data-q], [data-job]")]
         .find(el => el.dataset[focusKey[0]] === focusKey[1] && el.textContent === focusLabel);
@@ -819,9 +1516,11 @@
     if (btn) btn.disabled = true;
     try { await api(`jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST", body: {} }); }
     catch (e) { alert(e.message); if (btn) btn.disabled = false; }
+    loadStatus();
   }
 
   // ---- job history and detail ----------------------------------------
+  const openHistoryJobs = new Set();
   async function loadJobs() {
     let res;
     try { res = await api("jobs"); } catch (e) {
@@ -836,15 +1535,18 @@
     if (signature === jobsSignature) return;
     jobsSignature = signature;
     $("job-count").textContent = history.length ? `(${history.length})` : "";
-    $("job-list").innerHTML = history.map((j) => `
-      <div class="item"><h3 class="job-area-titles">${PipelineProgress.renderAreaTitles(j)}
-        <span class="pill ${esc(j.target || "local")}">${esc(j.target || "local")}</span> <span class="pill ${esc(j.status)}">${esc(j.status)}</span></h3>
-        <div class="muted">${esc(j.finished || j.created)} · ${esc(j.job_id)}</div>
-        <button class="job-title small" data-job="${esc(j.job_id)}">Details / log</button></div>`).join("") || "<p class='muted'>No completed jobs yet.</p>";
+    $("job-list").innerHTML = history.slice(0, 50).map((j) =>
+      PipelineProgress.renderQueueCard(j, false, false, undefined, openHistoryJobs.has(j.job_id))
+    ).join("") || "<p class='muted'>No completed jobs yet.</p>";
     $("job-list").querySelectorAll("[data-job]").forEach((el) => el.addEventListener("click", () => showJob(el.dataset.job)));
     $("job-list").querySelectorAll("[data-map-region]").forEach((button) =>
       button.addEventListener("click", () => showAreaOnMap(button.dataset.mapRegion)));
   }
+  $("job-list").addEventListener("toggle", (e) => {
+    const row = e.target.closest && e.target.closest("[data-qjob]");
+    if (!row || row !== e.target) return;
+    if (row.open) openHistoryJobs.add(row.dataset.qjob); else openHistoryJobs.delete(row.dataset.qjob);
+  }, true);
   $("stage-jobs").addEventListener("toggle", () => {
     if ($("stage-jobs").open) loadJobs();
   });
@@ -900,7 +1602,8 @@
           $("job-summary").dataset.stale = "true";
         }
       }
-      loadRegions(false);
+      loadRemote(false);
+      loadStatus();
       loadJobs();
       loadQueue();
     });
@@ -945,12 +1648,13 @@
   async function init() {
     try {
       const health = await fetch("/api/health").then((r) => r.json());
+      maxRegions = health.max_regions || maxRegions;
       if (!token) {
-        banner("Read-only: open the link printed by <code>python3 tools/pipeline_web.py</code> to start builds.");
+        banner("Read-only: open the link printed by <code>python3 tools/pipeline_web.py</code> to list areas and start builds.");
       } else {
         await api("jobs");  // verifies the token
         writable = true;
-        if (!health.linz_key) banner("No LINZ API key found (environment, .env or Secret Manager): area search and new areas will fail.");
+        if (!health.linz_key) banner("No LINZ API key found (environment, .env or Secret Manager): estimates for new areas will fail.");
         else if (health.workspace_lock) banner("A command-line build is running in this checkout; new builds wait until it ends.");
       }
       const lanes = health.active_jobs || {};
@@ -963,15 +1667,22 @@
       $("server-info").textContent = "Not connected";
     }
     setTarget(target);
-    renderSelection();
-    updateHint();
+    showView();
     if (writable) {
+      await loadStatus();
+      await loadCatalog();
+      loadGeometry();
+      const artifactOperation = sessionStorage.getItem("artifactOperation");
+      if (artifactOperation) followOperation(artifactOperation);
+      loadCloudOperations();
+      setInterval(loadCloudOperations, QUEUE_POLL_MS);
       loadJobs();
       loadQueue();
-      setInterval(loadQueue, QUEUE_POLL_MS);
-      setInterval(() => loadVm(false), VM_POLL_MS);
+      setInterval(() => { loadQueue(); loadStatus(); }, QUEUE_POLL_MS);
+      setInterval(() => { loadVm(false); loadRemote(false); }, VM_POLL_MS);
+    } else {
+      render();
     }
-    if (map.getSource("regions")) loadRegions(false);
   }
   init();
 })();

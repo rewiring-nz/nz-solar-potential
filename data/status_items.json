@@ -23,6 +23,12 @@
 
   "open": [
     {
+      "chip": "Verified",
+      "title": "Push locally staged regions to cloud staging",
+      "body": "The area list now adds or updates one current local staging set and uploads selected current versions through one Upload/Cancel summary. Config groups staging by council and has populated local retention defaults. Targeted tests and mocked browser checks pass; no real upload ran for the UX refinements.",
+      "note": "The prior Southshore cloud copy remains stored and incurs charges. Cloud release assembly, production promotion and remote cleanup remain future work. The full local suite found synthetic and golden geometry mismatches; its golden remainder was interrupted."
+    },
+    {
       "chip": "Ready",
       "title": "District rebuild on the three fixes",
       "body": "The drawn-face exemption, the cut-frame correction and the working clipper are committed and measured but not yet in a district build. About 4&frac12; hours on the VM, then the deploy gate.",

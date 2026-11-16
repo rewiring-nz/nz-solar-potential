@@ -57,6 +57,14 @@ effect before you trust the map.</p>
 <p>If a step fails, find its number in <a href="troubleshooting.html">Troubleshooting</a>.</p>
 <h2 id="next-steps">Next steps</h2>
 <ul>
+<li>Preserve the inspected region with <strong>Push to staging</strong> in the
+<a href="web-pipeline.html">Build data panel</a>. This copies its built output into a
+frozen, checksummed local copy without rebuilding or publishing; it does not
+deploy or change the map. In <strong>Local releases</strong>,
+select staged versions, assemble and preview a candidate, compare it with the
+local deployment, then approve and activate it. Unselected deployed regions
+are preserved. Configure retention explicitly before activation; rollback
+and grace-period cleanup are available without cloud calls or another build.</li>
 <li><a href="howto-build-a-region.html">Build another region</a>.</li>
 <li><a href="howto-cloud-quickstart.html">Run the quickstart in the cloud</a> for a
 shareable preview.</li>

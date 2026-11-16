@@ -1,9 +1,11 @@
 # Build data
 
-The local **Build data** workspace keeps area selection, existing data status,
-estimates and job progress beside one map. Expand **New build**, **Queue** and
-**Jobs** to follow a build without switching pages. A target toggle at the top
-picks where the work applies:
+The local **Build data** workspace is one list of areas beside a map. Tick
+areas, build them, follow the queue and stage the results without leaving
+the list: each row's status updates in place. Advanced, rarely used settings
+(the national area catalogue, local staging, local releases and retention) are on
+the **⚙ Config** page. A target toggle at the top picks where the work
+applies:
 
 | Target | Shows | A build runs | Costs |
 | --- | --- | --- | --- |
@@ -33,6 +35,8 @@ It prints a link such as
 | `--port N` | Listen on another loopback port (default 8766; the map preview uses 8765). |
 | `--python PATH` | Interpreter for pipeline runs (default: the one running the panel). |
 | `--no-open-browser` | Print the link without opening it. |
+| `--staging-root PATH` | Store staged copies here instead of ignored `data/regional_staging/`. Use an untracked location outside emitted outputs. |
+| `--release-root PATH` | Store isolated local candidates, deployment state and purge records here instead of ignored `data/local_releases/`. Must not overlap staging or working outputs. |
 
 `Ctrl+C` stops the panel. Running builds are cancelled first and queued
 ones are dropped. Cancelling a cloud build stops the local command; the VM
@@ -66,90 +70,166 @@ because it owns the port if its command is unrelated.
 
 ## Use it
 
-- **New build**: search for a suburb or locality, or zoom in to level 10 or
-  closer and click areas on the map. **Existing data for this area** reports
-  the selected target's known area state and links to available previews or
-  reports. A built summary, prepared inputs and a failed last run are distinct
-  states; no area record does not mean that no shared cached dataset covers
-  the area. Local cached dataset extents are shown separately in **Layers &
-  legend**; an extent does not guarantee complete valid data. **Refresh**
-  rereads area status and, for cloud targets, VM status. **Estimate** shows,
-  per area:
-  - building count
-  - download size
-  - time
-  - disk use
-  - warnings, such as no LiDAR or a large area
-  - blockers, such as unavailable LINZ metadata or too little disk
+### Areas
 
-  Aerial imagery is included by default and can be unchecked. That skips its
-  download, alignment, image-based obstruction checks, and paid AI referee;
-  outlines, elevation and LiDAR remain unchanged. The estimate recalculates
-  when the imagery or paid-referee choice changes, and the resulting choices
-  are pinned to the job. The paid AI referee is off by default and is only
-  available when imagery is included.
+The list is a tree of LINZ building-outline levels: **council** (territorial
+authority) › **town or city** › **suburb or locality**. Only areas with
+buildings appear; water such as lakes and inland bays is left out. The tree
+starts collapsed to councils. Each row is one line: tick box, name, building
+count and a status dot; click ▸ to expand a row and see its options, its last
+completed build and every earlier attempt (latest first).
 
-  Covering LINZ elevation and imagery layers are discovered from public layer
-  metadata, cached under ignored `data/sources/linz/`, and pinned from estimate
-  through execution. Areas with no covering LiDAR DSM use the warned synthetic
-  surface path; they are not blocked by a static survey list.
+- **Search** matches council, town and locality names; several words narrow
+  the match (`queenstown fern`).
+- **Filters** are fixed choices: *Built OK*, *Failed*, *Queued / running*,
+  *Never built*, *Stale* (a rebuild would change some buildings),
+  *Built without imagery*, *Built with imagery*, *Built with paid referee* and
+  *Built, not staged*. Several filters must all pass.
+- **Sort**: *Geographic (tree)* keeps the hierarchy; the others (last
+  completed, last attempt, status, buildings, name) list matching localities
+  flat, with their council and town shown beneath.
+- **Select all matching** ticks every area that passes the search and filters.
+- Ticking a council or town ticks every locality inside it; untick
+  individual localities afterwards. A partly ticked parent shows a dash.
+- Clicking an area's name zooms the map to it. Clicking an area on the map at
+  zoom 10 or closer ticks or unticks it.
 
-  Selecting a locality also enables **Choose grid cells**. The parent polygon
-  is the LINZ suburb/locality boundary; the council name groups localities and
-  is not the boundary being built. The panel divides the boundary's bounding
-  box into 2×2 through 10×10 cells (default 4×4) and clips each cell to the
-  locality polygon. It uses the LINZ key and boundary already needed for area
-  search; no additional API key or dataset is required. Select
-  individual cells or use **Select all** / **Deselect all**. An empty
-  selection cannot be estimated. Changing the parent or grid size invalidates
-  the previous estimate.
+Status colours are shared by the list dots, the map fill and the legend:
+*Not built*, *Queued*, *Running*, *Built*, *Staged*, *Live* and *Failed*.
+Click a legend entry to hide or show areas in that state.
+Status is per target: Local reads this checkout's runs and staging; Developer and Published read the cloud data catalogue. Local areas
+that are not in the national catalogue (for example `pilot`) are listed under
+**Other local areas**.
 
-  The estimate reports the selected building count, the sum of disjoint
-  buffered acquisition footprints, download estimate, runtime, disk estimate
-  and warnings. These are planning estimates, not limits. A partial-area build
-  runs locally only; it cannot start a Developer or Published build. It runs
-  the normal pipeline as one work area, not one pipeline per selected cell.
+The sticky bar under the list sums the selection (areas, buildings and a
+rough compute time from this checkout's measured rate; downloads are extra and
+appear in the Build… estimate) and offers the actions the
+selection allows. Click the selection count to list the selected areas and
+untick any of them; the list stays open until you close it.
 
-  Buildings are selected as whole LINZ building-outline features. For each
-  outline, the pipeline finds its representative point in EPSG:2193 and assigns
-  it to the lexically lowest selected-area ID whose polygon covers that point.
-  Only buildings owned by a selected grid cell are included; boundaries never
-  clip buildings and ties cannot duplicate them. This is a stable rule for an
-  identical parent, grid size and selection.
+- **Build…** opens the build dialog for every selected area.
+- **Push to staging** (Local only) copies each selected region's built
+  output into a frozen, checksummed [staged copy](#config-page). A region can
+  be staged when it is built, its latest local build succeeded and no queued
+  or running local job includes it or its grid cells. Other builds may keep
+  running. Regions that do not qualify are skipped and the result lists why;
+  the button's tooltip gives the same reasons. While a region is being
+  staged, it cannot be queued. Grid cells are never staged. Staged regions
+  may come from different input settings and code or data versions.
+- **Cancel queued** removes the selection's waiting jobs.
+- **Clear** unticks everything.
 
-  A selection has a deterministic ID below its parent:
-  `data/regions/<parent>/grid-<16-hex-id>/`. Its `selection.json`
-  records the parent, selected IDs, boundary dataset/version and geometry,
-  ownership rule, building IDs and acquisition footprints. Pipeline artefacts
-  are written below that selection directory, and emitted artefacts below the
-  matching `data/out/` directory; the parent locality's files are not changed.
-  The run combines only the selection into the local map data, so that map
-  output represents the selected work area, not complete parent coverage.
-  Selections are excluded from normal complete-area listings and are never
-  published as complete coverage.
+### Build
 
-  For Developer and Published the estimate also shows the Google Cloud
-  cost (see [Cloud builds](#cloud-builds)). The Start button is enabled after
-  checking the cost-acknowledgment box. Local builds start directly from the
-  button. The paid AI referee is off unless you tick it; the estimate shows
-  its upper cost.
+The build dialog estimates every selected area and applies one set of
+options to all of them. Per area it shows:
+
+- building count
+- download size
+- time
+- disk use
+- warnings, such as no LiDAR or a large area
+- blockers, such as unavailable LINZ metadata or too little disk
+
+Aerial imagery is included by default and can be unchecked. That skips its
+download, alignment, image-based obstruction checks, and paid AI referee;
+outlines, elevation and LiDAR remain unchanged. The estimate recalculates
+when the imagery or paid-referee choice changes, and the resulting choices
+are pinned to the job. The paid AI referee is off by default and is only
+available when imagery is included.
+
+Covering LINZ elevation and imagery layers are discovered from public layer
+metadata, cached under ignored `data/sources/linz/`, and pinned from estimate
+through execution. Areas with no covering LiDAR DSM use the warned synthetic
+surface path; they are not blocked by a static survey list.
+
+For Developer and Published the estimate also shows the Google Cloud
+cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
+VM/startup/storage allowances rather than assuming a single combined run.
+The queue button is enabled after checking the cost-acknowledgment box.
+Local builds queue directly from **Add to queue**. Paid options, such as the
+AI referee, start unticked every time the dialog opens, whatever was chosen
+before; the estimate shows their upper cost when ticked.
+
+### Grid cells
+
+Grid cells are a build option, not a list level. Use them for a quick
+developer check of a small area, or for a locality too large to build on one
+computer in reasonable time. In the build dialog (Local only), **Split each
+locality into grid cells** offers *Off* (default), *Auto* or a fixed 2×2
+to 10×10 grid. *Auto* splits only localities over 12,000 buildings, into
+N×N cells with N = ceil(√(buildings / 12,000)), clamped to 2–10, so each cell
+holds roughly 12,000 buildings or fewer. Cells with no buildings are dropped.
+The cells then appear as a fourth level under their locality, and stay there
+until the locality is built whole.
+
+When every estimated cell has built, the locality row offers **Combine**.
+That queues an ordinary whole-locality build. It reuses the downloaded
+sources but reruns geometry and yields. Once it succeeds, the cells are
+hidden again. Cells are never staged or published.
+
+Each locality boundary is the LINZ suburb/locality polygon, not a council
+boundary. The grid divides its bounding box and clips each cell to the
+polygon. It needs no additional API key or dataset.
+
+The estimate reports the selected building count, the sum of disjoint
+buffered acquisition footprints, download estimate, runtime, disk estimate
+and warnings. These are planning estimates, not limits. A partial-area build
+runs locally only; it cannot start a Developer or Published build. Each
+selected cell is estimated and built as its own work area and queue job.
+The estimate lists each cell separately and totals their costs/resources;
+shared source caches may reduce actual downloads on later jobs.
+
+Buildings are selected as whole LINZ building-outline features. For each
+outline, the pipeline finds its representative point in EPSG:2193 and assigns
+it to the lexically lowest selected-area ID whose polygon covers that point.
+Only buildings owned by a selected grid cell are included; boundaries never
+clip buildings and ties cannot duplicate them. This is a stable rule for an
+identical parent, grid size and selection.
+
+Each selected cell has a deterministic selection ID below its parent:
+`data/regions/<parent>/grid-<16-hex-id>/`. Its `selection.json`
+records the parent, selected IDs, boundary dataset/version and geometry,
+ownership rule, building IDs and acquisition footprints. Pipeline artefacts
+are written below that selection directory, and emitted artefacts below the
+matching `data/out/` directory; the parent locality's files are not changed.
+Each run initially combines its own cell into the local map data. The last
+job of a multi-area local submission combines existing emitted regions/cells
+once, without rerunning geometry or yields. Cancelling that final job also
+cancels its combine. Partial outputs remain partial, not complete parent coverage.
+Selections are excluded from normal complete-area listings and are never
+published as complete coverage.
+
+### Queue and jobs
+
+The **Queue** and **Jobs** panels sit over the map.
+
 - **Queue**: each lane's running and waiting jobs, titled by locality rather
-  than job ID. Running cards show
-  the current stage and area, approximate progress, elapsed time, estimated
-  remaining time and the age of the last log/status activity. Waiting jobs
-  show their lane position, wait reason and estimated runtime, not a moving
-  bar or a promised start time. **Remove** drops a waiting job; **Cancel**
-  stops a running one. Click an area's title on a queue or completed-job card
+  than job ID. Submitting two regions creates two jobs; submitting two grid
+  cells creates two jobs, rather than one grouped selection. Jobs from a
+  submission are added together in order (grid cells in row/column ID order)
+  and run sequentially within their lane. Each job has independent progress,
+  logs and cancellation; failure of one does not prevent the next from running.
+  Existing multi-area job history remains readable. Each job is one line —
+  its areas, a short summary (*42% · 25 min left*, *Queued #2 · ≈ 12 min*),
+  its status and **Remove**/**Cancel** — and clicking the line expands it,
+  like a region row; expanded jobs stay open across refreshes. Expanded
+  running jobs show the current stage and area, approximate progress,
+  elapsed time, estimated remaining time and the age of the last log/status
+  activity. Waiting jobs show their lane position, wait reason and estimated
+  runtime, not a moving bar or a promised start time. **Remove** drops a
+  waiting job; **Cancel** stops a running one. Click an area's title on a queue or completed-job card
   to zoom to its boundary and highlight it briefly; multi-area jobs show each
   area as a separate link. If a grid-selection boundary is not available yet,
-  the map shows its parent locality. Selecting an area also shows its
-  matching active or queued job, or the latest recently completed job, with a
-  link to its details. Use **Details / log** to open a completed job's report
-  and log view. Completed jobs are shown only in **Jobs** so each job
-  appears in one stage at a time.
-- **Jobs**: completed job history, newest first. Select a job to see progress,
-  per-area status and report links, and to open its live log. **Cancel** stops
-  a running build; finished areas are kept.
+  the map shows its parent locality. Expanding an area's row also shows its
+  attempts, with links to their job details. Use **Details / log** to open a
+  completed job's report and log view. Completed jobs are shown only in
+  **Jobs** so each job appears in one stage at a time.
+- **Jobs**: completed job history, newest first. Like the queue, each job is
+  one line (areas, duration, finish time, target if not local, and status);
+  select it to expand, then **Details / log** for per-area status, report
+  links and the live log. **Cancel** stops a running build; finished areas
+  are kept.
 
 Queue cards refresh every five seconds and use the same progress calculation
 as job details. Completed and deliberately skipped stages advance progress,
@@ -173,6 +253,195 @@ last ten finished runs, or the defaults in
 [`estimate_defaults.json`](../../tools/pipeline_webui/estimate_defaults.json),
 which record where each figure was measured. An estimate expires after 30
 minutes; a build can only start from the estimate that was shown.
+
+### Config page
+
+**⚙ Config** holds settings that are rarely needed.
+
+- **National area catalogue**: the council › town › locality list, building
+  counts, areas and simplified boundaries come from LINZ and are cached under
+  ignored `data/pipeline_web/cache/` (`national_catalog.json` and
+  `national_localities.geojson`). The list opens from that cache. **Refresh
+  from LINZ** rebuilds it in the background, in about a minute and a half;
+  do this when LINZ publishes new outlines or locality boundaries. The same
+  build runs from the command line:
+
+  ```sh
+  .venv/bin/python -m tools.pipeline_webui.national_catalog
+  ```
+
+  The authenticated API is `GET /api/catalog`, `GET /api/catalog/geometry`,
+  `POST /api/catalog/refresh` (poll it with `GET`) and
+  `GET /api/catalog/status` for per-area status on the selected target.
+
+- **Local staging**: the area list is where areas are selected and acted on.
+  **Push to local staging** adds each eligible built area to the current set or
+  replaces that area's current pointer with a new frozen copy. Other staged
+  areas stay in the set. The atomic
+  `data/regional_staging/current.json` maps each region to its current immutable
+  `data/regional_staging/<staging-id>/artifacts/` copy. Staging is local,
+  regardless of the target toggle; it does not rebuild, upload, approve,
+  deploy or change the current map. The copy is checked against the source
+  inventory before and after copying, so a rebuild that changes the output
+  mid-copy fails rather than mixing builds. Manifests preserve emitted
+  summaries and leave missing provenance unknown. A local staging batch accepts
+  up to 100 areas.
+
+  Config shows only the current copy per area, grouped under expandable
+  councils. **Verify current copy** checks the full inventory, sizes and
+  SHA-256 checksums, including unexpected files. Listing is not verification or
+  quality approval. Frozen copies contain no raw sources or shared release
+  assets and are not standalone deployable maps. Older immutable copies remain
+  available for candidates that pin them and are removed only by explicit local
+  retention cleanup. Failed or interrupted copies stay under
+  `.incomplete-<staging-id>/`; they never become current. A region being staged
+  holds a lock under `data/regional_staging/.locks/`; after a crash, check its
+  `owner.json` process ID before removing a stale lock.
+
+  **Push to remote staging** uploads the selected areas' current local staged
+  versions to the private bucket configured by
+  `CLOUD_SHARED_BUILD.artifact_staging_bucket` (default
+  `gs://solar-potential-map-data`), under
+  `pipeline-staging/submissions/<staging-id>/`. It requires `gcloud` access.
+  One final Upload/Cancel dialog shows the verified total bytes in GB, the
+  private destination and the selected areas; it warns that transfer and
+  ongoing storage may incur charges. It does not show a cost estimate or ask
+  for typed `yes`; select up to 100 areas per upload. The server rechecks that
+  each selected immutable ID is still
+  current before uploading. It creates objects without overwriting, checks the
+  remote inventory, sizes, SHA-256 metadata and server-computed MD5, and writes
+  the submission manifest last. The artifact lifecycle lock prevents local
+  cleanup during transfer. Failed partial transfers are not complete; retrying
+  the same staging ID reuses matching objects. Gcloud runs per object, so a
+  large number of objects can take minutes.
+
+  The remote staging history shows live upload and verification counts plus
+  success, failure and interruption, and reconnects after reload. It is the
+  latest 50 operations recorded by this checkout under
+  `data/pipeline_web/artifact_operations/`, not a bucket inventory. Resolve a
+  failure, then select the current area again and upload. Local retention does
+  not set cloud expiry or delete cloud objects; cloud cleanup is not
+  implemented. Remote staging does not assemble, approve, activate, switch a
+  production pointer or publish to the served tiles bucket. A future A/B
+  staging-to-production pointer switch is not implemented. The public
+  developer-preview bucket is not used.
+
+  The same operations are available on the command line:
+
+  ```sh
+  .venv/bin/python tools/regional_staging.py stage pilot
+  .venv/bin/python tools/regional_staging.py list
+  .venv/bin/python tools/regional_staging.py verify <staging-id>
+  ```
+
+  `--staging-root PATH` selects custom storage. The command line does not
+  check the build queue; run it only when that region is not being built.
+  Existing emitted data is sufficient; no LINZ or cloud credentials, source
+  acquisition or workspace build lock are needed.
+
+- **Local releases**: this is a filesystem-only publication rehearsal. It
+  never uploads, starts a VM, switches the published site's configuration or
+  changes the working map under `data/`, regardless of the target toggle.
+  Keep using the separate Developer/Published build workflow for cloud work.
+
+    1. **Create local candidate** uses all current staged versions. Grid
+      selections cannot replace a complete region.
+    2. Choose **Create local candidate**. All other active regions are carried
+     forward. Creation copies regional inputs and the frontend, validates the
+     frozen region contract, and assembles shared map assets using
+     `combine_regions.py --frozen-inputs --skip-markup-lines`. It does not fetch
+     sources, re-emit mutable regions or rerun geometry/yields. Tile joining,
+     checksum verification, shared cells and seasonal-curve assembly still use
+     CPU and additional disk.
+  3. Open **Preview candidate**. This immutable release URL remains pinned
+     even if another release becomes active. **Verify release** checks the full
+     site and regional inventories. Compare candidate previews with the active
+     map; integrity verification does not establish roof/model quality.
+  4. Choose **Compare with local deployment**. Green/pass means recorded and
+     compatible, amber/warning means changed, red/fail means a coverage
+     regression, and grey/unknown means metadata is missing. Increases are not
+     assumed to be quality improvements. Different regional source datasets are
+     allowed; source and boundary metadata is compared when present, never
+     invented for older outputs. Unknown/new fields are preserved in summaries.
+     Automatic review requires explicit `coverage.complete: true`; false is a
+     failure, while absent/unrecognized completeness metadata is unknown.
+     The current shared assumptions document requires equal PV assumptions
+     across regions; incompatible contracts, partial regions and overlapping
+     building ownership are blocked, not review overrides.
+    5. Under **Local retention and cleanup**, review the populated defaults:
+      30 days for rollback, candidates and unused staged copies, 7 days for
+      incomplete copies and 3 days' grace. Change and save them if needed. No
+      cleanup runs automatically; marking and permanent deletion remain explicit.
+  6. Choose **Approve and activate locally**. An all-pass comparison is approved
+     by the automatic policy. Warnings, regressions or unknowns require the
+     recorded **Manual review reason**. The optional **Approve candidate**
+     button records a review without activating. Both records bind the exact
+     candidate manifest, comparison-policy version and baseline generation.
+     Integrity failures cannot be overridden.
+  7. Open **Open local deployed map**. `/local-deploy/` resolves once to an
+     immutable release URL; reload that entry URL to follow a later activation.
+     A single atomic state replacement switches the complete site, rather than
+     copying files over a live deployment. Stale candidates cannot overwrite a
+     newer deployment: refresh and create a new candidate, which preserves
+     unrelated regional updates.
+  8. **Roll back local deployment** verifies and switches to the one previous
+     release inside its configured window. Repeated rollbacks do not extend
+     that window. Existing browser tabs remain pinned to their original release.
+
+  Candidates live in `data/local_releases/releases/<release-id>/`. Their manifest
+  records regional staging IDs/checksums, emitted summaries, output contract,
+  copied frontend hashes and assembly-source hashes. Assembly uses the current
+  checkout's producer; hashes describe it, but do not archive its dependencies
+  or make missing source datasets reproducible. Staged copies can be
+  verified independently; a release also keeps its own regional copies.
+  Local releases omit shared terrain/terrain-ground tiles and hand-drawn markup
+  overlays: 3D is explicitly disabled, with no fallback to working/cloud data.
+  Basemap imagery and frontend CDNs still require network access.
+
+  **Preview cleanup / mark eligible** lists unprotected expired releases,
+  unused staged copies and abandoned incomplete copies, and starts their
+  configured grace period. It deletes nothing. After the grace period, tick
+  the permanent-deletion confirmation and choose **Delete eligible artifacts
+  after grace**. Eligibility/references are checked again under a process lock.
+  Active and unexpired rollback releases are protected; retained candidates
+  protect their regional staging IDs. Only managed child directories
+  are removed. Lightweight purge metadata remains under `purged/`; raw source
+  caches and tracked curated assets are outside this cleanup. No scheduled
+  cleanup runs, and changing policy resets existing grace marks.
+
+  Release operations share the persistent artifact-operation status and
+  refresh/reconnect behavior. Failed assembly stays `.incomplete-<release-id>/`;
+  its error names `assembly.log`, and **Read assembly log** shows its last 64 KiB
+  in the panel. It is never activated. After a crash, inspect
+  owner PIDs in `data/.artifact-lifecycle-lock`, the release root's
+  `.lifecycle-lock` and any workspace lock before removing only a demonstrably
+  stale lock. Managed stage/release/cleanup writers serialize across
+  processes; keep uncoordinated external artifact edits idle.
+
+  CLI equivalents (use `--generation` from `list`; IDs below are placeholders):
+
+  ```sh
+  .venv/bin/python tools/local_releases.py list
+  .venv/bin/python tools/local_releases.py create <staging-id> --generation 0
+  .venv/bin/python tools/local_releases.py verify <release-id>
+  .venv/bin/python tools/local_releases.py compare <release-id>
+  .venv/bin/python tools/local_releases.py policy --policy-json '{"rollback_hours":24,"candidate_hours":72,"staging_hours":72,"incomplete_hours":24,"grace_hours":24}'
+  .venv/bin/python tools/local_releases.py publish <release-id> --generation 0 --reason "Inspected candidate against working output"
+  .venv/bin/python tools/local_releases.py rollback --generation 1
+  .venv/bin/python tools/local_releases.py cleanup
+  .venv/bin/python tools/local_releases.py cleanup --apply
+  ```
+
+  The example windows are illustrative, not defaults. `approve` and `activate`
+  are separate CLI/API actions when review and switching need separate steps.
+  Pass matching `--data`, `--staging-root` and `--release-root`
+  when using custom stores. The same data root must coordinate all writers.
+  The authenticated API uses `GET /api/releases` and background
+  `POST /api/releases/{create,verify,compare,approve,activate,publish,rollback,policy,cleanup}`.
+  Poll the returned `/api/operations/<operation-id>` for the result.
+  Local approvals are rehearsal records, not independent-user authorization
+  or a production review service.
+
 
 ## What a build does
 

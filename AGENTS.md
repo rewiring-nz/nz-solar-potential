@@ -66,13 +66,71 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   generation run in `tools/pipeline_webui/geo_worker.py`; a test in
   `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html` (titled **Build data**).
-  Area selection, target-specific existing-data status, estimates, active
-  queue and completed job history share one workspace with expandable
-  **New build**, **Queue** and **Jobs** sections. Prepared/built area overlays
-  and the grouped dataset legend remain on the map; area status links to
-  available previews and reports. The former `data-explorer.html` URL redirects
-  to this page. See
+  The page is one tick-box tree, council › town › locality (LINZ
+  `territorial_authority`, locality `major_name`, `suburb_locality`), whose
+  rows show each area's state in place for the selected target; status
+  colours the map. Search, fixed filters and sorts are pure logic in
+  `pipeline_tree.js` (`tests/test_pipeline_tree.js`); a sticky selection bar
+  offers Build…, Push to local staging, Push to remote staging, Cancel queued
+  and Clear; **Queue** and **Jobs** sit over the map. Catalogue refresh,
+  local staging and local releases are on the **⚙ Config** view. The tree comes
+  from a prebuilt national catalogue
+  (`python -m tools.pipeline_webui.national_catalog`, about 80 s, 3,227
+  localities with buildings; water types dropped) cached in ignored
+  `data/pipeline_web/cache/`; per-area status joins runs, jobs,
+  staging and selections in `tools/pipeline_webui/region_status.py`
+  (`/api/catalog*`, `tests/test_pipeline_web_catalog.py`). The former
+  `data-explorer.html` URL redirects to this page. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
+- **Push to local staging** copies a built region's `data/out/<region>/` straight
+  into a frozen, checksummed copy in ignored
+  `data/regional_staging/<id>/artifacts/` (`tools/regional_staging.py`,
+  `tools/pipeline_webui/artifacts.py`; `--staging-root` overrides it). The
+  atomic `current.json` points to one current copy per region; pushing a newer
+  copy adds that region or replaces its current pointer while leaving other
+  regions in the set. Frozen copies remain available to pinned candidates until
+  explicit local retention cleanup. There is no separate snapshot step. A
+  region can be staged when it is built, its
+  latest local build succeeded and no queued or running local job covers it
+  or its cells (`stage_refusal` in `tools/pipeline_webui/server.py`); other
+  builds may run, and a region being staged cannot be queued. The copy takes
+  a per-region lock, not the workspace lock, and fails if the source
+  inventory changes during the copy. Grid cells are never staged. Older
+  `<id>/snapshot/` copies stay readable; `data/regional_snapshots/` is unused.
+  Local staging itself makes no cloud calls, deploys nothing and runs no
+  automatic cleanup.
+- **Push to remote staging** submits selected, locally staged versions through
+  `tools/cloud_staging.py` to the private bucket in
+  `config.CLOUD_SHARED_BUILD["artifact_staging_bucket"]`, under the immutable
+  `pipeline-staging/submissions/<staging-id>/` prefix. The area list offers
+  one batch Upload/Cancel confirmation after showing verified total bytes and
+  the private GCS destination; no per-region cost estimate or typed `yes` is
+  required. The confirmation warns that storage and transfer may incur charges.
+  The server rechecks the selected current local versions and their sizes under
+  the artifact lifecycle lock, uploads create-only, checks remote
+  inventory/size/SHA metadata and server-computed MD5, and writes its manifest
+  last. Retained objects continue to incur storage cost. This operation does not build,
+  assemble, approve, activate, change a preview pointer or publish to the
+  served tiles bucket. The panel shows live upload and verification counts and
+  the latest 50 locally recorded push outcomes; this is not a bucket inventory.
+  Local retention controls do not apply to cloud objects. No cloud cleanup is implemented.
+- **Local releases** in Build data (`tools/local_releases.py`) assemble verified
+  complete staged regions into ignored `data/local_releases/` (`--release-root`).
+  Unchanged active regions are carried forward. The frozen-input combine mode
+  validates the region contract without re-emitting mutable inputs; geometry and
+  yields are not rerun. Candidates pin copied frontend/data and record source
+  hashes. Comparison/review binds the manifest and active generation; activation
+  atomically replaces local state. Automatic approval requires all-pass metrics;
+  warnings/unknowns require a recorded manual reason. Grid selections, overlapping
+  building ownership, mixed assumptions and incompatible contracts are blocked.
+  Terrain and markup overlays are omitted; local 3D is explicitly disabled.
+  Default retention in `tools/local_releases.py` is 720 hours for rollback,
+  candidates and unused staging, 168 hours for incomplete copies and 72 hours
+  for cleanup grace. Current staging copies are protected. Rollback protects
+  one previous release for the configured window. Cleanup requires
+  configured lifetimes, a mark/grace phase and explicit apply; no scheduled purge
+  or cloud action occurs. Capture/stage/release/cleanup share the process lock
+  `data/.artifact-lifecycle-lock`. See the web-pipeline guide for recovery and CLI.
 - The web queue and job details share stage-weighted progress
   (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
   reaches 100%; cloud runs without stage telemetry remain indeterminate.
@@ -80,8 +138,17 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   waiting work; terminal jobs appear once in the newest-first Jobs history.
   Disconnected views retain last-known cards with a warning instead of
   displaying stale progress as live.
-- The web pipeline can select a user-sized bounding-box grid (2x2 through
-  10x10, default 4x4) within a LINZ locality for one local-only pipeline run.
+- The web pipeline's build dialog can split localities into a bounding-box
+  grid (Off by default; Auto splits only localities over 12,000 buildings into
+  N = ceil(sqrt(buildings/12,000)) per side, clamped 2-10; or fixed 2x2-10x10),
+  local target only. Cells show as a fourth tree level until a whole-locality
+  build (**Combine**, offered once every estimated cell has built) succeeds;
+  cells are never staged. Web submissions enqueue one
+  independently cancellable job per selected region or cell, sequentially in
+  its target lane (`JobManager.start_batch`). Cells are materialised separately
+  while retaining the whole grid for stable building ownership. Cloud estimates
+  sum per-job allowances. The last job in a multi-area local submission combines
+  existing emitted outputs once without rebuilding geometry/yields.
   Grid selection uses the LINZ locality boundary and needs no additional API
   key or downloaded dataset. Selections have nested identities and outputs;
   acquisition timings are per-run in `data/pipeline_runs/` (outline preparation
@@ -163,6 +230,9 @@ figure for the same thing. Code enforces this:
   `tools/pipeline.py` (via `quickstart.sh`); the shared-VM build and publish
   is `tools/remote_build.sh`. See [docs/data-maintainers/quickstart-cloud.md](docs/data-maintainers/quickstart-cloud.md)
   and [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
+  Exception: data-only uploads to private artifact staging use the explicit
+  batch Upload confirmation described above, with verified bytes, destination
+  and a charge warning instead of a separate cost estimate or typed `yes`.
 - **Tasks** are GitHub Issues on the project board
   (https://github.com/orgs/rewiring-nz/projects/5). Link PRs with `Fixes #N`.
   Open work is also in BACKLOG.md.

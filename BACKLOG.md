@@ -1,5 +1,57 @@
 # Backlog
 
+Cloud staging submission (#66): the area list offers Push to local staging
+and Push to remote staging. Local batches update one current staging set
+atomically; Config groups current copies under expandable councils. Remote
+uploads use one verified-byte/destination Upload/Cancel confirmation, without
+typed yes or a cost estimate. Local retention defaults are populated; current
+staging and pinned candidates remain protected. Focused staging, HTTP, release
+and mocked browser checks pass. The full local run found synthetic and golden
+geometry-output mismatches; the golden remainder was interrupted, and no
+baselines were rewritten. No real cloud action ran for these UX refinements.
+A prior real Southshore submission (61 artifacts, 4,858,152 bytes) was
+verified in the configured private bucket in 3 minutes 30 seconds; its objects
+remain stored and incur ongoing charges. Cloud release assembly, activation and
+production promotion remain future work.
+
+Completed per-area web build queue: each selected region or locality grid cell
+is submitted as a separate sequential job, with independent progress, logs and
+cancellation. Grid estimates materialise one cell per work area while preserving
+whole-grid ownership rules; per-job source choices, timing and cost approvals
+are pinned. Cloud estimates sum separate-job allowances. Multi-area local batches
+combine existing emitted outputs once at the end without geometry/yield rebuilds.
+Queue/HTTP regression tests cover order, failures, cancellation and cell isolation.
+
+Completed local publication lifecycle: Build data assembles immutable candidates
+from staged complete regions, carries forward unrelated active regions, pins
+frontend/data, compares metadata with traffic-light states, records checksum- and
+generation-bound reviews, and atomically activates a local deployment. All-pass
+candidates support automatic review; unknowns/warnings require a manual reason.
+Stale candidates and integrity/contract failures are blocked. Bounded rollback
+and explicit mark/grace/apply retention protect live/referenced data and retain
+purge metadata. CLI parity, frozen-input real tile assembly and authenticated
+HTTP tests cover the local loop without cloud calls or geometry/yield rebuilds.
+Terrain and markup overlays are explicitly unavailable in these local releases.
+Remaining scale tracks: cloud storage/reviewer adapters, source-cache scheduling,
+urban prioritization and richer producer-recorded source/completeness metadata.
+
+Completed local snapshot staging: **Stage locally** in Build data verifies a
+snapshot and copies it into a separate local staging store, preserving the
+original manifest with a checksum-bound staging record. Repeated staging reuses
+a verified completed copy; interrupted copies stay incomplete, and corrupted
+copies are never overwritten. Independent staged verification, persistent web
+status and CLI parity are covered by cloud-free tests. No build, approval,
+deployment, cloud access or automatic deletion occurs.
+Comparison, approval, activation and retention are now covered by local releases.
+
+Completed local regional snapshots: Build data can capture one idle emitted
+region into an independent copy and verify its inventory, sizes and SHA-256
+checksums. Authenticated background operations persist status; capture holds
+the workspace lock, rejects links and detected source changes, and never
+rebuilds, publishes or deletes data. Manifests preserve emitted summaries and
+unknown provenance. CLI parity and cloud-free integrity/HTTP tests are included.
+Comparison, approval, activation and retention are now covered by local releases.
+
 Completed pipeline queue progress UX: shared queue/detail progress and timing,
 current stage and area, readable locality titles, pending-job positions and
 wait reasons, and the last three outcomes per lane for ten minutes. Unknown

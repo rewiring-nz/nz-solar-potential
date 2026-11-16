@@ -21,6 +21,7 @@ import argparse
 import hmac
 import http.server
 import json
+import threading
 import secrets
 import signal
 import sys
@@ -34,12 +35,19 @@ from src import map_layer_catalog as MLC
 from tools.pipeline_serve import RangeHandler
 from tools.render_docs import render_docs
 from tools.pipeline_webui import cloud as C
+from tools import cloud_staging as CS
 from tools.pipeline_webui import estimate as E
 from tools.pipeline_webui import geo_worker as GW
 from tools.pipeline_webui import grid_proxy as GP
 from tools.pipeline_webui import locality_proxy as LP
+from tools.pipeline_webui import national_catalog as NC
+from tools.pipeline_webui import region_status as RS
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui import remote_catalog as RM
+from tools.pipeline_webui.artifacts import Artifacts
+from tools.artifact_common import ArtifactError, artifact_id
+from tools.regional_staging import StagingStore
+from src.region_ids import is_grid_selection_id, validate
 from tools.pipeline_webui.common import DATA, ROOT, git_short
 from tools.pipeline_webui.jobs import JobError, JobManager, TERMINAL
 
@@ -49,13 +57,42 @@ STREAM_POLL_S = 0.5
 STREAM_MAX_S = 6 * 3600
 
 
+def covers(region: str, other: str) -> bool:
+    """True when `other` is `region` or one of its grid cells."""
+    return other == region or other.startswith(region + "/grid-")
+
+
+def stage_refusal(app: "App", region: str) -> str | None:
+    """Why `region` cannot be staged now, or None.
+
+    Staging copies data/out/<region>, which only local builds write, so only
+    the local lane's queued and running jobs block it. Cloud builds never
+    change local outputs."""
+    if is_grid_selection_id(region):
+        return "Grid cells are local build pieces; stage whole regions only"
+    if not (app.data / "out" / region / "summary.json").is_file():
+        return f"{region} is not built"
+    for job in app.jobs.queue()["local"]["jobs"]:
+        if any(covers(region, r) for r in job.get("regions") or []):
+            return f"{region} is in the build queue; stage it once its job finishes or is removed"
+    row = RS.status(app.data, app.artifacts, use_cache=False)["regions"].get(region) or {}
+    latest = row.get("latest_local_status")
+    if latest not in (None, "succeeded"):
+        return f"{region}'s latest local build {latest}; rebuild it first"
+    if region in app.artifacts.staging_regions():
+        return f"{region} is already being staged"
+    return None
+
+
 class App:
     """Everything a request handler needs, injectable for tests."""
 
     def __init__(self, token: str, data: Path = DATA, root: Path = ROOT, python: str = sys.executable,
                  api_key_fn: Callable[[], str] | None = None, http_get: Callable | None = None,
                  estimates: E.EstimateStore | None = None, jobs: JobManager | None = None,
-                 cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None):
+                 cloud: C.Cloud | None = None, remote: RM.RemoteCatalog | None = None,
+                 staging_root: Path | None = None,
+                 release_root: Path | None = None):
         self.token = token
         self.data = Path(data)
         self.root = Path(root)
@@ -76,6 +113,16 @@ class App:
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))
         self.git = git_short(self.root)
+        cloud_config = self.cloud.config()
+        cloud_staging = CS.CloudStaging(
+            StagingStore(self.data, staging_root), cloud_config["artifact_staging_bucket"],
+            cloud_config["preview_cost_model"], gcloud=self.cloud.gcloud())
+        self.artifacts = Artifacts(self.data, staging_root, release_root, self.root, python,
+                                   cloud_staging=cloud_staging)
+        # Held while checking and starting a staging copy or queueing a build,
+        # so a region cannot be queued and staged at the same time.
+        self.stage_gate = threading.Lock()
+        self.catalog_refresher = NC.Refresher(self.data, self.api_key_fn, self.http_get)
 
     def api_key(self) -> str:
         key = self.api_key_fn()
@@ -105,6 +152,22 @@ class WebHandler(RangeHandler):
             args = (args[0].split("?", 1)[0],) + args[1:]
         super().log_message(fmt, *args)
 
+    # Page code changes between reloads while developing; make browsers
+    # revalidate it (a cheap 304 when unchanged) instead of guessing freshness.
+    _REVALIDATE = (".html", ".js", ".css")
+
+    def send_header(self, keyword, value):
+        if keyword.lower() == "cache-control":
+            self._cache_header_sent = True
+        super().send_header(keyword, value)
+
+    def end_headers(self) -> None:
+        path = urllib.parse.urlsplit(self.path).path
+        if not getattr(self, "_cache_header_sent", False) and path.endswith(self._REVALIDATE):
+            self.send_header("Cache-Control", "no-cache")
+        self._cache_header_sent = False
+        super().end_headers()
+
     # ---- plumbing ------------------------------------------------------
     def _send_json(self, status: int, obj) -> None:
         body = json.dumps(obj, default=str).encode("utf-8")
@@ -116,6 +179,17 @@ class WebHandler(RangeHandler):
             # A refused POST's body may be unread; close rather than parse it as a request.
             self.close_connection = True
             self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file_json(self, path: Path) -> None:
+        if not path.is_file():
+            raise HttpError(404, "no locality boundaries yet; refresh the national catalogue from Config")
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/geo+json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
@@ -166,7 +240,7 @@ class WebHandler(RangeHandler):
                 self._send_json(status, payload)
         except HttpError as exc:
             self._send_json(exc.status, {"error": str(exc)})
-        except (E.EstimateError, LP.LocalityError, JobError) as exc:
+        except (E.EstimateError, LP.LocalityError, JobError, ArtifactError, NC.CatalogError) as exc:
             self._send_json(exc.status, {"error": str(exc)})
         except Exception as exc:  # never echo text that could carry a keyed URL
             self._send_json(500, {"error": f"server error ({type(exc).__name__})"})
@@ -182,6 +256,86 @@ class WebHandler(RangeHandler):
     def _route(self, method: str, parts: list[str], query: dict, body: dict):
         app = self.app
         head = parts[0] if parts else ""
+        if head == "catalog":
+            if parts == ["catalog"] and method == "GET":
+                catalog = NC.load(app.data)
+                if catalog is None:
+                    raise HttpError(404, "no national catalogue yet; refresh it from Config")
+                return 200, catalog
+            if parts == ["catalog", "geometry"] and method == "GET":
+                self._send_file_json(NC.geometry_path(app.data))
+                return 200, None
+            if parts == ["catalog", "refresh"]:
+                if method == "POST":
+                    return 202, app.catalog_refresher.start()
+                if method == "GET":
+                    return 200, app.catalog_refresher.status()
+            if parts == ["catalog", "status"] and method == "GET":
+                return 200, RS.status(app.data, app.artifacts)
+        if head == "releases":
+            if len(parts) == 1 and method == "GET":
+                return 200, app.artifacts.releases.list()
+            if len(parts) == 4 and parts[1] == "incomplete" and parts[3] == "log" and method == "GET":
+                return 200, app.artifacts.releases.incomplete_log(parts[2])
+            actions = {"create", "verify", "compare", "approve", "activate", "publish", "rollback", "policy", "cleanup"}
+            if len(parts) == 2 and parts[1] in actions and method == "POST":
+                return 202, app.artifacts.start(f"release_{parts[1]}", body)
+        if head == "staging":
+            if parts == ["staging"] and method == "GET":
+                return 200, {"staged": app.artifacts.current_staging(),
+                             "generation": app.artifacts.staging.current()["generation"]}
+            if parts == ["staging", "cloud-summary"] and method == "POST":
+                try:
+                    return 200, app.artifacts.cloud_staging.upload_summary(body.get("staging_ids"))
+                except ArtifactError as exc:
+                    raise HttpError(exc.status, str(exc)) from exc
+            if parts == ["staging", "cloud-estimate"] and method == "POST":
+                try:
+                    return 200, app.artifacts.cloud_staging.estimate(body.get("staging_ids"))
+                except ArtifactError as exc:
+                    raise HttpError(exc.status, str(exc)) from exc
+            if parts == ["staging", "cloud-submit"] and method == "POST":
+                if body.get("upload_confirmed") is not True:
+                    raise HttpError(400, "confirm the upload in the batch summary")
+                try:
+                    summary = app.artifacts.cloud_staging.upload_summary(body.get("staging_ids"))
+                    value = {"staging_ids": [item["staging_id"] for item in summary["staging"]],
+                             "upload_confirmed": True, "upload_summary": summary}
+                    return 202, app.artifacts.start("cloud_submit", value)
+                except (ArtifactError, KeyError) as exc:
+                    status = exc.status if isinstance(exc, ArtifactError) else 400
+                    raise HttpError(status, str(exc)) from exc
+            if parts == ["staging"] and method == "POST":
+                regions = body.get("regions")
+                single = regions is None
+                if single:
+                    regions = [body.get("region")]
+                if not isinstance(regions, list) or not regions or len(regions) > 100:
+                    raise HttpError(400, "select between one and 100 regions")
+                if any(not isinstance(region, str) for region in regions):
+                    raise HttpError(400, "region IDs must be text")
+                if len(set(regions)) != len(regions):
+                    raise HttpError(400, "a region was selected more than once")
+                for region in regions:
+                    try:
+                        validate(region)
+                    except (TypeError, ValueError) as exc:
+                        raise HttpError(400, str(exc)) from exc
+                with app.stage_gate:
+                    for region in regions:
+                        refusal = stage_refusal(app, region)
+                        if refusal:
+                            raise HttpError(409, refusal)
+                    if single:
+                        return 202, app.artifacts.start("stage", regions[0])
+                    return 202, app.artifacts.start("stage_batch", {"regions": regions})
+            if len(parts) == 3 and parts[2] == "verify" and method == "POST":
+                return 202, app.artifacts.start("verify_staged", artifact_id(parts[1]))
+        if head == "operations" and method == "GET":
+            if len(parts) == 1:
+                return 200, {"operations": app.artifacts.cloud_operations()}
+            if len(parts) == 2:
+                return 200, app.artifacts.get(parts[1])
         if head == "layers" and method == "GET" and len(parts) == 1:
             source = (query.get("source") or ["local"])[0]
             if source == "local":
@@ -281,12 +435,20 @@ class WebHandler(RangeHandler):
             blockers = self.app.cloud.publish_blockers()
             if blockers:
                 raise HttpError(409, "cannot publish: " + " ".join(blockers))
-        job_id = self.app.jobs.start(
-            record, paid_referee=paid,
-            cloud_cost_acknowledged=(target == "local"
-                                     or body.get("cloud_cost_acknowledged") is True))
+        with self.app.stage_gate:
+            if target == "local":
+                staging = self.app.artifacts.staging_regions()
+                busy = [r["region"] for r in record.get("regions") or []
+                        if any(covers(s, r["region"]) for s in staging)]
+                if busy:
+                    raise HttpError(409, f"{busy[0]} is being staged; queue it once staging finishes")
+            job_ids = self.app.jobs.start_batch(
+                record, paid_referee=paid,
+                cloud_cost_acknowledged=(target == "local"
+                                         or body.get("cloud_cost_acknowledged") is True))
         RC.invalidate()
-        return {"job_id": job_id, "status": "queued"}
+        RS.invalidate()
+        return {"job_id": job_ids[0], "job_ids": job_ids, "status": "queued"}
 
     def _stream(self, job_id: str) -> None:
         """Server-sent events: `log` chunks, then `status` when anything changes."""
@@ -328,6 +490,7 @@ class WebHandler(RangeHandler):
                     self.wfile.write(b"event: end\ndata: {}\n\n")
                     self.wfile.flush()
                     RC.invalidate()
+                    RS.invalidate()
                     return
                 if not chunk["text"]:
                     time.sleep(STREAM_POLL_S)
@@ -335,7 +498,56 @@ class WebHandler(RangeHandler):
             return
 
     # ---- verbs ---------------------------------------------------------
+    def _local_release(self, head_only: bool = False) -> bool:
+        path = urllib.parse.urlsplit(self.path).path
+        if path not in ("/local-deploy", "/local-deploy/") and not path.startswith("/local-releases/"):
+            return False
+        if self._refused():
+            return True
+        try:
+            if path in ("/local-deploy", "/local-deploy/"):
+                active = self.app.artifacts.releases.state()["active"]
+                if not active:
+                    raise HttpError(404, "No local release has been activated")
+                self.send_response(302)
+                self.send_header("Location", f"/local-releases/{active}/rooftop-solar.html")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return True
+            parts = urllib.parse.unquote(path).split("/")
+            identifier = artifact_id(parts[2])
+            manifest = self.app.artifacts.releases.manifest(identifier)
+            relative = "/".join(parts[3:]) or "rooftop-solar.html"
+            if relative not in {item["path"] for item in manifest["site_inventory"]}:
+                raise HttpError(404, "File is not part of this release")
+            site = self.app.artifacts.releases.path(identifier) / "site"
+            target = site / relative
+            if any(p.is_symlink() for p in (target, *target.parents)) or not target.resolve().is_relative_to(site):
+                raise HttpError(404, "Invalid release file")
+            # A request handler is per connection, so changing its static root
+            # cannot affect another client's release-pinned reads.
+            previous_directory, previous_path = self.directory, self.path
+            try:
+                self.directory = str(site)
+                self.path = "/" + relative
+                if head_only:
+                    super().do_HEAD()
+                else:
+                    super().do_GET()
+            finally:
+                self.directory, self.path = previous_directory, previous_path
+        except (ArtifactError, HttpError, OSError, ValueError) as exc:
+            self.send_error(getattr(exc, "status", 404), str(exc))
+        return True
+
+    def do_HEAD(self) -> None:
+        if not self._local_release(head_only=True):
+            super().do_HEAD()
+
     def do_GET(self) -> None:
+        if self._local_release():
+            return
         if urllib.parse.urlsplit(self.path).path.startswith("/api/"):
             if not self._refused():
                 self._api("GET")
@@ -357,6 +569,7 @@ def make_server(app: App, port: int = DEFAULT_PORT,
     handler = lambda *a, **kw: handler_cls(*a, directory=str(app.root), **kw)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     server.daemon_threads = True
+    server.app = app
     return server
 
 
@@ -403,9 +616,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="interpreter for pipeline runs (default: this one)")
     parser.add_argument("--no-open-browser", action="store_true",
                         help="print the link instead of opening it")
+    parser.add_argument("--staging-root", type=Path,
+                        help="local staging storage (default: data/regional_staging)")
+    parser.add_argument("--release-root", type=Path,
+                        help="local release storage (default: data/local_releases)")
     args = parser.parse_args(argv)
     render_docs(ROOT)
-    app = App(secrets.token_urlsafe(24), python=args.python)
+    app = App(secrets.token_urlsafe(24), python=args.python,
+              staging_root=args.staging_root, release_root=args.release_root)
     try:
         server = make_server(app, args.port)
     except OSError as exc:

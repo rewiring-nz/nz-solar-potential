@@ -61,6 +61,24 @@ assert.doesNotMatch(P.renderQueueCard(job, true, true), />Map:/);
 assert.match(P.renderQueueCard(job, true, true), /data-map-region="x\/y\/riccarton"/);
 assert.match(P.renderQueueCard(job, true, true), /data-running="true">Cancel/);
 assert.doesNotMatch(P.renderQueueCard(job, true, false), /data-q=/);
+html = P.renderQueueCard(job, true, true);
+assert.match(html, /^<details class="qrow running" data-qjob="abc">/);
+assert.match(P.renderQueueCard(job, true, true, 200, true), /data-qjob="abc" open>/);
+assert.match(html, /<summary[^]*data-running="true">Cancel[^]*<\/summary>/);
+assert.equal(P.queueSummary(job), "42% · 25 min left");
+assert.equal(P.queueSummary({ ...job, status: "queued", queue_position: 2, estimated_total_s: 720 }), "Queued #2 · ≈ 12 min");
+assert.equal(P.queueSummary({ ...job, status: "failed" }), "Failed · 18 min");
+assert.equal(P.queueSummary({ ...job, progress_known: false, eta_s: null }), "Building panel layouts");
+// Finished jobs render as the same one-line history rows, with a finish time and no Remove button.
+const finished = { ...job, status: "succeeded", finished: "2026-11-14T07:41:00Z" };
+assert.match(P.finishedLabel(finished), /^\d{1,2} \w+ \d\d:\d\d$/);
+assert.equal(P.finishedLabel({}), "");
+html = P.renderQueueCard(finished, false, false);
+assert.match(html, /<summary[^]*title="2026-11-14T07:41:00Z"[^]*<\/summary>/);
+assert.doesNotMatch(html, /data-q=/);
+assert.doesNotMatch(html, /<span class="qsum">Succeeded/);
+assert.match(html, /data-job="abc"/);
+assert.doesNotMatch(P.renderQueueCard(job, true, true), /title="2026/);
 assert.match(P.renderAreaTitles(job), /Christchurch Central, Christchurch/);
 assert.match(P.renderAreaTitles(job), /data-map-region="x\/y\/riccarton"/);
 assert.equal(P.jobTitle({ regions: ["x/queenstown/sunshine-bay/grid-abcdef"] }),
