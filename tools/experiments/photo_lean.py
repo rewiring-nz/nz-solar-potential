@@ -117,15 +117,66 @@ def photo_lean(faces, origin, img):
     return float(ks[i]), float(ks[j]), float(s[i, j])
 
 
+def absorb_slivers(faces, min_width=0.5, min_area=1.5):
+    """Faces too thin or small to be a roof face join the neighbour they
+    share the longest edge with (width = 2 * area / perimeter). A sliver is
+    a cell the labelling got wrong beside a seam, not a face: 1 Shotover
+    Street's 0.3 m strip between two parallel seams."""
+    faces = [dict(f) for f in faces]
+    changed = True
+    while changed and len(faces) > 1:
+        changed = False
+        for i, f in enumerate(faces):
+            p = f["poly"]
+            if p.area >= min_area and 2 * p.area / max(p.length, 1e-9) >= min_width:
+                continue
+            best, bl = None, 0.3
+            for j, g in enumerate(faces):
+                if j == i:
+                    continue
+                sh = p.boundary.intersection(g["poly"].buffer(0.05)).length
+                if sh > bl:
+                    best, bl = j, sh
+            if best is None:
+                continue
+            u = faces[best]["poly"].union(p.buffer(0.02)).buffer(-0.01)
+            if u.geom_type != "Polygon":
+                continue
+            faces[best]["poly"] = u
+            del faces[i]
+            changed = True
+            break
+    return faces
+
+
 def leaned(faces, origin, kx, ky):
     """The faces as the photo shows them: every vertex moved by k times its
-    own height on its face's plane."""
+    height. A corner two faces share moves once, by the mean of the heights
+    their planes give it there (planes fitted separately disagree by a few
+    centimetres at a shared corner, which bent the seam); across a step
+    (heights over STEP_M apart) each face keeps its own."""
+    STEP_M = 0.5
     cx, cy = origin
+    hts = {}
+    def key(x, y):
+        return (round(x, 2), round(y, 2))
+    def h_of(f, x, y):
+        a, b, c = f["plane"]
+        return a * (x - cx) + b * (y - cy) + c
+    for f in faces:
+        for ring in [f["poly"].exterior] + list(f["poly"].interiors):
+            for x, y in ring.coords:
+                hts.setdefault(key(x, y), []).append(h_of(f, x, y))
     out = []
     for f in faces:
-        a, b, c = f["plane"]
-        mv = lambda ring: [(x + kx * (a * (x - cx) + b * (y - cy) + c),
-                            y + ky * (a * (x - cx) + b * (y - cy) + c)) for x, y in ring.coords]
+        def mv(ring):
+            o = []
+            for x, y in ring.coords:
+                h0 = h_of(f, x, y)
+                hs = [h for h in hts[key(x, y)] if abs(h - h0) <= STEP_M]
+                h = float(np.mean(hs))
+                o.append((x + kx * h, y + ky * h))
+            return o
         p = Polygon(mv(f["poly"].exterior), [mv(i) for i in f["poly"].interiors]).buffer(0)
         if not p.is_empty and p.area > 0.3:
             out.append(p)

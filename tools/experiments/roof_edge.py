@@ -98,3 +98,94 @@ def roof_edge(pr, poly):
     except Exception:
         pass
     return g
+
+
+# ---------------------------------------------------------------------------
+# Per-edge fit: the surveyed outline keeps its corners and directions; each
+# wall line moves out or in to where this roof's returns stop.
+EDGE_MIN_M = 1.5      # shorter edges take their neighbours' move
+STRIP_M = 0.4         # depth of the strip whose return density is read
+OUT_MAX_M = 2.0       # eaves, verandas
+IN_MAX_M = 1.0
+DENSITY_SHARE = 0.4   # of the roof's own density: under this the strip is not roof
+HALF_SPACING_M = 0.1
+
+
+def own_returns(pr, poly, reach=REACH_M):
+    pts, _, ground = pr.all_points(poly, buf=reach)
+    if len(pts) < 30:
+        return np.zeros((0, 3))
+    ox, oy = poly.centroid.x, poly.centroid.y
+    lab, eqs, idx = pr.grow_planes(pts - np.array([ox, oy, ground]))
+    near = contains_xy(poly.buffer(0.6), pts[:, 0], pts[:, 1])
+    keep = np.zeros(len(pts), bool)
+    for k in set(lab[lab >= 0]):
+        m = lab == k
+        if near[m].mean() >= OWN_SHARE:
+            keep |= m
+    return pts[keep]
+
+
+def fit_edges(pr, poly):
+    """`poly` with each long edge moved along its normal to where the roof's
+    returns stop. Returns (polygon, moves) or (poly, None)."""
+    if isinstance(poly, MultiPolygon):
+        poly = max(poly.geoms, key=lambda g: g.area)
+    from shapely.geometry.polygon import orient
+    poly = orient(Polygon(poly.exterior), 1.0)       # counter-clockwise: outward normal is to the right
+    P = own_returns(pr, poly)
+    if len(P) < 60:
+        return poly, None
+    inside = contains_xy(poly, P[:, 0], P[:, 1])
+    rho = inside.sum() / max(poly.area, 1.0)
+    c = np.array(poly.exterior.coords)[:-1]
+    n = len(c)
+    moves = [None] * n
+    for i in range(n):
+        a, b = c[i], c[(i + 1) % n]
+        t = b - a; L = np.hypot(*t)
+        if L < EDGE_MIN_M:
+            continue
+        t = t / L; nrm = np.array([t[1], -t[0]])
+        rel = P[:, :2] - a
+        along = rel @ t; across = rel @ nrm
+        on = (along > 0.3) & (along < L - 0.3)
+        best = None
+        for d in np.arange(-IN_MAX_M, OUT_MAX_M + 1e-9, 0.1):
+            dens = ((across[on] > d - STRIP_M) & (across[on] <= d)).sum() / ((L - 0.6) * STRIP_M)
+            if dens >= DENSITY_SHARE * rho:
+                best = d
+            elif best is not None and d > 0:
+                break            # the returns have stopped: do not jump a gap to a neighbour
+        if best is None:
+            moves[i] = 0.0
+            continue
+        # the strip rule is good to the strip's depth; the edge itself is
+        # where the returns of that last stretch end
+        last = across[on & (across > best - 2 * STRIP_M) & (across <= best)]
+        moves[i] = (float(np.percentile(last, 95)) + HALF_SPACING_M) if len(last) >= 5 else best
+    if all(m is None for m in moves):
+        return poly, None
+    for i in range(n):           # short edges: the mean of the nearest fitted neighbours
+        if moves[i] is None:
+            nb = [moves[j % n] for j in (i - 1, i + 1) if moves[j % n] is not None]
+            moves[i] = float(np.mean(nb)) if nb else 0.0
+    lines = []
+    for i in range(n):
+        a, b = c[i], c[(i + 1) % n]
+        t = (b - a) / max(np.hypot(*(b - a)), 1e-9); nrm = np.array([t[1], -t[0]])
+        lines.append((a + nrm * moves[i], t, nrm))
+    out = []
+    for i in range(n):
+        (p0, t0, n0), (p1, t1, n1) = lines[i - 1], lines[i]
+        cr = t0[0] * t1[1] - t0[1] * t1[0]
+        if abs(cr) < 0.15:
+            out.append(c[i] + (n0 * moves[i - 1] + n1 * moves[i]) / 2)
+        else:
+            s = ((p1 - p0)[0] * t1[1] - (p1 - p0)[1] * t1[0]) / cr
+            q = p0 + t0 * s
+            out.append(q if np.hypot(*(q - c[i])) < 3.5 else c[i] + (n0 * moves[i - 1] + n1 * moves[i]) / 2)
+    g = Polygon(out).buffer(0)
+    if g.is_empty or g.geom_type != "Polygon" or not (0.6 * poly.area < g.area < 1.8 * poly.area):
+        return poly, None
+    return g, moves

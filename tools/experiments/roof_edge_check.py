@@ -37,10 +37,10 @@ def one(row):
         try:
             if name == 'outline': r = r0
             else:
-                e = RE.roof_edge(pr, translate(poly, *r0['shift']))
+                e, _ = RE.fit_edges(pr, translate(poly, *r0['shift']))
                 pr.REGISTER = False; r = pr.reconstruct(bid, e); pr.REGISTER = True
             org = (r['poly'].centroid.x, r['poly'].centroid.y)
-            k = PL.photo_lean(r['faces'], org, _I); ln = PL.leaned(r['faces'], org, k[0], k[1]) if k else [f['poly'] for f in r['faces']]
+            k = PL.photo_lean(r['faces'], org, _I); ln = PL.leaned(PL.absorb_slivers(r['faces']), org, k[0], k[1]) if k else [f['poly'] for f in r['faces']]
             go = close(ln); gl = M._lines(ln, go)
             res[name] = dict(lines=f1(dl, gl), lines75=f1(dl, gl, .75), edge=f1(o.boundary, go.boundary), edge75=f1(o.boundary, go.boundary, .75), area=go.area / o.area, n=len(ln),
                              iou=go.intersection(o).area / go.union(o).area)

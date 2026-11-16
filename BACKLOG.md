@@ -397,6 +397,29 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Roof edge wall by wall from the returns (16 Nov, experiment; owner
+  confirmed the markup's outer edge is the surveyed outline the tool gave,
+  so the markup cannot judge roof edges).** `roof_edge.fit_edges`: the
+  surveyed outline keeps its corners and directions, each wall of 1.5 m or
+  more moves along its normal (1 m in to 2 m out) to where this roof's
+  returns stop (last 0.4 m strip holding 0.4 of the roof's return density,
+  then the 95th percentile of the returns in it, plus 0.1 m). 36 Stanley
+  Street: 696 m2 against the 688 m2 drawn there by hand (surveyed outline
+  561 m2). Walls on 1 Shotover Street move -1.0 to +0.9 m, on 15B Frankton
+  Road -0.3 to +0.5 m. Inner lines on the 50 roofs, surveyed outline /
+  fitted edge: right at 0.3 m 28 / 26, at 0.75 m 33 / 35
+  (`docs/review/three_houses_16nov_roof_edge.jpg`). Agent's reading of
+  that render: Stanley's edge and hips sit on the roof; Shotover's eaves
+  are covered on the north and west but the east side gains a jog and a
+  notch; Frankton gains a small extra face on the south side. A photo
+  judge (strongest brightness change within 1.5 m of the leaned edge) was
+  tried and dropped: on Stanley it locks on the gutter line 1 m inside the
+  edge. Also in `photo_lean.py`: shared corners lean by one height (seams
+  no longer bend), `absorb_slivers` (no effect on these three: the
+  doubled lines on Shotover's south-west wing are the two sides of a step,
+  which the lean separates as the photo does). Open on Shotover: lines
+  (a)-(d) in the entry below.
+
 - **1 Shotover Street line by line, and the roof edge (16 Nov).**
   `tools/experiments/line_by_line.py` (leaned point roof against the
   markup, 0.5 m pieces): 85% of the drawn line length has a built line
