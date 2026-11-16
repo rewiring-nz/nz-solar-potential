@@ -397,6 +397,27 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Faces from the returns lead the free model in the build (16 Nov, code
+  on `point-roof`; `SOLAR_POINT_ROOF` still off by default, no region
+  built with it).** Fair comparison first
+  (`tools/experiments/fair_compare.py`: 29 benchmark roofs the free model
+  never trained on, each method's faces slid as one piece to its best
+  match with the markup's faces and strokes): line F at 0.3 m median 0.82
+  point roof against 0.69 free model, roofs at 0.7 or over 18 against 14,
+  point roof better on 15 and worse on 6. `roof_partition.selected_doc`
+  now reads reader, then point faces, then free model; point faces are
+  kept through the build like a reading (`from_reading`);
+  `point_roof.py --jobs`. Through the build itself, 50 marked pilot roofs
+  built blind (`SOLAR_HIDE_LABELS=1`, `tools/layout_ab.py`), scored the
+  same way (scratchpad `three/builtscore.py`): as now 24 roofs right at
+  0.3 m (median 0.69), 3,783 panels, 30% clean; with
+  `SOLAR_POINT_ROOF=1` 32 roofs (0.79), 3,980 panels, 50% clean. To ship:
+  point faces for every region (`point_roof.py <region> --jobs 16` on the
+  VM), the switch on, a district re-lay (the geometry hash changes), and
+  the lean for the drawing (entries above) or the roofs are right but
+  drawn off the photo. Reader against point roof on equal terms is
+  unmeasured.
+
 - **Lean prior and the check for the map's photo (16 Nov).** The misses on
   the map's tiles are jumps of 2-3 m onto another edge (4735146: -2.5,
   -2.1 m). `SOLAR_LEAN_PRIOR` (default 0.5): on the map's tiles against

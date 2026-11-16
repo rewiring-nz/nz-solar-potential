@@ -1356,8 +1356,17 @@ def selected_doc(building_id):
     from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
     # a confident reading of the photo leads them all (src/vision_roof.py)
     from src.vision_roof import STUDENT_FACES_DIR, USE_VISION_ROOF, VISION_FACES_DIR
-    dirs = (([VISION_FACES_DIR, STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
+    # Order: the paid reader's tracing, then faces from the returns, then the
+    # free model. The returns lead the free model on a fair comparison: 29
+    # benchmark roofs the model never trained on, each method's faces slid
+    # as one piece to its best match with the markup's faces and strokes
+    # (tools/experiments/fair_compare.py, 16 Nov): line F at 0.3 m median
+    # 0.82 against 0.69, roofs at 0.7 or over 18 against 14, better on 15
+    # roofs and worse on 6. Reader against returns is unmeasured on those
+    # terms; the reader keeps its place.
+    dirs = (([VISION_FACES_DIR] if USE_VISION_ROOF else [])
             + ([POINT_FACES_DIR] if USE_POINT_ROOF else [])
+            + ([STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
             + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])
     for d in dirs:
@@ -1569,7 +1578,10 @@ def facets_from_selected_faces(building_id, footprint, pts):
         inside = pts
     # a face traced from the photo is marked, so the build's LiDAR stages
     # leave its lines alone (build_layout_geojson, KEEP_READINGS)
-    _read = doc.get("source") in ("vision", "student")
+    # ...and so is a face cut from the returns' own planes (src/point_roof.py):
+    # its edges are plane intersections already, which the reshape stages
+    # can only move off them
+    _read = doc.get("source") in ("vision", "student", "points")
     out = []
     pending = []
     for ring in doc.get("faces") or []:

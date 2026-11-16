@@ -630,18 +630,35 @@ def main():
     ap.add_argument("--ids", nargs="*", type=int, default=None)
     ap.add_argument("--sample-file", default=None)
     ap.add_argument("--out", default=str(POINT_FACES_DIR))
+    ap.add_argument("--jobs", type=int, default=1)
     a = ap.parse_args()
     O = outlines(a.region)
     ids = a.ids or (json.loads(Path(a.sample_file).read_text()) if a.sample_file else sorted(O))
-    n = 0
-    for bid in ids:
-        if bid not in O:
-            continue
-        try:
-            n += 1 if write_faces(bid, O[bid], Path(a.out)) else 0
-        except Exception as exc:
-            print(f"  point_roof: {bid} failed ({exc!r})", flush=True)
+    ids = [b for b in ids if b in O]
+    if a.jobs > 1:
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(a.jobs, initializer=_init_worker, initargs=(a.region, a.out)) as ex:
+            n = sum(ex.map(_write_one, ids, chunksize=16))
+    else:
+        _init_worker(a.region, a.out)
+        n = sum(_write_one(b) for b in ids)
     print(f"point_roof: {n} of {len(ids)} roofs written to {a.out}")
+
+
+_W = {}
+
+
+def _init_worker(region, out):
+    _W["O"] = outlines(region)
+    _W["out"] = Path(out)
+
+
+def _write_one(bid):
+    try:
+        return 1 if write_faces(bid, _W["O"][bid], _W["out"]) else 0
+    except Exception as exc:
+        print(f"  point_roof: {bid} failed ({exc!r})", flush=True)
+        return 0
 
 
 if __name__ == "__main__":
