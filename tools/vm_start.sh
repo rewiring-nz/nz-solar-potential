@@ -47,6 +47,27 @@ done
 EST=$(python3 -c "print(round($HOURS*$RATE))")
 printf "VM hours this month: %.0f of %s (about NZ\$%s at NZ\$%s/h, before tax and disks)\n" "$HOURS" "$CAP" "$EST" "$RATE"
 [ "${1:-}" = "--status" ] && exit 0
+if [ "${1:-}" = "--clone" ]; then
+  # A CLONE OF THE BUILD VM, UNDER THE SAME CAP (owner's approval, 17 Nov).
+  #   tools/vm_start.sh --clone <name> "<regions>" <startup script> <job script>
+  # A spot c2d-standard-16 made from the `solar-worker` image
+  # (tools/fleet.sh image), deleted on preemption, that runs the job script
+  # on the regions in its metadata. Its hours count toward the month's total
+  # like any VM's. C2D in zone -a: T2D quota is 24 cores and the build VM
+  # holds 16. pd-standard: the SSD quota is 500 GB and the image is 600 GB.
+  NAME=${2:?clone name}; REGIONS=${3:?regions}; STARTUP=${4:?startup script}; JOB=${5:?job script}
+  python3 -c "import sys;sys.exit(0 if $HOURS < $CAP else 1)" \
+    || { echo "REFUSED: this month's VM hours are at the cap. The owner raises it in $BUDGET."; exit 2; }
+  gcloud compute instances create "$NAME" --project="$PROJECT" --zone "${CLONE_ZONE:-australia-southeast1-a}" \
+    --machine-type "${CLONE_MACHINE:-c2d-standard-16}" --image solar-worker --image-project "$PROJECT" \
+    --boot-disk-size 600GB --boot-disk-type pd-standard \
+    --provisioning-model SPOT --instance-termination-action DELETE \
+    --scopes storage-rw,compute-rw --labels role=solar-split \
+    --metadata "regions=$REGIONS" \
+    --metadata-from-file "startup-script=$STARTUP,clone-job=$JOB" \
+    --quiet --format="value(name,status)"
+  exit $?
+fi
 if python3 -c "import sys;sys.exit(0 if $HOURS < $CAP else 1)"; then
   gcloud compute instances start "$VM" --zone "$ZONE" --project "$PROJECT"
   echo "Started. It powers itself off after 30 idle minutes (tools/vm_idle_stop.sh)."
