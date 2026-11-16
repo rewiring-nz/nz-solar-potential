@@ -619,7 +619,14 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
     if not faces:
         return 0
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / f"{bid}.json").write_text(json.dumps({"source": "points", "score": 1.0, "shift": rec["shift"], "faces": faces}))
+    # each face's plane (z above the local ground = a*(x-ox) + b*(y-oy) + c)
+    # travels with it: the lean of the roof in a photo is read from the
+    # heights of its lines (tools/experiments/photo_lean.py)
+    c = rec["poly"].centroid
+    (out_dir / f"{bid}.json").write_text(json.dumps({
+        "source": "points", "score": 1.0, "shift": rec["shift"], "faces": faces,
+        "planes": [[round(float(v), 5) for v in f["plane"]] for f in rec["faces"]],
+        "origin": [round(c.x, 3), round(c.y, 3)]}))
     return len(faces)
 
 
