@@ -397,6 +397,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Three houses first (16 Nov, owner's instruction): get 15B Frankton Road
+  (4725546), 1 Shotover Street (4734696) and 36 Stanley Street (4735292)
+  right before widening.** `src/point_roof.py` (planes grown on the returns,
+  lines from plane intersections) against the markup's faces and strokes,
+  drawn lines found / built lines real within 0.3 m
+  (`tools/experiments/three_house_lean.py`, `three_house_view.py`):
+  as compared until now 4734696 33 / 29%, 4725546 64 / 60%, 4735292 3 / 8%;
+  after one slide of the whole roof chosen on the lines (0.25, -0.88 m;
+  0.25, 0.50; 1.62, -1.25) 84 / 79%, 91 / 88%, 39 / 93%. A lean per metre of
+  height fits as well (0.12-0.17 m/m). So on the first two the geometry is
+  close and the comparison was misplaced: the markup is in the photo's
+  frame, the build in the LiDAR's, and the census slide (best outline
+  overlap) gave (0, 0) for both. `image_shift.json` holds (-0.2, 1.1) for
+  4734696, the same slide with the sign turned, but (0.1, 0.0) for 4735292,
+  a 12 m roof that needs 2 m. The 24 census roofs re-scored with the slide
+  chosen on the lines (scratchpad `census/census_aligned.py`, after-fix
+  build): found 52/64/72%, real 73/85/90% within 0.3/0.75/1.5 m (38/60/71
+  and 57/84/90 before). Next: the same line-based slide in
+  `tools/markup_benchmark`; check what the map draws for these three
+  (lean applied or not); the remaining misses on the first two; why
+  4735292 misses 61% (near-flat faces at 12 m). Render:
+  `docs/review/three_houses_16nov_1_shotover_st.jpg` (its 3D row draws the
+  red wireframe at the wrong height: view bug, not the roof).
+
 - **The 24-roof yardstick under-counts, and where the real gap is (16 Nov).**
   The census (scratchpad `census/census.py`) and `tools/markup_benchmark._lines`
   score against the markup's closed `faces` only. The markup also holds
