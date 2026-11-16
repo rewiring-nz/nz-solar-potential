@@ -34,7 +34,7 @@ def one(job):
         from shapely.ops import unary_union
         from shapely.affinity import translate
         import markup_benchmark as M
-        import photo_lean as PL
+        from src import photo_lean as PL
         from src import point_roof as pr
         from src.region_build import area_paths
         if "B" not in _CACHE:

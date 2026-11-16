@@ -332,6 +332,11 @@ def drawing_shifts(region_dir):
 _READING_SHIFTS = []
 
 
+def _point_faces_lead(building_id):
+    from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
+    return USE_POINT_ROOF and (POINT_FACES_DIR / f"{building_id}.json").exists()
+
+
 def _reading_shifts():
     """{building_id: [dx, dy, 1.0]} for roofs built from a reading of the
     photo (src/vision_roof.py). The reading was traced on the photo and slid
@@ -350,6 +355,11 @@ def _reading_shifts():
             for f in (d.glob("*.json") if d.is_dir() else ()):
                 try:
                     if int(f.stem) in marked:
+                        continue
+                    # faces from the returns lead the free model's reading
+                    # (roof_partition.selected_doc): that roof is not built
+                    # from this reading, so it does not move by its slide
+                    if d == STUDENT_FACES_DIR and _point_faces_lead(f.stem):
                         continue
                     sh = json.loads(f.read_text()).get("shift") or [0.0, 0.0]
                     got[f.stem] = [-float(sh[0]), -float(sh[1]), 1.0]
@@ -378,6 +388,55 @@ def _labelled_ids():
     except Exception:
         return set()
     return {int(b) for b, v in B.items() if v.get("faces") or v.get("lines") or v.get("obstructions")}
+
+
+def _point_leans(out, building_ids, tiles):
+    """Replace the shift of every roof built from the returns
+    (src/point_roof.py) with the lean read off the map's own photo
+    (src/photo_lean.py), in `out`. Returns how many.
+
+    WHY. The shift above compares the survey-year photo with the map's
+    photo and so assumes the survey-year photo sits on the LiDAR. It does
+    not: on 35 marked pilot roofs the LiDAR roof is a median 0.71 m (p90
+    1.41 m) from where that photo shows it, and neighbours do not share the
+    slide (16 Nov, tools/experiments/roof_photo_slide_from_markup.py). A roof
+    with faces and their planes can be laid over the map's photo directly:
+    each line moved by the lean times its height, kept where the photo's
+    edges run along them. Blind on 50 marked pilot roofs, roofs whose lines
+    sit within 0.3 m of the markup: 5 as placed, 28 with the lean
+    (tools/experiments/lean_check_regions.py).
+
+    Roofs with a paid reading keep the slide that reading was made with,
+    and roofs with drawn markup keep theirs: neither is built from point
+    faces (roof_partition.selected_doc)."""
+    from src import photo_lean
+    from src.outline_fit import _marked
+    from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
+    from src.vision_roof import USE_VISION_ROOF, VISION_FACES_DIR
+    if not USE_POINT_ROOF:
+        return 0
+    marked = _marked()
+
+    def photo(x0, y0, x1, y1):
+        return tiles.window((x0, y0, x1, y1), int(round((y1 - y0) / RES_M)), int(round((x1 - x0) / RES_M)))
+
+    n = 0
+    for bid in building_ids:
+        f = POINT_FACES_DIR / f"{int(bid)}.json"
+        if int(bid) in marked or not f.exists():
+            continue
+        if USE_VISION_ROOF and (VISION_FACES_DIR / f"{int(bid)}.json").exists():
+            continue
+        try:
+            s = photo_lean.drawing_shift(json.loads(f.read_text()), photo)
+        except Exception as exc:
+            print(f"  register_imagery: lean of {bid} failed ({exc!r})", flush=True)
+            continue
+        if s is None:
+            continue
+        out[str(int(bid))] = s
+        n += 1
+    return n
 
 
 def register(region):
@@ -451,6 +510,9 @@ def register(region):
         if markup:
             print(f"[{region}] {len(markup)} labelled roofs left unshifted (drawn on the map's photo)")
     write_json_atomic(paths["dir"] / "markup_shift.json", markup)
+    if os.environ.get("SOLAR_PHOTO_LEAN", "1") != "0":
+        n_lean = _point_leans(out, [b for b in geoms], tiles)
+        print(f"[{region}] {n_lean} roofs placed by the lean of their own lines in the map's photo", flush=True)
     write_json_atomic(out_path, out)
     # roofs whose photo has changed since the survey (see CHANGE_LUM)
     changed = {}

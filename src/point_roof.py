@@ -1,4 +1,4 @@
-"""Roof faces straight from the raw LiDAR returns (SOLAR_POINT_ROOF=1, off).
+"""Roof faces straight from the raw LiDAR returns (SOLAR_POINT_ROOF=0 turns it off).
 
 THE RULE. Per building: (1) grow planes on the returns themselves, over a
 neighbour graph spread across directions (returns lie on scan lines about
@@ -20,9 +20,11 @@ LAMBDA was chosen on those 70 (0.4-4.0 gives line F 0.59-0.63); other towns
 and the held-back roofs are unscored.
 
 Writes data/point_faces/<id>.json in the selected-faces schema (source
-"points", score 1.0). With SOLAR_POINT_ROOF=1 the build reads it ahead of
-every other machine reading (roof_partition.selected_doc); hand markup
-still wins.
+"points", score 1.0), with each face's plane and the hash of this file (a
+roof is rewritten only when the code changed). The build reads it after a
+paid reading of the photo and ahead of every other machine reading
+(roof_partition.selected_doc); hand markup still wins. It is a PREPARE
+step of the district build (src/build_plan.py).
 
 Known gaps: roofs with sparse scan lines, balcony terraces, cones, hips
 under FLAT_DEG (joined as one deck).
@@ -44,7 +46,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 POINT_FACES_DIR = ROOT / "data" / "point_faces"
-USE_POINT_ROOF = os.environ.get("SOLAR_POINT_ROOF", "0") == "1"
+USE_POINT_ROOF = os.environ.get("SOLAR_POINT_ROOF", "1") == "1"
 
 KNN = 24                   # returns in a normal estimate
 KGROW = 10                 # growth-graph neighbours, at most two per 45 deg sector
@@ -624,7 +626,7 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
     # heights of its lines (tools/experiments/photo_lean.py)
     c = rec["poly"].centroid
     (out_dir / f"{bid}.json").write_text(json.dumps({
-        "source": "points", "score": 1.0, "shift": rec["shift"], "faces": faces,
+        "source": "points", "score": 1.0, "code": _code(), "shift": rec["shift"], "faces": faces,
         "planes": [[round(float(v), 5) for v in f["plane"]] for f in rec["faces"]],
         "origin": [round(c.x, 3), round(c.y, 3)]}))
     return len(faces)
@@ -637,7 +639,7 @@ def main():
     ap.add_argument("--ids", nargs="*", type=int, default=None)
     ap.add_argument("--sample-file", default=None)
     ap.add_argument("--out", default=str(POINT_FACES_DIR))
-    ap.add_argument("--jobs", type=int, default=1)
+    ap.add_argument("--jobs", type=int, default=min(16, os.cpu_count() or 1))
     a = ap.parse_args()
     O = outlines(a.region)
     ids = a.ids or (json.loads(Path(a.sample_file).read_text()) if a.sample_file else sorted(O))
@@ -660,8 +662,20 @@ def _init_worker(region, out):
     _W["out"] = Path(out)
 
 
+def _code():
+    """Hash of this file: a roof's faces are rewritten only when the code
+    that made them has changed (a district is 33,000 roofs)."""
+    if "code" not in _W:
+        import hashlib
+        _W["code"] = hashlib.md5(Path(__file__).read_bytes()).hexdigest()[:12]
+    return _W["code"]
+
+
 def _write_one(bid):
     try:
+        f = _W["out"] / f"{bid}.json"
+        if f.exists() and json.loads(f.read_text()).get("code") == _code():
+            return 1
         return 1 if write_faces(bid, _W["O"][bid], _W["out"]) else 0
     except Exception as exc:
         print(f"  point_roof: {bid} failed ({exc!r})", flush=True)

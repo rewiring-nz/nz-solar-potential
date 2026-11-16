@@ -151,7 +151,7 @@ deployment or authentication model.
 Every build engine reads its per-region steps from
 [build_plan.py](../../src/build_plan.py), in this order:
 
-1. **Prepare** (`build_plan.PREPARE`): `outline_fit`, then `repeat_roofs`.
+1. **Prepare** (`build_plan.PREPARE`): `point_roof`, `outline_fit`, then `repeat_roofs`.
    Each has a switch (`SOLAR_OUTLINE_FIT`, `SOLAR_REPEAT_ROOFS`, default on);
    a failure warns and the build continues. Skipped on yield-only rebuilds.
 2. **Stages** (`build_plan.STAGES`, through `run_stage.py`):

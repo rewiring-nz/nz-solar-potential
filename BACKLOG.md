@@ -397,6 +397,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Point roof and the lean wired into the district build (16 Nov, code on
+  `point-roof`, on by default; no region built with it yet).**
+  `build_plan.PREPARE` runs `point_roof` first for every region (16 jobs,
+  a roof rewritten only when `point_roof.py` changed; faces carry their
+  planes). `register_imagery._point_leans` replaces the shift of every roof
+  built from point faces with `photo_lean.drawing_shift` read off the
+  map's own tiles (0.2 s a roof; `SOLAR_PHOTO_LEAN=0` turns it off;
+  `SOLAR_LEAN_PRIOR` 1.0: no cost on the pilot check, 28 of 50, and fewer
+  far misses on the tiles). A free-model reading no longer moves the
+  drawing of a roof that point faces lead. `build_keys.reading_hash`
+  follows the new order. Reader against point roof on equal terms
+  (`tools/experiments/fair_compare_reader.py`, 23 marked roofs with a
+  reader reading): reader better on 12, point roof on 5, same 6; on the 17
+  with 12 faces or fewer 6 / 5 / 6. The reader keeps first place.
+  1 Shotover Street on the map's tiles: the lean gives a move of (0.0,
+  0.37) m where the map applies (-0.2, 1.1) today. Before the district
+  build: the lean check on the 68 marked roofs outside pilot, on the VM.
+
 - **Faces from the returns lead the free model in the build (16 Nov, code
   on `point-roof`; `SOLAR_POINT_ROOF` still off by default, no region
   built with it).** Fair comparison first

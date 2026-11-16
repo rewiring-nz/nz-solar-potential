@@ -64,6 +64,12 @@ class FinishStep:
 
 
 PREPARE: tuple[PrepareStep, ...] = (
+    # Faces cut from the returns' own planes are written first: they lead
+    # the free model's reading (roof_partition.selected_doc) and their slide
+    # moves the outline (outline_fit.fitted_outlines), so a roof whose faces
+    # changed reads as stale.
+    PrepareStep("point_roof", "SOLAR_POINT_ROOF",
+                "its roofs keep their other readings"),
     # An outline clearly offset from the roof the LiDAR sees is slid onto it
     # before the plan, so a building whose slide changed reads as stale.
     PrepareStep("outline_fit", "SOLAR_OUTLINE_FIT",

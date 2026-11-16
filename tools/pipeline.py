@@ -90,6 +90,11 @@ _STEP_INFO: dict[str, tuple[str, str, str]] = {
         "Fetched outlines, imagery and point cloud; SAM, torch, segment-anything, roof_lines_v5.pt and roof_lines_v6.pt",
         "data/selected_faces/<building_id>.json (some roofs may deliberately defer)",
     ),
+    "point_roof": (
+        "Roof faces from the point cloud (optional)",
+        "Outlines and point cloud; SOLAR_POINT_ROOF=0 skips",
+        "data/point_faces/<building_id>.json",
+    ),
     "outline_fit": (
         "Fit outlines to the roof (optional)",
         "Outlines, DSM, point cloud when available; SOLAR_OUTLINE_FIT=0 skips",
