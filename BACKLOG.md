@@ -397,6 +397,32 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **The 24-roof yardstick under-counts, and where the real gap is (16 Nov).**
+  The census (scratchpad `census/census.py`) and `tools/markup_benchmark._lines`
+  score against the markup's closed `faces` only. The markup also holds
+  open `lines` strokes (ridges, valleys): on the 24 census roofs 375 m of
+  3,033 m of strokes lie on no face edge, so a built line on them counted
+  as invented (4725546: 2 faces, 56 of 67 m of ridge strokes unscored;
+  4735292 89 m; 5371183 99 m; 4726056 53 m). Counting the strokes
+  (after-fix build): built lines that are real within 0.3/0.75/1.5 m
+  57/84/90%; drawn lines found 38/60/71%. So invention is small; the gap is
+  lines missed (29% of drawn length has nothing within 1.5 m) and placement
+  (half the lines found are 0.3-1.5 m off). LiDAR check
+  (`tools/experiments/line_evidence.py`: plane fitted to the returns within
+  1.5 m each side of a line): 78% of drawn line samples show a fold over 8
+  degrees or a step over 0.3 m; on 5372585, 5371176 and 4725546 the lines
+  scored as invented show folds of 29, 19 and 22 degrees on 99-100% of
+  samples. Render: `docs/review/census_16nov_lines_scored_invented.jpg`.
+  To do: score strokes in `markup_benchmark`; a label-free score from the
+  LiDAR (line on a fold or step, face on one plane, fold with no line) run
+  on every roof; test whether placement error grows with height above the
+  eave (photo lean is per metre of height, the census aligns outlines only).
+- **Free model retrain on 714 roofs: worse, not adopted (16 Nov).** 146 new
+  readings added to the 568: held-out line F / lines right / face IoU /
+  faces right 0.528 / 16 / 0.643 / 10 against 0.626 / 21 / 0.697 / 13 for
+  `face_regions_v3` (re-scored the same day, reproduced). Second run of
+  each in progress to size run-to-run variation.
+
 - **Reader readings for 234 more pilot homes, and why they hold fewer panels
   (16 Nov).** 299 pilot homes the free model had drawn were read by the paid
   reader (60 in session, 237 by batch, US$15.13); 234 rated 0.4 or over are
@@ -1106,6 +1132,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **At the next build: detailed building types from OpenStreetMap (16 Nov;
+  code done, not built).** `classify` now reads
+  `data/regions/<r>/building_uses.json` (churches, marae, emergency, sport,
+  accommodation, retail, office, farm) ahead of the zone and the size, and
+  the video offers one building type on its own. No region shows any of it
+  until, on the VM: `python tools/fetch_osm_uses.py` (every region; it
+  needs internet, retries the public Overpass servers and keeps a day's
+  answer), then a re-emit and combine. Do it as part of the next build
+  that re-emits anyway; no VM run was started for this on its own. Measured
+  on the Wakatipu regions only: 11 places of worship, 8 emergency, 12
+  community, 187 accommodation, 237 shops; Wanaka and Upper Clutha are
+  unmeasured. After the build, check the churches by name against the map
+  (one "place of worship" is named Literacy Aotearoa) and that the type
+  chips and the "Other" dashboard row read sensibly with fourteen types.
 - **At the next major build: panels one zoom level further out (16 Nov;
   open).** Below zoom 13 the map says "Zoom in to see panel layouts"
   because the panel-area tiles start at z13 (`src/emit_region.py`, the
