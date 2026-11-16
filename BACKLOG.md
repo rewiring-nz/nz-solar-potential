@@ -397,6 +397,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Lean read off the photo, no markup: 5 -> 28 of 50 roofs right at 0.3 m
+  (16 Nov).** `tools/experiments/photo_lean.py` (rule and measurement in its
+  header): the built roof's seams and edge, each point moved by k times its
+  height, are laid over the photo for every k within 0.4 m per metre, and
+  the k where the photo's brightness changes across the lines is kept. End
+  to end on the same 50 marked pilot roofs
+  (`tools/experiments/photo_lean_check.py`; the markup scores, it does not
+  place): line F at 0.3 m median 0.21 -> 0.73 (0.82 with the markup's own
+  slide), roofs at F >= 0.7 5 -> 28 (33); at 0.75 m 24 -> 32. The three
+  study houses, as placed / leaned: 1 Shotover Street 0.31 / 0.83, 15B
+  Frankton Road 0.61 / 0.81, 36 Stanley Street 0.05 / 0.58
+  (`docs/review/three_houses_16nov_leaned.jpg`). 36 Stanley Street is a
+  truncated pyramid the point roof had right, drawn 2 m off; the note
+  above calling it a miss is wrong. PRIOR and SIGMA_PX were picked on 36
+  of these roofs; unmarked roofs and other towns are unmeasured. Left on
+  the three (agent's reading of the render): the roof edge stops at the
+  LINZ outline, 0.5-1 m inside the eave the photo shows (see Imagery,
+  Eaves), and one sliver on 1 Shotover Street. Not in the build or the
+  map. Next: roof edge from the returns; then the lean in the build's
+  drawing step in place of `image_shift` where a roof has faces, for the
+  map's photo.
+
 - **The LiDAR roof is right far more often than scored; it is drawn off the
   photo (16 Nov).** 50 marked pilot roofs with 2-20 faces, none held back,
   `src/point_roof.py` against the markup's faces and strokes, line F at
