@@ -676,10 +676,24 @@ def _write_one(bid):
         f = _W["out"] / f"{bid}.json"
         if f.exists() and json.loads(f.read_text()).get("code") == _code():
             return 1
-        return 1 if write_faces(bid, _W["O"][bid], _W["out"]) else 0
+        # one roof may not hold a district up: a roof that is not done in
+        # ROOF_SECONDS keeps its other readings
+        import signal
+
+        def _late(*_):
+            raise TimeoutError(f"over {ROOF_SECONDS} s")
+        signal.signal(signal.SIGALRM, _late)
+        signal.alarm(ROOF_SECONDS)
+        try:
+            return 1 if write_faces(bid, _W["O"][bid], _W["out"]) else 0
+        finally:
+            signal.alarm(0)
     except Exception as exc:
         print(f"  point_roof: {bid} failed ({exc!r})", flush=True)
         return 0
+
+
+ROOF_SECONDS = 180
 
 
 if __name__ == "__main__":

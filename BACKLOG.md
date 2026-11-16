@@ -397,6 +397,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **The lean holds on the map's own photo, on regions it was never tuned
+  on (16 Nov, VM, `tools/experiments/lean_check_regions.py`).** 75 marked
+  roofs in 22 regions outside pilot, traced on the map's photo, point roof
+  scored against the markup's faces and strokes at 0.3 m: as placed
+  median 0.31, 12 roofs at 0.7 or over; leaned 0.64, 32-33 roofs (prior
+  0.5 / 1.0 / 1.5: 33 / 32 / 33); with the markup's own best slide 0.69,
+  37. The slide there is a median 0.56 m, p90 1.05 m. Pilot on the same
+  run: 5 -> 28 (prior 1.0), 32 with the best slide. `SOLAR_LEAN_PRIOR`
+  stays 1.0. The VM had no PyMaxflow (`point_roof`'s graph cut): installed
+  1.3.2, the Mac's version, and declared it in `requirements.txt` and the
+  lock. `point_roof` gives one roof 180 s before it keeps its other
+  readings.
+- **v80 uploaded, site not switched (16 Nov).** The reading-fix build
+  (35 regions, 1,239,069 panels, +0.1%) is at
+  `gs://solar-potential-map-tiles/v80/`. Gate listed 15 of 32,838 roofs
+  (2 zeroed, 11 big drops, 2 case roofs changed), rendered in
+  `docs/review/gate_v80_flagged_roofs.jpg`: about five are worse, a large
+  obstruction patch taking a face's panels (5372246, 5370362, 5374095,
+  4740583, 4751063). The push of `site-config.js` to main was refused by
+  the session's permission check; main still serves v79. v77-v79 are
+  still in the bucket (no `--keep`).
+
 - **Point roof and the lean wired into the district build (16 Nov, code on
   `point-roof`, on by default; no region built with it yet).**
   `build_plan.PREPARE` runs `point_roof` first for every region (16 jobs,
