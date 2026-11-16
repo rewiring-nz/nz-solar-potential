@@ -397,6 +397,35 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **1 Shotover Street line by line, and the roof edge (16 Nov).**
+  `tools/experiments/line_by_line.py` (leaned point roof against the
+  markup, 0.5 m pieces): 85% of the drawn line length has a built line
+  within 0.3 m, 9% within 0.3-0.75 m, 6% none; of built lines 81 / 10 / 9%
+  (`docs/review/three_houses_16nov_1_shotover_line_by_line.jpg`). The
+  differences: (a) the long valley from the middle junction stops 1.5 m
+  short of the top edge; (b) the small north-east gable has a built line
+  along its lower side, where the returns are two planes, that the markup
+  does not have; (c) the west side of the drawn box on the south-west wing
+  is not built, the box's long sides run on to the roof edge instead; (d)
+  line ends at the roof edge miss by up to 0.75 m; (e) leaning each face by
+  its own plane bends a seam where two planes disagree at a shared corner:
+  lean shared corners by one height. **Roof edge:** drawn edge within 0.3 m
+  of the built edge on 44%. `tools/experiments/roof_edge.py` takes the edge
+  from the returns of the planes that belong to the roof, straightened
+  with `_regularise_machine_face`: 36 Stanley Street edge F at 0.3 m 0.00
+  -> 0.74, area against drawn 0.81 -> 1.01, every hip and the top box on
+  the markup (`..._36_stanley_lidar_edge.jpg`; what is left there is the
+  gutter ring drawn 1 m inside the edge, not built). On the 50 marked
+  roofs (`tools/experiments/roof_edge_check.py`) the edge from the returns
+  scores under the surveyed outline (edge F at 0.3 m median 0.45 against
+  0.69; lines unchanged, 27 against 28 roofs), but the comparison is not
+  independent: the built-on-outline area is 1.00 of the drawn area at the
+  median (p10 0.97), so on most marked roofs the markup's outer edge is the
+  surveyed outline. The returns' edge is 1.01 of drawn at the median, p10
+  0.86, p90 1.14: too ragged as it stands. Needs a judge for the edge that
+  is not the markup (the photo's gradient across the leaned edge, or the
+  owner's eye), then per-edge fitting.
+
 - **Lean read off the photo, no markup: 5 -> 28 of 50 roofs right at 0.3 m
   (16 Nov).** `tools/experiments/photo_lean.py` (rule and measurement in its
   header): the built roof's seams and edge, each point moved by k times its
