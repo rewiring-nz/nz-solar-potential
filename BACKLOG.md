@@ -397,6 +397,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Lean on the MAP's photo: not ready (16 Nov).** The live map shows the
+  LINZ Basemaps photo, not the survey-year photo the pilot markup was
+  drawn on, so the lean has to be read off the map's tiles
+  (`register_imagery._Tiles`). Scratchpad `three/maplean.py`, 36 marked
+  pilot roofs, against the markup's slide plus `image_shift.json` (a sum of
+  two measurements, a third of the shifts borrowed from neighbours, so a
+  weak truth): what the map applies now is a median 0.72 m off (19% within
+  0.5 m, 17% over 1 m); the lean read off the tiles 0.43 m (56% within
+  0.5 m) but 31% over 1 m. Better typically, worse in the tail: do not
+  ship as is. Next: accept the photo's lean only on a sharp peak and keep
+  the present shift otherwise; a direct truth exists outside the pilot,
+  where marked roofs were traced on the map's own photo, but those
+  regions' LiDAR is on the VM only. 1 Shotover Street with the edge
+  extended: 84% of drawn line length has a built line within 0.3 m, 98%
+  within 0.75 m; what is left is the west side of the box on the
+  south-west wing and the top 1.5 m of the long valley, 0.3-0.75 m off.
+
 - **Roof edge from the returns: owner prefers it; faces extended, not
   re-partitioned; tree rule (16 Nov, experiment).** Owner's verdict on
   `docs/review/three_houses_16nov_roof_edge.jpg`: the edge from the LiDAR

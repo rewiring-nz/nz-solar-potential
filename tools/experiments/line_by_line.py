@@ -22,9 +22,9 @@ if os.environ.get('EDGE') == '1':
     import roof_edge as RE
     from shapely.affinity import translate as _tr
     _p = O[bid] if O[bid].geom_type == 'Polygon' else max(O[bid].geoms, key=lambda g: g.area)
-    _e = RE.roof_edge(pr, _tr(_p, *r['shift'])); pr.REGISTER = False; r = pr.reconstruct(bid, _e)
+    _e, _ = RE.fit_edges(pr, _tr(_p, *r['shift'])); r = dict(r, faces=RE.extend_to_edge(r['faces'], _e))
 org = (r['poly'].centroid.x, r['poly'].centroid.y)
-k = PL.photo_lean(r['faces'], org, img); got = PL.leaned(r['faces'], org, k[0], k[1])
+k = PL.photo_lean(r['faces'], org, img); got = PL.leaned(PL.absorb_slivers(r['faces']), org, k[0], k[1])
 close = lambda ps: unary_union([q.buffer(0.15) for q in ps]).buffer(-0.15)
 drawn = [p for p in (Polygon(f['ring']).buffer(0) for f in v['faces']) if p.area > 0.5]
 o = close(drawn); dl = M._lines(drawn, o)
