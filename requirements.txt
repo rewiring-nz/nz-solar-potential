@@ -8,6 +8,7 @@ laspy[lazrs]>=2.5
 pvlib>=0.11
 numpy>=1.26
 scipy>=1.11
+PyMaxflow>=1.3  # the graph cut that gives each roof cell its plane -- src/point_roof.py
 requests>=2.31
 python-dotenv>=1.0
 pillow
