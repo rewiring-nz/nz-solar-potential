@@ -398,13 +398,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 ## Roof lines
 
 - **Point-roof district build running, split over two machines (started
-  16 Nov 19:29 UTC).** The build VM takes the four Wanaka-area regions, then
-  22 more (`~/after_main.sh`, outputs `~/split_main.out`,
-  `~/split_main2.out`); a clone `solar-split-b` (n2-standard-16 spot, made by
-  `tools/vm_start.sh --clone` on branch `vm-spending-limits` from the
-  `solar-worker` image) takes nine and uploads what it wrote to
-  `gs://solar-potential-map-data/split_v81/solar-split-b/`, then deletes
-  itself. Still to do: unpack the clone's share on the build VM, run
+  16 Nov 19:29 UTC, four machines from 20:04).** The build VM takes the four
+  Wanaka-area regions (`~/split_main.out`); clones `solar-split-b`, `-c`, `-d`
+  (n2-standard-16 spot, made by `tools/vm_start.sh --clone` on branch
+  `vm-spending-limits` from the `solar-worker` image) take 9, 9 and 13
+  regions, upload what they wrote to
+  `gs://solar-potential-map-data/split_v81/<clone>/`, then delete themselves.
+  The CPU quota was raised by the owner on 16 Nov; clone limits (6 alive,
+  12 h each, monthly cap counting live clones) are in `data/vm_budget.json`
+  on that branch. Still to do: unpack the clone's share on the build VM, run
   `src/combine_regions.py`, gate against `~/build_snapshot_prev_v80.json`,
   publish as v81. Limits found: the project allows 32 CPUs in all
   (`CPUS_ALL_REGIONS`), so one 16-core clone; c2d spot had no capacity in
