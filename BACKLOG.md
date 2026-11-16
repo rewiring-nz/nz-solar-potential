@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Point-roof district build running, split over two machines (started
+  16 Nov 19:29 UTC).** The build VM takes the four Wanaka-area regions, then
+  22 more (`~/after_main.sh`, outputs `~/split_main.out`,
+  `~/split_main2.out`); a clone `solar-split-b` (n2-standard-16 spot, made by
+  `tools/vm_start.sh --clone` on branch `vm-spending-limits` from the
+  `solar-worker` image) takes nine and uploads what it wrote to
+  `gs://solar-potential-map-data/split_v81/solar-split-b/`, then deletes
+  itself. Still to do: unpack the clone's share on the build VM, run
+  `src/combine_regions.py`, gate against `~/build_snapshot_prev_v80.json`,
+  publish as v81. Limits found: the project allows 32 CPUs in all
+  (`CPUS_ALL_REGIONS`), so one 16-core clone; c2d spot had no capacity in
+  zone -a; the hook that guards VM starts also blocks `instances create`.
+  The fleet (`tools/fleet.sh`) could not be used: no queue exists in the
+  bucket, its image step asks for a 400 GB pd-balanced disk (image is
+  600 GB, SSD quota 500 GB), and `src/build_region.sh` runs the layout with
+  `--skip-done`, which skips a re-lay on old markers. The first launch of
+  this build was lost for ten hours to a watcher whose `pgrep -f` matched
+  its own ssh command; `tools/watch_vm_build.sh` replaces it.
+
 - **The lean holds on the map's own photo, on regions it was never tuned
   on (16 Nov, VM, `tools/experiments/lean_check_regions.py`).** 75 marked
   roofs in 22 regions outside pilot, traced on the map's photo, point roof
