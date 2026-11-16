@@ -397,6 +397,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Reader readings for 234 more pilot homes, and why they hold fewer panels
+  (16 Nov).** 299 pilot homes the free model had drawn were read by the paid
+  reader (60 in session, 237 by batch, US$15.13); 234 rated 0.4 or over are
+  in `data/vision_faces/` on the Mac, **not yet on the VM** (copy after the
+  running build, then a patch build). Built both ways on the Mac
+  (`tools/layout_ab.py`): free model 8,634 panels, reader 7,343. The split:
+  reader lines without reader obstructions 8,137 (-6%, the traced roof edge
+  holds 6% less roof area: 43,238 -> 40,571 m2); reader obstructions take
+  the other 10% (obstructions on these roofs 735 -> 1,523). The reader's
+  obstructions were scored against hand-drawn ones on the 15 census roofs
+  that have both: 113 of 154 touch a drawn obstruction, median size 0.92 of
+  the drawn one, total area 372 m2 against 628 m2 drawn. So they are
+  mostly real and not oversized; the earlier count placed panels over
+  skylights and vents the LiDAR detector does not see. Renders:
+  `docs/review/reader_vs_free_model_16nov_random.jpg` (12 at random) and
+  `..._most_panels_lost.jpg`. Open: (a) `vision_roof.ingest` drops a traced
+  part more than 3 m from the rest as "another building" even when it lies
+  inside the building's own outline (4750940, 4740468: 2 of 234, 43% of
+  each roof lost) -- keep a part that sits inside the surveyed outline;
+  (b) reader obstruction positions overlap the drawn ones by only 174 of
+  372 m2, so placement is a few pixels off; (c) not judged by the owner yet.
+
 - **Photo-first reading wired into the layout (14 Nov, behind
   `SOLAR_VISION_ROOF=1`, off; branch `point-roof`; awaiting the owner's
   blind picks).** `src/vision_roof.py`: `prep` writes gridded crops, a
@@ -1084,6 +1106,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **At the next major build: panels one zoom level further out (16 Nov;
+  open).** Below zoom 13 the map says "Zoom in to see panel layouts"
+  because the panel-area tiles start at z13 (`src/emit_region.py`, the
+  `_layout_lo` pass, 13-14). Showing them from z12 means cutting that pass
+  from 12, re-emitting every region, and moving the front end's matching
+  limits (`panel-areas-fill` minzoom, the zoom hint; the totals switch at
+  `BUILDING_MIN_Z` is separate). Expected gain is small: at z12 a pixel is
+  about 13 m and a home's panels are 7-8 m across, so homes are specks and
+  only large roofs read as panels. Not worth a re-emit on its own; do it
+  with a build that re-emits everything anyway, check the z12 tile sizes
+  against the 200 kB per-region budget, and judge it by a render.
 - **Panels skewed on the map by tile rounding (11 Nov; fixed, v78 live).** Built panels are square in the layouts, but the map drew
   many as rhombi. Cause: the z15-16 panel tiles were cut at tippecanoe's
   default detail (12), about 0.1 m per tile unit at z16, and the map
