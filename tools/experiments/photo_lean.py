@@ -26,7 +26,7 @@ from shapely.ops import unary_union
 K_MAX = 0.4          # m of lean per m of height searched, each way
 K_STEP = 0.0125
 SIGMA_PX = 1.5       # photo smoothing before the gradient, 0.1 m pixels
-PRIOR = 0.5          # standard deviations of the surface per metre of slide
+PRIOR = float(__import__("os").environ.get("SOLAR_LEAN_PRIOR", "0.5"))   # standard deviations of the surface per metre of slide
 PAD_M = 6.0
 
 

@@ -397,6 +397,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Lean prior and the check for the map's photo (16 Nov).** The misses on
+  the map's tiles are jumps of 2-3 m onto another edge (4735146: -2.5,
+  -2.1 m). `SOLAR_LEAN_PRIOR` (default 0.5): on the map's tiles against
+  the weak truth above, prior 0.5 / 1.0 / 1.5 / 2.5 leaves 31 / 22 / 14 /
+  11% of 36 roofs over 1 m off (median 0.43 / 0.41 / 0.35 / 0.35 m); on
+  the survey-year photo against the markup directly, roofs right at 0.3 m
+  28 / 28 / 24 / 21 of 50. Sharpness of the peak does not separate the
+  misses. `tools/experiments/lean_check_regions.py` scores every marked
+  roof whose region is on the machine; the 68 marked roofs outside pilot
+  (2-20 faces) were traced on the map's own photo and are the direct
+  check: run it on the VM after the district build, before choosing the
+  prior. VM cap for November raised 165 -> 205 h on the owner's word
+  (`data/vm_budget.json`, branch `vm-spending-limits`, 5eeb19e3).
+
 - **Lean on the MAP's photo: not ready (16 Nov).** The live map shows the
   LINZ Basemaps photo, not the survey-year photo the pilot markup was
   drawn on, so the lean has to be read off the map's tiles
