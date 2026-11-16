@@ -528,6 +528,30 @@ figure for the same thing. Code enforces this:
   is the pricing model; `economics.js` holds cost tiers, prices and the
   battery simulation it uses.
 - The refit API exists only in `src/live_server.py`; static hosting lacks it.
+- The left dashboard splits the in-view total by building type, one box
+  per group under the density slider (Homes, Businesses, Community
+  buildings, Other; `BTYPE_GROUPS` in `rooftop-solar.html`, a display merge
+  of the build's `btype`; regrouping needs no rebuild; a type no group lists
+  counts under the last group). In money mode each box also shows its
+  group's net saving a year: the in-view money total split by group, so the
+  boxes add up to it. Advanced > Export video
+  (`video_export.js`) renders an MP4 tour of one group, of all buildings,
+  or of one building type on its own:
+  a title screen over the current view, flights to well-covered areas drawn
+  at random (homes and businesses in turn for all buildings), each area's
+  panels added in fill order while that group's MW counts up top left, and
+  a closing screen with every group's total for the starting view. A
+  video fills every roof (density 100, no household cap) whatever the
+  slider is on, so its MW figures are higher than the sidebar's on Auto.
+  The zoomed-out heat map (the `cells-heat-*` density surface below the
+  building zooms) is off everywhere (`SHOW_ZOOMED_OUT_HEAT` in
+  `rooftop-solar.html`); the roof heat map from the building zooms up stays.
+  It is rendered a frame at a time
+  (`maplibregl.setNow`, `map.redraw`, WebCodecs H.264, `mp4-muxer` loaded
+  from unpkg on demand), and every frame waits for its map tiles.
+- The selection spotlight (the dimming around a selected building) fades
+  out while every selected building is off screen and returns when one is
+  back in view (`focusBox` in `rooftop-solar.html`).
 - `map_layers.js` and `map_layers.css` provide the shared Build data legend,
   catalogue layer styling and aerial/OpenStreetMap switch. The analysis stack
   is panels above solar-analysis building outlines above the heat map. Build
