@@ -397,6 +397,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **The LiDAR roof is right far more often than scored; it is drawn off the
+  photo (16 Nov).** 50 marked pilot roofs with 2-20 faces, none held back,
+  `src/point_roof.py` against the markup's faces and strokes, line F at
+  0.3 m (`tools/experiments/roof_photo_slide_from_markup.py`): median 0.21
+  as built, 0.82 after one slide of the whole roof chosen per roof on the
+  lines; roofs at F >= 0.7: 5 -> 33 of 50. The slide is a median 0.72 m,
+  p90 1.42 m. `src/register_imagery.py` assumes the survey-year photo (the
+  one the markup was drawn on) sits on the LiDAR; by this measure it does
+  not. The slide is not predicted by neighbours: the median slide of the 6
+  nearest marked roofs leaves 0.46 m (25% within 0.3 m), their lean per
+  metre of height times the roof's own height 0.47 m (19%). Reading it off
+  the photo with no markup, first attempt
+  (`tools/experiments/roof_photo_slide_from_photo.py`: built seams and roof
+  edge slid over the photo, keeping the place where the photo's gradient
+  runs across them): median 0.34 m from the markup's slide, 42% within
+  0.3 m, 58% within 0.5 m; the misses are jumps to another edge up to 3 m
+  away. The per-roof slide is fitted on the markup, two numbers per roof,
+  so 33 of 50 is an upper figure for an unmarked roof. Next: make the
+  photo slide dependable (prefer the small slide, require a sharp peak,
+  roof edge and seams agreeing), then draw the three study houses with it
+  and check the map's own photo, which leans differently
+  (`image_shift.json`). Likely the reason photo readings win blind picks:
+  they are traced on the photo, so they sit on it.
+
 - **Three houses first (16 Nov, owner's instruction): get 15B Frankton Road
   (4725546), 1 Shotover Street (4734696) and 36 Stanley Street (4735292)
   right before widening.** `src/point_roof.py` (planes grown on the returns,
