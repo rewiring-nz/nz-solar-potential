@@ -55,13 +55,34 @@ if [ "${1:-}" = "--clone" ]; then
   # on the regions in its metadata. Its hours count toward the month's total
   # like any VM's. C2D in zone -a: T2D quota is 24 cores and the build VM
   # holds 16. pd-standard: the SSD quota is 500 GB and the image is 600 GB.
+  #
+  # THREE LIMITS, all in data/vm_budget.json, so a raised CPU quota cannot
+  # turn into a large bill:
+  #   max_clones        clones alive at once (default 6).
+  #   clone_max_hours   Google deletes a clone this long after it starts,
+  #                     whatever it is doing (default 12): a hung or
+  #                     forgotten clone cannot run on.
+  #   hours_per_month   the month's hours so far, plus clone_max_hours for
+  #                     every clone alive and for this one, must fit under
+  #                     the cap: the cap holds even if every clone runs to
+  #                     its limit.
+  # Worst case for one launch: max_clones x clone_max_hours x nzd_per_hour
+  # (6 x 12 x NZ$1 = NZ$72), and never past the monthly cap.
   NAME=${2:?clone name}; REGIONS=${3:?regions}; STARTUP=${4:?startup script}; JOB=${5:?job script}
-  python3 -c "import sys;sys.exit(0 if $HOURS < $CAP else 1)" \
-    || { echo "REFUSED: this month's VM hours are at the cap. The owner raises it in $BUDGET."; exit 2; }
+  MAXC=$(python3 -c "import json;print(json.load(open('$BUDGET')).get('max_clones',6))")
+  MAXH=$(python3 -c "import json;print(json.load(open('$BUDGET')).get('clone_max_hours',12))")
+  ALIVE=$(gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-split OR labels.role=solar-worker" --format="value(name)" | wc -l | tr -d ' ') \
+    || { echo "could not count clones: refusing to start blind"; exit 1; }
+  echo "clones alive: $ALIVE of $MAXC; each is deleted after $MAXH h"
+  [ "$ALIVE" -lt "$MAXC" ] || { echo "REFUSED: $ALIVE clones are alive, the limit is $MAXC ($BUDGET)."; exit 2; }
+  python3 -c "import sys;sys.exit(0 if $HOURS + ($ALIVE + 1) * $MAXH <= $CAP else 1)" \
+    || { echo "REFUSED: $ALIVE clone(s) alive plus this one, at $MAXH h each, would pass the month's cap of $CAP h. The owner raises it in $BUDGET."; exit 2; }
+  [ "${CLONE_DRY_RUN:-0}" = "1" ] && { echo "dry run: would create $NAME"; exit 0; }
   gcloud compute instances create "$NAME" --project="$PROJECT" --zone "${CLONE_ZONE:-australia-southeast1-a}" \
     --machine-type "${CLONE_MACHINE:-c2d-standard-16}" --image solar-worker --image-project "$PROJECT" \
     --boot-disk-size 600GB --boot-disk-type pd-standard \
     --provisioning-model SPOT --instance-termination-action DELETE \
+    --max-run-duration "${MAXH}h" \
     --scopes storage-rw,compute-rw --labels role=solar-split \
     --metadata "regions=$REGIONS" \
     --metadata-from-file "startup-script=$STARTUP,clone-job=$JOB" \
