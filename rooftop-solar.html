@@ -3495,7 +3495,6 @@ map.on("load", async () => {
         cellEst.push({ k, cp: c.properties });
       }
     }
-    let cellRoofs = 0;
     const keep = new Set(want.map(w => w.id));
     moneyById.forEach((p, id) => { if (!keep.has(id)) { p.marker.remove(); moneyById.delete(id); } });
     const nets = new Map();
@@ -3527,14 +3526,10 @@ map.on("load", async () => {
       nets.forEach((v, k) => { byGroup[btypeGroupIndex(netType.get(k))] += v; });
       setByTypeMoney(byGroup);
       tot.classList.toggle("neg", sum < 0);
-      const nRoofs = cellsMode ? cellRoofs : nets.size;
-      const roofs = `${nRoofs.toLocaleString()} roof${nRoofs === 1 ? "" : "s"}`;
-      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` + (cellsMode
-        ? `<span class="rm-l">net savings, about ${roofs} in and around the view, from each area's roofs by size; zoom in for each roof's own figure</span>`
-        : estimating
-        ? `<span class="rm-l">net savings, the ${roofs} in view, each from its yearly total; zoom in for each roof's own figure</span>`
-        : `<span class="rm-l">net savings, the ${roofs} labelled` +
-          `${want.length >= MONEY_MAX_PILLS ? " (the " + MONEY_MAX_PILLS.toLocaleString() + " nearest the middle)" : ""}</span>`);
+      // One short label at every zoom: the roof counts and the method behind
+      // each zoom's figure are in the docs, not under the number.
+      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
+        `<span class="rm-l">Net savings after repayments</span>`;
     };
     let i = 0;
     // one pass over the loaded layout tiles for the whole screen (liveFeatures)
@@ -3557,7 +3552,7 @@ map.on("load", async () => {
       const t0 = performance.now();
       while (ci < cellEst.length && performance.now() - t0 < MONEY_SLICE_MS) {
         const { k, cp } = cellEst[ci++], o = cellMoneyEstimate(cp);
-        if (o && Number.isFinite(o.net)) { nets.set(k, o.net); netType.set(k, cp.btype || "home"); cellRoofs += o.roofs; }
+        if (o && Number.isFinite(o.net)) { nets.set(k, o.net); netType.set(k, cp.btype || "home"); }
       }
       total(cellEst.length - ci);
       if (ci < cellEst.length) moneyNext(cellSlice);
