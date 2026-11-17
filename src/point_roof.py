@@ -64,6 +64,7 @@ FLAT_STEP_M = 0.2
 VOID = True
 REGISTER = True            # slide the outline onto the roof-height returns first
 CAP = 0.5                  # most one return can cost, m
+MIN_RETURNS_M2 = 2.0       # returns over the outline, per m2 of it, to read a roof at all
 
 _PC = None
 
@@ -633,6 +634,14 @@ def reconstruct(bid, poly, lam=None):
 
 def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
     rec = reconstruct(bid, poly)
+    # A ROOF THE SURVEY BARELY SAW IS NOT READ FROM IT. The 2021 survey
+    # carries about 9 returns/m2; a house built since has a scatter of
+    # returns off the ground and the building site, and both the slide onto
+    # them and the faces grown on them are noise (Hanley's Farm #4738596:
+    # 145 returns on 127 m2, one face, slid 1.5 m east and 1.25 m north off
+    # the roof the photo shows). Such a roof keeps its other readings.
+    if len(rec["pts"]) < MIN_RETURNS_M2 * rec["poly"].area:
+        return 0
     # the roof ends where its returns stop, not at the surveyed outline:
     # each wall moves there and the faces run out to it (src/roof_edge.py)
     edge = None
@@ -718,7 +727,12 @@ def _write_one(bid):
         signal.signal(signal.SIGALRM, _late)
         signal.alarm(ROOF_SECONDS)
         try:
-            return 1 if write_faces(bid, _W["O"][bid], _W["out"]) else 0
+            if write_faces(bid, _W["O"][bid], _W["out"]):
+                return 1
+            # no faces from this code: faces an earlier version left behind
+            # must not stand in for them
+            f.unlink(missing_ok=True)
+            return 0
         finally:
             signal.alarm(0)
     except Exception as exc:

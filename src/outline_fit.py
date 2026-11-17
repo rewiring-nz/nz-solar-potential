@@ -199,6 +199,20 @@ def fitted_outlines(gdf, region_dir, use=None):
             continue
         # the roof edge a vision reading traced on the photo replaces the
         # surveyed outline, already in the LiDAR frame (src/vision_roof.py)
+        # THE OUTLINE FOLLOWS THE READING THAT GIVES THE FACES. Where the
+        # faces come from the returns and carry their own roof edge, that
+        # edge is the outline; an edge traced on the photo by a reading the
+        # build does not use for this roof would clip faces it was not drawn
+        # round (17 Nov, town centre: 680 of 1,270 outlines came from a photo
+        # reading, 327 of them on roofs whose faces did too).
+        edge = None
+        if int(bid) not in marked:
+            from src import roof_partition
+            if (roof_partition.selected_doc(int(bid)) or {}).get("source") == "points":
+                edge = point_outline(bid)
+        if edge is not None:
+            new.append(edge)
+            continue
         seen = None if int(bid) in marked else vision_outline(bid)
         if seen is not None:
             new.append(seen)
@@ -209,12 +223,6 @@ def fitted_outlines(gdf, region_dir, use=None):
         ps = None if int(bid) in marked else point_shift(bid)
         if ps is not None:
             s = ps if (ps[0] or ps[1]) else None
-            # ... and where the returns gave the roof's own edge, that edge
-            # is the outline (src/roof_edge.py), already in that frame
-            edge = point_outline(bid)
-            if edge is not None:
-                new.append(edge)
-                continue
         new.append(translate(g, s[0], s[1]) if s else g)
     gdf[col] = new
     return gdf
