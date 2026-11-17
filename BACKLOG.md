@@ -397,6 +397,35 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Roof edge from the returns is in the build (17-18 Nov, `point-roof`
+  a41dc41e; Queenstown build running, not live).** `src/roof_edge.py`
+  (moved from experiments): point faces run out to the fitted edge, the
+  doc carries it as `outline`, `outline_fit.fitted_outlines` uses it.
+  Three things found on the way, each from a four-suburb build (town
+  centre, Fernhill, Kelvin Heights, Hanley's Farm):
+  (1) the outline now follows the reading that gives the faces: a
+  photo-traced outline had clipped point faces on about 350 of 1,270
+  town-centre buildings; (2) a roof under 1.5 returns/m2 (built since the
+  2021 survey) is not read from the returns; (3) walls are not fitted on
+  sparse roofs (strip expects under 10 returns), so about one point roof
+  in three still has the surveyed outline (roof edge used: town centre
+  605 of 818 point roofs, Hanley's 437 of 551, Kelvin Heights 554 of
+  1,058, Fernhill 1,192 of 1,278). Same 20 houses before and after:
+  `docs/review/roof_edge_before_1..3.jpg`, `roof_edge_after_1..3.jpg`.
+  Agent's reading: better on about six (edge reaches wings and eaves the
+  surveyed outline missed; one house 2 m off now on its roof), same on
+  most, five town-centre roofs unchanged because a photo reading leads
+  them, one rebuilt-since-the-scan house wrong both times. Awaiting the
+  owner's verdict.
+- **While this is worked on, only Queenstown is rebuilt** (owner, 17 Nov):
+  the 23 regions with point faces. Wanaka, Hawea, Cromwell and the rest
+  stay on the map as v82 built them.
+- **Still flat:** the map moves a whole building by its lean at mean
+  height; the three-house images moved each corner by its own height. On
+  a house the difference is about 0.1-0.2 m; on a tall building more.
+- **Not looked into:** why Kelvin Heights fits an edge on only half its
+  point roofs when 57 of 64 random houses over 60 m2 fitted.
+
 - **40 random unmarked houses as v82 draws them (17 Nov,
   `docs/review/placement_v82_1..5.jpg`, `tools/experiments/placement_sheet.py`;
   awaiting the owner's verdict).** Yellow surveyed outline, red faces, cyan
