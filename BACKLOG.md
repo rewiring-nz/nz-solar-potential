@@ -397,6 +397,27 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Placement on the photo, checked 17 Nov (v82 live).** By eye on the live
+  map, four suburbs: most roofs carry their panels, but in every view one or
+  two houses have panels over an eave or across a ridge by 1-2 m. Test
+  (`tools/experiments/lean_neighbours.py`, 37 marked pilot roofs whose point
+  lines match the markup at F >= 0.6, truth = best slide of lines onto drawn
+  lines): no slide 0.71 m median error; the roof's own lean (the build's
+  rule) 0.21 m, 59% within 0.3 m, 75% within 0.5 m, 2% over 1 m; the
+  neighbours' median lean x own height 0.57 m, 18% within 0.3 m; own
+  reading with the prior centred on the neighbours' lean, same as own.
+  Pooling a lean over neighbours is DROPPED (second time it has lost). Where
+  the lines are right the placement is within 0.5 m on three roofs in four,
+  so the misses seen on the map are more likely roofs whose lines are wrong
+  than roofs put in the wrong place. Not yet measured: what share of
+  unmarked houses that is. Next: a sheet of ~40 random unmarked houses,
+  faces and panels over the map photo, each miss sorted into wrong lines /
+  wrong place / panel over the edge.
+- **Point fallback is NOT live.** The full re-lay was held on 17 Nov: 178 of
+  205 VM hours used, one re-lay costs 12-16, and any further `src` fix needs
+  its own re-lay, so the fallback (3 roofs regained) waits to ship with the
+  next roof fix.
+
 - **v82 is live (17 Nov 01:40 UTC): marked town-centre roofs that borrowed
   a neighbour's shift are placed by their own lean.** 19 Camp Street
   (#5372566) was drawn 2.3 m off its roof on v81: its photo-to-photo match
