@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **v82 is live (17 Nov 01:40 UTC): marked town-centre roofs that borrowed
+  a neighbour's shift are placed by their own lean.** 19 Camp Street
+  (#5372566) was drawn 2.3 m off its roof on v81: its photo-to-photo match
+  was weak, it took its neighbours' 1.0 m east, 0.7 m south, and its own
+  leans give 0.98 m west, 0.56 m north (`register_imagery._point_leans`).
+  Seven marked pilot roofs moved; the gate passed against v81 with nothing
+  zeroed, dropped or withheld; checked on the live map. Applying the lean
+  difference to every marked pilot roof was tried first and dropped: of the
+  8 that moved most, 3 looked clearly worse by render (leans under 3.5
+  sharpness in one photo). Other regions built with the commit before; the
+  rule changes nothing there (their markup is drawn on the map's photo).
+- **The 36 roofs v81 left with no panels are three groups, none fixed.**
+  6 are under the 0.45 confidence gate on point-roof faces (#4718821 0.25,
+  #4738149 0.42, #5372248 0.37, #4749869, #5374014, #5372361); 7 are
+  `too_small`; 23 carry `low_confidence` only as the fallback label: the
+  layout places a few panels and the panel gate drops them (#4737116 placed
+  7, #4748214 placed 3, rebuilt alone with `tools/layout_ab.py`). Rule to
+  try for the first group: a point reading under the confidence gate gives
+  way to the next reading instead of being withheld. Needs a full re-lay.
 - **v81 is live (17 Nov 00:09 UTC): the point roof and the photo lean on
   all 35 regions.** 32,838 buildings, 1,287,610 panels (v79: 1,238,166).
   Built from `point-roof` at a7acbaeb on four machines in 4 h 6 min
