@@ -413,9 +413,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   #4738149 0.42, #5372248 0.37, #4749869, #5374014, #5372361); 7 are
   `too_small`; 23 carry `low_confidence` only as the fallback label: the
   layout places a few panels and the panel gate drops them (#4737116 placed
-  7, #4748214 placed 3, rebuilt alone with `tools/layout_ab.py`). Rule to
-  try for the first group: a point reading under the confidence gate gives
-  way to the next reading instead of being withheld. Needs a full re-lay.
+  7, #4748214 placed 3, rebuilt alone with `tools/layout_ab.py`). **The
+  first group has a rule, built and not yet in a district build
+  (17 Nov, `SOLAR_POINT_FALLBACK`, build_layout_geojson POINT FALLBACK):**
+  a roof whose point faces fall under the confidence gate is built again
+  from the next reading and that build kept when it clears the gate. The
+  six roofs rebuilt alone on the VM, rule off and on (panels before the
+  panel gate): #4738149 0 -> 85 (confidence 0.42 -> 0.85), #4718821 0 -> 49
+  (0.25 -> 0.76), #5372248 0 -> 39 (0.37 -> 0.81); #5372361 clears the gate
+  (0.86) but is 25 m2 and takes no panel; #4749869 and #5374014 have no
+  other reading and stay withheld. How many roofs it changes district-wide
+  is unmeasured until the next full re-lay. A roof that falls back keeps
+  the photo lean of its point faces as its drawing shift
+  (register_imagery), not its fallback reading's slide: unchecked. The
+  second and third groups have no rule yet.
 - **v81 is live (17 Nov 00:09 UTC): the point roof and the photo lean on
   all 35 regions.** 32,838 buildings, 1,287,610 panels (v79: 1,238,166).
   Built from `point-roof` at a7acbaeb on four machines in 4 h 6 min
