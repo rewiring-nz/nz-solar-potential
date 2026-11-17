@@ -397,6 +397,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Fused roof edge beside v83 on 40 random unmarked houses (18 Nov,
+  `tools/experiments/fused_vs_live.py`, eight regions, five each,
+  `docs/review/fused_vs_live_18nov_1..5.jpg`; awaiting the owner's
+  verdict).** 38 of 40 got a fused edge; 33 and 38 have no faces from the
+  returns (built since the 2021 survey). Agent's reading: fused clearly
+  better on about 10 (3, 7, 12, 13, 16, 22, 23, 34, 39 and 2: v83 drew
+  nothing on 3, 22, 23 and 34), much the same on about 24 (v83 already has
+  point faces and the roof edge there), fused worse or absent on about 6
+  (33 and 38 nothing; 19 slid off its roof by the slide onto the returns,
+  as 3 Kerry Drive; 10, 37 and 5 odd faces or edge). Open: a guard on the
+  slide onto the returns; what a roof with no point faces falls back to;
+  balconies and other no-go areas; panels on the fused roof.
+
 - **Fused roof edge: surveyed outline + returns + photo (18 Nov,
   experiment, `tools/experiments/fused_edge.py`,
   `docs/review/fused_edge_18nov_{1,2}.jpg`; awaiting the owner's verdict).**
