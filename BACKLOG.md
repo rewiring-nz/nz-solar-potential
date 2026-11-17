@@ -397,26 +397,42 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
-- **Point-roof district build running, split over two machines (started
-  16 Nov 19:29 UTC, four machines from 20:04).** The build VM takes the four
-  Wanaka-area regions (`~/split_main.out`); clones `solar-split-b`, `-c`, `-d`
-  (n2-standard-16 spot, made by `tools/vm_start.sh --clone` on branch
-  `vm-spending-limits` from the `solar-worker` image) take 9, 9 and 13
-  regions, upload what they wrote to
-  `gs://solar-potential-map-data/split_v81/<clone>/`, then delete themselves.
-  The CPU quota was raised by the owner on 16 Nov; clone limits (6 alive,
-  12 h each, monthly cap counting live clones) are in `data/vm_budget.json`
-  on that branch. Still to do: unpack the clone's share on the build VM, run
-  `src/combine_regions.py`, gate against `~/build_snapshot_prev_v80.json`,
-  publish as v81. Limits found: the project allows 32 CPUs in all
-  (`CPUS_ALL_REGIONS`), so one 16-core clone; c2d spot had no capacity in
-  zone -a; the hook that guards VM starts also blocks `instances create`.
-  The fleet (`tools/fleet.sh`) could not be used: no queue exists in the
-  bucket, its image step asks for a 400 GB pd-balanced disk (image is
-  600 GB, SSD quota 500 GB), and `src/build_region.sh` runs the layout with
-  `--skip-done`, which skips a re-lay on old markers. The first launch of
-  this build was lost for ten hours to a watcher whose `pgrep -f` matched
-  its own ssh command; `tools/watch_vm_build.sh` replaces it.
+- **v81 is live (17 Nov 00:09 UTC): the point roof and the photo lean on
+  all 35 regions.** 32,838 buildings, 1,287,610 panels (v79: 1,238,166).
+  Built from `point-roof` at a7acbaeb on four machines in 4 h 6 min
+  (19:29 to 23:35 UTC 16 Nov): the build VM on the four Wanaka-area regions,
+  three n2-standard-16 spot clones (`tools/vm_start.sh --clone`, branch
+  `vm-spending-limits`, image `solar-worker`) on 9, 9 and 13 regions; each
+  clone uploaded what it wrote to
+  `gs://solar-potential-map-data/split_v81/<clone>/` and deleted itself; the
+  shares were unpacked on the build VM, then `combine_regions.py`.
+  - **Gate failed and was reviewed by render**, not judged against markup:
+    36 roofs lose all panels, 140 lose over 30%, 14 case roofs changed
+    (`docs/review/gate_v81_*.jpg`: 14 zeroed, 54 drops, 14 cases rendered).
+    The zeroed roofs looked at (4718821, 4738149) have well-drawn faces and
+    are withheld by the confidence stage as `low_confidence` (0.25, 0.42):
+    the confidence score has not been checked against point-roof faces.
+    Drops looked at lose a whole face (5370629: an 18 degree face toward
+    155 degrees gets none). Both are open.
+  - **The clones had no LINZ key** (`add_addresses` failed on all 31 of
+    their regions); addresses and emit were re-run on the build VM. A clone
+    job needs the key from Secret Manager or the `.env`.
+  - **Limits found.** The fleet (`tools/fleet.sh`) could not be used: no
+    queue exists in the bucket, `up` asks for a 400 GB pd-balanced disk
+    (image is 600 GB, SSD quota 500 GB), and `src/build_region.sh` runs the
+    layout with `--skip-done`, which skips a re-lay on old markers. c2d spot
+    had no capacity in zone -a. The CPU quota (`CPUS_ALL_REGIONS`) was 32
+    and was raised by the owner. Clone limits (6 alive, 12 h each, monthly
+    cap counting live clones) are in `data/vm_budget.json` on that branch;
+    the VM-start hook also blocks `instances create`, the fleet's `up`,
+    bulk create and instance groups.
+  - **Still to do:** merge `point-roof` into main (main serves data its code
+    did not build; draft PR #67 is behind the branch); re-record the golden
+    and synthetic references on the VM; delete `split_v81/` and the
+    `solar-worker` image when no longer wanted; v80 was never served.
+  - The first launch of this build was lost for ten hours to a watcher
+    whose `pgrep -f` matched its own ssh command; `tools/watch_vm_build.sh`
+    replaces it.
 
 - **The lean holds on the map's own photo, on regions it was never tuned
   on (16 Nov, VM, `tools/experiments/lean_check_regions.py`).** 75 marked
