@@ -397,6 +397,37 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Method survey and a photo-outline prototype (18 Nov; nothing in the
+  build).** Owner asked for a better way that scales.
+  *Survey (agent web research, primary sources read by the agent, not
+  re-checked here):* (1) `roofer`, the 3DBAG engine (GPL-3.0, v1.0.0 Apr
+  2026, CLI + Python), reconstructs roof planes from classified LAS plus
+  one roof polygon per building; run on about 10.8 M Dutch buildings at
+  about 10 pts/m2; it does NOT correct a polygon that is off the point
+  cloud, and reports per-building RMSE, no-data share and a
+  point-cloud-unusable flag. No published run outside the Netherlands.
+  (2) Google Solar API: Queenstown, Frankton, Arrowtown, Wanaka, Hawea
+  and Cromwell are in none of its coverage files (6 May 2026); roof
+  segments are bounding boxes; results may be cached 30 days: not usable.
+  (3) Otago Regional Council (June 2026): region-wide LiDAR, first
+  Queenstown-Lakes datasets public from late 2026. (4) Roof planes from
+  photos alone: best published AP50 about 0.57, no released weights.
+  (5) Outline-from-photo models with open weights and licences: Pix2Poly,
+  HiSup (MIT), FFL (BSD-3).
+  *Prototype (`tools/experiments/photo_outline.py`, SAM ViT-B already on
+  the Mac, box prompt from the surveyed outline, untuned;
+  `docs/review/photo_outline_18nov_{1,2}.jpg`), agent's reading on 12
+  roofs:* good on about 7 (9 Kent Street with its curve, 36 Stanley Street
+  on the eaves, 50 Andrews Road without its deck, 46 Goldfield Heights
+  with the part the surveyed outline lacks); leaks onto ground-level
+  surfaces on 4 (car parks, paths, decks); balconies not separated; edges
+  ragged. Leaks are all onto surfaces the returns put at ground height.
+  *Design this points to:* roof polygon = photo mask cut by the returns'
+  roof-height footprint (photo wins where the two disagree, flagged);
+  planes from the returns inside it (`roofer` or `point_roof`); the
+  surveyed outline only names the building. Next: `roofer` on the three
+  houses against `point_roof` (needs the owner's OK to install it).
+
 - **Owner's review of v83 on the live map (18 Nov): ten failures reported,
   none fixed yet.** What the build held for each (VM, 18 Nov):
   - *3 Kerry Drive #4735154* (outline and panels off the roof): point
