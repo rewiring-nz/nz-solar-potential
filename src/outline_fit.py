@@ -179,7 +179,7 @@ def fitted_outlines(gdf, region_dir, use=None):
     drawn in the labelling tool replaces the surveyed and the fitted one:
     hand markup wins (roof_line_source.hand_outline)."""
     from src.roof_line_source import hand_outline
-    from src.point_roof import point_shift
+    from src.point_roof import point_outline, point_shift
     from src.vision_roof import vision_outline
     col = gdf.geometry.name
     ids = gdf["building_id"] if "building_id" in gdf.columns else gdf.index
@@ -209,6 +209,12 @@ def fitted_outlines(gdf, region_dir, use=None):
         ps = None if int(bid) in marked else point_shift(bid)
         if ps is not None:
             s = ps if (ps[0] or ps[1]) else None
+            # ... and where the returns gave the roof's own edge, that edge
+            # is the outline (src/roof_edge.py), already in that frame
+            edge = point_outline(bid)
+            if edge is not None:
+                new.append(edge)
+                continue
         new.append(translate(g, s[0], s[1]) if s else g)
     gdf[col] = new
     return gdf

@@ -98,6 +98,22 @@ def point_shift(building_id):
         return None
 
 
+def point_outline(building_id):
+    """The roof edge a building's point faces were run out to
+    (src/roof_edge.py), in their frame, or None."""
+    if not USE_POINT_ROOF:
+        return None
+    try:
+        rings = json.loads((POINT_FACES_DIR / f"{int(building_id)}.json").read_text()).get("outline")
+        if not rings:
+            return None
+        from shapely.geometry import Polygon
+        g = Polygon(rings[0], rings[1:]).buffer(0)
+        return g if g.geom_type == "Polygon" and not g.is_empty else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def all_points(poly, buf=OUT_BUF_M):
     """Every return over the outline (+buf), with class; and local ground z."""
     minx, miny, maxx, maxy = poly.buffer(8).bounds
@@ -617,6 +633,18 @@ def reconstruct(bid, poly, lam=None):
 
 def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
     rec = reconstruct(bid, poly)
+    # the roof ends where its returns stop, not at the surveyed outline:
+    # each wall moves there and the faces run out to it (src/roof_edge.py)
+    edge = None
+    from src import roof_edge
+    if roof_edge.USE_ROOF_EDGE and rec["faces"]:
+        try:
+            e, moves = roof_edge.fit_edges(sys.modules[__name__], rec["poly"])
+            ext = roof_edge.extend_to_edge(rec["faces"], e) if moves is not None else None
+            if ext:
+                rec["faces"], edge = ext, e
+        except Exception as exc:
+            print(f"  point_roof: roof edge of {bid} failed ({exc!r})", flush=True)
     faces = [[[round(x, 2), round(y, 2)] for x, y in f["poly"].exterior.coords] for f in rec["faces"]]
     if not faces:
         return 0
@@ -628,7 +656,11 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
     (out_dir / f"{bid}.json").write_text(json.dumps({
         "source": "points", "score": 1.0, "code": _code(), "shift": rec["shift"], "faces": faces,
         "planes": [[round(float(v), 5) for v in f["plane"]] for f in rec["faces"]],
-        "origin": [round(c.x, 3), round(c.y, 3)]}))
+        "origin": [round(c.x, 3), round(c.y, 3)],
+        # the fitted roof edge, in the faces' frame: the outline the build
+        # clips to and the map draws (outline_fit.fitted_outlines)
+        **({"outline": [[[round(x, 2), round(y, 2)] for x, y in r.coords]
+                        for r in [edge.exterior] + list(edge.interiors)]} if edge is not None else {})}))
     return len(faces)
 
 
@@ -667,7 +699,8 @@ def _code():
     that made them has changed (a district is 33,000 roofs)."""
     if "code" not in _W:
         import hashlib
-        _W["code"] = hashlib.md5(Path(__file__).read_bytes()).hexdigest()[:12]
+        _W["code"] = hashlib.md5(Path(__file__).read_bytes()
+                                 + Path(__file__).with_name("roof_edge.py").read_bytes()).hexdigest()[:12]
     return _W["code"]
 
 
