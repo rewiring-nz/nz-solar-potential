@@ -463,6 +463,33 @@ def _point_leans(out, building_ids, tiles, reference=None):
     return n
 
 
+def _lean_pass(region, paths, out, reference=None):
+    """Place every point-roof building of the region by its own lean, in
+    `out`. Returns how many.
+
+    The lean is read off the map's tiles alone, so it runs for every
+    outline, whether or not the region has a survey-year photo and whether
+    or not the building's photo-to-photo match gave anything. Until 17 Nov
+    it ran only over buildings that match had measured: Wanaka, Hawea,
+    Albert Town and Arrowtown East (no survey-year photo: 10,357 buildings
+    with point faces) got no placement at all, and in regions with one,
+    roofs the match skipped went without (Frankton Flats: 786 of 1,591
+    placed). On 15 random Wanaka and Hawea houses the lean reads 0.0-0.2 m
+    (tools/experiments/placement_sheet.py, SHEET_LEAN=1), so there the
+    change is small; the skipped roofs of the Queenstown regions, where the
+    median lean is 0.3-0.6 m, are where it shows."""
+    if os.environ.get("SOLAR_PHOTO_LEAN", "1") == "0":
+        return 0
+    import geopandas as gpd
+    dd = paths["dir"] / "building_outlines_dedup.geojson"
+    gdf = gpd.read_file(dd if dd.exists() else paths["outlines"])
+    ids = [int(b) for b, g in zip(gdf["building_id"], gdf.geometry)
+           if g is not None and not g.is_empty and g.area >= MIN_AREA_M2]
+    n = _point_leans(out, ids, _Tiles(paths["dir"] / "display_tiles"), reference)
+    print(f"[{region}] {n} roofs placed by the lean of their own lines in the map's photo", flush=True)
+    return n
+
+
 def register(region):
     paths = area_paths(region)
     if os.environ.get("SOLAR_INCLUDE_IMAGERY", "1") == "0":
@@ -481,14 +508,18 @@ def register(region):
         sv = {}
     ref_layer = sv.get("reference_imagery_layer")
     if not ref_layer:
-        print(f"[{region}] survey has no own-year photo -- no image shifts")
-        write_json_atomic(out_path, {})
-        return {}
+        print(f"[{region}] survey has no own-year photo -- no photo-to-photo shifts")
+        out = {}
+        _lean_pass(region, paths, out)
+        write_json_atomic(out_path, out)
+        return out
     ref_path = paths["reference_imagery"] if ref_layer != sv.get("imagery_layer") else paths["imagery"]
     if not ref_path.exists():
-        print(f"[{region}] no reference photo at {ref_path.name} -- no image shifts")
-        write_json_atomic(out_path, {})
-        return {}
+        print(f"[{region}] no reference photo at {ref_path.name} -- no photo-to-photo shifts")
+        out = {}
+        _lean_pass(region, paths, out)
+        write_json_atomic(out_path, out)
+        return out
     t0 = time.time()
     dd = paths["dir"] / "building_outlines_dedup.geojson"
     gdf = gpd.read_file(dd if dd.exists() else paths["outlines"]).to_crs("EPSG:2193")
@@ -534,13 +565,11 @@ def register(region):
         if markup:
             print(f"[{region}] {len(markup)} labelled roofs left unshifted (drawn on the map's photo)")
     write_json_atomic(paths["dir"] / "markup_shift.json", markup)
-    if os.environ.get("SOLAR_PHOTO_LEAN", "1") != "0":
-        # markup traced on the reference photo (it is the region's own photo)
-        # is placed by its roof's lean too; markup traced on the map's photo
-        # was taken out of `out` above and stays where it was drawn
-        on_reference = ref_path.resolve() == paths["imagery"].resolve()
-        n_lean = _point_leans(out, [b for b in geoms], tiles, ref_ds if on_reference else None)
-        print(f"[{region}] {n_lean} roofs placed by the lean of their own lines in the map's photo", flush=True)
+    # markup traced on the reference photo (it is the region's own photo)
+    # is placed by its roof's lean too; markup traced on the map's photo
+    # was taken out of `out` above and stays where it was drawn
+    on_reference = ref_path.resolve() == paths["imagery"].resolve()
+    _lean_pass(region, paths, out, ref_ds if on_reference else None)
     write_json_atomic(out_path, out)
     # roofs whose photo has changed since the survey (see CHANGE_LUM)
     changed = {}

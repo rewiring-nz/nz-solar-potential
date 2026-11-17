@@ -397,6 +397,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **40 random unmarked houses as v82 draws them (17 Nov,
+  `docs/review/placement_v82_1..5.jpg`, `tools/experiments/placement_sheet.py`;
+  awaiting the owner's verdict).** Yellow surveyed outline, red faces, cyan
+  panels, at the shift on file. Agent's reading, not a measurement: about
+  half sit on the roof with sensible lines; the largest group of misses
+  (about a quarter: 11, 12, 14, 15, 19, 21, 22, 31, 34, 36, 40) is a roof
+  whose real edge is not the surveyed outline (eaves beyond it, a wing
+  missing, a different shape), which no slide can fix; about six are the
+  right shape slid by 0.5-1 m (5, 9, 17, 26, 28, 38); about four have
+  wrong inner lines (18, 20, 32, 39). **The roof edge from the returns and
+  `extend_to_edge` (owner preferred it on the three houses) is still not
+  in the build: that is the next thing to build.**
+- **Regions with no point faces at all:** Cromwell east and west,
+  Bannockburn, Arrowtown hills, Glenorchy (both), Kingston, Kinloch: about
+  6,500 buildings on the older method; Arrowtown East has them for 167 of
+  416. Cause not looked into.
+- **Photo placement now runs for every roof with point faces**
+  (`register_imagery._lean_pass`, not yet in a build). It had run only over
+  buildings the photo-to-photo match measured. On 15 random Wanaka and
+  Hawea houses the lean reads 0.0-0.2 m and the roofs already sat right, so
+  this was not the cause of the misses there.
+
 - **Placement on the photo, checked 17 Nov (v82 live).** By eye on the live
   map, four suburbs: most roofs carry their panels, but in every view one or
   two houses have panels over an eave or across a ridge by 1-2 m. Test
