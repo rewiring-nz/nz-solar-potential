@@ -1343,6 +1343,11 @@ REPEAT_KEEP_ROOF = os.environ.get("SOLAR_REPEAT_KEEP_ROOF", "1") == "1"
 REPEAT_CONTEST = os.environ.get("SOLAR_REPEAT_CONTEST", "1") == "1"
 
 
+# Buildings whose point reading has been set aside for this build: its faces
+# explained too few of the returns (build_layout_geojson, POINT FALLBACK).
+POINT_SET_ASIDE = set()
+
+
 def selected_doc(building_id):
     """The reading a building is built from: its set's agreed reading when
     there is one (SOLAR_REPEAT_ROOFS), else its own selected faces; None
@@ -1365,7 +1370,7 @@ def selected_doc(building_id):
     # roofs and worse on 6. Reader against returns is unmeasured on those
     # terms; the reader keeps its place.
     dirs = (([VISION_FACES_DIR] if USE_VISION_ROOF else [])
-            + ([POINT_FACES_DIR] if USE_POINT_ROOF else [])
+            + ([POINT_FACES_DIR] if USE_POINT_ROOF and building_id not in POINT_SET_ASIDE else [])
             + ([STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
             + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])

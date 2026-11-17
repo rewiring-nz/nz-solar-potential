@@ -547,6 +547,29 @@ def _build_one_at(building_id, nudge_m):
         confidence = 1.0      # not a survey measure: pitch_guessed carries the doubt
     modelled = from_labels or synthetic or confidence >= MIN_ROOF_CONFIDENCE
 
+    # POINT FALLBACK. Faces from the raw returns (src/point_roof.py) lead the
+    # other machine readings, but where they explain under
+    # MIN_ROOF_CONFIDENCE of the roof's returns the roof would be withheld
+    # with a reading in hand that the build trusted before. Such a roof is
+    # built again from the next reading, and that build is kept when it
+    # clears the gate. On v81 six roofs lost every panel this way: #4738149
+    # (84 panels on v79, point faces at 0.42 against 0.89), #4718821 (49,
+    # 0.25 against 0.76), #5372248 (39, 0.37 against 0.81).
+    # SOLAR_POINT_FALLBACK=0 withholds as before.
+    if not modelled and os.environ.get("SOLAR_POINT_FALLBACK", "1") != "0":
+        from src import roof_partition
+        if (building_id not in roof_partition.POINT_SET_ASIDE
+                and (roof_partition.selected_doc(building_id) or {}).get("source") == "points"):
+            roof_partition.POINT_SET_ASIDE.add(building_id)
+            try:
+                other = _build_one_at(building_id, nudge_m)
+            finally:
+                roof_partition.POINT_SET_ASIDE.discard(building_id)
+            other_conf = max((f["properties"].get("roof_confidence") or 0.0 for f in other
+                              if f["properties"].get("kind") == "facet"), default=0.0)
+            if other_conf >= MIN_ROOF_CONFIDENCE:
+                return other
+
     # On large commercial roofs, find the large clear areas to place panels
     # on rather than squeezing in every possible face, and ignore any clean
     # area that would take fewer than 8 panels. 32 Frankton Road is the case: 4,032 m2 shipped
