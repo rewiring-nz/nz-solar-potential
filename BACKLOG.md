@@ -397,6 +397,21 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Queenstown build with the roof edge is built and NOT published (18 Nov,
+  `point-roof` a41dc41e; the served set is on the VM and pulled to this
+  Mac's `data/`).** 23 regions rebuilt in 6 h 12 min on one VM; the map's
+  panels 1,287,611 -> 1,327,680. Gate against v82 FAILED: 5 zeroed (5-7
+  panels each: small buildings under trees), 38 big drops, 1 newly
+  withheld, 13 of 38 case roofs changed. Renders, before and after:
+  `docs/review/gate_v83_{zeroed,drops1,drops2,cases}.jpg`. Of the 38
+  drops, 26 are point roofs with the new edge and 12 are roofs under 1.5
+  returns/m2 that lost their point faces and fell back to another reading
+  (#5371543 74 -> 12, #4718798 78 -> 42 are clear losses on good roofs).
+  Publishing a failed gate needs the owner's go-ahead. To publish:
+  `.venv/bin/python tools/publish_served.py 83`, then `site-config.js` on
+  main to v83. The sparse-roof rule wants replacing before the next build:
+  keep the point faces and drop only the slide onto the returns.
+
 - **Roof edge from the returns is in the build (17-18 Nov, `point-roof`
   a41dc41e; Queenstown build running, not live).** `src/roof_edge.py`
   (moved from experiments): point faces run out to the fitted edge, the
