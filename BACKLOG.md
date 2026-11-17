@@ -397,6 +397,10 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **v83 is live (18 Nov): published on the owner's instruction, to judge
+  on the map, although the gate failed.** Hour cap: the owner said the
+  monthly hours may be raised (18 Nov); not yet raised. The entry as
+  written before publishing:
 - **Queenstown build with the roof edge is built and NOT published (18 Nov,
   `point-roof` a41dc41e; the served set is on the VM and pulled to this
   Mac's `data/`).** 23 regions rebuilt in 6 h 12 min on one VM; the map's
