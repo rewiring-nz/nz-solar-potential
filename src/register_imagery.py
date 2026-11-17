@@ -390,7 +390,7 @@ def _labelled_ids():
     return {int(b) for b, v in B.items() if v.get("faces") or v.get("lines") or v.get("obstructions")}
 
 
-def _point_leans(out, building_ids, tiles):
+def _point_leans(out, building_ids, tiles, reference=None):
     """Replace the shift of every roof built from the returns
     (src/point_roof.py) with the lean read off the map's own photo
     (src/photo_lean.py), in `out`. Returns how many.
@@ -406,9 +406,25 @@ def _point_leans(out, building_ids, tiles):
     sit within 0.3 m of the markup: 5 as placed, 28 with the lean
     (tools/experiments/lean_check_regions.py).
 
-    Roofs with a paid reading keep the slide that reading was made with,
-    and roofs with drawn markup keep theirs: neither is built from point
-    faces (roof_partition.selected_doc)."""
+    Roofs with a paid reading keep the slide that reading was made with:
+    they are not built from point faces (roof_partition.selected_doc).
+
+    A ROOF WITH DRAWN MARKUP, traced on the reference photo (`reference`
+    given: pilot), keeps its own photo-to-photo match when it has one. When
+    its match was weak and it BORROWED its neighbours' shift (quality 0),
+    and its point faces give a lean of sharpness LEAN_TRUST or more in both
+    photos, it moves by the difference instead: its lean in the map's photo
+    less its lean in the reference photo, which is what the photo-to-photo
+    match measures (60 pilot roofs with a sharp match and both leans at
+    LEAN_TRUST: median 0.15 m apart, correlation 0.93 east, 0.97 north).
+    A taller building does not lean like its neighbours: 19 Camp Street
+    (#5372566) borrowed 1.0 m east, 0.7 m south where its own leans give
+    0.98 m west, 0.56 m north, and was drawn 2.3 m off its roof.
+    Replacing every marked roof's match with the difference was tried and
+    dropped: of the 8 that moved most, the render put 3 clearly off roofs
+    they had been on (#4735146, #5372787, #4734913), all with a lean under
+    LEAN_TRUST in one photo."""
+    LEAN_TRUST = 3.5
     from src import photo_lean
     from src.outline_fit import _marked
     from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
@@ -423,12 +439,20 @@ def _point_leans(out, building_ids, tiles):
     n = 0
     for bid in building_ids:
         f = POINT_FACES_DIR / f"{int(bid)}.json"
-        if int(bid) in marked or not f.exists():
+        if not f.exists():
             continue
-        if USE_VISION_ROOF and (VISION_FACES_DIR / f"{int(bid)}.json").exists():
+        drawn = int(bid) in marked
+        if drawn and (reference is None or (out.get(str(int(bid))) or [0, 0, 1])[2] != 0):
+            continue
+        if not drawn and USE_VISION_ROOF and (VISION_FACES_DIR / f"{int(bid)}.json").exists():
             continue
         try:
-            s = photo_lean.drawing_shift(json.loads(f.read_text()), photo)
+            doc = json.loads(f.read_text())
+            s = photo_lean.drawing_shift(doc, photo)
+            if drawn and s is not None:
+                r = photo_lean.drawing_shift(doc, reference)
+                s = (None if r is None or min(s[2], r[2]) < LEAN_TRUST
+                     else [round(s[0] - r[0], 2), round(s[1] - r[1], 2), min(s[2], r[2])])
         except Exception as exc:
             print(f"  register_imagery: lean of {bid} failed ({exc!r})", flush=True)
             continue
@@ -511,7 +535,11 @@ def register(region):
             print(f"[{region}] {len(markup)} labelled roofs left unshifted (drawn on the map's photo)")
     write_json_atomic(paths["dir"] / "markup_shift.json", markup)
     if os.environ.get("SOLAR_PHOTO_LEAN", "1") != "0":
-        n_lean = _point_leans(out, [b for b in geoms], tiles)
+        # markup traced on the reference photo (it is the region's own photo)
+        # is placed by its roof's lean too; markup traced on the map's photo
+        # was taken out of `out` above and stays where it was drawn
+        on_reference = ref_path.resolve() == paths["imagery"].resolve()
+        n_lean = _point_leans(out, [b for b in geoms], tiles, ref_ds if on_reference else None)
         print(f"[{region}] {n_lean} roofs placed by the lean of their own lines in the map's photo", flush=True)
     write_json_atomic(out_path, out)
     # roofs whose photo has changed since the survey (see CHANGE_LUM)
