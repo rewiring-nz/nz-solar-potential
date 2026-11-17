@@ -64,7 +64,7 @@ FLAT_STEP_M = 0.2
 VOID = True
 REGISTER = True            # slide the outline onto the roof-height returns first
 CAP = 0.5                  # most one return can cost, m
-MIN_RETURNS_M2 = 2.0       # returns over the outline, per m2 of it, to read a roof at all
+MIN_RETURNS_M2 = 1.5       # returns over the outline, per m2 of it, to read a roof at all
 
 _PC = None
 
@@ -640,6 +640,9 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
     # them and the faces grown on them are noise (Hanley's Farm #4738596:
     # 145 returns on 127 m2, one face, slid 1.5 m east and 1.25 m north off
     # the roof the photo shows). Such a roof keeps its other readings.
+    # Four houses, rebuilt with and without their point faces (17 Nov):
+    # at 0.9 and 1.1 returns/m2 the other readings sat on the roof and the
+    # point faces did not; at 1.8 and 2.0 the point faces were the better.
     if len(rec["pts"]) < MIN_RETURNS_M2 * rec["poly"].area:
         return 0
     # the roof ends where its returns stop, not at the surveyed outline:
