@@ -397,6 +397,45 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Owner's review of v83 on the live map (18 Nov): ten failures reported,
+  none fixed yet.** What the build held for each (VM, 18 Nov):
+  - *3 Kerry Drive #4735154* (outline and panels off the roof): point
+    faces, slid onto the returns by (-1.5, 2.5) m by `point_roof.register`
+    on a multi-level building; lean sharpness 0.8. The surveyed outline,
+    unslid, fits the photo better. Same on v82.
+  - *7 Leeds Lane #4750959* (outline, ridges and panels wrong, a diagonal
+    run of panels): led by a paid photo reading, placed by the
+    photo-to-photo shift (1.3, 0.1) m. Its point faces with the roof edge,
+    at their own lean (0.69, -0.49), sit on the roof with the hips right
+    (agent's reading of `roof_edge_sheet`).
+  - *9 Kent Street #4735373* and *9 Vancouver Drive #4751255* (a lone
+    panel): the map shows panels by `fill_order` up to the slider or the
+    14 kW home cap; the order does not keep the shown set in whole arrays,
+    so the cut strands one panel. Owner's rule: when the cap would add a
+    single panel, stop one short or go one over, to a whole array.
+  - *32 Highview Terrace #4729348* (outline about 1.5 m off): point faces,
+    no slide; not traced further.
+  - *#4729407 Kelvin Heights* (panels over balconies; flagged "roof may
+    have changed"): two point faces, 362 + 57 panels, 2 obstructions.
+    Owner: read what a person sees in the photo, LiDAR or not.
+  - *50 Andrews Road #4729783* (one face panelled, room for more): not
+    traced.
+  - *46 Goldfield Heights* (outline nowhere near the building) and
+    *#5371259* (a long roof cut into dozens of slivers): not traced.
+  Owner's direction (18 Nov): rely less on the surveyed outline and more
+  on the photo itself for the outline and for where panels cannot go.
+  That is what the paid photo reader does (`src/vision_roof.py`; 13 Nov
+  pinned notes had point-roof houses right on 2 of 24); it has read 563
+  roofs, costs about US$0.17 a roof by batch, and its API credit is spent.
+- **The 26 big drops on roofs with the new edge are the panel packer's
+  thresholds, not the edge.** #4721870 (flat, 9.0 x 19.7 m): the surveyed
+  rectangle packs 70 at the tight edge gap; the fitted edge is 0.12 m
+  shorter, ten columns no longer fit, and the wide edge gap (0.4 m,
+  `EDGE_GAP_KEEP_FRACTION` 0.75) then keeps 48 of 63 = 0.76 and wins.
+  Searching both grid phases together changed nothing and was not kept.
+- **Round joins in `extend_to_edge` replaced by mitred ones** (a
+  rectangular face had come out with 104 vertices); not in a build.
+
 - **v83 is live (18 Nov): published on the owner's instruction, to judge
   on the map, although the gate failed.** Hour cap: the owner said the
   monthly hours may be raised (18 Nov); not yet raised. The entry as

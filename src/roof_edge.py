@@ -219,7 +219,10 @@ def extend_to_edge(faces, edge, reach=3.0):
             if sh > bl:
                 best, bl = i, sh
         if best is not None:
-            out[best]["poly"] = out[best]["poly"].union(pc.buffer(0.03)).buffer(-0.02)
+            # mitred, not round: a round join left an arc of some thirty
+            # points 1 cm across at every corner (a rectangular flat roof
+            # came out with 104 vertices and lost 22 of its 70 panels)
+            out[best]["poly"] = out[best]["poly"].union(pc.buffer(0.03, join_style=2)).buffer(-0.02, join_style=2)
     res = []
     for f in out:
         p = f["poly"]
@@ -228,5 +231,6 @@ def extend_to_edge(faces, edge, reach=3.0):
         if p.geom_type != "Polygon":
             p = max(p.geoms, key=lambda g: g.area) if hasattr(p, "geoms") else None
         if p is not None and p.geom_type == "Polygon" and p.area > 0.3:
-            res.append(dict(f, poly=p))
+            q = p.simplify(0.03)
+            res.append(dict(f, poly=q if q.is_valid and not q.is_empty and q.geom_type == "Polygon" else p))
     return res
