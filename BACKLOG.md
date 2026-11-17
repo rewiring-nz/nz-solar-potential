@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Fused roof edge: surveyed outline + returns + photo (18 Nov,
+  experiment, `tools/experiments/fused_edge.py`,
+  `docs/review/fused_edge_18nov_{1,2}.jpg`; awaiting the owner's verdict).**
+  Owner's direction: the LiDAR roof edge reconciled against the photo and
+  the outline together. Per building: point faces, each wall moved to where
+  the returns stop (`roof_edge`), every corner moved by the lean times its
+  own height (`photo_lean.leaned`), then each wall slid up to 0.8 m onto
+  the photo edge along it when one stands out by 3 robust standard
+  deviations. On the three houses and nine of the owner's v83 failures,
+  agent's reading: on the roof with straight edges and sensible ridges on 8
+  (36 Stanley Street, 15B Frankton Road, 1 Shotover Street, 7 Leeds Lane,
+  9 Kent Street, 9 Vancouver Drive, 32 Highview Terrace, 50 Andrews Road);
+  poor on 4: 3 Kerry Drive (the slide onto the returns, -1.5, 2.5 m, is
+  wrong), 46 Goldfield Heights and #4729407 (changed since the 2021
+  survey; balconies not separated), #5371259 busy. The photo snap moved
+  few walls and little: most of the gain over the live map is point faces
+  + roof edge + lean per corner being used at all, where v83 used a photo
+  reading or markup placed by a photo-to-photo shift.
+
 - **Method survey and a photo-outline prototype (18 Nov; nothing in the
   build).** Owner asked for a better way that scales.
   *Survey (agent web research, primary sources read by the agent, not
