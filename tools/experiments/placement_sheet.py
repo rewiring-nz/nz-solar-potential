@@ -10,6 +10,11 @@ SHEET_LEAN=1 draws each house at the lean of its own point faces read off
 the map's tiles (src/photo_lean.py) instead of the shift on file: what the
 build would give a region whose image_shift.json is empty.
 
+SHEET_LAYOUTS=<dir> reads <dir>/<region>/panel_layouts.geojson and
+image_shift.json (a kept copy of an earlier build) instead of the region's
+own; SHEET_IDS=<placement.json of another run> draws that run's houses, so
+two builds can be set side by side.
+
   .venv/bin/python tools/experiments/placement_sheet.py <out dir> [region ...]
 """
 import os
@@ -47,7 +52,8 @@ if __name__ == "__main__":
     picks = []
     for reg in regions:
         d = Path("data/regions") / reg
-        lay = json.load(open(d / "panel_layouts.geojson"))["features"]
+        ld = Path(os.environ["SHEET_LAYOUTS"]) / reg if os.environ.get("SHEET_LAYOUTS") else d
+        lay = json.load(open(ld / "panel_layouts.geojson"))["features"]
         by = {}
         for f in lay:
             by.setdefault(int(f["properties"]["building_id"]), []).append(f)
@@ -55,9 +61,14 @@ if __name__ == "__main__":
         ok = [(int(b), geom) for b, geom in zip(g["building_id"], g.geometry)
               if 120 <= geom.area <= 400 and int(b) not in skip
               and any(f["properties"]["kind"] == "panel" for f in by.get(int(b), []))]
-        sh = json.load(open(d / "image_shift.json"))
+        sh = json.load(open(ld / "image_shift.json"))
         tiles = _Tiles(d / "display_tiles")
-        for b, geom in random.sample(ok, min(PER_REGION, len(ok))):
+        chosen = random.sample(ok, min(PER_REGION, len(ok)))
+        if os.environ.get("SHEET_IDS"):
+            want = [r["id"] for r in json.load(open(os.environ["SHEET_IDS"])) if r["region"] == reg]
+            geoms = {int(b): geom for b, geom in zip(g["building_id"], g.geometry)}
+            chosen = [(b, geoms[b]) for b in want if b in geoms and b in by]
+        for b, geom in chosen:
             s = sh.get(str(b), [0, 0, 0])
             pf = Path(f"data/point_faces/{b}.json")
             if os.environ.get("SHEET_LEAN") == "1" and pf.exists():
