@@ -65,6 +65,44 @@ def reading_path(building_id):
         if fp.exists():
             return fp
     return None
+
+
+# THE PAID READER LEADS THE FACES FROM THE RETURNS ONLY ON A ROOF IT READS
+# AS MORE THAN READER_LEADS_OVER_FACES FACES. Each allowed its own best
+# slide, on 23 marked roofs with a reading (16 Nov,
+# tools/experiments/fair_compare_reader.py): the reader's lines were better
+# on 12, the returns' on 5, the same on 6; on the 17 roofs of 12 faces or
+# fewer 6 / 5 / 6, and on the 6 larger ones the reader won all 6. A reading
+# is placed on the map by the slide it was read with; faces from the returns
+# are placed by their own lines in the map's photo and carry the roof's own
+# edge. On v83 7 Leeds Lane (#4750959, a reading of 12 faces) was drawn off
+# its roof with its hips wrong while its faces from the returns sat on it
+# (owner, 18 Nov), and on 40 random houses the owner preferred the roofs
+# from the returns (docs/review/fused_vs_live_18nov_*.jpg). The reader's
+# obstructions are used either way.
+READER_LEADS_OVER_FACES = 12
+
+
+def reader_leads(building_id):
+    """Whether the paid reader's reading leads the faces from the returns
+    for this building. False when it has no reading."""
+    if not USE_VISION_ROOF or building_id is None:
+        return False
+    try:
+        fp = VISION_FACES_DIR / f"{int(building_id)}.json"
+    except (TypeError, ValueError):
+        return False
+    if not fp.exists():
+        return False
+    from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
+    if not USE_POINT_ROOF or not (POINT_FACES_DIR / f"{int(building_id)}.json").exists():
+        return True
+    try:
+        return len(json.loads(fp.read_text()).get("faces") or []) > READER_LEADS_OVER_FACES
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 MIN_CONFIDENCE = 0.5   # 24 drawn roofs: line F 0.81 at or over, 0.41 under
 CROP_PX = 1260
 GRID_PX = 90

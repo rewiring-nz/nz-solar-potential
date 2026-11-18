@@ -1369,8 +1369,13 @@ def selected_doc(building_id):
     # 0.82 against 0.69, roofs at 0.7 or over 18 against 14, better on 15
     # roofs and worse on 6. Reader against returns is unmeasured on those
     # terms; the reader keeps its place.
-    dirs = (([VISION_FACES_DIR] if USE_VISION_ROOF else [])
-            + ([POINT_FACES_DIR] if USE_POINT_ROOF and building_id not in POINT_SET_ASIDE else [])
+    # ... and the reader keeps it only on a roof it reads as a complex one
+    # (vision_roof.reader_leads); elsewhere its reading comes after the
+    # returns', for a roof whose point faces are set aside or missing
+    from src.vision_roof import reader_leads
+    pts = [POINT_FACES_DIR] if USE_POINT_ROOF and building_id not in POINT_SET_ASIDE else []
+    vis = [VISION_FACES_DIR] if USE_VISION_ROOF else []
+    dirs = ((vis + pts if (not pts or reader_leads(building_id)) else pts + vis)
             + ([STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
             + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])

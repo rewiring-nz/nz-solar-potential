@@ -132,7 +132,17 @@ def reading_hash(building_id):
         p = q
     w = DATA / "vision_faces" / f"{building_id}.json"
     if vision_on and w.exists():
-        p = w
+        # the reader leads the returns only on a roof it reads as complex
+        # (vision_roof.reader_leads)
+        lead = True
+        if p == q:
+            try:
+                from src.vision_roof import READER_LEADS_OVER_FACES
+                lead = len(json.loads(w.read_text()).get("faces") or []) > READER_LEADS_OVER_FACES
+            except (OSError, ValueError, TypeError):
+                lead = False
+        if lead:
+            p = w
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 

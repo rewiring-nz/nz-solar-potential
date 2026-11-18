@@ -64,7 +64,7 @@ FLAT_STEP_M = 0.2
 VOID = True
 REGISTER = True            # slide the outline onto the roof-height returns first
 CAP = 0.5                  # most one return can cost, m
-MIN_RETURNS_M2 = 1.5       # returns over the outline, per m2 of it, to read a roof at all
+SLIDE_CHECK_M = 1.0        # a slide onto the returns this long is checked against the photo
 
 _PC = None
 
@@ -596,13 +596,13 @@ def label_cells(cells, pts, lab, eqs, lam=LAMBDA, low=None):
     return x
 
 
-def reconstruct(bid, poly, lam=None):
+def reconstruct(bid, poly, lam=None, slide=None):
     from shapely.affinity import translate
     lam = LAMBDA if lam is None else lam
     if isinstance(poly, MultiPolygon):
         poly = max(poly.geoms, key=lambda g: g.area)
     dx = dy = 0.0
-    if REGISTER:
+    if REGISTER if slide is None else slide:
         dx, dy = register(poly)
         poly = translate(poly, dx, dy)
     pts, cls, ground = all_points(poly)
@@ -632,19 +632,34 @@ def reconstruct(bid, poly, lam=None):
     return out
 
 
-def write_faces(bid, poly, out_dir=POINT_FACES_DIR):
+def write_faces(bid, poly, out_dir=POINT_FACES_DIR, photo=None):
     rec = reconstruct(bid, poly)
-    # A ROOF THE SURVEY BARELY SAW IS NOT READ FROM IT. The 2021 survey
-    # carries about 9 returns/m2; a house built since has a scatter of
-    # returns off the ground and the building site, and both the slide onto
-    # them and the faces grown on them are noise (Hanley's Farm #4738596:
-    # 145 returns on 127 m2, one face, slid 1.5 m east and 1.25 m north off
-    # the roof the photo shows). Such a roof keeps its other readings.
-    # Four houses, rebuilt with and without their point faces (17 Nov):
-    # at 0.9 and 1.1 returns/m2 the other readings sat on the roof and the
-    # point faces did not; at 1.8 and 2.0 the point faces were the better.
-    if len(rec["pts"]) < MIN_RETURNS_M2 * rec["poly"].area:
-        return 0
+    # A LONG SLIDE ONTO THE RETURNS IS CHECKED AGAINST THE PHOTO. The slide
+    # lays the surveyed outline on the footprint of roof-height returns; on
+    # a multi-level building, or one the survey barely saw, the best overlap
+    # can be metres from the roof. A slide of SLIDE_CHECK_M or more is kept
+    # only when the roof it gives matches the photo's edges at least as
+    # sharply (src/photo_lean.py) as the roof built without it. 3 Kerry
+    # Drive #4735154: slid (-1.5, 2.5) m at sharpness 1.1, unslid 1.4, and
+    # the unslid roof is the one on the building; 7 Leeds Lane #4750959:
+    # slid (0.75, 0.5) m 5.0, unslid 4.4, and the slid one is right. Of 41
+    # houses (18 Nov, docs/review/fused_vs_live_18nov_*.jpg) four slides
+    # were dropped (1.1 to 2.9 m). Hanley's Farm #4738596 (1.1 returns/m2,
+    # slid 1.5 m east and 1.25 m north off its roof) is the same fault; the
+    # rule that dropped every roof under 1.5 returns/m2 for it cost 12
+    # roofs their layouts on v83 and is gone.
+    if photo is not None and rec["faces"] and math.hypot(*rec["shift"]) >= SLIDE_CHECK_M:
+        try:
+            from src import photo_lean
+            plain = reconstruct(bid, poly, slide=False)
+
+            def sharp(r):
+                k = photo_lean.photo_lean(r["faces"], (r["poly"].centroid.x, r["poly"].centroid.y), photo)
+                return k[2] if k else -1.0
+            if plain["faces"] and sharp(plain) > sharp(rec):
+                rec = plain
+        except Exception as exc:
+            print(f"  point_roof: slide check of {bid} failed ({exc!r})", flush=True)
     # the roof ends where its returns stop, not at the surveyed outline:
     # each wall moves there and the faces run out to it (src/roof_edge.py)
     edge = None
@@ -704,6 +719,24 @@ _W = {}
 def _init_worker(region, out):
     _W["O"] = outlines(region)
     _W["out"] = Path(out)
+    _W["region"] = region
+
+
+def _photo():
+    """The map's photo of this worker's region as photo_lean takes it, or
+    None when imagery is off or the tiles cannot be opened."""
+    if "photo" not in _W:
+        _W["photo"] = None
+        if os.environ.get("SOLAR_INCLUDE_IMAGERY", "1") != "0" and os.environ.get("SOLAR_SLIDE_CHECK", "1") != "0":
+            try:
+                from src.region_build import area_paths
+                from src.register_imagery import RES_M, _Tiles
+                tiles = _Tiles(area_paths(_W["region"])["dir"] / "display_tiles")
+                _W["photo"] = lambda x0, y0, x1, y1: tiles.window(
+                    (x0, y0, x1, y1), int(round((y1 - y0) / RES_M)), int(round((x1 - x0) / RES_M)))
+            except Exception as exc:
+                print(f"  point_roof: no map photo for the slide check ({exc!r})", flush=True)
+    return _W["photo"]
 
 
 def _code():
@@ -712,7 +745,8 @@ def _code():
     if "code" not in _W:
         import hashlib
         _W["code"] = hashlib.md5(Path(__file__).read_bytes()
-                                 + Path(__file__).with_name("roof_edge.py").read_bytes()).hexdigest()[:12]
+                                 + Path(__file__).with_name("roof_edge.py").read_bytes()
+                                 + Path(__file__).with_name("photo_lean.py").read_bytes()).hexdigest()[:12]
     return _W["code"]
 
 
@@ -730,7 +764,7 @@ def _write_one(bid):
         signal.signal(signal.SIGALRM, _late)
         signal.alarm(ROOF_SECONDS)
         try:
-            if write_faces(bid, _W["O"][bid], _W["out"]):
+            if write_faces(bid, _W["O"][bid], _W["out"], photo=_photo()):
                 return 1
             # no faces from this code: faces an earlier version left behind
             # must not stand in for them

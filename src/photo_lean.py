@@ -210,12 +210,9 @@ def doc_faces(doc):
     return faces, (float(origin[0]), float(origin[1]))
 
 
-def drawing_shift(doc, img):
-    """[dx, dy, sharpness]: how far a point-roof building's drawing moves to
-    sit on the roof in the photo `img`: the lean times the mean height of
-    the roof's lines. One move for the whole building, because the map
-    draws a building's outline, faces and panels together. None when the
-    doc has no planes or the photo gives nothing."""
+def drawing_lean(doc, img):
+    """(kx, ky, sharpness, mean line height) of a point-roof doc in the
+    photo `img`; None when the doc has no planes or the photo gives nothing."""
     faces, origin = doc_faces(doc)
     if not faces:
         return None
@@ -224,4 +221,22 @@ def drawing_shift(doc, img):
         return None
     seams, edge, _ = line_samples(faces, origin)
     hm = float(np.mean(np.r_[seams[:, 4], edge[:, 4]]))
-    return [round(k[0] * hm, 2), round(k[1] * hm, 2), round(k[2], 1)]
+    return k[0], k[1], k[2], hm
+
+
+def at_search_limit(kx, ky):
+    """A lean on the edge of the range searched is where the search stopped,
+    not a peak it found."""
+    return max(abs(kx), abs(ky)) >= K_MAX - 1e-6
+
+
+def drawing_shift(doc, img):
+    """[dx, dy, sharpness]: how far a point-roof building's drawing moves to
+    sit on the roof in the photo `img`: the lean times the mean height of
+    the roof's lines. One move for the whole building, because the map
+    draws a building's outline, faces and panels together. None when the
+    doc has no planes or the photo gives nothing."""
+    k = drawing_lean(doc, img)
+    if k is None:
+        return None
+    return [round(k[0] * k[3], 2), round(k[1] * k[3], 2), round(k[2], 1)]

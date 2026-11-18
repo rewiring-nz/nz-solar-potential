@@ -61,6 +61,8 @@ AGREE_MAX_M = 0.75       # a trusted match further than this from its neighbours
 NEIGHBOUR_M = 150.0
 NEIGHBOUR_K = 8
 MIN_NEIGHBOURS = 2
+LEAN_OUTLIER = 0.2        # m per m of height from the neighbours' median lean
+LEAN_MIN_NEIGHBOURS = 4
 MIN_AREA_M2 = 20.0
 # A SECOND LOOK, WIDER. The neighbour check above overrode correct answers: a
 # taller roof leans further than the houses round it, so its own sharp match
@@ -347,7 +349,7 @@ def _reading_shifts():
     if _READING_SHIFTS:
         return _READING_SHIFTS[0]
     from src.outline_fit import _marked
-    from src.vision_roof import STUDENT_FACES_DIR, USE_VISION_ROOF, VISION_FACES_DIR
+    from src.vision_roof import STUDENT_FACES_DIR, USE_VISION_ROOF, VISION_FACES_DIR, reader_leads
     got = {}
     if USE_VISION_ROOF:
         marked = _marked()
@@ -360,6 +362,10 @@ def _reading_shifts():
                     # (roof_partition.selected_doc): that roof is not built
                     # from this reading, so it does not move by its slide
                     if d == STUDENT_FACES_DIR and _point_faces_lead(f.stem):
+                        continue
+                    # ... and so do they a reader's reading of a simple
+                    # roof (vision_roof.reader_leads)
+                    if d == VISION_FACES_DIR and not reader_leads(f.stem):
                         continue
                     sh = json.loads(f.read_text()).get("shift") or [0.0, 0.0]
                     got[f.stem] = [-float(sh[0]), -float(sh[1]), 1.0]
@@ -428,7 +434,7 @@ def _point_leans(out, building_ids, tiles, reference=None):
     from src import photo_lean
     from src.outline_fit import _marked
     from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
-    from src.vision_roof import USE_VISION_ROOF, VISION_FACES_DIR
+    from src.vision_roof import reader_leads
     if not USE_POINT_ROOF:
         return 0
     marked = _marked()
@@ -437,6 +443,7 @@ def _point_leans(out, building_ids, tiles, reference=None):
         return tiles.window((x0, y0, x1, y1), int(round((y1 - y0) / RES_M)), int(round((x1 - x0) / RES_M)))
 
     n = 0
+    leans = {}          # bid -> (x, y, kx, ky, sharpness, mean line height)
     for bid in building_ids:
         f = POINT_FACES_DIR / f"{int(bid)}.json"
         if not f.exists():
@@ -444,22 +451,62 @@ def _point_leans(out, building_ids, tiles, reference=None):
         drawn = int(bid) in marked
         if drawn and (reference is None or (out.get(str(int(bid))) or [0, 0, 1])[2] != 0):
             continue
-        if not drawn and USE_VISION_ROOF and (VISION_FACES_DIR / f"{int(bid)}.json").exists():
+        # a roof the reader leads is not built from these faces
+        if not drawn and reader_leads(bid):
             continue
         try:
             doc = json.loads(f.read_text())
-            s = photo_lean.drawing_shift(doc, photo)
-            if drawn and s is not None:
-                r = photo_lean.drawing_shift(doc, reference)
-                s = (None if r is None or min(s[2], r[2]) < LEAN_TRUST
-                     else [round(s[0] - r[0], 2), round(s[1] - r[1], 2), min(s[2], r[2])])
+            if drawn:
+                s = photo_lean.drawing_shift(doc, photo)
+                r = photo_lean.drawing_shift(doc, reference) if s is not None else None
+                if s is None or r is None or min(s[2], r[2]) < LEAN_TRUST:
+                    continue
+                out[str(int(bid))] = [round(s[0] - r[0], 2), round(s[1] - r[1], 2), min(s[2], r[2])]
+                n += 1
+                continue
+            k = photo_lean.drawing_lean(doc, photo)
+            if k is not None:
+                leans[int(bid)] = (float(doc["origin"][0]), float(doc["origin"][1]), *k)
         except Exception as exc:
             print(f"  register_imagery: lean of {bid} failed ({exc!r})", flush=True)
             continue
-        if s is None:
-            continue
-        out[str(int(bid))] = s
+    # A LEAN IS ONE CAMERA'S VIEW OF A NEIGHBOURHOOD. Buildings a street
+    # apart lean alike per metre of height (448 sharp town-centre roofs: a
+    # roof's lean is a median 0.05, p90 0.13 m per m from the median of the
+    # sharp roofs within 150 m). A roof's own reading is the better
+    # placement on average (37 marked roofs: 0.21 m against 0.57 m median
+    # error, tools/experiments/lean_neighbours.py), so it is kept, unless
+    # it is where the search stopped (photo_lean.at_search_limit) or over
+    # LEAN_OUTLIER from that median: then a shadow or gutter edge won
+    # (Frankton #4721959: (0.4, -0.4) m per m, the corner of the search,
+    # 2.6 m off the roof along its own shadow) and the neighbours' median
+    # places it. With fewer than LEAN_MIN_NEIGHBOURS sharp neighbours a lean
+    # at the limit is dropped (no move) and any other is kept.
+    ok = {b: v for b, v in leans.items()
+          if v[4] >= LEAN_TRUST and not photo_lean.at_search_limit(v[2], v[3])}
+    xy = np.array([[v[0], v[1]] for v in ok.values()]) if ok else np.zeros((0, 2))
+    kk = np.array([[v[2], v[3]] for v in ok.values()]) if ok else np.zeros((0, 2))
+    ids = list(ok)
+    replaced = dropped = 0
+    for bid, (x, y, kx, ky, sharp, hm) in leans.items():
+        med = None
+        if len(xy):
+            d = np.hypot(xy[:, 0] - x, xy[:, 1] - y)
+            m = (d < NEIGHBOUR_M) & (np.array(ids) != bid)
+            if int(m.sum()) >= LEAN_MIN_NEIGHBOURS:
+                med = np.median(kk[m], axis=0)
+        limit = photo_lean.at_search_limit(kx, ky)
+        if med is not None and (limit or float(np.hypot(kx - med[0], ky - med[1])) > LEAN_OUTLIER):
+            kx, ky, sharp = float(med[0]), float(med[1]), 0.0
+            replaced += 1
+        elif limit:
+            kx, ky, sharp = 0.0, 0.0, 0.0
+            dropped += 1
+        out[str(int(bid))] = [round(kx * hm, 2), round(ky * hm, 2), round(sharp, 1)]
         n += 1
+    if replaced or dropped:
+        print(f"  register_imagery: {replaced} leans replaced by their neighbours' median, "
+              f"{dropped} at the search limit dropped", flush=True)
     return n
 
 
