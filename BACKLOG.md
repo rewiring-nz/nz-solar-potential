@@ -397,6 +397,21 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Fused roof edge: two checks added after the owner's verdict (18 Nov).**
+  Owner on the 40-house sheets: fused looks better, some way off (#4721959,
+  2.6 m off its roof). Cause: its lean came out at the corner of the search
+  (0.4, -0.4 m per m), on the building's own shadow edge. Added in
+  `tools/experiments/fused_edge.py`: (1) a slide onto the returns of 1 m or
+  more is kept only when the roof it gives matches the photo at least as
+  sharply as the unslid roof; (2) a lean at the search limit, or over
+  0.2 m per m from the median lean of the sharp roofs within 150 m, takes
+  that median (no lean when there are too few neighbours). Rerun on the
+  same 40 plus 3 Kerry Drive (sheets replaced, `fused_vs_live_18nov_1..6`;
+  numbering moved by one after house 5): 7 of 41 caught: slides dropped on
+  5, 6 (3 Kerry Drive, 2.9 m), 8 and 11; lean replaced on 13, 20
+  (#4721959) and 22. Agent's reading: 20, 6, 5 and 8 now sit on their
+  roofs. Not yet in the build.
+
 - **Fused roof edge beside v83 on 40 random unmarked houses (18 Nov,
   `tools/experiments/fused_vs_live.py`, eight regions, five each,
   `docs/review/fused_vs_live_18nov_1..5.jpg`; awaiting the owner's
