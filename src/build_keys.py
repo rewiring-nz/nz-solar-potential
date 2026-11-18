@@ -128,6 +128,7 @@ def reading_hash(building_id):
     if vision_on and w.exists():
         p = w
     q = DATA / "point_faces" / f"{building_id}.json"
+    before_points = p
     if os.environ.get("SOLAR_POINT_ROOF", "1") == "1" and q.exists():
         p = q
     w = DATA / "vision_faces" / f"{building_id}.json"
@@ -143,6 +144,15 @@ def reading_hash(building_id):
                 lead = False
         if lead:
             p = w
+    if p == q and before_points != q and before_points.exists():
+        # a thin point reading gives way to a fuller one
+        # (roof_partition.selected_doc): the key follows both files
+        try:
+            d = json.loads(q.read_text())
+            if len(d.get("faces") or []) == 1 and not d.get("outline"):
+                return hashlib.md5(q.read_bytes() + before_points.read_bytes()).hexdigest()[:12]
+        except (OSError, ValueError, TypeError):
+            pass
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 

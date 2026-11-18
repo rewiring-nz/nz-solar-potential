@@ -65,6 +65,7 @@ VOID = True
 REGISTER = True            # slide the outline onto the roof-height returns first
 CAP = 0.5                  # most one return can cost, m
 SLIDE_CHECK_M = 1.0        # a slide onto the returns this long is checked against the photo
+SLIDE_SLACK_M = 0.5        # tracing error allowed on top of the longest lean
 
 _PC = None
 
@@ -648,6 +649,20 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR, photo=None):
     # slid 1.5 m east and 1.25 m north off its roof) is the same fault; the
     # rule that dropped every roof under 1.5 returns/m2 for it cost 12
     # roofs their layouts on v83 and is gone.
+    # ... AND NO SLIDE IS LONGER THAN A PHOTO CAN LEAN. The surveyed outline
+    # was traced on a photo, so it sits off the roof by that photo's lean:
+    # at most photo_lean.K_MAX metres per metre of roof height, plus
+    # SLIDE_SLACK_M for the tracing. A longer slide has found something
+    # else. Speargrass #4723372, a single-storey house: slid (2.5, 1.5) m,
+    # which the photo check kept, and drawn off its roof on v84.
+    if rec["faces"] and math.hypot(*rec["shift"]) > 0:
+        from src import photo_lean
+        area = sum(f["poly"].area for f in rec["faces"])
+        hm = sum(f["poly"].area * f["plane"][2] for f in rec["faces"]) / max(area, 1e-9)
+        if math.hypot(*rec["shift"]) > photo_lean.K_MAX * max(hm, 0.0) + SLIDE_SLACK_M:
+            plain = reconstruct(bid, poly, slide=False)
+            if plain["faces"]:
+                rec = plain
     if photo is not None and rec["faces"] and math.hypot(*rec["shift"]) >= SLIDE_CHECK_M:
         try:
             from src import photo_lean

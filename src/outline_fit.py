@@ -206,9 +206,11 @@ def fitted_outlines(gdf, region_dir, use=None):
         # round (17 Nov, town centre: 680 of 1,270 outlines came from a photo
         # reading, 327 of them on roofs whose faces did too).
         edge = None
+        points_lead = False
         if int(bid) not in marked:
             from src import roof_partition
-            if (roof_partition.selected_doc(int(bid)) or {}).get("source") == "points":
+            points_lead = (roof_partition.selected_doc(int(bid)) or {}).get("source") == "points"
+            if points_lead:
                 edge = point_outline(bid)
         if edge is not None:
             new.append(edge)
@@ -220,7 +222,7 @@ def fitted_outlines(gdf, region_dir, use=None):
         s = None if int(bid) in marked else accepted(fits.get(str(int(bid))))
         # faces made from the raw returns carry the slide they were made
         # with; the outline must be in their frame (src/point_roof.py)
-        ps = None if int(bid) in marked else point_shift(bid)
+        ps = point_shift(bid) if points_lead else None
         if ps is not None:
             s = ps if (ps[0] or ps[1]) else None
         new.append(translate(g, s[0], s[1]) if s else g)

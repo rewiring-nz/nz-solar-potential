@@ -1379,15 +1379,38 @@ def selected_doc(building_id):
             + ([STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
             + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])
+    # A ONE-FACE READING OF A ROOF THE SURVEY BARELY SAW GIVES WAY. Where
+    # the returns are too thin to place the walls (the point doc carries no
+    # fitted roof edge) and they gave a single face, the returns could not
+    # separate the roof's planes: a gable read as one plane takes panels
+    # across its ridge. Such a reading leads only when no later reading
+    # finds two faces or more. v84 put these readings first and the gate
+    # listed their roofs (#4747990: one face against 8, #4738759: 1 against
+    # 2, #4738589: 1 against 4; renders docs/review/thin_point_19nov.jpg);
+    # v83 had dropped every roof under 1.5 returns/m2 instead, which also
+    # took roofs with no other reading.
+    thin = None
     for d in dirs:
         fp = d / f"{building_id}.json"
         if not fp.exists():
             continue
         try:
-            return json.loads(fp.read_text())
+            doc = json.loads(fp.read_text())
         except (OSError, ValueError):
-            return None
-    return None
+            return thin
+        if thin is None and d == POINT_FACES_DIR and thin_point_doc(doc):
+            thin = doc
+            continue
+        if thin is not None and len(doc.get("faces") or []) < 2:
+            continue
+        return doc
+    return thin
+
+
+def thin_point_doc(doc):
+    """A point-roof doc of one face with no fitted roof edge."""
+    return (doc.get("source") == "points" and len(doc.get("faces") or []) == 1
+            and not doc.get("outline"))
 
 
 def selected_score(building_id):

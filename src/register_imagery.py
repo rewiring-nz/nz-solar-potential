@@ -433,8 +433,8 @@ def _point_leans(out, building_ids, tiles, reference=None):
     LEAN_TRUST = 3.5
     from src import photo_lean
     from src.outline_fit import _marked
+    from src import roof_partition
     from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
-    from src.vision_roof import reader_leads
     if not USE_POINT_ROOF:
         return 0
     marked = _marked()
@@ -451,8 +451,10 @@ def _point_leans(out, building_ids, tiles, reference=None):
         drawn = int(bid) in marked
         if drawn and (reference is None or (out.get(str(int(bid))) or [0, 0, 1])[2] != 0):
             continue
-        # a roof the reader leads is not built from these faces
-        if not drawn and reader_leads(bid):
+        # a roof another reading leads (the reader's on a complex roof, a
+        # fuller one where the point reading is thin: selected_doc) is not
+        # built from these faces
+        if not drawn and (roof_partition.selected_doc(int(bid)) or {}).get("source") != "points":
             continue
         try:
             doc = json.loads(f.read_text())
