@@ -397,6 +397,10 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **v84 is live (19 Nov): published on the owner's instruction although
+  the gate failed.** Next: trace the three clear losses (#4723372,
+  #4747990, #4738759) and look at a sample of the leans the neighbours'
+  median replaced. The entry as written before publishing:
 - **Queenstown build with the checks and the new reading order is built and
   NOT published (19 Nov, `point-roof` 7f9ac465; served set on the VM and
   pulled to this Mac's `data/`).** 23 regions in 6 h 28 min; panels
