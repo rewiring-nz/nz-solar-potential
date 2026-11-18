@@ -397,6 +397,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Slide check, lean check and a new reading order are in the build
+  (18 Nov, `point-roof` 7f9ac465; Queenstown build running, not live).**
+  (1) `point_roof.write_faces`: a slide onto the returns of 1 m or more is
+  kept only when its roof matches the photo at least as sharply as the
+  unslid roof; the 1.5 returns/m2 cut-off is removed. (2)
+  `register_imagery._point_leans`: a lean at the search limit, or over
+  0.2 m per m from the median of 4 or more sharp neighbours within 150 m,
+  takes that median. (3) `vision_roof.reader_leads`: the paid reader leads
+  only a roof it reads as more than 12 faces; `selected_doc`,
+  `build_keys.reading_hash` and the drawing shifts follow it. Fast tests
+  pass. NOT built in from the experiment: each corner moved by its own
+  height (the map still moves a building as one piece; `emit_region.py`
+  has someone else's uncommitted work in this checkout) and walls snapped
+  to photo edges (moved few walls, little). Not done: the owner's
+  lone-panel rule (the cut is by `fill_order` in the map page and
+  `emit_region`), balconies, roofs built since the survey.
+
 - **Fused roof edge: two checks added after the owner's verdict (18 Nov).**
   Owner on the 40-house sheets: fused looks better, some way off (#4721959,
   2.6 m off its roof). Cause: its lean came out at the corner of the search
