@@ -67,20 +67,19 @@ def reading_path(building_id):
     return None
 
 
-# THE PAID READER LEADS THE FACES FROM THE RETURNS ONLY ON A ROOF IT READS
-# AS MORE THAN READER_LEADS_OVER_FACES FACES. Each allowed its own best
-# slide, on 23 marked roofs with a reading (16 Nov,
-# tools/experiments/fair_compare_reader.py): the reader's lines were better
-# on 12, the returns' on 5, the same on 6; on the 17 roofs of 12 faces or
-# fewer 6 / 5 / 6, and on the 6 larger ones the reader won all 6. A reading
-# is placed on the map by the slide it was read with; faces from the returns
-# are placed by their own lines in the map's photo and carry the roof's own
-# edge. On v83 7 Leeds Lane (#4750959, a reading of 12 faces) was drawn off
-# its roof with its hips wrong while its faces from the returns sat on it
-# (owner, 18 Nov), and on 40 random houses the owner preferred the roofs
-# from the returns (docs/review/fused_vs_live_18nov_*.jpg). The reader's
-# obstructions are used either way.
-READER_LEADS_OVER_FACES = 12
+# THE PAID READER LEADS THE FACES FROM THE RETURNS WHEREVER IT HAS A READING
+# (one it rated MIN_CONFIDENCE or over: ingest keeps no other). Owner's
+# verdict on 29 houses of two streets read on 19 Nov, each beside v84's
+# roof (docs/review/reader_vs_live_19nov_*.jpg): the reader looks better.
+# Agent's count on those sheets: better on about 17, poor on about 10, 8 of
+# the 10 rated under MIN_CONFIDENCE by the reader itself. Each allowed its
+# own best slide on 23 marked roofs (16 Nov,
+# tools/experiments/fair_compare_reader.py) the reader's lines were better
+# on 12, the returns' on 5, the same on 6. For one day (v84) the reader led
+# only roofs it read as more than 12 faces, after 7 Leeds Lane (#4750959,
+# an older reading) was drawn with its hips wrong on v83; READER_LEADS_OVER_FACES
+# restores that when set above 0.
+READER_LEADS_OVER_FACES = int(os.environ.get("SOLAR_READER_LEADS_OVER_FACES", "0"))
 
 
 def reader_leads(building_id):
