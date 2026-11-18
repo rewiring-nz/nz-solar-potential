@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Paid reader on two streets, beside v84 (19 Nov;
+  `docs/review/reader_vs_live_19nov_1..4.jpg`,
+  `tools/experiments/reader_vs_live.py`; awaiting the owner's verdict).**
+  All 29 buildings of 40 m2 or more on Wakatipu Heights and Bolton Lane
+  (none held back), `claude-fable-5-2`, effort high, Batch API: 29
+  readings, US$4.01 (about $0.14 a roof). The reader rated 14 at 0.5 or
+  over and 15 under (deep shadow, trees). Readings kept at any confidence
+  for the sheets (`--min-confidence 0`), in a trial folder on the VM
+  (`~/reader_streets_faces`), not in `data/vision_faces`; crops and raw
+  readings in `data/reader_trials/reader_streets/`. Agent's reading:
+  reader clearly better than v84 on about 17 (1, 3, 5, 6, 8, 10, 12, 15,
+  17, 20, 22, 23, 25 = 33 Wakatipu Heights, 26 = 35, 27 = 37, 28, 29);
+  poor on about 10 (2 = 5 Bolton Lane, half the building unread; 4, 7,
+  9, 11, 14, 16, 18, 19, 21, 24), 8 of them rated under 0.5 by the reader
+  itself. So its confidence sorts good from bad here, and a reading at 0.5
+  or over beat the point faces on simple roofs too: the "reader leads only
+  over 12 faces" rule of 18 Nov (`vision_roof.reader_leads`) needs
+  revisiting once the owner has judged these.
+
 - **Owner's review of v84 on the live map (19 Nov): seven more failures on
   two streets, none fixed.** Wakatipu Heights 23 (#4751005: the south face
   bare, the slider stops at 27 panels; owner: the default may sit near
