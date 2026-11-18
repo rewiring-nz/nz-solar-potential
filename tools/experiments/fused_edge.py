@@ -34,6 +34,8 @@ SNAP_STEP_M = 0.05
 SNAP_Z = 3.0            # the photo edge's score, in robust standard deviations of the offsets tried
 SNAP_COST = 1.5         # standard deviations per metre slid: the near edge wins a tie
 WALL_MIN_M = 1.5
+SLIDE_CHECK_M = 1.0     # a slide onto the returns this long is checked against the photo
+LEAN_OUTLIER = 0.2      # m per m of height from the neighbours' median lean (p90 among sharp pilot roofs: 0.13)
 VIEW_PAD_M = 6.0
 
 
@@ -69,9 +71,7 @@ def corners(c, lines):
     return out
 
 
-def fuse(pr, RE, PL, bid, outline, photo):
-    """dict(edge_lidar, faces, k, fused, moved) or None."""
-    from scipy import ndimage as ndi
+def _edge_faces(pr, RE, PL, bid, outline, photo):
     from shapely.geometry import Polygon
     from shapely.geometry.polygon import orient
     rec = pr.reconstruct(bid, outline)
@@ -83,7 +83,50 @@ def fuse(pr, RE, PL, bid, outline, photo):
         edge = rec["poly"]
     edge = orient(Polygon(edge.exterior), 1.0)
     origin = (rec["poly"].centroid.x, rec["poly"].centroid.y)
-    k = PL.photo_lean(faces, origin, photo) or (0.0, 0.0, 0.0)
+    return dict(edge=edge, faces=faces, origin=origin, slide=rec["shift"],
+                k=PL.photo_lean(faces, origin, photo) or (0.0, 0.0, 0.0))
+
+
+def fuse(pr, RE, PL, bid, outline, photo, neighbours_k=None):
+    """dict(edge_lidar, faces, k, fused, moved, notes) or None.
+
+    TWO CHECKS AGAINST THE PHOTO AND THE NEIGHBOURS (18 Nov).
+    (1) A slide onto the returns of SLIDE_CHECK_M or more is kept only when
+    the roof it gives matches the photo's edges at least as sharply as the
+    roof built without it (3 Kerry Drive #4735154: slid (-1.5, 2.5) m at
+    sharpness 1.1, unslid 1.4; 7 Leeds Lane #4750959: slid 5.0, unslid 4.4).
+    (2) A lean is one camera's view of a neighbourhood. One at the limit of
+    the search, or over LEAN_OUTLIER from the median lean of the sharp roofs
+    round it, is a shadow or gutter edge that won, and the neighbours'
+    median is used (Frankton #4721959: (0.4, -0.4) m per m, the corner of
+    the search, 2.6 m off the roof along its own shadow). `neighbours_k`:
+    () -> (kx, ky) or None."""
+    from scipy import ndimage as ndi
+    from shapely.geometry import Polygon
+    notes = []
+    r0 = _edge_faces(pr, RE, PL, bid, outline, photo)
+    if r0 is None:
+        return None
+    if float(np.hypot(*r0["slide"])) >= SLIDE_CHECK_M:
+        keep = pr.REGISTER
+        try:
+            pr.REGISTER = False
+            r1 = _edge_faces(pr, RE, PL, bid, outline, photo)
+        finally:
+            pr.REGISTER = keep
+        if r1 is not None and r1["k"][2] > r0["k"][2]:
+            notes.append("slide of %.1f m dropped" % float(np.hypot(*r0["slide"])))
+            r0 = r1
+    edge, faces, origin, k = r0["edge"], r0["faces"], r0["origin"], r0["k"]
+    if neighbours_k is not None:
+        at_limit = max(abs(k[0]), abs(k[1])) >= PL.K_MAX - 1e-6
+        nk = neighbours_k()
+        if nk is not None and (at_limit or float(np.hypot(k[0] - nk[0], k[1] - nk[1])) > LEAN_OUTLIER):
+            notes.append("lean from neighbours")
+            k = (float(nk[0]), float(nk[1]), 0.0)
+        elif at_limit:
+            notes.append("lean at the search limit, no neighbours: not leaned")
+            k = (0.0, 0.0, 0.0)
     kv = np.array(k[:2])
     x0, y0, x1, y1 = edge.buffer(VIEW_PAD_M).bounds
     img = np.asarray(photo(x0, y0, x1, y1), dtype=np.float32).mean(0)
@@ -127,7 +170,7 @@ def fuse(pr, RE, PL, bid, outline, photo):
     fused = Polygon(corners(c, lines)).buffer(0)
     if fused.is_empty or fused.geom_type != "Polygon" or not (0.7 * edge.area < fused.area < 1.4 * edge.area):
         fused = None
-    return dict(edge_lidar=edge, faces=faces, origin=origin, k=k, hm=hm, fused=fused, moved=moved, n_walls=n)
+    return dict(edge_lidar=edge, faces=faces, origin=origin, k=k, hm=hm, fused=fused, moved=moved, n_walls=n, notes=notes)
 
 
 if __name__ == "__main__":
