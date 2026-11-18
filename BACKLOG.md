@@ -397,6 +397,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Owner's verdict on the two-street trial (19 Nov): the reader looks
+  better than live.** Acted on: (1) `vision_roof.reader_leads` again lets
+  the reader lead wherever it has a reading (18ebc5f0; the 12-face limit
+  stays as `SOLAR_READER_LEADS_OVER_FACES`, off); (2) 502 random
+  Queenstown houses sent to the reader as 23 batches (outline 80-400 m2,
+  not held back, no markup, no reading yet, shared over the 23 regions by
+  their number of such houses, seed 41; 10,280 houses are eligible in
+  all). Crops, `picked.json` and each folder's `batch.json` are in
+  `data/reader_trials/reader_q500/` on this Mac; collect with
+  `src/vision_roof.py batch-collect <folder>`. Estimate US$85 at the
+  tool's $0.17 a roof; the 29-house batch came to $0.14 a roof. Not yet
+  done: ingest on the VM (the slide onto the LiDAR needs the returns),
+  copy the 14 confident two-street readings and these into
+  `data/vision_faces` there, rebuild. Reading all 10,280 eligible houses
+  would be about US$1,450 at $0.14: owner's decision. Also waiting for the
+  next build: the slide limit, the thin-reading rule, and panels on every
+  face for the slider (23 Wakatipu Heights; not written).
+
 - **Paid reader on two streets, beside v84 (19 Nov;
   `docs/review/reader_vs_live_19nov_1..4.jpg`,
   `tools/experiments/reader_vs_live.py`; awaiting the owner's verdict).**
