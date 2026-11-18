@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Queenstown build with the checks and the new reading order is built and
+  NOT published (19 Nov, `point-roof` 7f9ac465; served set on the VM and
+  pulled to this Mac's `data/`).** 23 regions in 6 h 28 min; panels
+  1,327,680 -> 1,329,719. Gate against v83 FAILED: 2 zeroed (5 and 6
+  panels: one under trees, one on a cleared site), 16 big drops, none
+  newly withheld, 10 of 38 case roofs changed
+  (`docs/review/gate_v84_{drops,cases}.jpg`). Agent's reading of the drops:
+  clear losses on good roofs #4723372 (77 -> 17, faces drawn off the
+  roof), #4747990 (58 -> 21), #4738759 (57 -> 26); partial on #4738589,
+  #4742844; the rest more faces or a building site. Causes not traced.
+  Same houses, v83 beside this build: `docs/review/build84_v83_1..6.jpg`,
+  `build84_new_1..6.jpg`: 3 Kerry Drive, 7 Leeds Lane and #4721959 now on
+  their roofs; 46 Goldfield Heights and 50 Andrews Road better; 9 Kent
+  Street loses its curved corner. The lean check replaced 60 leans in the
+  town centre and 118 in Frankton Arm (about one roof in ten there): few
+  of those were looked at. To publish: `.venv/bin/python
+  tools/publish_served.py 84`, then `site-config.js` on main to v84
+  (owner's go-ahead needed past a failed gate).
+
 - **Slide check, lean check and a new reading order are in the build
   (18 Nov, `point-roof` 7f9ac465; Queenstown build running, not live).**
   (1) `point_roof.write_faces`: a slide onto the returns of 1 m or more is
