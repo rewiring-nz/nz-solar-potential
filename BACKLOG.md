@@ -397,6 +397,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **The 502-house reader batch is back (19 Nov).** 489 readings, 13
+  failed, US$85.56 ($0.175 a reading returned; the 29-house batch was
+  $0.14). The reader rated 387 (79%) at 0.5 or over, median 0.55, 4 under
+  0.3; 379 became a roof on ingest (`~/reader_q500_faces` on the VM, not
+  yet in `data/vision_faces`). 40 of those, drawn at random, beside v84:
+  `docs/review/reader_q500_sample_1..5.jpg` (awaiting the owner's
+  verdict). Agent's reading of 16 of the 40: the reader's outline sits on
+  the eaves and its faces follow the ridges on all 16, and it is at least
+  as good as v84 on each; v84 was already close on about half. It marks
+  existing solar arrays and skylights as obstructions. At this rate all
+  10,280 eligible Queenstown houses would cost about US$1,800 and give
+  about 8,000 confident roofs.
+
 - **Owner's verdict on the two-street trial (19 Nov): the reader looks
   better than live.** Acted on: (1) `vision_roof.reader_leads` again lets
   the reader lead wherever it has a reading (18ebc5f0; the 12-face limit
