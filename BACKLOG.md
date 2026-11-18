@@ -397,6 +397,33 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Owner's review of v84 on the live map (19 Nov): seven more failures on
+  two streets, none fixed.** Wakatipu Heights 23 (#4751005: the south face
+  bare, the slider stops at 27 panels; owner: the default may sit near
+  14 kW but the slider must reach every place a panel fits), 33 (#4751072:
+  panels off the roof and across a step), 35 (#4751237: panels the wrong
+  way round across the hips), 37 (3 panels on a large roof); 1/3 Bolton
+  Lane (outline and roof lines well off the photo); 5 Bolton Lane (panels
+  over obstructions and empty space, scattered). The three Wakatipu
+  Heights roofs traced are point readings of 2-3 faces with a fitted edge
+  (frankton_arm_lake); the others are not traced. One street, nearly every
+  house wrong: the rules added since v82 have not made ordinary houses
+  right.
+- **The v84 losses traced (19 Nov): thin scans.** #4747990, #4738759 and
+  #4738589 have a one-face point reading with no fitted edge that v84 put
+  first; v83's other reading (8, 2 and 4 faces) drew them well
+  (`docs/review/thin_point_19nov_v83.jpg` against `thin_point_19nov.jpg`).
+  #4723372 was slid (2.5, 1.5) m, further than a photo can lean on a
+  single-storey house, and the photo check kept it. Two rules, committed
+  (c4356a60), fast tests pass, not in a build: a slide longer than
+  0.4 m per m of roof height plus 0.5 m is dropped
+  (`point_roof.write_faces`; #4723372 now unslid); a one-face point
+  reading with no fitted edge gives way to a later reading of two faces or
+  more (`roof_partition.selected_doc`; the three now lead with the other
+  reading). Tried and dropped: choosing between the two readings by which
+  agrees with the photo better, right on 7 of 12 known cases
+  (scratch `pick.py`).
+
 - **v84 is live (19 Nov): published on the owner's instruction although
   the gate failed.** Next: trace the three clear losses (#4723372,
   #4747990, #4738759) and look at a sample of the leans the neighbours'
