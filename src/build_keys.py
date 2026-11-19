@@ -120,6 +120,16 @@ def reading_hash(building_id):
     v = DATA / "referee_faces" / f"{building_id}.json"
     if os.environ.get("SOLAR_READING_REFEREE", "0") == "1" and v.exists():
         p = v
+    # faces from the raw LiDAR returns come before both (src/point_roof.py)
+    q = DATA / "point_faces" / f"{building_id}.json"
+    if os.environ.get("SOLAR_POINT_ROOF", "0") == "1" and q.exists():
+        p = q
+    # a reading of the photo comes before every other (src/vision_roof.py)
+    # (the vision model's, else the face-region model's)
+    for d in ("student_faces", "vision_faces"):
+        w = DATA / d / f"{building_id}.json"
+        if os.environ.get("SOLAR_VISION_ROOF", "1") == "1" and w.exists():
+            p = w
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 

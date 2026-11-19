@@ -325,7 +325,38 @@ def drawing_shifts(region_dir):
                 out.update(json.loads(f.read_text()))
             except Exception:
                 pass
+    out.update(_reading_shifts())
     return out
+
+
+_READING_SHIFTS = []
+
+
+def _reading_shifts():
+    """{building_id: [dx, dy, 1.0]} for roofs built from a reading of the
+    photo (src/vision_roof.py). The reading was traced on the photo and slid
+    onto the LiDAR by a recorded amount, so its drawing moves back by exactly
+    that, not by the lean measured for the surveyed outline. A reading that
+    was not slid is drawn where it was traced. Roofs with drawn markup keep
+    their own shift: the markup governs them."""
+    if _READING_SHIFTS:
+        return _READING_SHIFTS[0]
+    from src.outline_fit import _marked
+    from src.vision_roof import STUDENT_FACES_DIR, USE_VISION_ROOF, VISION_FACES_DIR
+    got = {}
+    if USE_VISION_ROOF:
+        marked = _marked()
+        for d in (STUDENT_FACES_DIR, VISION_FACES_DIR):      # a vision reading wins
+            for f in (d.glob("*.json") if d.is_dir() else ()):
+                try:
+                    if int(f.stem) in marked:
+                        continue
+                    sh = json.loads(f.read_text()).get("shift") or [0.0, 0.0]
+                    got[f.stem] = [-float(sh[0]), -float(sh[1]), 1.0]
+                except (OSError, ValueError, TypeError):
+                    continue
+    _READING_SHIFTS.append(got)
+    return got
 
 
 def markup_shifts(data_dir):
