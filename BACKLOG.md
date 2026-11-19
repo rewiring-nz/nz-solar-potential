@@ -397,6 +397,11 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **20 Nov: v85 published past the failed gate, on the owner's go-ahead.**
+  `gs://solar-potential-map-tiles/v85/`, main 252e05d2. Still open from the
+  gate: point-roof faces that end with no panels (#4732192, #4751244 and
+  seven more zeroed roofs), 77 roofs down over 30% not yet judged.
+
 - **19 Nov: Queenstown rebuilt (v85 candidate), gate FAILED, not published.**
   Build 01:23 to 07:44 UTC at 2e081948, no stage failed; VM up 6 h 51 min,
   stopped. Gate against v84: 9 roofs lost every panel, 77 lost over 30%,
