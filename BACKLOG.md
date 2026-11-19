@@ -397,6 +397,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Queenstown build with the reader roofs launched (19 Nov, VM
+  `~/qt_build3.out`).** The 23 point-face regions at 2e081948: 394
+  confident reader readings copied into the VM's `data/vision_faces`
+  (379 from the 502-house batch, 15 from the two streets; 658 to 1,051
+  files), the reader leading, the slide bound and the thin-point rule.
+  v84's layouts and shifts are kept in `~/v84_layouts` for the before/after.
+- **OPEN: the slider reaching every face needs the map page too.** Laying
+  panels on away-from-sun faces and ranking them last (as pocket panels
+  are) is not enough on its own: the map's default for a home is
+  `fill_order <= 28` and for anything else every panel
+  (`rooftop-solar.html` `withinSize`, `emit_region._panel_areas`), so a home
+  with fewer than 28 sunny-side panels and every non-home would show the
+  shady-side panels by default, and `derive_solar_potential` and
+  `bake_density_deciles` would count them in the default totals. It needs
+  a shipped flag on those panels that the default sizing, the totals and
+  the card's slider all read. Not in this build.
+
 - **The 502-house reader batch is back (19 Nov).** 489 readings, 13
   failed, US$85.56 ($0.175 a reading returned; the 29-house batch was
   $0.14). The reader rated 387 (79%) at 0.5 or over, median 0.55, 4 under
