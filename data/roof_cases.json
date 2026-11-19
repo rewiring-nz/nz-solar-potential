@@ -1044,6 +1044,198 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4735154,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "3 Kerry Drive: outline and panels off the roof",
+   "quotes": [
+    "Pretty clear failure here"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4735373,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "9 Kent Street: a standalone panel",
+   "quotes": [
+    "Why is there a standalone panel here, that's never how it would be installed"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4750959,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "7 Leeds Lane: outline, ridges and panel placement wrong; a diagonal line of panels",
+   "quotes": [
+    "That last one has the outline wrong, the ridges wrong, the panel placement wrong, and a strange diagonal line of panels that should never happen"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751255,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "9 Vancouver Drive: lone panel at the 14 kW cut",
+   "quotes": [
+    "Lone panel here. If it's close to 14kW, and going to make a lone panel, it should just do one less or one more, depending on the array. If it's got an 4 or higher panel array, and going to 14kW would add a single panel, then leave it at 13.5 or 13"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729348,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "32 Highview Terrace: outline clearly wrong",
+   "quotes": [
+    "This outline is clearly very wrong"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729407,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "Kelvin Heights: panels placed over balconies",
+   "quotes": [
+    "Panels placed over balconies. You need to be better at going off just the image even if there is no lidar. If a human could see not to place panels there in the image, you should be able to tell that as well"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729783,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "50 Andrews Road: roof could easily fit more panels",
+   "quotes": [
+    "This roof could easily fit more panels"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4721320,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "46 Goldfield Heights: outline not close to the real building",
+   "quotes": [
+    "This outline is not even close to the real building. Maybe we shouldn't be relying on outlines so much and instead the image as the outline"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371259,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "really terrible roof shape detection (long roof cut into slivers)",
+   "quotes": [
+    "This one is really terrible roof shape detection"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4721959,
+   "region": "frankton_flats",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "fused-edge sheet",
+   "defect": "house 19 of the fused sheets: way off the roof",
+   "quotes": [
+    "Fused does look better, with still some that are way off like this one"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751005,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "23 Wakatipu Heights: slider maxes out at 13.5 kW, south face unreachable",
+   "quotes": [
+    "Why is this home maxing out at 13.5kW? It should not max out at that. It should automatically be around that, but I should still be able to move the slider to add more panels to every possible place they would fit."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751072,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "33 Wakatipu Heights: panels miss the roof and cross a ridge/step",
+   "quotes": [
+    "These panels are clearly missing the roof, and also overlapping a roof ridge/cliff edge"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751237,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "35 Wakatipu Heights: wrong orientation for the panels",
+   "quotes": [
+    "Wrong orientation for these panels"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751017,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "37 Wakatipu Heights: a big part of the roof missing even at max slider",
+   "quotes": [
+    "Missing a big part of this roof even with max panel slider to the right"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751016,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "1/3 Bolton Lane: outline and roof lines way off the image",
+   "quotes": [
+    "Outline and roof lines clearly way off from the image"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371222,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "5 Bolton Lane: panels over obstructions and empty space, incorrectly placed",
+   "quotes": [
+    "This is a complete mess, panels over obstructions, over empty space, incorrectly placed and more"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
