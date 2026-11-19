@@ -397,6 +397,16 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **RULE: the paid reader is not the production method (owner, 19 Nov).**
+  Reading every Queenstown house (about US$1,800) is ruled out, and the
+  method must scale nationally at compute cost only. The reader supplies
+  training labels and evaluation samples in small batches. The roughly
+  1,050 readings already bought are the label set for a local model
+  (`data/models/face_regions_v3.pt` was trained on far fewer and is
+  untested outside central Queenstown). Next: retrain the local model on
+  all of them, hold some out, and put it beside the reader and the point
+  roof on the reported roofs (`tools/cases_sheet.py`).
+
 - **Compute costs reviewed (19 Nov).** Both stored 600 GB disk images
   deleted on the owner's instruction (`solar-vm-20261019`, `solar-worker`;
   about US$35-45 a month at list price): `tools/vm_start.sh --clone` needs
