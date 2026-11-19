@@ -26,6 +26,8 @@ data/heatmaps/lod/
 !data/bench_ids.txt
 !data/bench_set.json
 !data/roof_set.json
+# the monthly VM hour cap read by tools/vm_start.sh: tracked so it changes by commit
+!data/vm_budget.json
 !data/status_items.json
 !data/label_set/
 data/label_set/*
