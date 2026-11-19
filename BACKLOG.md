@@ -397,6 +397,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **19 Nov: Queenstown rebuilt (v85 candidate), gate FAILED, not published.**
+  Build 01:23 to 07:44 UTC at 2e081948, no stage failed; VM up 6 h 51 min,
+  stopped. Gate against v84: 9 roofs lost every panel, 77 lost over 30%,
+  2 newly withheld, panels on the map -0.4%. Renders, v84 beside v85, one
+  3600 px image per roof: `data/preview/cases/cases_v85/` (54 reported
+  roofs; 7 changed layout) and `data/preview/cases/gate_v85/` (the 9 zeroed
+  and the 15 largest drops). Seen in four of the gate renders, unjudged:
+  two big drops come from a reader roof that marks skylight strips and a
+  terrace as no-go; two zeroed roofs (#4732192, #4751244) have point-roof
+  faces drawn and no panels placed. Next: find why a point-roof face ends
+  with no panels (all nine zeroed have no reader file on the four checked),
+  fix generally, rebuild only the affected regions, then ask about
+  publishing.
+
 - **RULE: the paid reader is not the production method (owner, 19 Nov).**
   Reading every Queenstown house (about US$1,800) is ruled out, and the
   method must scale nationally at compute cost only. The reader supplies
