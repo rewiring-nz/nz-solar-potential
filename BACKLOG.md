@@ -397,6 +397,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Reported roofs are logged and redrawn every version (19 Nov).**
+  `data/roof_cases.json` now holds 54 roofs (16 added from the owner's v83
+  and v84 reviews; it had lapsed since 8 Nov). After every build:
+  `tools/cases_sheet.py snap <label>` then `sheet <out> <previous> <label>`
+  gives one 3600 px image a roof, previous version beside new, over the
+  map's photo at zoom 21, and an index page; send it with the gate result.
+  Baseline: v84, `data/preview/cases/cases_v84/index.html` (53 roofs; the
+  Wanaka case #4727237 is outside the kept Queenstown layouts). Snapshots
+  are on the VM under `~/casetool/data/case_snapshots` until the build
+  ends and the checkout can be synced. A v84 roof led by a photo reading is
+  drawn at the shift on file, which can differ from the map by its
+  reading's slide.
+
 - **Queenstown build with the reader roofs launched (19 Nov, VM
   `~/qt_build3.out`).** The 23 point-face regions at 2e081948: 394
   confident reader readings copied into the VM's `data/vision_faces`
