@@ -397,6 +397,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Compute costs reviewed (19 Nov).** Both stored 600 GB disk images
+  deleted on the owner's instruction (`solar-vm-20261019`, `solar-worker`;
+  about US$35-45 a month at list price): `tools/vm_start.sh --clone` needs
+  `tools/fleet.sh image` run again first. Open, largest first: rebuild only
+  the roofs a change touches (any hashed-code change marks all 23 regions
+  full, 6.5 h); a small machine type for light jobs through the capped
+  start script; the one-core stages before the first region (plan took 38
+  min on 18 Nov); a cheaper reader (cheaper model, or only roofs whose
+  point roof fails a check), to be trialled on about 50 houses; idle stop
+  30 to 10 min. Buckets are under 9 GB in all.
+
 - **Reported roofs are logged and redrawn every version (19 Nov).**
   `data/roof_cases.json` now holds 54 roofs (16 added from the owner's v83
   and v84 reviews; it had lapsed since 8 Nov). After every build:
