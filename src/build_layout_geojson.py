@@ -754,6 +754,15 @@ def _build_one_at(building_id, nudge_m):
                 _rel_skipped = _rel_skipped or not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0)
                 if not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0):
                     _rel_area += f["geometry"].area
+                    if SHADY_SIDE_PANELS:
+                        # the shady side is laid out too, last in the fill
+                        # order: see SHADY_SIDE_PANELS
+                        panels = fit_panels_on_facet(f, obstructions=obstructions,
+                                                     sibling_facets=siblings,
+                                                     fold_keepouts=_keepouts,
+                                                     frame=_frame)
+                        for pnl in panels:
+                            pnl["shady_side"] = True
             else:
                 panels = fit_panels_on_facet(f, obstructions=obstructions,
                                              sibling_facets=siblings,
@@ -874,6 +883,7 @@ def _build_one_at(building_id, nudge_m):
                     "array_size": pnl["array_size"],
                     **({"low_conf_fit": 1} if pnl.get("low_conf_fit") else {}),
                     **({"gap_fill": 1} if pnl.get("gap_fill") else {}),
+                    **({"shady_side": 1} if pnl.get("shady_side") else {}),
                 },
             })
     return features
@@ -904,6 +914,17 @@ SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.78"))  # 0.80 in v5
 SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.65"))  # 0.70 zeroed 88
 # all-south houses in v57 (one 24-29 degree face, 0.66-0.70); 0.65 keeps a south roof up to ~27 degrees
 SUN_SIDE_SECTOR_DEG = 112.5   # off north: east-south-east through west-south-west
+# ...BUT THE SLIDER REACHES EVERY FACE WHERE PANELS FIT. The shady side of a
+# roof (above SUN_SIDE_ABS, under SUN_SIDE_REL of the sunny side) is laid out
+# and its panels tagged shady_side: they rank after every sunny-side panel
+# (panel_fitting.assign_fill_ranks and rerank_layouts put them in the band
+# above the default density), so a system grows onto the sunny side first and
+# onto the shady side only once that is full. On the test street (21 Nov) 9 of
+# the owner's 12 "panels should go here" spots were on bare faces of 19 to 55
+# m2 at 30 to 34 degrees facing south-east or south-west, 950 to 1,120
+# kWh/m2 a year. Below SUN_SIDE_ABS a face still takes none.
+# SOLAR_SHADY_SIDE_PANELS=0: the shady side stays bare.
+SHADY_SIDE_PANELS = os.environ.get("SOLAR_SHADY_SIDE_PANELS", "1") != "0"
 SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny side
 SUN_SIDE_MIN_SHARE = float(os.environ.get("SOLAR_SUN_SIDE_MIN_SHARE", "0.25"))  # nor a sunny side
 # this small a share of the roof it would leave bare (second pass)

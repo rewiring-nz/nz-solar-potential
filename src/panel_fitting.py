@@ -1471,6 +1471,12 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     if low_fit_only and len(low_fit_only) > STRAGGLER_MAX_SHARE * len(panels):
         for p in low_fit_only:
             p["straggler"] = False
+    # the shady side fills after everything on the sunny side, whatever the
+    # size of its array (build_layout_geojson.SHADY_SIDE_PANELS); set after
+    # the two rules above so neither promotes it back
+    for p in panels:
+        if p.get("shady_side"):
+            p["straggler"] = True
     main = _order_by_array(([p for p in panels if not p.get("straggler")]), poa_key)
     extras = sorted((p for p in panels if p.get("straggler")),
                     key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))

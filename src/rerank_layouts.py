@@ -101,6 +101,10 @@ def rerank_area(name):
             straggler_ids.update(id(pf) for pf in b["panels"]
                                  if pf["properties"].get("low_conf_fit"))
 
+        # the shady side fills after the sunny side whatever its array size
+        # (build_layout_geojson.SHADY_SIDE_PANELS)
+        straggler_ids.update(id(pf) for pf in b["panels"] if pf["properties"].get("shady_side"))
+
         # Whole arrays in order of total yield, and within an array the
         # existing rank, which preserves the compact reverse-erosion order the
         # original fit produced. Ordering by facet sunniness -- what this did
