@@ -1589,6 +1589,16 @@ def residual_fill(building_id, footprint, pts, faces):
     return out
 
 
+# A face of the point reading whose returns are not one plane (a deck under a
+# pergola, a glazed roof, a terrace) used to be dropped, and residual fill
+# then recut its area with the old partition: 11 Sunrise Lane's two such
+# faces (plane inlier 0.15 and 0.22) left as five stray triangles holding
+# seven panels, where the owner marked nine wrong lines. With this on the
+# face stays as the reading cut it and takes no panels. Off until measured
+# on the drawn roofs (SOLAR_KEEP_UNREAD_FACE=1 turns it on).
+KEEP_UNREAD_FACE = os.environ.get("SOLAR_KEEP_UNREAD_FACE", "0") == "1"
+
+
 def facets_from_selected_faces(building_id, footprint, pts):
     """Facets straight from the precomputed winner, planes from LiDAR.
 
@@ -1657,6 +1667,17 @@ def facets_from_selected_faces(building_id, footprint, pts):
             # (Drawn faces never hit this path; sparse faces still
             # borrow below.)
             if _inlier_fraction(sub, plane) < SELECTED_MIN_PLANE_INLIER:
+                if KEEP_UNREAD_FACE and doc.get("source") == "points":
+                    # see KEEP_UNREAD_FACE: the face stays as cut, bare
+                    slope, aspect = _slope_aspect(plane)
+                    out.append({
+                        "building_id": building_id,
+                        "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+                        "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+                        "slope_deg": slope, "aspect_deg": aspect,
+                        "area_m2": float(poly.area), "point_count": int(len(sub)),
+                        "from_selected": True, "from_reading": True, "no_panel": True,
+                    })
                 continue
         bad = plane is None
         if not bad:
