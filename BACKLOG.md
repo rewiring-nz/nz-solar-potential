@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **21 Nov: placement on the photo checked; it was not the fault.** The
+  entry below compared the map's photo with the SURVEYED outline. Against the
+  drawn faces the recorded shifts hold: on the 19 street roofs the
+  photo-to-photo match (roof only) is about (-0.8, +0.7) m and the LiDAR
+  roof's lean in the survey-year photo about (+0.6, -0.6) m, which sum to
+  the small recorded shifts; drawn at the recorded shift the point faces sit
+  on the roof in the map's photo (#4729434, #4729764; agent's eye;
+  `tools/experiments/survey_vs_map_photo.py`, scratch `place.py`). So on the
+  13 unchanged roofs the faults are in the lines. #4729434: a real
+  two-ridge roof read nearly right, with a jogged seam where two parallel
+  fold lines 0.5 m apart both survived, and a hip end read as a sliver.
+  Trial `street_r5`, `SOLAR_LINE_MERGE_OFF=0.8` (parallel candidate lines
+  within 0.8 m are one line; was 0.35): 3 roofs change (#4729329 4 -> 3
+  faces, #4729434 jog gone, #4729292 15 -> 14 faces); on #4729434 panels
+  went 25 -> 38 and some look to sit across the gutter strip, not checked.
+  Not adopted, not benchmarked. `SOLAR_POINT_FACES_DIR` lets a trial write
+  and read its own readings. Open: why the hip end is lost (plane too small
+  to grow, or merged by the seam cost), the panels on #4729434 in r5, and
+  the 6 changed roofs.
 - **21 Nov: the 19 test-street roofs, survey-year photo against the map's
   photo.** Sheets in `data/preview/cases/change_r4/` (2021 photo, current
   photo, returns by height, surveyed outline, the owner's real-edge clicks;
