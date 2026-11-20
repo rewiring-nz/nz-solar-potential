@@ -26,19 +26,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
-# (key, label, colour, applies to). "panel": click panels. "spot": click the roof.
+# (key, label, colour, applies to, category). "panel": click panels. "spot":
+# click the roof. A fault with no category is not offered on the page; its key
+# stays so marks made on earlier pages still read and score.
 FAULTS = [
-    ("ridge", "Over a ridge or roof line", "#e6194b", "panel"),
-    ("obstruction", "Over an obstruction", "#f58231", "panel"),
-    ("off_roof", "Off the roof / over empty space", "#911eb4", "panel"),
-    ("wrong_way", "Wrong way round", "#008080", "panel"),
-    ("stray", "Stray panel, not part of an array", "#9a6324", "panel"),
-    ("remove", "Should not be here (other)", "#000000", "panel"),
-    ("add_panels", "Panels should go here", "#1a9c3c", "spot"),
-    ("missed_obstruction", "Obstruction not marked", "#f032e6", "spot"),
-    ("not_obstruction", "Marked obstruction is not one", "#4363d8", "spot"),
-    ("line_wrong", "Roof line or edge wrong here", "#e6c700", "spot"),
-    ("outline_wrong", "Building outline is off: click where the real roof edge is", "#00b7eb", "spot"),
+    ("line_wrong", "Roof line is wrong here", "#e6c700", "spot", "Roof lines"),
+    ("ridge", "Panel is over a ridge or roof line", "#e6194b", "panel", "Roof lines"),
+    ("outline_wrong", "Real roof edge is here", "#00b7eb", "spot", "Building outline"),
+    ("off_roof", "Panel is off the roof", "#911eb4", "panel", "Building outline"),
+    ("missed_obstruction", "Obstruction not marked", "#f032e6", "spot", "Obstructions"),
+    ("not_obstruction", "This is not an obstruction", "#4363d8", "spot", "Obstructions"),
+    ("obstruction", "Panel is over an obstruction", "#f58231", "panel", "Obstructions"),
+    ("add_panels", "Panels should go here", "#1a9c3c", "spot", "Panels"),
+    ("wrong_way", "Panel is the wrong way round", "#008080", "panel", "Panels"),
+    ("remove", "Panel should not be here", "#000000", "panel", "Panels"),
+    ("comment", "Comment", "#444444", "spot", "Comment"),
+    ("stray", "Stray panel, not part of an array", "#9a6324", "panel", ""),
 ]
 
 PAGE = r"""<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -51,6 +54,9 @@ body{font:15px system-ui;margin:0;background:#f4f4f2;color:#111}
 .tag i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
 .tag.on{border-color:#111;background:#111;color:#fff}
 .grp{color:#555;font-size:13px;margin-right:6px}
+.cat{font:inherit;font-weight:600;padding:7px 14px;margin:0 6px 4px 0;border:2px solid #bbb;border-radius:6px;background:#fff;cursor:pointer}
+.cat.on{border-color:#111;background:#111;color:#fff}
+.cm{position:absolute;z-index:3;width:40%;box-sizing:border-box;font:15px system-ui;line-height:normal;padding:6px;border:2px solid #111;border-radius:6px}
 #act button,.card button{font:inherit;padding:5px 10px;margin-right:6px;cursor:pointer}
 main{max-width:1100px;margin:0 auto;padding:10px 12px 80px}
 .card{background:#fff;border:1px solid #ccc;border-radius:8px;margin:18px 0;padding:10px}
@@ -69,8 +75,8 @@ textarea{width:100%;box-sizing:border-box;font:inherit;margin-top:8px;height:44p
 .count{color:#555}
 </style>
 <div id=bar>
- <div><b>1. Pick a fault</b><span class=grp>then click panels:</span><span id=tp></span></div>
- <div><span class=grp style="margin-left:96px">or click a spot on the roof:</span><span id=ts></span></div>
+ <div id=cats></div>
+ <div><span id=opts></span><span class=grp id=hint></span></div>
  <div id=act style="margin-top:6px"><button id=copy>Copy my marks</button><button id=dl>Download</button>
  <span class=count id=total></span> &nbsp; Click a mark again to remove it. Marks are saved in this browser as you go.</div>
 </div>
@@ -79,15 +85,20 @@ textarea{width:100%;box-sizing:border-box;font:inherit;margin-top:8px;height:44p
 const LABEL="__LABEL__", FAULTS=__FAULTS__, ROOFS=__ROOFS__;
 const STORE="fault_marks_"+LABEL, F=Object.fromEntries(FAULTS.map(f=>[f[0],f]));
 let marks={}; try{marks=JSON.parse(localStorage.getItem(STORE)||"{}")}catch(e){}
-let armed=FAULTS[0][0];
+const CATS=[...new Set(FAULTS.map(f=>f[4]).filter(Boolean))];
+let cat=CATS[0], armed=FAULTS.find(f=>f[4]==cat)[0];
 const $=id=>document.getElementById(id), NS="http://www.w3.org/2000/svg";
 function keep(){try{localStorage.setItem(STORE,JSON.stringify(marks))}catch(e){} total()}
 function rec(id){return marks[id]||(marks[id]={panels:{},spots:[],note:"",right:false})}
 function total(){let n=0,r=0;for(const k in marks){const m=marks[k];const c=Object.keys(m.panels).length+m.spots.length;n+=c;if(c||m.right||m.note)r++}
  $("total").textContent=n+" marks on "+r+" of "+ROOFS.length+" roofs"}
-function tags(){for(const [host,kind] of [["tp","panel"],["ts","spot"]]){$(host).innerHTML="";
- for(const f of FAULTS.filter(f=>f[3]==kind)){const b=document.createElement("button");b.className="tag"+(f[0]==armed?" on":"");
-  b.innerHTML="<i style='background:"+f[2]+"'></i>"+f[1];b.onclick=()=>{armed=f[0];tags()};$(host).appendChild(b)}}}
+function tags(){$("cats").innerHTML="";$("opts").innerHTML="";
+ for(const c of CATS){const b=document.createElement("button");b.className="cat"+(c==cat?" on":"");b.textContent=c;
+  b.onclick=()=>{cat=c;armed=FAULTS.find(f=>f[4]==c)[0];tags()};$("cats").appendChild(b)}
+ const fs=FAULTS.filter(f=>f[4]==cat);
+ if(fs.length>1)for(const f of fs){const b=document.createElement("button");b.className="tag"+(f[0]==armed?" on":"");
+  b.innerHTML="<i style='background:"+f[2]+"'></i>"+f[1];b.onclick=()=>{armed=f[0];tags()};$("opts").appendChild(b)}
+ $("hint").textContent=armed=="comment"?"Click the spot on the photo, then type your comment.":F[armed][3]=="panel"?"Now click the panel or panels.":"Now click the spot on the photo."}
 function el(n,a){const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e}
 function paint(r,svg){const m=rec(r.id);svg.querySelectorAll(".mk").forEach(e=>e.remove());
  r.panels.forEach((p,i)=>{const t=m.panels[i];if(!t)return;const f=F[t];
@@ -95,7 +106,7 @@ function paint(r,svg){const m=rec(r.id);svg.querySelectorAll(".mk").forEach(e=>e
  m.spots.forEach((s,j)=>{const f=F[s.tag],g=el("g",{class:"mk",style:"cursor:pointer"});
   g.appendChild(el("circle",{cx:s.px[0],cy:s.px[1],r:r.size/45,fill:f[2],stroke:"#fff","stroke-width":r.size/300}));
   const tx=el("text",{x:s.px[0]+r.size/36,y:s.px[1]+r.size/110,"font-size":r.size/42,fill:"#fff",stroke:"#000","stroke-width":r.size/260,"paint-order":"stroke","font-family":"system-ui","font-weight":600});
-  tx.textContent=f[1];g.appendChild(tx);
+  tx.textContent=s.text||f[1];g.appendChild(tx);
   g.onclick=e=>{e.stopPropagation();m.spots.splice(j,1);keep();paint(r,svg);sum(r)};svg.appendChild(g)})}
 function sum(r){const m=rec(r.id),c=Object.keys(m.panels).length+m.spots.length;
  $("n"+r.id).textContent=c?c+" mark"+(c>1?"s":""):"no marks yet"}
@@ -113,7 +124,13 @@ for(const r of ROOFS){const c=document.createElement("div");c.className="card";
    if(F[armed][3]!="panel"){spot(ev);return}
    if(m.panels[i]==armed)delete m.panels[i];else m.panels[i]=armed;keep();paint(r,svg);sum(r)};svg.appendChild(e)});
  function spot(ev){const b=svg.getBoundingClientRect(),k=r.size/b.width,x=(ev.clientX-b.left)*k,y=(ev.clientY-b.top)*k;
-  rec(r.id).spots.push({tag:armed,px:[Math.round(x),Math.round(y)],xy:[+(r.x0+x*r.res).toFixed(2),+(r.y1-y*r.res).toFixed(2)]});keep();paint(r,svg);sum(r)}
+  const s={tag:armed,px:[Math.round(x),Math.round(y)],xy:[+(r.x0+x*r.res).toFixed(2),+(r.y1-y*r.res).toFixed(2)]};
+  const add=()=>{rec(r.id).spots.push(s);keep();paint(r,svg);sum(r)};
+  if(armed!="comment"){add();return}
+  const i=document.createElement("input");i.className="cm";i.placeholder="Type your comment, then press Enter";
+  i.style.left=Math.min(100*x/r.size,58)+"%";i.style.top=Math.min(100*y/r.size,93)+"%";c.querySelector(".wrap").appendChild(i);i.focus();
+  let done=false;const fin=ok=>{if(done)return;done=true;const t=i.value.trim();i.remove();if(ok&&t){s.text=t;add()}};
+  i.onkeydown=e=>{if(e.key=="Enter")fin(true);if(e.key=="Escape")fin(false)};i.onblur=()=>fin(true)}
  svg.onclick=ev=>{if(F[armed][3]=="spot")spot(ev)};
  $("h"+r.id).onclick=()=>{const on=svg.classList.toggle("hide");$("h"+r.id).textContent=on?"Show the drawing":"Hide the drawing"};
  $("clr"+r.id).onclick=()=>{delete marks[r.id];$("ok"+r.id).checked=false;$("t"+r.id).value="";keep();paint(r,svg);sum(r)};
@@ -124,7 +141,7 @@ for(const r of ROOFS){const c=document.createElement("div");c.className="card";
 function out(){const roofs=[];for(const r of ROOFS){const m=marks[r.id];if(!m)continue;
   const ps=Object.entries(m.panels).map(([i,t])=>({panel:+i,fault:t,xy:r.panels[i].xy}));
   if(!ps.length&&!m.spots.length&&!m.right&&!m.note)continue;
-  roofs.push({id:r.id,right:!!m.right,note:m.note||"",panels:ps,spots:m.spots.map(s=>({fault:s.tag,xy:s.xy}))})}
+  roofs.push({id:r.id,right:!!m.right,note:m.note||"",panels:ps,spots:m.spots.map(s=>s.text?{fault:s.tag,xy:s.xy,text:s.text}:{fault:s.tag,xy:s.xy})})}
  return JSON.stringify({label:LABEL,marked:new Date().toISOString().slice(0,10),roofs})}
 $("copy").onclick=async()=>{const t=out();try{await navigator.clipboard.writeText(t);$("copy").textContent="Copied: paste it into the chat"}
  catch(e){prompt("Copy this and paste it into the chat",t)}};
@@ -190,6 +207,9 @@ def read(path):
         for m in r["panels"] + r["spots"]:
             n[m["fault"]] += 1
         print(r["id"], "right" if r["right"] else "", len(r["panels"]), "panels,", len(r["spots"]), "spots", r["note"])
+        for m in r["spots"]:
+            if m.get("text"):
+                print("    comment at", m["xy"], ":", m["text"])
     names = {f[0]: f[1] for f in FAULTS}
     for k, v in n.most_common():
         print(f"{v:4d}  {names.get(k, k)}")
@@ -242,6 +262,8 @@ def score(path, label):
         line = []
         for m in r["panels"] + r["spots"]:
             p, k = Point(m["xy"]), m["fault"]
+            if k == "comment":                              # words for a person, nothing to score
+                continue
             over = [g for g in pans if g.contains(p)]
             if k in REMOVE:
                 ok = not over
