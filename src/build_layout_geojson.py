@@ -523,6 +523,14 @@ def _build_one_at(building_id, nudge_m):
     # narrow gap between two faces closed (src/face_weld.py). Readings skip the
     # stages above, so this is the only place their doubled lines are joined.
     facets = weld_faces(facets)
+    # ...and a reading's shared edges straightened together once they are one
+    # line (src/face_straighten.py straighten_faces: kinks under STRAIGHTEN_M
+    # go, the outer edge stays, a change of area refuses). The stages above
+    # are skipped for a reading because they move lines to where noisy planes
+    # cross; this one only removes vertices. SOLAR_STRAIGHTEN_READINGS=0: off.
+    if _form and os.environ.get("SOLAR_STRAIGHTEN_READINGS", "1") != "0" \
+            and any(f.get("from_reading") for f in facets):
+        facets = straighten_faces(facets)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
