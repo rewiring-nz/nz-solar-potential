@@ -925,6 +925,24 @@ SMALL_OBJECT_MIN_M2 = 0.12
 SMALL_OBJECT_MAX_ELONGATION = 2.5
 SMALL_OBJECT_MIN_CONTRAST = 25.0    # luminance units (0-255) between the blob and its ring
 SMALL_OBJECT_RING_M = 0.5
+# A DISH AND ITS SHADOW ARE ONE PATCH. The mean luminance of a patch holding a
+# white dish and the black shadow beside it is the roof's own: of 20 roof
+# objects the owner marked as missed on the test street (21 Nov: dishes, flues
+# with a shadow streak, chimneys), the photo detector had found 14 as a patch
+# and this filter dropped 9 of them at a mean contrast of 1 to 24. With
+# CRISP_PEAK the lightest and the darkest quarter of the patch are each
+# compared with the ring and the largest difference counts
+# (SOLAR_CRISP_PEAK=0: the mean only).
+CRISP_PEAK = os.environ.get("SOLAR_CRISP_PEAK", "0") == "1"
+# ...AND A CHIMNEY IS BIGGER THAN A VENT. A compact patch over the colour-only
+# floor needed off-plane returns under it, which a 1 m chimney on 4 returns
+# a square metre does not give: three marked on the street at 1.5 to 2.0 m2
+# and a mean contrast of 96 to 111 were dropped. Up to CRISP_LARGE_MAX_M2 a
+# compact patch at CRISP_LARGE_MIN contrast or more is kept without them
+# (SOLAR_CRISP_LARGE=0: off).
+CRISP_LARGE = os.environ.get("SOLAR_CRISP_LARGE", "0") == "1"
+CRISP_LARGE_MAX_M2 = 3.0
+CRISP_LARGE_MIN = 60.0
 
 
 def _crisp_contrast(imagery_ds, poly, roof=None):
@@ -952,7 +970,15 @@ def _crisp_contrast(imagery_ds, poly, roof=None):
         around = rasterize([(ring, 1)], out_shape=lum.shape, transform=wt).astype(bool)
         if inside.sum() < 4 or around.sum() < 12:
             return 0.0
-        return float(abs(lum[inside].mean() - np.median(lum[around])))
+        ring_lum = np.median(lum[around])
+        mean_c = float(abs(lum[inside].mean() - ring_lum))
+        if not CRISP_PEAK:
+            return mean_c
+        # the lightest and the darkest quarter of the patch, each against the
+        # ring: see CRISP_PEAK
+        v = np.sort(lum[inside])
+        q = max(len(v) // 4, 2)
+        return max(mean_c, float(abs(v[-q:].mean() - ring_lum)), float(abs(v[:q].mean() - ring_lum)))
     except Exception:
         return 0.0
 
@@ -1114,6 +1140,10 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
             # 25 is the middle of that range. The contrast ring is clipped
             # to the face, or every eave corner reads as an object.
             filtered_color.append(blob)
+        elif (CRISP_LARGE and COLOUR_ONLY_MIN_AREA_M2 <= blob.area <= CRISP_LARGE_MAX_M2
+              and _elongation_ratio(blob) <= SMALL_OBJECT_MAX_ELONGATION
+              and _crisp_contrast(imagery_ds, blob, roof=facet_geom) >= CRISP_LARGE_MIN):
+            filtered_color.append(blob)             # see CRISP_LARGE
     color_obs = filtered_color
 
     # NO EARLY RETURN WHEN THE HEIGHT PATH FINDS NOTHING. There was one, and it
