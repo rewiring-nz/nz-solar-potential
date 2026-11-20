@@ -45,7 +45,9 @@ from shapely.ops import polygonize, unary_union
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-POINT_FACES_DIR = ROOT / "data" / "point_faces"
+# SOLAR_POINT_FACES_DIR: read and write the readings somewhere else (a trial
+# of a changed rule on a few roofs, beside the district's own readings)
+POINT_FACES_DIR = Path(os.environ.get("SOLAR_POINT_FACES_DIR") or ROOT / "data" / "point_faces")
 USE_POINT_ROOF = os.environ.get("SOLAR_POINT_ROOF", "1") == "1"
 
 KNN = 24                   # returns in a normal estimate
@@ -56,7 +58,7 @@ MIN_PLANE_PTS = 14         # about 1.5 m2 at 9 returns/m2
 OUT_BUF_M = 0.6            # returns this far outside the outline count (eaves)
 STEP_MIN_M = 0.35          # height jump that makes a boundary a step
 LINE_MERGE_ANG = 6.0
-LINE_MERGE_OFF = 0.35
+LINE_MERGE_OFF = float(os.environ.get("SOLAR_LINE_MERGE_OFF", "0.35"))
 MAX_SLOPE = math.tan(math.radians(62))   # steeper is wall or tree
 LAMBDA = 1.5               # cost of a metre of seam, in metres of return misfit
 FLAT_DEG = 5.0
