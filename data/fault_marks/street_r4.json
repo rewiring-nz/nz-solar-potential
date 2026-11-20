@@ -1,0 +1,95 @@
+{
+ "label": "r4",
+ "marked": "2026-11-20",
+ "roofs": [
+  {
+   "id": 4729286,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259955.99,
+      5004595.45
+     ],
+     "text": "These roof lines are clearly wrong, it's a messy small triangle rather than clean roof shape"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259954.31,
+      5004585.56
+     ],
+     "text": "Double up of lines here and I don't think this is part of the building"
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1259952.38,
+      5004588.1
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1259957.92,
+      5004583.05
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729452,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1260026.44,
+      5004662.65
+     ],
+     "text": "These lines are not fixed at all and clealry still wrong."
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260027.33,
+      5004666.65
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260030.13,
+      5004663.62
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260026.28,
+      5004656.12
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260023.84,
+      5004657.05
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260021.47,
+      5004658.14
+     ]
+    }
+   ]
+  }
+ ]
+}
