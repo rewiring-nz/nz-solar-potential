@@ -397,6 +397,24 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **20 Nov: test street round 1, scored against the owner's marks.** Marks
+  (`data/fault_marks/street_v85.json`, 127 on 17 of 19 roofs, 2 roofs marked
+  right): roof line or edge wrong 68, should not be here 18, obstruction not
+  marked 17, off the roof 7, panels should go here 7, over a ridge 6, over
+  an obstruction 4. Loop: `tools/street_loop.py <label> ~/street_cases.json`
+  on the VM (reproduces v85 exactly at baseline), then
+  `tools/mark_faults.py score`. Round 1 (fa93a3d9): no panels on a face
+  under 1.7 m wide (`NARROW_FACE_M`), and height-rule drops that lie on
+  their face's plane go back (`gate_panels.restore_on_plane`). Score: 18 of
+  18 "should not be here", 1 of 7 "panels should go here", both right roofs
+  unchanged; nothing else moved. Unmarked side effects for the owner to
+  judge: #4729550 -2 and #4729292 -3 panels (faces 1.4 and 1.5 m wide).
+  Renders `data/preview/cases/street_r1/`. Not in a build yet. Open, in
+  order of marks: roof lines (68; the reading itself), missed obstructions
+  (17; vents, skylights, a ridge strip), off the roof (7; six on a 2.2 m
+  face over a deck at #4729292), ridge (6), remaining "panels should go
+  here" (6; faces left empty at #4729287, #4729764).
+
 - **20 Nov: fault marking page.** `tools/mark_faults.py page <out> <snapshot>`
   draws every panel of a snapshot as a clickable shape on the 0.05 m photo;
   the owner tags panels (over a ridge, over an obstruction, off the roof,
