@@ -74,7 +74,14 @@ def weld_polygons(polys, gap_m=WELD_GAP_M):
         if grown is not None:
             polys[i] = grown
             gaps = gaps.difference(claim)
-    return polys
+    return [_tidy(p) for p in polys]
+
+
+def _tidy(p):
+    """Without the hair-width spikes the cuts leave: they turn into invalid
+    rings once the face is written in degrees."""
+    q = _largest(p.buffer(-0.02, join_style=2).buffer(0.02, join_style=2).simplify(0.02))
+    return q if q is not None and q.is_valid and q.area > 0.9 * p.area else p
 
 
 def weld_faces(facets):
