@@ -11,6 +11,7 @@ here" spot must be covered.
 
     python tools/mark_faults.py page <out dir> <snapshot label>
     python tools/mark_faults.py read <marks.json>        # summary of pasted marks
+    python tools/mark_faults.py score <marks.json> <snapshot label>
 
 page writes <out dir>/index.html and one photo per roof (0.05 m a pixel).
 Marks are kept in the browser and leave it by "Copy my marks" (pasted into
@@ -193,9 +194,90 @@ def read(path):
         print(f"{v:4d}  {names.get(k, k)}")
 
 
+REMOVE = {"ridge", "obstruction", "off_roof", "stray", "remove"}
+
+
+def score(path, label):
+    """The marks against another snapshot of the same roofs. A panel marked
+    to go is resolved when no panel covers its centre; "wrong way round" when
+    the panel there is turned or gone; "panels should go here" when a panel
+    covers the spot; "obstruction not marked" when an obstruction is within
+    0.5 m and no panel covers the spot; "is not one" when no obstruction
+    covers it. A wrong roof line has no right answer in the marks: it is
+    reported as changed (a face edge within 0.5 m before, none now) or
+    unchanged, and still needs the owner's eye. A roof marked right must keep
+    every panel."""
+    import math
+    import pyproj
+    from shapely.affinity import translate
+    from shapely.geometry import Point, shape
+    from shapely.ops import transform
+    import cases_sheet as CS
+    marks = json.loads(Path(path).expanduser().read_text())
+    base = json.loads((CS.SNAPS / f"street_{marks['label']}.json").read_text())["buildings"] \
+        if (CS.SNAPS / f"street_{marks['label']}.json").exists() else \
+        json.loads((CS.SNAPS / f"{marks['label']}.json").read_text())["buildings"]
+    new = json.loads((CS.SNAPS / f"{label}.json").read_text())["buildings"]
+    T = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
+
+    def geoms(e, kind):
+        return [translate(transform(T, shape(f["geometry"])), *e["shift"])
+                for f in e["features"] if f["properties"]["kind"] == kind]
+
+    def turn(g):
+        r = g.minimum_rotated_rectangle.exterior.coords
+        a, b = (r[1][0] - r[0][0], r[1][1] - r[0][1]), (r[2][0] - r[1][0], r[2][1] - r[1][1])
+        v = a if math.hypot(*a) >= math.hypot(*b) else b
+        return math.degrees(math.atan2(v[1], v[0])) % 180
+    tot, done = Counter(), Counter()
+    names = {f[0]: f[1] for f in FAULTS}
+    for r in marks["roofs"]:
+        e, o = new.get(str(r["id"])), base.get(str(r["id"]))
+        if not e or not o:
+            print(r["id"], "not in both snapshots")
+            continue
+        pans, obs, faces = geoms(e, "panel"), geoms(e, "obstruction"), geoms(e, "facet")
+        opans, ofaces = geoms(o, "panel"), geoms(o, "facet")
+        line = []
+        for m in r["panels"] + r["spots"]:
+            p, k = Point(m["xy"]), m["fault"]
+            over = [g for g in pans if g.contains(p)]
+            if k in REMOVE:
+                ok = not over
+            elif k == "wrong_way":
+                was = [g for g in opans if g.contains(p)]
+                ok = not over or (was and abs((turn(over[0]) - turn(was[0]) + 90) % 180 - 90) > 45)
+            elif k == "add_panels":
+                ok = bool(over)
+            elif k == "missed_obstruction":
+                ok = not over and any(g.distance(p) <= 0.5 for g in obs)
+            elif k == "not_obstruction":
+                ok = not any(g.contains(p) for g in obs)
+            else:                                           # line_wrong
+                near = lambda fs: any(g.exterior.distance(p) <= 0.5 for g in fs)
+                ok = near(ofaces) != near(faces) or (near(ofaces) and len(faces) != len(ofaces))
+                k = "line_wrong"
+            tot[k] += 1
+            done[k] += bool(ok)
+            line.append(("+" if ok else "-") + k)
+        if r["right"]:
+            same = len(pans) == len(opans) and all(any(g.contains(q.centroid) for g in pans) for q in opans)
+            tot["right_kept"] += 1
+            done["right_kept"] += same
+            line.append(("+" if same else "-") + "right_kept")
+        c = Counter(line)
+        print(r["id"], f"{len(opans)} -> {len(pans)} panels ", " ".join(f"{k}x{v}" for k, v in sorted(c.items())))
+    print()
+    for k in tot:
+        what = "roofs marked right, unchanged" if k == "right_kept" else names.get(k, k)
+        print(f"{done[k]:3d} of {tot[k]:3d}  {what}" + ("  (changed, not judged)" if k == "line_wrong" else ""))
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "page":
         page(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 4 and sys.argv[1] == "score":
+        score(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 3 and sys.argv[1] == "read":
         read(sys.argv[2])
     else:
