@@ -397,6 +397,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **21 Nov: the 19 test-street roofs, survey-year photo against the map's
+  photo.** Sheets in `data/preview/cases/change_r4/` (2021 photo, current
+  photo, returns by height, surveyed outline, the owner's real-edge clicks;
+  script `tools/experiments/survey_vs_map_photo.py`). Read by the agent's
+  eye, not measured: 6 of 19 are not the roof the survey saw (#4729767 and
+  #5371242 rebuilt larger, #4729554, #4729550 and #4729287 a different roof,
+  #4729452 under scaffolding in 2021). `roof_change` does not separate them:
+  edge correlation is under 0.25 on all but one of the 19, and brightness
+  change over 60 on 3. On the other 13 the 2021 photo sits on the outline and
+  the returns, and the current photo shows the roof up to about 1.5 m away
+  (#4729434, #4729288, #4729334, #4729764, #4729435), while the recorded
+  drawing shifts on the street are all under 0.5 m (`image_shift.json`; the
+  point-roof lean replaces the photo-to-photo match). Open: (1) compare the
+  photo-to-photo match (`register_imagery.measure`) with the point-roof lean
+  on these 13 and on the drawn roofs; (2) a changed-roof test that works
+  (footprint of the current photo against the returns), and what a changed
+  roof is built from.
 - **21 Nov: round 4 judged not fixed; what the first roofs show.** Owner on
   round 4: nothing visibly fixed (marks `data/fault_marks/street_r4.json`).
   The weld moves lines by centimetres; the faults are metres. Evidence
