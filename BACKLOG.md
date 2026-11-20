@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **21 Nov: round 4 judged not fixed; what the first roofs show.** Owner on
+  round 4: nothing visibly fixed (marks `data/fault_marks/street_r4.json`).
+  The weld moves lines by centimetres; the faults are metres. Evidence
+  renders (photo beside every return by height, surveyed outline, fitted
+  edge, faces, the owner's real-edge clicks: `data/preview/cases/evidence_r4/`):
+  13 Sunrise Lane (#5371242): the returns show a low roof the size of the
+  surveyed outline (32 m2); the map's photo shows a hip roof about twice
+  that, and the owner's four corner clicks sit 1-3 m outside the outline over
+  ground-height returns. The 2021 survey and the 2026 photo are not the same
+  roof. 1 Sunrise Lane (#4729286): faces follow the returns closely but not
+  the photo roof; moving the drawing (+0.9, -0.8) m did not line it up, so it
+  is not a slide. Recorded leans on the street are all under 0.5 m. Not yet
+  checked: the survey-year photo against the map's photo for the 19 roofs
+  (`register_imagery.roof_change`), which would say how many were built or
+  extended after the survey. Street rebuilt with the point roof off
+  (`SOLAR_POINT_ROOF=0`, `street_photo`: the photo-reading model leads on
+  the 10 roofs that have one): real-edge clicks met 4 of 7 (round 4 marks)
+  and 1 of 14 (round 3), both roofs once ticked right changed; by the
+  agent's eye not clearly better on #4729286. Not sent as a round.
 - **21 Nov: round 3 marks (106 spots, 46 comments) and round 4: one line
   between faces.** Marks in `data/fault_marks/street_r3.json`. What the
   comments say, by count of roofs: doubled or tangled lines (7), outline off
