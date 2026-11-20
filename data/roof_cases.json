@@ -1272,6 +1272,18 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4729434,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "15H Sunrise Lane: panels overlapping the ridge line",
+   "quotes": [
+    "Panels overlapping ridge line here"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
