@@ -1260,6 +1260,18 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4729452,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "11 Sunrise Lane: lone row of panels in the wrong orientation where a better array would fit",
+   "quotes": [
+    "There is a strange row of panels in wrong orientation on this roof, in an area where many panels could fit in a better orientation of array"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
