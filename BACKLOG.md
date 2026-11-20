@@ -397,6 +397,18 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **20 Nov: fault marking page.** `tools/mark_faults.py page <out> <snapshot>`
+  draws every panel of a snapshot as a clickable shape on the 0.05 m photo;
+  the owner tags panels (over a ridge, over an obstruction, off the roof,
+  wrong way round, stray, other) and pins spots (panels should go here,
+  obstruction not marked, marked obstruction is not one, line or edge
+  wrong). Marks carry the panel index and NZTM coordinates; save pasted
+  marks as `data/fault_marks/<label>.json` (`mark_faults.py read`). First
+  page: the 19-roof test street, `data/preview/cases/mark_street_v85/`
+  (serve with the `solar-map-static` preview, port 8010). Next: a scorer
+  that re-lays the street (`tools/layout_ab.py --ids`) and counts marks
+  resolved, so each rule change is judged against the marks.
+
 - **20 Nov: small test street for panel placement.** Sunrise Lane (17 roofs,
   frankton_arm) plus 26 Earnslaw Terrace and 84 Panorama Terrace: 19 roofs,
   refined until the owner calls each right, then widened. Baseline renders
