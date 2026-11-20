@@ -397,6 +397,25 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **20 Nov: test street round 2 (roof lines).** Cause found for the
+  staircase ridge at #4750879: `structured_roof.maybe_structured` swapped
+  the point reading's nine straight faces for a "wings" form with 26- and
+  30-corner faces. A reading now keeps its lines there as it does in the
+  reshape stages (60c476d3; `SOLAR_FORM_OVER_READING=1` swaps as before).
+  On the street it changes #4750879 and #5371242 only. The 68 line marks
+  split 35 on the outer edge (outline off the roof in the photo: decks and
+  pergolas inside the outline, and the photo's lean), 30 on inner lines,
+  3 away from any line. Seen in the LiDAR evidence renders
+  (scratch `evidence.py`: photo, candidate lines, returns by plane),
+  unjudged: #4729452's reading has two faces the build drops (plane inlier
+  0.15 and 0.22 over a flat roof and pergola) and residual fill replaces
+  them with stray triangles; #4729286 and #4729550 have the outline 1 m or
+  more off the photo roof. `mark_faults.py score` cannot judge a moved
+  line (a line 0.3 m off still lies within 0.5 m of the mark): line
+  changes go back to the owner on a fresh marking page. Drawn-roof
+  benchmark before/after running on the VM (`~/mb_before.score`,
+  `~/mb_after.score`). Renders `data/preview/cases/street_r2/`.
+
 - **20 Nov: test street round 1, scored against the owner's marks.** Marks
   (`data/fault_marks/street_v85.json`, 127 on 17 of 19 roofs, 2 roofs marked
   right): roof line or edge wrong 68, should not be here 18, obstruction not
