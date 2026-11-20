@@ -397,6 +397,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **21 Nov: round 3 marks (106 spots, 46 comments) and round 4: one line
+  between faces.** Marks in `data/fault_marks/street_r3.json`. What the
+  comments say, by count of roofs: doubled or tangled lines (7), outline off
+  the photo roof (6), balcony or deck drawn as roof (4), missed hips and
+  ridges that are plain in the photo (4), obstructions missed (15 spots) or
+  far too large (1). Measured: a "doubled line" is two near-parallel edges of
+  different faces 0.08-1.0 m apart over 1 m or more; 47 pairs on the round 3
+  street, on every roof marked for it, none on five roofs not marked for it.
+  `src/face_weld.py` (on by default, `SOLAR_WELD_FACES=0` off): a lapped
+  edge is cut, a gap between faces under 0.9 m goes to the face beside it.
+  Street round 4 (`street_r4`, built with `SOLAR_KEEP_UNREAD_FACE=1` like
+  round 3): 47 pairs -> 10; panels 474 -> 506. Drawn-roof benchmark (179,
+  blind, run before the spike tidy): line F 0.629 -> 0.639, roofs with lines
+  right 88 -> 92, faces right 43 -> 42, panels 20,335 -> 20,586 (drawn
+  19,370). Against the marks nothing else moved: ridges 2 of 6, obstructions
+  over 0 of 4, missed obstructions 0 of 17 and 2 of 15, real roof edge 2 of
+  14. Seen on #4729288, not measured: the oversized obstruction is gone and
+  a panel now sits on the small object it was drawn around. Not touched:
+  outline against the photo, balconies (flat faces well below the main roof),
+  missed hips, sliver faces under 1.7 m (the 10 pairs left are mostly these),
+  obstructions. Sheet `data/preview/cases/street_r4/`, marking page
+  `data/preview/cases/mark_street_r4/`.
 - **21 Nov: how fault marks become rules.** `tools/mark_faults.py` now
   has `measure` (every panel on the marked roofs measured the same way,
   marked or not; per fault, the measurement and threshold that takes every
