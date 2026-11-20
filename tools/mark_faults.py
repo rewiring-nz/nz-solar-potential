@@ -38,6 +38,7 @@ FAULTS = [
     ("missed_obstruction", "Obstruction not marked", "#f032e6", "spot"),
     ("not_obstruction", "Marked obstruction is not one", "#4363d8", "spot"),
     ("line_wrong", "Roof line or edge wrong here", "#e6c700", "spot"),
+    ("outline_wrong", "Building outline is off: click where the real roof edge is", "#00b7eb", "spot"),
 ]
 
 PAGE = r"""<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -253,6 +254,9 @@ def score(path, label):
                 ok = not over and any(g.distance(p) <= 0.5 for g in obs)
             elif k == "not_obstruction":
                 ok = not any(g.contains(p) for g in obs)
+            elif k == "outline_wrong":                      # the click is on the true roof edge
+                from shapely.ops import unary_union
+                ok = bool(faces) and unary_union(faces).boundary.distance(p) <= 0.5
             else:                                           # line_wrong
                 near = lambda fs: any(g.exterior.distance(p) <= 0.5 for g in fs)
                 ok = near(ofaces) != near(faces) or (near(ofaces) and len(faces) != len(ofaces))
