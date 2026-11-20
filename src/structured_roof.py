@@ -85,6 +85,16 @@ def maybe_structured(facets, footprint, pc_source, building_id=None):
         return facets
     if any(f.get("from_labels") or f.get("synthetic") for f in facets):
         return facets
+    # A READING KEEPS ITS LINES HERE TOO. Faces cut from the returns' own
+    # planes, or traced from the photo, have straight shared edges already
+    # (build_layout_geojson keeps them out of the reshape stages for that
+    # reason, SOLAR_KEEP_READINGS). This swap was not covered: 84 Panorama
+    # Terrace's nine point faces (3 to 7 corners each) left as a "wings" form
+    # with 26- and 30-corner faces, a ridge drawn as a staircase, which the
+    # owner marked at eight places on the test street (20 Nov).
+    if (os.environ.get("SOLAR_KEEP_READINGS", "1") != "0"
+            and any(f.get("from_reading") for f in facets)):
+        return facets
     if footprint.area > MAX_AREA_M2 or len(facets) < 2:
         return facets
     area = sum(f["geometry"].area for f in facets)
