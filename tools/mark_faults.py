@@ -12,10 +12,31 @@ here" spot must be covered.
     python tools/mark_faults.py page <out dir> <snapshot label>
     python tools/mark_faults.py read <marks.json>        # summary of pasted marks
     python tools/mark_faults.py score <marks.json> <snapshot label>
+    python tools/mark_faults.py score-all <snapshot label>   # every marks file so far
+    python tools/mark_faults.py measure <marks.json>     # what sets the marked apart
 
 page writes <out dir>/index.html and one photo per roof (0.05 m a pixel).
 Marks are kept in the browser and leave it by "Copy my marks" (pasted into
 the chat) or "Download"; save them as data/fault_marks/<label>.json.
+
+How a set of marks becomes a rule for every roof:
+
+1. measure. Every panel on the marked roofs, marked or not, gets the same
+   measurements (width of its face, share of it outside its face, over an
+   obstruction, off the roof, ...). For each fault the table gives the one
+   measurement and threshold that takes in every marked panel and the fewest
+   unmarked ones. A rule comes from a measurement that separates the two; a
+   fault no measurement separates needs evidence the snapshot lacks (the
+   returns, the photo) before any rule is written.
+2. The rule goes in the build behind a SOLAR_* switch, never keyed on a
+   building.
+3. score-all. The rebuilt street is scored against every marks file so far,
+   so a fix for this round's marks cannot quietly undo an earlier round's.
+   Roofs ticked right must keep every panel.
+4. tools/markup_benchmark.py on the drawn roofs: no harm away from the street.
+5. The owner marks the new round. Marks on what a rule changed say whether
+   the rule was right; a line mark has no right answer in it, so only this
+   step judges moved lines.
 """
 import json
 import sys
@@ -299,11 +320,128 @@ def score(path, label):
         print(f"{done[k]:3d} of {tot[k]:3d}  {what}" + ("  (changed, not judged)" if k == "line_wrong" else ""))
 
 
+def measure(path):
+    """Every panel and spot of the marked roofs, measured the same way, marked
+    or not; and per fault the measurement that separates the marked panels
+    from the unmarked with the fewest unmarked caught. Unmarked panels count
+    as right only on roofs the owner marked or ticked, since those are the
+    ones looked at."""
+    import csv
+    import math
+    import statistics
+    import pyproj
+    from shapely.affinity import translate
+    from shapely.geometry import Point, shape
+    from shapely.ops import transform, unary_union
+    import cases_sheet as CS
+    path = Path(path).expanduser()
+    marks = json.loads(path.read_text())
+    lab = marks["label"]
+    f = CS.SNAPS / f"street_{lab}.json"
+    snap = json.loads((f if f.exists() else CS.SNAPS / f"{lab}.json").read_text())["buildings"]
+    T = pyproj.Transformer.from_crs(4326, 2193, always_xy=True).transform
+
+    def sides(g):
+        r = list(g.minimum_rotated_rectangle.exterior.coords)
+        a, b = (r[1][0] - r[0][0], r[1][1] - r[0][1]), (r[2][0] - r[1][0], r[2][1] - r[1][1])
+        la, lb = math.hypot(*a), math.hypot(*b)
+        v = a if la >= lb else b
+        return max(la, lb), math.degrees(math.atan2(v[1], v[0])) % 180
+
+    rows, spots = [], []
+    for r in marks["roofs"]:
+        e = snap.get(str(r["id"]))
+        if not e:
+            continue
+        ft = [(q["properties"], translate(transform(T, shape(q["geometry"])), *e["shift"])) for q in e["features"]]
+        faces = [(q, g) for q, g in ft if q["kind"] == "facet"]
+        pans = [(q, g) for q, g in ft if q["kind"] == "panel"]
+        roof = unary_union([g for _, g in faces]) if faces else None
+        obs = unary_union([g for q, g in ft if q["kind"] == "obstruction"])
+        by_xy = {tuple(m["xy"]): m["fault"] for m in r["panels"]}
+        for q, g in pans:
+            c = g.centroid
+            fault = next((v for k, v in by_xy.items() if g.contains(Point(k))), "")
+            near = min(faces, key=lambda t: t[1].distance(c), default=None)
+            row = dict(id=r["id"], x=round(c.x, 2), y=round(c.y, 2), fault=fault,
+                       array_size=q.get("array_size") or 0, shading=q.get("shading_factor"),
+                       over_obstruction=round(g.intersection(obs).area / g.area, 3),
+                       obstruction_dist_m=round(g.distance(obs), 2) if not obs.is_empty else 99,
+                       off_roof=round(1 - g.intersection(roof).area / g.area, 3) if roof else 1)
+            if near:
+                fq, fg = near
+                long_side, face_turn = sides(fg)
+                row.update(face_width_m=round(fg.area / long_side, 2), face_area_m2=round(fg.area, 1),
+                           face_slope=fq.get("slope_deg"), face_confidence=fq.get("roof_confidence"),
+                           face_read=int(bool(fq.get("from_selected"))),
+                           outside_face=round(1 - g.intersection(fg).area / g.area, 3),
+                           edge_dist_m=round(fg.exterior.distance(c), 2),
+                           outer_edge_dist_m=round(roof.boundary.distance(c), 2),
+                           turn_vs_face=round(abs((sides(g)[1] - face_turn + 45) % 90 - 45), 1))
+            rows.append(row)
+        for m in r["spots"]:
+            p = Point(m["xy"])
+            inside = [t for t in faces if t[1].contains(p)]
+            edge = min((g.exterior.distance(p) for _, g in faces), default=99)
+            outer = roof.boundary.distance(p) if roof else 99
+            where = ("outer edge" if outer <= 0.5 else "inner line" if edge <= 0.5
+                     else "inside a face" if inside else "outside the roof")
+            spots.append(dict(id=r["id"], x=m["xy"][0], y=m["xy"][1], fault=m["fault"], where=where,
+                              line_dist_m=round(edge, 2), outer_edge_dist_m=round(outer, 2),
+                              panel_dist_m=round(min((g.distance(p) for _, g in pans), default=99), 2),
+                              obstruction_dist_m=round(p.distance(obs), 2) if not obs.is_empty else 99,
+                              face_read=int(bool(inside and inside[0][0].get("from_selected"))),
+                              text=m.get("text", "")))
+    for name, data in (("panels", rows), ("spots", spots)):
+        if data:
+            keys = list(dict.fromkeys(k for d in data for k in d))
+            with open(path.with_name(f"measured_{lab}_{name}.csv"), "w", newline="") as fh:
+                w = csv.DictWriter(fh, keys)
+                w.writeheader()
+                w.writerows(data)
+    names = {x[0]: x[1] for x in FAULTS}
+    good = [d for d in rows if not d["fault"]]
+    print(f"{len(rows)} panels on {len(marks['roofs'])} roofs: {len(rows) - len(good)} marked, {len(good)} left as right")
+    skip = {"id", "x", "y", "fault"}
+    for k in sorted({d["fault"] for d in rows if d["fault"]}):
+        bad = [d for d in rows if d["fault"] == k]
+        best = []
+        for key in rows[0]:
+            if key in skip:
+                continue
+            b = [d[key] for d in bad if d.get(key) is not None]
+            g = [d[key] for d in good if d.get(key) is not None]
+            if len(b) < len(bad) or not g:
+                continue
+            lo, hi = min(b), max(b)
+            best.append((sum(v <= hi for v in g), f"{key} <= {hi}", statistics.median(b), statistics.median(g)))
+            best.append((sum(v >= lo for v in g), f"{key} >= {lo}", statistics.median(b), statistics.median(g)))
+        print(f"\n{names.get(k, k)}: {len(bad)} panels")
+        for caught, rule, mb, mg in sorted(best)[:4]:
+            print(f"   {rule:34s} takes every marked panel and {caught:3d} of {len(good)} unmarked"
+                  f"   (median marked {mb}, unmarked {mg})")
+    print()
+    for (k, w), n in sorted(Counter((d["fault"], d["where"]) for d in spots).items()):
+        print(f"{n:4d}  {names.get(k, k)}: {w}")
+    for d in spots:
+        if d["text"]:
+            print(f"   #{d['id']} comment ({d['where']}): {d['text']}")
+    for r in marks["roofs"]:
+        if r.get("note"):
+            print(f"   #{r['id']} note: {r['note']}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "page":
         page(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 4 and sys.argv[1] == "score":
         score(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 3 and sys.argv[1] == "score-all":
+        for f in sorted((ROOT / "data" / "fault_marks").glob("street_*.json")):
+            print(f"=== {f.name} ===")
+            score(f, sys.argv[2])
+    elif len(sys.argv) == 3 and sys.argv[1] == "measure":
+        measure(sys.argv[2])
     elif len(sys.argv) == 3 and sys.argv[1] == "read":
         read(sys.argv[2])
     else:

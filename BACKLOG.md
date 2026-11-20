@@ -397,6 +397,22 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **21 Nov: how fault marks become rules.** `tools/mark_faults.py` now
+  has `measure` (every panel on the marked roofs measured the same way,
+  marked or not; per fault, the measurement and threshold that takes every
+  marked panel and the fewest unmarked) and `score-all` (a rebuilt street
+  against every marks file so far). The page groups faults into five
+  categories, adds "real roof edge is here" (scored: the drawn outer edge
+  within 0.5 m of the click) and comments pinned to a spot. On the v85
+  marks (484 panels, 35 marked): "should not be here" separates on face
+  width (<= 1.63 m takes all 18 and 5 of 449 unmarked), which is the round 1
+  rule; over a ridge, over an obstruction and off the roof do not separate
+  on anything the snapshot holds (best: 104, 155 and 62 unmarked caught), so
+  those need the returns and the photo measured at each mark before a rule.
+  55 of the 68 line marks sit within 0.5 m of the outer edge. Open: add
+  LiDAR and photo measurements to `measure` (runs on the VM); a second
+  street of another kind as the check that rules hold where they were not
+  tuned.
 - **20 Nov: test street round 3 and the drawn-roof benchmark.** Benchmark
   (179 drawn roofs, blind): rounds 1-2 change no face on any of them (line
   F 0.629, 88 roofs with lines right, both runs; panels 20,422 -> 20,335):
