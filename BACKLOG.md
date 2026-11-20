@@ -397,6 +397,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **20 Nov: test street round 3 and the drawn-roof benchmark.** Benchmark
+  (179 drawn roofs, blind): rounds 1-2 change no face on any of them (line
+  F 0.629, 88 roofs with lines right, both runs; panels 20,422 -> 20,335):
+  no harm, and no measured gain, because the form swap never met a reading
+  there. `SOLAR_KEEP_UNREAD_FACE=1` (a point-reading face that is not one
+  plane stays bare instead of being recut by residual fill): line F 0.629,
+  lines right 88 -> 87, panels 20,335 -> 19,605 (drawn total 19,370), 18
+  roofs changed, two large roofs lose most panels (#5372220 858 -> 481,
+  #4747637 419 -> 101). On the street it changes four roofs, clears the
+  stray triangles at #4729452 and the deck row at #4729292 (6 of 7 "off
+  the roof" marks). Left OFF in the code: mixed on the drawn roofs. Shown
+  to the owner as round 3 with a fresh marking page
+  (`data/preview/cases/mark_street_r3/`, before/after
+  `data/preview/cases/street_r3/`); it goes on, perhaps for homes only,
+  if the owner's marks say so. Still open: outer edges (35 marks: outline
+  against the photo), ridge and obstruction marks, missed obstructions.
+
 - **20 Nov: test street round 2 (roof lines).** Cause found for the
   staircase ridge at #4750879: `structured_roof.maybe_structured` swapped
   the point reading's nine straight faces for a "wings" form with 26- and
