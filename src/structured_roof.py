@@ -92,7 +92,9 @@ def maybe_structured(facets, footprint, pc_source, building_id=None):
     # Terrace's nine point faces (3 to 7 corners each) left as a "wings" form
     # with 26- and 30-corner faces, a ridge drawn as a staircase, which the
     # owner marked at eight places on the test street (20 Nov).
+    # SOLAR_FORM_OVER_READING=1 swaps as before.
     if (os.environ.get("SOLAR_KEEP_READINGS", "1") != "0"
+            and os.environ.get("SOLAR_FORM_OVER_READING", "0") != "1"
             and any(f.get("from_reading") for f in facets)):
         return facets
     if footprint.area > MAX_AREA_M2 or len(facets) < 2:
