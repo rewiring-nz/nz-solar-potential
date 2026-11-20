@@ -397,6 +397,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **20 Nov: small test street for panel placement.** Sunrise Lane (17 roofs,
+  frankton_arm) plus 26 Earnslaw Terrace and 84 Panorama Terrace: 19 roofs,
+  refined until the owner calls each right, then widened. Baseline renders
+  (v85): `data/preview/cases/street_v85/`. VM working folder `~/streettool`
+  (cases file `~/street_cases.json`); per-roof re-layout with
+  `tools/layout_ab.py frankton_arm --ids ...`. Four v85 reports logged as
+  cases: #4740972, #4750879, #4729452, #4729434. Faults seen in the
+  baseline, unjudged: arrays left ragged where the LiDAR gate and the
+  obstruction mask remove single panels; panels across ridges where face
+  lines sit off the photo ridge; a portrait row on a narrow strip face;
+  panels past the eave where the outline is wider than the roof; vents not
+  marked.
+
 - **20 Nov: v85 published past the failed gate, on the owner's go-ahead.**
   `gs://solar-potential-map-tiles/v85/`, main 252e05d2. Still open from the
   gate: point-roof faces that end with no panels (#4732192, #4751244 and
