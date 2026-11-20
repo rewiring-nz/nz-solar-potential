@@ -1248,6 +1248,18 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4750879,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "84 Panorama Terrace: panels overlapping empty space, off the roof edge",
+   "quotes": [
+    "Panels overlapping empty space here"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
