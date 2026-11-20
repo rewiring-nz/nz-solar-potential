@@ -733,6 +733,9 @@ def _build_one_at(building_id, nudge_m):
                 # geometry -- the drawn lines are the roof's lines -- and takes
                 # nothing. See facets_from_drawn_faces.
                 panels = []
+            elif not drawn and face_width(f["geometry"]) < NARROW_FACE_M:
+                # a strip, not a roof plane: see NARROW_FACE_M
+                panels = []
             elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
                 panels = []
                 _rel_skipped = _rel_skipped or not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0)
@@ -892,6 +895,25 @@ SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny s
 SUN_SIDE_MIN_SHARE = float(os.environ.get("SOLAR_SUN_SIDE_MIN_SHARE", "0.25"))  # nor a sunny side
 # this small a share of the roof it would leave bare (second pass)
 SUN_SIDE_MIN_PANELS = 8      # ...holding fewer panels than a small home system (8 x 500 W = 4 kW)
+
+
+# A face narrower than this carries no panels. A strip 1.3-1.6 m wide between
+# two roof planes is a parapet, a step or a gutter face, and the fitter laid a
+# single file of panels along it: on the 19-roof test street (20 Nov) all 18
+# panels marked "should not be here" lay on three such faces (1.3, 1.5 and
+# 1.6 m), and the narrowest face whose panels were left unmarked was 1.9 m.
+# Width is area over length, so a notch does not make a strip look wide.
+# Drawn faces are exempt: the markup decides. SOLAR_NARROW_FACE_M=0 turns it off.
+NARROW_FACE_M = float(os.environ.get("SOLAR_NARROW_FACE_M", "1.7"))
+
+
+def face_width(geom):
+    """A face's width in metres: its area over the long side of its
+    smallest enclosing rectangle."""
+    import math
+    r = list(geom.minimum_rotated_rectangle.exterior.coords)
+    long_side = max(math.dist(r[0], r[1]), math.dist(r[1], r[2]))
+    return geom.area / long_side if long_side > 0 else 0.0
 
 
 def sun_share(model, slope_deg, aspect_deg):

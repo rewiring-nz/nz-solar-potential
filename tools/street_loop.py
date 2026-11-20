@@ -70,18 +70,28 @@ def main():
         photo_read = G._photo_read(region)
         sh = drawing_shifts(ROOT / "data" / "regions" / region)
         for bid in ids:
-            kept, dropped = [], []
+            kept, dropped, sparse = [], [], []
             skip = G._has_usable_markup(bid) or bid in photo_read
             for f in per[bid]:
                 if f["properties"].get("kind") != "panel" or skip:
                     kept.append(f)
                     continue
                 ok, why = G._gate_feature(f, pc)
+                why, z = G._why(why)
                 if ok:
                     kept.append(f)
+                elif z is not None:
+                    sparse.append((f, z))
                 else:
                     dropped.append(dict(why=why, geometry=f["geometry"]))
                     why_all[why] += 1
+            back = G.restore_on_plane(kept, sparse)
+            kept += back
+            why_all["restored"] += len(back)
+            for f, _ in sparse:
+                if not any(f is g for g in back):
+                    dropped.append(dict(why="sparse", geometry=f["geometry"]))
+                    why_all["sparse"] += 1
             n0 = len(kept)
             kept, n_rerack = G.rerack(kept)
             why_all["rerack"] += n_rerack
