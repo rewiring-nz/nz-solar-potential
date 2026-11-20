@@ -20,6 +20,7 @@ Usage: python src/build_layout_geojson.py [area ...] [--jobs N]
 """
 
 import json
+from face_weld import weld_faces
 import os
 import signal
 import sys
@@ -518,6 +519,10 @@ def _build_one_at(building_id, nudge_m):
     # ...and a face that curves in plan gets a plane per section (src/curved_faces.py,
     # off unless SOLAR_CURVED_SPLIT=1).
     facets = _reshape(split_curved_faces, pc_source)
+    # ...and one line between neighbouring faces: a lapped edge cut and a
+    # narrow gap between two faces closed (src/face_weld.py). Readings skip the
+    # stages above, so this is the only place their doubled lines are joined.
+    facets = weld_faces(facets)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
