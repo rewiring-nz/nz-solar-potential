@@ -1236,6 +1236,18 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4740972,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "26 Earnslaw Terrace: sporadic layout, empty roof without panels, panels over obstructions",
+   "quotes": [
+    "This layout is sporadic with empty areas of roof that should have panels, and panels over obstructions"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
