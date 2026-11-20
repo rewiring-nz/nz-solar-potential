@@ -20,7 +20,7 @@ Usage: python src/build_layout_geojson.py [area ...] [--jobs N]
 """
 
 import json
-from face_weld import weld_faces
+from src.face_weld import weld_faces
 import os
 import signal
 import sys
