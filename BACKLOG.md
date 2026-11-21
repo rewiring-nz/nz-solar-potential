@@ -418,6 +418,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   or corrected (24 roofs); the 0.86 edge overlap measured on the 157 was
   partly agreement with the survey, not with the roof.
 - A no-panel face is not roof in the targets (67 faces on 37 roofs).
+- Outline pass (`build_label_bundle.py --outline-pass`, page in
+  `data/preview/outline_pass/`, 150 earlier roofs, local only: 33 MB): the
+  owner checked 17, changed the outline on 14. Earlier drop edges were drawn
+  where the roof really ends (in front of a balcony). Lines and faces are
+  reconciled to the new outline by `tools/reconcile_outline_pass.py`
+  (lines along the new outline dropped, ends carried to it up to 1.5 m,
+  faces rebuilt; 4 line ends over 1.5 m short were left). Set
+  `data/line_set/typed_set7`: 35 drawn roofs now teach the edge. Run H
+  (`runs/H_fold*.pt`) follows run G on it. 133 roofs of the pass remain.
 - Running: five folds on typed_set5 (`runs/G_fold*.pt`), then held-out maps
   for all 168 and the face score, old 157 against run D and the new 11
   against the before.
