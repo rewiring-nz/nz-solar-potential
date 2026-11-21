@@ -107,11 +107,21 @@ def main():
     ap.add_argument("--train", nargs="*", default=["vision", "points"]); ap.add_argument("--val", nargs="*", default=["hand"])
     ap.add_argument("--limit", type=int, default=0); ap.add_argument("--init", default=None)
     ap.add_argument("--lr", type=float, default=1e-3); ap.add_argument("--enc-lr", type=float, default=2e-5)
-    ap.add_argument("--val-share", type=float, default=0.0, help="share of the train kinds held out when there is no val kind")
+    ap.add_argument("--folds", type=int, default=0, help="split the val kinds into this many folds: fold --fold is the test, the rest train")
+    ap.add_argument("--fold", type=int, default=0)
+    ap.add_argument("--repeat-val-kind", type=int, default=1, help="times each hand-drawn training roof is seen per epoch")
     a = ap.parse_args()
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
     tr = [f for k in a.train for f in sorted(glob.glob(f"{a.data}/{k}/*.npz"))]
     va = [f for k in a.val for f in sorted(glob.glob(f"{a.data}/{k}/*.npz"))]
+    if a.folds:
+        # hand-drawn roofs are the best labels there are: all but one fold of
+        # them train, and that fold alone is the test, so every hand-drawn
+        # roof is scored by a model that never saw it
+        random.Random(11).shuffle(va)
+        test = va[a.fold::a.folds]
+        tr += [f for f in va if f not in set(test)] * a.repeat_val_kind
+        va = test
     random.Random(0).shuffle(tr)
     if a.limit:
         tr = tr[:a.limit]

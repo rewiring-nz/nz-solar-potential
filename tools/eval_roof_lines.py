@@ -19,12 +19,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model"); ap.add_argument("data"); ap.add_argument("--tol", type=float, default=0.3)
     ap.add_argument("--sheet"); ap.add_argument("--thr", type=float, default=0.5); ap.add_argument("--device", default="cpu")
+    ap.add_argument("--folds", type=int, default=0); ap.add_argument("--fold", type=int, default=0)
+    ap.add_argument("--csv")
     a = ap.parse_args()
     from scipy.ndimage import distance_transform_edt
     from skimage.morphology import skeletonize
     net = T.Net(); net.load_state_dict(torch.load(a.model, map_location="cpu")); net.eval().to(a.device)
     rows, tiles = [], []
-    for f in sorted(glob.glob(f"{a.data}/*.npz")):
+    files = sorted(glob.glob(f"{a.data}/*.npz"))
+    if a.folds:                      # the same split as train_roof_lines.py --folds
+        import random
+        random.Random(11).shuffle(files)
+        files = files[a.fold::a.folds]
+    for f in files:
         d = np.load(f)
         x = torch.from_numpy(d["image"].astype(np.float32) / 255).permute(2, 0, 1)[None].to(a.device)
         with torch.no_grad():
@@ -39,11 +46,15 @@ def main():
             rc = float((distance_transform_edt(~pb)[tb] <= tol).mean()) if tb.sum() and pb.sum() else 0.0
             pr = float((distance_transform_edt(~tb)[pb] <= tol).mean()) if tb.sum() and pb.sum() else 0.0
             fs = 2 * pr * rc / (pr + rc) if pr + rc else 0.0
-        rows.append((Path(f).stem, fs, pr, rc))
+        rows.append((Path(f).stem, fs, pr, rc, round(float(w.sum()) * float(d["meta"][0]) ** 2), str(d["region"])))
         if a.sheet:
             im = d["image"][..., :3].copy(); o1 = im.copy(); o2 = im.copy()
             o1[d["target"][..., 0]] = [255, 255, 0]; o2[(p[0] > a.thr) & w] = [255, 0, 0]
             tiles.append((fs, np.hstack([im, o1, o2])))
+    if a.csv:
+        with open(a.csv, "a") as fh:
+            for r in rows:
+                fh.write(",".join(str(v) for v in r) + "\n")
     fsv = np.array([r[1] for r in rows])
     print(f"{len(rows)} roofs at {a.tol} m: mean F {fsv.mean():.3f} (precision {np.mean([r[2] for r in rows]):.3f}, "
           f"recall {np.mean([r[3] for r in rows]):.3f}); F >= 0.7 on {(fsv >= 0.7).sum()}, >= 0.9 on {(fsv >= 0.9).sum()}")
