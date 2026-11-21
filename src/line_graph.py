@@ -265,3 +265,93 @@ def faces_from_maps(p, names, outline=None):
     faces = [f for f in polygonize(net)
              if f.area >= MIN_FACE_PX2 and outline.buffer(0.5).contains(f.representative_point())]
     return faces, lines, nodes, outline
+
+
+# ---------------------------------------------------------------- regions
+CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 40, 0.25, 3.0
+
+
+def faces_from_regions(p, names, outline):
+    """Closed faces: one per face interior the reader sees.
+
+    The joins-and-lines drawing keeps only lines whose two ends are found,
+    and a line that reaches nothing divides nothing: on the 157 held-out
+    drawn roofs it left most roofs short of faces. Here every face starts
+    from its CORE (the reader's map of face interiors), so a face exists
+    wherever the reader sees one, and the lines only decide where two faces
+    meet:
+
+    1. seeds: the connected pieces of the core map inside the roof edge;
+    2. each seed grows over the roof until it meets its neighbours, the
+       meeting held on the crest of the line maps (a watershed);
+    3. two regions whose shared boundary has no line under it (mean below
+       MERGE_BARRIER) are one face;
+    4. the shared boundaries are straightened together (a coverage
+       simplification, so neighbours keep one common edge) and tied to the
+       roof edge, and the faces are the areas they enclose.
+
+    `outline` is the roof edge in pixels. Returns polygons in pixels."""
+    import shapely
+    from rasterio import features
+    from skimage.segmentation import watershed
+    ch = {n: p[i] for i, n in enumerate(names)}
+    h, w = p.shape[1:]
+    inside = features.rasterize([outline], out_shape=(h, w)).astype(bool)
+    barrier = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
+    seeds, n = cc_label((ch["core"] >= CORE_MIN) & inside)
+    if n:
+        size = np.bincount(seeds.ravel(), minlength=n + 1)
+        seeds[np.isin(seeds, np.nonzero(size < SEED_MIN_PX2)[0])] = 0
+    if not seeds.any():
+        return [outline]
+    lab = watershed(barrier, markers=seeds, mask=inside)
+    # 3. merge across boundaries with no line under them
+    while True:
+        pairs = {}
+        for a, b in ((lab[:, :-1], lab[:, 1:]), (lab[:-1, :], lab[1:, :])):
+            m = (a != b) & (a > 0) & (b > 0)
+            bar = np.maximum(barrier[:, :-1], barrier[:, 1:])[m] if a.shape[1] < w else np.maximum(barrier[:-1, :], barrier[1:, :])[m]
+            for i, j, v in zip(a[m], b[m], bar):
+                k = (min(i, j), max(i, j)); s = pairs.setdefault(k, [0.0, 0]); s[0] += v; s[1] += 1
+        weak = [(s[0] / s[1], k) for k, s in pairs.items() if s[1] >= 4 and s[0] / s[1] < MERGE_BARRIER]
+        if not weak:
+            break
+        _, (i, j) = min(weak)
+        lab[lab == j] = i
+    polys = []
+    for geom, v in features.shapes(lab.astype(np.int32), mask=lab > 0):
+        if v:
+            polys.append(shapely.geometry.shape(geom))
+    by = {}
+    for q, v in zip(polys, [v for _, v in features.shapes(lab.astype(np.int32), mask=lab > 0) if v]):
+        by.setdefault(int(v), []).append(q)
+    regs = [unary_union(v) for v in by.values()]
+    regs = [max(r.geoms, key=lambda g: g.area) if r.geom_type == "MultiPolygon" else r for r in regs]
+    if len(regs) < 2:
+        return [outline]
+    regs = list(shapely.coverage_simplify(regs, REGION_SIMPLIFY_PX))
+    # 4. the lines between regions, tied to the roof edge
+    edge = outline.exterior
+    cover = unary_union(regs).exterior if unary_union(regs).geom_type == "Polygon" else None
+    inner = []
+    for i in range(len(regs)):
+        for j in range(i + 1, len(regs)):
+            s = regs[i].boundary.intersection(regs[j].boundary)
+            for g in getattr(s, "geoms", [s]):
+                if g.geom_type in ("LineString", "MultiLineString") and g.length > 0.5:
+                    inner.extend(getattr(g, "geoms", [g]))
+    merged = shapely.ops.linemerge(inner) if inner else None
+    inner = list(getattr(merged, "geoms", [merged])) if merged is not None and not merged.is_empty else []
+    ties = []
+    for g in inner:
+        for end in (g.coords[0], g.coords[-1]):
+            pt = Point(end)
+            if sum(1 for o in inner if o is not g and o.distance(pt) < 0.5) == 0:      # a loose end: it met the roof edge
+                near = edge.interpolate(edge.project(pt))
+                # carried a hair past the edge so the two cross
+                d = np.array(near.coords[0]) - np.array(end); ln = float(np.hypot(*d))
+                far = np.array(near.coords[0]) + (d / ln * 0.5 if ln > 1e-6 else 0)
+                ties.append(LineString([end, tuple(far)]))
+    net = unary_union([LineString(list(edge.coords))] + inner + ties)
+    faces = [f for f in polygonize(net) if f.area >= MIN_FACE_PX2 and outline.buffer(0.5).contains(f.representative_point())]
+    return faces or [outline]

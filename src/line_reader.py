@@ -14,8 +14,8 @@ pass 2 reads with the LiDAR moved. On 32 drawn roofs the model never saw
 (fold 0) the drawing scored F 0.722 with the LiDAR as it came, 0.757 read
 twice, 0.758 with the LiDAR aligned by the markup itself.
 
-The faces are src/line_graph.py's: joins connected by straight lines inside
-the roof edge the build supplies. That edge is not moved by the slide.
+The faces are src/line_graph.py's faces_from_regions, inside the roof edge
+the build supplies. That edge is not moved by the slide.
 """
 import os
 import sys
@@ -107,12 +107,15 @@ def roof_faces(geom, tiles, pts):
     (1 Sunrise Lane) whose edge already sat on the photo, and an edge moved
     by a wrong slide is a roof drawn off its building."""
     from shapely.affinity import affine_transform
-    from src.line_graph import faces_from_maps
+    from src.line_graph import faces_from_regions
     from train_roof_lines import NAMES
     img, b, mpp = picture(geom, tiles, pts)
     p, _ = read_twice(img, mpp)
     edge_px = affine_transform(geom, [1 / mpp, 0, 0, -1 / mpp, -b[0] / mpp, b[3] / mpp])
-    faces, lines, _, _ = faces_from_maps(p, NAMES, outline=edge_px)
+    # faces seeded from the face-interior map (faces_from_regions): on the 157
+    # held-out drawn roofs, face IoU 0.678 and lines right on 99, against
+    # 0.516 and 53 for the joins-and-lines drawing, which leaves lines that
+    # close no face
+    faces = faces_from_regions(p, NAMES, edge_px)
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
-    pt = lambda q: (b[0] + q[0] * mpp, b[3] - q[1] * mpp)
-    return [affine_transform(f, to_m) for f in faces], [(pt(a), pt(c), k) for a, c, k in lines]
+    return [affine_transform(f, to_m) for f in faces], []
