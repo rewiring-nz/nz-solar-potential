@@ -106,6 +106,7 @@
   <button data-tool="oline" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;clip-path:polygon(0 42%,100% 42%,100% 58%,0 58%)"></span> Outline line</span><span class="k">L</span></button>
   <button data-tool="olpart" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;opacity:.5"></span> Add / remove a part</span><span class="k">K</span></button>
   <button id="olreset">Back to the surveyed outline</button>
+  <button id="olok" style="display:none"><span>&#10003; Outline is right</span><span class="k">Y</span></button>
   <details class="hint"><summary>When and how to fix the outline</summary><div>The yellow outline comes from the LINZ survey and is sometimes off: shifted from the roof, missing an extension, or taking in a neighbour. Fix it <b>before</b> drawing lines, so your lines can snap to it.<br><b>Move / reshape</b>: drag inside the outline to move all of it; drag a corner to move it; drag from the middle of an edge to add a corner; click a corner and press <b>Delete</b> to remove it.<br><b>Redraw</b>: click each corner of the real roof edge, then <b>Enter</b> or click the first point again.<br>The surveyed outline stays dashed underneath for reference. Undo steps back through outline changes while an outline tool is selected.</div></details>
 
   <h2>Three lines &mdash; click, then click</h2>
@@ -505,7 +506,15 @@ function save(){
 // until something else is drawn or the roof is ticked complete.
 const hasMarks = d => !!(d && (d.problem || (d.outline && !d.seeded) || (d.lines||[]).length
   || (d.obstructions||[]).length || (d.nopanel||[]).length || (d.seeded && d.complete)));
-function marked(id){ return !!(ingested[id] || hasMarks(remote[id]) || hasMarks(data[id])); }
+// AN OUTLINE PASS (OPTS.outlinePass). Roofs drawn before the outline tools
+// were used keep the surveyed outline, balconies and decks included. In this
+// pass a roof is done once its outline has been corrected, or confirmed as
+// right with "Outline is right" (Y), which records the surveyed outline as
+// the drawn one.
+const hasOutline = d => !!(d && d.outline && !d.seeded);
+function marked(id){
+  if(OPTS.outlinePass) return hasOutline(remote[id]) || hasOutline(data[id]);
+  return !!(ingested[id] || hasMarks(remote[id]) || hasMarks(data[id])); }
 let lastNudge = 0;
 function nudgeSave(){
   if(DB) return;                       // the shared store already holds it
@@ -1461,6 +1470,11 @@ document.getElementById("olreset").onclick=()=>{
   olPush(); delete rec().outline; rec().olines=[]; olSel=null; save(); draw();
   say("back to the surveyed outline");
 };
+if(OPTS.outlinePass) document.getElementById("olok").style.display="";
+document.getElementById("olok").onclick=()=>{
+  if(!rec().outline) rec().outline = JSON.parse(JSON.stringify(R().outline));
+  save(); say("outline confirmed"); document.getElementById("skipto").click();
+};
 const help=document.getElementById("help");
 document.getElementById("helpbtn").onclick=()=>help.classList.add("on");
 document.getElementById("helpclose").onclick=()=>help.classList.remove("on");
@@ -1660,6 +1674,7 @@ addEventListener("keydown", e=>{
   if(k==="n"){ step(1); } else if(k==="p"){ step(-1); }
   else if(k==="h"){ document.getElementById("hidedone").click(); }
   else if(k==="v"){ document.getElementById("photo2").click(); }
+  else if(k==="y" && OPTS.outlinePass){ document.getElementById("olok").click(); }
   else if(k==="c"){ document.getElementById("complete").click(); }
   else if(k==="x"){ document.querySelector('[data-problem="absent"]').click(); }
   else if(k==="z"){ document.querySelector('[data-problem="not_building"]').click(); }

@@ -89,6 +89,9 @@ def main():
                     help="JSON {building id: {outline: ring, built: [rings]}} in "
                          "NZTM: a roof with no markup opens with this outline to "
                          "correct, and shows these faces as the reference (B)")
+    ap.add_argument("--outline-pass", action="store_true", dest="outline_pass",
+                    help="the roofs already drawn whose outline was left as "
+                         "surveyed, opened to correct or confirm the outline only")
     ap.add_argument("--max", type=int, default=None)
     ap.add_argument("--out", default="mark_roofs.html")
     a = ap.parse_args()
@@ -107,6 +110,16 @@ def main():
 
     ids = a.ids
     why = {}
+    if a.outline_pass and ids is None:
+        _B = json.loads((DATA_DIR / "roof_labels.json").read_text())["buildings"]
+        _held = {str(h["id"] if isinstance(h, dict) else h) for h in
+                 json.loads((DATA_DIR / "roof_set.json").read_text())["holdout"]}
+        ids = [int(k) for k, v in _B.items()
+               if v.get("faces") and not v.get("problem") and not v.get("outline")
+               and k not in _held]
+        # houses first: the edge matters most where a balcony or deck is likely
+        ids.sort(key=lambda k: (_B[str(k)].get("area") == "pilot",
+                                sum(f.get("m2", 0) for f in _B[str(k)]["faces"])))
     # THE BENCHMARK CLUSTER AS A WORK QUEUE: only the marked rooftops and
     # the ones queued in the area, so "next unmarked" walks the queue.
     #
@@ -380,7 +393,8 @@ def main():
     # Replaces the placeholder AND the "{}" default after it, so the template
     # stays valid JavaScript when opened directly and valid once substituted.
     html = html.replace("/*__OPTS__*/{}",
-                        json.dumps({"unmarkedOnly": bool(a.bench)}))
+                        json.dumps({"unmarkedOnly": bool(a.bench),
+                                    "outlinePass": bool(a.outline_pass)}))
     # PUBLISHED ONLINE THE PAGE IS A FRAGMENT, NOT A DOCUMENT. The Artifact
     # host wraps whatever it is given in its own doctype/head/body, so shipping
     # ours nests a second document inside the first. Everything between the
