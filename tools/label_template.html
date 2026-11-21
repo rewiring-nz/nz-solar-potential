@@ -424,6 +424,10 @@ ROOFS.forEach(r=>{
                   problem: r.saved.problem||null, outline: r.saved.outline||null,
                   olines: r.saved.olines||[]};
     if(r.saved.seeded) data[r.id].seeded = true;
+  } else if(r.saved && r.saved.seeded && loc && !loc.seeded && !loc.complete && !loc.problem
+            && !(loc.lines||[]).length && !(loc.obstructions||[]).length && !(loc.nopanel||[]).length
+            && JSON.stringify(loc.outline) === JSON.stringify(r.saved.outline)){
+    loc.seeded = true;      // a starting outline held from an earlier load, never touched
   }
 });
 let pending=null, drag=null, sel=null, shift=false, space=false;
