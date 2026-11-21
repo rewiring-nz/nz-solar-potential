@@ -28,10 +28,14 @@ THROUGH_PX, SNAP_PX, OUTLINE_SIMPLIFY_PX = 2.5, 6.0, 1.5
 MIN_FACE_PX2 = 60.0
 OUTLINE_JOIN_IOU = 0.93
 SKELETON_JOIN_PX = 7.0
+STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4.0, 15.0, 3.0, 0.9
 KINDS = ("ridge", "valley", "cliff")
+STRAIGHTEN = True
 
 
 def join_points(jmap):
+    from scipy.ndimage import gaussian_filter
+    jmap = gaussian_filter(jmap.astype(np.float32), 1.0)      # one peak per join, not a flat top
     peak = (jmap == maximum_filter(jmap, size=2 * JOIN_NMS_PX + 1)) & (jmap >= JOIN_MIN)
     ys, xs = np.nonzero(peak)
     pts = sorted(zip(jmap[ys, xs], xs.astype(float), ys.astype(float)), reverse=True)
@@ -56,7 +60,70 @@ def roof_outline(roof):
     p = Polygon([(x, y) for y, x in c]).buffer(0)
     if p.geom_type == "MultiPolygon":
         p = max(p.geoms, key=lambda g: g.area)
-    return p.simplify(OUTLINE_SIMPLIFY_PX)
+    return straighten(p) if STRAIGHTEN else p.simplify(OUTLINE_SIMPLIFY_PX)
+
+
+def straighten(poly, tol=STRAIGHT_SIMPLIFY_PX):
+    """The polygon with straight edges in the roof's two main directions.
+
+    A roof's outer edges are straight and nearly all run in one direction or
+    at right angles to it. The edge of a predicted roof map wobbles and has
+    rounded corners. Rule: simplify to `tol`; the main direction is the
+    length-weighted peak of the edge directions (mod 90 degrees); an edge
+    within STRAIGHT_SNAP_DEG of it or of its right angle is turned onto it
+    about its midpoint; neighbouring edges on the same line are merged; the
+    corners are where consecutive edge lines cross. The result is kept only
+    if it covers the same area as before (STRAIGHT_MIN_IOU)."""
+    q = poly.simplify(tol)
+    c = np.asarray(q.exterior.coords)[:-1]
+    if len(c) < 4:
+        return q
+    a, b2 = c, np.roll(c, -1, axis=0)
+    d = b2 - a; ln = np.hypot(d[:, 0], d[:, 1]); ang = np.degrees(np.arctan2(d[:, 1], d[:, 0])) % 180.0
+    hist = np.zeros(90)
+    for g, l in zip(ang, ln):
+        hist[int(g % 90.0) % 90] += l
+    sm = sum(np.roll(hist, k) for k in (-2, -1, 0, 1, 2))
+    k = int(np.argmax(sm))
+    w = np.array([hist[(k + j) % 90] for j in range(-2, 3)])
+    dom = (k + 0.5 + float((w * np.arange(-2, 3)).sum() / max(w.sum(), 1e-9))) % 90.0
+    edges = []                                        # (direction in degrees, point on the line, length)
+    for i in range(len(c)):
+        g = ang[i]
+        for t in (dom, dom + 90.0):
+            diff = abs((g - t + 90.0) % 180.0 - 90.0)
+            if diff <= STRAIGHT_SNAP_DEG:
+                g = t % 180.0
+                break
+        edges.append([g, (a[i] + b2[i]) / 2.0, ln[i]])
+    merged = []
+    for e in edges:                                   # neighbours on one line become one edge
+        if merged:
+            m = merged[-1]
+            if abs((e[0] - m[0] + 90.0) % 180.0 - 90.0) < 1e-6:
+                n = np.array([-np.sin(np.radians(m[0])), np.cos(np.radians(m[0]))])
+                if abs(float(np.dot(e[1] - m[1], n))) <= STRAIGHT_MERGE_PX:
+                    m[1] = (m[1] * m[2] + e[1] * e[2]) / (m[2] + e[2]); m[2] += e[2]
+                    continue
+        merged.append(e)
+    if len(merged) < 3:
+        return q
+    out = []
+    for i in range(len(merged)):
+        g1, p1, _ = merged[i - 1]; g2, p2, _ = merged[i]
+        u = np.array([np.cos(np.radians(g1)), np.sin(np.radians(g1))])
+        v = np.array([np.cos(np.radians(g2)), np.sin(np.radians(g2))])
+        den = u[0] * v[1] - u[1] * v[0]
+        if abs(den) < 0.17:                           # nearly parallel: a step, joined at its midpoint
+            mid = (p1 + p2) / 2.0
+            out.append(p1 + u * float(np.dot(mid - p1, u))); out.append(p2 + v * float(np.dot(mid - p2, v)))
+            continue
+        t = ((p2[0] - p1[0]) * v[1] - (p2[1] - p1[1]) * v[0]) / den
+        out.append(p1 + u * t)
+    r = Polygon(out)
+    if not r.is_valid or r.is_empty or r.geom_type != "Polygon":
+        return q
+    return r if r.intersection(poly).area / r.union(poly).area >= STRAIGHT_MIN_IOU else q
 
 
 def _along(m, a, b):
@@ -66,12 +133,17 @@ def _along(m, a, b):
     return map_coordinates(m, [ys, xs], order=1, mode="nearest")
 
 
-def faces_from_maps(p, names):
-    """p: C x H x W probabilities; names: the map names in order.
+def faces_from_maps(p, names, outline=None):
+    """p: C x H x W probabilities; names: the map names in order. `outline`:
+    the roof's outer edge in pixels when the caller has one (on fold 0 the
+    reader's own roof map matched the drawn outline at F 0.62 within 0.5 m,
+    no better than the build's outline); else the roof map's edge.
     Returns (faces, lines, joins, outline): faces as polygons, lines as
     (a, b, kind) with kind ridge, valley or cliff."""
     ch = {n: p[i] for i, n in enumerate(names)}
-    outline = roof_outline(ch["roof"])
+    given = outline is not None
+    if not given:
+        outline = roof_outline(ch["roof"])
     if outline is None or outline.is_empty:
         return [], [], [], None
     joins = join_points(ch["join"])
@@ -81,7 +153,10 @@ def faces_from_maps(p, names):
     # no predicted join is already beside them.
     from skimage.morphology import skeletonize
     from scipy.ndimage import convolve
-    sk = skeletonize((np.maximum.reduce([ch[k] for k in ("line",) + KINDS]) >= 0.5) & (ch["roof"] >= 0.5))
+    from shapely import contains_xy
+    yy, xx = np.mgrid[0:p.shape[1], 0:p.shape[2]]
+    inside = contains_xy(outline, xx + 0.5, yy + 0.5)
+    sk = skeletonize((np.maximum.reduce([ch[k] for k in ("line",) + KINDS]) >= 0.5) & inside)
     nb = convolve(sk.astype(int), np.ones((3, 3), int), mode="constant") - 1
     ys, xs = np.nonzero(sk & ((nb == 1) | (nb >= 3)))
     for x, y in zip(xs.astype(float), ys.astype(float)):
@@ -99,8 +174,10 @@ def faces_from_maps(p, names):
     # the map's own edge, with its corners moved onto the joins beside them.
     ext = outline.exterior
     on_edge = sorted((ext.project(Point(j)), j) for j in joins[:n_pred] if ext.distance(Point(j)) <= SNAP_PX)
-    drawn = Polygon([j for _, j in on_edge]).buffer(0) if len(on_edge) >= 3 else None
-    if drawn is not None and drawn.geom_type == "Polygon" and not drawn.is_empty and \
+    drawn = Polygon([j for _, j in on_edge]).buffer(0) if len(on_edge) >= 3 and not given else None
+    if given:
+        pass
+    elif drawn is not None and drawn.geom_type == "Polygon" and not drawn.is_empty and \
             drawn.intersection(outline).area / drawn.union(outline).area >= OUTLINE_JOIN_IOU:
         outline = drawn
     else:

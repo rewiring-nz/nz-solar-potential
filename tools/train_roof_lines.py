@@ -53,6 +53,10 @@ class Roofs(torch.utils.data.Dataset):
                 x[..., 5], x[..., 6] = 1 - c6, c5
             g = random.uniform(0.75, 1.3); bsh = random.uniform(-0.08, 0.08)
             x = x.copy(); x[..., :3] = np.clip(x[..., :3] ** g + bsh, 0, 1)
+            if random.random() < 0.5:
+                # the LiDAR sits up to a few tenths of a metre off the photo
+                # even after alignment: the photo, not the LiDAR, places a line
+                x[..., 3:] = np.roll(x[..., 3:], (random.randint(-4, 4), random.randint(-4, 4)), axis=(0, 1))
             if random.random() < 0.15:                     # sometimes no LiDAR: read the photo alone
                 x[..., 3:] = 0
         t = lambda a: torch.from_numpy(np.ascontiguousarray(a)).permute(2, 0, 1)
