@@ -84,10 +84,27 @@ def typed(d, label):
         # 10 of 157 drawn roofs have face rings that miss most of their drawn
         # lines (faces drawn apart, so their edges read as outer edge): the
         # drawn lines inside the roof are lines between faces too
-        drawn = (t[..., 2] | t[..., 3] | t[..., 4]) & binary_erosion(roof, iterations=4)
+        drawn = (t[..., 2] | t[..., 3] | t[..., 4]) & binary_erosion(t[..., 7], iterations=4)
         t[..., 0] |= drawn
         t[..., 1] &= ~binary_dilation(drawn, iterations=4)
-        rings = [Polygon(f["ring"]).buffer(0) for f in label["faces"] if f.get("ring") and len(f["ring"]) >= 3]
+        # a face marked as never able to take a panel (a wall inside the
+        # outline, a canopy, a balcony: 67 faces on 37 drawn roofs) is not
+        # roof: it leaves the roof map, and its edge is outer edge
+        notroof = Image.new("L", (size, size), 0); dn = ImageDraw.Draw(notroof)
+        for f in label["faces"]:
+            if f.get("ring") and len(f["ring"]) >= 3 and not f.get("usable", True):
+                dn.polygon([px(*p) for p in f["ring"]], fill=255)
+        notroof = np.array(notroof) > 0
+        if notroof.any():
+            roof = roof & ~notroof
+            t[..., 7] = roof
+            t[..., 5] = binary_dilation(roof) & ~binary_erosion(roof)
+            t[..., 1] &= binary_erosion(roof, iterations=2)
+            t[..., 0] &= binary_erosion(roof, iterations=3)
+            for ch in KINDS.values():
+                t[..., ch] &= binary_dilation(roof, iterations=2)
+        rings = [Polygon(f["ring"]).buffer(0) for f in label["faces"]
+                 if f.get("ring") and len(f["ring"]) >= 3 and f.get("usable", True)]
         outer = unary_union([r.buffer(0.02) for r in rings]).buffer(-0.02)
         for g in getattr(outer, "geoms", [outer]):
             ends += [tuple(c) for c in corners(g.exterior.coords)]

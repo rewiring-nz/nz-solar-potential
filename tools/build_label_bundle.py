@@ -85,6 +85,10 @@ def main():
     ap.add_argument("--bench", action="store_true",
                     help="the benchmark cluster: the roofs already marked plus "
                          "every unmarked one around them, opened as a work queue")
+    ap.add_argument("--seed", default=None,
+                    help="JSON {building id: {outline: ring, built: [rings]}} in "
+                         "NZTM: a roof with no markup opens with this outline to "
+                         "correct, and shows these faces as the reference (B)")
     ap.add_argument("--max", type=int, default=None)
     ap.add_argument("--out", default="mark_roofs.html")
     a = ap.parse_args()
@@ -203,6 +207,19 @@ def main():
                 "outline": v.get("outline"),
                 "olines": v.get("olines") or [],
             }
+
+    # A STARTING POINT TO CORRECT. A roof with no markup can open on a roof
+    # edge already read from the photo, with the reader's faces as the dashed
+    # reference: moving a few corners is quicker than redrawing the edge, and
+    # the edge is the part of the markup the reader most needs. Lines are
+    # not seeded: a wrong line left in place is a wrong label.
+    seed = {}
+    if a.seed:
+        seed = {int(k): v for k, v in json.loads(Path(a.seed).read_text()).items()}
+        for k, v in seed.items():
+            if k not in _saved and v.get("outline"):
+                _saved[k] = {"lines": [], "obstructions": [], "nopanel": [], "complete": False,
+                             "problem": None, "outline": v["outline"], "olines": []}
 
     truth = {}
     tp = DATA_DIR / "roof_truth.json"
@@ -330,7 +347,7 @@ def main():
                           for r in g.interiors],
                 "neighbours": nb,
                 "why": why.get(bid, []),
-                "built": built_cache.setdefault(
+                "built": (seed.get(bid) or {}).get("built") or built_cache.setdefault(
                     name, _built_facets(name)).get(bid, []),
                 # WORK ALREADY DONE TRAVELS WITH THE BUNDLE. The tool keeps
                 # marks in the browser's local storage, so a fresh bundle on a
