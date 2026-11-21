@@ -422,6 +422,13 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   5 Sunrise lines wrong on both; chamfered corners on #5371242.
   L9 (short slanted edges dropped, shared edges simplified to 8 px): not
   visibly better by eye, not shown as progress.
+- Benchmark with the reader's edge and the straighter faces (L9 code,
+  `~/ab/bench_L9`): line F 0.67, lines right 99, faces right 38, face IoU
+  0.613, outline IoU 0.87 (the build's edge, slid by the benchmark: 0.897).
+  Lines a little better than L7's run (0.65, 96), faces no better.
+- 784 px training on the Mac did not finish one epoch in 47 minutes
+  (stopped); 588 px (42 x 42 patches) is running instead
+  (`F588_fold0.log`).
 - Running: the reader retrained at 784 px (56 x 56 patches, `SOLAR_LINES_SIZE`)
   on fold 0, against D_fold0's 0.755 (`data/line_set/runs/F784_fold0.log`).
   If it helps: all folds, held-out face score, street. If not, the remaining
