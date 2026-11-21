@@ -120,6 +120,13 @@ def typed(d, label):
             dr.ellipse([x - JOIN_PX, y - JOIN_PX, x + JOIN_PX, y + JOIN_PX], fill=255)
         t[..., 6] = np.array(im) > 0
         known[:] = True
+        # The roof's outer edge is only as good as the outline under the
+        # drawing. On most roofs drawn before 22 Nov the surveyed outline was
+        # left as it was (balconies and decks included), so those roofs teach
+        # lines and joins but not the edge or the roof map; a roof whose
+        # outline was drawn or corrected (`outline` in its label) teaches both.
+        if not label.get("outline"):
+            known[5] = known[7] = False
     near = binary_dilation(roof, iterations=NEAR_PX)
     return t, known, near
 
