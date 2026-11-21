@@ -63,11 +63,9 @@ def _one(job):
             return bid, -2
         pts = pts + np.array([sx, sy, 0.0])
         if GRAPH:
-            # the typed reader, read twice (src/line_reader.py): its slide of
-            # the LiDAR onto the photo adds to the recorded drawing shift
+            # the typed reader, read twice (src/line_reader.py)
             from src import line_reader as lr
-            faces, _, (ex, ny) = lr.roof_faces(translate(geom, sx, sy), _W["tiles"], pts)
-            sx, sy = sx + ex, sy + ny
+            faces, _ = lr.roof_faces(translate(geom, sx, sy), _W["tiles"], pts)
             faces = [f for f in faces if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
         else:
             faces = [f for f in fr.straight_faces(translate(geom, sx, sy), _W["img"], pts, (0.0, 0.0))

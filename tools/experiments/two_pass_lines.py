@@ -49,7 +49,9 @@ for f in fs:
     d = np.load(f'{SRC}/{f}'); da = np.load(f'{ALIGNED}/{f}'); mpp = float(d['meta'][0])
     p1 = read(d['image'])
     img0 = d['image'].copy(); img0[..., 3:] = 0
-    dx, dy = LR.slide(d['image'], read(img0), mpp)
+    p0 = read(img0); roof = p0[7] > 0.5
+    dx, dy, _ = AL.slide_for(d['image'].astype(np.float32) / 255, (p0[0] * binary_erosion(roof, iterations=5)).astype(np.float32),
+                             p0[5].astype(np.float32), roof, mpp)
     p2 = read(AL.moved(d['image'], dx, dy)) if (dx or dy) else p1
     pa = read(da['image'])
     g1, r1, _ = drawing_score(p1, d); g2, r2, geo = drawing_score(p2, d); ga, ra, _ = drawing_score(pa, d)
