@@ -218,7 +218,7 @@ def main():
         seed = {int(k): v for k, v in json.loads(Path(a.seed).read_text()).items()}
         for k, v in seed.items():
             if k not in _saved and v.get("outline"):
-                _saved[k] = {"lines": [], "obstructions": [], "nopanel": [], "complete": False,
+                _saved[k] = {"seeded": True, "lines": [], "obstructions": [], "nopanel": [], "complete": False,
                              "problem": None, "outline": v["outline"], "olines": []}
 
     truth = {}

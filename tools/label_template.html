@@ -423,6 +423,7 @@ ROOFS.forEach(r=>{
                   nopanel: r.saved.nopanel||[], complete: !!r.saved.complete,
                   problem: r.saved.problem||null, outline: r.saved.outline||null,
                   olines: r.saved.olines||[]};
+    if(r.saved.seeded) data[r.id].seeded = true;
   }
 });
 let pending=null, drag=null, sel=null, shift=false, space=false;
@@ -482,8 +483,10 @@ function save(){
 }
 // A record with nothing in it is not a marked roof: clicking a roof saves one,
 // and counting it would make U skip a roof nobody drew.
-const hasMarks = d => !!(d && (d.problem || d.outline || (d.lines||[]).length
-  || (d.obstructions||[]).length || (d.nopanel||[]).length));
+// A seeded outline (a starting point put there by the bundle) is not a mark
+// until something else is drawn or the roof is ticked complete.
+const hasMarks = d => !!(d && (d.problem || (d.outline && !d.seeded) || (d.lines||[]).length
+  || (d.obstructions||[]).length || (d.nopanel||[]).length || (d.seeded && d.complete)));
 function marked(id){ return !!(ingested[id] || hasMarks(remote[id]) || hasMarks(data[id])); }
 let lastNudge = 0;
 function nudgeSave(){
