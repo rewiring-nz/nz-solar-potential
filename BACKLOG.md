@@ -397,6 +397,34 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**22 Nov (later), 11 hard roofs drawn; the outline was not being taught.**
+- The owner drew 11 of the 20 hard roofs (3 more flagged not a building, 6
+  not done: very complex roofs). In `data/roof_labels.json`; samples in
+  `data/line_set/typed_set5` (168 drawn roofs), fixed folds in
+  `data/line_set/folds.json`, the new ones listed in `new11.json`.
+- Before (the reader that never saw them, framed on the build's edge, as
+  the map would read them): outline IoU 0.77, face IoU 0.54, faces right on
+  1 of 11, outline 0.9 or better on 2.
+- The same reader given the picture centred on the drawn roof (the training
+  framing, drawn edge supplied) scores face IoU 0.74 and lines right on 9
+  of 11: much of the loss in the wild is not the lines. Reading again in a
+  picture framed on the reader's own edge (`line_reader.REFRAME`) recovers
+  little of it (face IoU 0.554 to 0.578, outline 0.753 to 0.774 on the 11,
+  VM): the rest is unexplained and is the next thing to find.
+- The owner, 22 Nov: on the roofs drawn earlier the outline was generally
+  left as surveyed. So 144 of the 168 drawn roofs were teaching the surveyed
+  outline (balconies and decks included) as the roof's edge. `line_targets`
+  now marks the edge and roof maps as known only where the outline was drawn
+  or corrected (24 roofs); the 0.86 edge overlap measured on the 157 was
+  partly agreement with the survey, not with the roof.
+- A no-panel face is not roof in the targets (67 faces on 37 roofs).
+- Running: five folds on typed_set5 (`runs/G_fold*.pt`), then held-out maps
+  for all 168 and the face score, old 157 against run D and the new 11
+  against the before.
+- Marking page: a second LINZ flight of each roof on V (`reference_imagery`),
+  for looking only; the main photo is the map's (`imagery` equals the
+  display tiles, checked by eye on two roofs).
+
 **22 Nov, like-for-like benchmark; the reader's own roof edge; owner's street verdicts.**
 - Build benchmark (179 drawn roofs, VM, each roof read by the fold model
   that never saw it, the build's outline, `~/ab/bench_L7`): face IoU 0.629,
