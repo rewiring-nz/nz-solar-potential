@@ -51,9 +51,11 @@ class Net(nn.Module):
         super().__init__()
         hub = hub or str(Path.home() / ".cache/torch/hub/facebookresearch_dinov2_main")
         self.enc = torch.hub.load(hub, "dinov2_vits14", source="local", pretrained=False)
-        self.s1 = conv(7, 32)                    # full res: photo + LiDAR, for sharp lines
-        self.s2 = conv(32, 64)                   # 1/2
-        self.s4 = conv(64, 96)                   # 1/4
+        # the fine branch starts at half resolution: at full resolution a batch
+        # of 8 did not fit a 19 GB Mac and each step took a minute
+        self.s1 = conv(7, 32)                    # 1/2: photo + LiDAR, for sharp lines
+        self.s2 = conv(32, 64)                   # 1/4
+        self.s4 = conv(64, 96)                   # 1/8
         self.lid = conv(4, 32)                   # LiDAR at patch scale
         self.neck = conv(384 * 4 + 32, 256)      # 1/14
         self.d4 = conv(256 + 96, 128)
@@ -64,13 +66,13 @@ class Net(nn.Module):
     def forward(self, x):
         rgb = (x[:, :3] - MEAN.to(x.device)) / STD.to(x.device)
         f = self.enc.get_intermediate_layers(rgb, n=4, reshape=True)        # 4 x (B,384,28,28)
-        a1 = self.s1(x); a2 = self.s2(F.avg_pool2d(a1, 2)); a4 = self.s4(F.avg_pool2d(a2, 2))
+        a1 = self.s1(F.avg_pool2d(x, 2)); a2 = self.s2(F.avg_pool2d(a1, 2)); a4 = self.s4(F.avg_pool2d(a2, 2))
         l = self.lid(F.adaptive_avg_pool2d(x[:, 3:], f[0].shape[-2:]))
         z = self.neck(torch.cat([*f, l], 1))
         z = self.d4(torch.cat([F.interpolate(z, size=a4.shape[-2:], mode="bilinear", align_corners=False), a4], 1))
         z = self.d2(torch.cat([F.interpolate(z, size=a2.shape[-2:], mode="bilinear", align_corners=False), a2], 1))
         z = self.d1(torch.cat([F.interpolate(z, size=a1.shape[-2:], mode="bilinear", align_corners=False), a1], 1))
-        return self.head(z)
+        return F.interpolate(self.head(z), size=x.shape[-2:], mode="bilinear", align_corners=False)
 
 
 def prep(x, y, w):

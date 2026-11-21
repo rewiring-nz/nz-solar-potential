@@ -60,6 +60,12 @@ MODEL = Path(os.environ.get("SOLAR_FACE_REGION_MODEL",
                             ROOT / "data" / "models" / "face_regions_v3.pt"))
 SIZE = 256
 FILL_PX = 208
+# SOLAR_FACE_REGION_ARCH=dino: the reader of tools/train_roof_lines.py (a
+# DINOv2 ViT-S/14 photo encoder with a LiDAR side branch), which sees the roof
+# at 384 px (tools/export_roof_lines.py) and is run at 392 inside.
+ARCH = os.environ.get("SOLAR_FACE_REGION_ARCH", "")
+if ARCH == "dino":
+    SIZE, FILL_PX = 384, 304
 MIN_FACE_FRAC = float(os.environ.get("SOLAR_FR_MIN_FACE", "0.005"))
 CORE_THR = float(os.environ.get("SOLAR_FR_CORE_THR", "0.50"))
 # Averaging over the 8 symmetries is off: on the 35 held-out roofs it blurred
@@ -76,6 +82,23 @@ def _net():
         if not MODEL.exists():
             return None
         torch.set_num_threads(1)      # one roof at a time; the callers run a process per core
+        if ARCH == "dino":
+            import torch.nn.functional as F
+            from train_roof_lines import Net, SIZE as RUN
+
+            class Wrapped(torch.nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.net = Net()
+
+                def forward(self, t):
+                    y = self.net(F.interpolate(t, size=(RUN, RUN), mode="bilinear", align_corners=False))
+                    return F.interpolate(y, size=t.shape[-2:], mode="bilinear", align_corners=False)
+            n = Wrapped()
+            n.net.load_state_dict(torch.load(MODEL, map_location="cpu"))
+            n.eval()
+            _NET[0] = n
+            return n
         ck = torch.load(MODEL, map_location="cpu", weights_only=False)
         n = EncoderNet() if ck.get("arch") == "resnet18" else UNet(cin=ck.get("cin", 7), cout=ck.get("cout", 2))
         n.load_state_dict(ck["state_dict"])
