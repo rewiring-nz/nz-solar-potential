@@ -397,6 +397,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **21 Nov: owner's direction: roof lines first, building outlines second,
+  everything else after.** "It's relatively easy to see and mark these up
+  visually as a human, so I see no reason we can't make AI good at that."
+  A new reader is being trained: DINOv2 ViT-S/14 photo encoder (weights
+  already on the Mac) with a LiDAR side branch, boundary and core maps at
+  392 px (`tools/train_roof_lines.py`), on `data/line_set/lines_set`
+  (`tools/export_roof_lines.py`, map-photo frame, 384 px): 716 paid readings
+  rated 0.5 or over, 4,322 LiDAR point-roof readings whose planes hold 95%
+  of their returns within 0.15 m (of 9,800 tried), 157 hand-drawn roofs kept
+  out as the test; the 30 held-back roofs are not read. Open: scores; maps
+  to faces through `face_regions.straight_faces`; the street side by side.
+- **21 Nov: three panel-side fixes from the street marks, parked behind the
+  line work.** (1) Obstructions: `CRISP_PEAK` and `CRISP_LARGE`
+  (`src/obstruction_detection.py`), on by default after the bench (103
+  marked roofs: small marks found 37.8% -> 64.6%, small detections on a
+  mark 29.2% -> 32.5%, area recall 0.322 -> 0.355, precision 0.338 ->
+  0.344); the edge rule (`CRISP_EDGE_M`) added after 15H Sunrise Lane
+  over-fired is not yet benched. (2) The shady side is laid out and ranked
+  after the sunny side (`SHADY_SIDE_PANELS`). (3) Readings get
+  `straighten_faces` after the weld: neutral on 179 drawn roofs (line F
+  0.638, 92 right, 43 faces right). Dropped: `SOLAR_LINE_MERGE_OFF=0.8`
+  (faces right 43 -> 39). Street `street_r7` against all marks: missed
+  obstructions 13 of 32 (was 2), panels should go here 10 of 12 (was 4),
+  over an obstruction 2 of 4. Not sent as a round.
 - **21 Nov: placement on the photo checked; it was not the fault.** The
   entry below compared the map's photo with the SURVEYED outline. Against the
   drawn faces the recorded shifts hold: on the 19 street roofs the

@@ -932,8 +932,12 @@ SMALL_OBJECT_RING_M = 0.5
 # and this filter dropped 9 of them at a mean contrast of 1 to 24. With
 # CRISP_PEAK the lightest and the darkest quarter of the patch are each
 # compared with the ring and the largest difference counts
-# (SOLAR_CRISP_PEAK=0: the mean only).
-CRISP_PEAK = os.environ.get("SOLAR_CRISP_PEAK", "0") == "1"
+# (SOLAR_CRISP_PEAK=0: the mean only). Against the 103 complete marked roofs
+# (tools/obstruction_bench.py, 21 Nov, before the edge rule below), off / peak
+# / peak and CRISP_LARGE: small marks found 142 / 232 / 243 of 376, small
+# detections on a mark 29.2 / 33.1 / 32.5%, area recall 0.322 / 0.343 / 0.355,
+# area precision 0.338 / 0.339 / 0.344.
+CRISP_PEAK = os.environ.get("SOLAR_CRISP_PEAK", "1") != "0"
 # ...but not along a face's edge: a ridge cap is a light strip and a gutter a
 # dark one, and each passes the lightest-quarter test. 15H Sunrise Lane went
 # from 4 obstructions to 11, strung along its ridges and eaves, and from 25
@@ -952,7 +956,7 @@ def _hugs_edge(blob, facet):
 # and a mean contrast of 96 to 111 were dropped. Up to CRISP_LARGE_MAX_M2 a
 # compact patch at CRISP_LARGE_MIN contrast or more is kept without them
 # (SOLAR_CRISP_LARGE=0: off).
-CRISP_LARGE = os.environ.get("SOLAR_CRISP_LARGE", "0") == "1"
+CRISP_LARGE = os.environ.get("SOLAR_CRISP_LARGE", "1") != "0"
 CRISP_LARGE_MAX_M2 = 3.0
 CRISP_LARGE_MIN = 60.0
 
