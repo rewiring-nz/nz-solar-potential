@@ -29,6 +29,7 @@ MIN_FACE_PX2 = 60.0
 OUTLINE_JOIN_IOU = 0.93
 SKELETON_JOIN_PX = 7.0
 STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4.0, 15.0, 3.0, 0.9
+EXTEND_PX, EXTEND_SHARE = 24.0, 0.35
 KINDS = ("ridge", "valley", "cliff")
 STRAIGHTEN = True
 
@@ -133,6 +134,41 @@ def _along(m, a, b):
     return map_coordinates(m, [ys, xs], order=1, mode="nearest")
 
 
+def _extend_dangling(lines, edge):
+    """Lines whose loose ends are carried on to what they point at.
+
+    A line divides a roof only if both its ends meet the outline or another
+    line. The reader's lines stop where its confidence does, often a little
+    short of the eave, and the build's roof edge sits outside the photo's
+    eave by its overhang: 1 Sunrise Lane (street L5) had a clean line map
+    and came out as one face. Rule: an end that touches nothing is carried
+    straight on, up to EXTEND_PX or EXTEND_SHARE of the line's length, to
+    the first outline edge or line it reaches; if it reaches nothing it is
+    left as it is."""
+    segs = [LineString([a, b]) for a, b, _ in lines]
+    out = []
+    for i, (a, b, kind) in enumerate(lines):
+        ends = []
+        for p, q in ((a, b), (b, a)):                 # p: the end looked at, q: the other end
+            pt = Point(p)
+            if edge.distance(pt) < 1.0 or any(j != i and s.distance(pt) < 1.0 for j, s in enumerate(segs)):
+                ends.append(p); continue
+            d = np.array(p) - np.array(q); ln = float(np.hypot(*d))
+            reach = max(EXTEND_PX, EXTEND_SHARE * ln)
+            far = tuple(np.array(p) + d / max(ln, 1e-6) * reach)
+            ray = LineString([p, far])
+            hits = [ray.intersection(g) for g in [edge] + [s for j, s in enumerate(segs) if j != i]]
+            pts = [h for hit in hits if not hit.is_empty for h in getattr(hit, "geoms", [hit]) if h.geom_type == "Point"]
+            if pts:
+                h = min(pts, key=lambda h: h.distance(pt))
+                # a hair past the meeting point, so the two lines cross and the face closes
+                ends.append(tuple(np.array(h.coords[0]) + d / max(ln, 1e-6) * 0.01))
+            else:
+                ends.append(p)
+        out.append((ends[0], ends[1], kind))
+    return out
+
+
 def faces_from_maps(p, names, outline=None):
     """p: C x H x W probabilities; names: the map names in order. `outline`:
     the roof's outer edge in pixels when the caller has one (on fold 0 the
@@ -224,6 +260,7 @@ def faces_from_maps(p, names, outline=None):
         if any(seg.crosses(k) for k in kept):
             continue
         kept.append(seg); lines.append((a, b, kind))
+    lines = _extend_dangling(lines, edge)
     net = unary_union([LineString(list(edge.coords))] + [LineString([a, b]) for a, b, _ in lines])
     faces = [f for f in polygonize(net)
              if f.area >= MIN_FACE_PX2 and outline.buffer(0.5).contains(f.representative_point())]

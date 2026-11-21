@@ -156,7 +156,7 @@ def predict_maps(geom, img_ds, pts):
             # the downhill-direction channels turn with the picture)
             sys.path.insert(0, str(ROOT / "tools"))
             from train_face_regions import dihedral
-            acc = torch.zeros(2, SIZE, SIZE)
+            acc = 0
             for k in range(8):
                 xk, _, _ = dihedral(t.clone(), t[:, :1], t[:, :1], k)
                 pk = torch.sigmoid(net(xk))[0]
