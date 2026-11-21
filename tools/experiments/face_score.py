@@ -6,7 +6,7 @@ and divides nothing). Per roof, each drawn face takes the read face that
 overlaps it best: FACE IoU is the area-weighted mean of those overlaps, and
 a roof's faces are right at 0.8 or more (tools/markup_benchmark.py's rule).
 
-    python tools/experiments/face_score.py <heldout maps dir> <graph|regions|...> [sheet.jpg]
+    python tools/experiments/face_score.py <heldout maps dir> <graph|regions|regions_own> [sheet.jpg]
 """
 import sys, os, glob, json, numpy as np
 sys.path.insert(0, '.'); sys.path.insert(0, 'tools')
@@ -26,6 +26,9 @@ def convert(p, outline):
         return LG.faces_from_maps(p, NAMES, outline)[0]
     if method == 'regions':
         return LG.faces_from_regions(p, NAMES, outline)
+    if method == 'regions_own':                      # the reader's own roof edge, not the drawn one
+        own = LG.roof_outline(p[7])
+        return LG.faces_from_regions(p, NAMES, own if own is not None and own.is_valid and own.area > 50 else outline)
     raise SystemExit(method)
 
 

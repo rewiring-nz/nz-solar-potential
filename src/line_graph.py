@@ -32,6 +32,7 @@ STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4
 EXTEND_PX, EXTEND_SHARE = 24.0, 0.35
 KINDS = ("ridge", "valley", "cliff")
 STRAIGHTEN = True
+EDGE_BAND_PX = 8
 
 
 def join_points(jmap):
@@ -47,13 +48,30 @@ def join_points(jmap):
     return out
 
 
-def roof_outline(roof):
-    """The largest roof area as a simplified polygon."""
+def roof_outline(roof, edge_map=None):
+    """The largest roof area as a simplified polygon.
+
+    With `edge_map` (the reader's map of the roof's outer edge) the area's
+    boundary is first carried onto the crest of that map: the roof map is
+    soft at its rim and its 0.5 level wanders, while the edge map is a thin
+    line on the edge itself. The sure inside (the area shrunk by
+    EDGE_BAND_PX) and the sure outside (everything beyond the area grown by
+    it) flood toward each other over the edge map and meet on its crest."""
     from skimage import measure
     lab, n = cc_label(roof >= 0.5)
     if not n:
         return None
     big = lab == (1 + np.argmax(np.bincount(lab.ravel())[1:]))
+    if edge_map is not None:
+        from scipy.ndimage import binary_dilation, binary_erosion, binary_fill_holes
+        from skimage.segmentation import watershed
+        inner = binary_erosion(big, iterations=EDGE_BAND_PX)
+        if inner.any():
+            marks = np.where(inner, 1, 0) + np.where(~binary_dilation(big, iterations=EDGE_BAND_PX), 2, 0)
+            # the roof map breaks ties where the edge map is flat
+            big = watershed(edge_map + 0.05 * (1 - np.clip(np.abs(roof - 0.5) * 2, 0, 1)), markers=marks) == 1
+            lab, n = cc_label(big)
+            big = binary_fill_holes(lab == (1 + np.argmax(np.bincount(lab.ravel())[1:]))) if n else big
     cs = measure.find_contours(np.pad(big, 1).astype(float), 0.5)
     if not cs:
         return None
@@ -269,7 +287,72 @@ def faces_from_maps(p, names, outline=None):
 
 # ---------------------------------------------------------------- regions
 CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 40, 0.25, 3.0
-SEED_LINE_MAX = 0.4
+BASIN_SIGMA_PX, BASIN_STEP = 1.0, 0.05
+
+
+def _basins(barrier, inside):
+    """The roof cut wherever the line maps have a crest, then joined back
+    across every cut with no line under it.
+
+    Seeds taken from the face-interior map (its connected pieces) give one
+    seed to two faces whenever the line between them has a gap, and a seed
+    cannot be divided: on the 157 held-out drawn roofs, 202 of 488 faces lost
+    into a neighbour had a line the reader saw (mean 0.5 or more) on the
+    missing edge. So the cut comes first: every basin of the smoothed line
+    map is a region (far more than there are faces), and two regions become
+    one where the boundary between them carries no line (mean below
+    MERGE_BARRIER), weakest boundary first; a region under SEED_MIN_PX2
+    joins its weakest neighbour whatever the boundary."""
+    from scipy.ndimage import gaussian_filter
+    from skimage.segmentation import watershed
+    h, w = barrier.shape
+    smooth = np.round(gaussian_filter(barrier, BASIN_SIGMA_PX) / BASIN_STEP) * BASIN_STEP
+    lab = watershed(smooth, mask=inside)
+    if lab.max() < 1:
+        return None
+    S, N = {}, {}
+    for a, b, v in ((lab[:, :-1], lab[:, 1:], np.maximum(barrier[:, :-1], barrier[:, 1:])),
+                    (lab[:-1, :], lab[1:, :], np.maximum(barrier[:-1, :], barrier[1:, :]))):
+        m = (a != b) & (a > 0) & (b > 0)
+        lo, hi = np.minimum(a[m], b[m]).astype(np.int64), np.maximum(a[m], b[m]).astype(np.int64)
+        key = lo * (lab.max() + 1) + hi
+        u, inv = np.unique(key, return_inverse=True)
+        sm, ct = np.bincount(inv, weights=v[m]), np.bincount(inv)
+        for k, x, c in zip(u, sm, ct):
+            k = (int(k // (lab.max() + 1)), int(k % (lab.max() + 1)))
+            S[k] = S.get(k, 0.0) + float(x); N[k] = N.get(k, 0) + int(c)
+    size = dict(enumerate(np.bincount(lab.ravel())))
+    nb = {}
+    for (i, j) in S:
+        nb.setdefault(i, set()).add(j); nb.setdefault(j, set()).add(i)
+    parent = {}
+    key = lambda i, j: (min(i, j), max(i, j))
+
+    def join(i, j):                                   # j into i; boundary sums add
+        for k in nb.pop(j, ()):
+            if k == i:
+                continue
+            S[key(i, k)] = S.get(key(i, k), 0.0) + S.pop(key(j, k)); N[key(i, k)] = N.get(key(i, k), 0) + N.pop(key(j, k))
+            nb[k].discard(j); nb[k].add(i); nb.setdefault(i, set()).add(k)
+        nb.get(i, set()).discard(j); S.pop(key(i, j), None); N.pop(key(i, j), None)
+        size[i] += size.pop(j); parent[j] = i
+    while S:
+        small = [(S[key(i, k)] / N[key(i, k)], i, k) for i in nb if size[i] < SEED_MIN_PX2 for k in nb[i]]
+        if small:
+            _, j, i = min(small)
+        else:
+            v, (i, j) = min((S[k] / N[k], k) for k in S)
+            if v >= MERGE_BARRIER:
+                break
+        join(i, j)
+    def root(i):
+        while i in parent:
+            i = parent[i]
+        return i
+    lut = np.arange(lab.max() + 1)
+    for i in parent:
+        lut[i] = root(i)
+    return lut[lab]
 
 
 def faces_from_regions(p, names, outline):
@@ -299,28 +382,9 @@ def faces_from_regions(p, names, outline):
     h, w = p.shape[1:]
     inside = features.rasterize([outline], out_shape=(h, w)).astype(bool)
     barrier = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
-    # a seed stops at a line the reader sees, even where its core map runs
-    # across it (1 Sunrise Lane, street L7: a clear ridge, one core)
-    seeds, n = cc_label((ch["core"] >= CORE_MIN) & (barrier < SEED_LINE_MAX) & inside)
-    if n:
-        size = np.bincount(seeds.ravel(), minlength=n + 1)
-        seeds[np.isin(seeds, np.nonzero(size < SEED_MIN_PX2)[0])] = 0
-    if not seeds.any():
+    lab = _basins(barrier, inside)
+    if lab is None:
         return [outline]
-    lab = watershed(barrier, markers=seeds, mask=inside)
-    # 3. merge across boundaries with no line under them
-    while True:
-        pairs = {}
-        for a, b in ((lab[:, :-1], lab[:, 1:]), (lab[:-1, :], lab[1:, :])):
-            m = (a != b) & (a > 0) & (b > 0)
-            bar = np.maximum(barrier[:, :-1], barrier[:, 1:])[m] if a.shape[1] < w else np.maximum(barrier[:-1, :], barrier[1:, :])[m]
-            for i, j, v in zip(a[m], b[m], bar):
-                k = (min(i, j), max(i, j)); s = pairs.setdefault(k, [0.0, 0]); s[0] += v; s[1] += 1
-        weak = [(s[0] / s[1], k) for k, s in pairs.items() if s[1] >= 4 and s[0] / s[1] < MERGE_BARRIER]
-        if not weak:
-            break
-        _, (i, j) = min(weak)
-        lab[lab == j] = i
     polys = []
     for geom, v in features.shapes(lab.astype(np.int32), mask=lab > 0):
         if v:

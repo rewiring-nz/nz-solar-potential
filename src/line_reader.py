@@ -70,15 +70,45 @@ def picture(geom, tiles, pts):
     return (chans * 255).astype(np.uint8), b, mpp
 
 
+TTA = int(os.environ.get("SOLAR_LINE_READER_TTA", "8"))
+
+
+def _turned(x, k):
+    """The picture (H W 7, 0..1) flipped (k >= 4) and turned k % 4 quarter
+    turns, the downhill channels turned with it, as in training."""
+    lidar = bool(x[..., 3:].any())
+    if k >= 4:
+        x = x[:, ::-1].copy()
+        if lidar:
+            x[..., 5] = 1 - x[..., 5]
+    for _ in range(k % 4):
+        x = np.rot90(x).copy()
+        if lidar:
+            c5, c6 = x[..., 5].copy(), x[..., 6].copy()
+            x[..., 5], x[..., 6] = 1 - c6, c5
+    return x
+
+
 def maps(img):
-    """The reader's maps (C H W, 0..1) for a picture."""
+    """The reader's maps (C H W, 0..1) for a picture: the mean over the TTA
+    views (the four quarter turns, each flipped and not), every view turned
+    back before averaging. Read one way up, a line the reader half sees is
+    kept or lost by chance; held-out drawn roofs score higher averaged."""
     import torch
     import torch.nn.functional as F
     from train_roof_lines import SIZE as RUN
-    x = torch.from_numpy(img.astype(np.float32) / 255).permute(2, 0, 1)[None]
-    with torch.no_grad():
-        p = torch.sigmoid(net()(F.interpolate(x, size=(RUN, RUN), mode="bilinear", align_corners=False)))
-        return F.interpolate(p, size=x.shape[-2:], mode="bilinear", align_corners=False)[0].numpy()
+    x0 = img.astype(np.float32) / 255
+    acc = 0
+    for k in range(8)[:max(1, TTA)] if TTA != 4 else range(4):
+        x = torch.from_numpy(np.ascontiguousarray(_turned(x0, k))).permute(2, 0, 1)[None]
+        with torch.no_grad():
+            p = torch.sigmoid(net()(F.interpolate(x, size=(RUN, RUN), mode="bilinear", align_corners=False)))
+            p = F.interpolate(p, size=x.shape[-2:], mode="bilinear", align_corners=False)[0].numpy()
+        p = np.rot90(p, -(k % 4), axes=(1, 2))
+        if k >= 4:
+            p = p[:, :, ::-1]
+        acc = acc + p
+    return np.ascontiguousarray(acc / max(1, len(range(8)[:max(1, TTA)])))
 
 
 def read_twice(img, mpp):
@@ -96,16 +126,44 @@ def read_twice(img, mpp):
     return maps(moved(img, dx, dy) if (dx or dy) else img), (dx, dy)
 
 
+EDGE = os.environ.get("SOLAR_LINE_READER_EDGE", "reader")
+EDGE_MIN_IOU = 0.6
+
+
+def reader_edge(p, edge_px):
+    """The roof's edge, in pixels: the reader's own where it has one.
+
+    The build's edge comes from the surveyed outline and the LiDAR: it takes
+    in balconies and decks, and it sits off the photo by the building's lean.
+    The reader's roof map was taught on drawn roofs (the union of the drawn
+    faces, which leaves balconies out) and is in the photo's frame. On the
+    157 held-out drawn roofs it overlaps the drawn edge 0.86 on average
+    (0.9 or better on 61). It is used where it agrees with the build's edge
+    on what the building is (overlap EDGE_MIN_IOU or more); a reading that
+    does not is not trusted over the survey."""
+    from src.line_graph import roof_outline
+    if EDGE != "reader":
+        return edge_px
+    try:
+        own = roof_outline(p[7], p[5])
+    except Exception:
+        own = None
+    if own is None or not own.is_valid or own.is_empty:
+        return edge_px
+    iou = own.intersection(edge_px).area / max(own.union(edge_px).area, 1e-9)
+    return own if iou >= EDGE_MIN_IOU else edge_px
+
+
 def roof_faces(geom, tiles, pts):
     """Faces of the roof whose edge `geom` and returns `pts` are in the photo
     frame as best known. Returns (faces, lines): polygons in metres in that
     frame and lines as (a, b, kind).
 
     The slide found by reading twice moves the LiDAR channels only, to help
-    the reader. The roof edge stays where the build put it: on the test
-    street three ways of finding the slide disagreed by a metre on one roof
-    (1 Sunrise Lane) whose edge already sat on the photo, and an edge moved
-    by a wrong slide is a roof drawn off its building."""
+    the reader. The build's edge is never moved by it: on the test street
+    three ways of finding the slide disagreed by a metre on one roof
+    (1 Sunrise Lane), and an edge moved by a wrong slide is a roof drawn off
+    its building. The edge the faces fill is the reader's own (reader_edge)."""
     from shapely.affinity import affine_transform
     from src.line_graph import faces_from_regions
     from train_roof_lines import NAMES
@@ -116,6 +174,6 @@ def roof_faces(geom, tiles, pts):
     # held-out drawn roofs, face IoU 0.678 and lines right on 99, against
     # 0.516 and 53 for the joins-and-lines drawing, which leaves lines that
     # close no face
-    faces = faces_from_regions(p, NAMES, edge_px)
+    faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px))
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
     return [affine_transform(f, to_m) for f in faces], []
