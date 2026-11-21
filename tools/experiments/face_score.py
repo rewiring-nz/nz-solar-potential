@@ -41,9 +41,12 @@ def raster(polys, size):
 
 
 rows, tiles = [], []
+ONLY = set(json.load(open(os.environ['SOLAR_LINES_ONLY']))) if os.environ.get('SOLAR_LINES_ONLY') else None
 for f in sorted(glob.glob(f'{maps_dir}/*.npz')):
     bid = os.path.basename(f)[:-4]
-    d = np.load(f'data/line_set/typed_set2/hand/{bid}.npz'); p = np.load(f)['maps'].astype(np.float32) / 255
+    if ONLY is not None and bid not in ONLY:
+        continue
+    d = np.load(f"{os.environ.get('SOLAR_LINES_SET', 'data/line_set/typed_set2')}/hand/{bid}.npz"); p = np.load(f)['maps'].astype(np.float32) / 255
     mpp, b0, b1, b2, b3, sx, sy = [float(v) for v in d['meta']]; size = d['weight'].shape[0]
     dx, dy = (sx, sy) if str(d['region']) == 'pilot' else (0.0, 0.0)
     px = lambda x, y: ((x + dx - b0) / (b2 - b0) * size, (1 - (y + dy - b1) / (b3 - b1)) * size)

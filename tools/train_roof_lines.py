@@ -7,7 +7,7 @@ sample teaches only the maps its label knows; the first-version set
 
     python train.py <data dir> --out model.pt [--epochs 30] [--train vision points] [--val hand]
 """
-import argparse, glob, math, os, random, sys, time
+import argparse, glob, json, math, os, random, sys, time
 from pathlib import Path
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 
@@ -146,6 +146,7 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3); ap.add_argument("--enc-lr", type=float, default=2e-5)
     ap.add_argument("--folds", type=int, default=0, help="split the val kinds into this many folds: fold --fold is the test, the rest train")
     ap.add_argument("--fold", type=int, default=0)
+    ap.add_argument("--fold-file", default=None, help="JSON {roof id: fold}; overrides the shuffled split")
     ap.add_argument("--repeat-val-kind", type=int, default=1, help="times each hand-drawn training roof is seen per epoch")
     a = ap.parse_args()
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -155,8 +156,14 @@ def main():
         # hand-drawn roofs are the best labels there are: all but one fold of
         # them train, and that fold alone is the test, so every hand-drawn
         # roof is scored by a model that never saw it
-        random.Random(11).shuffle(va)
-        test = va[a.fold::a.folds]
+        if a.fold_file:
+            # a fixed fold per roof, so roofs added later do not move the
+            # earlier ones between folds and scores stay comparable
+            ff = json.load(open(a.fold_file))
+            test = [f for f in va if ff.get(os.path.basename(f)[:-4]) == a.fold]
+        else:
+            random.Random(11).shuffle(va)
+            test = va[a.fold::a.folds]
         tr += [f for f in va if f not in set(test)] * a.repeat_val_kind
         va = test
     random.Random(0).shuffle(tr)

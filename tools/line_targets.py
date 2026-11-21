@@ -38,6 +38,8 @@ def corners(ring):
     p = np.asarray(ring, float)
     if len(p) > 1 and np.allclose(p[0], p[-1]):
         p = p[:-1]
+    if not len(p):                                    # a roof with no usable face has no outer edge
+        return []
     keep = [p[0]]
     for q in p[1:]:                                   # drop vertices closer than CORNER_MIN_M
         if np.hypot(*(q - keep[-1])) >= CORNER_MIN_M:
