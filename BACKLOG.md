@@ -429,7 +429,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 - 784 px training on the Mac did not finish one epoch in 47 minutes
   (stopped); 588 px (42 x 42 patches) is running instead
   (`F588_fold0.log`).
-- Running: the reader retrained at 784 px (56 x 56 patches, `SOLAR_LINES_SIZE`)
+- 588 px on fold 0, from the 392 px start: 0.660 then 0.640 after two
+  epochs against 0.691 and 0.708 at 392 px, at ten times the time per epoch
+  (1,400 s). Stopped: more detail in the reader is not the cheap gain.
+- 20 hard roofs out for marking (`data/label_set/mark20_picked.json`, the
+  reader's own edge and faces kept in `mark20_seed.json` for a before and
+  after): picked from 545 houses read across the district, by the reader's
+  uncertainty, drop edges, and disagreement with the surveyed outline.
+- Was running: the reader retrained at 784 px (56 x 56 patches, `SOLAR_LINES_SIZE`)
   on fold 0, against D_fold0's 0.755 (`data/line_set/runs/F784_fold0.log`).
   If it helps: all folds, held-out face score, street. If not, the remaining
   levers are more drawn roofs (126 drawn roofs took fold 0 from 0.687 to
