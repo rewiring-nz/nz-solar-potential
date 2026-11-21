@@ -81,7 +81,7 @@ def maps(img):
         return F.interpolate(p, size=x.shape[-2:], mode="bilinear", align_corners=False)[0].numpy()
 
 
-SEARCH_M, PRIOR_PER_M, LINE_SHARE = 1.6, 0.03, 0.5
+SEARCH_M, PRIOR_PER_M, LINE_SHARE, AREA_KEEP = 1.6, 0.05, 0.5, 0.9
 
 
 def footprint(img):
@@ -104,7 +104,7 @@ def slide(img, p0, mpp, foot=None):
     Two kinds of evidence, each scaled to its own best: the AREA of the
     building (`foot`: the build's roof edge as a mask, else where the LiDAR
     has returns) over pass 1's roof map, and the LiDAR's creases and steps
-    over pass 1's lines. The area decides most: sliding the LiDAR's edges
+    over pass 1's lines. The area decides first: sliding the LiDAR's edges
     over the lines alone moved 1 Sunrise Lane 1.2 m off a roof it already
     sat on (street L3). PRIOR_PER_M per metre is taken off, so a move has to
     earn its distance."""
@@ -126,10 +126,15 @@ def slide(img, p0, mpp, foot=None):
     idx = np.arange(-r, r + 1)
     win = lambda m: m[np.ix_(idx % m.shape[0], idx % m.shape[1])]
     A, L = win(area), win(line)
-    A = A / max(float(A.max()), 1e-6)
-    L = L / max(float(L.max()), 1e-6) if lines.sum() > 40 else np.zeros_like(A)
+    # each surface from 0 (its worst slide) to 1 (its best). The lines can
+    # match a parallel line a metre off as well as their own, so they only
+    # choose among slides where the area is within AREA_KEEP of its best.
+    unit = lambda m: (m - m.min()) / max(float(m.max() - m.min()), 1e-6)
+    A = unit(A)
+    L = unit(L) if lines.sum() > 40 else np.zeros_like(A)
     dist = np.hypot(*np.meshgrid(idx, idx)) * mpp
     surf = A + LINE_SHARE * L - PRIOR_PER_M * dist
+    surf[A < AREA_KEEP] = -1e9
     iy, ix = np.unravel_index(int(np.argmax(surf)), surf.shape)
     return int(idx[ix]), int(idx[iy])
 
