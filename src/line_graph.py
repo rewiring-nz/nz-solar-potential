@@ -289,8 +289,8 @@ def faces_from_maps(p, names, outline=None):
 
 
 # ---------------------------------------------------------------- regions
-CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 40, 0.25, 3.0
-BASIN_SIGMA_PX, BASIN_STEP = 1.0, 0.05
+CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 150, 0.35, 8.0
+BASIN_SIGMA_PX, BASIN_STEP = 2.0, 0.05
 
 
 def _basins(barrier, inside):

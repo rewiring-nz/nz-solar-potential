@@ -1259,7 +1259,14 @@
     "Panels overlapping empty space here"
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "On this example L8 is worse, while it is a bit better on some"
+    }
+   ]
   },
   {
    "id": 4729452,
@@ -1295,7 +1302,14 @@
     "Clearly wrong outline here, and wrong roof lines on L7"
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This one is still terrible and not even close"
+    }
+   ]
   },
   {
    "id": 4729334,
@@ -1307,7 +1321,14 @@
     "Both of these treat balcony as roof"
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This one is much better"
+    }
+   ]
   },
   {
    "id": 4729284,
@@ -1319,7 +1340,14 @@
     "Both of these clearly miss the actual outline of the building"
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This is better in L8 but still wrong"
+    }
+   ]
   },
   {
    "id": 4729292,
@@ -1344,6 +1372,108 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 5371242,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "The outline is in a better place in L8 but the corners have been cut off on the left and right corners with a chamfer"
+    }
+   ]
+  },
+  {
+   "id": 4729288,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This one is worse the obstruction has been made too big and the roof line not straight"
+    }
+   ]
+  },
+  {
+   "id": 4729554,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 one seems perfect"
+    }
+   ]
+  },
+  {
+   "id": 4729550,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This seems worse on L8"
+    }
+   ]
+  },
+  {
+   "id": 4729287,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "5 Sunrise Lane: roof lines wrong",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "Roof lines wrong on both versions here"
+    }
+   ]
+  },
+  {
+   "id": 4729573,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 is better"
+    }
+   ]
   }
  ]
 }
