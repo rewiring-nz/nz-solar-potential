@@ -269,6 +269,7 @@ def faces_from_maps(p, names, outline=None):
 
 # ---------------------------------------------------------------- regions
 CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 40, 0.25, 3.0
+SEED_LINE_MAX = 0.4
 
 
 def faces_from_regions(p, names, outline):
@@ -298,7 +299,9 @@ def faces_from_regions(p, names, outline):
     h, w = p.shape[1:]
     inside = features.rasterize([outline], out_shape=(h, w)).astype(bool)
     barrier = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
-    seeds, n = cc_label((ch["core"] >= CORE_MIN) & inside)
+    # a seed stops at a line the reader sees, even where its core map runs
+    # across it (1 Sunrise Lane, street L7: a clear ridge, one core)
+    seeds, n = cc_label((ch["core"] >= CORE_MIN) & (barrier < SEED_LINE_MAX) & inside)
     if n:
         size = np.bincount(seeds.ravel(), minlength=n + 1)
         seeds[np.isin(seeds, np.nonzero(size < SEED_MIN_PX2)[0])] = 0

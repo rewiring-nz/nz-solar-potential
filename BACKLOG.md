@@ -397,6 +397,26 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**21 Nov (night), faces seeded from the face-interior map.** All five folds
+trained (`D_fold0-4.pt`); every drawn roof read by a model that never saw it
+(`data/line_set/heldout_D`, `tools/experiments/heldout_maps.py`) and scored
+by FACES (`tools/experiments/face_score.py`, drawn outline supplied):
+
+| 157 held-out drawn roofs | face IoU | faces right | lines right | near perfect |
+|---|---|---|---|---|
+| joins-and-lines (`faces_from_maps`) | 0.516 | 20 | 53 | 21 |
+| regions (`faces_from_regions`) | 0.678 | 53 | 99 | 48 |
+
+Regions, by kind: houses outside the town centre 60 roofs, lines right 47,
+near perfect 22, faces right 18; town-centre houses 42: 27, 17, 22; larger
+55: 25, 9, 13. The three thresholds barely move the score (0.669-0.678).
+The reader finds 962 faces where 1,296 are drawn: missed faces are now the
+reader's, not the conversion's. Street L7 (`data/preview/cases/street_L7`):
+mixed by eye, not judged by the owner. Not comparable with the 179-roof
+build benchmark (0.627, 43, 92) until run through it with the build's own
+outline: do that next, on the VM.
+
+
 **21 Nov (late), LiDAR alignment in the training set; street not yet better.**
 - The first export left the LiDAR channels off the photo: few buildings
   outside the pilot have a recorded drawing shift. Aligned by the label
