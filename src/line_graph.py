@@ -198,6 +198,7 @@ def faces_from_maps(p, names, outline=None):
         d = edge.distance(Point(j))
         nodes.append(tuple(edge.interpolate(edge.project(Point(j))).coords[0]) if 0 < d <= SNAP_PX else j)
     anyline = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
+    inside_edge = outline.buffer(1.5)
     cand = []
     for i in range(len(nodes)):
         for k in range(i + 1, len(nodes)):
@@ -207,6 +208,8 @@ def faces_from_maps(p, names, outline=None):
                 continue
             if any(m not in (i, k) and seg.distance(Point(nodes[m])) < THROUGH_PX for m in range(len(nodes))):
                 continue                      # the two shorter pieces are tested on their own
+            if not inside_edge.contains(seg):
+                continue                      # a roof line does not leave the roof
             mid = seg.interpolate(0.5, normalized=True)
             if edge.distance(mid) < 2.0 and edge.distance(Point(a)) < 1.0 and edge.distance(Point(b)) < 1.0:
                 continue                      # along the outline: already a line
