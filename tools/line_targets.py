@@ -81,6 +81,12 @@ def typed(d, label):
                 dr.line([px(*p) for p in pts], fill=255, width=LINE_PX)
                 ends += [tuple(pts[0]), tuple(pts[-1])]
             t[..., ch] = np.array(im) > 0
+        # 10 of 157 drawn roofs have face rings that miss most of their drawn
+        # lines (faces drawn apart, so their edges read as outer edge): the
+        # drawn lines inside the roof are lines between faces too
+        drawn = (t[..., 2] | t[..., 3] | t[..., 4]) & binary_erosion(roof, iterations=4)
+        t[..., 0] |= drawn
+        t[..., 1] &= ~binary_dilation(drawn, iterations=4)
         rings = [Polygon(f["ring"]).buffer(0) for f in label["faces"] if f.get("ring") and len(f["ring"]) >= 3]
         outer = unary_union([r.buffer(0.02) for r in rings]).buffer(-0.02)
         for g in getattr(outer, "geoms", [outer]):
