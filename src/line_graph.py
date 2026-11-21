@@ -9,8 +9,8 @@ by kind and the roof itself. This turns them back into the drawing:
 2. the outline: the edge of the roof map, simplified, its corners moved onto
    the joins beside them;
 3. lines: a straight segment between two joins is kept when the line maps
-   hold along it (mean LINE_MEAN or more, and no stretch of it empty), and it
-   does not run through a third join;
+   hold along it (mean LINE_MEAN or more, and no stretch of it empty), it
+   does not run through a third join, and it crosses no better-supported line;
 4. faces: the areas the outline and the kept lines enclose.
 
 Every line is straight and every line ends on a join, so there are no
@@ -26,6 +26,8 @@ JOIN_MIN, JOIN_NMS_PX = 0.35, 4
 LINE_MEAN, LINE_LOW, LINE_LOW_SHARE = 0.45, 0.15, 0.2
 THROUGH_PX, SNAP_PX, OUTLINE_SIMPLIFY_PX = 2.5, 6.0, 1.5
 MIN_FACE_PX2 = 60.0
+OUTLINE_JOIN_IOU = 0.93
+SKELETON_JOIN_PX = 7.0
 KINDS = ("ridge", "valley", "cliff")
 
 
@@ -73,28 +75,53 @@ def faces_from_maps(p, names):
     if outline is None or outline.is_empty:
         return [], [], [], None
     joins = join_points(ch["join"])
+    n_pred = len(joins)
+    # The join map misses points (0.49 F on held-out drawn roofs, fold 0):
+    # the ends and forks of the line map's own skeleton are joins too, where
+    # no predicted join is already beside them.
+    from skimage.morphology import skeletonize
+    from scipy.ndimage import convolve
+    sk = skeletonize((np.maximum.reduce([ch[k] for k in ("line",) + KINDS]) >= 0.5) & (ch["roof"] >= 0.5))
+    nb = convolve(sk.astype(int), np.ones((3, 3), int), mode="constant") - 1
+    ys, xs = np.nonzero(sk & ((nb == 1) | (nb >= 3)))
+    for x, y in zip(xs.astype(float), ys.astype(float)):
+        if all(np.hypot(x - a, y - b) > SKELETON_JOIN_PX for a, b in joins):
+            joins.append((x, y))
     near = outline.buffer(SNAP_PX)
-    joins = [j for j in joins if near.contains(Point(j))]
+    keep = [near.contains(Point(j)) for j in joins]
+    n_pred = sum(keep[:n_pred])
+    joins = [j for j, k in zip(joins, keep) if k]
     # outline corners move onto the join beside them; joins on the outline
     # that are not corners are added to it, so lines can end mid-edge
-    ring = list(outline.exterior.coords)[:-1]
-    for i, v in enumerate(ring):
-        d = [np.hypot(v[0] - j[0], v[1] - j[1]) for j in joins]
-        if d and min(d) <= SNAP_PX:
-            ring[i] = joins[int(np.argmin(d))]
-    ring = [v for i, v in enumerate(ring) if v != ring[i - 1]]
-    if len(ring) < 3:
-        return [], [], joins, outline
-    outline = Polygon(ring).buffer(0)
-    if outline.geom_type == "MultiPolygon":
-        outline = max(outline.geoms, key=lambda g: g.area)
+    # The outline drawn through the joins that sit on the roof's edge, in
+    # order round it: straight edges between real corners. It is used when
+    # it covers the same area as the roof map (OUTLINE_JOIN_IOU); otherwise
+    # the map's own edge, with its corners moved onto the joins beside them.
+    ext = outline.exterior
+    on_edge = sorted((ext.project(Point(j)), j) for j in joins[:n_pred] if ext.distance(Point(j)) <= SNAP_PX)
+    drawn = Polygon([j for _, j in on_edge]).buffer(0) if len(on_edge) >= 3 else None
+    if drawn is not None and drawn.geom_type == "Polygon" and not drawn.is_empty and \
+            drawn.intersection(outline).area / drawn.union(outline).area >= OUTLINE_JOIN_IOU:
+        outline = drawn
+    else:
+        ring = list(ext.coords)[:-1]
+        for i, v in enumerate(ring):
+            d = [np.hypot(v[0] - j[0], v[1] - j[1]) for j in joins]
+            if d and min(d) <= SNAP_PX:
+                ring[i] = joins[int(np.argmin(d))]
+        ring = [v for i, v in enumerate(ring) if v != ring[i - 1]]
+        if len(ring) < 3:
+            return [], [], joins, outline
+        outline = Polygon(ring).buffer(0)
+        if outline.geom_type == "MultiPolygon":
+            outline = max(outline.geoms, key=lambda g: g.area)
     edge = outline.exterior
     nodes = []
     for j in joins:
         d = edge.distance(Point(j))
         nodes.append(tuple(edge.interpolate(edge.project(Point(j))).coords[0]) if 0 < d <= SNAP_PX else j)
     anyline = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
-    lines = []
+    cand = []
     for i in range(len(nodes)):
         for k in range(i + 1, len(nodes)):
             a, b = nodes[i], nodes[k]
@@ -109,7 +136,14 @@ def faces_from_maps(p, names):
             v = _along(anyline, a, b)
             if v.mean() >= LINE_MEAN and (v < LINE_LOW).mean() <= LINE_LOW_SHARE:
                 kind = max(KINDS, key=lambda n: _along(ch[n], a, b).mean())
-                lines.append((a, b, kind))
+                cand.append((float(v.mean()), seg, a, b, kind))
+    # roof lines do not cross except at a join: the best-supported line is
+    # kept and any that would cross it is dropped
+    lines, kept = [], []
+    for _, seg, a, b, kind in sorted(cand, key=lambda c: -c[0]):
+        if any(seg.crosses(k) for k in kept):
+            continue
+        kept.append(seg); lines.append((a, b, kind))
     net = unary_union([LineString(list(edge.coords))] + [LineString([a, b]) for a, b, _ in lines])
     faces = [f for f in polygonize(net)
              if f.area >= MIN_FACE_PX2 and outline.buffer(0.5).contains(f.representative_point())]

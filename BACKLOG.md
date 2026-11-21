@@ -397,6 +397,22 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**21 Nov, reader learns everything the markup records.** The markup gives each
+line a kind (ridge, valley, cliff), the outer edge and the join points; the
+first reader trained on "a line between faces" only, with the outer edge
+erased. `tools/line_targets.py` now writes eight target maps
+(`data/line_set/typed_set2`), `tools/train_roof_lines.py` trains them, and
+`src/line_graph.py` rebuilds a roof as joins connected by straight typed
+lines (from the markup's own maps: line F 0.91 at 0.75 m, 128 of 157 at 0.9+).
+Fold 0 of 5 (32 drawn roofs the model never saw, 0.75 m): reader A 0.687 ->
+with drawn roofs in training 0.716 (first-target scoring); with the corrected
+target, raw line map 0.735, joins-and-lines drawing 0.729. Typed maps at 2 px:
+ridge 0.62, cliff 0.47, valley 0.37, outline 0.55, join 0.49. Adding 4,322
+LiDAR-derived roofs to training (run B) did not help (0.620 vs 0.637).
+Open: outline from the roof map is wobbly (needs straight edges between
+corner joins); missed joins; folds 1-4; final model on all labels; street.
+
+
 - **21 Nov: owner's direction: roof lines first, building outlines second,
   everything else after.** "It's relatively easy to see and mark these up
   visually as a human, so I see no reason we can't make AI good at that."
