@@ -397,6 +397,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**21 Nov (late), LiDAR alignment in the training set; street not yet better.**
+- The first export left the LiDAR channels off the photo: few buildings
+  outside the pilot have a recorded drawing shift. Aligned by the label
+  (`tools/align_lidar_channels.py`, `data/line_set/typed_set3`): 100 of 157
+  drawn roofs and 392 of 716 readings moved more than 0.5 m.
+- Fold 0 (32 unseen drawn roofs, 0.75 m), reader retrained on the aligned set
+  (`D_fold0.pt`): raw line map 0.743 with the LiDAR as it comes, 0.775 read
+  twice (pass 1 photo alone, LiDAR slid onto its lines, pass 2), 0.776 aligned
+  by the label. Drawing F 0.757; 0.9+ on 12 of 32 (reader A: 6).
+- Final model on all labels: `data/line_set/runs/E_all.pt`. Build-side reader:
+  `src/line_reader.py`, `SOLAR_LINE_READER=graph tools/line_reader_faces.py`.
+- Street (L2-L6, `data/preview/cases/street_L*`): not better than L1 and not
+  sent. Three causes found: (1) a slide estimate moved the roof edge off 1
+  Sunrise Lane; the edge is no longer moved by the slide; (2) the
+  joins-and-lines drawing leaves lines that close no face: on fold 0 it reads
+  247 faces where 419 are drawn and gets the face count right on 9 of 32
+  roofs, although its line F is 0.69-0.76. Line F hid this: score FACES
+  (count, IoU) on held-out roofs before the next street run; (3) the old
+  region conversion with the new model (L6) is no better by eye.
+- Next: closed faces from the maps (the core map seeds every face, the line
+  and join maps place straight edges between them), judged by a face score
+  on the five folds, then the street.
+
+
 **21 Nov, reader learns everything the markup records.** The markup gives each
 line a kind (ridge, valley, cliff), the outer edge and the join points; the
 first reader trained on "a line between faces" only, with the outer edge
