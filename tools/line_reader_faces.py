@@ -10,6 +10,10 @@ stored with that slide, as a photo reading is.
 
     SOLAR_FACE_REGION_ARCH=dino SOLAR_FACE_REGION_MODEL=<model.pt> \\
         python tools/line_reader_faces.py <region> --out <dir> [--ids ...] [--jobs N]
+
+SOLAR_LINE_READER=graph SOLAR_LINE_READER_MODEL=<model.pt> reads with the
+typed reader instead (src/line_reader.py): the map's display photo, the roof
+read twice, faces from joins and straight lines.
 """
 import argparse
 import json
@@ -23,6 +27,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 MIN_AREA_M2 = 30.0
 MIN_RETURNS_PER_M2 = 1.0
 BRIDGE_M = 0.15
+GRAPH = os.environ.get("SOLAR_LINE_READER", "") == "graph"
 _W = {}
 
 
@@ -33,6 +38,7 @@ def _init(region):
     from src.pointcloud_source import PointCloudSource
     p = area_paths(region)
     _W["img"] = rasterio.open(p["imagery"])
+    _W["tiles"] = ri._Tiles(p["dir"] / "display_tiles")
     _W["O"] = pr.outlines(region)
     _W["shift"] = ri.drawing_shifts(p["dir"])
     _W["pc"] = PointCloudSource(max_cached_tiles=3)
@@ -56,8 +62,16 @@ def _one(job):
         if on_roof < MIN_RETURNS_PER_M2 * geom.area:
             return bid, -2
         pts = pts + np.array([sx, sy, 0.0])
-        faces = [f for f in fr.straight_faces(translate(geom, sx, sy), _W["img"], pts, (0.0, 0.0))
-                 if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
+        if GRAPH:
+            # the typed reader, read twice (src/line_reader.py): its slide of
+            # the LiDAR onto the photo adds to the recorded drawing shift
+            from src import line_reader as lr
+            faces, _, (ex, ny) = lr.roof_faces(translate(geom, sx, sy), _W["tiles"], pts)
+            sx, sy = sx + ex, sy + ny
+            faces = [f for f in faces if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
+        else:
+            faces = [f for f in fr.straight_faces(translate(geom, sx, sy), _W["img"], pts, (0.0, 0.0))
+                     if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
         if not faces:
             return bid, 0
         edge = unary_union([f.buffer(BRIDGE_M) for f in faces]).buffer(-BRIDGE_M)
