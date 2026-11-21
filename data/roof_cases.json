@@ -1359,7 +1359,14 @@
     "Panels placed over empty space on the bottom right of this rooftop on both versions"
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 is better"
+    }
+   ]
   },
   {
    "id": 4729415,
@@ -1472,6 +1479,23 @@
      "on": "street L8",
      "date": "2026-11-22",
      "quote": "This L8 is better"
+    }
+   ]
+  },
+  {
+   "id": 4729764,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "6 Sunrise Lane: balcony taken as roof",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 is worse in some ways and looks to maybe be including a balcony"
     }
    ]
   }

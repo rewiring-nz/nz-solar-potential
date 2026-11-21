@@ -13,7 +13,7 @@ import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-SIZE = 392                                  # 28 x 28 patches of 14
+SIZE = int(os.environ.get("SOLAR_LINES_SIZE", "392"))    # a multiple of the 14 px patch: 392 is 28 x 28 patches
 NOUT = 8
 NAMES = ["line", "core", "ridge", "valley", "cliff", "outline", "join", "roof"]
 WHOLE = [5, 7]                              # scored on the whole picture, not just the roof

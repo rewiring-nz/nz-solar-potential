@@ -397,6 +397,39 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**22 Nov, like-for-like benchmark; the reader's own roof edge; owner's street verdicts.**
+- Build benchmark (179 drawn roofs, VM, each roof read by the fold model
+  that never saw it, the build's outline, `~/ab/bench_L7`): face IoU 0.629,
+  line F 0.65, lines right 96, faces right 34. The build before it: 0.627,
+  92, 43. The typed reader with region faces ties the old build; it is not
+  a step up on this score.
+- Where the loss is: the faces step given the DRAWN maps scores face IoU
+  0.929, 137 of 157 faces right. Given the reader's maps, 0.68. The reader's
+  maps are the limit, not the conversion. Basins-then-merge
+  (`line_graph._basins`), 8-view reading (`line_reader.maps`), and every
+  threshold tried move the held-out score by under 0.01.
+- Roof edge: the reader's roof map, carried onto its edge map and
+  straightened (`line_graph.roof_outline`, `line_reader.reader_edge`),
+  overlaps the drawn edge 0.86 on the 157 held-out roofs with no slide
+  (0.9 or better on 61). It leaves out balconies and decks the build's edge
+  takes in. End to end with it (`face_score.py ... regions_own`): face IoU
+  0.620, lines right 103.
+- Street L8 (reader's edge), owner's verdicts (logged per roof in
+  `data/roof_cases.json`): better on 15, 7, 6 (#4729573), 4 Sunrise and both
+  sheds (3 Sunrise #4729554 "seems perfect"); worse on 84 Panorama,
+  2 Sunrise (obstruction too big, line not straight), 3 Sunrise #4729550,
+  6 Sunrise #4729764 (balcony taken in); 13 Sunrise "still terrible";
+  5 Sunrise lines wrong on both; chamfered corners on #5371242.
+  L9 (short slanted edges dropped, shared edges simplified to 8 px): not
+  visibly better by eye, not shown as progress.
+- Running: the reader retrained at 784 px (56 x 56 patches, `SOLAR_LINES_SIZE`)
+  on fold 0, against D_fold0's 0.755 (`data/line_set/runs/F784_fold0.log`).
+  If it helps: all folds, held-out face score, street. If not, the remaining
+  levers are more drawn roofs (126 drawn roofs took fold 0 from 0.687 to
+  0.755) and a larger backbone (a download: needs the owner's OK).
+- `tests/test_call_sites` fails on `src/face_regions.py:152,162` (net()
+  called with an argument) before and after this work: not from it.
+
 **21 Nov (night), faces seeded from the face-interior map.** All five folds
 trained (`D_fold0-4.pt`); every drawn roof read by a model that never saw it
 (`data/line_set/heldout_D`, `tools/experiments/heldout_maps.py`) and scored
