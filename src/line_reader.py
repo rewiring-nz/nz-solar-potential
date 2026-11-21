@@ -108,7 +108,7 @@ def roof_faces(geom, tiles, pts):
     p, (dx, dy) = read_twice(img, mpp)
     east, north = dx * mpp, -dy * mpp
     # metres -> pixels of the picture, the edge moved with the LiDAR
-    to_px = [1 / mpp, 0, 0, -1 / mpp, -(b[0] - east) / mpp, (b[3] + north) / mpp]
+    to_px = [1 / mpp, 0, 0, -1 / mpp, -(b[0] - east) / mpp, (b[3] - north) / mpp]
     edge_px = affine_transform(geom, to_px)
     faces, lines, _, _ = faces_from_maps(p, NAMES, outline=edge_px)
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
