@@ -128,6 +128,8 @@ def read_twice(img, mpp):
 
 EDGE = os.environ.get("SOLAR_LINE_READER_EDGE", "reader")
 EDGE_MIN_IOU = 0.6
+REFRAME = int(os.environ.get("SOLAR_LINE_READER_REFRAME", "1"))
+REFRAME_MIN = 0.05
 
 
 def reader_edge(p, edge_px):
@@ -170,6 +172,26 @@ def roof_faces(geom, tiles, pts):
     img, b, mpp = picture(geom, tiles, pts)
     p, _ = read_twice(img, mpp)
     edge_px = affine_transform(geom, [1 / mpp, 0, 0, -1 / mpp, -b[0] / mpp, b[3] / mpp])
+    for _ in range(REFRAME):
+        # The reader was taught on pictures centred on the true roof and
+        # filled by it. A picture framed on the build's edge is off-centre
+        # or the wrong size wherever that edge is wrong, which is where the
+        # reading matters most. So the roof is read again in a picture
+        # framed on the reader's own edge, when that edge is trusted
+        # (reader_edge) and moves the frame by REFRAME_MIN or more.
+        own = reader_edge(p, edge_px)
+        if own is edge_px:
+            break
+        own_m = affine_transform(own, [mpp, 0, 0, -mpp, b[0], b[3]])
+        ox0, oy0, ox1, oy1 = own_m.bounds; gx0, gy0, gx1, gy1 = geom.bounds
+        span = max(gx1 - gx0, gy1 - gy0)
+        moved = max(abs((ox0 + ox1) - (gx0 + gx1)) / 2, abs((oy0 + oy1) - (gy0 + gy1)) / 2, abs(max(ox1 - ox0, oy1 - oy0) - span))
+        if moved < REFRAME_MIN * span:
+            break
+        geom = own_m
+        img, b, mpp = picture(geom, tiles, pts)
+        p, _ = read_twice(img, mpp)
+        edge_px = affine_transform(geom, [1 / mpp, 0, 0, -1 / mpp, -b[0] / mpp, b[3] / mpp])
     # faces seeded from the face-interior map (faces_from_regions): on the 157
     # held-out drawn roofs, face IoU 0.678 and lines right on 99, against
     # 0.516 and 53 for the joins-and-lines drawing, which leaves lines that
