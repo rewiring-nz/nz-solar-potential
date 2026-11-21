@@ -1478,8 +1478,12 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
         if p.get("shady_side"):
             p["straggler"] = True
     main = _order_by_array(([p for p in panels if not p.get("straggler")]), poa_key)
-    extras = sorted((p for p in panels if p.get("straggler")),
+    extras = sorted((p for p in panels if p.get("straggler") and not p.get("shady_side")),
                     key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    # the shady side grows as arrays do, a block at a time: ordered by yield
+    # alone it filled as a ragged staircase across the face (84 Panorama
+    # Terrace, test street round 7)
+    extras += _order_by_array([p for p in panels if p.get("shady_side")], poa_key)
     # Main arrays occupy ranks 1..STRAGGLER_RANK_FLOOR, stragglers the band
     # above -- guaranteeing the default density cut excludes exactly the
     # stragglers regardless of their share of the building's panels.

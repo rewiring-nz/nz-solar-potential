@@ -934,6 +934,18 @@ SMALL_OBJECT_RING_M = 0.5
 # compared with the ring and the largest difference counts
 # (SOLAR_CRISP_PEAK=0: the mean only).
 CRISP_PEAK = os.environ.get("SOLAR_CRISP_PEAK", "0") == "1"
+# ...but not along a face's edge: a ridge cap is a light strip and a gutter a
+# dark one, and each passes the lightest-quarter test. 15H Sunrise Lane went
+# from 4 obstructions to 11, strung along its ridges and eaves, and from 25
+# panels to 14 (test street round 7). A patch with under half its area more
+# than CRISP_EDGE_M inside the face is judged by its mean, as before.
+CRISP_EDGE_M = 0.45
+
+
+def _hugs_edge(blob, facet):
+    inner = facet.buffer(-CRISP_EDGE_M)
+    return inner.is_empty or blob.intersection(inner).area < 0.5 * blob.area
+
 # ...AND A CHIMNEY IS BIGGER THAN A VENT. A compact patch over the colour-only
 # floor needed off-plane returns under it, which a 1 m chimney on 4 returns
 # a square metre does not give: three marked on the street at 1.5 to 2.0 m2
@@ -945,7 +957,7 @@ CRISP_LARGE_MAX_M2 = 3.0
 CRISP_LARGE_MIN = 60.0
 
 
-def _crisp_contrast(imagery_ds, poly, roof=None):
+def _crisp_contrast(imagery_ds, poly, roof=None, peak=False):
     """|mean luminance inside - median luminance of the ROOF in a ring around it|, or 0.
 
     The ring is clipped to `roof`: a patch at an eave corner otherwise gets
@@ -972,7 +984,7 @@ def _crisp_contrast(imagery_ds, poly, roof=None):
             return 0.0
         ring_lum = np.median(lum[around])
         mean_c = float(abs(lum[inside].mean() - ring_lum))
-        if not CRISP_PEAK:
+        if not peak:
             return mean_c
         # the lightest and the darkest quarter of the patch, each against the
         # ring: see CRISP_PEAK
@@ -1126,7 +1138,10 @@ def detect_obstructions_combined(imagery_ds, pc_source, facet_geom, plane,
         elif (os.environ.get("SOLAR_SMALL_OBJECTS", "1") != "0"
               and SMALL_OBJECT_MIN_M2 <= blob.area < COLOUR_ONLY_MIN_AREA_M2
               and _elongation_ratio(blob) <= SMALL_OBJECT_MAX_ELONGATION
-              and _crisp_contrast(imagery_ds, blob, roof=facet_geom) >= SMALL_OBJECT_MIN_CONTRAST):
+              and (_crisp_contrast(imagery_ds, blob, roof=facet_geom) >= SMALL_OBJECT_MIN_CONTRAST
+                   or (CRISP_PEAK and not _hugs_edge(blob, facet_geom)
+                       and _crisp_contrast(imagery_ds, blob, roof=facet_geom, peak=True)
+                       >= SMALL_OBJECT_MIN_CONTRAST))):
             # SMALL OBJECTS: vents, turbines, flues. Too small for the
             # colour-only floor and too few returns for any LiDAR test, so
             # every one was dropped -- 1 Ballarat St shipped panels over rows
