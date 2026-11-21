@@ -310,7 +310,15 @@ def main():
                     "gdf": gpd.read_file(dd if dd.exists() else p["outlines"]
                                          ).set_index("building_id", drop=False),
                     "img": rasterio.open(p["imagery"]),
+                    # A SECOND PHOTO OF THE SAME ROOF. A roof edge lost in
+                    # shadow in one flight is often plain in another: where
+                    # the area holds a second photo, the tool can swap to it
+                    # (V). It is for looking only: the two photos lean
+                    # differently, so marks are placed on the first.
+                    "img2": (rasterio.open(p["reference_imagery"])
+                             if p["reference_imagery"].exists() else None),
                 }
+                print(f"  {name}: second photo {'yes' if ctxs[name]['img2'] else 'no'}")
             ctx = ctxs[name]
             if ctx is None or bid not in ctx["gdf"].index:
                 continue
@@ -318,6 +326,7 @@ def main():
             minx, miny, maxx, maxy = g.bounds
             b = (minx - PAD_M, miny - PAD_M, maxx + PAD_M, maxy + PAD_M)
             jpg, size = crop(ctx["img"], b)
+            jpg2 = crop(ctx["img2"], b)[0] if ctx.get("img2") is not None else None
             # neighbours whose outline intersects the crop, so a busy block is
             # legible -- see the note in the module docstring
             from shapely.geometry import box
@@ -357,6 +366,7 @@ def main():
                 # roof_labels.json makes the bundle carry its own history.
                 "saved": _saved.get(bid),
                 "jpg": jpg,
+                "jpg2": jpg2,
             })
             placed = True
             break
