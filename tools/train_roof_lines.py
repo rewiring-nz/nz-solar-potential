@@ -1,5 +1,9 @@
 """Roof-line reader: a pretrained DINOv2 ViT-S/14 photo encoder with a LiDAR
-side branch, predicting the BOUNDARY between roof faces and each face's CORE.
+side branch. It predicts eight maps (tools/line_targets.py): the line between
+roof faces, each face's core, the line by kind (ridge, valley, cliff), the
+roof's outer edge, the points where lines join, and the roof itself. A
+sample teaches only the maps its label knows; the first-version set
+(two maps) still trains the first two.
 
     python train.py <data dir> --out model.pt [--epochs 30] [--train vision points] [--val hand]
 """
@@ -10,6 +14,11 @@ import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 SIZE = 392                                  # 28 x 28 patches of 14
+NOUT = 8
+NAMES = ["line", "core", "ridge", "valley", "cliff", "outline", "join", "roof"]
+WHOLE = [5, 7]                              # scored on the whole picture, not just the roof
+# a join is ~28 px of a 150,000 px picture and a line is a few hundred
+POS_WEIGHT = [6.0, 1.0, 8.0, 8.0, 8.0, 8.0, 20.0, 1.0]
 
 
 class Roofs(torch.utils.data.Dataset):
@@ -22,8 +31,17 @@ class Roofs(torch.utils.data.Dataset):
     def __getitem__(self, i):
         d = np.load(self.files[i])
         x = d["image"].astype(np.float32) / 255.0          # H W 7
-        y = d["target"].astype(np.float32)                 # H W 2
-        w = d["weight"].astype(np.float32)[..., None]
+        y = d["target"].astype(np.float32)                 # H W 2 (first set) or 8
+        roof = d["weight"].astype(np.float32)[..., None]
+        if y.shape[-1] == NOUT:
+            known = d["known"].astype(np.float32); near = d["near"].astype(np.float32)[..., None]
+        else:
+            y = np.concatenate([y, np.zeros(y.shape[:2] + (NOUT - 2,), np.float32)], -1)
+            known = np.array([1, 1] + [0] * (NOUT - 2), np.float32); near = roof
+        # per-map scoring area: the first two inside the roof (as the first
+        # version), the typed lines and joins on the roof and just beyond it,
+        # the outline and the roof on the whole picture
+        w = np.concatenate([roof, roof] + [np.ones_like(roof) if c in WHOLE else near for c in range(2, NOUT)], -1) * known
         if self.train:
             k = random.randrange(8)
             if k >= 4:                                     # flip left-right: east/west downhill flips
@@ -47,7 +65,7 @@ def conv(i, o):
 
 
 class Net(nn.Module):
-    def __init__(self, hub=None):
+    def __init__(self, hub=None, nout=NOUT):
         super().__init__()
         hub = hub or str(Path.home() / ".cache/torch/hub/facebookresearch_dinov2_main")
         self.enc = torch.hub.load(hub, "dinov2_vits14", source="local", pretrained=False)
@@ -61,7 +79,7 @@ class Net(nn.Module):
         self.d4 = conv(256 + 96, 128)
         self.d2 = conv(128 + 64, 64)
         self.d1 = conv(64 + 32, 32)
-        self.head = nn.Conv2d(32, 2, 1)
+        self.head = nn.Conv2d(32, nout, 1)
 
     def forward(self, x):
         rgb = (x[:, :3] - MEAN.to(x.device)) / STD.to(x.device)
@@ -75,29 +93,44 @@ class Net(nn.Module):
         return F.interpolate(self.head(z), size=x.shape[-2:], mode="bilinear", align_corners=False)
 
 
+def load_net(path):
+    """A saved reader, whichever number of maps it was trained with."""
+    sd = torch.load(path, map_location="cpu")
+    net = Net(nout=sd["head.weight"].shape[0])
+    net.load_state_dict(sd)
+    return net.eval()
+
+
 def prep(x, y, w):
     r = lambda a, m: F.interpolate(a, size=(SIZE, SIZE), mode=m, **({"align_corners": False} if m == "bilinear" else {}))
     return r(x, "bilinear"), (r(y, "bilinear") > 0.5).float(), r(w, "nearest")
 
 
 def loss_fn(logit, y, w):
-    pw = torch.tensor([6.0, 1.0], device=logit.device).view(1, 2, 1, 1)
+    pw = torch.tensor(POS_WEIGHT, device=logit.device).view(1, NOUT, 1, 1)
     bce = F.binary_cross_entropy_with_logits(logit, y, pos_weight=pw, reduction="none")
-    bce = (bce * w).sum() / (w.sum() * 2 + 1e-6)
-    p = torch.sigmoid(logit[:, :1]) * w; t = y[:, :1] * w
-    dice = 1 - (2 * (p * t).sum() + 1) / (p.sum() + t.sum() + 1)
-    return bce + 0.5 * dice
+    # each map averaged over the pixels that know it, then the maps averaged:
+    # the whole-picture maps would otherwise outweigh the line maps
+    per = (bce * w).sum((0, 2, 3)) / (w.sum((0, 2, 3)) + 1e-6)
+    has = (w.sum((0, 2, 3)) > 0).float()
+    bce = (per * has).sum() / has.sum().clamp(min=1)
+    dice = 0
+    for c in (0, 5):
+        p = torch.sigmoid(logit[:, c]) * w[:, c]; t = y[:, c] * w[:, c]
+        dice = dice + 1 - (2 * (p * t).sum() + 1) / (p.sum() + t.sum() + 1)
+    return bce + 0.25 * dice
 
 
 @torch.no_grad()
 def boundary_f1(logit, y, w, tol=2):
-    """Boundary F1 with a tolerance of `tol` pixels (a line 2 px off is still that line)."""
-    p = (torch.sigmoid(logit[:, :1]) > 0.5).float() * w
-    t = y[:, :1] * w
+    """Per map: F1 parts with a tolerance of `tol` pixels (a line 2 px off is
+    still that line). Returns NOUT x 4."""
+    p = (torch.sigmoid(logit) > 0.5).float() * w
+    t = y * w
     k = 2 * tol + 1
     pd = F.max_pool2d(p, k, 1, tol); td = F.max_pool2d(t, k, 1, tol)
-    tp_p = (p * td).sum(); tp_t = (t * pd).sum()
-    return tp_p.item(), p.sum().item(), tp_t.item(), t.sum().item()
+    s = lambda a: a.sum((0, 2, 3))
+    return torch.stack([s(p * td), s(p), s(t * pd), s(t)], 1).cpu().numpy()
 
 
 def main():
@@ -130,7 +163,12 @@ def main():
     sd = torch.load(Path.home() / ".cache/torch/hub/checkpoints/dinov2_vits14_pretrain.pth", map_location="cpu")
     net.enc.load_state_dict(sd)
     if a.init:
-        net.load_state_dict(torch.load(a.init, map_location="cpu"))
+        init = torch.load(a.init, map_location="cpu")
+        own = net.state_dict()
+        for k in ("head.weight", "head.bias"):        # a two-map model starts the first two maps
+            if init[k].shape[0] != NOUT:
+                new = own[k].clone(); new[:init[k].shape[0]] = init[k]; init[k] = new
+        net.load_state_dict(init)
     net.to(dev)
     enc = list(net.enc.parameters()); rest = [p for n, p in net.named_parameters() if not n.startswith("enc.")]
     opt = torch.optim.AdamW([{"params": enc, "lr": a.enc_lr}, {"params": rest, "lr": a.lr}], weight_decay=0.01)
@@ -146,13 +184,16 @@ def main():
             loss = loss_fn(net(x), y, w)
             opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
             tl += loss.item(); step += 1
-        net.eval(); s = np.zeros(4)
+        net.eval(); s = np.zeros((NOUT, 4))
         with torch.no_grad():
             for x, y, w in dv:
                 x, y, w = prep(x.to(dev), y.to(dev), w.to(dev))
-                s += np.array(boundary_f1(net(x), y, w))
-        pr, rc = s[0] / max(s[1], 1), s[2] / max(s[3], 1); f1 = 2 * pr * rc / max(pr + rc, 1e-9)
-        print(f"epoch {ep + 1}/{a.epochs} loss {tl / max(len(dl), 1):.4f} val boundary F1 {f1:.3f} (precision {pr:.3f} recall {rc:.3f}) {time.time() - t0:.0f}s", flush=True)
+                s += boundary_f1(net(x), y, w)
+        prs, rcs = s[:, 0] / np.maximum(s[:, 1], 1), s[:, 2] / np.maximum(s[:, 3], 1)
+        f1s = 2 * prs * rcs / np.maximum(prs + rcs, 1e-9)
+        pr, rc, f1 = prs[0], rcs[0], f1s[0]
+        typed = " ".join(f"{NAMES[c]} {f1s[c]:.2f}" for c in (2, 3, 4, 5, 6) if s[c, 3] > 0)
+        print(f"epoch {ep + 1}/{a.epochs} loss {tl / max(len(dl), 1):.4f} val boundary F1 {f1:.3f} (precision {pr:.3f} recall {rc:.3f}) {typed} {time.time() - t0:.0f}s", flush=True)
         if f1 > best:
             best = f1; torch.save(net.state_dict(), a.out)
     print("best", round(best, 3))

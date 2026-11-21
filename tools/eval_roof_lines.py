@@ -24,7 +24,7 @@ def main():
     a = ap.parse_args()
     from scipy.ndimage import distance_transform_edt
     from skimage.morphology import skeletonize
-    net = T.Net(); net.load_state_dict(torch.load(a.model, map_location="cpu")); net.eval().to(a.device)
+    net = T.load_net(a.model).to(a.device)
     rows, tiles = [], []
     files = sorted(glob.glob(f"{a.data}/*.npz"))
     if a.folds:                      # the same split as train_roof_lines.py --folds

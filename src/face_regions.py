@@ -84,18 +84,17 @@ def _net():
         torch.set_num_threads(1)      # one roof at a time; the callers run a process per core
         if ARCH == "dino":
             import torch.nn.functional as F
-            from train_roof_lines import Net, SIZE as RUN
+            from train_roof_lines import load_net, SIZE as RUN
 
             class Wrapped(torch.nn.Module):
                 def __init__(self):
                     super().__init__()
-                    self.net = Net()
+                    self.net = load_net(MODEL)
 
                 def forward(self, t):
                     y = self.net(F.interpolate(t, size=(RUN, RUN), mode="bilinear", align_corners=False))
                     return F.interpolate(y, size=t.shape[-2:], mode="bilinear", align_corners=False)
             n = Wrapped()
-            n.net.load_state_dict(torch.load(MODEL, map_location="cpu"))
             n.eval()
             _NET[0] = n
             return n
