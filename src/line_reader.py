@@ -81,18 +81,66 @@ def maps(img):
         return F.interpolate(p, size=x.shape[-2:], mode="bilinear", align_corners=False)[0].numpy()
 
 
-def read_twice(img, mpp):
-    """(maps, (dx, dy) px the LiDAR channels were moved by)."""
-    from scipy.ndimage import binary_erosion
-    net()
-    from align_lidar_channels import slide_for, moved
-    blank = img.copy(); blank[..., 3:] = 0
-    p0 = maps(blank)
+SEARCH_M, PRIOR_PER_M, LINE_SHARE = 1.6, 0.03, 0.5
+
+
+def footprint(img):
+    """Where the building's LiDAR returns are: the part of the picture with
+    height, the piece under the picture's centre."""
+    from scipy.ndimage import gaussian_filter, label
+    has = gaussian_filter(img[..., 3].astype(np.float32) / 255, 1.0) > 0.02
+    lab, n = label(has)
+    if not n:
+        return has
+    c = lab[lab.shape[0] // 2 - 20:lab.shape[0] // 2 + 20, lab.shape[1] // 2 - 20:lab.shape[1] // 2 + 20]
+    ids = np.bincount(c.ravel(), minlength=n + 1)[1:]
+    return lab == (1 + int(np.argmax(ids))) if ids.max() else has
+
+
+def slide(img, p0, mpp, foot=None):
+    """(dx, dy) px to move the LiDAR channels (and the roof edge with them)
+    onto the photo, from pass 1's reading of the photo alone.
+
+    Two kinds of evidence, each scaled to its own best: the AREA of the
+    building (`foot`: the build's roof edge as a mask, else where the LiDAR
+    has returns) over pass 1's roof map, and the LiDAR's creases and steps
+    over pass 1's lines. The area decides most: sliding the LiDAR's edges
+    over the lines alone moved 1 Sunrise Lane 1.2 m off a roof it already
+    sat on (street L3). PRIOR_PER_M per metre is taken off, so a move has to
+    earn its distance."""
+    from scipy.ndimage import binary_erosion, gaussian_filter
+    from align_lidar_channels import lidar_edges
     roof = p0[7] > 0.5
     if roof.sum() < 400:
-        return maps(img), (0, 0)
-    dx, dy, _ = slide_for(img.astype(np.float32) / 255, (p0[0] * binary_erosion(roof, iterations=5)).astype(np.float32),
-                          p0[5].astype(np.float32), roof, mpp)
+        return 0, 0
+    foot = footprint(img) if foot is None else foot
+    F, iF = np.fft.rfft2, np.fft.irfft2
+    corr = lambda a, b: iF(np.conj(F(a.astype(np.float32))) * F(b.astype(np.float32)), s=a.shape)
+    # overlap less what falls off the roof: a footprint larger than the roof
+    # map (eaves, a deck) must not slide to hide its surplus
+    area = corr(foot, p0[7]) - 0.5 * corr(foot, 1.0 - p0[7])
+    crease, step, _ = lidar_edges(img.astype(np.float32) / 255, roof)
+    lines = gaussian_filter(p0[0] * binary_erosion(roof, iterations=5), 1.0)
+    line = corr(crease + 0.5 * step, lines)
+    r = int(round(SEARCH_M / mpp))
+    idx = np.arange(-r, r + 1)
+    win = lambda m: m[np.ix_(idx % m.shape[0], idx % m.shape[1])]
+    A, L = win(area), win(line)
+    A = A / max(float(A.max()), 1e-6)
+    L = L / max(float(L.max()), 1e-6) if lines.sum() > 40 else np.zeros_like(A)
+    dist = np.hypot(*np.meshgrid(idx, idx)) * mpp
+    surf = A + LINE_SHARE * L - PRIOR_PER_M * dist
+    iy, ix = np.unravel_index(int(np.argmax(surf)), surf.shape)
+    return int(idx[ix]), int(idx[iy])
+
+
+def read_twice(img, mpp, foot=None):
+    """(maps, (dx, dy) px the LiDAR channels were moved by)."""
+    net()
+    from align_lidar_channels import moved
+    blank = img.copy(); blank[..., 3:] = 0
+    p0 = maps(blank)
+    dx, dy = slide(img, p0, mpp, foot)
     return maps(moved(img, dx, dy) if (dx or dy) else img), (dx, dy)
 
 
@@ -104,8 +152,12 @@ def roof_faces(geom, tiles, pts):
     from shapely.affinity import affine_transform
     from src.line_graph import faces_from_maps
     from train_roof_lines import NAMES
+    from PIL import Image, ImageDraw
     img, b, mpp = picture(geom, tiles, pts)
-    p, (dx, dy) = read_twice(img, mpp)
+    fm = Image.new("L", (SIZE, SIZE), 0)
+    for g in getattr(geom, "geoms", [geom]):
+        ImageDraw.Draw(fm).polygon([((x - b[0]) / mpp, (b[3] - y) / mpp) for x, y in g.exterior.coords], fill=1)
+    p, (dx, dy) = read_twice(img, mpp, np.array(fm) > 0)
     east, north = dx * mpp, -dy * mpp
     # metres -> pixels of the picture, the edge moved with the LiDAR
     to_px = [1 / mpp, 0, 0, -1 / mpp, -(b[0] - east) / mpp, (b[3] - north) / mpp]

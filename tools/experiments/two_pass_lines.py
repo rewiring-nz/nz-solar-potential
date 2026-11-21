@@ -10,7 +10,7 @@ two-pass, and aligned by the label (the ceiling).
 """
 import sys, os, glob, random, numpy as np, torch, torch.nn.functional as F
 sys.path.insert(0, '.'); sys.path.insert(0, 'tools')
-import train_roof_lines as T, align_lidar_channels as AL, src.line_graph as LG
+import train_roof_lines as T, align_lidar_channels as AL, src.line_graph as LG, src.line_reader as LR
 from scipy.ndimage import distance_transform_edt, binary_erosion, binary_dilation
 from skimage.morphology import skeletonize
 from PIL import Image, ImageDraw
@@ -48,15 +48,8 @@ rows, tiles, slides = [], [], []
 for f in fs:
     d = np.load(f'{SRC}/{f}'); da = np.load(f'{ALIGNED}/{f}'); mpp = float(d['meta'][0])
     p1 = read(d['image'])
-    if os.environ.get('PHOTO_FIRST', '1') == '1':
-        # pass 1 for the slide reads the photo alone: with the LiDAR in, its
-        # lines sit where the LiDAR is and the slide found is nothing
-        img0 = d['image'].copy(); img0[..., 3:] = 0; p0 = read(img0)
-    else:
-        p0 = p1
-    roof = p0[7] > 0.5
-    dx, dy, gain = AL.slide_for(d['image'].astype(np.float32) / 255, (p0[0] * binary_erosion(roof, iterations=5)).astype(np.float32),
-                                p0[5].astype(np.float32), roof, mpp)
+    img0 = d['image'].copy(); img0[..., 3:] = 0
+    dx, dy = LR.slide(d['image'], read(img0), mpp)
     p2 = read(AL.moved(d['image'], dx, dy)) if (dx or dy) else p1
     pa = read(da['image'])
     g1, r1, _ = drawing_score(p1, d); g2, r2, geo = drawing_score(p2, d); ga, ra, _ = drawing_score(pa, d)
