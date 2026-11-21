@@ -28,7 +28,8 @@ THROUGH_PX, SNAP_PX, OUTLINE_SIMPLIFY_PX = 2.5, 6.0, 1.5
 MIN_FACE_PX2 = 60.0
 OUTLINE_JOIN_IOU = 0.93
 SKELETON_JOIN_PX = 7.0
-STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4.0, 15.0, 3.0, 0.9
+STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4.0, 15.0, 3.0, 0.85
+STRAIGHT_DROP_PX = 20.0
 EXTEND_PX, EXTEND_SHARE = 24.0, 0.35
 KINDS = ("ridge", "valley", "cliff")
 STRAIGHTEN = True
@@ -114,6 +115,8 @@ def straighten(poly, tol=STRAIGHT_SIMPLIFY_PX):
             if diff <= STRAIGHT_SNAP_DEG:
                 g = t % 180.0
                 break
+        if g not in (dom % 180.0, (dom + 90.0) % 180.0) and ln[i] < STRAIGHT_DROP_PX:
+            continue                                  # a short slanted edge is a rounded corner: its neighbours meet instead
         edges.append([g, (a[i] + b2[i]) / 2.0, ln[i]])
     merged = []
     for e in edges:                                   # neighbours on one line become one edge

@@ -1284,6 +1284,66 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4729767,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "13 Sunrise Lane: roof outline off the building and roof lines wrong",
+   "quotes": [
+    "Clearly wrong outline here, and wrong roof lines on L7"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729334,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "15 Sunrise Lane: balcony treated as roof",
+   "quotes": [
+    "Both of these treat balcony as roof"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729284,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "4 Sunrise Lane: outline misses the actual building",
+   "quotes": [
+    "Both of these clearly miss the actual outline of the building"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729292,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "7 Sunrise Lane: panels over empty space at the bottom right (deck taken as roof)",
+   "quotes": [
+    "Panels placed over empty space on the bottom right of this rooftop on both versions"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729415,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "9 Sunrise Lane: roof lines wrong",
+   "quotes": [
+    "These roof lines are clearly wrong from the human eye"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }
