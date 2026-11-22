@@ -397,6 +397,31 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**22 Nov (late), five quick tests on the held-out drawn roofs (run I maps, drawn edge supplied).**
+Default: face IoU 0.741, faces right 73-74 of 166-167. Scripts in the session
+scratchpad (oracle.py, judge.py, repair.py), not in git.
+- Candidates: 27 per roof (runs G, I, their mean; merge barrier 0.2/0.35/0.5;
+  basin sigma 1/2/3.5). No single setting beats the default. Best per roof
+  (a perfect judge): 0.789, 96 right. Houses 59 -> 71, larger 15 -> 25.
+- Two readers averaged (G and I maps): 0.737, 74. No gain.
+- LiDAR judge picking among the 27 (plane fit of the returns in each face,
+  returns slid up to 1.5 m): 0.750, 79 right; better on 48 roofs, worse on
+  25. About a quarter of what picking could give. The per-face penalty made
+  no difference.
+- LiDAR joining faces one plane fits (joint fit worse by under 0.015 m RMS),
+  from the default or an over-split reading: 0.742, 76. It joins too much
+  (863-1031 faces against 1347 drawn; 0.03 m and looser score worse).
+- L10 street (`I_all.pt`): not visibly better than L9 on 13 and 5 Sunrise
+  Lane; not sent.
+- Where houses go wrong (4-11 drawn faces, IoU under 0.8, sheet by eye): the
+  main ridges are read sharply; faces are lost where a line fades before it
+  reaches the edge or another line, and the watershed then closes the face
+  with a wobbly or slanted boundary. Houses by drawn faces: 2-3 faces 0.87,
+  4-6 0.75, 7-11 0.72, 12+ 0.65.
+- ViT-B/14 backbone (`SOLAR_LINES_ARCH=vitb14`): batch 8 needs 13.6 GB on
+  MPS and stalls a 19 GB Mac; batch 4 runs at 0.87 s a step. Fold 0 training
+  (`J_fold0.pt`, no vision-only start).
+
 **22 Nov (night), outline pass complete; run I level with run G; the reader is the limit.**
 - The owner checked the outline of all 150 earlier drawn roofs (91 changed,
   59 confirmed); lines reconciled (`tools/reconcile_outline_pass.py`; 42
