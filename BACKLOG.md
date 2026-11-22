@@ -404,7 +404,18 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   5371242, 4729434, 4729334 and 4729764; 4729286 gains lines but they
   wobble; 4729767 and 4729284 still wrong. Lines from the regions are not
   straight: straightening is the next visible loss.
-- Folds 1-4 of the ViT-B reader are training for the 168-roof score.
+- All five folds (168 held-out drawn roofs, `data/line_set/heldout_J`),
+  ViT-B against ViT-S (run I): drawn edge given, face IoU 0.739 against
+  0.737, faces right 78 against 70, lines near perfect 78 against 73, line
+  F 0.773 against 0.794; own edge 0.681 against 0.666, faces right 53
+  against 54, lines near perfect 77 against 66. Houses outside the town
+  centre: 0.784 against 0.768 and 38 against 34 (own edge 0.740 against
+  0.716, 26 and 26). Larger roofs 19 against 15 right. Validation line F1
+  by fold 0.832/0.802/0.758/0.768/0.790 against 0.786/0.773/0.752/0.768/0.760.
+  A modest gain: fold 0 (21 against 15) overstated it. ViT-B reads more
+  faces (1447 against 1318, 1389 drawn).
+- Merge barrier 0.35/0.45/0.55/0.65 and basin sigma 2/3 on the ViT-B maps:
+  the defaults (0.35, 2) stay best (78; 77, 73, 63; sigma 3 lower each time).
 
 **22 Nov (late night), ViT-B/14 reader ahead on fold 0; what the reader misses is valleys and drop edges.**
 - Fold 0 (35 held-out drawn roofs), ViT-B (`J_fold0.pt`, batch 4, 16 epochs,
