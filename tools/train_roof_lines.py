@@ -68,18 +68,25 @@ def conv(i, o):
                          nn.Conv2d(o, o, 3, padding=1), nn.GroupNorm(8, o), nn.GELU())
 
 
+# The photo encoder: DINOv2 ViT-S/14 (384 features a patch) or ViT-B/14 (768).
+ARCHS = {"vits14": 384, "vitb14": 768}
+ARCH = os.environ.get("SOLAR_LINES_ARCH", "vits14")
+
+
 class Net(nn.Module):
-    def __init__(self, hub=None, nout=NOUT):
+    def __init__(self, hub=None, nout=NOUT, arch=None):
         super().__init__()
+        self.arch = arch or ARCH
+        dim = ARCHS[self.arch]
         hub = hub or str(Path.home() / ".cache/torch/hub/facebookresearch_dinov2_main")
-        self.enc = torch.hub.load(hub, "dinov2_vits14", source="local", pretrained=False)
+        self.enc = torch.hub.load(hub, f"dinov2_{self.arch}", source="local", pretrained=False)
         # the fine branch starts at half resolution: at full resolution a batch
         # of 8 did not fit a 19 GB Mac and each step took a minute
         self.s1 = conv(7, 32)                    # 1/2: photo + LiDAR, for sharp lines
         self.s2 = conv(32, 64)                   # 1/4
         self.s4 = conv(64, 96)                   # 1/8
         self.lid = conv(4, 32)                   # LiDAR at patch scale
-        self.neck = conv(384 * 4 + 32, 256)      # 1/14
+        self.neck = conv(dim * 4 + 32, 256)      # 1/14
         self.d4 = conv(256 + 96, 128)
         self.d2 = conv(128 + 64, 64)
         self.d1 = conv(64 + 32, 32)
@@ -100,7 +107,8 @@ class Net(nn.Module):
 def load_net(path):
     """A saved reader, whichever number of maps it was trained with."""
     sd = torch.load(path, map_location="cpu")
-    net = Net(nout=sd["head.weight"].shape[0])
+    dim = (sd["neck.0.weight"].shape[1] - 32) // 4          # the encoder is told by its feature width
+    net = Net(nout=sd["head.weight"].shape[0], arch={v: k for k, v in ARCHS.items()}[dim])
     net.load_state_dict(sd)
     return net.eval()
 
@@ -171,7 +179,7 @@ def main():
         tr = tr[:a.limit]
     print(f"{len(tr)} training roofs, {len(va)} validation roofs, {dev}", flush=True)
     net = Net()
-    sd = torch.load(Path.home() / ".cache/torch/hub/checkpoints/dinov2_vits14_pretrain.pth", map_location="cpu")
+    sd = torch.load(Path.home() / f".cache/torch/hub/checkpoints/dinov2_{ARCH}_pretrain.pth", map_location="cpu")
     net.enc.load_state_dict(sd)
     if a.init:
         init = torch.load(a.init, map_location="cpu")
