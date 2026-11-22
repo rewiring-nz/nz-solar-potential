@@ -414,8 +414,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   Off. Loose line ends are not the main loss.
 - Sharp LiDAR channels (`SOLAR_LINES_SHARP`: unsmoothed height and the
   height step within 0.6 m): samples re-cut on the VM
-  (`data/line_set/typed_sharp`, 9 channels); fold 0 on ViT-B training
-  (`K_fold0.pt`).
+  (`data/line_set/typed_sharp`, 9 channels); fold 0 on ViT-B
+  (`K_fold0.pt`): no gain. Drawn edge given, face IoU 0.782 against 0.795
+  and faces right 18 against 21; own edge 0.718 against 0.741, 14 and 14;
+  validation line F1 0.820 against 0.832 (drop edge 0.54 against 0.51).
+  Off. The ViT-B reader on the 7-channel set is the one trained on: an
+  all-roofs model (`J_all.pt`), then folds 1-4.
 - `data/line_set/lines_set/points` holds 4322 LiDAR plane-fit readings never
   used in the typed sets: a ready self-training set to test.
 
