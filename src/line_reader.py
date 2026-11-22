@@ -27,6 +27,27 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL = os.environ.get("SOLAR_LINE_READER_MODEL", str(ROOT / "data/models/roof_lines.pt"))
 SIZE, FILL_PX = 384, 304
 _NET = []
+SHARP = int(os.environ.get("SOLAR_LINES_SHARP", "0"))
+SHARP_WINDOW_M, SHARP_STEP_M = 0.6, 2.0
+
+
+def sharp_channels(z, base, mpp):
+    """Two more LiDAR channels, unsmoothed: the height above the roof's low
+    point, and the height step within SHARP_WINDOW_M (highest less lowest
+    return), full scale at SHARP_STEP_M.
+
+    The four smoothed channels blur the surface over 1.2 m or more, which
+    keeps a ridge (a change of slope over metres) and loses a drop edge or a
+    valley's foot. Read by a model that never saw them, 81% of drawn ridge
+    pixels are seen (line map 0.5 or more) against 68% of valley and 59% of
+    drop-edge pixels (168 drawn roofs, run I)."""
+    from scipy.ndimage import maximum_filter, minimum_filter
+    has = np.isfinite(z)
+    zz = np.where(has, z - base, 0.0)
+    k = max(3, int(round(SHARP_WINDOW_M / mpp)) | 1)
+    hi = maximum_filter(np.where(has, zz, -1e6), k); lo = minimum_filter(np.where(has, zz, 1e6), k)
+    step = np.where(has, np.clip(hi - lo, 0, None), 0.0)
+    return [np.clip(zz / 10.0, 0, 1), np.clip(step / SHARP_STEP_M, 0, 1)]
 
 
 def net():
@@ -66,7 +87,7 @@ def picture(geom, tiles, pts):
     slope = np.degrees(np.arctan(np.hypot(dzx, dzy)))
     mag = np.hypot(dzx, dzy) + 1e-9
     chans = np.dstack([rgb, np.clip(zf / 10.0, 0, 1), np.clip(slope / 45.0, 0, 1),
-                       (-dzx / mag + 1) / 2, (dzy / mag + 1) / 2])
+                       (-dzx / mag + 1) / 2, (dzy / mag + 1) / 2] + (sharp_channels(z, base, mpp) if SHARP else []))
     return (chans * 255).astype(np.uint8), b, mpp
 
 

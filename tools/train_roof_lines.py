@@ -74,7 +74,7 @@ ARCH = os.environ.get("SOLAR_LINES_ARCH", "vits14")
 
 
 class Net(nn.Module):
-    def __init__(self, hub=None, nout=NOUT, arch=None):
+    def __init__(self, hub=None, nout=NOUT, arch=None, nin=7):
         super().__init__()
         self.arch = arch or ARCH
         dim = ARCHS[self.arch]
@@ -82,10 +82,10 @@ class Net(nn.Module):
         self.enc = torch.hub.load(hub, f"dinov2_{self.arch}", source="local", pretrained=False)
         # the fine branch starts at half resolution: at full resolution a batch
         # of 8 did not fit a 19 GB Mac and each step took a minute
-        self.s1 = conv(7, 32)                    # 1/2: photo + LiDAR, for sharp lines
+        self.s1 = conv(nin, 32)                  # 1/2: photo + LiDAR, for sharp lines
         self.s2 = conv(32, 64)                   # 1/4
         self.s4 = conv(64, 96)                   # 1/8
-        self.lid = conv(4, 32)                   # LiDAR at patch scale
+        self.lid = conv(nin - 3, 32)             # LiDAR at patch scale
         self.neck = conv(dim * 4 + 32, 256)      # 1/14
         self.d4 = conv(256 + 96, 128)
         self.d2 = conv(128 + 64, 64)
@@ -108,7 +108,7 @@ def load_net(path):
     """A saved reader, whichever number of maps it was trained with."""
     sd = torch.load(path, map_location="cpu")
     dim = (sd["neck.0.weight"].shape[1] - 32) // 4          # the encoder is told by its feature width
-    net = Net(nout=sd["head.weight"].shape[0], arch={v: k for k, v in ARCHS.items()}[dim])
+    net = Net(nout=sd["head.weight"].shape[0], arch={v: k for k, v in ARCHS.items()}[dim], nin=sd["s1.0.weight"].shape[1])
     net.load_state_dict(sd)
     return net.eval()
 
@@ -178,7 +178,7 @@ def main():
     if a.limit:
         tr = tr[:a.limit]
     print(f"{len(tr)} training roofs, {len(va)} validation roofs, {dev}", flush=True)
-    net = Net()
+    net = Net(nin=np.load(tr[0])["image"].shape[-1])
     sd = torch.load(Path.home() / f".cache/torch/hub/checkpoints/dinov2_{ARCH}_pretrain.pth", map_location="cpu")
     net.enc.load_state_dict(sd)
     if a.init:
@@ -187,7 +187,10 @@ def main():
         for k in ("head.weight", "head.bias"):        # a two-map model starts the first two maps
             if init[k].shape[0] != NOUT:
                 new = own[k].clone(); new[:init[k].shape[0]] = init[k]; init[k] = new
-        net.load_state_dict(init)
+        # a start trained with other inputs or another encoder gives what fits
+        init = {k: v for k, v in init.items() if k in own and v.shape == own[k].shape}
+        print(f"start: {len(init)} of {len(own)} tensors taken", flush=True)
+        net.load_state_dict(init, strict=False)
     net.to(dev)
     enc = list(net.enc.parameters()); rest = [p for n, p in net.named_parameters() if not n.startswith("enc.")]
     opt = torch.optim.AdamW([{"params": enc, "lr": a.enc_lr}, {"params": rest, "lr": a.lr}], weight_decay=0.01)

@@ -17,6 +17,8 @@ Every line is straight and every line ends on a join, so there are no
 doubled or wandering lines to tidy afterwards. Pixel coordinates throughout
 (x right, y down); the caller maps to metres.
 """
+import os
+
 import numpy as np
 from scipy.ndimage import maximum_filter, label as cc_label, map_coordinates
 from shapely.geometry import LineString, Point, Polygon
@@ -291,6 +293,63 @@ def faces_from_maps(p, names, outline=None):
 # ---------------------------------------------------------------- regions
 CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 150, 0.35, 8.0
 BASIN_SIGMA_PX, BASIN_STEP = 2.0, 0.05
+COMPLETE = int(os.environ.get("SOLAR_LINE_COMPLETE", "0"))
+COMPLETE_STRONG, COMPLETE_MIN_PX, COMPLETE_GAP_PX = 0.5, 14, 3
+COMPLETE_REACH_PX, COMPLETE_REACH_SHARE, COMPLETE_MEET_PX, COMPLETE_SIDE = 30.0, 1.0, 5, 0.3
+
+
+def complete_lines(barrier, inside):
+    """The line map with every clear straight line carried on to where it
+    must end.
+
+    A roof line ends on the roof edge or on another line; it never stops in
+    the middle of a face. The reader's lines fade where the photo gives no
+    edge (a ridge in shadow, a valley under a tree), and a line that stops
+    short divides nothing: the faces either side join, or close along a
+    slanted cut. Rule: the straight pieces of the map at COMPLETE_STRONG or
+    more, COMPLETE_MIN_PX or longer, are found (a Hough transform of the
+    thinned map); an end that is not on the roof edge and has no other line
+    beside it (nothing at COMPLETE_SIDE or more off its axis within
+    COMPLETE_MEET_PX: a ridge end where two hips leave is complete) is
+    carried straight on to the first strong line or the roof edge it
+    reaches, within COMPLETE_REACH_PX or COMPLETE_REACH_SHARE of its own
+    length. Returns the map with the carried parts drawn in at 1."""
+    from skimage.morphology import skeletonize
+    from skimage.transform import probabilistic_hough_line
+    from skimage.draw import line as draw_line
+    from scipy.ndimage import binary_dilation, binary_erosion
+    h, w = barrier.shape
+    strong = (barrier >= COMPLETE_STRONG) & inside
+    segs = probabilistic_hough_line(skeletonize(strong), threshold=8, line_length=COMPLETE_MIN_PX, line_gap=COMPLETE_GAP_PX, rng=0)
+    if not segs:
+        return barrier
+    rim = inside & ~binary_erosion(inside, iterations=3)
+    out = barrier.copy()
+    wide = binary_dilation(strong, iterations=1)
+    for (x0, y0), (x1, y1) in segs:
+        ln = float(np.hypot(x1 - x0, y1 - y0))
+        for (px, py), (qx, qy) in (((x1, y1), (x0, y0)), ((x0, y0), (x1, y1))):       # p: the end, q: the other end
+            ux, uy = (px - qx) / ln, (py - qy) / ln
+            reach = int(min(max(COMPLETE_REACH_PX, COMPLETE_REACH_SHARE * ln), 4 * COMPLETE_REACH_PX))
+            # the end is complete if another line leaves it: strong map off the line's own axis, near the end
+            ys, xs = np.mgrid[max(0, py - COMPLETE_MEET_PX):min(h, py + COMPLETE_MEET_PX + 1), max(0, px - COMPLETE_MEET_PX):min(w, px + COMPLETE_MEET_PX + 1)]
+            off = np.abs((xs - px) * -uy + (ys - py) * ux) > 2.5
+            if (barrier[ys, xs][off] >= COMPLETE_SIDE).any() or rim[max(0, py - 3):py + 4, max(0, px - 3):px + 4].any():
+                continue
+            hit = None
+            for t in range(3, reach + 1):
+                x, y = int(round(px + ux * t)), int(round(py + uy * t))
+                if not (0 <= x < w and 0 <= y < h) or not inside[y, x]:
+                    hit = (int(round(px + ux * (t - 1))), int(round(py + uy * (t - 1)))); break
+                if t > COMPLETE_MEET_PX and wide[y, x]:
+                    hit = (x, y); break
+            if hit is None:
+                continue
+            rr, cc = draw_line(py, px, hit[1], hit[0])
+            ok = (rr >= 0) & (rr < h) & (cc >= 0) & (cc < w)
+            out[rr[ok], cc[ok]] = 1.0
+            out[np.clip(rr[ok] + 1, 0, h - 1), cc[ok]] = 1.0; out[rr[ok], np.clip(cc[ok] + 1, 0, w - 1)] = 1.0
+    return out
 
 
 def _basins(barrier, inside):
@@ -385,6 +444,8 @@ def faces_from_regions(p, names, outline):
     h, w = p.shape[1:]
     inside = features.rasterize([outline], out_shape=(h, w)).astype(bool)
     barrier = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
+    if COMPLETE:
+        barrier = complete_lines(barrier, inside)
     lab = _basins(barrier, inside)
     if lab is None:
         return [outline]

@@ -53,8 +53,9 @@ def sample(faces, tiles, pc, shift):
     dzy, dzx = np.gradient(zf, mpp)
     slope = np.degrees(np.arctan(np.hypot(dzx, dzy)))
     mag = np.hypot(dzx, dzy) + 1e-9
+    from src import line_reader as LR                 # the build's picture has the same channels
     chans = np.dstack([rgb, np.clip(zf / 10.0, 0, 1), np.clip(slope / 45.0, 0, 1),
-                       (-dzx / mag + 1) / 2, (dzy / mag + 1) / 2])
+                       (-dzx / mag + 1) / 2, (dzy / mag + 1) / 2] + (LR.sharp_channels(z, base, mpp) if LR.SHARP else []))
 
     def px(x, y):
         return ((x - b[0]) / (b[2] - b[0]) * SIZE, (1 - (y - b[1]) / (b[3] - b[1])) * SIZE)

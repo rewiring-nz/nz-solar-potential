@@ -70,7 +70,7 @@ def slide_for(x, lines, outline, roof, mpp):
 
 def moved(img, dx, dy):
     out = img.copy()
-    for c in range(3, 7):
+    for c in range(3, img.shape[-1]):
         out[..., c] = nd_shift(img[..., c].astype(np.float32), (dy, dx), order=1, mode="nearest").clip(0, 255).astype(np.uint8)
     return out
 
