@@ -1308,6 +1308,11 @@
      "on": "street L8",
      "date": "2026-11-22",
      "quote": "This one is still terrible and not even close"
+    },
+    {
+     "on": "street L11",
+     "date": "2026-11-23",
+     "quote": "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
     }
    ]
   },
@@ -1496,6 +1501,25 @@
      "on": "street L8",
      "date": "2026-11-22",
      "quote": "This L8 is worse in some ways and looks to maybe be including a balcony"
+    }
+   ]
+  },
+  {
+   "id": 4729286,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-23",
+   "flagged_on": "street L11",
+   "defect": "1 Sunrise Lane: roof lines wrong",
+   "quotes": [
+    "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L11",
+     "date": "2026-11-23",
+     "quote": "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
     }
    ]
   }
