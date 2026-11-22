@@ -397,6 +397,21 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**22 Nov (evening), run G scored: the 11 new hard roofs help a little.**
+- Run G (`data/line_set/runs/G_fold*.pt`, `typed_set5`, fixed folds): each
+  roof read by the fold model that never saw it, faces by
+  `tools/experiments/face_score.py` on `data/line_set/heldout_G`.
+- The 157 earlier roofs, against run D (`heldout_D8`): drawn edge supplied,
+  face IoU 0.694 (0.680), lines right 106 (103), near perfect 59 (56); the
+  reader's own edge, 0.630 (0.620), 102 (103), 52 (48). A small gain,
+  within what a retrain alone can move.
+- The 11 new roofs, held out, against the reader trained without any of
+  them: drawn edge 0.778 (0.743), faces right 7; own edge 0.734 (0.688),
+  faces right 6. Lines right on all 11.
+- Larger roofs remain the weak group (56 roofs: face IoU 0.618, faces right
+  12). Still unexplained: the same 11 roofs read in the wild scored 0.54.
+- Run H (17 corrected outlines, 35 roofs teaching the edge) follows.
+
 **22 Nov (later), 11 hard roofs drawn; the outline was not being taught.**
 - The owner drew 11 of the 20 hard roofs (3 more flagged not a building, 6
   not done: very complex roofs). In `data/roof_labels.json`; samples in
