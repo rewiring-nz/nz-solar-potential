@@ -397,6 +397,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**23 Nov, Sunrise Lane street rebuilt with the ViT-B all-roofs reader (`J_all.pt`, street L11 against L10).**
+- None of the 19 street roofs is in the training sets. Sheets in
+  `data/preview/cases/street_L11/`. Not judged by the owner yet; the agent's
+  reading (not a measurement): hips and the missing faces now found on
+  5371242, 4729434, 4729334 and 4729764; 4729286 gains lines but they
+  wobble; 4729767 and 4729284 still wrong. Lines from the regions are not
+  straight: straightening is the next visible loss.
+- Folds 1-4 of the ViT-B reader are training for the 168-roof score.
+
 **22 Nov (late night), ViT-B/14 reader ahead on fold 0; what the reader misses is valleys and drop edges.**
 - Fold 0 (35 held-out drawn roofs), ViT-B (`J_fold0.pt`, batch 4, 16 epochs,
   no vision-only start) against ViT-S (run I): drawn edge given, face IoU
