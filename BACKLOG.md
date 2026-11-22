@@ -397,6 +397,28 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**22 Nov (late night), ViT-B/14 reader ahead on fold 0; what the reader misses is valleys and drop edges.**
+- Fold 0 (35 held-out drawn roofs), ViT-B (`J_fold0.pt`, batch 4, 16 epochs,
+  no vision-only start) against ViT-S (run I): drawn edge given, face IoU
+  0.795 against 0.759, faces right 21 against 15, line F 0.821 against 0.807;
+  own edge 0.741 against 0.709, faces right 14 and 14. Validation line F1
+  0.832 against 0.786 (ridge 0.80/0.74, valley 0.51/0.41, drop edge
+  0.51/0.43, outline 0.73/0.71). One fold: the other four are to train.
+- Missed drawn faces (run I, 1354 drawn, 637 found at IoU 0.6): of 548
+  missed faces of 5 m2 or more, 356 are merged into a drawn neighbour, 210
+  of those with a line map under 0.3 on the missing edge (the reader does
+  not see the line). Drawn line pixels the reader sees (0.5 or more within
+  2 px): ridge 81%, valley 68%, drop edge 59%.
+- Line completion (`SOLAR_LINE_COMPLETE`, `line_graph.complete_lines`):
+  74 -> 76 roofs right of 167, 7 better and 3 worse at the best setting.
+  Off. Loose line ends are not the main loss.
+- Sharp LiDAR channels (`SOLAR_LINES_SHARP`: unsmoothed height and the
+  height step within 0.6 m): samples re-cut on the VM
+  (`data/line_set/typed_sharp`, 9 channels); fold 0 on ViT-B training
+  (`K_fold0.pt`).
+- `data/line_set/lines_set/points` holds 4322 LiDAR plane-fit readings never
+  used in the typed sets: a ready self-training set to test.
+
 **22 Nov (late), five quick tests on the held-out drawn roofs (run I maps, drawn edge supplied).**
 Default: face IoU 0.741, faces right 73-74 of 166-167. Scripts in the session
 scratchpad (oracle.py, judge.py, repair.py), not in git.
