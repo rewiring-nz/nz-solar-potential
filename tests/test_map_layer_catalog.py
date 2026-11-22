@@ -35,7 +35,7 @@ def _assert_contract(catalogue: dict) -> None:
         assert layer["representation"] in {"footprint", "vector", "vector-tiles", "raster-tiles"}
         assert layer["colour"].startswith("#")
         assert len(layer["bounds"]) == 4
-        assert layer["defaultVisible"] is False
+        assert layer["defaultVisible"] is (layer["id"] == "source-native-raster")
         endpoints = sum(key in layer for key in ("data", "url", "tiles"))
         assert endpoints == 1
         if "data" in layer:
@@ -339,6 +339,91 @@ def test_local_catalog_does_not_infer_combined_layers_from_region_summaries():
         assert not [layer for layer in catalogue["layers"] if layer["group"] == "analysis"]
 
 
+def test_native_raster_catalogue_shows_only_managed_readable_tiles():
+    import fcntl
+    import hashlib
+    from src.raster_cache import CachePolicy, RasterCache
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        data = root / "data"
+        data.mkdir()
+        source = root / "source.tif"
+        _write_raster(source)
+        payload = source.read_bytes()
+        asset = {
+            "collection_url": "https://example.test/collection.json",
+            "collection_id": "survey", "item_id": "tile", "asset_key": "data",
+            "url": source.as_uri(), "size_bytes": len(payload),
+            "checksum": "1220" + hashlib.sha256(payload).hexdigest(),
+            "revision": "1", "bbox_wgs84": [0, 0, 1, 1],
+        }
+        cache = RasterCache(root / "external-cache", CachePolicy(100000, 0, 10000))
+        with cache.lease(asset) as cached_path:
+            key = cached_path.stem
+        _write_raster(data / "regions" / "alpha" / "dsm_mosaic.tif")
+        _write_raster(cache.directory / "assets" / ("b" * 64 + ".tif"))
+
+        catalogue = build_local_catalog(data, raster_cache_dir=cache.directory)
+        _assert_contract(catalogue)
+        layers = {layer["id"]: layer for layer in catalogue["layers"]}
+        assert "source-dsm" in layers
+        native = layers["source-native-raster"]
+        assert len(native["data"]["features"]) == 1
+        properties = native["data"]["features"][0]["properties"]
+        assert properties["name"] == "tile"
+        assert properties["extent_kind"] == "native_raster_header_extent"
+        assert properties["integrity"] == properties["freshness"] == "not checked"
+        assert "cached_path" not in properties
+        assert "not valid-data coverage" in native["description"]
+        assert "external-cache" not in json.dumps(catalogue)
+        assert catalogue["warnings"]
+
+        from tools.pipeline_webui.geo_worker import _catalog
+        from tools.pipeline_serve import LOCAL_CATALOG_PATH, RangeHandler
+        with patch.dict("os.environ", {"SOLAR_RASTER_CACHE_DIR": str(cache.directory)}):
+            worker_catalogue = _catalog(str(data))
+            assert any(layer["id"] == "source-native-raster" for layer in worker_catalogue["layers"])
+            handler = lambda *a, **kw: RangeHandler(*a, directory=str(root), **kw)
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                status, _, served = _get(f"http://127.0.0.1:{server.server_address[1]}" + LOCAL_CATALOG_PATH)
+                assert status == 200
+                assert any(layer["id"] == "source-native-raster" for layer in served["layers"])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        default_cache = RasterCache(data / "raster_cache", CachePolicy(100000, 0, 10000))
+        with default_cache.lease(asset):
+            pass
+        with patch.dict("os.environ", {}, clear=True):
+            assert any(layer["id"] == "source-native-raster" for layer in _catalog(str(data))["layers"])
+            handler = lambda *a, **kw: RangeHandler(*a, directory=str(root), **kw)
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                status, _, served = _get(f"http://127.0.0.1:{server.server_address[1]}" + LOCAL_CATALOG_PATH)
+                assert status == 200
+                assert any(layer["id"] == "source-native-raster" for layer in served["layers"])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        with (cache.directory / "locks" / f"{key}.lock").open("rb") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            busy = build_local_catalog(data, raster_cache_dir=cache.directory)
+            assert not any(layer["id"] == "source-native-raster" for layer in busy["layers"])
+            assert any("busy" in warning for warning in busy["warnings"])
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+        (cache.directory / "partial" / f"{key}.previous").touch()
+        recovering = build_local_catalog(data, raster_cache_dir=cache.directory)
+        assert not any(layer["id"] == "source-native-raster" for layer in recovering["layers"])
+        assert any("replacement requires cache recovery" in warning for warning in recovering["warnings"])
+
+
 def _get(url: str) -> tuple[int, dict, dict]:
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
@@ -405,6 +490,7 @@ if __name__ == "__main__":
     test_combine_writes_static_catalog_for_its_region_selection()
     test_static_catalog_warns_when_selected_cell_file_is_malformed()
     test_local_catalog_does_not_infer_combined_layers_from_region_summaries()
+    test_native_raster_catalogue_shows_only_managed_readable_tiles()
     test_preview_server_computes_local_catalog_only_on_its_explicit_route()
     test_publication_keeps_legacy_explorer_redirect_but_not_its_former_app()
     print("map layer catalogue tests passed")

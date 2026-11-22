@@ -526,9 +526,19 @@ def _key_available() -> bool:
     return bool(_linz_key_value())
 
 
-def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
+def _preflight(area: str, py: Path, *,
+               admission_options: dict[str, bool] | None = None) -> tuple[bool, str, dict[str, Any]]:
     if not py.is_file() or not os.access(py, os.X_OK):
         return False, f"Selected Python executable is unavailable: {py}", {"name": area}
+    from src.raster_plan_handoff import RasterPlanError, optional_approved_raster_plan
+    try:
+        if admission_options is None:
+            optional_approved_raster_plan(os.environ, [area])
+        else:
+            from src.raster_job_admission import approved_build_plan
+            approved_build_plan(os.environ, region=area, workspace=ROOT, **admission_options)
+    except (RasterPlanError, ValueError, OSError) as exc:
+        return False, str(exc), {"name": area}
     raster_probe = subprocess.run(
         [str(py), "-c", (
             "import sys\n"
@@ -598,7 +608,7 @@ def _preflight(area: str, py: Path) -> tuple[bool, str, dict[str, Any]]:
         if survey.get("pointcloud_bulk_url") and not survey.get("lidar_tile_index_layer"):
             raise ValueError("a point-cloud bulk store is configured without a tile-index layer")
         survey_meta = {k: survey.get(k) for k in (
-            "name", "dsm_layer", "dem_layer", "imagery_layer",
+            "name", "dsm_layer", "raster_dsm_layer", "dem_layer", "imagery_layer",
             "reference_imagery_layer", "lidar_tile_index_layer",
             "pointcloud_bulk_url", "pointcloud_tile_year")}
     except Exception as exc:
@@ -2059,6 +2069,16 @@ def main() -> int:
     return run_local(args, area, ROOT)
 
 
+def _pin_survey_for_run(env: dict[str, str], area: str, survey_layers: dict) -> dict:
+    """Pass the preflight selection to each stage without losing other area pins."""
+    from src.surveys import environment_overrides
+    overrides = environment_overrides(env)
+    overrides[area] = {key: value for key, value in survey_layers.items() if key != "name"}
+    env.pop("SOLAR_SURVEY_OVERRIDES_B64", None)
+    env["SOLAR_SURVEY_OVERRIDES"] = json.dumps(overrides)
+    return overrides
+
+
 def _run_local(args: argparse.Namespace, area: str) -> int:
     py = _python_executable(args.python)
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -2087,7 +2107,19 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
     terrain_stage_dir = region_out_root / f".terrain-{run_id}"
 
     run.begin(1)
-    ok, details, area_meta = _preflight(area, py)
+    if os.environ.get("SOLAR_RASTER_ACTIVE_ADMISSION"):
+        from src.raster_reservations import DiskReservationError
+        try:
+            ok, details, area_meta = _preflight(
+                area, py, admission_options={
+                    "include_imagery": args.include_imagery,
+                    "paid_referee": bool(getattr(args, "paid_referee", False)),
+                    "no_preview_server": bool(getattr(args, "no_preview_server", False)),
+                })
+        except DiskReservationError as exc:
+            ok, details, area_meta = False, str(exc), {"name": area}
+    else:
+        ok, details, area_meta = _preflight(area, py)
     run.metadata.update(area_meta)
     try:
         acquisitions = json.loads(acquisition_path.read_text(encoding="utf-8")).get("acquisitions", [])
@@ -2120,6 +2152,7 @@ def _run_local(args: argparse.Namespace, area: str) -> int:
     env["PYTHONUNBUFFERED"] = "1"
     env["SOLAR_INCLUDE_IMAGERY"] = "1" if args.include_imagery else "0"
     survey_layers = area_meta.get("survey_layers") or {}
+    run.metadata["survey_overrides"] = _pin_survey_for_run(env, area, survey_layers)
     env["SOLAR_DISABLE_POINTCLOUD"] = (
         "0" if survey_layers.get("pointcloud_bulk_url") else "1")
     if not args.include_imagery:

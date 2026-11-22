@@ -29,7 +29,9 @@ python -c "import geopandas, rasterio, shapely, laspy, pvlib; print('ready')"
 ```
 
 The last line should print `ready`. Run `. .venv/bin/activate` in each new
-terminal; the prompt then starts with `(.venv)`.
+terminal; the prompt then starts with `(.venv)`. Rasterio 1.4 or newer is
+required so regional raster merges can write in bounded chunks rather than
+allocating the entire mosaic in memory.
 
 ## LINZ credentials
 

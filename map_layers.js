@@ -139,6 +139,7 @@
       this.options = options;
       this.entries = [];
       this.datasets = new Map();
+      this.visibilityPreferences = new Map();
       this.messages = [];
       this.generation = 0;
       this.queryId = null;
@@ -355,6 +356,7 @@
             }
             if (generation !== this.generation) return;
             dataset.visible = on;
+            this.visibilityPreferences.set(spec.id, on);
             dataset.layers.forEach(id => this.map.setLayoutProperty(id, "visibility", on ? "visible" : "none"));
           },
         });
@@ -363,7 +365,10 @@
       this.setMessages(catalogue.warnings || []);
       // Refreshes preserve visibility without keeping stale geometry or URLs.
       for (const dataset of this.datasets.values()) {
-        if (visible.has(dataset.entry.id) || dataset.entry.defaultVisible) {
+        const enabled = this.visibilityPreferences.has(dataset.entry.id)
+          ? this.visibilityPreferences.get(dataset.entry.id)
+          : visible.has(dataset.entry.id) || dataset.entry.defaultVisible;
+        if (enabled) {
           dataset.entry.setVisible(true).then(() => this.refresh()).catch(error =>
             this.setMessages([...this.messages, `${dataset.entry.label}: ${error.message}`]));
         }

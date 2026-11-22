@@ -10,6 +10,7 @@ import argparse
 import http.server
 import ipaddress
 import json
+import os
 import re
 import sys
 import urllib.parse
@@ -54,7 +55,11 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
             return
         try:
             from src.map_layer_catalog import build_local_catalog
-            catalogue = build_local_catalog(Path(self.directory) / "data")
+            from src.raster_cache_config import display_cache_config
+            data = Path(self.directory) / "data"
+            config, _ = display_cache_config(data)
+            catalogue = build_local_catalog(
+                data, raster_cache_dir=config.directory if config.directory.is_dir() else None)
             status = 200
         except Exception as exc:  # noqa: BLE001 - report the failure without paths
             catalogue = {"version": 1, "layers": [],

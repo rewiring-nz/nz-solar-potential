@@ -138,10 +138,92 @@ when the imagery or paid-referee choice changes, and the resulting choices
 are pinned to the job. The paid AI referee is off by default and is only
 available when imagery is included.
 
-Covering LINZ elevation and imagery layers are discovered from public layer
-metadata, cached under ignored `data/sources/linz/`, and pinned from estimate
-through execution. Areas with no covering LiDAR DSM use the warned synthetic
-surface path; they are not blocked by a static survey list.
+LINZ elevation and imagery layers are discovered from public layer metadata,
+cached under ignored `data/sources/linz/`, and pinned from estimate through
+execution. Selection checks layer bounding extents, not actual valid-data
+coverage; review the survey before building. Areas with no matching LiDAR
+extent use the warned synthetic surface path; they are not blocked by a static
+survey list.
+Local estimates use the same regional raster planner as the experimental CLI.
+By default no STAC mappings are supplied, so they report export fallbacks.
+Their disk figures are not whole-job reservations.
+An inherited `SOLAR_RASTER_JOB_BOUNDS` setting enables an experimental
+operator-bounded local queue admission path, but must match each job's approved
+snapshot and options. After launch it deliberately leaves the job failed and
+its reservation and workspace lock retained for manual review; it is not a
+general web batch admission facility. See the
+[pipeline reference](pipeline-reference.md#experimental-local-queue-admission)
+for the bounds contract and recovery steps.
+The local queue does not automatically delete cached tiles or partial downloads
+when admitting a job; if the configured budget or available disk is insufficient,
+admission fails before the build starts.
+For an offline-reviewed mapping file, set `SOLAR_RASTER_SOURCE_MAPPINGS` to its
+path before starting the panel (format and evidence requirements are in the
+[pipeline reference](pipeline-reference.md)). An opt-in mapping for an
+explicitly selected national DSM is available in
+[`tools/national-dsm-mapping.json`](../../tools/national-dsm-mapping.json);
+it does not automatically replace regional survey selections. To prefer that
+national raster for LiDAR areas, also set `SOLAR_PREFER_NATIONAL_DSM=1` before
+starting the panel. Explicit raster overrides take precedence and synthetic
+areas remain synthetic; review the reported reference-survey and coverage
+warnings before building. An estimate with mapped inputs
+shows a preview of unique required tiles and, when cache policy is configured,
+cached and missing counts and known transfer sizes. Unknown sizes remain
+explicit; the configured per-asset amount is a transfer limit, not a measured
+size. Expand the native tile list to inspect individual tile identities, cache
+states and using areas. Large selections are split into separate estimates, so
+the same tile may appear in more than one list. The inventory is a snapshot,
+not a reservation. Per-area warnings identify requested footprints not covered by the
+planned item bounding boxes; covered bounding boxes do not prove valid-pixel
+coverage. National DSM plans also compare the footprints to LINZ's simplified
+capture-area boundary and warn where it does not cover them; that boundary
+can itself contain nodata. With a cache policy configured, download and disk estimates replace
+mapped inputs' export estimates with missing unique tiles, attributed once to
+the first area using each tile; unknown sizes use the configured transfer limit.
+Other inputs remain area-based estimates. Without a cache policy, totals remain
+export-based. These are not whole-job peak bounds. Mapped
+jobs require `SOLAR_RASTER_JOB_BOUNDS`, an exact match to the displayed
+per-area plan SHA-256, and explicit processing options for each mapped role.
+The displayed STAC check time is used by the local queue to recheck overdue
+plans before admission; a changed source requires a new estimate.
+Create the bounds file using the procedure in the pipeline reference before
+starting the job; the settings are validated and frozen at submission.
+Mapped execution is experimental, and output equivalence to existing mosaics
+has not been established. Unset the mapping variable and re-estimate to use
+the export path. Metadata discovery can make public STAC requests; the preview
+does not download raster payloads.
+
+To run the opt-in national DSM path for one local area:
+
+1. Prepare an absolute-path cache-policy JSON file with explicit `max_bytes`
+   and `min_free_bytes`, and choose an absolute path for the per-job bounds
+   JSON file. The policy format and required bounds are in the
+   [pipeline reference](pipeline-reference.md#experimental-local-queue-admission).
+   Size all bounds for the whole job and its filesystems, not just the DSM.
+2. Start the panel with `SOLAR_PREFER_NATIONAL_DSM=1`,
+   `SOLAR_RASTER_SOURCE_MAPPINGS` pointing to the national mapping,
+   `SOLAR_RASTER_CACHE_POLICY` pointing to the policy, and
+   `SOLAR_RASTER_JOB_BOUNDS` pointing to the bounds file. The bounds file can
+   be written after the estimate; its path must be set before the panel starts.
+3. Select **Local**, choose one area and the imagery/referee options, and
+   request an estimate. Review its source and coverage warnings. Copy the
+   displayed raster plan SHA-256 into `plan_sha256` in the bounds file, along
+   with the exact region, checkout path, options, allocation evidence, and
+   processing choice for each mapped role. Use absolute paths for the policy
+   and allocation directories. The estimate expires; if a new estimate is
+   needed, update the digest in the bounds file before submission.
+4. Submit that estimate. The queue checks the bounds and plan before starting.
+   After an admitted launch, consult the run report and perform the documented
+   manual recovery only after independently confirming all consumers have
+   stopped. A subsequent area needs a new estimate and matching bounds; do not
+   remove the retained lock or reservation while anything may still be using it.
+
+Optionally set `SOLAR_RASTER_CACHE_POLICY` to the path of an experimental
+cache-policy JSON file before starting the panel (see
+[pipeline reference](pipeline-reference.md)). Local estimates then show a
+point-in-time cache inventory: logical bytes leased, currently eligible for
+cleanup, or unmanaged/awaiting recovery. This inventory alone does not enable
+cached-tile acquisition or reserve disk.
 
 For Developer and Published the estimate also shows the Google Cloud
 cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
@@ -459,6 +541,33 @@ including shared cached sources and available intermediate outputs. A cached
 extent is drawn as a faint fill with a dashed boundary; it is not a claim
 that every pixel contains usable data. Missing requested LiDAR tiles are not
 shown as cached. Layer data is loaded on demand when enabled.
+The experimental native raster cache defaults to `data/raster_cache`. If
+`SOLAR_RASTER_CACHE_POLICY` is set, its resolved cache directory takes
+precedence; otherwise `SOLAR_RASTER_CACHE_DIR` overrides the display default.
+Both the local panel and preview server use this precedence. Neither default
+nor display override enables cache-backed regional builds. The
+**Native raster cache tiles** layer is on by default and separate from regional DSM, imagery and
+terrain mosaics. It shows managed tile header rectangles only; neither
+valid-data coverage, content integrity nor source freshness is checked by the
+catalogue. Tiles being replaced or needing recovery, and incomplete entries,
+are omitted with a warning.
+
+On the Local map, zoom to level 9 or closer to automatically inspect national
+LINZ DSM tiles intersecting the view, independently of area selection. The
+background worker indexes public STAC metadata under ignored
+`data/pipeline_web/cache/` and refreshes it after 24 hours or with **Refresh DSM
+metadata**. Initial discovery can take time; raster payloads are not downloaded.
+Up to 150 intersecting tiles are inspected in batches of eight; zoom in when
+the view exceeds that limit. The map shows separate cached-and-validated,
+missing and attention layers as batches finish. Select **Query** for a layer
+and click a rectangle for its tile, state and size. Layer checkboxes remain
+available to hide them. A failed refresh or inspection is reported, not treated
+as an empty map.
+
+The national DSM viewport is not a list of tiles required by the selected
+areas and may differ from the build's pinned source. Rectangles are not proof
+of valid-pixel coverage; cache states are snapshots, not reservations. The
+separate header-only cache layer indicates presence, not validation.
 
 Prepared/built region and locality-selection boundaries are separate **Build
 areas** overlays. Their status colours are not evidence that all sources were

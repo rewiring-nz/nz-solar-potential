@@ -5,6 +5,7 @@ Run: .venv/bin/python tests/test_pipeline_web_data.py
 """
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -461,6 +462,7 @@ def test_estimate_arithmetic_and_cache_effects():
     with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         data = Path(tmp)
         fresh = E.estimate_region("r", size, lidar, data, defaults, 0.5)
+        assert any("not verified valid-data coverage" in warning for warning in fresh["warnings"])
         expected_gb = 2.0 * (defaults["imagery_gb_per_km2"] + defaults["reference_imagery_gb_per_km2"]
                              + defaults["dsm_gb_per_km2"] + defaults["lidar_gb_per_km2"])
         assert abs(fresh["download_gb"] - round(expected_gb, 3)) < 1e-9
@@ -472,6 +474,20 @@ def test_estimate_arithmetic_and_cache_effects():
         assert abs(without_imagery["download_gb"]
                    - round(expected_without_imagery, 3)) < 1e-9
         assert any("excluded" in warning for warning in without_imagery["warnings"])
+        same_photo = E.estimate_region(
+            "r", size, {**lidar, "source_layers": {**lidar["source_layers"],
+                "imagery_layer": 202, "reference_imagery_layer": 202}},
+            data, defaults, 0.5)
+        expected_same = 2.0 * (defaults["imagery_gb_per_km2"]
+                               + defaults["dsm_gb_per_km2"] + defaults["lidar_gb_per_km2"])
+        assert same_photo["reference_same_as_imagery"]
+        assert same_photo["download_gb"] == round(expected_same, 3)
+        different_photo = E.estimate_region(
+            "r", size, {**lidar, "source_layers": {**lidar["source_layers"],
+                "imagery_layer": 202, "reference_imagery_layer": 303}},
+            data, defaults, 0.5)
+        assert not different_photo["reference_same_as_imagery"]
+        assert different_photo["download_gb"] == fresh["download_gb"]
         for name in ("building_outlines.geojson", "pointcloud_tiles.txt", "dsm_mosaic.tif",
                      "imagery_mosaic.tif",
                      "reference_imagery_mosaic.tif"):
@@ -483,6 +499,326 @@ def test_estimate_arithmetic_and_cache_effects():
         assert any("No LiDAR" in w for w in synthetic["warnings"])
         uncovered = E.estimate_region("s", size, {"error": "no survey"}, data, defaults, 0.5)
         assert uncovered["blockers"]
+
+
+def test_survey_reference_imagery_tracks_legacy_s3_selection():
+    from unittest.mock import patch
+
+    with patch("src.surveys.survey_for") as resolve:
+        resolve.return_value = {"elevation": "lidar", "imagery_layer": 202,
+                                "reference_imagery_layer": 202,
+                                "imagery_s3": "current",
+                                "reference_imagery_s3": "older"}
+        distinct = E._survey([168, -45, 169, -44], "area")
+        assert not distinct["reference_same_as_imagery"]
+        resolve.return_value["reference_imagery_s3"] = "current"
+        same = E._survey([168, -45, 169, -44], "area")
+        assert same["reference_same_as_imagery"]
+        resolve.return_value.pop("reference_imagery_s3")
+        resolve.return_value.pop("imagery_s3")
+        same_layer = E._survey([168, -45, 169, -44], "area")
+        assert same_layer["reference_same_as_imagery"]
+
+
+def test_local_estimate_plans_batch_with_fetch_footprints_and_source_fallbacks():
+    from unittest.mock import patch
+
+    bbox = [168.6, -45.05, 168.61, -45.04]
+    footprints = [[168.6, -45.05, 168.604, -45.046],
+                  [168.606, -45.044, 168.61, -45.04]]
+    layers = {"dsm_layer": 101, "imagery_layer": 202, "reference_imagery_layer": 202}
+    survey = lambda box, region: {"name": "survey", "elevation": "lidar",
+                                  "source_layers": layers}
+    size = {"buildings": 10, "bbox": bbox, "bbox_km2": 1, "source": "fixture"}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        data = Path(tmp)
+        region_dir = data / "regions" / "area1"
+        region_dir.mkdir(parents=True)
+        (region_dir / "locality.json").write_text(json.dumps({"acquisition_footprints": footprints}))
+        with patch.object(E, "region_size", return_value=size):
+            estimate = E.estimate(["area1", "area2"], data=data, survey_fn=survey,
+                                  disk_free=10**12)
+        batch = estimate["raster_plan"]["batch"]
+        assert any("not peak-space bounds or reservations" in text for text in estimate["warnings"])
+        selection = next(item for item in estimate["raster_plan"]["regions"]
+                         if item["region"] == "area1")
+        assert selection["footprints_wgs84"] == footprints
+        self_regions = {item["region"]: item for item in estimate["regions"]}
+        assert len(batch["export_fallbacks"]) == 4
+        first_dsm = next(item for item in batch["export_fallbacks"]
+                         if item["region"] == "area1" and item["role"] == "dsm")
+        assert first_dsm["footprints_wgs84"] == footprints
+        assert self_regions["area1"]["reference_same_as_imagery"]
+        assert [item["state"] for item in self_regions["area1"]["raster_sources"]] == [
+            "exports_fallback", "exports_fallback", "same_as_imagery"]
+        assert any("not shared-tile cache predictions" in item
+                   for item in self_regions["area1"]["warnings"])
+        assert batch["assets"] == []
+        (region_dir / "dsm_mosaic.tif").write_bytes(b"existing")
+        with patch.object(E, "region_size", return_value=size):
+            cached = E.estimate(["area1"], data=data, survey_fn=survey, disk_free=10**12)
+        assert any("without verifying their source or footprints" in item
+                   for item in cached["regions"][0]["warnings"])
+
+
+def test_local_estimate_handles_synthetic_excluded_and_legacy_sources():
+    from unittest.mock import patch
+    from tools.pipeline_webui import geo_worker
+
+    size = {"buildings": 10, "bbox": [168.6, -45.05, 168.61, -45.04],
+            "bbox_km2": 1, "source": "fixture"}
+    synthetic = {"name": "synthetic", "elevation": "synthetic",
+                 "source_layers": {"dsm_layer": None, "imagery_layer": 202}}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp, \
+            patch.object(E, "region_size", return_value=size):
+        estimate = E.estimate(["area"], data=Path(tmp), survey_fn=lambda *_: synthetic,
+                              disk_free=10**12, include_imagery=False)
+        assert estimate["raster_plan"]["batch"] is None
+        assert [item["state"] for item in estimate["regions"][0]["raster_sources"]] == [
+            "synthetic", "excluded", "excluded"]
+        legacy = {**synthetic, "elevation": "lidar", "legacy_raster_sources": True,
+                  "source_layers": {"dsm_layer": 101}}
+        with patch.object(geo_worker, "run", side_effect=AssertionError("unexpected planner")):
+            estimate = E.estimate(["area"], data=Path(tmp), survey_fn=lambda *_: legacy,
+                                  disk_free=10**12)
+        assert estimate["raster_plan"] is None
+        assert any("Legacy S3" in text for text in estimate["regions"][0]["warnings"])
+
+
+def test_web_worker_uses_shared_regional_planner():
+    from unittest.mock import patch
+    from tools.pipeline_webui import geo_worker
+    from src.raster_region_plan import plan_regions
+
+    row = {"region": "area", "bbox": [168.6, -45.05, 168.61, -45.04],
+           "survey": "fixture", "elevation": "lidar",
+           "source_layers": {"dsm_layer": 101, "imagery_layer": 202}}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        request = {"data": tmp, "regions": [row], "include_imagery": False}
+        with patch("src.raster_region_plan.plan_regions", wraps=plan_regions) as planner:
+            snapshot = geo_worker._raster_plan(request)
+        planner.assert_called_once()
+        assert snapshot["regions"][0]["footprints_wgs84"] == [row["bbox"]]
+        assert snapshot["batch"]["export_fallbacks"][0]["layer_id"] == 101
+        try:
+            geo_worker._raster_plan({**request, "regions": [row, row]})
+        except ValueError as exc:
+            assert "Duplicate" in str(exc)
+        else:
+            raise AssertionError("duplicate region was accepted")
+        for error, expected in ((ValueError("https://example.test/?token=secret"), "mapping"),
+                                (OSError("https://example.test/?token=secret"), "network")):
+            with patch("src.raster_region_plan.plan_regions", side_effect=error):
+                try:
+                    geo_worker._raster_plan(request)
+                except LookupError as exc:
+                    assert expected in str(exc)
+                    assert "secret" not in str(exc)
+                else:
+                    raise AssertionError("raster planning failure was silently accepted")
+
+
+def test_local_estimate_displays_optional_cache_inventory_without_changing_plan():
+    from unittest.mock import patch
+
+    size = {"buildings": 10, "bbox": [168.6, -45.05, 168.61, -45.04],
+            "bbox_km2": 1, "source": "fixture"}
+    survey = {"name": "survey", "elevation": "lidar",
+              "source_layers": {"dsm_layer": 101}}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        root = Path(tmp)
+        policy = root / "policy.json"
+        policy.write_text(json.dumps({"version": 1, "directory": "cache", "max_bytes": 1000}))
+        with patch.dict(os.environ, {"SOLAR_RASTER_CACHE_POLICY": str(policy.resolve())}), \
+                patch.object(E, "region_size", return_value=size):
+            estimate = E.estimate(["area"], data=root, survey_fn=lambda *_: survey,
+                                  disk_free=10**12, include_imagery=False)
+        overview = estimate["raster_cache_overview"]["cache"]
+        assert overview["budget_bytes"] == 1000
+        assert overview["usage_bytes"] == overview["leased_bytes"] == overview["reclaimable_bytes"] == 0
+        assert len(estimate["raster_plan"]["batch"]["export_fallbacks"]) == 1
+        assert "cache_overview" not in estimate["raster_plan"]
+        assert not any("raster_cache" in blocker for blocker in estimate["blockers"])
+        policy.write_text('{"version": 1, "queue_lookahead": 0}')
+        with patch.dict(os.environ, {"SOLAR_RASTER_CACHE_POLICY": str(policy.resolve())}), \
+                patch.object(E, "region_size", return_value=size):
+            try:
+                E.estimate(["area"], data=root, survey_fn=lambda *_: survey,
+                           disk_free=10**12, include_imagery=False)
+            except E.EstimateError as exc:
+                assert "Raster cache inspection failed" in str(exc)
+                assert "lookahead must be positive" in str(exc)
+            else:
+                raise AssertionError("invalid cache policy was silently accepted")
+
+
+def test_mapped_batch_estimate_is_unique_inspected_and_blocked_from_execution():
+    import base64
+    import hashlib
+    from unittest.mock import patch
+    from src.raster_cache import CachePolicy, RasterCache
+    from src.raster_region_plan import plan_regions
+    from src.s3_rasters import _LERC_PROBE
+    from tools.pipeline_webui import geo_worker
+
+    bbox = [168.6, -45.05, 168.61, -45.04]
+    survey = {"name": "survey", "elevation": "lidar",
+              "source_layers": {"dsm_layer": 101}}
+    size = {"buildings": 10, "bbox": bbox, "bbox_km2": 1, "source": "fixture"}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        root = Path(tmp).resolve()
+        payload = base64.b64decode(_LERC_PROBE)
+        tile = root / "tile.tif"
+        tile.write_bytes(payload)
+        mappings = root / "mappings.json"
+        mappings.write_text(json.dumps({"version": 1, "mappings": [{
+            "layer_id": 101, "role": "dsm", "collection_url": "https://example.test/collection.json",
+            "collection_id": "capture", "asset_key": "data", "evidence": "offline fixture",
+        }]}))
+        policy = root / "policy.json"
+        policy.write_text(json.dumps({"version": 1, "directory": "cache", "max_bytes": 100000,
+                                      "min_free_bytes": 0, "unknown_asset_bytes": 1000}))
+        docs = {
+            "https://example.test/collection.json": {
+                "id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+            "https://example.test/item.json": {
+                "id": "tile", "collection": "capture", "bbox": bbox, "properties": {},
+                "assets": {"data": {"href": tile.as_uri(), "type": "image/tiff",
+                                    "file:size": len(payload),
+                                    "file:checksum": "1220" + hashlib.sha256(payload).hexdigest()}}},
+        }
+
+        def offline_plan(*args, **kwargs):
+            return plan_regions(*args, **kwargs, get_json=docs.__getitem__)
+
+        capture_state = {"area1": "intersects"}
+
+        def worker(args, input_text=None, **kwargs):
+            assert args == ["raster-plan"]
+            result = geo_worker._raster_plan(json.loads(input_text))
+            result["batch"]["capture_coverage"] = [
+                {"region": "area1", "role": "dsm", "footprint_wgs84": bbox,
+                 "state": capture_state["area1"], "source_url": "https://example.test/coverage",
+                 "checksum": None},
+                {"region": "area2", "role": "dsm", "footprint_wgs84": bbox,
+                 "state": "covered", "source_url": "https://example.test/coverage",
+                 "checksum": None}]
+            result["batch"]["capture_surveys"] = [
+                {"region": "area1", "role": "dsm", "footprint_wgs84": bbox,
+                 "surveys": [{"id": "one", "title": "different survey"}]},
+                {"region": "area2", "role": "dsm", "footprint_wgs84": bbox,
+                 "surveys": [{"id": "two", "title": "survey"}]}]
+            return result
+
+        env = {"SOLAR_RASTER_SOURCE_MAPPINGS": str(mappings),
+               "SOLAR_RASTER_CACHE_POLICY": str(policy)}
+        with patch.dict(os.environ, env), patch.object(E, "region_size", return_value=size), \
+                patch.object(geo_worker, "run", side_effect=worker), \
+                patch("src.raster_region_plan.plan_regions", side_effect=offline_plan):
+            cold = E.estimate(["area1", "area2"], data=root, survey_fn=lambda *_: survey,
+                              disk_free=10**12, include_imagery=False)
+            preview = cold["raster_tile_preview"]
+            assert (preview["required_count"], preview["cached_count"], preview["missing_count"]) == (1, 0, 1)
+            assert preview["known_missing_bytes"] == len(payload)
+            assert all(isinstance(row["raster_metadata_checked_at"], (int, float))
+                       for row in cold["regions"])
+            assert any("capture geometry does not fully cover" in warning
+                       for warning in cold["regions"][0]["warnings"])
+            assert not any("capture geometry does not fully cover" in warning
+                           for warning in cold["regions"][1]["warnings"])
+            assert any("selected reference survey name is not among" in warning
+                       for warning in cold["regions"][0]["warnings"])
+            assert not any("selected reference survey name is not among" in warning
+                           for warning in cold["regions"][1]["warnings"])
+            from src.raster_plan_handoff import plan_for_regions
+            sliced = plan_for_regions(cold["raster_plan"], ["area1"])
+            assert [item["region"] for item in sliced["batch"]["capture_coverage"]] == ["area1"]
+            assert [item["region"] for item in sliced["batch"]["capture_surveys"]] == ["area1"]
+            capture_state["area1"] = "outside"
+            outside = E.estimate(["area1", "area2"], data=root, survey_fn=lambda *_: survey,
+                                 disk_free=10**12, include_imagery=False)
+            assert any("outside the published capture geometry" in blocker
+                       for blocker in outside["regions"][0]["blockers"])
+            capture_state["area1"] = "intersects"
+            assert all(any("preview-only" in blocker for blocker in row["blockers"])
+                       for row in cold["regions"])
+            assert cold["blockers"]
+            cache = RasterCache(root / "cache", CachePolicy(100000, 0, 1000))
+            with cache.lease(cold["raster_plan"]["batch"]["assets"][0]):
+                pass
+            warm = E.estimate(["area1", "area2"], data=root, survey_fn=lambda *_: survey,
+                              disk_free=10**12, include_imagery=False)
+            assert warm["raster_tile_preview"]["cached_count"] == 1
+            assert warm["raster_tile_preview"]["known_missing_bytes"] == 0
+            assert warm["blockers"]
+            docs["https://example.test/item.json"]["id"] = "different-tile"
+            del docs["https://example.test/item.json"]["assets"]["data"]["file:size"]
+            unknown = E.estimate(["area1", "area2"], data=root, survey_fn=lambda *_: survey,
+                                 disk_free=10**12, include_imagery=False)
+            preview = unknown["raster_tile_preview"]
+            assert preview["missing_count"] == 1
+            assert preview["known_missing_bytes"] == 0
+            assert preview["unknown_missing_count"] == 1
+            assert preview["unknown_asset_estimate_bytes"] == 1000
+            assert unknown["blockers"]
+            with patch.dict(os.environ):
+                os.environ.pop("SOLAR_RASTER_CACHE_POLICY")
+                mixed = E.estimate(
+                    ["area1", "area2"], data=root,
+                    survey_fn=lambda *_: {**survey, "source_layers": {
+                        **survey["source_layers"], "imagery_layer": 102}},
+                    disk_free=10**12, include_imagery=True)
+            preview = mixed["raster_tile_preview"]
+            assert preview["required_count"] == 1
+            assert preview["cached_count"] is None
+            assert preview["missing_count"] is None
+            assert len(mixed["raster_plan"]["batch"]["export_fallbacks"]) == 2
+            assert mixed["blockers"]
+            for item_bbox in ([168.6, -45.05, 168.605, -45.04],
+                              [169.0, -45.05, 169.01, -45.04]):
+                docs["https://example.test/item.json"]["bbox"] = item_bbox
+                gap = E.estimate(["area1", "area2"], data=root,
+                                 survey_fn=lambda *_: survey, disk_free=10**12,
+                                 include_imagery=False)
+                assert all(any("item bounds do not cover" in warning
+                               and "valid-pixel" in warning for warning in row["warnings"])
+                           for row in gap["regions"])
+                assert gap["blockers"]
+
+
+def test_mapped_batch_totals_count_missing_tiles_once_and_preserve_fallbacks():
+    defaults = E.load_defaults()
+    size = {"buildings": 10, "bbox": [168.6, -45.05, 168.61, -45.04],
+            "bbox_km2": 1, "source": "fixture"}
+    survey = {"name": "survey", "elevation": "lidar",
+              "source_layers": {"dsm_layer": 101, "imagery_layer": 202},
+              "reference_imagery_available": False}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        rows = [E.estimate_region(region, size, survey, Path(tmp), defaults, 0.5)
+                for region in ("area1", "area2")]
+        fallback_gb = rows[0]["download_components_gb"]["imagery"]
+        batch = {
+            "inputs": [{"region": region, "role": "dsm", "source": {}}
+                       for region in ("area1", "area2")],
+            "cache": {"unknown_asset_estimate_bytes": 300_000_000},
+            "assets": [{"cache_state": "missing", "size_bytes": 500_000_000,
+                        "uses": [{"region": region, "role": "dsm"}
+                                 for region in ("area1", "area2")]}],
+        }
+        E.apply_cached_raster_estimates(rows, batch, defaults)
+        assert rows[0]["download_components_gb"]["dsm"] == 0.5
+        assert rows[1]["download_components_gb"]["dsm"] == 0
+        assert all(row["download_components_gb"]["imagery"] == fallback_gb for row in rows)
+        assert round(sum(row["download_gb"] for row in rows), 3) == round(0.5 + 2 * fallback_gb, 3)
+        assert all(any("once per batch" in warning for warning in row["warnings"]) for row in rows)
+
+        batch["assets"][0]["cache_state"] = "cached"
+        E.apply_cached_raster_estimates(rows, batch, defaults)
+        assert all(row["download_components_gb"]["dsm"] == 0 for row in rows)
+        batch["assets"][0].update(cache_state="missing", size_bytes=None)
+        E.apply_cached_raster_estimates(rows, batch, defaults)
+        assert rows[0]["download_components_gb"]["dsm"] == 0.3
+        assert rows[1]["download_components_gb"]["dsm"] == 0
 
 
 def test_calibration_uses_finished_runs_only():
@@ -650,6 +986,12 @@ if __name__ == "__main__":
                  test_disjoint_raster_fetch_creates_a_resumable_parts_directory,
                  test_wide_dem_uses_only_disjoint_selection_coverage,
                  test_estimate_arithmetic_and_cache_effects,
+                 test_survey_reference_imagery_tracks_legacy_s3_selection,
+                 test_local_estimate_plans_batch_with_fetch_footprints_and_source_fallbacks,
+                 test_local_estimate_handles_synthetic_excluded_and_legacy_sources,
+                 test_web_worker_uses_shared_regional_planner,
+                 test_local_estimate_displays_optional_cache_inventory_without_changing_plan,
+                 test_mapped_batch_estimate_is_unique_inspected_and_blocked_from_execution,
                  test_calibration_uses_finished_runs_only,
                  test_estimate_store_lifecycle_and_blockers,
                  test_server_process_never_loads_proj,

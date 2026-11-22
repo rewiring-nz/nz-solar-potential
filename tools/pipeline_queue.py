@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.local_queue import Coordinator, QueueClient, QueueError, TERMINAL, atomic_json, validate_task
+from src.local_queue import (Coordinator, QueueClient, QueueError, SOURCE_ENVIRONMENT_KEYS,
+                             TERMINAL, atomic_json, validate_task)
 
 PROVENANCE_FILES = ("config.py", "tools/pipeline.py", "tools/pipeline_queue.py", "src/local_queue.py",
                     "src/region_ids.py")
@@ -29,6 +30,18 @@ def provenance(workspace: Path) -> dict[str, Any]:
                             capture_output=True, text=True, check=True).stdout.strip()
     files = {name: hashlib.sha256((workspace / name).read_bytes()).hexdigest()
              for name in PROVENANCE_FILES}
+    sources = sorted(
+        path for directory in ("src", "tools")
+        for path in (workspace / directory).rglob("*")
+        if path.is_file() and path.suffix in (".py", ".sh")
+    )
+    tree = hashlib.sha256()
+    for path in sources:
+        name = path.relative_to(workspace).as_posix().encode()
+        tree.update(len(name).to_bytes(8, "big"))
+        tree.update(name)
+        tree.update(hashlib.sha256(path.read_bytes()).digest())
+    files["__source_tree__"] = tree.hexdigest()
     return {"commit": commit, "files": files}
 
 
@@ -42,7 +55,7 @@ def make_task(workspace: Path, region: str, python: str, *, port: int | None = N
     executable = str(Path(python).expanduser().absolute())
     if not Path(executable).is_file():
         raise QueueError(f"Python executable not found: {executable}")
-    return validate_task({
+    task = {
         "id": uuid.uuid4().hex,
         "region": _safe_area(region),
         "workspace": str(workspace),
@@ -50,8 +63,36 @@ def make_task(workspace: Path, region: str, python: str, *, port: int | None = N
         "options": {"port": port, "no_open_browser": no_open_browser, "step_offset": step_offset,
                     "paid_referee": paid_referee, "no_preview_server": no_preview_server,
                     "include_imagery": include_imagery},
+        "source_environment": {key: os.environ[key] for key in SOURCE_ENVIRONMENT_KEYS
+                               if key in os.environ},
         "provenance": provenance(workspace),
-    })
+    }
+    bounds_path = os.environ.get("SOLAR_RASTER_JOB_BOUNDS")
+    frozen_bounds_path = os.environ.get("SOLAR_RASTER_JOB_BOUNDS_SNAPSHOT")
+    if bounds_path or frozen_bounds_path:
+        if os.name != "posix":
+            raise QueueError("Raster admission requires POSIX.")
+        if not no_preview_server:
+            raise QueueError("Raster admission requires --no-preview-server.")
+        from src.raster_job_bounds import (
+            load_frozen_job_bounds, load_job_bounds, processing_for_snapshot,
+        )
+        from src.raster_plan_handoff import RasterPlanError, optional_approved_raster_plan
+        source_environment = task["source_environment"]
+        try:
+            approved = optional_approved_raster_plan(
+                source_environment, [region], allow_mapped=True)
+            if approved is None:
+                raise QueueError("Raster admission requires an approved raster snapshot.")
+        except RasterPlanError as exc:
+            raise QueueError(f"Raster approval invalid: {exc}") from exc
+        loader = load_frozen_job_bounds if frozen_bounds_path else load_job_bounds
+        task["raster_admission"] = loader(
+            Path(frozen_bounds_path or bounds_path), region=region, workspace=workspace,
+            plan_digest=source_environment["SOLAR_RASTER_PLAN_SHA256"],
+            include_imagery=include_imagery, paid_referee=paid_referee)
+        processing_for_snapshot(task["raster_admission"], approved, region)
+    return validate_task(task)
 
 
 def stop_process(process: subprocess.Popen[Any]) -> None:
@@ -74,6 +115,66 @@ def stop_process(process: subprocess.Popen[Any]) -> None:
         process.wait()
 
 
+def process_group_stopped(group: int) -> bool:
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
+def upcoming_raster_plans(client: QueueClient, cache_dir: Path, limit: int) -> list[dict]:
+    """Read queued approved plans as eviction preferences, never as leases."""
+    from src.raster_plan_handoff import RasterPlanError, optional_approved_raster_plan, plan_for_regions
+
+    if limit <= 0:
+        return []
+    status = client.call("status")
+    if not isinstance(status, dict) or not isinstance(status.get("tasks"), list):
+        raise QueueError("Cannot read queued raster plans for cache cleanup.")
+    plans = []
+    for record in status["tasks"]:
+        if not isinstance(record, dict) or record.get("status") != "pending":
+            continue
+        task = record.get("task")
+        if not isinstance(task, dict) or not isinstance(task.get("raster_admission"), dict):
+            continue
+        cache = task["raster_admission"].get("cache")
+        if not isinstance(cache, dict) or not isinstance(cache.get("directory"), str):
+            raise QueueError("Queued raster task has an invalid frozen cache directory.")
+        if Path(cache["directory"]).resolve() != cache_dir.resolve():
+            continue
+        try:
+            snapshot = optional_approved_raster_plan(
+                task.get("source_environment", {}), [task["region"]], allow_mapped=True)
+            if snapshot is None:
+                raise RasterPlanError("approved raster plan is missing")
+            batch = plan_for_regions(snapshot, [task["region"]])["batch"]
+        except (RasterPlanError, KeyError, TypeError, ValueError) as exc:
+            print(f"[queue] WARNING: skipping invalid upcoming raster preference "
+                  f"for {task.get('id', 'unknown task')}: {exc}", file=sys.stderr, flush=True)
+            continue
+        if batch is not None:
+            plans.append(batch)
+            if len(plans) == limit:
+                break
+    return plans
+
+
+def report_raster_cleanup(results: dict) -> None:
+    for phase in ("partials", "assets", "proactive"):
+        result = results.get(phase)
+        if result is None:
+            continue
+        removed = result["removed"]
+        details = f"{len(removed)} entries, {sum(item['bytes'] for item in removed)} bytes"
+        if "target_reached" in result:
+            details += "; target " + ("reached" if result["target_reached"] else "not reached")
+        print(f"[queue] Raster {phase} cleanup: {details}.", flush=True)
+
+
 def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueClient,
             worker: str) -> int:
     workspace = Path(task["workspace"])
@@ -89,16 +190,92 @@ def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueCli
             "stop old processes and inspect owner.json before manually removing the lock."
         ) from exc
     process: subprocess.Popen[Any] | None = None
+    launch_attempted = False
+    admission = None
     try:
-        atomic_json(ownership / "owner.json", {"pid": os.getpid(), "task": task["id"], "attempt": attempt})
+        owner = {"pid": os.getpid(), "task": task["id"], "attempt": attempt}
+        atomic_json(ownership / "owner.json", owner)
+        if "raster_admission" in task:
+            if os.name != "posix" or not task["options"].get("no_preview_server", False):
+                raise QueueError("Raster admission requires POSIX and --no-preview-server.")
+            from src.raster_job_bounds import (
+                job_resources, processing_for_snapshot, validate_job_bounds,
+            )
+            from src.raster_job_admission import admission_binding
+            from src.raster_cache import RasterCacheError
+            from src.raster_plan_handoff import (
+                RasterPlanError, optional_approved_raster_plan, plan_for_regions,
+            )
+            from src.raster_reservations import (
+                DiskReservationError, DiskReservations,
+            )
+
+            environment = task.get("source_environment", {})
+            try:
+                approved = optional_approved_raster_plan(
+                    environment, [task["region"]], allow_mapped=True)
+            except RasterPlanError as exc:
+                raise QueueError(f"Raster approval invalid: {exc}") from exc
+            if approved is None:
+                raise QueueError("Raster admission requires an approved raster snapshot.")
+            bounds = validate_job_bounds(
+                task["raster_admission"], region=task["region"], workspace=workspace,
+                plan_digest=environment["SOLAR_RASTER_PLAN_SHA256"],
+                include_imagery=task["options"]["include_imagery"],
+                paid_referee=task["options"]["paid_referee"], frozen=True)
+            processing_for_snapshot(bounds, approved, task["region"])
+            cache, requirements = job_resources(bounds)
+            batch = plan_for_regions(approved, [task["region"]])["batch"]
+            plan = batch or {"inputs": [], "assets": [], "export_fallbacks": []}
+            if (bounds.get("freshness") is None
+                    and any(item.get("source") is not None for item in plan["inputs"])):
+                raise QueueError("Mapped task has no frozen metadata refresh interval; resubmit it.")
+            if bounds.get("freshness") is not None:
+                from src.raster_freshness import verify_due_metadata
+                try:
+                    refreshed = verify_due_metadata(plan, bounds["freshness"]["metadata_refresh_s"])
+                except (OSError, KeyError, TypeError, ValueError) as exc:
+                    raise QueueError(f"Raster metadata refresh failed: {exc}") from exc
+                if refreshed:
+                    print("[queue] Approved raster metadata rechecked; sources unchanged.",
+                          flush=True)
+            registry = cache.directory / "reservations"
+            reservations = DiskReservations(registry)
+            admission = reservations.reserve(
+                lambda: cache.inspect_plan(plan), requirements,
+                consumers_stopped=lambda: not launch_attempted,
+                binding=admission_binding(bounds), exclusive=True)
+            try:
+                forecast = admission.__enter__()
+            except (DiskReservationError, RasterCacheError) as exc:
+                admission = None
+                raise QueueError(f"Raster disk admission failed: {exc}") from exc
+            owner["reservation_id"] = forecast["reservation_id"]
+            owner["reservation_registry"] = str(registry.resolve())
+            atomic_json(ownership / "owner.json", owner)
+            print(f"[queue] Cooperative disk reservation {forecast['reservation_id']} admitted. "
+                  "It will require manual recovery after the build.", flush=True)
         command = [task["python"], "-m", "tools.pipeline_queue", "execute"]
+        env = {key: value for key, value in os.environ.items()
+               if key not in SOURCE_ENVIRONMENT_KEYS and key not in {
+                   "SOLAR_RASTER_ACTIVE_ADMISSION", "SOLAR_RASTER_JOB_BOUNDS_SNAPSHOT"}}
+        env.update(task.get("source_environment", {}))
+        if admission is not None:
+            env["SOLAR_RASTER_ACTIVE_ADMISSION"] = json.dumps(
+                {"bounds": bounds, "reservation_id": forecast["reservation_id"]},
+                separators=(",", ":"), allow_nan=False)
+        env["PYTHONUNBUFFERED"] = "1"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as log:
+            launch_attempted = True
             process = subprocess.Popen(
                 command, cwd=workspace, stdin=subprocess.PIPE, stdout=log,
                 stderr=subprocess.STDOUT, text=True, start_new_session=(os.name == "posix"),
-                env=dict(os.environ, PYTHONUNBUFFERED="1"),
+                env=env,
             )
+            if os.name == "posix":
+                owner["process_group"] = process.pid
+                atomic_json(ownership / "owner.json", owner)
             assert process.stdin is not None
             process.stdin.write(json.dumps(task))
             process.stdin.close()
@@ -117,8 +294,30 @@ def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueCli
                         last_heartbeat = time.monotonic()
                     time.sleep(0.1)
     finally:
-        if process is not None:
-            stop_process(process)
+        original_error = sys.exc_info()[1]
+        try:
+            if process is not None:
+                stop_process(process)
+            if os.name == "posix" and launch_attempted and (
+                process is None or not process_group_stopped(process.pid)
+            ):
+                raise QueueError(
+                    f"Workspace consumers may still be running; lock retained at {ownership}. "
+                    "Stop all consumers and inspect owner.json before manually removing the lock."
+                )
+            if admission is not None and launch_attempted:
+                raise QueueError(f"Reservation and workspace lock retained at {ownership}; "
+                                 "confirm all consumers stopped before manual recovery.")
+        finally:
+            if admission is not None:
+                from src.raster_reservations import DiskReservationError
+                try:
+                    admission.__exit__(*sys.exc_info())
+                except DiskReservationError as exc:
+                    detail = (f" Original error: {type(original_error).__name__}: {original_error}."
+                              if original_error is not None else "")
+                    raise QueueError(f"{exc}; workspace lock retained at {ownership}. "
+                                     f"Confirm all consumers stopped before manual recovery.{detail}") from exc
         (ownership / "owner.json").unlink(missing_ok=True)
         ownership.rmdir()
 

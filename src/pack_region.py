@@ -62,6 +62,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.region_build import area_paths, DATA_DIR
+from src.raster_provenance import derived_manifest, file_sha256, verify_mosaic
 
 PAD_ALL_M = 4.0
 PAD_GROUND_M = 23.5
@@ -77,6 +78,57 @@ POINTCLOUD_DIR = DATA_DIR / "pointcloud"
 
 def _pack_dir(region):
     return area_paths(region)["dir"] / "pack"
+
+
+def _sidecar(raster):
+    raster = Path(raster)
+    return raster.with_name(raster.name + ".source.json")
+
+
+def _verified_provenance(raster, region, role):
+    sidecar = _sidecar(raster)
+    if not sidecar.exists() and not sidecar.is_symlink():
+        return None
+    manifest = verify_mosaic(raster, sidecar)
+    if manifest.get("region") != region or manifest.get("role") != role:
+        raise ValueError(f"Raster provenance does not match {region} {role}: {sidecar}")
+    return manifest
+
+
+def _record_derivation(parent, raster, operation):
+    manifest = derived_manifest(parent, raster, operation)
+    with _sidecar(raster).open("x", encoding="utf-8") as stream:
+        json.dump(manifest, stream, sort_keys=True, allow_nan=False)
+        stream.write("\n")
+    return manifest
+
+
+def validate_pack_sources(region):
+    """Refuse to discard tracked inputs unless this pack records their lineage."""
+    paths = area_paths(region)
+    pack = _pack_dir(region)
+    inventory = json.loads((pack / "pack.json").read_text()).get("raster_provenance")
+    for role, name in (("dsm", "dsm_pack.tif"), ("imagery", "imagery_pack.tif")):
+        original = _verified_provenance(paths[role], region, role)
+        if original is None:
+            continue
+        if not isinstance(inventory, dict):
+            raise ValueError(f"[{region}] existing pack lacks {role} provenance")
+        packed = _verified_provenance(pack / name, region, role)
+        if packed is None or packed["fingerprint"] != inventory.get(role):
+            raise ValueError(f"[{region}] existing pack lacks matching {role} provenance")
+        packed_steps = packed.get("derivations", [])
+        original_steps = original.get("derivations", [])
+        packed_from_original = (isinstance(packed_steps, list) and packed_steps
+                                and isinstance(packed_steps[-1], dict)
+                                and packed_steps[-1].get("parent_fingerprint") == original["fingerprint"])
+        restored_from_pack = (isinstance(original_steps, list) and original_steps
+                              and isinstance(original_steps[-1], dict)
+                              and original_steps[-1].get("operation") == "restore_pack_copy"
+                              and original_steps[-1].get("parent_fingerprint") == packed["fingerprint"]
+                              and original["output"]["sha256"] == packed["output"]["sha256"])
+        if not packed_from_original and not restored_from_pack:
+            raise ValueError(f"[{region}] existing pack does not match current {role} input")
 
 
 def _boxes(outlines_path):
@@ -154,6 +206,8 @@ def pack(region):
     boxes = _boxes(paths["outlines"])
     if not len(boxes):
         raise SystemExit(f"[{region}] no outlines to pack around")
+    originals = {role: _verified_provenance(paths[role], region, role)
+                 for role in ("dsm", "imagery")}
     out = _pack_dir(region)
     if out.exists():
         shutil.rmtree(out)
@@ -216,6 +270,19 @@ def pack(region):
 
     img_bytes = _pack_imagery(paths["imagery"], boxes, out / "imagery_pack.tif")
     dsm_bytes = _copy_raster(paths["dsm"], out / "dsm_pack.tif")
+    provenance = {}
+    for role, name, operation in (
+        ("dsm", "dsm_pack.tif", "pack_full_dsm_reencode"),
+        ("imagery", "imagery_pack.tif", "pack_imagery_building_subset"),
+    ):
+        original = originals[role]
+        if original is None:
+            provenance[role] = None
+            continue
+        if _verified_provenance(paths[role], region, role) != original:
+            raise ValueError(f"[{region}] {role} provenance changed during packing")
+        derived = _record_derivation(original, out / name, operation)
+        provenance[role] = derived["fingerprint"]
     manifest = {
         "region": region, "packed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "pads_m": {"all_classes": PAD_ALL_M, "ground": PAD_GROUND_M, "imagery": PAD_IMAGERY_M},
@@ -223,6 +290,7 @@ def pack(region):
         "tiles": [p.name for p in tiles], "points_in": n_in, "points_kept": n_kept,
         "point_bytes_in": bytes_in, "point_bytes_kept": bytes_out,
         "imagery_bytes": img_bytes, "dsm_bytes": dsm_bytes,
+        "raster_provenance": provenance,
     }
     (out / "pack.json").write_text(json.dumps(manifest, indent=1))
     print(f"[{region}] packed {n_kept:,} of {n_in:,} points "
@@ -312,19 +380,43 @@ def restore(region):
         if r.returncode != 0 or not (src / "pack.json").exists():
             raise SystemExit(f"[{region}] no pack at {src} and none in the bucket")
     paths = area_paths(region)
+    manifest = json.loads((src / "pack.json").read_text())
+    provenance = manifest.get("raster_provenance")
+    if provenance is not None and (
+        not isinstance(provenance, dict) or set(provenance) != {"dsm", "imagery"}
+    ):
+        raise ValueError(f"[{region}] invalid packed raster provenance inventory")
+    packed_provenance = {}
+    for role, name in (("imagery", "imagery_pack.tif"), ("dsm", "dsm_pack.tif")):
+        parent = _verified_provenance(src / name, region, role)
+        expected = provenance.get(role) if provenance is not None else None
+        if parent is not None and (expected is None or parent["fingerprint"] != expected):
+            raise ValueError(f"[{region}] unexpected or mismatched {role} pack provenance")
+        if expected is not None and parent is None:
+            raise ValueError(f"[{region}] missing {role} pack provenance")
+        packed_provenance[role] = parent
     clashes = [p.name for p in (src / "points").glob("*.laz") if (POINTCLOUD_DIR / p.name).exists()]
     if clashes:
         raise SystemExit(f"[{region}] {len(clashes)} point tile(s) already in {POINTCLOUD_DIR} "
                          f"(e.g. {clashes[0]}) -- the survey is still here, nothing to restore")
     for name, dest in (("imagery_pack.tif", paths["imagery"]), ("dsm_pack.tif", paths["dsm"])):
-        if (src / name).exists() and Path(dest).exists():
+        if (src / name).exists() and (Path(dest).exists() or _sidecar(dest).exists()
+                                      or _sidecar(dest).is_symlink()):
             raise SystemExit(f"[{region}] {dest} exists -- refusing to overwrite it with the pack")
     POINTCLOUD_DIR.mkdir(parents=True, exist_ok=True)
     for p in sorted((src / "points").glob("*.laz")):
         shutil.copy2(p, POINTCLOUD_DIR / p.name)
-    for name, dest in (("imagery_pack.tif", paths["imagery"]), ("dsm_pack.tif", paths["dsm"])):
+    for role, name, dest in (("imagery", "imagery_pack.tif", paths["imagery"]),
+                             ("dsm", "dsm_pack.tif", paths["dsm"])):
         if (src / name).exists():
             shutil.copy2(src / name, dest)
+            parent = packed_provenance[role]
+            if parent is not None:
+                if _verified_provenance(src / name, region, role) != parent:
+                    raise ValueError(f"[{region}] {role} pack provenance changed during restore")
+                if file_sha256(dest) != parent["output"]["sha256"]:
+                    raise ValueError(f"[{region}] restored {role} does not match the pack")
+                _record_derivation(parent, dest, "restore_pack_copy")
     tiles = sorted(p.name for p in (src / "points").glob("*.laz"))
     PACKED_REGISTRY.write_text(json.dumps(sorted(packed_tiles() | set(tiles))))
     (paths["dir"] / "pointcloud_tiles.txt").write_text("\n".join(tiles) + "\n")

@@ -88,6 +88,17 @@
     assert(control.map.getLayer("dataset-source-line").layout.visibility === "none", "not hidden");
     assert(control.map.getLayer("selection"), "removed selection");
   });
+  await test("default-visible layers remain disabled across refresh and absence", async () => {
+    const control = legend();
+    const layer = { ...footprint("dsm", "source"), defaultVisible: true };
+    control.setCatalogue(catalogue([layer]), "https://example.org/");
+    await Promise.resolve();
+    await control.datasets.get("dsm").entry.setVisible(false);
+    control.setCatalogue(catalogue([]), "https://example.org/");
+    control.setCatalogue(catalogue([layer]), "https://example.org/");
+    await Promise.resolve();
+    assert(!control.datasets.get("dsm").visible, "user choice was overwritten");
+  });
   await test("tile catalogue paints panels above outlines above raster regardless of enable order", async () => {
     const control = legend();
     control.setCatalogue(catalogue([

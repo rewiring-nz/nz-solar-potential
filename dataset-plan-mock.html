@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dataset plan · Build data</title>
+<style>
+  :root { color-scheme: light; --ink:#202832; --muted:#65717d; --line:#dce2e8; --blue:#175b98; --soft:#f4f7fa; --green:#237347; --amber:#875b00; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); background:#f4f6f8; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px max(20px,calc((100vw - 1060px)/2)); }
+  header a, a { color:var(--blue); }
+  main { max-width:1060px; margin:24px auto; padding:0 20px 60px; }
+  h1 { font-size:26px; line-height:1.2; margin:0 0 6px; }
+  h2 { font-size:18px; margin:0 0 4px; }
+  h3 { font-size:15px; margin:0 0 3px; }
+  p { margin:5px 0 12px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .notice { padding:12px 14px; border:1px solid #d5e0eb; border-radius:9px; background:#edf4fb; margin:16px 0; }
+  .overview { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 20px; }
+  .chip { background:#fff; border:1px solid var(--line); border-radius:20px; padding:5px 11px; font-size:13px; }
+  .group-title { padding:10px 16px 6px; background:var(--soft); border-top:1px solid var(--line); color:#46515c; font-size:12px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
+  .group-title:first-child { border-top:0; border-radius:10px 10px 0 0; }
+  .layout { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(250px,.85fr); gap:18px; align-items:start; }
+  .card, .summary { border:1px solid var(--line); border-radius:10px; background:#fff; }
+  .dataset { padding:9px 16px; }
+  .dataset + .dataset { border-top:1px solid var(--line); }
+  .dataset-head { display:flex; gap:10px; align-items:center; min-height:32px; }
+  .dataset-head input { margin:0; accent-color:var(--blue); }
+  .dataset-main { flex:1; min-width:0; display:flex; align-items:center; gap:10px; }
+  .dataset-title { display:flex; align-items:center; gap:8px; min-width:0; }
+  .dataset-title h3 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .badge { display:inline-block; border-radius:12px; padding:1px 8px; font-size:11px; background:#edf5ee; color:var(--green); }
+  .badge.required { background:#edf1f5; color:#4b5864; }
+  .badge.partial { background:#fff4d8; color:var(--amber); }
+  .dataset-details { margin:0 0 0 auto; flex:none; }
+  summary { cursor:pointer; color:var(--blue); font-size:12px; white-space:nowrap; }
+  .details-body { padding:8px 0 2px 30px; }
+  .details-body > p:first-child { margin-top:0; }
+  .metadata { margin:8px 0 2px; padding:9px 11px; background:var(--soft); border-radius:7px; }
+  .metadata dl { display:grid; grid-template-columns:110px 1fr; gap:3px 8px; margin:0; font-size:12px; }
+  .metadata dt { color:var(--muted); }
+  .metadata dd { margin:0; }
+  .alternatives { margin:8px 0 0 20px; padding:0; color:#46515c; font-size:13px; }
+  .alternatives li { margin:4px 0; }
+  .summary { position:sticky; top:14px; padding:16px; }
+  .summary h2 { margin-bottom:12px; }
+  .summary dl { display:grid; grid-template-columns:1fr auto; gap:8px; margin:0; font-size:14px; }
+  .summary dd { margin:0; font-weight:600; text-align:right; }
+  .summary hr { border:0; border-top:1px solid var(--line); margin:13px 0; }
+  .outputs { display:grid; gap:7px; margin-top:8px; font-size:13px; }
+  .output { display:flex; justify-content:space-between; gap:8px; }
+  .state { color:var(--muted); text-align:right; }
+  .actions { display:flex; gap:8px; margin-top:16px; }
+  button { font:inherit; border:1px solid var(--line); border-radius:7px; padding:7px 12px; background:#fff; cursor:pointer; }
+  button.primary { color:#fff; background:var(--blue); border-color:var(--blue); }
+  button:disabled { opacity:.5; cursor:default; }
+  @media (max-width:720px) { main { margin-top:16px; } .layout { grid-template-columns:1fr; } .summary { position:static; } }
+</style>
+</head>
+<body>
+<header><a href="pipeline.html">← Back to Build data</a></header>
+<main>
+  <h1>Plan datasets</h1>
+  <p class="muted">The recommended datasets for an area, with the acquisition method and current readiness at a glance.</p>
+  <div class="notice"><b>Design preview only.</b> Source availability, cache status, sizes and output status below are illustrative. This page does not query LINZ or cloud storage, change build settings, download data, or start a build.</div>
+  <div class="overview" id="areas" aria-label="Selected areas"></div>
+  <div class="layout">
+    <section>
+      <h2 id="area-heading">Datasets available for Queenstown</h2>
+      <p class="muted">Defaults are selected for a quick build. Expand a dataset for source details and advanced options.</p>
+      <div class="card">
+        <div class="group-title">Building footprints</div>
+        <article class="dataset">
+          <div class="dataset-head">
+            <input type="checkbox" checked aria-label="Include building footprints" disabled>
+            <div class="dataset-main">
+              <div class="dataset-title"><h3>Building footprints</h3><span class="badge required">Required</span></div>
+              <details class="dataset-details"><summary>Details</summary><div class="details-body">
+                <p class="source">LINZ NZ Building Outlines · vector data · selected for this area</p>
+                <p class="statusline">Fetched by area, not as raster tiles. A council-wide GeoPackage cache is an alternate acquisition path.</p>
+                <div class="metadata"><dl>
+                  <dt>Data role</dt><dd>Building boundaries, IDs and locality attributes used to define and identify roofs</dd>
+                  <dt>Source</dt><dd>LINZ NZ Building Outlines (layer 101290)</dd>
+                  <dt>Acquisition</dt><dd>Current pipeline queries WFS for the area. Council GeoPackage exports can be reused across areas in the same territorial authority.</dd>
+                  <dt>Processing CRS</dt><dd>EPSG:2193 (NZTM2000)</dd>
+                  <dt>Use</dt><dd>Required for roof layouts; curated roof markup can refine or replace source geometry where present</dd>
+                </dl></div>
+                <ul class="alternatives"><li>Refresh the LINZ source when the upstream layer changes.</li></ul>
+              </div></details>
+            </div>
+          </div>
+        </article>
+        <div class="group-title">Elevation and 3D source data</div>
+        <article class="dataset">
+          <div class="dataset-head">
+            <input type="checkbox" checked aria-label="Include LiDAR surface model">
+            <div class="dataset-main">
+              <div class="dataset-title"><h3>LiDAR surface model (DSM)</h3><span class="badge required">Required where LiDAR exists</span></div>
+              <details class="dataset-details"><summary>Details</summary><div class="details-body">
+                <p class="source">Otago - Queenstown LiDAR 1 m DSM (2021) · LINZ layer 105855</p>
+                <p class="statusline">Raster · export crop today · native tiled COG acquisition is proposed, not integrated</p>
+                <div class="metadata"><dl>
+                  <dt>Data role</dt><dd>Building and roof elevation</dd>
+                  <dt>Source</dt><dd>LINZ Queenstown LiDAR survey, 2021</dd>
+                  <dt>Acquisition</dt><dd>Current pipeline requests cropped raster exports by region. Shared COG tile downloads are proposed.</dd>
+                  <dt>Resolution</dt><dd>1 m</dd>
+                  <dt>Processing CRS</dt><dd>EPSG:2193 (NZTM2000)</dd>
+                  <dt>Fallback</dt><dd>Modelled surface where no LiDAR is available; flagged as guessed</dd>
+                  <dt>Readiness</dt><dd>Source selected from the project's Queenstown pilot configuration; local cached/download state is not checked by this mock</dd>
+                </dl></div>
+                <ul class="alternatives">
+                  <li>Use an explicitly pinned survey when configured and still covering the area.</li>
+                  <li>Use the modelled surface where no suitable LiDAR survey covers the area.</li>
+                  <li>Keep export crops when the corresponding analytical COG assets cannot be confidently resolved.</li>
+                </ul>
+              </div></details>
+            </div>
+          </div>
+        </article>
+        <article class="dataset">
+          <div class="dataset-head">
+            <input type="checkbox" aria-label="Include raw LiDAR point cloud" disabled>
+            <div class="dataset-main">
+              <div class="dataset-title"><h3>Raw LiDAR point cloud</h3><span class="badge partial">Not resolved by default</span></div>
+              <details class="dataset-details"><summary>Details</summary><div class="details-body">
+                <p class="source">Survey-specific LAS/LAZ tiles · higher-detail 3D measurements than the 1 m DSM</p>
+                <p class="statusline">Point-cloud tiles · no default bulk source for this Queenstown example</p>
+                <div class="metadata"><dl>
+                  <dt>Data role</dt><dd>Detailed roof planes, heights and obstruction evidence</dd>
+                  <dt>Acquisition</dt><dd>Survey-indexed point-cloud tiles; not a raster COG and not downloaded as one regional image</dd>
+                  <dt>Pipeline support</dt><dd>Point-cloud fetch and processing paths exist, but the survey resolver only supplies a bulk store through an explicit source override</dd>
+                  <dt>Selection</dt><dd>Use only when the chosen survey has a verified point-cloud source</dd>
+                  <dt>Fallback</dt><dd>Continue with DSM-based processing where point-cloud tiles are unavailable</dd>
+                </dl></div>
+                <ul class="alternatives">
+                  <li>Skip point-cloud acquisition and use the surface model only.</li>
+                  <li>Show unavailable until the selected survey's tile index or bulk source is verified.</li>
+                </ul>
+              </div></details>
+            </div>
+          </div>
+        </article>
+        <article class="dataset">
+          <div class="dataset-head">
+            <input type="checkbox" checked aria-label="Include aerial imagery">
+            <div class="dataset-main">
+              <div class="dataset-title"><h3>Aerial imagery</h3><span class="badge">Recommended</span><span class="badge partial">Optional</span></div>
+              <details class="dataset-details"><summary>Details</summary><div class="details-body">
+                <p class="source">Queenstown 0.1 m Urban Aerial Photos (2021) · LINZ survey</p>
+                <p class="statusline">Regional raster · export crop today · separate from the 1 m elevation source</p>
+                <div class="metadata"><dl>
+                  <dt>Data role</dt><dd>Image alignment and image-based checks</dd>
+                  <dt>Source</dt><dd>LINZ Queenstown aerial imagery, 2021</dd>
+                  <dt>Acquisition</dt><dd>Regional export crop in the current pipeline; imagery survey coverage can vary by area</dd>
+                  <dt>Resolution</dt><dd>0.1 m for this configured Queenstown capture</dd>
+                  <dt>Processing CRS</dt><dd>Regional raster output uses EPSG:2193</dd>
+                  <dt>Reference image</dt><dd>May be a separate LiDAR-era survey image when required for registration</dd>
+                  <dt>Fallback</dt><dd>Build may continue without imagery, with a visible warning</dd>
+                </dl></div>
+                <ul class="alternatives">
+                  <li>Exclude imagery for a faster LiDAR-only build.</li>
+                  <li>Use the LiDAR-era reference image for registration when the pipeline resolves one.</li>
+                  <li>Retain export crops if imagery has no verified compatible COG mapping.</li>
+                </ul>
+              </div></details>
+            </div>
+          </div>
+        </article>
+        <div class="group-title">Terrain context</div>
+        <article class="dataset">
+          <div class="dataset-head">
+            <input type="checkbox" checked aria-label="Include wide terrain elevation">
+            <div class="dataset-main">
+              <div class="dataset-title"><h3>Wide terrain elevation</h3><span class="badge required">Required</span></div>
+              <details class="dataset-details"><summary>Details</summary><div class="details-body">
+                <p class="source">Shared LINZ 8 m terrain tiles · buffered around selected areas</p>
+                <p class="statusline">Raster tiles · shared across areas with overlapping buffered coverage</p>
+                <div class="metadata"><dl>
+                  <dt>Data role</dt><dd>Distant terrain horizons and terrain masks</dd>
+                  <dt>Source</dt><dd>Open LINZ elevation tiles; S3 tile/VRT workflow</dd>
+                  <dt>Resolution</dt><dd>8 m</dd>
+                  <dt>Source grid</dt><dd>NZTM2000 tile collection (EPSG:2193)</dd>
+                  <dt>Buffer</dt><dd>Region footprints buffered in metres for terrain analysis</dd>
+                  <dt>Reuse</dt><dd>Shared across areas whose buffered footprints touch the same source tiles</dd>
+                </dl></div>
+                <ul class="alternatives">
+                  <li>Use the configured LINZ export fallback.</li>
+                  <li>Advanced: inspect cache and tile details once those are reported by the live acquisition planner.</li>
+                </ul>
+              </div></details>
+            </div>
+          </div>
+        </article>
+        <div class="group-title">Generated for the selected area</div>
+        <article class="dataset">
+          <div class="dataset-head">
+            <input type="checkbox" checked aria-label="Generate roof geometry and panel layouts" disabled>
+            <div class="dataset-main">
+              <div class="dataset-title"><h3>Roof geometry and panel layouts</h3><span class="badge required">Generated output</span></div>
+              <details class="dataset-details"><summary>Details</summary><div class="details-body">
+                <p class="source">3D roof faces, obstructions, panel placements and solar estimates</p>
+                <p class="statusline">Built from outlines, DSM, available point-cloud data, imagery, markup and solar model inputs</p>
+                <p class="statusline">Built from outlines, DSM, available point-cloud data, imagery, markup and solar model inputs</p>
+                <div class="metadata"><dl>
+                  <dt>Local</dt><dd>Per-area outputs under <code>data/regions/&lt;area&gt;/</code></dd>
+                  <dt>Cloud staging</dt><dd>Published data-version artifacts; not checked in this mock</dd>
+                  <dt>Production</dt><dd>Versioned map data; not checked in this mock</dd>
+                  <dt>Provenance</dt><dd>A live planner should link outputs to selected source surveys, source revisions and build version</dd>
+                </dl></div>
+              </div></details>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+    <aside class="summary">
+      <h2>Plan summary</h2>
+      <dl>
+        <dt>Selected areas</dt><dd id="area-count">—</dd>
+        <dt>Selected source roles</dt><dd>4</dd>
+        <dt>Estimated download</dt><dd>Not yet measured</dd>
+        <dt>Peak disk needed</dt><dd>Not yet measured</dd>
+      </dl>
+      <p class="muted">A live planner should count unique missing assets across all selected areas, then show estimates and uncertainty before a build starts.</p>
+      <hr>
+      <h3>Generated outputs</h3>
+      <p class="muted">Example locations, not live status:</p>
+      <div class="outputs">
+        <div class="output"><span>Local build outputs</span><span class="state">Per-area · data/regions/…</span></div>
+        <div class="output"><span>Cloud staging</span><span class="state">Not checked</span></div>
+        <div class="output"><span>Cloud production</span><span class="state">Not checked</span></div>
+      </div>
+      <details><summary>What this mock leaves for the live planner</summary>
+        <ul class="alternatives">
+          <li>Per-region coverage and fallbacks.</li>
+          <li>Downloaded, partial, missing and protected cache assets.</li>
+          <li>Generated output provenance at local, staging and production targets.</li>
+          <li>Unique download bytes, peak disk, uncertainty and build consequences.</li>
+        </ul>
+      </details>
+      <div class="actions">
+        <button type="button" id="back">Back to areas</button>
+        <button type="button" class="primary" disabled title="This preview does not apply selections">Continue</button>
+      </div>
+    </aside>
+  </div>
+</main>
+<script>
+  "use strict";
+  const params = new URLSearchParams(location.search);
+  let areas = [{ name: "Queenstown", breadcrumb: "Queenstown-Lakes District · pilot area" }];
+  try {
+    const parsed = JSON.parse(params.get("areas") || "[]");
+    if (Array.isArray(parsed) && parsed.length) areas = parsed.filter((area) => area && typeof area.name === "string");
+  } catch (error) {
+    areas = [];
+  }
+  const esc = (value) => String(value).replace(/[&<>"']/g, (char) =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
+  document.getElementById("areas").innerHTML = areas.length
+    ? areas.map((area) => `<span class="chip">${esc(area.name)}${area.breadcrumb ? ` · ${esc(area.breadcrumb)}` : ""}</span>`).join("")
+    : '<span class="chip">No areas passed · illustrative example</span>';
+  document.getElementById("area-count").textContent = areas.length ? String(areas.length) : "Example";
+  document.getElementById("area-heading").textContent = areas.length
+    ? `Datasets available for ${areas.map((area) => area.name).join(", ")}`
+    : "Datasets available for selected area";
+  document.getElementById("back").addEventListener("click", () => window.close());
+</script>
+</body>
+</html>

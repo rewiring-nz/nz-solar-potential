@@ -77,16 +77,32 @@ def _declared_inputs(stage, region):
     from src.preflight import REQUIRED, DATA_DIR as PF_DATA
     spec = REQUIRED.get(stage) or {}
     out = []
-    if region is not None and (spec.get("region") or spec.get("optional_region")):
+    if region is not None and (spec.get("region") or spec.get("optional_region")
+                               or spec.get("staleness_region")):
         from src.region_build import area_paths
         paths = area_paths(region)
-        for key in list(spec.get("region", [])) + list(spec.get("optional_region", [])):
+        for key in (list(spec.get("region", [])) + list(spec.get("optional_region", []))
+                    + list(spec.get("staleness_region", []))):
             p = paths.get(key)
             if p is not None:
                 out.append(Path(p))
     for name in spec.get("root", []):
         out.append(PF_DATA / name)
     return out
+
+
+def _tracked_rasters(stage, region):
+    from src.raster_provenance import tracked_raster_inputs
+    names = {"dsm_mosaic.tif": "dsm", "imagery_mosaic.tif": "imagery",
+             "reference_imagery_mosaic.tif": "reference_imagery",
+             "dem_wide_mosaic.tif": "wide_dem"}
+    paths = {}
+    for path in _declared_inputs(stage, region):
+        role = names.get(path.name)
+        if role and not (role in ("imagery", "reference_imagery")
+                         and os.environ.get("SOLAR_INCLUDE_IMAGERY") == "0"):
+            paths[role] = path
+    return tracked_raster_inputs(paths, region=region)
 
 
 def is_done(stage, region):
@@ -113,6 +129,8 @@ def is_done(stage, region):
     imagery = "0" if os.environ.get("SOLAR_INCLUDE_IMAGERY") == "0" else "1"
     if marker.get("include_imagery", "1") != imagery:
         return False, "imagery selection changed since the marker"
+    if marker.get("raster_inputs", {}) != _tracked_rasters(stage, region):
+        return False, "tracked raster inputs changed since the marker"
     m_time = m.stat().st_mtime
     for p in _declared_inputs(stage, region):
         if p.exists() and p.stat().st_mtime > m_time + 1.0:
@@ -120,7 +138,10 @@ def is_done(stage, region):
     return True, "done"
 
 
-def write_marker(stage, region, seconds):
+def write_marker(stage, region, seconds, raster_inputs=None):
+    current = _tracked_rasters(stage, region)
+    if raster_inputs is not None and current != raster_inputs:
+        raise RuntimeError(f"[{region}] tracked raster inputs changed during {stage}; no marker written")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     marker_path(stage, region).write_text(json.dumps({
         "stage": stage,
@@ -130,6 +151,7 @@ def write_marker(stage, region, seconds):
         "commit": _git_sha(),
         "code": stage_code_hash(stage),
         "include_imagery": ("0" if os.environ.get("SOLAR_INCLUDE_IMAGERY") == "0" else "1"),
+        "raster_inputs": current,
     }, indent=1))
 
 
@@ -172,6 +194,8 @@ def main():
         return 1
 
     cmd = [sys.executable, str(script)] + ([a.region] if a.region else [])
+    raster_inputs = _tracked_rasters(a.stage, a.region)
+    marker_path(a.stage, a.region).unlink(missing_ok=True)
     t0 = time.time()
     r = subprocess.run(cmd, cwd=ROOT)
     elapsed = time.time() - t0
@@ -182,7 +206,7 @@ def main():
               flush=True)
         return r.returncode
 
-    write_marker(a.stage, a.region, elapsed)
+    write_marker(a.stage, a.region, elapsed, raster_inputs=raster_inputs)
     print(f"[done] {label} in {elapsed:.0f}s", flush=True)
     return 0
 

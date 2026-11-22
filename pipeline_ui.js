@@ -542,6 +542,7 @@
     }
     loadRemote(false);
     loadLayers();
+    scheduleDsmView();
     loadVm(false);
   }
 
@@ -592,6 +593,14 @@
   map.addControl(layerLegend, "top-right");
   let layerRequest = 0;
   let layersTarget = null;
+  let dsmLayers = [];
+  let baseCatalogue = null;
+  function applyLayers() {
+    if (baseCatalogue && layersTarget === target) {
+      layerLegend.setCatalogue({ ...baseCatalogue,
+        layers: [...baseCatalogue.layers, ...(target === "local" ? dsmLayers : [])] }, location.href);
+    }
+  }
   async function loadLayers() {
     if (!writable) return;
     const source = target;
@@ -600,11 +609,13 @@
       layerLegend.clearDatasets();
       layerLegend.setMessages([]);
       layersTarget = source;
+      baseCatalogue = null;
     }
     try {
       const catalogue = await api("layers?source=" + source);
       if (request !== layerRequest || source !== target) return;
-      layerLegend.setCatalogue(catalogue, location.href);
+      baseCatalogue = catalogue;
+      applyLayers();
     } catch (error) {
       if (request !== layerRequest || source !== target) return;
       layerLegend.clearDatasets();
@@ -616,6 +627,79 @@
     ...T.STATES.flatMap((s) => [s, T.STATE_COLOURS[s]]), T.STATE_COLOURS.none];
   const isOn = (key) => ["boolean", ["feature-state", key], false];
   let mapReady = false;
+  let dsmRevision = 0, dsmRunning = false, dsmTimer = null, dsmForceRefresh = false;
+  function scheduleDsmView(refresh = false) {
+    dsmRevision++;
+    dsmForceRefresh = dsmForceRefresh || refresh;
+    clearTimeout(dsmTimer);
+    dsmLayers = [];
+    applyLayers();
+    $("dsm-status-box").hidden = target !== "local" || !writable;
+    if (target !== "local" || !writable || !mapReady) return;
+    if (map.getZoom() < 9) {
+      $("dsm-status").textContent = "Zoom in to inspect national DSM tiles. Cached tile outlines remain visible.";
+      return;
+    }
+    $("dsm-status").textContent = "Checking DSM tiles for this map view…";
+    dsmTimer = setTimeout(runDsmView, 400);
+  }
+  async function runDsmView() {
+    if (dsmRunning || !mapReady || target !== "local" || map.getZoom() < 9) return;
+    const revision = dsmRevision;
+    const bounds = map.getBounds();
+    const bbox = [Math.max(-180, bounds.getWest()), Math.max(-90, bounds.getSouth()),
+      Math.min(180, bounds.getEast()), Math.min(90, bounds.getNorth())];
+    if (bbox[0] >= bbox[2] || bbox[1] >= bbox[3]) {
+      $("dsm-status").textContent = "DSM tiles unavailable for this map extent.";
+      return;
+    }
+    const refresh = dsmForceRefresh;
+    dsmForceRefresh = false;
+    dsmRunning = true;
+    try {
+      let offset = 0, checkedAt = null;
+      const assets = [];
+      for (;;) {
+        const request = await api("dsm-view", { method: "POST",
+          body: { bbox, refresh: refresh && offset === 0, offset } });
+        let result;
+        const deadline = Date.now() + 920000;
+        do {
+          await sleep(ESTIMATE_POLL_MS);
+          result = await api("dsm-view/" + request.estimate_id);
+          if (Date.now() > deadline) throw new Error("inspection timed out");
+        } while (result.status === "pending");
+        if (revision !== dsmRevision || target !== "local") return;
+        if (result.status !== "ready") throw new Error(result.error || "inspection failed");
+        if (checkedAt !== null && checkedAt !== result.metadata_checked_at) {
+          scheduleDsmView();
+          return;
+        }
+        checkedAt = result.metadata_checked_at;
+        if (result.total > result.limit) {
+          $("dsm-status").textContent = `${result.total} tiles in view; zoom in to inspect at most ${result.limit}.`;
+          return;
+        }
+        assets.push(...result.assets);
+        dsmLayers = PipelineRasterPreview.mapLayers(assets);
+        applyLayers();
+        offset += result.assets.length;
+        $("dsm-status").textContent = `${offset} of ${result.total} national DSM tile(s) inspected. Metadata checked ${new Date(checkedAt * 1000).toLocaleString()}. ` +
+          "Snapshot only; outlines are not valid-pixel coverage or necessarily the build source. Use Layers & legend to query.";
+        if (offset >= result.total) break;
+        if (!result.assets.length) throw new Error("inspection returned an incomplete batch");
+      }
+    } catch (error) {
+      if (revision === dsmRevision && target === "local") {
+        $("dsm-status").textContent = "DSM tiles unavailable: " + error.message + ". Use Refresh DSM metadata to retry.";
+      }
+    } finally {
+      dsmRunning = false;
+      if (revision !== dsmRevision) scheduleDsmView();
+    }
+  }
+  $("dsm-refresh").addEventListener("click", () => scheduleDsmView(true));
+  map.on("moveend", () => scheduleDsmView());
 
   map.on("load", () => {
     map.addSource("localities", { type: "geojson", data: empty, promoteId: "linz_id" });
@@ -680,6 +764,7 @@
       map.on("mouseleave", id, () => { map.getCanvas().style.cursor = ""; });
     });
     mapReady = true;
+    scheduleDsmView();
     loadGeometry();
   });
 
@@ -1172,6 +1257,7 @@
       if (list) list.open = selListOpen;
     }
     $("act-build").disabled = !writable || !leaves.length;
+    $("act-data-plan").disabled = !leaves.length;
     $("act-stage").disabled = !writable || !stageable.length || stageBatchTooLarge || target !== "local" || pushing || artifactBusy || cloudRunning;
     $("act-stage").title = stageBatchTooLarge ? "Push no more than 100 areas per local staging batch."
       : target !== "local" ? "Staging is local; switch the target to Local."
@@ -1188,6 +1274,16 @@
     else if (zoom) { const leaf = tree.leaves.get(zoom.dataset.zoomSel); if (leaf) { zoomToNode(leaf); revealRow(leaf.id); } }
   });
   $("act-clear").addEventListener("click", () => { selected.clear(); render(); });
+  $("act-data-plan").addEventListener("click", () => {
+    const areas = selectedLeaves().map((leaf) => ({
+      id: leaf.id,
+      name: leaf.name,
+      breadcrumb: T.breadcrumb(tree, leaf.id),
+    }));
+    const url = new URL("dataset-plan-mock.html", location.href);
+    url.searchParams.set("areas", JSON.stringify(areas));
+    window.open(url, "_blank", "noopener");
+  });
   $("act-build").addEventListener("click", () => openBuild([...selected], {}));
   $("act-cancel").addEventListener("click", async () => {
     const jobs = new Map();
@@ -1367,7 +1463,9 @@
     const rows = estimates.flatMap((est) => est.regions.map((r) => `<tr>
         <td>${r.grid_size ? esc(rowLabel(r)) : rowLabel(r)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
-          ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}</td>
+          ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
+          ${Number.isFinite(r.raster_metadata_checked_at) && Math.abs(r.raster_metadata_checked_at) <= 8.64e12 ? `<div class="muted">STAC metadata checked: ${esc(new Date(r.raster_metadata_checked_at * 1000).toISOString())}; rechecked at admission if overdue.</div>` : ""}
+          ${r.raster_plan_sha256 ? `<div class="muted">Approved raster plan SHA-256: <code>${esc(r.raster_plan_sha256)}</code></div>` : ""}</td>
         <td class="num">${fmtInt(r.buildings)}</td><td class="num">${fmtArea(r.bbox_km2)}</td>
         <td class="num">${fmtGb(r.download_gb)}</td><td class="num">${fmtDur(r.total_s)}</td></tr>`)).join("");
     const sum = (f) => ok.reduce((n, e) => n + (f(e) || 0), 0);
@@ -1378,6 +1476,27 @@
     const first = estimates[0];
     const referee = sum((e) => e.paid_referee && e.paid_referee.usd_upper);
     const empty = estimates.flatMap((e) => (e.selection && e.selection.empty_grid_ids) || []);
+    const cacheOverviews = estimates.flatMap((e) => e.raster_cache_overview ? [e.raster_cache_overview.cache] : []);
+    const cacheDetails = cacheOverviews.map((cache) => `<div class="muted">
+      Native tile cache snapshot: ${fmtGb(cache.usage_bytes / 1e9)} of ${fmtGb(cache.budget_bytes / 1e9)};
+      ${fmtGb(cache.leased_bytes / 1e9)} leased, ${fmtGb(cache.reclaimable_bytes / 1e9)} currently eligible,
+      ${fmtGb(cache.unmanaged_bytes / 1e9)} unmanaged or awaiting recovery.
+      These are logical bytes at inspection, not a reservation.
+    </div>`).join("");
+    const tileDetails = estimates.flatMap((e) => e.raster_tile_preview ? [e.raster_tile_preview] : [])
+      .map((tiles) => `<div class="muted">
+        Native tile plan: ${fmtInt(tiles.required_count)} unique required;
+        ${fmtInt(tiles.cached_count)} cached, ${fmtInt(tiles.missing_count)} requiring transfer or recovery.
+        Known missing: ${fmtGb(tiles.known_missing_bytes == null ? null : tiles.known_missing_bytes / 1e9)};
+        unknown-size missing: ${fmtInt(tiles.unknown_missing_count)}.
+        ${tiles.unknown_missing_count ? `Unknown-size transfer limit: ${fmtGb(tiles.unknown_asset_estimate_bytes / 1e9)} each.` : ""}
+        ${tiles.cached_count == null ? "Regional download totals above remain export-based because no cache policy is configured." :
+          "Regional download totals include each missing tile once per estimate; unknown sizes use the configured transfer limit."}
+      </div>`).join("");
+    const tileLists = estimates.map((estimate, index) =>
+      PipelineRasterPreview.renderAssetList(
+        estimate.raster_plan && estimate.raster_plan.batch && estimate.raster_plan.batch.assets,
+        index + 1)).join("");
     let costBlock = "";
     if (first && target === "local") {
       costBlock = `<div class="muted">Disk about ${fmtGb(totals.disk)} (${esc(first.machine.disk_free_gb)} GB free). Cloud cost: $0 (runs on this computer).</div>`;
@@ -1398,6 +1517,9 @@
       ${empty.length ? `<div class="muted">${empty.length} empty grid cell(s) skipped.</div>` : ""}
       ${referee ? `<div class="muted">Paid referee: up to US$${esc(Math.round(referee * 100) / 100)}.</div>` : ""}
       ${costBlock}
+      ${cacheDetails}
+      ${tileDetails}
+      ${tileLists}
       ${first ? `<div class="muted">Rate ${esc(first.calibration.seconds_per_building)} s/building from ${first.calibration.source === "history"
         ? esc(first.calibration.runs_used) + " recent runs" : "defaults"}. ${esc(first.disclaimer)}</div>` : ""}
       ${estimates.flatMap((e) => e.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "layer_id": 122082,
+      "role": "dsm",
+      "collection_url": "https://nz-elevation.s3-ap-southeast-2.amazonaws.com/new-zealand/new-zealand/dsm_1m/2193/collection.json",
+      "collection_id": "01JRV1RZNTCC76E4K1C3D3G44M",
+      "asset_key": "visual",
+      "evidence": "LINZ layer https://data.linz.govt.nz/layer/122082-new-zealand-lidar-1m-dsm/ identifies this S3 collection as its source; the visual asset is the DSM GeoTIFF, not a rendered image."
+    }
+  ]
+}

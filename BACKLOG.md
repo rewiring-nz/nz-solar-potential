@@ -1,5 +1,19 @@
 # Backlog
 
+The local map shows cached native raster headers by default and automatically
+inspects national DSM tiles by viewport against a refreshable metadata index.
+The overlay is metadata-only, bounded and does not select build sources or
+reserve tiles; it is not proof of valid-pixel coverage.
+
+Completed the opt-in local DSM-cache slice of #63: approved plans select
+verified LINZ national DSM tiles, share validated native payloads across areas,
+and prepare provenance-tracked regional mosaics. Offline tests cover cold and
+warm reuse, grid and mask preservation, admission, corruption, and leased-input
+protection. Operator-bounded jobs remain experimental and retain their
+reservation and workspace lock for manual recovery after launch. Production
+queue lifecycle, source selection, benchmarking and broader UI/eviction work
+continue in #71, #72, #73 and #74; no real-world savings are claimed.
+
 Cloud staging submission (#66): the area list offers Push to local staging
 and Push to remote staging. Local batches update one current staging set
 atomically; Config groups current copies under expandable councils. Remote

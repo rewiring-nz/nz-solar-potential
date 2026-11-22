@@ -991,6 +991,8 @@ def _yield_inputs(facet, shading_factor):
 
 def main(area="pilot", jobs=None, limit=0, dry_run=False):
     preflight("build_layout_geojson", area)
+    from src.build_keys import raster_inputs
+    raster_identity = raster_inputs(area)
     paths = area_paths(area)
     gdf = gpd.read_file(paths["outlines"])
     ids = [int(b) for b in gdf["building_id"].tolist()]
@@ -1148,6 +1150,8 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
     geojson = {"type": "FeatureCollection", "yield_model": yield_code_hash(),
                "features": features}
     out_path = paths["panel_layouts"]
+    from src.build_keys import forget_keys
+    forget_keys(area)
     out_path.write_text(json.dumps(geojson))
     # What every building in this file was built from (src/build_keys.py), so
     # the next incremental build rebuilds exactly the ones whose reading,
@@ -1155,7 +1159,7 @@ def main(area="pilot", jobs=None, limit=0, dry_run=False):
     # did not build the region.
     if not limit:
         from src.build_keys import record_keys
-        record_keys(area, ids, replace=True)
+        record_keys(area, ids, replace=True, raster_identity=raster_identity)
 
     n_facets = sum(1 for f in features if f["properties"]["kind"] == "facet")
     n_panels = sum(1 for f in features if f["properties"]["kind"] == "panel")

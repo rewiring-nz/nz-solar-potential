@@ -80,6 +80,16 @@ pack is byte-identical (`tests/synthetic` checks this). `build_region.sh`
 restores the pack instead of fetching. The real pack ratio has not been
 measured at scale yet.
 
+When a regional DSM or imagery mosaic has a verified raster source sidecar,
+packing records a new output hash and the derivation from that source. The
+DSM is re-encoded and the imagery is a building-area subset; neither is a
+complete native cache tile. Restore verifies tracked pack files and records
+the copy as another derivation. Legacy packs without provenance remain
+untracked. Publishing refuses to delete a tracked input if the existing pack
+does not match it. Regional uploads are verified by file size, not by a
+remote content hash. Pack and restore are not atomic transactions: after a
+failure, inspect any partial files before retrying.
+
 ## Rebuild boundaries
 
 | layer | what | re-run | cost |

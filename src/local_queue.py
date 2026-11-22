@@ -20,6 +20,10 @@ from urllib.request import ProxyHandler, Request, build_opener
 from src import region_ids
 
 TERMINAL = frozenset({"succeeded", "failed", "interrupted"})
+SOURCE_ENVIRONMENT_KEYS = frozenset({
+    "SOLAR_SURVEY_OVERRIDES", "SOLAR_SURVEY_OVERRIDES_B64", "SOLAR_RASTER_PLAN_JOB",
+    "SOLAR_RASTER_PLAN_SHA256",
+})
 
 
 class QueueError(RuntimeError):
@@ -41,10 +45,21 @@ def atomic_json(path: Path, value: Any) -> None:
 
 
 def validate_task(task: Any) -> dict[str, Any]:
-    if not isinstance(task, dict) or set(task) != {
-        "id", "region", "workspace", "python", "options", "provenance",
-    }:
+    required_fields = {"id", "region", "workspace", "python", "options", "provenance"}
+    if not isinstance(task, dict) or not required_fields <= set(task) <= (
+        required_fields | {"source_environment", "raster_admission"}
+    ):
         raise QueueError("Task must contain id, region, workspace, python, options and provenance.")
+    source_environment = task.get("source_environment", {})
+    if (not isinstance(source_environment, dict)
+            or not set(source_environment) <= SOURCE_ENVIRONMENT_KEYS
+            or any(not isinstance(value, str) or "\0" in value or len(value) > 1024 * 1024
+                   for value in source_environment.values())
+            or (source_environment.get("SOLAR_RASTER_PLAN_JOB")
+                and not Path(source_environment["SOLAR_RASTER_PLAN_JOB"]).is_absolute())
+            or (source_environment.get("SOLAR_RASTER_PLAN_SHA256")
+                and not re.fullmatch(r"[a-f0-9]{64}", source_environment["SOLAR_RASTER_PLAN_SHA256"]))):
+        raise QueueError("Invalid task source environment.")
     if not isinstance(task["id"], str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", task["id"]):
         raise QueueError("Invalid task id.")
     try:

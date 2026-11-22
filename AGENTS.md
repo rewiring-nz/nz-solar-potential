@@ -30,6 +30,28 @@ Keep Markdown guides in persona subdirectories matching the index, with
 point-in-time notes under `docs/ai-agents/archive/`. When code is removed,
 remove its obsolete documentation and diagram paths in the same change;
 consolidate redundant explanations rather than preserving them as history.
+The STAC source-selection adapter, planner, leased raster cache, local mosaic
+preparation, disk forecast and cooperative reservations
+(`src/raster_acquisition_plan.py`, `src/raster_cache.py`,
+`src/raster_source_selection.py`, `src/raster_prepare.py`, `src/raster_disk_plan.py`,
+`src/raster_reservations.py`, `src/raster_provenance.py`) are experimental.
+Live regional fetching can use mapped cache tiles only with an approved plan
+and an active, bound local queue reservation. Operator-supplied whole-job
+bounds and per-role processing options opt jobs into this experimental path;
+launched jobs retain their reservation and workspace lock for manual review
+and are reported failed. Local web estimates snapshot source selections in the
+geospatial worker; local web jobs pass those snapshots to the fetcher for
+source and footprint revalidation. No mappings are supplied by default. See
+[pipeline reference](docs/data-maintainers/pipeline-reference.md).
+The local dataset catalogue shows native cache tile header rectangles by default from
+the configured cache policy, then `SOLAR_RASTER_CACHE_DIR`, or by default
+`data/raster_cache`. Its header-only display does not verify freshness or
+integrity (`src/map_layer_catalog.py`). At zoom 9 or closer, the local panel
+automatically inspects national DSM tiles in the map viewport, in batches of
+eight and at most 150 per view, using a local metadata index refreshed after
+24 hours or on request (`tools/pipeline_webui/geo_worker.py`). Neither display verifies
+valid-pixel coverage, reserves tiles, enables cache acquisition or changes the
+build's pinned sources.
 
 ## Build and test
 
@@ -331,6 +353,14 @@ figure for the same thing. Code enforces this:
 ### Pipeline
 - Each region builds in its own Python process, because decoded point-cloud
   tiles stay in memory.
+- Pipeline preflight and regional fetching check an approved raster snapshot's
+  digest and structure before locality preparation; fetching revalidates source
+  choices and footprints before raster acquisition (`tools/pipeline.py`,
+  `src/fetch_regions.py`, `src/raster_plan_handoff.py`).
+- The local queue retains its workspace lock and fails the task if its POSIX
+  pipeline process group survives its leader or cannot be checked
+  (`tools/pipeline_queue.py`). Descendants that leave the group are not detected;
+  stop all consumers before manually recovering a retained lock.
 - Layout workers close their DSM and imagery datasets through a multiprocessing
   finalizer before interpreter teardown, avoiding Rasterio callback errors
   during spawned-worker shutdown (`src/build_layout_geojson.py`).
@@ -411,6 +441,117 @@ figure for the same thing. Code enforces this:
 - `data/` is not disposable: it holds tracked labels, benchmark and verdict
   files and trained models beside ignored inputs and build outputs.
   `git clean -fd` keeps ignored files; `rm -rf data` deletes tracked ones.
+- `src/pack_region.py` records derivations when packing or restoring mosaics
+  with verified experimental source sidecars; its DSM is re-encoded and its
+  imagery is a building-area subset, not a native cache tile. Legacy packs
+  stay untracked. Before deleting tracked inputs, `src/publish_region.py`
+  checks the pack records their lineage; remote upload checking is size-based.
+- `src/build_keys.py` and `src/run_stage.py` include verified raster sidecar
+  content identities when present; legacy rasters remain untracked. Layout
+  builds and stages compare tracked inputs before and after execution.
+- `src/raster_prepare.py` can prepare declared batch-plan footprints from
+  their selected assets with verified provenance, including a guarded merge
+  requiring aligned grids, nodata and no per-dataset masks. Non-EPSG:2193
+  tiles can be reprojected to an explicit output resolution when they have
+  common nodata and no alpha or per-dataset mask; the native cache is unchanged.
+  It does not run
+  exports fallbacks or reserve disk for a complete build. Its experimental
+  planned preparation requires item bounding boxes to cover each footprint;
+  that does not prove valid-data coverage. It checks declared native CRS
+  against the tile header, records the header CRS, and requires at least one
+  actual header extent to overlap the requested footprint. Planned reuse
+  verifies existing mosaic content and source metadata, rejects unversioned
+  assets; the admitted live fetcher uses the same preparation boundary.
+- `src/raster_region_plan.py` builds an experimental batch from the regional
+  fetcher's existing bbox, footprint and survey resolvers. The web estimate's
+  geospatial worker uses it with selected surveys and optional explicit
+  mappings. It rejects selected legacy S3 inputs. Mapped plans may be executed
+  by the experimental admitted local queue path.
+- `tools/raster_plan.py` exposes that experimental plan, optional cache
+  inspection and a point-in-time disk forecast using caller-supplied bounds;
+  the forecast does not reserve space. `src/raster_source_selection.py` loads
+  explicit mapping assertions from JSON; no default LDS-to-STAC mappings are
+  asserted. `tools/national-dsm-mapping.json` supplies an opt-in mapping for
+  national DSM layer 122082, linked to its S3 collection by LINZ. The
+  `raster_dsm_layer` survey override selects a raster without replacing the
+  regional survey used to choose reference imagery and point-cloud metadata.
+  `SOLAR_PREFER_NATIONAL_DSM=1` opts LiDAR areas into the national raster
+  unless a raster override is pinned; synthetic areas are unchanged.
+  Published capture geometry is advisory and does not prove valid-pixel coverage.
+- `src/raster_execution.py` executes an explicit plan inside a cooperative
+  reservation held by its caller, with exports delegated to a callback.
+  The live fetcher uses its mapped-input preparation under the queue reservation.
+- `src/raster_regional_execution.py` experimentally revalidates an approved
+ snapshot against current regional surveys, mappings and footprints before
+ using that execution boundary and the regional exports fetcher. The caller
+ may supply mappings or reconstruct explicit assertions from the verified
+ snapshot without re-reading mapping files; conflicting assertions fail. The
+ caller must verify approval, supply whole-job bounds and retain the context until
+ all consumers stop; it is not connected to live builds.
+- `src/raster_regional_job.py` experimentally verifies a snapshot digest and
+ runs a supervised command in the same reservation as regional acquisition.
+ Acquisition failure after admission leaves an orphan reservation. Process
+ groups cannot detect escaped descendants, and the caller must supply
+ whole-job bounds and ensure the command consumes the acquired rasters.
+ It is not connected to live builds or the queue.
+- `src/raster_cache.py` re-downloads assets without a nonempty source revision
+  or published checksum instead of assuming unchanged URL and size mean fresh.
+  It reads all bands and masks in bounded windows before committing a download,
+  adding cold-download I/O in exchange for detecting unreadable raster blocks.
+  Inspection classifies logical asset bytes as leased, reclaimable or unmanaged
+  at that instant; it does not reserve space or guarantee later eviction.
+- `src/raster_reservations.py` conservatively reserves a possible re-download
+  for cached assets because cache inspection does not pin them. It can refuse
+  warm-cache jobs that would fit. An orphaned
+  record blocks admission until its consumers are stopped and that record is
+  explicitly recovered with `tools/raster_reservation_recover.py`.
+  Its opt-in cleanup admission rechecks capacity after reclaiming expired
+  partials and unleased entries using bounded caller-supplied queue preferences;
+  it does not reclaim assets for a shortfall on another filesystem. The
+  experimental local queue instead admits without automatic cleanup and fails
+  when capacity is insufficient (`tools/pipeline_queue.py`).
+- `src/raster_job_supervisor.py` experimentally holds an admission while a POSIX
+ process group runs, signals it to stop on interruption, and leaves an orphan
+ record if its consumers may survive.
+  It cannot detect descendants that leave that group and is not wired to builds.
+- `src/raster_cache_config.py` loads experimental per-deployment cache policy;
+  `tools/raster_plan.py --cache-policy` reports effective values and their
+  sources. The experimental admission helper supports best-effort high-water
+  cleanup. The local queue rechecks due mapped STAC plans at admission and
+  refuses changed sources; it does not refresh idle entries in the background.
+  Configuration alone does not enable live cache use or build admission.
+- `SOLAR_RASTER_JOB_BOUNDS` opts approved local queue jobs into
+  experimental cooperative disk admission (`tools/pipeline_queue.py`).
+  Its cache policy must explicitly set the maximum and free-space reserve.
+  The local queue takes an exclusive reservation within the configured cache
+  registry; other cooperating reservations in that registry cannot overlap.
+  Operator bounds are not enforced caps; after any launch attempt the task
+  fails and retains its reservation and workspace lock for manual recovery.
+  Mapped jobs also need per-role processing choices and explicit reviewed
+  mappings. Web jobs are submitted one area at a time. See
+  [the admission procedure](docs/data-maintainers/pipeline-reference.md#experimental-local-queue-admission).
+- Setting `SOLAR_RASTER_CACHE_POLICY` for the local web panel adds a
+  point-in-time cache inventory to estimates via the geospatial worker.
+  `SOLAR_RASTER_SOURCE_MAPPINGS` enables explicit mapped-plan previews;
+  mapped execution requires matching operator bounds and queue admission.
+- `src/fetch_regions.py` reuses each area's first successful survey selection
+  and acquisition footprints across its raster and point-cloud passes; it
+  does not verify reused legacy regional rasters against that selection.
+  Export-tile and multi-part merges use Rasterio's disk-backed merge, requiring
+  Rasterio 1.4+.
+  For surveys without legacy S3 fields it builds a per-area export-fallback
+  plan, checks its footprints and uses its layer IDs. Local web jobs instead
+  retain the estimated batch and reject source or footprint drift before raster
+  acquisition. Admitted mapped jobs use the shared cache while fallbacks retain
+  their existing export paths.
+  `tools/pipeline.py` pins its preflight-selected source layers and point-cloud
+  metadata for subsequent processes; layer bounding extents are revalidated. Local
+  queue tasks retain source overrides and the approved plan path and digest
+  independently of the claiming worker's environment; unrelated environment
+  variables such as `LINZ_API_KEY` are not copied into tasks.
+- `src/surveys.py` tests layer bounding extents, not verified valid-pixel or
+  capture-area coverage. A matching extent can include areas with no survey
+  data; review source coverage before relying on an automatic selection.
 - Published data is a version folder in the tiles bucket; the site on
   GitHub Pages reads it through `site-config.js` (`dataBase`,
   `dataVersion`).

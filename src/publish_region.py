@@ -94,6 +94,9 @@ def publish(region, delete=True, dry=False):
     if not (pack_dir / "pack.json").exists() and not dry:
         from src.pack_region import pack as _pack
         _pack(region)
+    if delete and (pack_dir / "pack.json").exists():
+        from src.pack_region import validate_pack_sources
+        validate_pack_sources(region)
 
     # 1. upload
     _rsync(out, base + "/out", dry)
@@ -174,8 +177,13 @@ def publish(region, delete=True, dry=False):
         for pat in INPUT_GLOBS:
             for p in rdir.glob(pat):
                 freed += p.stat().st_size
+                sidecar = p.with_name(p.name + ".source.json")
+                if p in (Path(paths["dsm"]), Path(paths["imagery"])) and sidecar.is_file():
+                    freed += sidecar.stat().st_size
                 if not dry:
                     p.unlink()
+                    if p in (Path(paths["dsm"]), Path(paths["imagery"])) and sidecar.is_file():
+                        sidecar.unlink()
         # point-cloud tiles nobody else on this disk still lists
         mine = set()
         lst = rdir / "pointcloud_tiles.txt"

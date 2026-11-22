@@ -380,6 +380,15 @@ class WebHandler(RangeHandler):
                 return 202, {"estimate_id": estimate_id, "status": "pending"}
             if method == "GET" and len(parts) == 2:
                 return 200, app.estimates.get(parts[1])
+        if parts == ["raster-preview"] and method == "POST":
+            preview_id = app.estimates.start_dsm_preview(body.get("estimate_ids"))
+            return 202, {"estimate_id": preview_id, "status": "pending"}
+        if parts == ["dsm-view"] and method == "POST":
+            preview_id = app.estimates.start_dsm_view(body.get("bbox"), body.get("refresh", False),
+                                                      body.get("offset", 0))
+            return 202, {"estimate_id": preview_id, "status": "pending"}
+        if head == "dsm-view" and len(parts) == 2 and method == "GET":
+            return 200, app.estimates.get_dsm_view(parts[1])
         if head == "queue" and method == "GET" and len(parts) == 1:
             return 200, {"lanes": app.jobs.queue()}
         if parts == ["cloud", "status"] and method == "GET":

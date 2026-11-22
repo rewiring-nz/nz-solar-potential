@@ -123,7 +123,19 @@ def reading_hash(building_id):
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 
-def building_key(building_id, geometry_hash=None, region=None):
+def raster_inputs(region):
+    """Verified raster inputs used by layout; legacy rasters remain untracked."""
+    from src.raster_provenance import tracked_raster_inputs
+    directory = DATA / "regions" / region
+    paths = {"dsm": directory / "dsm_mosaic.tif",
+             "wide_dem": DATA / "dem_wide_mosaic.tif"}
+    if os.environ.get("SOLAR_INCLUDE_IMAGERY", "1") != "0":
+        paths.update({"imagery": directory / "imagery_mosaic.tif",
+                      "reference_imagery": directory / "reference_imagery_mosaic.tif"})
+    return tracked_raster_inputs(paths, region=region)
+
+
+def building_key(building_id, geometry_hash=None, region=None, raster_identity=None):
     """What a building's layout is built from: its reading and the geometry
     code. Drawn markup (data/roof_labels.json) is an input too and is in the
     key through its own hash, so a newly drawn roof reads as stale. So is the
@@ -132,7 +144,12 @@ def building_key(building_id, geometry_hash=None, region=None):
     k = f"{reading_hash(building_id)}+{labels_hash(building_id)}+" \
         f"{geometry_hash or stage_code_hash(GEOMETRY_STAGE)}"
     s = outline_slide(region, building_id) if region else None
-    return k + (f"+s{s[0]:.2f},{s[1]:.2f}" if s else "")
+    k += f"+s{s[0]:.2f},{s[1]:.2f}" if s else ""
+    tracked = raster_identity if raster_identity is not None else raster_inputs(region) if region else {}
+    if tracked:
+        from src.raster_provenance import fingerprint
+        k += "+r" + fingerprint(tracked)
+    return k
 
 
 _slides = {}
@@ -180,14 +197,7 @@ def load_keys(region):
         return {}
 
 
-def record_keys(region, building_ids, geometry_hash=None, replace=False):
-    """Record the current key for these buildings (after building them).
-    replace=True starts the file afresh -- a full region build, after which
-    no other building's old key should survive."""
-    gh = geometry_hash or stage_code_hash(GEOMETRY_STAGE)
-    keys = {} if replace else load_keys(region)
-    for bid in building_ids:
-        keys[str(int(bid))] = building_key(int(bid), gh, region)
+def _save_keys(region, keys):
     p = keys_path(region)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
@@ -195,11 +205,38 @@ def record_keys(region, building_ids, geometry_hash=None, replace=False):
     os.replace(tmp, p)
 
 
+def forget_keys(region, building_ids=None):
+    """Invalidate affected keys before changing any existing layout."""
+    keys = load_keys(region)
+    if building_ids is None:
+        keys = {}
+    else:
+        for bid in building_ids:
+            keys.pop(str(int(bid)), None)
+    _save_keys(region, keys)
+
+
+def record_keys(region, building_ids, geometry_hash=None, replace=False, raster_identity=None):
+    """Record the current key for these buildings (after building them).
+    replace=True starts the file afresh -- a full region build, after which
+    no other building's old key should survive."""
+    gh = geometry_hash or stage_code_hash(GEOMETRY_STAGE)
+    current = raster_inputs(region)
+    if raster_identity is not None and current != raster_identity:
+        raise RuntimeError(f"[{region}] tracked raster inputs changed during the build; keys not recorded")
+    keys = {} if replace else load_keys(region)
+    for bid in building_ids:
+        keys[str(int(bid))] = building_key(int(bid), gh, region, current)
+    _save_keys(region, keys)
+
+
 def stale_buildings(region, building_ids, geometry_hash=None):
     """The subset of building_ids whose recorded key differs from now."""
     gh = geometry_hash or stage_code_hash(GEOMETRY_STAGE)
     keys = load_keys(region)
-    return [int(b) for b in building_ids if keys.get(str(int(b))) != building_key(int(b), gh, region)]
+    current = raster_inputs(region)
+    return [int(b) for b in building_ids
+            if keys.get(str(int(b))) != building_key(int(b), gh, region, current)]
 
 
 YIELD_STAGE = "apply_yield"

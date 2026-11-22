@@ -108,7 +108,7 @@ def download_tile(filename, store=None, retries=4):
             time.sleep(10 * (attempt + 1))
 
 
-def main(region_names=None):
+def main(region_names=None, *, selections=None):
     """region_names lets fetch_regions call this directly, so setting up a new
     region pulls its point cloud automatically instead of relying on someone
     remembering a second script."""
@@ -127,8 +127,12 @@ def main(region_names=None):
     # properties of the selected LINZ survey, not project-wide defaults.
     all_tiles = {}
     for name in region_names:
-        bbox = area_bbox_wgs84(name)
-        sv = survey_for(bbox, name)
+        selection = selections.get(name) if selections is not None else None
+        if selection is None:
+            bbox = area_bbox_wgs84(name)
+            sv = survey_for(bbox, name)
+        else:
+            sv = selection["survey"]
         store = sv.get("pointcloud_bulk_url")
         if not store:
             print(f"{name}: survey {sv.get('name')} publishes no point cloud "
@@ -141,7 +145,9 @@ def main(region_names=None):
         if not year or not layer_id:
             raise RuntimeError(
                 f"{name}: LINZ metadata lacks a verified point-cloud year or tile index")
-        tiles = sorted({tile for footprint in area_footprints_wgs84(name)
+        footprints = (area_footprints_wgs84(name) if selection is None
+                      else selection["footprints"])
+        tiles = sorted({tile for footprint in footprints
                         for tile in tiles_for_bbox_wgs84(footprint, api_key, layer_id)})
         print(f"{name}: {len(tiles)} tiles from {store.rsplit('/', 1)[-1]} ({year})")
         names = [tilename_to_filename(t, year) for t in tiles]

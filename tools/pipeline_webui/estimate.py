@@ -130,14 +130,23 @@ def _survey(bbox, region: str) -> dict:
     except LookupError as exc:
         return {"name": None, "elevation": None, "error": str(exc),
                 "imagery_available": False}
+    imagery_s3 = sv.get("imagery_s3")
+    reference_s3 = sv.get("reference_imagery_s3")
+    same_reference = (False if reference_s3 and reference_s3 != imagery_s3 else
+                      True if imagery_s3 else
+                      bool(sv.get("imagery_layer")
+                           and sv.get("imagery_layer") == sv.get("reference_imagery_layer")))
     return {
         "name": sv.get("name", "default"),
         "elevation": sv.get("elevation") or "lidar",
         "imagery_available": bool(sv.get("imagery_layer") or sv.get("imagery_s3")),
         "reference_imagery_available": bool(
             sv.get("reference_imagery_layer") or sv.get("reference_imagery_s3")),
+        "reference_same_as_imagery": same_reference,
+        "legacy_raster_sources": any(sv.get(field) for field in
+                                     ("dsm_s3", "imagery_s3", "reference_imagery_s3")),
         "source_layers": {key: sv.get(key) for key in
-                          ("dsm_layer", "dem_layer", "lidar_tile_index_layer",
+                          ("dsm_layer", "raster_dsm_layer", "dem_layer", "lidar_tile_index_layer",
                            "imagery_layer", "reference_imagery_layer",
                            "pointcloud_bulk_url", "pointcloud_tile_year")},
         "warning": sv.get("warning"),
@@ -163,8 +172,17 @@ def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults:
     synthetic = survey.get("elevation") == "synthetic"
     imagery_available = survey.get("imagery_available", True)
     reference_imagery_available = survey.get("reference_imagery_available", imagery_available)
+    imagery_layer = source_layers.get("imagery_layer")
+    reference_layer = source_layers.get("reference_imagery_layer")
+    reference_same_as_imagery = survey.get(
+        "reference_same_as_imagery",
+        imagery_layer is not None and imagery_layer == reference_layer)
     if survey.get("error"):
         blockers.append("LINZ source metadata could not be resolved: " + survey["error"])
+    if survey.get("elevation") == "lidar":
+        warnings.append(
+            "LINZ source selection uses layer bounding extents, not verified "
+            "valid-data coverage; check the selected survey before building.")
     if synthetic:
         warnings.append("No LiDAR here: builds on a modelled surface and every roof pitch is guessed.")
     if survey.get("warning"):
@@ -173,10 +191,14 @@ def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults:
         warnings.append("Aerial imagery excluded: image-based registration and obstruction checks will be skipped.")
     elif not imagery_available and not survey.get("error"):
         warnings.append("No aerial imagery source is configured for this area.")
+    if ((cached["dsm"] and not synthetic) or
+            (include_imagery and (cached["imagery"] or cached["reference_imagery"]))):
+        warnings.append("Existing regional mosaics may be reused without verifying their "
+                        "source or footprints against this estimate.")
     imagery_gb = (0.0 if cached["imagery"] or not include_imagery or not imagery_available
                   else km2 * defaults["imagery_gb_per_km2"])
     reference_gb = (0.0 if cached["reference_imagery"] or not include_imagery
-                    or not reference_imagery_available
+                    or not reference_imagery_available or reference_same_as_imagery
                     else km2 * defaults["reference_imagery_gb_per_km2"])
     lidar_gb = (0.0 if (cached["lidar"] or synthetic or not pointcloud_available)
                 else km2 * defaults["lidar_gb_per_km2"])
@@ -199,12 +221,59 @@ def estimate_region(region: str, size: dict, survey: dict, data: Path, defaults:
         "elevation": survey.get("elevation"), "cached": cached,
         "imagery_available": imagery_available,
         "reference_imagery_available": reference_imagery_available,
+        "reference_same_as_imagery": reference_same_as_imagery,
+        "legacy_raster_sources": survey.get("legacy_raster_sources", False),
         "include_imagery": include_imagery,
         "download_gb": round(download_gb, 3), "download_s": round(download_s),
         "dsm_gb": round(dsm_gb, 3),
+        "download_components_gb": {"dsm": dsm_gb, "imagery": imagery_gb,
+                                   "reference_imagery": reference_gb, "lidar": lidar_gb},
         "compute_s": round(compute_s), "total_s": round(download_s + compute_s),
         "disk_gb": round(disk_gb, 3), "warnings": warnings, "blockers": blockers,
     }
+
+
+def apply_cached_raster_estimates(rows: list[dict], batch: dict, defaults: dict) -> None:
+    """Replace mapped export estimates with unique missing tile transfer bounds."""
+    cache = batch.get("cache")
+    if not isinstance(cache, dict):
+        return
+    by_region = {row["region"]: row for row in rows}
+    mapped = {(item["region"], item["role"]) for item in batch["inputs"]
+              if item.get("source") is not None}
+    adjusted = {region for region, _ in mapped}
+    if not adjusted:
+        return
+    for region, role in mapped:
+        by_region[region]["download_components_gb"][role] = 0.0
+    for asset in batch["assets"]:
+        if asset["cache_state"] == "cached":
+            continue
+        uses = sorted((use["region"], use["role"]) for use in asset["uses"]
+                      if (use["region"], use["role"]) in mapped)
+        if not uses:
+            raise EstimateError("Raster asset has no matching mapped input")
+        region, role = uses[0]
+        size = asset["size_bytes"]
+        if size is None:
+            size = cache["unknown_asset_estimate_bytes"]
+        by_region[region]["download_components_gb"][role] += size / 1e9
+    for region in adjusted:
+        row = by_region[region]
+        total = sum(row["download_components_gb"].values())
+        download_s = total * 8000 / max(defaults["download_mbps"], 0.1)
+        if not row["cached"]["outlines"]:
+            download_s += defaults["linz_export_overhead_s"]
+        row["download_gb"] = round(total, 3)
+        row["download_s"] = round(download_s)
+        row["total_s"] = round(download_s + row["compute_s"])
+        row["disk_gb"] = round(total + (row["buildings"] or 0)
+                               * defaults["output_mb_per_building"] / 1024, 3)
+        row["dsm_gb"] = round(row["download_components_gb"]["dsm"], 3)
+        row["warnings"].append(
+            "Mapped tile transfer is estimated once per batch, assigned to the first "
+            "area using each tile. Unknown sizes use the configured transfer limit; "
+            "retries or changed queue order can change individual downloads.")
 
 
 def referee_note(rows: list[dict]) -> dict:
@@ -311,6 +380,104 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
             continue
         rows.append(estimate_region(region, size, survey_fn(size["bbox"], region), cache_dir,
                                     defaults, spb, include_imagery))
+    raster_plan = None
+    cache_overview = None
+    raster_tiles = None
+    if not is_cloud:
+        eligible = []
+        for row in rows:
+            layers = row.get("source_layers") or {}
+            elevation = row.get("elevation")
+            if row.get("legacy_raster_sources"):
+                row["warnings"].append(
+                    "Legacy S3 raster inputs are not represented in the experimental "
+                    "raster plan; download sizes remain area-based estimates.")
+            if (row.get("bbox") and not row.get("legacy_raster_sources")
+                    and (elevation == "synthetic"
+                         or (elevation == "lidar" and type(layers.get("dsm_layer")) is int
+                             and layers["dsm_layer"] > 0))):
+                eligible.append({key: row.get(key) for key in
+                                 ("region", "bbox", "survey", "elevation", "source_layers")})
+        if eligible:
+            from tools.pipeline_webui import geo_worker
+            request = {"data": str(data.resolve()), "regions": eligible,
+                       "include_imagery": include_imagery}
+            try:
+                raster_plan = geo_worker.run(["raster-plan"], input_text=json.dumps(request))
+            except LookupError as exc:
+                raise EstimateError(f"Raster acquisition plan failed: {exc}") from exc
+            cache_overview = raster_plan.pop("cache_overview", None)
+            batch = raster_plan.get("batch")
+            if batch is not None and any(item.get("source") is not None for item in batch["inputs"]):
+                assets = batch["assets"]
+                cache = batch.get("cache")
+                raster_tiles = {
+                    "required_count": len(assets),
+                    "cached_count": cache["cached_count"] if cache else None,
+                    "missing_count": cache["missing_count"] if cache else None,
+                    "known_missing_bytes": cache["known_missing_bytes"] if cache else None,
+                    "unknown_missing_count": cache["unknown_missing_count"] if cache else None,
+                    "unknown_asset_estimate_bytes": cache["unknown_asset_estimate_bytes"] if cache else None,
+                    "known_asset_bytes": batch["known_asset_bytes"],
+                    "unknown_size_count": batch["unknown_size_count"],
+                }
+                apply_cached_raster_estimates(rows, batch, defaults)
+            by_region = {item["region"]: item["inputs"] for item in raster_plan["regions"]}
+            coverage = batch["footprint_bbox_coverage"] if batch is not None else []
+            for row in rows:
+                if row["region"] in by_region:
+                    row["raster_sources"] = by_region[row["region"]]
+                    if any(item["state"] == "mapped" for item in row["raster_sources"]):
+                        from src.raster_plan_handoff import plan_digest, plan_for_regions
+                        try:
+                            row["raster_plan_sha256"] = plan_digest(
+                                plan_for_regions(raster_plan, [row["region"]]))
+                            row["raster_metadata_checked_at"] = batch.get("metadata_checked_at")
+                        except (KeyError, TypeError, ValueError) as exc:
+                            raise EstimateError(f"Raster acquisition plan is invalid: {exc}") from exc
+                        if not os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
+                            row["blockers"].append(
+                                "Mapped raster plans are preview-only without operator-supplied "
+                                "whole-job bounds (SOLAR_RASTER_JOB_BOUNDS).")
+                        else:
+                            row["warnings"].append(
+                                "Mapped build requires matching operator bounds; after launch its "
+                                "reservation and workspace lock need manual recovery.")
+                    if any(item["state"] == "exports_fallback" for item in row["raster_sources"]):
+                        row["warnings"].append(
+                            "Raster inputs use LINZ exports; download sizes are estimates, "
+                            "not shared-tile cache predictions.")
+                    gaps = [item for item in coverage
+                            if item["region"] == row["region"]
+                            and item["bbox_coverage"] != "fully_bounded"]
+                    if gaps:
+                        roles = ", ".join(sorted({item["role"] for item in gaps}))
+                        row["warnings"].append(
+                            f"Mapped {roles} item bounds do not cover {len(gaps)} requested "
+                            "footprint(s); preparation would reject this plan. Item bounds "
+                            "do not establish valid-pixel coverage.")
+                        row["blockers"].append(
+                            f"Mapped {roles} item bounds do not cover the acquisition footprints.")
+                    captures = [item for item in (batch or {}).get("capture_coverage", [])
+                                if item["region"] == row["region"] and item["state"] != "covered"]
+                    if captures:
+                        row["warnings"].append(
+                            f"Published national DSM capture geometry does not fully cover "
+                            f"{len(captures)} footprint(s). Its simplified boundary can include "
+                            "nodata; inspect coverage before building.")
+                        if any(item["state"] == "outside" for item in captures):
+                            row["blockers"].append(
+                                "A mapped DSM footprint is outside the published capture geometry; "
+                                "review the source before building.")
+                    surveys = [item for item in (batch or {}).get("capture_surveys", [])
+                               if item["region"] == row["region"] and item["role"] == "dsm"]
+                    if surveys:
+                        names = {survey["title"] for item in surveys for survey in item["surveys"]}
+                        if row.get("survey") not in names:
+                            row["warnings"].append(
+                                "The selected reference survey name is not among the national "
+                                "DSM's intersecting survey names. Check point-cloud and reference-"
+                                "imagery alignment; names alone cannot prove dataset identity.")
     totals = {k: round(sum(r.get(k) or 0 for r in rows), 3)
               for k in ("buildings", "download_gb", "download_s", "compute_s", "total_s", "disk_gb")}
     warnings, blockers = [], []
@@ -332,6 +499,11 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         warnings.extend(cloud_block.pop("warnings"))
         blockers.extend(cloud_block["blockers"])
     else:
+        warnings.append(
+            "Disk figures are estimates, not peak-space bounds or reservations. "
+            "Only jobs with operator-supplied bounds use cooperative disk admission.")
+        if os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and len(rows) != 1:
+            blockers.append("Operator-bounded local jobs must be submitted one area at a time.")
         free = (shutil.disk_usage(data if data.exists() else data.parent).free
                 if disk_free is None else disk_free)
         free_gb = free / 1e9
@@ -353,6 +525,9 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         "blockers": blockers + [f"{r['region']}: {b}" for r in rows for b in r["blockers"]],
         "machine": machine, "cloud": cloud_block,
         "selection": selection_info,
+        "raster_plan": raster_plan,
+        "raster_cache_overview": cache_overview,
+        "raster_tile_preview": raster_tiles,
         "options": {"include_imagery": include_imagery, "paid_referee": paid_referee},
         "cloud_cost_nzd": cloud_block["cost_nzd"] if cloud_block else "0",
         "paid_referee": referee,
@@ -463,6 +638,9 @@ class EstimateStore:
         self.api_key_fn = api_key_fn
         self.kwargs = estimate_kwargs
         self.dir = web_dir(self.data) / "estimates"
+        self._dsm_view_lock = threading.Lock()
+        self._dsm_view_records_lock = threading.Lock()
+        self._dsm_view_records: dict[str, dict] = {}
 
     def _path(self, estimate_id: str) -> Path:
         if not _ID.fullmatch(estimate_id or ""):
@@ -526,9 +704,110 @@ class EstimateStore:
             raise EstimateError("unknown estimate", 404)
         return record
 
+    def start_dsm_preview(self, estimate_ids: object) -> str:
+        """Plan the national DSM for already-estimated local selections."""
+        if (not isinstance(estimate_ids, list) or not estimate_ids
+                or len(estimate_ids) > 200
+                or any(not isinstance(item, str) or not _ID.fullmatch(item) for item in estimate_ids)
+                or len(set(estimate_ids)) != len(estimate_ids)):
+            raise EstimateError("select valid local estimates for the DSM preview")
+        rows = []
+        seen = set()
+        for identifier in estimate_ids:
+            record = self.get(identifier)
+            if (record.get("status") != "ready" or record.get("target") != "local"
+                    or time.time() > float(record.get("expires_at") or 0)):
+                raise EstimateError("local estimate unavailable or expired; estimate again", 409)
+            for row in record.get("regions") or []:
+                region = row.get("region")
+                if not region or region in seen:
+                    raise EstimateError("duplicate or invalid preview area; estimate again", 409)
+                if any(str(value).startswith("LINZ source metadata could not be resolved")
+                       for value in row.get("blockers", [])):
+                    raise EstimateError(f"source metadata unresolved for {region}; estimate again", 409)
+                seen.add(region)
+                rows.append({key: row.get(key) for key in ("region", "bbox", "elevation", "survey")})
+        if not rows or len(rows) > 5000:
+            raise EstimateError("DSM preview requires between 1 and 5000 estimated areas")
+        preview_id = secrets.token_hex(8)
+        write_json_atomic(self._path(preview_id), {
+            "estimate_id": preview_id, "kind": "dsm-preview", "status": "pending"})
+
+        def work():
+            from tools.pipeline_webui import geo_worker
+            try:
+                result = geo_worker.run(["national-dsm-preview"], timeout=900,
+                                        input_text=json.dumps({"data": str(self.data.resolve()),
+                                                               "regions": rows}))
+                result.update(estimate_id=preview_id, kind="dsm-preview", status="ready")
+            except LookupError as exc:
+                result = {"estimate_id": preview_id, "kind": "dsm-preview",
+                          "status": "error", "error": str(exc)}
+            write_json_atomic(self._path(preview_id), result)
+
+        threading.Thread(target=work, daemon=True, name=f"dsm-preview-{preview_id}").start()
+        return preview_id
+
+    def start_dsm_view(self, bbox: object, refresh: object = False, offset: object = 0) -> str:
+        import math
+        if (not isinstance(bbox, list) or len(bbox) != 4
+                or any(type(value) not in (int, float) or not math.isfinite(value) for value in bbox)
+                or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90)):
+            raise EstimateError("invalid DSM map viewport")
+        if type(refresh) is not bool:
+            raise EstimateError("refresh must be true or false")
+        if type(offset) is not int or not 0 <= offset < 150:
+            raise EstimateError("invalid DSM inspection offset")
+        if not self._dsm_view_lock.acquire(blocking=False):
+            raise EstimateError("DSM map inspection already running; retry shortly", 409)
+        identifier = secrets.token_hex(8)
+        with self._dsm_view_records_lock:
+            while len(self._dsm_view_records) >= 32:
+                del self._dsm_view_records[next(iter(self._dsm_view_records))]
+            self._dsm_view_records[identifier] = {
+                "estimate_id": identifier, "kind": "dsm-view", "status": "pending"}
+
+        def work():
+            from tools.pipeline_webui import geo_worker
+            try:
+                try:
+                    result = geo_worker.run(["national-dsm-view"], timeout=900,
+                                            input_text=json.dumps({"data": str(self.data.resolve()),
+                                                                   "bbox": bbox, "refresh": refresh,
+                                                                   "offset": offset}))
+                    result.update(estimate_id=identifier, kind="dsm-view", status="ready")
+                except LookupError as exc:
+                    result = {"estimate_id": identifier, "kind": "dsm-view",
+                              "status": "error", "error": str(exc)}
+                except Exception as exc:
+                    result = {"estimate_id": identifier, "kind": "dsm-view", "status": "error",
+                              "error": f"DSM inspection failed ({type(exc).__name__})"}
+                with self._dsm_view_records_lock:
+                    self._dsm_view_records[identifier] = result
+            finally:
+                self._dsm_view_lock.release()
+
+        try:
+            threading.Thread(target=work, daemon=True, name=f"dsm-view-{identifier}").start()
+        except RuntimeError:
+            self._dsm_view_lock.release()
+            with self._dsm_view_records_lock:
+                del self._dsm_view_records[identifier]
+            raise
+        return identifier
+
+    def get_dsm_view(self, identifier: str) -> dict:
+        with self._dsm_view_records_lock:
+            record = self._dsm_view_records.get(identifier)
+            if record is None:
+                raise EstimateError("unknown DSM inspection", 404)
+            return dict(record)
+
     def usable(self, estimate_id: str, now: float | None = None) -> dict:
         """The stored estimate a job may start from, or EstimateError."""
         record = self.get(estimate_id)
+        if record.get("kind") in ("dsm-preview", "dsm-view"):
+            raise EstimateError("a DSM preview is not a build estimate", 409)
         now = time.time() if now is None else now
         if record.get("status") != "ready":
             raise EstimateError("the estimate is not ready", 409)

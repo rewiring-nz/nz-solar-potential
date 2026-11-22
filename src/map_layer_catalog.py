@@ -13,6 +13,7 @@ from typing import Any
 _COLOURS = {
     "lidar": "#7c3aed",
     "raster": "#0ea5e9",
+    "native_raster": "#d97706",
     "outlines": "#64748b",
     "coverage": "#16a34a",
     "buildings": "#f59e0b",
@@ -379,6 +380,74 @@ def _raster_layer(data: Path, warnings: list[str]) -> dict | None:
     return result
 
 
+def _native_raster_layer(directory: Path, data: Path, warnings: list[str]) -> dict | None:
+    import fcntl
+    import rasterio
+
+    directory = Path(directory)
+    assets = directory / "assets"
+    if not assets.is_dir():
+        _warn(warnings, directory, data, "configured native raster cache has no assets directory")
+        return None
+    features = []
+    for path in sorted(assets.glob("*.tif")):
+        key = path.stem
+        if not re.fullmatch(r"[a-f0-9]{64}", key) or path.is_symlink() or not path.is_file():
+            continue
+        metadata = directory / "metadata" / f"{key}.json"
+        lock_path = directory / "locks" / f"{key}.lock"
+        if metadata.is_symlink() or lock_path.is_symlink():
+            _warn(warnings, path, data, "native raster cache metadata or lock is a symlink")
+            continue
+        try:
+            with lock_path.open("rb") as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+                try:
+                    if (directory / "partial" / f"{key}.previous").exists():
+                        _warn(warnings, path, data, "interrupted replacement requires cache recovery")
+                        continue
+                    record = json.loads(metadata.read_text(encoding="utf-8"))
+                    if (not isinstance(record, dict)
+                            or type(record.get("size_bytes")) is not int
+                            or record["size_bytes"] <= 0
+                            or record["size_bytes"] != path.stat().st_size
+                            or not isinstance(record.get("sha256"), str)
+                            or not re.fullmatch(r"[a-f0-9]{64}", record["sha256"])
+                            or any(not isinstance(record.get(field), str) or not record[field]
+                                   for field in ("collection_id", "item_id", "asset_key"))):
+                        _warn(warnings, path, data, "invalid or incomplete native raster metadata")
+                        continue
+                    with rasterio.open(path) as dataset:
+                        if dataset.crs is None:
+                            raise ValueError("raster has no CRS")
+                        bounds = _wgs84_bounds(dataset.bounds, dataset.crs)
+                        if bounds is None:
+                            raise ValueError("invalid raster header bounds")
+                    features.append(_feature(
+                        f"native-raster:{key}", record["item_id"], bounds, [],
+                        source="native_raster_tile", status="cached",
+                        extent_kind="native_raster_header_extent", subset=False,
+                        collection_id=record["collection_id"], asset_key=record["asset_key"],
+                        integrity="not checked", freshness="not checked",
+                    ))
+                finally:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        except BlockingIOError:
+            _warn(warnings, path, data, "native raster is busy; extent omitted")
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+                rasterio.errors.RasterioError) as exc:
+            _warn(warnings, path, data, f"could not inspect native raster ({type(exc).__name__})")
+    layer = _layer(
+        "source-native-raster", "Native raster cache tiles", "source", "footprint",
+        features, _COLOURS["native_raster"],
+        "Native tile header rectangles, not valid-data coverage; cache freshness and content "
+        "integrity are not checked by this catalogue.",
+    )
+    if layer:
+        layer["defaultVisible"] = True
+    return layer
+
+
 def _authority_regions(data: Path, authority: str) -> list[str]:
     authority_key = re.sub(r"[^a-z0-9]+", "-", authority.lower()).strip("-")
     result = [
@@ -604,13 +673,14 @@ def _local_combined_regions(data: Path, warnings: list[str]) -> list[str]:
         return []
 
 
-def build_local_catalog(data_dir: Path) -> dict:
+def build_local_catalog(data_dir: Path, *, raster_cache_dir: Path | None = None) -> dict:
     """Describe only cached local sources and region outputs on disk."""
     data = Path(data_dir)
     warnings: list[str] = []
     layers = []
     for layer in (
         _pointcloud_layer(data, warnings),
+        _native_raster_layer(raster_cache_dir, data, warnings) if raster_cache_dir is not None else None,
         *_raster_layer(data, warnings),
         _council_outline_layer(data, warnings),
     ):

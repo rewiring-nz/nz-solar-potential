@@ -87,6 +87,7 @@ REQUIRED = {
         "root": ["dem_wide_mosaic.tif", "selected_faces",
                  "roof_labels.json"],
         "optional_region": ["imagery"],
+        "staleness_region": ["reference_imagery"],
     },
     "gate_panels": {
         # No wide DEM any more: the gate stopped reading it when the
@@ -108,9 +109,12 @@ REQUIRED = {
     },
     "add_addresses":          {"region": ["solar_potential"]},
     # Per-building image-vs-LiDAR offset; emit moves the drawing by it.
-    "register_imagery":       {"region": ["outlines", "dsm"], "optional_region": ["imagery"]},
+    "register_imagery":       {"region": ["outlines", "dsm"],
+                               "optional_region": ["imagery"],
+                               "staleness_region": ["reference_imagery"]},
     # Buildings gone since the survey: compares the photos, rewrites the layouts.
-    "demolished":             {"region": ["panel_layouts", "outlines"]},
+    "demolished":             {"region": ["panel_layouts", "outlines"],
+                               "staleness_region": ["reference_imagery"]},
     # The region's own tiles, cells, detail and summary (docs/maintainers/scale-architecture.md).
     "emit_region":            {"region": ["solar_potential", "panel_layouts"],
                                "optional_region": ["heatmap_png"]},

@@ -21,13 +21,12 @@ import time
 import zipfile
 from pathlib import Path
 
-import rasterio
 import requests
 from dotenv import load_dotenv
-from rasterio.merge import merge
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config
+from src.raster_merge import merge_to_file
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 EXPORT_CREATE_TIMEOUT_S = 120
@@ -161,23 +160,14 @@ def fetch_raster(bbox_wgs84, api_key, layer_id, name, out_dir=DATA_DIR, format_k
     with phase("local_prepare"):
         extract_dir = out_dir / name
         with zipfile.ZipFile(zip_path) as zf:
+            names = sorted({Path(item.filename).name for item in zf.infolist()
+                            if not item.is_dir() and len(Path(item.filename).parts) == 1
+                            and item.filename.endswith(".tif")})
             zf.extractall(extract_dir)
 
-        tifs = sorted(extract_dir.glob("*.tif"))
-        srcs = [rasterio.open(f) for f in tifs]
-        mosaic, transform = merge(srcs)
-        profile = srcs[0].profile
-        profile.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform)
+        tifs = [extract_dir / filename for filename in names]
         mosaic_path = out_dir / f"{name}_mosaic.tif"
-        temporary = mosaic_path.with_name(mosaic_path.stem + ".part.tif")
-        try:
-            with rasterio.open(temporary, "w", **profile) as dst:
-                dst.write(mosaic)
-            temporary.replace(mosaic_path)
-        finally:
-            for s in srcs:
-                s.close()
-            temporary.unlink(missing_ok=True)
+        merge_to_file(tifs, mosaic_path)
 
     print(f"Mosaicked {len(tifs)} tiles -> {mosaic_path}")
     reclaim_export_intermediates(zip_path, extract_dir, mosaic_path)
@@ -255,7 +245,8 @@ def main():
     if survey.get("elevation") == "synthetic" or not survey.get("dsm_layer"):
         raise RuntimeError("no covering LINZ DSM is available for the pilot area")
     print(f"Fetching DSM for bbox {config.PILOT_BBOX} (WGS84)...")
-    fetch_raster(config.PILOT_BBOX, api_key, survey["dsm_layer"], "dsm")
+    fetch_raster(config.PILOT_BBOX, api_key,
+                 survey.get("raster_dsm_layer") or survey["dsm_layer"], "dsm")
 
     from src.fetch_dem_wide import ensure_dem_wide
     print("Ensuring wide 8m DEM for distant terrain...")

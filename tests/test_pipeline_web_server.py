@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -71,6 +72,22 @@ def test_api_end_to_end():
             status, fc = c.request("GET", "/api/regions")
             assert status == 200 and fc["type"] == "FeatureCollection"
             assert c.request("GET", "/api/layers", token=None)[0] == 403
+            assert c.request("POST", "/api/dsm-view", {"bbox": [168, -45, 169, -44]}, token=None)[0] == 403
+            assert c.request("POST", "/api/dsm-view", {"bbox": [168, -45, 169, -44]},
+                             headers={"Origin": "http://evil.example"})[0] == 403
+            assert c.request("POST", "/api/dsm-view", {"bbox": [1, 2, 1, 3]})[0] == 400
+            with patch("tools.pipeline_webui.geo_worker.run", return_value={"assets": [], "total": 0}):
+                status, started_view = c.request("POST", "/api/dsm-view", {"bbox": [168, -45, 169, -44]})
+                assert status == 202
+                for _ in range(100):
+                    _, result = c.request("GET", "/api/dsm-view/" + started_view["estimate_id"])
+                    if result["status"] != "pending":
+                        break
+                    time.sleep(.01)
+                assert result["status"] == "ready" and result["kind"] == "dsm-view"
+                assert c.request("GET", "/api/dsm-view/" + started_view["estimate_id"], token=None)[0] == 403
+                assert c.request("POST", "/api/jobs", {"estimate_id": started_view["estimate_id"],
+                                                        "target": "local"})[0] == 404
             status, layers = c.request("GET", "/api/layers?source=local")
             assert status == 200 and layers["version"] == 1
             assert layers["availability"] == {"source": "local", "local_cache": True}
@@ -108,6 +125,20 @@ def test_api_end_to_end():
                 time.sleep(0.05)
             assert est["status"] == "ready" and est["totals"]["buildings"] == 5, est
             assert est["options"] == {"include_imagery": False, "paid_referee": False}
+            preview_body = {"estimate_ids": [est["estimate_id"]]}
+            assert c.request("POST", "/api/raster-preview", preview_body, token=None)[0] == 403
+            assert c.request("POST", "/api/raster-preview", preview_body,
+                             headers={"Origin": "http://evil.example"})[0] == 403
+            with patch("tools.pipeline_webui.geo_worker.run", return_value={"assets": []}):
+                status, started_preview = c.request("POST", "/api/raster-preview", preview_body)
+                assert status == 202
+                for _ in range(100):
+                    _, preview = c.request("GET", "/api/estimate/" + started_preview["estimate_id"])
+                    if preview["status"] != "pending":
+                        break
+                    time.sleep(0.01)
+                assert preview["status"] == "ready"
+                assert c.request("GET", "/api/estimate/" + started_preview["estimate_id"], token=None)[0] == 403
 
             body = {"estimate_id": est["estimate_id"],
                     "include_imagery": est["options"]["include_imagery"],
@@ -153,12 +184,15 @@ def test_static_files_keep_pipeline_serve_rules():
         try:
             status, body = c.request("GET", "/pipeline.html", token=None)
             assert status == 200 and b"pipeline_ui.js" in body and b"pipeline_progress.js" in body
+            assert b"pipeline_raster_preview.js" in body
             assert b"<title>Build data</title>" in body
             assert b'id="stage-build"' in body and b'id="stage-queue"' in body and b'id="stage-jobs"' in body
             assert b'id="map-action-status"' in body
             assert b'data-tab="regions"' not in body and b'id="region-list"' not in body
             status, progress = c.request("GET", "/pipeline_progress.js", token=None)
             assert status == 200 and b"data-map-region" in progress and b"matchingJobsForRegion" in progress
+            status, raster_preview = c.request("GET", "/pipeline_raster_preview.js", token=None)
+            assert status == 200 and b"renderAssetList" in raster_preview
             status, ui = c.request("GET", "/pipeline_ui.js", token=None)
             assert status == 200 and ui.count(b"renderAreaTitles(") >= 1
             assert b'$("job-list").querySelectorAll("[data-map-region]")' in ui

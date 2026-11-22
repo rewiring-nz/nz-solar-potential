@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.region_ids import list_regions
+from src.raster_plan_handoff import plan_digest, plan_for_regions
 from tools.pipeline_webui.cloud import parse_cloud_line
 from tools.pipeline_webui.estimate import referee_note
 from tools.pipeline_webui.common import DATA, ROOT, read_json, web_dir, write_json_atomic
@@ -321,6 +322,9 @@ class JobManager:
         rows = estimate.get("regions") or []
         if not rows:
             raise JobError("the estimate names no regions")
+        if (estimate.get("target", "local") == "local"
+                and os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and len(rows) != 1):
+            raise JobError("operator-bounded local jobs must be submitted one area at a time", 409)
         if any(row.get("selection_count", 1) != 1 for row in rows):
             raise JobError("this estimate groups grid cells; estimate again for separate jobs", 409)
         jobs = []
@@ -331,6 +335,18 @@ class JobManager:
                            ("buildings", "download_gb", "download_s", "compute_s", "total_s", "disk_gb")},
                 "paid_referee": referee_note([row]),
             }
+            if estimate.get("target", "local") == "local" and estimate.get("raster_plan") is not None:
+                try:
+                    plan = estimate["raster_plan"]
+                    if ("raster_sources" not in row and isinstance(plan, dict)
+                            and isinstance(plan.get("regions"), list)
+                            and all(isinstance(item, dict) and item.get("region") != row["region"]
+                                    for item in plan["regions"])):
+                        child["raster_plan"] = None
+                    else:
+                        child["raster_plan"] = plan_for_regions(plan, [row["region"]])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise JobError(f"the estimate's raster plan is invalid; estimate again: {exc}", 409) from exc
             if estimate.get("target", "local") != "local":
                 if len(rows) > 1 and not row.get("cloud"):
                     raise JobError("this estimate lacks per-job cloud costs; estimate again", 409)
@@ -364,6 +380,60 @@ class JobManager:
             for row in estimate.get("regions", [])
             if isinstance(row.get("source_layers"), dict)
         }
+        raster_plan = estimate.get("raster_plan")
+        raster_admission = None
+        if (lane_name == "local" and raster_plan is None
+                and any("raster_sources" in row for row in estimate["regions"])):
+            raise JobError("the estimate's raster plan is missing; estimate again", 409)
+        if lane_name == "local" and raster_plan is not None:
+            if not isinstance(raster_plan, dict) or not isinstance(raster_plan.get("regions"), list):
+                raise JobError("the estimate's raster plan is invalid; estimate again", 409)
+            planned_regions = raster_plan["regions"]
+            if any(not isinstance(entry, dict) for entry in planned_regions):
+                raise JobError("the estimate's raster plan is invalid; estimate again", 409)
+            if any(not isinstance(entry.get("inputs"), list) for entry in planned_regions):
+                raise JobError("the estimate's raster source selections are invalid; estimate again", 409)
+            batch = raster_plan.get("batch")
+            if batch is not None and (not isinstance(batch, dict)
+                                      or not isinstance(batch.get("inputs"), list)
+                                      or any(not isinstance(item, dict) for item in batch["inputs"])):
+                raise JobError("the estimate's raster batch is invalid; estimate again", 409)
+            mapped = any(isinstance(status, dict) and status.get("state") == "mapped"
+                   for entry in planned_regions for status in entry["inputs"]) or (
+                       batch is not None and any(item.get("source") is not None
+                                                 for item in batch["inputs"]))
+            if mapped and not os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
+                raise JobError("mapped raster plans are preview-only; live cache acquisition "
+                               "requires operator-supplied whole-job bounds", 409)
+            counts = {region: sum(entry.get("region") == region for entry in planned_regions)
+                      for region in regions}
+            if any(count > 1 for count in counts.values()):
+                raise JobError("the estimate has duplicate raster selections; estimate again", 409)
+            for row in estimate["regions"]:
+                if "raster_sources" in row and counts[row["region"]] != 1:
+                    raise JobError("the estimate's raster selection is missing; estimate again", 409)
+            if not all(count == 1 for count in counts.values()):
+                raster_plan = None
+            else:
+                try:
+                    plan_for_regions(raster_plan, regions)
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise JobError(f"the estimate's raster plan is invalid; estimate again: {exc}", 409) from exc
+            if mapped or os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
+                if len(regions) != 1 or raster_plan is None:
+                    raise JobError("operator-bounded jobs require one region and its approved plan", 409)
+                try:
+                    from src.raster_job_bounds import load_job_bounds, processing_for_snapshot
+                    bounds = load_job_bounds(
+                        Path(os.environ["SOLAR_RASTER_JOB_BOUNDS"]), region=regions[0],
+                        workspace=self.root, plan_digest=plan_digest(raster_plan),
+                        include_imagery=include_imagery, paid_referee=paid_referee)
+                    processing_for_snapshot(bounds, raster_plan, regions[0])
+                    raster_admission = bounds
+                except (OSError, ValueError) as exc:
+                    raise JobError(f"job bounds are invalid: {exc}", 409) from exc
+        elif lane_name == "local" and os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
+            raise JobError("operator-bounded jobs require an approved raster plan", 409)
         job_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + secrets.token_hex(3)
         job = {
             "job_id": job_id, "estimate_id": estimate.get("estimate_id"),
@@ -371,6 +441,10 @@ class JobManager:
             "paid_referee": bool(paid_referee),
             "include_imagery": include_imagery,
             "survey_overrides": survey_overrides,
+            "raster_plan": raster_plan if lane_name == "local" else None,
+            "raster_admission": raster_admission,
+            "raster_plan_sha256": (plan_digest(raster_plan)
+                                   if lane_name == "local" and raster_plan is not None else None),
             "approved": {"at": _now(),
                          "cloud_cost_acknowledged": (target == "local"
                                                      or cloud_cost_acknowledged),
@@ -510,8 +584,16 @@ class JobManager:
                     cmd = self.command_builder(self.python, run["region"], job["paid_referee"])
                     if not job.get("include_imagery", True):
                         cmd.append("--no-imagery")
-                    env = ({"SOLAR_SURVEY_OVERRIDES": json.dumps(job["survey_overrides"])}
-                           if job.get("survey_overrides") else None)
+                    env = {
+                        "SOLAR_RASTER_PLAN_JOB": (
+                            str((job_dir / "job.json").resolve()) if job.get("raster_plan") else ""),
+                        "SOLAR_RASTER_PLAN_SHA256": job.get("raster_plan_sha256") or "",
+                        "SOLAR_RASTER_JOB_BOUNDS_SNAPSHOT": (
+                            str((job_dir / "job.json").resolve()) if job.get("raster_admission") else ""),
+                        "SOLAR_RASTER_JOB_BOUNDS": "",
+                        "SOLAR_SURVEY_OVERRIDES": json.dumps(job.get("survey_overrides") or {}),
+                        "SOLAR_SURVEY_OVERRIDES_B64": "",
+                    }
                     code = self._stream(self._launch(lane, cmd, log, env), log, on_line)
                     with self.lock:
                         lane.process = None

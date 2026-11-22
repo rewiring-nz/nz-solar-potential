@@ -25,6 +25,11 @@ from pathlib import Path
 data, region = Path(sys.argv[1]), sys.argv[2]
 if os.environ.get("SOLAR_SURVEY_OVERRIDES"):
     print("SURVEY_OVERRIDES=" + os.environ["SOLAR_SURVEY_OVERRIDES"], flush=True)
+if os.environ.get("SOLAR_SURVEY_OVERRIDES_B64"):
+    print("ENCODED_SURVEY_OVERRIDES_PRESENT", flush=True)
+if os.environ.get("SOLAR_RASTER_PLAN_JOB"):
+    job = json.loads(Path(os.environ["SOLAR_RASTER_PLAN_JOB"]).read_text())
+    print("APPROVED_RASTER_PLAN=" + json.dumps(job["raster_plan"]), flush=True)
 run = data / "pipeline_runs" / ("run-" + region.replace("/", "_"))
 run.mkdir(parents=True, exist_ok=True)
 print("PIPELINE_RUN_DIR=" + str(run), flush=True)
@@ -133,11 +138,62 @@ def test_source_choice_is_pinned_to_job_and_command():
         estimate["regions"][0]["source_layers"] = {
             "dsm_layer": 123194, "imagery_layer": 123118,
         }
-        job = _wait(m, m.start(estimate))
+        with patch.dict(os.environ, {"SOLAR_SURVEY_OVERRIDES_B64": "c3RhbGU="}):
+            job = _wait(m, m.start(estimate))
         assert job["include_imagery"] is False
         assert "--no-imagery" in commands[0]
         assert job["survey_overrides"]["a"] == estimate["regions"][0]["source_layers"]
         assert '"dsm_layer": 123194' in m.log(job["job_id"])["text"]
+        assert "ENCODED_SURVEY_OVERRIDES_PRESENT" not in m.log(job["job_id"])["text"]
+
+
+def test_approved_raster_batch_is_passed_to_each_local_job():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        from src.raster_acquisition_plan import plan_batch
+        from src.raster_plan_handoff import plan_digest
+        from src.raster_source_selection import survey_requests
+
+        m = _manager(Path(tmp))
+        estimate = _estimate("a", "b")
+        footprints = [[168, -45, 168.1, -44.9]]
+        selected = {region: survey_requests(region, footprints,
+                    {"elevation": "lidar", "dsm_layer": layer}, mappings=[])
+                    for region, layer in (("a", 101), ("b", 102))}
+        plan = {"regions": [{"region": region, "footprints_wgs84": footprints,
+                             "inputs": selected[region]["inputs"]} for region in ("a", "b")],
+                "batch": plan_batch([request for selection in selected.values()
+                                     for request in selection["requests"]])}
+        estimate["raster_plan"] = plan
+        with patch.dict(os.environ, {"SOLAR_RASTER_PLAN_JOB": "/inherited/stale"}):
+            ids = m.start_batch(estimate)
+            for job_id, region in zip(ids, ("a", "b")):
+                job = _wait(m, job_id)
+                assert job["status"] == "succeeded"
+                assert [entry["region"] for entry in job["raster_plan"]["regions"]] == [region]
+                assert [entry["region"] for entry in job["raster_plan"]["batch"]["inputs"]] == [region]
+                assert job["raster_plan_sha256"] == plan_digest(job["raster_plan"])
+                assert "APPROVED_RASTER_PLAN=" in m.log(job_id)["text"]
+            assert len(plan["regions"]) == len(plan["batch"]["inputs"]) == 2
+            unplanned = _wait(m, m.start(_estimate("c")))
+            assert unplanned["status"] == "succeeded"
+            assert "APPROVED_RASTER_PLAN=" not in m.log(unplanned["job_id"])["text"]
+
+
+def test_invalid_approved_raster_plan_is_not_silently_discarded():
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        m = _manager(Path(tmp))
+        estimate = _estimate("a")
+        estimate["regions"][0]["raster_sources"] = []
+        for plan in (None, {"regions": []},
+                     {"regions": [{"region": "a"}, {"region": "a"}]},
+                     {"regions": [None]}):
+            estimate["raster_plan"] = plan
+            try:
+                m.start(estimate)
+            except JobError as exc:
+                assert exc.status == 409
+            else:
+                raise AssertionError("invalid raster plan was accepted")
 
 
 def test_job_environment_overrides_preserve_parent_environment():
@@ -399,6 +455,8 @@ if __name__ == "__main__":
     for test in (test_regions_run_in_order_failures_continue_and_combine_runs,
                  test_single_region_success_needs_no_extra_combine,
                  test_source_choice_is_pinned_to_job_and_command,
+                 test_approved_raster_batch_is_passed_to_each_local_job,
+                 test_invalid_approved_raster_plan_is_not_silently_discarded,
                  test_job_environment_overrides_preserve_parent_environment,
                  test_cancel_sends_sigint_and_skips_the_rest,
                  test_workspace_lock_makes_local_jobs_wait_and_stale_jobs_recover,

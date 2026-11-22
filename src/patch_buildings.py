@@ -41,9 +41,11 @@ def main():
 
     from src.region_build import area_paths, area_centroid_wgs84
     from src.solar_model import SolarModel
+    from src.build_keys import raster_inputs
     import src.build_layout_geojson as blg
 
     t0 = time.time()
+    raster_identity = raster_inputs(a.area)
     c = area_centroid_wgs84(a.area)
     blg._init_worker(a.area, SolarModel(*c) if c else SolarModel())
     new_feats = {}
@@ -99,6 +101,8 @@ def main():
         json.dump(d, open(path, "w"))
         print(f"  patched {path.name}: {before} -> {len(d['features'])} features", flush=True)
 
+    from src.build_keys import forget_keys
+    forget_keys(a.area, a.ids)
     region = area_paths(a.area)["panel_layouts"]
     patch(region)
     # gate just this area's new panels (in place, cheap for a handful of ids)
@@ -140,7 +144,7 @@ def main():
     # fingerprint-then-patch driver; a key recorded only AFTER the building is
     # in the file is the one signal that survives being interrupted.
     from src.build_keys import record_keys
-    record_keys(a.area, a.ids)
+    record_keys(a.area, a.ids, raster_identity=raster_identity)
 
     if not a.skip_tiles:
         # Re-emit this region and recombine: tiles, cells, detail and summary

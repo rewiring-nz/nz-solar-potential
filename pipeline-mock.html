@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build data · UX mock</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink:#1f2933; --muted:#66727e; --line:#dce2e8; --blue:#1769aa;
+    --blue-soft:#eaf3fb; --green:#237347; --amber:#875b00; --red:#a33b32;
+    --panel:#fff; --page:#f3f5f7; --shadow:0 2px 12px rgba(22,35,48,.08);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); background:var(--page); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  button,select { color:inherit; font:inherit; }
+  button { cursor:pointer; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline:3px solid #78b8f1; outline-offset:2px; }
+  header { height:54px; display:flex; align-items:center; gap:12px; padding:0 18px; background:#fff; border-bottom:1px solid var(--line); }
+  header h1 { margin:0; font-size:17px; }
+  header .sub { color:var(--muted); font-size:12px; }
+  header .spacer { flex:1; }
+  .preview { font-size:11px; border:1px solid #ead8a8; background:#fff8e4; color:#745313; border-radius:20px; padding:3px 9px; }
+  main { height:calc(100vh - 54px); min-height:560px; display:flex; flex-direction:column; }
+  .toolbar { min-height:55px; display:flex; align-items:center; gap:16px; padding:8px 18px; border-bottom:1px solid var(--line); background:#fff; }
+  .stepper { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; }
+  .step { display:flex; align-items:center; gap:6px; }
+  .step b { display:grid; place-items:center; width:22px; height:22px; border:1px solid #cbd4dc; border-radius:50%; font-size:11px; }
+  .step.active { color:var(--blue); font-weight:650; }
+  .step.active b,.step.done b { border-color:var(--blue); background:var(--blue); color:white; }
+  .step.done { color:var(--green); }
+  .divider { width:27px; height:1px; background:var(--line); }
+  .toolbar .spacer { flex:1; }
+  .workspace { min-height:0; flex:1; display:grid; grid-template-columns:390px minmax(0,1fr); }
+  .left { min-height:0; display:flex; flex-direction:column; overflow:auto; background:var(--panel); border-right:1px solid var(--line); }
+  .left-section { border-bottom:1px solid var(--line); }
+  .left-section > summary { display:flex; align-items:center; gap:8px; min-height:43px; padding:9px 15px; color:var(--ink); font-size:13px; font-weight:650; list-style:none; cursor:pointer; }
+  .left-section > summary::-webkit-details-marker { display:none; }
+  .left-section > summary::before { content:"▸"; color:var(--muted); font-size:12px; }
+  .left-section[open] > summary::before { content:"▾"; }
+  .section-count { margin-left:auto; color:var(--muted); font-weight:400; font-size:11px; }
+  .section-body { padding:0 12px 12px; }
+  .section-hint { margin:0 3px 8px; color:var(--muted); font-size:11px; }
+  .left-head { padding:4px 3px 8px; }
+  h2 { margin:0; font-size:17px; }
+  .hint { margin:3px 0 0; color:var(--muted); font-size:12px; }
+  .search { margin:10px 0 0; width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px; }
+  .tree-actions { display:flex; align-items:center; justify-content:space-between; padding:0 3px 6px; color:var(--muted); font-size:11px; }
+  .text-button { border:0; background:none; padding:2px; color:var(--blue); font-size:12px; }
+  .tree { padding:0 0 5px; }
+  .tree-group { margin:0 0 2px; }
+  .group-row,.area-row { display:flex; align-items:center; gap:7px; min-height:36px; border-radius:6px; padding:4px 7px; }
+  .group-row:hover,.area-row:hover { background:#f6f8fa; }
+  .group-toggle { width:19px; flex:none; border:0; background:none; padding:0; color:var(--muted); }
+  .group-name { flex:1; font-weight:650; }
+  .group-count,.row-meta { color:var(--muted); font-size:11px; white-space:nowrap; }
+  .area-list { margin-left:19px; padding-left:9px; border-left:1px solid var(--line); }
+  .area-row { min-height:35px; cursor:pointer; }
+  .area-row input { margin:0; accent-color:var(--blue); }
+  .area-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .status-dot { width:8px; height:8px; flex:none; border-radius:50%; background:#aeb8c2; }
+  .status-dot.built { background:#4e9668; }
+  .status-dot.stale { background:#d89b2b; }
+  .row-status { color:var(--muted); font-size:10px; }
+  .area-row.selected { background:var(--blue-soft); color:#144f7e; }
+  .group-row[hidden],.area-row[hidden],.tree-group[hidden] { display:none; }
+  .selected-strip { padding:7px 3px 0; color:var(--muted); font-size:11px; }
+  .selected-strip b { color:var(--ink); }
+  .destination-fields { display:grid; gap:9px; }
+  .destination-field { display:grid; gap:4px; color:var(--muted); font-size:11px; }
+  .destination-field select { width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; padding:7px 9px; color:var(--ink); }
+  .dataset-list { display:grid; gap:8px; }
+  .dataset-group { border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+  .dataset-group h3 { margin:0; padding:6px 9px; background:#f6f8fa; color:#4e5b66; font-size:10px; letter-spacing:.03em; text-transform:uppercase; }
+  .dataset-row { display:flex; align-items:flex-start; gap:7px; padding:7px 8px; border-top:1px solid #edf0f2; }
+  .dataset-row input { margin:3px 0 0; accent-color:var(--blue); }
+  .dataset-copy { min-width:0; flex:1; }
+  .dataset-title { display:flex; align-items:center; flex-wrap:wrap; gap:5px; font-size:11px; font-weight:650; }
+  .dataset-source { margin-top:2px; color:var(--muted); font-size:10px; line-height:1.35; }
+  .dataset-row .badge { display:inline-block; padding:0 5px; border-radius:9px; background:#edf5ee; color:var(--green); font-size:9px; font-weight:500; }
+  .dataset-row .badge.required { background:#edf1f5; color:#4b5864; }
+  .dataset-row .badge.partial { background:#fff4d8; color:var(--amber); }
+  .dataset-detail { margin-top:4px; }
+  .dataset-detail summary { color:var(--blue); font-size:10px; }
+  .dataset-detail p { margin:4px 0 0; color:var(--muted); font-size:10px; }
+  .dataset-unavailable { color:var(--amber); }
+  .empty-datasets { padding:12px 8px; border:1px dashed var(--line); border-radius:7px; color:var(--muted); font-size:11px; }
+  .right { position:relative; min-width:0; min-height:0; overflow:hidden; }
+  .map-top { position:absolute; z-index:2; left:14px; right:14px; top:12px; display:flex; align-items:center; gap:8px; pointer-events:none; }
+  .map-caption,.map-key { padding:7px 10px; background:#fff; border:1px solid var(--line); border-radius:7px; box-shadow:var(--shadow); font-size:12px; }
+  .map-caption { font-weight:650; }
+  .map-key { margin-left:auto; display:flex; gap:12px; color:var(--muted); }
+  .key-item { display:flex; align-items:center; gap:5px; }
+  .key-swatch { width:10px; height:10px; border:1px solid #8a9ba8; border-radius:2px; background:#f8fafb; }
+  .key-swatch.selected { background:#77b7e5; border-color:#2875ac; }
+  .map { position:absolute; inset:0; width:100%; height:100%; background:#e9eff1; }
+  .terrain { fill:#dfe8df; stroke:#d0ddd1; stroke-width:1; }
+  .water { fill:#cce1e9; stroke:#b6d2dc; stroke-width:1; }
+  .road { fill:none; stroke:#fff; stroke-width:8; stroke-linecap:round; opacity:.9; }
+  .road-edge { fill:none; stroke:#d0d5d4; stroke-width:1; }
+  .map-label { fill:#53616b; font:12px system-ui,sans-serif; }
+  .map-small { fill:#72808a; font:10px system-ui,sans-serif; }
+  .map-area { cursor:pointer; stroke:#54705e; stroke-width:1.6; fill:#f9fbf8; fill-opacity:.9; transition:fill .15s,stroke .15s; }
+  .map-area:hover { fill:#e8f2e8; stroke:#2f7247; stroke-width:2.5; }
+  .map-area.selected { fill:#70b3e1; fill-opacity:.78; stroke:#1769aa; stroke-width:3; }
+  .map-area.focused { filter:drop-shadow(0 0 5px #1769aa); }
+  .map-area-label { pointer-events:none; fill:#25333c; font:12px system-ui,sans-serif; font-weight:600; text-anchor:middle; }
+  .map circle { pointer-events:none; }
+  .map-controls { position:absolute; right:15px; bottom:17px; display:grid; gap:5px; }
+  .map-controls button { width:34px; height:34px; border:1px solid var(--line); border-radius:6px; background:white; box-shadow:var(--shadow); font-size:19px; }
+  .map-note { position:absolute; left:14px; bottom:15px; max-width:330px; padding:7px 10px; background:#fff; border:1px solid var(--line); border-radius:7px; color:var(--muted); font-size:11px; box-shadow:var(--shadow); }
+  .review { position:absolute; z-index:3; top:64px; right:14px; bottom:14px; width:min(440px,calc(100% - 28px)); display:none; flex-direction:column; overflow:hidden; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 28px rgba(22,35,48,.18); }
+  .review.open { display:flex; }
+  .review-head { padding:14px 16px; border-bottom:1px solid var(--line); }
+  .review-head-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .close { border:0; background:none; color:var(--muted); font-size:20px; }
+  .review-body { overflow:auto; padding:12px 16px; }
+  .notice { margin:0 0 12px; padding:9px 10px; border-radius:7px; background:#edf5fb; color:#385a72; font-size:12px; }
+  .warning { padding:8px 10px; border-radius:7px; background:#fff5df; color:#775717; font-size:12px; margin-bottom:12px; }
+  .review-section { padding:10px 0; border-top:1px solid var(--line); }
+  .review-section:first-of-type { border-top:0; padding-top:0; }
+  .review-section h3 { margin:0 0 7px; font-size:13px; }
+  .review-area { display:flex; justify-content:space-between; gap:10px; padding:5px 0; font-size:12px; }
+  .dataset-plan { display:grid; gap:6px; }
+  .plan-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:center; font-size:12px; }
+  .plan-row strong { font-weight:600; }
+  .plan-state { text-align:right; color:var(--green); font-size:11px; }
+  .plan-state.muted { color:var(--muted); }
+  .advanced { margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
+  .advanced summary { color:var(--blue); font-size:12px; cursor:pointer; }
+  .advanced p { color:var(--muted); font-size:11px; margin:7px 0 0; }
+  .review-metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .metric { padding:8px; background:#f6f8fa; border-radius:7px; }
+  .metric small { display:block; color:var(--muted); font-size:10px; }
+  .metric b { display:block; margin-top:2px; font-size:13px; }
+  .review-footer { margin-top:auto; padding:11px 16px; border-top:1px solid var(--line); }
+  .review-footer .actions { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .btn { border:1px solid var(--line); border-radius:7px; padding:7px 11px; background:white; }
+  .btn.primary { color:white; background:var(--blue); border-color:var(--blue); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .actionbar { display:flex; align-items:center; gap:12px; min-height:56px; padding:8px 18px; background:#fff; border-top:1px solid var(--line); }
+  .action-summary { flex:1; color:var(--muted); font-size:12px; }
+  .action-summary b { color:var(--ink); }
+  .no-selection { display:none; position:absolute; z-index:1; inset:0; place-items:center; background:rgba(255,255,255,.86); color:var(--muted); text-align:center; }
+  @media(max-width:820px) {
+    main { height:auto; min-height:calc(100vh - 54px); }
+    .toolbar { flex-wrap:wrap; gap:9px; padding:8px 12px; }
+    .stepper { width:100%; }
+    .workspace { flex:1; grid-template-columns:minmax(285px,42%) minmax(0,1fr); min-height:530px; }
+    .map-key { display:none; }
+    .actionbar { flex-wrap:wrap; padding:8px 12px; }
+  }
+  @media(max-width:580px) {
+    .workspace { grid-template-columns:1fr; grid-template-rows:minmax(300px,52vh) minmax(290px,44vh); }
+    .left { order:2; border-right:0; border-top:1px solid var(--line); }
+    .right { order:1; }
+    .map-note { max-width:240px; }
+    .review { top:58px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Build data</h1><span class="sub">Plan a regional build</span><span class="spacer"></span>
+  <span class="preview">UX mock · sample data</span>
+</header>
+<main>
+  <div class="toolbar">
+    <div class="stepper" aria-label="Build workflow">
+      <span class="step active" id="step-areas"><b>1</b> Areas</span><span class="divider"></span>
+      <span class="step" id="step-plan"><b>2</b> Review plan</span><span class="divider"></span>
+      <span class="step" id="step-build"><b>3</b> Build</span>
+    </div>
+    <span class="spacer"></span>
+    <span class="hint">Choose areas and data, then review the plan</span>
+  </div>
+  <div class="workspace">
+    <aside class="left" aria-label="Build plan selections">
+      <details class="left-section" open>
+        <summary>Build destination</summary>
+        <div class="section-body destination-fields">
+          <label class="destination-field">Run build on
+            <select id="compute">
+              <option value="local">This computer</option>
+              <option value="remote">Shared build VM</option>
+            </select>
+          </label>
+          <label class="destination-field">Send outputs to
+            <select id="destination">
+              <option value="local">Local only</option>
+              <option value="developer">Developer preview</option>
+              <option value="production">Production (deploy gate)</option>
+            </select>
+          </label>
+        </div>
+      </details>
+      <details class="left-section" id="area-section" open>
+        <summary>Choose areas <span class="section-count" id="area-section-count"></span></summary>
+        <div class="section-body">
+          <div class="left-head">
+            <p class="section-hint">Select localities here or on the map. They stay linked.</p>
+            <input id="search" class="search" type="search" placeholder="Search areas…" aria-label="Search areas">
+          </div>
+          <div class="tree-actions"><span>Area</span><button class="text-button" id="clear">Clear selection</button></div>
+          <div class="tree" id="tree"></div>
+          <div class="selected-strip" id="selected-strip"></div>
+        </div>
+      </details>
+      <details class="left-section" id="dataset-section" open>
+        <summary>Datasets <span class="section-count" id="dataset-section-count"></span></summary>
+        <div class="section-body">
+          <p class="section-hint">Recommended choices are selected. Availability and source names follow the selected areas.</p>
+          <div class="dataset-list" id="dataset-list"></div>
+        </div>
+      </details>
+    </aside>
+    <section class="right" aria-label="Area map">
+      <div class="map-top"><div class="map-caption">Queenstown area · schematic</div>
+        <div class="map-key"><span class="key-item"><i class="key-swatch selected"></i>Selected</span><span class="key-item"><i class="key-swatch"></i>Available area</span></div>
+      </div>
+      <svg class="map" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Schematic map; click an area to select it">
+        <rect width="900" height="620" fill="#e9eff1"/>
+        <path class="terrain" d="M0 130 84 78 173 116 238 74 319 120 401 61 484 108 557 48 650 94 739 44 900 101V0H0Z"/>
+        <path class="terrain" d="M0 503 77 465 140 492 216 445 297 495 386 458 480 507 553 467 635 503 729 456 805 495 900 456V620H0Z"/>
+        <path class="water" d="M518 0C483 58 507 103 482 148c-24 42-9 85-24 124-16 40-48 61-41 103 7 39 48 53 53 91 5 41-24 88-5 154h98c-23-74-2-105 1-148 4-50-36-72-38-109-3-47 34-71 41-116 8-53-14-87 4-130 19-44 4-77 35-117Z"/>
+        <path class="water" d="M0 296c67-31 114-27 165-9 55 20 90 8 130-16 37-21 77-20 130 7l-4 74c-55-27-93-29-137-7-47 23-90 37-148 17-52-18-88-13-136 10Z"/>
+        <path class="road" d="M38 401C158 370 209 324 291 307s125 19 186-6 97-82 156-94 149 18 221-33"/>
+        <path class="road-edge" d="M38 401C158 370 209 324 291 307s125 19 186-6 97-82 156-94 149 18 221-33"/>
+        <path class="road" d="M180 550c48-72 92-125 125-190s38-121 94-166 115-51 167-83"/>
+        <path class="road-edge" d="M180 550c48-72 92-125 125-190s38-121 94-166 115-51 167-83"/>
+        <path class="road" d="M654 568c-13-65-5-123 33-171s86-77 176-89"/>
+        <path class="road-edge" d="M654 568c-13-65-5-123 33-171s86-77 176-89"/>
+        <text class="map-label" x="462" y="350">Lake Wakatipu</text>
+        <text class="map-small" x="455" y="370">Queenstown Bay</text>
+        <text class="map-label" x="95" y="177">Ben Lomond</text>
+        <text class="map-label" x="730" y="144">Coronet Peak</text>
+        <polygon class="map-area" data-area="pilot" points="413,285 463,273 480,302 460,327 416,326 397,306"/>
+        <text class="map-area-label" x="438" y="306">CBD</text>
+        <polygon class="map-area" data-area="frankton" points="609,183 665,172 693,197 678,227 626,230 598,208"/>
+        <text class="map-area-label" x="647" y="205">Frankton</text>
+        <polygon class="map-area" data-area="arrowtown" points="768,108 822,95 845,119 829,150 777,154 754,132"/>
+        <text class="map-area-label" x="800" y="130">Arrowtown</text>
+        <polygon class="map-area" data-area="wanaka" points="682,413 737,397 770,423 760,459 711,473 674,449"/>
+        <text class="map-area-label" x="722" y="440">Wānaka</text>
+        <circle cx="439" cy="301" r="4" fill="#1769aa"/>
+        <circle cx="647" cy="203" r="4" fill="#1769aa"/>
+        <circle cx="800" cy="128" r="4" fill="#1769aa"/>
+        <circle cx="722" cy="442" r="4" fill="#1769aa"/>
+      </svg>
+      <div class="map-note">Schematic locations for the prototype. In the live experience, the existing map and area boundaries would be linked to this checklist.</div>
+      <div class="map-controls"><button type="button" aria-label="Zoom in">+</button><button type="button" aria-label="Zoom out">−</button></div>
+      <div class="no-selection" id="no-selection">Select one or more areas to review a build plan.</div>
+      <section class="review" id="review" aria-labelledby="review-title">
+        <div class="review-head">
+          <div class="review-head-row"><h2 id="review-title">Review build plan</h2><button class="close" id="close-review" aria-label="Close review">×</button></div>
+          <p class="hint">Recommended sources are selected automatically for each area.</p>
+        </div>
+        <div class="review-body" id="review-body"></div>
+        <div class="review-footer"><div class="actions">
+          <button class="btn" id="back-to-areas">Back to areas</button>
+          <button class="btn primary" id="start-build">Add build to queue</button>
+        </div></div>
+      </section>
+    </section>
+  </div>
+  <div class="actionbar">
+    <div class="action-summary" id="action-summary"></div>
+    <button class="btn" id="review-plan" disabled>Review build plan</button>
+  </div>
+</main>
+<script>
+  "use strict";
+  const areas = [
+    { id:"pilot", council:"Queenstown-Lakes District", town:"Queenstown", name:"Queenstown CBD", buildings:1270, build:"Built", dataset:"Queenstown 2021 LiDAR", dsmSourceId:"dsm:queenstown-2021", imagery:"Queenstown 2021 aerial photos", imagerySourceId:"imagery:queenstown-2021" },
+    { id:"frankton", council:"Queenstown-Lakes District", town:"Queenstown", name:"Frankton", buildings:1625, build:"Stale", dataset:"Queenstown 2021 LiDAR", dsmSourceId:"dsm:queenstown-2021", imagery:"Queenstown 2021 aerial photos", imagerySourceId:"imagery:queenstown-2021" },
+    { id:"arrowtown", council:"Queenstown-Lakes District", town:"Arrowtown", name:"Arrowtown", buildings:2712, build:"Not built", dataset:"Queenstown 2021 LiDAR", dsmSourceId:"dsm:queenstown-2021", imagery:"Queenstown 2021 aerial photos", imagerySourceId:"imagery:queenstown-2021" },
+    { id:"wanaka", council:"Queenstown-Lakes District", town:"Wānaka", name:"Wānaka township", buildings:8945, build:"Not built", dataset:"Wanaka local LiDAR survey", dsmSourceId:"dsm:wanaka-survey", imagery:"Wanaka regional imagery", imagerySourceId:"imagery:wanaka-regional" },
+  ];
+  const selected = new Set(["pilot","frankton"]);
+  const expanded = new Set(["Queenstown-Lakes District","Queenstown-Lakes District/Queenstown"]);
+  const datasetSelection = { footprints:true, dsm:true, pointcloud:false, imagery:true, terrain:true };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const format = (n) => Number(n).toLocaleString();
+  let plan;
+  function distinctSources(chosen, key) {
+    return [...new Set(chosen.map((area) => area[key]))];
+  }
+  function renderDatasets() {
+    const chosen = areas.filter((area) => selected.has(area.id));
+    const selectedCount = Object.values(datasetSelection).filter(Boolean).length;
+    const unavailableCount = chosen.length ? 1 : 0;
+    $("dataset-section-count").textContent = chosen.length
+      ? `${selectedCount} selected${unavailableCount ? " · 1 unavailable" : ""}`
+      : "select areas first";
+    if (!chosen.length) {
+      $("dataset-list").innerHTML = '<div class="empty-datasets">Select one or more areas to see the datasets available for them.</div>';
+      return;
+    }
+    const dsmSources = distinctSources(chosen,"dataset");
+    const imagerySources = distinctSources(chosen,"imagery");
+    const row = ({id,title,badge,source,detail,disabled=false,checked=datasetSelection[id]}) => `
+      <div class="dataset-row">
+        <input type="checkbox" data-dataset="${id}" aria-label="${esc(`Include ${title}`)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+        <div class="dataset-copy">
+          <div class="dataset-title"><span>${esc(title)}</span>${badge ? `<span class="badge ${badge.kind || ""}">${esc(badge.text)}</span>` : ""}</div>
+          <div class="dataset-source ${disabled && id === "pointcloud" ? "dataset-unavailable" : ""}">${esc(source)}</div>
+          <details class="dataset-detail"><summary>Details</summary><p>${esc(detail)}</p></details>
+        </div>
+      </div>`;
+    $("dataset-list").innerHTML = `
+      <section class="dataset-group"><h3>Building footprints</h3>
+        ${row({id:"footprints",title:"Building footprints",badge:{text:"Required",kind:"required"},source:"LINZ NZ Building Outlines · selected for all areas",detail:"Vector features fetched by area; a council-wide GeoPackage is an alternate route. Required to identify buildings and roofs.",disabled:true})}
+      </section>
+      <section class="dataset-group"><h3>Elevation and 3D source data</h3>
+        ${row({id:"dsm",title:"LiDAR surface model (DSM)",badge:{text:"Recommended"},source:dsmSources.join(" + "),detail:"Raster elevation source for roof geometry. The source survey can vary by area; modelled surfaces are used where LiDAR coverage is unavailable."})}
+        ${row({id:"pointcloud",title:"Raw LiDAR point cloud",badge:{text:"Not resolved",kind:"partial"},source:"Survey-specific LAS/LAZ tiles · no verified source for this example",detail:"Higher-detail 3D measurements, acquired as survey-indexed point-cloud tiles. The pipeline fetch path exists, but this example has no verified bulk source.",disabled:true,checked:false})}
+      </section>
+      <section class="dataset-group"><h3>Aerial imagery</h3>
+        ${row({id:"imagery",title:"Aerial imagery",badge:{text:"Optional"},source:imagerySources.join(" + "),detail:"Regional raster imagery can differ by area. The build can continue without it, with image-based checks omitted."})}
+      </section>
+      <section class="dataset-group"><h3>Terrain context</h3>
+        ${row({id:"terrain",title:"Wide terrain elevation",badge:{text:"Required",kind:"required"},source:"LINZ 8 m terrain tiles · shared across selected areas",detail:"Buffered raster tiles support terrain horizons and masks. Shared tiles are reused where area coverage overlaps.",disabled:true})}
+      </section>
+      <section class="dataset-group"><h3>Generated output</h3>
+        ${row({id:"outputs",title:"Roof geometry and panel layouts",badge:{text:"Generated",kind:"required"},source:"Produced from selected areas and available source data",detail:"Per-area roof geometry, panel placements and solar estimates are generated by the build.",disabled:true,checked:true})}
+      </section>`;
+    for (const input of $("dataset-list").querySelectorAll("[data-dataset]")) {
+      input.addEventListener("change",() => {
+        datasetSelection[input.dataset.dataset] = input.checked;
+        plan = createPlan();
+        $("dataset-section-count").textContent = `${Object.values(datasetSelection).filter(Boolean).length} selected · 1 unavailable`;
+        if ($("review").classList.contains("open")) renderReview();
+      });
+    }
+  }
+  function createPlan() {
+    const chosen = areas.filter((area) => selected.has(area.id));
+    const areaInputs = chosen.map((area) => ({
+      areaId: area.id,
+      footprints: datasetSelection.footprints ? "linz:building-outlines" : null,
+      dsm: datasetSelection.dsm ? area.dsmSourceId : null,
+      imagery: datasetSelection.imagery ? area.imagerySourceId : null,
+    }));
+    const assetIds = new Set(areaInputs.flatMap((input) => [input.footprints,input.dsm,input.imagery].filter(Boolean)));
+    if (datasetSelection.terrain) assetIds.add("linz:wide-dem-8m");
+    const datasetRows = [
+      { id:"footprints",label:"Building outlines",source:"LINZ vector",selected:datasetSelection.footprints },
+      { id:"dsm",label:"DSM",source:distinctSources(chosen,"dataset").join(" + "),selected:datasetSelection.dsm },
+      { id:"imagery",label:"Aerial imagery",source:distinctSources(chosen,"imagery").join(" + "),selected:datasetSelection.imagery },
+      { id:"terrain",label:"Wide terrain",source:"LINZ 8 m · shared tiles",selected:datasetSelection.terrain },
+    ].filter((dataset) => dataset.selected);
+    return {
+      areas: chosen,
+      areaInputs,
+      assetIds: [...assetIds],
+      datasetRows,
+      compute: $("compute").value,
+      destination: $("destination").value,
+      totalBuildings: chosen.reduce((sum,area) => sum + area.buildings,0),
+      estimates: { downloadBytes: null, peakDiskBytes: null, timeSeconds: null },
+      cache: { checked: false, state: "not-connected" },
+      warnings: chosen.some((area) => area.id === "wanaka") ? ["Source survey differs across selected areas."] : [],
+    };
+  }
+  const groupTree = () => {
+    const councils = new Map();
+    for (const area of areas) {
+      if (!councils.has(area.council)) councils.set(area.council,new Map());
+      const towns = councils.get(area.council);
+      if (!towns.has(area.town)) towns.set(area.town,[]);
+      towns.get(area.town).push(area);
+    }
+    return councils;
+  };
+  function renderTree() {
+    const query = $("search").value.trim().toLowerCase();
+    const councils = groupTree();
+    let html = "";
+    for (const [council,towns] of councils) {
+      const all = [...towns.values()].flat();
+      const councilMatch = council.toLowerCase().includes(query);
+      const councilHasMatch = councilMatch || all.some((a) => `${a.name} ${a.town}`.toLowerCase().includes(query));
+      if (!councilHasMatch) continue;
+      const councilOpen = expanded.has(council) || Boolean(query);
+      html += `<section class="tree-group"><div class="group-row">
+        <button class="group-toggle" data-toggle="${esc(council)}" aria-label="${councilOpen ? "Collapse" : "Expand"} ${esc(council)}">${councilOpen ? "▾" : "▸"}</button>
+        <span class="group-name">${esc(council)}</span><span class="group-count">${all.length} areas</span></div>`;
+      if (councilOpen) {
+        html += '<div class="area-list">';
+        for (const [town,items] of towns) {
+          const townMatches = councilMatch || town.toLowerCase().includes(query) || items.some((a) => a.name.toLowerCase().includes(query));
+          if (!townMatches) continue;
+          const townKey = `${council}/${town}`;
+          const townOpen = expanded.has(townKey) || Boolean(query);
+          html += `<div class="group-row"><button class="group-toggle" data-toggle="${esc(townKey)}" aria-label="${townOpen ? "Collapse" : "Expand"} ${esc(town)}">${townOpen ? "▾" : "▸"}</button><span class="group-name">${esc(town)}</span><span class="group-count">${items.length}</span></div>`;
+          if (townOpen) for (const area of items) {
+            if (!councilMatch && !town.toLowerCase().includes(query) && !area.name.toLowerCase().includes(query)) continue;
+            const checked = selected.has(area.id);
+            const statusClass = area.build === "Built" ? "built" : area.build === "Stale" ? "stale" : "";
+            html += `<div class="area-row ${checked ? "selected" : ""}" data-row-area="${area.id}" role="checkbox" aria-checked="${checked}" tabindex="0">
+              <input type="checkbox" data-select="${area.id}" ${checked ? "checked" : ""}>
+              <span class="area-label">${esc(area.name)}</span><span class="status-dot ${statusClass}" aria-hidden="true"></span>
+              <span class="row-status">${esc(area.build)}</span><span class="row-meta">${format(area.buildings)}</span></div>`;
+          }
+        }
+        html += "</div>";
+      }
+      html += "</section>";
+    }
+    $("tree").innerHTML = html || '<p class="hint">No areas match that search.</p>';
+    for (const el of $("tree").querySelectorAll("[data-toggle]")) el.addEventListener("click", () => {
+      const key = el.dataset.toggle;
+      expanded.has(key) ? expanded.delete(key) : expanded.add(key);
+      renderTree();
+    });
+    for (const el of $("tree").querySelectorAll("[data-select]")) el.addEventListener("change", () => {
+      toggleArea(el.dataset.select);
+    });
+    $("tree").querySelectorAll("[data-row-area]").forEach((row) => row.addEventListener("click", (event) => {
+      if (event.target.matches("input")) return;
+      toggleArea(row.dataset.rowArea);
+    }));
+  }
+  function toggleArea(id) {
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    render();
+  }
+  function selectedAreas() { return areas.filter((area) => selected.has(area.id)); }
+  function renderMap() {
+    document.querySelectorAll(".map-area").forEach((shape) => {
+      shape.classList.toggle("selected",selected.has(shape.dataset.area));
+      shape.classList.toggle("focused",selected.has(shape.dataset.area));
+      shape.setAttribute("aria-pressed",selected.has(shape.dataset.area) ? "true" : "false");
+      shape.setAttribute("tabindex","0");
+      shape.setAttribute("role","button");
+      const area = areas.find((entry) => entry.id === shape.dataset.area);
+      shape.setAttribute("aria-label",`${selected.has(shape.dataset.area) ? "Remove" : "Add"} ${area.name}`);
+    });
+    $("no-selection").style.display = selected.size ? "none" : "grid";
+  }
+  function renderReview() {
+    const chosen = plan.areas;
+    const hasMissingCloud = plan.destination !== "local";
+    $("review-body").innerHTML = `
+      <div class="notice">This shared plan drives the previewed source list, download estimate, cache status, and queued build. A live system would produce it once from the selected areas and pass it to each service.</div>
+      ${plan.warnings.length ? `<div class="warning"><b>Coverage differs by area.</b> ${plan.warnings.map(esc).join(" ")} ${datasetSelection.imagery ? "Imagery source and cache readiness need confirmation." : "Selected source cache readiness needs confirmation."}</div>` : ""}
+      <section class="review-section"><h3>Areas · ${chosen.length} selected</h3>
+        ${chosen.map((area) => `<div class="review-area"><span>${esc(area.name)} <span class="hint">· ${esc(area.town)}</span></span><span>${format(area.buildings)} buildings</span></div>`).join("")}
+      </section>
+      <section class="review-section"><h3>Build destination</h3>
+        <div class="review-area"><span>Compute</span><b>${plan.compute === "local" ? "This computer" : "Shared build VM"}</b></div>
+        <div class="review-area"><span>Outputs</span><b>${plan.destination === "local" ? "Local only" : plan.destination === "developer" ? "Developer preview" : "Production (deploy gate)"}</b></div>
+      </section>
+      <section class="review-section"><h3>Recommended sources by area</h3>
+        <div class="dataset-plan">
+          ${plan.datasetRows.length
+            ? plan.datasetRows.map((dataset) => `<div class="plan-row"><span>${esc(dataset.label)}${dataset.id === "dsm" || dataset.id === "imagery" ? ` · ${chosen.length} area${chosen.length === 1 ? "" : "s"}` : ""}</span><span class="plan-state">${esc(dataset.source)}</span></div>`).join("")
+            : '<div class="plan-row"><span>No source datasets selected</span><span class="plan-state muted">Review selections</span></div>'}
+        </div>
+        <details class="advanced"><summary>Advanced · source assets and acquisition</summary>
+          <p>Outlines are vector data fetched by region or council; raster sources resolve to the covering survey assets/tiles. The planner deduplicates common assets across all selected areas. Native source CRS and grids stay with cached assets; regional processing remains EPSG:2193. This mock does not enumerate real tile IDs.</p>
+        </details>
+      </section>
+      <section class="review-section"><h3>Build readiness</h3>
+        <div class="review-metrics">
+          <div class="metric"><small>Buildings in selection</small><b>${format(plan.totalBuildings)}</b></div>
+          <div class="metric"><small>Unique source assets</small><b>${plan.assetIds.length} · example</b></div>
+          <div class="metric"><small>New download</small><b>${plan.estimates.downloadBytes == null ? "Needs live cache check" : esc(format(plan.estimates.downloadBytes))}</b></div>
+          <div class="metric"><small>Peak disk / time</small><b>${plan.estimates.peakDiskBytes == null || plan.estimates.timeSeconds == null ? "Needs live estimate" : "Estimated"}</b></div>
+        </div>
+        ${hasMissingCloud ? '<p class="hint" style="margin-top:8px">Cloud estimates and required cost approval appear before a remote build starts.</p>' : ""}
+      </section>
+      <section class="review-section"><h3>Existing build status</h3>
+        ${chosen.map((area) => `<div class="review-area"><span>${esc(area.name)}</span><span>${esc(area.build)} · ${area.build === "Stale" ? "rebuild recommended" : area.build === "Built" ? "up to date" : "ready to plan"}</span></div>`).join("")}
+      </section>`;
+    $("start-build").disabled = chosen.length === 0;
+  }
+  function render() {
+    plan = createPlan();
+    renderTree();
+    renderDatasets();
+    renderMap();
+    const chosen = plan.areas;
+    const buildings = plan.totalBuildings;
+    $("area-section-count").textContent = `${chosen.length} selected`;
+    $("selected-strip").innerHTML = `<b>${chosen.length} selected</b>${chosen.length ? ` · ${format(buildings)} buildings` : " · select areas to continue"}`;
+    $("action-summary").innerHTML = chosen.length
+      ? `<b>${chosen.length} area${chosen.length === 1 ? "" : "s"}</b> · ${format(buildings)} buildings · ${chosen.filter((a) => a.build === "Not built" || a.build === "Stale").length} need a build or refresh`
+      : "Choose one or more areas to plan a build.";
+    $("review-plan").disabled = chosen.length === 0;
+    if ($("review").classList.contains("open")) renderReview();
+  }
+  $("search").addEventListener("input",renderTree);
+  $("clear").addEventListener("click",() => { selected.clear(); render(); });
+  document.querySelectorAll(".map-area").forEach((shape) => {
+    shape.addEventListener("click",() => toggleArea(shape.dataset.area));
+    shape.addEventListener("keydown",(event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleArea(shape.dataset.area); }
+    });
+  });
+  function openReview() {
+    renderReview();
+    $("review").classList.add("open");
+    $("step-areas").classList.add("done");
+    $("step-areas").classList.remove("active");
+    $("step-plan").classList.add("active");
+  }
+  function closeReview() {
+    $("review").classList.remove("open");
+    $("step-plan").classList.remove("active");
+    $("step-areas").classList.remove("done");
+    $("step-areas").classList.add("active");
+  }
+  $("review-plan").addEventListener("click",openReview);
+  $("close-review").addEventListener("click",closeReview);
+  $("back-to-areas").addEventListener("click",closeReview);
+  $("compute").addEventListener("change",() => { plan = createPlan(); if ($("review").classList.contains("open")) renderReview(); });
+  $("destination").addEventListener("change",() => { plan = createPlan(); if ($("review").classList.contains("open")) renderReview(); });
+  $("start-build").addEventListener("click",() => {
+    $("step-plan").classList.remove("active");
+    $("step-plan").classList.add("done");
+    $("step-build").classList.add("active");
+    $("start-build").textContent = "Mock: plan confirmed";
+    $("start-build").disabled = true;
+  });
+  $("tree").addEventListener("keydown",(event) => {
+    const row = event.target.closest("[data-row-area]");
+    if (row && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); toggleArea(row.dataset.rowArea); }
+  });
+  render();
+</script>
+</body>
+</html>

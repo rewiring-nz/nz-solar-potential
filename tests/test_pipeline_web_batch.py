@@ -87,6 +87,144 @@ class BatchQueueTests(unittest.TestCase):
                 manager.start_batch(estimate)
             self.assertEqual(manager.list(), [])
 
+    def test_bad_raster_snapshot_in_later_job_does_not_enqueue_earlier_job(self):
+        from src.raster_acquisition_plan import plan_batch
+        from src.raster_source_selection import survey_requests
+
+        footprints = [[168, -45, 168.1, -44.9]]
+        selections = {
+            region: survey_requests(region, footprints,
+                                    {"elevation": "lidar", "dsm_layer": layer}, mappings=[])
+            for region, layer in (("a", 101), ("b", 102))
+        }
+        plan = {
+            "regions": [{"region": region, "inputs": selections[region]["inputs"],
+                         "footprints_wgs84": footprints} for region in ("a", "b")],
+            "batch": plan_batch([request for selection in selections.values()
+                                 for request in selection["requests"]]),
+        }
+        plan["batch"]["export_fallbacks"] = [
+            item for item in plan["batch"]["export_fallbacks"] if item["region"] != "b"]
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = _manager(Path(temporary))
+            estimate = _estimate("a", "b")
+            estimate["raster_plan"] = plan
+            with self.assertRaisesRegex(JobError, "missing selected fallbacks"):
+                manager.start_batch(estimate)
+            self.assertEqual(manager.list(), [])
+
+    def test_mapped_preview_cannot_bypass_estimate_blocker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = _manager(Path(temporary))
+            estimate = _estimate("a")
+            estimate["raster_plan"] = {
+                "regions": [{"region": "a", "inputs": [{"role": "dsm", "state": "mapped"}]}],
+                "batch": None,
+            }
+            with self.assertRaisesRegex(JobError, "preview-only"):
+                manager.start(estimate)
+            self.assertEqual(manager.list(), [])
+
+    def test_mapped_job_freezes_valid_operator_bounds(self):
+        from src.raster_job_bounds import load_frozen_job_bounds
+        from src.raster_plan_handoff import plan_digest, plan_for_regions
+        from src.raster_region_plan import plan_regions
+        from src.raster_source_selection import LayerMapping
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            manager = _manager(root)
+            bbox = [168, -45, 168.1, -44.9]
+            mapping = LayerMapping(101, "dsm", "https://example.test/collection.json",
+                                   "capture", "data", "reviewed")
+            docs = {
+                mapping.collection_url: {"id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+                "https://example.test/item.json": {
+                    "id": "tile", "bbox": bbox, "properties": {},
+                    "assets": {"data": {"href": "tile.tif", "type": "image/tiff",
+                                        "file:size": 100}}}}
+            plan = plan_regions(
+                ["a"], mappings=[mapping], bbox_for=lambda _: bbox,
+                footprints_for=lambda *_: [bbox],
+                survey_for=lambda *_: {"elevation": "lidar", "dsm_layer": 101},
+                get_json=docs.__getitem__)
+            digest = plan_digest(plan_for_regions(plan, ["a"]))
+            policy = root / "policy.json"
+            policy.write_text(json.dumps({"version": 1, "directory": str(root / "cache"),
+                                          "max_bytes": 1000000, "min_free_bytes": 0}))
+            bounds_file = root / "bounds.json"
+            bounds_file.write_text(json.dumps({
+                "version": 1, "region": "a", "workspace": str(ROOT.resolve()),
+                "plan_sha256": digest, "include_imagery": True, "paid_referee": False,
+                "evidence": "fixture", "cache_policy": str(policy), "work_dir": str(root),
+                "output_dir": str(root), "mosaic_bytes": 1, "scratch_bytes": 1,
+                "output_bytes": 1, "export_bytes": 1, "extra_allocations": [],
+                "processing": {"dsm": {"resolution": 1, "resampling": "average"}}}))
+            estimate = _estimate("a")
+            estimate["raster_plan"] = plan
+            with patch.dict(os.environ, {"SOLAR_RASTER_JOB_BOUNDS": str(bounds_file)}):
+                for missing in ("max_bytes", "min_free_bytes"):
+                    settings = {"version": 1, "directory": str(root / "cache"),
+                                "max_bytes": 1000000, "min_free_bytes": 0}
+                    del settings[missing]
+                    policy.write_text(json.dumps(settings))
+                    with self.assertRaisesRegex(JobError, "explicitly set max_bytes and min_free_bytes"):
+                        manager.start_batch(estimate)
+                policy.write_text(json.dumps({"version": 1, "directory": str(root / "cache"),
+                                              "max_bytes": 1000000, "min_free_bytes": 0}))
+                job_id = manager.start_batch(estimate)[0]
+                _wait(manager, job_id)
+            saved = manager.load(job_id)
+            self.assertEqual(saved["raster_plan_sha256"], digest)
+            self.assertEqual(saved["raster_admission"]["processing"]["dsm"]["resolution"], 1)
+            bounds_file.write_text("{}")
+            policy.write_text("{}")
+            job_path = manager._job_dir(job_id) / "job.json"
+            frozen = load_frozen_job_bounds(job_path, region="a", workspace=ROOT,
+                                            plan_digest=digest, include_imagery=True,
+                                            paid_referee=False)
+            self.assertEqual(frozen["cache"]["max_bytes"], 1000000)
+
+    def test_batch_inputs_cannot_hide_mapped_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = _manager(Path(temporary))
+            estimate = _estimate("a")
+            estimate["raster_plan"] = {
+                "regions": [{"region": "a", "inputs": [{"role": "dsm", "state": "exports_fallback"}]}],
+                "batch": {"inputs": [{"source": {"collection_id": "capture"}}]},
+            }
+            with self.assertRaisesRegex(JobError, "preview-only"):
+                manager.start(estimate)
+            self.assertEqual(manager.list(), [])
+
+    def test_malformed_raster_inputs_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = _manager(Path(temporary))
+            estimate = _estimate("a")
+            estimate["raster_plan"] = {"regions": [{"region": "a", "inputs": None}], "batch": None}
+            with self.assertRaisesRegex(JobError, "raster source selections are invalid"):
+                manager.start(estimate)
+            self.assertEqual(manager.list(), [])
+
+    def test_single_job_validates_missing_export_fallback_before_queueing(self):
+        from src.raster_acquisition_plan import plan_batch
+        from src.raster_source_selection import survey_requests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = _manager(Path(temporary))
+            estimate = _estimate("a")
+            selection = survey_requests("a", [[168, -45, 168.1, -44.9]],
+                                        {"elevation": "lidar", "dsm_layer": 101}, mappings=[])
+            batch = plan_batch(selection["requests"])
+            batch["export_fallbacks"].clear()
+            estimate["raster_plan"] = {
+                "regions": [{"region": "a", "inputs": selection["inputs"]}],
+                "batch": batch,
+            }
+            with self.assertRaisesRegex(JobError, "missing selected fallbacks"):
+                manager.start(estimate)
+            self.assertEqual(manager.list(), [])
+
     def test_cloud_estimate_sums_per_job_allowances_and_pins_them(self):
         with tempfile.TemporaryDirectory() as temporary:
             data = Path(temporary)

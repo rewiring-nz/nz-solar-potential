@@ -57,6 +57,7 @@ if command -v node >/dev/null 2>&1; then
   done
   run "map layer legend (js)" node tests/test_map_layers.js
   run "pipeline progress (js)" node tests/test_pipeline_progress.js
+  run "pipeline raster preview (js)" node tests/test_pipeline_raster_preview.js
   run "pipeline area tree (js)" node tests/test_pipeline_tree.js
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
@@ -105,6 +106,25 @@ run "region ids, LINZ localities" $PY tests/test_region_ids.py
 run "LINZ council GeoPackages, locality defaults" $PY tests/test_linz_exports.py
 run "national area catalogue" $PY tests/test_list_areas.py
 run "LERC raster dependencies" $PY tests/test_s3_rasters.py
+run "raster acquisition planning" $PY -m unittest tests.test_raster_acquisition_plan
+run "raster metadata freshness" $PY -m unittest tests.test_raster_freshness
+run "raster source selection" $PY -m unittest tests.test_raster_source_selection
+run "raster job handoff"   $PY -m unittest tests.test_raster_plan_handoff
+run "raster region planning" $PY -m unittest tests.test_raster_region_plan
+run "raster planning CLI" $PY -m unittest tests.test_raster_plan_cli
+run "regional fetch selection" $PY -m unittest tests.test_fetch_region_selection
+run "regional raster merge" $PY -m unittest tests.test_fetch_raster_merge
+run "survey run pinning" $PY -m unittest tests.test_survey_run_pinning
+run "raster cached preparation" $PY -m unittest tests.test_raster_prepare
+run "regional raster execution" $PY -m unittest tests.test_raster_regional_execution
+run "packed raster provenance" $PY -m unittest tests.test_pack_raster_provenance
+run "raster build invalidation" $PY -m unittest tests.test_raster_invalidation
+run "raster cache"          $PY -m unittest tests.test_raster_cache
+run "raster cache configuration" $PY -m unittest tests.test_raster_cache_config
+run "national DSM map preview" $PY -m unittest tests.test_national_dsm_preview
+run "raster disk forecast"  $PY -m unittest tests.test_raster_disk_plan
+run "raster disk reservations" $PY -m unittest tests.test_raster_reservations
+run "raster job supervision" $PY -m unittest tests.test_raster_job_supervisor
 run "quickstart map preview" $PY tests/test_quickstart_map.py
 run "shared build plan"     $PY tests/test_build_plan.py
 run "pipeline web panel data" $PY tests/test_pipeline_web_data.py

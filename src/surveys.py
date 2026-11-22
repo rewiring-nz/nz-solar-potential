@@ -24,8 +24,9 @@ DATA_DIR = ROOT / "data"
 API = "https://data.linz.govt.nz/services/api/v1.x"
 CACHE_NAME = "survey_layer_catalog.json"
 CACHE_TTL_S = 7 * 24 * 60 * 60
+NATIONAL_DSM_LAYER = 122082
 KEYS = (
-    "dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
+    "dsm_layer", "raster_dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
     "pointcloud_bulk_url", "pointcloud_tile_year", "reference_imagery_layer",
     "elevation", "dsm_s3", "imagery_s3", "reference_imagery_s3",
 )
@@ -244,6 +245,27 @@ def _select_imagery(bbox, terms, dsm_years, catalog, path, get_json, now) -> tup
     return current, reference
 
 
+def environment_overrides(environ=None) -> dict:
+    """Read region-specific source pins, honoring the encoded form first."""
+    environ = os.environ if environ is None else environ
+    encoded = environ.get("SOLAR_SURVEY_OVERRIDES_B64")
+    raw = environ.get("SOLAR_SURVEY_OVERRIDES")
+    if encoded:
+        try:
+            raw = base64.b64decode(encoded, validate=True).decode("utf-8")
+        except (ValueError, UnicodeError) as exc:
+            raise LookupError("encoded source overrides are invalid") from exc
+    if not raw:
+        return {}
+    try:
+        configured = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise LookupError("source overrides are not valid JSON") from exc
+    if not isinstance(configured, dict):
+        raise LookupError("source overrides must be a region-to-layers object")
+    return configured
+
+
 def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
                get_json=None, now: float | None = None,
                overrides: dict | None = None) -> dict:
@@ -257,24 +279,14 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
     now = time.time() if now is None else now
     path = _catalog_path(Path(data_dir))
     if overrides is None:
-        encoded_overrides = os.environ.get("SOLAR_SURVEY_OVERRIDES_B64")
-        raw_overrides = os.environ.get("SOLAR_SURVEY_OVERRIDES")
-        if encoded_overrides:
-            try:
-                raw_overrides = base64.b64decode(encoded_overrides, validate=True).decode("utf-8")
-            except (ValueError, UnicodeError) as exc:
-                raise LookupError("encoded source overrides are invalid") from exc
-        if raw_overrides:
-            try:
-                configured = json.loads(raw_overrides)
-            except json.JSONDecodeError as exc:
-                raise LookupError("source overrides are not valid JSON") from exc
-            if not isinstance(configured, dict):
-                raise LookupError("source overrides must be a region-to-layers object")
-            overrides = configured.get(str(name))
-    overrides = overrides or {}
+        overrides = environment_overrides().get(str(name))
+    if overrides is None:
+        overrides = {}
     if not isinstance(overrides, dict):
         raise LookupError("pinned source layers must be an object")
+    prefer_national = os.environ.get("SOLAR_PREFER_NATIONAL_DSM", "0")
+    if prefer_national not in ("0", "1"):
+        raise LookupError("SOLAR_PREFER_NATIONAL_DSM must be 0 or 1")
     with _CACHE_LOCK:
         catalog = _read_catalog(path)
         terms = _place_terms(str(name or ""))
@@ -286,6 +298,17 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
             )
         else:
             dsm = _select_dsm(bbox, terms, catalog, path, get_json, now)
+        raster_layer = (overrides["raster_dsm_layer"] if "raster_dsm_layer" in overrides else
+                        NATIONAL_DSM_LAYER if prefer_national == "1" and dsm is not None else None)
+        raster_dsm = None
+        if raster_layer is not None:
+            if dsm is None:
+                raise LookupError("a raster DSM override cannot replace synthetic elevation")
+            raster_dsm = _pinned_layer(
+                raster_layer, bbox,
+                lambda title: "lidar" in title.casefold() and "dsm" in title.casefold(),
+                catalog, path, get_json, now,
+            )
         years = _years(dsm["title"]) if dsm else []
         if "imagery_layer" in overrides:
             imagery = _pinned_layer(
@@ -309,6 +332,7 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
         "bbox": dsm["bounds"] if dsm else None,
         "elevation": "lidar" if dsm else "synthetic",
         "dsm_layer": dsm["id"] if dsm else None,
+        "raster_dsm_layer": raster_dsm["id"] if raster_dsm else None,
         "dem_layer": (overrides.get("dem_layer") if "dem_layer" in overrides else
                       _layer_id(dsm["metadata"].get("description_html")
                                 or dsm["metadata"].get("description", ""),

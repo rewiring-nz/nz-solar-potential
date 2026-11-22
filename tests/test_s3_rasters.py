@@ -1,6 +1,7 @@
 """Offline LERC dependency and strict mosaic checks."""
 
 import base64
+import json
 import os
 import shutil
 import subprocess
@@ -74,6 +75,79 @@ class RasterSupportTests(unittest.TestCase):
             self.assertFalse(ok)
             self.assertIn("No available GDAL TIFF reader", details)
             key.assert_not_called()
+
+    def test_pipeline_rejects_bad_raster_approval_before_preflight_work(self):
+        from src.raster_plan_handoff import plan_digest
+
+        region = "queenstown-lakes-district/queenstown/frankton"
+        mapped = {"regions": [{"region": region, "inputs": [
+            {"role": "dsm", "state": "mapped", "layer_id": 101}]}],
+            "batch": {"inputs": [{"region": region, "role": "dsm", "layer_id": 101,
+                                  "source": {"collection_url": "https://example.test"}}],
+                      "export_fallbacks": [], "assets": [],
+                      "footprints_without_intersecting_assets": [],
+                      "footprint_bbox_coverage": []}}
+        cases = [
+            ({"regions": [{"region": region, "inputs": []}], "batch": None},
+             "0" * 64, "plan changed"),
+            ({"regions": [{"region": region, "inputs": [
+                {"role": "dsm", "state": "exports_fallback", "layer_id": 101}]}],
+              "batch": None}, None, "batch is missing selected inputs"),
+            (mapped, None, "Mapped raster plans cannot be executed"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "job.json"
+            for plan, digest, error in cases:
+                path.write_text(json.dumps({"raster_plan": plan}))
+                with self.subTest(error=error), \
+                        patch.dict(os.environ, {"SOLAR_RASTER_PLAN_JOB": str(path),
+                                   "SOLAR_RASTER_PLAN_SHA256": digest or plan_digest(plan)}), \
+                        patch("tools.pipeline.subprocess.run") as run, \
+                        patch("tools.pipeline._key_available") as key:
+                    ok, details, _ = _preflight(region, Path(sys.executable))
+                    self.assertFalse(ok)
+                    self.assertIn(error, details)
+                    run.assert_not_called()
+                    key.assert_not_called()
+
+    def test_pipeline_preflight_accepts_approved_and_unplanned_locality(self):
+        from src.raster_plan_handoff import plan_digest
+
+        region = "queenstown-lakes-district/queenstown/frankton"
+        plan = {"regions": [{"region": region, "inputs": []}], "batch": None}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "job.json"
+            path.write_text(json.dumps({"raster_plan": plan}))
+            area_dir = root / "regions" / region
+            area_dir.mkdir(parents=True)
+            (area_dir / "locality.json").write_text(json.dumps({"bbox": [168, -45, 169, -44]}))
+            for env in ({}, {"SOLAR_RASTER_PLAN_JOB": str(path),
+                             "SOLAR_RASTER_PLAN_SHA256": plan_digest(plan)}):
+                with self.subTest(approved=bool(env)), \
+                        patch.dict(os.environ, env, clear=True), \
+                        patch("tools.pipeline.DATA", root), \
+                        patch("tools.pipeline._key_available", return_value=True), \
+                        patch("tools.pipeline.shutil.which", return_value="/tool"), \
+                        patch("tools.pipeline.subprocess.run",
+                              return_value=subprocess.CompletedProcess([], 0, "GTiff", "")) as run, \
+                        patch("src.surveys.survey_for", return_value={"name": "fixture",
+                              "elevation": "synthetic"}):
+                    ok, details, _ = _preflight(region, Path(sys.executable))
+                    self.assertTrue(ok, details)
+                    self.assertEqual(len(run.call_args_list), 3)
+                    self.assertEqual(run.call_args_list[-1].args[0][1:],
+                                     ["src/localities.py", "prepare", region])
+
+    def test_pipeline_rejects_incomplete_approval_environment(self):
+        for env in ({"SOLAR_RASTER_PLAN_JOB": "/job.json"},
+                    {"SOLAR_RASTER_PLAN_SHA256": "0" * 64}):
+            with self.subTest(env=env), patch.dict(os.environ, env, clear=True), \
+                    patch("tools.pipeline.subprocess.run") as run:
+                ok, details, _ = _preflight("pilot", Path(sys.executable))
+                self.assertFalse(ok)
+                self.assertIn("path and digest must both be supplied", details)
+                run.assert_not_called()
 
     def test_successful_cli_probe_also_checks_python_decoder(self):
         def decode(cmd, **kwargs):
