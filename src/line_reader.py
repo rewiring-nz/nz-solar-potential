@@ -128,7 +128,10 @@ def read_twice(img, mpp):
 
 EDGE = os.environ.get("SOLAR_LINE_READER_EDGE", "reader")
 EDGE_MIN_IOU = 0.6
-REFRAME = int(os.environ.get("SOLAR_LINE_READER_REFRAME", "1"))
+# Off: on 167 held-out drawn roofs read from the build's edge, reading again
+# in a picture framed on the reader's own edge left face IoU at 0.662 and
+# took the edge's overlap with the drawn one from 0.873 to 0.869.
+REFRAME = int(os.environ.get("SOLAR_LINE_READER_REFRAME", "0"))
 REFRAME_MIN = 0.05
 
 
