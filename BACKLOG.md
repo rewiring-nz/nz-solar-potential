@@ -397,6 +397,37 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**22 Nov (night), outline pass complete; run I level with run G; the reader is the limit.**
+- The owner checked the outline of all 150 earlier drawn roofs (91 changed,
+  59 confirmed); lines reconciled (`tools/reconcile_outline_pass.py`; 42
+  line ends on 27 roofs more than 1.5 m short were left). 178 of 211 drawn
+  roofs carry a checked outline; all 168 in the training set teach the edge
+  (`data/line_set/typed_set9`, samples re-cut on the VM).
+- Fair baseline: run G read on the re-cut samples and scored against the
+  corrected markup (`heldout_G9`): drawn edge given, face IoU 0.725, faces
+  right 69, lines right 124; own edge 0.664, 54, 118; roof map against the
+  taught roof 0.875 (0.9 or better on 98). Against the old markup the same
+  reader scored 0.700 / 66 / 117: part of the counted error was the markup.
+- Run I (`I_fold*.pt`, all 168 teaching the edge; `heldout_I`): drawn edge
+  0.737, 70, lines right 132; own edge 0.666, 54, 125; roof map 0.867 (97).
+  Lines a little better, faces and edge level. Teaching the edge on 168
+  roofs instead of 35 did not move the edge; 11 more roofs of lines moved
+  the lines a little. More markup of this kind is not what limits the reader.
+- Sample framing against the build's reading, 167 roofs, G folds on the VM
+  (ablation script kept in the session scratchpad, not in git): framed on
+  the drawn roof, face IoU 0.727 / own edge 0.677 / edge IoU 0.90; framed
+  on the build's edge 0.727 / 0.662 / 0.873; re-framed on the reader's edge
+  0.729 / 0.662 / 0.869. The build's reading is not broken; re-framing is
+  now off (`SOLAR_LINE_READER_REFRAME`). Build edge against drawn: 0.856.
+- Larger roofs read in tiles at 0.07 or 0.1 m/px with the same reader: no
+  gain (85 roofs 0.648 -> 0.653; 38 roofs 0.605 -> 0.585). Not trained on
+  part-roofs, so untested rather than ruled out.
+- The worst roof maps are flat commercial roofs with plant, car-park decks
+  and multi-building blocks in the town centre, not houses (houses: roof
+  map 0.89, faces right on about half).
+- Next: a stronger reader (larger backbone is a download and needs the
+  owner's OK); `I_all.pt` (all drawn roofs) for the street.
+
 **22 Nov (evening), run G scored: the 11 new hard roofs help a little.**
 - Run G (`data/line_set/runs/G_fold*.pt`, `typed_set5`, fixed folds): each
   roof read by the fold model that never saw it, faces by
