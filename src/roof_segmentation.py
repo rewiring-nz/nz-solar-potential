@@ -1000,7 +1000,9 @@ def repair_staircase_facets(facets, pc_source):
     out, flags = [], []
     for f in facets:
         try:
-            if not _is_unrepairable_staircase(f, pc_source):
+            # a face already marked to take no panels is kept as geometry:
+            # dropping it removes a roof line and protects nothing
+            if f.get("no_panel") or not _is_unrepairable_staircase(f, pc_source):
                 out.append(f)
                 flags.append(True)
                 continue
