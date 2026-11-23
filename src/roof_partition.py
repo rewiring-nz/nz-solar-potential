@@ -1612,6 +1612,9 @@ READ_COVER_MIN = 0.85
 
 
 READ_CUT_MAX_PARTS, READ_CUT_MIN_INLIER, READ_CUT_MIN_COVER = 4, 0.70, 0.80
+# every part is a face in its own right: 2 Sunrise Lane's three parts are 53
+# to 63 m2, the scraps of 13 Sunrise Lane's 17 m2 louvre strips 6 to 11 m2
+READ_CUT_MIN_PART_M2 = 12.0
 
 
 def _clean_cut(building_id, poly, pts, inside):
@@ -1628,6 +1631,8 @@ def _clean_cut(building_id, poly, pts, inside):
     if not cut or len(cut) > READ_CUT_MAX_PARTS:
         return []
     if sum(f["geometry"].area for f in cut) < READ_CUT_MIN_COVER * poly.area:
+        return []
+    if min(f["geometry"].area for f in cut) < READ_CUT_MIN_PART_M2:
         return []
     for f in cut:
         sub = _points_in(f["geometry"], inside)
