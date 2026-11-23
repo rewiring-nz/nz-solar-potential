@@ -189,6 +189,7 @@ def main():
     ap.add_argument("--folds", type=int, default=0, help="split the val kinds into this many folds: fold --fold is the test, the rest train")
     ap.add_argument("--fold", type=int, default=0)
     ap.add_argument("--fold-file", default=None, help="JSON {roof id: fold}; overrides the shuffled split")
+    ap.add_argument("--hand-share", type=float, default=1.0, help="with --folds: train on this share of the hand-drawn roofs outside the test fold")
     ap.add_argument("--repeat-val-kind", type=int, default=1, help="times each hand-drawn training roof is seen per epoch")
     a = ap.parse_args()
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -206,7 +207,12 @@ def main():
         else:
             random.Random(11).shuffle(va)
             test = va[a.fold::a.folds]
-        tr += [f for f in va if f not in set(test)] * a.repeat_val_kind
+        keep = [f for f in va if f not in set(test)]
+        if a.hand_share < 1:
+            # a learning curve: the same test fold read by a model taught with a share of the other
+            # hand-drawn roofs says whether drawing more would move the score
+            random.Random(5).shuffle(keep); keep = keep[:int(round(a.hand_share * len(keep)))]
+        tr += keep * a.repeat_val_kind
         va = test
     random.Random(0).shuffle(tr)
     if a.limit:
