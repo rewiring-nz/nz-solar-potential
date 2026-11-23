@@ -397,6 +397,26 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**23 Nov, 13 Sunrise: the build loses what the reader reads. Open.**
+- The reader's maps for 4729767 (dumped with `SOLAR_LINE_READER_DUMP`,
+  `J_all.pt`) hold the drawn structure: the ridge, the wing join and the
+  three strip lines, straight, and no cross lines.
+- Faces straight from those maps (`faces_from_regions`, reader's own edge)
+  match the drawn faces 0.78 (0.83 inside the drawn edge). The built facets
+  of street L11 from the same reading match 0.64 and carry cross cuts on
+  the wing that are in no map. The loss is between the reader's faces and
+  the built facets. Next: find the build step that cuts a read face.
+- Second loss, smaller: the reader's own edge has rounded corners and a
+  bulge at the south-west.
+- Line snapping (`SOLAR_LINE_SNAP`, off): lines between faces simplified
+  and turned onto the roof's two main directions by least squares. On the
+  168 held-out drawn roofs (J maps, drawn edge): 77 right at tolerance 3 px
+  and 10 degrees, 72 at 8 px and 20 degrees, against 78 off. Street L12
+  (gentle) and L13 (strong) against the markup: 13 Sunrise 0.63 and 0.61
+  against 0.64; 1 Sunrise 0.54 and 0.57 against 0.55. It straightens the
+  ridge on 13 Sunrise by eye; the scores do not move. Left off until the
+  build keeps the reader's faces.
+
 **23 Nov, self-training on unmarked roofs: no gain.**
 - Teacher `J_fold0.pt` read 4,319 unmarked roofs (held-back 30 excluded);
   the 1,000 most confident (confidence 0.934 to 0.954) became the kind
