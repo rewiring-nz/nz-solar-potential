@@ -291,7 +291,8 @@ def faces_from_maps(p, names, outline=None):
 
 
 # ---------------------------------------------------------------- regions
-CORE_MIN, SEED_MIN_PX2, MERGE_BARRIER, REGION_SIMPLIFY_PX = 0.5, 150, 0.35, 8.0
+CORE_MIN, SEED_MIN_PX2, REGION_SIMPLIFY_PX = 0.5, 150, 8.0
+MERGE_BARRIER = float(os.environ.get("SOLAR_LINE_MERGE", "0.35"))      # two regions are one face when the line maps average under this along their boundary
 BASIN_SIGMA_PX, BASIN_STEP = 2.0, 0.05
 COMPLETE = int(os.environ.get("SOLAR_LINE_COMPLETE", "0"))
 COMPLETE_STRONG, COMPLETE_MIN_PX, COMPLETE_GAP_PX = 0.5, 14, 3
