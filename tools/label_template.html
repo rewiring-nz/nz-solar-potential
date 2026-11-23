@@ -504,7 +504,7 @@ function save(){
 // and counting it would make U skip a roof nobody drew.
 // A seeded outline (a starting point put there by the bundle) is not a mark
 // until something else is drawn or the roof is ticked complete.
-const hasMarks = d => !!(d && (d.problem || (d.outline && !d.seeded) || (d.lines||[]).length
+const hasMarks = d => !!(d && (d.problem || (d.outline && !d.seeded) || ((d.lines||[]).length && !d.seeded)
   || (d.obstructions||[]).length || (d.nopanel||[]).length || (d.seeded && d.complete)));
 // AN OUTLINE PASS (OPTS.outlinePass). Roofs drawn before the outline tools
 // were used keep the surveyed outline, balconies and decks included. In this

@@ -65,7 +65,7 @@ def _one(job):
         if GRAPH:
             # the typed reader, read twice (src/line_reader.py)
             from src import line_reader as lr
-            faces, _ = lr.roof_faces(translate(geom, sx, sy), _W["tiles"], pts)
+            faces, lines = lr.roof_faces(translate(geom, sx, sy), _W["tiles"], pts)
             faces = [f for f in faces if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
         else:
             faces = [f for f in fr.straight_faces(translate(geom, sx, sy), _W["img"], pts, (0.0, 0.0))
@@ -77,7 +77,10 @@ def _one(job):
         faces = [f for f in faces if f.representative_point().within(edge.buffer(0.05))]
         ring = lambda q: [[round(x - sx, 2), round(y - sy, 2)] for x, y in q.exterior.coords]
         doc = {"source": "student", "reader": "lines", "score": 1.0, "shift": [-sx, -sy], "outline": ring(edge),
-               "faces": [ring(f) for f in faces], "obstructions": []}
+               "faces": [ring(f) for f in faces], "obstructions": [],
+               # the reader's lines, for a markup draft (build_label_bundle --seed-lines)
+               "lines": [{"a": [round(a[0] - sx, 2), round(a[1] - sy, 2)], "b": [round(q[0] - sx, 2), round(q[1] - sy, 2)], "kind": k}
+                         for a, q, k in (lines if GRAPH else [])]}
         dst = Path(out) / f"{bid}.json"
         tmp = Path(out) / f"{bid}.json.tmp"
         tmp.write_text(json.dumps(doc))

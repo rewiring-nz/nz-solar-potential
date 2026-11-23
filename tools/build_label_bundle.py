@@ -89,6 +89,10 @@ def main():
                     help="JSON {building id: {outline: ring, built: [rings]}} in "
                          "NZTM: a roof with no markup opens with this outline to "
                          "correct, and shows these faces as the reference (B)")
+    ap.add_argument("--seed-lines", action="store_true", dest="seed_lines",
+                    help="with --seed: a seeded roof also opens with the seed's "
+                         "lines ([{a, b, kind}]) as a draft to correct; it counts "
+                         "as marked only once ticked complete")
     ap.add_argument("--outline-pass", action="store_true", dest="outline_pass",
                     help="the roofs already drawn whose outline was left as "
                          "surveyed, opened to correct or confirm the outline only")
@@ -231,7 +235,7 @@ def main():
         seed = {int(k): v for k, v in json.loads(Path(a.seed).read_text()).items()}
         for k, v in seed.items():
             if k not in _saved and v.get("outline"):
-                _saved[k] = {"seeded": True, "lines": [], "obstructions": [], "nopanel": [], "complete": False,
+                _saved[k] = {"seeded": True, "lines": (v.get("lines") or []) if a.seed_lines else [], "obstructions": [], "nopanel": [], "complete": False,
                              "problem": None, "outline": v["outline"], "olines": []}
 
     truth = {}

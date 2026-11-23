@@ -235,4 +235,27 @@ def roof_faces(geom, tiles, pts):
                             edge=np.asarray(reader_edge(p, edge_px).exterior.coords))
     faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px))
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
-    return [affine_transform(f, to_m) for f in faces], []
+    return [affine_transform(f, to_m) for f in faces], face_lines(faces, p, to_m)
+
+
+def face_lines(faces, p, to_m):
+    """The lines between faces as (a, b, kind) in metres: each straight run
+    two faces share, typed ridge, valley or cliff by whichever of those maps
+    is strongest along it. A draft for the markup page to open with."""
+    from scipy.ndimage import map_coordinates
+    kinds = ("ridge", "valley", "cliff")
+    out = []
+    for i in range(len(faces)):
+        for j in range(i + 1, len(faces)):
+            s = faces[i].boundary.intersection(faces[j].boundary)
+            for g in getattr(s, "geoms", [s]):
+                if g.geom_type != "LineString" or g.length < 2.0:
+                    continue
+                c = np.asarray(g.simplify(0.5).coords)
+                for a, q in zip(c[:-1], c[1:]):
+                    n = max(int(np.hypot(*(q - a))), 2)
+                    xs, ys = np.linspace(a[0], q[0], n), np.linspace(a[1], q[1], n)
+                    v = [float(map_coordinates(p[k], [ys, xs], order=1, mode="nearest").mean()) for k in (2, 3, 4)]
+                    pa = (to_m[0] * a[0] + to_m[4], to_m[3] * a[1] + to_m[5]); pb = (to_m[0] * q[0] + to_m[4], to_m[3] * q[1] + to_m[5])
+                    out.append((pa, pb, kinds[int(np.argmax(v))]))
+    return out
