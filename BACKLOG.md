@@ -397,6 +397,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Seen against unseen, and the converter's ceiling (23 Nov).** Asked: does the reader get right a roof it has been shown? Fold 0's 35 drawn roofs, faces right with the drawn edge, straight lines on:
+  - the drawn targets themselves fed to the converter as maps (`data/line_set/perfect_maps`): 135 of 168 (80%), face IoU 0.889, line F 0.940;
+  - read by J_all, which trained on them (`data/line_set/seen_Jall0`): 25 of 35 (71%), IoU 0.852, line F 0.952;
+  - read by J fold 0, which did not: 20 of 35 (57%), IoU 0.792, line F 0.841.
+  So the reader reproduces the LINES of a roof it has seen (0.95, the level of the drawing itself); the loss on seen roofs is after the maps.
+  - *Part of that loss is the scoring truth, not the converter.* On the failing perfect-map roofs looked at (4725521, 4718601, 5372392, 4734157), the drawn lines are right and the stored `faces` leave them out: a ridge that stops just short of the edge closes no face in the page's `facesFor`, so the truth is two faces across a ridge and a reading that honours the ridge scores as wrong (`data/preview/cases/drawn_lines_vs_stored_faces.jpg`). How many of the 33 failures are this is not counted yet.
+  - *Next:* rebuild the scoring faces from the drawn lines with loose ends carried to what they point at (the build already joins ends within 1 m, `SOLAR_DANGLE_JOIN_M`), then re-measure all three rows. Until then line F is the more faithful measure of "matches the drawing".
+
 - **Draft-and-check: the drafts are not close (23 Nov, owner's verdict after 3 roofs: "way off", "not even close").** Against the owner's corrections the draft held 0%, 27% and 24% of the drawn line length (within 0.5 m); roof edge IoU 0.69, 0.88, 0.75. What went wrong: a roof joined to a larger building read as one blob with no lines (39A Highview Terrace); a hip roof with no hips drawn to the corners (4 Lancewood Lane); a ridge that wanders and an edge that takes in the neighbour (16 Goldleaf Hill); a roof drawn on a cleared site (346 Frankton Road). Sheet `data/preview/cases/draft_vs_corrected.jpg`. The three corrections are in `roof_labels.json` (216 hand-drawn roofs). Drafts are parked until the reader is much better.
   - *Is more markup worth the owner's time: unmeasured.* Queued behind run P: the J reader taught with none and with half of the hand-drawn roofs outside fold 0 (`--hand-share`), scores to `data/line_set/runs/curve_scores.txt`. A flat curve says more markup will not help this model; a rising one says it will.
   - Hand-drawn roofs number 216 (168 in the held-out reader set), with 716 paid-reader readings beside them; "about 850 drawn roofs" in this session's notes was wrong.
