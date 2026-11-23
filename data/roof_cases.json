@@ -1509,9 +1509,10 @@
    "region": "frankton_arm",
    "first_flagged": "2026-11-23",
    "flagged_on": "street L11",
-   "defect": "1 Sunrise Lane: roof lines wrong",
+   "defect": "1 Sunrise Lane: roof lines wrong; unusual roof shape, rare, not a tuning target",
    "quotes": [
-    "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
+    "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems.",
+    "1 sunrise is a very unusual roof shape which should not appear often at all"
    ],
    "status": "open",
    "flagged_times": 1,
