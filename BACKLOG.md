@@ -397,6 +397,15 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**23 Nov, self-training on unmarked roofs: no gain.**
+- Teacher `J_fold0.pt` read 4,319 unmarked roofs (held-back 30 excluded);
+  the 1,000 most confident (confidence 0.934 to 0.954) became the kind
+  `typed_set9/pseudo0`. `M_fold0.pt` trained with them added, ViT-B, 16
+  epochs, scored on the 35 fold-0 drawn roofs.
+- Drawn edge: face IoU 0.790, 16 right (J 0.795, 21). Own edge: 0.742, 15
+  right (J 0.741, 14). Val F1 0.824 (J 0.832). Not carried forward: the
+  most confident roofs are the simple ones the reader already gets right.
+
 **23 Nov, 1 and 13 Sunrise Lane drawn; L11 scored against the markup.**
 - Owner's verdict on street L11: better than L10 but not great; 4729286
   (1 Sunrise) and 4729767 (13 Sunrise) are the main problems. 1 Sunrise is a
