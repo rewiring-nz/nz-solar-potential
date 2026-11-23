@@ -397,6 +397,23 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+**23 Nov, 1 and 13 Sunrise Lane drawn; L11 scored against the markup.**
+- Owner's verdict on street L11: better than L10 but not great; 4729286
+  (1 Sunrise) and 4729767 (13 Sunrise) are the main problems. 1 Sunrise is a
+  rare roof shape and is not a tuning target; 13 Sunrise is.
+- Both drawn with outline and lines (markup page built with
+  `build_label_bundle.py --ids ... --artifact` on the VM; faces derived by
+  the page's own `facesFor`). They are no longer unseen test roofs; the other
+  17 street roofs still are.
+- Area-weighted best face IoU against the drawn faces, and roof edge IoU:
+  13 Sunrise L10 0.52 / 0.75, L11 0.64 / 0.89 (8 faces drawn, 7 built);
+  1 Sunrise L10 0.68 / 0.89, L11 0.55 / 0.86 (11 drawn, 11 built).
+  Sheets `data/preview/cases/sunrise_drawn_<id>.jpg`.
+- 13 Sunrise: every drawn line follows one of two perpendicular directions.
+  L11 has the ridge slanted off the eave direction, wobbling edges, and the
+  four parallel strips of the side wing cut crosswise. Next test: snap
+  region edges to the roof's main directions.
+
 **23 Nov, Sunrise Lane street rebuilt with the ViT-B all-roofs reader (`J_all.pt`, street L11 against L10).**
 - None of the 19 street roofs is in the training sets. Sheets in
   `data/preview/cases/street_L11/`. Not judged by the owner yet; the agent's
