@@ -126,8 +126,14 @@ def maps(img):
             p = torch.sigmoid(net()(F.interpolate(x, size=(RUN, RUN), mode="bilinear", align_corners=False)))
             p = F.interpolate(p, size=x.shape[-2:], mode="bilinear", align_corners=False)[0].numpy()
         p = np.rot90(p, -(k % 4), axes=(1, 2))
+        if p.shape[0] > 8 and k % 2:
+            # the direction maps (train_roof_lines.NDIR) hold twice the line's
+            # angle: a quarter turn back reverses both
+            p = p.copy(); p[8:10] = 1 - p[8:10]
         if k >= 4:
             p = p[:, :, ::-1]
+            if p.shape[0] > 8:                     # a mirror reverses the sine map
+                p = p.copy(); p[9] = 1 - p[9]
         acc = acc + p
     return np.ascontiguousarray(acc / max(1, len(range(8)[:max(1, TTA)])))
 

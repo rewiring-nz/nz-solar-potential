@@ -19,6 +19,35 @@ NAMES = ["line", "core", "ridge", "valley", "cliff", "outline", "join", "roof"]
 WHOLE = [5, 7]                              # scored on the whole picture, not just the roof
 # a join is ~28 px of a 150,000 px picture and a line is a few hundred
 POS_WEIGHT = [6.0, 1.0, 8.0, 8.0, 8.0, 8.0, 20.0, 1.0]
+# Two more maps (SOLAR_LINES_DIR=1): which way the nearest line runs, as
+# (cos 2a + 1) / 2 and (sin 2a + 1) / 2 for a line at angle a in picture
+# coordinates (x right, y down). A roof line is straight: its direction is
+# the same along its whole length, which the where-is-a-line maps cannot be
+# taught (they curve a ridge and still score well). The target comes from
+# the drawn lines themselves, so no roof needs marking again.
+NDIR = 2 if os.environ.get("SOLAR_LINES_DIR", "0") == "1" else 0
+DIR_WEIGHT, DIR_REACH_PX = 2.0, 4
+
+
+def _box(a, k):
+    return F.avg_pool2d(a, k, 1, k // 2)
+
+
+def dir_target(y, w):
+    """(B 2 H W target in 0..1, B 1 H W weight) from the drawn inner lines
+    and roof edge: the structure tensor of the blurred line mask gives the
+    direction across each line; the line runs at right angles to it. Scored
+    within DIR_REACH_PX of a line, where one direction is clear (not at a
+    join of lines)."""
+    m = torch.maximum(y[:, 0:1] * (w[:, 0:1] > 0), y[:, 5:6] * (w[:, 5:6] > 0))
+    b = _box(_box(m, 5), 5)
+    gx = F.pad(b[:, :, :, 2:] - b[:, :, :, :-2], (1, 1, 0, 0)); gy = F.pad(b[:, :, 2:, :] - b[:, :, :-2, :], (0, 0, 1, 1))
+    jxx, jxy, jyy = _box(gx * gx, 9), _box(gx * gy, 9), _box(gy * gy, 9)
+    n = torch.sqrt((jxx - jyy) ** 2 + 4 * jxy ** 2)
+    coh = n / (jxx + jyy + 1e-9)
+    c2, s2 = -(jxx - jyy) / (n + 1e-9), -2 * jxy / (n + 1e-9)       # the line is at right angles to the gradient
+    near = F.max_pool2d(m, 2 * DIR_REACH_PX + 1, 1, DIR_REACH_PX)
+    return torch.cat([(c2 + 1) / 2, (s2 + 1) / 2], 1), near * (coh > 0.5).float()
 
 
 class Roofs(torch.utils.data.Dataset):
@@ -119,6 +148,11 @@ def prep(x, y, w):
 
 
 def loss_fn(logit, y, w):
+    extra = 0
+    if logit.shape[1] > NOUT:
+        t, tw = dir_target(y, w)
+        extra = DIR_WEIGHT * (((torch.sigmoid(logit[:, NOUT:]) - t) ** 2) * tw).sum() / (2 * tw.sum() + 1e-6)
+        logit = logit[:, :NOUT]
     pw = torch.tensor(POS_WEIGHT, device=logit.device).view(1, NOUT, 1, 1)
     bce = F.binary_cross_entropy_with_logits(logit, y, pos_weight=pw, reduction="none")
     # each map averaged over the pixels that know it, then the maps averaged:
@@ -130,14 +164,14 @@ def loss_fn(logit, y, w):
     for c in (0, 5):
         p = torch.sigmoid(logit[:, c]) * w[:, c]; t = y[:, c] * w[:, c]
         dice = dice + 1 - (2 * (p * t).sum() + 1) / (p.sum() + t.sum() + 1)
-    return bce + 0.25 * dice
+    return bce + 0.25 * dice + extra
 
 
 @torch.no_grad()
 def boundary_f1(logit, y, w, tol=2):
     """Per map: F1 parts with a tolerance of `tol` pixels (a line 2 px off is
     still that line). Returns NOUT x 4."""
-    p = (torch.sigmoid(logit) > 0.5).float() * w
+    p = (torch.sigmoid(logit[:, :NOUT]) > 0.5).float() * w
     t = y * w
     k = 2 * tol + 1
     pd = F.max_pool2d(p, k, 1, tol); td = F.max_pool2d(t, k, 1, tol)
@@ -178,14 +212,14 @@ def main():
     if a.limit:
         tr = tr[:a.limit]
     print(f"{len(tr)} training roofs, {len(va)} validation roofs, {dev}", flush=True)
-    net = Net(nin=np.load(tr[0])["image"].shape[-1])
+    net = Net(nin=np.load(tr[0])["image"].shape[-1], nout=NOUT + NDIR)
     sd = torch.load(Path.home() / f".cache/torch/hub/checkpoints/dinov2_{ARCH}_pretrain.pth", map_location="cpu")
     net.enc.load_state_dict(sd)
     if a.init:
         init = torch.load(a.init, map_location="cpu")
         own = net.state_dict()
         for k in ("head.weight", "head.bias"):        # a two-map model starts the first two maps
-            if init[k].shape[0] != NOUT:
+            if init[k].shape[0] != NOUT + NDIR:
                 new = own[k].clone(); new[:init[k].shape[0]] = init[k]; init[k] = new
         # a start trained with other inputs or another encoder gives what fits
         init = {k: v for k, v in init.items() if k in own and v.shape == own[k].shape}
