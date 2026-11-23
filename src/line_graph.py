@@ -353,7 +353,7 @@ def complete_lines(barrier, inside):
     return out
 
 
-def _basins(barrier, inside):
+def _basins(barrier, inside, merge_at=None):
     """The roof cut wherever the line maps have a crest, then joined back
     across every cut with no line under it.
 
@@ -405,7 +405,7 @@ def _basins(barrier, inside):
             _, j, i = min(small)
         else:
             v, (i, j) = min((S[k] / N[k], k) for k in S)
-            if v >= MERGE_BARRIER:
+            if v >= (MERGE_BARRIER if merge_at is None else merge_at):
                 break
         join(i, j)
     def root(i):
@@ -416,6 +416,118 @@ def _basins(barrier, inside):
     for i in parent:
         lut[i] = root(i)
     return lut[lab]
+
+
+# THE LINES AND THE SURFACE DECIDE TOGETHER (SOLAR_LINE_PLANES=1). A roof face
+# is a plane. The line maps alone merge two faces wherever the line between
+# them is faint (homes outside the town centre, 31 unseen roofs wrong: 94
+# drawn faces merged into a neighbour, 52 split, 60 shifted), and the
+# unsmoothed LiDAR heights say which of those pairs are one plane. Rule: the
+# roof is cut at every crest of the line maps as before; then two
+# neighbouring regions become one when the line between them is weak (under
+# MERGE_BARRIER) AND the heights do not put them on different planes, or
+# when the heights put them on ONE plane and the line is under PL_SAME_LINE.
+# "One plane": each region's heights lie within PL_SAME_M (median) of the
+# plane fitted to the other. "Different": beyond PL_DIFF_M. A region with
+# under PL_MIN_PX heights has no say, and the lines decide alone.
+PLANES = int(os.environ.get("SOLAR_LINE_PLANES", "0"))
+PL_SAME_M = float(os.environ.get("SOLAR_PL_SAME", "0.10"))
+PL_DIFF_M = float(os.environ.get("SOLAR_PL_DIFF", "0.30"))
+PL_SAME_LINE = float(os.environ.get("SOLAR_PL_SAME_LINE", "0.6"))
+PL_MIN_PX, PL_ERODE_PX = 120, 3
+
+
+PL_CREASE = float(os.environ.get("SOLAR_PL_CREASE", "0"))       # weight of the surface's own creases among the cuts (0: lines only)
+PL_NOLINE = 0.15
+PL_DIFF_NOLINE_M = float(os.environ.get("SOLAR_PL_DIFF_NOLINE", "0.6"))
+PL_FACE_MIN_PX = int(os.environ.get("SOLAR_PL_FACE_MIN", "600"))
+PL_CREASE_SIGMA_PX = float(os.environ.get("SOLAR_PL_CREASE_SIGMA", "3"))
+
+
+def _creases(height, has):
+    """0..1: how sharply the LiDAR surface bends or steps at each pixel (the
+    size of the second derivative of the lightly smoothed heights, as a share
+    of the roof's 99th percentile). Gaps are filled from the nearest return."""
+    from scipy.ndimage import distance_transform_edt, gaussian_filter, binary_dilation
+    idx = distance_transform_edt(~has, return_distances=False, return_indices=True)
+    z = gaussian_filter(height[idx[0], idx[1]], PL_CREASE_SIGMA_PX)
+    gy, gx = np.gradient(z)
+    gyy, gyx = np.gradient(gy); gxy, gxx = np.gradient(gx)
+    c = gaussian_filter(np.sqrt(gxx ** 2 + gyy ** 2 + 2 * gxy ** 2), 1.0)
+    c[binary_dilation(~has, iterations=4)] = 0
+    top = np.percentile(c[has], 99) if has.any() else 0
+    return np.clip(c / top, 0, 1) if top > 1e-9 else np.zeros_like(c)
+
+
+def _plane(ys, xs, z):
+    """Least-squares plane z = a x + b y + c through the points, refitted once without the far ones."""
+    A = np.c_[xs, ys, np.ones(len(xs))]
+    k, *_ = np.linalg.lstsq(A, z, rcond=None)
+    r = np.abs(A @ k - z); keep = r <= max(0.05, 2.5 * np.median(r))
+    if keep.sum() >= 30:
+        k, *_ = np.linalg.lstsq(A[keep], z[keep], rcond=None)
+    return k
+
+
+def _plane_basins(barrier, inside, height):
+    from scipy.ndimage import binary_erosion
+    has = height > 0
+    surface = barrier
+    if PL_CREASE > 0 and has.sum() > 400:
+        # where the surface bends or steps the roof is also cut, so that two
+        # planes with no line seen between them are two regions for the
+        # heights to keep apart; a cut inside one plane is joined back below
+        surface = np.maximum(barrier, PL_CREASE * _creases(height, has))
+    lab = _basins(surface, inside, merge_at=0.0)
+    if lab is None:
+        return None
+    pts, fit, rel = {}, {}, {}
+
+    def data(i):
+        if i not in pts:
+            m = binary_erosion(lab == i, iterations=PL_ERODE_PX) & has
+            ys, xs = np.nonzero(m)
+            pts[i] = (ys, xs, height[ys, xs]) if len(ys) >= PL_MIN_PX else None
+            fit[i] = _plane(*pts[i]) if pts[i] is not None else None
+        return pts[i], fit[i]
+
+    def relation(i, j):
+        k = (min(i, j), max(i, j))
+        if k not in rel:
+            (pi, fi), (pj, fj) = data(i), data(j)
+            if pi is None or pj is None:
+                rel[k] = None
+            else:
+                off = lambda pp, ff: float(np.median(np.abs(pp[1] * ff[0] + pp[0] * ff[1] + ff[2] - pp[2])))
+                rel[k] = max(off(pj, fi), off(pi, fj))
+        return rel[k]
+
+    while True:
+        S, N = {}, {}
+        for a, b, v in ((lab[:, :-1], lab[:, 1:], np.maximum(barrier[:, :-1], barrier[:, 1:])),
+                        (lab[:-1, :], lab[1:, :], np.maximum(barrier[:-1, :], barrier[1:, :]))):
+            m = (a != b) & (a > 0) & (b > 0)
+            for lo, hi, x in zip(np.minimum(a[m], b[m]).tolist(), np.maximum(a[m], b[m]).tolist(), v[m].tolist()):
+                S[(lo, hi)] = S.get((lo, hi), 0.0) + x; N[(lo, hi)] = N.get((lo, hi), 0) + 1
+        best = None
+        for k in S:
+            line = S[k] / N[k]; d = relation(*k)
+            # with no line seen at all, the heights alone keep two regions apart only when both are
+            # face-sized and clearly off each other's plane
+            apart = d is not None and d > (PL_DIFF_M if line >= PL_NOLINE else PL_DIFF_NOLINE_M)
+            if apart and line < PL_NOLINE:
+                apart = min(len(pts[k[0]][0]), len(pts[k[1]][0])) >= PL_FACE_MIN_PX
+            if (line < MERGE_BARRIER and not apart) or (d is not None and d <= PL_SAME_M and line < PL_SAME_LINE):
+                if best is None or line < best[0]:
+                    best = (line, k)
+        if best is None:
+            return lab
+        i, j = best[1]
+        lab = np.where(lab == j, i, lab)
+        for d_ in (pts, fit):
+            d_.pop(i, None); d_.pop(j, None)
+        for k in [k for k in rel if i in k or j in k]:
+            rel.pop(k)
 
 
 SNAP = int(os.environ.get("SOLAR_LINE_SNAP", "0"))
@@ -693,7 +805,7 @@ def straight_faces(lab, outline, barrier=None):
     return faces or None
 
 
-def faces_from_regions(p, names, outline):
+def faces_from_regions(p, names, outline, height=None):
     """Closed faces: one per face interior the reader sees.
 
     The joins-and-lines drawing keeps only lines whose two ends are found,
@@ -722,7 +834,8 @@ def faces_from_regions(p, names, outline):
     barrier = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
     if COMPLETE:
         barrier = complete_lines(barrier, inside)
-    lab = _basins(barrier, inside)
+    # `height`: unsmoothed LiDAR height above the roof's low point (H W, metres, 0 where there is none)
+    lab = _plane_basins(barrier, inside, height) if PLANES and height is not None else _basins(barrier, inside)
     if lab is None:
         return [outline]
     if STRAIGHT:

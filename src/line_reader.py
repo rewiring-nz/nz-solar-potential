@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL = os.environ.get("SOLAR_LINE_READER_MODEL", str(ROOT / "data/models/roof_lines.pt"))
 SIZE, FILL_PX = 384, 304
 _NET = []
+_HEIGHT = []
 SHARP = int(os.environ.get("SOLAR_LINES_SHARP", "0"))
 SHARP_WINDOW_M, SHARP_STEP_M = 0.6, 2.0
 
@@ -88,6 +89,8 @@ def picture(geom, tiles, pts):
     mag = np.hypot(dzx, dzy) + 1e-9
     chans = np.dstack([rgb, np.clip(zf / 10.0, 0, 1), np.clip(slope / 45.0, 0, 1),
                        (-dzx / mag + 1) / 2, (dzy / mag + 1) / 2] + (sharp_channels(z, base, mpp) if SHARP else []))
+    # the unsmoothed heights, for the faces' plane check (line_graph.PLANES): 0 where there is no return
+    _HEIGHT[:] = [np.where(np.isfinite(z), np.clip(z - base, 0.0, 10.0), 0.0).astype(np.float32)]
     return (chans * 255).astype(np.uint8), b, mpp
 
 
@@ -200,7 +203,10 @@ def roof_faces(geom, tiles, pts):
     from src.line_graph import faces_from_regions
     from train_roof_lines import NAMES
     img, b, mpp = picture(geom, tiles, pts)
-    p, _ = read_twice(img, mpp)
+    p, (dx, dy) = read_twice(img, mpp)
+    # the heights moved as the LiDAR channels were for the second reading
+    from scipy.ndimage import shift as _shift
+    height = _shift(_HEIGHT[0], (dy, dx), order=0, mode="nearest") if _HEIGHT else None
     edge_px = affine_transform(geom, [1 / mpp, 0, 0, -1 / mpp, -b[0] / mpp, b[3] / mpp])
     for _ in range(REFRAME):
         # The reader was taught on pictures centred on the true roof and
@@ -233,7 +239,7 @@ def roof_faces(geom, tiles, pts):
         np.savez_compressed(os.path.join(os.environ["SOLAR_LINE_READER_DUMP"], f"{int(c.x)}_{int(c.y)}.npz"),
                             image=img, maps=(p * 255).astype(np.uint8), frame=np.array(list(b) + [mpp]),
                             edge=np.asarray(reader_edge(p, edge_px).exterior.coords))
-    faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px))
+    faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px), height=height)
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
     return [affine_transform(f, to_m) for f in faces], face_lines(faces, p, to_m)
 
