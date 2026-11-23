@@ -1622,6 +1622,9 @@ def _clean_cut(building_id, poly, pts, inside):
     scraps) and a face over two real planes passes."""
     from shapely.geometry import Point
     cut = residual_fill(building_id, poly, pts, [{"geometry": Point(poly.exterior.coords[0]).buffer(0.01)}])
+    if os.environ.get("SOLAR_FACE_DEBUG"):
+        print(f"[cut {building_id}] face {poly.area:.0f} m2 -> " + ", ".join(
+            "%.0f m2 inl %.2f slope %.0f asp %.0f" % (f["geometry"].area, _inlier_fraction(_points_in(f["geometry"], inside), (f["plane_a"], f["plane_b"], f["plane_c"])) if len(_points_in(f["geometry"], inside)) else -1, f["slope_deg"], f["aspect_deg"]) for f in cut))
     if not cut or len(cut) > READ_CUT_MAX_PARTS:
         return []
     if sum(f["geometry"].area for f in cut) < READ_CUT_MIN_COVER * poly.area:
