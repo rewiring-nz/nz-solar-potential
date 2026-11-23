@@ -417,6 +417,88 @@ def _basins(barrier, inside):
     return lut[lab]
 
 
+SNAP = int(os.environ.get("SOLAR_LINE_SNAP", "0"))
+SNAP_SIMPLIFY_PX = float(os.environ.get("SOLAR_LINE_SNAP_TOL", "8"))
+SNAP_DEG = float(os.environ.get("SOLAR_LINE_SNAP_DEG", "20"))
+SNAP_HOLD = float(os.environ.get("SOLAR_LINE_SNAP_HOLD", "0.05"))
+SNAP_EXTEND_PX = 5.0
+
+
+def main_direction(segs):
+    """The length-weighted peak of segment directions, mod 90 degrees.
+    `segs` is rows of (x1, y1, x2, y2)."""
+    segs = np.asarray(segs, float)
+    d = segs[:, 2:] - segs[:, :2]; ln = np.hypot(d[:, 0], d[:, 1])
+    ang = np.degrees(np.arctan2(d[:, 1], d[:, 0])) % 90.0
+    hist = np.zeros(90)
+    np.add.at(hist, ang.astype(int) % 90, ln)
+    sm = sum(np.roll(hist, k) for k in (-2, -1, 0, 1, 2))
+    k = int(np.argmax(sm))
+    w = np.array([hist[(k + j) % 90] for j in range(-2, 3)])
+    return (k + 0.5 + float((w * np.arange(-2, 3)).sum() / max(w.sum(), 1e-9))) % 90.0
+
+
+def snap_lines(inner, outline):
+    """The lines between faces made straight and turned onto the roof's two
+    main directions.
+
+    A roof's ridges, valleys and steps are straight, and most run along the
+    roof's main direction or at right angles to it. The boundary between two
+    read regions wobbles and drifts off that direction. Rule: each line is
+    simplified to SNAP_SIMPLIFY_PX; the main direction is the length-weighted
+    peak (mod 90 degrees) of the outline's and the lines' segment directions;
+    a segment within SNAP_DEG of it or of its right angle is made exactly
+    parallel by moving its two ends (least squares over all segments at once,
+    each end held weakly at its read position so shared ends stay shared);
+    other segments (hips) stay straight between their moved ends. A line's
+    loose end is carried on along its last segment to cross the roof edge."""
+    if not inner:
+        return inner
+    lines = [list(g.simplify(SNAP_SIMPLIFY_PX).coords) for g in inner]
+    oc = list(outline.simplify(STRAIGHT_SIMPLIFY_PX).exterior.coords)
+    segs = [(a[0], a[1], b[0], b[1]) for c in lines + [oc] for a, b in zip(c[:-1], c[1:])]
+    t = np.radians(main_direction(segs))
+    R = np.array([[np.cos(t), np.sin(t)], [-np.sin(t), np.cos(t)]])      # into the roof's frame
+    idx, pts = {}, []
+    def node(q):
+        k = (round(q[0], 2), round(q[1], 2))
+        if k not in idx:
+            idx[k] = len(pts); pts.append(q)
+        return idx[k]
+    chains = [[node(q) for q in c] for c in lines]
+    P = np.asarray(pts, float) @ R.T
+    n = len(P)
+    A = [np.eye(n) * SNAP_HOLD, np.eye(n) * SNAP_HOLD]; B = [P[:, 0] * SNAP_HOLD, P[:, 1] * SNAP_HOLD]
+    for c in chains:
+        for i, j in zip(c[:-1], c[1:]):
+            d = P[j] - P[i]; ln = float(np.hypot(*d))
+            if ln < 1e-6:
+                continue
+            g = np.degrees(np.arctan2(d[1], d[0])) % 180.0
+            for ax, target in ((1, 0.0), (0, 90.0)):          # along the main direction: equal across it, and the reverse
+                if abs((g - target + 90.0) % 180.0 - 90.0) <= SNAP_DEG:
+                    w = ln / 20.0
+                    A[ax][i, i] += w; A[ax][j, j] += w; A[ax][i, j] -= w; A[ax][j, i] -= w
+    Q = np.stack([np.linalg.solve(A[0], B[0]), np.linalg.solve(A[1], B[1])], axis=1) @ R
+    deg = np.zeros(n, int)
+    for c in chains:
+        if c[0] != c[-1]:
+            deg[c[0]] += 1; deg[c[-1]] += 1
+    out = []
+    for c in chains:
+        q = [Q[i].copy() for i in c]
+        if c[0] != c[-1] and len(q) >= 2:
+            for end, nxt, i in ((0, 1, c[0]), (-1, -2, c[-1])):
+                if deg[i] == 1:                                   # a loose end: on to the roof edge
+                    d = q[end] - q[nxt]; ln = float(np.hypot(*d))
+                    if ln > 1e-6:
+                        q[end] = q[end] + d / ln * SNAP_EXTEND_PX
+        g = LineString([tuple(v) for v in q])
+        if g.length > 0.5:
+            out.append(g)
+    return out
+
+
 def faces_from_regions(p, names, outline):
     """Closed faces: one per face interior the reader sees.
 
@@ -473,6 +555,8 @@ def faces_from_regions(p, names, outline):
                     inner.extend(getattr(g, "geoms", [g]))
     merged = shapely.ops.linemerge(inner) if inner else None
     inner = list(getattr(merged, "geoms", [merged])) if merged is not None and not merged.is_empty else []
+    if SNAP:
+        inner = snap_lines(inner, outline)
     ties = []
     for g in inner:
         for end in (g.coords[0], g.coords[-1]):
