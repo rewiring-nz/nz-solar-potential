@@ -71,6 +71,47 @@ class JobError(Exception):
         self.status = status
 
 
+def automatic_raster_bounds(row: dict, data: Path, workspace: Path, digest: str,
+                            include_imagery: bool, paid_referee: bool) -> dict:
+    """Freeze the web estimate in the existing admission contract."""
+    from src.raster_job_bounds import validate_job_bounds
+
+    estimate = row["raster_auto_estimate"]
+    config = estimate["cache_policy"]
+    if estimate["work_dir"] != str(data.resolve()) or estimate["output_dir"] != str(data.resolve()):
+        raise ValueError("Automatic disk estimate no longer matches the data directory")
+    bounds = {
+        "version": 1, "region": row["region"], "workspace": str(workspace.resolve()),
+        "plan_sha256": digest, "include_imagery": include_imagery,
+        "paid_referee": paid_referee,
+        "evidence": "Automatically estimated from area, buildings and download assumptions; "
+                    "not an upper bound or enforced limit.",
+        "cache_policy": str(Path(os.environ.get(
+            "SOLAR_RASTER_CACHE_POLICY") or data / "raster-cache-policy.json").resolve()),
+        "work_dir": estimate["work_dir"], "output_dir": estimate["output_dir"],
+        "mosaic_bytes": estimate["mosaic_bytes"], "scratch_bytes": estimate["scratch_bytes"],
+        "output_bytes": estimate["output_bytes"], "export_bytes": estimate["export_bytes"],
+        "extra_allocations": [
+            {"name": "other_inputs", "directory": estimate["work_dir"],
+             "bytes": estimate["other_bytes"]},
+            {"name": "temporary_files", "directory": estimate["temp_dir"],
+             "bytes": estimate["scratch_bytes"]},
+        ],
+        "processing": {"dsm": {"resolution": 1, "resampling": "average"}},
+        "cache": {key: config[key] for key in
+                  ("directory", "max_bytes", "min_free_bytes", "unknown_asset_bytes")},
+        "cleanup": {
+            "lookahead": config["queue_lookahead"], "near_distance_m": config["near_distance_m"],
+            "max_unused_age_s": config["max_unused_age_s"],
+            "partial_expiry_s": config["partial_expiry_s"],
+            "high_water_bytes": config["high_water_bytes"], "target_bytes": config["target_bytes"]},
+        "freshness": {"metadata_refresh_s": config["metadata_refresh_s"]},
+    }
+    return validate_job_bounds(bounds, region=row["region"], workspace=workspace,
+                               plan_digest=digest, include_imagery=include_imagery,
+                               paid_referee=paid_referee, frozen=True)
+
+
 def pipeline_command(python: str, region: str, paid_referee: bool) -> list[str]:
     return [python, "tools/pipeline.py", region, "--python", python, "--no-open-browser",
             "--no-preview-server", "--paid-referee" if paid_referee else "--no-paid-referee"]
@@ -323,7 +364,9 @@ class JobManager:
         if not rows:
             raise JobError("the estimate names no regions")
         if (estimate.get("target", "local") == "local"
-                and os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and len(rows) != 1):
+                and (os.environ.get("SOLAR_RASTER_JOB_BOUNDS")
+                     or any(row.get("raster_auto_estimate") for row in rows))
+                and len(rows) != 1):
             raise JobError("operator-bounded local jobs must be submitted one area at a time", 409)
         if any(row.get("selection_count", 1) != 1 for row in rows):
             raise JobError("this estimate groups grid cells; estimate again for separate jobs", 409)
@@ -402,7 +445,8 @@ class JobManager:
                    for entry in planned_regions for status in entry["inputs"]) or (
                        batch is not None and any(item.get("source") is not None
                                                  for item in batch["inputs"]))
-            if mapped and not os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
+            automatic = len(regions) == 1 and estimate["regions"][0].get("raster_auto_estimate")
+            if mapped and not os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and not automatic:
                 raise JobError("mapped raster plans are preview-only; live cache acquisition "
                                "requires operator-supplied whole-job bounds", 409)
             counts = {region: sum(entry.get("region") == region for entry in planned_regions)
@@ -424,13 +468,18 @@ class JobManager:
                     raise JobError("operator-bounded jobs require one region and its approved plan", 409)
                 try:
                     from src.raster_job_bounds import load_job_bounds, processing_for_snapshot
-                    bounds = load_job_bounds(
-                        Path(os.environ["SOLAR_RASTER_JOB_BOUNDS"]), region=regions[0],
-                        workspace=self.root, plan_digest=plan_digest(raster_plan),
-                        include_imagery=include_imagery, paid_referee=paid_referee)
+                    if os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
+                        bounds = load_job_bounds(
+                            Path(os.environ["SOLAR_RASTER_JOB_BOUNDS"]), region=regions[0],
+                            workspace=self.root, plan_digest=plan_digest(raster_plan),
+                            include_imagery=include_imagery, paid_referee=paid_referee)
+                    else:
+                        bounds = automatic_raster_bounds(
+                            estimate["regions"][0], self.data, self.root,
+                            plan_digest(raster_plan), include_imagery, paid_referee)
                     processing_for_snapshot(bounds, raster_plan, regions[0])
                     raster_admission = bounds
-                except (OSError, ValueError) as exc:
+                except (KeyError, TypeError, OSError, ValueError) as exc:
                     raise JobError(f"job bounds are invalid: {exc}", 409) from exc
         elif lane_name == "local" and os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
             raise JobError("operator-bounded jobs require an approved raster plan", 409)
@@ -475,6 +524,14 @@ class JobManager:
     def _enqueue(self, jobs: list[dict]) -> None:
         with self.lock:
             lane = self.lanes[jobs[0]["lane"]]
+            if lane.name == "local" and any(job.get("raster_admission") for job in jobs):
+                if len(jobs) != 1 or lane.active or lane.queue:
+                    raise JobError("Mapped jobs require an idle local queue", 409)
+            if lane.name == "local" and (lane.active or lane.queue):
+                existing = ([lane.active] if lane.active else []) + lane.queue
+                if any(self.load(identifier).get("raster_admission") for identifier in existing):
+                    raise JobError("A mapped job is already queued or running; wait for it "
+                                   "to finish before submitting another", 409)
             for job in jobs:
                 self._save(job)
             lane.queue.extend(job["job_id"] for job in jobs)
@@ -550,6 +607,12 @@ class JobManager:
                     job["waiting"] = None
                     self._save(job)
                 return True
+            if owner.get("reservation_id"):
+                from tools.pipeline_queue import recover_stale_raster_workspace
+                if recover_stale_raster_workspace(self.data / "pipeline-workspace.lock"):
+                    log.write("Recovered a stopped raster job's reservation and workspace lock.\n")
+                    log.flush()
+                    continue
             if not announced:
                 job["waiting"] = ("a CLI build holds data/pipeline-workspace.lock "
                                   f"(pid {owner.get('pid', '?')}); waiting for it to finish")
@@ -626,7 +689,7 @@ class JobManager:
                 job["status"] = "failed"
         except Exception as exc:
             job["status"] = "failed"
-            job["error"] = f"job runner failed ({type(exc).__name__})"
+            job["error"] = f"job runner failed ({type(exc).__name__}): {exc}"
         finally:
             self._finish(job)
 

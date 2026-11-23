@@ -2,7 +2,7 @@
 
 import copy
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from src.raster_acquisition_plan import RasterRequest, RasterSource, plan_batch
 from src.raster_freshness import verify_due_metadata
@@ -46,6 +46,24 @@ class RasterFreshnessTests(unittest.TestCase):
         self.assertEqual(lookup.call_count, 2)
         del self.plan["metadata_checked_at"]
         self.assertTrue(verify_due_metadata(self.plan, 10, get_json=lookup, now=110))
+
+    def test_due_head_size_is_rechecked_and_change_requires_new_estimate(self):
+        del self.docs["https://example.test/item.json"]["assets"]["data"]["file:size"]
+        self.plan["assets"][0]["size_bytes"] = 1198655802
+        self.plan["assets"][0]["size_source"] = "http-head"
+        def resolve(items):
+            for item in items:
+                item["size_bytes"] = 1198655802
+                item["size_source"] = "http-head"
+        with patch("src.raster_freshness.resolve_asset_sizes", side_effect=resolve) as probe:
+            self.assertTrue(verify_due_metadata(self.plan, 10, get_json=self.docs.__getitem__, now=110))
+            self.assertEqual(len(probe.call_args.args[0]), 1)
+        def changed(items):
+            for item in items:
+                item["size_bytes"] = 1198655803
+        with patch("src.raster_freshness.resolve_asset_sizes", side_effect=changed):
+            with self.assertRaisesRegex(ValueError, "changed; estimate"):
+                verify_due_metadata(self.plan, 10, get_json=self.docs.__getitem__, now=110)
 
     def test_changed_metadata_or_new_intersecting_item_requires_approval(self):
         self.docs["https://example.test/item.json"]["properties"]["updated"] = "two"

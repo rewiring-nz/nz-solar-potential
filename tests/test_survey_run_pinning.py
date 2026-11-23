@@ -119,6 +119,14 @@ class SurveyRunPinningTests(unittest.TestCase):
             disabled = survey_for(CHRISTCHURCH_CENTRAL, "area",
                                   overrides={"raster_dsm_layer": None}, **kwargs)
             self.assertIsNone(disabled["raster_dsm_layer"])
+            with patch.dict("os.environ", {"SOLAR_PREFER_NATIONAL_DSM": "0"}, clear=True):
+                web_default = survey_for(CHRISTCHURCH_CENTRAL, "area",
+                                         prefer_national=True, **kwargs)
+                self.assertEqual(web_default["raster_dsm_layer"], 122082)
+                explicit = survey_for(CHRISTCHURCH_CENTRAL, "area",
+                                      prefer_national=True,
+                                      overrides={"raster_dsm_layer": None}, **kwargs)
+                self.assertIsNone(explicit["raster_dsm_layer"])
             synthetic = survey_for(CHRISTCHURCH_CENTRAL, "area",
                                    overrides={"dsm_layer": None, "imagery_layer": None}, **kwargs)
             self.assertEqual(synthetic["elevation"], "synthetic")

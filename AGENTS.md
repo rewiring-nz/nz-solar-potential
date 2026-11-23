@@ -36,13 +36,18 @@ preparation, disk forecast and cooperative reservations
 `src/raster_source_selection.py`, `src/raster_prepare.py`, `src/raster_disk_plan.py`,
 `src/raster_reservations.py`, `src/raster_provenance.py`) are experimental.
 Live regional fetching can use mapped cache tiles only with an approved plan
-and an active, bound local queue reservation. Operator-supplied whole-job
-bounds and per-role processing options opt jobs into this experimental path;
-launched jobs retain their reservation and workspace lock for manual review
-and are reported failed. Local web estimates snapshot source selections in the
-geospatial worker; local web jobs pass those snapshots to the fetcher for
-source and footprint revalidation. No mappings are supplied by default. See
+and an active, bound local queue reservation. Local web jobs default to the
+national DSM mapping and use automatic disk estimates, not guaranteed bounds;
+the CLI retains its operator-bounded opt-in. Queue jobs release reservations
+and workspace locks after their recorded process group stops; a subsequent
+submission recovers stopped raster-job locks automatically. Detached
+descendants are not detectable. Web submissions remain one area at a time. Local web estimates
+snapshot source selections in the geospatial worker; local web jobs pass those
+snapshots to the fetcher for source and footprint revalidation. See
 [pipeline reference](docs/data-maintainers/pipeline-reference.md).
+When national DSM STAC items omit `file:size`, local web estimates obtain
+selected tile sizes by HTTP `HEAD`; missing or invalid lengths block estimation.
+Due metadata rechecks repeat the size lookup (`src/raster_freshness.py`).
 The local dataset catalogue shows native cache tile header rectangles by default from
 the configured cache policy, then `SOLAR_RASTER_CACHE_DIR`, or by default
 `data/raster_cache`. Its header-only display does not verify freshness or
@@ -470,13 +475,15 @@ figure for the same thing. Code enforces this:
 - `tools/raster_plan.py` exposes that experimental plan, optional cache
   inspection and a point-in-time disk forecast using caller-supplied bounds;
   the forecast does not reserve space. `src/raster_source_selection.py` loads
-  explicit mapping assertions from JSON; no default LDS-to-STAC mappings are
-  asserted. `tools/national-dsm-mapping.json` supplies an opt-in mapping for
+  explicit mapping assertions from JSON; standalone planning asserts no default
+  LDS-to-STAC mappings. `tools/national-dsm-mapping.json` supplies the local
+  web panel's default mapping for
   national DSM layer 122082, linked to its S3 collection by LINZ. The
   `raster_dsm_layer` survey override selects a raster without replacing the
   regional survey used to choose reference imagery and point-cloud metadata.
-  `SOLAR_PREFER_NATIONAL_DSM=1` opts LiDAR areas into the national raster
-  unless a raster override is pinned; synthetic areas are unchanged.
+  The local web panel prefers this raster unless `SOLAR_PREFER_NATIONAL_DSM=0`;
+  elsewhere `SOLAR_PREFER_NATIONAL_DSM=1` opts in. A pinned raster override
+  takes precedence and synthetic areas are unchanged.
   Published capture geometry is advisory and does not prove valid-pixel coverage.
 - `src/raster_execution.py` executes an explicit plan inside a cooperative
   reservation held by its caller, with exports delegated to a callback.
@@ -525,15 +532,16 @@ figure for the same thing. Code enforces this:
   Its cache policy must explicitly set the maximum and free-space reserve.
   The local queue takes an exclusive reservation within the configured cache
   registry; other cooperating reservations in that registry cannot overlap.
-  Operator bounds are not enforced caps; after any launch attempt the task
-  fails and retains its reservation and workspace lock for manual recovery.
+  Operator bounds are not enforced caps; the task releases its reservation
+  and workspace lock when its process group has stopped. Automatic stale-lock
+  recovery cannot detect detached descendants and refuses incomplete or active ownership.
   Mapped jobs also need per-role processing choices and explicit reviewed
   mappings. Web jobs are submitted one area at a time. See
   [the admission procedure](docs/data-maintainers/pipeline-reference.md#experimental-local-queue-admission).
-- Setting `SOLAR_RASTER_CACHE_POLICY` for the local web panel adds a
-  point-in-time cache inventory to estimates via the geospatial worker.
-  `SOLAR_RASTER_SOURCE_MAPPINGS` enables explicit mapped-plan previews;
-  mapped execution requires matching operator bounds and queue admission.
+- Local web estimates inspect the cache using the configured policy or display
+  default. `SOLAR_RASTER_SOURCE_MAPPINGS` overrides the default national
+  mapping. Mapped execution requires queue admission with operator bounds or
+  automatic web estimates.
 - `src/fetch_regions.py` reuses each area's first successful survey selection
   and acquisition footprints across its raster and point-cloud passes; it
   does not verify reused legacy regional rasters against that selection.

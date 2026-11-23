@@ -19,6 +19,7 @@ import shutil
 import statistics
 import threading
 import time
+import tempfile
 from decimal import Decimal
 from pathlib import Path
 from typing import Callable
@@ -123,10 +124,13 @@ def linz_size_lookup(api_key_fn: Callable[[], str]) -> SizeLookup:
     return lookup
 
 
-def _survey(bbox, region: str) -> dict:
+def _survey(bbox, region: str, *, prefer_national: bool | None = None) -> dict:
     from src.surveys import survey_for
     try:
-        sv = survey_for(bbox, region)
+        if prefer_national is None:
+            sv = survey_for(bbox, region)
+        else:
+            sv = survey_for(bbox, region, prefer_national=prefer_national)
     except LookupError as exc:
         return {"name": None, "elevation": None, "error": str(exc),
                 "imagery_available": False}
@@ -276,6 +280,30 @@ def apply_cached_raster_estimates(rows: list[dict], batch: dict, defaults: dict)
             "retries or changed queue order can change individual downloads.")
 
 
+def automatic_raster_estimate(row: dict, cache_overview: dict, data: Path) -> dict:
+    """Estimate allocations for admission; these are not verified upper bounds."""
+    values = cache_overview["policy"]["values"]
+    mib = 1024 ** 2
+    km2 = float(row["bbox_km2"])
+    raw_dsm = max(64 * mib, int(km2 * 4_000_000))
+    components = row["download_components_gb"]
+    export = max(64 * mib, int(max(components["imagery"],
+                                    components["reference_imagery"]) * 1e9))
+    other = max(64 * mib, int(components["lidar"] * 1e9))
+    output = max(64 * mib, int((row["buildings"] or 0) * 102_400))
+    return {
+        "cache_policy": values,
+        "work_dir": str(data.resolve()),
+        "output_dir": str(data.resolve()),
+        "temp_dir": str(Path(tempfile.gettempdir()).resolve()),
+        "mosaic_bytes": 4 * raw_dsm,
+        "scratch_bytes": 2 * raw_dsm + 2 * export,
+        "output_bytes": output,
+        "export_bytes": export,
+        "other_bytes": other,
+    }
+
+
 def referee_note(rows: list[dict]) -> dict:
     from src import build_plan
     cap = build_plan.referee_cap_usd()
@@ -291,7 +319,8 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
              now: float | None = None, cloud=None, selection: dict | None = None,
              grid_lookup: Callable | None = None,
              api_key_fn: Callable[[], str] | None = None,
-             include_imagery: bool = True, paid_referee: bool = False) -> dict:
+             include_imagery: bool = True, paid_referee: bool = False,
+             web_native_default: bool = False) -> dict:
     if target not in TARGETS:
         raise EstimateError(f"unknown target: {target}")
     if not isinstance(include_imagery, bool) or not isinstance(paid_referee, bool):
@@ -299,6 +328,12 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
     if paid_referee and not include_imagery:
         raise EstimateError("the paid AI referee requires aerial imagery")
     is_cloud = target != "local"
+    preference = os.environ.get("SOLAR_PREFER_NATIONAL_DSM", "1")
+    if web_native_default and preference not in ("0", "1"):
+        raise EstimateError("SOLAR_PREFER_NATIONAL_DSM must be 0 or 1")
+    native_default = web_native_default and not is_cloud and preference == "1"
+    if native_default and survey_fn is _survey:
+        survey_fn = lambda bbox, region: _survey(bbox, region, prefer_national=True)
     if is_cloud and cloud is None:
         raise EstimateError("cloud targets are not configured on this server")
     data = Path(data)
@@ -402,6 +437,8 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
             from tools.pipeline_webui import geo_worker
             request = {"data": str(data.resolve()), "regions": eligible,
                        "include_imagery": include_imagery}
+            if native_default:
+                request["national_default"] = True
             try:
                 raster_plan = geo_worker.run(["raster-plan"], input_text=json.dumps(request))
             except LookupError as exc:
@@ -427,6 +464,12 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
             for row in rows:
                 if row["region"] in by_region:
                     row["raster_sources"] = by_region[row["region"]]
+                    if (native_default and (row.get("source_layers") or {}).get("raster_dsm_layer") == 122082
+                            and any(item["role"] == "dsm" and item["state"] != "mapped"
+                                    for item in row["raster_sources"])):
+                        row["blockers"].append(
+                            "The selected national DSM has no native tile mapping. "
+                            "Review the configured source mappings before building.")
                     if any(item["state"] == "mapped" for item in row["raster_sources"]):
                         from src.raster_plan_handoff import plan_digest, plan_for_regions
                         try:
@@ -436,17 +479,34 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
                         except (KeyError, TypeError, ValueError) as exc:
                             raise EstimateError(f"Raster acquisition plan is invalid: {exc}") from exc
                         if not os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
-                            row["blockers"].append(
-                                "Mapped raster plans are preview-only without operator-supplied "
-                                "whole-job bounds (SOLAR_RASTER_JOB_BOUNDS).")
+                            mapped_roles = {item["role"] for item in row["raster_sources"]
+                                            if item["state"] == "mapped"}
+                            if (native_default and cache_overview and mapped_roles == {"dsm"}
+                                    and (row.get("source_layers") or {}).get("raster_dsm_layer") == 122082):
+                                row["raster_auto_estimate"] = automatic_raster_estimate(
+                                    row, cache_overview, data)
+                                row["warnings"].append(
+                                    "Automatic disk allocations are rough estimates, not guaranteed "
+                                    "bounds or enforced limits. Actual usage can be higher.")
+                            else:
+                                row["blockers"].append(
+                                    "Mapped raster plans are preview-only without operator-supplied "
+                                    "whole-job bounds (SOLAR_RASTER_JOB_BOUNDS).")
                         else:
                             row["warnings"].append(
-                                "Mapped build requires matching operator bounds; after launch its "
-                                "reservation and workspace lock need manual recovery.")
+                                "Mapped build requires matching operator bounds.")
                     if any(item["state"] == "exports_fallback" for item in row["raster_sources"]):
                         row["warnings"].append(
                             "Raster inputs use LINZ exports; download sizes are estimates, "
                             "not shared-tile cache predictions.")
+                    if any(item["role"] == "dsm" and item["state"] == "mapped"
+                           for item in row["raster_sources"]):
+                        mosaic = data / "regions" / row["region"] / "dsm_mosaic.tif"
+                        sidecar = mosaic.with_name(mosaic.name + ".source.json")
+                        if mosaic.exists() and not sidecar.is_file():
+                            row["blockers"].append(
+                                f"Existing DSM mosaic has no verified source provenance: {mosaic}. "
+                                "Preserve and move it aside before building with national tiles.")
                     gaps = [item for item in coverage
                             if item["region"] == row["region"]
                             and item["bbox_coverage"] != "fully_bounded"]
@@ -501,9 +561,10 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
     else:
         warnings.append(
             "Disk figures are estimates, not peak-space bounds or reservations. "
-            "Only jobs with operator-supplied bounds use cooperative disk admission.")
-        if os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and len(rows) != 1:
-            blockers.append("Operator-bounded local jobs must be submitted one area at a time.")
+            "Mapped jobs use cooperative disk admission, which does not allocate or cap space.")
+        if (os.environ.get("SOLAR_RASTER_JOB_BOUNDS")
+                or any(row.get("raster_auto_estimate") for row in rows)) and len(rows) != 1:
+            blockers.append("Mapped local jobs must be submitted one area at a time.")
         free = (shutil.disk_usage(data if data.exists() else data.parent).free
                 if disk_free is None else disk_free)
         free_gb = free / 1e9

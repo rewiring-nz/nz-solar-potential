@@ -170,6 +170,8 @@ def _raster_plan(request: dict) -> dict:
 
     data = Path(request["data"])
     mappings_path = os.environ.get("SOLAR_RASTER_SOURCE_MAPPINGS")
+    if not mappings_path and request.get("national_default") is True:
+        mappings_path = str(ROOT / "tools" / "national-dsm-mapping.json")
     try:
         mappings = load_layer_mappings(Path(mappings_path)) if mappings_path else []
     except ValueError as exc:
@@ -195,12 +197,25 @@ def _raster_plan(request: dict) -> dict:
     except ValueError as exc:
         raise LookupError("Raster plan is invalid; check the configured mapping, collection "
                           "metadata and regional footprints.") from exc
-    policy_path = os.environ.get("SOLAR_RASTER_CACHE_POLICY")
-    if policy_path:
-        from src.raster_cache import RasterCacheError
-        from src.raster_cache_config import load_cache_config
+    if request.get("national_default") is True and result["batch"] is not None:
+        from src.raster_acquisition_plan import NATIONAL_DSM_COLLECTION, resolve_asset_sizes
+        batch = result["batch"]
+        selected = [asset for asset in batch["assets"]
+                    if asset.get("collection_url") == NATIONAL_DSM_COLLECTION]
         try:
-            config, sources = load_cache_config(Path(policy_path))
+            resolve_asset_sizes(selected)
+        except (OSError, ValueError) as exc:
+            raise LookupError("Cannot determine national DSM tile transfer sizes; "
+                              "check source availability and try estimating again.") from exc
+        batch["known_asset_bytes"] = sum(asset["size_bytes"] or 0 for asset in batch["assets"])
+        batch["unknown_size_count"] = sum(asset["size_bytes"] is None for asset in batch["assets"])
+    policy_path = os.environ.get("SOLAR_RASTER_CACHE_POLICY")
+    if policy_path or request.get("national_default") is True:
+        from src.raster_cache import RasterCacheError
+        from src.raster_cache_config import display_cache_config, load_cache_config
+        try:
+            config, sources = (load_cache_config(Path(policy_path)) if policy_path else
+                               display_cache_config(data))
             batch = result["batch"] or {"assets": [], "export_fallbacks": []}
             inspected = config.cache().inspect_plan(batch)
             if result["batch"] is not None:

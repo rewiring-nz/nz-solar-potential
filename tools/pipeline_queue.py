@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -125,6 +126,56 @@ def process_group_stopped(group: int) -> bool:
     return False
 
 
+def recover_stale_raster_workspace(ownership: Path) -> bool:
+    """Recover a queue-owned raster lock only when its recorded processes have stopped."""
+    if os.name != "posix" or not ownership.is_dir():
+        return False
+    import fcntl
+    with (ownership.parent / "pipeline-workspace-recovery.lock").open("a+b") as guard:
+        fcntl.flock(guard.fileno(), fcntl.LOCK_EX)
+        if not ownership.is_dir():
+            return False
+        try:
+            owner = json.loads((ownership / "owner.json").read_text())
+        except (OSError, ValueError) as exc:
+            raise QueueError(f"Workspace conflict: cannot inspect lock {ownership}: {exc}") from exc
+        if not isinstance(owner, dict) or not owner.get("reservation_id"):
+            return False
+        pid, group = owner.get("pid"), owner.get("process_group")
+        registry, reservation_id = owner.get("reservation_registry"), owner["reservation_id"]
+        if type(pid) is not int or pid <= 0:
+            raise QueueError(f"Cannot safely recover incomplete raster workspace owner at {ownership}")
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            return False
+        else:
+            return False
+        if (type(group) is not int or group <= 0
+                or not isinstance(registry, str) or not Path(registry).is_absolute()
+                or not isinstance(reservation_id, str)
+                or not re.fullmatch(r"[a-f0-9]{32}", reservation_id)):
+            raise QueueError(f"Cannot safely recover incomplete raster workspace owner at {ownership}")
+        if not process_group_stopped(group):
+            raise QueueError(f"Cannot recover {ownership}: process group {group} is still running")
+        from src.raster_reservations import DiskReservationError, DiskReservations
+
+        registry_path = Path(registry)
+        record = registry_path / f"{reservation_id}.json"
+        if not registry_path.is_dir():
+            raise QueueError(f"Cannot recover raster reservation: registry missing at {registry_path}")
+        if record.exists() or record.is_symlink():
+            try:
+                DiskReservations(registry_path).recover_orphan(reservation_id, consumers_stopped=True)
+            except (DiskReservationError, OSError, ValueError) as exc:
+                raise QueueError(f"Cannot recover raster reservation: {exc}") from exc
+        (ownership / "owner.json").unlink()
+        ownership.rmdir()
+        return True
+
+
 def upcoming_raster_plans(client: QueueClient, cache_dir: Path, limit: int) -> list[dict]:
     """Read queued approved plans as eviction preferences, never as leases."""
     from src.raster_plan_handoff import RasterPlanError, optional_approved_raster_plan, plan_for_regions
@@ -182,6 +233,8 @@ def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueCli
         raise QueueError("Code/configuration changed after submission; submit a new task.")
     ownership = workspace / "data" / "pipeline-workspace.lock"
     ownership.parent.mkdir(parents=True, exist_ok=True)
+    if recover_stale_raster_workspace(ownership):
+        print("[queue] Recovered a stopped raster job's reservation and workspace lock.", flush=True)
     try:
         ownership.mkdir()
     except FileExistsError as exc:
@@ -243,7 +296,9 @@ def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueCli
             reservations = DiskReservations(registry)
             admission = reservations.reserve(
                 lambda: cache.inspect_plan(plan), requirements,
-                consumers_stopped=lambda: not launch_attempted,
+                consumers_stopped=lambda: not launch_attempted or (
+                    process is not None and process.poll() is not None
+                    and process_group_stopped(process.pid)),
                 binding=admission_binding(bounds), exclusive=True)
             try:
                 forecast = admission.__enter__()
@@ -253,8 +308,8 @@ def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueCli
             owner["reservation_id"] = forecast["reservation_id"]
             owner["reservation_registry"] = str(registry.resolve())
             atomic_json(ownership / "owner.json", owner)
-            print(f"[queue] Cooperative disk reservation {forecast['reservation_id']} admitted. "
-                  "It will require manual recovery after the build.", flush=True)
+            print(f"[queue] Cooperative disk reservation {forecast['reservation_id']} admitted.",
+                  flush=True)
         command = [task["python"], "-m", "tools.pipeline_queue", "execute"]
         env = {key: value for key, value in os.environ.items()
                if key not in SOURCE_ENVIRONMENT_KEYS and key not in {
@@ -305,9 +360,6 @@ def execute(task: dict[str, Any], attempt: str, log_path: Path, client: QueueCli
                     f"Workspace consumers may still be running; lock retained at {ownership}. "
                     "Stop all consumers and inspect owner.json before manually removing the lock."
                 )
-            if admission is not None and launch_attempted:
-                raise QueueError(f"Reservation and workspace lock retained at {ownership}; "
-                                 "confirm all consumers stopped before manual recovery.")
         finally:
             if admission is not None:
                 from src.raster_reservations import DiskReservationError

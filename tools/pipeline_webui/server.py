@@ -108,7 +108,7 @@ class App:
             self.data, E.linz_size_lookup(api_key_fn),
             grid_lookup=lambda region, linz_id, grid_size: GP.grid_cells(
                 region, linz_id, self.api_key(), self.http_get, grid_size),
-            api_key_fn=self.api_key, cloud=self.cloud)
+            api_key_fn=self.api_key, cloud=self.cloud, web_native_default=True)
         self.jobs = jobs or JobManager(self.data, self.root, python,
                                        cloud_builder=C.cloud_command,
                                        cloud_env=lambda: C.cloud_env(self.cloud))

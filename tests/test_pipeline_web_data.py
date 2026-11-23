@@ -786,6 +786,96 @@ def test_mapped_batch_estimate_is_unique_inspected_and_blocked_from_execution():
                 assert gap["blockers"]
 
 
+def test_web_default_plans_national_tiles_and_blocks_unverified_mosaic():
+    from unittest.mock import patch
+    from src.raster_region_plan import plan_regions
+    from src.raster_source_selection import LayerMapping
+    from tools.pipeline_webui import geo_worker
+
+    bbox = [168.6, -45.05, 168.61, -45.04]
+    survey = {"name": "survey", "elevation": "lidar",
+              "source_layers": {"dsm_layer": 101, "raster_dsm_layer": 122082}}
+    size = {"buildings": 10, "bbox": bbox, "bbox_km2": 1, "source": "fixture"}
+    mapping = LayerMapping(122082, "dsm", "https://example.test/collection.json",
+                           "capture", "data", "offline fixture")
+    docs = {
+        mapping.collection_url: {"id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+        "https://example.test/item.json": {
+            "id": "tile", "bbox": bbox, "properties": {},
+            "assets": {"data": {"href": "tile.tif", "type": "image/tiff", "file:size": 100}}}}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp, patch.dict(os.environ, {}, clear=True):
+        data = Path(tmp).resolve()
+        def offline_plan(*args, **kwargs):
+            return plan_regions(*args, **kwargs, get_json=docs.__getitem__)
+        def worker(args, input_text=None, **kwargs):
+            request = json.loads(input_text)
+            assert request["national_default"] is True
+            return geo_worker._raster_plan(request)
+        with patch.object(E, "region_size", return_value=size), \
+                patch.object(geo_worker, "run", side_effect=worker), \
+                patch("src.raster_source_selection.load_layer_mappings", return_value=[mapping]) as load, \
+                patch("src.raster_region_plan.plan_regions", side_effect=offline_plan):
+            result = E.estimate(["area1"], data=data, survey_fn=lambda *_: survey,
+                                disk_free=10**12, include_imagery=False,
+                                web_native_default=True)
+            assert not result["blockers"], result["blockers"]
+            assert result["raster_tile_preview"]["missing_count"] == 1
+            assert result["regions"][0]["raster_auto_estimate"]
+            assert load.call_args.args[0].name == "national-dsm-mapping.json"
+            region = data / "regions" / "area1"
+            region.mkdir(parents=True)
+            (region / "dsm_mosaic.tif").write_bytes(b"existing")
+            blocked = E.estimate(["area1"], data=data, survey_fn=lambda *_: survey,
+                                 disk_free=10**12, include_imagery=False,
+                                 web_native_default=True)
+            assert any("move it aside" in item for item in blocked["blockers"])
+            assert (region / "dsm_mosaic.tif").read_bytes() == b"existing"
+
+
+def test_web_default_uses_head_size_for_national_tile_admission_estimate():
+    from unittest.mock import Mock, patch
+    from src.raster_acquisition_plan import NATIONAL_DSM_COLLECTION
+    from src.raster_region_plan import plan_regions
+    from src.raster_source_selection import load_layer_mappings
+    from tools.pipeline_webui import geo_worker
+
+    bbox = [168.6, -45.05, 168.61, -45.04]
+    polygon = {"type": "Polygon", "coordinates": [[
+        [bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]],
+        [bbox[0], bbox[3]], [bbox[0], bbox[1]]]]}
+    mapping = load_layer_mappings(ROOT / "tools" / "national-dsm-mapping.json")[0]
+    base = NATIONAL_DSM_COLLECTION.rsplit("/", 1)[0] + "/"
+    docs = {
+        NATIONAL_DSM_COLLECTION: {"id": mapping.collection_id,
+            "links": [{"rel": "item", "href": "tile.json"}],
+            "assets": {"capture_area": {"href": "area.json"},
+                       "capture_dates": {"href": "dates.json"}}},
+        base + "tile.json": {"id": "BX24", "bbox": bbox, "properties": {},
+            "assets": {"visual": {"href": "BX24.tiff", "type": "image/tiff"}}},
+        base + "area.json": {"type": "Feature", "geometry": polygon},
+        base + "dates.json": {"type": "FeatureCollection", "features": []},
+    }
+    response = Mock()
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    response.headers = {"Content-Length": "1198655802"}
+    row = {"region": "area", "bbox": bbox, "survey": "survey", "elevation": "lidar",
+           "source_layers": {"dsm_layer": 101, "raster_dsm_layer": 122082}}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp, patch.dict(os.environ, {}, clear=True), \
+            patch("src.raster_region_plan.plan_regions",
+                  side_effect=lambda *args, **kwargs: plan_regions(*args, **kwargs, get_json=docs.__getitem__)), \
+            patch("src.raster_acquisition_plan.urllib.request.urlopen", return_value=response) as opened:
+        plan = geo_worker._raster_plan({"data": tmp, "regions": [row], "include_imagery": False,
+                                        "national_default": True})
+    self_size = plan["batch"]["assets"][0]
+    assert self_size["size_bytes"] == 1198655802
+    assert self_size["size_source"] == "http-head"
+    assert plan["batch"]["cache"]["known_missing_bytes"] == 1198655802
+    assert plan["batch"]["cache"]["unknown_missing_count"] == 0
+    assert opened.call_args.args[0].get_method() == "HEAD"
+    response.read.assert_not_called()
+
+
 def test_mapped_batch_totals_count_missing_tiles_once_and_preserve_fallbacks():
     defaults = E.load_defaults()
     size = {"buildings": 10, "bbox": [168.6, -45.05, 168.61, -45.04],
@@ -992,6 +1082,8 @@ if __name__ == "__main__":
                  test_web_worker_uses_shared_regional_planner,
                  test_local_estimate_displays_optional_cache_inventory_without_changing_plan,
                  test_mapped_batch_estimate_is_unique_inspected_and_blocked_from_execution,
+                 test_web_default_plans_national_tiles_and_blocks_unverified_mosaic,
+                 test_web_default_uses_head_size_for_national_tile_admission_estimate,
                  test_calibration_uses_finished_runs_only,
                  test_estimate_store_lifecycle_and_blockers,
                  test_server_process_never_loads_proj,

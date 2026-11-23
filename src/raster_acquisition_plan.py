@@ -56,6 +56,23 @@ def _read_json(url: str) -> dict:
     return value
 
 
+def resolve_asset_sizes(assets: list[dict]) -> None:
+    """Resolve missing transfer sizes using HTTP headers, without fetching payloads."""
+    for asset in assets:
+        if asset.get("size_bytes") is not None:
+            continue
+        url = asset.get("url")
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+            raise ValueError(f"Cannot determine transfer size for raster tile {asset.get('item_id')}")
+        request = urllib.request.Request(url, method="HEAD", headers={"Accept-Encoding": "identity"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            length = response.headers.get("Content-Length")
+        if not isinstance(length, str) or not length.isascii() or not length.isdecimal() or int(length) <= 0:
+            raise ValueError(f"No valid Content-Length for raster tile {asset.get('item_id')}")
+        asset["size_bytes"] = int(length)
+        asset["size_source"] = "http-head"
+
+
 def _bounds(value: object, label: str) -> tuple[float, float, float, float]:
     if not isinstance(value, (tuple, list)) or len(value) != 4:
         raise ValueError(f"{label} must be a four-coordinate WGS84 bounding box")

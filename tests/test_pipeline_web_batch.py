@@ -185,6 +185,65 @@ class BatchQueueTests(unittest.TestCase):
                                             paid_referee=False)
             self.assertEqual(frozen["cache"]["max_bytes"], 1000000)
 
+    def test_web_auto_estimate_freezes_admission_without_ack(self):
+        from src.raster_cache_config import display_cache_config
+        from src.raster_job_bounds import load_frozen_job_bounds
+        from src.raster_region_plan import plan_regions
+        from src.raster_source_selection import LayerMapping
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+                os.environ, {"SOLAR_RASTER_JOB_BOUNDS": ""}):
+            root = Path(temporary).resolve()
+            manager = _manager(root)
+            bbox = [168, -45, 168.1, -44.9]
+            mapping = LayerMapping(101, "dsm", "https://example.test/collection.json",
+                                   "capture", "data", "reviewed")
+            docs = {
+                mapping.collection_url: {"id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+                "https://example.test/item.json": {
+                    "id": "tile", "bbox": bbox, "properties": {},
+                    "assets": {"data": {"href": "tile.tif", "type": "image/tiff", "file:size": 100}}}}
+            plan = plan_regions(
+                ["a"], mappings=[mapping], bbox_for=lambda _: bbox,
+                footprints_for=lambda *_: [bbox],
+                survey_for=lambda *_: {"elevation": "lidar", "dsm_layer": 101},
+                get_json=docs.__getitem__)
+            config, sources = display_cache_config(manager.data)
+            row = {"region": "a", "bbox_km2": 1, "buildings": 10,
+                   "download_components_gb": {"imagery": 0.1, "reference_imagery": 0, "lidar": 0}}
+            row["raster_auto_estimate"] = E.automatic_raster_estimate(
+                row, {"policy": config.describe(sources)}, manager.data)
+            estimate = _estimate("a")
+            estimate["regions"] = [row]
+            estimate["raster_plan"] = plan
+            job_id = manager.start_batch(estimate)[0]
+            _wait(manager, job_id)
+            saved = manager.load(job_id)
+            bounds = load_frozen_job_bounds(
+                manager._job_dir(job_id) / "job.json", region="a", workspace=ROOT,
+                plan_digest=saved["raster_plan_sha256"], include_imagery=True,
+                paid_referee=False)
+            self.assertEqual(bounds["cache"]["directory"], str(config.directory))
+            self.assertEqual(bounds["mosaic_bytes"], row["raster_auto_estimate"]["mosaic_bytes"])
+            self.assertEqual(bounds["processing"]["dsm"], {"resolution": 1, "resampling": "average"})
+
+    def test_submission_recovers_stopped_reservation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = _manager(Path(temporary))
+            lock = manager.data / "pipeline-workspace.lock"
+            lock.mkdir()
+            registry = manager.data / "raster_cache/reservations"
+            registry.mkdir(parents=True)
+            reservation = registry / (("a" * 32) + ".json")
+            reservation.write_text("{}")
+            write_json_atomic(lock / "owner.json", {
+                "reservation_id": "a" * 32, "reservation_registry": str(registry),
+                "pid": 99999999, "process_group": 99999998})
+            job_id = manager.start(_estimate("a"))
+            self.assertEqual(_wait(manager, job_id)["status"], "succeeded")
+            self.assertFalse(lock.exists())
+            self.assertFalse(reservation.exists())
+
     def test_batch_inputs_cannot_hide_mapped_source(self):
         with tempfile.TemporaryDirectory() as temporary:
             manager = _manager(Path(temporary))
@@ -259,6 +318,45 @@ class BatchHTTPTests(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.data = self.root / "data"
+
+    def test_mapped_job_http_accepts_without_disk_estimate_acknowledgement(self):
+        from src.raster_cache_config import display_cache_config
+        from src.raster_region_plan import plan_regions
+        from src.raster_source_selection import LayerMapping
+
+        bbox = [168, -45, 168.1, -44.9]
+        mapping = LayerMapping(122082, "dsm", "https://example.test/collection.json",
+                               "capture", "data", "fixture")
+        docs = {
+            mapping.collection_url: {"id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+            "https://example.test/item.json": {
+                "id": "tile", "bbox": bbox, "properties": {},
+                "assets": {"data": {"href": "tile.tif", "type": "image/tiff", "file:size": 100}}}}
+        plan = plan_regions(
+            ["a"], mappings=[mapping], bbox_for=lambda _: bbox,
+            footprints_for=lambda *_: [bbox],
+            survey_for=lambda *_: {"elevation": "lidar", "dsm_layer": 122082},
+            get_json=docs.__getitem__)
+        with patch.dict(os.environ, {"SOLAR_RASTER_JOB_BOUNDS": ""}):
+            config, sources = display_cache_config(self.data)
+            row = {"region": "a", "bbox_km2": 1, "buildings": 10,
+                   "download_components_gb": {"imagery": 0, "reference_imagery": 0, "lidar": 0}}
+            row["raster_auto_estimate"] = E.automatic_raster_estimate(
+                row, {"policy": config.describe(sources)}, self.data)
+            estimate = _estimate("a")
+            estimate.update(status="ready", expires_at=time.time() + 60,
+                            raster_plan=plan, regions=[row], blockers=[])
+            store = E.EstimateStore(self.data)
+            write_json_atomic(store._path(estimate["estimate_id"]), estimate)
+            body = {"estimate_id": estimate["estimate_id"], "target": "local"}
+            code, result = self.client.request("POST", "/api/jobs", body)
+            self.assertEqual(code, 202, result)
+            for _ in range(300):
+                _, job = self.client.request("GET", "/api/jobs/" + result["job_id"])
+                if job["status"] in ("succeeded", "failed", "cancelled"):
+                    break
+                time.sleep(.01)
+            self.assertIsNotNone(job["raster_admission"])
 
     def submit(self, estimate):
         store = E.EstimateStore(self.data)

@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 from src.local_queue import Coordinator, QueueClient, QueueError, QueueState
 from tools.pipeline_queue import (
     PROVENANCE_FILES, execute, make_task, report_raster_cleanup, run_local, stop_process,
-    upcoming_raster_plans,
+    upcoming_raster_plans, recover_stale_raster_workspace,
 )
 
 
@@ -377,26 +377,69 @@ class LocalQueueTests(unittest.TestCase):
         return task, bounds, policy
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
-    def test_admitted_queue_job_retains_reservation_and_workspace_for_review(self):
-        from src.raster_reservations import DiskReservations
+    def test_stale_raster_recovery_checks_owner_group_and_record(self):
+        import fcntl
 
+        lock = self.directory / "data/pipeline-workspace.lock"
+        lock.mkdir(parents=True)
+        registry = self.directory / "registry"
+        registry.mkdir()
+        reservation = registry / (("a" * 32) + ".json")
+        reservation.write_text("{}")
+        owner = {"pid": os.getpid(), "process_group": os.getpgrp(),
+                 "reservation_id": "a" * 32, "reservation_registry": str(registry)}
+        (lock / "owner.json").write_text(json.dumps(owner))
+        self.assertFalse(recover_stale_raster_workspace(lock))
+        self.assertTrue(reservation.exists())
+        with patch("tools.pipeline_queue.os.kill", side_effect=ProcessLookupError):
+            with self.assertRaisesRegex(QueueError, "still running"):
+                recover_stale_raster_workspace(lock)
+            self.assertTrue(reservation.exists())
+            with patch("tools.pipeline_queue.process_group_stopped", return_value=True):
+                with reservation.open("r+") as active:
+                    fcntl.flock(active, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    with self.assertRaisesRegex(QueueError, "still active"):
+                        recover_stale_raster_workspace(lock)
+                self.assertTrue(recover_stale_raster_workspace(lock))
+        self.assertFalse(lock.exists())
+        self.assertFalse(reservation.exists())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
+    def test_stale_raster_recovery_rejects_missing_process_group(self):
+        lock = self.directory / "data/pipeline-workspace.lock"
+        lock.mkdir(parents=True)
+        (lock / "owner.json").write_text(json.dumps({
+            "pid": 99999999, "reservation_id": "a" * 32,
+            "reservation_registry": str(self.directory / "registry")}))
+        with self.assertRaisesRegex(QueueError, "incomplete"):
+            recover_stale_raster_workspace(lock)
+        self.assertTrue(lock.exists())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
+    def test_running_worker_with_incomplete_owner_is_not_recovered(self):
+        lock = self.directory / "data/pipeline-workspace.lock"
+        lock.mkdir(parents=True)
+        (lock / "owner.json").write_text(json.dumps({
+            "pid": os.getpid(), "reservation_id": "a" * 32}))
+        self.assertFalse(recover_stale_raster_workspace(lock))
+        self.assertTrue(lock.exists())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
+    def test_admitted_queue_job_releases_reservation_and_workspace(self):
         workspace = self.fixture("admitted")
         task, bounds, policy = self.admission_task(workspace)
         bounds.write_text("{}")
         policy.write_text("{}")
         with patch("src.raster_cache.RasterCache.cleanup_for_queue") as cleanup, \
                 patch("src.raster_cache.RasterCache.cleanup_partials") as partials:
-            with self.assertRaisesRegex(QueueError, "reservation.*retained|reservation.*recovery"):
-                execute(task, "attempt", self.directory / "admitted.log", self.idle_client(), "worker")
+            self.assertEqual(execute(task, "attempt", self.directory / "admitted.log",
+                                     self.idle_client(), "worker"), 0)
             cleanup.assert_not_called()
             partials.assert_not_called()
         self.assertTrue((workspace / "started").exists())
         lock = workspace / "data/pipeline-workspace.lock"
-        owner = json.loads((lock / "owner.json").read_text())
-        registry = Path(owner["reservation_registry"])
-        record = registry / (owner["reservation_id"] + ".json")
-        self.assertTrue(record.is_file())
-        DiskReservations(registry).recover_orphan(owner["reservation_id"], consumers_stopped=True)
+        self.assertFalse(lock.exists())
+        self.assertEqual(list((self.directory / "cache/reservations").glob("*.json")), [])
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
     def test_insufficient_job_bounds_fail_before_pipeline_launch(self):
@@ -423,29 +466,20 @@ class LocalQueueTests(unittest.TestCase):
         self.assertFalse((workspace / "data/pipeline-workspace.lock").exists())
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
-    def test_active_orphan_prevents_next_admitted_job_starting(self):
-        from src.raster_reservations import DiskReservations
-
+    def test_sequential_admitted_jobs_release_reservations(self):
         first = self.fixture("admission-first")
         second = self.fixture("admission-second")
         first_task, _, _ = self.admission_task(first)
         second_task, _, _ = self.admission_task(second)
-        with self.assertRaises(QueueError):
-            execute(first_task, "first", self.directory / "first.log",
-                    self.idle_client(), "worker")
-        with self.assertRaisesRegex(QueueError, "Orphaned disk reservation"):
-            execute(second_task, "second", self.directory / "second.log",
-                    self.idle_client(), "worker")
-        self.assertFalse((second / "started").exists())
+        self.assertEqual(execute(first_task, "first", self.directory / "first.log",
+                                 self.idle_client(), "worker"), 0)
+        self.assertEqual(execute(second_task, "second", self.directory / "second.log",
+                                 self.idle_client(), "worker"), 0)
+        self.assertTrue((second / "started").exists())
         self.assertFalse((second / "data/pipeline-workspace.lock").exists())
-        owner = json.loads((first / "data/pipeline-workspace.lock/owner.json").read_text())
-        DiskReservations(Path(owner["reservation_registry"])).recover_orphan(
-            owner["reservation_id"], consumers_stopped=True)
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
-    def test_worker_reports_manual_review_after_admitted_build(self):
-        from src.raster_reservations import DiskReservations
-
+    def test_worker_reports_success_after_admitted_build(self):
         workspace = self.fixture("admission-worker")
         task, _, _ = self.admission_task(workspace)
         queue = self.directory / "admission-queue"
@@ -455,17 +489,12 @@ class LocalQueueTests(unittest.TestCase):
             process = self.start_worker(queue, "admitted-worker")
             output, _ = process.communicate(timeout=15)
             record = client.call("status")["tasks"][0]
-            self.assertEqual(record["status"], "failed", output)
-            self.assertIn("manual recovery", record["error"])
+            self.assertEqual(record["status"], "succeeded", output)
             self.assertTrue((workspace / "started").exists())
-        owner = json.loads((workspace / "data/pipeline-workspace.lock/owner.json").read_text())
-        DiskReservations(Path(owner["reservation_registry"])).recover_orphan(
-            owner["reservation_id"], consumers_stopped=True)
+        self.assertFalse((workspace / "data/pipeline-workspace.lock").exists())
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
-    def test_interrupted_admitted_worker_retains_reservation_and_lock(self):
-        from src.raster_reservations import DiskReservations
-
+    def test_interrupted_admitted_worker_releases_stopped_group(self):
         workspace = self.fixture("admission-interrupt", "time.sleep(60)\nreturn 0")
         task, _, _ = self.admission_task(workspace)
         queue = self.directory / "interrupted-queue"
@@ -478,10 +507,7 @@ class LocalQueueTests(unittest.TestCase):
             process.communicate(timeout=15)
             record = client.call("status")["tasks"][0]
             self.assertEqual(record["status"], "failed")
-            self.assertIn("retained", record["error"])
-        owner = json.loads((workspace / "data/pipeline-workspace.lock/owner.json").read_text())
-        DiskReservations(Path(owner["reservation_registry"])).recover_orphan(
-            owner["reservation_id"], consumers_stopped=True)
+        self.assertFalse((workspace / "data/pipeline-workspace.lock").exists())
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
     def test_tampered_frozen_bounds_fail_before_launch(self):
@@ -590,13 +616,13 @@ class LocalQueueTests(unittest.TestCase):
             f"src.__path__.append({str(ROOT / 'src')!r})\n"
             "from src.raster_job_admission import approved_build_plan\n"
             "snapshot, bounds = approved_build_plan(os.environ, region=area, "
-            "workspace=Path.cwd(), include_imagery=True, paid_referee=False, "
+            "workspace=Path.cwd(), include_imagery=False, paid_referee=False, "
             "no_preview_server=True)\n"
             "Path('verified-admission.json').write_text(json.dumps(snapshot['regions']))\n"
             "from src import fetch_regions as fetch\n"
             "box = snapshot['regions'][0]['bbox_wgs84']\n"
             "data = Path.cwd() / 'data'\n"
-            "os.environ['SOLAR_INCLUDE_IMAGERY'] = '1'\n"
+            "os.environ['SOLAR_INCLUDE_IMAGERY'] = '0'\n"
             "os.environ['SOLAR_DEMOLISHED_REFEREE'] = '0'\n"
             "with ExitStack() as stack:\n"
             "    stack.enter_context(patch.object(sys, 'argv', ['fetch_regions.py', area]))\n"
@@ -620,7 +646,7 @@ class LocalQueueTests(unittest.TestCase):
                        "raster_cache", "raster_cache_config", "raster_disk_plan",
                        "raster_reservations", "raster_plan_handoff"):
             shutil.copyfile(ROOT / "src" / f"{module}.py", workspace / "src" / f"{module}.py")
-        task, bounds_path, _ = self.admission_task(workspace)
+        task, bounds_path, policy_path = self.admission_task(workspace)
         tile = workspace / "tile.tif"
         with rasterio.open(tile, "w", driver="GTiff", count=1, width=8, height=8,
                            dtype="float32", crs="EPSG:2193", nodata=-9999,
@@ -639,7 +665,7 @@ class LocalQueueTests(unittest.TestCase):
                                     "file:size": len(payload),
                                     "file:checksum": "1220" + hashlib.sha256(payload).hexdigest()}}}}
         snapshot = plan_regions(
-            ["pilot"], mappings=[mapping], bbox_for=lambda _: bbox,
+            ["pilot"], mappings=[mapping], include_imagery=False, bbox_for=lambda _: bbox,
             footprints_for=lambda *_: [bbox],
             survey_for=lambda *_: {"elevation": "lidar", "dsm_layer": 101},
             get_json=docs.__getitem__)
@@ -654,6 +680,24 @@ class LocalQueueTests(unittest.TestCase):
                                      "SOLAR_RASTER_PLAN_JOB": str(job_path),
                                      "SOLAR_RASTER_PLAN_SHA256": digest}):
             task = make_task(workspace, "pilot", sys.executable, no_preview_server=True)
+        from src.raster_cache_config import load_cache_config
+        from tools.pipeline_webui.estimate import automatic_raster_estimate
+        from tools.pipeline_webui.jobs import automatic_raster_bounds
+        config, sources = load_cache_config(policy_path)
+        row = {"region": "pilot", "bbox_km2": 1, "buildings": 10,
+               "download_components_gb": {"imagery": 0, "reference_imagery": 0, "lidar": 0}}
+        row["raster_auto_estimate"] = automatic_raster_estimate(
+            row, {"policy": config.describe(sources)}, workspace / "data")
+        auto_bounds = automatic_raster_bounds(
+            row, workspace / "data", workspace, digest, include_imagery=False,
+            paid_referee=False)
+        job_path.write_text(json.dumps({"raster_plan": snapshot, "raster_admission": auto_bounds}))
+        with patch.dict(os.environ, {"SOLAR_RASTER_JOB_BOUNDS": "",
+                                     "SOLAR_RASTER_JOB_BOUNDS_SNAPSHOT": str(job_path),
+                                     "SOLAR_RASTER_PLAN_JOB": str(job_path),
+                                     "SOLAR_RASTER_PLAN_SHA256": digest}):
+            task = make_task(workspace, "pilot", sys.executable, no_preview_server=True,
+                             include_imagery=False)
         with patch("src.raster_freshness.verify_due_metadata",
                    side_effect=ValueError("source changed; estimate again")):
             with self.assertRaisesRegex(QueueError, "metadata refresh failed.*source changed"):
@@ -668,8 +712,7 @@ class LocalQueueTests(unittest.TestCase):
             process = self.start_worker(queue, "mapped-worker")
             output, _ = process.communicate(timeout=20)
             record = client.call("status")["tasks"][0]
-            self.assertEqual(record["status"], "failed", output)
-            self.assertIn("retained", record["error"])
+            self.assertEqual(record["status"], "succeeded", output)
             logs = list((queue / "attempts").glob("*.log"))
             self.assertTrue((workspace / "verified-admission.json").exists(),
                             output + "\n" + "\n".join(path.read_text() for path in logs))
@@ -678,9 +721,7 @@ class LocalQueueTests(unittest.TestCase):
             self.assertTrue((workspace / "data/regions/pilot/dsm_mosaic.tif").is_file(), output)
             self.assertTrue((workspace / "data/regions/pilot/dsm_mosaic.tif.source.json").is_file(),
                             output)
-        owner = json.loads((workspace / "data/pipeline-workspace.lock/owner.json").read_text())
-        DiskReservations(Path(owner["reservation_registry"])).recover_orphan(
-            owner["reservation_id"], consumers_stopped=True)
+        self.assertFalse((workspace / "data/pipeline-workspace.lock").exists())
 
     @unittest.skipUnless(os.name == "posix", "POSIX reservations required")
     def test_reservation_release_failure_keeps_workspace_lock_before_launch(self):

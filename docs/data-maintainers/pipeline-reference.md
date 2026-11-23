@@ -60,7 +60,8 @@ reference-imagery choice. STAC mappings must be supplied explicitly for each
 LDS layer and input role, with the expected collection ID, asset key and
 documented evidence; the collection ID is checked, but the code cannot
 independently prove the mapping evidence. Unmapped layers remain exports
-fallbacks. No mappings are supplied by default. The planner classifies
+fallbacks. The standalone planner supplies no mappings by default; the local
+web panel supplies the national DSM mapping for its preferred source. The planner classifies
 each footprint as fully bounded, partially bounded or outside item bounding
 boxes, which does not
 establish valid-data coverage; missing asset sizes and cache state remain unknown.
@@ -70,9 +71,9 @@ that the tiles actually contain valid data throughout the footprint.
 For surveys without legacy S3 fields, regional fetching constructs a per-area
 plan from its selected survey and footprints, reports unmapped layers as
 export fallbacks, and uses the planned layer IDs while checking the footprints
-have not changed. By default local web estimates also create an
-export-fallback batch plan from selected layer IDs and currently available
-footprints, using a separate geospatial worker. The estimate displays warnings
+have not changed. Local web estimates create a batch plan from selected layer
+IDs and currently available footprints using a separate geospatial worker,
+preferring national DSM tiles by default. The estimate displays warnings
 that export sizes are area-based, not shared-tile cache predictions. Local web
 jobs retain the estimate snapshot. Pipeline preflight and the fetcher check the
 snapshot digest and batch structure before their respective locality preparation
@@ -82,9 +83,11 @@ layers, roles and footprints against it before raster acquisition without
 refreshing STAC asset metadata during that comparison. If those
 choices changed, the job fails and requires a new estimate. Cloud estimates and
 legacy S3 selections are not represented by this batch planner. The
-experimental opt-in below can use mapped cache tiles for local builds; ordinary
-jobs continue to use exports or their legacy S3 inputs. Local estimates warn
-that their disk figures are not peak-space bounds or reservations.
+experimental path below can use mapped cache tiles for local builds; the web
+panel uses it with automatic estimates, while standalone jobs
+require the explicit opt-in. Other inputs continue to use exports or their
+legacy S3 inputs. Local estimates warn that their disk figures are not
+guaranteed peak-space bounds.
 For separately queued local jobs, each job retains only its own region's
 selection, assets and fallback inputs from the approved batch, without
 rediscovering sources; shared assets remain identified by the same source
@@ -176,6 +179,11 @@ one area at a time.
 Without this setting, the existing queue behavior is unchanged and no
 whole-job reservation is made.
 
+The local web panel can alternatively generate an approximate
+admission snapshot for its default national DSM path. Its allocation assumptions
+and limitations are described in the [web guide](web-pipeline.md); unlike the
+operator contract below, they are not workload-specific attestations.
+
 The document must contain these fields:
 
 | Field | Required value |
@@ -219,17 +227,18 @@ non-cooperating processes, and standalone cleanup helpers are not globally
 excluded by this reservation. Per-tile leases still protect inputs in use.
 It does not automatically
 clean the cache to make room. The reservation is bound to the frozen bounds
-and rechecked during mapped acquisition. Once launch is
-attempted, it retains both the reservation and workspace lock regardless of
-the pipeline result, including interruption, because descendants can escape
-the process group. The queue marks the task **failed**, not successful;
-inspect the attempt log and pipeline report for the underlying result.
-To recover, independently verify that the worker and **all** consumers
-have stopped. Read `data/pipeline-workspace.lock/owner.json` for the registry
-and reservation ID, then run the recovery command above for that exact record.
-Only after that confirmation and recovery, inspect and manually remove the
-specific stale workspace lock. A retained reservation blocks later admissions
-using that registry. Never recover a live job.
+and rechecked during mapped acquisition. When the pipeline process and its
+recorded process group have stopped, the worker releases the reservation and
+workspace lock and reports the pipeline's result. A later local submission
+automatically recovers a stale raster lock when its recorded worker and process
+group have stopped and the reservation is unlocked. Recovery is serialized.
+Process-group checks cannot detect detached descendants, so builds must keep
+all consumers in the supervised group. Incomplete ownership records, active
+groups, an active reservation or recovery errors prevent automatic recovery.
+If automatic recovery is impossible, independently verify that the worker and
+all consumers have stopped, inspect `data/pipeline-workspace.lock/owner.json`
+and use the recovery command above for that exact reservation before removing
+the specific stale workspace lock. Never recover a live job.
 If the approved mapped plan's STAC check is older than its frozen
 `metadata_refresh_s`, the worker queries the selected collections again before
 admission. Unchanged metadata permits the approved plan to run; changed
@@ -247,9 +256,9 @@ resolution may refresh its local metadata cache; no raster payload is
 downloaded. Public STAC item metadata is fetched with at most eight concurrent
 requests per collection, preserving deterministic link order and failing the
 plan if any item cannot be read. The web estimate's geospatial worker uses the same regional
-planner with its already-selected surveys and, optionally,
-`SOLAR_RASTER_SOURCE_MAPPINGS`. Without mappings, plans describe export
-fallbacks; mapped execution requires the opt-in admission above.
+planner with its already-selected surveys and `SOLAR_RASTER_SOURCE_MAPPINGS`,
+or the national DSM mapping by default for local web builds. Without mappings,
+plans describe export fallbacks; mapped execution requires admission as above.
 For an already-prepared area, `.venv/bin/python tools/raster_plan.py AREA`
 prints an experimental batch plan as JSON. `--no-imagery` excludes imagery.
 `--mappings PATH` loads a JSON object with `version: 1` and a `mappings`

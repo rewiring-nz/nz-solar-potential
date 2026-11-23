@@ -268,7 +268,7 @@ def environment_overrides(environ=None) -> dict:
 
 def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
                get_json=None, now: float | None = None,
-               overrides: dict | None = None) -> dict:
+               overrides: dict | None = None, prefer_national: bool | None = None) -> dict:
     """Resolve the newest covering LINZ surface and compatible aerial photos.
 
     Metadata is cached locally for seven days. If no LiDAR layer covers the
@@ -284,9 +284,13 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
         overrides = {}
     if not isinstance(overrides, dict):
         raise LookupError("pinned source layers must be an object")
-    prefer_national = os.environ.get("SOLAR_PREFER_NATIONAL_DSM", "0")
-    if prefer_national not in ("0", "1"):
-        raise LookupError("SOLAR_PREFER_NATIONAL_DSM must be 0 or 1")
+    if prefer_national is None:
+        preference = os.environ.get("SOLAR_PREFER_NATIONAL_DSM", "0")
+        if preference not in ("0", "1"):
+            raise LookupError("SOLAR_PREFER_NATIONAL_DSM must be 0 or 1")
+        prefer_national = preference == "1"
+    elif type(prefer_national) is not bool:
+        raise LookupError("national DSM preference must be a boolean")
     with _CACHE_LOCK:
         catalog = _read_catalog(path)
         terms = _place_terms(str(name or ""))
@@ -299,7 +303,7 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
         else:
             dsm = _select_dsm(bbox, terms, catalog, path, get_json, now)
         raster_layer = (overrides["raster_dsm_layer"] if "raster_dsm_layer" in overrides else
-                        NATIONAL_DSM_LAYER if prefer_national == "1" and dsm is not None else None)
+                        NATIONAL_DSM_LAYER if prefer_national and dsm is not None else None)
         raster_dsm = None
         if raster_layer is not None:
             if dsm is None:

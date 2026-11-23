@@ -2,11 +2,11 @@
 
 import unittest
 import threading
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from src.raster_acquisition_plan import (
     RasterRequest, RasterSource, _read_items, describe_requests, discover_assets, plan_assets,
-    plan_batch, region_manifest,
+    plan_batch, region_manifest, resolve_asset_sizes,
 )
 
 
@@ -42,6 +42,34 @@ def fixture():
 
 
 class RasterAcquisitionPlanTests(unittest.TestCase):
+    def test_missing_size_uses_head_without_reading_payload(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.headers = {"Content-Length": "1198655802"}
+        assets = [{"item_id": "BX24", "url": "https://example.test/tile.tif", "size_bytes": None},
+                  {"item_id": "known", "url": "https://example.test/known.tif", "size_bytes": 100}]
+        with patch("src.raster_acquisition_plan.urllib.request.urlopen", return_value=response) as opened:
+            resolve_asset_sizes(assets)
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual(opened.call_args.args[0].get_method(), "HEAD")
+        response.read.assert_not_called()
+        self.assertEqual(assets[0]["size_bytes"], 1198655802)
+        self.assertEqual(assets[0]["size_source"], "http-head")
+        self.assertEqual(assets[1]["size_bytes"], 100)
+
+    def test_missing_or_invalid_head_size_is_reported(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        for value in (None, "0", "-1", "unknown"):
+            response.headers = {} if value is None else {"Content-Length": value}
+            with self.subTest(value=value), patch(
+                    "src.raster_acquisition_plan.urllib.request.urlopen", return_value=response):
+                with self.assertRaisesRegex(ValueError, "No valid Content-Length"):
+                    resolve_asset_sizes([{"item_id": "tile", "url": "https://example.test/tile",
+                                          "size_bytes": None}])
+
     def test_public_metadata_reads_are_bounded_parallel_and_ordered(self):
         from unittest.mock import patch
         import src.raster_acquisition_plan as planner

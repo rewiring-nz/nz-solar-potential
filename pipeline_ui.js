@@ -1462,6 +1462,7 @@
     const blocked = estimates.length - ok.length;
     const rows = estimates.flatMap((est) => est.regions.map((r) => `<tr>
         <td>${r.grid_size ? esc(rowLabel(r)) : rowLabel(r)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
+          ${(r.raster_sources || []).map((s) => `<div class="muted">${esc(s.role)}: ${esc(s.state === "mapped" ? "native tile cache" : s.state === "exports_fallback" ? "LINZ export" : s.state)}${s.layer_id ? ` (LINZ layer ${esc(s.layer_id)})` : ""}</div>`).join("")}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
           ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
           ${Number.isFinite(r.raster_metadata_checked_at) && Math.abs(r.raster_metadata_checked_at) <= 8.64e12 ? `<div class="muted">STAC metadata checked: ${esc(new Date(r.raster_metadata_checked_at * 1000).toISOString())}; rechecked at admission if overdue.</div>` : ""}
@@ -1497,6 +1498,17 @@
       PipelineRasterPreview.renderAssetList(
         estimate.raster_plan && estimate.raster_plan.batch && estimate.raster_plan.batch.assets,
         index + 1)).join("");
+    const automatic = ok.flatMap((e) => e.regions.filter((r) => r.raster_auto_estimate));
+    const autoDetails = automatic.map((r) => {
+      const a = r.raster_auto_estimate;
+      return `<div class="warn">Estimated allocations for ${esc(r.region)}: mosaics ${fmtGb(a.mosaic_bytes / 1e9)},
+        scratch ${fmtGb(a.scratch_bytes / 1e9)}, output ${fmtGb(a.output_bytes / 1e9)},
+        each export ${fmtGb(a.export_bytes / 1e9)}, other inputs ${fmtGb(a.other_bytes / 1e9)},
+        temporary files ${fmtGb(a.scratch_bytes / 1e9)}.
+        Cache: ${esc(a.cache_policy.directory)} (budget ${fmtGb(a.cache_policy.max_bytes / 1e9)},
+        free-space reserve ${fmtGb(a.cache_policy.min_free_bytes / 1e9)});
+        work/output: ${esc(a.work_dir)}; temporary: ${esc(a.temp_dir)}.</div>`;
+    }).join("");
     let costBlock = "";
     if (first && target === "local") {
       costBlock = `<div class="muted">Disk about ${fmtGb(totals.disk)} (${esc(first.machine.disk_free_gb)} GB free). Cloud cost: $0 (runs on this computer).</div>`;
@@ -1520,6 +1532,8 @@
       ${cacheDetails}
       ${tileDetails}
       ${tileLists}
+      ${autoDetails}
+      ${automatic.length && jobs !== 1 ? `<div class="block">Select one area at a time for a mapped build.</div>` : ""}
       ${first ? `<div class="muted">Rate ${esc(first.calibration.seconds_per_building)} s/building from ${first.calibration.source === "history"
         ? esc(first.calibration.runs_used) + " recent runs" : "defaults"}. ${esc(first.disclaimer)}</div>` : ""}
       ${estimates.flatMap((e) => e.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
@@ -1528,7 +1542,9 @@
     $("build-foot-note").textContent = jobs ? `${fmtInt(jobs)} job(s), run one after another; each can be cancelled.` : "";
     $("start-btn").textContent = TARGETS[target].start;
     const yes = $("cost-yes");
-    const update = () => { $("start-btn").disabled = !jobs || (target !== "local" && (!yes || yes.value.trim().toLowerCase() !== "yes")); };
+    const update = () => { $("start-btn").disabled = !jobs ||
+      (automatic.length && jobs !== 1) ||
+      (target !== "local" && (!yes || yes.value.trim().toLowerCase() !== "yes")); };
     if (yes) yes.addEventListener("input", update);
     update();
   }

@@ -5,12 +5,20 @@ inspects national DSM tiles by viewport against a refreshable metadata index.
 The overlay is metadata-only, bounded and does not select build sources or
 reserve tiles; it is not proof of valid-pixel coverage.
 
+Local web builds now prefer the experimental national DSM native cache, with
+automatic disk estimates and one area per submission.
+The queue releases stopped mapped jobs and recovers stopped stale raster locks;
+existing unprovenanced mosaics are preserved and block the new path.
+National DSM web estimates now obtain missing STAC tile sizes from HTTP
+headers before admission, preventing a known-size tile from overrunning the
+default unknown-size transfer allowance.
+
 Completed the opt-in local DSM-cache slice of #63: approved plans select
 verified LINZ national DSM tiles, share validated native payloads across areas,
 and prepare provenance-tracked regional mosaics. Offline tests cover cold and
 warm reuse, grid and mask preservation, admission, corruption, and leased-input
-protection. Operator-bounded jobs remain experimental and retain their
-reservation and workspace lock for manual recovery after launch. Production
+protection. Operator-bounded jobs remain experimental; process-group checks
+cannot detect detached descendants. Production
 queue lifecycle, source selection, benchmarking and broader UI/eviction work
 continue in #71, #72, #73 and #74; no real-world savings are claimed.
 

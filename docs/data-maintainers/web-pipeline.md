@@ -144,33 +144,59 @@ execution. Selection checks layer bounding extents, not actual valid-data
 coverage; review the survey before building. Areas with no matching LiDAR
 extent use the warned synthetic surface path; they are not blocked by a static
 survey list.
-Local estimates use the same regional raster planner as the experimental CLI.
-By default no STAC mappings are supplied, so they report export fallbacks.
-Their disk figures are not whole-job reservations.
-An inherited `SOLAR_RASTER_JOB_BOUNDS` setting enables an experimental
-operator-bounded local queue admission path, but must match each job's approved
-snapshot and options. After launch it deliberately leaves the job failed and
-its reservation and workspace lock retained for manual review; it is not a
-general web batch admission facility. See the
-[pipeline reference](pipeline-reference.md#experimental-local-queue-admission)
-for the bounds contract and recovery steps.
+Local estimates prefer the experimental LINZ national DSM native-tile source
+for LiDAR areas. They plan against the same `data/raster_cache` location used
+by the map, unless a cache policy or `SOLAR_RASTER_CACHE_DIR` selects another
+directory. Synthetic areas stay synthetic and explicit raster overrides take
+precedence. Set `SOLAR_PREFER_NATIONAL_DSM=0` before starting the panel to
+retain regional exports by default. Cloud targets and the CLI retain their
+existing defaults.
+
+The local panel can submit a mapped job using its automatic disk estimates.
+These are **not guaranteed bounds or enforced
+limits**; actual usage can be higher and unrelated processes can consume disk.
+The panel estimates four times the uncompressed 1 m float DSM footprint
+(minimum 64 MiB), scratch as twice that footprint plus twice the largest
+estimated imagery export, an export allowance per fallback, estimated LiDAR
+inputs and building output, and a separate temporary-files allowance equal to
+scratch. The tile transfer calculation uses published sizes or the cache
+policy's unknown-asset allowance. When the national DSM STAC item does not
+publish a size, the local estimate sends a `HEAD` request for each selected
+tile and uses its `Content-Length` for the reservation and transfer limit.
+No tile payload is downloaded during estimation. If the size cannot be
+determined, the estimate fails rather than starting an under-reserved transfer.
+The advertised size is rechecked when the source metadata is due for refresh;
+a change requires a new estimate. Other mapped sources may still use the
+unknown-asset allowance. These assumptions can underestimate other
+inputs, peak usage or files on other filesystems. The panel displays the
+allocations and cache budget before submission; the cooperative reservation
+checks available space again at launch, but does not allocate or cap it.
+
+Only one mapped area may be submitted at a time, with an idle local queue.
+After a job finishes or is interrupted, the queue releases its reservation and
+workspace lock when the recorded process group has stopped. On a subsequent
+submission it also recovers a stopped raster job's stale reservation and lock.
+Recovery cannot detect descendants that left the recorded process group;
+incomplete ownership records, active groups and other recovery errors block
+the job instead. See the
+[recovery procedure](pipeline-reference.md#experimental-local-queue-admission).
+This is not an automatic multi-area build workflow. Existing DSM mosaics without provenance
+are preserved and block the mapped build; move them aside deliberately before
+retrying. A mosaic with provenance is verified against the approved plan.
 The local queue does not automatically delete cached tiles or partial downloads
 when admitting a job; if the configured budget or available disk is insufficient,
 admission fails before the build starts.
-For an offline-reviewed mapping file, set `SOLAR_RASTER_SOURCE_MAPPINGS` to its
-path before starting the panel (format and evidence requirements are in the
-[pipeline reference](pipeline-reference.md)). An opt-in mapping for an
-explicitly selected national DSM is available in
-[`tools/national-dsm-mapping.json`](../../tools/national-dsm-mapping.json);
-it does not automatically replace regional survey selections. To prefer that
-national raster for LiDAR areas, also set `SOLAR_PREFER_NATIONAL_DSM=1` before
-starting the panel. Explicit raster overrides take precedence and synthetic
-areas remain synthetic; review the reported reference-survey and coverage
-warnings before building. An estimate with mapped inputs
+For an offline-reviewed custom mapping file, set `SOLAR_RASTER_SOURCE_MAPPINGS`
+before starting the panel (format and evidence requirements are in the
+[pipeline reference](pipeline-reference.md)). Without one, the panel uses
+[`tools/national-dsm-mapping.json`](../../tools/national-dsm-mapping.json)
+for its default national DSM; a custom mapping without that source blocks the
+national build rather than silently switching to exports. Review the
+reference-survey and coverage warnings before building. An estimate with mapped inputs
 shows a preview of unique required tiles and, when cache policy is configured,
-cached and missing counts and known transfer sizes. Unknown sizes remain
-explicit; the configured per-asset amount is a transfer limit, not a measured
-size. Expand the native tile list to inspect individual tile identities, cache
+cached and missing counts and known transfer sizes. Unknown sizes for other
+sources remain explicit; the configured per-asset amount is a transfer limit,
+not a measured size. Expand the native tile list to inspect individual tile identities, cache
 states and using areas. Large selections are split into separate estimates, so
 the same tile may appear in more than one list. The inventory is a snapshot,
 not a reservation. Per-area warnings identify requested footprints not covered by the
@@ -180,20 +206,17 @@ capture-area boundary and warn where it does not cover them; that boundary
 can itself contain nodata. With a cache policy configured, download and disk estimates replace
 mapped inputs' export estimates with missing unique tiles, attributed once to
 the first area using each tile; unknown sizes use the configured transfer limit.
-Other inputs remain area-based estimates. Without a cache policy, totals remain
-export-based. These are not whole-job peak bounds. Mapped
-jobs require `SOLAR_RASTER_JOB_BOUNDS`, an exact match to the displayed
-per-area plan SHA-256, and explicit processing options for each mapped role.
+Other inputs remain area-based estimates. Mapped
+jobs use the displayed per-area plan SHA-256; the default DSM processing
+choice is 1 m resolution and average resampling.
 The displayed STAC check time is used by the local queue to recheck overdue
 plans before admission; a changed source requires a new estimate.
-Create the bounds file using the procedure in the pipeline reference before
-starting the job; the settings are validated and frozen at submission.
 Mapped execution is experimental, and output equivalence to existing mosaics
-has not been established. Unset the mapping variable and re-estimate to use
-the export path. Metadata discovery can make public STAC requests; the preview
+has not been established. Set `SOLAR_PREFER_NATIONAL_DSM=0` and re-estimate to
+use the regional path. Metadata discovery can make public STAC requests; the preview
 does not download raster payloads.
 
-To run the opt-in national DSM path for one local area:
+To use operator-supplied bounds instead of the automatic estimate for one local area:
 
 1. Prepare an absolute-path cache-policy JSON file with explicit `max_bytes`
    and `min_free_bytes`, and choose an absolute path for the per-job bounds
@@ -201,7 +224,7 @@ To run the opt-in national DSM path for one local area:
    [pipeline reference](pipeline-reference.md#experimental-local-queue-admission).
    Size all bounds for the whole job and its filesystems, not just the DSM.
 2. Start the panel with `SOLAR_PREFER_NATIONAL_DSM=1`,
-   `SOLAR_RASTER_SOURCE_MAPPINGS` pointing to the national mapping,
+   optionally `SOLAR_RASTER_SOURCE_MAPPINGS` pointing to a reviewed mapping,
    `SOLAR_RASTER_CACHE_POLICY` pointing to the policy, and
    `SOLAR_RASTER_JOB_BOUNDS` pointing to the bounds file. The bounds file can
    be written after the estimate; its path must be set before the panel starts.
@@ -212,18 +235,16 @@ To run the opt-in national DSM path for one local area:
    processing choice for each mapped role. Use absolute paths for the policy
    and allocation directories. The estimate expires; if a new estimate is
    needed, update the digest in the bounds file before submission.
-4. Submit that estimate. The queue checks the bounds and plan before starting.
-   After an admitted launch, consult the run report and perform the documented
-   manual recovery only after independently confirming all consumers have
-   stopped. A subsequent area needs a new estimate and matching bounds; do not
-   remove the retained lock or reservation while anything may still be using it.
+4. Submit that estimate. The queue checks the bounds and plan before starting
+   and releases its reservation after the process group stops. A subsequent
+   area needs a new estimate and matching bounds. Consult the run report if a
+   job fails.
 
 Optionally set `SOLAR_RASTER_CACHE_POLICY` to the path of an experimental
 cache-policy JSON file before starting the panel (see
 [pipeline reference](pipeline-reference.md)). Local estimates then show a
 point-in-time cache inventory: logical bytes leased, currently eligible for
-cleanup, or unmanaged/awaiting recovery. This inventory alone does not enable
-cached-tile acquisition or reserve disk.
+cleanup, or unmanaged/awaiting recovery. This inventory is not a reservation.
 
 For Developer and Published the estimate also shows the Google Cloud
 cost (see [Cloud builds](#cloud-builds)). Cloud totals sum the separate jobs'
@@ -544,8 +565,8 @@ shown as cached. Layer data is loaded on demand when enabled.
 The experimental native raster cache defaults to `data/raster_cache`. If
 `SOLAR_RASTER_CACHE_POLICY` is set, its resolved cache directory takes
 precedence; otherwise `SOLAR_RASTER_CACHE_DIR` overrides the display default.
-Both the local panel and preview server use this precedence. Neither default
-nor display override enables cache-backed regional builds. The
+Both the local panel and preview server use this precedence. The panel's local
+national DSM builds use the same location; the preview server only displays it. The
 **Native raster cache tiles** layer is on by default and separate from regional DSM, imagery and
 terrain mosaics. It shows managed tile header rectangles only; neither
 valid-data coverage, content integrity nor source freshness is checked by the
