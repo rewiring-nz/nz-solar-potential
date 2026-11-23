@@ -499,6 +499,186 @@ def snap_lines(inner, outline):
     return out
 
 
+STRAIGHT = int(os.environ.get("SOLAR_LINE_STRAIGHT", "0"))
+ST_TOL_PX = float(os.environ.get("SOLAR_ST_TOL", "3"))          # a piece is straight when it stays this close to its chord
+ST_MIN_PX = float(os.environ.get("SOLAR_ST_MIN", "12"))         # shorter pieces give no line of their own
+ST_SNAP_DEG = float(os.environ.get("SOLAR_ST_DEG", "12"))       # a line this close to a main direction is turned onto it
+ST_MERGE_PX = float(os.environ.get("SOLAR_ST_MERGE", "3"))      # parallel lines this close are one line
+ST_REACH_PX = float(os.environ.get("SOLAR_ST_REACH", "1e9"))
+ST_JOIN_PX = float(os.environ.get("SOLAR_ST_JOIN", "8"))        # consecutive pieces of one boundary this close are one line
+ST_FREE_JOIN_DEG = 8.0
+ST_FREE_EDGE_PX = float(os.environ.get("SOLAR_ST_FREE_EDGE", "40"))   # a slanted run of the roof edge needs this length to be kept    # how far a line runs past the piece it was fitted to
+
+
+def _straight_pieces(coords, tol, min_len):
+    """A chain cut into straight pieces: (points) arrays, each within `tol`
+    of its chord and `min_len` or longer."""
+    c = np.asarray(coords, float)
+    if len(c) < 2:
+        return []
+    keep = np.asarray(LineString(c).simplify(tol).coords)
+    idx, j = [], 0
+    for k in keep:                                    # simplify keeps a subset of the vertices, in order
+        while j < len(c) - 1 and not (abs(c[j, 0] - k[0]) < 1e-9 and abs(c[j, 1] - k[1]) < 1e-9):
+            j += 1
+        idx.append(j)
+    out = []
+    for a, b in zip(idx[:-1], idx[1:]):
+        if b > a and np.hypot(*(c[b] - c[a])) >= min_len:
+            out.append(c[a:b + 1])
+    return out
+
+
+def straight_faces(lab, outline):
+    """Faces whose every edge lies on a fitted straight line.
+
+    Roof lines are straight, and the outer edge is long straight runs with
+    square corners. The regions the reader's maps give (`lab`, one number
+    per face) have the right faces but their boundaries follow the maps
+    pixel by pixel: they wobble, and corners come out rounded. Rule:
+
+    1. every boundary (between two regions, and the roof edge) is cut into
+       straight pieces; a piece of ST_MIN_PX or more gives one line, fitted
+       through its points;
+    2. a line within ST_SNAP_DEG of the roof's main direction or its right
+       angle is turned onto it; parallel lines within ST_MERGE_PX are one
+       line, so edges that line up across the roof are exactly in line;
+    3. the lines cut the picture into cells, each cell goes whole to the
+       region that covers most of it, and a face is its region's cells.
+
+    A face edge can then only run along a fitted line and turn where two
+    lines cross. A boundary too short to give a line (a rounded corner, a
+    small jog) is taken up by the lines around it."""
+    import shapely
+    from rasterio import features
+    h, w = lab.shape
+    chains = []                                       # (points, is roof edge)
+    regs = {}
+    for geom, v in features.shapes(lab.astype(np.int32), mask=lab > 0):
+        regs.setdefault(int(v), []).append(shapely.geometry.shape(geom))
+    regs = {k: unary_union(v) for k, v in regs.items()}
+    keys = sorted(regs)
+    for a in range(len(keys)):
+        for b in range(a + 1, len(keys)):
+            s = regs[keys[a]].boundary.intersection(regs[keys[b]].boundary)
+            parts = [g for g in getattr(s, "geoms", [s]) if g.geom_type in ("LineString", "MultiLineString") and g.length > 0.5]
+            if parts:
+                m = unary_union(parts)
+                m = shapely.ops.linemerge(m) if m.geom_type == "MultiLineString" else m
+                chains += [(np.asarray(g.coords), False) for g in getattr(m, "geoms", [m]) if g.geom_type == "LineString"]
+    ring = np.asarray(outline.exterior.segmentize(1.0).coords)
+    # the ring starts at an arbitrary point: begin it at its sharpest corner so no straight run is split
+    simp = np.asarray(outline.simplify(ST_TOL_PX).exterior.coords)
+    if len(simp) > 3:
+        k0 = int(np.argmin(np.hypot(*(ring[:-1] - simp[0]).T)))
+        ring = np.vstack([ring[k0:-1], ring[:k0 + 1]])
+    chains.append((ring, True))
+    raw = []                                          # per chain: pieces in order, (angle, points)
+    for pts, outer in chains:
+        row = []
+        for pc in _straight_pieces(pts, ST_TOL_PX, ST_MIN_PX):
+            vt = np.linalg.svd(pc - pc.mean(0), full_matrices=False)[2]
+            row.append([float(np.degrees(np.arctan2(vt[0][1], vt[0][0])) % 180.0), pc])
+        raw.append((row, outer))
+    if sum(len(r) for r, _ in raw) < 3:
+        return None
+    dom = main_direction([[*pc[0], *pc[-1]] for r, _ in raw for _, pc in r])
+    off = lambda g, t: abs((g - t + 90.0) % 180.0 - 90.0)
+    fit = []
+    for row, outer in raw:
+        done = []                                     # [angle, snapped, points]
+        for ang, pc in row:
+            snapped = False
+            for t in (dom, dom + 90.0):
+                if off(ang, t) <= ST_SNAP_DEG:
+                    ang, snapped = t % 180.0, True
+                    break
+            if done:
+                # the next piece of the same chain on nearly the same line is the same roof line, wobbling
+                m = done[-1]
+                if off(ang, m[0]) <= (1e-6 if snapped and m[1] else ST_FREE_JOIN_DEG):
+                    n = np.array([-np.sin(np.radians(m[0])), np.cos(np.radians(m[0]))])
+                    if abs(float(np.median(pc @ n) - np.median(m[2] @ n))) <= ST_JOIN_PX:
+                        m[2] = np.vstack([m[2], pc])
+                        if not m[1]:
+                            vt = np.linalg.svd(m[2] - m[2].mean(0), full_matrices=False)[2]
+                            m[0] = float(np.degrees(np.arctan2(vt[0][1], vt[0][0])) % 180.0)
+                        continue
+            done.append([ang, snapped, pc])
+        for ang, snapped, pc in done:
+            d = np.array([np.cos(np.radians(ang)), np.sin(np.radians(ang))]); n = np.array([-d[1], d[0]])
+            t = pc @ d; ln = float(t.max() - t.min())
+            if outer and not snapped and ln < ST_FREE_EDGE_PX:
+                continue                              # a short slanted run of the roof edge is a rounded corner
+            fit.append([ang, float(np.median(pc @ n)), ln, float(t.min()), float(t.max())])
+    fit.sort(key=lambda f: -f[2])
+    merged = []
+    for f in fit:
+        for m in merged:
+            if abs((f[0] - m[0] + 90.0) % 180.0 - 90.0) < 2.0:
+                d = np.array([np.cos(np.radians(m[0])), np.sin(np.radians(m[0]))]); n = np.array([-d[1], d[0]])
+                fd = np.array([np.cos(np.radians(f[0])), np.sin(np.radians(f[0]))]); fn = np.array([-fd[1], fd[0]])
+                mid = fd * (f[3] + f[4]) / 2 + fn * f[1]
+                if abs(float(mid @ n) - m[1]) <= ST_MERGE_PX:
+                    t = float(mid @ d); half = (f[4] - f[3]) / 2
+                    m[1] = (m[1] * m[2] + float(mid @ n) * f[2]) / (m[2] + f[2]); m[2] += f[2]
+                    m[3], m[4] = min(m[3], t - half), max(m[4], t + half)
+                    break
+        else:
+            merged.append(list(f))
+    R = 2.0 * (h + w)
+    segs = []
+    for ang, rho, ln, t0, t1 in merged:
+        d = np.array([np.cos(np.radians(ang)), np.sin(np.radians(ang))]); n = np.array([-d[1], d[0]])
+        a, b = max(t0 - ST_REACH_PX, -R), min(t1 + ST_REACH_PX, R)
+        segs.append(LineString([tuple(n * rho + d * a), tuple(n * rho + d * b)]))
+    box = shapely.geometry.box(-2, -2, w + 2, h + 2)
+    net = unary_union([box.exterior] + [s.intersection(box) for s in segs])
+    cells = [c for c in polygonize(net) if c.area > 1e-6]
+    if not cells:
+        return None
+    cid = features.rasterize([(c, i + 1) for i, c in enumerate(cells)], out_shape=(h, w), dtype="int32")
+    nl = int(lab.max()) + 1
+    votes = np.bincount((cid.ravel().astype(np.int64)) * nl + lab.ravel().astype(np.int64), minlength=(len(cells) + 1) * nl).reshape(len(cells) + 1, nl)
+    own = votes.argmax(1)
+    own[votes.sum(1) == 0] = 0
+    for i, c in enumerate(cells):                     # a cell too thin to hold a pixel centre: its middle decides
+        if votes[i + 1].sum() == 0:
+            q = c.representative_point(); x, y = int(q.x), int(q.y)
+            own[i + 1] = int(lab[y, x]) if 0 <= x < w and 0 <= y < h else 0
+    for _ in range(3):                                # a stray piece of a face goes to the face it borders most
+        by = {}
+        for i, c in enumerate(cells):
+            if own[i + 1]:
+                by.setdefault(int(own[i + 1]), []).append(i)
+        moved = False
+        for k, ids in by.items():
+            u = unary_union([cells[i] for i in ids])
+            if u.geom_type != "MultiPolygon":
+                continue
+            big = max(u.geoms, key=lambda g: g.area)
+            for i in ids:
+                if big.contains(cells[i].representative_point()):
+                    continue
+                best, bl = 0, 0.0
+                for j, c in enumerate(cells):
+                    if own[j + 1] != k and cells[i].touches(c):
+                        l = cells[i].boundary.intersection(c.boundary).length
+                        if l > bl and own[j + 1]:
+                            best, bl = int(own[j + 1]), l
+                own[i + 1] = best; moved = True
+        if not moved:
+            break
+    faces = []
+    for k in sorted(set(int(v) for v in own if v)):
+        u = unary_union([cells[i] for i in range(len(cells)) if own[i + 1] == k])
+        u = max(u.geoms, key=lambda g: g.area) if u.geom_type == "MultiPolygon" else u
+        u = u.simplify(0.01)
+        if u.geom_type == "Polygon" and u.area >= MIN_FACE_PX2:
+            faces.append(Polygon(u.exterior))
+    return faces or None
+
+
 def faces_from_regions(p, names, outline):
     """Closed faces: one per face interior the reader sees.
 
@@ -531,6 +711,10 @@ def faces_from_regions(p, names, outline):
     lab = _basins(barrier, inside)
     if lab is None:
         return [outline]
+    if STRAIGHT:
+        st = straight_faces(lab, outline)
+        if st:
+            return st
     polys = []
     for geom, v in features.shapes(lab.astype(np.int32), mask=lab > 0):
         if v:

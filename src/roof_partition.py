@@ -1598,6 +1598,18 @@ def residual_fill(building_id, footprint, pts, faces):
 # on the drawn roofs (SOLAR_KEEP_UNREAD_FACE=1 turns it on).
 KEEP_UNREAD_FACE = os.environ.get("SOLAR_KEEP_UNREAD_FACE", "0") == "1"
 
+# The line reader's faces are kept as read. A face the regulariser could not
+# simplify, or whose returns are not one plane, used to be dropped, and
+# residual fill then recut its area with the LiDAR partition: lines the
+# reader never drew. 13 Sunrise Lane's reading matched the drawn faces 0.78
+# and the facets built from it 0.64, with cross cuts over the wing's strip
+# roofs that are in none of the reader's maps. With this on such a face
+# stays as read (bare, when it is not one plane), and residual fill is
+# skipped when the reading covers READ_COVER_MIN of the footprint. Off until
+# measured on the drawn roofs (SOLAR_KEEP_READ_FACES=1 turns it on).
+KEEP_READ_FACES = os.environ.get("SOLAR_KEEP_READ_FACES", "0") == "1"
+READ_COVER_MIN = 0.85
+
 
 def facets_from_selected_faces(building_id, footprint, pts):
     """Facets straight from the precomputed winner, planes from LiDAR.
@@ -1625,6 +1637,7 @@ def facets_from_selected_faces(building_id, footprint, pts):
     # its edges are plane intersections already, which the reshape stages
     # can only move off them
     _read = doc.get("source") in ("vision", "student", "points")
+    _keep = KEEP_READ_FACES and doc.get("reader") == "lines"
     out = []
     pending = []
     for ring in doc.get("faces") or []:
@@ -1644,7 +1657,9 @@ def facets_from_selected_faces(building_id, footprint, pts):
         if reg is None:
             if _dbg:
                 print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners: regulariser dropped it")
-            continue
+            if not _keep:
+                continue
+            reg = (poly, False)
         poly, forced = reg
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
@@ -1655,7 +1670,7 @@ def facets_from_selected_faces(building_id, footprint, pts):
         if _dbg:
             print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners forced={forced} "
                   f"pts={len(sub)} inlier={_inlier_fraction(sub, plane) if plane is not None else None}")
-        if forced and (plane is None
+        if not _keep and forced and (plane is None
                        or _inlier_fraction(sub, plane) < BIG_FACE_MIN_PLANE_INLIER):
             continue          # over the cap and not one plane: residual fill cuts it properly
         if plane is not None:
@@ -1667,7 +1682,7 @@ def facets_from_selected_faces(building_id, footprint, pts):
             # (Drawn faces never hit this path; sparse faces still
             # borrow below.)
             if _inlier_fraction(sub, plane) < SELECTED_MIN_PLANE_INLIER:
-                if KEEP_UNREAD_FACE and doc.get("source") == "points":
+                if _keep or (KEEP_UNREAD_FACE and doc.get("source") == "points"):
                     # see KEEP_UNREAD_FACE: the face stays as cut, bare
                     slope, aspect = _slope_aspect(plane)
                     out.append({
@@ -1741,7 +1756,10 @@ def facets_from_selected_faces(building_id, footprint, pts):
     # part of a roof left the rest with no facet at all -- and no facet
     # means no panels, no obstructions, nothing. #4724740 shipped 63%
     # coverage and a bare 216 m2 flat middle.
-    filled = residual_fill(building_id, footprint, pts, out)
+    if _keep and out and unary_union([f["geometry"] for f in out]).intersection(footprint).area >= READ_COVER_MIN * footprint.area:
+        filled = []
+    else:
+        filled = residual_fill(building_id, footprint, pts, out)
     if os.environ.get("SOLAR_FACE_DEBUG"):
         print(f"[face {building_id}] selected kept {len(out)} ({sum(f['area_m2'] for f in out):.0f} m2), "
               f"residual fill added {len(filled)} ({sum(f['geometry'].area for f in filled):.0f} m2) of footprint {footprint.area:.0f} m2")
