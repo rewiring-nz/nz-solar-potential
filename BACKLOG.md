@@ -397,6 +397,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Public roofs added to training, run P (23 Nov).** 2,386 RoofVIP roofs (Munich, 0.2 m, CC BY 4.0; `tools/public_roofvip.py`, known maps line, core, outline, join, roof) beside the hand and vision sets, fold 0, same schedule as J. Scored on the 35 unseen fold-0 roofs against the rebuilt faces, straight lines on:
+  - drawn edge: faces right 23 of 35 (J 20), face IoU 0.796 (0.798), line F 0.857 (0.849);
+  - reader's own edge: 19 of 35 (J 18), face IoU 0.751 (0.768), line F 0.856 (0.865);
+  - faces read 333 against 285 drawn (J 268): P splits roofs into more faces than drawn.
+  Three roofs of 35 is inside the fold-to-fold spread, and face IoU did not move: no measurable gain from foreign roofs at this size. Not adopted; `J_all.pt` stays the reader.
+
 - **Scoring faces rebuilt from the drawn lines (23 Nov).** `tools/experiments/joined_faces.py <reach m> out.json`: a loose line end is carried along its direction to the first line or edge within reach (ends within 0.3 m are joined), and the faces are the cells of that plus the stored faces' own edges. At 1.0 m, 59 of 180 drawn roofs gain faces the stored `faces` lacked (45 from the 0.3 m join alone), none lose any; renders of eight changed roofs follow the drawn lines. `face_score.py` reads it with `SOLAR_TRUTH_FACES=data/line_set/faces_joined_1.0.json`. Faces right, straight lines on, drawn edge, stored truth -> rebuilt truth:
   - the drawing itself through the converter: 135 -> 148 of 168 (88%);
   - roofs J_all trained on (fold 0): 25 -> 29 of 35 (83%), line F 0.968;
