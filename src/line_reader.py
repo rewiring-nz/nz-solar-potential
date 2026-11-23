@@ -220,6 +220,13 @@ def roof_faces(geom, tiles, pts):
     # held-out drawn roofs, face IoU 0.678 and lines right on 99, against
     # 0.516 and 53 for the joins-and-lines drawing, which leaves lines that
     # close no face
+    if os.environ.get("SOLAR_LINE_READER_DUMP"):
+        # the picture, the maps and the edge of one reading, for looking at
+        # which map carries a wrong line
+        c = geom.centroid
+        np.savez_compressed(os.path.join(os.environ["SOLAR_LINE_READER_DUMP"], f"{int(c.x)}_{int(c.y)}.npz"),
+                            image=img, maps=(p * 255).astype(np.uint8), frame=np.array(list(b) + [mpp]),
+                            edge=np.asarray(reader_edge(p, edge_px).exterior.coords))
     faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px))
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
     return [affine_transform(f, to_m) for f in faces], []
