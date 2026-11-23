@@ -397,6 +397,12 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Learning curve on the hand-drawn roofs (24 Nov).** The J reader taught with none, half and all of the hand-drawn roofs outside fold 0 (`tools/train_roof_lines.py --hand-share`; the 716 vision readings always in), scored on the 35 unseen fold-0 roofs against the rebuilt faces, straight lines on (drawn edge / reader's own edge):
+  - 0 drawn roofs: faces right 0 / 2 of 35, face IoU 0.346, line F 0.355;
+  - 66 drawn roofs: 19 / 17, face IoU 0.787 / 0.755, line F 0.853;
+  - 133 drawn roofs: 20 / 18, face IoU 0.798 / 0.768, line F 0.849.
+  The vision readings alone teach nothing that matches the drawing; the first 66 drawn roofs do nearly all the work; doubling to 133 adds one roof of 35. On this evidence more markup of the same kind will not close the seen-to-unseen gap (83% to 57%) with this reader: the model has to change. One fold of 35 is noisy, so the half-share run is repeating on folds 1-4 (`heldout_C05`, scores in `data/line_set/runs/curve2_scores.txt`) to give the row on all 168.
+
 - **Public roofs added to training, run P (23 Nov).** 2,386 RoofVIP roofs (Munich, 0.2 m, CC BY 4.0; `tools/public_roofvip.py`, known maps line, core, outline, join, roof) beside the hand and vision sets, fold 0, same schedule as J. Scored on the 35 unseen fold-0 roofs against the rebuilt faces, straight lines on:
   - drawn edge: faces right 23 of 35 (J 20), face IoU 0.796 (0.798), line F 0.857 (0.849);
   - reader's own edge: 19 of 35 (J 18), face IoU 0.751 (0.768), line F 0.856 (0.865);
