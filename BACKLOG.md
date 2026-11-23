@@ -397,6 +397,14 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Straight lines by construction, and the build's invented lines traced (23 Nov).** Owner's verdict on the 13 Sunrise sheet: not close; lines wobble and curve, and the build adds lines that are not there.
+  - *Where the invented lines came from.* `facets_from_selected_faces` dropped a read face whose returns are not one plane, and `residual_fill` recut the gap from the LiDAR partition. On 13 Sunrise three louvre strips (plane inlier 0.09 to 0.14) were dropped and five scraps added.
+  - *`SOLAR_KEEP_READ_FACES=1`* (off by default): such a face stays as read and bare; residual fill is skipped when the reading covers 85% of the footprint; a bare face passes `repair_staircase_facets`. A read face over a few clean planes is still cut by the returns (`_clean_cut`: at most 4 parts, each 12 m2 or more with 0.70 on plane; 2 Sunrise's one read face gives parts of 53 to 63 m2, the louvre scraps are 6 to 11 m2).
+  - *`SOLAR_LINE_STRAIGHT=1`* (`line_graph.straight_faces`, off by default): boundaries are cut into straight pieces, each fitted with a line, lines near the roof's two main directions are turned onto them and merged, and faces are the cells the lines cut. 168 held-out drawn roofs: drawn edge 0.733 / 77 right (0.739 / 78 before), own edge 0.682 / 54 (0.681 / 53). The score does not measure wobble; the renders are straight. Sliding lines onto the map crest (`SOLAR_ST_CREST`): 74 right, left off.
+  - *Street L18 (both on) against the markup:* 13 Sunrise 0.64 -> 0.71 faces, edge 0.89 -> 0.91, no invented lines; 1 Sunrise 0.55 -> 0.55, edge 0.86 -> 0.89. Sheets `data/preview/cases/street_L18/`.
+  - *Not done:* `SOLAR_KEEP_READ_FACES` is unmeasured on the drawn-roof benchmark (`tools/markup_benchmark.py`); the street round is not judged by the owner.
+  - *What is left is the reading itself.* On 13 Sunrise the reader bends the ridge into the wing line and misses two small faces; on the 168 roofs faces are right on 77 with the drawn edge given. The converter cannot add a line the maps do not hold. Next: teach the reader more (line direction as a target, public roof wireframe sets for pretraining, LiDAR channels that are not blurred over 1.2 m).
+
 **23 Nov, 13 Sunrise: the build loses what the reader reads. Open.**
 - The reader's maps for 4729767 (dumped with `SOLAR_LINE_READER_DUMP`,
   `J_all.pt`) hold the drawn structure: the ridge, the wing join and the
