@@ -25,6 +25,31 @@ POS_WEIGHT = [6.0, 1.0, 8.0, 8.0, 8.0, 8.0, 20.0, 1.0]
 # the same along its whole length, which the where-is-a-line maps cannot be
 # taught (they curve a ridge and still score well). The target comes from
 # the drawn lines themselves, so no roof needs marking again.
+# SOLAR_LINES_ROT=1: training roofs are also turned by any angle and resized
+# (0.75 to 1.05), not only by quarter turns. A roof sits at any angle to
+# north, and 133 drawn roofs at four angles each are few; the reader scores
+# 0.97 on lines of roofs it trained on and 0.85 on roofs it did not (fold 0).
+ROT = os.environ.get("SOLAR_LINES_ROT", "0") == "1"
+
+
+def turn(x, y, w, deg, scale):
+    """The picture, targets and weights turned `deg` anticlockwise about the
+    centre and resized by `scale`. The two downhill-direction channels (5, 6)
+    are a vector and turn with the picture; outside the picture weighs nothing."""
+    from scipy.ndimage import affine_transform
+    h = x.shape[0]; t = math.radians(deg); c, s_ = math.cos(t) / scale, math.sin(t) / scale
+    m = np.array([[c, s_], [-s_, c]]); off = np.array([h / 2 - 0.5] * 2) - m @ np.array([h / 2 - 0.5] * 2)
+    tf = lambda a, order: np.stack([affine_transform(a[..., k], m, offset=off, order=order, mode="constant", cval=0.0) for k in range(a.shape[-1])], -1)
+    has = (x[..., 3:].max(-1, keepdims=True) > 0).astype(np.float32)
+    x2 = tf(x, 1); y2 = (tf(y, 1) > 0.35).astype(np.float32); w2 = tf(w, 0); has2 = tf(has, 0)
+    if x.shape[-1] > 6:
+        a, b = 2 * x2[..., 5] - 1, 2 * x2[..., 6] - 1
+        ct, st = math.cos(t), math.sin(t)
+        x2[..., 5] = (a * ct - b * st + 1) / 2; x2[..., 6] = (a * st + b * ct + 1) / 2
+        x2[..., 3:] *= has2
+    return x2, y2, w2
+
+
 NDIR = 2 if os.environ.get("SOLAR_LINES_DIR", "0") == "1" else 0
 DIR_WEIGHT, DIR_REACH_PX = 2.0, 4
 
@@ -80,6 +105,8 @@ class Roofs(torch.utils.data.Dataset):
                 x, y, w = np.rot90(x), np.rot90(y), np.rot90(w)
                 x = x.copy(); c5, c6 = x[..., 5].copy(), x[..., 6].copy()
                 x[..., 5], x[..., 6] = 1 - c6, c5
+            if ROT and random.random() < 0.75:
+                x, y, w = turn(np.ascontiguousarray(x), np.ascontiguousarray(y), np.ascontiguousarray(w), random.uniform(-45, 45), random.uniform(0.75, 1.05))
             g = random.uniform(0.75, 1.3); bsh = random.uniform(-0.08, 0.08)
             x = x.copy(); x[..., :3] = np.clip(x[..., :3] ** g + bsh, 0, 1)
             if random.random() < 0.5:
