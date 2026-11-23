@@ -19,6 +19,11 @@ import src.line_graph as LG
 NAMES = ["line", "core", "ridge", "valley", "cliff", "outline", "join", "roof"]
 maps_dir, method = sys.argv[1], sys.argv[2]; sheet = sys.argv[3] if len(sys.argv) > 3 else None
 labels = json.load(open('data/roof_labels.json'))['buildings']
+# SOLAR_TRUTH_FACES: faces rebuilt from the drawn lines (tools/experiments/joined_faces.py) in place of the stored ones
+if os.environ.get('SOLAR_TRUTH_FACES'):
+    for _k, _rings in json.load(open(os.environ['SOLAR_TRUTH_FACES'])).items():
+        if _k in labels and _rings:
+            labels[_k] = dict(labels[_k], faces=[{'ring': r} for r in _rings])
 
 
 def convert(p, outline):

@@ -397,6 +397,13 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Scoring faces rebuilt from the drawn lines (23 Nov).** `tools/experiments/joined_faces.py <reach m> out.json`: a loose line end is carried along its direction to the first line or edge within reach (ends within 0.3 m are joined), and the faces are the cells of that plus the stored faces' own edges. At 1.0 m, 59 of 180 drawn roofs gain faces the stored `faces` lacked (45 from the 0.3 m join alone), none lose any; renders of eight changed roofs follow the drawn lines. `face_score.py` reads it with `SOLAR_TRUTH_FACES=data/line_set/faces_joined_1.0.json`. Faces right, straight lines on, drawn edge, stored truth -> rebuilt truth:
+  - the drawing itself through the converter: 135 -> 148 of 168 (88%);
+  - roofs J_all trained on (fold 0): 25 -> 29 of 35 (83%), line F 0.968;
+  - the same roofs unseen (J fold 0): 20 -> 20 of 35 (57%), line F 0.849;
+  - all 168 unseen (J folds): 77 -> 81 with the drawn edge (48%), 65 with the reader's own edge (39%). Homes outside the town centre: line F 0.927 and faces right on 40 of 71; larger roofs 19 of 55.
+  So the reader reproduces a roof it has been shown (83%, against a ceiling of 88%) and falls to 57% on one it has not: the main loss is from seen to unseen. The stored `faces` in `roof_labels.json` are unchanged; the rebuilt set is for scoring only, and whether it should replace them in training targets is open.
+
 - **Seen against unseen, and the converter's ceiling (23 Nov).** Asked: does the reader get right a roof it has been shown? Fold 0's 35 drawn roofs, faces right with the drawn edge, straight lines on:
   - the drawn targets themselves fed to the converter as maps (`data/line_set/perfect_maps`): 135 of 168 (80%), face IoU 0.889, line F 0.940;
   - read by J_all, which trained on them (`data/line_set/seen_Jall0`): 25 of 35 (71%), IoU 0.852, line F 0.952;
