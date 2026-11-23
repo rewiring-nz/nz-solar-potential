@@ -584,20 +584,20 @@ def straight_faces(lab, outline, barrier=None):
     if sum(len(r) for r, _ in raw) < 3:
         return None
     dom = main_direction([[*pc[0], *pc[-1]] for r, _ in raw for _, pc in r])
-    off = lambda g, t: abs((g - t + 90.0) % 180.0 - 90.0)
+    _turn = lambda g, t: abs((g - t + 90.0) % 180.0 - 90.0)
     fit = []
     for row, outer in raw:
         done = []                                     # [angle, snapped, points]
         for ang, pc in row:
             snapped = False
             for t in (dom, dom + 90.0):
-                if off(ang, t) <= ST_SNAP_DEG:
+                if _turn(ang, t) <= ST_SNAP_DEG:
                     ang, snapped = t % 180.0, True
                     break
             if done:
                 # the next piece of the same chain on nearly the same line is the same roof line, wobbling
                 m = done[-1]
-                if off(ang, m[0]) <= (1e-6 if snapped and m[1] else ST_FREE_JOIN_DEG):
+                if _turn(ang, m[0]) <= (1e-6 if snapped and m[1] else ST_FREE_JOIN_DEG):
                     n = np.array([-np.sin(np.radians(m[0])), np.cos(np.radians(m[0]))])
                     if abs(float(np.median(pc @ n) - np.median(m[2] @ n))) <= ST_JOIN_PX:
                         m[2] = np.vstack([m[2], pc])

@@ -129,7 +129,9 @@ def reading_hash(building_id):
         p = w
     q = DATA / "point_faces" / f"{building_id}.json"
     before_points = p
-    if os.environ.get("SOLAR_POINT_ROOF", "1") == "1" and q.exists():
+    # SOLAR_STUDENT_LEADS=1: the local reader's reading comes before the returns'
+    student_leads = os.environ.get("SOLAR_STUDENT_LEADS", "0") == "1" and before_points == DATA / "student_faces" / f"{building_id}.json"
+    if os.environ.get("SOLAR_POINT_ROOF", "1") == "1" and q.exists() and not student_leads:
         p = q
     w = DATA / "vision_faces" / f"{building_id}.json"
     if vision_on and w.exists():

@@ -1375,8 +1375,16 @@ def selected_doc(building_id):
     from src.vision_roof import reader_leads
     pts = [POINT_FACES_DIR] if USE_POINT_ROOF and building_id not in POINT_SET_ASIDE else []
     vis = [VISION_FACES_DIR] if USE_VISION_ROOF else []
-    dirs = ((vis + pts if (not pts or reader_leads(building_id)) else pts + vis)
-            + ([STUDENT_FACES_DIR] if USE_VISION_ROOF else [])
+    # SOLAR_STUDENT_LEADS=1: the local reader's faces come before the faces
+    # from the returns (after the paid reader's). Off by default: the order
+    # above was measured with the earlier local model; the roof-line reader
+    # (reader "lines") is unmeasured against the returns on those terms.
+    stu = [STUDENT_FACES_DIR] if USE_VISION_ROOF else []
+    lead = vis + pts if (not pts or reader_leads(building_id)) else pts + vis
+    if STUDENT_LEADS and pts:
+        lead = [d for d in lead if d != POINT_FACES_DIR] + stu + pts
+        stu = []
+    dirs = (lead + stu
             + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])
     # A ONE-FACE READING OF A ROOF THE SURVEY BARELY SAW GIVES WAY. Where
@@ -1597,6 +1605,7 @@ def residual_fill(building_id, footprint, pts, faces):
 # face stays as the reading cut it and takes no panels. Off until measured
 # on the drawn roofs (SOLAR_KEEP_UNREAD_FACE=1 turns it on).
 KEEP_UNREAD_FACE = os.environ.get("SOLAR_KEEP_UNREAD_FACE", "0") == "1"
+STUDENT_LEADS = os.environ.get("SOLAR_STUDENT_LEADS", "0") == "1"
 
 # The line reader's faces are kept as read. A face the regulariser could not
 # simplify, or whose returns are not one plane, used to be dropped, and
