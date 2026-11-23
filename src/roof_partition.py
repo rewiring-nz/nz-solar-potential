@@ -1611,6 +1611,29 @@ KEEP_READ_FACES = os.environ.get("SOLAR_KEEP_READ_FACES", "0") == "1"
 READ_COVER_MIN = 0.85
 
 
+READ_CUT_MAX_PARTS, READ_CUT_MIN_INLIER, READ_CUT_MIN_COVER = 4, 0.70, 0.80
+
+
+def _clean_cut(building_id, poly, pts, inside):
+    """The LiDAR partition of one read face, when it is clean: at most
+    READ_CUT_MAX_PARTS facets covering READ_CUT_MIN_COVER of the face, each
+    with READ_CUT_MIN_INLIER of its returns on its plane. Else []. A louvre
+    or pergola roof fails this (13 Sunrise Lane: inlier 0.09 to 0.14, five
+    scraps) and a face over two real planes passes."""
+    from shapely.geometry import Point
+    cut = residual_fill(building_id, poly, pts, [{"geometry": Point(poly.exterior.coords[0]).buffer(0.01)}])
+    if not cut or len(cut) > READ_CUT_MAX_PARTS:
+        return []
+    if sum(f["geometry"].area for f in cut) < READ_CUT_MIN_COVER * poly.area:
+        return []
+    for f in cut:
+        sub = _points_in(f["geometry"], inside)
+        if len(sub) < MIN_POINTS_PER_FACE or _inlier_fraction(sub, (f["plane_a"], f["plane_b"], f["plane_c"])) < READ_CUT_MIN_INLIER:
+            return []
+        f["from_selected"] = True; f["from_reading"] = True
+    return cut
+
+
 def facets_from_selected_faces(building_id, footprint, pts):
     """Facets straight from the precomputed winner, planes from LiDAR.
 
@@ -1685,6 +1708,14 @@ def facets_from_selected_faces(building_id, footprint, pts):
                 if _keep or (KEEP_UNREAD_FACE and doc.get("source") == "points"):
                     # see KEEP_UNREAD_FACE: the face stays as cut, bare
                     slope, aspect = _slope_aspect(plane)
+                    # ...unless the returns inside it are a few clean planes
+                    # the reader missed the line between (2 Sunrise Lane: one
+                    # read face over two planes, 43 panels to none when kept
+                    # bare). Then the returns cut this face, and only it.
+                    cut = _clean_cut(building_id, poly, pts, inside) if _keep else []
+                    if cut:
+                        out.extend(cut)
+                        continue
                     out.append({
                         "building_id": building_id,
                         "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),

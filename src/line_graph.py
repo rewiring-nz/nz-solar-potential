@@ -507,6 +507,7 @@ ST_MERGE_PX = float(os.environ.get("SOLAR_ST_MERGE", "3"))      # parallel lines
 ST_REACH_PX = float(os.environ.get("SOLAR_ST_REACH", "1e9"))
 ST_JOIN_PX = float(os.environ.get("SOLAR_ST_JOIN", "8"))        # consecutive pieces of one boundary this close are one line
 ST_FREE_JOIN_DEG = 8.0
+ST_CREST_PX = float(os.environ.get("SOLAR_ST_CREST", "0"))      # a line may slide this far onto the crest of the line maps
 ST_FREE_EDGE_PX = float(os.environ.get("SOLAR_ST_FREE_EDGE", "40"))   # a slanted run of the roof edge needs this length to be kept    # how far a line runs past the piece it was fitted to
 
 
@@ -529,7 +530,7 @@ def _straight_pieces(coords, tol, min_len):
     return out
 
 
-def straight_faces(lab, outline):
+def straight_faces(lab, outline, barrier=None):
     """Faces whose every edge lies on a fitted straight line.
 
     Roof lines are straight, and the outer edge is long straight runs with
@@ -610,7 +611,19 @@ def straight_faces(lab, outline):
             t = pc @ d; ln = float(t.max() - t.min())
             if outer and not snapped and ln < ST_FREE_EDGE_PX:
                 continue                              # a short slanted run of the roof edge is a rounded corner
-            fit.append([ang, float(np.median(pc @ n)), ln, float(t.min()), float(t.max())])
+            rho = float(np.median(pc @ n))
+            if barrier is not None and not outer and ST_CREST_PX > 0:
+                # the region boundary follows the line maps loosely where they are faint; the
+                # line itself is where the maps are strongest along its length
+                ts = np.linspace(t.min(), t.max(), max(int(ln), 2))
+                best, bv = rho, -1.0
+                for dr in np.arange(-ST_CREST_PX, ST_CREST_PX + 0.01, 0.5):
+                    xy = np.outer(ts, d) + n * (rho + dr)
+                    v = float(map_coordinates(barrier, [xy[:, 1], xy[:, 0]], order=1, mode="nearest").mean()) - 0.002 * abs(dr)
+                    if v > bv:
+                        best, bv = rho + dr, v
+                rho = best
+            fit.append([ang, rho, ln, float(t.min()), float(t.max())])
     fit.sort(key=lambda f: -f[2])
     merged = []
     for f in fit:
@@ -712,7 +725,7 @@ def faces_from_regions(p, names, outline):
     if lab is None:
         return [outline]
     if STRAIGHT:
-        st = straight_faces(lab, outline)
+        st = straight_faces(lab, outline, barrier)
         if st:
             return st
     polys = []
