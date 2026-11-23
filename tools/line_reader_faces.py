@@ -72,7 +72,8 @@ def _one(job):
                      if f.is_valid and f.geom_type == "Polygon" and f.area >= 1.0]
         if not faces:
             return bid, 0
-        edge = unary_union([f.buffer(BRIDGE_M) for f in faces]).buffer(-BRIDGE_M)
+        # square joins: a round join gives every corner of the roof edge a dozen points
+        edge = unary_union([f.buffer(BRIDGE_M, join_style=2) for f in faces]).buffer(-BRIDGE_M, join_style=2).simplify(0.05)
         edge = max(edge.geoms, key=lambda q: q.area) if hasattr(edge, "geoms") else edge
         faces = [f for f in faces if f.representative_point().within(edge.buffer(0.05))]
         ring = lambda q: [[round(x - sx, 2), round(y - sy, 2)] for x, y in q.exterior.coords]
