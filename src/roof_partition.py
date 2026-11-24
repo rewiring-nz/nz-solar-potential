@@ -1630,27 +1630,68 @@ READ_CUT_MAX_PARTS, READ_CUT_MIN_INLIER, READ_CUT_MIN_COVER = 4, 0.70, 0.80
 READ_CUT_MIN_PART_M2 = 12.0
 
 
+# A read face that is one roof plane with other things standing on or beside
+# it (plant, a raised deck, a parapet) fails the one-plane test and the clean
+# cut alike, and was kept bare. #4743917: a 1,329 m2 read face, 21% of its
+# returns on one plane, whose LiDAR partition is one 954 m2 part at 2 deg
+# (86% on its plane) and six scraps of 1 to 44 m2; kept bare it held none of
+# the 250 panels the live map had there. Rule: when the largest part of the
+# partition covers READ_MAIN_MIN_SHARE of the face and READ_CUT_MIN_INLIER of
+# that part's returns lie on its plane, that part is the face and takes
+# panels; the rest of the read face stays, bare, on the same plane. Off until
+# judged on renders (SOLAR_READ_MAIN_PLANE=1 turns it on).
+READ_MAIN_PLANE = os.environ.get("SOLAR_READ_MAIN_PLANE", "0") == "1"
+READ_MAIN_MIN_SHARE = float(os.environ.get("SOLAR_READ_MAIN_MIN_SHARE", "0.6"))
+
+
+def _main_plane_cut(building_id, poly, cut, inside):
+    """[the main part, the bare rest...] of a read face under READ_MAIN_PLANE, else []."""
+    if not READ_MAIN_PLANE or not cut:
+        return []
+    main = max(cut, key=lambda f: f["geometry"].area)
+    g = main["geometry"].intersection(poly)
+    if g.geom_type != "Polygon" or g.area < READ_MAIN_MIN_SHARE * poly.area:
+        return []
+    sub = _points_in(g, inside)
+    plane = (main["plane_a"], main["plane_b"], main["plane_c"])
+    if len(sub) < MIN_POINTS_PER_FACE or _inlier_fraction(sub, plane) < READ_CUT_MIN_INLIER:
+        return []
+    out = [dict(main, geometry=g, area_m2=float(g.area), from_selected=True, from_reading=True)]
+    rest = poly.difference(g.buffer(0.05))
+    for r in getattr(rest, "geoms", [rest]):
+        if r.geom_type == "Polygon" and r.area >= DRAWN_MIN_FACET_M2:
+            out.append({"building_id": building_id, "geometry": r,
+                        "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+                        "slope_deg": main["slope_deg"], "aspect_deg": main["aspect_deg"],
+                        "area_m2": float(r.area), "point_count": 0,
+                        "from_selected": True, "from_reading": True, "no_panel": True})
+    return out
+
+
 def _clean_cut(building_id, poly, pts, inside):
     """The LiDAR partition of one read face, when it is clean: at most
     READ_CUT_MAX_PARTS facets covering READ_CUT_MIN_COVER of the face, each
-    with READ_CUT_MIN_INLIER of its returns on its plane. Else []. A louvre
+    with READ_CUT_MIN_INLIER of its returns on its plane. Else the main part
+    and the bare rest (_main_plane_cut), else []. A louvre
     or pergola roof fails this (13 Sunrise Lane: inlier 0.09 to 0.14, five
     scraps) and a face over two real planes passes."""
     from shapely.geometry import Point
     cut = residual_fill(building_id, poly, pts, [{"geometry": Point(poly.exterior.coords[0]).buffer(0.01)}])
+    _raw = list(cut)
     if os.environ.get("SOLAR_FACE_DEBUG"):
         print(f"[cut {building_id}] face {poly.area:.0f} m2 -> " + ", ".join(
             "%.0f m2 inl %.2f slope %.0f asp %.0f" % (f["geometry"].area, _inlier_fraction(_points_in(f["geometry"], inside), (f["plane_a"], f["plane_b"], f["plane_c"])) if len(_points_in(f["geometry"], inside)) else -1, f["slope_deg"], f["aspect_deg"]) for f in cut))
     if not cut or len(cut) > READ_CUT_MAX_PARTS:
-        return []
+        return _main_plane_cut(building_id, poly, _raw, inside)
     if sum(f["geometry"].area for f in cut) < READ_CUT_MIN_COVER * poly.area:
-        return []
+        return _main_plane_cut(building_id, poly, _raw, inside)
     if min(f["geometry"].area for f in cut) < READ_CUT_MIN_PART_M2:
-        return []
+        return _main_plane_cut(building_id, poly, _raw, inside)
     for f in cut:
         sub = _points_in(f["geometry"], inside)
         if len(sub) < MIN_POINTS_PER_FACE or _inlier_fraction(sub, (f["plane_a"], f["plane_b"], f["plane_c"])) < READ_CUT_MIN_INLIER:
-            return []
+            return _main_plane_cut(building_id, poly, _raw, inside)
+    for f in cut:
         f["from_selected"] = True; f["from_reading"] = True
     return cut
 
