@@ -52,9 +52,10 @@ def verify_due_metadata(plan: dict, refresh_s: int, *,
             item["region"], item["role"],
             tuple(tuple(footprint) for footprint in item["footprints_wgs84"]),
             RasterSource(source["collection_url"], source["asset_key"],
-                         source["expected_collection_id"]),
+                         source["expected_collection_id"], source.get("index_layer")),
             item["layer_id"], survey_name=item.get("survey_name"),
-            mapping_evidence=item.get("mapping_evidence")))
+            mapping_evidence=item.get("mapping_evidence"),
+            allow_partial=item.get("allow_partial", False)))
     refreshed = plan_batch(requests, get_json=get_json)
     observed = {(item["collection_url"], item["item_id"], item["asset_key"])
                 for item in plan["assets"] if item.get("size_source") == "http-head"}

@@ -152,6 +152,7 @@ def _survey(bbox, region: str, *, prefer_national: bool | None = None) -> dict:
         "source_layers": {key: sv.get(key) for key in
                           ("dsm_layer", "raster_dsm_layer", "dem_layer", "lidar_tile_index_layer",
                            "imagery_layer", "reference_imagery_layer",
+                           "imagery_index_layer", "imagery_partial",
                            "pointcloud_bulk_url", "pointcloud_tile_year")},
         "warning": sv.get("warning"),
     }
@@ -286,6 +287,11 @@ def automatic_raster_estimate(row: dict, cache_overview: dict, data: Path) -> di
     mib = 1024 ** 2
     km2 = float(row["bbox_km2"])
     raw_dsm = max(64 * mib, int(km2 * 4_000_000))
+    # RGB plus alpha at the 0.1 m processing grid, including a working-copy allowance.
+    imagery_roles = sum(item["state"] == "mapped"
+                        and item["role"] in ("imagery", "reference_imagery")
+                        for item in row.get("raster_sources", []))
+    raw_imagery = int(km2 * 400_000_000) * imagery_roles
     components = row["download_components_gb"]
     export = max(64 * mib, int(max(components["imagery"],
                                     components["reference_imagery"]) * 1e9))
@@ -296,8 +302,8 @@ def automatic_raster_estimate(row: dict, cache_overview: dict, data: Path) -> di
         "work_dir": str(data.resolve()),
         "output_dir": str(data.resolve()),
         "temp_dir": str(Path(tempfile.gettempdir()).resolve()),
-        "mosaic_bytes": 4 * raw_dsm,
-        "scratch_bytes": 2 * raw_dsm + 2 * export,
+        "mosaic_bytes": 4 * raw_dsm + 2 * raw_imagery,
+        "scratch_bytes": 2 * raw_dsm + 2 * export + 2 * raw_imagery,
         "output_bytes": output,
         "export_bytes": export,
         "other_bytes": other,
@@ -320,7 +326,7 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
              grid_lookup: Callable | None = None,
              api_key_fn: Callable[[], str] | None = None,
              include_imagery: bool = True, paid_referee: bool = False,
-             web_native_default: bool = False) -> dict:
+             web_native_default: bool = False, imagery_choices: dict | None = None) -> dict:
     if target not in TARGETS:
         raise EstimateError(f"unknown target: {target}")
     if not isinstance(include_imagery, bool) or not isinstance(paid_referee, bool):
@@ -437,13 +443,41 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
             from tools.pipeline_webui import geo_worker
             request = {"data": str(data.resolve()), "regions": eligible,
                        "include_imagery": include_imagery}
+            if web_native_default and include_imagery:
+                request["native_imagery"] = True
+                request["imagery_choices"] = imagery_choices or {}
             if native_default:
                 request["national_default"] = True
             try:
-                raster_plan = geo_worker.run(["raster-plan"], input_text=json.dumps(request))
+                raster_plan = geo_worker.run(
+                    ["raster-plan"], input_text=json.dumps(request), timeout=900,
+                    env={"LINZ_API_KEY": api_key_fn() or ""} if api_key_fn else None)
             except LookupError as exc:
                 raise EstimateError(f"Raster acquisition plan failed: {exc}") from exc
             cache_overview = raster_plan.pop("cache_overview", None)
+            imagery_selections = {item["region"]: item
+                                  for item in raster_plan.pop("imagery_selections", [])}
+            for row in rows:
+                if row["region"] in imagery_selections:
+                    item = imagery_selections[row["region"]]
+                    row.update({key: item[key] for key in
+                                ("source_layers", "imagery_selected", "imagery_candidates")})
+                    layers = row["source_layers"]
+                    reference = layers.get("reference_imagery_layer")
+                    row["imagery_available"] = True
+                    row["reference_imagery_available"] = reference is not None
+                    row["reference_same_as_imagery"] = reference == layers["imagery_layer"]
+                    row["download_components_gb"]["reference_imagery"] = (
+                        float(row["bbox_km2"]) * defaults["reference_imagery_gb_per_km2"]
+                        if reference is not None and not row["reference_same_as_imagery"]
+                        and not row["cached"]["reference_imagery"] else 0.0)
+                    row["warnings"] = [warning for warning in row["warnings"]
+                                       if warning != "No aerial imagery source is configured for this area."]
+                    if not item["imagery_selected"]["fully_covered"]:
+                        percent = 100 * item["imagery_selected"]["coverage_fraction"]
+                        row["warnings"].append(
+                            f"PARTIAL IMAGERY: selected survey covers {percent:.1f}% of the acquisition "
+                            "area. Uncovered pixels remain invalid; image-based checks cannot use them.")
             batch = raster_plan.get("batch")
             if batch is not None and any(item.get("source") is not None for item in batch["inputs"]):
                 assets = batch["assets"]
@@ -481,8 +515,8 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
                         if not os.environ.get("SOLAR_RASTER_JOB_BOUNDS"):
                             mapped_roles = {item["role"] for item in row["raster_sources"]
                                             if item["state"] == "mapped"}
-                            if (native_default and cache_overview and mapped_roles == {"dsm"}
-                                    and (row.get("source_layers") or {}).get("raster_dsm_layer") == 122082):
+                            if (web_native_default and cache_overview
+                                    and mapped_roles <= {"dsm", "imagery", "reference_imagery"}):
                                 row["raster_auto_estimate"] = automatic_raster_estimate(
                                     row, cache_overview, data)
                                 row["warnings"].append(
@@ -499,17 +533,29 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
                         row["warnings"].append(
                             "Raster inputs use LINZ exports; download sizes are estimates, "
                             "not shared-tile cache predictions.")
-                    if any(item["role"] == "dsm" and item["state"] == "mapped"
-                           for item in row["raster_sources"]):
-                        mosaic = data / "regions" / row["region"] / "dsm_mosaic.tif"
+                    for source in row["raster_sources"]:
+                        if source["state"] != "mapped":
+                            continue
+                        role = source["role"]
+                        mosaic = data / "regions" / row["region"] / f"{role}_mosaic.tif"
                         sidecar = mosaic.with_name(mosaic.name + ".source.json")
+                        if mosaic.exists() and role in ("imagery", "reference_imagery") and row.get("imagery_selected"):
+                            row["warnings"].append(
+                                f"Existing {role} will be verified against this selection. "
+                                "A different or legacy photo is preserved in previous_imagery/ "
+                                "before preparing the selected native tiles.")
+                            continue
                         if mosaic.exists() and not sidecar.is_file():
                             row["blockers"].append(
-                                f"Existing DSM mosaic has no verified source provenance: {mosaic}. "
-                                "Preserve and move it aside before building with national tiles.")
+                                f"Existing {role} mosaic has no verified source provenance: {mosaic}. "
+                                "Preserve and move it aside before building with native tiles.")
+                    partial_imagery = row["source_layers"].get("imagery_partial") and any(
+                        use["region"] == row["region"] and use["role"] == "imagery"
+                        for asset in (batch or {}).get("assets", []) for use in asset["uses"])
                     gaps = [item for item in coverage
                             if item["region"] == row["region"]
-                            and item["bbox_coverage"] != "fully_bounded"]
+                            and item["bbox_coverage"] != "fully_bounded"
+                            and not (item["role"] == "imagery" and partial_imagery)]
                     if gaps:
                         roles = ", ".join(sorted({item["role"] for item in gaps}))
                         row["warnings"].append(
@@ -710,7 +756,19 @@ class EstimateStore:
 
     def start(self, regions, target: str = "local", background: bool = True,
               selection: dict | None = None, include_imagery: bool = True,
-              paid_referee: bool = False) -> str:
+              paid_referee: bool = False, imagery_choices: dict | None = None) -> str:
+        if imagery_choices is not None:
+            if (not isinstance(imagery_choices, dict) or len(imagery_choices) > 5000
+                    or any(not isinstance(region, str) or type(layer) is not int or layer <= 0
+                           for region, layer in imagery_choices.items())):
+                raise EstimateError("imagery choices must map area IDs to positive LINZ layer IDs")
+            for region in imagery_choices:
+                try:
+                    validate(region)
+                except ValueError:
+                    raise EstimateError("invalid imagery choice area") from None
+            if target != "local" or not include_imagery:
+                raise EstimateError("imagery choices require a local build with imagery included")
         if not isinstance(include_imagery, bool) or not isinstance(paid_referee, bool):
             raise EstimateError("source choices must be true or false")
         if paid_referee and not include_imagery:
@@ -741,7 +799,9 @@ class EstimateStore:
                                   grid_lookup=self.grid_lookup,
                                   api_key_fn=self.api_key_fn,
                                   include_imagery=include_imagery,
-                                  paid_referee=paid_referee, **self.kwargs)
+                                  paid_referee=paid_referee,
+                                  **({"imagery_choices": imagery_choices} if imagery_choices else {}),
+                                  **self.kwargs)
                 result["estimate_id"] = estimate_id
             except EstimateError as exc:
                 result = {"estimate_id": estimate_id, "status": "error", "error": str(exc)}
@@ -809,6 +869,57 @@ class EstimateStore:
         threading.Thread(target=work, daemon=True, name=f"dsm-preview-{preview_id}").start()
         return preview_id
 
+    def start_imagery_preview(self, estimate_ids: object, refresh: object = False,
+                              background: bool = True) -> str:
+        """Preview survey-index matches without changing approved build sources."""
+        if (not isinstance(estimate_ids, list) or not estimate_ids or len(estimate_ids) > 200
+                or any(not isinstance(item, str) or not _ID.fullmatch(item) for item in estimate_ids)
+                or len(set(estimate_ids)) != len(estimate_ids)):
+            raise EstimateError("select valid local estimates for imagery preview")
+        if type(refresh) is not bool:
+            raise EstimateError("refresh must be true or false")
+        rows = []
+        seen = set()
+        for identifier in estimate_ids:
+            record = self.get(identifier)
+            if (record.get("status") != "ready" or record.get("target") != "local"
+                    or time.time() > float(record.get("expires_at") or 0)):
+                raise EstimateError("local estimate unavailable or expired; estimate again", 409)
+            for row in record.get("regions") or []:
+                region = row.get("region")
+                if not region or region in seen or not row.get("bbox"):
+                    raise EstimateError("duplicate or unresolved imagery preview area", 409)
+                seen.add(region)
+                rows.append({"region": region, "bbox": row["bbox"]})
+        if not rows or len(rows) > 5000:
+            raise EstimateError("imagery preview requires between 1 and 5000 areas")
+        preview_id = secrets.token_hex(8)
+        write_json_atomic(self._path(preview_id), {
+            "estimate_id": preview_id, "kind": "imagery-preview", "status": "pending"})
+
+        def work():
+            from tools.pipeline_webui import geo_worker
+            try:
+                key = self.api_key_fn() if self.api_key_fn else ""
+                result = geo_worker.run(
+                    ["imagery-survey-preview"], timeout=900, env={"LINZ_API_KEY": key or ""},
+                    input_text=json.dumps({"data": str(self.data.resolve()), "regions": rows,
+                                           "refresh": refresh}))
+                result.update(estimate_id=preview_id, kind="imagery-preview", status="ready")
+            except LookupError as exc:
+                result = {"estimate_id": preview_id, "kind": "imagery-preview",
+                          "status": "error", "error": str(exc)}
+            except Exception as exc:
+                result = {"estimate_id": preview_id, "kind": "imagery-preview",
+                          "status": "error", "error": f"imagery preview failed ({type(exc).__name__})"}
+            write_json_atomic(self._path(preview_id), result)
+
+        if background:
+            threading.Thread(target=work, daemon=True, name=f"imagery-preview-{preview_id}").start()
+        else:
+            work()
+        return preview_id
+
     def start_dsm_view(self, bbox: object, refresh: object = False, offset: object = 0) -> str:
         import math
         if (not isinstance(bbox, list) or len(bbox) != 4
@@ -867,8 +978,8 @@ class EstimateStore:
     def usable(self, estimate_id: str, now: float | None = None) -> dict:
         """The stored estimate a job may start from, or EstimateError."""
         record = self.get(estimate_id)
-        if record.get("kind") in ("dsm-preview", "dsm-view"):
-            raise EstimateError("a DSM preview is not a build estimate", 409)
+        if record.get("kind") in ("dsm-preview", "dsm-view", "imagery-preview"):
+            raise EstimateError("a preview is not a build estimate", 409)
         now = time.time() if now is None else now
         if record.get("status") != "ready":
             raise EstimateError("the estimate is not ready", 409)

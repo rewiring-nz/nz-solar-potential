@@ -594,11 +594,16 @@
   let layerRequest = 0;
   let layersTarget = null;
   let dsmLayers = [];
+  let selectedImageryAssets = [];
+  let rasterQueueSignature = null;
+  let rasterLayersCheckedAt = 0;
   let baseCatalogue = null;
   function applyLayers() {
     if (baseCatalogue && layersTarget === target) {
       layerLegend.setCatalogue({ ...baseCatalogue,
-        layers: [...baseCatalogue.layers, ...(target === "local" ? dsmLayers : [])] }, location.href);
+        layers: [...baseCatalogue.layers, ...(target === "local"
+          ? [...dsmLayers, ...PipelineRasterPreview.imageryMapLayers(selectedImageryAssets, baseCatalogue)]
+          : [])] }, location.href);
     }
   }
   async function loadLayers() {
@@ -1354,10 +1359,39 @@
   // ---- build dialog ----------------------------------------------------
   let build = null;  // {ids, combine, revision, estimates, batches}
   let buildRevision = 0;
+  async function refreshImageryIndex() {
+    if (!build || !build.estimates || target !== "local") return;
+    const revision = ++buildRevision;
+    const estimateIds = build.estimates.map((est) => est.estimate_id);
+    $("start-btn").disabled = true;
+    $("imagery-preview-refresh").disabled = true;
+    $("estimate").innerHTML = "<p class='muted'>Refreshing imagery survey index…</p><progress></progress>";
+    try {
+      const started = await api("imagery-preview", { method: "POST",
+        body: { estimate_ids: estimateIds, refresh: true } });
+      let result;
+      const deadline = Date.now() + 920000;
+      do {
+        await sleep(ESTIMATE_POLL_MS);
+        if (!build || revision !== buildRevision) return;
+        result = await api("estimate/" + started.estimate_id);
+        if (Date.now() > deadline) throw new Error("imagery index refresh timed out");
+      } while (result.status === "pending");
+      if (!build || revision !== buildRevision) return;
+      if (result.status !== "ready") throw new Error(result.error || "imagery index refresh failed");
+      await estimateBuild();
+    } catch (error) {
+      if (build && revision === buildRevision) {
+        $("estimate").innerHTML = `<div class="block">Imagery index refresh failed: ${esc(error.message)}.</div>`;
+        $("imagery-preview-refresh").disabled = false;
+      }
+    }
+  }
 
   function openBuild(ids, { combine }) {
     if (!writable || !ids.length) return;
-    build = { ids, combine: !!combine };
+    build = { ids, combine: !!combine, imageryChoices: {} };
+    $("imagery-options").hidden = target !== "local";
     $("build-title").textContent = combine
       ? `Combine ${tree.leaves.get(ids[0]).name}: build it whole`
       : `Build ${ids.length} selected area(s) · ${TARGETS[target].label}`;
@@ -1378,6 +1412,13 @@
   }));
   $("build-cancel").addEventListener("click", () => { buildRevision++; $("build-dialog").close(); });
   $("build-dialog").addEventListener("close", () => { buildRevision++; build = null; });
+  $("imagery-preview-refresh").addEventListener("click", refreshImageryIndex);
+  $("estimate").addEventListener("change", (event) => {
+    const input = event.target.closest("select[data-imagery-region]");
+    if (!input || !build) return;
+    build.imageryChoices[input.dataset.imageryRegion] = Number(input.value);
+    estimateBuild();
+  });
 
   // Batches for /api/estimate: whole regions by up to max_regions, and one
   // grid selection per locality (new grids list every cell).
@@ -1414,8 +1455,12 @@
     const revision = ++buildRevision;
     const current = () => revision === buildRevision && build;
     $("start-btn").disabled = true;
+    selectedImageryAssets = [];
+    applyLayers();
+    $("imagery-preview-refresh").disabled = true;
     $("build-foot-note").textContent = "";
     const options = { target, include_imagery: $("opt-imagery").checked, paid_referee: $("opt-referee").checked };
+    if (target === "local" && options.include_imagery) options.imagery_choices = build.imageryChoices;
     const progress = (text) => { $("estimate").innerHTML = `<p class="muted">${esc(text)}</p><progress></progress>`; };
     progress("Planning…");
     const estimates = [];
@@ -1445,7 +1490,10 @@
     }
     if (!current()) return;
     build.estimates = estimates;
+    selectedImageryAssets = estimates.flatMap(est => est.raster_plan?.batch?.assets || []);
+    applyLayers();
     renderEstimates(estimates, errors);
+    $("imagery-preview-refresh").disabled = !estimates.length;
   }
 
   function rowLabel(r) {
@@ -1462,6 +1510,11 @@
     const blocked = estimates.length - ok.length;
     const rows = estimates.flatMap((est) => est.regions.map((r) => `<tr>
         <td>${r.grid_size ? esc(rowLabel(r)) : rowLabel(r)}${r.elevation === "synthetic" ? " <span class='warn'>(no LiDAR)</span>" : ""}
+          ${r.imagery_selected ? `<label>Build imagery
+            <select data-imagery-region="${esc(r.region)}" aria-label="Build imagery for ${esc(r.region)}">
+              ${(r.imagery_candidates || []).map((s, i) => `<option value="${s.imagery_id}" ${s.imagery_id === r.imagery_selected.imagery_id ? "selected" : ""}>${i === 0 ? "Recommended: " : ""}${esc(s.name)} · ${s.resolution_m} m · ${esc(s.flown_to)} · ${Math.round(s.coverage_fraction * 100)}% coverage</option>`).join("")}
+            </select></label>
+            <div class="muted">Selected imagery is pinned to this estimate and acquired through the native tile cache; processed at 0.1 m. Reference imagery remains a separate input when needed.</div>` : ""}
           ${(r.raster_sources || []).map((s) => `<div class="muted">${esc(s.role)}: ${esc(s.state === "mapped" ? "native tile cache" : s.state === "exports_fallback" ? "LINZ export" : s.state)}${s.layer_id ? ` (LINZ layer ${esc(s.layer_id)})` : ""}</div>`).join("")}
           ${(r.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
           ${(r.blockers || []).map((w) => `<div class="block">${esc(w)}</div>`).join("")}
@@ -1614,6 +1667,14 @@
     const lanes = res.lanes || {};
     queueJobs = Object.values(lanes).flatMap((lane) => lane.jobs || []);
     recentQueueJobs = Object.values(lanes).flatMap((lane) => lane.recent || []);
+    const localJobs = [...queueJobs, ...recentQueueJobs].filter(job => (job.target || "local") === "local");
+    const rasterSignature = JSON.stringify(localJobs.map(job => [job.job_id, job.status]));
+    if (target === "local" && (rasterSignature !== rasterQueueSignature ||
+        (localJobs.some(job => job.status === "running") && Date.now() - rasterLayersCheckedAt > 15000))) {
+      rasterQueueSignature = rasterSignature;
+      rasterLayersCheckedAt = Date.now();
+      loadLayers();
+    }
     const total = Object.values(lanes).reduce((n, l) => n + l.jobs.length, 0);
     $("queue-count").textContent = total ? "(" + total + ")" : "";
     if (!queueInitialized) {
@@ -1744,6 +1805,7 @@
       loadStatus();
       loadJobs();
       loadQueue();
+      loadLayers();
     });
   }
 

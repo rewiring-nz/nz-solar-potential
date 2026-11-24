@@ -56,7 +56,46 @@
       };
     }).filter((layer) => layer.data.features.length);
   }
-  const api = { renderAssetList, mapLayers };
+  function imageryMapLayers(assets, catalogue) {
+    const downloaded = new Set((catalogue?.layers || [])
+      .filter(layer => layer.id === "source-native-imagery")
+      .flatMap(layer => layer.data.features)
+      .map(feature => JSON.stringify([feature.properties.collection_id,
+        feature.properties.name, feature.properties.asset_key])));
+    const unique = new Map();
+    for (const asset of assets || []) {
+      const uses = (asset.uses || []).filter(use => ["imagery", "reference_imagery"].includes(use.role));
+      if (!uses.length) continue;
+      const key = JSON.stringify([asset.collection_id, asset.item_id, asset.asset_key]);
+      const existing = unique.get(key);
+      unique.set(key, { ...asset, uses: [...(existing?.uses || []), ...uses] });
+    }
+    return [
+      { key: "missing", label: "Selected imagery: awaiting download", colour: "#f9a8d4" },
+      { key: "downloaded", label: "Selected imagery: downloaded locally", colour: "#db2777" },
+    ].map(group => ({
+      id: "imagery-selected-" + group.key, label: group.label, group: "source",
+      representation: "footprint", colour: group.colour, defaultVisible: true,
+      description: "Imagery tiles pinned to the latest build estimate in this page, including reference photos. " +
+        "Pink rectangles show tile extents, not photos or valid-pixel coverage. " +
+        "Downloaded status uses local headers when available, not a new integrity check.",
+      data: { type: "FeatureCollection", features: [...unique.entries()]
+        .filter(([key, asset]) => (catalogue ? downloaded.has(key) : asset.cache_state === "cached")
+          === (group.key === "downloaded"))
+        .map(([, asset]) => {
+          const [w, s, e, n] = asset.bbox_wgs84;
+          return { type: "Feature", geometry: { type: "Polygon",
+            coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+          properties: { name: asset.item_id, layer_id: "imagery-selected-" + group.key,
+            collection_id: asset.collection_id, asset_key: asset.asset_key,
+            status: group.key, size_bytes: asset.size_bytes,
+            regions: [...new Set(asset.uses.map(use => use.region))].join(", "),
+            roles: [...new Set(asset.uses.map(use => use.role))].join(", "),
+            imagery_layers: [...new Set(asset.uses.map(use => use.layer_id))].join(", ") } };
+        }) },
+    })).filter(layer => layer.data.features.length);
+  }
+  const api = { renderAssetList, mapLayers, imageryMapLayers };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.PipelineRasterPreview = api;
 })(globalThis);

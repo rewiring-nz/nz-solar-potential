@@ -39,4 +39,26 @@ assert.equal(layers[2].data.features[2].properties.state, "recovery_required");
 assert.equal(layers[0].group, "source");
 assert.equal(layers[0].data.features[0].geometry.coordinates[0][0][0], 170);
 assert.equal(MapLayers.validCatalogue({ version: 1, layers }).layers.length, 3);
+const photo = { ...assets[0], bbox_wgs84: [170, -45, 171, -44],
+  uses: [{ region: "one", role: "imagery", layer_id: 123118 }] };
+const reference = { ...photo, item_id: "reference", cache_state: "missing",
+  uses: [{ region: "one", role: "reference_imagery", layer_id: 999 }] };
+const dsm = { ...photo, item_id: "dsm", uses: [{ region: "one", role: "dsm", layer_id: 122082 }] };
+const selected = R.imageryMapLayers([photo, reference, dsm, photo]);
+assert.equal(selected.length, 2);
+assert.equal(selected[0].colour, "#f9a8d4");
+assert.equal(selected[1].colour, "#db2777");
+assert.equal(selected[0].data.features.length, 1);
+assert.equal(selected[1].data.features.length, 1);
+assert.equal(selected[0].data.features[0].properties.roles, "reference_imagery");
+assert.equal(selected[1].data.features[0].properties.imagery_layers, "123118");
+assert.equal(MapLayers.validCatalogue({ version: 1, layers: selected }).layers.length, 2);
+const local = { layers: [{ id: "source-native-imagery", data: { features: [
+  { properties: { collection_id: reference.collection_id, name: "reference", asset_key: "visual" } },
+] } }] };
+const refreshed = R.imageryMapLayers([photo, reference], local);
+assert.equal(refreshed[0].data.features[0].properties.name, photo.item_id);
+assert.equal(refreshed[1].data.features[0].properties.name, reference.item_id);
+assert.equal(R.imageryMapLayers([dsm]).length, 0);
+assert.equal(R.imageryMapLayers([]).length, 0);
 console.log("pipeline raster preview tests passed");

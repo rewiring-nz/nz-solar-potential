@@ -456,12 +456,14 @@ figure for the same thing. Code enforces this:
   builds and stages compare tracked inputs before and after execution.
 - `src/raster_prepare.py` can prepare declared batch-plan footprints from
   their selected assets with verified provenance, including a guarded merge
-  requiring aligned grids, nodata and no per-dataset masks. Non-EPSG:2193
+  requiring aligned grids and nodata or alpha without independent per-dataset
+  masks. Non-EPSG:2193
   tiles can be reprojected to an explicit output resolution when they have
   common nodata and no alpha or per-dataset mask; the native cache is unchanged.
   It does not run
   exports fallbacks or reserve disk for a complete build. Its experimental
-  planned preparation requires item bounding boxes to cover each footprint;
+  planned preparation requires item bounding boxes to cover each footprint,
+  except explicitly pinned partial imagery with invalid uncovered pixels;
   that does not prove valid-data coverage. It checks declared native CRS
   against the tile header, records the header CRS, and requires at least one
   actual header extent to overlap the requested footprint. Planned reuse
@@ -485,6 +487,21 @@ figure for the same thing. Code enforces this:
   elsewhere `SOLAR_PREFER_NATIONAL_DSM=1` opts in. A pinned raster override
   takes precedence and synthetic areas are unchanged.
   Published capture geometry is advisory and does not prove valid-pixel coverage.
+- Local web imagery choices are executable, not advisory:
+  `src/imagery_survey_index.py` caches LINZ layer 95677 indefinitely and ranks
+  full coverage, finer resolution, then recency; manual refresh is explicit.
+  `src/imagery_tiles.py` caches per-survey indexes and filters public RGB
+  EPSG:2193 STAC tiles. The estimate pins imagery/index IDs and the native raster
+  plan; reference imagery remains separate. Regional photos use an aligned
+  0.1 m RGBA grid without altering native cache payloads. Under queue admission,
+  `src/fetch_regions.py` preserves replaced or legacy indexed photos in each
+  area's `previous_imagery/`; corrupt provenance blocks replacement.
+- `src/map_layer_catalog.py` separates downloaded public LINZ RGB imagery
+  tiles into a default-visible dark-pink overlay and excludes preserved photos
+  from current regional imagery. `pipeline_raster_preview.js` shows the latest
+  page estimate's selected imagery in light/bright pink for awaiting/downloaded
+  tiles. The panel refreshes local headers on queue transitions and about every
+  15 seconds while a local job runs; header presence is not integrity validation.
 - `src/raster_execution.py` executes an explicit plan inside a cooperative
   reservation held by its caller, with exports delegated to a callback.
   The live fetcher uses its mapped-input preparation under the queue reservation.

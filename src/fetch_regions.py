@@ -281,6 +281,15 @@ def prepare_mapped_fetch(approved, bounds, name, verify_admission):
                     for item in batch["inputs"]}
     choices = processing_for_snapshot(bounds, approved, name)
     processing = {(name, role): RasterProcessing(**options) for role, options in choices.items()}
+    from src.raster_prepare import preserve_previous_imagery
+    for item in batch["inputs"]:
+        role = item["role"]
+        if role in ("imagery", "reference_imagery") and (item.get("source") or {}).get("index_layer"):
+            verify_admission()
+            options = processing[(name, role)]
+            preserve_previous_imagery(
+                batch, name, role, destinations[(name, role)],
+                res=options.resolution, resampling=options.resampling)
     return prepare_admitted_mapped_inputs(batch, cache, destinations, processing, verify_admission)
 
 

@@ -29,6 +29,7 @@ KEYS = (
     "dsm_layer", "raster_dsm_layer", "dem_layer", "imagery_layer", "lidar_tile_index_layer",
     "pointcloud_bulk_url", "pointcloud_tile_year", "reference_imagery_layer",
     "elevation", "dsm_s3", "imagery_s3", "reference_imagery_s3",
+    "imagery_index_layer", "imagery_partial",
 )
 _CACHE_LOCK = threading.RLock()
 
@@ -99,7 +100,8 @@ def _layer_detail(layer: dict, catalog: dict, path: Path, get_json, now: float) 
     return metadata
 
 
-def _pinned_layer(layer_id, bbox, predicate, catalog, path, get_json, now) -> dict | None:
+def _pinned_layer(layer_id, bbox, predicate, catalog, path, get_json, now, *,
+                  allow_partial: bool = False) -> dict | None:
     if layer_id is None:
         return None
     if isinstance(layer_id, bool):
@@ -112,7 +114,9 @@ def _pinned_layer(layer_id, bbox, predicate, catalog, path, get_json, now) -> di
     metadata = _layer_detail(layer, catalog, path, get_json, now)
     title = str(metadata.get("title") or "")
     bounds = _extent_bounds(metadata)
-    if not predicate(title) or not _covers(bounds, bbox):
+    intersects = (bounds is not None and bounds[0] < bbox[2] and bounds[2] > bbox[0]
+                  and bounds[1] < bbox[3] and bounds[3] > bbox[1])
+    if not predicate(title) or not (_covers(bounds, bbox) or (allow_partial and intersects)):
         raise LookupError(f"pinned LINZ layer {layer_id} no longer covers this area")
     return {"id": layer_id, "title": title, "bounds": bounds, "metadata": metadata}
 
@@ -284,6 +288,13 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
         overrides = {}
     if not isinstance(overrides, dict):
         raise LookupError("pinned source layers must be an object")
+    partial = overrides.get("imagery_partial", False)
+    if partial is None:
+        partial = False
+    if type(partial) is not bool:
+        raise LookupError("pinned imagery partial-coverage choice must be boolean")
+    if partial and not overrides.get("imagery_index_layer"):
+        raise LookupError("partial imagery requires an indexed source")
     if prefer_national is None:
         preference = os.environ.get("SOLAR_PREFER_NATIONAL_DSM", "0")
         if preference not in ("0", "1"):
@@ -318,7 +329,7 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
             imagery = _pinned_layer(
                 overrides["imagery_layer"], bbox,
                 lambda title: "aerial" in title.casefold() and "photo" in title.casefold(),
-                catalog, path, get_json, now,
+                catalog, path, get_json, now, allow_partial=partial,
             )
             reference = _pinned_layer(
                 overrides.get("reference_imagery_layer"), bbox,
@@ -353,6 +364,8 @@ def survey_for(bbox, name=None, *, data_dir: Path = DATA_DIR,
                                  str(max(years)) if years else None),
         "imagery_layer": imagery["id"] if imagery else None,
         "reference_imagery_layer": reference["id"] if reference else None,
+        "imagery_index_layer": overrides.get("imagery_index_layer"),
+        "imagery_partial": partial,
     })
     if dsm and not out["pointcloud_bulk_url"]:
         out["warning"] = (

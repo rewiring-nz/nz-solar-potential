@@ -1,5 +1,25 @@
 # Backlog
 
+Local map imagery now has separate pink legend overlays for selected tiles
+awaiting transfer, selected tiles downloaded locally, and all downloaded native
+imagery tiles. Regional imagery footprints also use pink; preserved prior
+photos are excluded. Queue transitions and periodic running-job checks refresh
+local headers automatically. Selection is the latest estimate in the page;
+downloaded extents persist across reloads through the disk catalogue. Header
+presence does not assert integrity, freshness or valid-pixel coverage.
+
+Local web imagery now uses a single-select per-area survey choice, preselecting
+full coverage, finer resolution, then more recent capture. The choice is pinned
+through estimates, jobs and native tile acquisition; it is not an advisory
+preview. LINZ's national survey index (95677) and spatial tile indexes are
+cached indefinitely, with explicit national index refresh. Public RGB S3 tiles
+share the DSM cache, and regional photos use an aligned 0.1 m RGBA grid.
+Reference imagery remains separate; partial coverage warns and keeps uncovered
+pixels invalid. Replaced or legacy indexed imagery is preserved under
+`previous_imagery/`. Offline selection/pinning/acquisition tests and a tiny real
+Christchurch tile download/crop validate this slice of #63; no full solar build
+or performance benchmark is claimed.
+
 The local map shows cached native raster headers by default and automatically
 inspects national DSM tiles by viewport against a refreshable metadata index.
 The overlay is metadata-only, bounded and does not select build sources or
@@ -8,7 +28,7 @@ reserve tiles; it is not proof of valid-pixel coverage.
 Local web builds now prefer the experimental national DSM native cache, with
 automatic disk estimates and one area per submission.
 The queue releases stopped mapped jobs and recovers stopped stale raster locks;
-existing unprovenanced mosaics are preserved and block the new path.
+existing unprovenanced DSM mosaics are preserved and block the new path.
 National DSM web estimates now obtain missing STAC tile sizes from HTTP
 headers before admission, preventing a known-size tile from overrunning the
 default unknown-size transfer allowance.

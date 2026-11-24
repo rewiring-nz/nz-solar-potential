@@ -968,6 +968,33 @@ def test_estimate_store_lifecycle_and_blockers():
             assert exc.status == 404
 
 
+def test_imagery_preview_uses_cached_estimates_and_optional_refresh():
+    from unittest.mock import patch
+
+    region = "queenstown-lakes-district/queenstown/frankton"
+    size = {"buildings": 10, "bbox": [168.6, -45.05, 168.61, -45.04], "bbox_km2": 0.8}
+    survey = lambda bbox, name: {"name": "t", "elevation": "lidar"}
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
+        store = E.EstimateStore(Path(tmp), lookup=lambda _: size, survey_fn=survey,
+                                api_key_fn=lambda: KEY, disk_free=10**12)
+        estimate_id = store.start([region], background=False)
+        calls = []
+
+        def fake_geo(args, env=None, timeout=None, input_text=None):
+            calls.append({"args": args, "env": env, "timeout": timeout,
+                          "input": json.loads(input_text)})
+            return {"regions": [{"region": region, "surveys": [{"imagery_id": 1}]}]}
+
+        with patch("tools.pipeline_webui.geo_worker.run", side_effect=fake_geo):
+            preview = store.start_imagery_preview([estimate_id], refresh=True, background=False)
+            result = store.get(preview)
+        assert result["status"] == "ready" and result["kind"] == "imagery-preview"
+        assert calls and calls[0]["args"] == ["imagery-survey-preview"]
+        assert calls[0]["env"] == {"LINZ_API_KEY": KEY}
+        assert calls[0]["input"]["refresh"] is True
+        assert calls[0]["input"]["regions"] == [{"region": region, "bbox": size["bbox"]}]
+
+
 PROJ_PACKAGES = ("pyproj", "rasterio", "fiona", "osgeo", "pyogrio", "geopandas")
 
 
@@ -1086,6 +1113,7 @@ if __name__ == "__main__":
                  test_web_default_uses_head_size_for_national_tile_admission_estimate,
                  test_calibration_uses_finished_runs_only,
                  test_estimate_store_lifecycle_and_blockers,
+                 test_imagery_preview_uses_cached_estimates_and_optional_refresh,
                  test_server_process_never_loads_proj,
                  test_geo_worker_keeps_the_key_out_of_arguments_and_errors,
                  test_geo_worker_uses_spawn_safe_launch_arguments,

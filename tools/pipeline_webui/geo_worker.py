@@ -162,6 +162,85 @@ def _national_dsm_view(request: dict) -> dict:
     return result
 
 
+def _imagery_survey_preview(request: dict) -> dict:
+    """Compare survey footprints with estimated area bounds in a child process."""
+    from src.imagery_survey_index import cached_index, ranked_for_bounds
+    from src.raster_acquisition_plan import _bounds
+    frame = cached_index(Path(request["data"]), os.environ.get("LINZ_API_KEY", ""),
+                         refresh=request["refresh"])
+    result = []
+    for row in request["regions"]:
+        bounds = _bounds(row["bbox"], "estimated area")
+        matches = ranked_for_bounds(frame, [bounds])
+        result.append({"region": row["region"], "surveys": [{
+            key: survey[key] for key in ("name", "imagery_id", "resolution_m",
+                                          "flown_to", "coverage_fraction", "fully_covered")
+        } for survey in matches]})
+    return {"regions": result}
+
+
+def _select_native_imagery(request: dict, rows: dict, mappings: list) -> list[dict]:
+    from src.imagery_survey_index import cached_index, collection_url, ranked_for_bounds
+    from src.raster_acquisition_plan import _read_json
+    from src.raster_source_selection import LayerMapping
+    from src.fetch_regions import acquisition_footprints
+
+    data = Path(request["data"])
+    frame = cached_index(data, os.environ.get("LINZ_API_KEY", ""))
+    choices = request.get("imagery_choices") or {}
+    results = []
+    collections = {}
+    for region, row in rows.items():
+        footprints = acquisition_footprints(region, row["bbox"], data / "regions")
+        candidates = ranked_for_bounds(frame, footprints)
+        # A locality preference also applies to the grid cells generated from it.
+        chosen = choices.get(region)
+        if chosen is None:
+            parents = [name for name in choices if region.startswith(name + "/")
+                       or region.startswith(name + "@")]
+            if parents:
+                chosen = choices[max(parents, key=len)]
+        selected = next((item for item in candidates if item["imagery_id"] == chosen), None) \
+            if chosen is not None else (candidates[0] if candidates else None)
+        if chosen is not None and selected is None:
+            raise LookupError(f"Selected imagery does not intersect {region}; choose another survey")
+        if selected is None:
+            raise LookupError(f"No indexed public RGB imagery intersects {region}")
+        layers = row["source_layers"]
+        layers.update(imagery_layer=selected["imagery_id"],
+                      imagery_index_layer=selected["index_id"],
+                      imagery_partial=not selected["fully_covered"])
+        for role, layer in (("imagery", selected["imagery_id"]),
+                            ("reference_imagery", layers.get("reference_imagery_layer"))):
+            if layer is None or (role == "reference_imagery" and layer == selected["imagery_id"]):
+                continue
+            matches = frame.loc[frame.imagery_id == layer]
+            if len(matches) != 1:
+                if role == "imagery":
+                    raise LookupError("Selected imagery survey is ambiguous in the national index")
+                continue
+            record = matches.iloc[0]
+            try:
+                url = collection_url(record.s3)
+                index = int(record.index_id)
+            except (ValueError, TypeError, OverflowError):
+                if role == "imagery":
+                    raise LookupError("Selected imagery survey has no supported public tile source") from None
+                continue
+            if url not in collections:
+                collections[url] = _read_json(url)
+            collection = collections[url]
+            identifier = collection.get("id")
+            if not isinstance(identifier, str) or not identifier:
+                raise LookupError("Selected imagery collection has no STAC identity")
+            evidence = f"LINZ survey index 95677 imagery_id={layer}; tile index {index}; public S3 field"
+            mappings[:] = [item for item in mappings if (item.layer_id, item.role) != (layer, role)]
+            mappings.append(LayerMapping(layer, role, url, identifier, "visual", evidence, index))
+        results.append({"region": region, "source_layers": layers,
+                        "imagery_selected": selected, "imagery_candidates": candidates})
+    return results
+
+
 def _raster_plan(request: dict) -> dict:
     from src.fetch_regions import acquisition_footprints
     from src.raster_region_plan import plan_regions
@@ -182,6 +261,9 @@ def _raster_plan(request: dict) -> dict:
         if region in rows:
             raise ValueError(f"Duplicate raster plan region: {region}")
         rows[region] = row
+    imagery_selections = []
+    if request.get("native_imagery") is True and request["include_imagery"]:
+        imagery_selections = _select_native_imagery(request, rows, mappings)
     try:
         result = plan_regions(
             list(rows), mappings=mappings, include_imagery=request["include_imagery"],
@@ -197,20 +279,22 @@ def _raster_plan(request: dict) -> dict:
     except ValueError as exc:
         raise LookupError("Raster plan is invalid; check the configured mapping, collection "
                           "metadata and regional footprints.") from exc
-    if request.get("national_default") is True and result["batch"] is not None:
+    if (request.get("national_default") is True or imagery_selections) and result["batch"] is not None:
         from src.raster_acquisition_plan import NATIONAL_DSM_COLLECTION, resolve_asset_sizes
         batch = result["batch"]
         selected = [asset for asset in batch["assets"]
-                    if asset.get("collection_url") == NATIONAL_DSM_COLLECTION]
+                    if asset.get("collection_url") == NATIONAL_DSM_COLLECTION
+                    or any(use["role"] in ("imagery", "reference_imagery")
+                           for use in asset.get("uses", []))]
         try:
             resolve_asset_sizes(selected)
         except (OSError, ValueError) as exc:
-            raise LookupError("Cannot determine national DSM tile transfer sizes; "
+            raise LookupError("Cannot determine native raster tile transfer sizes; "
                               "check source availability and try estimating again.") from exc
         batch["known_asset_bytes"] = sum(asset["size_bytes"] or 0 for asset in batch["assets"])
         batch["unknown_size_count"] = sum(asset["size_bytes"] is None for asset in batch["assets"])
     policy_path = os.environ.get("SOLAR_RASTER_CACHE_POLICY")
-    if policy_path or request.get("national_default") is True:
+    if policy_path or request.get("national_default") is True or imagery_selections:
         from src.raster_cache import RasterCacheError
         from src.raster_cache_config import display_cache_config, load_cache_config
         try:
@@ -226,6 +310,8 @@ def _raster_plan(request: dict) -> dict:
             }
         except (ValueError, OSError, RasterCacheError) as exc:
             raise LookupError(f"Raster cache inspection failed: {exc}") from exc
+    if imagery_selections:
+        result["imagery_selections"] = imagery_selections
     return result
 
 
@@ -279,6 +365,8 @@ def main(argv: list[str]) -> int:
             out = _national_dsm_preview(json.load(sys.stdin))
         elif argv == ["national-dsm-view"]:
             out = _national_dsm_view(json.load(sys.stdin))
+        elif argv == ["imagery-survey-preview"]:
+            out = _imagery_survey_preview(json.load(sys.stdin))
         else:
             out = {"error": "usage: geo_worker km2 <bbox-json> | size <region> | "
                             "selection <request-json> <data-dir> | catalog <data-dir> | "
@@ -287,7 +375,8 @@ def main(argv: list[str]) -> int:
         out = {"error": str(exc)}
     except Exception as exc:
         description = ("national DSM metadata or cache inspection"
-                       if argv in (["national-dsm-preview"], ["national-dsm-view"]) else "area lookup")
+                       if argv in (["national-dsm-preview"], ["national-dsm-view"]) else
+                       "imagery survey index" if argv == ["imagery-survey-preview"] else "area lookup")
         out = {"error": f"{description} failed ({type(exc).__name__})"}
     print(json.dumps(out))
     return 1 if "error" in out else 0

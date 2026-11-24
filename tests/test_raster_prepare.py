@@ -26,7 +26,7 @@ from src.raster_execution import (
 )
 from src.raster_prepare import (
     _planned_assets, ensure_planned_region, prepare_cached_mosaic, prepare_planned_mosaic,
-    prepare_planned_region, verify_planned_region,
+    prepare_planned_region, verify_planned_region, preserve_previous_imagery,
 )
 from src.raster_provenance import fingerprint, tracked_raster_inputs, verify_mosaic
 from src.raster_region_plan import plan_regions
@@ -79,6 +79,99 @@ class RasterPrepareTests(unittest.TestCase):
             "checksum": "1220" + hashlib.sha256(payload).hexdigest(),
             "bbox_wgs84": self.bounds, "revision": "1",
         }
+
+    def rgba_plan(self, footprints=None, partial=False):
+        tile = self.root / "rgba.tif"
+        from rasterio.enums import ColorInterp
+        with rasterio.open(tile, "w", driver="GTiff", count=4, width=20, height=8,
+                           dtype="uint8", crs=2193,
+                           transform=from_origin(1200000, 5000000, 1, 1)) as source:
+            data = np.full((4, 8, 20), 100, dtype="uint8")
+            data[3] = 255
+            data[:3, 3, 2] = 0  # Black is valid when the alpha band is nonzero.
+            data[3, 4, 2] = 0
+            source.write(data)
+            source.colorinterp = (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha)
+            bounds = list(transform_bounds(2193, 4326, *source.bounds, densify_pts=21))
+        payload = tile.read_bytes()
+        asset = {**self.asset, "item_id": "rgba", "url": tile.as_uri(),
+                 "size_bytes": len(payload), "checksum": "1220" + hashlib.sha256(payload).hexdigest(),
+                 "bbox_wgs84": bounds,
+                 "uses": [{"region": "area", "role": "imagery", "layer_id": 202}]}
+        return {"inputs": [{"region": "area", "role": "imagery", "layer_id": 202,
+                            "footprints_wgs84": footprints or [bounds],
+                            "allow_partial": partial,
+                            "source": {"collection_url": asset["collection_url"],
+                                       "asset_key": asset["asset_key"],
+                                       "expected_collection_id": asset["collection_id"],
+                                       "index_layer": 203}}],
+                "assets": [asset]}
+
+    def test_rgba_imagery_preserves_alpha_black_pixels_and_provenance(self):
+        plan = self.rgba_plan()
+        output = self.root / "rgba-mosaic.tif"
+        prepare_planned_region(self.cache, plan, "area", "imagery", output, res=1, resampling="nearest")
+        manifest = verify_planned_region(plan, "area", "imagery", output, res=1, resampling="nearest")
+        self.assertEqual(manifest["layer_id"], 202)
+        with rasterio.open(output) as raster:
+            self.assertEqual(raster.count, 4)
+            values, mask = raster.read(), raster.dataset_mask()
+            self.assertTrue(np.any((values[:3] == 0).all(axis=0) & (mask == 255)))
+            self.assertTrue(np.any(mask == 0))
+
+    def test_disjoint_rgba_imagery_preserves_transparent_gap(self):
+        footprints = [list(transform_bounds(2193, 4326, 1200001, 4999993, 1200005, 4999999)),
+                      list(transform_bounds(2193, 4326, 1200015, 4999993, 1200019, 4999999))]
+        plan = self.rgba_plan(footprints)
+        output = self.root / "rgba-parts.tif"
+        prepare_planned_region(self.cache, plan, "area", "imagery", output, res=1)
+        verify_planned_region(plan, "area", "imagery", output, res=1)
+        with rasterio.open(output) as raster:
+            self.assertEqual(raster.count, 4)
+            mask = raster.dataset_mask()
+            self.assertTrue(np.any(mask == 255))
+            self.assertTrue(np.all(mask[:, mask.shape[1] // 2] == 0))
+
+    def test_partial_rgba_preparation_keeps_uncovered_pixels_invalid(self):
+        footprint = list(transform_bounds(2193, 4326, 1200010, 4999993, 1200030, 4999999))
+        plan = self.rgba_plan([footprint], partial=True)
+        output = self.root / "rgba-partial.tif"
+        prepare_planned_region(self.cache, plan, "area", "imagery", output, res=1)
+        with rasterio.open(output) as raster:
+            self.assertTrue(np.any(raster.dataset_mask() == 255))
+            self.assertTrue(np.all(raster.dataset_mask()[:, -5:] == 0))
+        plan["inputs"][0]["allow_partial"] = False
+        with self.assertRaisesRegex(ValueError, "do not cover"):
+            _planned_assets(plan, "area", "imagery", footprint)
+
+    def test_partial_disjoint_imagery_keeps_completely_uncovered_footprint(self):
+        footprints = [list(transform_bounds(2193, 4326, 1200001, 4999993, 1200005, 4999999)),
+                      list(transform_bounds(2193, 4326, 1200030, 4999993, 1200035, 4999999))]
+        plan = self.rgba_plan(footprints, partial=True)
+        output = self.root / "rgba-uncovered.tif"
+        prepare_planned_region(self.cache, plan, "area", "imagery", output, res=1)
+        manifest = verify_planned_region(plan, "area", "imagery", output, res=1)
+        self.assertEqual(len(manifest["footprints_wgs84"]), 2)
+        with rasterio.open(output) as raster:
+            self.assertGreaterEqual(raster.bounds.right, 1200035)
+            self.assertTrue(np.any(raster.dataset_mask() == 255))
+            self.assertTrue(np.all(raster.dataset_mask()[:, -5:] == 0))
+
+    def test_selected_imagery_preserves_legacy_mosaic_before_replacement(self):
+        plan = self.rgba_plan()
+        output = self.root / "imagery_mosaic.tif"
+        output.write_bytes(b"legacy imagery")
+        preserve_previous_imagery(plan, "area", "imagery", output, res=1, resampling="average")
+        self.assertFalse(output.exists())
+        self.assertEqual([path.read_bytes() for path in
+                          (self.root / "previous_imagery").glob("*/imagery_mosaic.tif")],
+                         [b"legacy imagery"])
+        ensure_planned_region(self.cache, plan, "area", "imagery", output, res=1)
+        preserve_previous_imagery(plan, "area", "imagery", output, res=1, resampling="average")
+        self.assertTrue(output.exists())
+        output.write_bytes(b"corrupted")
+        with self.assertRaises(ValueError):
+            preserve_previous_imagery(plan, "area", "imagery", output, res=1, resampling="average")
 
     def test_local_output_matches_existing_gdal_grid_values_and_mask(self):
         for resolution in (None, 16):

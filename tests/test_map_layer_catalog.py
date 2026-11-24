@@ -35,7 +35,7 @@ def _assert_contract(catalogue: dict) -> None:
         assert layer["representation"] in {"footprint", "vector", "vector-tiles", "raster-tiles"}
         assert layer["colour"].startswith("#")
         assert len(layer["bounds"]) == 4
-        assert layer["defaultVisible"] is (layer["id"] == "source-native-raster")
+        assert layer["defaultVisible"] is (layer["id"] in {"source-native-raster", "source-native-imagery"})
         endpoints = sum(key in layer for key in ("data", "url", "tiles"))
         assert endpoints == 1
         if "data" in layer:
@@ -424,6 +424,49 @@ def test_native_raster_catalogue_shows_only_managed_readable_tiles():
         assert any("replacement requires cache recovery" in warning for warning in recovering["warnings"])
 
 
+def test_native_imagery_has_distinct_pink_layer_and_omits_preserved_photos():
+    import hashlib
+    from src.raster_cache import CachePolicy, RasterCache
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        data = root / "data"
+        data.mkdir()
+        source = root / "source.tif"
+        _write_raster(source)
+        payload = source.read_bytes()
+        cache = RasterCache(root / "cache", CachePolicy(100000, 0, 10000))
+        for item, public in (("imagery", True), ("dsm", False)):
+            asset = {
+                "collection_url": "https://example.test/collection.json",
+                "collection_id": item, "item_id": item, "asset_key": "visual",
+                "url": source.as_uri(), "size_bytes": len(payload),
+                "checksum": "1220" + hashlib.sha256(payload).hexdigest(),
+                "revision": "1", "bbox_wgs84": [0, 0, 1, 1],
+            }
+            with cache.lease(asset) as cached_path:
+                key = cached_path.stem
+            metadata = cache.directory / "metadata" / f"{key}.json"
+            record = json.loads(metadata.read_text())
+            bucket = "nz-imagery" if public else "nz-elevation"
+            record["url"] = f"https://{bucket}.s3-ap-southeast-2.amazonaws.com/survey/rgb/2193/tile.tiff"
+            metadata.write_text(json.dumps(record))
+        _write_raster(data / "regions" / "area" / "imagery_mosaic.tif")
+        _write_raster(data / "regions" / "area" / "previous_imagery" / "old" / "imagery_mosaic.tif")
+        catalogue = build_local_catalog(data, raster_cache_dir=cache.directory)
+        _assert_contract(catalogue)
+        layers = {layer["id"]: layer for layer in catalogue["layers"]}
+        photos = layers["source-native-imagery"]
+        assert photos["colour"] == "#be185d"
+        assert photos["defaultVisible"]
+        assert [f["properties"]["collection_id"] for f in photos["data"]["features"]] == ["imagery"]
+        assert [f["properties"]["collection_id"] for f in
+                layers["source-native-raster"]["data"]["features"]] == ["dsm"]
+        assert layers["source-imagery"]["colour"] == photos["colour"]
+        assert len(layers["source-imagery"]["data"]["features"]) == 1
+        assert "previous_imagery" not in json.dumps(catalogue)
+
+
 def _get(url: str) -> tuple[int, dict, dict]:
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
@@ -491,6 +534,7 @@ if __name__ == "__main__":
     test_static_catalog_warns_when_selected_cell_file_is_malformed()
     test_local_catalog_does_not_infer_combined_layers_from_region_summaries()
     test_native_raster_catalogue_shows_only_managed_readable_tiles()
+    test_native_imagery_has_distinct_pink_layer_and_omits_preserved_photos()
     test_preview_server_computes_local_catalog_only_on_its_explicit_route()
     test_publication_keeps_legacy_explorer_redirect_but_not_its_former_app()
     print("map layer catalogue tests passed")

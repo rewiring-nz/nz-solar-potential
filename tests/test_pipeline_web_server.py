@@ -139,6 +139,18 @@ def test_api_end_to_end():
                     time.sleep(0.01)
                 assert preview["status"] == "ready"
                 assert c.request("GET", "/api/estimate/" + started_preview["estimate_id"], token=None)[0] == 403
+            assert c.request("POST", "/api/imagery-preview", preview_body, token=None)[0] == 403
+            with patch("tools.pipeline_webui.geo_worker.run", return_value={"regions": []}):
+                status, started_imagery = c.request("POST", "/api/imagery-preview", preview_body)
+                assert status == 202
+                for _ in range(100):
+                    _, preview = c.request("GET", "/api/estimate/" + started_imagery["estimate_id"])
+                    if preview["status"] != "pending":
+                        break
+                    time.sleep(0.01)
+                assert preview["status"] == "ready" and preview["kind"] == "imagery-preview"
+                assert c.request("POST", "/api/jobs", {"estimate_id": started_imagery["estimate_id"],
+                                                       "target": "local"})[0] == 409
 
             body = {"estimate_id": est["estimate_id"],
                     "include_imagery": est["options"]["include_imagery"],

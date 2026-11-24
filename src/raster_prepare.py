@@ -84,9 +84,10 @@ def _planned_assets(plan: dict, region: str, role: str, footprint: tuple) -> tup
             raise ValueError(f"Planned asset layer does not match {region} {role}")
         if box(*_bounds(asset.get("bbox_wgs84"), "STAC asset footprint")).intersects(region_box):
             assets.append(asset)
-    if not assets:
+    partial = selected.get("allow_partial") is True and role in ("imagery", "reference_imagery")
+    if not assets and not partial:
         raise ValueError(f"No planned raster asset intersects {region} {role} footprint")
-    if not unary_union([box(*asset["bbox_wgs84"]) for asset in assets]).covers(region_box):
+    if not partial and not unary_union([box(*asset["bbox_wgs84"]) for asset in assets]).covers(region_box):
         raise ValueError(f"Planned raster item bounds do not cover {region} {role} footprint")
     return selected, assets
 
@@ -126,7 +127,7 @@ def prepare_planned_region(cache: RasterCache, plan: dict, region: str, role: st
                            resampling: str = "average") -> Path:
     """Prepare all declared footprints, retaining provenance for their union."""
     import rasterio
-    from rasterio.enums import MaskFlags
+    from rasterio.enums import ColorInterp, MaskFlags
     from rasterio.merge import merge
     if not isinstance(plan, dict) or not isinstance(plan.get("inputs"), list):
         raise ValueError("A batch acquisition plan with inputs is required")
@@ -148,6 +149,8 @@ def prepare_planned_region(cache: RasterCache, plan: dict, region: str, role: st
             if key in assets and assets[key] != asset:
                 raise ValueError(f"Conflicting planned raster asset: {key}")
             assets[key] = asset
+    if not assets:
+        raise ValueError(f"No planned raster asset intersects {region} {role}")
     destination = Path(destination)
     sidecar = destination.with_name(destination.name + ".source.json")
     if not destination.parent.is_dir():
@@ -162,6 +165,8 @@ def prepare_planned_region(cache: RasterCache, plan: dict, region: str, role: st
             for index, footprint in enumerate(footprints):
                 part = tmp / f"part{index:04d}.tif"
                 _, part_assets = _planned_assets(plan, region, role, footprint)
+                if not part_assets:
+                    continue
                 _prepare_cached_mosaic(
                     cache, part_assets, footprint, part, res=res, resampling=resampling,
                     provenance={"region": region, "role": role,
@@ -174,8 +179,10 @@ def prepare_planned_region(cache: RasterCache, plan: dict, region: str, role: st
                 manifests.append(verify_mosaic(part, part.with_name(part.name + ".source.json")))
             with rasterio.open(parts[0]) as first:
                 profile = first.profile.copy()
-                if first.nodata is None or any(MaskFlags.per_dataset in flags for flags in first.mask_flag_enums):
-                    raise ValueError("Multi-footprint merge requires nodata without per-dataset masks")
+                if ((first.nodata is None and ColorInterp.alpha not in first.colorinterp)
+                        or any(MaskFlags.per_dataset in flags and MaskFlags.alpha not in flags
+                               for flags in first.mask_flag_enums)):
+                    raise ValueError("Multi-footprint merge requires nodata or alpha without independent per-dataset masks")
                 signature = (first.crs, first.count, first.dtypes, first.nodatavals, first.colorinterp,
                              first.res)
                 origin = first.transform
@@ -186,7 +193,8 @@ def prepare_planned_region(cache: RasterCache, plan: dict, region: str, role: st
                     if (source.crs, source.count, source.dtypes, source.nodatavals,
                             source.colorinterp, source.res) != signature:
                         raise ValueError("Multi-footprint rasters have incompatible profiles")
-                    if any(MaskFlags.per_dataset in flags for flags in source.mask_flag_enums):
+                    if any(MaskFlags.per_dataset in flags and MaskFlags.alpha not in flags
+                           for flags in source.mask_flag_enums):
                         raise ValueError("Multi-footprint merge cannot preserve per-dataset masks")
                     dx = (source.transform.c - origin.c) / origin.a
                     dy = (source.transform.f - origin.f) / origin.e
@@ -195,7 +203,18 @@ def prepare_planned_region(cache: RasterCache, plan: dict, region: str, role: st
                         raise ValueError("Multi-footprint rasters have incompatible grid alignment")
             output = tmp / "merged.tif"
             profile.update(driver="GTiff", tiled=True, compress="deflate", BIGTIFF="IF_SAFER")
-            merge(parts, dst_path=output, dst_kwds=profile)
+            output_bounds = None
+            if selected[0].get("allow_partial") is True:
+                from rasterio.warp import transform_bounds
+                extents = [transform_bounds(4326, 2193, *footprint, densify_pts=21)
+                           for footprint in footprints]
+                output_bounds = (
+                    min(bounds[0] for bounds in extents), min(bounds[1] for bounds in extents),
+                    max(bounds[2] for bounds in extents), max(bounds[3] for bounds in extents))
+            merge(parts, dst_path=output, dst_kwds=profile, bounds=output_bounds,
+                  target_aligned_pixels=output_bounds is not None)
+            with rasterio.open(output, "r+") as result:
+                result.colorinterp = signature[4]
             if output.with_suffix(output.suffix + ".msk").exists():
                 raise ValueError("Merged mosaic has an external mask that cannot be published safely")
             with rasterio.open(output) as result:
@@ -329,6 +348,48 @@ def ensure_planned_region(cache: RasterCache, plan: dict, region: str, role: str
         return destination
     return prepare_planned_region(cache, plan, region, role, destination,
                                   res=res, resampling=resampling)
+
+
+def preserve_previous_imagery(plan: dict, region: str, role: str, destination: Path, *,
+                               res: float | None, resampling: str) -> None:
+    """Keep prior photos before switching a web-selected, indexed imagery input.
+
+    Call only while holding workspace admission. A malformed sidecar or changed
+    output is an integrity failure, not permission to replace it.
+    """
+    if role not in ("imagery", "reference_imagery"):
+        raise ValueError("Only imagery inputs may be preserved for source replacement")
+    destination = Path(destination)
+    sidecar = destination.with_name(destination.name + ".source.json")
+    if destination.is_symlink() or sidecar.is_symlink():
+        raise ValueError(f"Refusing to replace symlinked imagery: {destination}")
+    if not destination.exists():
+        if sidecar.exists():
+            raise ValueError(f"Imagery provenance has no matching raster: {sidecar}")
+        return
+    if sidecar.exists():
+        verify_mosaic(destination, sidecar)
+        try:
+            verify_planned_region(plan, region, role, destination, res=res, resampling=resampling)
+            return
+        except ValueError as exc:
+            print(f"  Imagery source/grid changed: {exc}")
+    directory = destination.parent / "previous_imagery"
+    directory.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{role}-", dir=directory) as temporary:
+        # Rename the directory only after both files are safely inside it.
+        temporary = Path(temporary)
+        previous = temporary / destination.name
+        destination.rename(previous)
+        try:
+            if sidecar.exists():
+                sidecar.rename(temporary / sidecar.name)
+        except BaseException:
+            previous.rename(destination)
+            raise
+        final = directory / temporary.name.removeprefix(".")
+        temporary.rename(final)
+    print(f"  Preserved previous {role} mosaic in {final}; preparing selected native tiles")
 
 
 def prepare_cached_mosaic(cache: RasterCache, assets: list[dict], footprint: tuple,
@@ -483,7 +544,8 @@ def _prepare_cached_mosaic(cache: RasterCache, assets: list[dict], footprint: tu
                                                   densify_pts=21))
         if not any(extent.intersection(footprint_native).area > 0 for extent in tile_extents):
             raise ValueError("Cached tile headers do not overlap the acquisition footprint")
-        if source_crs.to_epsg() != 2193:
+        imagery_grid = provenance is not None and provenance["role"] in ("imagery", "reference_imagery")
+        if source_crs.to_epsg() != 2193 or (imagery_grid and res is not None):
             x0, y0, x1, y1 = transform_bounds("EPSG:4326", "EPSG:2193", *bounds, densify_pts=21)
         else:
             x0, y0, x1, y1 = s3_rasters._nztm_bounds(bounds)
@@ -493,7 +555,7 @@ def _prepare_cached_mosaic(cache: RasterCache, assets: list[dict], footprint: tu
             vrt = Path(tmp) / "source.vrt"
             output = Path(tmp) / "mosaic.tif"
             s3_rasters._build_vrt([str(path) for path in paths.values()], vrt, reader)
-            if source_crs.to_epsg() != 2193:
+            if source_crs.to_epsg() != 2193 or (imagery_grid and res is not None):
                 if res is None:
                     raise ValueError("Reprojecting cached tiles requires an explicit "
                                      "EPSG:2193 output resolution")

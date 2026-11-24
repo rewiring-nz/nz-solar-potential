@@ -22,6 +22,7 @@ class LayerMapping:
     collection_id: str
     asset_key: str
     evidence: str
+    index_layer: int | None = None
 
 
 def _validate_mappings(mappings: list[LayerMapping]) -> dict[tuple[int, str], LayerMapping]:
@@ -35,6 +36,9 @@ def _validate_mappings(mappings: list[LayerMapping]) -> dict[tuple[int, str], La
             raise ValueError("Mapping layer ID must be a positive integer")
         if mapping.role not in ("dsm", "imagery", "reference_imagery"):
             raise ValueError("Invalid mapping role")
+        if mapping.index_layer is not None and (
+                type(mapping.index_layer) is not int or mapping.index_layer <= 0):
+            raise ValueError("Invalid mapping tile index layer")
         if not all(isinstance(value, str) and value.strip() for value in (
             mapping.collection_url, mapping.collection_id, mapping.asset_key, mapping.evidence
         )):
@@ -62,7 +66,7 @@ def load_layer_mappings(path: Path) -> list[LayerMapping]:
     fields = {"layer_id", "role", "collection_url", "collection_id", "asset_key", "evidence"}
     mappings = []
     for entry in data["mappings"]:
-        if not isinstance(entry, dict) or set(entry) != fields:
+        if not isinstance(entry, dict) or not fields <= set(entry) or set(entry) - fields - {"index_layer"}:
             raise ValueError(f"Invalid raster source mapping entry in {path}")
         mappings.append(LayerMapping(**entry))
     _validate_mappings(mappings)
@@ -84,13 +88,12 @@ def mappings_from_snapshot(snapshot: dict, regions: list[str]) -> list[LayerMapp
         if source is None:
             fallbacks.add(key)
             continue
-        if not isinstance(source, dict) or set(source) != {
-            "collection_url", "expected_collection_id", "asset_key"
-        }:
+        fields = {"collection_url", "expected_collection_id", "asset_key"}
+        if not isinstance(source, dict) or not fields <= set(source) or set(source) - fields - {"index_layer"}:
             raise ValueError("Invalid snapshot raster source")
         mapping = LayerMapping(key[0], key[1], source["collection_url"],
                                source["expected_collection_id"], source["asset_key"],
-                               item.get("mapping_evidence"))
+                               item.get("mapping_evidence"), source.get("index_layer"))
         previous = by_layer.get(key)
         if previous is not None and previous != mapping:
             raise ValueError(f"Conflicting snapshot mappings for layer {key[0]} ({key[1]})")
@@ -156,10 +159,13 @@ def survey_requests(region: str, footprints: list, survey: dict, *,
             statuses.append({"role": role, "state": "exports_fallback", "layer_id": layer_id,
                              "reason": reason})
         else:
-            source = RasterSource(mapping.collection_url, mapping.asset_key, mapping.collection_id)
+            source = RasterSource(mapping.collection_url, mapping.asset_key, mapping.collection_id,
+                                  mapping.index_layer)
             requests.append(RasterRequest(region, role, bounds, source, layer_id,
                                           survey_name=survey_name,
-                                          mapping_evidence=mapping.evidence))
+                                          mapping_evidence=mapping.evidence,
+                                          allow_partial=bool(survey.get("imagery_partial"))
+                                          if role == "imagery" else False))
             statuses.append({"role": role, "state": "mapped", "layer_id": layer_id,
                              "mapping_evidence": mapping.evidence})
     return {"requests": requests, "inputs": statuses, "survey_name": survey.get("name")}

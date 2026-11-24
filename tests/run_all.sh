@@ -109,6 +109,8 @@ run "LERC raster dependencies" $PY tests/test_s3_rasters.py
 run "raster acquisition planning" $PY -m unittest tests.test_raster_acquisition_plan
 run "raster metadata freshness" $PY -m unittest tests.test_raster_freshness
 run "raster source selection" $PY -m unittest tests.test_raster_source_selection
+run "imagery survey index" $PY -m unittest tests.test_imagery_survey_index
+run "indexed native imagery" $PY -m unittest tests.test_imagery_tiles
 run "raster job handoff"   $PY -m unittest tests.test_raster_plan_handoff
 run "raster region planning" $PY -m unittest tests.test_raster_region_plan
 run "raster planning CLI" $PY -m unittest tests.test_raster_plan_cli

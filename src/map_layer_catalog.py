@@ -8,12 +8,14 @@ import re
 import sqlite3
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 _COLOURS = {
     "lidar": "#7c3aed",
     "raster": "#0ea5e9",
     "native_raster": "#d97706",
+    "imagery": "#be185d",
     "outlines": "#64748b",
     "coverage": "#16a34a",
     "buildings": "#f59e0b",
@@ -320,6 +322,8 @@ def _raster_layer(data: Path, warnings: list[str]) -> dict | None:
         for path in regions.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in {".tif", ".tiff"}:
                 continue
+            if "previous_imagery" in path.relative_to(regions).parts:
+                continue
             if path.name in _RASTER_NAMES:
                 region = path.parent.parent.relative_to(regions).as_posix() if path.parent.name == "pack" \
                     else path.parent.relative_to(regions).as_posix()
@@ -371,7 +375,7 @@ def _raster_layer(data: Path, warnings: list[str]) -> dict | None:
         _layer("source-dsm", "DSM rasters", "source", "footprint", dsm_features,
                _COLOURS["raster"], "Raster header extents, not valid-data coverage."),
         _layer("source-imagery", "Aerial imagery rasters", "source", "footprint", imagery_features,
-               _COLOURS["raster"], "Raster header extents, not valid-data coverage."),
+               _COLOURS["imagery"], "Prepared regional photos. Raster header extents, not valid-data coverage."),
         _layer("source-terrain-dem", "Terrain DEM rasters", "source", "footprint", terrain_features,
                _COLOURS["raster"], "Raster header extents, not valid-data coverage."),
     ):
@@ -380,7 +384,7 @@ def _raster_layer(data: Path, warnings: list[str]) -> dict | None:
     return result
 
 
-def _native_raster_layer(directory: Path, data: Path, warnings: list[str]) -> dict | None:
+def _native_raster_layers(directory: Path, data: Path, warnings: list[str]) -> list[dict]:
     import fcntl
     import rasterio
 
@@ -388,8 +392,8 @@ def _native_raster_layer(directory: Path, data: Path, warnings: list[str]) -> di
     assets = directory / "assets"
     if not assets.is_dir():
         _warn(warnings, directory, data, "configured native raster cache has no assets directory")
-        return None
-    features = []
+        return []
+    features, imagery_features = [], []
     for path in sorted(assets.glob("*.tif")):
         key = path.stem
         if not re.fullmatch(r"[a-f0-9]{64}", key) or path.is_symlink() or not path.is_file():
@@ -423,7 +427,14 @@ def _native_raster_layer(directory: Path, data: Path, warnings: list[str]) -> di
                         bounds = _wgs84_bounds(dataset.bounds, dataset.crs)
                         if bounds is None:
                             raise ValueError("invalid raster header bounds")
-                    features.append(_feature(
+                    source_url = urlparse(record["url"] if isinstance(record.get("url"), str) else "")
+                    imagery = (source_url.hostname in (
+                        "nz-imagery.s3-ap-southeast-2.amazonaws.com",
+                        "nz-imagery.s3.ap-southeast-2.amazonaws.com",
+                        "nz-imagery.s3.amazonaws.com",
+                    ) and "/rgb/" in source_url.path)
+                    target = imagery_features if imagery else features
+                    target.append(_feature(
                         f"native-raster:{key}", record["item_id"], bounds, [],
                         source="native_raster_tile", status="cached",
                         extent_kind="native_raster_header_extent", subset=False,
@@ -437,15 +448,20 @@ def _native_raster_layer(directory: Path, data: Path, warnings: list[str]) -> di
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
                 rasterio.errors.RasterioError) as exc:
             _warn(warnings, path, data, f"could not inspect native raster ({type(exc).__name__})")
-    layer = _layer(
-        "source-native-raster", "Native raster cache tiles", "source", "footprint",
-        features, _COLOURS["native_raster"],
-        "Native tile header rectangles, not valid-data coverage; cache freshness and content "
-        "integrity are not checked by this catalogue.",
-    )
-    if layer:
-        layer["defaultVisible"] = True
-    return layer
+    result = []
+    for identifier, label, entries, colour in (
+        ("source-native-raster", "Native raster cache tiles", features, _COLOURS["native_raster"]),
+        ("source-native-imagery", "Imagery tiles: downloaded locally", imagery_features, _COLOURS["imagery"]),
+    ):
+        layer = _layer(
+            identifier, label, "source", "footprint", entries, colour,
+            "Downloaded native tile header rectangles, not valid-data coverage; cache freshness "
+            "and content integrity are not checked by this catalogue.",
+        )
+        if layer:
+            layer["defaultVisible"] = True
+            result.append(layer)
+    return result
 
 
 def _authority_regions(data: Path, authority: str) -> list[str]:
@@ -680,7 +696,7 @@ def build_local_catalog(data_dir: Path, *, raster_cache_dir: Path | None = None)
     layers = []
     for layer in (
         _pointcloud_layer(data, warnings),
-        _native_raster_layer(raster_cache_dir, data, warnings) if raster_cache_dir is not None else None,
+        *(_native_raster_layers(raster_cache_dir, data, warnings) if raster_cache_dir is not None else []),
         *_raster_layer(data, warnings),
         _council_outline_layer(data, warnings),
     ):

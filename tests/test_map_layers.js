@@ -240,6 +240,37 @@
       globalThis.layerTestMap = map;
       globalThis.layerTestControl = control;
     });
+    await test("actual imagery legend paints pink and updates downloaded selection", async () => {
+      const map = globalThis.layerTestMap;
+      const control = globalThis.layerTestControl;
+      const asset = { item_id: "photo-tile", collection_id: "photos", asset_key: "visual",
+        bbox_wgs84: [168.65, -45.04, 168.67, -45.02], cache_state: "missing",
+        uses: [{ region: "area", role: "imagery", layer_id: 123118 }] };
+      const pending = PipelineRasterPreview.imageryMapLayers([asset], catalogue([]));
+      control.setCatalogue(catalogue(pending), location.href);
+      await control.datasets.get("imagery-selected-missing").entry.setVisible(true);
+      assert(map.getPaintProperty("dataset-imagery-selected-missing-line", "line-color") === "#f9a8d4",
+        "selected missing imagery is not light pink");
+      const downloaded = { ...pending[0], id: "source-native-imagery",
+        label: "Imagery tiles: downloaded locally", colour: "#be185d",
+        data: { type: "FeatureCollection", features: [{
+          ...pending[0].data.features[0],
+          properties: { name: "photo-tile", collection_id: "photos", asset_key: "visual" },
+        }] } };
+      const refreshed = PipelineRasterPreview.imageryMapLayers([asset], catalogue([downloaded]));
+      control.setCatalogue(catalogue([downloaded, ...refreshed]), location.href);
+      await control.datasets.get("imagery-selected-downloaded").entry.setVisible(true);
+      await control.datasets.get("source-native-imagery").entry.setVisible(true);
+      assert(!map.getLayer("dataset-imagery-selected-missing-line"), "stale pending overlay remains");
+      assert(map.getPaintProperty("dataset-imagery-selected-downloaded-line", "line-color") === "#db2777",
+        "downloaded selection is not bright pink");
+      assert(map.getPaintProperty("dataset-source-native-imagery-line", "line-color") === "#be185d",
+        "downloaded cache is not dark pink");
+      assert(control.body.textContent.includes("Imagery tiles: downloaded locally"),
+        "downloaded imagery is missing from legend");
+      await control.selectQuery("imagery-selected-downloaded");
+      assert(control.queryId === "imagery-selected-downloaded", "selected tile cannot be queried");
+    });
   }
   globalThis.mapLayersTestResult = { passed, failures };
   if (typeof process !== "undefined") process.exitCode = failures.length ? 1 : 0;

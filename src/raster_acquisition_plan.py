@@ -12,8 +12,9 @@ import math
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Callable, Mapping
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlparse
 
 from shapely.errors import GEOSException
 from shapely.geometry import box, shape
@@ -32,6 +33,7 @@ class RasterSource:
     collection_url: str
     asset_key: str
     expected_collection_id: str | None = None
+    index_layer: int | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,7 @@ class RasterRequest:
     fallback_reason: str | None = None
     survey_name: str | None = None
     mapping_evidence: str | None = None
+    allow_partial: bool = False
 
 
 def _read_json(url: str) -> dict:
@@ -95,6 +98,7 @@ def _read_items(urls: list[str], get_json: Callable[[str], dict]) -> list[dict]:
 
 def discover_assets(
     source: RasterSource, *, get_json: Callable[[str], dict] = _read_json,
+    footprints: list | None = None,
 ) -> list[dict]:
     """Read collection and item metadata; never fetch a raster payload."""
     collection_url = source.collection_url
@@ -117,12 +121,17 @@ def discover_assets(
     })
     if not item_urls:
         raise ValueError(f"STAC collection has no item links: {collection_url}")
+    if source.index_layer is not None and footprints is not None:
+        from src.imagery_tiles import intersecting_item_urls
+        item_urls = intersecting_item_urls(source.index_layer, item_urls, footprints)
     result = []
     seen = set()
     for item_url, item in zip(item_urls, _read_items(item_urls, get_json)):
         item_id = item.get("id")
         if not isinstance(item_id, str) or not item_id or item_id in seen:
             raise ValueError(f"Missing or duplicate STAC item id in {item_url}")
+        if source.index_layer is not None and item_id != PurePosixPath(unquote(urlparse(item_url).path)).stem:
+            raise ValueError("Indexed imagery STAC item identity does not match its tile link")
         seen.add(item_id)
         assets = item.get("assets")
         asset = assets.get(source.asset_key) if isinstance(assets, dict) else None
@@ -176,7 +185,11 @@ def plan_assets(
         regions[name] = [box(*_bounds(bounds, f"{name} footprint")) for bounds in boxes]
     if not regions:
         raise ValueError("At least one region is required")
-    assets = discover_assets(source, get_json=get_json)
+    assets = discover_assets(source, get_json=get_json,
+                             **({"footprints": [list(geometry.bounds)
+                                                for geometries in regions.values()
+                                                for geometry in geometries]}
+                                if source.index_layer is not None else {}))
     selected = []
     for asset in assets:
         extent = box(*asset["bbox_wgs84"])
@@ -220,6 +233,12 @@ def _describe_requests(requests: list[RasterRequest]) -> tuple[dict, list, list]
         if (request.region, request.role) in seen_requests:
             raise ValueError(f"Duplicate raster request for {request.region}: {request.role}")
         seen_requests.add((request.region, request.role))
+        if type(request.allow_partial) is not bool or (
+                request.allow_partial and request.role not in ("imagery", "reference_imagery")):
+            raise ValueError("Partial coverage is only supported for imagery")
+        if request.source is not None and request.source.index_layer is not None and (
+                type(request.source.index_layer) is not int or request.source.index_layer <= 0):
+            raise ValueError("Invalid raster tile index layer")
         if not request.footprints:
             raise ValueError(f"{request.region} {request.role} has no acquisition footprints")
         footprints = [list(bounds) for bounds in sorted({
@@ -268,8 +287,11 @@ def _describe_requests(requests: list[RasterRequest]) -> tuple[dict, list, list]
             "survey_name": request.survey_name, "mapping_evidence": request.mapping_evidence,
             "source": ({"collection_url": request.source.collection_url,
                         "asset_key": request.source.asset_key,
-                        "expected_collection_id": request.source.expected_collection_id}
+                        "expected_collection_id": request.source.expected_collection_id,
+                        **({"index_layer": request.source.index_layer}
+                           if request.source.index_layer is not None else {})}
                        if request.source else None),
+            **({"allow_partial": True} if request.allow_partial else {}),
         })
     if not requests:
         raise ValueError("At least one raster request is required")

@@ -97,7 +97,10 @@ def automatic_raster_bounds(row: dict, data: Path, workspace: Path, digest: str,
             {"name": "temporary_files", "directory": estimate["temp_dir"],
              "bytes": estimate["scratch_bytes"]},
         ],
-        "processing": {"dsm": {"resolution": 1, "resampling": "average"}},
+        "processing": {item["role"]: {
+            "resolution": 1 if item["role"] == "dsm" else 0.1, "resampling": "average"}
+            for item in row.get("raster_sources", [{"role": "dsm", "state": "mapped"}])
+            if item["state"] == "mapped"},
         "cache": {key: config[key] for key in
                   ("directory", "max_bytes", "min_free_bytes", "unknown_asset_bytes")},
         "cleanup": {

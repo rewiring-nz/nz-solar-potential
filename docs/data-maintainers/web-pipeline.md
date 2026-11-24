@@ -138,6 +138,29 @@ when the imagery or paid-referee choice changes, and the resulting choices
 are pinned to the job. The paid AI referee is off by default and is only
 available when imagery is included.
 
+For local builds, each area's **Build imagery** dropdown is single-select and
+controls the imagery actually acquired. The first, preselected recommendation
+prefers full survey-footprint coverage, then finer ground resolution, then more
+recent capture. Alternatives stay in that order. Changing the selection
+re-estimates the build; the selected layer, tile-index identity and STAC plan are
+pinned through queue admission and fetching. If no survey fully covers the
+requested footprints, the best partial survey is selected with a prominent
+**PARTIAL IMAGERY** warning; uncovered pixels remain invalid, not invented photos.
+Reference imagery associated with the LiDAR survey remains a separate input
+unless it is the same layer.
+
+The national imagery survey index (LINZ layer 95677, EPSG:2193) is cached once
+at `data/pipeline_web/cache/imagery-surveys.gpkg` and reused without an expiry.
+**Refresh imagery index** explicitly replaces it and re-estimates the current
+selection. Failed refreshes retain the previous cache but do not enable a stale
+build submission. Only surveys with published public RGB EPSG:2193 S3 collections
+and tile-index IDs are offered. Each survey's spatial tile index is cached under
+`data/sources/linz/imagery_tiles/`; it limits STAC item reads to intersecting tiles.
+Index downloads need a LINZ key; the selected public S3 imagery payloads do not.
+The native tiles use the same validated shared raster cache as DSM inputs.
+Regional imagery is prepared on an aligned 0.1 m EPSG:2193 grid, preserving
+alpha masks and valid black pixels; native cache payloads are not resampled.
+
 LINZ elevation and imagery layers are discovered from public layer metadata,
 cached under ignored `data/sources/linz/`, and pinned from estimate through
 execution. Selection checks layer bounding extents, not actual valid-data
@@ -155,13 +178,14 @@ existing defaults.
 The local panel can submit a mapped job using its automatic disk estimates.
 These are **not guaranteed bounds or enforced
 limits**; actual usage can be higher and unrelated processes can consume disk.
-The panel estimates four times the uncompressed 1 m float DSM footprint
-(minimum 64 MiB), scratch as twice that footprint plus twice the largest
-estimated imagery export, an export allowance per fallback, estimated LiDAR
-inputs and building output, and a separate temporary-files allowance equal to
-scratch. The tile transfer calculation uses published sizes or the cache
-policy's unknown-asset allowance. When the national DSM STAC item does not
-publish a size, the local estimate sends a `HEAD` request for each selected
+The panel estimates working space for mapped DSM and 0.1 m RGBA imagery,
+scratch, an export allowance per fallback, estimated LiDAR inputs and building
+output, and a separate temporary-files allowance equal to scratch. The
+allocation formulas are in
+[`automatic_raster_estimate`](../../tools/pipeline_webui/estimate.py).
+The tile transfer calculation uses published sizes or the cache policy's
+unknown-asset allowance. When a national DSM or selected imagery STAC item does
+not publish a size, the local estimate sends a `HEAD` request for each selected
 tile and uses its `Content-Length` for the reservation and transfer limit.
 No tile payload is downloaded during estimation. If the size cannot be
 determined, the estimate fails rather than starting an under-reserved transfer.
@@ -183,6 +207,12 @@ the job instead. See the
 This is not an automatic multi-area build workflow. Existing DSM mosaics without provenance
 are preserved and block the mapped build; move them aside deliberately before
 retrying. A mosaic with provenance is verified against the approved plan.
+Indexed imagery has an explicit replacement policy: a different or legacy
+regional photo is preserved with its sidecar, when present, under that area's
+`previous_imagery/` before the selected tiles are prepared. Matching verified
+mosaics are reused. Corrupted manifests, changed output hashes and symlinked
+photos block replacement rather than silently discarding data. These preserved
+photos are not automatically deleted.
 The local queue does not automatically delete cached tiles or partial downloads
 when admitting a job; if the configured budget or available disk is insufficient,
 admission fails before the build starts.
@@ -572,6 +602,28 @@ terrain mosaics. It shows managed tile header rectangles only; neither
 valid-data coverage, content integrity nor source freshness is checked by the
 catalogue. Tiles being replaced or needing recovery, and incomplete entries,
 are omitted with a warning.
+
+Imagery has its own pink overlays in **Layers & legend → Source datasets**:
+
+- **Selected imagery: awaiting download** (light pink) shows imagery and
+  reference tiles pinned to the latest build estimate in this page.
+- **Selected imagery: downloaded locally** (bright pink) shows selected tiles
+  also present in the local cache catalogue.
+- **Imagery tiles: downloaded locally** (dark pink) shows all managed public
+  LINZ RGB imagery tiles found in the native cache, including earlier builds.
+  These tiles are excluded from the orange generic native-raster overlay.
+- **Aerial imagery rasters** uses dark pink for prepared regional photo
+  extents; preserved `previous_imagery/` copies are not shown as current inputs.
+
+The tile overlays are enabled by default when data exists. Use **Query** and
+click a rectangle for tile/collection identity; selected tiles also show LINZ
+layer IDs, input roles and areas. These are footprint overlays, not a display of
+the downloaded photo pixels. Downloaded status is header-based presence, not a
+new integrity/freshness check or valid-pixel guarantee. The selected overlay
+lasts until another estimate or a page reload; the downloaded overlay is
+reconstructed from disk and survives reloads. Local queue transitions refresh
+the catalogue automatically, as do running-job polls at roughly 15-second
+intervals, so newly downloaded tiles appear without a manual metadata refresh.
 
 On the Local map, zoom to level 9 or closer to automatically inspect national
 LINZ DSM tiles intersecting the view, independently of area selection. The

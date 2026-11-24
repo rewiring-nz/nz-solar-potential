@@ -47,7 +47,10 @@ point-cloud metadata to subsequent stage processes through source overrides;
 each selected layer is revalidated by the survey resolver.
 Existing export-derived regional raster files are still reused without
 verifying that they match this invocation's survey selection. Mapped inputs
-require matching provenance before an existing mosaic can be reused.
+require matching provenance before an existing mosaic can be reused. For
+web-selected indexed imagery, `src/fetch_regions.py` preserves non-matching or
+legacy photos under the area's `previous_imagery/` before preparing replacements,
+while holding workspace admission; corrupted provenance is an error.
 
 The experimental read-only STAC planner in `src/raster_acquisition_plan.py`
 can identify explicitly selected GeoTIFF assets intersecting multiple area
@@ -61,13 +64,24 @@ LDS layer and input role, with the expected collection ID, asset key and
 documented evidence; the collection ID is checked, but the code cannot
 independently prove the mapping evidence. Unmapped layers remain exports
 fallbacks. The standalone planner supplies no mappings by default; the local
-web panel supplies the national DSM mapping for its preferred source. The planner classifies
+web panel supplies the national DSM mapping for its preferred source and
+constructs imagery mappings from the cached LINZ survey index's imagery ID,
+tile-index ID and public S3 collection, checking its STAC identity. A
+single-select imagery choice is pinned to each local estimate and build;
+full coverage, resolution and recency determine the default. Reference imagery
+remains separate where needed. Survey and tile indexes are cached indefinitely;
+the panel exposes an explicit national survey-index refresh. See
+[web imagery selection](web-pipeline.md#build).
+The planner classifies
 each footprint as fully bounded, partially bounded or outside item bounding
 boxes, which does not
 establish valid-data coverage; missing asset sizes and cache state remain unknown.
 Experimental planned preparation refuses a footprint unless the union of its
-selected item bounding boxes covers it. This necessary check does not establish
-that the tiles actually contain valid data throughout the footprint.
+selected item bounding boxes covers it, except for explicitly pinned partial
+imagery. Partial imagery has a visible warning and leaves uncovered pixels
+invalid, including completely uncovered disjoint footprints when other parts
+have imagery. Bounding-box coverage does not establish that the tiles actually
+contain valid data throughout the footprint.
 For surveys without legacy S3 fields, regional fetching constructs a per-area
 plan from its selected survey and footprints, reports unmapped layers as
 export fallbacks, and uses the planned layer IDs while checking the footprints

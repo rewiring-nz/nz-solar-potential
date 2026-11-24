@@ -376,12 +376,17 @@ class WebHandler(RangeHandler):
                     body.get("regions"), body.get("target", "local"),
                     selection=body.get("selection"),
                     include_imagery=body.get("include_imagery", True),
-                    paid_referee=body.get("paid_referee", False))
+                    paid_referee=body.get("paid_referee", False),
+                    imagery_choices=body.get("imagery_choices"))
                 return 202, {"estimate_id": estimate_id, "status": "pending"}
             if method == "GET" and len(parts) == 2:
                 return 200, app.estimates.get(parts[1])
         if parts == ["raster-preview"] and method == "POST":
             preview_id = app.estimates.start_dsm_preview(body.get("estimate_ids"))
+            return 202, {"estimate_id": preview_id, "status": "pending"}
+        if parts == ["imagery-preview"] and method == "POST":
+            preview_id = app.estimates.start_imagery_preview(
+                body.get("estimate_ids"), body.get("refresh", False))
             return 202, {"estimate_id": preview_id, "status": "pending"}
         if parts == ["dsm-view"] and method == "POST":
             preview_id = app.estimates.start_dsm_view(body.get("bbox"), body.get("refresh", False),
