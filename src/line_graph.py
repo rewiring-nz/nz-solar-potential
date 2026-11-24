@@ -624,6 +624,7 @@ STRAIGHT = int(os.environ.get("SOLAR_LINE_STRAIGHT", "0"))
 ST_TOL_PX = float(os.environ.get("SOLAR_ST_TOL", "3"))          # a piece is straight when it stays this close to its chord
 ST_MIN_PX = float(os.environ.get("SOLAR_ST_MIN", "12"))         # shorter pieces give no line of their own
 ST_SNAP_DEG = float(os.environ.get("SOLAR_ST_DEG", "12"))       # a line this close to a main direction is turned onto it
+ST_SNAP_MOVE_PX = float(os.environ.get("SOLAR_ST_SNAP_MOVE", "1e9"))
 ST_MERGE_PX = float(os.environ.get("SOLAR_ST_MERGE", "3"))      # parallel lines this close are one line
 ST_REACH_PX = float(os.environ.get("SOLAR_ST_REACH", "1e9"))
 ST_JOIN_PX = float(os.environ.get("SOLAR_ST_JOIN", "8"))        # consecutive pieces of one boundary this close are one line
@@ -713,6 +714,11 @@ def straight_faces(lab, outline, barrier=None):
             snapped = False
             for t in (dom, dom + 90.0):
                 if _turn(ang, t) <= ST_SNAP_DEG:
+                    # turned about its middle, no point of the piece may move more than ST_SNAP_MOVE_PX:
+                    # a short wobbling piece is squared up, a long line that really runs off-square is kept
+                    half = float(np.hypot(*(pc[-1] - pc[0]))) / 2.0
+                    if half * np.sin(np.radians(_turn(ang, t))) > ST_SNAP_MOVE_PX:
+                        break
                     ang, snapped = t % 180.0, True
                     break
             if done:
