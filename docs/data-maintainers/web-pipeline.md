@@ -580,6 +580,15 @@ minutes; a build can only start from the estimate that was shown.
 
 ### Map layers
 
+The **Rooftop solar** page link retains the map's current geographic extent,
+and its **Build data** link retains the extent in the opposite direction.
+The root loopback rooftop page uses the latest combined local `data/` outputs;
+it no longer reads the published bucket by default. Developer/Published target
+links use `?data=published` to retain configured-deployment access. Immutable
+local releases keep their pinned dataset. A single-area job combines only that
+area into the current map; earlier regional outputs remain available on disk
+but are not automatically added to this map contract.
+
 **Layers & legend**, below the navigation controls, reuses the shared component
 and layer styling used by the canonical map. It groups analysis, derived and
 source datasets above the basemap. Panels

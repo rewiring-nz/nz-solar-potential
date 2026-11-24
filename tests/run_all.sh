@@ -56,6 +56,7 @@ if command -v node >/dev/null 2>&1; then
     run "$t (js)"           node tests/test_$t.mjs
   done
   run "map layer legend (js)" node tests/test_map_layers.js
+  run "map page navigation (js)" node tests/test_map_navigation.js
   run "pipeline progress (js)" node tests/test_pipeline_progress.js
   run "pipeline raster preview (js)" node tests/test_pipeline_raster_preview.js
   run "pipeline area tree (js)" node tests/test_pipeline_tree.js

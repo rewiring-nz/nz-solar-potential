@@ -240,6 +240,44 @@
       globalThis.layerTestMap = map;
       globalThis.layerTestControl = control;
     });
+    await test("map navigation retains extent across differently sized map containers", async () => {
+      const source = globalThis.layerTestMap;
+      source.jumpTo({ center: [172.695, -43.51], zoom: 14, bearing: 0, pitch: 0 });
+      const href = MapNavigation.linkFor("http://localhost:8765/rooftop-solar.html", source, "local");
+      const view = MapNavigation.viewFromURL(href);
+      const container = document.createElement("div");
+      container.style.cssText = "height:300px;width:700px";
+      document.body.append(container);
+      const destination = new maplibregl.Map({ container,
+        style: { version: 8, sources: {}, layers: [] }, ...view });
+      try {
+        await new Promise(resolve => destination.on("load", resolve));
+        const original = source.getBounds();
+        const restored = destination.getBounds();
+        assert(Math.abs(destination.getCenter().lng - source.getCenter().lng) < .000001 &&
+          Math.abs(destination.getCenter().lat - source.getCenter().lat) < .000001,
+        "map centre did not survive navigation");
+        assert(restored.getWest() <= original.getWest() + .000001 &&
+          restored.getEast() >= original.getEast() - .000001 &&
+          restored.getSouth() <= original.getSouth() + .000001 &&
+          restored.getNorth() >= original.getNorth() - .000001,
+        "new viewport clipped the original map extent");
+        const link = document.createElement("a");
+        link.href = "http://localhost:8765/pipeline.html";
+        MapNavigation.bindLinks(destination, [link], null, href);
+        assert(new URL(link.href).searchParams.get("mapbbox") ===
+          new URL(href).searchParams.get("mapbbox"),
+        "unmoved return link accumulated extra viewport margins");
+        const rotated = new URL(href);
+        rotated.searchParams.set("bearing", "12");
+        rotated.searchParams.set("pitch", "20");
+        destination.fitBounds(view.bounds, {
+          ...MapNavigation.viewFromURL(rotated.href).fitBoundsOptions, duration: 0,
+        });
+        assert(destination.getBearing() === 12 && destination.getPitch() === 20,
+        "fitting the shared extent reset camera rotation or pitch");
+      } finally { destination.remove(); container.remove(); }
+    });
     await test("actual imagery legend paints pink and updates downloaded selection", async () => {
       const map = globalThis.layerTestMap;
       const control = globalThis.layerTestControl;

@@ -1,5 +1,11 @@
 # Backlog
 
+The Build data and rooftop-solar page links now retain the geographic map
+extent in both directions. Root loopback rooftop maps read the latest combined
+local outputs rather than the published bucket; `?data=published` remains
+available, and public/immutable-release data selection is unchanged. Local
+single-area builds still replace the current combined contract with that area.
+
 Local map imagery now has separate pink legend overlays for selected tiles
 awaiting transfer, selected tiles downloaded locally, and all downloaded native
 imagery tiles. Regional imagery footprints also use pink; preserved prior

@@ -7,6 +7,7 @@
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <script src="map_layers.js"></script>
+<script src="map_navigation.js"></script>
 <link href="map_layers.css" rel="stylesheet">
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <style>
@@ -151,7 +152,7 @@
 <body>
 <header id="top">
   <h1>Build data</h1>
-  <span class="links" aria-label="Pages"><a href="rooftop-solar.html">Rooftop solar</a><a href="docs/index.html">Docs</a></span>
+  <span class="links" aria-label="Pages"><a href="rooftop-solar.html" data-map-page>Rooftop solar</a><a href="docs/index.html">Docs</a></span>
   <span id="targets" role="group" aria-label="Target">
     <button data-target="local" title="This checkout and computer">Local</button>
     <button data-target="developer" title="Shared build VM; previews under devel/&lt;alias&gt;/">Developer</button>

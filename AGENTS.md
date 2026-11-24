@@ -505,6 +505,12 @@ figure for the same thing. Code enforces this:
 - `src/raster_execution.py` executes an explicit plan inside a cooperative
   reservation held by its caller, with exports delegated to a callback.
   The live fetcher uses its mapped-input preparation under the queue reservation.
+- `map_navigation.js` shares map extents through the links between
+  `pipeline.html` and `rooftop-solar.html`, fitting to the destination viewport.
+  The root loopback rooftop map uses local combined outputs by default;
+  `?data=published` retains the configured deployment. Public pages and local
+  release paths keep deployment-pinned data. The helper is a public frontend
+  asset (`tools/site_assets.py`).
 - `src/raster_regional_execution.py` experimentally revalidates an approved
  snapshot against current regional surveys, mappings and footprints before
  using that execution boundary and the regional exports fetcher. The caller

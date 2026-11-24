@@ -587,7 +587,10 @@
   const map = new maplibregl.Map({
     container: "map", style: MapLayers.aerialStyle(),
     center: [172.5, -41.5], zoom: 5,
+    ...(MapNavigation.viewFromURL(location.href) || {}),
   });
+  MapNavigation.bindLinks(map, document.querySelectorAll("[data-map-page]"),
+    () => target === "local" ? "local" : "published");
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   const layerLegend = new MapLayers.Legend({ beforeId: "localities-fill" });
   map.addControl(layerLegend, "top-right");

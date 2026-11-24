@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script src="map_layers.js"></script>
+<script src="map_navigation.js"></script>
 <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
 <!-- Per-deployment settings (which town this site opens on). Local, synchronous
      and deliberately NOT shared between the two repos -- see site-config.js. -->
@@ -525,6 +526,7 @@
     border: 1px solid #555; border-radius: 6px; font-size: 11px; font-weight: 600;
     padding: 5px 9px; font-family: inherit; text-align: left; }
   .corner-btn:hover { background: rgba(40,40,40,0.95); color: #fff; }
+  a.corner-btn { text-decoration: none; }
   #page-navigation nav { display: flex; flex-direction: column; gap: 6px;
     background: rgba(20,20,20,0.95); padding: 8px 10px; margin-top: 4px;
     border: 1px solid #555; border-radius: 6px; font-size: 12px; }
@@ -1208,7 +1210,8 @@
         <summary class="corner-btn">Tools &amp; docs</summary>
         <nav aria-label="Pages">
           <a href="wholesale.html">Wholesale price history</a>
-          <a href="pipeline.html">Build data (local server)</a>
+          <a href="pipeline.html" data-map-page>Build data (local server)</a>
+          <span id="map-data-source"></span>
           <a href="docs/index.html">Documentation</a>
         </nav>
       </details>
@@ -1219,6 +1222,7 @@
       <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
       <button class="corner-btn" id="theme-toggle" title="Switch between light and dark"></button>
       <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
+      <a class="corner-btn" href="pipeline.html" data-map-page>Map Builder</a>
     </div>
   </details>
   <button class="corner-btn" id="open-methodology" title="Where the data comes from and how each step works">&#128506;&#65039; How this map is made</button>
@@ -1497,11 +1501,19 @@ const DEFAULT_VIEW = (window.SITE && window.SITE.defaultView)
   || { center: [174.7745, -41.3380], zoom: 15.0 };  // fallback: Island Bay
 
 function startView() {
+  const sharedView = MapNavigation.viewFromURL(location.href);
+  if (sharedView) return sharedView;
   const q = new URLSearchParams(location.search);
   // explicit coordinates win: ?lat=-41.33&lng=174.77&z=15
   const lat = parseFloat(q.get("lat")), lng = parseFloat(q.get("lng"));
   if (isFinite(lat) && isFinite(lng)) {
-    return { center: [lng, lat], zoom: parseFloat(q.get("z")) || 15 };
+    const bearing = Number(q.get("bearing") || 0), pitch = Number(q.get("pitch") || 0);
+    if (!Number.isFinite(bearing) || !Number.isFinite(pitch) || pitch < 0 || pitch > 85) {
+      console.warn("Ignoring invalid map navigation camera angles");
+    }
+    return { center: [lng, lat], zoom: parseFloat(q.get("z")) || 15,
+      bearing: Number.isFinite(bearing) ? bearing : 0,
+      pitch: Number.isFinite(pitch) && pitch >= 0 && pitch <= 85 ? pitch : 0 };
   }
   const name = (q.get("location") || "").toLowerCase().replace(/[^a-z-]/g, "");
   if (name && START_LOCATIONS[name]) return START_LOCATIONS[name];
@@ -1553,6 +1565,7 @@ const map = new maplibregl.Map({
   },
   ...startView()
 });
+MapNavigation.bindLinks(map, document.querySelectorAll("[data-map-page]"));
 
 // Exposed for diagnosis. Debugging a camera that ends up inside a hillside
 // without being able to read its pitch, zoom and centre is guesswork.
@@ -2735,16 +2748,14 @@ function wireTuningControls(popupEl, buildingId) {
   });
 }
 
-// PER-DEPLOYMENT, so it lives in site-config.js beside defaultView.
-// The two sites version their data independently -- Queenstown shipped 34
-// on 3 Sep while Wellington was still on 33 -- and preview.html is meant
-// to be byte-identical between them, which this line was quietly breaking.
-const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
-// Where the data lives. Empty = beside the page (GitHub Pages, as today).
-// A bucket URL ending in "/" moves every tile, detail and index fetch there
-// without touching the page: Pages caps a file at 100 MB and Auckland's
-// panel tiles alone are ~1.5 GB (docs/maintainers/scale-architecture.md).
-const DATA_BASE = new URL((window.SITE && window.SITE.dataBase) || "./", location.href).href;
+// Deployments use site-config.js; the root loopback map uses local build
+// outputs unless ?data=published explicitly selects the configured deployment.
+const MAP_DATA = MapNavigation.dataSettings(window.SITE, location.href);
+const DATA_VERSION = MAP_DATA.version;
+// Tile, detail and index requests must all use the same selected dataset.
+const DATA_BASE = MAP_DATA.base;
+document.getElementById("map-data-source").textContent = MAP_DATA.local
+  ? "Viewing local build data" : "Viewing configured deployment data";
 let coveragePct = 25;   // Heat Map default (Josh, 18 Oct)
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 // Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between
@@ -7124,12 +7135,14 @@ map.on("load", async () => {
     q.set("lat", c.lat.toFixed(5));
     q.set("lng", c.lng.toFixed(5));
     q.set("z", z.toFixed(1));
+    q.set("bearing", String(map.getBearing()));
+    q.set("pitch", String(map.getPitch()));
     if (panelOpen) q.set("b", String(selectedPanelBuildingId));
     else if (deepLinkPending) q.set("b", String(startB));
     // Keep anything else in the URL, less the start-location forms the
     // coordinates now override.
     for (const [k, v] of old) {
-      if (["lat", "lng", "z", "b", "location"].includes(k)) continue;
+      if (["lat", "lng", "z", "b", "location", "mapbbox", "bearing", "pitch"].includes(k)) continue;
       if (!v && START_LOCATIONS[k.toLowerCase().replace(/[^a-z-]/g, "")]) continue;
       q.append(k, v);
     }

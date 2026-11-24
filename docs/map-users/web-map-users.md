@@ -30,9 +30,27 @@ If automatic browser opening fails, copy the printed URL into your browser.
 developer-preview link when sharing a build with someone else.
 
 The simple map is `rooftop-solar.html`; old `preview.html` links redirect to
-it, preserving their query string and fragment. Open **Tools & docs** in the
-map's bottom-left controls to reach **Build data** or the documentation. Build
-data requires its local backend; it cannot run builds from static hosting.
+it, preserving their query string and fragment. Open **Advanced** in the
+map's bottom-left controls and select **Map Builder** to reach Build data, or
+open **Tools & docs** for the documentation. Build data requires its local
+backend; it cannot run builds from static hosting.
+
+The **Rooftop solar**, **Map Builder**, and **Build data** links carry the current map extent
+between pages, rather than resetting to the deployment's default town. Each
+page fits that extent to its available map size; different sidebar/viewport
+proportions can add visible space around it; switching back without moving the
+map preserves the original extent rather than accumulating those margins.
+Existing coordinate and named-town
+links still work when no shared extent is supplied.
+
+On a loopback server, the root `rooftop-solar.html` reads the latest combined
+local `data/` outputs, not the published bucket configured in `site-config.js`.
+Use `?data=published` to inspect that configured deployment instead. Public
+sites and immutable local-release URLs keep their deployment-pinned data.
+**Tools & docs** identifies whether the map is using local build data.
+A successful local build does not publish it, and a single-area build replaces
+the current combined map with that area; earlier areas' regional outputs remain
+on disk but are not automatically included in the current map.
 
 ## Look at a building
 
