@@ -20,7 +20,6 @@ Usage: python src/build_layout_geojson.py [area ...] [--jobs N]
 """
 
 import json
-from src.face_weld import weld_faces
 import os
 import signal
 import sys
@@ -38,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import shapely
 import config
 from src.outline_fit import fitted_outlines
+from src.face_weld import weld_faces
 from src.preflight import preflight
 import geopandas as gpd
 
