@@ -1406,6 +1406,8 @@ def selected_doc(building_id):
             doc = json.loads(fp.read_text())
         except (OSError, ValueError):
             return thin
+        if d == STUDENT_FACES_DIR and doc.get("reader") == "lines" and int(building_id) in LINES_GAVE_WAY:
+            continue
         if thin is None and d == POINT_FACES_DIR and thin_point_doc(doc):
             thin = doc
             continue
@@ -1606,6 +1608,8 @@ def residual_fill(building_id, footprint, pts, faces):
 # on the drawn roofs (SOLAR_KEEP_UNREAD_FACE=1 turns it on).
 KEEP_UNREAD_FACE = os.environ.get("SOLAR_KEEP_UNREAD_FACE", "0") == "1"
 STUDENT_LEADS = os.environ.get("SOLAR_STUDENT_LEADS", "0") == "1"
+READ_BARE_MAX = float(os.environ.get("SOLAR_READ_BARE_MAX", "0.5"))
+LINES_GAVE_WAY = set()        # buildings whose roof-line reading gave way in this process
 
 # The line reader's faces are kept as read. A face the regulariser could not
 # simplify, or whose returns are not one plane, used to be dropped, and
@@ -1804,6 +1808,20 @@ def facets_from_selected_faces(building_id, footprint, pts):
     # part of a roof left the rest with no facet at all -- and no facet
     # means no panels, no obstructions, nothing. #4724740 shipped 63%
     # coverage and a bare 216 m2 flat middle.
+    # A READING THAT LEAVES MOST OF THE ROOF BARE GIVES WAY. A face kept as
+    # read carries panels only where it is one plane; a reader that saw two
+    # faces on a roof of twenty leaves both bare and the roof with no panels
+    # (Queenstown part A, 24 Nov: 75 roofs zeroed against v85, 8 of 8 checked
+    # had a reading of 1 to 5 faces with 10-35% of the returns on their
+    # planes, #4740325: 2 faces over 2,600 m2). Over READ_BARE_MAX of the
+    # read area bare, the next reading in the order is built instead.
+    if _keep and out:
+        bare = sum(f["area_m2"] for f in out if f.get("no_panel")) / max(sum(f["area_m2"] for f in out), 1e-9)
+        if bare > READ_BARE_MAX:
+            if os.environ.get("SOLAR_FACE_DEBUG"):
+                print(f"[face {building_id}] reading gives way: {bare:.0%} of its area is not one plane")
+            LINES_GAVE_WAY.add(int(building_id))
+            return facets_from_selected_faces(building_id, footprint, pts)
     if _keep and out and unary_union([f["geometry"] for f in out]).intersection(footprint).area >= READ_COVER_MIN * footprint.area:
         filled = []
     else:
