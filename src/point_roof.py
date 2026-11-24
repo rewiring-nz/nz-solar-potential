@@ -295,9 +295,11 @@ def grow_planes(pts):
         lab = np.array([remap.get(L, -1) for L in lab])
         eqs = [fit_plane(pts[lab == k])[0] for k in range(len(keep))]
     lab, eqs = merge_coplanar(pts, lab, eqs, idx)
-    lab, eqs = merge_flat(pts, lab, eqs, idx)
     if MERGE_LOOSE:
         lab, eqs = merge_loose(pts, lab, eqs, idx)
+        lab, eqs = drop_specks(pts, lab, eqs, idx)
+    else:
+        lab, eqs = merge_flat(pts, lab, eqs, idx)
     # walls and tree faces are not roof
     ok = [k for k, (a, b, c) in enumerate(eqs) if math.hypot(a, b) < MAX_SLOPE]
     remap = {L: k for k, L in enumerate(ok)}
@@ -369,7 +371,48 @@ def merge_flat(pts, lab, eqs, idx):
 # two halves of a gable at 3 degrees each way point 6 degrees apart, and a
 # plane through both misses each by the rise of the roof. Pairs merge best
 # fit first, each merge refitted, so a curved roof is not walked into one.
+#
+# A LOW GABLE IS NOT A FLAT DECK. merge_flat joins neighbours that are both
+# under FLAT_DEG and meet without a step, so the two halves of a 2 to 3
+# degree warehouse gable became one face: #5372239's "plane" of 75,024
+# returns at 0.4 degrees misses a fifth of them by 0.77 m or more. A deck
+# with falls of a degree or two stays within FLAT_JOINT_TOL_M of one plane;
+# the gable does not. With the switch on, two flat neighbours join on the
+# same joint-fit test at FLAT_JOINT_TOL_M, whatever their angle, and
+# merge_flat is not run.
+#
+# A SPECK INSIDE ONE FACE IS NOT A FACE (drop_specks). A skylight, vent or
+# ridge cap gives a plane of a few dozen returns, steep and all its own; the
+# cell labelling then cuts it into the face around it (#5372239: 93 such
+# planes of 15 to 90 returns in one roof of 82,779). A region with under
+# SPECK_MAX_PTS returns and under SPECK_SHARE of the roof's, bordered almost
+# wholly (SPECK_ENCLOSED) by one other region, is left unlabelled: clutter
+# for the obstruction pass. A 150 m2 home has about 1,350 returns, so the
+# share (7 returns) is below MIN_PLANE_PTS and no dormer is touched.
 MERGE_LOOSE = os.environ.get("SOLAR_POINT_MERGE_LOOSE", "0") == "1"
+FLAT_JOINT_TOL_M = float(os.environ.get("SOLAR_FLAT_JOINT_TOL", "0.3"))
+SPECK_MAX_PTS = 100
+SPECK_SHARE = 0.005
+SPECK_ENCLOSED = 0.8
+
+
+def drop_specks(pts, lab, eqs, idx):
+    n = np.bincount(lab[lab >= 0], minlength=len(eqs))
+    lim = min(SPECK_MAX_PTS, SPECK_SHARE * len(pts))
+    adj = adjacency(lab, idx)
+    gone = set()
+    for k in range(len(eqs)):
+        if n[k] >= lim:
+            continue
+        nb = {(i if j == k else j): c for (i, j), c in adj.items() if k in (i, j)}
+        if nb and max(nb.values()) >= SPECK_ENCLOSED * sum(nb.values()) and n[max(nb, key=nb.get)] >= 10 * n[k]:
+            gone.add(k)
+    if not gone:
+        return lab, eqs
+    keep = [k for k in range(len(eqs)) if k not in gone]
+    remap = np.full(len(eqs) + 1, -1); remap[keep] = np.arange(len(keep))
+    return np.where(lab >= 0, remap[lab], -1), [eqs[k] for k in keep]
+
 LOOSE_ANG_DEG = float(os.environ.get("SOLAR_LOOSE_ANG", "4.0"))
 LOOSE_TOL_M = float(os.environ.get("SOLAR_LOOSE_TOL", "0.15"))
 LOOSE_Q = float(os.environ.get("SOLAR_LOOSE_Q", "0.8"))
@@ -397,13 +440,16 @@ def merge_loose(pts, lab, eqs, idx):
             if k1 - k0 < 4:
                 continue
             i, j = divmod(int(key[k0]), len(eqs) + 1)
-            if unit(eqs[i]) @ unit(eqs[j]) < cosang:
+            flat = all(math.hypot(eqs[k][0], eqs[k][1]) < math.tan(math.radians(FLAT_DEG)) for k in (i, j))
+            if not flat and unit(eqs[i]) @ unit(eqs[j]) < cosang:
                 continue
             if np.median(np.abs(pts[ii[k0:k1], 2] - pts[jj[k0:k1], 2])) >= FLAT_STEP_M:
                 continue
             pi, pj = pts[lab == i], pts[lab == j]
             e = fit_plane(np.vstack([pi, pj]))[0]
             s_ = max(float(np.quantile(np.abs(e[0] * q[:, 0] + e[1] * q[:, 1] + e[2] - q[:, 2]), LOOSE_Q)) for q in (pi, pj))
+            # compared as a share of its own tolerance, so the best fit merges first
+            s_ /= (FLAT_JOINT_TOL_M if flat else LOOSE_TOL_M) / LOOSE_TOL_M
             if s_ < bs:
                 best, bs, beq = (i, j), s_, e
         if best is None:
