@@ -67,6 +67,7 @@ def score(maps_dir, method, out):
             print(bid, 'failed', type(e).__name__, e); read = [edge]
         D, R = raster(drawn, size), raster(read, size)
         tot = acc = 0.0; merged = split = shifted = 0
+        min_face = 1.0
         for i in range(1, len(drawn) + 1):
             m = D == i; a = m.sum()
             if not a:
@@ -76,7 +77,7 @@ def score(maps_dir, method, out):
                 if j:
                     r = R == j; v = (m & r).sum() / (m | r).sum()
                     if v > best: best, bj = v, j
-            tot += a; acc += a * best
+            tot += a; acc += a * best; min_face = min(min_face, best)
             if best < 0.8:
                 r = R == bj; in_r = (m & r).sum() / a; r_in = (m & r).sum() / max(r.sum(), 1)
                 if in_r >= 0.85 and r_in < 0.8: merged += 1
@@ -92,9 +93,28 @@ def score(maps_dir, method, out):
             rc = (distance_transform_edt(~pb)[tb] <= tol).mean(); pr = (distance_transform_edt(~tb)[pb] <= tol).mean(); lf = 2 * pr * rc / (pr + rc) if pr + rc else 0.0
         area = outline.area * mpp * mpp
         ru = unary_union(read)
+        # the ledger's measures (tools/roof_ledger.py), all at 0.5 m: drawn line length that was read
+        # (none missing), read line length that was drawn (none invented), and the two roof edges on each other
+        t5 = 0.5 / mpp
+        near = lambda a, b: float((distance_transform_edt(~b)[a] <= t5).mean()) if a.sum() else 1.0
+        def rim(g):
+            im = Image.new('L', (size, size), 0); dr = ImageDraw.Draw(im)
+            for q in getattr(g, 'geoms', [g]):
+                dr.line(list(q.exterior.coords), fill=1, width=1)
+            return np.array(im) > 0
+        ob, rb = rim(outline), rim(ru)
+        extra = dict(line_found=near(tb, pb) if tb.sum() >= 10 else 1.0, line_real=near(pb, tb | ob) if pb.sum() >= 10 else 1.0,
+                     edge_found=near(ob, rb), edge_real=near(rb, ob), face_min=float(min_face))
+        if os.environ.get('SOLAR_TILES_DIR'):
+            def view(polys, col):
+                im = Image.fromarray(d['image'][..., :3].copy()); dr = ImageDraw.Draw(im)
+                for q in polys: dr.line(list(q.exterior.coords), fill=col, width=2)
+                return np.array(im)
+            os.makedirs(os.environ['SOLAR_TILES_DIR'], exist_ok=True)
+            Image.fromarray(np.hstack([view(drawn, (255, 255, 0)), view(read, (255, 60, 60))])).save(f"{os.environ['SOLAR_TILES_DIR']}/{bid}.jpg", quality=80)
         rows[bid] = dict(fiou=acc / tot, lf=lf, drawn=len(drawn), read=len(read), merged=merged, split=split, shifted=shifted,
                          edge=outline.intersection(ru).area / max(outline.union(ru).area, 1e-9),
-                         cls='larger' if area >= 350 else ('centre home' if str(d['region']) == 'pilot' else 'home'))
+                         **extra, cls='larger' if area >= 350 else ('centre home' if str(d['region']) == 'pilot' else 'home'))
     json.dump(rows, open(out, 'w'))
     summary(rows)
 
