@@ -158,6 +158,7 @@ def read_twice(img, mpp):
 
 EDGE = os.environ.get("SOLAR_LINE_READER_EDGE", "reader")
 EDGE_MIN_IOU = 0.6
+EDGE_FIT = int(os.environ.get("SOLAR_LINE_EDGE_FIT", "0"))
 # Off: on 167 held-out drawn roofs read from the build's edge, reading again
 # in a picture framed on the reader's own edge left face IoU at 0.662 and
 # took the edge's overlap with the drawn one from 0.873 to 0.869.
@@ -165,7 +166,7 @@ REFRAME = int(os.environ.get("SOLAR_LINE_READER_REFRAME", "0"))
 REFRAME_MIN = 0.05
 
 
-def reader_edge(p, edge_px):
+def reader_edge(p, edge_px, mpp=None):
     """The roof's edge, in pixels: the reader's own where it has one.
 
     The build's edge comes from the surveyed outline and the LiDAR: it takes
@@ -176,14 +177,24 @@ def reader_edge(p, edge_px):
     (0.9 or better on 61). It is used where it agrees with the build's edge
     on what the building is (overlap EDGE_MIN_IOU or more); a reading that
     does not is not trusted over the survey."""
-    from src.line_graph import roof_outline
+    from src.line_graph import roof_outline, best_edge
     if EDGE != "reader":
         return edge_px
     try:
         own = roof_outline(p[7], p[5])
     except Exception:
         own = None
-    if own is None or not own.is_valid or own.is_empty:
+    if own is not None and (not own.is_valid or own.is_empty):
+        own = None
+    if EDGE_FIT and mpp:
+        # the survey's shape where the reader sees the edge, unless the reader's own edge is clearly the better (best_edge)
+        try:
+            got = best_edge(edge_px, own, p[5], p[7], 1.0 / mpp)
+            if got is not None:
+                return got
+        except Exception:
+            pass
+    if own is None:
         return edge_px
     iou = own.intersection(edge_px).area / max(own.union(edge_px).area, 1e-9)
     return own if iou >= EDGE_MIN_IOU else edge_px
@@ -215,7 +226,7 @@ def roof_faces(geom, tiles, pts):
         # reading matters most. So the roof is read again in a picture
         # framed on the reader's own edge, when that edge is trusted
         # (reader_edge) and moves the frame by REFRAME_MIN or more.
-        own = reader_edge(p, edge_px)
+        own = reader_edge(p, edge_px, mpp)
         if own is edge_px:
             break
         own_m = affine_transform(own, [mpp, 0, 0, -mpp, b[0], b[3]])
@@ -238,8 +249,8 @@ def roof_faces(geom, tiles, pts):
         c = geom.centroid
         np.savez_compressed(os.path.join(os.environ["SOLAR_LINE_READER_DUMP"], f"{int(c.x)}_{int(c.y)}.npz"),
                             image=img, maps=(p * 255).astype(np.uint8), frame=np.array(list(b) + [mpp]),
-                            edge=np.asarray(reader_edge(p, edge_px).exterior.coords))
-    faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px), height=height)
+                            edge=np.asarray(reader_edge(p, edge_px, mpp).exterior.coords))
+    faces = faces_from_regions(p, NAMES, reader_edge(p, edge_px, mpp), height=height)
     to_m = [mpp, 0, 0, -mpp, b[0], b[3]]
     return [affine_transform(f, to_m) for f in faces], face_lines(faces, p, to_m)
 

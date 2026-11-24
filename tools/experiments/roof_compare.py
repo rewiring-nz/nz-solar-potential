@@ -39,6 +39,16 @@ def score(maps_dir, method, out):
         for i, q in enumerate(polys, 1):
             im = Image.new('L', (size, size), 0); ImageDraw.Draw(im).polygon(list(q.exterior.coords), fill=1); lab[np.array(im) > 0] = i
         return lab
+    _survey = {}
+    def survey():
+        if not _survey:
+            from shapely.geometry import shape
+            for g in glob.glob('data/regions/*/building_outlines.geojson'):
+                for ft in json.load(open(g))['features']:
+                    k = str(ft['properties'].get('building_id') or ft['properties'].get('id') or ft.get('id'))
+                    if k in labels:
+                        _survey.setdefault(k, shape(ft['geometry']))
+        return _survey
     rows = {}
     for f in sorted(glob.glob(f'{maps_dir}/*.npz')):
         bid = os.path.basename(f)[:-4]
@@ -64,6 +74,17 @@ def score(maps_dir, method, out):
             # as the build reads it (src/line_reader.reader_edge): the roof map carried onto the crest of the edge map
             own = LG.roof_outline(p[7], None if os.environ.get('SOLAR_CMP_NO_EDGE_MAP') else p[5])
             edge = own if own is not None and own.is_valid and own.area > 50 else outline
+        if method == 'regions_fit':
+            # as the build does with SOLAR_LINE_EDGE_FIT=1: the surveyed outline slid onto the reader's edge
+            # (src/line_graph.slide_outline) where the roof map agrees, else the reader's own edge
+            from shapely.affinity import affine_transform
+            own = LG.roof_outline(p[7], p[5])
+            edge = own if own is not None and own.is_valid and own.area > 50 else outline
+            o = survey().get(bid)
+            if o is not None:
+                o = affine_transform(o, [size / (b2 - b0), 0, 0, -size / (b3 - b1), -b0 / (b2 - b0) * size, size + b1 / (b3 - b1) * size]).buffer(0)
+                o = max(o.geoms, key=lambda g: g.area) if o.geom_type == 'MultiPolygon' else o
+                edge = LG.best_edge(o, own if own is not None and own.is_valid and own.area > 50 else None, p[5], p[7], 1.0 / mpp) or edge
         height = d['image'][..., 7].astype(np.float32) / 255 * 10.0
         try:
             read = [q for q in LG.faces_from_regions(p, NAMES, edge, height=height) if q.is_valid and q.geom_type == 'Polygon']

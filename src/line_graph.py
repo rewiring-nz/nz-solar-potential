@@ -86,6 +86,78 @@ def roof_outline(roof, edge_map=None):
     return straighten(p) if STRAIGHTEN else p.simplify(OUTLINE_SIMPLIFY_PX)
 
 
+EDGE_FIT_ROOF_W = 2.0
+EDGE_FIT_MARGIN, EDGE_FIT_MIN_IOU = 0.2, 0.6
+
+
+def edge_strength(poly, edge_map):
+    """Mean of the reader's (lightly blurred) edge map along a polygon's edge."""
+    from scipy.ndimage import gaussian_filter
+    pts = np.asarray(poly.exterior.segmentize(2.0).coords)
+    return float(map_coordinates(gaussian_filter(edge_map.astype(np.float32), 1.0), [pts[:, 1], pts[:, 0]], order=1, mode="constant").mean())
+
+
+def best_edge(survey, own, edge_map, roof, px_per_m):
+    """The roof edge to use: the surveyed outline slid onto the reader's edge
+    (slide_outline), or the reader's own edge.
+
+    The reader's own edge follows the crest of its edge map by construction,
+    so the map is always stronger along it; the slid survey outline is the
+    better edge unless the map is much weaker along it (the survey has a
+    deck or a neighbour in it, or is out of date). Rule: the slid outline
+    when the edge map along it is within EDGE_FIT_MARGIN of the map along
+    the reader's own edge and it overlaps the roof map EDGE_FIT_MIN_IOU or
+    more. On the 100 reference roofs, edge right within 0.5 m: own 34,
+    slid outline always 44, this rule 54 (the better of the two each time
+    would be 58); with the margin chosen on half the roofs and tested on
+    the other half, 24.8 of 50 against 16.9."""
+    if survey is None:
+        return own
+    g = survey.buffer(0)
+    g = max(g.geoms, key=lambda q: q.area) if g.geom_type == "MultiPolygon" else g
+    if g.is_empty or g.geom_type != "Polygon":
+        return own
+    fit, iou = slide_outline(g, edge_map, roof, 2.5 * px_per_m, 0.25 * px_per_m)
+    if own is None:
+        return fit if iou >= EDGE_FIT_MIN_IOU else None
+    if iou >= EDGE_FIT_MIN_IOU and edge_strength(fit, edge_map) >= edge_strength(own, edge_map) - EDGE_FIT_MARGIN:
+        return fit
+    return own
+
+
+def slide_outline(outline, edge_map, roof, reach_px, step_px):
+    """The surveyed outline moved, without turning or reshaping, to where the
+    reader sees the roof's edge. Returns (polygon, overlap with the roof map).
+
+    The surveyed outline has the roof's shape with straight edges and square
+    corners, but it sits off the photo by the building's lean and the
+    survey's own error. The reader's edge is in the photo's frame but soft:
+    its corners round and its edges wander. On the 100 reference roofs,
+    within 0.5 m of the drawn edge: the surveyed outline as it lies 20, the
+    reader's own edge 34, the surveyed outline at its best position 54, and
+    at the position found here 44. Rule: of every position within `reach_px`
+    (in steps of `step_px`) the one where the reader's edge map is strongest
+    along the outline, plus EDGE_FIT_ROOF_W times its overlap with the
+    reader's roof map."""
+    from scipy.ndimage import gaussian_filter
+    from rasterio import features
+    from shapely.affinity import translate
+    es = gaussian_filter(edge_map.astype(np.float32), 1.0)
+    pts = np.asarray(outline.exterior.segmentize(2.0).coords)
+    inside = features.rasterize([outline], out_shape=roof.shape).astype(bool)
+    rm = roof >= 0.5
+    r, st = int(round(reach_px)), max(1, int(round(step_px)))
+    best = (-1.0, 0, 0, 0.0)
+    for dx in range(-r, r + 1, st):
+        for dy in range(-r, r + 1, st):
+            m = np.roll(np.roll(inside, dy, 0), dx, 1)
+            iou = float((m & rm).sum() / max((m | rm).sum(), 1))
+            v = float(map_coordinates(es, [pts[:, 1] + dy, pts[:, 0] + dx], order=1, mode="constant").mean()) + EDGE_FIT_ROOF_W * iou
+            if v > best[0]:
+                best = (v, dx, dy, iou)
+    return translate(outline, best[1], best[2]), best[3]
+
+
 def straighten(poly, tol=STRAIGHT_SIMPLIFY_PX):
     """The polygon with straight edges in the roof's two main directions.
 
@@ -625,6 +697,9 @@ ST_TOL_PX = float(os.environ.get("SOLAR_ST_TOL", "3"))          # a piece is str
 ST_MIN_PX = float(os.environ.get("SOLAR_ST_MIN", "12"))         # shorter pieces give no line of their own
 ST_SNAP_DEG = float(os.environ.get("SOLAR_ST_DEG", "12"))       # a line this close to a main direction is turned onto it
 ST_SNAP_MOVE_PX = float(os.environ.get("SOLAR_ST_SNAP_MOVE", "1e9"))
+# SOLAR_ST_KEEP_EDGE=1: the roof edge given is kept exactly (a surveyed outline is already straight
+# lines and square corners; fitting lines to it again drops its short slanted runs and moves the rest)
+ST_KEEP_EDGE = os.environ.get("SOLAR_ST_KEEP_EDGE", "0") == "1"
 ST_MERGE_PX = float(os.environ.get("SOLAR_ST_MERGE", "3"))      # parallel lines this close are one line
 ST_REACH_PX = float(os.environ.get("SOLAR_ST_REACH", "1e9"))
 ST_JOIN_PX = float(os.environ.get("SOLAR_ST_JOIN", "8"))        # consecutive pieces of one boundary this close are one line
@@ -695,7 +770,8 @@ def straight_faces(lab, outline, barrier=None):
     if len(simp) > 3:
         k0 = int(np.argmin(np.hypot(*(ring[:-1] - simp[0]).T)))
         ring = np.vstack([ring[k0:-1], ring[:k0 + 1]])
-    chains.append((ring, True))
+    if not ST_KEEP_EDGE:
+        chains.append((ring, True))
     raw = []                                          # per chain: pieces in order, (angle, points)
     for pts, outer in chains:
         row = []
@@ -780,6 +856,8 @@ def straight_faces(lab, outline, barrier=None):
     cid = features.rasterize([(c, i + 1) for i, c in enumerate(cells)], out_shape=(h, w), dtype="int32")
     nl = int(lab.max()) + 1
     votes = np.bincount((cid.ravel().astype(np.int64)) * nl + lab.ravel().astype(np.int64), minlength=(len(cells) + 1) * nl).reshape(len(cells) + 1, nl)
+    if ST_KEEP_EDGE:
+        votes[:, 0] = 0                               # the edge is the outline's own: a cell goes to the face that holds most of its inside part
     own = votes.argmax(1)
     own[votes.sum(1) == 0] = 0
     for i, c in enumerate(cells):                     # a cell too thin to hold a pixel centre: its middle decides
@@ -812,6 +890,10 @@ def straight_faces(lab, outline, barrier=None):
     faces = []
     for k in sorted(set(int(v) for v in own if v)):
         u = unary_union([cells[i] for i in range(len(cells)) if own[i + 1] == k])
+        if ST_KEEP_EDGE:
+            u = u.intersection(outline)
+            if u.is_empty or u.geom_type not in ("Polygon", "MultiPolygon"):
+                continue
         u = max(u.geoms, key=lambda g: g.area) if u.geom_type == "MultiPolygon" else u
         u = u.simplify(0.01)
         if u.geom_type == "Polygon" and u.area >= MIN_FACE_PX2:

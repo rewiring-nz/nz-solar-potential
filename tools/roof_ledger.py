@@ -65,7 +65,7 @@ def round_(label, maps):
     out = ROOT / f"data/roof100/{label}.json"; out.parent.mkdir(parents=True, exist_ok=True)
     page = ROOT / f"data/preview/roof100/{label}"; page.mkdir(parents=True, exist_ok=True)
     raw = out.with_suffix(".all.json")
-    subprocess.run([sys.executable, str(ROOT / "tools/experiments/roof_compare.py"), "score", maps, "regions_own", str(raw)],
+    subprocess.run([sys.executable, str(ROOT / "tools/experiments/roof_compare.py"), "score", maps, os.environ.get("ROOF100_EDGE", "regions_own"), str(raw)],
                    cwd=ROOT, env=dict(os.environ, SOLAR_TILES_DIR=str(page / "tiles")), check=True, stdout=subprocess.DEVNULL)
     allr = json.loads(raw.read_text()); raw.unlink()
     roofs = json.loads(SET.read_text())["roofs"]
