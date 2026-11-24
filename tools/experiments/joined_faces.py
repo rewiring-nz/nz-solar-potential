@@ -55,6 +55,11 @@ def joined(b, reach):
                 continue
             hit = LineString([tuple(p), tuple(p + d / n * reach)]).intersection(others)
             if hit.is_empty:
+                # nothing ahead: a line never ends in the middle of a face, so an end with a line
+                # or the edge beside it (within the same reach) meets that at the nearest point
+                if gap <= reach:
+                    t = np.array(nearest_points(others, P)[0].coords[0]); v = t - p; m = float(np.hypot(*v))
+                    extra.append(LineString([tuple(p), tuple(t + v / m * 0.02)]))
                 continue
             far = min(getattr(hit, 'geoms', [hit]), key=lambda g: g.distance(P))
             fp = np.array(far.coords[0])
@@ -66,9 +71,19 @@ def joined(b, reach):
     return new, stored
 
 
+def unused_m(b, faces):
+    """Metres of drawn line, inside the roof edge, that lie on no face edge: lines that divide nothing."""
+    edge, _ = roof_edge(b)
+    segs = [LineString(l.get('points') or [l['a'], l['b']]) for l in b.get('lines') or []]
+    if edge is None or not segs or not faces:
+        return 0.0
+    ln = unary_union(segs).intersection(edge.buffer(-0.3))
+    return float(ln.difference(unary_union([f.exterior for f in faces]).buffer(0.15)).length)
+
+
 if __name__ == '__main__':
     L = json.load(open('data/roof_labels.json'))['buildings']
-    reach = float(sys.argv[1]); out = {}; more, same, less = [], 0, []
+    reach = float(sys.argv[1]); out = {}; loose = {}; more, same, less = [], 0, []
     for bid, b in L.items():
         if not b.get('lines'):
             continue
@@ -79,7 +94,10 @@ if __name__ == '__main__':
         elif len(new) < len(stored): less.append((bid, len(stored), len(new)))
         else: same += 1
         out[bid] = [[[round(x, 3), round(y, 3)] for x, y in f.exterior.coords] for f in new]
+        loose[bid] = round(unused_m(b, new), 1)
     print('reach %.1f m: %d roofs; more faces than stored on %d, the same on %d, fewer on %d' % (reach, len(out), len(more), same, len(less)))
     print('more:', more[:40]); print('fewer:', less[:15])
     if len(sys.argv) > 2:
         json.dump(out, open(sys.argv[2], 'w'))
+        json.dump(loose, open(sys.argv[2].replace('.json', '_unused_m.json'), 'w'))
+    print('roofs with over 0.5 m of drawn line on no face edge:', sum(v > 0.5 for v in loose.values()))

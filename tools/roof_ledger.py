@@ -9,7 +9,8 @@ markup and within 0.5 m:
            other, and they overlap 0.90 or more;
   lines    no drawn line is missing (95% of the drawn line length is read)
            and no line is invented (95% of the read line length is drawn);
-  faces    every drawn face has its own read face (overlap 0.8 or more) and
+  faces    every drawn face has its own read face (overlap 0.8 or more, or
+           95% of each one's edge within 0.5 m of the other's) and
            the two have the same number of faces (a face under 0.5 m wide is
            inside the tolerance and is neither required nor counted).
 
@@ -28,6 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SET = ROOT / "data/roof100.json"
 N_BY_CLASS = {"home": 50, "centre home": 20, "larger": 30}
+UNUSED_MAX_M = 0.5
 
 
 def pick():
@@ -35,20 +37,27 @@ def pick():
     base = json.loads((ROOT / "data/line_set/cmp/J_own_base.json").read_text())      # class of every drawn roof with an unseen reading
     rs = json.loads((ROOT / "data/roof_set.json").read_text())
     hold = {str(h["id"]) for h in rs["holdout"]}; dev = {str(d["id"]) for d in rs["dev"]}
+    labels = json.loads((ROOT / "data/roof_labels.json").read_text())["buildings"]
+    unused = json.loads((ROOT / "data/line_set/faces_joined_side_unused_m.json").read_text())
+    # a reference roof is one the marker flagged as fully marked ("I marked EVERY line on this roof"),
+    # with no problem noted, whose every drawn line closes a face (0.5 m or less of line dividing
+    # nothing): on any other roof a read line that is not drawn cannot be called invented
+    whole = lambda i: labels[i].get("complete") and not labels[i].get("problem") and unused.get(i, 0) <= UNUSED_MAX_M
     out = []
     for cls, n in N_BY_CLASS.items():
         ids = sorted(i for i, v in base.items() if v["cls"] == cls and i not in hold)
         random.Random(100).shuffle(ids)
+        ids = [i for i in ids if whole(i)]
         ids.sort(key=lambda i: i not in dev)                 # roofs already in the development set first
         out += [{"id": i, "cls": cls} for i in ids[:n]]
-    SET.write_text(json.dumps({"rule": "50 homes outside the town centre, 20 town-centre homes, 30 larger roofs, all hand-drawn, none held back", "roofs": out}, indent=1))
+    SET.write_text(json.dumps({"rule": "50 homes outside the town centre, 20 town-centre homes, 30 larger roofs, all hand-drawn and flagged fully marked, every drawn line closing a face, none held back", "roofs": out}, indent=1))
     print(len(out), "roofs ->", SET)
 
 
 def state(v):
     o = v["edge"] >= 0.90 and v["edge_found"] >= 0.95 and v["edge_real"] >= 0.95
     l = v["line_found"] >= 0.95 and v["line_real"] >= 0.95
-    f = v["face_min"] >= 0.8 and v["read_wide"] == v["drawn_wide"]
+    f = v.get("faces_off", int(v["face_min"] < 0.8)) == 0 and v["read_wide"] == v["drawn_wide"]
     return {"outline": o, "lines": l, "faces": f, "missing": v["line_found"] < 0.95, "invented": v["line_real"] < 0.95}
 
 

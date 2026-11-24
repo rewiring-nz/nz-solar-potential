@@ -29,7 +29,7 @@ def score(maps_dir, method, out):
     from skimage.morphology import skeletonize
     import src.line_graph as LG
     labels = json.load(open('data/roof_labels.json'))['buildings']
-    for k, rings in json.load(open('data/line_set/faces_joined_1.0.json')).items():
+    for k, rings in json.load(open('data/line_set/faces_joined_side.json')).items():
         if k in labels and rings:
             labels[k] = dict(labels[k], faces=[{'ring': r} for r in rings])
     also = [d for d in os.environ.get('SOLAR_MAPS_ALSO', '').split(',') if d]
@@ -52,22 +52,31 @@ def score(maps_dir, method, out):
         drawn = [Polygon([px(*c) for c in fc['ring']]).buffer(0) for fc in labels[bid]['faces'] if fc.get('ring') and len(fc['ring']) >= 3]
         drawn = [max(q.geoms, key=lambda g: g.area) if q.geom_type == 'MultiPolygon' else q for q in drawn if not q.is_empty]
         drawn = [q for q in drawn if q.area * mpp * mpp >= 1.0]
+        # a face inside another (a dormer on a slope) is stored by its outer ring only: the larger
+        # face is painted first so the smaller one is not painted over
+        drawn.sort(key=lambda q: -q.area)
         if not drawn:
             continue
         outline = unary_union([q.buffer(0.3) for q in drawn]).buffer(-0.3)
         outline = max(outline.geoms, key=lambda g: g.area) if outline.geom_type == 'MultiPolygon' else outline
         edge = outline
         if method == 'regions_own':
-            own = LG.roof_outline(p[7])
+            # as the build reads it (src/line_reader.reader_edge): the roof map carried onto the crest of the edge map
+            own = LG.roof_outline(p[7], None if os.environ.get('SOLAR_CMP_NO_EDGE_MAP') else p[5])
             edge = own if own is not None and own.is_valid and own.area > 50 else outline
         height = d['image'][..., 7].astype(np.float32) / 255 * 10.0
         try:
             read = [q for q in LG.faces_from_regions(p, NAMES, edge, height=height) if q.is_valid and q.geom_type == 'Polygon']
         except Exception as e:
             print(bid, 'failed', type(e).__name__, e); read = [edge]
+        read.sort(key=lambda q: -q.area)
         D, R = raster(drawn, size), raster(read, size)
         tot = acc = 0.0; merged = split = shifted = 0
-        min_face = 1.0
+        min_face = 1.0; faces_off = 0
+        from scipy.ndimage import binary_erosion
+        t5f = 0.5 / mpp
+        ring_of = lambda m: m & ~binary_erosion(m)
+        within = lambda a, b: float((distance_transform_edt(~b)[a] <= t5f).mean()) if a.any() and b.any() else 0.0
         # a face under 0.5 m wide is inside the 0.5 m tolerance: the ledger neither requires nor counts it
         wide = lambda q: not q.buffer(-0.25 / mpp).is_empty
         for i in range(1, len(drawn) + 1):
@@ -82,6 +91,13 @@ def score(maps_dir, method, out):
             tot += a; acc += a * best
             if wide(drawn[i - 1]):
                 min_face = min(min_face, best)
+                # a small face cannot reach an overlap of 0.8 on this grid (a 1 m dormer face is some
+                # 11 px across, and one pixel either side is 0.67): a face is also the drawn one when
+                # 95% of each one's edge lies within 0.5 m of the other's
+                if best < 0.8:
+                    ea, eb = ring_of(m), ring_of(R == bj)
+                    if not bj or min(within(ea, eb), within(eb, ea)) < 0.95:
+                        faces_off += 1
             if best < 0.8:
                 r = R == bj; in_r = (m & r).sum() / a; r_in = (m & r).sum() / max(r.sum(), 1)
                 if in_r >= 0.85 and r_in < 0.8: merged += 1
@@ -109,7 +125,7 @@ def score(maps_dir, method, out):
         # hairline gaps between read faces are not roof edge: the read roof is closed over 1.5 px first
         ob, rb = rim(outline), rim(ru.buffer(1.5, join_style=2).buffer(-1.5, join_style=2))
         extra = dict(line_found=near(tb, pb) if tb.sum() >= 10 else 1.0, line_real=near(pb, tb | ob) if pb.sum() >= 10 else 1.0,
-                     edge_found=near(ob, rb), edge_real=near(rb, ob), face_min=float(min_face),
+                     edge_found=near(ob, rb), edge_real=near(rb, ob), face_min=float(min_face), faces_off=faces_off,
                      drawn_wide=sum(1 for q in drawn if wide(q)), read_wide=sum(1 for q in read if wide(q)))
         if os.environ.get('SOLAR_TILES_DIR'):
             def view(polys, col):

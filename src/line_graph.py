@@ -34,7 +34,8 @@ STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4
 STRAIGHT_DROP_PX = 20.0
 EXTEND_PX, EXTEND_SHARE = 24.0, 0.35
 KINDS = ("ridge", "valley", "cliff")
-STRAIGHTEN = True
+STRAIGHTEN = os.environ.get("SOLAR_LINE_OUTLINE_STRAIGHT", "1") == "1"
+STRAIGHT_MAX_MOVE_PX = float(os.environ.get("SOLAR_LINE_OUTLINE_MOVE", "1e9"))     # the straightened edge may lie this far from the edge it was fitted to
 EDGE_BAND_PX = 8
 
 
@@ -147,7 +148,11 @@ def straighten(poly, tol=STRAIGHT_SIMPLIFY_PX):
     r = Polygon(out)
     if not r.is_valid or r.is_empty or r.geom_type != "Polygon":
         return q
-    return r if r.intersection(poly).area / r.union(poly).area >= STRAIGHT_MIN_IOU else q
+    if r.intersection(poly).area / r.union(poly).area < STRAIGHT_MIN_IOU:
+        return q
+    if r.exterior.hausdorff_distance(q.exterior) > STRAIGHT_MAX_MOVE_PX:
+        return q
+    return r
 
 
 def _along(m, a, b):
@@ -291,9 +296,9 @@ def faces_from_maps(p, names, outline=None):
 
 
 # ---------------------------------------------------------------- regions
-CORE_MIN, SEED_MIN_PX2, REGION_SIMPLIFY_PX = 0.5, 150, 8.0
+CORE_MIN, SEED_MIN_PX2, REGION_SIMPLIFY_PX = 0.5, int(os.environ.get("SOLAR_LINE_SEED_MIN", "150")), 8.0
 MERGE_BARRIER = float(os.environ.get("SOLAR_LINE_MERGE", "0.35"))      # two regions are one face when the line maps average under this along their boundary
-BASIN_SIGMA_PX, BASIN_STEP = 2.0, 0.05
+BASIN_SIGMA_PX, BASIN_STEP = float(os.environ.get("SOLAR_LINE_BASIN_SIGMA", "2.0")), 0.05
 COMPLETE = int(os.environ.get("SOLAR_LINE_COMPLETE", "0"))
 COMPLETE_STRONG, COMPLETE_MIN_PX, COMPLETE_GAP_PX = 0.5, 14, 3
 COMPLETE_REACH_PX, COMPLETE_REACH_SHARE, COMPLETE_MEET_PX, COMPLETE_SIDE = 30.0, 1.0, 5, 0.3

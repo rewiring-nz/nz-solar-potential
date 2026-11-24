@@ -56,6 +56,37 @@ def corners(ring):
     return out
 
 
+def closed_lines(d, rings):
+    """HxW bool: the edges between the faces of the completed drawing.
+
+    The drawn lines alone stop where the marker's hand stopped: a ridge 0.5 m
+    short of the eave, a valley that ends beside the line it meets. The faces
+    rebuilt from them (tools/experiments/joined_faces.py) carry every such
+    end on to what it meets, and a face edge exists along the carried part
+    too. A target drawn from the raw lines teaches the reader to stop short
+    there and gives the converter a gap to merge two faces through: of the
+    100 reference roofs, the raw drawn lines fed to the converter as maps
+    lost a drawn face on 27. `rings`: the rebuilt faces in NZTM."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    size = d["weight"].shape[0]
+    mpp, b0, b1, b2, b3, sx, sy = [float(v) for v in d["meta"]]
+    dx, dy = (sx, sy) if str(d["region"]) == "pilot" else (0.0, 0.0)
+    px = lambda x, y: ((x + dx - b0) / (b2 - b0) * size, (1 - (y + dy - b1) / (b3 - b1)) * size)
+    faces = [Polygon(r).buffer(0) for r in rings if len(r) >= 3]
+    faces = [f for f in faces if not f.is_empty and f.geom_type == "Polygon"]
+    if len(faces) < 2:
+        return np.zeros((size, size), bool)
+    roof = unary_union([f.buffer(0.02) for f in faces]).buffer(-0.02)
+    im = Image.new("L", (size, size), 0); dr = ImageDraw.Draw(im)
+    for f in faces:
+        dr.line([px(*c) for c in f.exterior.coords], fill=255, width=LINE_PX)
+    inner = Image.new("L", (size, size), 0)
+    for g in getattr(roof, "geoms", [roof]):
+        ImageDraw.Draw(inner).polygon([px(*c) for c in g.exterior.coords], fill=255)
+    return (np.array(im) > 0) & binary_erosion(np.array(inner) > 0, iterations=4)
+
+
 def typed(d, label):
     """(target HxWx8 bool, known 8 bool, near HxW bool) for one exported sample."""
     old, roof = d["target"].astype(bool), d["weight"].astype(bool)
