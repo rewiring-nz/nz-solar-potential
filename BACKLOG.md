@@ -397,6 +397,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Owner's blind picks on A5 (25 Nov), 22 flagged roofs, v85 against A5**
+  (`data/blind_check/owner_flagged_A5_25nov.json`). Outline v85 12, A5 8,
+  same 2; lines v85 12, A5 9; obstructions v85 10, A5 11; panels v85 12,
+  A5 9. On the 20 judged before, panels moved from v85 15 / new 3 to
+  v85 12 / new 7. A5 is still behind live on the roofs the gate flags, so
+  it is not published. #4750944 (112 -> 72 panels, edge 0.5 m in) went to
+  A5 on all four: the smaller edge and the lower count were right there, so
+  the edge shift is not a fault in itself. v85 on all four picks, the roofs
+  to work next: #5371143, #4739240, #4729782, #4740497, #5370318, #4734995,
+  #4731197, #4751245.
+
 - **A5 candidate (25 Nov): A4 plus the main-plane rule, four areas rebuilt.**
   Gate FAILED, not published: zeroed 6 (A4 7, A3 16), big drops 135 (A4 139),
   panels 1,325,054 -> 1,319,852 (-0.4%). Blind page of the 20 flagged roofs

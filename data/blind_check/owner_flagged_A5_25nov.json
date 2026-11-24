@@ -1,0 +1,181 @@
+{
+ "_readme": "Owner's blind picks, 25 Nov 2026: the 20 flagged roofs judged on A3 plus #4750944 and #5371141, live v85 against A5 (A4 + main-plane rule). Sides shuffled and unlabelled; outline is its own pick.",
+ "tally": {
+  "outline": {
+   "same": 2,
+   "v85": 12,
+   "A5": 8
+  },
+  "lines": {
+   "v85": 12,
+   "same": 1,
+   "A5": 9
+  },
+  "obstructions": {
+   "v85": 10,
+   "same": 1,
+   "A5": 11
+  },
+  "panels": {
+   "v85": 12,
+   "same": 1,
+   "A5": 9
+  }
+ },
+ "picks": [
+  {
+   "id": 5370368,
+   "outline": "same",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 5371143,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 5371145,
+   "outline": "same",
+   "lines": "same",
+   "obstructions": "same",
+   "panels": "same"
+  },
+  {
+   "id": 5371144,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 4731855,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4739240,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4729782,
+   "outline": "v85",
+   "lines": "v85",
+   "panels": "v85",
+   "obstructions": "v85"
+  },
+  {
+   "id": 5373429,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "A5",
+   "panels": "v85"
+  },
+  {
+   "id": 4743917,
+   "outline": "v85",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 4740497,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 5370318,
+   "lines": "v85",
+   "outline": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4725610,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 4731096,
+   "panels": "A5",
+   "obstructions": "A5",
+   "lines": "A5",
+   "outline": "A5"
+  },
+  {
+   "id": 4734995,
+   "panels": "v85",
+   "obstructions": "v85",
+   "lines": "v85",
+   "outline": "v85"
+  },
+  {
+   "id": 5371265,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "A5",
+   "panels": "v85"
+  },
+  {
+   "id": 4729471,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 4731197,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4741451,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 4729332,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 4751245,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4750944,
+   "outline": "A5",
+   "lines": "A5",
+   "obstructions": "A5",
+   "panels": "A5"
+  },
+  {
+   "id": 5371141,
+   "outline": "v85",
+   "lines": "v85",
+   "obstructions": "A5",
+   "panels": "A5"
+  }
+ ]
+}
