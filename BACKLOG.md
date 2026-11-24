@@ -397,6 +397,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **A5 candidate (25 Nov): A4 plus the main-plane rule, four areas rebuilt.**
+  Gate FAILED, not published: zeroed 6 (A4 7, A3 16), big drops 135 (A4 139),
+  panels 1,325,054 -> 1,319,852 (-0.4%). Blind page of the 20 flagged roofs
+  judged on A3, plus #4750944 and #5371141, live v85 against A5, with the
+  building outline as its own pick (`tools/review_page.py --aspects`; key
+  `data/preview/cases/review_flagged_A5_key.json`): awaiting the owner.
+  Third cause of the remaining drops, measured on six frankton_arm roofs:
+  plain build gives the v85 counts (110/170/112/126/107/107), the student
+  reading leading gives 72/136/91/82/79/69, and `SOLAR_EDGE_GAP=0` recovers
+  part (88/138/106/97/90/78). The reading's fitted edge sits about 0.5 m
+  inside the selected face (#4750944: 273 -> 242 m2), which costs a panel
+  row a side. Grid bearing, edge-drop keepouts and the empty-face refit are
+  ruled out. Which edge is right is the owner's outline pick, not a count.
+
 - **Roofs that lost panels in the candidate: two causes found and fixed, a third open (24 Nov).** The owner's blind picks on 20 flagged roofs (`data/blind_check/owner_flagged_A3_24nov.json`): on the 8 that lost every panel v85 was better on panels 8 of 8 and on lines 6 to 2; on the 12 that lost over 30%, lines candidate 6, v85 4, same 2; obstructions 5, 5, 2; panels v85 7, candidate 3, same 2. One roof noted as bad in both (#4734995).
   - Cause 1, roofs withheld (156e3be3): a line reading that explains under 0.45 of the returns had no fallback, and a point reading left mostly bare was kept. Both now give way to the next reading. Rebuild "A4": gate zeroed 16 -> 7, big drops 140 -> 139, panels -0.4%; gate failed, not published. Of the 29 flagged zeroed roofs 10 have panels again; 19 small ones (2 to 11 panels on v85) are still empty (15 `low_confidence`, 4 `too_small`).
   - Cause 2, a large flat face kept bare (7b949fda, `SOLAR_READ_MAIN_PLANE=1`): a read face that is one plane with plant or a raised part on it failed the one-plane test and took no panels (#4743917: 1,329 m2 face, 21% of returns on one plane, though 954 m2 of it is one 2 deg plane; #5371141: 294 of 312 m2). The main part now takes panels and the rest stays bare. Re-laid on the 153 flagged roofs: 46 change, none loses panels, 6,528 -> 7,475 panels (v85 11,779); #4743917 871 -> 530 -> 841, #4743911 394 -> 185 -> 341, #5371141 321 -> 178 -> 257. Rebuild "A5" with the rule on is the candidate; not yet seen by the owner.

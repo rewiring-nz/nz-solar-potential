@@ -31,7 +31,11 @@ from pathlib import Path
 # One pick per aspect (--aspects). An overall "which is better" was hard to
 # give where one drawing had the better panels and the other the better
 # lines or obstructions (owner, 13 Nov point-roof review).
+# The outline is its own pick: a reading that leads moves the roof edge
+# about 0.5 m inside the selected faces' edge (#4750944, 273 -> 242 m2), and
+# which edge is right is seen on the photo, not in the panel count.
 ASPECTS = [
+    ("outline", "Building outline", "The outer roof edge sits on the real roof edge"),
     ("lines", "Roof lines", "Faces, ridges, valleys and edges match the real roof"),
     ("obstructions", "Obstructions", "Vents, skylights, chimneys and plant are found, and nothing else"),
     ("panels", "Panel layout", "Panels sit where an installer would put them"),
