@@ -438,6 +438,7 @@ PL_MIN_PX, PL_ERODE_PX = 120, 3
 
 
 PL_CREASE = float(os.environ.get("SOLAR_PL_CREASE", "0"))       # weight of the surface's own creases among the cuts (0: lines only)
+PL_OWN_M = float(os.environ.get("SOLAR_PL_OWN", "0.3"))        # a region further than this (median) from its own fitted plane has no say
 PL_NOLINE = 0.15
 PL_DIFF_NOLINE_M = float(os.environ.get("SOLAR_PL_DIFF_NOLINE", "0.6"))
 PL_FACE_MIN_PX = int(os.environ.get("SOLAR_PL_FACE_MIN", "600"))
@@ -489,6 +490,8 @@ def _plane_basins(barrier, inside, height):
             ys, xs = np.nonzero(m)
             pts[i] = (ys, xs, height[ys, xs]) if len(ys) >= PL_MIN_PX else None
             fit[i] = _plane(*pts[i]) if pts[i] is not None else None
+            if fit[i] is not None and float(np.median(np.abs(pts[i][1] * fit[i][0] + pts[i][0] * fit[i][1] + fit[i][2] - pts[i][2]))) > PL_OWN_M:
+                pts[i] = fit[i] = None          # not one plane itself (plant, a curved or stepped region): no say
         return pts[i], fit[i]
 
     def relation(i, j):
