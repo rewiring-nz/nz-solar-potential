@@ -68,6 +68,8 @@ def score(maps_dir, method, out):
         D, R = raster(drawn, size), raster(read, size)
         tot = acc = 0.0; merged = split = shifted = 0
         min_face = 1.0
+        # a face under 0.5 m wide is inside the 0.5 m tolerance: the ledger neither requires nor counts it
+        wide = lambda q: not q.buffer(-0.25 / mpp).is_empty
         for i in range(1, len(drawn) + 1):
             m = D == i; a = m.sum()
             if not a:
@@ -77,7 +79,9 @@ def score(maps_dir, method, out):
                 if j:
                     r = R == j; v = (m & r).sum() / (m | r).sum()
                     if v > best: best, bj = v, j
-            tot += a; acc += a * best; min_face = min(min_face, best)
+            tot += a; acc += a * best
+            if wide(drawn[i - 1]):
+                min_face = min(min_face, best)
             if best < 0.8:
                 r = R == bj; in_r = (m & r).sum() / a; r_in = (m & r).sum() / max(r.sum(), 1)
                 if in_r >= 0.85 and r_in < 0.8: merged += 1
@@ -105,7 +109,8 @@ def score(maps_dir, method, out):
         # hairline gaps between read faces are not roof edge: the read roof is closed over 1.5 px first
         ob, rb = rim(outline), rim(ru.buffer(1.5, join_style=2).buffer(-1.5, join_style=2))
         extra = dict(line_found=near(tb, pb) if tb.sum() >= 10 else 1.0, line_real=near(pb, tb | ob) if pb.sum() >= 10 else 1.0,
-                     edge_found=near(ob, rb), edge_real=near(rb, ob), face_min=float(min_face))
+                     edge_found=near(ob, rb), edge_real=near(rb, ob), face_min=float(min_face),
+                     drawn_wide=sum(1 for q in drawn if wide(q)), read_wide=sum(1 for q in read if wide(q)))
         if os.environ.get('SOLAR_TILES_DIR'):
             def view(polys, col):
                 im = Image.fromarray(d['image'][..., :3].copy()); dr = ImageDraw.Draw(im)

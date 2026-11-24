@@ -10,7 +10,8 @@ markup and within 0.5 m:
   lines    no drawn line is missing (95% of the drawn line length is read)
            and no line is invented (95% of the read line length is drawn);
   faces    every drawn face has its own read face (overlap 0.8 or more) and
-           the two have the same number of faces.
+           the two have the same number of faces (a face under 0.5 m wide is
+           inside the tolerance and is neither required nor counted).
 
 Each roof is read by a model that did not train on it (five folds,
 data/line_set/folds.json), so a right roof says something about the next
@@ -47,7 +48,7 @@ def pick():
 def state(v):
     o = v["edge"] >= 0.90 and v["edge_found"] >= 0.95 and v["edge_real"] >= 0.95
     l = v["line_found"] >= 0.95 and v["line_real"] >= 0.95
-    f = v["face_min"] >= 0.8 and v["read"] == v["drawn"]
+    f = v["face_min"] >= 0.8 and v["read_wide"] == v["drawn_wide"]
     return {"outline": o, "lines": l, "faces": f, "missing": v["line_found"] < 0.95, "invented": v["line_real"] < 0.95}
 
 
@@ -62,15 +63,27 @@ def round_(label, maps):
     led = {r["id"]: dict(allr[r["id"]], **state(allr[r["id"]])) for r in roofs if r["id"] in allr}
     out.write_text(json.dumps(led, indent=1))
     report(label, led)
+    write_page(label, led)
+
+
+def write_page(label, led):
+    """One self-contained page (the tiles are inside it: a viewer that opens the file alone still shows them)."""
+    import base64
+    page = ROOT / f"data/preview/roof100/{label}"
     rows = sorted(led.items(), key=lambda kv: (kv[1]["outline"] + kv[1]["lines"] + kv[1]["faces"], kv[1]["fiou"]))
     b = lambda ok, t: f'<span class="{"y" if ok else "n"}">{t}</span>'
-    cards = "".join(f'<div class="c"><img loading="lazy" src="tiles/{i}.jpg"><div>#{i} · {v["cls"]} {b(v["outline"], "outline")}{b(v["lines"], "lines")}{b(v["faces"], "faces")}'
+    img = lambda i: "data:image/jpeg;base64," + base64.b64encode((page / "tiles" / f"{i}.jpg").read_bytes()).decode()
+    cards = "".join(f'<div class="c"><img loading="lazy" src="{img(i)}"><div>#{i} · {v["cls"]} {b(v["outline"], "outline")}{b(v["lines"], "lines")}{b(v["faces"], "faces")}'
                     f'{"<i> missing lines</i>" if v["missing"] else ""}{"<i> invented lines</i>" if v["invented"] else ""}</div></div>' for i, v in rows)
     right = sum(v["outline"] and v["lines"] and v["faces"] for v in led.values())
     (page / "index.html").write_text(f'<!doctype html><meta charset=utf8><title>Roof 100: {label}</title><style>body{{font:14px system-ui;margin:16px;background:#111;color:#eee}}'
         f'.g{{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:12px}}img{{width:100%}}.y,.n{{margin-left:6px;padding:1px 6px;border-radius:3px}}.y{{background:#1c6b2f}}.n{{background:#8a2020}}i{{color:#f0b040}}</style>'
-        f'<h2>Round {label}: {right} of {len(led)} roofs right</h2><p>Left: hand markup (yellow). Right: read by a model that never saw the roof (red). Worst first.</p><div class="g">{cards}</div>')
+        f'<h2>Round {label}: {right} of {len(led)} roofs right</h2><p>Left: hand markup (yellow). Right: read by a model that never saw the roof (red). Green: that part is right. Worst first.</p><div class="g">{cards}</div>')
     print("page:", page / "index.html")
+
+
+def page(label):
+    write_page(label, json.loads((ROOT / f"data/roof100/{label}.json").read_text()))
 
 
 def report(label, led):
@@ -91,4 +104,4 @@ def diff(a, b):
 
 
 if __name__ == "__main__":
-    {"pick": pick, "round": round_, "diff": diff}[sys.argv[1]](*sys.argv[2:])
+    {"pick": pick, "round": round_, "diff": diff, "page": page}[sys.argv[1]](*sys.argv[2:])
