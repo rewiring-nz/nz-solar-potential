@@ -102,7 +102,8 @@ def score(maps_dir, method, out):
             for q in getattr(g, 'geoms', [g]):
                 dr.line(list(q.exterior.coords), fill=1, width=1)
             return np.array(im) > 0
-        ob, rb = rim(outline), rim(ru)
+        # hairline gaps between read faces are not roof edge: the read roof is closed over 1.5 px first
+        ob, rb = rim(outline), rim(ru.buffer(1.5, join_style=2).buffer(-1.5, join_style=2))
         extra = dict(line_found=near(tb, pb) if tb.sum() >= 10 else 1.0, line_real=near(pb, tb | ob) if pb.sum() >= 10 else 1.0,
                      edge_found=near(ob, rb), edge_real=near(rb, ob), face_min=float(min_face))
         if os.environ.get('SOLAR_TILES_DIR'):
