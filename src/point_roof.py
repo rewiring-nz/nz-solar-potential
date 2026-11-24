@@ -296,6 +296,8 @@ def grow_planes(pts):
         eqs = [fit_plane(pts[lab == k])[0] for k in range(len(keep))]
     lab, eqs = merge_coplanar(pts, lab, eqs, idx)
     lab, eqs = merge_flat(pts, lab, eqs, idx)
+    if MERGE_LOOSE:
+        lab, eqs = merge_loose(pts, lab, eqs, idx)
     # walls and tree faces are not roof
     ok = [k for k, (a, b, c) in enumerate(eqs) if math.hypot(a, b) < MAX_SLOPE]
     remap = {L: k for k, L in enumerate(ok)}
@@ -351,6 +353,68 @@ def merge_flat(pts, lab, eqs, idx):
     lab = np.array([remap[find(L)] if L >= 0 else -1 for L in lab])
     eqs = [fit_plane(pts[lab == k])[0] for k in range(len(roots))]
     return lab, eqs
+
+
+# ONE PLANE OVER A LARGE ROOF IS NOT FLAT TO 8 CM. Growth holds a return
+# within GROW_DIST_M (0.12 m) of its plane and merge_coplanar asks a median
+# of 0.08 m under the neighbour's own plane; a long low-pitched sheet roof
+# sags and ripples more than that, and a small piece's plane, carried across
+# the roof, misses by more again. #5372239 (a warehouse drawn as 2 faces)
+# came out as 74 planes and 34 built faces, #5372232 (drawn 3) as 35 and 24;
+# of 61 drawn roofs with 1 to 3 faces, 18 were built with a third more faces
+# than drawn (markup benchmark, 25 Nov). Rule: two adjacent regions are one
+# plane when their surfaces point within LOOSE_ANG_DEG of each other, they
+# meet without a step, and ONE plane fitted to both holds LOOSE_Q of each
+# region's returns within LOOSE_TOL_M. The joint fit is what keeps a ridge:
+# two halves of a gable at 3 degrees each way point 6 degrees apart, and a
+# plane through both misses each by the rise of the roof. Pairs merge best
+# fit first, each merge refitted, so a curved roof is not walked into one.
+MERGE_LOOSE = os.environ.get("SOLAR_POINT_MERGE_LOOSE", "0") == "1"
+LOOSE_ANG_DEG = float(os.environ.get("SOLAR_LOOSE_ANG", "4.0"))
+LOOSE_TOL_M = float(os.environ.get("SOLAR_LOOSE_TOL", "0.15"))
+LOOSE_Q = float(os.environ.get("SOLAR_LOOSE_Q", "0.8"))
+
+
+def merge_loose(pts, lab, eqs, idx):
+    eqs = [tuple(e) for e in eqs]
+    cosang = math.cos(math.radians(LOOSE_ANG_DEG))
+
+    def unit(e):
+        a, b, _ = e
+        return np.array([-a, -b, 1.0]) / math.sqrt(1 + a * a + b * b)
+    I = np.repeat(np.arange(len(pts)), idx.shape[1] - 1); J = idx[:, 1:].ravel()
+    lab = lab.copy()
+    while True:
+        a, b = lab[I], lab[J]
+        m = (a >= 0) & (b > a)
+        key = a[m] * (len(eqs) + 1) + b[m]
+        ii, jj = I[m], J[m]
+        order = np.argsort(key, kind="stable")
+        key, ii, jj = key[order], ii[order], jj[order]
+        cuts = np.flatnonzero(np.diff(key)) + 1
+        best, bs, beq = None, LOOSE_TOL_M, None
+        for k0, k1 in zip(np.r_[0, cuts], np.r_[cuts, len(key)]):
+            if k1 - k0 < 4:
+                continue
+            i, j = divmod(int(key[k0]), len(eqs) + 1)
+            if unit(eqs[i]) @ unit(eqs[j]) < cosang:
+                continue
+            if np.median(np.abs(pts[ii[k0:k1], 2] - pts[jj[k0:k1], 2])) >= FLAT_STEP_M:
+                continue
+            pi, pj = pts[lab == i], pts[lab == j]
+            e = fit_plane(np.vstack([pi, pj]))[0]
+            s_ = max(float(np.quantile(np.abs(e[0] * q[:, 0] + e[1] * q[:, 1] + e[2] - q[:, 2]), LOOSE_Q)) for q in (pi, pj))
+            if s_ < bs:
+                best, bs, beq = (i, j), s_, e
+        if best is None:
+            return lab, eqs
+        i, j = best
+        lab[lab == j] = i
+        eqs[i] = tuple(beq)
+        keep = sorted(set(lab.tolist()) - {-1})
+        remap = np.full(max(keep) + 2, -1); remap[keep] = np.arange(len(keep))
+        lab = np.where(lab >= 0, remap[lab], -1)
+        eqs = [eqs[L] for L in keep]
 
 
 def adjacency(lab, idx):
