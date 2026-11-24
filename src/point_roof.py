@@ -413,7 +413,7 @@ def drop_specks(pts, lab, eqs, idx):
     remap = np.full(len(eqs) + 1, -1); remap[keep] = np.arange(len(keep))
     return np.where(lab >= 0, remap[lab], -1), [eqs[k] for k in keep]
 
-LOOSE_ANG_DEG = float(os.environ.get("SOLAR_LOOSE_ANG", "4.0"))
+LOOSE_ANG_DEG = float(os.environ.get("SOLAR_LOOSE_ANG", "0"))    # 0: only flat neighbours join. At 4.0 pitched neighbours joined too and a lower annex was lost (#4735130); line F 0.686 against 0.689 at 0 on the 195 drawn roofs
 LOOSE_TOL_M = float(os.environ.get("SOLAR_LOOSE_TOL", "0.15"))
 LOOSE_Q = float(os.environ.get("SOLAR_LOOSE_Q", "0.8"))
 
