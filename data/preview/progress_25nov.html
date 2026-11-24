@@ -1,0 +1,93 @@
+<title>Roof accuracy progress</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{--bg:#f9f9f7;--card:#fcfcfb;--fg:#0b0b0b;--fg2:#52514e;--rule:#e3e2dd;--new:#2a78d6;--live:#eb6834;--same:#d5d4ce;--bar:#2a78d6;--track:#ecebe6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d0d0d;--card:#1a1a19;--fg:#f0efec;--fg2:#c3c2b7;--rule:#33332f;--new:#3987e5;--live:#d95926;--same:#4a4a45;--bar:#3987e5;--track:#2a2a27;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0d0d0d;--card:#1a1a19;--fg:#f0efec;--fg2:#c3c2b7;--rule:#33332f;--new:#3987e5;--live:#d95926;--same:#4a4a45;--bar:#3987e5;--track:#2a2a27;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:880px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:22px}
+h1{font-size:26px;margin:0;text-wrap:balance}h2{font-size:18px;margin:0 0 4px;text-wrap:balance}
+p{margin:0;color:var(--fg2);max-width:68ch}
+section{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--fg2)}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.m h3{font-size:14px;margin:0 0 8px;font-weight:600}
+.row{display:grid;grid-template-columns:92px 1fr 44px;gap:8px;align-items:center;font-size:13px;margin:5px 0}
+.row .lab{color:var(--fg2)}.row .val{text-align:right;font-variant-numeric:tabular-nums}
+.track{background:var(--track);border-radius:4px;height:14px;overflow:hidden}
+.fill{height:100%;border-radius:0 4px 4px 0}
+.rev{border-top:1px solid var(--rule);padding-top:12px}
+.rev:first-of-type{border-top:0;padding-top:0}
+.rev h3{font-size:14px;margin:0;font-weight:600}.rev .sub{font-size:13px;color:var(--fg2);margin-bottom:6px}
+.stack{display:flex;gap:2px;height:16px;border-radius:4px;overflow:hidden}
+.stack div{min-width:2px}
+.srow{display:grid;grid-template-columns:92px 1fr 78px;gap:8px;align-items:center;font-size:13px;margin:5px 0}
+.srow .lab{color:var(--fg2)}.srow .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--fg2)}
+.note{font-size:13px}
+</style>
+<main>
+<header>
+<h1>Roof accuracy progress</h1>
+<p>Two yardsticks: how close the automatic build comes to the roofs you drew by hand, and which drawing you picked in each blind side-by-side. 25 November 2026.</p>
+</header>
+
+<section>
+<div><h2>Against your hand markup, today</h2>
+<p>Each drawn roof is built as if nobody had drawn it, then compared with your drawing. 1.00 would be a perfect match. 195 drawn roofs.</p></div>
+<div class="legend"><span><i class="sw" style="background:var(--live)"></i>Live method</span><span><i class="sw" style="background:var(--new)"></i>New candidate (reader leading)</span></div>
+<div class="grid" id="today"></div>
+<p class="note" id="todaynote"></p>
+</section>
+
+<section>
+<div><h2>Against your hand markup, over time</h2>
+<p>The live method's roof-line score on the drawn roofs at three points this month. The drawn set grew between runs (130, then 179, then 195 roofs), so the steps are indicative, not exact.</p></div>
+<div class="grid" id="time"></div>
+</section>
+
+<section>
+<div><h2>Your blind picks, review by review</h2>
+<p>Each bar is one review: how many roofs you picked the new candidate, called it the same, or picked the live map of the day. Every review tested a different candidate on a different set of roofs, so read each bar on its own.</p></div>
+<div class="legend"><span><i class="sw" style="background:var(--new)"></i>Candidate better</span><span><i class="sw" style="background:var(--same)"></i>Same / unsure</span><span><i class="sw" style="background:var(--live)"></i>Live better</span></div>
+<div id="reviews"></div>
+</section>
+
+<section>
+<h2>What the charts say</h2>
+<p><b>Outlines</b> are the strongest part (0.90 against your markup) and have been since the fitted outline went in.</p>
+<p><b>Roof lines</b> have climbed steadily this month but only about six drawn roofs in ten have their lines right, and under three in ten have every face right.</p>
+<p><b>Obstructions</b> are the weakest: under half of what the build marks is real, and under half of what you drew is found. They have had the least work.</p>
+<p><b>Your picks:</b> candidates win clearly on ordinary houses and lose on the large and awkward roofs the gate flags. No candidate has yet won on both.</p>
+</section>
+</main>
+<script>
+const TODAY = [{"name": "Outline", "live": 0.895, "cand": 0.91}, {"name": "Roof faces (overlap)", "live": 0.647, "cand": 0.668}, {"name": "Roof lines", "live": 0.678, "cand": 0.727}, {"name": "Obstructions marked that are real", "live": 0.437, "cand": 0.364}, {"name": "Your obstructions that are found", "live": 0.451, "cand": 0.394}];
+const TIME = [
+  {name:"Roof lines score", rows:[["~12 Nov",0.586],["~20 Nov",0.639],["25 Nov",0.678]], max:1},
+  {name:"Roofs with lines right (share of the drawn set)", rows:[["~12 Nov",63/130,"63 of 130"],["~20 Nov",92/179,"92 of 179"],["25 Nov",115/195,"115 of 195"]], max:1}
+];
+const REVIEWS = [
+  ["2 Nov","v70 against v69, 40 roofs","Scores out of 10: candidate 3.2, live 5.3. Not shipped.",{Overall:[3,13,24]}],
+  ["13 Nov","LiDAR-point roofs, 25 mixed roofs","Scores out of 10: candidate 4.1, live 2.3.",{Overall:[12,10,3]}],
+  ["13 Nov","LiDAR-point roofs, 24 houses","",{"Roof lines":[12,4,8],Obstructions:[3,17,4],Panels:[8,7,9]}],
+  ["14 Nov","Local photo model, 24 houses","",{"Roof lines":[13,5,6],Obstructions:[12,6,6],Panels:[13,5,6]}],
+  ["14 Nov","Paid photo reader, 24 houses","The paid reader is for labels only, not the map.",{"Roof lines":[20,1,3],Obstructions:[16,5,3],Panels:[21,0,3]}],
+  ["14 Nov","Paid photo reader, 24 fresh houses","",{"Roof lines":[20,4,0],Obstructions:[16,8,0],Panels:[16,8,0]}],
+  ["24 Nov","Roof-line reader, 17 street houses","",{"Roof lines":[10,4,3],Obstructions:[7,6,4],Panels:[11,3,3]}],
+  ["24 Nov","Roof-line reader, 20 gate-flagged roofs","Picked because the candidate lost the most panels on them.",{"Roof lines":[8,2,10],Obstructions:[6,5,9],Panels:[3,2,15]}],
+  ["25 Nov","Same reader after two fixes, 22 gate-flagged roofs","",{Outline:[8,2,12],"Roof lines":[9,1,12],Obstructions:[11,1,10],Panels:[9,1,12]}]
+];
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
+const bar=(lab,v,col,txt,max)=>{const r=el("div","row");r.title=lab+": "+(txt||v.toFixed(2));r.append(el("div","lab",lab));const t=el("div","track");const f=el("div","fill");f.style.width=(100*v/(max||1))+"%";f.style.background=col;t.append(f);r.append(t,el("div","val",v.toFixed(2)));return r};
+const today=document.getElementById("today");
+TODAY.forEach(m=>{const d=el("div","m");d.append(el("h3",null,m.name));d.append(bar("Live",m.live,"var(--live)"));if(m.cand!=null)d.append(bar("Candidate",m.cand,"var(--new)"));today.append(d)});
+document.getElementById("todaynote").textContent="Lines right on 115 roofs live and 129 with the candidate; every face right on 54 and 59. Caution: the candidate's reader was, as far as the records show, trained on these drawn roofs, so its line and face scores here flatter it; on roofs it had not seen, its line score was about 0.85 with the drawn edge given against 0.97 on seen ones.";
+const time=document.getElementById("time");
+TIME.forEach(m=>{const d=el("div","m");d.append(el("h3",null,m.name));m.rows.forEach(([l,v,t])=>d.append(bar(l,v,"var(--bar)",t,m.max)));time.append(d)});
+const rv=document.getElementById("reviews");
+REVIEWS.forEach(([date,name,sub,asp])=>{const d=el("div","rev");d.append(el("h3",null,date+" · "+name));d.append(el("div","sub",sub||"&nbsp;"));
+ Object.entries(asp).forEach(([a,[c,s,l]])=>{const r=el("div","srow");r.title=a+": candidate "+c+", same "+s+", live "+l;r.append(el("div","lab",a));const st=el("div","stack");
+  [[c,"var(--new)"],[s,"var(--same)"],[l,"var(--live)"]].forEach(([n,col])=>{if(n){const x=el("div");x.style.flex=n;x.style.background=col;st.append(x)}});
+  r.append(st,el("div","val",c+" · "+s+" · "+l));d.append(r)});rv.append(d)});
+</script>

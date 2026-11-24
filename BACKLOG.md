@@ -397,6 +397,44 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Both methods against the markup, and where the errors are (25 Nov).**
+  `tools/markup_benchmark.py` on 195 drawn roofs, built blind (VM
+  `~/mb_live`, `~/mb_new`). Current code with live settings: outline IoU
+  0.895, face IoU 0.647, line F 0.678 (lines right 115, faces right 54),
+  obstruction precision 0.437, recall 0.451. A5 switches: 0.910, 0.668,
+  0.727 (129, 59), 0.364, 0.394. The reader's lines_L19 model is taken to
+  have trained on these roofs, so its line and face scores are flattered
+  (seen 0.97 against unseen 0.85 on J). Per roof, line F: reader better on
+  41, worse on 16, identical on 102; best of the two per roof is 0.742, so a
+  per-roof chooser adds little over the reader on drawn roofs.
+  - *No cheap signal picks the owner's side.* On the 39 roofs judged blind
+    (22 flagged, 17 street), plane-fit confidence, bare-area share and panel
+    count do not separate his line picks; facet shape measures need the
+    untessellated faces (layout_ab output facets are triangles).
+  - *The 8 roofs live won outright:* straightening already runs
+    (`SOLAR_LINE_STRAIGHT=1` in the readings); #4739240's ridge kinks are
+    6 cm. #4751245 and #4731197 are bad readings (boundaries where the
+    reader saw no line), not unstraightened ones.
+  - *Obstructions are the weakest part and get worse with the reader.* On
+    the 161 roofs with under 15 m2 drawn, live marks 2,076 m2 against 258
+    drawn and finds 126 of it: eight times too much, and half missed. All
+    195: 4,681 m2 marked, 1,627 real; 4,141 drawn, 1,866 found. Next: split
+    the false area by detector (colour, height, edge) on these roofs and cut
+    the largest source, judged on the markup and by the owner.
+  - Progress charts for the owner: `data/preview/progress_25nov.html`.
+
+- **Rebuild cost and a staged build (25 Nov, plan).** Pilot, 1,270 buildings,
+  19 min on 16 cores: register_imagery 2.4, layout (roof shape and panels)
+  4.8, gate_panels 3.6, rerank/derive/confidence 1, horizons 0.3, heat-map
+  raster 6.3, addresses and emit 1. Half the time is stages a layout change
+  cannot affect, and any code or config edit marks every building stale
+  (`build_keys` hashes all of it). Plan: three per-building stages with
+  stored results and their own keys: faces (inputs: outline, LiDAR, photo,
+  roof-shape code) -> panels (faces, layout code) -> yield (panels, sun
+  model). A layout change re-runs panels and yield from stored faces; a
+  roof-shape change re-lays only roofs whose faces changed; heat map and
+  horizons key on the outline alone. Not started.
+
 - **Owner's blind picks on A5 (25 Nov), 22 flagged roofs, v85 against A5**
   (`data/blind_check/owner_flagged_A5_25nov.json`). Outline v85 12, A5 8,
   same 2; lines v85 12, A5 9; obstructions v85 10, A5 11; panels v85 12,
