@@ -1815,13 +1815,24 @@ def facets_from_selected_faces(building_id, footprint, pts):
     # had a reading of 1 to 5 faces with 10-35% of the returns on their
     # planes, #4740325: 2 faces over 2,600 m2). Over READ_BARE_MAX of the
     # read area bare, the next reading in the order is built instead.
-    if _keep and out:
+    _bare_pts = KEEP_UNREAD_FACE and doc.get("source") == "points" and building_id not in POINT_SET_ASIDE
+    if (_keep or _bare_pts) and out:
         bare = sum(f["area_m2"] for f in out if f.get("no_panel")) / max(sum(f["area_m2"] for f in out), 1e-9)
         if bare > READ_BARE_MAX:
             if os.environ.get("SOLAR_FACE_DEBUG"):
                 print(f"[face {building_id}] reading gives way: {bare:.0%} of its area is not one plane")
-            LINES_GAVE_WAY.add(int(building_id))
-            return facets_from_selected_faces(building_id, footprint, pts)
+            # ...and so does a point reading kept bare (SOLAR_KEEP_UNREAD_FACE):
+            # #5370368's reader reading gave way to a point reading of one
+            # 326 m2 face with 7% of its returns on its plane, kept bare,
+            # and the roof lost 57 panels.
+            if _keep:
+                LINES_GAVE_WAY.add(int(building_id))
+                return facets_from_selected_faces(building_id, footprint, pts)
+            POINT_SET_ASIDE.add(building_id)
+            try:
+                return facets_from_selected_faces(building_id, footprint, pts)
+            finally:
+                POINT_SET_ASIDE.discard(building_id)
     if _keep and out and unary_union([f["geometry"] for f in out]).intersection(footprint).area >= READ_COVER_MIN * footprint.area:
         filled = []
     else:

@@ -582,6 +582,24 @@ def _build_one_at(building_id, nudge_m):
                               if f["properties"].get("kind") == "facet"), default=0.0)
             if other_conf >= MIN_ROOF_CONFIDENCE:
                 return other
+        # THE ROOF-LINE READER'S READING GIVES WAY THE SAME WAY. With the
+        # reader leading (SOLAR_STUDENT_LEADS=1) a reading that explains
+        # under MIN_ROOF_CONFIDENCE of the returns withheld the roof although
+        # the readings behind it had built it: Queenstown part A, 24 Nov, 16
+        # roofs with panels on v85 had none, 13 of them read by the reader
+        # (#5371145: 19 read faces at 0.42, 22 panels on v85; #5371144 at
+        # 0.30, 21 panels). The owner judged v85's panels better on 8 of 8
+        # shown blind. The next reading is built and kept when it clears
+        # the gate.
+        elif (int(building_id) not in roof_partition.LINES_GAVE_WAY
+                and (roof_partition.selected_doc(building_id) or {}).get("reader") == "lines"):
+            roof_partition.LINES_GAVE_WAY.add(int(building_id))
+            other = _build_one_at(building_id, nudge_m)
+            other_conf = max((f["properties"].get("roof_confidence") or 0.0 for f in other
+                              if f["properties"].get("kind") == "facet"), default=0.0)
+            if other_conf >= MIN_ROOF_CONFIDENCE:
+                return other
+            roof_partition.LINES_GAVE_WAY.discard(int(building_id))
 
     # On large commercial roofs, find the large clear areas to place panels
     # on rather than squeezing in every possible face, and ignore any clean
