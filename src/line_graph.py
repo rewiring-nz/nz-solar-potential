@@ -578,8 +578,8 @@ def _plane_basins(barrier, inside, height):
             if pi is None or pj is None:
                 rel[k] = None
             else:
-                off = lambda pp, ff: float(np.median(np.abs(pp[1] * ff[0] + pp[0] * ff[1] + ff[2] - pp[2])))
-                rel[k] = max(off(pj, fi), off(pi, fj))
+                gap = lambda pp, ff: float(np.median(np.abs(pp[1] * ff[0] + pp[0] * ff[1] + ff[2] - pp[2])))
+                rel[k] = max(gap(pj, fi), gap(pi, fj))
         return rel[k]
 
     while True:

@@ -121,8 +121,8 @@ def predict_maps(geom, img_ds, pts):
     import rasterio.windows
     from scipy.ndimage import gaussian_filter
     from scipy.spatial import cKDTree
-    net = _net()
-    if net is None:
+    model = _net()
+    if model is None:
         return None
     b, m_per_px = _frame(geom)
     win = rasterio.windows.from_bounds(*b, img_ds.transform)
@@ -149,7 +149,7 @@ def predict_maps(geom, img_ds, pts):
     with torch.no_grad():
         t = torch.from_numpy(x).permute(2, 0, 1)[None]
         if not TTA:
-            p = torch.sigmoid(net(t))[0].numpy()
+            p = torch.sigmoid(model(t))[0].numpy()
         else:
             # the reading averaged over the picture's 8 symmetries, each
             # turned back before averaging (the trainer's own dihedral, so
@@ -159,7 +159,7 @@ def predict_maps(geom, img_ds, pts):
             acc = 0
             for k in range(8):
                 xk, _, _ = dihedral(t.clone(), t[:, :1], t[:, :1], k)
-                pk = torch.sigmoid(net(xk))[0]
+                pk = torch.sigmoid(model(xk))[0]
                 r = k & 3
                 if r:
                     pk = torch.rot90(pk, -r, (-2, -1))
