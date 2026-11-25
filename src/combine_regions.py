@@ -241,6 +241,11 @@ def _combine_heatmap(regions, out_root, dest_tmp):
     return n, seams
 
 
+def _fold(s):
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFD", s) if not unicodedata.combining(ch))
+
+
 def _addr_key(addr):
     s = "".join(ch for ch in addr.lower() if ch.isalnum())
     return (s[:2] if len(s) >= 2 else (s + "_")[:2]) or "__"
@@ -265,7 +270,15 @@ def _combine_addresses(regions, out_root, dest_tmp):
         p = out_root / r / "addresses.json"
         if p.exists():
             rows.extend(json.loads(p.read_text()))
-    rows.sort()
+    # Neighbouring regions' bboxes overlap, so an address point near a border
+    # is in both regions' indexes: keep one row per label and place, the one
+    # that names a building.
+    best = {}
+    for row in rows:
+        k = (row[0], round(row[1], 5), round(row[2], 5))
+        if k not in best or (row[3] and not best[k][3]):
+            best[k] = row
+    rows = sorted(best.values())
     if len(rows) <= ADDR_SHARD_AT:
         (dest_tmp / "addresses.json").write_text(json.dumps(rows, separators=(",", ":")))
         return len(rows), 0
@@ -280,10 +293,14 @@ def _combine_addresses(regions, out_root, dest_tmp):
     # match, so the street shard is all it takes.
     shards = defaultdict(list)
     for row in rows:
-        keys = {_addr_key(row[0])}
-        street = _street_of(row[0])
-        if street:
-            keys.add(_addr_key(street))
+        # Under the macron-folded keys too: the page folds what is typed
+        # ("Otahuhu" and "Ōtāhuhu" ask for the same shard).
+        keys = set()
+        for label in {row[0], _fold(row[0])}:
+            keys.add(_addr_key(label))
+            street = _street_of(label)
+            if street:
+                keys.add(_addr_key(street))
         for k in keys:
             shards[k].append(row)
     out = dest_tmp / "addresses"

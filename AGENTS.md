@@ -558,6 +558,20 @@ figure for the same thing. Code enforces this:
   face's `sh`), so `generation.js` prices it like any other. Edits are kept
   per roof until the page reloads and stay on the card while that roof is
   open; nothing is written back to the build.
+- The search box matches with `address_search.js` (rules in its header;
+  `tests/test_address_search.js`): normalised words in any order, street
+  abbreviations and macrons folded, a town word optional on labels without
+  one, numbers in numeric order, and spelling suggestions when nothing
+  matches. Its index (`addresses.json`) is every LINZ address point, labelled
+  with suburb and town: `src/add_addresses.py` writes
+  `data/regions/<r>/address_points.json`, `emit_region` turns it into the
+  region's index (building id 0 where no emitted building holds the point; the
+  page then opens the outline under the point or says LINZ has none there),
+  and `combine_regions` drops duplicates from overlapping regions. Builds
+  before this indexed one title per building, which left out about 13,600 of
+  34,900 addresses in v85 (10 Elspeth Street, Cromwell among them);
+  `tools/refresh_address_index.py` rebuilds a published version's index from
+  LINZ without a rebuild.
 - The selection spotlight (the dimming around a selected building) fades
   out while every selected building is off screen and returns when one is
   back in view (`focusBox` in `rooftop-solar.html`).

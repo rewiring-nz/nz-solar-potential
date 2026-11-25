@@ -27,6 +27,7 @@
 <script src="buildings3d.js"></script>
 <script src="low_solar.js"></script>
 <script src="video_export.js"></script>
+<script src="address_search.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <link href="map_layers.css" rel="stylesheet">
 <script>
@@ -595,6 +596,8 @@
 
   .addr-results div { padding: 7px 10px; font-size: 12.5px; cursor: pointer; color: #eee; }
   .addr-results div:hover, .addr-results div.active { background: #266db6; color: #fff; }
+  .addr-results div.addr-note, .addr-results div.addr-note:hover { cursor: default;
+    background: none; color: var(--ink-3); font-size: 12px; line-height: 1.35; }
   /* Horizontal, directly under the headline figure it controls, so the number
      and the control that moves it read as one thing. */
   .hslider-wrap { width: 100%; margin-top: var(--s3); }
@@ -4196,7 +4199,10 @@ map.on("load", async () => {
     // Queenstown list here put Queenstown suburbs in the NATIONAL site's search
     // box. Same bug as the hardcoded DEFAULT_VIEW, in the other direction.
     const TOWNS = ((window.SITE && window.SITE.towns) || [])
-      .map(([name, lng, lat, z]) => ({ addr: name + " (area)", lower: name.toLowerCase(), town: { lng, lat, z } }));
+      .map(([name, lng, lat, z]) => ({ addr: name + " (area)", town: { lng, lat, z } }));
+    // Words naming a town or suburb: a search may name one that an older
+    // index's labels leave out (address_search.js).
+    const PLACES = AddressSearch.placeWords(TOWNS.map(t => t.addr.replace(/ \(area\)$/, "")));
     // With buildings tiled, the page can no longer see every address by
     // reading the source -- it only has the tiles on screen. data/addresses.json
     // is a flat [address, lng, lat, building_id] index, 0.7 MB for the
@@ -4205,8 +4211,10 @@ map.on("load", async () => {
     // needs this sharded by prefix or replaced with a geocoder
     // (docs/maintainers/scaling-and-iteration.md). It is a separate problem from the one
     // this change fixes, and a tenth of the size.
-    let searchable = TOWNS.slice();
-    const addrRow = ([addr, lng, lat, id]) => ({ addr, lower: addr.toLowerCase(), at: { lng, lat, id } });
+    let searchable = [];
+    // id 0: an address point in no building on the map (address_points.json,
+    // src/add_addresses.py); picking it opens whatever outline is under it.
+    const addrRow = ([addr, lng, lat, id]) => ({ addr, at: { lng, lat, id } });
     // Flat file where the build is small; shards by the first two characters
     // where it is not (combine_regions), fetched as they are typed.
     // Each loaded shard is kept on its own and a keystroke scans only the
@@ -4224,14 +4232,18 @@ map.on("load", async () => {
         if (idx && idx.shards) { addrShards = new Set(idx.shards); return; }
         return fetch(`${DATA_BASE}data/addresses.json?v=${DATA_VERSION}`)
           .then(r => r.ok ? r.json() : [])
-          .then(rows => { searchable = TOWNS.concat(rows.map(addrRow)); });
+          .then(rows => { searchable = rows.map(addrRow);
+                          if (input.value.trim()) input.dispatchEvent(new Event("input")); });
       })
       .catch(() => {});
     // Must match combine_regions._addr_key, which keeps every character
     // Python calls alphanumeric. [a-z0-9] dropped the macron vowels, so
     // "Ōtāhuhu" asked for shard "th" while its rows were written to "ōt".
+    // Macrons are folded here and combine_regions writes each address under
+    // its folded key too, so "Otahuhu" and "Ōtāhuhu" ask for the same shard.
     const addrShardKey = q => {
-      const s2 = [...q.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")];
+      const s2 = [...q.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+                    .replace(/[^\p{L}\p{N}]/gu, "")];
       return s2.length >= 2 ? s2.slice(0, 2).join("") : null;
     };
     const input = document.getElementById("addr-input");
@@ -4259,6 +4271,7 @@ map.on("load", async () => {
       const { lng, lat, id } = item.at;
       results.style.display = "none";
       input.value = item.addr;
+      if (!id) { openAddressPoint(item); return; }
       flyToPlace(lng, lat, 18, 1200);
       selectBuilding(id);
       // The address index carries a point and an id, not the feature -- with
@@ -4317,6 +4330,28 @@ map.on("load", async () => {
         showBuildingPanel(best.properties, { lng: cx, lat: cy }, best.geometry);
       }
     };
+    // An address with no building on the map: mark the point, open the
+    // outline under it if the tiles have one, else say there is no roof
+    // estimate there (LINZ has no outline yet, or it is outside the build).
+    const openAddressPoint = async (item) => {
+      const { lng, lat } = item.at;
+      if (coordMarker) coordMarker.remove();
+      coordMarker = new maplibregl.Marker({ color: "#e5484d" }).setLngLat([lng, lat]).addTo(map);
+      flyToPlace(lng, lat, 18, 1200);
+      await new Promise(r => map.once("idle", r));
+      const pt = map.project([lng, lat]);
+      const box = [[pt.x - 6, pt.y - 6], [pt.x + 6, pt.y + 6]];
+      const f = map.queryRenderedFeatures(box, { layers: ["buildings-fill"] })[0];
+      if (f) {
+        selectBuilding(f.properties.building_id);
+        showBuildingPanel(f.properties, { lng, lat }, f.geometry);
+        return;
+      }
+      matches = [];
+      results.innerHTML = `<div class="addr-note">No building outline at ${escHtml(item.addr)} in the LINZ data this map is built from, so there is no roof estimate here yet. New houses appear once LINZ maps them.</div>`;
+      results.style.display = "block";
+    };
+    const SUGGEST_HEAD = `<div class="addr-note">No exact match. Did you mean:</div>`;
     let matches = [];
     input.addEventListener("input", () => {
       const q = input.value.trim().toLowerCase();
@@ -4328,7 +4363,7 @@ map.on("load", async () => {
         results.style.display = "block";
         return;
       }
-      let pools = [searchable];
+      let pools = [TOWNS, searchable];
       if (addrShards) {
         const key = addrShardKey(q);
         pools = [TOWNS];
@@ -4343,19 +4378,43 @@ map.on("load", async () => {
           } else if (addrShardRows.get(key)) pools.push(addrShardRows.get(key));
         }
       }
-      const starts = pools.flatMap(p => p.filter(x => x.lower.startsWith(q)));
-      const contains = pools.flatMap(p => p.filter(x => !x.lower.startsWith(q) && x.lower.includes(q)));
-      matches = starts.concat(contains).slice(0, 8);
-      if (!matches.length) { results.style.display = "none"; return; }
-      results.innerHTML = matches.map((x, i) => `<div data-i="${i}">${escHtml(x.addr)}</div>`).join("");
+      const raw = input.value;
+      matches = AddressSearch.search(pools, raw, { places: PLACES });
+      if (matches.length) {
+        results.innerHTML = matches.map((x, i) => `<div data-i="${i}">${escHtml(x.addr)}</div>`).join("");
+        results.style.display = "block";
+        return;
+      }
+      // Still loading the shard (or the flat file) this query needs: wait for it.
+      const loading = addrShards ? addrShardRows.get(addrShardKey(q)) === null : !searchable.length;
+      if (loading) { results.style.display = "none"; return; }
+      const sugg = AddressSearch.suggest(pools, raw, { places: PLACES });
+      matches = sugg.map(x => x.row || { suggestText: x.text, addr: x.label });
+      if (!matches.length) {
+        results.innerHTML = `<div class="addr-note">No address found. Try the street name on its own, or a town.</div>`;
+        results.style.display = "block";
+        return;
+      }
+      const note = sugg.some(x => x.streetOnly) && sugg[0].streetOnly
+        ? `<div class="addr-note">That number isn't in the map's address list. Streets like it:</div>` : SUGGEST_HEAD;
+      results.innerHTML = note + matches.map((x, i) => `<div data-i="${i}">${escHtml(x.addr)}</div>`).join("");
       results.style.display = "block";
     });
+    const pick = (item) => {
+      if (item.suggestText) {
+        input.value = item.suggestText;
+        input.dispatchEvent(new Event("input"));
+        input.focus();
+        return;
+      }
+      openResult(item);
+    };
     results.addEventListener("click", e => {
       const d = e.target.closest("div[data-i]");
-      if (d) openResult(matches[+d.dataset.i]);
+      if (d) pick(matches[+d.dataset.i]);
     });
     input.addEventListener("keydown", e => {
-      if (e.key === "Enter" && matches.length) openResult(matches[0]);
+      if (e.key === "Enter" && matches.length) pick(matches[0]);
       if (e.key === "Escape") results.style.display = "none";
     });
     // The search is collapsed to an icon so the dashboard can sit at the top of

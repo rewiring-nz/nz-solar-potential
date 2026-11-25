@@ -382,6 +382,40 @@ def test_address_shards_find_a_street_without_a_number():
         assert shard("go") == [rows[1]] and shard("5g") == [rows[1]]
 
 
+def test_address_index_holds_every_address_point():
+    # The search index is every LINZ address point, not one title per
+    # building: 10 Elspeth Street, Cromwell sits in no outline and was missing.
+    import json, tempfile
+    from pathlib import Path as P
+    import src.combine_regions as cr
+    from src.emit_region import _search_addresses
+    with tempfile.TemporaryDirectory() as t:
+        t = P(t)
+        titles = [["12 Elspeth Street", 1.0, 2.0, 7]]
+        assert _search_addresses(t, titles, {7}) == titles      # older region: titles
+        (t / "address_points.json").write_text(json.dumps([
+            ["12 Elspeth Street, Cromwell", 1.0, 2.0, 7],
+            ["10 Elspeth Street, Cromwell", 1.1, 2.1, 0],
+            ["9 Elspeth Street, Cromwell", 1.2, 2.2, 99]]))     # 99: not emitted here
+        rows = _search_addresses(t, titles, {7})
+        assert rows == [["10 Elspeth Street, Cromwell", 1.1, 2.1, 0],
+                        ["12 Elspeth Street, Cromwell", 1.0, 2.0, 7],
+                        ["9 Elspeth Street, Cromwell", 1.2, 2.2, 0]]
+        # the same point in two overlapping regions: one row, the one with a building
+        for r, bid in (("a", 0), ("b", 5)):
+            (t / "out" / r).mkdir(parents=True)
+            (t / "out" / r / "addresses.json").write_text(json.dumps(
+                [["3 Ōtāhuhu Place, Cromwell", 1.0, 2.0, bid]]))
+        old = cr.ADDR_SHARD_AT
+        cr.ADDR_SHARD_AT = 0
+        try:
+            assert cr._combine_addresses(["a", "b"], t / "out", t)[0] == 1
+        finally:
+            cr.ADDR_SHARD_AT = old
+        shard = lambda k: json.loads((t / "addresses" / f"{k}.json").read_text())
+        assert shard("ōt") == shard("ot") == [["3 Ōtāhuhu Place, Cromwell", 1.0, 2.0, 5]]
+
+
 def test_building_axis_follows_the_walls_not_the_bounding_box():
     """A stepped outline's minimum rectangle lies along the diagonal of the
     steps; racking and roof lines must follow the walls (8 Sydney Street:
