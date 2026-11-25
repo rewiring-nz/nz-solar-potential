@@ -397,6 +397,19 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Candidate B1: live method with the flat rules and the surveyed outline, gate result (25 Nov).**
+  `SOLAR_POINT_MERGE_LOOSE=1 SOLAR_ROOF_EDGE=survey`, no reader switches,
+  four Queenstown areas rebuilt with `--force` at ae62d496 (82 min). Gate
+  FAILED, not published: zeroed 9 (largest 15 panels: #4751092, #5371669,
+  #4722654, #4741658, #4731836, #4734810, #4741332, #5373255, #5372656), big
+  drops 57 (reader candidate A5: 135), panels 1,325,054 -> 1,324,230
+  (-0.1%), vanished 0, newly withheld 0, 23 of 38 case roofs changed.
+  Largest drop #4729407 414 -> 183. Blind page for the owner (v85 | B1, 32
+  roofs: the 22 flagged roofs judged for A5 plus 10 reported roofs drawn at
+  random, seed 31; key `data/preview/cases/review_B1_key.json`):
+  https://claude.ai/artifact/LaayHkpkuYc5wMRnCKcfi6. Next: render the 9
+  zeroed and the largest drops and find the shared cause; owner's picks
+  decide whether B1 replaces v85.
 - **Roof shape and outline against the markup: three changes to the point reading (25 Nov).**
   Owner: roof shape and outline come before obstructions. All on the 195
   drawn roofs, built blind, like for like (point readings re-read with one
