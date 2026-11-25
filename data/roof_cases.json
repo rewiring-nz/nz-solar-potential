@@ -1116,7 +1116,8 @@
     "25 Nov, blind v85 against B1: B is much better, A placed way too many panels over balconies, but B still misses many parts of the balconies and places panels on them which is wrong."
    ],
    "status": "open",
-   "flagged_times": 2
+   "flagged_times": 2,
+   "finding": "25 Nov: LiDAR shows one clean 17-degree plane over the terraces (0 of 3,364 returns more than 0.6 m off it): the survey predates the building as photographed. Needs a photo call per face (roofing or terrace); height cannot help."
   },
   {
    "id": 4729783,
