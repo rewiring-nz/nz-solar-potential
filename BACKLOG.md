@@ -397,6 +397,26 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Owner's picks on B1 and the strip rule (25 Nov).** Five roofs, blind,
+  v85 against B1 (`data/blind_check/owner_B1_25nov.json`): outline B1 3 /
+  same 2 / v85 0; lines 3 / 2 / 0; obstructions B1 3, same 1, unsure 1;
+  panels B1 2, v85 2, same 1. Notes: #4729407 "B is much better ... but B
+  still misses many parts of the balconies and places panels on them";
+  #4729782 "Both bad and too few panels" (new case). The two panel losses
+  (#5371143 47 -> 29, #4739240 26 -> 20) and B1's zeroed roofs are not the
+  edge gap (`SOLAR_EDGE_SETBACK_FALLBACK` 0.05 and 0 change nothing): on
+  #5371143 two of ten identical 58-degree faces came out 1.64 m wide in
+  plan and were skipped by the strip rule (`NARROW_FACE_M` 1.7). Two
+  general changes to that rule, each with a switch: a face narrow in plan
+  but 3 m or more on the slope is roof (`SOLAR_NARROW_ON_SLOPE`), and a
+  narrow face holding a quarter or more of the roof's face area is roof
+  (`SOLAR_NARROW_MAX_SHARE`). Marked test street (`street_v85.json`), rule
+  old against new: identical, 18 of 18 "should not be here" still gone.
+  B1 switches plus the new rule: #5371143 30 -> 48 (v85 47); of the 9
+  zeroed, #4734810 4, #4731836 6, #5371669 9, #4741332 4, #5373255 6;
+  still none on #4751092, #4722654, #5372656, #4741658; #4739240 (20) and
+  #4729782 (3) unchanged, cause not found yet. Candidate B2 (same switches,
+  83e8be5d) building on the VM from 07:06 UTC.
 - **Candidate B1: live method with the flat rules and the surveyed outline, gate result (25 Nov).**
   `SOLAR_POINT_MERGE_LOOSE=1 SOLAR_ROOF_EDGE=survey`, no reader switches,
   four Queenstown areas rebuilt with `--force` at ae62d496 (82 min). Gate
@@ -2537,9 +2557,36 @@ corner joins); missed joins; folds 1-4; final model on all labels; street.
   `src/validate_against_pvgis.py`), deliberately: PVGIS uses generic
   temperature and system losses. A derate-only change is a `--yield-only`
   rebuild; it leaves each panel's stored shading_factor valid.
-- **Station mapping outside the Wakatipu.** Low-solar days are mapped onto
-  the Queenstown Aero station record only for Queenstown, Glenorchy and
-  Kingston. Wanaka and Cromwell are not mapped.
+- **Low-solar runs in inversion basins (Cromwell, Alexandra, Clyde; then
+  every inland basin in NZ).** Households in Cromwell report weeks of
+  near-zero output under a low winter inversion. Low-solar days are mapped
+  onto a ground record only for Queenstown, Glenorchy and Kingston
+  (Queenstown Aero pyranometer, `tools/station_qmap.py`); everywhere else
+  runs come from raw ERA5. Measured 25 Nov 2026:
+  - Raw ERA5 does not put roofs on the mountains: Cromwell's nearest
+    valley-level cell (-45.00_169.25) is used. But a ~25 km cell cannot
+    hold the cold pool, so it cannot make valley fog.
+  - Himawari satellite (Open-Meteo `models=jma_jaxa_himawari`, 0.05°, 2015
+    on, CC BY 4.0) follows the Queenstown pyranometer day by day at r 0.98
+    (ERA5 0.92). Within the Cromwell cell its valley-floor pixels (210-290 m)
+    are duller in June than the slopes (500-800 m): 4.6 vs 4.8-5.2 MJ/m2,
+    12-14% vs 9-10% of May-July days under a fifth of the year's average.
+  - It is still blind to most basin fog. June horizontal sunlight (kWh/m2/day):
+    Clyde pyranometer normal 1.14, ERA5 1.20, satellite 1.34 (+17%). At
+    Queenstown: station 1.36, satellite 1.44 (+6%). Mapped onto the
+    satellite, Cromwell's dark days come out *lighter* (5th-percentile share
+    of month 0.44 -> 0.46) while Queenstown's darken (0.50 -> 0.42, as the
+    pyranometer does). So a satellite map is not shipped; the tool that
+    built it (25-pixel valley-floor quantile map per cell) is not in the repo.
+  - Neither ERA5 nor the satellite shows more than ~8 days in a row under
+    clearness 0.4 at Cromwell, 2015-2025. Reports of weeks of near-zero
+    output need a ground record to test, and may include frost or snow
+    lying on panels in freezing fog (not modelled).
+  Needed: daily global radiation from pyranometers in the basins
+  (Earth Sciences NZ DataHub, as the Queenstown Aero file: Clyde, Alexandra,
+  Cromwell, Lauder, Wanaka; then a national list). With them,
+  `station_qmap.py` maps each valley cell to the nearest station on the same
+  valley floor, as a general rule, not per town.
 - **NREL Himawari sunlight (optional).** The NSRDB Himawari files are public
   on AWS (2015–2020); range reads of the Queenstown pixels may avoid needing
   an API key. The only route to suburb-level cloud.
