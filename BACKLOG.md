@@ -410,6 +410,17 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   https://claude.ai/artifact/LaayHkpkuYc5wMRnCKcfi6. Next: render the 9
   zeroed and the largest drops and find the shared cause; owner's picks
   decide whether B1 replaces v85.
+  The 9 zeroed, rendered (`drops_B1b` on the VM, v85 | B1): the faces are
+  as plain or plainer than v85's and the layout step itself fits no panel
+  (not a later gate). Laid out again with the fitted edge, 6 of the 9 take
+  panels; with the surveyed edge, none. #5373255: the sunny face is 1.70 m
+  deep in plan at 46 degrees (2.45 m on the slope) and takes no row; the
+  same two planes took 6 panels on v85 behind an edge about 0.15 m further
+  out. So the tighter outline removes rows that fitted by centimetres on
+  small roofs (largest zeroed: 15 panels). Not settled: whether those rows
+  were real (the edge clearance was tuned with the larger fitted edge).
+  The largest drop, #4729407 (414 -> 183), is a reported roof ("panels
+  placed over balconies"): B1 stops at the balconies.
 - **Roof shape and outline against the markup: three changes to the point reading (25 Nov).**
   Owner: roof shape and outline come before obstructions. All on the 195
   drawn roofs, built blind, like for like (point readings re-read with one
