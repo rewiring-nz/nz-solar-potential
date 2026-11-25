@@ -397,6 +397,30 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Photo flag for roofs the LiDAR reads with too few or too many faces (25 Nov, provisional).**
+  Owner's idea: pick out complex roofs from the photo and process them
+  differently. Test on the 90 drawn roofs that have a local photo reading
+  (`data/student_faces`, lines_L19) against the point reading (VM
+  `~/mb_survey2`, `~/mb_new`; rows `~/flag_rows.json`):
+  - too few: photo faces > 1.3 x LiDAR faces flags 29 roofs and catches 15
+    of the 18 the LiDAR builds with under 0.75 of the drawn faces; on the
+    flagged roofs the reader's lines beat the point reading's on 20 and
+    lose on 5 (unflagged 20 / 14);
+  - too many: LiDAR faces > 1.3 x photo faces (and 2 more) flags 14 and
+    catches 10 of 16; reader lines better 6, worse 1;
+  - where the two counts agree within 1 (43 roofs) the count matches the
+    drawing within 1 on 35.
+  NOT a clean test: lines_L19 is taken to have trained on these roofs, so
+  its face count is close to the drawing by memory. Next: the same table
+  with each roof read by a fold model that did not train on it
+  (`data/line_set/runs/*fold*.pt`), then route flagged roofs (finer plane
+  growing; photo lines place the cuts) and score blind.
+- **Strip rule on the slope: 2 m (25 Nov).** Owner: a face 2 m or more on
+  the slope is enough; 1.2 m with panels on their side if really needed.
+  `SOLAR_NARROW_SLOPE_M` 2.0 (9a542ad2); the 1.2 m landscape case is not
+  switched on. B2 was launched before this with 3 m. To check on the marked
+  street before a build: the three marked strips (1.3-1.6 m in plan) pass a
+  2 m slope limit above about 37 degrees.
 - **Owner's picks on B1 and the strip rule (25 Nov).** Five roofs, blind,
   v85 against B1 (`data/blind_check/owner_B1_25nov.json`): outline B1 3 /
   same 2 / v85 0; lines 3 / 2 / 0; obstructions B1 3, same 1, unsure 1;
@@ -2557,36 +2581,42 @@ corner joins); missed joins; folds 1-4; final model on all labels; street.
   `src/validate_against_pvgis.py`), deliberately: PVGIS uses generic
   temperature and system losses. A derate-only change is a `--yield-only`
   rebuild; it leaves each panel's stored shading_factor valid.
-- **Low-solar runs in inversion basins (Cromwell, Alexandra, Clyde; then
-  every inland basin in NZ).** Households in Cromwell report weeks of
-  near-zero output under a low winter inversion. Low-solar days are mapped
-  onto a ground record only for Queenstown, Glenorchy and Kingston
-  (Queenstown Aero pyranometer, `tools/station_qmap.py`); everywhere else
-  runs come from raw ERA5. Measured 25 Nov 2026:
-  - Raw ERA5 does not put roofs on the mountains: Cromwell's nearest
-    valley-level cell (-45.00_169.25) is used. But a ~25 km cell cannot
-    hold the cold pool, so it cannot make valley fog.
-  - Himawari satellite (Open-Meteo `models=jma_jaxa_himawari`, 0.05°, 2015
-    on, CC BY 4.0) follows the Queenstown pyranometer day by day at r 0.98
-    (ERA5 0.92). Within the Cromwell cell its valley-floor pixels (210-290 m)
-    are duller in June than the slopes (500-800 m): 4.6 vs 4.8-5.2 MJ/m2,
-    12-14% vs 9-10% of May-July days under a fifth of the year's average.
-  - It is still blind to most basin fog. June horizontal sunlight (kWh/m2/day):
-    Clyde pyranometer normal 1.14, ERA5 1.20, satellite 1.34 (+17%). At
-    Queenstown: station 1.36, satellite 1.44 (+6%). Mapped onto the
-    satellite, Cromwell's dark days come out *lighter* (5th-percentile share
-    of month 0.44 -> 0.46) while Queenstown's darken (0.50 -> 0.42, as the
-    pyranometer does). So a satellite map is not shipped; the tool that
-    built it (25-pixel valley-floor quantile map per cell) is not in the repo.
-  - Neither ERA5 nor the satellite shows more than ~8 days in a row under
-    clearness 0.4 at Cromwell, 2015-2025. Reports of weeks of near-zero
-    output need a ground record to test, and may include frost or snow
-    lying on panels in freezing fog (not modelled).
-  Needed: daily global radiation from pyranometers in the basins
-  (Earth Sciences NZ DataHub, as the Queenstown Aero file: Clyde, Alexandra,
-  Cromwell, Lauder, Wanaka; then a national list). With them,
-  `station_qmap.py` maps each valley cell to the nearest station on the same
-  valley floor, as a general rule, not per town.
+- **Low-solar runs in inversion basins: done for Central Otago; the rest of
+  NZ needs stations.** Each valley cell within 0.5° of a pyranometer in
+  `climate/stations.json` has its days mapped onto the nearest station
+  (`tools/station_qmap.py <dir of DataHub CSVs>`): Queenstown Aero, Cromwell
+  (26381), Alexandra (43904) and Wānaka (41237, also Hāwea and Makarora).
+  Measured, May-July 2016-2025: Cromwell's pyranometer has days under a fifth
+  of the year's average on 22.9% of days, ERA5 10.2%; longest run 13 days
+  (8-26 Jun 2023, 1.3-2.4 MJ/m2 a day, Queenstown 4-7) against ERA5's 4.
+  On a north roof through the page's own code, 2007-2025, low days: sensor
+  1.9%, ERA5 before 1.1%, after 2.1%; Wānaka 4.9%, 1.5%, 4.4%. Open:
+  - **The longest spells stay short.** The map cannot add a fog spell ERA5's
+    sequence lacks (the 13-day spell maps to about 5). Tried and not enough:
+    the Himawari satellite (0.05°, r 0.98 with Queenstown's pyranometer but
+    blind to most basin fog: Clyde June 1.34 vs the station normal 1.14
+    kWh/m2/day), a regression on ERA5's daily and hourly weather (pressure,
+    wind, low cloud, boundary-layer depth; r 0.79, longest run 5), and a
+    second table for days after a dark day (runs unchanged).
+  - **The low-day threshold.** At 20% of the roof's average day the June 2023
+    spell (3.5-6.3 kWh a day on a test roof whose clear June day is 24.5)
+    reads as runs of 3-4; at 25-30% the sensor shows 9 days. The default stays
+    20% (decided 25 Nov 2026); a reader raises it on the card.
+  - **The rest of NZ.** Cells with no station within 0.5° stay raw ERA5.
+    Download every DataHub global-radiation station, add each to
+    `climate/stations.json`, and rerun. 12431 (1996-2012, Central Otago,
+    likely Clyde) is not listed: its position is unknown, and it has a run of 50 days
+    under clearness 0.4 ending 6 Sep 2012 that no other station has (likely
+    a failing sensor before it closed; not checked). Lauder (5535) is
+    listed but no built cell is within 0.5°.
+  - **Frost and snow on panels** in freezing fog are not modelled.
+- **Wānaka and Hāwea yearly sunlight is calibrated to Queenstown Aero, but
+  Wānaka's own pyranometer (41237, 2015-2026) measures 1,341 kWh/m2 a year
+  against Queenstown's 1,470 (-9%), June 0.96 against 1.34 kWh/m2/day
+  (-29%).** Cromwell (1,446) and Alexandra (1,377) sit near the Clyde normal
+  the model uses. Adding these stations to `NIWA_MEASURED_GHI_STATIONS` in
+  `src/solar_model.py` changes every panel's kWh there and the beam share in
+  `shading_factor`: a full rebuild, fixture regenerated.
 - **NREL Himawari sunlight (optional).** The NSRDB Himawari files are public
   on AWS (2015–2020); range reads of the Queenstown pixels may avoid needing
   an API key. The only route to suburb-level cloud.
