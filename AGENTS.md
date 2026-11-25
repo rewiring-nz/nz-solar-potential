@@ -321,6 +321,14 @@ figure for the same thing. Code enforces this:
   what is wrong as well as which side is better. A one-drawing review of
   a sample of the live map, repeated each release, gives the accuracy
   over time.
+- **Volunteer roof check** (`check_roofs.html`, rules in
+  [docs/maintainers/roof-check.md](docs/maintainers/roof-check.md)): one
+  aspect a card, "something else is wrong" on every card, gold cards (owner's
+  markup, planted faults, owner's fault marks) mixed in unseen. Only people
+  reliable on an aspect by its gold cards count, and a roof is right only
+  when all four aspects are (`tools/roof_check_score.py`). A deck's
+  `key.json` is private; markup traced on another photo (the pilot's) is
+  never gold. Verdicts are evidence checked against markup, not truth.
 - **Stop VM jobs by session; check for orphans.** Launch long jobs with
   `setsid nohup` and stop them with `pkill -s <session>`. Killing a Python
   parent by PID leaves its multiprocessing workers (~1.8 GB each) running.
