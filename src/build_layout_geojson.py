@@ -965,11 +965,13 @@ NARROW_FACE_M = float(os.environ.get("SOLAR_NARROW_FACE_M", "1.7"))
 # at 58 degrees, 3.1 m or more on the slope, and take three rows of panels;
 # with the roof edge on the surveyed outline two of them came out 1.64 m in
 # plan and lost all their panels (47 -> 29 on the roof; the owner picked
-# the fuller layout blind, 25 Nov). A steep face is roof when it runs
-# 3 m or more downhill (roof_partition.STEEP_MIN_RUN_M, measured on risers),
-# so a face that narrow in plan but that long on the slope is not a strip.
+# the fuller layout blind, 25 Nov). A face NARROW_SLOPE_M or more wide on
+# the slope is roof: 2 m takes a row of upright panels (1.96 m long); the
+# owner's rule, 25 Nov. (Down to 1.2 m a row of panels on their side still
+# fits: not used, kept for a roof that needs it.)
 # SOLAR_NARROW_ON_SLOPE=0 judges on the plan width alone, as before.
 NARROW_ON_SLOPE = os.environ.get("SOLAR_NARROW_ON_SLOPE", "1") != "0"
+NARROW_SLOPE_M = float(os.environ.get("SOLAR_NARROW_SLOPE_M", "2.0"))
 
 
 # ...and a strip is a minor part of its roof. A small gable's two faces are
@@ -991,9 +993,8 @@ def narrow_face(geom, slope_deg, roof_area=None):
     if roof_area and geom.area >= NARROW_MAX_SHARE * roof_area:
         return False
     if NARROW_ON_SLOPE:
-        from src.roof_partition import STEEP_MIN_RUN_M
         c = math.cos(math.radians(min(max(slope_deg or 0.0, 0.0), 85.0)))
-        if w / c >= STEEP_MIN_RUN_M:
+        if w / c >= NARROW_SLOPE_M:
             return False
     return True
 
