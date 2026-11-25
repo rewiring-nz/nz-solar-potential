@@ -20,6 +20,7 @@ Usage: python src/gate_panels.py [region ...]   (default: all areas)
 """
 
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -89,7 +90,9 @@ def panel_ok(poly, pc):
     if (roof_z - local_ground) < MIN_HEIGHT_ABOVE_GROUND_M:
         # sits at ground level: carpark, yard, slab, or air over a gap where
         # the only returns are the ground below
-        return False, "sparse"
+        # the height rides along so restore_on_plane can tell a roof cut
+        # into a slope from a slab on the ground
+        return False, f"sparse@{roof_z:.2f}"
     pts = pc.points_in_bbox(minx - 0.3, miny - 0.3, maxx + 0.3, maxy + 0.3, building_only=True)
     inside = shapely.contains_xy(poly, pts[:, 0], pts[:, 1]) if len(pts) else np.zeros(0, bool)
     pp = pts[inside] if len(pts) and inside.any() else all_in
@@ -163,6 +166,52 @@ def _ground_beside(pc, x, y):
         if len(g) >= 20:
             return float(np.percentile(g[:, 2], q))
     return None
+
+
+ON_PLANE_TOL_M = float(os.environ.get("SOLAR_GATE_ON_PLANE_M", "0.5"))
+
+
+def restore_on_plane(kept, sparse):
+    """Panels the height rule dropped that stand on their own roof face.
+    The rule (surface under 2 m above the ground beside it) is for slabs,
+    carparks and air past an eave. A house cut into a slope fails it along
+    its uphill edge: 26 Earnslaw Terrace lost 7 of 33 panels there, leaving
+    a ragged array and bare roof the owner marked "panels should go here".
+    A face is one surface, so where more of a face's panels pass the rule
+    than fail it, a failed panel whose returns lie within ON_PLANE_TOL_M of
+    the face's fitted plane is on that roof and goes back. A slab fails as
+    a whole face, and a panel past the eave sees ground far below the
+    plane, so neither returns. `sparse` is [(feature, surface height)];
+    returns the features to put back. SOLAR_GATE_ON_PLANE_M=0 turns it off."""
+    if not sparse or ON_PLANE_TOL_M <= 0:
+        return []
+    key = lambda q: (q.get("building_id"), round(float(q.get("plane_aspect_deg") or 0), 4),
+                     round(float(q.get("plane_slope_deg") or 0), 4))
+    plane, passed, failed = {}, Counter(), Counter()
+    for f in kept:
+        q = f["properties"]
+        if q.get("kind") == "facet" and q.get("plane") and q.get("plane_aspect_deg") is not None:
+            plane[key(q)] = q["plane"]
+        elif q.get("kind") == "panel":
+            passed[key(q)] += 1
+    for f, _ in sparse:
+        failed[key(f["properties"])] += 1
+    back = []
+    for f, z in sparse:
+        k = key(f["properties"])
+        if k not in plane or passed[k] <= failed[k]:
+            continue
+        c = shp_transform(TO_NZTM, shape(f["geometry"])).centroid
+        a, b, d = plane[k]
+        if abs(z - (a * c.x + b * c.y + d)) <= ON_PLANE_TOL_M:
+            back.append(f)
+    return back
+
+
+def _why(why):
+    """("sparse", 386.2) from "sparse@386.20"; (why, None) otherwise."""
+    name, _, z = why.partition("@")
+    return name, (float(z) if z else None)
 
 
 def rerack(features):
@@ -240,7 +289,7 @@ def gate_area(name, pc, only_ids=None):
     photo_read = _photo_read(name)
     # Counter, not a fixed dict: adding a new veto reason to panel_ok() should
     # show up in the summary, never KeyError halfway through an area.
-    kept, dropped = [], Counter()
+    kept, dropped, sparse = [], Counter(), []
     errors = 0  # gate crashes keep the panel, but MUST be visible: a systematic
     # failure here would otherwise look like a clean run that changed nothing.
     for f in d["features"]:
@@ -258,12 +307,18 @@ def gate_area(name, pc, only_ids=None):
             kept.append(f)   # drawn and photo-read roofs skip the surface gates
             continue
         ok, why = _gate_feature(f, pc)
+        why, z = _why(why)
         if why == "error-kept":
             errors += 1   # never drop a panel on a gate crash
         if ok:
             kept.append(f)
         else:
             dropped[why] += 1
+            if z is not None:
+                sparse.append((f, z))
+    back = restore_on_plane(kept, sparse)
+    kept += back
+    dropped["sparse"] -= len(back)
     kept, n_rerack = rerack(kept)
     if n_rerack:
         dropped["rerack"] += n_rerack
@@ -394,7 +449,7 @@ def gate_area_parallel(name, jobs=None):
     # array ids and fill orders from one run to the next. Slotting them back
     # makes this exactly gate_area's output, as the docstring always claimed.
     out = [None] * len(d["features"])
-    dropped, errors = Counter(), 0
+    dropped, errors, sparse = Counter(), 0, []
     photo_read = _photo_read(name)
     todo, todo_slot = [], []
     for i, f in enumerate(d["features"]):
@@ -442,10 +497,19 @@ def gate_area_parallel(name, jobs=None):
                     print(f"  {name}: {done_n}/{len(todo)} panels gated", flush=True)
                 if why == "error-kept":
                     errors += 1
+                why, z = _why(why)
                 if ok:
                     out[todo_slot[bi * BATCH + j]] = json.loads(fj)
                 else:
                     dropped[why] += 1
+                    if z is not None:
+                        sparse.append((todo_slot[bi * BATCH + j], json.loads(fj), z))
+    back = {id(f) for f in restore_on_plane([f for f in out if f is not None],
+                                            [(f, z) for _, f, z in sparse])}
+    for slot, f, _ in sparse:
+        if id(f) in back:
+            out[slot] = f
+            dropped["sparse"] -= 1
     feats, n_rerack = rerack([f for f in out if f is not None])
     if n_rerack:
         dropped["rerack"] += n_rerack

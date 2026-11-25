@@ -1,0 +1,196 @@
+{
+ "_readme": "Owner's blind picks, 24 Nov 2026: 20 roofs the deploy gate flagged for losing panels in the four-area build with reader faces, plane check and fitted roof edge (A3), against live v85. Sides shuffled and unlabelled.",
+ "tally": {
+  "zeroed": {
+   "lines": {
+    "v85": 6,
+    "A3": 2
+   },
+   "obstructions": {
+    "same": 3,
+    "v85": 4,
+    "A3": 1
+   },
+   "panels": {
+    "v85": 8
+   }
+  },
+  "drop": {
+   "lines": {
+    "A3": 6,
+    "v85": 4,
+    "same": 2
+   },
+   "obstructions": {
+    "v85": 5,
+    "A3": 5,
+    "same": 2
+   },
+   "panels": {
+    "v85": 7,
+    "A3": 3,
+    "same": 2
+   }
+  },
+  "all": {
+   "lines": {
+    "v85": 10,
+    "A3": 8,
+    "same": 2
+   },
+   "obstructions": {
+    "same": 5,
+    "v85": 9,
+    "A3": 6
+   },
+   "panels": {
+    "v85": 15,
+    "A3": 3,
+    "same": 2
+   }
+  }
+ },
+ "roofs": [
+  {
+   "id": 5370368,
+   "gate": "gate: 57 -> 0 panels, footprint 261 m2, low_confidence",
+   "lines": "v85",
+   "obstructions": "same",
+   "panels": "v85"
+  },
+  {
+   "id": 5371143,
+   "gate": "gate: 47 -> 0 panels, footprint 179 m2, low_confidence",
+   "lines": "v85",
+   "obstructions": "same",
+   "panels": "v85"
+  },
+  {
+   "id": 5371145,
+   "gate": "gate: 22 -> 0 panels, footprint 144 m2, low_confidence",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 5371144,
+   "gate": "gate: 21 -> 0 panels, footprint 140 m2, low_confidence",
+   "lines": "A3",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4731855,
+   "gate": "gate: 10 -> 0 panels, footprint 112 m2, low_confidence",
+   "lines": "A3",
+   "obstructions": "A3",
+   "panels": "v85"
+  },
+  {
+   "id": 4739240,
+   "gate": "gate: 26 -> 0 panels, footprint 99 m2, low_confidence",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4729782,
+   "gate": "gate: 4 -> 0 panels, footprint 86 m2, low_confidence",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 5373429,
+   "gate": "gate: 4 -> 0 panels, footprint 58 m2, low_confidence",
+   "lines": "v85",
+   "obstructions": "same",
+   "panels": "v85"
+  },
+  {
+   "id": 4743917,
+   "gate": "gate: 871 -> 530 panels, footprint 3732 m2, None",
+   "lines": "A3",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4740497,
+   "gate": "gate: 212 -> 84 panels, footprint 698 m2, None",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 5370318,
+   "gate": "gate: 82 -> 57 panels, footprint 427 m2, None",
+   "lines": "A3",
+   "obstructions": "A3",
+   "panels": "v85"
+  },
+  {
+   "id": 4725610,
+   "gate": "gate: 141 -> 98 panels, footprint 370 m2, None",
+   "lines": "A3",
+   "obstructions": "A3",
+   "panels": "A3"
+  },
+  {
+   "id": 4731096,
+   "gate": "gate: 93 -> 64 panels, footprint 303 m2, None",
+   "lines": "A3",
+   "obstructions": "A3",
+   "panels": "A3"
+  },
+  {
+   "id": 4734995,
+   "gate": "gate: 48 -> 24 panels, footprint 266 m2, None",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85",
+   "note": "Both terrible"
+  },
+  {
+   "id": 5371265,
+   "gate": "gate: 77 -> 49 panels, footprint 237 m2, None",
+   "lines": "A3",
+   "obstructions": "A3",
+   "panels": "v85"
+  },
+  {
+   "id": 4729471,
+   "gate": "gate: 77 -> 49 panels, footprint 220 m2, None",
+   "lines": "A3",
+   "obstructions": "A3",
+   "panels": "A3"
+  },
+  {
+   "id": 4731197,
+   "gate": "gate: 50 -> 23 panels, footprint 208 m2, None",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4741451,
+   "gate": "gate: 46 -> 25 panels, footprint 189 m2, None",
+   "lines": "same",
+   "obstructions": "same",
+   "panels": "same"
+  },
+  {
+   "id": 4729332,
+   "gate": "gate: 48 -> 25 panels, footprint 170 m2, None",
+   "lines": "same",
+   "obstructions": "same",
+   "panels": "same"
+  },
+  {
+   "id": 4751245,
+   "gate": "gate: 42 -> 18 panels, footprint 156 m2, None",
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  }
+ ]
+}

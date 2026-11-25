@@ -85,6 +85,17 @@ def main():
     ap.add_argument("--bench", action="store_true",
                     help="the benchmark cluster: the roofs already marked plus "
                          "every unmarked one around them, opened as a work queue")
+    ap.add_argument("--seed", default=None,
+                    help="JSON {building id: {outline: ring, built: [rings]}} in "
+                         "NZTM: a roof with no markup opens with this outline to "
+                         "correct, and shows these faces as the reference (B)")
+    ap.add_argument("--seed-lines", action="store_true", dest="seed_lines",
+                    help="with --seed: a seeded roof also opens with the seed's "
+                         "lines ([{a, b, kind}]) as a draft to correct; it counts "
+                         "as marked only once ticked complete")
+    ap.add_argument("--outline-pass", action="store_true", dest="outline_pass",
+                    help="the roofs already drawn whose outline was left as "
+                         "surveyed, opened to correct or confirm the outline only")
     ap.add_argument("--max", type=int, default=None)
     ap.add_argument("--out", default="mark_roofs.html")
     a = ap.parse_args()
@@ -103,6 +114,16 @@ def main():
 
     ids = a.ids
     why = {}
+    if a.outline_pass and ids is None:
+        _B = json.loads((DATA_DIR / "roof_labels.json").read_text())["buildings"]
+        _held = {str(h["id"] if isinstance(h, dict) else h) for h in
+                 json.loads((DATA_DIR / "roof_set.json").read_text())["holdout"]}
+        ids = [int(k) for k, v in _B.items()
+               if v.get("faces") and not v.get("problem") and not v.get("outline")
+               and k not in _held]
+        # houses first: the edge matters most where a balcony or deck is likely
+        ids.sort(key=lambda k: (_B[str(k)].get("area") == "pilot",
+                                sum(f.get("m2", 0) for f in _B[str(k)]["faces"])))
     # THE BENCHMARK CLUSTER AS A WORK QUEUE: only the marked rooftops and
     # the ones queued in the area, so "next unmarked" walks the queue.
     #
@@ -204,6 +225,19 @@ def main():
                 "olines": v.get("olines") or [],
             }
 
+    # A STARTING POINT TO CORRECT. A roof with no markup can open on a roof
+    # edge already read from the photo, with the reader's faces as the dashed
+    # reference: moving a few corners is quicker than redrawing the edge, and
+    # the edge is the part of the markup the reader most needs. Lines are
+    # not seeded: a wrong line left in place is a wrong label.
+    seed = {}
+    if a.seed:
+        seed = {int(k): v for k, v in json.loads(Path(a.seed).read_text()).items()}
+        for k, v in seed.items():
+            if k not in _saved and v.get("outline"):
+                _saved[k] = {"seeded": True, "lines": (v.get("lines") or []) if a.seed_lines else [], "obstructions": [], "nopanel": [], "complete": False,
+                             "problem": None, "outline": v["outline"], "olines": []}
+
     truth = {}
     tp = DATA_DIR / "roof_truth.json"
     if tp.exists():
@@ -293,7 +327,15 @@ def main():
                     "gdf": gpd.read_file(dd if dd.exists() else p["outlines"]
                                          ).set_index("building_id", drop=False),
                     "img": rasterio.open(p["imagery"]),
+                    # A SECOND PHOTO OF THE SAME ROOF. A roof edge lost in
+                    # shadow in one flight is often plain in another: where
+                    # the area holds a second photo, the tool can swap to it
+                    # (V). It is for looking only: the two photos lean
+                    # differently, so marks are placed on the first.
+                    "img2": (rasterio.open(p["reference_imagery"])
+                             if p["reference_imagery"].exists() else None),
                 }
+                print(f"  {name}: second photo {'yes' if ctxs[name]['img2'] else 'no'}")
             ctx = ctxs[name]
             if ctx is None or bid not in ctx["gdf"].index:
                 continue
@@ -301,6 +343,7 @@ def main():
             minx, miny, maxx, maxy = g.bounds
             b = (minx - PAD_M, miny - PAD_M, maxx + PAD_M, maxy + PAD_M)
             jpg, size = crop(ctx["img"], b)
+            jpg2 = crop(ctx["img2"], b)[0] if ctx.get("img2") is not None else None
             # neighbours whose outline intersects the crop, so a busy block is
             # legible -- see the note in the module docstring
             from shapely.geometry import box
@@ -330,7 +373,7 @@ def main():
                           for r in g.interiors],
                 "neighbours": nb,
                 "why": why.get(bid, []),
-                "built": built_cache.setdefault(
+                "built": (seed.get(bid) or {}).get("built") or built_cache.setdefault(
                     name, _built_facets(name)).get(bid, []),
                 # WORK ALREADY DONE TRAVELS WITH THE BUNDLE. The tool keeps
                 # marks in the browser's local storage, so a fresh bundle on a
@@ -340,6 +383,7 @@ def main():
                 # roof_labels.json makes the bundle carry its own history.
                 "saved": _saved.get(bid),
                 "jpg": jpg,
+                "jpg2": jpg2,
             })
             placed = True
             break
@@ -353,7 +397,8 @@ def main():
     # Replaces the placeholder AND the "{}" default after it, so the template
     # stays valid JavaScript when opened directly and valid once substituted.
     html = html.replace("/*__OPTS__*/{}",
-                        json.dumps({"unmarkedOnly": bool(a.bench)}))
+                        json.dumps({"unmarkedOnly": bool(a.bench),
+                                    "outlinePass": bool(a.outline_pass)}))
     # PUBLISHED ONLINE THE PAGE IS A FRAGMENT, NOT A DOCUMENT. The Artifact
     # host wraps whatever it is given in its own doctype/head/body, so shipping
     # ours nests a second document inside the first. Everything between the

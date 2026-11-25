@@ -120,6 +120,41 @@ def reading_hash(building_id):
     v = DATA / "referee_faces" / f"{building_id}.json"
     if os.environ.get("SOLAR_READING_REFEREE", "0") == "1" and v.exists():
         p = v
+    # the same order as roof_partition.selected_doc: the face-region model's
+    # reading, then faces from the raw LiDAR returns (src/point_roof.py),
+    # then the vision model's reading of the photo (src/vision_roof.py)
+    vision_on = os.environ.get("SOLAR_VISION_ROOF", "1") == "1"
+    w = DATA / "student_faces" / f"{building_id}.json"
+    if vision_on and w.exists():
+        p = w
+    q = DATA / "point_faces" / f"{building_id}.json"
+    before_points = p
+    # SOLAR_STUDENT_LEADS=1: the local reader's reading comes before the returns'
+    student_leads = os.environ.get("SOLAR_STUDENT_LEADS", "0") == "1" and before_points == DATA / "student_faces" / f"{building_id}.json"
+    if os.environ.get("SOLAR_POINT_ROOF", "1") == "1" and q.exists() and not student_leads:
+        p = q
+    w = DATA / "vision_faces" / f"{building_id}.json"
+    if vision_on and w.exists():
+        # the reader leads the returns only on a roof it reads as complex
+        # (vision_roof.reader_leads)
+        lead = True
+        if p == q:
+            try:
+                from src.vision_roof import READER_LEADS_OVER_FACES
+                lead = len(json.loads(w.read_text()).get("faces") or []) > READER_LEADS_OVER_FACES
+            except (OSError, ValueError, TypeError):
+                lead = False
+        if lead:
+            p = w
+    if p == q and before_points != q and before_points.exists():
+        # a thin point reading gives way to a fuller one
+        # (roof_partition.selected_doc): the key follows both files
+        try:
+            d = json.loads(q.read_text())
+            if len(d.get("faces") or []) == 1 and not d.get("outline"):
+                return hashlib.md5(q.read_bytes() + before_points.read_bytes()).hexdigest()[:12]
+        except (OSError, ValueError, TypeError):
+            pass
     return hashlib.md5(p.read_bytes()).hexdigest()[:12] if p.exists() else "none"
 
 

@@ -1,0 +1,108 @@
+"""The roof's edge from the LiDAR returns, in place of the surveyed outline.
+
+THE RULE. The surveyed outline says WHICH building; the returns say where
+its roof ends. Planes are grown on every roof-height return within REACH_M
+of the outline; a plane belongs to this roof when at least OWN_SHARE of its
+returns lie over the outline (a neighbour's roof or a tree lies mostly off
+it). The returns of those planes are binned on a CELL_M grid turned to the
+outline's main wall direction, closed over the scan-line spacing, and the
+filled area's boundary is the roof edge: stair steps along the walls'
+directions, simplified to SIMPLIFY_M.
+
+THE MEASUREMENT is in BACKLOG.md (Roof lines, 16 Nov).
+"""
+import math
+import numpy as np
+from scipy import ndimage as ndi
+from shapely.geometry import Polygon, MultiPolygon, box
+from shapely.ops import unary_union
+from shapely.affinity import rotate, translate
+from shapely import contains_xy
+
+REACH_M = 2.5        # how far past the outline an eave may run
+OWN_SHARE = 0.5      # of a plane's returns over the outline (+0.6 m)
+CELL_M = 0.2
+CLOSE_M = 0.7        # scan lines are about 1 m apart
+GROW_M = 0.15        # the outermost return is short of the edge by half the return spacing
+SIMPLIFY_M = 0.3
+MIN_PART_M2 = 4.0
+
+
+def roof_edge(pr, poly):
+    """Polygon of the roof as the returns have it, or `poly` when there is
+    too little to go on. `pr` is src.point_roof; `poly` the outline already
+    slid onto the returns."""
+    if isinstance(poly, MultiPolygon):
+        poly = max(poly.geoms, key=lambda g: g.area)
+    pts, _, ground = pr.all_points(poly, buf=REACH_M)
+    if len(pts) < 30:
+        return poly
+    ox, oy = poly.centroid.x, poly.centroid.y
+    loc = pts - np.array([ox, oy, ground])
+    lab, eqs, idx = pr.grow_planes(loc)
+    near = contains_xy(poly.buffer(0.6), pts[:, 0], pts[:, 1])
+    keep = np.zeros(len(pts), bool)
+    for k in set(lab[lab >= 0]):
+        m = lab == k
+        if near[m].mean() >= OWN_SHARE:
+            keep |= m
+    if keep.sum() < 30:
+        return poly
+    dirs = pr.dominant_dirs(poly)
+    ang = dirs[0] if dirs else 0.0
+    c, s = math.cos(math.radians(-ang)), math.sin(math.radians(-ang))
+    x = (pts[keep, 0] - ox) * c - (pts[keep, 1] - oy) * s
+    y = (pts[keep, 0] - ox) * s + (pts[keep, 1] - oy) * c
+    pad = CLOSE_M + 1.0
+    x0, y0 = x.min() - pad, y.min() - pad
+    W, H = int((x.max() + pad - x0) / CELL_M) + 1, int((y.max() + pad - y0) / CELL_M) + 1
+    occ = np.zeros((H, W), bool)
+    occ[((y - y0) / CELL_M).astype(int), ((x - x0) / CELL_M).astype(int)] = True
+    r = int(round(CLOSE_M / CELL_M))
+    occ = ndi.binary_closing(occ, np.ones((2 * r + 1, 2 * r + 1)))
+    occ = ndi.binary_fill_holes(occ)
+    occ = ndi.binary_opening(occ, np.ones((3, 3)))
+    lbl, n = ndi.label(occ)
+    parts = []
+    for i in range(1, n + 1):
+        ys, xs = np.nonzero(lbl == i)
+        if len(ys) * CELL_M * CELL_M < MIN_PART_M2:
+            continue
+        # run-length boxes per row: axis-aligned edges in the turned frame
+        cells = []
+        for yy in np.unique(ys):
+            row = np.sort(xs[ys == yy]); st = row[0]; pv = row[0]
+            for v in row[1:]:
+                if v != pv + 1:
+                    cells.append(box(x0 + st * CELL_M, y0 + yy * CELL_M, x0 + (pv + 1) * CELL_M, y0 + (yy + 1) * CELL_M)); st = v
+                pv = v
+            cells.append(box(x0 + st * CELL_M, y0 + yy * CELL_M, x0 + (pv + 1) * CELL_M, y0 + (yy + 1) * CELL_M))
+        parts.append(unary_union(cells))
+    if not parts:
+        return poly
+    g = unary_union(parts).buffer(GROW_M, join_style=2).simplify(SIMPLIFY_M)
+    g = translate(rotate(g, ang, origin=(0, 0)), ox, oy).buffer(0)
+    if g.is_empty:
+        return poly
+    # the parts that are this building: touching the outline
+    gs = [q for q in (g.geoms if hasattr(g, "geoms") else [g]) if q.intersects(poly) and q.area >= MIN_PART_M2]
+    if not gs:
+        return poly
+    g = Polygon(max(gs, key=lambda q: q.intersection(poly).area).exterior)
+    # straight by construction: edges along the walls' directions, few corners
+    try:
+        from src.roof_partition import _regularise_machine_face
+        reg = _regularise_machine_face(g, poly)
+        if reg is not None and abs(reg[0].area - g.area) < 0.12 * g.area:
+            g = reg[0]
+    except Exception:
+        pass
+    return g
+
+
+# ---------------------------------------------------------------------------
+
+
+# The wall-by-wall fit and the face extension are in the build now.
+from src.roof_edge import (EDGE_MIN_M, STRIP_M, OUT_MAX_M, IN_MAX_M, DENSITY_SHARE, HALF_SPACING_M,  # noqa: E402,F401
+                           MIN_STRIP_RETURNS, TREE_SHARE, own_returns, tree_returns, fit_edges, extend_to_edge)

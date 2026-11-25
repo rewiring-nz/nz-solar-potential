@@ -717,10 +717,22 @@ def _has_twin(facet, sibling_facets):
     return False
 
 
+# The tighter rung of the setback ladder (_ladder). SOLAR_EDGE_SETBACK_FALLBACK
+# overrides config.PANEL_EDGE_SETBACK_FALLBACK_M for A/B runs. With the roof
+# edge on the surveyed outline (SOLAR_ROOF_EDGE=survey, about 0.15 m inside
+# the fitted edge) rows that cleared the 0.1 m edge gap by centimetres no
+# longer fit: candidate B1 zeroed 9 small roofs, and on #5371143 two of five
+# identical 58-degree faces (1.95 m deep in plan against 1.96 m) took no
+# panels. The outline is good to about 0.1 m, so a whole extra row (the
+# ladder's 2-panel gain) is kept at a smaller gap.
+EDGE_SETBACK_FALLBACK_M = float(os.environ.get("SOLAR_EDGE_SETBACK_FALLBACK",
+                                               config.PANEL_EDGE_SETBACK_FALLBACK_M))
+
+
 def fit_panels_on_facet(facet, panel_width=config.PANEL_WIDTH_M, panel_height=config.PANEL_HEIGHT_M,
                          setback=config.PANEL_EDGE_SETBACK_M, resolution=RASTER_RESOLUTION_M,
                          obstructions=None, sibling_facets=None, ridge_setback=config.RIDGE_SETBACK_M,
-                         fallback_setback=config.PANEL_EDGE_SETBACK_FALLBACK_M, frame=None,
+                         fallback_setback=EDGE_SETBACK_FALLBACK_M, frame=None,
                          fold_keepouts=None, edge_gap=None):
     """Returns list of panel dicts: {geometry (world XY Polygon), facet_id fields}.
     obstructions: optional list of world-XY Polygons (e.g. from
@@ -1471,9 +1483,19 @@ def assign_fill_ranks(panels, poa_key="poa_kwh_m2_yr"):
     if low_fit_only and len(low_fit_only) > STRAGGLER_MAX_SHARE * len(panels):
         for p in low_fit_only:
             p["straggler"] = False
+    # the shady side fills after everything on the sunny side, whatever the
+    # size of its array (build_layout_geojson.SHADY_SIDE_PANELS); set after
+    # the two rules above so neither promotes it back
+    for p in panels:
+        if p.get("shady_side"):
+            p["straggler"] = True
     main = _order_by_array(([p for p in panels if not p.get("straggler")]), poa_key)
-    extras = sorted((p for p in panels if p.get("straggler")),
+    extras = sorted((p for p in panels if p.get("straggler") and not p.get("shady_side")),
                     key=lambda p: (-p[poa_key], p["facet_key"], p["order"]))
+    # the shady side grows as arrays do, a block at a time: ordered by yield
+    # alone it filled as a ragged staircase across the face (84 Panorama
+    # Terrace, test street round 7)
+    extras += _order_by_array([p for p in panels if p.get("shady_side")], poa_key)
     # Main arrays occupy ranks 1..STRAGGLER_RANK_FLOOR, stragglers the band
     # above -- guaranteeing the default density cut excludes exactly the
     # stragglers regardless of their share of the building's panels.

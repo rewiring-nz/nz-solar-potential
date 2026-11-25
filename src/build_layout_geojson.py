@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import shapely
 import config
 from src.outline_fit import fitted_outlines
+from src.face_weld import weld_faces
 from src.preflight import preflight
 import geopandas as gpd
 
@@ -476,6 +477,18 @@ def _build_one_at(building_id, nudge_m):
     # SOLAR_KEEP_FORMS=0 runs every stage as before.
     _form = (os.environ.get("SOLAR_KEEP_FORMS", "1") != "0"
              and bool(facets) and all(f.get("structured") for f in facets))
+    # A ROOF READ FROM THE PHOTO KEEPS ITS LINES TOO (src/vision_roof.py).
+    # The reader places a ridge where the photo shows it; the stages below
+    # then cut a face where the returns step (a dormer, a chimney, the far
+    # eave) and merge the cut piece into the face across the ridge, so a
+    # straight ridge leaves as a zig-zag. On the 24 drawn pilot roofs read on
+    # 14 Nov, 10 readings matched the drawing as read and 4 after these
+    # stages (16 Nov census): 4735378's two 52 m2 faces left as 63 and 40 m2,
+    # line match 1.0 -> 0.03. Planes are still refreshed. Faces the reading
+    # did not supply (residual fill) are straight partition cuts already.
+    # SOLAR_KEEP_READINGS=0 runs every stage as before.
+    _form = _form or (os.environ.get("SOLAR_KEEP_READINGS", "1") != "0"
+                      and any(f.get("from_reading") for f in facets))
     _reshape = (lambda stage, *a, **k: facets) if _form else \
         (lambda stage, *a, **k: _geometry_stage(building_id, stage, facets, *a, **k))
     facets = _geometry_stage(building_id, refresh_planes, facets, pc_source, dsm=_dsm_ev)
@@ -506,6 +519,18 @@ def _build_one_at(building_id, nudge_m):
     # ...and a face that curves in plan gets a plane per section (src/curved_faces.py,
     # off unless SOLAR_CURVED_SPLIT=1).
     facets = _reshape(split_curved_faces, pc_source)
+    # ...and one line between neighbouring faces: a lapped edge cut and a
+    # narrow gap between two faces closed (src/face_weld.py). Readings skip the
+    # stages above, so this is the only place their doubled lines are joined.
+    facets = weld_faces(facets)
+    # ...and a reading's shared edges straightened together once they are one
+    # line (src/face_straighten.py straighten_faces: kinks under STRAIGHTEN_M
+    # go, the outer edge stays, a change of area refuses). The stages above
+    # are skipped for a reading because they move lines to where noisy planes
+    # cross; this one only removes vertices. SOLAR_STRAIGHTEN_READINGS=0: off.
+    if _form and os.environ.get("SOLAR_STRAIGHTEN_READINGS", "1") != "0" \
+            and any(f.get("from_reading") for f in facets):
+        facets = straighten_faces(facets)
 
     # Do not propose panels on a roof we have not understood -- see
     # MIN_ROOF_CONFIDENCE. Facets are still emitted so the roof draws on the
@@ -534,6 +559,47 @@ def _build_one_at(building_id, nudge_m):
     if synthetic:
         confidence = 1.0      # not a survey measure: pitch_guessed carries the doubt
     modelled = from_labels or synthetic or confidence >= MIN_ROOF_CONFIDENCE
+
+    # POINT FALLBACK. Faces from the raw returns (src/point_roof.py) lead the
+    # other machine readings, but where they explain under
+    # MIN_ROOF_CONFIDENCE of the roof's returns the roof would be withheld
+    # with a reading in hand that the build trusted before. Such a roof is
+    # built again from the next reading, and that build is kept when it
+    # clears the gate. On v81 six roofs lost every panel this way: #4738149
+    # (84 panels on v79, point faces at 0.42 against 0.89), #4718821 (49,
+    # 0.25 against 0.76), #5372248 (39, 0.37 against 0.81).
+    # SOLAR_POINT_FALLBACK=0 withholds as before.
+    if not modelled and os.environ.get("SOLAR_POINT_FALLBACK", "1") != "0":
+        from src import roof_partition
+        if (building_id not in roof_partition.POINT_SET_ASIDE
+                and (roof_partition.selected_doc(building_id) or {}).get("source") == "points"):
+            roof_partition.POINT_SET_ASIDE.add(building_id)
+            try:
+                other = _build_one_at(building_id, nudge_m)
+            finally:
+                roof_partition.POINT_SET_ASIDE.discard(building_id)
+            other_conf = max((f["properties"].get("roof_confidence") or 0.0 for f in other
+                              if f["properties"].get("kind") == "facet"), default=0.0)
+            if other_conf >= MIN_ROOF_CONFIDENCE:
+                return other
+        # THE ROOF-LINE READER'S READING GIVES WAY THE SAME WAY. With the
+        # reader leading (SOLAR_STUDENT_LEADS=1) a reading that explains
+        # under MIN_ROOF_CONFIDENCE of the returns withheld the roof although
+        # the readings behind it had built it: Queenstown part A, 24 Nov, 16
+        # roofs with panels on v85 had none, 13 of them read by the reader
+        # (#5371145: 19 read faces at 0.42, 22 panels on v85; #5371144 at
+        # 0.30, 21 panels). The owner judged v85's panels better on 8 of 8
+        # shown blind. The next reading is built and kept when it clears
+        # the gate.
+        elif (int(building_id) not in roof_partition.LINES_GAVE_WAY
+                and (roof_partition.selected_doc(building_id) or {}).get("reader") == "lines"):
+            roof_partition.LINES_GAVE_WAY.add(int(building_id))
+            other = _build_one_at(building_id, nudge_m)
+            other_conf = max((f["properties"].get("roof_confidence") or 0.0 for f in other
+                              if f["properties"].get("kind") == "facet"), default=0.0)
+            if other_conf >= MIN_ROOF_CONFIDENCE:
+                return other
+            roof_partition.LINES_GAVE_WAY.discard(int(building_id))
 
     # On large commercial roofs, find the large clear areas to place panels
     # on rather than squeezing in every possible face, and ignore any clean
@@ -647,6 +713,12 @@ def _build_one_at(building_id, nudge_m):
             if not _drawn_obs:
                 obstructions = drop_roof_like(obstructions, f, facets, pc_source)
                 obstructions = drop_edge_hugging(obstructions, f, pc_source)
+                # what a vision reading of the photo named as an obstruction
+                # is one, whatever the returns under it look like
+                # (src/vision_roof.py; SOLAR_VISION_ROOF=0 turns it off)
+                from src.vision_roof import vision_obstructions
+                obstructions = list(obstructions) + [o for o in vision_obstructions(f.get("building_id"))
+                                                     if o.intersects(f["geometry"])]
             # Existing solar marked by hand is panel area: the detector flags an
             # array as an obstruction because it looks nothing like the roofing
             # around it (src/obstruction_detection.py), so cut it back out.
@@ -692,11 +764,24 @@ def _build_one_at(building_id, nudge_m):
                 # geometry -- the drawn lines are the roof's lines -- and takes
                 # nothing. See facets_from_drawn_faces.
                 panels = []
+            elif not drawn and narrow_face(f["geometry"], f["slope_deg"],
+                                           sum(o["geometry"].area for o in facets)):
+                # a strip, not a roof plane: see NARROW_FACE_M
+                panels = []
             elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
                 panels = []
                 _rel_skipped = _rel_skipped or not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0)
                 if not away_from_sun(model, f["slope_deg"], f["aspect_deg"], 0.0):
                     _rel_area += f["geometry"].area
+                    if SHADY_SIDE_PANELS:
+                        # the shady side is laid out too, last in the fill
+                        # order: see SHADY_SIDE_PANELS
+                        panels = fit_panels_on_facet(f, obstructions=obstructions,
+                                                     sibling_facets=siblings,
+                                                     fold_keepouts=_keepouts,
+                                                     frame=_frame)
+                        for pnl in panels:
+                            pnl["shady_side"] = True
             else:
                 panels = fit_panels_on_facet(f, obstructions=obstructions,
                                              sibling_facets=siblings,
@@ -817,6 +902,7 @@ def _build_one_at(building_id, nudge_m):
                     "array_size": pnl["array_size"],
                     **({"low_conf_fit": 1} if pnl.get("low_conf_fit") else {}),
                     **({"gap_fill": 1} if pnl.get("gap_fill") else {}),
+                    **({"shady_side": 1} if pnl.get("shady_side") else {}),
                 },
             })
     return features
@@ -847,10 +933,79 @@ SUN_SIDE_REL = float(os.environ.get("SOLAR_SUN_SIDE_REL", "0.78"))  # 0.80 in v5
 SUN_SIDE_ABS = float(os.environ.get("SOLAR_SUN_SIDE_ABS", "0.65"))  # 0.70 zeroed 88
 # all-south houses in v57 (one 24-29 degree face, 0.66-0.70); 0.65 keeps a south roof up to ~27 degrees
 SUN_SIDE_SECTOR_DEG = 112.5   # off north: east-south-east through west-south-west
+# ...BUT THE SLIDER REACHES EVERY FACE WHERE PANELS FIT. The shady side of a
+# roof (above SUN_SIDE_ABS, under SUN_SIDE_REL of the sunny side) is laid out
+# and its panels tagged shady_side: they rank after every sunny-side panel
+# (panel_fitting.assign_fill_ranks and rerank_layouts put them in the band
+# above the default density), so a system grows onto the sunny side first and
+# onto the shady side only once that is full. On the test street (21 Nov) 9 of
+# the owner's 12 "panels should go here" spots were on bare faces of 19 to 55
+# m2 at 30 to 34 degrees facing south-east or south-west, 950 to 1,120
+# kWh/m2 a year. Below SUN_SIDE_ABS a face still takes none.
+# SOLAR_SHADY_SIDE_PANELS=0: the shady side stays bare.
+SHADY_SIDE_PANELS = os.environ.get("SOLAR_SHADY_SIDE_PANELS", "1") != "0"
 SUN_SIDE_MIN_FACE_M2 = 10.0   # a face this small does not make a roof's sunny side
 SUN_SIDE_MIN_SHARE = float(os.environ.get("SOLAR_SUN_SIDE_MIN_SHARE", "0.25"))  # nor a sunny side
 # this small a share of the roof it would leave bare (second pass)
 SUN_SIDE_MIN_PANELS = 8      # ...holding fewer panels than a small home system (8 x 500 W = 4 kW)
+
+
+# A face narrower than this carries no panels. A strip 1.3-1.6 m wide between
+# two roof planes is a parapet, a step or a gutter face, and the fitter laid a
+# single file of panels along it: on the 19-roof test street (20 Nov) all 18
+# panels marked "should not be here" lay on three such faces (1.3, 1.5 and
+# 1.6 m), and the narrowest face whose panels were left unmarked was 1.9 m.
+# Width is area over length, so a notch does not make a strip look wide.
+# Drawn faces are exempt: the markup decides. SOLAR_NARROW_FACE_M=0 turns it off.
+NARROW_FACE_M = float(os.environ.get("SOLAR_NARROW_FACE_M", "1.7"))
+
+
+# ...but the width that matters is on the roof, not on the map. A steep face
+# is foreshortened in plan: #5371143's ten faces are 1.64-2.4 m wide in plan
+# at 58 degrees, 3.1 m or more on the slope, and take three rows of panels;
+# with the roof edge on the surveyed outline two of them came out 1.64 m in
+# plan and lost all their panels (47 -> 29 on the roof; the owner picked
+# the fuller layout blind, 25 Nov). A face NARROW_SLOPE_M or more wide on
+# the slope is roof: 2 m takes a row of upright panels (1.96 m long); the
+# owner's rule, 25 Nov. (Down to 1.2 m a row of panels on their side still
+# fits: not used, kept for a roof that needs it.)
+# SOLAR_NARROW_ON_SLOPE=0 judges on the plan width alone, as before.
+NARROW_ON_SLOPE = os.environ.get("SOLAR_NARROW_ON_SLOPE", "1") != "0"
+NARROW_SLOPE_M = float(os.environ.get("SOLAR_NARROW_SLOPE_M", "2.0"))
+
+
+# ...and a strip is a minor part of its roof. A small gable's two faces are
+# each under 1.7 m in plan and are the whole roof: with the roof edge on the
+# surveyed outline (about 0.15 m inside the fitted edge) candidate B1 left
+# 9 such roofs with no panels (#4734810, two faces, half the roof each;
+# #5373255, 13 of 35 m2; #4741332, one face). A narrow face holding
+# NARROW_MAX_SHARE of the roof's face area or more is roof.
+# SOLAR_NARROW_MAX_SHARE=1 judges every narrow face a strip, as before.
+NARROW_MAX_SHARE = float(os.environ.get("SOLAR_NARROW_MAX_SHARE", "0.25"))
+
+
+def narrow_face(geom, slope_deg, roof_area=None):
+    """True where a face is a strip that carries no panels."""
+    import math
+    w = face_width(geom)
+    if w >= NARROW_FACE_M:
+        return False
+    if roof_area and geom.area >= NARROW_MAX_SHARE * roof_area:
+        return False
+    if NARROW_ON_SLOPE:
+        c = math.cos(math.radians(min(max(slope_deg or 0.0, 0.0), 85.0)))
+        if w / c >= NARROW_SLOPE_M:
+            return False
+    return True
+
+
+def face_width(geom):
+    """A face's width in metres: its area over the long side of its
+    smallest enclosing rectangle."""
+    import math
+    r = list(geom.minimum_rotated_rectangle.exterior.coords)
+    long_side = max(math.dist(r[0], r[1]), math.dist(r[1], r[2]))
+    return geom.area / long_side if long_side > 0 else 0.0
 
 
 def sun_share(model, slope_deg, aspect_deg):

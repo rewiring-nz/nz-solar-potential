@@ -248,6 +248,51 @@ def _fit_plane_robust(pts, iterations=6):
     return plane
 
 
+# A reading's face that the trimmed fit calls "not one plane" is tried once
+# more against the plane most of its returns lie on. The trimmed fit starts
+# from a least-squares plane through everything, so plant, a parapet or an
+# overhanging tree on a third of a flat roof tilts it and it never recovers:
+# 10B Church St (#5370320), a 200 m2 flat face read correctly, fitted 9 deg
+# with 23% of returns on plane, where a 1 deg plane holds 64% and the other
+# 35% stand above it. What separates that from a face spanning two planes is
+# the side the rest fall on: things stand ON a roof, a second roof plane falls
+# AWAY below (52 Camp St #4735104, a missed ridge: 41% below). Seeded, so a
+# roof builds the same every time.
+DOMINANT_SAMPLES = 300
+DOMINANT_MAX_BELOW = 0.15
+
+
+def _dominant_plane(pts):
+    """The plane most of the returns lie on, when the rest stand above it;
+    None when there is none (too few on it, or a share falls below)."""
+    if len(pts) < MIN_POINTS_PER_FACE:
+        return None
+    rng = np.random.default_rng(0)
+    best, best_n = None, 0
+    for _ in range(DOMINANT_SAMPLES):
+        q = pts[rng.choice(len(pts), 3, replace=False)]
+        try:
+            pl = _fit_plane(q)
+        except Exception:
+            continue
+        if not np.all(np.isfinite(pl)):
+            continue
+        r = pts[:, 2] - (pl[0] * pts[:, 0] + pl[1] * pts[:, 1] + pl[2])
+        n = int((np.abs(r) < INLIER_BAND_M).sum())
+        if n > best_n:
+            best, best_n = pl, n
+    if best is None or best_n < MIN_POINTS_PER_FACE:
+        return None
+    r = pts[:, 2] - (best[0] * pts[:, 0] + best[1] * pts[:, 1] + best[2])
+    plane = _fit_plane(pts[np.abs(r) < INLIER_BAND_M])
+    r = pts[:, 2] - (plane[0] * pts[:, 0] + plane[1] * pts[:, 1] + plane[2])
+    if (np.abs(r) < INLIER_BAND_M).mean() < SELECTED_MIN_PLANE_INLIER:
+        return None
+    if (r < -INLIER_BAND_M).mean() > DOMINANT_MAX_BELOW:
+        return None
+    return plane
+
+
 def _inlier_fraction(pts, plane):
     r = pts[:, 2] - (plane[0] * pts[:, 0] + plane[1] * pts[:, 1] + plane[2])
     return float((np.abs(r - np.median(r)) < INLIER_BAND_M).mean())
@@ -1298,6 +1343,11 @@ REPEAT_KEEP_ROOF = os.environ.get("SOLAR_REPEAT_KEEP_ROOF", "1") == "1"
 REPEAT_CONTEST = os.environ.get("SOLAR_REPEAT_CONTEST", "1") == "1"
 
 
+# Buildings whose point reading has been set aside for this build: its faces
+# explained too few of the returns (build_layout_geojson, POINT FALLBACK).
+POINT_SET_ASIDE = set()
+
+
 def selected_doc(building_id):
     """The reading a building is built from: its set's agreed reading when
     there is one (SOLAR_REPEAT_ROOFS), else its own selected faces; None
@@ -1306,17 +1356,71 @@ def selected_doc(building_id):
         return None
     # the vision referee's pick comes first when it is on (src/reading_referee.py)
     from src.reading_referee import REFEREE_FACES_DIR, USE_READING_REFEREE
-    dirs = (([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
+    # faces from the raw LiDAR returns lead every other machine reading when
+    # they are on (src/point_roof.py)
+    from src.point_roof import POINT_FACES_DIR, USE_POINT_ROOF
+    # a confident reading of the photo leads them all (src/vision_roof.py)
+    from src.vision_roof import STUDENT_FACES_DIR, USE_VISION_ROOF, VISION_FACES_DIR
+    # Order: the paid reader's tracing, then faces from the returns, then the
+    # free model. The returns lead the free model on a fair comparison: 29
+    # benchmark roofs the model never trained on, each method's faces slid
+    # as one piece to its best match with the markup's faces and strokes
+    # (tools/experiments/fair_compare.py, 16 Nov): line F at 0.3 m median
+    # 0.82 against 0.69, roofs at 0.7 or over 18 against 14, better on 15
+    # roofs and worse on 6. Reader against returns is unmeasured on those
+    # terms; the reader keeps its place.
+    # ... and the reader keeps it only on a roof it reads as a complex one
+    # (vision_roof.reader_leads); elsewhere its reading comes after the
+    # returns', for a roof whose point faces are set aside or missing
+    from src.vision_roof import reader_leads
+    pts = [POINT_FACES_DIR] if USE_POINT_ROOF and building_id not in POINT_SET_ASIDE else []
+    vis = [VISION_FACES_DIR] if USE_VISION_ROOF else []
+    # SOLAR_STUDENT_LEADS=1: the local reader's faces come before the faces
+    # from the returns (after the paid reader's). Off by default: the order
+    # above was measured with the earlier local model; the roof-line reader
+    # (reader "lines") is unmeasured against the returns on those terms.
+    stu = [STUDENT_FACES_DIR] if USE_VISION_ROOF else []
+    lead = vis + pts if (not pts or reader_leads(building_id)) else pts + vis
+    if STUDENT_LEADS and pts:
+        lead = [d for d in lead if d != POINT_FACES_DIR] + stu + pts
+        stu = []
+    dirs = (lead + stu
+            + ([REFEREE_FACES_DIR] if USE_READING_REFEREE else [])
             + ([REPEAT_FACES_DIR] if USE_REPEAT_ROOFS else []) + [SELECTED_FACES_DIR])
+    # A ONE-FACE READING OF A ROOF THE SURVEY BARELY SAW GIVES WAY. Where
+    # the returns are too thin to place the walls (the point doc carries no
+    # fitted roof edge) and they gave a single face, the returns could not
+    # separate the roof's planes: a gable read as one plane takes panels
+    # across its ridge. Such a reading leads only when no later reading
+    # finds two faces or more. v84 put these readings first and the gate
+    # listed their roofs (#4747990: one face against 8, #4738759: 1 against
+    # 2, #4738589: 1 against 4; renders docs/review/thin_point_19nov.jpg);
+    # v83 had dropped every roof under 1.5 returns/m2 instead, which also
+    # took roofs with no other reading.
+    thin = None
     for d in dirs:
         fp = d / f"{building_id}.json"
         if not fp.exists():
             continue
         try:
-            return json.loads(fp.read_text())
+            doc = json.loads(fp.read_text())
         except (OSError, ValueError):
-            return None
-    return None
+            return thin
+        if d == STUDENT_FACES_DIR and doc.get("reader") == "lines" and int(building_id) in LINES_GAVE_WAY:
+            continue
+        if thin is None and d == POINT_FACES_DIR and thin_point_doc(doc):
+            thin = doc
+            continue
+        if thin is not None and len(doc.get("faces") or []) < 2:
+            continue
+        return doc
+    return thin
+
+
+def thin_point_doc(doc):
+    """A point-roof doc of one face with no fitted roof edge."""
+    return (doc.get("source") == "points" and len(doc.get("faces") or []) == 1
+            and not doc.get("outline"))
 
 
 def selected_score(building_id):
@@ -1495,6 +1599,103 @@ def residual_fill(building_id, footprint, pts, faces):
     return out
 
 
+# A face of the point reading whose returns are not one plane (a deck under a
+# pergola, a glazed roof, a terrace) used to be dropped, and residual fill
+# then recut its area with the old partition: 11 Sunrise Lane's two such
+# faces (plane inlier 0.15 and 0.22) left as five stray triangles holding
+# seven panels, where the owner marked nine wrong lines. With this on the
+# face stays as the reading cut it and takes no panels. Off until measured
+# on the drawn roofs (SOLAR_KEEP_UNREAD_FACE=1 turns it on).
+KEEP_UNREAD_FACE = os.environ.get("SOLAR_KEEP_UNREAD_FACE", "0") == "1"
+STUDENT_LEADS = os.environ.get("SOLAR_STUDENT_LEADS", "0") == "1"
+READ_BARE_MAX = float(os.environ.get("SOLAR_READ_BARE_MAX", "0.5"))
+LINES_GAVE_WAY = set()        # buildings whose roof-line reading gave way in this process
+
+# The line reader's faces are kept as read. A face the regulariser could not
+# simplify, or whose returns are not one plane, used to be dropped, and
+# residual fill then recut its area with the LiDAR partition: lines the
+# reader never drew. 13 Sunrise Lane's reading matched the drawn faces 0.78
+# and the facets built from it 0.64, with cross cuts over the wing's strip
+# roofs that are in none of the reader's maps. With this on such a face
+# stays as read (bare, when it is not one plane), and residual fill is
+# skipped when the reading covers READ_COVER_MIN of the footprint. Off until
+# measured on the drawn roofs (SOLAR_KEEP_READ_FACES=1 turns it on).
+KEEP_READ_FACES = os.environ.get("SOLAR_KEEP_READ_FACES", "0") == "1"
+READ_COVER_MIN = 0.85
+
+
+READ_CUT_MAX_PARTS, READ_CUT_MIN_INLIER, READ_CUT_MIN_COVER = 4, 0.70, 0.80
+# every part is a face in its own right: 2 Sunrise Lane's three parts are 53
+# to 63 m2, the scraps of 13 Sunrise Lane's 17 m2 louvre strips 6 to 11 m2
+READ_CUT_MIN_PART_M2 = 12.0
+
+
+# A read face that is one roof plane with other things standing on or beside
+# it (plant, a raised deck, a parapet) fails the one-plane test and the clean
+# cut alike, and was kept bare. #4743917: a 1,329 m2 read face, 21% of its
+# returns on one plane, whose LiDAR partition is one 954 m2 part at 2 deg
+# (86% on its plane) and six scraps of 1 to 44 m2; kept bare it held none of
+# the 250 panels the live map had there. Rule: when the largest part of the
+# partition covers READ_MAIN_MIN_SHARE of the face and READ_CUT_MIN_INLIER of
+# that part's returns lie on its plane, that part is the face and takes
+# panels; the rest of the read face stays, bare, on the same plane. Off until
+# judged on renders (SOLAR_READ_MAIN_PLANE=1 turns it on).
+READ_MAIN_PLANE = os.environ.get("SOLAR_READ_MAIN_PLANE", "0") == "1"
+READ_MAIN_MIN_SHARE = float(os.environ.get("SOLAR_READ_MAIN_MIN_SHARE", "0.6"))
+
+
+def _main_plane_cut(building_id, poly, cut, inside):
+    """[the main part, the bare rest...] of a read face under READ_MAIN_PLANE, else []."""
+    if not READ_MAIN_PLANE or not cut:
+        return []
+    main = max(cut, key=lambda f: f["geometry"].area)
+    g = main["geometry"].intersection(poly)
+    if g.geom_type != "Polygon" or g.area < READ_MAIN_MIN_SHARE * poly.area:
+        return []
+    sub = _points_in(g, inside)
+    plane = (main["plane_a"], main["plane_b"], main["plane_c"])
+    if len(sub) < MIN_POINTS_PER_FACE or _inlier_fraction(sub, plane) < READ_CUT_MIN_INLIER:
+        return []
+    out = [dict(main, geometry=g, area_m2=float(g.area), from_selected=True, from_reading=True)]
+    rest = poly.difference(g.buffer(0.05))
+    for r in getattr(rest, "geoms", [rest]):
+        if r.geom_type == "Polygon" and r.area >= DRAWN_MIN_FACET_M2:
+            out.append({"building_id": building_id, "geometry": r,
+                        "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+                        "slope_deg": main["slope_deg"], "aspect_deg": main["aspect_deg"],
+                        "area_m2": float(r.area), "point_count": 0,
+                        "from_selected": True, "from_reading": True, "no_panel": True})
+    return out
+
+
+def _clean_cut(building_id, poly, pts, inside):
+    """The LiDAR partition of one read face, when it is clean: at most
+    READ_CUT_MAX_PARTS facets covering READ_CUT_MIN_COVER of the face, each
+    with READ_CUT_MIN_INLIER of its returns on its plane. Else the main part
+    and the bare rest (_main_plane_cut), else []. A louvre
+    or pergola roof fails this (13 Sunrise Lane: inlier 0.09 to 0.14, five
+    scraps) and a face over two real planes passes."""
+    from shapely.geometry import Point
+    cut = residual_fill(building_id, poly, pts, [{"geometry": Point(poly.exterior.coords[0]).buffer(0.01)}])
+    _raw = list(cut)
+    if os.environ.get("SOLAR_FACE_DEBUG"):
+        print(f"[cut {building_id}] face {poly.area:.0f} m2 -> " + ", ".join(
+            "%.0f m2 inl %.2f slope %.0f asp %.0f" % (f["geometry"].area, _inlier_fraction(_points_in(f["geometry"], inside), (f["plane_a"], f["plane_b"], f["plane_c"])) if len(_points_in(f["geometry"], inside)) else -1, f["slope_deg"], f["aspect_deg"]) for f in cut))
+    if not cut or len(cut) > READ_CUT_MAX_PARTS:
+        return _main_plane_cut(building_id, poly, _raw, inside)
+    if sum(f["geometry"].area for f in cut) < READ_CUT_MIN_COVER * poly.area:
+        return _main_plane_cut(building_id, poly, _raw, inside)
+    if min(f["geometry"].area for f in cut) < READ_CUT_MIN_PART_M2:
+        return _main_plane_cut(building_id, poly, _raw, inside)
+    for f in cut:
+        sub = _points_in(f["geometry"], inside)
+        if len(sub) < MIN_POINTS_PER_FACE or _inlier_fraction(sub, (f["plane_a"], f["plane_b"], f["plane_c"])) < READ_CUT_MIN_INLIER:
+            return _main_plane_cut(building_id, poly, _raw, inside)
+    for f in cut:
+        f["from_selected"] = True; f["from_reading"] = True
+    return cut
+
+
 def facets_from_selected_faces(building_id, footprint, pts):
     """Facets straight from the precomputed winner, planes from LiDAR.
 
@@ -1515,6 +1716,13 @@ def facets_from_selected_faces(building_id, footprint, pts):
     inside = _points_in(footprint, pts)
     if len(inside) < MIN_POINTS:
         inside = pts
+    # a face traced from the photo is marked, so the build's LiDAR stages
+    # leave its lines alone (build_layout_geojson, KEEP_READINGS)
+    # ...and so is a face cut from the returns' own planes (src/point_roof.py):
+    # its edges are plane intersections already, which the reshape stages
+    # can only move off them
+    _read = doc.get("source") in ("vision", "student", "points")
+    _keep = KEEP_READ_FACES and doc.get("reader") == "lines"
     out = []
     pending = []
     for ring in doc.get("faces") or []:
@@ -1534,15 +1742,20 @@ def facets_from_selected_faces(building_id, footprint, pts):
         if reg is None:
             if _dbg:
                 print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners: regulariser dropped it")
-            continue
+            if not _keep:
+                continue
+            reg = (poly, False)
         poly, forced = reg
         sub = _points_in(poly, inside)
         plane = _fit_plane_robust(sub) if len(sub) >= MIN_POINTS_PER_FACE \
             else None
+        if (_read and plane is not None
+                and _inlier_fraction(sub, plane) < SELECTED_MIN_PLANE_INLIER):
+            plane = _dominant_plane(sub) or plane
         if _dbg:
             print(f"[face {building_id}] {poly.area:.0f} m2 {len(poly.exterior.coords) - 1} corners forced={forced} "
                   f"pts={len(sub)} inlier={_inlier_fraction(sub, plane) if plane is not None else None}")
-        if forced and (plane is None
+        if not _keep and forced and (plane is None
                        or _inlier_fraction(sub, plane) < BIG_FACE_MIN_PLANE_INLIER):
             continue          # over the cap and not one plane: residual fill cuts it properly
         if plane is not None:
@@ -1554,6 +1767,25 @@ def facets_from_selected_faces(building_id, footprint, pts):
             # (Drawn faces never hit this path; sparse faces still
             # borrow below.)
             if _inlier_fraction(sub, plane) < SELECTED_MIN_PLANE_INLIER:
+                if _keep or (KEEP_UNREAD_FACE and doc.get("source") == "points"):
+                    # see KEEP_UNREAD_FACE: the face stays as cut, bare
+                    slope, aspect = _slope_aspect(plane)
+                    # ...unless the returns inside it are a few clean planes
+                    # the reader missed the line between (2 Sunrise Lane: one
+                    # read face over two planes, 43 panels to none when kept
+                    # bare). Then the returns cut this face, and only it.
+                    cut = _clean_cut(building_id, poly, pts, inside) if _keep else []
+                    if cut:
+                        out.extend(cut)
+                        continue
+                    out.append({
+                        "building_id": building_id,
+                        "geometry": Polygon(poly.exterior, [r for r in poly.interiors]),
+                        "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
+                        "slope_deg": slope, "aspect_deg": aspect,
+                        "area_m2": float(poly.area), "point_count": int(len(sub)),
+                        "from_selected": True, "from_reading": True, "no_panel": True,
+                    })
                 continue
         bad = plane is None
         if not bad:
@@ -1572,7 +1804,7 @@ def facets_from_selected_faces(building_id, footprint, pts):
             "plane_a": plane[0], "plane_b": plane[1], "plane_c": plane[2],
             "slope_deg": slope, "aspect_deg": aspect,
             "area_m2": float(poly.area), "point_count": int(len(sub)),
-            "from_selected": True,
+            "from_selected": True, **({"from_reading": True} if _read else {}),
         })
     # PLAIN POLYGONS, because that is what this function's pending list holds.
     #
@@ -1610,13 +1842,42 @@ def facets_from_selected_faces(building_id, footprint, pts):
             "slope_deg": best["slope_deg"], "aspect_deg": best["aspect_deg"],
             "area_m2": float(poly.area), "point_count": 0,
             "from_selected": True, "plane_borrowed": True,
+            **({"from_reading": True} if _read else {}),
         })
     # COVERAGE IS A GUARANTEE ON THIS PATH TOO. Until 18 Sep only
     # partition_roof filled the residue, so a vision reading that covered
     # part of a roof left the rest with no facet at all -- and no facet
     # means no panels, no obstructions, nothing. #4724740 shipped 63%
     # coverage and a bare 216 m2 flat middle.
-    filled = residual_fill(building_id, footprint, pts, out)
+    # A READING THAT LEAVES MOST OF THE ROOF BARE GIVES WAY. A face kept as
+    # read carries panels only where it is one plane; a reader that saw two
+    # faces on a roof of twenty leaves both bare and the roof with no panels
+    # (Queenstown part A, 24 Nov: 75 roofs zeroed against v85, 8 of 8 checked
+    # had a reading of 1 to 5 faces with 10-35% of the returns on their
+    # planes, #4740325: 2 faces over 2,600 m2). Over READ_BARE_MAX of the
+    # read area bare, the next reading in the order is built instead.
+    _bare_pts = KEEP_UNREAD_FACE and doc.get("source") == "points" and building_id not in POINT_SET_ASIDE
+    if (_keep or _bare_pts) and out:
+        bare = sum(f["area_m2"] for f in out if f.get("no_panel")) / max(sum(f["area_m2"] for f in out), 1e-9)
+        if bare > READ_BARE_MAX:
+            if os.environ.get("SOLAR_FACE_DEBUG"):
+                print(f"[face {building_id}] reading gives way: {bare:.0%} of its area is not one plane")
+            # ...and so does a point reading kept bare (SOLAR_KEEP_UNREAD_FACE):
+            # #5370368's reader reading gave way to a point reading of one
+            # 326 m2 face with 7% of its returns on its plane, kept bare,
+            # and the roof lost 57 panels.
+            if _keep:
+                LINES_GAVE_WAY.add(int(building_id))
+                return facets_from_selected_faces(building_id, footprint, pts)
+            POINT_SET_ASIDE.add(building_id)
+            try:
+                return facets_from_selected_faces(building_id, footprint, pts)
+            finally:
+                POINT_SET_ASIDE.discard(building_id)
+    if _keep and out and unary_union([f["geometry"] for f in out]).intersection(footprint).area >= READ_COVER_MIN * footprint.area:
+        filled = []
+    else:
+        filled = residual_fill(building_id, footprint, pts, out)
     if os.environ.get("SOLAR_FACE_DEBUG"):
         print(f"[face {building_id}] selected kept {len(out)} ({sum(f['area_m2'] for f in out):.0f} m2), "
               f"residual fill added {len(filled)} ({sum(f['geometry'].area for f in filled):.0f} m2) of footprint {footprint.area:.0f} m2")

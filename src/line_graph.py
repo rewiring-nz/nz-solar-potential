@@ -1,0 +1,979 @@
+"""Roof faces from the reader's maps, the way a roof is drawn by hand.
+
+A person marks a roof as points joined by straight lines: the outline's
+corners, the ends of each ridge, valley and drop edge. The reader
+(tools/train_roof_lines.py) predicts those points (the join map), the lines
+by kind and the roof itself. This turns them back into the drawing:
+
+1. joins: the peaks of the join map;
+2. the outline: the edge of the roof map, simplified, its corners moved onto
+   the joins beside them;
+3. lines: a straight segment between two joins is kept when the line maps
+   hold along it (mean LINE_MEAN or more, and no stretch of it empty), it
+   does not run through a third join, and it crosses no better-supported line;
+4. faces: the areas the outline and the kept lines enclose.
+
+Every line is straight and every line ends on a join, so there are no
+doubled or wandering lines to tidy afterwards. Pixel coordinates throughout
+(x right, y down); the caller maps to metres.
+"""
+import os
+
+import numpy as np
+from scipy.ndimage import maximum_filter, label as cc_label, map_coordinates
+from shapely.geometry import LineString, Point, Polygon
+from shapely.ops import polygonize, unary_union
+
+JOIN_MIN, JOIN_NMS_PX = 0.35, 4
+LINE_MEAN, LINE_LOW, LINE_LOW_SHARE = 0.45, 0.15, 0.2
+THROUGH_PX, SNAP_PX, OUTLINE_SIMPLIFY_PX = 2.5, 6.0, 1.5
+MIN_FACE_PX2 = 60.0
+OUTLINE_JOIN_IOU = 0.93
+SKELETON_JOIN_PX = 7.0
+STRAIGHT_SIMPLIFY_PX, STRAIGHT_SNAP_DEG, STRAIGHT_MERGE_PX, STRAIGHT_MIN_IOU = 4.0, 15.0, 3.0, 0.85
+STRAIGHT_DROP_PX = 20.0
+EXTEND_PX, EXTEND_SHARE = 24.0, 0.35
+KINDS = ("ridge", "valley", "cliff")
+STRAIGHTEN = os.environ.get("SOLAR_LINE_OUTLINE_STRAIGHT", "1") == "1"
+STRAIGHT_MAX_MOVE_PX = float(os.environ.get("SOLAR_LINE_OUTLINE_MOVE", "1e9"))     # the straightened edge may lie this far from the edge it was fitted to
+EDGE_BAND_PX = 8
+
+
+def join_points(jmap):
+    from scipy.ndimage import gaussian_filter
+    jmap = gaussian_filter(jmap.astype(np.float32), 1.0)      # one peak per join, not a flat top
+    peak = (jmap == maximum_filter(jmap, size=2 * JOIN_NMS_PX + 1)) & (jmap >= JOIN_MIN)
+    ys, xs = np.nonzero(peak)
+    pts = sorted(zip(jmap[ys, xs], xs.astype(float), ys.astype(float)), reverse=True)
+    out = []
+    for _, x, y in pts:                       # a flat-topped peak gives several pixels: keep one
+        if all(np.hypot(x - a, y - b) > JOIN_NMS_PX for a, b in out):
+            out.append((x, y))
+    return out
+
+
+def roof_outline(roof, edge_map=None):
+    """The largest roof area as a simplified polygon.
+
+    With `edge_map` (the reader's map of the roof's outer edge) the area's
+    boundary is first carried onto the crest of that map: the roof map is
+    soft at its rim and its 0.5 level wanders, while the edge map is a thin
+    line on the edge itself. The sure inside (the area shrunk by
+    EDGE_BAND_PX) and the sure outside (everything beyond the area grown by
+    it) flood toward each other over the edge map and meet on its crest."""
+    from skimage import measure
+    lab, n = cc_label(roof >= 0.5)
+    if not n:
+        return None
+    big = lab == (1 + np.argmax(np.bincount(lab.ravel())[1:]))
+    if edge_map is not None:
+        from scipy.ndimage import binary_dilation, binary_erosion, binary_fill_holes
+        from skimage.segmentation import watershed
+        inner = binary_erosion(big, iterations=EDGE_BAND_PX)
+        if inner.any():
+            marks = np.where(inner, 1, 0) + np.where(~binary_dilation(big, iterations=EDGE_BAND_PX), 2, 0)
+            # the roof map breaks ties where the edge map is flat
+            big = watershed(edge_map + 0.05 * (1 - np.clip(np.abs(roof - 0.5) * 2, 0, 1)), markers=marks) == 1
+            lab, n = cc_label(big)
+            big = binary_fill_holes(lab == (1 + np.argmax(np.bincount(lab.ravel())[1:]))) if n else big
+    cs = measure.find_contours(np.pad(big, 1).astype(float), 0.5)
+    if not cs:
+        return None
+    c = max(cs, key=len) - 1.0
+    p = Polygon([(x, y) for y, x in c]).buffer(0)
+    if p.geom_type == "MultiPolygon":
+        p = max(p.geoms, key=lambda g: g.area)
+    return straighten(p) if STRAIGHTEN else p.simplify(OUTLINE_SIMPLIFY_PX)
+
+
+EDGE_FIT_ROOF_W = 2.0
+EDGE_FIT_MARGIN, EDGE_FIT_MIN_IOU = 0.2, 0.6
+
+
+def edge_strength(poly, edge_map):
+    """Mean of the reader's (lightly blurred) edge map along a polygon's edge."""
+    from scipy.ndimage import gaussian_filter
+    pts = np.asarray(poly.exterior.segmentize(2.0).coords)
+    return float(map_coordinates(gaussian_filter(edge_map.astype(np.float32), 1.0), [pts[:, 1], pts[:, 0]], order=1, mode="constant").mean())
+
+
+def best_edge(survey, own, edge_map, roof, px_per_m):
+    """The roof edge to use: the surveyed outline slid onto the reader's edge
+    (slide_outline), or the reader's own edge.
+
+    The reader's own edge follows the crest of its edge map by construction,
+    so the map is always stronger along it; the slid survey outline is the
+    better edge unless the map is much weaker along it (the survey has a
+    deck or a neighbour in it, or is out of date). Rule: the slid outline
+    when the edge map along it is within EDGE_FIT_MARGIN of the map along
+    the reader's own edge and it overlaps the roof map EDGE_FIT_MIN_IOU or
+    more. On the 100 reference roofs, edge right within 0.5 m: own 34,
+    slid outline always 44, this rule 54 (the better of the two each time
+    would be 58); with the margin chosen on half the roofs and tested on
+    the other half, 24.8 of 50 against 16.9."""
+    if survey is None:
+        return own
+    g = survey.buffer(0)
+    g = max(g.geoms, key=lambda q: q.area) if g.geom_type == "MultiPolygon" else g
+    if g.is_empty or g.geom_type != "Polygon":
+        return own
+    fit, iou = slide_outline(g, edge_map, roof, 2.5 * px_per_m, 0.25 * px_per_m)
+    if own is None:
+        return fit if iou >= EDGE_FIT_MIN_IOU else None
+    if iou >= EDGE_FIT_MIN_IOU and edge_strength(fit, edge_map) >= edge_strength(own, edge_map) - EDGE_FIT_MARGIN:
+        return fit
+    return own
+
+
+def slide_outline(outline, edge_map, roof, reach_px, step_px):
+    """The surveyed outline moved, without turning or reshaping, to where the
+    reader sees the roof's edge. Returns (polygon, overlap with the roof map).
+
+    The surveyed outline has the roof's shape with straight edges and square
+    corners, but it sits off the photo by the building's lean and the
+    survey's own error. The reader's edge is in the photo's frame but soft:
+    its corners round and its edges wander. On the 100 reference roofs,
+    within 0.5 m of the drawn edge: the surveyed outline as it lies 20, the
+    reader's own edge 34, the surveyed outline at its best position 54, and
+    at the position found here 44. Rule: of every position within `reach_px`
+    (in steps of `step_px`) the one where the reader's edge map is strongest
+    along the outline, plus EDGE_FIT_ROOF_W times its overlap with the
+    reader's roof map."""
+    from scipy.ndimage import gaussian_filter
+    from rasterio import features
+    from shapely.affinity import translate
+    es = gaussian_filter(edge_map.astype(np.float32), 1.0)
+    pts = np.asarray(outline.exterior.segmentize(2.0).coords)
+    inside = features.rasterize([outline], out_shape=roof.shape).astype(bool)
+    rm = roof >= 0.5
+    r, st = int(round(reach_px)), max(1, int(round(step_px)))
+    best = (-1.0, 0, 0, 0.0)
+    for dx in range(-r, r + 1, st):
+        for dy in range(-r, r + 1, st):
+            m = np.roll(np.roll(inside, dy, 0), dx, 1)
+            iou = float((m & rm).sum() / max((m | rm).sum(), 1))
+            v = float(map_coordinates(es, [pts[:, 1] + dy, pts[:, 0] + dx], order=1, mode="constant").mean()) + EDGE_FIT_ROOF_W * iou
+            if v > best[0]:
+                best = (v, dx, dy, iou)
+    return translate(outline, best[1], best[2]), best[3]
+
+
+def straighten(poly, tol=STRAIGHT_SIMPLIFY_PX):
+    """The polygon with straight edges in the roof's two main directions.
+
+    A roof's outer edges are straight and nearly all run in one direction or
+    at right angles to it. The edge of a predicted roof map wobbles and has
+    rounded corners. Rule: simplify to `tol`; the main direction is the
+    length-weighted peak of the edge directions (mod 90 degrees); an edge
+    within STRAIGHT_SNAP_DEG of it or of its right angle is turned onto it
+    about its midpoint; neighbouring edges on the same line are merged; the
+    corners are where consecutive edge lines cross. The result is kept only
+    if it covers the same area as before (STRAIGHT_MIN_IOU)."""
+    q = poly.simplify(tol)
+    c = np.asarray(q.exterior.coords)[:-1]
+    if len(c) < 4:
+        return q
+    a, b2 = c, np.roll(c, -1, axis=0)
+    d = b2 - a; ln = np.hypot(d[:, 0], d[:, 1]); ang = np.degrees(np.arctan2(d[:, 1], d[:, 0])) % 180.0
+    hist = np.zeros(90)
+    for g, l in zip(ang, ln):
+        hist[int(g % 90.0) % 90] += l
+    sm = sum(np.roll(hist, k) for k in (-2, -1, 0, 1, 2))
+    k = int(np.argmax(sm))
+    w = np.array([hist[(k + j) % 90] for j in range(-2, 3)])
+    dom = (k + 0.5 + float((w * np.arange(-2, 3)).sum() / max(w.sum(), 1e-9))) % 90.0
+    edges = []                                        # (direction in degrees, point on the line, length)
+    for i in range(len(c)):
+        g = ang[i]
+        for t in (dom, dom + 90.0):
+            diff = abs((g - t + 90.0) % 180.0 - 90.0)
+            if diff <= STRAIGHT_SNAP_DEG:
+                g = t % 180.0
+                break
+        if g not in (dom % 180.0, (dom + 90.0) % 180.0) and ln[i] < STRAIGHT_DROP_PX:
+            continue                                  # a short slanted edge is a rounded corner: its neighbours meet instead
+        edges.append([g, (a[i] + b2[i]) / 2.0, ln[i]])
+    merged = []
+    for e in edges:                                   # neighbours on one line become one edge
+        if merged:
+            m = merged[-1]
+            if abs((e[0] - m[0] + 90.0) % 180.0 - 90.0) < 1e-6:
+                n = np.array([-np.sin(np.radians(m[0])), np.cos(np.radians(m[0]))])
+                if abs(float(np.dot(e[1] - m[1], n))) <= STRAIGHT_MERGE_PX:
+                    m[1] = (m[1] * m[2] + e[1] * e[2]) / (m[2] + e[2]); m[2] += e[2]
+                    continue
+        merged.append(e)
+    if len(merged) < 3:
+        return q
+    out = []
+    for i in range(len(merged)):
+        g1, p1, _ = merged[i - 1]; g2, p2, _ = merged[i]
+        u = np.array([np.cos(np.radians(g1)), np.sin(np.radians(g1))])
+        v = np.array([np.cos(np.radians(g2)), np.sin(np.radians(g2))])
+        den = u[0] * v[1] - u[1] * v[0]
+        if abs(den) < 0.17:                           # nearly parallel: a step, joined at its midpoint
+            mid = (p1 + p2) / 2.0
+            out.append(p1 + u * float(np.dot(mid - p1, u))); out.append(p2 + v * float(np.dot(mid - p2, v)))
+            continue
+        t = ((p2[0] - p1[0]) * v[1] - (p2[1] - p1[1]) * v[0]) / den
+        out.append(p1 + u * t)
+    r = Polygon(out)
+    if not r.is_valid or r.is_empty or r.geom_type != "Polygon":
+        return q
+    if r.intersection(poly).area / r.union(poly).area < STRAIGHT_MIN_IOU:
+        return q
+    if r.exterior.hausdorff_distance(q.exterior) > STRAIGHT_MAX_MOVE_PX:
+        return q
+    return r
+
+
+def _along(m, a, b):
+    n = max(int(np.hypot(b[0] - a[0], b[1] - a[1])), 2)
+    t = np.linspace(0.08, 0.92, n)            # the ends sit on joins, where lines of other kinds cross
+    xs, ys = a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])
+    return map_coordinates(m, [ys, xs], order=1, mode="nearest")
+
+
+def _extend_dangling(lines, edge):
+    """Lines whose loose ends are carried on to what they point at.
+
+    A line divides a roof only if both its ends meet the outline or another
+    line. The reader's lines stop where its confidence does, often a little
+    short of the eave, and the build's roof edge sits outside the photo's
+    eave by its overhang: 1 Sunrise Lane (street L5) had a clean line map
+    and came out as one face. Rule: an end that touches nothing is carried
+    straight on, up to EXTEND_PX or EXTEND_SHARE of the line's length, to
+    the first outline edge or line it reaches; if it reaches nothing it is
+    left as it is."""
+    segs = [LineString([a, b]) for a, b, _ in lines]
+    out = []
+    for i, (a, b, kind) in enumerate(lines):
+        ends = []
+        for p, q in ((a, b), (b, a)):                 # p: the end looked at, q: the other end
+            pt = Point(p)
+            if edge.distance(pt) < 1.0 or any(j != i and s.distance(pt) < 1.0 for j, s in enumerate(segs)):
+                ends.append(p); continue
+            d = np.array(p) - np.array(q); ln = float(np.hypot(*d))
+            reach = max(EXTEND_PX, EXTEND_SHARE * ln)
+            far = tuple(np.array(p) + d / max(ln, 1e-6) * reach)
+            ray = LineString([p, far])
+            hits = [ray.intersection(g) for g in [edge] + [s for j, s in enumerate(segs) if j != i]]
+            pts = [h for hit in hits if not hit.is_empty for h in getattr(hit, "geoms", [hit]) if h.geom_type == "Point"]
+            if pts:
+                h = min(pts, key=lambda h: h.distance(pt))
+                # a hair past the meeting point, so the two lines cross and the face closes
+                ends.append(tuple(np.array(h.coords[0]) + d / max(ln, 1e-6) * 0.01))
+            else:
+                ends.append(p)
+        out.append((ends[0], ends[1], kind))
+    return out
+
+
+def faces_from_maps(p, names, outline=None):
+    """p: C x H x W probabilities; names: the map names in order. `outline`:
+    the roof's outer edge in pixels when the caller has one (on fold 0 the
+    reader's own roof map matched the drawn outline at F 0.62 within 0.5 m,
+    no better than the build's outline); else the roof map's edge.
+    Returns (faces, lines, joins, outline): faces as polygons, lines as
+    (a, b, kind) with kind ridge, valley or cliff."""
+    ch = {n: p[i] for i, n in enumerate(names)}
+    given = outline is not None
+    if not given:
+        outline = roof_outline(ch["roof"])
+    if outline is None or outline.is_empty:
+        return [], [], [], None
+    joins = join_points(ch["join"])
+    n_pred = len(joins)
+    # The join map misses points (0.49 F on held-out drawn roofs, fold 0):
+    # the ends and forks of the line map's own skeleton are joins too, where
+    # no predicted join is already beside them.
+    from skimage.morphology import skeletonize
+    from scipy.ndimage import convolve
+    from shapely import contains_xy
+    yy, xx = np.mgrid[0:p.shape[1], 0:p.shape[2]]
+    inside = contains_xy(outline, xx + 0.5, yy + 0.5)
+    sk = skeletonize((np.maximum.reduce([ch[k] for k in ("line",) + KINDS]) >= 0.5) & inside)
+    nb = convolve(sk.astype(int), np.ones((3, 3), int), mode="constant") - 1
+    ys, xs = np.nonzero(sk & ((nb == 1) | (nb >= 3)))
+    for x, y in zip(xs.astype(float), ys.astype(float)):
+        if all(np.hypot(x - a, y - b) > SKELETON_JOIN_PX for a, b in joins):
+            joins.append((x, y))
+    near = outline.buffer(SNAP_PX)
+    keep = [near.contains(Point(j)) for j in joins]
+    n_pred = sum(keep[:n_pred])
+    joins = [j for j, k in zip(joins, keep) if k]
+    # outline corners move onto the join beside them; joins on the outline
+    # that are not corners are added to it, so lines can end mid-edge
+    # The outline drawn through the joins that sit on the roof's edge, in
+    # order round it: straight edges between real corners. It is used when
+    # it covers the same area as the roof map (OUTLINE_JOIN_IOU); otherwise
+    # the map's own edge, with its corners moved onto the joins beside them.
+    ext = outline.exterior
+    on_edge = sorted((ext.project(Point(j)), j) for j in joins[:n_pred] if ext.distance(Point(j)) <= SNAP_PX)
+    drawn = Polygon([j for _, j in on_edge]).buffer(0) if len(on_edge) >= 3 and not given else None
+    if given:
+        pass
+    elif drawn is not None and drawn.geom_type == "Polygon" and not drawn.is_empty and \
+            drawn.intersection(outline).area / drawn.union(outline).area >= OUTLINE_JOIN_IOU:
+        outline = drawn
+    else:
+        ring = list(ext.coords)[:-1]
+        for i, v in enumerate(ring):
+            d = [np.hypot(v[0] - j[0], v[1] - j[1]) for j in joins]
+            if d and min(d) <= SNAP_PX:
+                ring[i] = joins[int(np.argmin(d))]
+        ring = [v for i, v in enumerate(ring) if v != ring[i - 1]]
+        if len(ring) < 3:
+            return [], [], joins, outline
+        outline = Polygon(ring).buffer(0)
+        if outline.geom_type == "MultiPolygon":
+            outline = max(outline.geoms, key=lambda g: g.area)
+    edge = outline.exterior
+    nodes = []
+    for j in joins:
+        d = edge.distance(Point(j))
+        nodes.append(tuple(edge.interpolate(edge.project(Point(j))).coords[0]) if 0 < d <= SNAP_PX else j)
+    anyline = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
+    inside_edge = outline.buffer(1.5)
+    cand = []
+    for i in range(len(nodes)):
+        for k in range(i + 1, len(nodes)):
+            a, b = nodes[i], nodes[k]
+            seg = LineString([a, b])
+            if seg.length < 3:
+                continue
+            if any(m not in (i, k) and seg.distance(Point(nodes[m])) < THROUGH_PX for m in range(len(nodes))):
+                continue                      # the two shorter pieces are tested on their own
+            if not inside_edge.contains(seg):
+                continue                      # a roof line does not leave the roof
+            mid = seg.interpolate(0.5, normalized=True)
+            if edge.distance(mid) < 2.0 and edge.distance(Point(a)) < 1.0 and edge.distance(Point(b)) < 1.0:
+                continue                      # along the outline: already a line
+            v = _along(anyline, a, b)
+            if v.mean() >= LINE_MEAN and (v < LINE_LOW).mean() <= LINE_LOW_SHARE:
+                kind = max(KINDS, key=lambda n: _along(ch[n], a, b).mean())
+                cand.append((float(v.mean()), seg, a, b, kind))
+    # roof lines do not cross except at a join: the best-supported line is
+    # kept and any that would cross it is dropped
+    lines, kept = [], []
+    for _, seg, a, b, kind in sorted(cand, key=lambda c: -c[0]):
+        if any(seg.crosses(k) for k in kept):
+            continue
+        kept.append(seg); lines.append((a, b, kind))
+    lines = _extend_dangling(lines, edge)
+    net = unary_union([LineString(list(edge.coords))] + [LineString([a, b]) for a, b, _ in lines])
+    faces = [f for f in polygonize(net)
+             if f.area >= MIN_FACE_PX2 and outline.buffer(0.5).contains(f.representative_point())]
+    return faces, lines, nodes, outline
+
+
+# ---------------------------------------------------------------- regions
+CORE_MIN, SEED_MIN_PX2, REGION_SIMPLIFY_PX = 0.5, int(os.environ.get("SOLAR_LINE_SEED_MIN", "150")), 8.0
+MERGE_BARRIER = float(os.environ.get("SOLAR_LINE_MERGE", "0.35"))      # two regions are one face when the line maps average under this along their boundary
+BASIN_SIGMA_PX, BASIN_STEP = float(os.environ.get("SOLAR_LINE_BASIN_SIGMA", "2.0")), 0.05
+COMPLETE = int(os.environ.get("SOLAR_LINE_COMPLETE", "0"))
+COMPLETE_STRONG, COMPLETE_MIN_PX, COMPLETE_GAP_PX = 0.5, 14, 3
+COMPLETE_REACH_PX, COMPLETE_REACH_SHARE, COMPLETE_MEET_PX, COMPLETE_SIDE = 30.0, 1.0, 5, 0.3
+
+
+def complete_lines(barrier, inside):
+    """The line map with every clear straight line carried on to where it
+    must end.
+
+    A roof line ends on the roof edge or on another line; it never stops in
+    the middle of a face. The reader's lines fade where the photo gives no
+    edge (a ridge in shadow, a valley under a tree), and a line that stops
+    short divides nothing: the faces either side join, or close along a
+    slanted cut. Rule: the straight pieces of the map at COMPLETE_STRONG or
+    more, COMPLETE_MIN_PX or longer, are found (a Hough transform of the
+    thinned map); an end that is not on the roof edge and has no other line
+    beside it (nothing at COMPLETE_SIDE or more off its axis within
+    COMPLETE_MEET_PX: a ridge end where two hips leave is complete) is
+    carried straight on to the first strong line or the roof edge it
+    reaches, within COMPLETE_REACH_PX or COMPLETE_REACH_SHARE of its own
+    length. Returns the map with the carried parts drawn in at 1."""
+    from skimage.morphology import skeletonize
+    from skimage.transform import probabilistic_hough_line
+    from skimage.draw import line as draw_line
+    from scipy.ndimage import binary_dilation, binary_erosion
+    h, w = barrier.shape
+    strong = (barrier >= COMPLETE_STRONG) & inside
+    segs = probabilistic_hough_line(skeletonize(strong), threshold=8, line_length=COMPLETE_MIN_PX, line_gap=COMPLETE_GAP_PX, rng=0)
+    if not segs:
+        return barrier
+    rim = inside & ~binary_erosion(inside, iterations=3)
+    out = barrier.copy()
+    wide = binary_dilation(strong, iterations=1)
+    for (x0, y0), (x1, y1) in segs:
+        ln = float(np.hypot(x1 - x0, y1 - y0))
+        for (px, py), (qx, qy) in (((x1, y1), (x0, y0)), ((x0, y0), (x1, y1))):       # p: the end, q: the other end
+            ux, uy = (px - qx) / ln, (py - qy) / ln
+            reach = int(min(max(COMPLETE_REACH_PX, COMPLETE_REACH_SHARE * ln), 4 * COMPLETE_REACH_PX))
+            # the end is complete if another line leaves it: strong map off the line's own axis, near the end
+            ys, xs = np.mgrid[max(0, py - COMPLETE_MEET_PX):min(h, py + COMPLETE_MEET_PX + 1), max(0, px - COMPLETE_MEET_PX):min(w, px + COMPLETE_MEET_PX + 1)]
+            off = np.abs((xs - px) * -uy + (ys - py) * ux) > 2.5
+            if (barrier[ys, xs][off] >= COMPLETE_SIDE).any() or rim[max(0, py - 3):py + 4, max(0, px - 3):px + 4].any():
+                continue
+            hit = None
+            for t in range(3, reach + 1):
+                x, y = int(round(px + ux * t)), int(round(py + uy * t))
+                if not (0 <= x < w and 0 <= y < h) or not inside[y, x]:
+                    hit = (int(round(px + ux * (t - 1))), int(round(py + uy * (t - 1)))); break
+                if t > COMPLETE_MEET_PX and wide[y, x]:
+                    hit = (x, y); break
+            if hit is None:
+                continue
+            rr, cc = draw_line(py, px, hit[1], hit[0])
+            ok = (rr >= 0) & (rr < h) & (cc >= 0) & (cc < w)
+            out[rr[ok], cc[ok]] = 1.0
+            out[np.clip(rr[ok] + 1, 0, h - 1), cc[ok]] = 1.0; out[rr[ok], np.clip(cc[ok] + 1, 0, w - 1)] = 1.0
+    return out
+
+
+def _basins(barrier, inside, merge_at=None):
+    """The roof cut wherever the line maps have a crest, then joined back
+    across every cut with no line under it.
+
+    Seeds taken from the face-interior map (its connected pieces) give one
+    seed to two faces whenever the line between them has a gap, and a seed
+    cannot be divided: on the 157 held-out drawn roofs, 202 of 488 faces lost
+    into a neighbour had a line the reader saw (mean 0.5 or more) on the
+    missing edge. So the cut comes first: every basin of the smoothed line
+    map is a region (far more than there are faces), and two regions become
+    one where the boundary between them carries no line (mean below
+    MERGE_BARRIER), weakest boundary first; a region under SEED_MIN_PX2
+    joins its weakest neighbour whatever the boundary."""
+    from scipy.ndimage import gaussian_filter
+    from skimage.segmentation import watershed
+    h, w = barrier.shape
+    smooth = np.round(gaussian_filter(barrier, BASIN_SIGMA_PX) / BASIN_STEP) * BASIN_STEP
+    lab = watershed(smooth, mask=inside)
+    if lab.max() < 1:
+        return None
+    S, N = {}, {}
+    for a, b, v in ((lab[:, :-1], lab[:, 1:], np.maximum(barrier[:, :-1], barrier[:, 1:])),
+                    (lab[:-1, :], lab[1:, :], np.maximum(barrier[:-1, :], barrier[1:, :]))):
+        m = (a != b) & (a > 0) & (b > 0)
+        lo, hi = np.minimum(a[m], b[m]).astype(np.int64), np.maximum(a[m], b[m]).astype(np.int64)
+        key = lo * (lab.max() + 1) + hi
+        u, inv = np.unique(key, return_inverse=True)
+        sm, ct = np.bincount(inv, weights=v[m]), np.bincount(inv)
+        for k, x, c in zip(u, sm, ct):
+            k = (int(k // (lab.max() + 1)), int(k % (lab.max() + 1)))
+            S[k] = S.get(k, 0.0) + float(x); N[k] = N.get(k, 0) + int(c)
+    size = dict(enumerate(np.bincount(lab.ravel())))
+    nb = {}
+    for (i, j) in S:
+        nb.setdefault(i, set()).add(j); nb.setdefault(j, set()).add(i)
+    parent = {}
+    key = lambda i, j: (min(i, j), max(i, j))
+
+    def join(i, j):                                   # j into i; boundary sums add
+        for k in nb.pop(j, ()):
+            if k == i:
+                continue
+            S[key(i, k)] = S.get(key(i, k), 0.0) + S.pop(key(j, k)); N[key(i, k)] = N.get(key(i, k), 0) + N.pop(key(j, k))
+            nb[k].discard(j); nb[k].add(i); nb.setdefault(i, set()).add(k)
+        nb.get(i, set()).discard(j); S.pop(key(i, j), None); N.pop(key(i, j), None)
+        size[i] += size.pop(j); parent[j] = i
+    while S:
+        small = [(S[key(i, k)] / N[key(i, k)], i, k) for i in nb if size[i] < SEED_MIN_PX2 for k in nb[i]]
+        if small:
+            _, j, i = min(small)
+        else:
+            v, (i, j) = min((S[k] / N[k], k) for k in S)
+            if v >= (MERGE_BARRIER if merge_at is None else merge_at):
+                break
+        join(i, j)
+    def root(i):
+        while i in parent:
+            i = parent[i]
+        return i
+    lut = np.arange(lab.max() + 1)
+    for i in parent:
+        lut[i] = root(i)
+    return lut[lab]
+
+
+# THE LINES AND THE SURFACE DECIDE TOGETHER (SOLAR_LINE_PLANES=1). A roof face
+# is a plane. The line maps alone merge two faces wherever the line between
+# them is faint (homes outside the town centre, 31 unseen roofs wrong: 94
+# drawn faces merged into a neighbour, 52 split, 60 shifted), and the
+# unsmoothed LiDAR heights say which of those pairs are one plane. Rule: the
+# roof is cut at every crest of the line maps as before; then two
+# neighbouring regions become one when the line between them is weak (under
+# MERGE_BARRIER) AND the heights do not put them on different planes, or
+# when the heights put them on ONE plane and the line is under PL_SAME_LINE.
+# "One plane": each region's heights lie within PL_SAME_M (median) of the
+# plane fitted to the other. "Different": beyond PL_DIFF_M. A region with
+# under PL_MIN_PX heights has no say, and the lines decide alone.
+PLANES = int(os.environ.get("SOLAR_LINE_PLANES", "0"))
+PL_SAME_M = float(os.environ.get("SOLAR_PL_SAME", "0.10"))
+PL_DIFF_M = float(os.environ.get("SOLAR_PL_DIFF", "0.30"))
+PL_SAME_LINE = float(os.environ.get("SOLAR_PL_SAME_LINE", "0.6"))
+PL_MIN_PX, PL_ERODE_PX = 120, 3
+
+
+PL_CREASE = float(os.environ.get("SOLAR_PL_CREASE", "0"))       # weight of the surface's own creases among the cuts (0: lines only)
+PL_OWN_M = float(os.environ.get("SOLAR_PL_OWN", "0.3"))        # a region further than this (median) from its own fitted plane has no say
+PL_NOLINE = 0.15
+PL_DIFF_NOLINE_M = float(os.environ.get("SOLAR_PL_DIFF_NOLINE", "0.6"))
+PL_FACE_MIN_PX = int(os.environ.get("SOLAR_PL_FACE_MIN", "600"))
+PL_CREASE_SIGMA_PX = float(os.environ.get("SOLAR_PL_CREASE_SIGMA", "3"))
+
+
+def _creases(height, has):
+    """0..1: how sharply the LiDAR surface bends or steps at each pixel (the
+    size of the second derivative of the lightly smoothed heights, as a share
+    of the roof's 99th percentile). Gaps are filled from the nearest return."""
+    from scipy.ndimage import distance_transform_edt, gaussian_filter, binary_dilation
+    idx = distance_transform_edt(~has, return_distances=False, return_indices=True)
+    z = gaussian_filter(height[idx[0], idx[1]], PL_CREASE_SIGMA_PX)
+    gy, gx = np.gradient(z)
+    gyy, gyx = np.gradient(gy); gxy, gxx = np.gradient(gx)
+    c = gaussian_filter(np.sqrt(gxx ** 2 + gyy ** 2 + 2 * gxy ** 2), 1.0)
+    c[binary_dilation(~has, iterations=4)] = 0
+    top = np.percentile(c[has], 99) if has.any() else 0
+    return np.clip(c / top, 0, 1) if top > 1e-9 else np.zeros_like(c)
+
+
+def _plane(ys, xs, z):
+    """Least-squares plane z = a x + b y + c through the points, refitted once without the far ones."""
+    A = np.c_[xs, ys, np.ones(len(xs))]
+    k, *_ = np.linalg.lstsq(A, z, rcond=None)
+    r = np.abs(A @ k - z); keep = r <= max(0.05, 2.5 * np.median(r))
+    if keep.sum() >= 30:
+        k, *_ = np.linalg.lstsq(A[keep], z[keep], rcond=None)
+    return k
+
+
+def _plane_basins(barrier, inside, height):
+    from scipy.ndimage import binary_erosion
+    has = height > 0
+    surface = barrier
+    if PL_CREASE > 0 and has.sum() > 400:
+        # where the surface bends or steps the roof is also cut, so that two
+        # planes with no line seen between them are two regions for the
+        # heights to keep apart; a cut inside one plane is joined back below
+        surface = np.maximum(barrier, PL_CREASE * _creases(height, has))
+    lab = _basins(surface, inside, merge_at=0.0)
+    if lab is None:
+        return None
+    pts, fit, rel = {}, {}, {}
+
+    def data(i):
+        if i not in pts:
+            m = binary_erosion(lab == i, iterations=PL_ERODE_PX) & has
+            ys, xs = np.nonzero(m)
+            pts[i] = (ys, xs, height[ys, xs]) if len(ys) >= PL_MIN_PX else None
+            fit[i] = _plane(*pts[i]) if pts[i] is not None else None
+            if fit[i] is not None and float(np.median(np.abs(pts[i][1] * fit[i][0] + pts[i][0] * fit[i][1] + fit[i][2] - pts[i][2]))) > PL_OWN_M:
+                pts[i] = fit[i] = None          # not one plane itself (plant, a curved or stepped region): no say
+        return pts[i], fit[i]
+
+    def relation(i, j):
+        k = (min(i, j), max(i, j))
+        if k not in rel:
+            (pi, fi), (pj, fj) = data(i), data(j)
+            if pi is None or pj is None:
+                rel[k] = None
+            else:
+                gap = lambda pp, ff: float(np.median(np.abs(pp[1] * ff[0] + pp[0] * ff[1] + ff[2] - pp[2])))
+                rel[k] = max(gap(pj, fi), gap(pi, fj))
+        return rel[k]
+
+    while True:
+        S, N = {}, {}
+        for a, b, v in ((lab[:, :-1], lab[:, 1:], np.maximum(barrier[:, :-1], barrier[:, 1:])),
+                        (lab[:-1, :], lab[1:, :], np.maximum(barrier[:-1, :], barrier[1:, :]))):
+            m = (a != b) & (a > 0) & (b > 0)
+            for lo, hi, x in zip(np.minimum(a[m], b[m]).tolist(), np.maximum(a[m], b[m]).tolist(), v[m].tolist()):
+                S[(lo, hi)] = S.get((lo, hi), 0.0) + x; N[(lo, hi)] = N.get((lo, hi), 0) + 1
+        best = None
+        for k in S:
+            line = S[k] / N[k]; d = relation(*k)
+            # with no line seen at all, the heights alone keep two regions apart only when both are
+            # face-sized and clearly off each other's plane
+            apart = d is not None and d > (PL_DIFF_M if line >= PL_NOLINE else PL_DIFF_NOLINE_M)
+            if apart and line < PL_NOLINE:
+                apart = min(len(pts[k[0]][0]), len(pts[k[1]][0])) >= PL_FACE_MIN_PX
+            if (line < MERGE_BARRIER and not apart) or (d is not None and d <= PL_SAME_M and line < PL_SAME_LINE):
+                if best is None or line < best[0]:
+                    best = (line, k)
+        if best is None:
+            return lab
+        i, j = best[1]
+        lab = np.where(lab == j, i, lab)
+        for d_ in (pts, fit):
+            d_.pop(i, None); d_.pop(j, None)
+        for k in [k for k in rel if i in k or j in k]:
+            rel.pop(k)
+
+
+SNAP = int(os.environ.get("SOLAR_LINE_SNAP", "0"))
+SNAP_SIMPLIFY_PX = float(os.environ.get("SOLAR_LINE_SNAP_TOL", "8"))
+SNAP_DEG = float(os.environ.get("SOLAR_LINE_SNAP_DEG", "20"))
+SNAP_HOLD = float(os.environ.get("SOLAR_LINE_SNAP_HOLD", "0.05"))
+SNAP_EXTEND_PX = 5.0
+
+
+def main_direction(segs):
+    """The length-weighted peak of segment directions, mod 90 degrees.
+    `segs` is rows of (x1, y1, x2, y2)."""
+    segs = np.asarray(segs, float)
+    d = segs[:, 2:] - segs[:, :2]; ln = np.hypot(d[:, 0], d[:, 1])
+    ang = np.degrees(np.arctan2(d[:, 1], d[:, 0])) % 90.0
+    hist = np.zeros(90)
+    np.add.at(hist, ang.astype(int) % 90, ln)
+    sm = sum(np.roll(hist, k) for k in (-2, -1, 0, 1, 2))
+    k = int(np.argmax(sm))
+    w = np.array([hist[(k + j) % 90] for j in range(-2, 3)])
+    return (k + 0.5 + float((w * np.arange(-2, 3)).sum() / max(w.sum(), 1e-9))) % 90.0
+
+
+def snap_lines(inner, outline):
+    """The lines between faces made straight and turned onto the roof's two
+    main directions.
+
+    A roof's ridges, valleys and steps are straight, and most run along the
+    roof's main direction or at right angles to it. The boundary between two
+    read regions wobbles and drifts off that direction. Rule: each line is
+    simplified to SNAP_SIMPLIFY_PX; the main direction is the length-weighted
+    peak (mod 90 degrees) of the outline's and the lines' segment directions;
+    a segment within SNAP_DEG of it or of its right angle is made exactly
+    parallel by moving its two ends (least squares over all segments at once,
+    each end held weakly at its read position so shared ends stay shared);
+    other segments (hips) stay straight between their moved ends. A line's
+    loose end is carried on along its last segment to cross the roof edge."""
+    if not inner:
+        return inner
+    lines = [list(g.simplify(SNAP_SIMPLIFY_PX).coords) for g in inner]
+    oc = list(outline.simplify(STRAIGHT_SIMPLIFY_PX).exterior.coords)
+    segs = [(a[0], a[1], b[0], b[1]) for c in lines + [oc] for a, b in zip(c[:-1], c[1:])]
+    t = np.radians(main_direction(segs))
+    R = np.array([[np.cos(t), np.sin(t)], [-np.sin(t), np.cos(t)]])      # into the roof's frame
+    idx, pts = {}, []
+    def node(q):
+        k = (round(q[0], 2), round(q[1], 2))
+        if k not in idx:
+            idx[k] = len(pts); pts.append(q)
+        return idx[k]
+    chains = [[node(q) for q in c] for c in lines]
+    P = np.asarray(pts, float) @ R.T
+    n = len(P)
+    A = [np.eye(n) * SNAP_HOLD, np.eye(n) * SNAP_HOLD]; B = [P[:, 0] * SNAP_HOLD, P[:, 1] * SNAP_HOLD]
+    for c in chains:
+        for i, j in zip(c[:-1], c[1:]):
+            d = P[j] - P[i]; ln = float(np.hypot(*d))
+            if ln < 1e-6:
+                continue
+            g = np.degrees(np.arctan2(d[1], d[0])) % 180.0
+            for ax, target in ((1, 0.0), (0, 90.0)):          # along the main direction: equal across it, and the reverse
+                if abs((g - target + 90.0) % 180.0 - 90.0) <= SNAP_DEG:
+                    w = ln / 20.0
+                    A[ax][i, i] += w; A[ax][j, j] += w; A[ax][i, j] -= w; A[ax][j, i] -= w
+    Q = np.stack([np.linalg.solve(A[0], B[0]), np.linalg.solve(A[1], B[1])], axis=1) @ R
+    deg = np.zeros(n, int)
+    for c in chains:
+        if c[0] != c[-1]:
+            deg[c[0]] += 1; deg[c[-1]] += 1
+    out = []
+    for c in chains:
+        q = [Q[i].copy() for i in c]
+        if c[0] != c[-1] and len(q) >= 2:
+            for end, nxt, i in ((0, 1, c[0]), (-1, -2, c[-1])):
+                if deg[i] == 1:                                   # a loose end: on to the roof edge
+                    d = q[end] - q[nxt]; ln = float(np.hypot(*d))
+                    if ln > 1e-6:
+                        q[end] = q[end] + d / ln * SNAP_EXTEND_PX
+        g = LineString([tuple(v) for v in q])
+        if g.length > 0.5:
+            out.append(g)
+    return out
+
+
+STRAIGHT = int(os.environ.get("SOLAR_LINE_STRAIGHT", "0"))
+ST_TOL_PX = float(os.environ.get("SOLAR_ST_TOL", "3"))          # a piece is straight when it stays this close to its chord
+ST_MIN_PX = float(os.environ.get("SOLAR_ST_MIN", "12"))         # shorter pieces give no line of their own
+ST_SNAP_DEG = float(os.environ.get("SOLAR_ST_DEG", "12"))       # a line this close to a main direction is turned onto it
+ST_SNAP_MOVE_PX = float(os.environ.get("SOLAR_ST_SNAP_MOVE", "1e9"))
+# SOLAR_ST_KEEP_EDGE=1: the roof edge given is kept exactly (a surveyed outline is already straight
+# lines and square corners; fitting lines to it again drops its short slanted runs and moves the rest)
+ST_KEEP_EDGE = os.environ.get("SOLAR_ST_KEEP_EDGE", "0") == "1"
+ST_MERGE_PX = float(os.environ.get("SOLAR_ST_MERGE", "3"))      # parallel lines this close are one line
+ST_REACH_PX = float(os.environ.get("SOLAR_ST_REACH", "1e9"))
+ST_JOIN_PX = float(os.environ.get("SOLAR_ST_JOIN", "8"))        # consecutive pieces of one boundary this close are one line
+ST_FREE_JOIN_DEG = 8.0
+ST_CREST_PX = float(os.environ.get("SOLAR_ST_CREST", "0"))      # a line may slide this far onto the crest of the line maps
+ST_FREE_EDGE_PX = float(os.environ.get("SOLAR_ST_FREE_EDGE", "40"))   # a slanted run of the roof edge needs this length to be kept    # how far a line runs past the piece it was fitted to
+
+
+def _straight_pieces(coords, tol, min_len):
+    """A chain cut into straight pieces: (points) arrays, each within `tol`
+    of its chord and `min_len` or longer."""
+    c = np.asarray(coords, float)
+    if len(c) < 2:
+        return []
+    keep = np.asarray(LineString(c).simplify(tol).coords)
+    idx, j = [], 0
+    for k in keep:                                    # simplify keeps a subset of the vertices, in order
+        while j < len(c) - 1 and not (abs(c[j, 0] - k[0]) < 1e-9 and abs(c[j, 1] - k[1]) < 1e-9):
+            j += 1
+        idx.append(j)
+    out = []
+    for a, b in zip(idx[:-1], idx[1:]):
+        if b > a and np.hypot(*(c[b] - c[a])) >= min_len:
+            out.append(c[a:b + 1])
+    return out
+
+
+def straight_faces(lab, outline, barrier=None):
+    """Faces whose every edge lies on a fitted straight line.
+
+    Roof lines are straight, and the outer edge is long straight runs with
+    square corners. The regions the reader's maps give (`lab`, one number
+    per face) have the right faces but their boundaries follow the maps
+    pixel by pixel: they wobble, and corners come out rounded. Rule:
+
+    1. every boundary (between two regions, and the roof edge) is cut into
+       straight pieces; a piece of ST_MIN_PX or more gives one line, fitted
+       through its points;
+    2. a line within ST_SNAP_DEG of the roof's main direction or its right
+       angle is turned onto it; parallel lines within ST_MERGE_PX are one
+       line, so edges that line up across the roof are exactly in line;
+    3. the lines cut the picture into cells, each cell goes whole to the
+       region that covers most of it, and a face is its region's cells.
+
+    A face edge can then only run along a fitted line and turn where two
+    lines cross. A boundary too short to give a line (a rounded corner, a
+    small jog) is taken up by the lines around it."""
+    import shapely
+    from rasterio import features
+    h, w = lab.shape
+    chains = []                                       # (points, is roof edge)
+    regs = {}
+    for geom, v in features.shapes(lab.astype(np.int32), mask=lab > 0):
+        regs.setdefault(int(v), []).append(shapely.geometry.shape(geom))
+    regs = {k: unary_union(v) for k, v in regs.items()}
+    keys = sorted(regs)
+    for a in range(len(keys)):
+        for b in range(a + 1, len(keys)):
+            s = regs[keys[a]].boundary.intersection(regs[keys[b]].boundary)
+            parts = [g for g in getattr(s, "geoms", [s]) if g.geom_type in ("LineString", "MultiLineString") and g.length > 0.5]
+            if parts:
+                m = unary_union(parts)
+                m = shapely.ops.linemerge(m) if m.geom_type == "MultiLineString" else m
+                chains += [(np.asarray(g.coords), False) for g in getattr(m, "geoms", [m]) if g.geom_type == "LineString"]
+    ring = np.asarray(outline.exterior.segmentize(1.0).coords)
+    # the ring starts at an arbitrary point: begin it at its sharpest corner so no straight run is split
+    simp = np.asarray(outline.simplify(ST_TOL_PX).exterior.coords)
+    if len(simp) > 3:
+        k0 = int(np.argmin(np.hypot(*(ring[:-1] - simp[0]).T)))
+        ring = np.vstack([ring[k0:-1], ring[:k0 + 1]])
+    if not ST_KEEP_EDGE:
+        chains.append((ring, True))
+    raw = []                                          # per chain: pieces in order, (angle, points)
+    for pts, outer in chains:
+        row = []
+        for pc in _straight_pieces(pts, ST_TOL_PX, ST_MIN_PX):
+            vt = np.linalg.svd(pc - pc.mean(0), full_matrices=False)[2]
+            row.append([float(np.degrees(np.arctan2(vt[0][1], vt[0][0])) % 180.0), pc])
+        raw.append((row, outer))
+    if sum(len(r) for r, _ in raw) < 3:
+        return None
+    dom = main_direction([[*pc[0], *pc[-1]] for r, _ in raw for _, pc in r])
+    _turn = lambda g, t: abs((g - t + 90.0) % 180.0 - 90.0)
+    fit = []
+    for row, outer in raw:
+        done = []                                     # [angle, snapped, points]
+        for ang, pc in row:
+            snapped = False
+            for t in (dom, dom + 90.0):
+                if _turn(ang, t) <= ST_SNAP_DEG:
+                    # turned about its middle, no point of the piece may move more than ST_SNAP_MOVE_PX:
+                    # a short wobbling piece is squared up, a long line that really runs off-square is kept
+                    half = float(np.hypot(*(pc[-1] - pc[0]))) / 2.0
+                    if half * np.sin(np.radians(_turn(ang, t))) > ST_SNAP_MOVE_PX:
+                        break
+                    ang, snapped = t % 180.0, True
+                    break
+            if done:
+                # the next piece of the same chain on nearly the same line is the same roof line, wobbling
+                m = done[-1]
+                if _turn(ang, m[0]) <= (1e-6 if snapped and m[1] else ST_FREE_JOIN_DEG):
+                    n = np.array([-np.sin(np.radians(m[0])), np.cos(np.radians(m[0]))])
+                    if abs(float(np.median(pc @ n) - np.median(m[2] @ n))) <= ST_JOIN_PX:
+                        m[2] = np.vstack([m[2], pc])
+                        if not m[1]:
+                            vt = np.linalg.svd(m[2] - m[2].mean(0), full_matrices=False)[2]
+                            m[0] = float(np.degrees(np.arctan2(vt[0][1], vt[0][0])) % 180.0)
+                        continue
+            done.append([ang, snapped, pc])
+        for ang, snapped, pc in done:
+            d = np.array([np.cos(np.radians(ang)), np.sin(np.radians(ang))]); n = np.array([-d[1], d[0]])
+            t = pc @ d; ln = float(t.max() - t.min())
+            if outer and not snapped and ln < ST_FREE_EDGE_PX:
+                continue                              # a short slanted run of the roof edge is a rounded corner
+            rho = float(np.median(pc @ n))
+            if barrier is not None and not outer and ST_CREST_PX > 0:
+                # the region boundary follows the line maps loosely where they are faint; the
+                # line itself is where the maps are strongest along its length
+                ts = np.linspace(t.min(), t.max(), max(int(ln), 2))
+                best, bv = rho, -1.0
+                for dr in np.arange(-ST_CREST_PX, ST_CREST_PX + 0.01, 0.5):
+                    xy = np.outer(ts, d) + n * (rho + dr)
+                    v = float(map_coordinates(barrier, [xy[:, 1], xy[:, 0]], order=1, mode="nearest").mean()) - 0.002 * abs(dr)
+                    if v > bv:
+                        best, bv = rho + dr, v
+                rho = best
+            fit.append([ang, rho, ln, float(t.min()), float(t.max())])
+    fit.sort(key=lambda f: -f[2])
+    merged = []
+    for f in fit:
+        for m in merged:
+            if abs((f[0] - m[0] + 90.0) % 180.0 - 90.0) < 2.0:
+                d = np.array([np.cos(np.radians(m[0])), np.sin(np.radians(m[0]))]); n = np.array([-d[1], d[0]])
+                fd = np.array([np.cos(np.radians(f[0])), np.sin(np.radians(f[0]))]); fn = np.array([-fd[1], fd[0]])
+                mid = fd * (f[3] + f[4]) / 2 + fn * f[1]
+                if abs(float(mid @ n) - m[1]) <= ST_MERGE_PX:
+                    t = float(mid @ d); half = (f[4] - f[3]) / 2
+                    m[1] = (m[1] * m[2] + float(mid @ n) * f[2]) / (m[2] + f[2]); m[2] += f[2]
+                    m[3], m[4] = min(m[3], t - half), max(m[4], t + half)
+                    break
+        else:
+            merged.append(list(f))
+    R = 2.0 * (h + w)
+    segs = []
+    for ang, rho, ln, t0, t1 in merged:
+        d = np.array([np.cos(np.radians(ang)), np.sin(np.radians(ang))]); n = np.array([-d[1], d[0]])
+        a, b = max(t0 - ST_REACH_PX, -R), min(t1 + ST_REACH_PX, R)
+        segs.append(LineString([tuple(n * rho + d * a), tuple(n * rho + d * b)]))
+    box = shapely.geometry.box(-2, -2, w + 2, h + 2)
+    net = unary_union([box.exterior] + [s.intersection(box) for s in segs])
+    cells = [c for c in polygonize(net) if c.area > 1e-6]
+    if not cells:
+        return None
+    cid = features.rasterize([(c, i + 1) for i, c in enumerate(cells)], out_shape=(h, w), dtype="int32")
+    nl = int(lab.max()) + 1
+    votes = np.bincount((cid.ravel().astype(np.int64)) * nl + lab.ravel().astype(np.int64), minlength=(len(cells) + 1) * nl).reshape(len(cells) + 1, nl)
+    if ST_KEEP_EDGE:
+        votes[:, 0] = 0                               # the edge is the outline's own: a cell goes to the face that holds most of its inside part
+    own = votes.argmax(1)
+    own[votes.sum(1) == 0] = 0
+    for i, c in enumerate(cells):                     # a cell too thin to hold a pixel centre: its middle decides
+        if votes[i + 1].sum() == 0:
+            q = c.representative_point(); x, y = int(q.x), int(q.y)
+            own[i + 1] = int(lab[y, x]) if 0 <= x < w and 0 <= y < h else 0
+    for _ in range(3):                                # a stray piece of a face goes to the face it borders most
+        by = {}
+        for i, c in enumerate(cells):
+            if own[i + 1]:
+                by.setdefault(int(own[i + 1]), []).append(i)
+        moved = False
+        for k, ids in by.items():
+            u = unary_union([cells[i] for i in ids])
+            if u.geom_type != "MultiPolygon":
+                continue
+            big = max(u.geoms, key=lambda g: g.area)
+            for i in ids:
+                if big.contains(cells[i].representative_point()):
+                    continue
+                best, bl = 0, 0.0
+                for j, c in enumerate(cells):
+                    if own[j + 1] != k and cells[i].touches(c):
+                        l = cells[i].boundary.intersection(c.boundary).length
+                        if l > bl and own[j + 1]:
+                            best, bl = int(own[j + 1]), l
+                own[i + 1] = best; moved = True
+        if not moved:
+            break
+    faces = []
+    for k in sorted(set(int(v) for v in own if v)):
+        u = unary_union([cells[i] for i in range(len(cells)) if own[i + 1] == k])
+        if ST_KEEP_EDGE:
+            u = u.intersection(outline)
+            if u.is_empty or u.geom_type not in ("Polygon", "MultiPolygon"):
+                continue
+        u = max(u.geoms, key=lambda g: g.area) if u.geom_type == "MultiPolygon" else u
+        u = u.simplify(0.01)
+        if u.geom_type == "Polygon" and u.area >= MIN_FACE_PX2:
+            faces.append(Polygon(u.exterior))
+    return faces or None
+
+
+def faces_from_regions(p, names, outline, height=None):
+    """Closed faces: one per face interior the reader sees.
+
+    The joins-and-lines drawing keeps only lines whose two ends are found,
+    and a line that reaches nothing divides nothing: on the 157 held-out
+    drawn roofs it left most roofs short of faces. Here every face starts
+    from its CORE (the reader's map of face interiors), so a face exists
+    wherever the reader sees one, and the lines only decide where two faces
+    meet:
+
+    1. seeds: the connected pieces of the core map inside the roof edge;
+    2. each seed grows over the roof until it meets its neighbours, the
+       meeting held on the crest of the line maps (a watershed);
+    3. two regions whose shared boundary has no line under it (mean below
+       MERGE_BARRIER) are one face;
+    4. the shared boundaries are straightened together (a coverage
+       simplification, so neighbours keep one common edge) and tied to the
+       roof edge, and the faces are the areas they enclose.
+
+    `outline` is the roof edge in pixels. Returns polygons in pixels."""
+    import shapely
+    from rasterio import features
+    from skimage.segmentation import watershed
+    ch = {n: p[i] for i, n in enumerate(names)}
+    h, w = p.shape[1:]
+    inside = features.rasterize([outline], out_shape=(h, w)).astype(bool)
+    barrier = np.maximum.reduce([ch[k] for k in ("line",) + KINDS])
+    if COMPLETE:
+        barrier = complete_lines(barrier, inside)
+    # `height`: unsmoothed LiDAR height above the roof's low point (H W, metres, 0 where there is none)
+    lab = _plane_basins(barrier, inside, height) if PLANES and height is not None else _basins(barrier, inside)
+    if lab is None:
+        return [outline]
+    if STRAIGHT:
+        st = straight_faces(lab, outline, barrier)
+        if st:
+            return st
+    polys = []
+    for geom, v in features.shapes(lab.astype(np.int32), mask=lab > 0):
+        if v:
+            polys.append(shapely.geometry.shape(geom))
+    by = {}
+    for q, v in zip(polys, [v for _, v in features.shapes(lab.astype(np.int32), mask=lab > 0) if v]):
+        by.setdefault(int(v), []).append(q)
+    regs = [unary_union(v) for v in by.values()]
+    regs = [max(r.geoms, key=lambda g: g.area) if r.geom_type == "MultiPolygon" else r for r in regs]
+    if len(regs) < 2:
+        return [outline]
+    regs = list(shapely.coverage_simplify(regs, REGION_SIMPLIFY_PX))
+    # 4. the lines between regions, tied to the roof edge
+    edge = outline.exterior
+    cover = unary_union(regs).exterior if unary_union(regs).geom_type == "Polygon" else None
+    inner = []
+    for i in range(len(regs)):
+        for j in range(i + 1, len(regs)):
+            s = regs[i].boundary.intersection(regs[j].boundary)
+            for g in getattr(s, "geoms", [s]):
+                if g.geom_type in ("LineString", "MultiLineString") and g.length > 0.5:
+                    inner.extend(getattr(g, "geoms", [g]))
+    merged = shapely.ops.linemerge(inner) if inner else None
+    inner = list(getattr(merged, "geoms", [merged])) if merged is not None and not merged.is_empty else []
+    if SNAP:
+        inner = snap_lines(inner, outline)
+    ties = []
+    for g in inner:
+        for end in (g.coords[0], g.coords[-1]):
+            pt = Point(end)
+            if sum(1 for o in inner if o is not g and o.distance(pt) < 0.5) == 0:      # a loose end: it met the roof edge
+                near = edge.interpolate(edge.project(pt))
+                # carried a hair past the edge so the two cross
+                d = np.array(near.coords[0]) - np.array(end); ln = float(np.hypot(*d))
+                far = np.array(near.coords[0]) + (d / ln * 0.5 if ln > 1e-6 else 0)
+                ties.append(LineString([end, tuple(far)]))
+    net = unary_union([LineString(list(edge.coords))] + inner + ties)
+    faces = [f for f in polygonize(net) if f.area >= MIN_FACE_PX2 and outline.buffer(0.5).contains(f.representative_point())]
+    return faces or [outline]

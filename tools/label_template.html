@@ -106,6 +106,7 @@
   <button data-tool="oline" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;clip-path:polygon(0 42%,100% 42%,100% 58%,0 58%)"></span> Outline line</span><span class="k">L</span></button>
   <button data-tool="olpart" style="--tc:#ffd400"><span><span class="sw" style="background:#ffd400;opacity:.5"></span> Add / remove a part</span><span class="k">K</span></button>
   <button id="olreset">Back to the surveyed outline</button>
+  <button id="olok" style="display:none"><span>&#10003; Outline is right</span><span class="k">Y</span></button>
   <details class="hint"><summary>When and how to fix the outline</summary><div>The yellow outline comes from the LINZ survey and is sometimes off: shifted from the roof, missing an extension, or taking in a neighbour. Fix it <b>before</b> drawing lines, so your lines can snap to it.<br><b>Move / reshape</b>: drag inside the outline to move all of it; drag a corner to move it; drag from the middle of an edge to add a corner; click a corner and press <b>Delete</b> to remove it.<br><b>Redraw</b>: click each corner of the real roof edge, then <b>Enter</b> or click the first point again.<br>The surveyed outline stays dashed underneath for reference. Undo steps back through outline changes while an outline tool is selected.</div></details>
 
   <h2>Three lines &mdash; click, then click</h2>
@@ -279,6 +280,7 @@
     <button id="zin"  title="Zoom in">+</button>
     <button id="zout" title="Zoom out">&minus;</button>
     <button id="zfit" title="Fit the roof">Fit</button>
+    <button id="photo2" title="Swap to the other photo of this roof (V)" style="display:none">Other photo</button>
     <button id="hand" title="Drag to pan (or hold Space, or drag with the right button)">✋ Pan</button>
   </div>
   <div id="status">…</div><div id="prog"></div></div>
@@ -423,9 +425,27 @@ ROOFS.forEach(r=>{
                   nopanel: r.saved.nopanel||[], complete: !!r.saved.complete,
                   problem: r.saved.problem||null, outline: r.saved.outline||null,
                   olines: r.saved.olines||[]};
+    if(r.saved.seeded) data[r.id].seeded = true;
+  } else if(r.saved && r.saved.seeded && loc && !loc.seeded && !loc.complete && !loc.problem
+            && !(loc.lines||[]).length && !(loc.obstructions||[]).length && !(loc.nopanel||[]).length
+            && JSON.stringify(loc.outline) === JSON.stringify(r.saved.outline)){
+    loc.seeded = true;      // a starting outline held from an earlier load, never touched
   }
 });
 let pending=null, drag=null, sel=null, shift=false, space=false;
+// THE OTHER PHOTO. Where the bundle carries a second photo of the roof (a
+// different flight, so different light and shadow), V swaps to it and back.
+// It is for looking: the two photos lean differently, so an edge can sit up
+// to a metre or so apart between them, and marks belong on the first photo.
+let photo2=false;
+function showPhoto(){
+  const r=R(), b=document.getElementById("photo2");
+  if(!r.jpg2) photo2=false;
+  b.style.display = r.jpg2 ? "" : "none";
+  b.textContent = photo2 ? "Main photo (V)" : "Other photo (V)";
+  b.style.outline = photo2 ? "2px solid #ffd400" : "";
+  img=new Image(); img.onload=draw; img.src="data:image/jpeg;base64,"+(photo2 ? r.jpg2 : r.jpg);
+}
 const cv=document.getElementById("c"), ctx=cv.getContext("2d");
 const R = () => ROOFS[idx];
 const rec = () => { const o = (data[R().id] = data[R().id] || {lines:[], obstructions:[]});
@@ -482,9 +502,19 @@ function save(){
 }
 // A record with nothing in it is not a marked roof: clicking a roof saves one,
 // and counting it would make U skip a roof nobody drew.
-const hasMarks = d => !!(d && (d.problem || d.outline || (d.lines||[]).length
-  || (d.obstructions||[]).length || (d.nopanel||[]).length));
-function marked(id){ return !!(ingested[id] || hasMarks(remote[id]) || hasMarks(data[id])); }
+// A seeded outline (a starting point put there by the bundle) is not a mark
+// until something else is drawn or the roof is ticked complete.
+const hasMarks = d => !!(d && (d.problem || (d.outline && !d.seeded) || ((d.lines||[]).length && !d.seeded)
+  || (d.obstructions||[]).length || (d.nopanel||[]).length || (d.seeded && d.complete)));
+// AN OUTLINE PASS (OPTS.outlinePass). Roofs drawn before the outline tools
+// were used keep the surveyed outline, balconies and decks included. In this
+// pass a roof is done once its outline has been corrected, or confirmed as
+// right with "Outline is right" (Y), which records the surveyed outline as
+// the drawn one.
+const hasOutline = d => !!(d && d.outline && !d.seeded);
+function marked(id){
+  if(OPTS.outlinePass) return hasOutline(remote[id]) || hasOutline(data[id]);
+  return !!(ingested[id] || hasMarks(remote[id]) || hasMarks(data[id])); }
 let lastNudge = 0;
 function nudgeSave(){
   if(DB) return;                       // the shared store already holds it
@@ -1141,7 +1171,7 @@ function show(i){
     + `<a target="_blank" rel="noopener" href="https://maps.apple.com/?ll=${lat},${lon}&z=19&t=k">Apple Maps</a>`;
   } else lk.innerHTML="";
   resetView(); sizeCanvas();
-  img=new Image(); img.onload=draw; img.src="data:image/jpeg;base64,"+r.jpg;
+  photo2=false; showPhoto();
   refreshComplete(); refreshProblem();
   say(`#${r.id} — ${idx+1} of ${ROOFS.length}`); draw();
 }
@@ -1440,6 +1470,11 @@ document.getElementById("olreset").onclick=()=>{
   olPush(); delete rec().outline; rec().olines=[]; olSel=null; save(); draw();
   say("back to the surveyed outline");
 };
+if(OPTS.outlinePass) document.getElementById("olok").style.display="";
+document.getElementById("olok").onclick=()=>{
+  if(!rec().outline) rec().outline = JSON.parse(JSON.stringify(R().outline));
+  save(); say("outline confirmed"); document.getElementById("skipto").click();
+};
 const help=document.getElementById("help");
 document.getElementById("helpbtn").onclick=()=>help.classList.add("on");
 document.getElementById("helpclose").onclick=()=>help.classList.remove("on");
@@ -1525,6 +1560,7 @@ document.getElementById("hidedone").onclick=()=>{
 document.getElementById("zin").onclick =()=>zoomAt(cv.width/2,cv.height/2,1.3);
 document.getElementById("zout").onclick=()=>zoomAt(cv.width/2,cv.height/2,1/1.3);
 document.getElementById("zfit").onclick=()=>{ resetView(); draw(); say("view reset"); };
+document.getElementById("photo2").onclick=()=>{ photo2=!photo2; showPhoto(); say(photo2 ? "other photo \u2014 for looking; place marks on the main photo" : "main photo"); };
 document.getElementById("hand").onclick=()=>{
   handMode=!handMode;
   document.getElementById("hand").classList.toggle("on", handMode);
@@ -1637,6 +1673,8 @@ addEventListener("keydown", e=>{
   const k=e.key.toLowerCase();
   if(k==="n"){ step(1); } else if(k==="p"){ step(-1); }
   else if(k==="h"){ document.getElementById("hidedone").click(); }
+  else if(k==="v"){ document.getElementById("photo2").click(); }
+  else if(k==="y" && OPTS.outlinePass){ document.getElementById("olok").click(); }
   else if(k==="c"){ document.getElementById("complete").click(); }
   else if(k==="x"){ document.querySelector('[data-problem="absent"]').click(); }
   else if(k==="z"){ document.querySelector('[data-problem="not_building"]').click(); }

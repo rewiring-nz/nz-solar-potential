@@ -1,0 +1,125 @@
+{
+ "_readme": "Owner's blind picks, 24 Nov 2026: 17 street houses, live v85 against candidate L20 (reader faces, plane check, fitted roof edge). One pick per aspect; sides were shuffled and unlabelled.",
+ "tally": {
+  "lines": {
+   "same": 4,
+   "L20": 10,
+   "v85": 3
+  },
+  "obstructions": {
+   "v85": 4,
+   "L20": 7,
+   "same": 6
+  },
+  "panels": {
+   "L20": 11,
+   "v85": 3,
+   "same": 3
+  }
+ },
+ "roofs": [
+  {
+   "id": 4729284,
+   "lines": "same",
+   "obstructions": "v85",
+   "panels": "L20"
+  },
+  {
+   "id": 4729286,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  },
+  {
+   "id": 4729287,
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "v85"
+  },
+  {
+   "id": 4729288,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  },
+  {
+   "id": 4729292,
+   "lines": "L20",
+   "obstructions": "same",
+   "panels": "same"
+  },
+  {
+   "id": 4729334,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  },
+  {
+   "id": 4729415,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  },
+  {
+   "id": 4729434,
+   "lines": "L20",
+   "obstructions": "same",
+   "panels": "L20"
+  },
+  {
+   "id": 4729452,
+   "lines": "same",
+   "obstructions": "v85",
+   "panels": "same"
+  },
+  {
+   "id": 4729550,
+   "lines": "v85",
+   "obstructions": "v85",
+   "panels": "L20"
+  },
+  {
+   "id": 4729554,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  },
+  {
+   "id": 4729573,
+   "lines": "same",
+   "obstructions": "same",
+   "panels": "v85"
+  },
+  {
+   "id": 4729764,
+   "lines": "v85",
+   "obstructions": "same",
+   "panels": "v85"
+  },
+  {
+   "id": 4729767,
+   "lines": "same",
+   "obstructions": "same",
+   "panels": "same",
+   "note": "Both completely miss the right roof outline shape"
+  },
+  {
+   "id": 4740972,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  },
+  {
+   "id": 4750879,
+   "lines": "L20",
+   "obstructions": "same",
+   "panels": "L20"
+  },
+  {
+   "id": 5371242,
+   "lines": "L20",
+   "obstructions": "L20",
+   "panels": "L20"
+  }
+ ]
+}

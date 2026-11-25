@@ -1,0 +1,1089 @@
+{
+ "label": "v85",
+ "marked": "2026-11-20",
+ "roofs": [
+  {
+   "id": 4729286,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 22,
+     "fault": "remove",
+     "xy": [
+      1259961.29,
+      5004600.99
+     ]
+    },
+    {
+     "panel": 23,
+     "fault": "remove",
+     "xy": [
+      1259962.75,
+      5004599.68
+     ]
+    },
+    {
+     "panel": 24,
+     "fault": "remove",
+     "xy": [
+      1259964.21,
+      5004598.37
+     ]
+    },
+    {
+     "panel": 25,
+     "fault": "remove",
+     "xy": [
+      1259965.67,
+      5004597.06
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259955.23,
+      5004595.07
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259955.79,
+      5004593.42
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259956.35,
+      5004596.78
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259960.07,
+      5004600.53
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259955.1,
+      5004586.44
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259952.17,
+      5004587.92
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259957.6,
+      5004582.52
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729452,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 24,
+     "fault": "remove",
+     "xy": [
+      1260020.37,
+      5004660.39
+     ]
+    },
+    {
+     "panel": 25,
+     "fault": "remove",
+     "xy": [
+      1260021.57,
+      5004661.94
+     ]
+    },
+    {
+     "panel": 26,
+     "fault": "remove",
+     "xy": [
+      1260022.77,
+      5004663.49
+     ]
+    },
+    {
+     "panel": 27,
+     "fault": "remove",
+     "xy": [
+      1260023.97,
+      5004665.05
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260027.8,
+      5004657.08
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260029.4,
+      5004661.53
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260024.66,
+      5004660.28
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260024.22,
+      5004656.41
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260030.26,
+      5004663.8
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260028.44,
+      5004665.3
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260023.35,
+      5004662.33
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260025.3,
+      5004665.04
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260020.67,
+      5004659.16
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729767,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260042.56,
+      5004680.04
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260034.38,
+      5004669.98
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260045.43,
+      5004671.58
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260043.28,
+      5004674.39
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260043.57,
+      5004667.72
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260038.44,
+      5004666.97
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260045.23,
+      5004669.81
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260041.86,
+      5004672.82
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260036.91,
+      5004672.56
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260035.31,
+      5004674.1
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5371242,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 0,
+     "fault": "ridge",
+     "xy": [
+      1260036.33,
+      5004684.52
+     ]
+    },
+    {
+     "panel": 1,
+     "fault": "ridge",
+     "xy": [
+      1260037.3,
+      5004685.1
+     ]
+    },
+    {
+     "panel": 2,
+     "fault": "ridge",
+     "xy": [
+      1260038.28,
+      5004685.68
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260042.22,
+      5004686.65
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260040.03,
+      5004686.01
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260040.78,
+      5004689.03
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260043.16,
+      5004684.75
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729334,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260036.19,
+      5004722.9
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260033.78,
+      5004721.34
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260044.79,
+      5004721.63
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260045.05,
+      5004724.45
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260033.41,
+      5004708.85
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260031.38,
+      5004714.44
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729329,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 36,
+     "fault": "remove",
+     "xy": [
+      1260064.23,
+      5004690.1
+     ]
+    },
+    {
+     "panel": 37,
+     "fault": "remove",
+     "xy": [
+      1260064.29,
+      5004692.06
+     ]
+    },
+    {
+     "panel": 38,
+     "fault": "remove",
+     "xy": [
+      1260064.35,
+      5004694.02
+     ]
+    },
+    {
+     "panel": 39,
+     "fault": "remove",
+     "xy": [
+      1260064.41,
+      5004695.98
+     ]
+    },
+    {
+     "panel": 40,
+     "fault": "remove",
+     "xy": [
+      1260064.47,
+      5004697.94
+     ]
+    },
+    {
+     "panel": 41,
+     "fault": "remove",
+     "xy": [
+      1260064.53,
+      5004699.9
+     ]
+    },
+    {
+     "panel": 42,
+     "fault": "remove",
+     "xy": [
+      1260064.59,
+      5004701.86
+     ]
+    },
+    {
+     "panel": 43,
+     "fault": "remove",
+     "xy": [
+      1260064.65,
+      5004703.82
+     ]
+    },
+    {
+     "panel": 44,
+     "fault": "remove",
+     "xy": [
+      1260064.71,
+      5004705.78
+     ]
+    },
+    {
+     "panel": 45,
+     "fault": "remove",
+     "xy": [
+      1260064.77,
+      5004707.74
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260067.58,
+      5004702.71
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260067.91,
+      5004708.56
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260067.68,
+      5004698.23
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260067.25,
+      5004696.1
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729434,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 20,
+     "fault": "ridge",
+     "xy": [
+      1260051.39,
+      5004692.76
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260052.93,
+      5004692.2
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260050.5,
+      5004692.36
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260056.06,
+      5004685.72
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260055.53,
+      5004678.86
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729288,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 3,
+     "fault": "off_roof",
+     "xy": [
+      1259949.32,
+      5004620.5
+     ]
+    }
+   ],
+   "spots": []
+  },
+  {
+   "id": 4729554,
+   "right": true,
+   "note": "",
+   "panels": [],
+   "spots": []
+  },
+  {
+   "id": 4729550,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 5,
+     "fault": "ridge",
+     "xy": [
+      1259967.35,
+      5004608.7
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259971.4,
+      5004603.42
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259974.41,
+      5004604.49
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259974.36,
+      5004607.77
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259968.9,
+      5004610.36
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259971.86,
+      5004600.23
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259968.95,
+      5004603.19
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259978.67,
+      5004608.47
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259973.02,
+      5004605.83
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729284,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 5,
+     "fault": "ridge",
+     "xy": [
+      1259960,
+      5004654.44
+     ]
+    }
+   ],
+   "spots": []
+  },
+  {
+   "id": 4729287,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 0,
+     "fault": "obstruction",
+     "xy": [
+      1259980.27,
+      5004627.25
+     ]
+    },
+    {
+     "panel": 1,
+     "fault": "obstruction",
+     "xy": [
+      1259980.93,
+      5004628.17
+     ]
+    },
+    {
+     "panel": 3,
+     "fault": "obstruction",
+     "xy": [
+      1259979.33,
+      5004629.31
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259985.85,
+      5004623.42
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259983.62,
+      5004620.45
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259976.01,
+      5004623.65
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259980.65,
+      5004625.86
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729573,
+   "right": true,
+   "note": "",
+   "panels": [],
+   "spots": []
+  },
+  {
+   "id": 4729764,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 13,
+     "fault": "obstruction",
+     "xy": [
+      1259972.35,
+      5004667.32
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259979.47,
+      5004660.18
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259981.31,
+      5004662.86
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259972.97,
+      5004656.31
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259973.17,
+      5004657.95
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259966.23,
+      5004667.92
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259968.41,
+      5004664.5
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729292,
+   "right": false,
+   "note": "",
+   "panels": [
+    {
+     "panel": 13,
+     "fault": "off_roof",
+     "xy": [
+      1259995.75,
+      5004630.15
+     ]
+    },
+    {
+     "panel": 14,
+     "fault": "off_roof",
+     "xy": [
+      1259996.51,
+      5004630.99
+     ]
+    },
+    {
+     "panel": 15,
+     "fault": "off_roof",
+     "xy": [
+      1259997.28,
+      5004631.83
+     ]
+    },
+    {
+     "panel": 16,
+     "fault": "off_roof",
+     "xy": [
+      1259998.04,
+      5004632.66
+     ]
+    },
+    {
+     "panel": 17,
+     "fault": "off_roof",
+     "xy": [
+      1259998.8,
+      5004633.5
+     ]
+    },
+    {
+     "panel": 18,
+     "fault": "off_roof",
+     "xy": [
+      1259999.57,
+      5004634.34
+     ]
+    }
+   ],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259990.69,
+      5004642.78
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259991.07,
+      5004644.87
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259983.67,
+      5004640.37
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259985.17,
+      5004641.6
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260001.62,
+      5004636.14
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260001.67,
+      5004639.4
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259994.17,
+      5004636.05
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259989.67,
+      5004636.48
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259993.96,
+      5004646.61
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729435,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259991.37,
+      5004679.4
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729415,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260017.07,
+      5004651.73
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260014.07,
+      5004648.28
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260011.6,
+      5004647.36
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260006.82,
+      5004654.66
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260011.37,
+      5004658.52
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260018.73,
+      5004650.92
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4740972,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259490.22,
+      5004260.01
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259493.66,
+      5004256.17
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259496.73,
+      5004258.6
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259489.65,
+      5004266.97
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259487.07,
+      5004267.05
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4750879,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259781.89,
+      5004392.93
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259782.04,
+      5004397.41
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259786.68,
+      5004393.78
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259784.59,
+      5004390.84
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259776.83,
+      5004387.56
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259791.08,
+      5004400.89
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259789.69,
+      5004405.68
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259789.27,
+      5004391.5
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259794.64,
+      5004403.9
+     ]
+    }
+   ]
+  }
+ ]
+}

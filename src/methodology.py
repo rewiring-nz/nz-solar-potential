@@ -281,9 +281,12 @@ STEPS: list[dict] = [
         {"title": "Lining the data up",
          "text": "The photo and the scan were taken in different years and lean differently. Each roof's lean "
                  "is measured by matching the photos (up to {lean_search_m} m), and an outline that sits off the "
-                 "scanned roof is slid onto it (up to {outline_slide_m} m) without changing its shape.",
+                 "scanned roof is slid onto it (up to {outline_slide_m} m) without changing its shape. A roof whose faces "
+                 "come from the scan's planes is laid over the map's photo directly: its lines are moved in "
+                 "proportion to their height until they sit on the edges the photo shows.",
          "facts": [("Largest lean looked for", "lean_search_m", " m"), ("Largest outline slide", "outline_slide_m", " m")],
-         "code": ["src/register_imagery.py", "src/outline_fit.py"], "stages": ["register_imagery", "outline_fit"]},
+         "code": ["src/register_imagery.py", "src/outline_fit.py", "src/photo_lean.py"],
+         "stages": ["register_imagery", "outline_fit"]},
      ]},
     {"title": "Read each roof", "icon": "🏠",
      "summary": "Find the roof's faces, their slope and direction, and anything on them.",
@@ -302,6 +305,11 @@ STEPS: list[dict] = [
          "facts": [("Lowest score used", "pick_min", ""), ("Score that needs no contest", "pick_trust", "")],
          "code": ["src/roof_partition.py::SELECTED_TRUST", "src/roof_segmentation.py"],
          "stages": ["build_layout_geojson"]},
+        {"title": "Roof faces from the laser scan's own planes",
+         "text": "Flat planes are grown on the laser points themselves, and each roof line is put where two of "
+                 "those planes meet or where the height steps. A roof read this way is used ahead of the image "
+                 "models' reading; a paid reading of the photo and a hand-drawn roof still come first.",
+         "code": ["src/point_roof.py", "src/roof_partition.py::selected_doc"], "stages": ["point_roof"]},
         {"title": "Hand-drawn roofs come first",
          "text": "Where a person has drawn a roof's faces and lines, the drawing is used as it is. Identical "
                  "roofs in a row of houses share the reading that explains the whole set best.",

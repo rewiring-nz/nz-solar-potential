@@ -1,0 +1,405 @@
+{
+ "rule": "50 homes outside the town centre, 20 town-centre homes, 30 larger roofs, all hand-drawn and flagged fully marked, every drawn line closing a face, none held back",
+ "roofs": [
+  {
+   "id": "5372064",
+   "cls": "home"
+  },
+  {
+   "id": "4733916",
+   "cls": "home"
+  },
+  {
+   "id": "5371581",
+   "cls": "home"
+  },
+  {
+   "id": "4731151",
+   "cls": "home"
+  },
+  {
+   "id": "4741639",
+   "cls": "home"
+  },
+  {
+   "id": "4727413",
+   "cls": "home"
+  },
+  {
+   "id": "4732152",
+   "cls": "home"
+  },
+  {
+   "id": "5372641",
+   "cls": "home"
+  },
+  {
+   "id": "4727942",
+   "cls": "home"
+  },
+  {
+   "id": "4746110",
+   "cls": "home"
+  },
+  {
+   "id": "4730603",
+   "cls": "home"
+  },
+  {
+   "id": "4742246",
+   "cls": "home"
+  },
+  {
+   "id": "4740398",
+   "cls": "home"
+  },
+  {
+   "id": "4729357",
+   "cls": "home"
+  },
+  {
+   "id": "4746196",
+   "cls": "home"
+  },
+  {
+   "id": "4730598",
+   "cls": "home"
+  },
+  {
+   "id": "4729367",
+   "cls": "home"
+  },
+  {
+   "id": "4747641",
+   "cls": "home"
+  },
+  {
+   "id": "4719759",
+   "cls": "home"
+  },
+  {
+   "id": "5370862",
+   "cls": "home"
+  },
+  {
+   "id": "4740680",
+   "cls": "home"
+  },
+  {
+   "id": "4726034",
+   "cls": "home"
+  },
+  {
+   "id": "4742760",
+   "cls": "home"
+  },
+  {
+   "id": "4739021",
+   "cls": "home"
+  },
+  {
+   "id": "4719508",
+   "cls": "home"
+  },
+  {
+   "id": "4741664",
+   "cls": "home"
+  },
+  {
+   "id": "4746243",
+   "cls": "home"
+  },
+  {
+   "id": "4739074",
+   "cls": "home"
+  },
+  {
+   "id": "4738748",
+   "cls": "home"
+  },
+  {
+   "id": "5370347",
+   "cls": "home"
+  },
+  {
+   "id": "4723359",
+   "cls": "home"
+  },
+  {
+   "id": "4742423",
+   "cls": "home"
+  },
+  {
+   "id": "5372219",
+   "cls": "home"
+  },
+  {
+   "id": "4751238",
+   "cls": "home"
+  },
+  {
+   "id": "4740551",
+   "cls": "home"
+  },
+  {
+   "id": "4746034",
+   "cls": "home"
+  },
+  {
+   "id": "4733721",
+   "cls": "home"
+  },
+  {
+   "id": "4732043",
+   "cls": "home"
+  },
+  {
+   "id": "4727648",
+   "cls": "home"
+  },
+  {
+   "id": "4747486",
+   "cls": "home"
+  },
+  {
+   "id": "5371487",
+   "cls": "home"
+  },
+  {
+   "id": "4731569",
+   "cls": "home"
+  },
+  {
+   "id": "4727955",
+   "cls": "home"
+  },
+  {
+   "id": "4742020",
+   "cls": "home"
+  },
+  {
+   "id": "4723281",
+   "cls": "home"
+  },
+  {
+   "id": "4729753",
+   "cls": "home"
+  },
+  {
+   "id": "4736600",
+   "cls": "home"
+  },
+  {
+   "id": "4747530",
+   "cls": "home"
+  },
+  {
+   "id": "4742274",
+   "cls": "home"
+  },
+  {
+   "id": "4731941",
+   "cls": "home"
+  },
+  {
+   "id": "4735099",
+   "cls": "centre home"
+  },
+  {
+   "id": "4751260",
+   "cls": "centre home"
+  },
+  {
+   "id": "5371107",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735623",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735073",
+   "cls": "centre home"
+  },
+  {
+   "id": "4734696",
+   "cls": "centre home"
+  },
+  {
+   "id": "4740517",
+   "cls": "centre home"
+  },
+  {
+   "id": "5372601",
+   "cls": "centre home"
+  },
+  {
+   "id": "4725521",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735224",
+   "cls": "centre home"
+  },
+  {
+   "id": "5371176",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735113",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735146",
+   "cls": "centre home"
+  },
+  {
+   "id": "5372585",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735104",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735138",
+   "cls": "centre home"
+  },
+  {
+   "id": "5370377",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735130",
+   "cls": "centre home"
+  },
+  {
+   "id": "5372592",
+   "cls": "centre home"
+  },
+  {
+   "id": "5372590",
+   "cls": "centre home"
+  },
+  {
+   "id": "4735015",
+   "cls": "larger"
+  },
+  {
+   "id": "5370340",
+   "cls": "larger"
+  },
+  {
+   "id": "4735249",
+   "cls": "larger"
+  },
+  {
+   "id": "4740662",
+   "cls": "larger"
+  },
+  {
+   "id": "4723238",
+   "cls": "larger"
+  },
+  {
+   "id": "5371002",
+   "cls": "larger"
+  },
+  {
+   "id": "5372383",
+   "cls": "larger"
+  },
+  {
+   "id": "4729620",
+   "cls": "larger"
+  },
+  {
+   "id": "4748050",
+   "cls": "larger"
+  },
+  {
+   "id": "4725488",
+   "cls": "larger"
+  },
+  {
+   "id": "5372222",
+   "cls": "larger"
+  },
+  {
+   "id": "4747890",
+   "cls": "larger"
+  },
+  {
+   "id": "4750934",
+   "cls": "larger"
+  },
+  {
+   "id": "4719731",
+   "cls": "larger"
+  },
+  {
+   "id": "4728128",
+   "cls": "larger"
+  },
+  {
+   "id": "5371128",
+   "cls": "larger"
+  },
+  {
+   "id": "4744109",
+   "cls": "larger"
+  },
+  {
+   "id": "5373363",
+   "cls": "larger"
+  },
+  {
+   "id": "5372388",
+   "cls": "larger"
+  },
+  {
+   "id": "5371142",
+   "cls": "larger"
+  },
+  {
+   "id": "5372220",
+   "cls": "larger"
+  },
+  {
+   "id": "4735316",
+   "cls": "larger"
+  },
+  {
+   "id": "5372566",
+   "cls": "larger"
+  },
+  {
+   "id": "4747535",
+   "cls": "larger"
+  },
+  {
+   "id": "5370837",
+   "cls": "larger"
+  },
+  {
+   "id": "4734685",
+   "cls": "larger"
+  },
+  {
+   "id": "5370320",
+   "cls": "larger"
+  },
+  {
+   "id": "4726047",
+   "cls": "larger"
+  },
+  {
+   "id": "4749465",
+   "cls": "larger"
+  },
+  {
+   "id": "4739261",
+   "cls": "larger"
+  }
+ ]
+}

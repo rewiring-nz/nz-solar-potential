@@ -1044,6 +1044,504 @@
    ],
    "status": "open",
    "flagged_times": 1
+  },
+  {
+   "id": 4735154,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "3 Kerry Drive: outline and panels off the roof",
+   "quotes": [
+    "Pretty clear failure here"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4735373,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "9 Kent Street: a standalone panel",
+   "quotes": [
+    "Why is there a standalone panel here, that's never how it would be installed"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4750959,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "7 Leeds Lane: outline, ridges and panel placement wrong; a diagonal line of panels",
+   "quotes": [
+    "That last one has the outline wrong, the ridges wrong, the panel placement wrong, and a strange diagonal line of panels that should never happen"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751255,
+   "region": "pilot",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "9 Vancouver Drive: lone panel at the 14 kW cut",
+   "quotes": [
+    "Lone panel here. If it's close to 14kW, and going to make a lone panel, it should just do one less or one more, depending on the array. If it's got an 4 or higher panel array, and going to 14kW would add a single panel, then leave it at 13.5 or 13"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729348,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "32 Highview Terrace: outline clearly wrong",
+   "quotes": [
+    "This outline is clearly very wrong"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729407,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "Kelvin Heights: panels placed over balconies",
+   "quotes": [
+    "Panels placed over balconies. You need to be better at going off just the image even if there is no lidar. If a human could see not to place panels there in the image, you should be able to tell that as well",
+    "25 Nov, blind v85 against B1: B is much better, A placed way too many panels over balconies, but B still misses many parts of the balconies and places panels on them which is wrong."
+   ],
+   "status": "open",
+   "flagged_times": 2,
+   "finding": "25 Nov: LiDAR shows one clean 17-degree plane over the terraces (0 of 3,364 returns more than 0.6 m off it): the survey predates the building as photographed. Needs a photo call per face (roofing or terrace); height cannot help."
+  },
+  {
+   "id": 4729783,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "50 Andrews Road: roof could easily fit more panels",
+   "quotes": [
+    "This roof could easily fit more panels"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4721320,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "46 Goldfield Heights: outline not close to the real building",
+   "quotes": [
+    "This outline is not even close to the real building. Maybe we shouldn't be relying on outlines so much and instead the image as the outline"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371259,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "v83",
+   "defect": "really terrible roof shape detection (long roof cut into slivers)",
+   "quotes": [
+    "This one is really terrible roof shape detection"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4721959,
+   "region": "frankton_flats",
+   "first_flagged": "2026-11-18",
+   "flagged_on": "fused-edge sheet",
+   "defect": "house 19 of the fused sheets: way off the roof",
+   "quotes": [
+    "Fused does look better, with still some that are way off like this one"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751005,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "23 Wakatipu Heights: slider maxes out at 13.5 kW, south face unreachable",
+   "quotes": [
+    "Why is this home maxing out at 13.5kW? It should not max out at that. It should automatically be around that, but I should still be able to move the slider to add more panels to every possible place they would fit."
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751072,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "33 Wakatipu Heights: panels miss the roof and cross a ridge/step",
+   "quotes": [
+    "These panels are clearly missing the roof, and also overlapping a roof ridge/cliff edge"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751237,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "35 Wakatipu Heights: wrong orientation for the panels",
+   "quotes": [
+    "Wrong orientation for these panels"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751017,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "37 Wakatipu Heights: a big part of the roof missing even at max slider",
+   "quotes": [
+    "Missing a big part of this roof even with max panel slider to the right"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4751016,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "1/3 Bolton Lane: outline and roof lines way off the image",
+   "quotes": [
+    "Outline and roof lines clearly way off from the image"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371222,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-19",
+   "flagged_on": "v84",
+   "defect": "5 Bolton Lane: panels over obstructions and empty space, incorrectly placed",
+   "quotes": [
+    "This is a complete mess, panels over obstructions, over empty space, incorrectly placed and more"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4740972,
+   "region": "frankton_arm_lake",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "26 Earnslaw Terrace: sporadic layout, empty roof without panels, panels over obstructions",
+   "quotes": [
+    "This layout is sporadic with empty areas of roof that should have panels, and panels over obstructions"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4750879,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "84 Panorama Terrace: panels overlapping empty space, off the roof edge",
+   "quotes": [
+    "Panels overlapping empty space here"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "On this example L8 is worse, while it is a bit better on some"
+    }
+   ]
+  },
+  {
+   "id": 4729452,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "11 Sunrise Lane: lone row of panels in the wrong orientation where a better array would fit",
+   "quotes": [
+    "There is a strange row of panels in wrong orientation on this roof, in an area where many panels could fit in a better orientation of array"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729434,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-20",
+   "flagged_on": "v85",
+   "defect": "15H Sunrise Lane: panels overlapping the ridge line",
+   "quotes": [
+    "Panels overlapping ridge line here"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 4729767,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "13 Sunrise Lane: roof outline off the building and roof lines wrong",
+   "quotes": [
+    "Clearly wrong outline here, and wrong roof lines on L7"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This one is still terrible and not even close"
+    },
+    {
+     "on": "street L11",
+     "date": "2026-11-23",
+     "quote": "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
+    },
+    {
+     "on": "reader vs build sheet (L11)",
+     "date": "2026-11-23",
+     "quote": "These examples aren't even close ... Roof lines are almost always straight, and yet you are curving them. They are wobbly. The last one adds a bunch of lines that should not be there"
+    }
+   ]
+  },
+  {
+   "id": 4729334,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "15 Sunrise Lane: balcony treated as roof",
+   "quotes": [
+    "Both of these treat balcony as roof"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This one is much better"
+    }
+   ]
+  },
+  {
+   "id": 4729284,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "4 Sunrise Lane: outline misses the actual building",
+   "quotes": [
+    "Both of these clearly miss the actual outline of the building"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This is better in L8 but still wrong"
+    }
+   ]
+  },
+  {
+   "id": 4729292,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "7 Sunrise Lane: panels over empty space at the bottom right (deck taken as roof)",
+   "quotes": [
+    "Panels placed over empty space on the bottom right of this rooftop on both versions"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 is better"
+    }
+   ]
+  },
+  {
+   "id": 4729415,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L7",
+   "defect": "9 Sunrise Lane: roof lines wrong",
+   "quotes": [
+    "These roof lines are clearly wrong from the human eye"
+   ],
+   "status": "open",
+   "flagged_times": 1
+  },
+  {
+   "id": 5371242,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "The outline is in a better place in L8 but the corners have been cut off on the left and right corners with a chamfer"
+    }
+   ]
+  },
+  {
+   "id": 4729288,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This one is worse the obstruction has been made too big and the roof line not straight"
+    }
+   ]
+  },
+  {
+   "id": 4729554,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 one seems perfect"
+    }
+   ]
+  },
+  {
+   "id": 4729550,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This seems worse on L8"
+    }
+   ]
+  },
+  {
+   "id": 4729287,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "5 Sunrise Lane: roof lines wrong",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "Roof lines wrong on both versions here"
+    }
+   ]
+  },
+  {
+   "id": 4729573,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 is better"
+    }
+   ]
+  },
+  {
+   "id": 4729764,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-22",
+   "flagged_on": "street L8",
+   "defect": "6 Sunrise Lane: balcony taken as roof",
+   "quotes": [],
+   "status": "open",
+   "flagged_times": 0,
+   "verdicts": [
+    {
+     "on": "street L8",
+     "date": "2026-11-22",
+     "quote": "This L8 is worse in some ways and looks to maybe be including a balcony"
+    }
+   ]
+  },
+  {
+   "id": 4729286,
+   "region": "frankton_arm",
+   "first_flagged": "2026-11-23",
+   "flagged_on": "street L11",
+   "defect": "1 Sunrise Lane: roof lines wrong; unusual roof shape, rare, not a tuning target",
+   "quotes": [
+    "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems.",
+    "1 sunrise is a very unusual roof shape which should not appear often at all"
+   ],
+   "status": "open",
+   "flagged_times": 1,
+   "verdicts": [
+    {
+     "on": "street L11",
+     "date": "2026-11-23",
+     "quote": "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
+    }
+   ]
+  },
+  {
+   "id": 4729782,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-25",
+   "flagged_on": "v85",
+   "defect": "too few panels on both the live map and candidate B1",
+   "quotes": [
+    "Both bad and too few panels"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }

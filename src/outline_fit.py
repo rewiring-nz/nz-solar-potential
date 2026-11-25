@@ -179,6 +179,8 @@ def fitted_outlines(gdf, region_dir, use=None):
     drawn in the labelling tool replaces the surveyed and the fitted one:
     hand markup wins (roof_line_source.hand_outline)."""
     from src.roof_line_source import hand_outline
+    from src.point_roof import point_outline, point_shift
+    from src.vision_roof import vision_outline
     col = gdf.geometry.name
     ids = gdf["building_id"] if "building_id" in gdf.columns else gdf.index
     fits = {}
@@ -195,7 +197,34 @@ def fitted_outlines(gdf, region_dir, use=None):
         if drawn is not None:
             new.append(drawn)
             continue
+        # the roof edge a vision reading traced on the photo replaces the
+        # surveyed outline, already in the LiDAR frame (src/vision_roof.py)
+        # THE OUTLINE FOLLOWS THE READING THAT GIVES THE FACES. Where the
+        # faces come from the returns and carry their own roof edge, that
+        # edge is the outline; an edge traced on the photo by a reading the
+        # build does not use for this roof would clip faces it was not drawn
+        # round (17 Nov, town centre: 680 of 1,270 outlines came from a photo
+        # reading, 327 of them on roofs whose faces did too).
+        edge = None
+        points_lead = False
+        if int(bid) not in marked:
+            from src import roof_partition
+            points_lead = (roof_partition.selected_doc(int(bid)) or {}).get("source") == "points"
+            if points_lead:
+                edge = point_outline(bid)
+        if edge is not None:
+            new.append(edge)
+            continue
+        seen = None if int(bid) in marked else vision_outline(bid)
+        if seen is not None:
+            new.append(seen)
+            continue
         s = None if int(bid) in marked else accepted(fits.get(str(int(bid))))
+        # faces made from the raw returns carry the slide they were made
+        # with; the outline must be in their frame (src/point_roof.py)
+        ps = point_shift(bid) if points_lead else None
+        if ps is not None:
+            s = ps if (ps[0] or ps[1]) else None
         new.append(translate(g, s[0], s[1]) if s else g)
     gdf[col] = new
     return gdf

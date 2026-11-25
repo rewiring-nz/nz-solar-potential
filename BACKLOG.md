@@ -449,21 +449,1994 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
-- **Faces straight from the raw LiDAR points (13 Nov, prototype, not in the
-  build).** `../point-roof-prototype/recon.py` (outside the repo): slide the
-  outline onto the roof-height returns; grow planes on the returns (not the
-  rasterised grid); roof lines are the planes' exact intersections plus fitted
-  step lines; cut the outline by every line; one graph cut gives each cell a
-  plane or "no roof here"; flat planes that meet without a step are one deck.
-  No trained model, no photo, about 0.3 s a roof. The survey supports it:
+- **Candidate B2 gate result (25 Nov).** B1's switches plus the strip rule
+  (3 m slope limit, quarter-of-roof share; 83e8be5d), four Queenstown areas.
+  Gate FAILED, not published: zeroed 4 (B1: 9; #4751092, #4722654,
+  #4741658, #5372656), big drops 57 (B1: 57), panels 1,325,054 ->
+  1,324,368 (-0.1%), vanished 0, newly withheld 0. Sheets v85 | B2 on the
+  VM (`~/droptool2/drops_B2b`, `~/droptool/drops_B2`, `~/qtB2_cases`). The
+  largest drops rendered (#4725986 391 -> 210, #4740321 130 -> 88,
+  #4734677 90 -> 61) carry many more small obstruction marks than v85 and,
+  on #4725986, an empty strip along one long edge: the drop is in the
+  obstruction and edge stages, not the faces. Against the markup the new
+  method's obstructions are level with the current method's (precision
+  0.335 against 0.319 on 135 roofs; found 9.5 of 21.2 m2 against 9.6), so
+  whether the extra marks on those roofs are real is the owner's call.
+  Not found yet: why #4751092 and #4722654 (plain faces) take no panels.
+- **#4729407 balconies: the LiDAR cannot see them (25 Nov).** The point
+  reading gives 2 faces for 738 m2 (669 m2 at 17 degrees); inside the big
+  face 3,364 building returns, none more than 0.6 m below or above the
+  plane, 25 of 1,186 cells without returns. So the surveyed surface is one
+  clean slope where the photo shows terraces: the LiDAR is of an earlier
+  state of the building, the sunken-region rule (`_sunken_regions`) has
+  nothing to carve, and a height-step test cannot work here. The photo
+  reader gives 21 faces and 80 lines (photo faces against LiDAR faces
+  21 : 2, the complexity flag above), and with the reader leading (A5) the
+  terraces came out as faces of their own but still took panels. What is
+  missing is a per-face call from the photo: roofing or terrace. Next for
+  this roof: (1) treat a roof whose photo reading and LiDAR disagree this
+  far as "LiDAR out of date" and let the photo faces lead there; (2) a
+  roofing/terrace call per read face, trained on the drawn roofs' "no
+  panels here" faces. 2 m slope limit on the marked street: identical to
+  3 m, 18 of 18 (`street_S2`, `street_S3`).
+- **Photo flag for roofs the LiDAR reads with too few or too many faces (25 Nov, provisional).**
+  Owner's idea: pick out complex roofs from the photo and process them
+  differently. Test on the 90 drawn roofs that have a local photo reading
+  (`data/student_faces`, lines_L19) against the point reading (VM
+  `~/mb_survey2`, `~/mb_new`; rows `~/flag_rows.json`):
+  - too few: photo faces > 1.3 x LiDAR faces flags 29 roofs and catches 15
+    of the 18 the LiDAR builds with under 0.75 of the drawn faces; on the
+    flagged roofs the reader's lines beat the point reading's on 20 and
+    lose on 5 (unflagged 20 / 14);
+  - too many: LiDAR faces > 1.3 x photo faces (and 2 more) flags 14 and
+    catches 10 of 16; reader lines better 6, worse 1;
+  - where the two counts agree within 1 (43 roofs) the count matches the
+    drawing within 1 on 35.
+  NOT a clean test: lines_L19 is taken to have trained on these roofs, so
+  its face count is close to the drawing by memory. Next: the same table
+  with each roof read by a fold model that did not train on it
+  (`data/line_set/runs/*fold*.pt`), then route flagged roofs (finer plane
+  growing; photo lines place the cuts) and score blind.
+- **Strip rule on the slope: 2 m (25 Nov).** Owner: a face 2 m or more on
+  the slope is enough; 1.2 m with panels on their side if really needed.
+  `SOLAR_NARROW_SLOPE_M` 2.0 (9a542ad2); the 1.2 m landscape case is not
+  switched on. B2 was launched before this with 3 m. To check on the marked
+  street before a build: the three marked strips (1.3-1.6 m in plan) pass a
+  2 m slope limit above about 37 degrees.
+- **Owner's picks on B1 and the strip rule (25 Nov).** Five roofs, blind,
+  v85 against B1 (`data/blind_check/owner_B1_25nov.json`): outline B1 3 /
+  same 2 / v85 0; lines 3 / 2 / 0; obstructions B1 3, same 1, unsure 1;
+  panels B1 2, v85 2, same 1. Notes: #4729407 "B is much better ... but B
+  still misses many parts of the balconies and places panels on them";
+  #4729782 "Both bad and too few panels" (new case). The two panel losses
+  (#5371143 47 -> 29, #4739240 26 -> 20) and B1's zeroed roofs are not the
+  edge gap (`SOLAR_EDGE_SETBACK_FALLBACK` 0.05 and 0 change nothing): on
+  #5371143 two of ten identical 58-degree faces came out 1.64 m wide in
+  plan and were skipped by the strip rule (`NARROW_FACE_M` 1.7). Two
+  general changes to that rule, each with a switch: a face narrow in plan
+  but 3 m or more on the slope is roof (`SOLAR_NARROW_ON_SLOPE`), and a
+  narrow face holding a quarter or more of the roof's face area is roof
+  (`SOLAR_NARROW_MAX_SHARE`). Marked test street (`street_v85.json`), rule
+  old against new: identical, 18 of 18 "should not be here" still gone.
+  B1 switches plus the new rule: #5371143 30 -> 48 (v85 47); of the 9
+  zeroed, #4734810 4, #4731836 6, #5371669 9, #4741332 4, #5373255 6;
+  still none on #4751092, #4722654, #5372656, #4741658; #4739240 (20) and
+  #4729782 (3) unchanged, cause not found yet. Candidate B2 (same switches,
+  83e8be5d) building on the VM from 07:06 UTC.
+- **Candidate B1: live method with the flat rules and the surveyed outline, gate result (25 Nov).**
+  `SOLAR_POINT_MERGE_LOOSE=1 SOLAR_ROOF_EDGE=survey`, no reader switches,
+  four Queenstown areas rebuilt with `--force` at ae62d496 (82 min). Gate
+  FAILED, not published: zeroed 9 (largest 15 panels: #4751092, #5371669,
+  #4722654, #4741658, #4731836, #4734810, #4741332, #5373255, #5372656), big
+  drops 57 (reader candidate A5: 135), panels 1,325,054 -> 1,324,230
+  (-0.1%), vanished 0, newly withheld 0, 23 of 38 case roofs changed.
+  Largest drop #4729407 414 -> 183. Blind page for the owner (v85 | B1, 32
+  roofs: the 22 flagged roofs judged for A5 plus 10 reported roofs drawn at
+  random, seed 31; key `data/preview/cases/review_B1_key.json`):
+  https://claude.ai/artifact/LaayHkpkuYc5wMRnCKcfi6. Next: render the 9
+  zeroed and the largest drops and find the shared cause; owner's picks
+  decide whether B1 replaces v85.
+  The 9 zeroed, rendered (`drops_B1b` on the VM, v85 | B1): the faces are
+  as plain or plainer than v85's and the layout step itself fits no panel
+  (not a later gate). Laid out again with the fitted edge, 6 of the 9 take
+  panels; with the surveyed edge, none. #5373255: the sunny face is 1.70 m
+  deep in plan at 46 degrees (2.45 m on the slope) and takes no row; the
+  same two planes took 6 panels on v85 behind an edge about 0.15 m further
+  out. So the tighter outline removes rows that fitted by centimetres on
+  small roofs (largest zeroed: 15 panels). Not settled: whether those rows
+  were real (the edge clearance was tuned with the larger fitted edge).
+  The largest drop, #4729407 (414 -> 183), is a reported roof ("panels
+  placed over balconies"): B1 stops at the balconies.
+- **Roof shape and outline against the markup: three changes to the point reading (25 Nov).**
+  Owner: roof shape and outline come before obstructions. All on the 195
+  drawn roofs, built blind, like for like (point readings re-read with one
+  code version; VM `~/mb_ctrl`, `~/mb_flat`, `~/mb_noedge`, `~/mb_survey`,
+  `~/mb_survey2`). Outline IoU / face IoU / line F / faces right / lines right:
+  - current method: 0.891 / 0.643 / 0.679 / 49 / 115;
+  - `SOLAR_POINT_MERGE_LOOSE=1` (flat neighbours join only when one plane
+    holds both; specks inside one face are not faces): 0.892 / 0.647 / 0.689
+    / 50 / 118. #5372239 (drawn 2 faces) 34 built faces -> 2, face IoU 0.34
+    -> 0.97; #5372232 (drawn 3) 24 -> 7, 0.26 -> 0.72. With pitched
+    neighbours joining too (`SOLAR_LOOSE_ANG=4`): line F 0.686 and a lost
+    annex on #4735130, so the default is 0;
+  - `SOLAR_ROOF_EDGE=0` as well: 0.922 / 0.658 / 0.667 / 59 / 110;
+  - `SOLAR_ROOF_EDGE=survey` (faces run out to the surveyed outline as it
+    lies): 0.926 / 0.663 / 0.670 / 60 / 112;
+  - `SOLAR_ROOF_EDGE=survey` with the outline placed on the fitted edge
+    (as committed): 0.918 / 0.661 / 0.681 / 57 / 118. Against the current
+    method: outline better on 44 roofs and worse on 9, faces 35 and 19,
+    lines 22 and 19.
+  - *Why:* the edge fitted to the returns sits 0.13 m outside the drawn edge
+    on average (0.17 m on homes; 0.28 m2 outside and 0.15 m2 inside per
+    metre of edge); the surveyed outline is 0.04 m inside (0.00 on homes;
+    0.13 and 0.17). Found from 14 Wanaka roofs whose stored readings predate
+    the fitted edge (16 Nov, code a338dc25fd98): outline 0.953 stored against
+    0.900 re-read, faces right 7 against 2.
+  - *Stored readings are of mixed code versions* (9e1a52fff9cc 19 Nov,
+    882918aed6b1 21 Nov, a338dc25fd98 16 Nov): a re-read changes roofs
+    whatever the switch, so compare against a re-read control.
+  - Sheets: `data/preview/cases/outline_25nov/s2_markup_after.jpg` (drawn |
+    new) and `s2_before_after.jpg` (current | new), 8 most improved and 4
+    most worsened roofs.
+  - *Next:* re-read the four Queenstown areas with both switches, rebuild,
+    gate, blind page for the owner. Editing `point_roof.py` restamps every
+    stored reading, so the re-read is every roof in the build.
+
+- **Both methods against the markup, and where the errors are (25 Nov).**
+  `tools/markup_benchmark.py` on 195 drawn roofs, built blind (VM
+  `~/mb_live`, `~/mb_new`). Current code with live settings: outline IoU
+  0.895, face IoU 0.647, line F 0.678 (lines right 115, faces right 54),
+  obstruction precision 0.437, recall 0.451. A5 switches: 0.910, 0.668,
+  0.727 (129, 59), 0.364, 0.394. The reader's lines_L19 model is taken to
+  have trained on these roofs, so its line and face scores are flattered
+  (seen 0.97 against unseen 0.85 on J). Per roof, line F: reader better on
+  41, worse on 16, identical on 102; best of the two per roof is 0.742, so a
+  per-roof chooser adds little over the reader on drawn roofs.
+  - *No cheap signal picks the owner's side.* On the 39 roofs judged blind
+    (22 flagged, 17 street), plane-fit confidence, bare-area share and panel
+    count do not separate his line picks; facet shape measures need the
+    untessellated faces (layout_ab output facets are triangles).
+  - *The 8 roofs live won outright:* straightening already runs
+    (`SOLAR_LINE_STRAIGHT=1` in the readings); #4739240's ridge kinks are
+    6 cm. #4751245 and #4731197 are bad readings (boundaries where the
+    reader saw no line), not unstraightened ones.
+  - *Obstructions are the weakest part and get worse with the reader.* On
+    the 161 roofs with under 15 m2 drawn, live marks 2,076 m2 against 258
+    drawn and finds 126 of it: eight times too much, and half missed. All
+    195: 4,681 m2 marked, 1,627 real; 4,141 drawn, 1,866 found. Next: split
+    the false area by detector (colour, height, edge) on these roofs and cut
+    the largest source, judged on the markup and by the owner.
+  - Progress charts for the owner: `data/preview/progress_25nov.html`.
+
+- **Rebuild cost and a staged build (25 Nov, plan).** Pilot, 1,270 buildings,
+  19 min on 16 cores: register_imagery 2.4, layout (roof shape and panels)
+  4.8, gate_panels 3.6, rerank/derive/confidence 1, horizons 0.3, heat-map
+  raster 6.3, addresses and emit 1. Half the time is stages a layout change
+  cannot affect, and any code or config edit marks every building stale
+  (`build_keys` hashes all of it). Plan: three per-building stages with
+  stored results and their own keys: faces (inputs: outline, LiDAR, photo,
+  roof-shape code) -> panels (faces, layout code) -> yield (panels, sun
+  model). A layout change re-runs panels and yield from stored faces; a
+  roof-shape change re-lays only roofs whose faces changed; heat map and
+  horizons key on the outline alone. Not started.
+
+- **Owner's blind picks on A5 (25 Nov), 22 flagged roofs, v85 against A5**
+  (`data/blind_check/owner_flagged_A5_25nov.json`). Outline v85 12, A5 8,
+  same 2; lines v85 12, A5 9; obstructions v85 10, A5 11; panels v85 12,
+  A5 9. On the 20 judged before, panels moved from v85 15 / new 3 to
+  v85 12 / new 7. A5 is still behind live on the roofs the gate flags, so
+  it is not published. #4750944 (112 -> 72 panels, edge 0.5 m in) went to
+  A5 on all four: the smaller edge and the lower count were right there, so
+  the edge shift is not a fault in itself. v85 on all four picks, the roofs
+  to work next: #5371143, #4739240, #4729782, #4740497, #5370318, #4734995,
+  #4731197, #4751245.
+
+- **A5 candidate (25 Nov): A4 plus the main-plane rule, four areas rebuilt.**
+  Gate FAILED, not published: zeroed 6 (A4 7, A3 16), big drops 135 (A4 139),
+  panels 1,325,054 -> 1,319,852 (-0.4%). Blind page of the 20 flagged roofs
+  judged on A3, plus #4750944 and #5371141, live v85 against A5, with the
+  building outline as its own pick (`tools/review_page.py --aspects`; key
+  `data/preview/cases/review_flagged_A5_key.json`): awaiting the owner.
+  Third cause of the remaining drops, measured on six frankton_arm roofs:
+  plain build gives the v85 counts (110/170/112/126/107/107), the student
+  reading leading gives 72/136/91/82/79/69, and `SOLAR_EDGE_GAP=0` recovers
+  part (88/138/106/97/90/78). The reading's fitted edge sits about 0.5 m
+  inside the selected face (#4750944: 273 -> 242 m2), which costs a panel
+  row a side. Grid bearing, edge-drop keepouts and the empty-face refit are
+  ruled out. Which edge is right is the owner's outline pick, not a count.
+
+- **Roofs that lost panels in the candidate: two causes found and fixed, a third open (24 Nov).** The owner's blind picks on 20 flagged roofs (`data/blind_check/owner_flagged_A3_24nov.json`): on the 8 that lost every panel v85 was better on panels 8 of 8 and on lines 6 to 2; on the 12 that lost over 30%, lines candidate 6, v85 4, same 2; obstructions 5, 5, 2; panels v85 7, candidate 3, same 2. One roof noted as bad in both (#4734995).
+  - Cause 1, roofs withheld (156e3be3): a line reading that explains under 0.45 of the returns had no fallback, and a point reading left mostly bare was kept. Both now give way to the next reading. Rebuild "A4": gate zeroed 16 -> 7, big drops 140 -> 139, panels -0.4%; gate failed, not published. Of the 29 flagged zeroed roofs 10 have panels again; 19 small ones (2 to 11 panels on v85) are still empty (15 `low_confidence`, 4 `too_small`).
+  - Cause 2, a large flat face kept bare (7b949fda, `SOLAR_READ_MAIN_PLANE=1`): a read face that is one plane with plant or a raised part on it failed the one-plane test and took no panels (#4743917: 1,329 m2 face, 21% of returns on one plane, though 954 m2 of it is one 2 deg plane; #5371141: 294 of 312 m2). The main part now takes panels and the rest stays bare. Re-laid on the 153 flagged roofs: 46 change, none loses panels, 6,528 -> 7,475 panels (v85 11,779); #4743917 871 -> 530 -> 841, #4743911 394 -> 185 -> 341, #5371141 321 -> 178 -> 257. Rebuild "A5" with the rule on is the candidate; not yet seen by the owner.
+  - Open: about 100 flagged roofs barely move. On these the reader cuts one face into many (#4729407: one 889 m2 face with 360 panels becomes 11 faces, 837 m2 of 1,056 kept, 201 panels) and more area is marked as obstruction. Whether the extra lines are right is for the markup and the owner's eye, not the panel count.
+
+- **Four areas rebuilt with the plane check and the fitted roof edge (24 Nov): gate lists 16 zeroed, 140 big drops, 105 big rises; not published.** Panels -0.5% against v85. The gate's lists are roofs to look at, not a verdict: a roof that loses panels can be the better layout where v85 put panels over missed obstructions.
+  - Traced: all 153 flagged roofs carry reader faces with face area about equal to the footprint; the zeroed ones are withheld as `low_confidence` (5 small ones `too_small` or unread). On 4743917 (871 -> 530) the build leaves one large flat face empty. Cause not yet found.
+  - Sheets: `data/preview/cases/drops_A3/` (42 flagged roofs, v85 | new), `data/preview/qtA3_cases/` (71 reported roofs). 20 of the flagged roofs are with the owner as a blind page (key `data/preview/cases/review_flagged_A3_key.json`).
+- **Owner's blind picks on the test street, v85 against the candidate (24 Nov, 17 houses):** lines 10 candidate, 3 v85, 4 same; obstructions 7, 4, 6; panels 11, 3, 3 (`data/blind_check/owner_street_L20_24nov.json`). None of the 17 was right in either version, so the win says less bad, not good. v85 better on 4729287 (all three), 4729764 (lines, panels), 4729550 (lines, obstructions); both miss the outline shape on 4729767.
+- **Fitted pairwise merge rule, not kept (24 Nov).** A classifier on 2,505 neighbouring-region pairs from 150 roofs (`tools/experiments/merge_pairs.py`) picks merge or keep at 0.845 against 0.813 for the current rule: too small a gain to change the converter.
+- **Round 2: the roof edge from the surveyed outline slid onto the reader's edge (24 Nov). 18 of 100 right, outline 32 -> 52.** With the drawn edge the same readings give 30 right against 15 with the reader's own edge, so the edge was the largest single loss. Edge within 0.5 m of the drawn one on the 100: surveyed outline as it lies 20; reader's own edge 34; surveyed outline at its best position 54 (larger roofs 19 of 30, where the reader's own is 1). `line_graph.slide_outline` finds the position from the reader's edge map and roof map (44 right), `best_edge` keeps the reader's own edge where its edge map is more than 0.2 stronger along it (54; margin chosen on half the roofs and tested on the other half: 24.8 of 50 against 16.9). `SOLAR_ST_KEEP_EDGE=1` keeps that edge exact through the straight-lines step (refitting it lost 7 of them). Switches: `SOLAR_LINE_EDGE_FIT=1 SOLAR_ST_KEEP_EDGE=1`; ledger `ROOF100_EDGE=regions_fit`. Round `r2_edge` against `r1_planes`: outline gained 24 lost 4; right 15 -> 18 (homes 10, centre 5, larger 3); newly right 5, no longer right 2 (4729367, 4736600). In the build the edge slid is the build's own (survey fitted to LiDAR), not the raw survey measured here: to check on the street roofs.
+  - Still: lines right on 41 (a drawn line missing on 45 roofs, a line not drawn on 43), faces on 25.
+
+- **Queenstown part A rebuilt with the bare-reading rule: gate FAILED again, not published (24 Nov, 03:00 UTC build).** 32,838 buildings, panels 1,325,054 -> 1,321,291 (-0.3%). Zeroed 5 (#4723003 16 -> 0, #4740521, #4732231, #4731855, #5372657; 75 before the rule), big drops 106 (137 before; worst #4729407 414 -> 204, #4740325 354 -> 196), 23 of 38 case roofs with a changed layout, none vanished or withheld. Before/after sheets of all 71 reported roofs: `data/preview/qtA2_cases/index.html` (snapshots `v85all` and `qtA2` on the VM). The five zeroed and the big drops are not yet traced. VM stopped 03:30 UTC after about 6.2 hours (about NZ$6).
+
+- **The reference itself was part of the failure: the 100 re-picked, the drawing completed, the scoring fixed (24 Nov).** Working through the ceiling failures (the drawn lines fed to the converter as maps, 51 of 100) found four faults that are not the converter's:
+  - *28 of the 100 were not flagged "I marked EVERY line on this roof"* (`complete` in `roof_labels.json`). On those a read line that is not drawn cannot be called invented. `roof_ledger.py pick` now takes only roofs flagged complete, with no problem noted, whose every drawn line closes a face. 119 qualify (50 homes, 33 centre homes, 36 larger); 63 of the old 100 stay, 37 are new.
+  - *Drawn lines that close nothing.* `joined_faces.py` carried a loose end straight ahead only. An end with nothing ahead but a line or the edge beside it within the same 1.0 m now meets that at the nearest point (`data/line_set/faces_joined_side.json`; 68 of 180 roofs gain faces over the stored ones, none lose). `..._unused_m.json` is, per roof, the metres of drawn line still on no face edge. **16 fully-marked roofs still have over 0.5 m of it and are out of the reference until their lines are finished**: 4725584 (332 m), 5372567, 4744126, 5371183, 4735242, 4726056, 4735237, 5372232, 5372565, 4719462, 4734678, 5370548, 4730523, 4725794, 4747492, 4728319. Mostly large flat roofs with parapet lines drawn as open chains 2 to 4 m from anything.
+  - *The targets were drawn from the raw lines.* The line map of a drawn roof stopped where the hand stopped, while the face edge runs on to the eave. `line_targets.closed_lines` draws the edges of the completed faces; `data/line_set/perfect_maps2` has them (19 of 168 roofs gain line, median 464 px). **The reader has been trained on the gapped targets**: retraining on the closed ones is the next round.
+  - *Scoring.* A face inside another (a dormer) was painted over by the larger one (now largest first). A small face cannot reach an overlap of 0.8 on a 384 px picture (a 1 m face is about 11 px across), so a face also counts as the drawn one when 95% of each one's edge is within 0.5 m of the other's. The reader's own edge is now taken as the build takes it, with the edge map (`reader_edge`).
+  - **Ceiling on the new basis** (drawn lines in, 100 roofs): drawn edge, no straightening 76; reader's own edge 65 to 72; own edge and straight lines 56 (outline 74, lines 74, faces 65; invented lines on 2 roofs, missing on 26). So three converter stages each cost roofs with perfect input: the small faces and joins (24), the roof edge from the roof map (about 10), straight lines (about 9).
+  - **Rounds on the new basis** (J folds, reader's own edge, straight lines): round 0 13 right (outline 32, lines 37, faces 24; missing lines on 53 roofs, invented on 35); round 1 with the plane check 15 (lines 40, faces 26), homes 7 -> 10. Larger roofs 0 of 30 in both.
+  - Tried and not kept: a smaller minimum face (`SOLAR_LINE_SEED_MIN` 30 or 60 against 150) halves merged faces at the ceiling (62 -> 23) and adds splits, no roof gained; capping how far the straightened roof edge may move (`SOLAR_LINE_OUTLINE_MOVE=4`) gains 5 roofs at the ceiling and loses 3 on real readings, where the roof map is soft and the straightening is doing work. Both are switches, default unchanged.
+  - **Where the unseen roofs fail, maps against converter** (89 of the 100 with lines inside, J folds, plane check on): every drawn line is in the reader's maps (95% of its length within 0.5 m at 0.35 or more) on 52 roofs, and the maps' strong lines are all drawn ones on 67; after the converter the lines are all found on 39 and all real on 56. On 14 roofs the map has every line and the converter loses one; on 15 the map's strong lines are all real and the converter adds one. Renders of those 15 show no single cause (faint map lines kept as faces, a slanted cut from straightening, the reader's edge taking in a neighbour).
+  - Also tried, switches left off: a line is squared up only if no point of it moves more than `SOLAR_ST_SNAP_MOVE` px, and a slanted roof-edge run is kept from 15 px (`SOLAR_ST_FREE_EDGE`): ceiling with straight lines 67 -> 70, unseen readings 15 -> 15 (face IoU better on 4, worse on 0).
+  - **Retraining on the closed targets: no gain (fold 0, 35 unseen roofs, own edge, plane check, straight lines).** T against J: face IoU +0.009 [-0.007, +0.025], 10 roofs better and 5 worse (sign p 0.30); line F -0.019 [-0.085, +0.026]. On the 25 of them in the reference: right 3 -> 2, lines 11 -> 7. Only 19 of 168 drawn roofs have a different target, so this was a small change to the training; the closed targets stay as the correct ones (`typed_set9c`) but the other four folds are not retrained for it.
+  - Larger roofs are a resolution limit as well: a 384 px picture of a 70 m roof is 0.2 m a pixel, where a 1 m2 face is 25 px. They need to be read in tiles.
+
+- **Queenstown part A: gate FAILED, cause fixed, rebuilding (24 Nov, VM `~/qt_A2.out`).** Part A (`pilot frankton_arm frankton_arm_lake kelvin_heights`, 3,114 roofs read) built at 01:23 UTC after a layout-stage import fix (1fa092e9). Gate against v85: 75 roofs lost every panel, 137 lost over 30%, panels -0.6%, 24 of 38 case roofs changed. Cause of the zeroed roofs (8 of 8 checked): the reader saw 1 to 5 faces on a complex roof, none of them one plane, and `SOLAR_KEEP_READ_FACES` kept them bare. Rule added (ab690cfe): a roof-line reading with over half its area bare gives way to the next reading (`READ_BARE_MAX`); the 8 roofs carry 68 to 213 panels again. Part A is rebuilding with it. **Part B (the other 19 regions, about 20 VM hours of reading) is not being run**: the reader stands at 8 of 100 on the reference roofs, and the plan is to get those right before a district-wide read. Not published.
+
+- **THE PLAN (owner, 24 Nov): 100 reference roofs made right one round at a time, then scale.** `data/roof100.json` (50 homes outside the town centre, 20 town-centre homes, 30 larger roofs; all hand-drawn, Queenstown, none of the 30 held back) and `tools/roof_ledger.py` (`round <label> <maps dir>`, `diff`). A roof is right when, within 0.5 m of the markup: the outline is the drawn one, no drawn line is missing and none is invented, and every drawn face has its own read face with the counts equal. Each roof is read by a model that did not train on it. Ledgers in `data/roof100/`, pages in `data/preview/roof100/<label>/index.html`.
+  - **Round 0** (J folds, straight lines, reader's own edge): 8 of 100 right; outline 28, lines 29, faces 15; 57 roofs miss a line, 44 have an invented one. Larger roofs: 0 of 30.
+  - **Round 1, plane check on**: 9 right; outline 29, lines 33, faces 16; no roof lost.
+  - **Ceiling** (the drawing itself through the lines-to-faces step): 51 of 100; outline 77, lines 75, faces 53. So half the roofs cannot come out right whatever the reader does: the converter is the first thing the rounds fix, and it needs no training.
+  Rule of the rounds: group the failures by cause, fix the largest with a general rule, rerun all 100, and a fix that makes a right roof wrong does not go in.
+
+- **Judging by fine paired measures, and the planes deciding with the lines (24 Nov).** Owner: the accept/reject calls rested on one coarse count, and combinations were not tried. `tools/experiments/roof_compare.py` now scores every unseen roof (face IoU, line F, faces merged / split / shifted, edge IoU) and compares two runs roof by roof with a bootstrap interval and a sign test, by class of roof. Found with it, all 168 unseen roofs, drawn edge, straight lines on:
+  - **`SOLAR_LINE_PLANES=1`** (`line_graph._plane_basins`): two regions merge only when the line between them is weak AND the unsmoothed LiDAR heights do not put them on different planes, or when the heights put them on one plane. Homes outside the town centre: face IoU +0.021 [+0.011, +0.033], 19 roofs better, 2 worse, merged faces 119 to 89, right 40 to 44. Town-centre homes +0.018 (11 better, 6 worse), right 22 to 27. Larger roofs -0.007, right 19 to 16 (more splits): not yet good there. Stable across the thresholds tried (same 0.06-0.15 m, different 0.3-0.8 m, line 0.45-0.8). Wired into the build's reader (`line_reader.roof_faces` passes the heights); off by default, not in the Queenstown build now running, not yet tried on the street.
+  - LiDAR creases as extra cuts (`SOLAR_PL_CREASE`): fewer merges (-40 to -60 on homes) but as many new splits; line F down 0.05 to 0.07. Off.
+  - Earlier runs re-judged on fold 0 (35 roofs): P, R and N each within noise of J on every measure. The three averaged (J+P+R maps): line F +0.019 [+0.007, +0.037], 9 roofs better, none worse; face IoU +0.010 (not significant).
+  - A region has a say only when it fits its own plane (median within `SOLAR_PL_OWN`, 0.3 m): plant and stepped regions no longer keep faces apart. With it, all 168: face IoU +0.016 [+0.008, +0.025], 36 better, 8 worse, right 81 to 90; homes 18 better, 1 worse; town-centre homes 10 and 4; larger roofs +0.006, 8 and 3 (no longer hurt). The veto does the work; the one-plane merge alone moves 10 roofs. With the reader's own edge the gain is about half (+0.008, 27 better, 13 worse).
+  Next: planes on larger roofs (why splits rise), the reader's own edge (39% against 48% with the drawn edge), averaging with the planes, then the street.
+
+- **Any-angle rotation in training, run R: no gain, not adopted (24 Nov).** `SOLAR_LINES_ROT=1` (roofs turned -45 to 45 degrees and resized 0.75 to 1.05 on three samples in four), fold 0, same schedule as J. Unseen fold-0 roofs against the rebuilt faces, straight lines on: faces right 20 of 35 with the drawn edge (J 20), 18 with the reader's own (J 18); face IoU 0.791 / 0.757 (J 0.798 / 0.768); validation line F1 0.815 (J 0.832). With the flat learning curve and run P, three ways of giving this reader more examples have not moved unseen roofs: the remaining loss is not a shortage of examples of the same picture. Untried: a sharper picture for large roofs (a 50 m roof is read at 16 cm a pixel), and the lines-to-faces step on faint lines.
+
+- **Queenstown build with the roof-line reader leading: launched in two parts (24 Nov, VM `~/qt_lines.sh`, output `~/qt_lines.out`, `~/qt_lines_A.out`, `~/qt_lines_B.out`).** Owner's instruction: a working version to test on the live map. `J_all.pt` reads every roof (`tools/line_reader_faces.py`, `SOLAR_LINE_READER=graph SOLAR_LINE_STRAIGHT=1`) into `data/student_faces` (v85's files kept in `~/student_faces_v85`, layouts in `~/v85_layouts`), then `run_district_build.sh --force` with `SOLAR_KEEP_READ_FACES=1 SOLAR_STUDENT_LEADS=1 SOLAR_KEEP_UNREAD_FACE=1`. `SOLAR_STUDENT_LEADS` (new, off by default) puts the local reader's faces before the point roof's; markup and the paid readings still lead. The test street built with these settings (L19) matched L18 roof for roof. Reading runs at about 21 roofs a minute on 15 cores (16 passes a roof), about a day for all 33,000, so part A is `pilot frankton_arm frankton_arm_lake kelvin_heights` (where the reported roofs are) and part B the other 19 regions. Unseen roofs fail mostly by faint or missing lines that merge two faces (homes outside the centre, 31 wrong of 71: 94 faces merged, 52 split, 60 shifted). A reader trained with any-angle rotation (`SOLAR_LINES_ROT=1`, run R, fold 0) is training on the Mac.
+
+- **Learning curve on the hand-drawn roofs (24 Nov).** The J reader taught with none, half and all of the hand-drawn roofs outside fold 0 (`tools/train_roof_lines.py --hand-share`; the 716 vision readings always in), scored on the 35 unseen fold-0 roofs against the rebuilt faces, straight lines on (drawn edge / reader's own edge):
+  - 0 drawn roofs: faces right 0 / 2 of 35, face IoU 0.346, line F 0.355;
+  - 66 drawn roofs: 19 / 17, face IoU 0.787 / 0.755, line F 0.853;
+  - 133 drawn roofs: 20 / 18, face IoU 0.798 / 0.768, line F 0.849.
+  The vision readings alone teach nothing that matches the drawing; the first 66 drawn roofs do nearly all the work; doubling to 133 adds one roof of 35. On this evidence more markup of the same kind will not close the seen-to-unseen gap (83% to 57%) with this reader: the model has to change. One fold of 35 is noisy, so the half-share run was repeated on folds 1-4 (`heldout_C05`, `data/line_set/runs/curve2_scores.txt`). All 168 unseen, half against all of the drawn roofs: faces right 85 against 81 with the drawn edge, 65 against 65 with the reader's own; face IoU 0.758 against 0.753; homes outside the town centre 44 against 40 of 71, larger roofs 19 against 19 of 55. Flat on every row: this reader has stopped learning from more drawn roofs at about 66.
+
+- **Public roofs added to training, run P (23 Nov).** 2,386 RoofVIP roofs (Munich, 0.2 m, CC BY 4.0; `tools/public_roofvip.py`, known maps line, core, outline, join, roof) beside the hand and vision sets, fold 0, same schedule as J. Scored on the 35 unseen fold-0 roofs against the rebuilt faces, straight lines on:
+  - drawn edge: faces right 23 of 35 (J 20), face IoU 0.796 (0.798), line F 0.857 (0.849);
+  - reader's own edge: 19 of 35 (J 18), face IoU 0.751 (0.768), line F 0.856 (0.865);
+  - faces read 333 against 285 drawn (J 268): P splits roofs into more faces than drawn.
+  Three roofs of 35 is inside the fold-to-fold spread, and face IoU did not move: no measurable gain from foreign roofs at this size. Not adopted; `J_all.pt` stays the reader.
+
+- **Scoring faces rebuilt from the drawn lines (23 Nov).** `tools/experiments/joined_faces.py <reach m> out.json`: a loose line end is carried along its direction to the first line or edge within reach (ends within 0.3 m are joined), and the faces are the cells of that plus the stored faces' own edges. At 1.0 m, 59 of 180 drawn roofs gain faces the stored `faces` lacked (45 from the 0.3 m join alone), none lose any; renders of eight changed roofs follow the drawn lines. `face_score.py` reads it with `SOLAR_TRUTH_FACES=data/line_set/faces_joined_1.0.json`. Faces right, straight lines on, drawn edge, stored truth -> rebuilt truth:
+  - the drawing itself through the converter: 135 -> 148 of 168 (88%);
+  - roofs J_all trained on (fold 0): 25 -> 29 of 35 (83%), line F 0.968;
+  - the same roofs unseen (J fold 0): 20 -> 20 of 35 (57%), line F 0.849;
+  - all 168 unseen (J folds): 77 -> 81 with the drawn edge (48%), 65 with the reader's own edge (39%). Homes outside the town centre: line F 0.927 and faces right on 40 of 71; larger roofs 19 of 55.
+  So the reader reproduces a roof it has been shown (83%, against a ceiling of 88%) and falls to 57% on one it has not: the main loss is from seen to unseen. The stored `faces` in `roof_labels.json` are unchanged; the rebuilt set is for scoring only, and whether it should replace them in training targets is open.
+
+- **Seen against unseen, and the converter's ceiling (23 Nov).** Asked: does the reader get right a roof it has been shown? Fold 0's 35 drawn roofs, faces right with the drawn edge, straight lines on:
+  - the drawn targets themselves fed to the converter as maps (`data/line_set/perfect_maps`): 135 of 168 (80%), face IoU 0.889, line F 0.940;
+  - read by J_all, which trained on them (`data/line_set/seen_Jall0`): 25 of 35 (71%), IoU 0.852, line F 0.952;
+  - read by J fold 0, which did not: 20 of 35 (57%), IoU 0.792, line F 0.841.
+  So the reader reproduces the LINES of a roof it has seen (0.95, the level of the drawing itself); the loss on seen roofs is after the maps.
+  - *Part of that loss is the scoring truth, not the converter.* On the failing perfect-map roofs looked at (4725521, 4718601, 5372392, 4734157), the drawn lines are right and the stored `faces` leave them out: a ridge that stops just short of the edge closes no face in the page's `facesFor`, so the truth is two faces across a ridge and a reading that honours the ridge scores as wrong (`data/preview/cases/drawn_lines_vs_stored_faces.jpg`). How many of the 33 failures are this is not counted yet.
+  - *Next:* rebuild the scoring faces from the drawn lines with loose ends carried to what they point at (the build already joins ends within 1 m, `SOLAR_DANGLE_JOIN_M`), then re-measure all three rows. Until then line F is the more faithful measure of "matches the drawing".
+
+- **Draft-and-check: the drafts are not close (23 Nov, owner's verdict after 3 roofs: "way off", "not even close").** Against the owner's corrections the draft held 0%, 27% and 24% of the drawn line length (within 0.5 m); roof edge IoU 0.69, 0.88, 0.75. What went wrong: a roof joined to a larger building read as one blob with no lines (39A Highview Terrace); a hip roof with no hips drawn to the corners (4 Lancewood Lane); a ridge that wanders and an edge that takes in the neighbour (16 Goldleaf Hill); a roof drawn on a cleared site (346 Frankton Road). Sheet `data/preview/cases/draft_vs_corrected.jpg`. The three corrections are in `roof_labels.json` (216 hand-drawn roofs). Drafts are parked until the reader is much better.
+  - *Is more markup worth the owner's time: unmeasured.* Queued behind run P: the J reader taught with none and with half of the hand-drawn roofs outside fold 0 (`--hand-share`), scores to `data/line_set/runs/curve_scores.txt`. A flat curve says more markup will not help this model; a rising one says it will.
+  - Hand-drawn roofs number 216 (168 in the held-out reader set), with 716 paid-reader readings beside them; "about 850 drawn roofs" in this session's notes was wrong.
+
+- **Teaching the reader more: cheap options first (23 Nov, budget $100, spent under $1 of VM time).**
+  - *Line direction as a target (run N, `SOLAR_LINES_DIR=1`): no gain.* Fold 0, 35 held-out drawn roofs, drawn edge: 0.782 / 18 right against J 0.795 / 21; own edge 0.730 / 13 against 0.741 / 14; best val line F1 0.822 against 0.832. The two direction maps are not yet used by the converter. Left off.
+  - *RoofVIP (DLR, Zenodo 22015175, CC BY 4.0) as extra training roofs.* 10,245 Munich scenes at 0.2 m with hand-drawn roof planes; `tools/public_roofvip.py` writes each building wholly inside a scene in the reader's form: 2,386 roofs in `data/line_set/roofvip/pre` (line, core, outline, join, roof known; no line kinds). The polygon files are pickles: checked with pickletools to hold only numpy arrays before loading. Run P (fold 0, J's settings, 3,501 training roofs) is training on the Mac; scores land in `data/line_set/runs/P_scores.txt`.
+  - *Draft-and-check markup.* The reader writes its lines with a kind (`line_reader.face_lines`); `build_label_bundle.py --seed X --seed-lines` opens a roof with outline and lines as a draft, counted as marked only once ticked complete. First batch: 23 unlabelled homes in frankton_arm (seed 23, 90 to 350 m2, not in the roof set or the test street), page `data/label_set/mark_draft.html`. Not yet checked by the owner; whether correcting is faster than drawing is unmeasured.
+  - *Researched, not started:* a corners-and-edges model (HEAT, CVPR 2022: 1,601 training buildings, code non-commercial so reimplement); DINOv3 backbone (gated weights, "Built with DINOv3" attribution); 3DBAG + PDOK 8 cm + AHN as a larger, machine-labelled pre-training set; small vision-language models (no evidence at this data scale). Rented GPU: about $0.35 to $0.70 an hour for 48 GB (RunPod).
+
+- **Straight lines by construction, and the build's invented lines traced (23 Nov).** Owner's verdict on the 13 Sunrise sheet: not close; lines wobble and curve, and the build adds lines that are not there.
+  - *Where the invented lines came from.* `facets_from_selected_faces` dropped a read face whose returns are not one plane, and `residual_fill` recut the gap from the LiDAR partition. On 13 Sunrise three louvre strips (plane inlier 0.09 to 0.14) were dropped and five scraps added.
+  - *`SOLAR_KEEP_READ_FACES=1`* (off by default): such a face stays as read and bare; residual fill is skipped when the reading covers 85% of the footprint; a bare face passes `repair_staircase_facets`. A read face over a few clean planes is still cut by the returns (`_clean_cut`: at most 4 parts, each 12 m2 or more with 0.70 on plane; 2 Sunrise's one read face gives parts of 53 to 63 m2, the louvre scraps are 6 to 11 m2).
+  - *`SOLAR_LINE_STRAIGHT=1`* (`line_graph.straight_faces`, off by default): boundaries are cut into straight pieces, each fitted with a line, lines near the roof's two main directions are turned onto them and merged, and faces are the cells the lines cut. 168 held-out drawn roofs: drawn edge 0.733 / 77 right (0.739 / 78 before), own edge 0.682 / 54 (0.681 / 53). The score does not measure wobble; the renders are straight. Sliding lines onto the map crest (`SOLAR_ST_CREST`): 74 right, left off.
+  - *Street L18 (both on) against the markup:* 13 Sunrise 0.64 -> 0.71 faces, edge 0.89 -> 0.91, no invented lines; 1 Sunrise 0.55 -> 0.55, edge 0.86 -> 0.89. Sheets `data/preview/cases/street_L18/`.
+  - *Not done:* `SOLAR_KEEP_READ_FACES` is unmeasured on the drawn-roof benchmark (`tools/markup_benchmark.py`); the street round is not judged by the owner.
+  - *What is left is the reading itself.* On 13 Sunrise the reader bends the ridge into the wing line and misses two small faces; on the 168 roofs faces are right on 77 with the drawn edge given. The converter cannot add a line the maps do not hold. Next: teach the reader more (line direction as a target, public roof wireframe sets for pretraining, LiDAR channels that are not blurred over 1.2 m).
+
+**23 Nov, 13 Sunrise: the build loses what the reader reads. Open.**
+- The reader's maps for 4729767 (dumped with `SOLAR_LINE_READER_DUMP`,
+  `J_all.pt`) hold the drawn structure: the ridge, the wing join and the
+  three strip lines, straight, and no cross lines.
+- Faces straight from those maps (`faces_from_regions`, reader's own edge)
+  match the drawn faces 0.78 (0.83 inside the drawn edge). The built facets
+  of street L11 from the same reading match 0.64 and carry cross cuts on
+  the wing that are in no map. The loss is between the reader's faces and
+  the built facets. Next: find the build step that cuts a read face.
+- Second loss, smaller: the reader's own edge has rounded corners and a
+  bulge at the south-west.
+- Line snapping (`SOLAR_LINE_SNAP`, off): lines between faces simplified
+  and turned onto the roof's two main directions by least squares. On the
+  168 held-out drawn roofs (J maps, drawn edge): 77 right at tolerance 3 px
+  and 10 degrees, 72 at 8 px and 20 degrees, against 78 off. Street L12
+  (gentle) and L13 (strong) against the markup: 13 Sunrise 0.63 and 0.61
+  against 0.64; 1 Sunrise 0.54 and 0.57 against 0.55. It straightens the
+  ridge on 13 Sunrise by eye; the scores do not move. Left off until the
+  build keeps the reader's faces.
+
+**23 Nov, self-training on unmarked roofs: no gain.**
+- Teacher `J_fold0.pt` read 4,319 unmarked roofs (held-back 30 excluded);
+  the 1,000 most confident (confidence 0.934 to 0.954) became the kind
+  `typed_set9/pseudo0`. `M_fold0.pt` trained with them added, ViT-B, 16
+  epochs, scored on the 35 fold-0 drawn roofs.
+- Drawn edge: face IoU 0.790, 16 right (J 0.795, 21). Own edge: 0.742, 15
+  right (J 0.741, 14). Val F1 0.824 (J 0.832). Not carried forward: the
+  most confident roofs are the simple ones the reader already gets right.
+
+**23 Nov, 1 and 13 Sunrise Lane drawn; L11 scored against the markup.**
+- Owner's verdict on street L11: better than L10 but not great; 4729286
+  (1 Sunrise) and 4729767 (13 Sunrise) are the main problems. 1 Sunrise is a
+  rare roof shape and is not a tuning target; 13 Sunrise is.
+- Both drawn with outline and lines (markup page built with
+  `build_label_bundle.py --ids ... --artifact` on the VM; faces derived by
+  the page's own `facesFor`). They are no longer unseen test roofs; the other
+  17 street roofs still are.
+- Area-weighted best face IoU against the drawn faces, and roof edge IoU:
+  13 Sunrise L10 0.52 / 0.75, L11 0.64 / 0.89 (8 faces drawn, 7 built);
+  1 Sunrise L10 0.68 / 0.89, L11 0.55 / 0.86 (11 drawn, 11 built).
+  Sheets `data/preview/cases/sunrise_drawn_<id>.jpg`.
+- 13 Sunrise: every drawn line follows one of two perpendicular directions.
+  L11 has the ridge slanted off the eave direction, wobbling edges, and the
+  four parallel strips of the side wing cut crosswise. Next test: snap
+  region edges to the roof's main directions.
+
+**23 Nov, Sunrise Lane street rebuilt with the ViT-B all-roofs reader (`J_all.pt`, street L11 against L10).**
+- None of the 19 street roofs is in the training sets. Sheets in
+  `data/preview/cases/street_L11/`. Not judged by the owner yet; the agent's
+  reading (not a measurement): hips and the missing faces now found on
+  5371242, 4729434, 4729334 and 4729764; 4729286 gains lines but they
+  wobble; 4729767 and 4729284 still wrong. Lines from the regions are not
+  straight: straightening is the next visible loss.
+- All five folds (168 held-out drawn roofs, `data/line_set/heldout_J`),
+  ViT-B against ViT-S (run I): drawn edge given, face IoU 0.739 against
+  0.737, faces right 78 against 70, lines near perfect 78 against 73, line
+  F 0.773 against 0.794; own edge 0.681 against 0.666, faces right 53
+  against 54, lines near perfect 77 against 66. Houses outside the town
+  centre: 0.784 against 0.768 and 38 against 34 (own edge 0.740 against
+  0.716, 26 and 26). Larger roofs 19 against 15 right. Validation line F1
+  by fold 0.832/0.802/0.758/0.768/0.790 against 0.786/0.773/0.752/0.768/0.760.
+  A modest gain: fold 0 (21 against 15) overstated it. ViT-B reads more
+  faces (1447 against 1318, 1389 drawn).
+- Merge barrier 0.35/0.45/0.55/0.65 and basin sigma 2/3 on the ViT-B maps:
+  the defaults (0.35, 2) stay best (78; 77, 73, 63; sigma 3 lower each time).
+
+**22 Nov (late night), ViT-B/14 reader ahead on fold 0; what the reader misses is valleys and drop edges.**
+- Fold 0 (35 held-out drawn roofs), ViT-B (`J_fold0.pt`, batch 4, 16 epochs,
+  no vision-only start) against ViT-S (run I): drawn edge given, face IoU
+  0.795 against 0.759, faces right 21 against 15, line F 0.821 against 0.807;
+  own edge 0.741 against 0.709, faces right 14 and 14. Validation line F1
+  0.832 against 0.786 (ridge 0.80/0.74, valley 0.51/0.41, drop edge
+  0.51/0.43, outline 0.73/0.71). One fold: the other four are to train.
+- Missed drawn faces (run I, 1354 drawn, 637 found at IoU 0.6): of 548
+  missed faces of 5 m2 or more, 356 are merged into a drawn neighbour, 210
+  of those with a line map under 0.3 on the missing edge (the reader does
+  not see the line). Drawn line pixels the reader sees (0.5 or more within
+  2 px): ridge 81%, valley 68%, drop edge 59%.
+- Line completion (`SOLAR_LINE_COMPLETE`, `line_graph.complete_lines`):
+  74 -> 76 roofs right of 167, 7 better and 3 worse at the best setting.
+  Off. Loose line ends are not the main loss.
+- Sharp LiDAR channels (`SOLAR_LINES_SHARP`: unsmoothed height and the
+  height step within 0.6 m): samples re-cut on the VM
+  (`data/line_set/typed_sharp`, 9 channels); fold 0 on ViT-B
+  (`K_fold0.pt`): no gain. Drawn edge given, face IoU 0.782 against 0.795
+  and faces right 18 against 21; own edge 0.718 against 0.741, 14 and 14;
+  validation line F1 0.820 against 0.832 (drop edge 0.54 against 0.51).
+  Off. The ViT-B reader on the 7-channel set is the one trained on: an
+  all-roofs model (`J_all.pt`), then folds 1-4.
+- `data/line_set/lines_set/points` holds 4322 LiDAR plane-fit readings never
+  used in the typed sets: a ready self-training set to test.
+
+**22 Nov (late), five quick tests on the held-out drawn roofs (run I maps, drawn edge supplied).**
+Default: face IoU 0.741, faces right 73-74 of 166-167. Scripts in the session
+scratchpad (oracle.py, judge.py, repair.py), not in git.
+- Candidates: 27 per roof (runs G, I, their mean; merge barrier 0.2/0.35/0.5;
+  basin sigma 1/2/3.5). No single setting beats the default. Best per roof
+  (a perfect judge): 0.789, 96 right. Houses 59 -> 71, larger 15 -> 25.
+- Two readers averaged (G and I maps): 0.737, 74. No gain.
+- LiDAR judge picking among the 27 (plane fit of the returns in each face,
+  returns slid up to 1.5 m): 0.750, 79 right; better on 48 roofs, worse on
+  25. About a quarter of what picking could give. The per-face penalty made
+  no difference.
+- LiDAR joining faces one plane fits (joint fit worse by under 0.015 m RMS),
+  from the default or an over-split reading: 0.742, 76. It joins too much
+  (863-1031 faces against 1347 drawn; 0.03 m and looser score worse).
+- L10 street (`I_all.pt`): not visibly better than L9 on 13 and 5 Sunrise
+  Lane; not sent.
+- Where houses go wrong (4-11 drawn faces, IoU under 0.8, sheet by eye): the
+  main ridges are read sharply; faces are lost where a line fades before it
+  reaches the edge or another line, and the watershed then closes the face
+  with a wobbly or slanted boundary. Houses by drawn faces: 2-3 faces 0.87,
+  4-6 0.75, 7-11 0.72, 12+ 0.65.
+- ViT-B/14 backbone (`SOLAR_LINES_ARCH=vitb14`): batch 8 needs 13.6 GB on
+  MPS and stalls a 19 GB Mac; batch 4 runs at 0.87 s a step. Fold 0 training
+  (`J_fold0.pt`, no vision-only start).
+
+**22 Nov (night), outline pass complete; run I level with run G; the reader is the limit.**
+- The owner checked the outline of all 150 earlier drawn roofs (91 changed,
+  59 confirmed); lines reconciled (`tools/reconcile_outline_pass.py`; 42
+  line ends on 27 roofs more than 1.5 m short were left). 178 of 211 drawn
+  roofs carry a checked outline; all 168 in the training set teach the edge
+  (`data/line_set/typed_set9`, samples re-cut on the VM).
+- Fair baseline: run G read on the re-cut samples and scored against the
+  corrected markup (`heldout_G9`): drawn edge given, face IoU 0.725, faces
+  right 69, lines right 124; own edge 0.664, 54, 118; roof map against the
+  taught roof 0.875 (0.9 or better on 98). Against the old markup the same
+  reader scored 0.700 / 66 / 117: part of the counted error was the markup.
+- Run I (`I_fold*.pt`, all 168 teaching the edge; `heldout_I`): drawn edge
+  0.737, 70, lines right 132; own edge 0.666, 54, 125; roof map 0.867 (97).
+  Lines a little better, faces and edge level. Teaching the edge on 168
+  roofs instead of 35 did not move the edge; 11 more roofs of lines moved
+  the lines a little. More markup of this kind is not what limits the reader.
+- Sample framing against the build's reading, 167 roofs, G folds on the VM
+  (ablation script kept in the session scratchpad, not in git): framed on
+  the drawn roof, face IoU 0.727 / own edge 0.677 / edge IoU 0.90; framed
+  on the build's edge 0.727 / 0.662 / 0.873; re-framed on the reader's edge
+  0.729 / 0.662 / 0.869. The build's reading is not broken; re-framing is
+  now off (`SOLAR_LINE_READER_REFRAME`). Build edge against drawn: 0.856.
+- Larger roofs read in tiles at 0.07 or 0.1 m/px with the same reader: no
+  gain (85 roofs 0.648 -> 0.653; 38 roofs 0.605 -> 0.585). Not trained on
+  part-roofs, so untested rather than ruled out.
+- The worst roof maps are flat commercial roofs with plant, car-park decks
+  and multi-building blocks in the town centre, not houses (houses: roof
+  map 0.89, faces right on about half).
+- Next: a stronger reader (larger backbone is a download and needs the
+  owner's OK); `I_all.pt` (all drawn roofs) for the street.
+
+**22 Nov (evening), run G scored: the 11 new hard roofs help a little.**
+- Run G (`data/line_set/runs/G_fold*.pt`, `typed_set5`, fixed folds): each
+  roof read by the fold model that never saw it, faces by
+  `tools/experiments/face_score.py` on `data/line_set/heldout_G`.
+- The 157 earlier roofs, against run D (`heldout_D8`): drawn edge supplied,
+  face IoU 0.694 (0.680), lines right 106 (103), near perfect 59 (56); the
+  reader's own edge, 0.630 (0.620), 102 (103), 52 (48). A small gain,
+  within what a retrain alone can move.
+- The 11 new roofs, held out, against the reader trained without any of
+  them: drawn edge 0.778 (0.743), faces right 7; own edge 0.734 (0.688),
+  faces right 6. Lines right on all 11.
+- Larger roofs remain the weak group (56 roofs: face IoU 0.618, faces right
+  12). Still unexplained: the same 11 roofs read in the wild scored 0.54.
+- Run H (17 corrected outlines, 35 roofs teaching the edge) follows.
+
+**22 Nov (later), 11 hard roofs drawn; the outline was not being taught.**
+- The owner drew 11 of the 20 hard roofs (3 more flagged not a building, 6
+  not done: very complex roofs). In `data/roof_labels.json`; samples in
+  `data/line_set/typed_set5` (168 drawn roofs), fixed folds in
+  `data/line_set/folds.json`, the new ones listed in `new11.json`.
+- Before (the reader that never saw them, framed on the build's edge, as
+  the map would read them): outline IoU 0.77, face IoU 0.54, faces right on
+  1 of 11, outline 0.9 or better on 2.
+- The same reader given the picture centred on the drawn roof (the training
+  framing, drawn edge supplied) scores face IoU 0.74 and lines right on 9
+  of 11: much of the loss in the wild is not the lines. Reading again in a
+  picture framed on the reader's own edge (`line_reader.REFRAME`) recovers
+  little of it (face IoU 0.554 to 0.578, outline 0.753 to 0.774 on the 11,
+  VM): the rest is unexplained and is the next thing to find.
+- The owner, 22 Nov: on the roofs drawn earlier the outline was generally
+  left as surveyed. So 144 of the 168 drawn roofs were teaching the surveyed
+  outline (balconies and decks included) as the roof's edge. `line_targets`
+  now marks the edge and roof maps as known only where the outline was drawn
+  or corrected (24 roofs); the 0.86 edge overlap measured on the 157 was
+  partly agreement with the survey, not with the roof.
+- A no-panel face is not roof in the targets (67 faces on 37 roofs).
+- Outline pass (`build_label_bundle.py --outline-pass`, page in
+  `data/preview/outline_pass/`, 150 earlier roofs, local only: 33 MB): the
+  owner checked 17, changed the outline on 14. Earlier drop edges were drawn
+  where the roof really ends (in front of a balcony). Lines and faces are
+  reconciled to the new outline by `tools/reconcile_outline_pass.py`
+  (lines along the new outline dropped, ends carried to it up to 1.5 m,
+  faces rebuilt; 4 line ends over 1.5 m short were left). Set
+  `data/line_set/typed_set7`: 35 drawn roofs now teach the edge. Run H
+  (`runs/H_fold*.pt`) follows run G on it. 133 roofs of the pass remain.
+- Running: five folds on typed_set5 (`runs/G_fold*.pt`), then held-out maps
+  for all 168 and the face score, old 157 against run D and the new 11
+  against the before.
+- Marking page: a second LINZ flight of each roof on V (`reference_imagery`),
+  for looking only; the main photo is the map's (`imagery` equals the
+  display tiles, checked by eye on two roofs).
+
+**22 Nov, like-for-like benchmark; the reader's own roof edge; owner's street verdicts.**
+- Build benchmark (179 drawn roofs, VM, each roof read by the fold model
+  that never saw it, the build's outline, `~/ab/bench_L7`): face IoU 0.629,
+  line F 0.65, lines right 96, faces right 34. The build before it: 0.627,
+  92, 43. The typed reader with region faces ties the old build; it is not
+  a step up on this score.
+- Where the loss is: the faces step given the DRAWN maps scores face IoU
+  0.929, 137 of 157 faces right. Given the reader's maps, 0.68. The reader's
+  maps are the limit, not the conversion. Basins-then-merge
+  (`line_graph._basins`), 8-view reading (`line_reader.maps`), and every
+  threshold tried move the held-out score by under 0.01.
+- Roof edge: the reader's roof map, carried onto its edge map and
+  straightened (`line_graph.roof_outline`, `line_reader.reader_edge`),
+  overlaps the drawn edge 0.86 on the 157 held-out roofs with no slide
+  (0.9 or better on 61). It leaves out balconies and decks the build's edge
+  takes in. End to end with it (`face_score.py ... regions_own`): face IoU
+  0.620, lines right 103.
+- Street L8 (reader's edge), owner's verdicts (logged per roof in
+  `data/roof_cases.json`): better on 15, 7, 6 (#4729573), 4 Sunrise and both
+  sheds (3 Sunrise #4729554 "seems perfect"); worse on 84 Panorama,
+  2 Sunrise (obstruction too big, line not straight), 3 Sunrise #4729550,
+  6 Sunrise #4729764 (balcony taken in); 13 Sunrise "still terrible";
+  5 Sunrise lines wrong on both; chamfered corners on #5371242.
+  L9 (short slanted edges dropped, shared edges simplified to 8 px): not
+  visibly better by eye, not shown as progress.
+- Benchmark with the reader's edge and the straighter faces (L9 code,
+  `~/ab/bench_L9`): line F 0.67, lines right 99, faces right 38, face IoU
+  0.613, outline IoU 0.87 (the build's edge, slid by the benchmark: 0.897).
+  Lines a little better than L7's run (0.65, 96), faces no better.
+- 784 px training on the Mac did not finish one epoch in 47 minutes
+  (stopped); 588 px (42 x 42 patches) is running instead
+  (`F588_fold0.log`).
+- 588 px on fold 0, from the 392 px start: 0.660 then 0.640 after two
+  epochs against 0.691 and 0.708 at 392 px, at ten times the time per epoch
+  (1,400 s). Stopped: more detail in the reader is not the cheap gain.
+- 20 hard roofs out for marking (`data/label_set/mark20_picked.json`, the
+  reader's own edge and faces kept in `mark20_seed.json` for a before and
+  after): picked from 545 houses read across the district, by the reader's
+  uncertainty, drop edges, and disagreement with the surveyed outline.
+- Was running: the reader retrained at 784 px (56 x 56 patches, `SOLAR_LINES_SIZE`)
+  on fold 0, against D_fold0's 0.755 (`data/line_set/runs/F784_fold0.log`).
+  If it helps: all folds, held-out face score, street. If not, the remaining
+  levers are more drawn roofs (126 drawn roofs took fold 0 from 0.687 to
+  0.755) and a larger backbone (a download: needs the owner's OK).
+- `tests/test_call_sites` fails on `src/face_regions.py:152,162` (net()
+  called with an argument) before and after this work: not from it.
+
+**21 Nov (night), faces seeded from the face-interior map.** All five folds
+trained (`D_fold0-4.pt`); every drawn roof read by a model that never saw it
+(`data/line_set/heldout_D`, `tools/experiments/heldout_maps.py`) and scored
+by FACES (`tools/experiments/face_score.py`, drawn outline supplied):
+
+| 157 held-out drawn roofs | face IoU | faces right | lines right | near perfect |
+|---|---|---|---|---|
+| joins-and-lines (`faces_from_maps`) | 0.516 | 20 | 53 | 21 |
+| regions (`faces_from_regions`) | 0.678 | 53 | 99 | 48 |
+
+Regions, by kind: houses outside the town centre 60 roofs, lines right 47,
+near perfect 22, faces right 18; town-centre houses 42: 27, 17, 22; larger
+55: 25, 9, 13. The three thresholds barely move the score (0.669-0.678).
+The reader finds 962 faces where 1,296 are drawn: missed faces are now the
+reader's, not the conversion's. Street L7 (`data/preview/cases/street_L7`):
+mixed by eye, not judged by the owner. Not comparable with the 179-roof
+build benchmark (0.627, 43, 92) until run through it with the build's own
+outline: do that next, on the VM.
+
+
+**21 Nov (late), LiDAR alignment in the training set; street not yet better.**
+- The first export left the LiDAR channels off the photo: few buildings
+  outside the pilot have a recorded drawing shift. Aligned by the label
+  (`tools/align_lidar_channels.py`, `data/line_set/typed_set3`): 100 of 157
+  drawn roofs and 392 of 716 readings moved more than 0.5 m.
+- Fold 0 (32 unseen drawn roofs, 0.75 m), reader retrained on the aligned set
+  (`D_fold0.pt`): raw line map 0.743 with the LiDAR as it comes, 0.775 read
+  twice (pass 1 photo alone, LiDAR slid onto its lines, pass 2), 0.776 aligned
+  by the label. Drawing F 0.757; 0.9+ on 12 of 32 (reader A: 6).
+- Final model on all labels: `data/line_set/runs/E_all.pt`. Build-side reader:
+  `src/line_reader.py`, `SOLAR_LINE_READER=graph tools/line_reader_faces.py`.
+- Street (L2-L6, `data/preview/cases/street_L*`): not better than L1 and not
+  sent. Three causes found: (1) a slide estimate moved the roof edge off 1
+  Sunrise Lane; the edge is no longer moved by the slide; (2) the
+  joins-and-lines drawing leaves lines that close no face: on fold 0 it reads
+  247 faces where 419 are drawn and gets the face count right on 9 of 32
+  roofs, although its line F is 0.69-0.76. Line F hid this: score FACES
+  (count, IoU) on held-out roofs before the next street run; (3) the old
+  region conversion with the new model (L6) is no better by eye.
+- Next: closed faces from the maps (the core map seeds every face, the line
+  and join maps place straight edges between them), judged by a face score
+  on the five folds, then the street.
+
+
+**21 Nov, reader learns everything the markup records.** The markup gives each
+line a kind (ridge, valley, cliff), the outer edge and the join points; the
+first reader trained on "a line between faces" only, with the outer edge
+erased. `tools/line_targets.py` now writes eight target maps
+(`data/line_set/typed_set2`), `tools/train_roof_lines.py` trains them, and
+`src/line_graph.py` rebuilds a roof as joins connected by straight typed
+lines (from the markup's own maps: line F 0.91 at 0.75 m, 128 of 157 at 0.9+).
+Fold 0 of 5 (32 drawn roofs the model never saw, 0.75 m): reader A 0.687 ->
+with drawn roofs in training 0.716 (first-target scoring); with the corrected
+target, raw line map 0.735, joins-and-lines drawing 0.729. Typed maps at 2 px:
+ridge 0.62, cliff 0.47, valley 0.37, outline 0.55, join 0.49. Adding 4,322
+LiDAR-derived roofs to training (run B) did not help (0.620 vs 0.637).
+Open: outline from the roof map is wobbly (needs straight edges between
+corner joins); missed joins; folds 1-4; final model on all labels; street.
+
+
+- **21 Nov: owner's direction: roof lines first, building outlines second,
+  everything else after.** "It's relatively easy to see and mark these up
+  visually as a human, so I see no reason we can't make AI good at that."
+  A new reader is being trained: DINOv2 ViT-S/14 photo encoder (weights
+  already on the Mac) with a LiDAR side branch, boundary and core maps at
+  392 px (`tools/train_roof_lines.py`), on `data/line_set/lines_set`
+  (`tools/export_roof_lines.py`, map-photo frame, 384 px): 716 paid readings
+  rated 0.5 or over, 4,322 LiDAR point-roof readings whose planes hold 95%
+  of their returns within 0.15 m (of 9,800 tried), 157 hand-drawn roofs kept
+  out as the test; the 30 held-back roofs are not read. Open: scores; maps
+  to faces through `face_regions.straight_faces`; the street side by side.
+- **21 Nov: three panel-side fixes from the street marks, parked behind the
+  line work.** (1) Obstructions: `CRISP_PEAK` and `CRISP_LARGE`
+  (`src/obstruction_detection.py`), on by default after the bench (103
+  marked roofs: small marks found 37.8% -> 64.6%, small detections on a
+  mark 29.2% -> 32.5%, area recall 0.322 -> 0.355, precision 0.338 ->
+  0.344); the edge rule (`CRISP_EDGE_M`) added after 15H Sunrise Lane
+  over-fired is not yet benched. (2) The shady side is laid out and ranked
+  after the sunny side (`SHADY_SIDE_PANELS`). (3) Readings get
+  `straighten_faces` after the weld: neutral on 179 drawn roofs (line F
+  0.638, 92 right, 43 faces right). Dropped: `SOLAR_LINE_MERGE_OFF=0.8`
+  (faces right 43 -> 39). Street `street_r7` against all marks: missed
+  obstructions 13 of 32 (was 2), panels should go here 10 of 12 (was 4),
+  over an obstruction 2 of 4. Not sent as a round.
+- **21 Nov: placement on the photo checked; it was not the fault.** The
+  entry below compared the map's photo with the SURVEYED outline. Against the
+  drawn faces the recorded shifts hold: on the 19 street roofs the
+  photo-to-photo match (roof only) is about (-0.8, +0.7) m and the LiDAR
+  roof's lean in the survey-year photo about (+0.6, -0.6) m, which sum to
+  the small recorded shifts; drawn at the recorded shift the point faces sit
+  on the roof in the map's photo (#4729434, #4729764; agent's eye;
+  `tools/experiments/survey_vs_map_photo.py`, scratch `place.py`). So on the
+  13 unchanged roofs the faults are in the lines. #4729434: a real
+  two-ridge roof read nearly right, with a jogged seam where two parallel
+  fold lines 0.5 m apart both survived, and a hip end read as a sliver.
+  Trial `street_r5`, `SOLAR_LINE_MERGE_OFF=0.8` (parallel candidate lines
+  within 0.8 m are one line; was 0.35): 3 roofs change (#4729329 4 -> 3
+  faces, #4729434 jog gone, #4729292 15 -> 14 faces); on #4729434 panels
+  went 25 -> 38 and some look to sit across the gutter strip, not checked.
+  Not adopted, not benchmarked. `SOLAR_POINT_FACES_DIR` lets a trial write
+  and read its own readings. Open: why the hip end is lost (plane too small
+  to grow, or merged by the seam cost), the panels on #4729434 in r5, and
+  the 6 changed roofs.
+- **21 Nov: the 19 test-street roofs, survey-year photo against the map's
+  photo.** Sheets in `data/preview/cases/change_r4/` (2021 photo, current
+  photo, returns by height, surveyed outline, the owner's real-edge clicks;
+  script `tools/experiments/survey_vs_map_photo.py`). Read by the agent's
+  eye, not measured: 6 of 19 are not the roof the survey saw (#4729767 and
+  #5371242 rebuilt larger, #4729554, #4729550 and #4729287 a different roof,
+  #4729452 under scaffolding in 2021). `roof_change` does not separate them:
+  edge correlation is under 0.25 on all but one of the 19, and brightness
+  change over 60 on 3. On the other 13 the 2021 photo sits on the outline and
+  the returns, and the current photo shows the roof up to about 1.5 m away
+  (#4729434, #4729288, #4729334, #4729764, #4729435), while the recorded
+  drawing shifts on the street are all under 0.5 m (`image_shift.json`; the
+  point-roof lean replaces the photo-to-photo match). Open: (1) compare the
+  photo-to-photo match (`register_imagery.measure`) with the point-roof lean
+  on these 13 and on the drawn roofs; (2) a changed-roof test that works
+  (footprint of the current photo against the returns), and what a changed
+  roof is built from.
+- **21 Nov: round 4 judged not fixed; what the first roofs show.** Owner on
+  round 4: nothing visibly fixed (marks `data/fault_marks/street_r4.json`).
+  The weld moves lines by centimetres; the faults are metres. Evidence
+  renders (photo beside every return by height, surveyed outline, fitted
+  edge, faces, the owner's real-edge clicks: `data/preview/cases/evidence_r4/`):
+  13 Sunrise Lane (#5371242): the returns show a low roof the size of the
+  surveyed outline (32 m2); the map's photo shows a hip roof about twice
+  that, and the owner's four corner clicks sit 1-3 m outside the outline over
+  ground-height returns. The 2021 survey and the 2026 photo are not the same
+  roof. 1 Sunrise Lane (#4729286): faces follow the returns closely but not
+  the photo roof; moving the drawing (+0.9, -0.8) m did not line it up, so it
+  is not a slide. Recorded leans on the street are all under 0.5 m. Not yet
+  checked: the survey-year photo against the map's photo for the 19 roofs
+  (`register_imagery.roof_change`), which would say how many were built or
+  extended after the survey. Street rebuilt with the point roof off
+  (`SOLAR_POINT_ROOF=0`, `street_photo`: the photo-reading model leads on
+  the 10 roofs that have one): real-edge clicks met 4 of 7 (round 4 marks)
+  and 1 of 14 (round 3), both roofs once ticked right changed; by the
+  agent's eye not clearly better on #4729286. Not sent as a round.
+- **21 Nov: round 3 marks (106 spots, 46 comments) and round 4: one line
+  between faces.** Marks in `data/fault_marks/street_r3.json`. What the
+  comments say, by count of roofs: doubled or tangled lines (7), outline off
+  the photo roof (6), balcony or deck drawn as roof (4), missed hips and
+  ridges that are plain in the photo (4), obstructions missed (15 spots) or
+  far too large (1). Measured: a "doubled line" is two near-parallel edges of
+  different faces 0.08-1.0 m apart over 1 m or more; 47 pairs on the round 3
+  street, on every roof marked for it, none on five roofs not marked for it.
+  `src/face_weld.py` (on by default, `SOLAR_WELD_FACES=0` off): a lapped
+  edge is cut, a gap between faces under 0.9 m goes to the face beside it.
+  Street round 4 (`street_r4`, built with `SOLAR_KEEP_UNREAD_FACE=1` like
+  round 3): 47 pairs -> 10; panels 474 -> 506. Drawn-roof benchmark (179,
+  blind, run before the spike tidy): line F 0.629 -> 0.639, roofs with lines
+  right 88 -> 92, faces right 43 -> 42, panels 20,335 -> 20,586 (drawn
+  19,370). Against the marks nothing else moved: ridges 2 of 6, obstructions
+  over 0 of 4, missed obstructions 0 of 17 and 2 of 15, real roof edge 2 of
+  14. Seen on #4729288, not measured: the oversized obstruction is gone and
+  a panel now sits on the small object it was drawn around. Not touched:
+  outline against the photo, balconies (flat faces well below the main roof),
+  missed hips, sliver faces under 1.7 m (the 10 pairs left are mostly these),
+  obstructions. Sheet `data/preview/cases/street_r4/`, marking page
+  `data/preview/cases/mark_street_r4/`.
+- **21 Nov: how fault marks become rules.** `tools/mark_faults.py` now
+  has `measure` (every panel on the marked roofs measured the same way,
+  marked or not; per fault, the measurement and threshold that takes every
+  marked panel and the fewest unmarked) and `score-all` (a rebuilt street
+  against every marks file so far). The page groups faults into five
+  categories, adds "real roof edge is here" (scored: the drawn outer edge
+  within 0.5 m of the click) and comments pinned to a spot. On the v85
+  marks (484 panels, 35 marked): "should not be here" separates on face
+  width (<= 1.63 m takes all 18 and 5 of 449 unmarked), which is the round 1
+  rule; over a ridge, over an obstruction and off the roof do not separate
+  on anything the snapshot holds (best: 104, 155 and 62 unmarked caught), so
+  those need the returns and the photo measured at each mark before a rule.
+  55 of the 68 line marks sit within 0.5 m of the outer edge. Open: add
+  LiDAR and photo measurements to `measure` (runs on the VM); a second
+  street of another kind as the check that rules hold where they were not
+  tuned.
+- **20 Nov: test street round 3 and the drawn-roof benchmark.** Benchmark
+  (179 drawn roofs, blind): rounds 1-2 change no face on any of them (line
+  F 0.629, 88 roofs with lines right, both runs; panels 20,422 -> 20,335):
+  no harm, and no measured gain, because the form swap never met a reading
+  there. `SOLAR_KEEP_UNREAD_FACE=1` (a point-reading face that is not one
+  plane stays bare instead of being recut by residual fill): line F 0.629,
+  lines right 88 -> 87, panels 20,335 -> 19,605 (drawn total 19,370), 18
+  roofs changed, two large roofs lose most panels (#5372220 858 -> 481,
+  #4747637 419 -> 101). On the street it changes four roofs, clears the
+  stray triangles at #4729452 and the deck row at #4729292 (6 of 7 "off
+  the roof" marks). Left OFF in the code: mixed on the drawn roofs. Shown
+  to the owner as round 3 with a fresh marking page
+  (`data/preview/cases/mark_street_r3/`, before/after
+  `data/preview/cases/street_r3/`); it goes on, perhaps for homes only,
+  if the owner's marks say so. Still open: outer edges (35 marks: outline
+  against the photo), ridge and obstruction marks, missed obstructions.
+
+- **20 Nov: test street round 2 (roof lines).** Cause found for the
+  staircase ridge at #4750879: `structured_roof.maybe_structured` swapped
+  the point reading's nine straight faces for a "wings" form with 26- and
+  30-corner faces. A reading now keeps its lines there as it does in the
+  reshape stages (60c476d3; `SOLAR_FORM_OVER_READING=1` swaps as before).
+  On the street it changes #4750879 and #5371242 only. The 68 line marks
+  split 35 on the outer edge (outline off the roof in the photo: decks and
+  pergolas inside the outline, and the photo's lean), 30 on inner lines,
+  3 away from any line. Seen in the LiDAR evidence renders
+  (scratch `evidence.py`: photo, candidate lines, returns by plane),
+  unjudged: #4729452's reading has two faces the build drops (plane inlier
+  0.15 and 0.22 over a flat roof and pergola) and residual fill replaces
+  them with stray triangles; #4729286 and #4729550 have the outline 1 m or
+  more off the photo roof. `mark_faults.py score` cannot judge a moved
+  line (a line 0.3 m off still lies within 0.5 m of the mark): line
+  changes go back to the owner on a fresh marking page. Drawn-roof
+  benchmark before/after running on the VM (`~/mb_before.score`,
+  `~/mb_after.score`). Renders `data/preview/cases/street_r2/`.
+
+- **20 Nov: test street round 1, scored against the owner's marks.** Marks
+  (`data/fault_marks/street_v85.json`, 127 on 17 of 19 roofs, 2 roofs marked
+  right): roof line or edge wrong 68, should not be here 18, obstruction not
+  marked 17, off the roof 7, panels should go here 7, over a ridge 6, over
+  an obstruction 4. Loop: `tools/street_loop.py <label> ~/street_cases.json`
+  on the VM (reproduces v85 exactly at baseline), then
+  `tools/mark_faults.py score`. Round 1 (fa93a3d9): no panels on a face
+  under 1.7 m wide (`NARROW_FACE_M`), and height-rule drops that lie on
+  their face's plane go back (`gate_panels.restore_on_plane`). Score: 18 of
+  18 "should not be here", 1 of 7 "panels should go here", both right roofs
+  unchanged; nothing else moved. Unmarked side effects for the owner to
+  judge: #4729550 -2 and #4729292 -3 panels (faces 1.4 and 1.5 m wide).
+  Renders `data/preview/cases/street_r1/`. Not in a build yet. Open, in
+  order of marks: roof lines (68; the reading itself), missed obstructions
+  (17; vents, skylights, a ridge strip), off the roof (7; six on a 2.2 m
+  face over a deck at #4729292), ridge (6), remaining "panels should go
+  here" (6; faces left empty at #4729287, #4729764).
+
+- **20 Nov: fault marking page.** `tools/mark_faults.py page <out> <snapshot>`
+  draws every panel of a snapshot as a clickable shape on the 0.05 m photo;
+  the owner tags panels (over a ridge, over an obstruction, off the roof,
+  wrong way round, stray, other) and pins spots (panels should go here,
+  obstruction not marked, marked obstruction is not one, line or edge
+  wrong). Marks carry the panel index and NZTM coordinates; save pasted
+  marks as `data/fault_marks/<label>.json` (`mark_faults.py read`). First
+  page: the 19-roof test street, `data/preview/cases/mark_street_v85/`
+  (serve with the `solar-map-static` preview, port 8010). Next: a scorer
+  that re-lays the street (`tools/layout_ab.py --ids`) and counts marks
+  resolved, so each rule change is judged against the marks.
+
+- **20 Nov: small test street for panel placement.** Sunrise Lane (17 roofs,
+  frankton_arm) plus 26 Earnslaw Terrace and 84 Panorama Terrace: 19 roofs,
+  refined until the owner calls each right, then widened. Baseline renders
+  (v85): `data/preview/cases/street_v85/`. VM working folder `~/streettool`
+  (cases file `~/street_cases.json`); per-roof re-layout with
+  `tools/layout_ab.py frankton_arm --ids ...`. Four v85 reports logged as
+  cases: #4740972, #4750879, #4729452, #4729434. Faults seen in the
+  baseline, unjudged: arrays left ragged where the LiDAR gate and the
+  obstruction mask remove single panels; panels across ridges where face
+  lines sit off the photo ridge; a portrait row on a narrow strip face;
+  panels past the eave where the outline is wider than the roof; vents not
+  marked.
+
+- **20 Nov: v85 published past the failed gate, on the owner's go-ahead.**
+  `gs://solar-potential-map-tiles/v85/`, main 252e05d2. Still open from the
+  gate: point-roof faces that end with no panels (#4732192, #4751244 and
+  seven more zeroed roofs), 77 roofs down over 30% not yet judged.
+
+- **19 Nov: Queenstown rebuilt (v85 candidate), gate FAILED, not published.**
+  Build 01:23 to 07:44 UTC at 2e081948, no stage failed; VM up 6 h 51 min,
+  stopped. Gate against v84: 9 roofs lost every panel, 77 lost over 30%,
+  2 newly withheld, panels on the map -0.4%. Renders, v84 beside v85, one
+  3600 px image per roof: `data/preview/cases/cases_v85/` (54 reported
+  roofs; 7 changed layout) and `data/preview/cases/gate_v85/` (the 9 zeroed
+  and the 15 largest drops). Seen in four of the gate renders, unjudged:
+  two big drops come from a reader roof that marks skylight strips and a
+  terrace as no-go; two zeroed roofs (#4732192, #4751244) have point-roof
+  faces drawn and no panels placed. Next: find why a point-roof face ends
+  with no panels (all nine zeroed have no reader file on the four checked),
+  fix generally, rebuild only the affected regions, then ask about
+  publishing.
+
+- **RULE: the paid reader is not the production method (owner, 19 Nov).**
+  Reading every Queenstown house (about US$1,800) is ruled out, and the
+  method must scale nationally at compute cost only. The reader supplies
+  training labels and evaluation samples in small batches. The roughly
+  1,050 readings already bought are the label set for a local model
+  (`data/models/face_regions_v3.pt` was trained on far fewer and is
+  untested outside central Queenstown). Next: retrain the local model on
+  all of them, hold some out, and put it beside the reader and the point
+  roof on the reported roofs (`tools/cases_sheet.py`).
+
+- **Compute costs reviewed (19 Nov).** Both stored 600 GB disk images
+  deleted on the owner's instruction (`solar-vm-20261019`, `solar-worker`;
+  about US$35-45 a month at list price): `tools/vm_start.sh --clone` needs
+  `tools/fleet.sh image` run again first. Open, largest first: rebuild only
+  the roofs a change touches (any hashed-code change marks all 23 regions
+  full, 6.5 h); a small machine type for light jobs through the capped
+  start script; the one-core stages before the first region (plan took 38
+  min on 18 Nov); a cheaper reader (cheaper model, or only roofs whose
+  point roof fails a check), to be trialled on about 50 houses; idle stop
+  30 to 10 min. Buckets are under 9 GB in all.
+
+- **Reported roofs are logged and redrawn every version (19 Nov).**
+  `data/roof_cases.json` now holds 54 roofs (16 added from the owner's v83
+  and v84 reviews; it had lapsed since 8 Nov). After every build:
+  `tools/cases_sheet.py snap <label>` then `sheet <out> <previous> <label>`
+  gives one 3600 px image a roof, previous version beside new, over the
+  map's photo at zoom 21, and an index page; send it with the gate result.
+  Baseline: v84, `data/preview/cases/cases_v84/index.html` (53 roofs; the
+  Wanaka case #4727237 is outside the kept Queenstown layouts). Snapshots
+  are on the VM under `~/casetool/data/case_snapshots` until the build
+  ends and the checkout can be synced. A v84 roof led by a photo reading is
+  drawn at the shift on file, which can differ from the map by its
+  reading's slide.
+
+- **Queenstown build with the reader roofs launched (19 Nov, VM
+  `~/qt_build3.out`).** The 23 point-face regions at 2e081948: 394
+  confident reader readings copied into the VM's `data/vision_faces`
+  (379 from the 502-house batch, 15 from the two streets; 658 to 1,051
+  files), the reader leading, the slide bound and the thin-point rule.
+  v84's layouts and shifts are kept in `~/v84_layouts` for the before/after.
+- **OPEN: the slider reaching every face needs the map page too.** Laying
+  panels on away-from-sun faces and ranking them last (as pocket panels
+  are) is not enough on its own: the map's default for a home is
+  `fill_order <= 28` and for anything else every panel
+  (`rooftop-solar.html` `withinSize`, `emit_region._panel_areas`), so a home
+  with fewer than 28 sunny-side panels and every non-home would show the
+  shady-side panels by default, and `derive_solar_potential` and
+  `bake_density_deciles` would count them in the default totals. It needs
+  a shipped flag on those panels that the default sizing, the totals and
+  the card's slider all read. Not in this build.
+
+- **The 502-house reader batch is back (19 Nov).** 489 readings, 13
+  failed, US$85.56 ($0.175 a reading returned; the 29-house batch was
+  $0.14). The reader rated 387 (79%) at 0.5 or over, median 0.55, 4 under
+  0.3; 379 became a roof on ingest (`~/reader_q500_faces` on the VM, not
+  yet in `data/vision_faces`). 40 of those, drawn at random, beside v84:
+  `docs/review/reader_q500_sample_1..5.jpg` (awaiting the owner's
+  verdict). Agent's reading of 16 of the 40: the reader's outline sits on
+  the eaves and its faces follow the ridges on all 16, and it is at least
+  as good as v84 on each; v84 was already close on about half. It marks
+  existing solar arrays and skylights as obstructions. At this rate all
+  10,280 eligible Queenstown houses would cost about US$1,800 and give
+  about 8,000 confident roofs.
+
+- **Owner's verdict on the two-street trial (19 Nov): the reader looks
+  better than live.** Acted on: (1) `vision_roof.reader_leads` again lets
+  the reader lead wherever it has a reading (18ebc5f0; the 12-face limit
+  stays as `SOLAR_READER_LEADS_OVER_FACES`, off); (2) 502 random
+  Queenstown houses sent to the reader as 23 batches (outline 80-400 m2,
+  not held back, no markup, no reading yet, shared over the 23 regions by
+  their number of such houses, seed 41; 10,280 houses are eligible in
+  all). Crops, `picked.json` and each folder's `batch.json` are in
+  `data/reader_trials/reader_q500/` on this Mac; collect with
+  `src/vision_roof.py batch-collect <folder>`. Estimate US$85 at the
+  tool's $0.17 a roof; the 29-house batch came to $0.14 a roof. Not yet
+  done: ingest on the VM (the slide onto the LiDAR needs the returns),
+  copy the 14 confident two-street readings and these into
+  `data/vision_faces` there, rebuild. Reading all 10,280 eligible houses
+  would be about US$1,450 at $0.14: owner's decision. Also waiting for the
+  next build: the slide limit, the thin-reading rule, and panels on every
+  face for the slider (23 Wakatipu Heights; not written).
+
+- **Paid reader on two streets, beside v84 (19 Nov;
+  `docs/review/reader_vs_live_19nov_1..4.jpg`,
+  `tools/experiments/reader_vs_live.py`; awaiting the owner's verdict).**
+  All 29 buildings of 40 m2 or more on Wakatipu Heights and Bolton Lane
+  (none held back), `claude-fable-5-2`, effort high, Batch API: 29
+  readings, US$4.01 (about $0.14 a roof). The reader rated 14 at 0.5 or
+  over and 15 under (deep shadow, trees). Readings kept at any confidence
+  for the sheets (`--min-confidence 0`), in a trial folder on the VM
+  (`~/reader_streets_faces`), not in `data/vision_faces`; crops and raw
+  readings in `data/reader_trials/reader_streets/`. Agent's reading:
+  reader clearly better than v84 on about 17 (1, 3, 5, 6, 8, 10, 12, 15,
+  17, 20, 22, 23, 25 = 33 Wakatipu Heights, 26 = 35, 27 = 37, 28, 29);
+  poor on about 10 (2 = 5 Bolton Lane, half the building unread; 4, 7,
+  9, 11, 14, 16, 18, 19, 21, 24), 8 of them rated under 0.5 by the reader
+  itself. So its confidence sorts good from bad here, and a reading at 0.5
+  or over beat the point faces on simple roofs too: the "reader leads only
+  over 12 faces" rule of 18 Nov (`vision_roof.reader_leads`) needs
+  revisiting once the owner has judged these.
+
+- **Owner's review of v84 on the live map (19 Nov): seven more failures on
+  two streets, none fixed.** Wakatipu Heights 23 (#4751005: the south face
+  bare, the slider stops at 27 panels; owner: the default may sit near
+  14 kW but the slider must reach every place a panel fits), 33 (#4751072:
+  panels off the roof and across a step), 35 (#4751237: panels the wrong
+  way round across the hips), 37 (3 panels on a large roof); 1/3 Bolton
+  Lane (outline and roof lines well off the photo); 5 Bolton Lane (panels
+  over obstructions and empty space, scattered). The three Wakatipu
+  Heights roofs traced are point readings of 2-3 faces with a fitted edge
+  (frankton_arm_lake); the others are not traced. One street, nearly every
+  house wrong: the rules added since v82 have not made ordinary houses
+  right.
+- **The v84 losses traced (19 Nov): thin scans.** #4747990, #4738759 and
+  #4738589 have a one-face point reading with no fitted edge that v84 put
+  first; v83's other reading (8, 2 and 4 faces) drew them well
+  (`docs/review/thin_point_19nov_v83.jpg` against `thin_point_19nov.jpg`).
+  #4723372 was slid (2.5, 1.5) m, further than a photo can lean on a
+  single-storey house, and the photo check kept it. Two rules, committed
+  (c4356a60), fast tests pass, not in a build: a slide longer than
+  0.4 m per m of roof height plus 0.5 m is dropped
+  (`point_roof.write_faces`; #4723372 now unslid); a one-face point
+  reading with no fitted edge gives way to a later reading of two faces or
+  more (`roof_partition.selected_doc`; the three now lead with the other
+  reading). Tried and dropped: choosing between the two readings by which
+  agrees with the photo better, right on 7 of 12 known cases
+  (scratch `pick.py`).
+
+- **v84 is live (19 Nov): published on the owner's instruction although
+  the gate failed.** Next: trace the three clear losses (#4723372,
+  #4747990, #4738759) and look at a sample of the leans the neighbours'
+  median replaced. The entry as written before publishing:
+- **Queenstown build with the checks and the new reading order is built and
+  NOT published (19 Nov, `point-roof` 7f9ac465; served set on the VM and
+  pulled to this Mac's `data/`).** 23 regions in 6 h 28 min; panels
+  1,327,680 -> 1,329,719. Gate against v83 FAILED: 2 zeroed (5 and 6
+  panels: one under trees, one on a cleared site), 16 big drops, none
+  newly withheld, 10 of 38 case roofs changed
+  (`docs/review/gate_v84_{drops,cases}.jpg`). Agent's reading of the drops:
+  clear losses on good roofs #4723372 (77 -> 17, faces drawn off the
+  roof), #4747990 (58 -> 21), #4738759 (57 -> 26); partial on #4738589,
+  #4742844; the rest more faces or a building site. Causes not traced.
+  Same houses, v83 beside this build: `docs/review/build84_v83_1..6.jpg`,
+  `build84_new_1..6.jpg`: 3 Kerry Drive, 7 Leeds Lane and #4721959 now on
+  their roofs; 46 Goldfield Heights and 50 Andrews Road better; 9 Kent
+  Street loses its curved corner. The lean check replaced 60 leans in the
+  town centre and 118 in Frankton Arm (about one roof in ten there): few
+  of those were looked at. To publish: `.venv/bin/python
+  tools/publish_served.py 84`, then `site-config.js` on main to v84
+  (owner's go-ahead needed past a failed gate).
+
+- **Slide check, lean check and a new reading order are in the build
+  (18 Nov, `point-roof` 7f9ac465; Queenstown build running, not live).**
+  (1) `point_roof.write_faces`: a slide onto the returns of 1 m or more is
+  kept only when its roof matches the photo at least as sharply as the
+  unslid roof; the 1.5 returns/m2 cut-off is removed. (2)
+  `register_imagery._point_leans`: a lean at the search limit, or over
+  0.2 m per m from the median of 4 or more sharp neighbours within 150 m,
+  takes that median. (3) `vision_roof.reader_leads`: the paid reader leads
+  only a roof it reads as more than 12 faces; `selected_doc`,
+  `build_keys.reading_hash` and the drawing shifts follow it. Fast tests
+  pass. NOT built in from the experiment: each corner moved by its own
+  height (the map still moves a building as one piece; `emit_region.py`
+  has someone else's uncommitted work in this checkout) and walls snapped
+  to photo edges (moved few walls, little). Not done: the owner's
+  lone-panel rule (the cut is by `fill_order` in the map page and
+  `emit_region`), balconies, roofs built since the survey.
+
+- **Fused roof edge: two checks added after the owner's verdict (18 Nov).**
+  Owner on the 40-house sheets: fused looks better, some way off (#4721959,
+  2.6 m off its roof). Cause: its lean came out at the corner of the search
+  (0.4, -0.4 m per m), on the building's own shadow edge. Added in
+  `tools/experiments/fused_edge.py`: (1) a slide onto the returns of 1 m or
+  more is kept only when the roof it gives matches the photo at least as
+  sharply as the unslid roof; (2) a lean at the search limit, or over
+  0.2 m per m from the median lean of the sharp roofs within 150 m, takes
+  that median (no lean when there are too few neighbours). Rerun on the
+  same 40 plus 3 Kerry Drive (sheets replaced, `fused_vs_live_18nov_1..6`;
+  numbering moved by one after house 5): 7 of 41 caught: slides dropped on
+  5, 6 (3 Kerry Drive, 2.9 m), 8 and 11; lean replaced on 13, 20
+  (#4721959) and 22. Agent's reading: 20, 6, 5 and 8 now sit on their
+  roofs. Not yet in the build.
+
+- **Fused roof edge beside v83 on 40 random unmarked houses (18 Nov,
+  `tools/experiments/fused_vs_live.py`, eight regions, five each,
+  `docs/review/fused_vs_live_18nov_1..5.jpg`; awaiting the owner's
+  verdict).** 38 of 40 got a fused edge; 33 and 38 have no faces from the
+  returns (built since the 2021 survey). Agent's reading: fused clearly
+  better on about 10 (3, 7, 12, 13, 16, 22, 23, 34, 39 and 2: v83 drew
+  nothing on 3, 22, 23 and 34), much the same on about 24 (v83 already has
+  point faces and the roof edge there), fused worse or absent on about 6
+  (33 and 38 nothing; 19 slid off its roof by the slide onto the returns,
+  as 3 Kerry Drive; 10, 37 and 5 odd faces or edge). Open: a guard on the
+  slide onto the returns; what a roof with no point faces falls back to;
+  balconies and other no-go areas; panels on the fused roof.
+
+- **Fused roof edge: surveyed outline + returns + photo (18 Nov,
+  experiment, `tools/experiments/fused_edge.py`,
+  `docs/review/fused_edge_18nov_{1,2}.jpg`; awaiting the owner's verdict).**
+  Owner's direction: the LiDAR roof edge reconciled against the photo and
+  the outline together. Per building: point faces, each wall moved to where
+  the returns stop (`roof_edge`), every corner moved by the lean times its
+  own height (`photo_lean.leaned`), then each wall slid up to 0.8 m onto
+  the photo edge along it when one stands out by 3 robust standard
+  deviations. On the three houses and nine of the owner's v83 failures,
+  agent's reading: on the roof with straight edges and sensible ridges on 8
+  (36 Stanley Street, 15B Frankton Road, 1 Shotover Street, 7 Leeds Lane,
+  9 Kent Street, 9 Vancouver Drive, 32 Highview Terrace, 50 Andrews Road);
+  poor on 4: 3 Kerry Drive (the slide onto the returns, -1.5, 2.5 m, is
+  wrong), 46 Goldfield Heights and #4729407 (changed since the 2021
+  survey; balconies not separated), #5371259 busy. The photo snap moved
+  few walls and little: most of the gain over the live map is point faces
+  + roof edge + lean per corner being used at all, where v83 used a photo
+  reading or markup placed by a photo-to-photo shift.
+
+- **Method survey and a photo-outline prototype (18 Nov; nothing in the
+  build).** Owner asked for a better way that scales.
+  *Survey (agent web research, primary sources read by the agent, not
+  re-checked here):* (1) `roofer`, the 3DBAG engine (GPL-3.0, v1.0.0 Apr
+  2026, CLI + Python), reconstructs roof planes from classified LAS plus
+  one roof polygon per building; run on about 10.8 M Dutch buildings at
+  about 10 pts/m2; it does NOT correct a polygon that is off the point
+  cloud, and reports per-building RMSE, no-data share and a
+  point-cloud-unusable flag. No published run outside the Netherlands.
+  (2) Google Solar API: Queenstown, Frankton, Arrowtown, Wanaka, Hawea
+  and Cromwell are in none of its coverage files (6 May 2026); roof
+  segments are bounding boxes; results may be cached 30 days: not usable.
+  (3) Otago Regional Council (June 2026): region-wide LiDAR, first
+  Queenstown-Lakes datasets public from late 2026. (4) Roof planes from
+  photos alone: best published AP50 about 0.57, no released weights.
+  (5) Outline-from-photo models with open weights and licences: Pix2Poly,
+  HiSup (MIT), FFL (BSD-3).
+  *Prototype (`tools/experiments/photo_outline.py`, SAM ViT-B already on
+  the Mac, box prompt from the surveyed outline, untuned;
+  `docs/review/photo_outline_18nov_{1,2}.jpg`), agent's reading on 12
+  roofs:* good on about 7 (9 Kent Street with its curve, 36 Stanley Street
+  on the eaves, 50 Andrews Road without its deck, 46 Goldfield Heights
+  with the part the surveyed outline lacks); leaks onto ground-level
+  surfaces on 4 (car parks, paths, decks); balconies not separated; edges
+  ragged. Leaks are all onto surfaces the returns put at ground height.
+  *Design this points to:* roof polygon = photo mask cut by the returns'
+  roof-height footprint (photo wins where the two disagree, flagged);
+  planes from the returns inside it (`roofer` or `point_roof`); the
+  surveyed outline only names the building. Next: `roofer` on the three
+  houses against `point_roof` (needs the owner's OK to install it).
+
+- **Owner's review of v83 on the live map (18 Nov): ten failures reported,
+  none fixed yet.** What the build held for each (VM, 18 Nov):
+  - *3 Kerry Drive #4735154* (outline and panels off the roof): point
+    faces, slid onto the returns by (-1.5, 2.5) m by `point_roof.register`
+    on a multi-level building; lean sharpness 0.8. The surveyed outline,
+    unslid, fits the photo better. Same on v82.
+  - *7 Leeds Lane #4750959* (outline, ridges and panels wrong, a diagonal
+    run of panels): led by a paid photo reading, placed by the
+    photo-to-photo shift (1.3, 0.1) m. Its point faces with the roof edge,
+    at their own lean (0.69, -0.49), sit on the roof with the hips right
+    (agent's reading of `roof_edge_sheet`).
+  - *9 Kent Street #4735373* and *9 Vancouver Drive #4751255* (a lone
+    panel): the map shows panels by `fill_order` up to the slider or the
+    14 kW home cap; the order does not keep the shown set in whole arrays,
+    so the cut strands one panel. Owner's rule: when the cap would add a
+    single panel, stop one short or go one over, to a whole array.
+  - *32 Highview Terrace #4729348* (outline about 1.5 m off): point faces,
+    no slide; not traced further.
+  - *#4729407 Kelvin Heights* (panels over balconies; flagged "roof may
+    have changed"): two point faces, 362 + 57 panels, 2 obstructions.
+    Owner: read what a person sees in the photo, LiDAR or not.
+  - *50 Andrews Road #4729783* (one face panelled, room for more): not
+    traced.
+  - *46 Goldfield Heights* (outline nowhere near the building) and
+    *#5371259* (a long roof cut into dozens of slivers): not traced.
+  Owner's direction (18 Nov): rely less on the surveyed outline and more
+  on the photo itself for the outline and for where panels cannot go.
+  That is what the paid photo reader does (`src/vision_roof.py`; 13 Nov
+  pinned notes had point-roof houses right on 2 of 24); it has read 563
+  roofs, costs about US$0.17 a roof by batch, and its API credit is spent.
+- **The 26 big drops on roofs with the new edge are the panel packer's
+  thresholds, not the edge.** #4721870 (flat, 9.0 x 19.7 m): the surveyed
+  rectangle packs 70 at the tight edge gap; the fitted edge is 0.12 m
+  shorter, ten columns no longer fit, and the wide edge gap (0.4 m,
+  `EDGE_GAP_KEEP_FRACTION` 0.75) then keeps 48 of 63 = 0.76 and wins.
+  Searching both grid phases together changed nothing and was not kept.
+- **Round joins in `extend_to_edge` replaced by mitred ones** (a
+  rectangular face had come out with 104 vertices); not in a build.
+
+- **v83 is live (18 Nov): published on the owner's instruction, to judge
+  on the map, although the gate failed.** Hour cap: the owner said the
+  monthly hours may be raised (18 Nov); not yet raised. The entry as
+  written before publishing:
+- **Queenstown build with the roof edge is built and NOT published (18 Nov,
+  `point-roof` a41dc41e; the served set is on the VM and pulled to this
+  Mac's `data/`).** 23 regions rebuilt in 6 h 12 min on one VM; the map's
+  panels 1,287,611 -> 1,327,680. Gate against v82 FAILED: 5 zeroed (5-7
+  panels each: small buildings under trees), 38 big drops, 1 newly
+  withheld, 13 of 38 case roofs changed. Renders, before and after:
+  `docs/review/gate_v83_{zeroed,drops1,drops2,cases}.jpg`. Of the 38
+  drops, 26 are point roofs with the new edge and 12 are roofs under 1.5
+  returns/m2 that lost their point faces and fell back to another reading
+  (#5371543 74 -> 12, #4718798 78 -> 42 are clear losses on good roofs).
+  Publishing a failed gate needs the owner's go-ahead. To publish:
+  `.venv/bin/python tools/publish_served.py 83`, then `site-config.js` on
+  main to v83. The sparse-roof rule wants replacing before the next build:
+  keep the point faces and drop only the slide onto the returns.
+
+- **Roof edge from the returns is in the build (17-18 Nov, `point-roof`
+  a41dc41e; Queenstown build running, not live).** `src/roof_edge.py`
+  (moved from experiments): point faces run out to the fitted edge, the
+  doc carries it as `outline`, `outline_fit.fitted_outlines` uses it.
+  Three things found on the way, each from a four-suburb build (town
+  centre, Fernhill, Kelvin Heights, Hanley's Farm):
+  (1) the outline now follows the reading that gives the faces: a
+  photo-traced outline had clipped point faces on about 350 of 1,270
+  town-centre buildings; (2) a roof under 1.5 returns/m2 (built since the
+  2021 survey) is not read from the returns; (3) walls are not fitted on
+  sparse roofs (strip expects under 10 returns), so about one point roof
+  in three still has the surveyed outline (roof edge used: town centre
+  605 of 818 point roofs, Hanley's 437 of 551, Kelvin Heights 554 of
+  1,058, Fernhill 1,192 of 1,278). Same 20 houses before and after:
+  `docs/review/roof_edge_before_1..3.jpg`, `roof_edge_after_1..3.jpg`.
+  Agent's reading: better on about six (edge reaches wings and eaves the
+  surveyed outline missed; one house 2 m off now on its roof), same on
+  most, five town-centre roofs unchanged because a photo reading leads
+  them, one rebuilt-since-the-scan house wrong both times. Awaiting the
+  owner's verdict.
+- **While this is worked on, only Queenstown is rebuilt** (owner, 17 Nov):
+  the 23 regions with point faces. Wanaka, Hawea, Cromwell and the rest
+  stay on the map as v82 built them.
+- **Still flat:** the map moves a whole building by its lean at mean
+  height; the three-house images moved each corner by its own height. On
+  a house the difference is about 0.1-0.2 m; on a tall building more.
+- **Not looked into:** why Kelvin Heights fits an edge on only half its
+  point roofs when 57 of 64 random houses over 60 m2 fitted.
+
+- **40 random unmarked houses as v82 draws them (17 Nov,
+  `docs/review/placement_v82_1..5.jpg`, `tools/experiments/placement_sheet.py`;
+  awaiting the owner's verdict).** Yellow surveyed outline, red faces, cyan
+  panels, at the shift on file. Agent's reading, not a measurement: about
+  half sit on the roof with sensible lines; the largest group of misses
+  (about a quarter: 11, 12, 14, 15, 19, 21, 22, 31, 34, 36, 40) is a roof
+  whose real edge is not the surveyed outline (eaves beyond it, a wing
+  missing, a different shape), which no slide can fix; about six are the
+  right shape slid by 0.5-1 m (5, 9, 17, 26, 28, 38); about four have
+  wrong inner lines (18, 20, 32, 39). **The roof edge from the returns and
+  `extend_to_edge` (owner preferred it on the three houses) is still not
+  in the build: that is the next thing to build.**
+- **Regions with no point faces at all:** Cromwell east and west,
+  Bannockburn, Arrowtown hills, Glenorchy (both), Kingston, Kinloch: about
+  6,500 buildings on the older method; Arrowtown East has them for 167 of
+  416. Cause not looked into.
+- **Photo placement now runs for every roof with point faces**
+  (`register_imagery._lean_pass`, not yet in a build). It had run only over
+  buildings the photo-to-photo match measured. On 15 random Wanaka and
+  Hawea houses the lean reads 0.0-0.2 m and the roofs already sat right, so
+  this was not the cause of the misses there.
+
+- **Placement on the photo, checked 17 Nov (v82 live).** By eye on the live
+  map, four suburbs: most roofs carry their panels, but in every view one or
+  two houses have panels over an eave or across a ridge by 1-2 m. Test
+  (`tools/experiments/lean_neighbours.py`, 37 marked pilot roofs whose point
+  lines match the markup at F >= 0.6, truth = best slide of lines onto drawn
+  lines): no slide 0.71 m median error; the roof's own lean (the build's
+  rule) 0.21 m, 59% within 0.3 m, 75% within 0.5 m, 2% over 1 m; the
+  neighbours' median lean x own height 0.57 m, 18% within 0.3 m; own
+  reading with the prior centred on the neighbours' lean, same as own.
+  Pooling a lean over neighbours is DROPPED (second time it has lost). Where
+  the lines are right the placement is within 0.5 m on three roofs in four,
+  so the misses seen on the map are more likely roofs whose lines are wrong
+  than roofs put in the wrong place. Not yet measured: what share of
+  unmarked houses that is. Next: a sheet of ~40 random unmarked houses,
+  faces and panels over the map photo, each miss sorted into wrong lines /
+  wrong place / panel over the edge.
+- **Point fallback is NOT live.** The full re-lay was held on 17 Nov: 178 of
+  205 VM hours used, one re-lay costs 12-16, and any further `src` fix needs
+  its own re-lay, so the fallback (3 roofs regained) waits to ship with the
+  next roof fix.
+
+- **v82 is live (17 Nov 01:40 UTC): marked town-centre roofs that borrowed
+  a neighbour's shift are placed by their own lean.** 19 Camp Street
+  (#5372566) was drawn 2.3 m off its roof on v81: its photo-to-photo match
+  was weak, it took its neighbours' 1.0 m east, 0.7 m south, and its own
+  leans give 0.98 m west, 0.56 m north (`register_imagery._point_leans`).
+  Seven marked pilot roofs moved; the gate passed against v81 with nothing
+  zeroed, dropped or withheld; checked on the live map. Applying the lean
+  difference to every marked pilot roof was tried first and dropped: of the
+  8 that moved most, 3 looked clearly worse by render (leans under 3.5
+  sharpness in one photo). Other regions built with the commit before; the
+  rule changes nothing there (their markup is drawn on the map's photo).
+- **The 36 roofs v81 left with no panels are three groups, none fixed.**
+  6 are under the 0.45 confidence gate on point-roof faces (#4718821 0.25,
+  #4738149 0.42, #5372248 0.37, #4749869, #5374014, #5372361); 7 are
+  `too_small`; 23 carry `low_confidence` only as the fallback label: the
+  layout places a few panels and the panel gate drops them (#4737116 placed
+  7, #4748214 placed 3, rebuilt alone with `tools/layout_ab.py`). **The
+  first group has a rule, built and not yet in a district build
+  (17 Nov, `SOLAR_POINT_FALLBACK`, build_layout_geojson POINT FALLBACK):**
+  a roof whose point faces fall under the confidence gate is built again
+  from the next reading and that build kept when it clears the gate. The
+  six roofs rebuilt alone on the VM, rule off and on (panels before the
+  panel gate): #4738149 0 -> 85 (confidence 0.42 -> 0.85), #4718821 0 -> 49
+  (0.25 -> 0.76), #5372248 0 -> 39 (0.37 -> 0.81); #5372361 clears the gate
+  (0.86) but is 25 m2 and takes no panel; #4749869 and #5374014 have no
+  other reading and stay withheld. How many roofs it changes district-wide
+  is unmeasured until the next full re-lay. A roof that falls back keeps
+  the photo lean of its point faces as its drawing shift
+  (register_imagery), not its fallback reading's slide: unchecked. The
+  second and third groups have no rule yet.
+- **v81 is live (17 Nov 00:09 UTC): the point roof and the photo lean on
+  all 35 regions.** 32,838 buildings, 1,287,610 panels (v79: 1,238,166).
+  Built from `point-roof` at a7acbaeb on four machines in 4 h 6 min
+  (19:29 to 23:35 UTC 16 Nov): the build VM on the four Wanaka-area regions,
+  three n2-standard-16 spot clones (`tools/vm_start.sh --clone`, branch
+  `vm-spending-limits`, image `solar-worker`) on 9, 9 and 13 regions; each
+  clone uploaded what it wrote to
+  `gs://solar-potential-map-data/split_v81/<clone>/` and deleted itself; the
+  shares were unpacked on the build VM, then `combine_regions.py`.
+  - **Gate failed and was reviewed by render**, not judged against markup:
+    36 roofs lose all panels, 140 lose over 30%, 14 case roofs changed
+    (`docs/review/gate_v81_*.jpg`: 14 zeroed, 54 drops, 14 cases rendered).
+    The zeroed roofs looked at (4718821, 4738149) have well-drawn faces and
+    are withheld by the confidence stage as `low_confidence` (0.25, 0.42):
+    the confidence score has not been checked against point-roof faces.
+    Drops looked at lose a whole face (5370629: an 18 degree face toward
+    155 degrees gets none). Both are open.
+  - **The clones had no LINZ key** (`add_addresses` failed on all 31 of
+    their regions); addresses and emit were re-run on the build VM. A clone
+    job needs the key from Secret Manager or the `.env`.
+  - **Limits found.** The fleet (`tools/fleet.sh`) could not be used: no
+    queue exists in the bucket, `up` asks for a 400 GB pd-balanced disk
+    (image is 600 GB, SSD quota 500 GB), and `src/build_region.sh` runs the
+    layout with `--skip-done`, which skips a re-lay on old markers. c2d spot
+    had no capacity in zone -a. The CPU quota (`CPUS_ALL_REGIONS`) was 32
+    and was raised by the owner. Clone limits (6 alive, 12 h each, monthly
+    cap counting live clones) are in `data/vm_budget.json` on that branch;
+    the VM-start hook also blocks `instances create`, the fleet's `up`,
+    bulk create and instance groups.
+  - **Still to do:** merge `point-roof` into main (main serves data its code
+    did not build; draft PR #67 is behind the branch); re-record the golden
+    and synthetic references on the VM; delete `split_v81/` and the
+    `solar-worker` image when no longer wanted; v80 was never served.
+  - The first launch of this build was lost for ten hours to a watcher
+    whose `pgrep -f` matched its own ssh command; `tools/watch_vm_build.sh`
+    replaces it.
+
+- **The lean holds on the map's own photo, on regions it was never tuned
+  on (16 Nov, VM, `tools/experiments/lean_check_regions.py`).** 75 marked
+  roofs in 22 regions outside pilot, traced on the map's photo, point roof
+  scored against the markup's faces and strokes at 0.3 m: as placed
+  median 0.31, 12 roofs at 0.7 or over; leaned 0.64, 32-33 roofs (prior
+  0.5 / 1.0 / 1.5: 33 / 32 / 33); with the markup's own best slide 0.69,
+  37. The slide there is a median 0.56 m, p90 1.05 m. Pilot on the same
+  run: 5 -> 28 (prior 1.0), 32 with the best slide. `SOLAR_LEAN_PRIOR`
+  stays 1.0. The VM had no PyMaxflow (`point_roof`'s graph cut): installed
+  1.3.2, the Mac's version, and declared it in `requirements.txt` and the
+  lock. `point_roof` gives one roof 180 s before it keeps its other
+  readings.
+- **v80 uploaded, site not switched (16 Nov).** The reading-fix build
+  (35 regions, 1,239,069 panels, +0.1%) is at
+  `gs://solar-potential-map-tiles/v80/`. Gate listed 15 of 32,838 roofs
+  (2 zeroed, 11 big drops, 2 case roofs changed), rendered in
+  `docs/review/gate_v80_flagged_roofs.jpg`: about five are worse, a large
+  obstruction patch taking a face's panels (5372246, 5370362, 5374095,
+  4740583, 4751063). The push of `site-config.js` to main was refused by
+  the session's permission check; main still serves v79. v77-v79 are
+  still in the bucket (no `--keep`).
+
+- **Point roof and the lean wired into the district build (16 Nov, code on
+  `point-roof`, on by default; no region built with it yet).**
+  `build_plan.PREPARE` runs `point_roof` first for every region (16 jobs,
+  a roof rewritten only when `point_roof.py` changed; faces carry their
+  planes). `register_imagery._point_leans` replaces the shift of every roof
+  built from point faces with `photo_lean.drawing_shift` read off the
+  map's own tiles (0.2 s a roof; `SOLAR_PHOTO_LEAN=0` turns it off;
+  `SOLAR_LEAN_PRIOR` 1.0: no cost on the pilot check, 28 of 50, and fewer
+  far misses on the tiles). A free-model reading no longer moves the
+  drawing of a roof that point faces lead. `build_keys.reading_hash`
+  follows the new order. Reader against point roof on equal terms
+  (`tools/experiments/fair_compare_reader.py`, 23 marked roofs with a
+  reader reading): reader better on 12, point roof on 5, same 6; on the 17
+  with 12 faces or fewer 6 / 5 / 6. The reader keeps first place.
+  1 Shotover Street on the map's tiles: the lean gives a move of (0.0,
+  0.37) m where the map applies (-0.2, 1.1) today. Before the district
+  build: the lean check on the 68 marked roofs outside pilot, on the VM.
+
+- **Faces from the returns lead the free model in the build (16 Nov, code
+  on `point-roof`; `SOLAR_POINT_ROOF` still off by default, no region
+  built with it).** Fair comparison first
+  (`tools/experiments/fair_compare.py`: 29 benchmark roofs the free model
+  never trained on, each method's faces slid as one piece to its best
+  match with the markup's faces and strokes): line F at 0.3 m median 0.82
+  point roof against 0.69 free model, roofs at 0.7 or over 18 against 14,
+  point roof better on 15 and worse on 6. `roof_partition.selected_doc`
+  now reads reader, then point faces, then free model; point faces are
+  kept through the build like a reading (`from_reading`);
+  `point_roof.py --jobs`. Through the build itself, 50 marked pilot roofs
+  built blind (`SOLAR_HIDE_LABELS=1`, `tools/layout_ab.py`), scored the
+  same way (scratchpad `three/builtscore.py`): as now 24 roofs right at
+  0.3 m (median 0.69), 3,783 panels, 30% clean; with
+  `SOLAR_POINT_ROOF=1` 32 roofs (0.79), 3,980 panels, 50% clean. To ship:
+  point faces for every region (`point_roof.py <region> --jobs 16` on the
+  VM), the switch on, a district re-lay (the geometry hash changes), and
+  the lean for the drawing (entries above) or the roofs are right but
+  drawn off the photo. Reader against point roof on equal terms is
+  unmeasured.
+
+- **Lean prior and the check for the map's photo (16 Nov).** The misses on
+  the map's tiles are jumps of 2-3 m onto another edge (4735146: -2.5,
+  -2.1 m). `SOLAR_LEAN_PRIOR` (default 0.5): on the map's tiles against
+  the weak truth above, prior 0.5 / 1.0 / 1.5 / 2.5 leaves 31 / 22 / 14 /
+  11% of 36 roofs over 1 m off (median 0.43 / 0.41 / 0.35 / 0.35 m); on
+  the survey-year photo against the markup directly, roofs right at 0.3 m
+  28 / 28 / 24 / 21 of 50. Sharpness of the peak does not separate the
+  misses. `tools/experiments/lean_check_regions.py` scores every marked
+  roof whose region is on the machine; the 68 marked roofs outside pilot
+  (2-20 faces) were traced on the map's own photo and are the direct
+  check: run it on the VM after the district build, before choosing the
+  prior. VM cap for November raised 165 -> 205 h on the owner's word
+  (`data/vm_budget.json`, branch `vm-spending-limits`, 5eeb19e3).
+
+- **Lean on the MAP's photo: not ready (16 Nov).** The live map shows the
+  LINZ Basemaps photo, not the survey-year photo the pilot markup was
+  drawn on, so the lean has to be read off the map's tiles
+  (`register_imagery._Tiles`). Scratchpad `three/maplean.py`, 36 marked
+  pilot roofs, against the markup's slide plus `image_shift.json` (a sum of
+  two measurements, a third of the shifts borrowed from neighbours, so a
+  weak truth): what the map applies now is a median 0.72 m off (19% within
+  0.5 m, 17% over 1 m); the lean read off the tiles 0.43 m (56% within
+  0.5 m) but 31% over 1 m. Better typically, worse in the tail: do not
+  ship as is. Next: accept the photo's lean only on a sharp peak and keep
+  the present shift otherwise; a direct truth exists outside the pilot,
+  where marked roofs were traced on the map's own photo, but those
+  regions' LiDAR is on the VM only. 1 Shotover Street with the edge
+  extended: 84% of drawn line length has a built line within 0.3 m, 98%
+  within 0.75 m; what is left is the west side of the box on the
+  south-west wing and the top 1.5 m of the long valley, 0.3-0.75 m off.
+
+- **Roof edge from the returns: owner prefers it; faces extended, not
+  re-partitioned; tree rule (16 Nov, experiment).** Owner's verdict on
+  `docs/review/three_houses_16nov_roof_edge.jpg`: the edge from the LiDAR
+  is better than the surveyed outline. Three rules added to
+  `tools/experiments/roof_edge.py` since the entry below: (1) a wall is
+  fitted only when its strip expects 10 or more returns (1 Shotover
+  Street's 2.4 m wall expected 5 and moved 1 m inwards on noise); unfitted
+  walls take the roof's median move. (2) `extend_to_edge`: the faces found
+  on the surveyed outline are kept and run out to the fitted edge, the
+  eave strip cut by each seam carried straight on; re-partitioning on the
+  moved outline redrew a hip end on Shotover that was right. (3) Owner: a
+  tree over the roof edge makes the returns a bad guide. A wall with
+  vegetation returns at or above its roof height over 20% of its length,
+  on the roof side, is not fitted: 46 of 525 walls on 14 of the 50 marked
+  roofs (counting every vegetation return within reach stopped 192 of 365:
+  garden shrubs). The tree rule is untested against a known overhang.
+  Inner lines on the 50, surveyed outline / extended to the fitted edge:
+  right at 0.3 m 28 / 24, at 0.75 m 33 / 33; the drop is seams carried
+  through the eave strip, which the markup (outer edge = surveyed outline)
+  does not have. Not in the build or the map.
+
+- **Roof edge wall by wall from the returns (16 Nov, experiment; owner
+  confirmed the markup's outer edge is the surveyed outline the tool gave,
+  so the markup cannot judge roof edges).** `roof_edge.fit_edges`: the
+  surveyed outline keeps its corners and directions, each wall of 1.5 m or
+  more moves along its normal (1 m in to 2 m out) to where this roof's
+  returns stop (last 0.4 m strip holding 0.4 of the roof's return density,
+  then the 95th percentile of the returns in it, plus 0.1 m). 36 Stanley
+  Street: 696 m2 against the 688 m2 drawn there by hand (surveyed outline
+  561 m2). Walls on 1 Shotover Street move -1.0 to +0.9 m, on 15B Frankton
+  Road -0.3 to +0.5 m. Inner lines on the 50 roofs, surveyed outline /
+  fitted edge: right at 0.3 m 28 / 26, at 0.75 m 33 / 35
+  (`docs/review/three_houses_16nov_roof_edge.jpg`). Agent's reading of
+  that render: Stanley's edge and hips sit on the roof; Shotover's eaves
+  are covered on the north and west but the east side gains a jog and a
+  notch; Frankton gains a small extra face on the south side. A photo
+  judge (strongest brightness change within 1.5 m of the leaned edge) was
+  tried and dropped: on Stanley it locks on the gutter line 1 m inside the
+  edge. Also in `photo_lean.py`: shared corners lean by one height (seams
+  no longer bend), `absorb_slivers` (no effect on these three: the
+  doubled lines on Shotover's south-west wing are the two sides of a step,
+  which the lean separates as the photo does). Open on Shotover: lines
+  (a)-(d) in the entry below.
+
+- **1 Shotover Street line by line, and the roof edge (16 Nov).**
+  `tools/experiments/line_by_line.py` (leaned point roof against the
+  markup, 0.5 m pieces): 85% of the drawn line length has a built line
+  within 0.3 m, 9% within 0.3-0.75 m, 6% none; of built lines 81 / 10 / 9%
+  (`docs/review/three_houses_16nov_1_shotover_line_by_line.jpg`). The
+  differences: (a) the long valley from the middle junction stops 1.5 m
+  short of the top edge; (b) the small north-east gable has a built line
+  along its lower side, where the returns are two planes, that the markup
+  does not have; (c) the west side of the drawn box on the south-west wing
+  is not built, the box's long sides run on to the roof edge instead; (d)
+  line ends at the roof edge miss by up to 0.75 m; (e) leaning each face by
+  its own plane bends a seam where two planes disagree at a shared corner:
+  lean shared corners by one height. **Roof edge:** drawn edge within 0.3 m
+  of the built edge on 44%. `tools/experiments/roof_edge.py` takes the edge
+  from the returns of the planes that belong to the roof, straightened
+  with `_regularise_machine_face`: 36 Stanley Street edge F at 0.3 m 0.00
+  -> 0.74, area against drawn 0.81 -> 1.01, every hip and the top box on
+  the markup (`..._36_stanley_lidar_edge.jpg`; what is left there is the
+  gutter ring drawn 1 m inside the edge, not built). On the 50 marked
+  roofs (`tools/experiments/roof_edge_check.py`) the edge from the returns
+  scores under the surveyed outline (edge F at 0.3 m median 0.45 against
+  0.69; lines unchanged, 27 against 28 roofs), but the comparison is not
+  independent: the built-on-outline area is 1.00 of the drawn area at the
+  median (p10 0.97), so on most marked roofs the markup's outer edge is the
+  surveyed outline. The returns' edge is 1.01 of drawn at the median, p10
+  0.86, p90 1.14: too ragged as it stands. Needs a judge for the edge that
+  is not the markup (the photo's gradient across the leaned edge, or the
+  owner's eye), then per-edge fitting.
+
+- **Lean read off the photo, no markup: 5 -> 28 of 50 roofs right at 0.3 m
+  (16 Nov).** `tools/experiments/photo_lean.py` (rule and measurement in its
+  header): the built roof's seams and edge, each point moved by k times its
+  height, are laid over the photo for every k within 0.4 m per metre, and
+  the k where the photo's brightness changes across the lines is kept. End
+  to end on the same 50 marked pilot roofs
+  (`tools/experiments/photo_lean_check.py`; the markup scores, it does not
+  place): line F at 0.3 m median 0.21 -> 0.73 (0.82 with the markup's own
+  slide), roofs at F >= 0.7 5 -> 28 (33); at 0.75 m 24 -> 32. The three
+  study houses, as placed / leaned: 1 Shotover Street 0.31 / 0.83, 15B
+  Frankton Road 0.61 / 0.81, 36 Stanley Street 0.05 / 0.58
+  (`docs/review/three_houses_16nov_leaned.jpg`). 36 Stanley Street is a
+  truncated pyramid the point roof had right, drawn 2 m off; the note
+  above calling it a miss is wrong. PRIOR and SIGMA_PX were picked on 36
+  of these roofs; unmarked roofs and other towns are unmeasured. Left on
+  the three (agent's reading of the render): the roof edge stops at the
+  LINZ outline, 0.5-1 m inside the eave the photo shows (see Imagery,
+  Eaves), and one sliver on 1 Shotover Street. Not in the build or the
+  map. Next: roof edge from the returns; then the lean in the build's
+  drawing step in place of `image_shift` where a roof has faces, for the
+  map's photo.
+
+- **The LiDAR roof is right far more often than scored; it is drawn off the
+  photo (16 Nov).** 50 marked pilot roofs with 2-20 faces, none held back,
+  `src/point_roof.py` against the markup's faces and strokes, line F at
+  0.3 m (`tools/experiments/roof_photo_slide_from_markup.py`): median 0.21
+  as built, 0.82 after one slide of the whole roof chosen per roof on the
+  lines; roofs at F >= 0.7: 5 -> 33 of 50. The slide is a median 0.72 m,
+  p90 1.42 m. `src/register_imagery.py` assumes the survey-year photo (the
+  one the markup was drawn on) sits on the LiDAR; by this measure it does
+  not. The slide is not predicted by neighbours: the median slide of the 6
+  nearest marked roofs leaves 0.46 m (25% within 0.3 m), their lean per
+  metre of height times the roof's own height 0.47 m (19%). Reading it off
+  the photo with no markup, first attempt
+  (`tools/experiments/roof_photo_slide_from_photo.py`: built seams and roof
+  edge slid over the photo, keeping the place where the photo's gradient
+  runs across them): median 0.34 m from the markup's slide, 42% within
+  0.3 m, 58% within 0.5 m; the misses are jumps to another edge up to 3 m
+  away. The per-roof slide is fitted on the markup, two numbers per roof,
+  so 33 of 50 is an upper figure for an unmarked roof. Next: make the
+  photo slide dependable (prefer the small slide, require a sharp peak,
+  roof edge and seams agreeing), then draw the three study houses with it
+  and check the map's own photo, which leans differently
+  (`image_shift.json`). Likely the reason photo readings win blind picks:
+  they are traced on the photo, so they sit on it.
+
+- **Three houses first (16 Nov, owner's instruction): get 15B Frankton Road
+  (4725546), 1 Shotover Street (4734696) and 36 Stanley Street (4735292)
+  right before widening.** `src/point_roof.py` (planes grown on the returns,
+  lines from plane intersections) against the markup's faces and strokes,
+  drawn lines found / built lines real within 0.3 m
+  (`tools/experiments/three_house_lean.py`, `three_house_view.py`):
+  as compared until now 4734696 33 / 29%, 4725546 64 / 60%, 4735292 3 / 8%;
+  after one slide of the whole roof chosen on the lines (0.25, -0.88 m;
+  0.25, 0.50; 1.62, -1.25) 84 / 79%, 91 / 88%, 39 / 93%. A lean per metre of
+  height fits as well (0.12-0.17 m/m). So on the first two the geometry is
+  close and the comparison was misplaced: the markup is in the photo's
+  frame, the build in the LiDAR's, and the census slide (best outline
+  overlap) gave (0, 0) for both. `image_shift.json` holds (-0.2, 1.1) for
+  4734696, the same slide with the sign turned, but (0.1, 0.0) for 4735292,
+  a 12 m roof that needs 2 m. The 24 census roofs re-scored with the slide
+  chosen on the lines (scratchpad `census/census_aligned.py`, after-fix
+  build): found 52/64/72%, real 73/85/90% within 0.3/0.75/1.5 m (38/60/71
+  and 57/84/90 before). Next: the same line-based slide in
+  `tools/markup_benchmark`; check what the map draws for these three
+  (lean applied or not); the remaining misses on the first two; why
+  4735292 misses 61% (near-flat faces at 12 m). Render:
+  `docs/review/three_houses_16nov_1_shotover_st.jpg` (its 3D row draws the
+  red wireframe at the wrong height: view bug, not the roof).
+
+- **The 24-roof yardstick under-counts, and where the real gap is (16 Nov).**
+  The census (scratchpad `census/census.py`) and `tools/markup_benchmark._lines`
+  score against the markup's closed `faces` only. The markup also holds
+  open `lines` strokes (ridges, valleys): on the 24 census roofs 375 m of
+  3,033 m of strokes lie on no face edge, so a built line on them counted
+  as invented (4725546: 2 faces, 56 of 67 m of ridge strokes unscored;
+  4735292 89 m; 5371183 99 m; 4726056 53 m). Counting the strokes
+  (after-fix build): built lines that are real within 0.3/0.75/1.5 m
+  57/84/90%; drawn lines found 38/60/71%. So invention is small; the gap is
+  lines missed (29% of drawn length has nothing within 1.5 m) and placement
+  (half the lines found are 0.3-1.5 m off). LiDAR check
+  (`tools/experiments/line_evidence.py`: plane fitted to the returns within
+  1.5 m each side of a line): 78% of drawn line samples show a fold over 8
+  degrees or a step over 0.3 m; on 5372585, 5371176 and 4725546 the lines
+  scored as invented show folds of 29, 19 and 22 degrees on 99-100% of
+  samples. Render: `docs/review/census_16nov_lines_scored_invented.jpg`.
+  To do: score strokes in `markup_benchmark`; a label-free score from the
+  LiDAR (line on a fold or step, face on one plane, fold with no line) run
+  on every roof; test whether placement error grows with height above the
+  eave (photo lean is per metre of height, the census aligns outlines only).
+- **Free model retrain on 714 roofs: worse, not adopted (16 Nov).** 146 new
+  readings added to the 568: held-out line F / lines right / face IoU /
+  faces right 0.528 / 16 / 0.643 / 10 against 0.626 / 21 / 0.697 / 13 for
+  `face_regions_v3` (re-scored the same day, reproduced). Second run of
+  each: 714 roofs 0.507 / 18 / 0.648 / 7; 568 roofs 0.559 / 18 / 0.655 /
+  13. So one data set moves 0.07 in line F between runs, v3 was the better
+  of two draws, and 146 more readings did not help (both 714 runs sit
+  under both 568 runs). Parked: the three-house study comes first, and
+  these scores use the outline slide shown above to be misplaced.
+
+- **Reader readings for 234 more pilot homes, and why they hold fewer panels
+  (16 Nov).** 299 pilot homes the free model had drawn were read by the paid
+  reader (60 in session, 237 by batch, US$15.13); 234 rated 0.4 or over are
+  in `data/vision_faces/` on the Mac, **not yet on the VM** (copy after the
+  running build, then a patch build). Built both ways on the Mac
+  (`tools/layout_ab.py`): free model 8,634 panels, reader 7,343. The split:
+  reader lines without reader obstructions 8,137 (-6%, the traced roof edge
+  holds 6% less roof area: 43,238 -> 40,571 m2); reader obstructions take
+  the other 10% (obstructions on these roofs 735 -> 1,523). The reader's
+  obstructions were scored against hand-drawn ones on the 15 census roofs
+  that have both: 113 of 154 touch a drawn obstruction, median size 0.92 of
+  the drawn one, total area 372 m2 against 628 m2 drawn. So they are
+  mostly real and not oversized; the earlier count placed panels over
+  skylights and vents the LiDAR detector does not see. Renders:
+  `docs/review/reader_vs_free_model_16nov_random.jpg` (12 at random) and
+  `..._most_panels_lost.jpg`. Open: (a) `vision_roof.ingest` drops a traced
+  part more than 3 m from the rest as "another building" even when it lies
+  inside the building's own outline (4750940, 4740468: 2 of 234, 43% of
+  each roof lost) -- keep a part that sits inside the surveyed outline;
+  (b) reader obstruction positions overlap the drawn ones by only 174 of
+  372 m2, so placement is a few pixels off; (c) not judged by the owner yet.
+
+- **Photo-first reading wired into the layout (14 Nov, behind
+  `SOLAR_VISION_ROOF=1`, off; branch `point-roof`; awaiting the owner's
+  blind picks).** `src/vision_roof.py`: `prep` writes gridded crops, a
+  reader (PROMPT) traces faces, obstructions and not-roof areas, `ingest`
+  turns a reading into `data/vision_faces/<id>.json`. The reading leads
+  every machine reading (`roof_partition.selected_doc`), its traced roof
+  edge replaces the surveyed outline (`outline_fit.fitted_outlines`), its
+  obstructions are added to the detector's (`build_layout_geojson`), and it
+  is slid onto the LiDAR for pitch; hand markup still wins. Run on the 24
+  noted houses with readers in the session: 19 readings used, 5 rated under
+  0.4 fell back to point faces. The 0.5 bar from the benchmark test did not
+  carry over: this run's prompt asked for an honest confidence and the
+  ratings came out about 0.1 lower, so 0.4 was used; the bar needs setting
+  against markup with the final prompt. Blind per-aspect page against
+  production, each drawn where the map would draw it:
+  https://claude.ai/artifact/L5GMXXbg9tANuwgZCC7rV6 (key
+  `data/blind_check/answer_key_14nov_photo_first_houses.json`; the agent
+  called photo-first better on lines on 17, same on 6, production on 1).
+  **Owner's blind picks (14 Nov,
+  `data/blind_check/owner_14nov_photo_first_houses.json`), photo-first /
+  production / same of 24: roof lines 20 / 3 / 1, obstructions 16 / 3 / 5,
+  panel layout 21 / 3 / 0** (point faces against production on the same
+  houses, 13 Nov: 12 / 8 / 4, 3 / 4 / 13, 8 / 9 / 7). On the 19 houses built
+  from a photo reading: lines 16 / 2 / 1, panels 17 / 2. Production won all
+  three on 4740401 and 5371209. The 5 point-face fallbacks also won 4 on
+  lines, where they had not on 13 Nov: the only change for them is the
+  drawing moved back onto the photo. The agent's lines call matched the
+  owner on 15 of 24. This says better than production, not right: the
+  count of roofs with nothing wrong (2 of 24 for point faces) is not yet
+  measured for photo-first, and these 24 houses were the development set.
+  **Fresh houses (14 Nov, awaiting picks):** 24 random pilot `home`
+  outlines over 60 m2, none used before, same prompt and 0.4 bar: 16 photo
+  readings, 8 fell back to point faces. Page
+  https://claude.ai/artifact/RqdBtssi2zt7n8TVgVMvMA, key
+  `data/blind_check/answer_key_14nov_photo_first_fresh.json`; the agent
+  called lines photo-first 10, same 13, production 1. Seen in the renders:
+  4750932 takes no panels on its main roof under the photo reading.
+  **Owner's picks on the fresh 24
+  (`data/blind_check/owner_14nov_photo_first_fresh.json`), photo-first /
+  production / same: roof lines 20 / 0 / 4, obstructions 16 / 0 / 7 (1
+  unsure), panel layout 16 / 0 / 7 (1 unsure).** On the 16 built from a
+  photo reading: lines 16 of 16, obstructions and panels 15 of 16. The 8
+  point-face fallbacks: lines 4 better, 4 same; six of them noted "both
+  terrible" or "both bad" — the unread photos are the open gap. Also noted:
+  panels not lined up with each other across faces (4725495), empty space
+  left without panels (4750932). Agent's lines call matched 12 of 24.
+  **Which reader, and what it costs (14 Nov, the same 24 hand-drawn dev
+  roofs, line F / lines right of 24):** through the API
+  (`src/vision_roof.py read`, effort high): `claude-fable-5-2` 0.727 / 16 at
+  $0.335 a roof (4.7k tokens in, 7.4k out); `claude-opus-5-5` 0.563 / 13 at
+  $0.062. As agents in the session: Fable 0.664 / 15, Sonnet 0.487 / 11,
+  Haiku 0.489 / 9. Production 0.575 / 11, point faces 0.621 / 11. Only the
+  top model reads roofs better than production; the Batch API halves its
+  price to about $0.17 a roof. Spent on this test: $9.64.
+  **Does the small model want more labels?** `tools/train_face_regions.py`
+  from scratch, 80 epochs, on 24 / 48 / 96 hand-drawn roofs, same 35 held
+  out: boundary F1 0.146 / 0.216 / 0.246. Still rising, slowly, from a low
+  base: a from-scratch U-Net is not the student.
+  **Open-model survey (agent web research, 14 Nov, not verified here):** no
+  published SAM fine-tune or open weights for roof planes at this
+  resolution; the best published RGB-only roof-plane result is AP50 0.57
+  (DINOv3 backbone, 2.1M Dutch 3DBAG masks). Suggested student: a pretrained
+  DINOv2/DINOv3 backbone with instance and boundary heads and a LiDAR side
+  branch, pretrained on free Dutch 3DBAG roof planes with 8 cm photos, then
+  fine-tuned on a few thousand teacher labels; estimated 30-60 GPU hours.
+  **A pretrained encoder lifts the student (14 Nov, scratchpad experiment,
+  not in the repo yet).** Same data, loss, metric and 35 held-out roofs as
+  `tools/train_face_regions.py`; ResNet-18 (ImageNet weights already on
+  the Mac) as the photo encoder at 512 px, U-Net decoder, LiDAR channels in
+  a side branch, 60 epochs: held-out boundary F1 0.413 on 96 hand-drawn
+  roofs (0.349 on 24, 0.313 on 48: noisy at these sizes), against 0.280
+  for the same network without pretrained weights and 0.246 for the old
+  U-Net. Photo only: 0.400, so the LiDAR branch adds little as built.
+  **500 pilot houses sent to the teacher (14 Nov):** `vision_roof.py
+  batch-submit`, `claude-fable-5-2`, estimate $85 (batches
+  msgbatch_01X5MiLBYLx8Dv2HKMp84mGA, msgbatch_019WPqbxFVTcvYQEtE2mJent).
+  Result: 492 readings for $84.98; 318 rated 0.5 or over became training
+  samples (photo-frame faces through `export_face_regions.roof_sample`).
+  **Student scored as roof faces on the 35 held-out hand-drawn pilot roofs
+  (maps -> `face_regions.learned_faces` -> benchmark arithmetic), line F /
+  lines right / face IoU:** hand 96 only 0.434 / 12 / 0.613; teacher 318
+  only 0.528 / 16 / 0.707; hand 96 + teacher 318 0.534 / 18 / 0.677.
+  Production on the same roofs 0.562 / 18 / 0.687, point faces 0.609 / 19 /
+  0.720. Teacher labels train the student as well as hand labels do, and
+  318 of them moved it 0.10; it is still under production. 30 minutes of
+  training on the Mac. Not yet tried: more labels (the pilot has only ~630
+  houses; other towns' photos are on the VM), a stronger open backbone
+  (DINOv2/DINOv3 need a download), the Dutch 3DBAG pretraining, the 174
+  lower-confidence readings. Spend to date on this work: $94.62.
+  **Direction channels fixed in augmentation, all paid labels used (14 Nov,
+  no further spend).** `tools/train_face_regions.dihedral` flips and rotates
+  the pixels but leaves the LiDAR downhill-direction channels (5, 6)
+  pointing the old way, so 7 of 8 augmented copies teach a wrong slope
+  direction. Fix (scratchpad `curve/pre.py`, mode `prefix`; not yet in the
+  repo trainer): a flip sets c5 = 1 - c5, each quarter turn sets
+  (c5, c6) = (1 - c6, c5). With the fix, same 35 held-out roofs, line F /
+  lines right / face IoU / faces right: hand 96 + teacher 318 0.546 / 18 /
+  0.662 / 11; hand 96 + 461 teacher readings rated 0.4 or over + session
+  readings (568) **0.626 / 21 / 0.697 / 13**. That is above production
+  (0.562 / 18 / 0.687) and point faces (0.609 / 19 / 0.720) on lines, between
+  them on face IoU. Boundary F1 on the maps did not move (0.438, 0.430), so
+  map F1 is a poor guide to the polygons. One training run each, 35 roofs:
+  a difference of 3 roofs is within what a rerun could move; the owner's
+  blind page decides. 40 minutes of training on the Mac, free to run per
+  roof.
+  **Blind page out, awaiting the owner (14 Nov):** 24 pilot homes the
+  student never saw (131 unseen homes, seed 14), production against the
+  student's faces through the vision-roof path (union of faces as roof edge,
+  slid onto the LiDAR, no obstructions from the student; trial readings read
+  through `SOLAR_VISION_FACES_DIR`). https://claude.ai/artifact/7w1gfP3rhP3vQUyajZ8hJq,
+  key `data/blind_check/answer_key_14nov_free_model_houses.json`. Agent's
+  line calls recorded first (`source_14nov_free_model_houses.json`): student
+  14, same 9, production 1. Layout health on the 24, production -> student:
+  panels 920 -> 875, clean roofs 50% -> 25% (12.6% of student panels count
+  as off the building because the health check measures against the
+  surveyed outline and the reading's roof edge is slid onto the LiDAR; an
+  earlier note here had the two columns swapped). Student lines are raster-traced and wobble; they
+  are not yet straightened or snapped to plane intersections. The student
+  lives in the scratchpad (`curve/pre.py`, `pre_prefix_568.pt`); it moves
+  into `tools/train_face_regions.py` and `src/face_regions.py` if the owner
+  prefers it. DINOv2 ViT-S student: stopped unscored. At 644 px on the Mac
+  it had not finished 5 of 40 epochs in 4 hours; it needs a GPU.
+  **Owner's blind picks (14 Nov,
+  `data/blind_check/owner_14nov_free_model_houses.json`), student /
+  production / same: lines 13 / 6 / 5, obstructions 12 / 6 / 6, panels
+  13 / 6 / 5.** The agent's line calls matched 13 of 24. For comparison the
+  paid reader on its own fresh page won lines 20 / 0 / 4. So the free
+  student is ahead of production but well short of its teacher, and the
+  owner's notes say "not great" or "terrible" on 9 of the 24, including
+  houses the student won. Production won 4725572, 4735022, 4735041, 4735396,
+  5370893, 5371131: on the renders (agent's reading, not a measurement) the
+  student's lines there wobble, or it split a plain face or merged two.
+  More teacher labels are the paid route to close the gap to the reader.
+  **Student in the build (14 Nov, uncommitted on `point-roof`).**
+  `tools/train_face_regions.py`: `EncoderNet` and the direction-channel fix
+  in `dihedral` (the training loop for EncoderNet is still the scratchpad
+  `curve/pre.py`). `src/face_regions.py`: loads
+  `data/models/face_regions_v3.pt` (57 MB, untracked; not yet on the VM or
+  in a bucket), `straight_faces` (header there: 35 held-out drawn roofs,
+  raster 0.626 / 21 / 0.697 / 13, straight 0.619 / 20 / 0.716 / 16, so
+  neutral on lines and better on faces; a loose plane-intersection rule
+  scored 0.560 and averaging over symmetries 0.553, both rejected).
+  `tools/student_faces.py <region>` reads every home (zone class home,
+  unmarked, no vision reading; 2.2 core-seconds a roof) into
+  `data/student_faces/`. `SOLAR_VISION_ROOF` now defaults on: a vision
+  reading, else a student reading, leads `selected_doc`, the roof edge and
+  the build key, and `register_imagery.drawing_shifts` moves such a roof's
+  drawing back by its own recorded slide. The 318 paid readings rated 0.5 or
+  over are in `data/vision_faces/` on this Mac. Fast tests pass. Not judged:
+  the straightened faces by the owner; any town but central Queenstown;
+  non-homes (left on production).
+  **District rebuild launched (14 Nov, 10:40 UTC):** the owner raised the
+  month's VM cap from 120 to 150 hours (`data/vm_budget.json` on branch
+  `vm-spending-limits`, not merged to main; 131 used at the start). Estimate
+  about 15 h, NZ$15 (10.7 h re-lay measured for v72, readings, margin).
+  `point-roof` pushed (bec030ce) and synced to the VM; `face_regions_v3.pt`
+  and the 329 files of `data/vision_faces/` copied up. On the VM
+  `/tmp/chain.sh` (log `~/solar-map/photo_roof_chain.out`) runs
+  `tools/student_faces.py` on every served region, then
+  `run_district_build.sh --force --regions "<data/out less akl_*>"`.
+  **First launch failed (3.3 VM hours):** the VM's checkout had
+  `src/face_rectify.py` deleted in its working tree, so
+  `build_layout_geojson` failed at import in every region; the build stopped
+  before the fan-in and nothing was combined. The readings finished (7,289
+  student files). File restored with `git checkout`, build relaunched at
+  13:58 UTC (`/tmp/chain2.sh`, log `photo_roof_chain2.out`). Check
+  `git status` on the VM for deleted tracked files before a build.
+  **Student coverage gaps seen in that run:** every home fails with "need at
+  least one array to concatenate" in arrowtown_hills, glenorchy,
+  glenorchy_north, kingston and kinloch, and many in arrowtown_east (176),
+  wanaka_albert_town (121), hawea (67) and wanaka_town (85): cause not
+  traced (no point-cloud returns for the roof is the likely one). Cromwell
+  and Bannockburn have no buildings zoned "home", so none are read. All of
+  these stay on the selected faces.
+  **Build finished, gate failed, not published (15 Nov 00:31 UTC):** 35
+  regions, 32,838 buildings, 1,236,935 panels (live v78: 1,256,226, -1.5%).
+  Gate against v78: 21 roofs zeroed, 165 big drops, 3 newly withheld, 34 of
+  38 case roofs changed. Of the zeroed, 19 use a student reading; of the big
+  drops, 115 student, 19 vision, 31 neither (7,289 student and 329 vision
+  readings in the build). Renders of all 21 zeroed and 30 of the drops:
+  `docs/review/gate_15nov_zeroed.jpg`, `gate_15nov_drops_sample.jpg`. Agent's
+  reading, not a measurement: several zeroed roofs are plain, well-lit
+  houses with faces drawn and no panels (5374704, 4735665, 4720927); on
+  others the student's faces sit off the building (4738118, 4735619,
+  5372972) or are missing (4720448, 4720457); a share of the drops show the
+  same off-building faces (4725815, 4727777, 4736995). Cause not traced: the
+  recorded slide (`shift`) is the first suspect. The student reading scores
+  1.0 always, so nothing competes with a bad one. The VM's served set is
+  pulled into `data/` on this Mac: the whole build is viewable at
+  `http://localhost:8000/solar-map/rooftop-solar.html?localdata=1`. VM
+  stopped at 00:58 UTC after 14.4 h this start; month at about 145.5 of 150
+  h.
+  **Owner: fix first (15 Nov); a panel drop is not in itself bad, some
+  roofs carried too many.** Three causes traced, three rules in
+  `tools/student_faces.py` (no `src/` change, so only roofs whose reading
+  changes rebuild):
+  (1) the reading was slid by `point_roof.register`, which under trees slid
+  it off the building (4735042, 4735619: a face over the wall at 57-67
+  degrees); it now takes the build's accepted outline-fit slide. Pilot: 71
+  of 368 homes change, renders in
+  `docs/review/slide_fix_15nov_pilot_movers.jpg`; several remaining drops
+  are south faces at 26-36 degrees that rightly hold no panels.
+  (2) a reading gives way when its plane-fit share is over 0.20 below the
+  incumbent reading's (68 of 368 pilot homes; on the owner's 24 blind homes
+  5: 2 production wins, 2 same, 1 model win).
+  (3) no reading under 1 building-class return per m2 (three zeroed Wanaka
+  homes held 0.03-0.46; Kinloch has none at all, so it is not read).
+  Month's cap raised to 165 h on the owner's word. Re-read and incremental
+  build launched 01:42 UTC (`/tmp/chain3.sh`, log
+  `photo_roof_chain3.out`); the 15 Nov layouts are kept in
+  `~/v79a_layouts` on the VM for before/after renders. Still
+  to do: `tools/deploy_from_vm.sh`, render the gate's list, `--push`, stop
+  the VM, record the hours.
+  **Second gate, 15 Nov 09:10 UTC: failed again, not published; live is
+  still v78.** Build finished 08:50 UTC (10 regions clean, 12 patched,
+  13 full): 32,838 buildings, 1,238,166 panels (v78 1,256,226, -1.4%);
+  5,658 student readings kept (7,289 before the three rules). Gate:
+  11 zeroed (was 21; 9 student, 2 no reading), 120 big drops (was 165;
+  69 student, 19 vision, 32 no reading; 110 of the 120 are the same roofs
+  as the first gate), 1 newly withheld (4721200, a glasshouse). So the three
+  rules fixed the zeroed roofs they targeted but barely touched the drops.
+  Renders against `~/v68_layouts` (the nearest saved layouts to v78; no v78
+  layouts were kept): `docs/review/gate2_15nov_zeroed.jpg` (all 11) and
+  `docs/review/gate2_15nov_drops_sample.jpg` (every fifth drop, 24). Not
+  yet judged by the owner. Unmeasured reading of the sheets: several zeroed
+  roofs are overgrown or a glasshouse, but 4720927 (plain hip garage),
+  4734693, 5371115 lose panels a plain roof should hold; many drops keep
+  the same faces and place fewer panels on them (4742404 52->22, 4735028
+  44->21, 4733218 48->26), cause not yet found; 32 drops have no photo
+  reading at all, so something else on this branch changed them since v78.
+  **Published as v79 on the owner's word (15 Nov), gate failed and
+  reviewed;** `site-config.js` on main points at v79 (commit 24c44ff3), roll
+  back by pointing it at v78. Main does not yet hold the code that built
+  v79 (branch `point-roof`).
+  **Where the lost panels went (measured on this Mac, 15 Nov).** On the 120
+  flagged roofs the face area is unchanged from v78 (median ratio 1.00) but
+  panels cover a median 27% of it against 44%. 19 flagged pilot roofs with
+  a paid reading, rebuilt three ways (`tools/layout_ab.py`): no reading
+  1,310 panels; the reading's faces without its obstructions 1,010; the
+  full reading 749. So about half the loss is the reading's face shapes and
+  half the obstructions it names (`vision_obstructions`, which the LiDAR
+  checks never test). Two mechanisms seen in renders, not yet judged by the
+  owner: (a) v78 packs rows to within 0.11-0.15 m of the face edge, so a
+  ridge drawn 0.4 m off drops a whole row (4735028: a 4.0 m face became
+  3.59 m, 22 -> 11); (b) one small obstruction mid-face leaves the far half
+  of the face empty (4735028 other face 22 -> 10; 4735398 three named
+  strips, 35 -> 21, and the photo shows nothing under two of them). Not the
+  cause: height-step splitting (SOLAR_STEP_SPLIT 0 and 1 give the same
+  counts on four no-reading roofs). Still unexplained: the 32 drops with no
+  reading; 10 of them carry hand markup, and 4725599 builds 199 here but
+  132 on the VM. Next: decide whether photo-named obstructions need a LiDAR
+  or size check, and why the fitter abandons the far side of an obstruction.
+  **Owner's verdict on v79 (16 Nov): panel placement is still not an order
+  of magnitude better.** Examples: 9 Melbourne St (4725494) has a staggered
+  array and an empty far side; 7 Melbourne St has staggered panels on its
+  sawtooth bays ("solar installers would never install staggered like
+  this"). Traced on 4725494: the 183 m2 face carries 15 obstructions
+  totalling 62 m2 and the grid keeps every free slot around them, hence the
+  stagger (55 panels on v78, 38 now); the 133 m2 south-east face (25 deg,
+  aspect 133) is emptied by `away_from_sun` at 0.74 of the roof's best 0.96,
+  as it was on v78. Also measured: on 329 paid-reading roofs the drawn seam
+  sits a median 0.35 m from where the two LiDAR planes meet (343 of 922
+  seams over 0.5 m). The two small fitter fixes were stopped before any
+  code changed; a plan for panel placement was put to the owner instead
+  (array-first placement, rows on each face's own eave, obstructions held
+  to a measured standard, seams on plane intersections, and a benchmark of
+  owner-drawn layouts to iterate against on this Mac).
+  **Error census on the drawn roofs (16 Nov, this Mac, pilot only: the
+  other regions hold no imagery here; held-back roofs excluded).** Each
+  drawn roof built blind (SOLAR_HIDE_LABELS=1) and sorted by what is wrong;
+  "right" is line F >= 0.7 at 0.75 m and face IoU >= 0.8.
+  LiDAR path alone, 70 roofs: 19 right; 20 have the right lines placed
+  0.3-1.5 m off; 13 invent lines; 6 miss lines; 12 mixed or other. 35% of
+  its line length matches no drawn line within 1.5 m. By size: 1-2 faces 9
+  of 25 right, 3-4 faces 6 of 12, 5-8 faces 3 of 17, 9+ faces 1 of 16.
+  Paid reader on the 24 it read on 14 Nov, same roofs three ways: the
+  reading as read 10 right (lines within 0.3 / 0.75 / 1.5 m: 45 / 68 / 78%;
+  87% of its lines real); the LiDAR path 6 right; **the same readings
+  after the build 4 right** (35 / 58 / 71%). Of the 10 read right, 6 come
+  out of the build worse: 4735378 and 5371118 are two-face roofs whose
+  straight ridge (line F 1.0 and 0.89) is rebuilt as a zig-zag (0.03 and
+  0.41); 5370320 goes from 2 faces to 5. Renders:
+  `docs/review/census_16nov_reader_as_read.jpg`,
+  `docs/review/census_16nov_reader_after_build.jpg`. Caveats: the markup
+  was traced on a leaning photo, so some of the 0.3 m misses are the
+  ruler; the free model was trained on these roofs so it cannot be scored
+  on them; these 70 are mostly central-town buildings, not houses. The paid
+  reader could not be run on the other 46: the API key's credit is spent
+  (no charge made). Next: find the build stage that bends a reading's
+  seams and let a reading through intact; then the reader on all 70.
+  **Readings now pass through the build intact (16 Nov, code on
+  `point-roof`, not yet in a district build).** Three stages were damaging
+  them, each traced on the six roofs above. (1) The LiDAR reshape stages in
+  `build_layout_geojson` (`split_steps`, `split_lower_levels`, then
+  `merge_coplanar_faces`) cut a face where the returns step and merged the
+  piece into the face across the ridge: 4735378's two 52 m2 faces left as
+  63 and 40 m2. A roof holding reading faces now skips them, as a plain
+  form does; planes are still refreshed. (2) The like-plane merge at the end
+  of `_attach_building_geometry` merged faces the reader drew apart
+  (5371137: 20 faces read, 13 left). Reading faces now stand through it as
+  drawn faces do. (3) The trimmed plane fit starts from least squares, so
+  plant or a tree over a third of a flat face tilts it and the face is
+  thrown away as "not one plane" and re-cut (5370320: 9 deg, 23% on plane,
+  where a 1 deg plane holds 64% and the rest stand above). A reading face
+  that fails is retried on the plane most returns lie on, and kept when
+  under 15% of returns fall below it (`_dominant_plane`); a missed ridge
+  still fails (4735104: 41% below). `SOLAR_KEEP_READINGS=0` turns (1) and
+  (2) off. Same 24 roofs, built blind: **4 right before, 9 after; the
+  readings as read score 10.** Lines within 0.3 / 0.75 / 1.5 m: 35 / 58 /
+  71% before, 42 / 67 / 78% after (as read 45 / 68 / 78%). Panels on the 24:
+  2,413 to 2,598. The one still lost is 4735104, where the reader missed a
+  ridge and residual fill places it badly. Renders:
+  `docs/review/readings_16nov_before_fix.jpg`,
+  `docs/review/readings_16nov_after_fix.jpg`. Not measured: the 5,658
+  student-read homes on the live map (trained on these roofs, so no fair
+  score here; needs a district build and a blind check), and whether the
+  student's readings deserve the same trust as the paid reader's.
+  Tests: fast suite passes. The full suite fails on this branch with or
+  without this change, identically (28 golden buildings and the synthetic
+  region, 606 -> 415 panels): the references predate the branch's
+  panel-fitting and reading work and have not been re-recorded. To do:
+  re-record on the VM once the branch's layouts are accepted.
+  **District build with the fix launched (15 Nov 23:12 UTC = 16 Nov midday
+  NZ)** on the owner's word. VM started 23:09 UTC through `vm_start.sh`
+  (about 153.4 of 165 h used before). `point-roof` at cc9334eb synced. Every
+  changed line acts only on faces marked `from_reading`, so
+  `tools/rekey_unaffected.py --from-hash 0cd1aeb44b88 --apply` carried the
+  build keys of the 26,851 buildings with no photo reading to the new code
+  hash (bfbc016ffcd4); the 5,987 with a reading rebuild. Keys before the
+  carry are in `~/v79b_keys` on the VM; the published layouts in
+  `~/v79b_layouts`. `run_district_build.sh --regions "<data/out less
+  akl_*>"`, log `~/readings_fix_build.out`. Regions over a tenth stale build
+  in full (about 20,700 buildings), so the estimate is 6-8 h. Still to do:
+  the deploy gate against v79, renders of what it flags, the owner's word
+  before any publish, stop the VM, record the hours.
+  **Reader extended to the pilot homes the student drew (16 Nov, in
+  progress).** The owner's blind picks on fresh houses put the reader's
+  lines ahead of production on 20 of 24 and the student's on 13 of 24, so
+  the student's homes are being re-read by the reader, run as agents in the
+  session (no API charge; about 19k tokens a roof, six roofs to an agent).
+  First 60 of the 299 pilot homes holding a student reading: 45 rated 0.4 or
+  over and ingested, 15 under and left on the student. Built both ways
+  (student -> reader): panels on the 45, 1,535 -> 1,353; sample render
+  `docs/review/reader_vs_free_model_16nov_sample.jpg` (agent's reading, not
+  a measurement: the reader's lines are cleaner on most, and it finds
+  ridges and hips the student misses; some of its obstruction outlines are
+  too large). The other 239 are being read in waves. Readings are in the
+  scratchpad (`teach1/`, `teach2/`) until all are in; then into
+  `data/vision_faces/`, up to the VM, and a patch build. Tried and dropped
+  the same day: moving a reading's seams onto the LiDAR plane crossings
+  (`seams_to_plane_lines` on the 24 census roofs: lines within 0.3 / 0.75 /
+  1.5 m unchanged at 42 / 67 / 78%).
+  New layouts kept in `~/v79b_layouts` on the VM. VM stopped 09:29 UTC:
+  7.9 h this start, about 153.4 of the month's 165.
+  **Pilot built locally for a preview (14 Nov):** every stage of the plan
+  run through `src/run_stage.py`, then `emit_region` and `combine_regions`
+  (23 minutes; `tools/pipeline.py` stops at preflight here because the GDAL
+  command-line tools are not installed on this Mac). 318 homes from vision
+  readings, 368 from the student, the rest as before. View with the
+  `solar-preview` server at
+  `http://localhost:8000/solar-map/rooftop-solar.html?localdata=1`: on a
+  local server `?localdata=1` reads the data beside the page instead of the
+  published release (`rooftop-solar.html`, DATA_BASE). The other 23 regions
+  in that local set are older local copies, not the live v78.
+  **Cost rules out a reader call per building** (owner, 14 Nov: millions of
+  buildings nationally; roughly 5-10 cents each, unchecked against the
+  price list). Direction: the reader labels a few thousand roofs once and a
+  small local model is trained on those labels and run free on the VM;
+  whether the small model keeps the reader's quality is untested.
+  Not done: lines snapped to LiDAR plane intersections; `emit_region` moving
+  a vision roof's drawing back by its stored slide (the review renders do);
+  a reader that calls the API instead of session agents (paid; estimate
+  before any district run); other towns. Fast tests pass.
+- **Roof read from the photo by a vision model (14 Nov, first test).** Owner's pinned notes on the 24 point-roof houses
+  (`data/blind_check/owner_notes_13nov_point_roof_houses.json`): 2 of 24
+  right; wrong roof lines on 15, an obstruction missed or a panel over one
+  on 12, panels over empty space, a balcony, a valley or a ridge on 9, the
+  outline off the photo on 8. Two causes found for the outline: the review
+  page drew the layout in the LiDAR frame without moving it back onto the
+  photo (emit does this from `image_shift.json`; `tools/layout_ab.py` output
+  does not), and `point_roof.register` slid 4734808 1.5 m where the measured
+  lean is 0.7 m. Test of the photo-first route: a Claude vision reader traced
+  24 hand-drawn pilot dev roofs from a gridded photo crop alone (never shown
+  the markup), scored with the benchmark's arithmetic: line F 0.664 (lines
+  right 15) against point faces 0.621 (11) and production 0.575 (11); face
+  IoU 0.655 / 0.665 / 0.644. The reader's own confidence separates its
+  results: at 0.5 or over (15 roofs) line F 0.81, 11 right; under 0.5 (9
+  roofs: dark, blurred, shadowed or overexposed photos) 0.41, where point
+  faces score 0.56. Vision where confident and point faces elsewhere: 0.72,
+  14 right. One untuned prompt, one read per roof, no snapping to LiDAR or
+  image edges. Next: snap traced lines to the LiDAR plane intersections and
+  take pitch from the returns inside each traced face; use the reader's
+  obstructions and not-roof areas; wire as a reading and judge blind on
+  houses. A district-wide run is a paid API cost to confirm first.
+
+- **Faces straight from the raw LiDAR points (13 Nov, behind
+  `SOLAR_POINT_ROOF=1`, off; branch `point-roof`).** `src/point_roof.py`:
+  slide the outline onto the roof-height returns; grow planes on the returns
+  (not the rasterised grid); roof lines are the planes' exact intersections
+  plus fitted step lines; cut the outline by every line; one graph cut gives
+  each cell a plane or "no roof here"; flat planes that meet without a step
+  are one deck. No trained model, no photo, about 0.3 s a roof for the
+  faces. `python src/point_roof.py <region> --ids ...` writes
+  `data/point_faces/<id>.json` (selected-faces schema plus the slide);
+  `roof_partition.selected_doc` reads it first and
+  `outline_fit.fitted_outlines` applies its slide. The survey supports it:
   9 returns/m2, about 2 cm of noise across a plane. Blind on the 70 drawn
-  pilot roofs, production -> prototype: line F 0.583 -> 0.629, lines right
-  33 -> 38, faces right 26 -> 28, face IoU 0.651 -> 0.682. Its smoothness
-  weight was picked on these 70 (0.4-4.0 gives 0.59-0.63), and production's
-  detectors trained on many of them; other towns and the held-back 30 are
-  unscored (their point clouds are on the VM). No owner verdict yet.
-  Known gaps: roofs with sparse scan lines, balcony terraces, cones, low hips
-  under 5 deg (merged as flat).
+  pilot roofs through `tools/layout_ab.py`, production -> switch on: line F
+  0.584 -> 0.614, lines right 33 -> 36, faces right 25 -> 24, face IoU
+  0.651 -> 0.674; by roof, line F better on 21, worse on 21. Layout of the
+  70: 335 s -> 87 s. A wash on the benchmark. Its smoothness weight was
+  picked on these 70, and production's detectors trained on many of them;
+  other towns and the held-back 30 are unscored (their point clouds are on
+  the VM). Blind side-by-side for the owner, the 30 roofs whose seams differ
+  most: https://claude.ai/artifact/JZUYsLVV85GS4yQuX95t8b (answers in its
+  `answers` collection; key and the agent's calls, recorded first, in
+  `data/blind_check/answer_key_13nov_point_roof.json`: points 19,
+  production 5, same 6).
+  Owner's verdict (13 Nov, `data/blind_check/owner_13nov_point_roof.json`):
+  points better on 14 (2 of them from the scores, no pick made), production
+  on 3, same on 12, unsure 1. Mean score out of 10 on the 24 roofs scored
+  both ways: production 2.3, points 4.1; points scored higher on 16, lower
+  on 1, equal on 7. The agent agreed on 13 of the 17 decided. On r30
+  (5371108) the pick says production and the scores say points (3 vs 5).
+  Fault tags, production / points, of 24: obstructions 14 / 10, roof lines
+  14 / 8, panels across a ridge 3 / 5, outline 3 / 3, over empty area 2 / 0.
+  So the owner prefers the point faces where the benchmark called a wash
+  (line F better on 21, worse on 21), and at 4.1 out of 10 they are still
+  far from good: obstructions are now the most common fault, then lines.
+  Second page, as the owner asked (the first had too many commercial roofs,
+  and one overall pick was hard where one drawing had the better panels and
+  the other the better lines): 24 random pilot houses (zone class home,
+  70-350 m2, seed 1311), one pick each for roof lines, obstructions and
+  panel layout (`tools/review_page.py --aspects`):
+  https://claude.ai/artifact/A38LDAsCTByYVNhBz5xXni (key
+  `data/blind_check/answer_key_13nov_point_roof_houses.json`; picks in
+  `owner_13nov_point_roof_houses.json`). Owner's picks, points / production
+  / same: roof lines 12 / 8 / 4; obstructions 3 / 4 / 13 (4 can't tell);
+  panel layout 8 / 9 / 7. On houses the point faces have a small edge on
+  lines and none on panels. The agent called 20 of the 24 "same" from a
+  contact sheet and matched the owner's lines pick on 6: thumbnails do not
+  show what the owner sees.
+  A pick does not say what is wrong, so the same 24 houses are on a page
+  where the owner pins the fault on the point build's drawing and describes
+  it (`tools/annotate_page.py`, pins as image fractions, map bounds in
+  `data/blind_check/notes_key_13nov_point_roof_houses.json`):
+  https://claude.ai/artifact/DbWrnP9P7qBQfBpUux872M (`notes` collection).
+  The 8 houses where production's lines won come first. Awaiting notes.
 - **The benchmark's truth drops drawn lines (13 Nov).** `markup_benchmark`
   takes the roof's lines from the label's derived faces, and a drawn line
   that closes no face is not in them. Over 150 drawn roofs (held-back
@@ -690,9 +2663,65 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
   `src/validate_against_pvgis.py`), deliberately: PVGIS uses generic
   temperature and system losses. A derate-only change is a `--yield-only`
   rebuild; it leaves each panel's stored shading_factor valid.
-- **Station mapping outside the Wakatipu.** Low-solar days are mapped onto
-  the Queenstown Aero station record only for Queenstown, Glenorchy and
-  Kingston. Wanaka and Cromwell are not mapped.
+- **Low-solar runs: station-corrected in Central Otago; the rest of NZ needs
+  stations.** Each valley cell within 0.5° of a pyranometer in
+  `climate/stations.json` has its days mapped onto the nearest station
+  (`tools/station_qmap.py <dir of DataHub CSVs>`): Queenstown Aero, Cromwell
+  (26381), Alexandra (43904), Wānaka (41237, also Hāwea and Makarora). All 35
+  built Otago regions use a station (`tools/sunlight_coverage.py`). Measured,
+  May-July 2016-2025: Cromwell's pyranometer has days under a fifth of the
+  year's average on 22.9% of days, ERA5 10.2%; longest run 13 days (8-26 Jun
+  2023) against ERA5's 4. On a north roof through the page's own code,
+  2007-2025, low days: sensor 1.9%, ERA5 before 1.1%, after 2.1%. Audit, 25
+  Nov 2026:
+  - **The measured runs hold up.** NIWA's June 2023 summary puts an
+    inversion over inland basins from 6 to 25 June and Cromwell's lowest June
+    sunshine since 1979 (54 hours). The four Central Otago sensors agree on
+    90% of winter days (dark = under half the month's average, 2019-2025);
+    Cromwell is the foggiest (16.9% of winter days, five runs of 5+ days),
+    Alexandra 13.8% with none.
+  - **Every station's sensor is now checked** (`read_station_audited`):
+    Wānaka's is shaded on clear winter mornings (9-10 am at 16-31% of its
+    midday level, Apr-Aug); those hours are taken out. Its clear June days
+    still read 0.78-0.80 of the satellite against 0.89 in summer: more shade
+    in the low-sun hours the check does not judge. Cromwell, Alexandra and
+    Wānaka read 5-11% under the satellite on clear days in every month
+    (Queenstown Aero 0.96-1.00): a calibration offset. It does not touch the
+    maps (shares of the month), but it does touch any yearly figure taken
+    from these sensors. Lauder's low 1992-94 is Pinatubo haze.
+  - **No independent weather reports here:** the Iowa State METAR archive
+    has no NZ airports, NOAA's ISD only Queenstown and Tara Hills.
+  - **The longest spells stay short.** The map cannot add a fog spell ERA5's
+    sequence lacks (the 13-day spell maps to about 5). Tried and not enough:
+    the Himawari satellite (r 0.98 at Queenstown, blind to most basin fog),
+    a regression on ERA5's daily and hourly weather (r 0.79, longest run 5),
+    a second table for days after a dark day.
+  - **The low-day threshold** stays at 20% (decided 25 Nov 2026). At 20% the
+    June 2023 spell (3.5-6.3 kWh a day on a test roof whose clear June day is
+    24.5) reads as runs of 3-4; at 25-30% the sensor shows 9.
+  - **Next, for the rest of NZ:** (1) every DataHub global-radiation
+    station, hourly, into `data/stations/`, listed in `climate/stations.json`;
+    (2) daily sunshine hours for Cromwell (1979 on) and Alexandra: a longer,
+    independent record to test the maps' 86-year runs, and the denser network
+    for towns with no pyranometer; (3) `tools/fetch_era5_cells.py --region`
+    for each new region; (4) with stations outside the inland basins, test
+    whether a satellite map is a safe fallback there (inside them it is not).
+    12431 (1996-2012, likely Clyde) is not listed: position unknown, and a
+    50-day run under clearness 0.4 ending 6 Sep 2012 no other station has.
+  - **Frost and snow on panels** in freezing fog are not modelled.
+- **Wānaka and Hāwea yearly sunlight is calibrated to Queenstown Aero, but
+  Wānaka's own pyranometer (41237, 2015-2026) measures 1,341 kWh/m2 a year
+  against Queenstown's 1,470 (-9%), June 0.96 against 1.34 kWh/m2/day
+  (-29%).** Cromwell (1,446) and Alexandra (1,377) sit near the Clyde normal
+  the model uses. Adding these stations to `NIWA_MEASURED_GHI_STATIONS` in
+  `src/solar_model.py` changes every panel's kWh there and the beam share in
+  `shading_factor`: a full rebuild, fixture regenerated. **Held until the
+  station records are audited:** Wānaka's sensor reads clear June days ~28%
+  under the Himawari pixel (shading at the site), and Cromwell and Alexandra
+  read 5-9% under it in every month (sensor offset). Measured with the rows
+  as computed (Wānaka with its shaded 9-10 am hours taken out), kWh/kWp on
+  every v78 panel: Wānaka and Hāwea -9.4 to -9.9%, Cromwell and Bannockburn
+  +2.4 to +3.1%, every other region unchanged.
 - **NREL Himawari sunlight (optional).** The NSRDB Himawari files are public
   on AWS (2015–2020); range reads of the Queenstown pixels may avoid needing
   an API key. The only route to suburb-level cloud.
@@ -703,6 +2732,31 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Map
 
+- **At the next build: detailed building types from OpenStreetMap (16 Nov;
+  code done, not built).** `classify` now reads
+  `data/regions/<r>/building_uses.json` (churches, marae, emergency, sport,
+  accommodation, retail, office, farm) ahead of the zone and the size, and
+  the video offers one building type on its own. No region shows any of it
+  until, on the VM: `python tools/fetch_osm_uses.py` (every region; it
+  needs internet, retries the public Overpass servers and keeps a day's
+  answer), then a re-emit and combine. Do it as part of the next build
+  that re-emits anyway; no VM run was started for this on its own. Measured
+  on the Wakatipu regions only: 11 places of worship, 8 emergency, 12
+  community, 187 accommodation, 237 shops; Wanaka and Upper Clutha are
+  unmeasured. After the build, check the churches by name against the map
+  (one "place of worship" is named Literacy Aotearoa) and that the type
+  chips and the "Other" dashboard row read sensibly with fourteen types.
+- **At the next major build: panels one zoom level further out (16 Nov;
+  open).** Below zoom 13 the map says "Zoom in to see panel layouts"
+  because the panel-area tiles start at z13 (`src/emit_region.py`, the
+  `_layout_lo` pass, 13-14). Showing them from z12 means cutting that pass
+  from 12, re-emitting every region, and moving the front end's matching
+  limits (`panel-areas-fill` minzoom, the zoom hint; the totals switch at
+  `BUILDING_MIN_Z` is separate). Expected gain is small: at z12 a pixel is
+  about 13 m and a home's panels are 7-8 m across, so homes are specks and
+  only large roofs read as panels. Not worth a re-emit on its own; do it
+  with a build that re-emits everything anyway, check the z12 tile sizes
+  against the 200 kB per-region budget, and judge it by a render.
 - **Panels skewed on the map by tile rounding (11 Nov; fixed, v78 live).** Built panels are square in the layouts, but the map drew
   many as rhombi. Cause: the z15-16 panel tiles were cut at tippecanoe's
   default detail (12), about 0.1 m per tile unit at z16, and the map

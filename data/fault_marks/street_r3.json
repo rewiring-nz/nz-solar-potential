@@ -1,0 +1,937 @@
+{
+ "label": "r3",
+ "marked": "2026-11-20",
+ "roofs": [
+  {
+   "id": 4729286,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259956.49,
+      5004596.46
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259955.01,
+      5004594.16
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259954.68,
+      5004586.23
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259955.62,
+      5004583.4
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259952.05,
+      5004586.89
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259953.9,
+      5004585.17
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259964.78,
+      5004590.34
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259962.19,
+      5004588.82
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259960.26,
+      5004601.1
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259955.13,
+      5004595.37
+     ],
+     "text": "Roof lines on this roof are all very far from the reality of this roof, and very messy."
+    }
+   ]
+  },
+  {
+   "id": 4729452,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260022.67,
+      5004658.45
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260026.87,
+      5004663.43
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260030.09,
+      5004660.47
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260025.39,
+      5004655.5
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260024.96,
+      5004665.52
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260020.61,
+      5004659.27
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260016.22,
+      5004662.69
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260023.72,
+      5004663.5
+     ],
+     "text": "The roof lines on this roof and its outline are clearly very different to the visual roof underneath."
+    }
+   ]
+  },
+  {
+   "id": 4729767,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260042.38,
+      5004681.03
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260034.28,
+      5004670.83
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260038,
+      5004666.97
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260035.98,
+      5004672.03
+     ],
+     "text": "This box of roof lines seems to be incorrect."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260043.46,
+      5004669.5
+     ],
+     "text": "These areas there are no roof lines which there should be, this is clearly roof underneath."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260044.29,
+      5004666.06
+     ],
+     "text": "The roof outline of this building is very far off from reality"
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260032.72,
+      5004672.28
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260032.54,
+      5004674.52
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260042.63,
+      5004664.29
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260045.92,
+      5004668.41
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260050,
+      5004672.79
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260046.75,
+      5004679.44
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260042.74,
+      5004682.44
+     ]
+    }
+   ]
+  },
+  {
+   "id": 5371242,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260034.73,
+      5004685.69
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260040.69,
+      5004689.38
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260043.84,
+      5004685.48
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1260036.82,
+      5004681.2
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260036.22,
+      5004682.98
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260042.32,
+      5004686.59
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260039.27,
+      5004682.26
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1260038.42,
+      5004686.9
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260040.95,
+      5004685.64
+     ],
+     "text": "This is a very simple small roof, and yet the roof lines are wrong. They are two rectangles and don't recognise the triangular part of the roof."
+    }
+   ]
+  },
+  {
+   "id": 4729334,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260034.05,
+      5004721.48
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260036.22,
+      5004722.91
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260031.41,
+      5004714.5
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260033.58,
+      5004708.77
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260043.85,
+      5004706.87
+     ],
+     "text": "This is a balcony not an area of roof."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260045.37,
+      5004720.34
+     ],
+     "text": "This is a balcony not an area of roof"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260046.2,
+      5004724.23
+     ],
+     "text": "This is a balcony not an area of roof"
+    }
+   ]
+  },
+  {
+   "id": 4729329,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1260067.23,
+      5004704.53
+     ],
+     "text": "There are a collection of three vertical roof lines here which do not seem right and I doubt are a real part of the roof."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260065.49,
+      5004695.12
+     ],
+     "text": "There is no need to do this other direction panel array here"
+    }
+   ]
+  },
+  {
+   "id": 4729434,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1260051.71,
+      5004691.49
+     ],
+     "text": "The roof lines here are wrong and make a weird shape that is not clean and rarely ever going to be a shape on a roof. You can see from the image underneath that the roof lines are not recognising the clear triangle shape of this section of roof. This roof has very clear ridges in the image so it is surprising it is so wrong and maybe a clue?"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260061.44,
+      5004685.32
+     ],
+     "text": "This part of the roof line also missed"
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260058.57,
+      5004683.58
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260052.31,
+      5004682.04
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260055.61,
+      5004675.35
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260060.07,
+      5004684.35
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729288,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259952.54,
+      5004631.9
+     ],
+     "text": "This should be a small obstruction, but instead its a large area marked as an obstruction for something small."
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259955.15,
+      5004634.39
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259948.03,
+      5004627.18
+     ],
+     "text": "Theres a double up of roof lines here which is clearly wrong, generally it would be very very rare, to ever have two roof lines right next to each other or overlapping, yet you seem to do it on a lot of rooftops."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259946.28,
+      5004622.94
+     ],
+     "text": "Same double up line problem here"
+    }
+   ]
+  },
+  {
+   "id": 4729554,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259965.56,
+      5004608.21
+     ],
+     "text": "Good roof, except the outline is a little but larger than the image underneath, it is stretched to the bottom right beyond the real roof edge"
+    }
+   ]
+  },
+  {
+   "id": 4729550,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259970.11,
+      5004603.2
+     ],
+     "text": "These roof lines are terrible"
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259979.78,
+      5004605.37
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259975.54,
+      5004600.32
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259979.1,
+      5004608.37
+     ],
+     "text": "Roof lines have a weird shape here that is unrealistic"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259971.79,
+      5004600.09
+     ],
+     "text": "Roof lines have a weird double up shape here that is unrealistic. Generally speaking roof lines are quite clean and straight or curved but never so much chaos in such a small area. For example maybe a rule that small areas with lots of intersecting or overlapping lines get correct because rooftops just don't have that. they are large simple shapes to make a roof in almost every case."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259974.19,
+      5004605.26
+     ],
+     "text": "More wrong roof lines here"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259974.38,
+      5004608.45
+     ],
+     "text": "More wrong roof lines here"
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259974.38,
+      5004609.68
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259973.97,
+      5004606.87
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259974.16,
+      5004603.87
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259969.1,
+      5004603.24
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259970.07,
+      5004609.68
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729284,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259962.66,
+      5004652.79
+     ],
+     "text": "Missing clear roof lines here that are obvious from the photo"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259964.79,
+      5004658.61
+     ],
+     "text": "Building outline is way off and not where it is in th ephoto."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259963.17,
+      5004659.58
+     ],
+     "text": "Missing more roof ridge lines here."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259958.45,
+      5004647.87
+     ],
+     "text": "Empty space here"
+    }
+   ]
+  },
+  {
+   "id": 4729287,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259981.64,
+      5004627.03
+     ],
+     "text": "Panels have been placed over obstructions here"
+    }
+   ]
+  },
+  {
+   "id": 4729573,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259953.68,
+      5004666.51
+     ],
+     "text": "Strange that the panel orientation changes here and I would have expected it to continue to match the orientation of the nearby sections"
+    }
+   ]
+  },
+  {
+   "id": 4729764,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259973.31,
+      5004659.54
+     ],
+     "text": "Incorrect roof line double up here."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259980.1,
+      5004667.17
+     ],
+     "text": "Not accurately on th ebuilding outline."
+    }
+   ]
+  },
+  {
+   "id": 4729292,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259990.63,
+      5004642.88
+     ],
+     "text": "Many incorrect roof lines on this roof, way more complicated that it should be."
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259994.23,
+      5004646.09
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259985.03,
+      5004641.45
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259983.38,
+      5004640.37
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259991.67,
+      5004642.14
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259998.09,
+      5004632.38
+     ],
+     "text": "Balcony marked as roof"
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259999.52,
+      5004636.11
+     ],
+     "text": "Not sure these are obstructions"
+    }
+   ]
+  },
+  {
+   "id": 4729435,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259991.39,
+      5004679.41
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4729415,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260016.86,
+      5004651.34
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260015.32,
+      5004648.27
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1260018.91,
+      5004650.78
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260010.57,
+      5004655.12
+     ],
+     "text": "Roof line missing under here and panels placed on top."
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1260004.42,
+      5004646.08
+     ],
+     "text": "Roof line double up"
+    }
+   ]
+  },
+  {
+   "id": 4740972,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "comment",
+     "xy": [
+      1259492.3,
+      5004256.46
+     ],
+     "text": "This is a balcony not a crazy roof shape."
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259489.94,
+      5004256
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259495.81,
+      5004257.64
+     ]
+    },
+    {
+     "fault": "line_wrong",
+     "xy": [
+      1259491.65,
+      5004258.29
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1259494,
+      5004259.87
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1259492.33,
+      5004259.73
+     ]
+    },
+    {
+     "fault": "outline_wrong",
+     "xy": [
+      1259485.92,
+      5004258.1
+     ]
+    },
+    {
+     "fault": "comment",
+     "xy": [
+      1259490.07,
+      5004259.08
+     ],
+     "text": "This is a crazy triangular roof shape which should just be relatively straight sections. This is a major clear mistake."
+    }
+   ]
+  },
+  {
+   "id": 4750879,
+   "right": false,
+   "note": "",
+   "panels": [],
+   "spots": [
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259794.84,
+      5004403.97
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259783.52,
+      5004387.72
+     ]
+    },
+    {
+     "fault": "missed_obstruction",
+     "xy": [
+      1259788.84,
+      5004403.58
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259791.93,
+      5004398.89
+     ]
+    },
+    {
+     "fault": "add_panels",
+     "xy": [
+      1259786.95,
+      5004389.7
+     ]
+    }
+   ]
+  }
+ ]
+}
