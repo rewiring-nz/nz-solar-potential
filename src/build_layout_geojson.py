@@ -764,7 +764,7 @@ def _build_one_at(building_id, nudge_m):
                 # geometry -- the drawn lines are the roof's lines -- and takes
                 # nothing. See facets_from_drawn_faces.
                 panels = []
-            elif not drawn and face_width(f["geometry"]) < NARROW_FACE_M:
+            elif not drawn and narrow_face(f["geometry"], f["slope_deg"]):
                 # a strip, not a roof plane: see NARROW_FACE_M
                 panels = []
             elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
@@ -957,6 +957,32 @@ SUN_SIDE_MIN_PANELS = 8      # ...holding fewer panels than a small home system 
 # Width is area over length, so a notch does not make a strip look wide.
 # Drawn faces are exempt: the markup decides. SOLAR_NARROW_FACE_M=0 turns it off.
 NARROW_FACE_M = float(os.environ.get("SOLAR_NARROW_FACE_M", "1.7"))
+
+
+# ...but the width that matters is on the roof, not on the map. A steep face
+# is foreshortened in plan: #5371143's ten faces are 1.64-2.4 m wide in plan
+# at 58 degrees, 3.1 m or more on the slope, and take three rows of panels;
+# with the roof edge on the surveyed outline two of them came out 1.64 m in
+# plan and lost all their panels (47 -> 29 on the roof; the owner picked
+# the fuller layout blind, 25 Nov). A steep face is roof when it runs
+# 3 m or more downhill (roof_partition.STEEP_MIN_RUN_M, measured on risers),
+# so a face that narrow in plan but that long on the slope is not a strip.
+# SOLAR_NARROW_ON_SLOPE=0 judges on the plan width alone, as before.
+NARROW_ON_SLOPE = os.environ.get("SOLAR_NARROW_ON_SLOPE", "1") != "0"
+
+
+def narrow_face(geom, slope_deg):
+    """True where a face is a strip that carries no panels."""
+    import math
+    w = face_width(geom)
+    if w >= NARROW_FACE_M:
+        return False
+    if NARROW_ON_SLOPE:
+        from src.roof_partition import STEEP_MIN_RUN_M
+        c = math.cos(math.radians(min(max(slope_deg or 0.0, 0.0), 85.0)))
+        if w / c >= STEEP_MIN_RUN_M:
+            return False
+    return True
 
 
 def face_width(geom):
