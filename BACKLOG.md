@@ -397,6 +397,29 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Photo flag, clean test (25 Nov).** Each drawn roof read by a fold model
+  that did not train on it (`bench_fold0..4.pt`, `data/line_set/folds.json`;
+  VM `~/sf_clean`, rows `~/flag_clean.json`), against the point reading
+  (`~/mb_survey2`). 167 roofs: the point reading builds too few faces
+  (under 0.75 of the drawn) on 32, too many (over 1.3x and 2 more) on 28.
+  - photo faces > 1.5 x LiDAR faces: flags 37, catches 20 of the 32, 17
+    flagged without cause;
+  - > 1.3 x: flags 53, catches 22, 31 without cause;
+  - LiDAR faces > 1.3 x photo (and 2 more): flags 14, catches 6 of 28: not
+    a usable test for invented faces;
+  - counts agree within 1 on 87 roofs; there the count is within 1 of the
+    drawing on 67.
+  The seen-roof test above overstated it (15 of 18). Usable as a pointer
+  to roofs with missed faces, not as a verdict. Not built: the different
+  processing for flagged roofs.
+- **Main brought up to the roof code (25 Nov).** #60 (VM spending limits)
+  merged; draft #67 closed as superseded; #75 (point-roof with main merged
+  in, one conflict in `rooftop-solar.html` `DATA_BASE`, two locals renamed
+  for main's call-site check) merged at 8189ab78 with checks green. The
+  site publish failed once after the merge ("No artifacts named
+  github-pages", the deploy step ran before the artifact was listed) and
+  passed on re-run. Live data is v86 (v85 with the address index), set on
+  main before these merges and unchanged by them.
 - **Candidate B2 gate result (25 Nov).** B1's switches plus the strip rule
   (3 m slope limit, quarter-of-roof share; 83e8be5d), four Queenstown areas.
   Gate FAILED, not published: zeroed 4 (B1: 9; #4751092, #4722654,
@@ -2656,6 +2679,19 @@ corner joins); missed joins; folds 1-4; final model on all labels; street.
     whether a satellite map is a safe fallback there (inside them it is not).
     12431 (1996-2012, likely Clyde) is not listed: position unknown, and a
     50-day run under clearness 0.4 ending 6 Sep 2012 no other station has.
+  - **Satellites cannot stand in for a station on run lengths** (25 Nov 2026,
+    May-Aug 2016-2025, dark = under half the month's average at the sensor).
+    Himawari (0.05°) catches 45% of Cromwell's dark days (Queenstown 75%) at
+    2% false alarms; with its dark line raised to 0.6 of the month, 64% at
+    6%, but longest run 5 against the sensor's 9 and one run of 5+ days
+    against six. NASA MODIS Aqua's 500 m daily cloud flag (MYD10A1, about
+    1:30 pm) flags 95-97% of dark days but half the bright ones; with
+    Himawari under 0.8-0.9 of the month it over-calls runs (5+ runs 9-10
+    against 6). "Valley pixel cloudy, slope pixel clear" catches 11%. A run
+    breaks on one missed day, so run counts need near-perfect daily calls.
+    Satellites can estimate how often a place is dark, not how long; ground
+    records (radiation, sunshine hours, rooftop inverter logs) are the way.
+    The NASA token is `EARTHDATA_TOKEN` in the root `.env`.
   - **Frost and snow on panels** in freezing fog are not modelled.
 - **Wānaka and Hāwea yearly sunlight is calibrated to Queenstown Aero, but
   Wānaka's own pyranometer (41237, 2015-2026) measures 1,341 kWh/m2 a year
