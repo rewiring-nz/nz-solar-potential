@@ -764,7 +764,8 @@ def _build_one_at(building_id, nudge_m):
                 # geometry -- the drawn lines are the roof's lines -- and takes
                 # nothing. See facets_from_drawn_faces.
                 panels = []
-            elif not drawn and narrow_face(f["geometry"], f["slope_deg"]):
+            elif not drawn and narrow_face(f["geometry"], f["slope_deg"],
+                                           sum(o["geometry"].area for o in facets)):
                 # a strip, not a roof plane: see NARROW_FACE_M
                 panels = []
             elif away_from_sun(model, f["slope_deg"], f["aspect_deg"], _sunniest):
@@ -971,11 +972,23 @@ NARROW_FACE_M = float(os.environ.get("SOLAR_NARROW_FACE_M", "1.7"))
 NARROW_ON_SLOPE = os.environ.get("SOLAR_NARROW_ON_SLOPE", "1") != "0"
 
 
-def narrow_face(geom, slope_deg):
+# ...and a strip is a minor part of its roof. A small gable's two faces are
+# each under 1.7 m in plan and are the whole roof: with the roof edge on the
+# surveyed outline (about 0.15 m inside the fitted edge) candidate B1 left
+# 9 such roofs with no panels (#4734810, two faces, half the roof each;
+# #5373255, 13 of 35 m2; #4741332, one face). A narrow face holding
+# NARROW_MAX_SHARE of the roof's face area or more is roof.
+# SOLAR_NARROW_MAX_SHARE=1 judges every narrow face a strip, as before.
+NARROW_MAX_SHARE = float(os.environ.get("SOLAR_NARROW_MAX_SHARE", "0.25"))
+
+
+def narrow_face(geom, slope_deg, roof_area=None):
     """True where a face is a strip that carries no panels."""
     import math
     w = face_width(geom)
     if w >= NARROW_FACE_M:
+        return False
+    if roof_area and geom.area >= NARROW_MAX_SHARE * roof_area:
         return False
     if NARROW_ON_SLOPE:
         from src.roof_partition import STEEP_MIN_RUN_M
