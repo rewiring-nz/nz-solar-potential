@@ -362,66 +362,139 @@
     border-radius: 11px; padding: 3px 9px; font-size: 12px; font-variant-numeric: tabular-nums; }
   .live-badge b { color: #f5b82e; }
   .live-badge .ed { color: #7fd18e; margin-left: 6px; }
-  /* "How this map is made" (methodology.js draws methodology.json) */
+  /* "How this map is made" (methodology.js draws methodology.json): steps
+     along the top, the step's parts on the left, five tabs for the chosen
+     part. One surface, no paging through documents. */
   #methodology-lightbox { position: fixed; inset: 0; z-index: 4600; background: rgba(0,0,0,.6);
     display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; overflow: auto; }
   #methodology-lightbox[hidden] { display: none; }
-  .mth-card { width: min(1100px, 100%); background: #1c1f26; color: var(--ink); border: 1px solid rgba(255,255,255,.1);
+  .mth-card { width: min(1080px, 100%); background: #1c1f26; color: var(--ink); border: 1px solid rgba(255,255,255,.1);
     border-radius: 16px; padding: 18px 22px 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
   html.light .mth-card { background: #fff; border-color: rgba(15,20,30,.12); }
+  .mth-card a { color: var(--ink); }
+  .mth-card code { overflow-wrap: anywhere; font-size: 12px; }
   .mth-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .mth-head h2 { margin: 0; font-size: 20px; }
   .mth-close { background: none; border: 0; color: var(--ink-2); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 8px; }
-  .mth-intro { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 6px 0 14px; max-width: 760px; }
-  .mth-flow { display: flex; align-items: stretch; gap: 4px; padding-bottom: 4px; }
-  .mth-step { flex: 1 1 0; min-width: 0; text-align: left; background: var(--surface-2); color: var(--ink);
-    border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 11px; cursor: pointer; font: inherit;
-    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; column-gap: 7px; }
-  .mth-step:hover { border-color: var(--accent); }
-  .mth-step.on { border-color: var(--accent); background: rgba(255,210,74,.12); }
-  html.light .mth-step.on { background: rgba(179,122,0,.09); }
-  .mth-step .mth-n { grid-row: 1; }
-  .mth-step .mth-ic { grid-row: 1; grid-column: 2; justify-self: end; font-size: 18px; }
-  .mth-step .mth-t { grid-column: 1 / -1; font-weight: 700; font-size: 13.5px; margin-top: 6px; }
-  .mth-step .mth-s { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); margin-top: 3px; line-height: 1.4; }
+  .mth-intro { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 4px 0 14px; max-width: 760px; }
+  .mth-dim { color: var(--ink-3); }
+  /* the steps: numbered stops on one line */
+  .mth-flow { list-style: none; margin: 0; padding: 0; display: flex; gap: 0; position: relative; }
+  .mth-flow li { flex: 1 1 0; min-width: 0; position: relative; }
+  .mth-flow li + li::before { content: ""; position: absolute; top: 19px; left: -50%; right: 50%; height: 2px;
+    background: var(--line); z-index: 0; }
+  .mth-step { position: relative; z-index: 1; width: 100%; background: none; border: 0; color: var(--ink-2); cursor: pointer;
+    font: inherit; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 2px; border-radius: 10px; }
+  .mth-step .mth-n { width: 30px; height: 30px; font-size: 13px; background: var(--surface-2); color: var(--ink);
+    border: 2px solid var(--line); box-sizing: border-box; }
+  .mth-step .mth-ic { position: absolute; top: 0; left: calc(50% + 12px); font-size: 13px; }
+  .mth-step .mth-t { font-size: 12.5px; font-weight: 600; text-align: center; line-height: 1.25; }
+  .mth-step:hover .mth-n { border-color: var(--accent); }
+  .mth-step.on { color: var(--ink); }
+  .mth-step.on .mth-n { background: var(--accent); border-color: var(--accent); color: #111; }
+  html.light .mth-step.on .mth-n { color: #fff; }
+  .mth-step:focus-visible, .mth-it:focus-visible, .mth-tab:focus-visible, .mth-pg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .mth-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
     background: var(--accent); color: #111; font-weight: 800; font-size: 12px; }
-  html.light .mth-n { color: #fff; }
-  .mth-arrow { align-self: center; color: var(--ink-3); font-size: 14px; flex: none; }
-  .mth-detail { margin-top: 16px; }
-  .mth-detail h3 { display: flex; align-items: center; gap: 8px; font-size: 17px; margin: 0 0 10px; }
-  .mth-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 10px; }
-  .mth-detail > * { min-width: 0; }
-  .mth-detail h3 { grid-column: 1 / -1; }
-  .mth-item { background: var(--surface-2); border-radius: 12px; padding: 11px 13px; }
-  .mth-item h4 { margin: 0 0 4px; font-size: 14px; }
-  .mth-item p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
-  .mth-more { margin-top: 8px; font-size: 12.5px; }
-  .mth-more summary { cursor: pointer; color: var(--accent); font-weight: 600; }
-  /* fixed columns, and code names may break anywhere: a long reference such
-     as config.PV_ASSUMPTIONS.panel_rated_power_w ran 80px out of its card */
+  .mth-sum { margin: 12px 0 12px; font-size: 13.5px; color: var(--ink-2); }
+  .mth-sum b { color: var(--ink); margin-right: 4px; }
+  /* the parts of the step, and the chosen part */
+  .mth-main { display: grid; grid-template-columns: minmax(180px, 250px) 1fr; gap: 14px; align-items: start; }
+  .mth-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .mth-it { width: 100%; text-align: left; background: none; border: 0; border-left: 3px solid transparent; color: var(--ink-2);
+    font: inherit; font-size: 13.5px; padding: 8px 10px; border-radius: 0 8px 8px 0; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .mth-it:hover { background: var(--surface-2); color: var(--ink); }
+  .mth-it.on { background: var(--surface-2); color: var(--ink); border-left-color: var(--accent); font-weight: 600; }
+  .mth-badge { flex: none; font-size: 11px; font-weight: 700; min-width: 18px; padding: 1px 6px; border-radius: 9px;
+    background: rgba(255,120,90,.18); color: #ff9b85; text-align: center; }
+  html.light .mth-badge { background: rgba(184,48,31,.1); color: #b8301f; }
+  .mth-pane { background: var(--surface-2); border-radius: 12px; padding: 14px 16px 16px; min-width: 0; min-height: 260px; }
+  .mth-pane h3 { margin: 0 0 10px; font-size: 17px; }
+  .mth-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .mth-tab { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--ink-2);
+    font: inherit; font-size: 13px; font-weight: 600; padding: 6px 10px; cursor: pointer; }
+  .mth-tab:hover { color: var(--ink); }
+  .mth-tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+  .mth-tabbody { font-size: 13.5px; line-height: 1.55; max-width: 720px; }
+  .mth-tabbody h5 { margin: 12px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
+  .mth-tabbody h5:first-child { margin-top: 0; }
+  .mth-lead { margin: 0; font-size: 14px; }
+  .mth-list { margin: 0; padding-left: 18px; }
+  .mth-list li + li { margin-top: 4px; }
+  .mth-hint { font-size: 12.5px; color: var(--ink-2); margin: 10px 0 0; }
+  .mth-chips { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .mth-chips li { display: flex; gap: 6px; align-items: baseline; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); font-size: 12.5px; cursor: help; }
+  .mth-chips span { color: var(--ink-2); }
+  /* pictures: a threshold slider, a losses bar */
+  .mth-fig { margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; }
+  .mth-fig figcaption { font-size: 12px; color: var(--ink-2); font-weight: 600; margin-bottom: 8px; }
+  .mth-track { position: relative; height: 8px; border-radius: 4px; overflow: visible; margin: 18px 9px 0; }
+  .mth-band { position: absolute; top: 0; bottom: 0; }
+  .mth-band:first-child { border-radius: 4px 0 0 4px; }
+  .mth-band:nth-last-child(1 of .mth-band) { border-radius: 0 4px 4px 0; }
+  .mth-band.bad, .mth-verdict.bad { background: rgba(232,93,74,.55); }
+  .mth-band.mid, .mth-verdict.mid { background: rgba(245,184,46,.55); }
+  .mth-band.good, .mth-verdict.good { background: rgba(80,190,110,.55); }
+  .mth-cut { position: absolute; top: -18px; bottom: -4px; width: 0; border-left: 2px solid var(--ink); }
+  .mth-cut b { position: absolute; top: -2px; left: 4px; font-size: 11px; white-space: nowrap; }
+  .mth-thr input { width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+  .mth-out { margin: 6px 0 0; font-size: 13.5px; }
+  .mth-verdict { display: inline-block; padding: 1px 8px; border-radius: 6px; color: var(--ink); font-weight: 600; margin-left: 4px; }
+  .mth-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; }
+  .mth-seg.kept { background: rgba(80,190,110,.75); }
+  .mth-seg.l0 { background: rgba(232,93,74,.7); }
+  .mth-seg.l1 { background: rgba(245,184,46,.7); }
+  .mth-legend { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; }
+  .mth-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .mth-legend b { margin-right: 3px; }
+  /* where it fails */
+  .mth-cases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .mth-case { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px;
+    border: 1px solid var(--line); border-radius: 8px; }
+  .mth-defect { display: block; }
+  .mth-meta { display: block; font-size: 12px; color: var(--ink-3); }
+  .mth-st.regressed { color: #ff9b85; }
+  html.light .mth-st.regressed { color: #b8301f; }
+  .mth-go { flex: none; background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    font: inherit; font-size: 12.5px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .mth-go:hover { border-color: var(--accent); }
+  .mth-labels { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+  .mth-label { text-decoration: none; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12.5px; }
+  .mth-label:hover { border-color: var(--accent); }
+  .mth-label b { margin-left: 4px; color: var(--accent); }
+  /* change it */
+  .mth-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 6px 16px; }
+  .mth-code { margin: 0; padding-left: 16px; }
+  .mth-code li + li { margin-top: 3px; }
+  .mth-sym { color: var(--ink-2); }
+  .mth-judge { margin-top: 12px; padding-top: 2px; border-top: 1px solid var(--line); }
+  .mth-judge ol { margin: 0; padding-left: 20px; }
+  .mth-judge pre { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: rgba(0,0,0,.25); font-size: 12px;
+    white-space: pre-wrap; overflow-wrap: anywhere; }
+  html.light .mth-judge pre { background: rgba(15,20,30,.05); }
+  .mth-pager { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+  .mth-pg { background: none; border: 0; color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer; padding: 4px 2px; }
+  .mth-pg:hover { color: var(--ink); }
   .mth-facts { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; table-layout: fixed; }
-  .mth-facts td, .mth-facts th { overflow-wrap: anywhere; }
-  .mth-item .mth-facts th:first-child { width: 32%; }
-  .mth-item .mth-facts th:nth-child(2) { width: 22%; }
-  .mth-card a { color: var(--ink); }
-  .mth-card code { overflow-wrap: anywhere; }
-  .mth-facts th, .mth-facts td { text-align: left; padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  .mth-facts td, .mth-facts th { overflow-wrap: anywhere; text-align: left; padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
   .mth-facts thead th { color: var(--ink-2); font-weight: 600; border-top: 0; }
-  .mth-src, .mth-stages, .mth-code-h { color: var(--ink-2); }
-  .mth-src { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
-  .mth-code { margin: 2px 0 0; padding-left: 18px; }
-  .mth-code a { color: var(--ink); }
-  .mth-dim { color: var(--ink-3); }
-  .mth-sources { margin-top: 16px; }
+  .mth-sources { margin-top: 14px; font-size: 12.5px; }
+  .mth-sources summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
   .mth-scroll { overflow-x: auto; }
   .mth-scroll .mth-facts { min-width: 560px; }
-  .mth-foot { font-size: 12px; color: var(--ink-2); margin: 14px 0 0; }
-  @media (max-width: 700px) {
-    .mth-flow { flex-direction: column; }
-    .mth-arrow { transform: rotate(90deg); align-self: flex-start; margin-left: 12px; }
-    .mth-step { min-width: 0; }
+  .mth-foot { font-size: 12px; color: var(--ink-3); margin: 10px 0 0; }
+  .mth-foot a { color: var(--ink-2); }
+  @media (max-width: 760px) {
     .mth-card { padding: 14px; }
+    .mth-flow { overflow-x: auto; padding-bottom: 4px; }
+    .mth-flow li { flex: 0 0 92px; }
+    .mth-main { grid-template-columns: 1fr; }
+    .mth-items { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 4px; }
+    .mth-it { white-space: nowrap; border-left: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; }
+    .mth-it.on { border-bottom-color: var(--accent); }
+    .mth-pane { padding: 12px; }
   }
   /* The headline saving under the yellow box (bill_tool.js ctx.saveBox).
      White on a green deep enough for 4.5:1+ at both ends of the gradient,
@@ -4292,6 +4365,23 @@ map.on("load", async () => {
           .find(x => x.properties.building_id === id);
         if (f) showBuildingPanel(f.properties, { lng, lat }, f.geometry);
       });
+    };
+    // "How this map is made" (methodology.js) opens a reported roof by its
+    // building id. The address index is the only id -> place lookup the page
+    // has: a building with no address point, or a build whose index is
+    // sharded by address, cannot be found this way and gives false.
+    window.solarOpenBuilding = async (id) => {
+      let row = searchable.find(r => r.at && r.at.id === id);
+      if (!row && !searchable.length && !addrShards) {
+        try {
+          const rows = await (await fetch(`${DATA_BASE}data/addresses.json?v=${DATA_VERSION}`)).json();
+          if (!searchable.length) searchable = rows.map(addrRow);
+          row = searchable.find(r => r.at && r.at.id === id);
+        } catch (err) { /* no index */ }
+      }
+      if (!row) return false;
+      openResult(row);
+      return true;
     };
     // Coordinates paste straight from a bug report or Google Maps:
     // "-44.95041,168.83692" (lat,lon) or lon-first. |value|>90 must be the

@@ -1,5 +1,6 @@
 {
- "intro": "How each roof's estimate is made, from the data sources to the money. Tap a step for more, and Details for the figures and the code behind them.",
+ "intro": "How each roof's estimate is made, from the data sources to the money. Pick a step, then a part of it: what it does, why, what else could work, where it goes wrong and how to change it.",
+ "repo": "rewiring-nz/nz-solar-potential",
  "steps": [
   {
    "title": "Build the 3D landscape",
@@ -16,7 +17,35 @@
      ],
      "stages": [
       "fetch:src/fetch_regions.py"
-     ]
+     ],
+     "why": "LINZ's outlines are the one open, national list of buildings, and each keeps its ID from one build to the next, so a roof's fixes and reports stay attached to it.",
+     "try": [
+      "Outlines traced from the laser scan, for houses LINZ has not drawn yet",
+      "Outlines read from the newest aerial photo by an image model"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "geometry"
+      ],
+      "known": [
+       "A house built since LINZ last drew the area has no outline, so no estimate."
+      ]
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_OUTLINE_SOURCE",
+        "file": "src/localities.py"
+       }
+      ],
+      "tests": [
+       "tests/test_linz_exports.py",
+       "tests/test_region_ids.py"
+      ],
+      "judge": "inputs"
+     }
     },
     {
      "title": "A laser scan of the roofs",
@@ -30,7 +59,40 @@
      "stages": [
       "fetch:src/fetch_regions.py",
       "fetch:src/fetch_pointcloud_regions.py"
-     ]
+     ],
+     "why": "A laser scan measures height to a few centimetres, so a roof's slope and direction are measured, not guessed from a photo. The raw points keep detail the gridded surface smooths away.",
+     "try": [
+      "Heights from overlapping aerial photos where the scan is old",
+      "Using two surveys of different years together"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "scale"
+      ],
+      "known": [
+       "A roof built or changed since the survey is read as it was then.",
+       "Where the raw points are not published, small roof detail is lost in the surface model."
+      ]
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_DISABLE_POINTCLOUD",
+        "file": "src/pointcloud_source.py"
+       },
+       {
+        "name": "SOLAR_TIFF_READER",
+        "file": "src/s3_rasters.py"
+       }
+      ],
+      "tests": [
+       "tests/test_surveys.py",
+       "tests/test_s3_rasters.py"
+      ],
+      "judge": "inputs"
+     }
     },
     {
      "title": "Distant hills",
@@ -41,7 +103,34 @@
      ],
      "stages": [
       "fetch:src/fetch_dem_wide.py"
-     ]
+     ],
+     "why": "The laser scan stops at the survey's edge, but mountains far beyond it block the low sun. The national model covers every hill at a size a build can read quickly.",
+     "try": [
+      "A finer elevation model where one covers the hills",
+      "Checking horizons against photos taken from real roofs"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": [
+       "LINZ calls this model cartographic, not precise: a ridge can be metres off."
+      ]
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_DEM_WIDE_SOURCE",
+        "file": "src/fetch_dem_wide.py"
+       }
+      ],
+      "tests": [
+       "tests/test_shading_split.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "Aerial photos",
@@ -52,7 +141,34 @@
      ],
      "stages": [
       "fetch:src/fetch_regions.py"
-     ]
+     ],
+     "why": "The photo shows roof lines, skylights and vents that the scan blurs, and it is usually newer than the scan.",
+     "try": [
+      "Sharper photos where a council has them",
+      "Older photos, to see roofs before trees grew over them"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "geometry"
+      ],
+      "known": [
+       "Without a photo, a build skips finding objects from the photo."
+      ]
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_INCLUDE_IMAGERY",
+        "file": "src/fetch_regions.py"
+       }
+      ],
+      "tests": [
+       "tests/test_surveys.py"
+      ],
+      "judge": "inputs"
+     }
     },
     {
      "title": "Places with no laser scan",
@@ -69,7 +185,34 @@
      ],
      "stages": [
       "fetch:src/synthesize_dsm.py"
-     ]
+     ],
+     "why": "A plain, modest roof gives a fair first estimate where there is nothing to measure, and the map says it is a guess rather than hiding the town.",
+     "try": [
+      "Reading gable or hip from the photo's roof lines",
+      "Reading the pitch from shadows in the photo"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "no-lidar"
+      ],
+      "known": [
+       "Every roof in such a town gets the same pitch, so steep and shallow roofs are both off."
+      ]
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_PHOTO_ROOFS",
+        "file": "src/synthesize_dsm.py"
+       }
+      ],
+      "tests": [
+       "tests/test_synthesize_dsm.py"
+      ],
+      "judge": "layout"
+     }
     },
     {
      "title": "Lining the data up",
@@ -94,7 +237,74 @@
      "stages": [
       "register_imagery",
       "outline_fit"
-     ]
+     ],
+     "why": "People judge a roof by the photo under it. Panels drawn a metre off the roof look wrong even when the sums are right, so the drawing follows the photo and the sums follow the scan.",
+     "try": [
+      "Fitting the outline's shape to the scan's roof edges, not only sliding it",
+      "Correcting each photo's lean from where its camera was"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4721320,
+        "region": "frankton_arm",
+        "defect": "46 Goldfield Heights: outline not close to the real building",
+        "status": "open"
+       },
+       {
+        "id": 4721959,
+        "region": "frankton_flats",
+        "defect": "house 19 of the fused sheets: way off the roof",
+        "status": "open"
+       },
+       {
+        "id": 4725580,
+        "region": "pilot",
+        "defect": "12 Stanley St: complex pyramid roof, lines misaligned",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4729284,
+        "region": "frankton_arm",
+        "defect": "4 Sunrise Lane: outline misses the actual building",
+        "status": "open"
+       },
+       {
+        "id": 4729348,
+        "region": "kelvin_heights",
+        "defect": "32 Highview Terrace: outline clearly wrong",
+        "status": "open"
+       },
+       {
+        "id": 4729767,
+        "region": "frankton_arm",
+        "defect": "13 Sunrise Lane: roof outline off the building and roof lines wrong",
+        "status": "open"
+       }
+      ],
+      "cases_total": 14,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_OUTLINE_FIT",
+        "file": "src/outline_fit.py"
+       },
+       {
+        "name": "SOLAR_PHOTO_LEAN",
+        "file": "src/register_imagery.py"
+       }
+      ],
+      "tests": [
+       "tests/test_register_imagery.py",
+       "tests/test_hand_outline.py"
+      ],
+      "judge": "markup"
+     }
     }
    ]
   },
@@ -109,11 +319,80 @@
      "facts": [],
      "code": [
       "tools/predict_faces.py",
-      "src/face_candidates.py::score_candidate"
+      "src/face_candidates.py::score_candidate",
+      "src/vision_roof.py"
      ],
      "stages": [
       "fetch:tools/predict_faces.py"
-     ]
+     ],
+     "why": "Each reading fails on different roofs. Scoring several against the scan and the photo and keeping the best is more reliable than tuning any one of them.",
+     "try": [
+      "A model trained on the hand markup that draws the roof lines directly",
+      "Letting the readings vote line by line instead of picking one whole roof"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4735292,
+        "region": "pilot",
+        "defect": "truncated pyramid: 4 slopes plus a real 4 m flat square at the peak",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4734994,
+        "region": "pilot",
+        "defect": "fuzzy, jagged boundaries following nothing visible",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4735106,
+        "region": "pilot",
+        "defect": "not close to the obvious faces visible in the imagery",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 5371107,
+        "region": "pilot",
+        "defect": "invented kite-shaped face in the middle of a plain roof",
+        "status": "regressed"
+       },
+       {
+        "id": 4725488,
+        "region": "pilot",
+        "defect": "119-face sawtooth stripped by the surface gates (100 panels -> 12)",
+        "status": "regressed"
+       },
+       {
+        "id": 4725580,
+        "region": "pilot",
+        "defect": "12 Stanley St: complex pyramid roof, lines misaligned",
+        "status": "needs_verdict"
+       }
+      ],
+      "cases_total": 20,
+      "labels": [
+       "geometry",
+       "roof-case"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_SELECTED_FACES",
+        "file": "src/roof_partition.py"
+       },
+       {
+        "name": "SOLAR_VISION_ROOF",
+        "file": "src/vision_roof.py"
+       }
+      ],
+      "tests": [
+       "tests/test_reading_referee.py",
+       "tests/test_face_steps.py"
+      ],
+      "judge": "markup"
+     }
     },
     {
      "title": "When the reading is doubtful",
@@ -136,7 +415,77 @@
      ],
      "stages": [
       "build_layout_geojson"
-     ]
+     ],
+     "why": "A low score means the reading and the scan disagree. Faces from the scan alone are plainer, but rarely wrong in kind.",
+     "try": [
+      "Learning the two limits from the hand markup instead of setting them by hand"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 5371107,
+        "region": "pilot",
+        "defect": "invented kite-shaped face in the middle of a plain roof",
+        "status": "regressed"
+       },
+       {
+        "id": 4734913,
+        "region": "pilot",
+        "defect": "unnecessary inaccurate roof lines drawn where none exist",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4735099,
+        "region": "pilot",
+        "defect": "simple roof read wrongly",
+        "status": "regressed"
+       }
+      ],
+      "cases_total": 3,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_SELECTED_MIN_SCORE",
+        "file": "src/roof_partition.py"
+       },
+       {
+        "name": "SOLAR_SELECTED_TRUST",
+        "file": "src/roof_partition.py"
+       }
+      ],
+      "tests": [
+       "tests/test_reading_referee.py"
+      ],
+      "judge": "markup"
+     },
+     "show": {
+      "kind": "threshold",
+      "ask": "A reading that scores",
+      "unit": "",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "cuts": [
+       {
+        "at": 0.3,
+        "source": "src/roof_partition.py SELECTED_MIN_SCORE (default)"
+       },
+       {
+        "at": 0.6,
+        "source": "src/roof_partition.py SELECTED_TRUST (default)"
+       }
+      ],
+      "outcomes": [
+       "is not used",
+       "competes with faces from the scan",
+       "is used as it is"
+      ]
+     }
     },
     {
      "title": "Roof faces from the laser scan's own planes",
@@ -148,7 +497,70 @@
      ],
      "stages": [
       "point_roof"
-     ]
+     ],
+     "why": "A line where two measured planes meet follows the real ridge. An edge in the photo may be a shadow, a gutter or a change of paint.",
+     "try": [
+      "Stricter merging of planes on low-pitch roofs",
+      "Fitting neighbouring planes together so they share their ridge exactly"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4725580,
+        "region": "pilot",
+        "defect": "12 Stanley St: complex pyramid roof, lines misaligned",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4734696,
+        "region": "pilot",
+        "defect": "valley lines missing from the preview",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4735237,
+        "region": "pilot",
+        "defect": "24 Beach St: lots of badly placed panels, from panels over ridges to panels over obstructi",
+        "status": "open"
+       },
+       {
+        "id": 4735274,
+        "region": "pilot",
+        "defect": "11A Camp St: roof lines wonky, not straight along the ridges",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4750959,
+        "region": "pilot",
+        "defect": "7 Leeds Lane: outline, ridges and panel placement wrong; a diagonal line of panels",
+        "status": "open"
+       },
+       {
+        "id": 5372604,
+        "region": "pilot",
+        "defect": "1 Ballarat St: panels over obstructions the map does not mark; lines miss the ridges and v",
+        "status": "needs_verdict"
+       }
+      ],
+      "cases_total": 6,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_POINT_ROOF",
+        "file": "src/point_roof.py"
+       }
+      ],
+      "tests": [
+       "tests/test_plane_refresh.py",
+       "tests/test_seam_steps.py"
+      ],
+      "judge": "markup"
+     }
     },
     {
      "title": "Hand-drawn roofs come first",
@@ -160,7 +572,50 @@
      ],
      "stages": [
       "repeat_roofs"
-     ]
+     ],
+     "why": "A person looking at the photo is right more often than any model, and identical houses should get identical answers.",
+     "try": [
+      "More people drawing roofs: every drawing fixes a roof and becomes a test",
+      "Training the reading models on each new drawing"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4734606,
+        "region": "pilot",
+        "defect": "6/60 Hallenstein St: eight identical townhouse roofs get different panel layouts -- the pr",
+        "status": "open"
+       },
+       {
+        "id": 4735623,
+        "region": "pilot",
+        "defect": "far less detailed than the markup; clearly defined faces missed",
+        "status": "needs_verdict"
+       }
+      ],
+      "cases_total": 2,
+      "labels": [
+       "roof-case"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_REPEAT_ROOFS",
+        "file": "src/roof_partition.py"
+       },
+       {
+        "name": "SOLAR_HIDE_LABELS",
+        "file": "src/outline_fit.py"
+       }
+      ],
+      "tests": [
+       "tests/test_repeat_roofs.py",
+       "tests/test_drawn_solar.py"
+      ],
+      "judge": "markup"
+     }
     },
     {
      "title": "Slope and direction",
@@ -183,7 +638,92 @@
      ],
      "stages": [
       "patch_roof_confidence"
-     ]
+     ],
+     "why": "A fit that ignores stray points is not tilted by chimneys, gutters or overhanging trees, as a plain average would be.",
+     "try": [
+      "Telling a balcony or deck from roof by its height below the eaves",
+      "Fitting all of a roof's faces at once"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4735292,
+        "region": "pilot",
+        "defect": "truncated pyramid: 4 slopes plus a real 4 m flat square at the peak",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4729407,
+        "region": "kelvin_heights",
+        "defect": "Kelvin Heights: panels placed over balconies",
+        "status": "open"
+       },
+       {
+        "id": 4724740,
+        "region": "dalefield",
+        "defect": "216 m2 flat middle had no facet at all, so no panels",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4726056,
+        "region": "pilot",
+        "defect": "17 Church St: flat roof with lots of plant shows no panels at all",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4729292,
+        "region": "frankton_arm",
+        "defect": "7 Sunrise Lane: panels over empty space at the bottom right (deck taken as roof)",
+        "status": "open"
+       },
+       {
+        "id": 4729334,
+        "region": "frankton_arm",
+        "defect": "15 Sunrise Lane: balcony treated as roof",
+        "status": "open"
+       }
+      ],
+      "cases_total": 10,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_EMPTY_FACE_REFIT",
+        "file": "src/build_layout_geojson.py"
+       },
+       {
+        "name": "SOLAR_BALCONY_LEVELS",
+        "file": "src/roof_segmentation.py"
+       }
+      ],
+      "tests": [
+       "tests/test_roof_levels.py",
+       "tests/test_sunken.py"
+      ],
+      "judge": "markup"
+     },
+     "show": {
+      "kind": "threshold",
+      "ask": "A roof whose points fit its planes",
+      "unit": "% of the time",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "cuts": [
+       {
+        "at": 45.0,
+        "source": "src/build_layout_geojson.py MIN_ROOF_CONFIDENCE, as %"
+       }
+      ],
+      "outcomes": [
+       "gets no panels",
+       "can get panels"
+      ]
+     }
     },
     {
      "title": "Objects on the roof",
@@ -201,7 +741,74 @@
      ],
      "stages": [
       "build_layout_geojson"
-     ]
+     ],
+     "why": "The scan finds things that stand up; the photo finds flat things such as skylights. Each alone misses one kind.",
+     "try": [
+      "An image model trained on the drawn obstructions",
+      "The scan's return strength, to spot glass"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4726056,
+        "region": "pilot",
+        "defect": "17 Church St: flat roof with lots of plant shows no panels at all",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4727237,
+        "region": "wanaka_town",
+        "defect": "13 Plantation Road: lots of panels missing on this roof (the east half of the long wing an",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4740972,
+        "region": "frankton_arm_lake",
+        "defect": "26 Earnslaw Terrace: sporadic layout, empty roof without panels, panels over obstructions",
+        "status": "open"
+       },
+       {
+        "id": 5370328,
+        "region": "pilot",
+        "defect": "9 Marine Parade: roof lines wrong; obstructions drawn over clear space",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 5370368,
+        "region": "pilot",
+        "defect": "48 Beach St: incorrectly mapped obstructions -- panels placed over obstructions while empt",
+        "status": "open"
+       },
+       {
+        "id": 5371137,
+        "region": "pilot",
+        "defect": "8 Sydney St: lines wrong, obstructions over clear areas, panels at an odd angle",
+        "status": "needs_verdict"
+       }
+      ],
+      "cases_total": 8,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_SMALL_OBJECTS",
+        "file": "src/obstruction_detection.py"
+       },
+       {
+        "name": "SOLAR_OBS_PLANE_CHECK",
+        "file": "src/obstruction_planarity.py"
+       }
+      ],
+      "tests": [
+       "tests/test_small_obstructions.py",
+       "tests/test_obstruction_planarity.py"
+      ],
+      "judge": "markup"
+     }
     }
    ]
   },
@@ -218,7 +825,26 @@
       "src/solar_model.py::build_poa_lookup_table",
       "src/solar_model.py~~model=\"ineichen\""
      ],
-     "stages": []
+     "stages": [],
+     "why": "Ineichen is a standard, well-tested clear-sky model, and pvlib is the open library solar engineers use, so anyone can check it.",
+     "try": [
+      "Hourly sunlight from satellite records instead of a clear sky cut by cloud"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_reference_cases.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "Cloud, from measured records",
@@ -239,7 +865,29 @@
       "src/solar_model.py::solarview_calibrated_monthly_factors",
       "src/solar_model.py::niwa_station_measured_monthly_factors"
      ],
-     "stages": []
+     "stages": [],
+     "why": "Ground instruments are the most accurate measure of sunlight there is. Models are checked against them, not the other way round.",
+     "try": [
+      "Satellite cloud records, which are finer in space than stations"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": [
+       "A station far from a town may have a different climate from it."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_shading_split.py",
+       "tests/test_reference_cases.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "Differences between towns",
@@ -260,7 +908,31 @@
       "src/solar_model.py::era5_spatial_ratio",
       "src/solar_model.py::_era5_monthly"
      ],
-     "stages": []
+     "stages": [],
+     "why": "A weather model gets the difference between nearby places better than the amount itself, so only its ratio is used and the measured level is kept.",
+     "try": [
+      "A finer reanalysis or a satellite sunlight product"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_ERA5_SPATIAL",
+        "file": "src/solar_model.py"
+       }
+      ],
+      "tests": [
+       "tests/test_reference_cases.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "What the sunlight data cannot see",
@@ -270,7 +942,29 @@
       "src/solar_model.py::solarview_calibrated_monthly_factors",
       "src/solar_model.py::era5_spatial_ratio"
      ],
-     "stages": []
+     "stages": [],
+     "why": "Payback depends on a typical year. A particular year's weather would add noise, not accuracy.",
+     "try": [
+      "Satellite fog records for valley towns",
+      "Measuring winter sun on a few roofs in towns that get fog"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": [
+       "Valley fog is not seen, so winter sun in foggy towns is overstated."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_reference_cases.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "Onto a sloped roof",
@@ -291,7 +985,28 @@
       "src/solar_model.py~~irradiance.erbs",
       "src/solar_model.py~~model=\"perez\""
      ],
-     "stages": []
+     "stages": [],
+     "why": "Erbs and Perez are the standard pair in solar design tools. Working each slope and direction out once, as a table, makes every roof fast.",
+     "try": [
+      "Finer slope and direction steps",
+      "A measured split of direct and diffuse light"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_reference_cases.py",
+       "tests/test_shading_split.py"
+      ],
+      "judge": "energy"
+     }
     }
    ]
   },
@@ -320,7 +1035,29 @@
      ],
      "stages": [
       "build_layout_geojson"
-     ]
+     ],
+     "why": "The scan already holds every tree and neighbour, so shade is measured for each panel instead of guessed for the roof.",
+     "try": [
+      "Trees that lose their leaves, letting winter sun through",
+      "Tracing the sun through the scan's points rather than its surface"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": [
+       "A tree is solid all year: a bare winter tree shades as much as a summer one."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_shading_split.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "Hills",
@@ -343,7 +1080,26 @@
      ],
      "stages": [
       "bake_building_horizons"
-     ]
+     ],
+     "why": "In a mountain valley the hills take the morning or evening sun. One horizon per building, from its eaves, catches that without working it out for every panel.",
+     "try": [
+      "A horizon from each panel instead of each building"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_shading_split.py"
+      ],
+      "judge": "energy"
+     }
     },
     {
      "title": "Deep shade",
@@ -359,7 +1115,44 @@
       "src/solar_model.py::SolarModel",
       "src/build_layout_geojson.py::DEEP_SHADE_FACTOR"
      ],
-     "stages": []
+     "stages": [],
+     "why": "A panel that sees little direct sun pays back too slowly to be worth placing.",
+     "try": [
+      "Setting the limit by money (what the panel saves) instead of sunlight"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_shading_split.py"
+      ],
+      "judge": "layout"
+     },
+     "show": {
+      "kind": "threshold",
+      "ask": "A panel that keeps",
+      "unit": "% of its direct sun",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "cuts": [
+       {
+        "at": 45.0,
+        "source": "src/build_layout_geojson.py DEEP_SHADE_FACTOR, as %"
+       }
+      ],
+      "outcomes": [
+       "is not placed",
+       "can be placed"
+      ]
+     }
     }
    ]
   },
@@ -390,7 +1183,97 @@
      "stages": [
       "build_layout_geojson",
       "gate_panels"
-     ]
+     ],
+     "why": "Fixed gaps and clean rows put panels where an installer would. Landscape is used only when it clearly fits more, because mixed rows cost more to rack.",
+     "try": [
+      "Packing whole arrays at once instead of row by row",
+      "Rules taken from installers' real layouts"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4725584,
+        "region": "pilot",
+        "defect": "32 Frankton Road: a very disorganised layout. The underlying roof is simple and straight, ",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4725633,
+        "region": "pilot",
+        "defect": "93 Beach St: tiny sets of 3 and 2 panels should not be placed -- clearly not part of a big",
+        "status": "open"
+       },
+       {
+        "id": 4726050,
+        "region": "my_test_area",
+        "defect": "22 Earl Street: missing a whole perfectly good section of roof (the raised NE wing, 1,100 ",
+        "status": "open"
+       },
+       {
+        "id": 4727237,
+        "region": "wanaka_town",
+        "defect": "13 Plantation Road: lots of panels missing on this roof (the east half of the long wing an",
+        "status": "needs_verdict"
+       },
+       {
+        "id": 4729434,
+        "region": "frankton_arm",
+        "defect": "15H Sunrise Lane: panels overlapping the ridge line",
+        "status": "open"
+       },
+       {
+        "id": 4729452,
+        "region": "frankton_arm",
+        "defect": "11 Sunrise Lane: lone row of panels in the wrong orientation where a better array would fit",
+        "status": "open"
+       }
+      ],
+      "cases_total": 26,
+      "labels": [
+       "geometry",
+       "roof-case"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_EDGE_GAP",
+        "file": "src/panel_fitting.py"
+       },
+       {
+        "name": "SOLAR_LANDSCAPE_MARGIN",
+        "file": "src/panel_fitting.py"
+       },
+       {
+        "name": "SOLAR_SUN_SIDE_REL",
+        "file": "src/build_layout_geojson.py"
+       }
+      ],
+      "tests": [
+       "tests/test_racking.py",
+       "tests/test_installer_rules.py"
+      ],
+      "judge": "layout"
+     },
+     "show": {
+      "kind": "threshold",
+      "ask": "A face away from the sun, with",
+      "unit": "% of the sunniest face's sun",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "cuts": [
+       {
+        "at": 78.0,
+        "source": "src/build_layout_geojson.py SUN_SIDE_REL (default), as %"
+       }
+      ],
+      "outcomes": [
+       "is left bare",
+       "gets panels"
+      ]
+     }
     },
     {
      "title": "Sunniest first",
@@ -402,7 +1285,62 @@
      ],
      "stages": [
       "rerank_layouts"
-     ]
+     ],
+     "why": "Most homes want fewer panels than fit. Ranking lets every system size take its own best spots.",
+     "try": [
+      "Ranking by money (use at home against export) instead of energy"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 4734679,
+        "region": "my_test_area",
+        "defect": "13 Beach St: this panel layout is terrible -- a flat roof cut into many small faces, panel",
+        "status": "open"
+       },
+       {
+        "id": 4751005,
+        "region": "frankton_arm_lake",
+        "defect": "23 Wakatipu Heights: slider maxes out at 13.5 kW, south face unreachable",
+        "status": "open"
+       },
+       {
+        "id": 4751017,
+        "region": "frankton_arm_lake",
+        "defect": "37 Wakatipu Heights: a big part of the roof missing even at max slider",
+        "status": "open"
+       },
+       {
+        "id": 4751255,
+        "region": "pilot",
+        "defect": "9 Vancouver Drive: lone panel at the 14 kW cut",
+        "status": "open"
+       },
+       {
+        "id": 5371259,
+        "region": "frankton_arm",
+        "defect": "really terrible roof shape detection (long roof cut into slivers)",
+        "status": "open"
+       }
+      ],
+      "cases_total": 5,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_RERANK_ROWS",
+        "file": "src/rerank_layouts.py"
+       }
+      ],
+      "tests": [
+       "tests/test_racking.py"
+      ],
+      "judge": "layout"
+     }
     },
     {
      "title": "Power from each panel",
@@ -432,7 +1370,49 @@
      "stages": [
       "derive_solar_potential",
       "apply_yield"
-     ]
+     ],
+     "why": "Each panel is worked out from its own sunlight, so a part-shaded roof is not averaged away.",
+     "try": [
+      "A panel temperature model from local air temperature and wind"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": [
+       "One loss figure for every system: hot, dusty or old systems lose more."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_generation.mjs",
+       "tests/test_workings.mjs",
+       "tests/test_reference_cases.py"
+      ],
+      "judge": "energy"
+     },
+     "show": {
+      "kind": "losses",
+      "parts": [
+       {
+        "label": "Inverter",
+        "pct": 3.0,
+        "source": "100 − config.PV_ASSUMPTIONS.inverter_efficiency_pct"
+       },
+       {
+        "label": "Heat, dirt, wiring, glass",
+        "pct": 13.79,
+        "source": "config.PV_ASSUMPTIONS.system_derate_pct"
+       }
+      ],
+      "kept": {
+       "pct": 83.6,
+       "source": "inverter_efficiency × (1 − system_derate), config.PV_ASSUMPTIONS"
+      }
+     }
     },
     {
      "title": "Buildings that are gone",
@@ -443,7 +1423,42 @@
      ],
      "stages": [
       "demolished"
-     ]
+     ],
+     "why": "A cheap pixel check screens every outline, so the paid second look is needed only for the few it flags.",
+     "try": [
+      "A free local model for the second look"
+     ],
+     "fails": {
+      "cases": [
+       {
+        "id": 5373533,
+        "region": "pilot",
+        "defect": "18 Beetham St: phantom building, knocked down -- the imagery shows it is no longer there. ",
+        "status": "open"
+       }
+      ],
+      "cases_total": 1,
+      "labels": [
+       "geometry"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [
+       {
+        "name": "SOLAR_DEMOLISHED",
+        "file": "src/demolished.py"
+       },
+       {
+        "name": "SOLAR_DEMOLISHED_REFEREE",
+        "file": "src/demolished.py"
+       }
+      ],
+      "tests": [
+       "tests/test_demolished.py"
+      ],
+      "judge": "release"
+     }
     },
     {
      "title": "Heat map mode",
@@ -454,7 +1469,26 @@
      ],
      "stages": [
       "build_heatmap_raster"
-     ]
+     ],
+     "why": "The same model as the panels, so the colours and the figures never disagree.",
+     "try": [
+      "Hours of direct sun in winter, as a second colour scale"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "model"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_output_contract.py"
+      ],
+      "judge": "energy"
+     }
     }
    ]
   },
@@ -473,7 +1507,28 @@
      ],
      "stages": [
       "page:bill_tool.js"
-     ]
+     ],
+     "why": "Average days by season are public and local. Real meter data for each home is neither.",
+     "try": [
+      "Real smart-meter profiles, shared with consent",
+      "Profiles for homes with a heat pump or an electric car"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "Use does not follow the weather, so a cold, dull week costs the same as an average one."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_bill_tool.mjs",
+       "tests/test_economics.mjs"
+      ],
+      "judge": "money"
+     }
     },
     {
      "title": "Batteries",
@@ -486,7 +1541,27 @@
      ],
      "stages": [
       "page:economics.js"
-     ]
+     ],
+     "why": "Charging only from spare solar is how most home batteries are set up, and it keeps the saving from solar apart from tariff tricks.",
+     "try": [
+      "Charging from the grid off-peak on a time-of-use plan"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "A typical day repeated cannot show a run of dull days."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_low_solar_battery.mjs",
+       "tests/test_economics.mjs"
+      ],
+      "judge": "money"
+     }
     },
     {
      "title": "The whole year, day by day",
@@ -499,7 +1574,27 @@
      ],
      "stages": [
       "page:bill_tool.js"
-     ]
+     ],
+     "why": "A real year's weather shows the swings an average day hides, while the bills stay on the averages they were checked against.",
+     "try": [
+      "Working the bills out on the day-by-day year too"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "One year's weather: a duller or sunnier year would differ."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_low_solar_battery.mjs",
+       "tests/test_bill_tool.mjs"
+      ],
+      "judge": "money"
+     }
     },
     {
      "title": "Power prices",
@@ -538,7 +1633,26 @@
      ],
      "stages": [
       "page:regional_prices.js"
-     ]
+     ],
+     "why": "The Electricity Authority publishes the same figures for every network each month, so every area is priced the same way and the prices update themselves.",
+     "try": [
+      "Real retail plans, retailer by retailer"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "Splitting one price into peak and off-peak only approximates real plans."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_economics.mjs"
+      ],
+      "judge": "money"
+     }
     },
     {
      "title": "Cost and savings",
@@ -561,7 +1675,27 @@
      ],
      "stages": [
       "page:economics.js"
-     ]
+     ],
+     "why": "Today's dollars make a saving late in the system's life comparable with one now.",
+     "try": [
+      "Installer quotes by region in place of one cost curve"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "One cost curve for every roof: a hard roof to work on costs more."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_economics.mjs",
+       "tests/test_reference_cases.mjs"
+      ],
+      "judge": "money"
+     }
     },
     {
      "title": "Net saving with a loan",
@@ -590,7 +1724,27 @@
      ],
      "stages": [
       "page:bill_tool.js"
-     ]
+     ],
+     "why": "Most households would borrow. What is left each year after repayments is the figure they can act on.",
+     "try": [
+      "Green home-loan top-ups at mortgage rates"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "One loan rate for everyone."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_bill_tool.mjs",
+       "tests/test_reference_cases.mjs"
+      ],
+      "judge": "money"
+     }
     },
     {
      "title": "Return on investment",
@@ -601,7 +1755,26 @@
      ],
      "stages": [
       "page:bill_tool.js"
-     ]
+     ],
+     "why": "A rate of return compares solar with other uses of the same money.",
+     "try": [
+      "Years to pay back, shown beside the rate"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [],
+      "known": [
+       "The rate assumes the price rises above hold for the whole life."
+      ]
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_bill_tool.mjs"
+      ],
+      "judge": "money"
+     }
     }
    ]
   },
@@ -622,11 +1795,136 @@
      "stages": [
       "emit_region",
       "add_addresses"
-     ]
+     ],
+     "why": "A figure anyone can open and add up again is one they can trust, or show to be wrong.",
+     "try": [
+      "A public page of what changed in each release, roof by roof"
+     ],
+     "fails": {
+      "cases": [],
+      "cases_total": 0,
+      "labels": [
+       "bug",
+       "infra"
+      ],
+      "known": []
+     },
+     "change": {
+      "switches": [],
+      "tests": [
+       "tests/test_workings.mjs",
+       "tests/test_output_contract.py",
+       "tests/test_methodology.py"
+      ],
+      "judge": "release"
+     }
     }
    ]
   }
  ],
+ "judges": {
+  "markup": {
+   "title": "Scored blind against the hand-drawn roofs",
+   "steps": [
+    "Switch the change on and off with its switch, so both runs see the same roofs.",
+    "Build the development roofs as if nobody had drawn them, and score what comes out against the drawings: face overlap, roof lines found, objects found.",
+    "Fix rules against the development set only. Score the held-back set once, at the end.",
+    "Where no one has drawn a roof, the owner judges before and after side by side, shuffled, without labels."
+   ],
+   "run": [
+    "SOLAR_HIDE_LABELS=1 python tools/markup_benchmark.py run",
+    "python tools/markup_benchmark.py score",
+    "python tools/render_built.py --cases --before <old layouts> --out cases.jpg"
+   ],
+   "files": [
+    "data/roof_set.json",
+    "data/roof_labels.json",
+    "data/roof_cases.json"
+   ]
+  },
+  "layout": {
+   "title": "The same roofs, change off and on",
+   "steps": [
+    "Run the build's own layout code on a sample of roofs with the change off, then on.",
+    "Count what a sound layout never does: panels off the building, across a ridge, on an object.",
+    "After a build, no roof should lose roof-face area. Render every roof that moved."
+   ],
+   "run": [
+    "SOLAR_X=0 python tools/layout_ab.py pilot --n 200 --out off.json",
+    "python tools/layout_ab.py pilot --n 200 --out on.json",
+    "python tools/layout_health.py pilot --worst 40",
+    "python tools/face_area_check.py --before <old layouts> pilot"
+   ],
+   "files": [
+    "data/roof_cases.json"
+   ]
+  },
+  "energy": {
+   "title": "Worked examples, and the browser against Python",
+   "steps": [
+    "The worked examples can be checked by hand: a panel's kWh, an hour of sun.",
+    "The browser must give the same kWh as the build for real panels.",
+    "A change to the sun model or panel figures regenerates that fixture and needs a full rebuild.",
+    "Compare with an independent model such as PVGIS on a few roofs."
+   ],
+   "run": [
+    "python tests/test_reference_cases.py",
+    "python tools/export_workings_fixture.py kinloch > tests/fixtures/workings_kinloch.json",
+    "node tests/test_generation.mjs"
+   ],
+   "files": [
+    "tests/fixtures/workings_kinloch.json"
+   ]
+  },
+  "money": {
+   "title": "Worked examples and checks on the page",
+   "steps": [
+    "The tests price fixed homes and compare with sums worked by hand.",
+    "On the page, every roof's money pill must equal its card's figure."
+   ],
+   "run": [
+    "node tests/test_economics.mjs",
+    "node tests/test_bill_tool.mjs",
+    "node tests/test_reference_cases.mjs"
+   ],
+   "files": [
+    "tools/econ_check.js",
+    "tools/money_check.js"
+   ]
+  },
+  "inputs": {
+   "title": "Same buildings, same areas",
+   "steps": [
+    "The fetch tests check which buildings and layers an area gets.",
+    "A new source must give the same buildings where the old one covers them.",
+    "The deploy gate compares the whole build with the live map before it is published."
+   ],
+   "run": [
+    "python tests/test_linz_exports.py",
+    "python tests/test_surveys.py",
+    "bash tools/deploy_from_vm.sh"
+   ],
+   "files": [
+    "tools/predeploy_check.py"
+   ]
+  },
+  "release": {
+   "title": "The deploy gate",
+   "steps": [
+    "Every release is compared with the live map: roofs that lose panels, figures that disagree.",
+    "Each flagged roof is rendered and judged before the release goes out."
+   ],
+   "run": [
+    "bash tools/deploy_from_vm.sh",
+    "python tools/predeploy_check.py"
+   ],
+   "files": [
+    "tools/predeploy_check.py",
+    "data/roof_cases.json"
+   ]
+  }
+ },
+ "cases_total": 72,
  "sources": [
   {
    "id": 51768,

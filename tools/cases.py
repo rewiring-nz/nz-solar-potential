@@ -67,6 +67,13 @@ def load():
 
 def save(d):
     REG.write_text(json.dumps(d, indent=1))
+    # "How this map is made" lists open roofs under each step
+    # (src/methodology.py); keep it in step with the register.
+    try:
+        from src import methodology
+        methodology.OUT.write_text(json.dumps(methodology.build(), indent=1, ensure_ascii=False) + "\n")
+    except Exception as e:  # noqa: BLE001 -- the register is written either way
+        print(f"methodology.json not rewritten ({e}): run python src/methodology.py")
 
 
 def _find_region(bid):
