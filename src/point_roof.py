@@ -793,7 +793,16 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR, photo=None):
     from src import roof_edge
     if roof_edge.USE_ROOF_EDGE and rec["faces"]:
         try:
-            e, moves = roof_edge.fit_edges(sys.modules[__name__], rec["poly"])
+            # SOLAR_ROOF_EDGE=survey: the faces run out to the surveyed outline
+            # (slid onto the returns) and no wall is moved. Against the 195
+            # drawn roofs the fitted edge sits 0.13 m outside the drawn one
+            # on average (0.17 m on homes; 0.28 m2 outside and 0.15 m2 inside
+            # per metre of edge), the surveyed outline 0.07 m inside (0.11
+            # and 0.18): outline IoU 0.892 fitted, 0.922 with no fit.
+            if os.environ.get("SOLAR_ROOF_EDGE") == "survey":
+                e, moves = rec["poly"], {}
+            else:
+                e, moves = roof_edge.fit_edges(sys.modules[__name__], rec["poly"])
             ext = roof_edge.extend_to_edge(rec["faces"], e) if moves is not None else None
             if ext:
                 rec["faces"], edge = ext, e
