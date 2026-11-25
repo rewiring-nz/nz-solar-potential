@@ -38,7 +38,8 @@ measured-radiation station, then scaled by ERA5's difference between that
 point and the region ([`src/solar_model.py`](src/solar_model.py)). NASA POWER
 is in the code as a fallback but no built region uses it.
 
-There is no licence file for this repository yet.
+Licence: code is [MIT](LICENSE); the published map data and the docs are
+[CC BY 4.0](LICENSE-DATA.md), with credit to LINZ.
 
 ## How it works
 

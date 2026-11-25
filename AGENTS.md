@@ -587,6 +587,15 @@ figure for the same thing. Code enforces this:
   34,900 addresses in v85 (10 Elspeth Street, Cromwell among them);
   `tools/refresh_address_index.py` rebuilds a published version's index from
   LINZ without a rebuild.
+- Problem reports from the map (the Report button, the roof card's wrong-layout
+  flag, Edit panels' Send) go through `report.js` to the inbox Cloud Run
+  function (`services/report_inbox/`, `site-config.js` `reportUrl`), which
+  stores them in `gs://solar-potential-map-data/user-reports/inbox/`;
+  `.github/workflows/user-reports.yml` files them every 15 minutes as public
+  `user-report` issues, one open issue per building
+  ([docs/maintainers/user-reports.md](docs/maintainers/user-reports.md)).
+  The map canvas is read inside a `render` event: MapLibre 5 clears it after
+  each frame.
 - The selection spotlight (the dimming around a selected building) fades
   out while every selected building is off screen and returns when one is
   back in view (`focusBox` in `rooftop-solar.html`).

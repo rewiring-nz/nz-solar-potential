@@ -1,0 +1,39 @@
+# Files problem reports sent from the map as public GitHub issues.
+# The map posts to the inbox function (services/report_inbox/), which stores
+# each report in the private data bucket; this job files what is waiting
+# (tools/user_reports.py). Issues are opened by github-actions[bot] with this
+# repository's own token. Scheduled runs can start a few minutes late.
+name: File user reports
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: user-reports
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+jobs:
+  file:
+    if: github.repository == 'rewiring-nz/nz-solar-potential'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/65402120014/locations/global/workloadIdentityPools/github/providers/nz-solar-potential
+          service_account: github-builder@solar-potential-map-512020.iam.gserviceaccount.com
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet google-cloud-storage==2.18.2
+      - run: python tools/user_reports.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
