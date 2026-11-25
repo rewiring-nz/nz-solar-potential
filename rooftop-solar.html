@@ -563,7 +563,10 @@
   #panel-edit-bar button { background:#252d35; color:#e9eef2; border:1px solid #39424c;
                            border-radius:4px; padding:5px 10px; font-size:12px; cursor:pointer; }
   #panel-edit-bar button:hover:not(:disabled) { background:#2f3841; }
-  #panel-edit-bar button.on { background:#1b9e4b; border-color:#25c25f; }
+  #panel-edit-bar button.on, #panel-edit-bar button.primary { background:#147a3a; border-color:#1b9e4b; color:#fff; }
+  #panel-edit-bar button.primary:hover { background:#11692f; }
+  #pe-box { position:absolute; z-index:6; pointer-events:none; border:1.5px dashed #ffd400;
+    background:rgba(255,212,0,.12); }
   #panel-edit-bar button:disabled { opacity:.45; cursor:default; }
   /* Flagging a layout has to be nearly free or nobody does it. One click
      sends; the follow-up chips are optional and only appear afterwards. */
@@ -1035,6 +1038,9 @@
   html.light #panel-edit-bar { color: var(--ink); background: #f3f5f8; border-color: rgba(15,20,30,0.15); }
   html.light #panel-edit-bar button { color: var(--ink); background: #f3f5f8; border-color: rgba(15,20,30,0.15); }
   html.light #panel-edit-bar button:hover:not(:disabled) { background: #f3f5f8; }
+  html.light #panel-edit-bar button.primary { color: #fff; background: #147a3a; border-color: #147a3a; }
+  html.light #panel-edit-bar .pe-delta, html.light #panel-edit-bar .pe-sent { color: #12703a; }
+  html.light #panel-edit-bar .pe-hint { color: #4a5560; }
   html.light .flag-wrap { border-top-color: rgba(15,20,30,0.15); }
   html.light .flag-btn { color: var(--ink); }
   html.light .corner-btn .dot { background: rgba(15,20,30,0.22); border-color: rgba(15,20,30,0.15); }
@@ -1214,6 +1220,7 @@
       </details>
       <!-- one switch for outlines and obstructions; roof markup is on the M key -->
       <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
+      <button class="corner-btn" id="toggle-edit-panels" title="Add, remove and move panels on a roof by hand" aria-pressed="false"><span class="dot"></span>Edit panels</button>
       <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
       <button class="corner-btn" id="export-video" title="Record a video of panels being added across the area in view">&#127909; Export video</button>
       <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
@@ -2637,6 +2644,7 @@ function clearSelection() {
   selectedIds = [];
   selectedPropsById = {};
   selectedGeomById = {};
+  if (window.PanelEditor) window.PanelEditor.onCleared();
   // These were never cleared, so after deselecting, anything that refreshed on
   // the "selected" building kept working on the old one.
   selectedPanelBuildingId = -1;
@@ -4757,12 +4765,7 @@ map.on("load", async () => {
     const edit = ev.target.closest("[data-edit-panels]");
     if (edit) {
       const id = parseInt(edit.getAttribute("data-edit-panels"), 10);
-      if (window.PanelEditor) {
-        // Panels only exist as tiles in layout mode, so switch first --
-        // entering the editor over the heat map would find nothing to copy.
-        if (typeof setMode === "function" && mode !== "layout") setMode("layout");
-        setTimeout(() => window.PanelEditor.enter(id, map.getCenter()), 350);
-      }
+      if (window.PanelEditor) window.PanelEditor.start(id);
       return;
     }
     const chip = ev.target.closest("[data-flag-kind]");
@@ -5299,7 +5302,8 @@ map.on("load", async () => {
   // map before it can bind anything -- so it is wired here rather than at load.
   // A selected panel highlights through _selected, which only the editor sets.
   map.setPaintProperty("live-panels-fill", "fill-color",
-    ["case", ["==", ["get", "_selected"], 1], "#ffd400", "#2f6fb0"]);
+    ["case", ["==", ["get", "_selected"], 1], "#ffd400",
+             ["boolean", ["feature-state", "hover"], false], "#4f93d8", "#2f6fb0"]);
   map.setPaintProperty("live-panels-outline", "line-color",
     ["case", ["==", ["get", "_selected"], 1], "#ffffff", "#7fd4ff"]);
   map.setPaintProperty("live-panels-outline", "line-width",
@@ -5807,7 +5811,7 @@ map.on("load", async () => {
       if (sun && panels.length) {
         const g = genFromPanels(panels, sun, assumptions, { asBuilt: assumptionsAsBuilt() });
         if (g) {
-          if (F.edited) g.node.flags.push("Panels edited by hand. Moved panels keep their roof face's sunlight and shading.");
+          if (F.edited) g.node.flags.push("Panels edited by hand. A panel added or moved takes the tilt and direction of the roof face under it, and the shading of the build's panels nearest it on that face.");
           const curve = genCurve(sun, genWeightsFromPanels(g.perPanel, assumptions), g.node, props.tshade);
           // the share of these panels' sunlight that shade takes: the same
           // per-panel shade factors the kWh above are worked from
@@ -5913,7 +5917,9 @@ map.on("load", async () => {
     const box = document.getElementById("bldg-sys");
     if (!box) return;
     const S = bldgSys;
-    const on = !!(S && S.buildingId === buildingId && mode === "layout");
+    // hand-edited panels (panel_editor.js) have no system-size ladder
+    const on = !!(S && S.buildingId === buildingId && mode === "layout")
+      && layoutExcludedBuildingId !== buildingId;
     box.hidden = !on;
     if (!on) return;
     const sl = document.getElementById("bldg-sys-slider");
@@ -7052,6 +7058,8 @@ map.on("load", async () => {
     // exactly how a half-initialised panel hides its own breakage.
     if (!multiSel && !p.no_estimate_reason) wireTuningControls(panel, p.building_id);
     if (window.__refreshModeUI) window.__refreshModeUI();
+    // every way a roof opens (click, address search, shared link) lands here
+    if (window.PanelEditor) window.PanelEditor.onSelection(selectedIds.length ? selectedIds.slice() : [p.building_id]);
   }
 
   // Shift (or Cmd/Ctrl) click builds a multi-building selection whose totals
@@ -7068,7 +7076,11 @@ map.on("load", async () => {
     const p = e.features[0].properties;
     const geom = e.features[0].geometry;
     const ev = e.originalEvent || {};
-    const additive = !!(ev.shiftKey || ev.metaKey || ev.ctrlKey);
+    // Editing panels (panel_editor.js): clicks on the open roof are the
+    // editor's, and shift means "several panels", not "several buildings".
+    const editing = window.PanelEditor && window.PanelEditor.modeOn();
+    if (editing && window.PanelEditor.isActive() && window.PanelEditor.buildingId() === p.building_id) return;
+    const additive = !editing && !!(ev.shiftKey || ev.metaKey || ev.ctrlKey);
     if (!additive) {
       selectedIds = [];
       selectedPropsById = {};
@@ -7304,6 +7316,8 @@ map.on("load", async () => {
     // multi-selection, not "clear everything" -- losing the set to a stray
     // pixel would be infuriating.
     const ev = e.originalEvent || {};
+    // a stray click off the roof while editing panels keeps the roof open
+    if (window.PanelEditor && window.PanelEditor.isActive()) return;
     if (hits.length === 0 && !(ev.shiftKey || ev.metaKey || ev.ctrlKey)) clearSelection();
   });
 

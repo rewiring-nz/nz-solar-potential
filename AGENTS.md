@@ -549,6 +549,15 @@ figure for the same thing. Code enforces this:
   It is rendered a frame at a time
   (`maplibregl.setNow`, `map.redraw`, WebCodecs H.264, `mp4-muxer` loaded
   from unpkg on demand), and every frame waits for its map tiles.
+- Advanced > Edit panels (`panel_editor.js`) hand-edits one roof's panels
+  in the browser: click empty roof to add a panel (snapped to the face's
+  grid, or laid portrait down the slope on an empty face), click or
+  shift-drag to select, drag to move, Delete or the bin to remove, Cmd/Ctrl-Z
+  to undo. An added or moved panel takes `sb`/`ab` from the facet under its
+  centre and `sh` from the nearest build panels on that face (else the
+  face's `sh`), so `generation.js` prices it like any other. Edits are kept
+  per roof until the page reloads and stay on the card while that roof is
+  open; nothing is written back to the build.
 - The selection spotlight (the dimming around a selected building) fades
   out while every selected building is off screen and returns when one is
   back in view (`focusBox` in `rooftop-solar.html`).

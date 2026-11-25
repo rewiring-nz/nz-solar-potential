@@ -100,8 +100,10 @@ function genFromPanels(panels, sun, A, opts) {
   // the per-panel sum, exactly as the pipeline does it (in its order)
   const kwpEach = 1 * A.panel_rated_power_w / 1000;
   const fInv = A.inverter_efficiency_pct / 100, fKept = 1 - A.system_derate_pct / 100;
-  // panels added in the editor have no reading of their own: they take this
-  // roof's average sunlight and shading, and the breakdown says so
+  // a panel with no reading of its own (one the editor could not place on a
+  // roof face) takes this roof's average sunlight and shading, and the
+  // breakdown says so; panel_editor.js gives every other added panel the
+  // reading of the face under it
   const mean = (f) => withIn.reduce((t, p) => t + f(p), 0) / withIn.length;
   const avgOpen = mean(p => genAnnual(sun, p.sb, p.ab));
   const avgShade = mean(p => genAnnual(sun, p.sb, p.ab) * p.sh) / avgOpen;
@@ -120,7 +122,7 @@ function genFromPanels(panels, sun, A, opts) {
   const groups = new Map();
   for (const q of perPanel) {
     const k = q.has ? `${q.sb}_${q.ab}` : "added";
-    if (!groups.has(k)) groups.set(k, { face: q.has ? genFace(q.sb, q.ab) : "added in the editor (roof average)",
+    if (!groups.has(k)) groups.set(k, { face: q.has ? genFace(q.sb, q.ab) : "off any roof face (roof average)",
                                         n: 0, open: q.open, shSum: 0, sb: q.sb, ab: q.ab });
     const g = groups.get(k); g.n++; g.shSum += q.sh;
   }
@@ -150,7 +152,7 @@ function genFromPanels(panels, sun, A, opts) {
     note: "Measured for each panel from the laser scan: nearby buildings and trees within 100 m, " +
           "and hills out to 20 km. It is the share of direct sun the panel still gets.",
   });
-  if (missing) shade.flags.push(`${missing} panel${missing > 1 ? "s were" : " was"} added in the editor and use${missing > 1 ? "" : "s"} this roof's average sunlight and shading.`);
+  if (missing) shade.flags.push(`${missing} panel${missing > 1 ? "s are" : " is"} off any roof face and use${missing > 1 ? "" : "s"} this roof's average sunlight and shading.`);
   const perM2 = Wk.product("Sunlight on each m² of panel", "kWh/m²/yr", [ground, tilt, shade]);
 
   const a = genAssumptionNodes(A);
@@ -312,7 +314,7 @@ function genCurve(sun, weights, total, tshade) {
 }
 
 // Bin weights for the curve from the panels genFromPanels priced.
-// A panel added in the editor has no tilt or direction of its own:
+// A panel with no tilt or direction of its own (off any roof face):
 // genFromPanels prices it at the mean sunlight of the panels that have one
 // (avgOpen). Its weight is spread over their bins in proportion to how many
 // of them sit in each (n_b / N), so sum_b w_b x annual_b = sh x f x avgOpen,
