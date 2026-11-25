@@ -1112,10 +1112,11 @@
    "flagged_on": "v83",
    "defect": "Kelvin Heights: panels placed over balconies",
    "quotes": [
-    "Panels placed over balconies. You need to be better at going off just the image even if there is no lidar. If a human could see not to place panels there in the image, you should be able to tell that as well"
+    "Panels placed over balconies. You need to be better at going off just the image even if there is no lidar. If a human could see not to place panels there in the image, you should be able to tell that as well",
+    "25 Nov, blind v85 against B1: B is much better, A placed way too many panels over balconies, but B still misses many parts of the balconies and places panels on them which is wrong."
    ],
    "status": "open",
-   "flagged_times": 1
+   "flagged_times": 2
   },
   {
    "id": 4729783,
@@ -1528,6 +1529,18 @@
      "quote": "Better but not great. The last 2, 1 Sunrise and 13 Sunrise, are the main problems."
     }
    ]
+  },
+  {
+   "id": 4729782,
+   "region": "kelvin_heights",
+   "first_flagged": "2026-11-25",
+   "flagged_on": "v85",
+   "defect": "too few panels on both the live map and candidate B1",
+   "quotes": [
+    "Both bad and too few panels"
+   ],
+   "status": "open",
+   "flagged_times": 1
   }
  ]
 }

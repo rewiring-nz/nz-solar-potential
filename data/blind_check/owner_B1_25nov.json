@@ -1,0 +1,62 @@
+{
+ "_readme": "Owner's blind picks, 25 Nov 2026: five roofs, live v85 against candidate B1 (SOLAR_POINT_MERGE_LOOSE=1 SOLAR_ROOF_EDGE=survey, no reader). Sides shuffled and unlabelled; key data/preview/cases/review_B1s_key.json. In the notes A/B are the page's sides, decoded here.",
+ "tally": {
+  "outline": {
+   "B1": 3,
+   "same": 2
+  },
+  "lines": {
+   "B1": 3,
+   "same": 2
+  },
+  "obstructions": {
+   "unsure": 1,
+   "same": 1,
+   "B1": 3
+  },
+  "panels": {
+   "v85": 2,
+   "same": 1,
+   "B1": 2
+  }
+ },
+ "picks": [
+  {
+   "id": 5371143,
+   "outline": "B1",
+   "lines": "B1",
+   "obstructions": "unsure",
+   "panels": "v85"
+  },
+  {
+   "id": 4739240,
+   "outline": "same",
+   "lines": "same",
+   "obstructions": "same",
+   "panels": "v85"
+  },
+  {
+   "id": 4729782,
+   "outline": "same",
+   "lines": "same",
+   "obstructions": "B1",
+   "panels": "same",
+   "note": "Both bad and too few panels"
+  },
+  {
+   "id": 4750944,
+   "outline": "B1",
+   "lines": "B1",
+   "obstructions": "B1",
+   "panels": "B1"
+  },
+  {
+   "id": 4729407,
+   "outline": "B1",
+   "lines": "B1",
+   "obstructions": "B1",
+   "panels": "B1",
+   "note": "B is much better, A placed way too many panels over balconies, but B still misses many parts of the balconies and places panels on them which is wrong."
+  }
+ ]
+}
