@@ -397,6 +397,20 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Candidate B2 gate result (25 Nov).** B1's switches plus the strip rule
+  (3 m slope limit, quarter-of-roof share; 83e8be5d), four Queenstown areas.
+  Gate FAILED, not published: zeroed 4 (B1: 9; #4751092, #4722654,
+  #4741658, #5372656), big drops 57 (B1: 57), panels 1,325,054 ->
+  1,324,368 (-0.1%), vanished 0, newly withheld 0. Sheets v85 | B2 on the
+  VM (`~/droptool2/drops_B2b`, `~/droptool/drops_B2`, `~/qtB2_cases`). The
+  largest drops rendered (#4725986 391 -> 210, #4740321 130 -> 88,
+  #4734677 90 -> 61) carry many more small obstruction marks than v85 and,
+  on #4725986, an empty strip along one long edge: the drop is in the
+  obstruction and edge stages, not the faces. Against the markup the new
+  method's obstructions are level with the current method's (precision
+  0.335 against 0.319 on 135 roofs; found 9.5 of 21.2 m2 against 9.6), so
+  whether the extra marks on those roofs are real is the owner's call.
+  Not found yet: why #4751092 and #4722654 (plain faces) take no panels.
 - **#4729407 balconies: the LiDAR cannot see them (25 Nov).** The point
   reading gives 2 faces for 738 m2 (669 m2 at 17 degrees); inside the big
   face 3,364 building returns, none more than 0.6 m below or above the
