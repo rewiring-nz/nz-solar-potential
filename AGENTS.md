@@ -41,7 +41,9 @@ national DSM mapping and use automatic disk estimates, not guaranteed bounds;
 the CLI retains its operator-bounded opt-in. Queue jobs release reservations
 and workspace locks after their recorded process group stops; a subsequent
 submission recovers stopped raster-job locks automatically. Detached
-descendants are not detectable. Web submissions remain one area at a time. Local web estimates
+descendants are not detectable. Automatically estimated mapped web jobs can be
+queued in batches and run sequentially, with per-job admission at launch;
+operator-supplied bounds remain specific to one area per submission. Local web estimates
 snapshot source selections in the geospatial worker; local web jobs pass those
 snapshots to the fetcher for source and footprint revalidation. See
 [pipeline reference](docs/data-maintainers/pipeline-reference.md).
@@ -559,7 +561,8 @@ figure for the same thing. Code enforces this:
   and workspace lock when its process group has stopped. Automatic stale-lock
   recovery cannot detect detached descendants and refuses incomplete or active ownership.
   Mapped jobs also need per-role processing choices and explicit reviewed
-  mappings. Web jobs are submitted one area at a time. See
+  mappings. Operator-bounded web jobs are submitted one area at a time;
+  automatically estimated jobs can be queued in batches. See
   [the admission procedure](docs/data-maintainers/pipeline-reference.md#experimental-local-queue-admission).
 - Local web estimates inspect the cache using the configured policy or display
   default. `SOLAR_RASTER_SOURCE_MAPPINGS` overrides the default national

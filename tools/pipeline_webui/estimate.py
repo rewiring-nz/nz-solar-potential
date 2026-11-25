@@ -608,9 +608,8 @@ def estimate(regions: list[str], data: Path = DATA, target: str = "local",
         warnings.append(
             "Disk figures are estimates, not peak-space bounds or reservations. "
             "Mapped jobs use cooperative disk admission, which does not allocate or cap space.")
-        if (os.environ.get("SOLAR_RASTER_JOB_BOUNDS")
-                or any(row.get("raster_auto_estimate") for row in rows)) and len(rows) != 1:
-            blockers.append("Mapped local jobs must be submitted one area at a time.")
+        if os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and len(rows) != 1:
+            blockers.append("Operator-bounded local jobs must be submitted one area at a time.")
         free = (shutil.disk_usage(data if data.exists() else data.parent).free
                 if disk_free is None else disk_free)
         free_gb = free / 1e9

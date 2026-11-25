@@ -1589,7 +1589,6 @@
       ${tileDetails}
       ${tileLists}
       ${autoDetails}
-      ${automatic.length && jobs !== 1 ? `<div class="block">Select one area at a time for a mapped build.</div>` : ""}
       ${first ? `<div class="muted">Rate ${esc(first.calibration.seconds_per_building)} s/building from ${first.calibration.source === "history"
         ? esc(first.calibration.runs_used) + " recent runs" : "defaults"}. ${esc(first.disclaimer)}</div>` : ""}
       ${estimates.flatMap((e) => e.warnings || []).map((w) => `<div class="warn">${esc(w)}</div>`).join("")}
@@ -1599,7 +1598,6 @@
     $("start-btn").textContent = TARGETS[target].start;
     const yes = $("cost-yes");
     const update = () => { $("start-btn").disabled = !jobs ||
-      (automatic.length && jobs !== 1) ||
       (target !== "local" && (!yes || yes.value.trim().toLowerCase() !== "yes")); };
     if (yes) yes.addEventListener("input", update);
     update();

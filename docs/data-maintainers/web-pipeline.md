@@ -196,15 +196,18 @@ inputs, peak usage or files on other filesystems. The panel displays the
 allocations and cache budget before submission; the cooperative reservation
 checks available space again at launch, but does not allocate or cap it.
 
-Only one mapped area may be submitted at a time, with an idle local queue.
-After a job finishes or is interrupted, the queue releases its reservation and
+Multiple automatically estimated mapped areas can be queued together or added
+to a busy local queue. Each area is a separate, cancellable job; the local
+lane runs them sequentially and rechecks source metadata and disk admission at
+launch. An operator-supplied bounds document still applies to one area per
+submission. After a job finishes or is interrupted, the queue releases its reservation and
 workspace lock when the recorded process group has stopped. On a subsequent
 submission it also recovers a stopped raster job's stale reservation and lock.
 Recovery cannot detect descendants that left the recorded process group;
 incomplete ownership records, active groups and other recovery errors block
 the job instead. See the
 [recovery procedure](pipeline-reference.md#experimental-local-queue-admission).
-This is not an automatic multi-area build workflow. Existing DSM mosaics without provenance
+Existing DSM mosaics without provenance
 are preserved and block the mapped build; move them aside deliberately before
 retrying. A mosaic with provenance is verified against the approved plan.
 Indexed imagery has an explicit replacement policy: a different or legacy

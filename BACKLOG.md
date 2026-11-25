@@ -32,7 +32,7 @@ The overlay is metadata-only, bounded and does not select build sources or
 reserve tiles; it is not proof of valid-pixel coverage.
 
 Local web builds now prefer the experimental national DSM native cache, with
-automatic disk estimates and one area per submission.
+automatic disk estimates and sequential multi-area queue submissions.
 The queue releases stopped mapped jobs and recovers stopped stale raster locks;
 existing unprovenanced DSM mosaics are preserved and block the new path.
 National DSM web estimates now obtain missing STAC tile sizes from HTTP

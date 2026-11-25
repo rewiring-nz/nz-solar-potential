@@ -367,9 +367,7 @@ class JobManager:
         if not rows:
             raise JobError("the estimate names no regions")
         if (estimate.get("target", "local") == "local"
-                and (os.environ.get("SOLAR_RASTER_JOB_BOUNDS")
-                     or any(row.get("raster_auto_estimate") for row in rows))
-                and len(rows) != 1):
+                and os.environ.get("SOLAR_RASTER_JOB_BOUNDS") and len(rows) != 1):
             raise JobError("operator-bounded local jobs must be submitted one area at a time", 409)
         if any(row.get("selection_count", 1) != 1 for row in rows):
             raise JobError("this estimate groups grid cells; estimate again for separate jobs", 409)
@@ -527,14 +525,6 @@ class JobManager:
     def _enqueue(self, jobs: list[dict]) -> None:
         with self.lock:
             lane = self.lanes[jobs[0]["lane"]]
-            if lane.name == "local" and any(job.get("raster_admission") for job in jobs):
-                if len(jobs) != 1 or lane.active or lane.queue:
-                    raise JobError("Mapped jobs require an idle local queue", 409)
-            if lane.name == "local" and (lane.active or lane.queue):
-                existing = ([lane.active] if lane.active else []) + lane.queue
-                if any(self.load(identifier).get("raster_admission") for identifier in existing):
-                    raise JobError("A mapped job is already queued or running; wait for it "
-                                   "to finish before submitting another", 409)
             for job in jobs:
                 self._save(job)
             lane.queue.extend(job["job_id"] for job in jobs)

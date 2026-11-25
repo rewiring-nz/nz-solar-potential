@@ -822,6 +822,16 @@ def test_web_default_plans_national_tiles_and_blocks_unverified_mosaic():
             assert result["raster_tile_preview"]["missing_count"] == 1
             assert result["regions"][0]["raster_auto_estimate"]
             assert load.call_args.args[0].name == "national-dsm-mapping.json"
+            multiple = E.estimate(["area1", "area2", "area3"], data=data,
+                                  survey_fn=lambda *_: survey, disk_free=10**12,
+                                  include_imagery=False, web_native_default=True)
+            assert not multiple["blockers"], multiple["blockers"]
+            assert all(row["raster_auto_estimate"] for row in multiple["regions"])
+            with patch.dict(os.environ, {"SOLAR_RASTER_JOB_BOUNDS": "/fixture/bounds.json"}):
+                bounded = E.estimate(["area1", "area2"], data=data,
+                                     survey_fn=lambda *_: survey, disk_free=10**12,
+                                     include_imagery=False, web_native_default=True)
+            assert any("Operator-bounded" in blocker for blocker in bounded["blockers"])
             region = data / "regions" / "area1"
             region.mkdir(parents=True)
             (region / "dsm_mosaic.tif").write_bytes(b"existing")

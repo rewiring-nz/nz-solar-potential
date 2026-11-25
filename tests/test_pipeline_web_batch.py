@@ -227,6 +227,73 @@ class BatchQueueTests(unittest.TestCase):
             self.assertEqual(bounds["mosaic_bytes"], row["raster_auto_estimate"]["mosaic_bytes"])
             self.assertEqual(bounds["processing"]["dsm"], {"resolution": 1, "resampling": "average"})
 
+    def test_auto_mapped_batches_queue_sequentially_even_when_busy(self):
+        from src.raster_cache_config import display_cache_config
+        from src.raster_job_bounds import load_frozen_job_bounds
+        from src.raster_plan_handoff import plan_digest, plan_for_regions
+        from src.raster_region_plan import plan_regions
+        from src.raster_source_selection import LayerMapping
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+                os.environ, {"SOLAR_RASTER_JOB_BOUNDS": ""}):
+            root = Path(temporary).resolve()
+            manager = _manager(root)
+            bbox = [168, -45, 168.1, -44.9]
+            mapping = LayerMapping(101, "dsm", "https://example.test/collection.json",
+                                   "capture", "data", "fixture")
+            docs = {
+                mapping.collection_url: {"id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+                "https://example.test/item.json": {
+                    "id": "tile", "bbox": bbox, "properties": {},
+                    "assets": {"data": {"href": "tile.tif", "type": "image/tiff", "file:size": 100}}}}
+            regions = ["a", "b", "c"]
+            plan = plan_regions(
+                regions, mappings=[mapping], bbox_for=lambda _: bbox,
+                footprints_for=lambda *_: [bbox],
+                survey_for=lambda *_: {"elevation": "lidar", "dsm_layer": 101},
+                get_json=docs.__getitem__)
+            config, sources = display_cache_config(manager.data)
+            rows = []
+            for region in regions:
+                row = {"region": region, "bbox_km2": 1, "buildings": 10,
+                       "download_components_gb": {"imagery": 0, "reference_imagery": 0, "lidar": 0}}
+                row["raster_auto_estimate"] = E.automatic_raster_estimate(
+                    row, {"policy": config.describe(sources)}, manager.data)
+                rows.append(row)
+            estimate = _estimate(*regions)
+            estimate.update(regions=rows, raster_plan=plan)
+            invalid = {**estimate, "regions": [rows[0], {**rows[1], "raster_auto_estimate": None}]}
+            with self.assertRaisesRegex(JobError, "preview-only"):
+                manager.start_batch(invalid)
+            self.assertEqual(manager.list(), [])
+            with patch.dict(os.environ, {"SOLAR_RASTER_JOB_BOUNDS": str(root / "bounds.json")}):
+                with self.assertRaisesRegex(JobError, "one area at a time"):
+                    manager.start_batch(estimate)
+            self.assertEqual(manager.list(), [])
+            lock = manager.data / "pipeline-workspace.lock"
+            lock.write_text(json.dumps({"pid": os.getpid()}))
+            try:
+                ids = manager.start_batch(estimate)
+                later = manager.start_batch({**estimate, "regions": [rows[0]],
+                                              "raster_plan": plan_for_regions(plan, ["a"])})[0]
+                self.assertEqual(len(ids), 3)
+                for identifier, region in zip(ids, regions):
+                    saved = manager.load(identifier)
+                    selected = json.loads(json.dumps(plan_for_regions(plan, [region])))
+                    self.assertEqual(saved["raster_plan"], selected)
+                    self.assertEqual(saved["raster_plan_sha256"], plan_digest(selected))
+                    bounds = load_frozen_job_bounds(
+                        manager._job_dir(identifier) / "job.json", region=region, workspace=ROOT,
+                        plan_digest=plan_digest(selected), include_imagery=True, paid_referee=False)
+                    self.assertEqual(bounds["cache"]["directory"], str(config.directory))
+            finally:
+                lock.unlink()
+            jobs = [_wait(manager, identifier) for identifier in [*ids, later]]
+            self.assertEqual([job["status"] for job in jobs], ["succeeded"] * 4)
+            for previous, current in zip(jobs, jobs[1:]):
+                self.assertGreaterEqual(current["started"], previous["finished"])
+            self.assertEqual(jobs[2]["final_combine"]["regions"], regions)
+
     def test_submission_recovers_stopped_reservation(self):
         with tempfile.TemporaryDirectory() as temporary:
             manager = _manager(Path(temporary))
@@ -357,6 +424,41 @@ class BatchHTTPTests(unittest.TestCase):
                     break
                 time.sleep(.01)
             self.assertIsNotNone(job["raster_admission"])
+
+    def test_auto_mapped_three_area_batch_is_accepted_by_http(self):
+        from src.raster_cache_config import display_cache_config
+        from src.raster_region_plan import plan_regions
+        from src.raster_source_selection import LayerMapping
+
+        bbox = [168, -45, 168.1, -44.9]
+        mapping = LayerMapping(122082, "dsm", "https://example.test/collection.json",
+                               "capture", "data", "fixture")
+        docs = {
+            mapping.collection_url: {"id": "capture", "links": [{"rel": "item", "href": "item.json"}]},
+            "https://example.test/item.json": {
+                "id": "tile", "bbox": bbox, "properties": {},
+                "assets": {"data": {"href": "tile.tif", "type": "image/tiff", "file:size": 100}}}}
+        regions = ["a", "b", "c"]
+        plan = plan_regions(
+            regions, mappings=[mapping], bbox_for=lambda _: bbox,
+            footprints_for=lambda *_: [bbox],
+            survey_for=lambda *_: {"elevation": "lidar", "dsm_layer": 122082},
+            get_json=docs.__getitem__)
+        with patch.dict(os.environ, {"SOLAR_RASTER_JOB_BOUNDS": ""}):
+            config, sources = display_cache_config(self.data)
+            rows = []
+            for region in regions:
+                row = {"region": region, "bbox_km2": 1, "buildings": 10,
+                       "download_components_gb": {"imagery": 0, "reference_imagery": 0, "lidar": 0}}
+                row["raster_auto_estimate"] = E.automatic_raster_estimate(
+                    row, {"policy": config.describe(sources)}, self.data)
+                rows.append(row)
+            estimate = _estimate(*regions)
+            estimate.update(status="ready", expires_at=time.time() + 60,
+                            raster_plan=plan, regions=rows, blockers=[])
+            jobs = self.submit(estimate)
+            self.assertTrue(all(job["raster_admission"] for job in jobs))
+            self.assertEqual(jobs[-1]["final_combine"]["regions"], regions)
 
     def submit(self, estimate):
         store = E.EstimateStore(self.data)
