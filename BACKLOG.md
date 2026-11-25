@@ -397,6 +397,41 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Roof shape and outline against the markup: three changes to the point reading (25 Nov).**
+  Owner: roof shape and outline come before obstructions. All on the 195
+  drawn roofs, built blind, like for like (point readings re-read with one
+  code version; VM `~/mb_ctrl`, `~/mb_flat`, `~/mb_noedge`, `~/mb_survey`,
+  `~/mb_survey2`). Outline IoU / face IoU / line F / faces right / lines right:
+  - current method: 0.891 / 0.643 / 0.679 / 49 / 115;
+  - `SOLAR_POINT_MERGE_LOOSE=1` (flat neighbours join only when one plane
+    holds both; specks inside one face are not faces): 0.892 / 0.647 / 0.689
+    / 50 / 118. #5372239 (drawn 2 faces) 34 built faces -> 2, face IoU 0.34
+    -> 0.97; #5372232 (drawn 3) 24 -> 7, 0.26 -> 0.72. With pitched
+    neighbours joining too (`SOLAR_LOOSE_ANG=4`): line F 0.686 and a lost
+    annex on #4735130, so the default is 0;
+  - `SOLAR_ROOF_EDGE=0` as well: 0.922 / 0.658 / 0.667 / 59 / 110;
+  - `SOLAR_ROOF_EDGE=survey` (faces run out to the surveyed outline as it
+    lies): 0.926 / 0.663 / 0.670 / 60 / 112;
+  - `SOLAR_ROOF_EDGE=survey` with the outline placed on the fitted edge
+    (as committed): 0.918 / 0.661 / 0.681 / 57 / 118. Against the current
+    method: outline better on 44 roofs and worse on 9, faces 35 and 19,
+    lines 22 and 19.
+  - *Why:* the edge fitted to the returns sits 0.13 m outside the drawn edge
+    on average (0.17 m on homes; 0.28 m2 outside and 0.15 m2 inside per
+    metre of edge); the surveyed outline is 0.04 m inside (0.00 on homes;
+    0.13 and 0.17). Found from 14 Wanaka roofs whose stored readings predate
+    the fitted edge (16 Nov, code a338dc25fd98): outline 0.953 stored against
+    0.900 re-read, faces right 7 against 2.
+  - *Stored readings are of mixed code versions* (9e1a52fff9cc 19 Nov,
+    882918aed6b1 21 Nov, a338dc25fd98 16 Nov): a re-read changes roofs
+    whatever the switch, so compare against a re-read control.
+  - Sheets: `data/preview/cases/outline_25nov/s2_markup_after.jpg` (drawn |
+    new) and `s2_before_after.jpg` (current | new), 8 most improved and 4
+    most worsened roofs.
+  - *Next:* re-read the four Queenstown areas with both switches, rebuild,
+    gate, blind page for the owner. Editing `point_roof.py` restamps every
+    stored reading, so the re-read is every roof in the build.
+
 - **Both methods against the markup, and where the errors are (25 Nov).**
   `tools/markup_benchmark.py` on 195 drawn roofs, built blind (VM
   `~/mb_live`, `~/mb_new`). Current code with live settings: outline IoU
