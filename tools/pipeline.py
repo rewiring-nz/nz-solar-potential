@@ -1081,6 +1081,11 @@ def _load_shared_cloud_config() -> dict[str, Any]:
     values = dict(values)
     if not isinstance(values.get("preview_bucket"), str):
         raise ValueError("config.CLOUD_SHARED_BUILD.preview_bucket must be a string")
+    if not isinstance(values.get("artifact_staging_bucket"), str) or not re.fullmatch(
+        r"gs://[a-z0-9][a-z0-9-]{1,61}[a-z0-9]",
+        values["artifact_staging_bucket"],
+    ):
+        raise ValueError("config.CLOUD_SHARED_BUILD.artifact_staging_bucket must be a valid gs:// bucket")
     if (
         isinstance(values.get("preview_retention_days"), bool)
         or not isinstance(values.get("preview_retention_days"), int)
@@ -1136,6 +1141,7 @@ def _load_shared_cloud_config() -> dict[str, Any]:
     return {
         **{key: values[key] for key in required},
         "preview_bucket": values["preview_bucket"],
+        "artifact_staging_bucket": values["artifact_staging_bucket"],
         "preview_retention_days": values["preview_retention_days"],
         "preview_cost_model": dict(cost_model),
     }

@@ -11,6 +11,16 @@ several address points (units, flats) take the lowest street number and note
 the count. No address within range -> no "address" property; the frontend
 falls back to the outline id.
 
+Search index: every address point in the bbox is also written to
+data/regions/<area>/address_points.json as [full label, lon, lat, building_id],
+building_id the outline that contains the point or that took it as its nearest
+address, else 0. The building title keeps one address per building, but the
+search must hold every address: with only the titles indexed, an address whose
+point sits in no outline (a house built after the outline capture, a rear lot)
+or shares a building with a lower number could not be found at all -- 10, 16
+and 20 Elspeth Street, Cromwell were missing from v85 this way. The label keeps
+LINZ's ", Suburb, Town" tail so a search that names the town matches.
+
 Patches solar_potential.geojson in place. derive_solar_potential carries the
 addresses over when it rebuilds that file, so this only has to re-run when the
 buildings or the address layer change.
@@ -34,6 +44,7 @@ from src.fetch_data import fetch_building_outlines
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 NZ_ADDRESSES_LAYER = 123113
+ADDRESS_POINTS_NAME = "address_points.json"
 NEAREST_MAX_M = 40.0  # beyond this, an address point is someone else's
 
 
@@ -59,7 +70,7 @@ def main(area="pilot"):
     # config.REGIONS raised KeyError for every one of them.
     bbox = area_bbox_wgs84(area)
     addr = fetch_addresses(bbox, api_key)
-    pts, labels = [], []
+    pts, labels, full_labels = [], [], []
     for f in addr["features"]:
         g = f.get("geometry")
         if not g or g["type"] != "Point":
@@ -72,6 +83,7 @@ def main(area="pilot"):
         short = label.split(",")[0].strip()
         pts.append(g["coordinates"][:2])
         labels.append(short)
+        full_labels.append(props.get("full_address") or label)
     pts = np.array(pts).reshape(-1, 2)
     print(f"{len(pts)} address points")
     if len(pts) == 0:
@@ -92,6 +104,7 @@ def main(area="pilot"):
     tree = cKDTree(pts * scale)
 
     n_contained = n_nearest = n_none = 0
+    point_bid = [0] * len(pts)
     for feat in sp["features"]:
         geom = shape(feat["geometry"])
         inside = shapely.contains_xy(geom, pts[:, 0], pts[:, 1])
@@ -107,12 +120,23 @@ def main(area="pilot"):
                 continue
         else:
             n_contained += 1
+        # A point inside an outline belongs to it; a point a building only
+        # took as its nearest address goes to it unless an outline holds it.
+        held = bool(inside.any())
+        for i in idx:
+            if held or not point_bid[i]:
+                point_bid[i] = int(feat["properties"]["building_id"])
         chosen = sorted(labels[i] for i in idx)[0]
         feat["properties"]["address"] = chosen
         if len(idx) > 1:
             feat["properties"]["address_count"] = int(len(idx))
 
     write_json_atomic(sp_path, sp)
+    rows = sorted([full_labels[i], round(float(pts[i][0]), 6), round(float(pts[i][1]), 6),
+                   point_bid[i]] for i in range(len(pts)))
+    write_json_atomic(area_paths(area)["dir"] / ADDRESS_POINTS_NAME, rows)
+    print(f"{len(rows)} address points indexed for search "
+          f"({sum(1 for r in rows if not r[3])} on no building)")
     print(f"contained={n_contained} nearest={n_nearest} unmatched={n_none}")
     print(f"Patched {sp_path}")
 

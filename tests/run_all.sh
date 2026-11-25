@@ -57,6 +57,8 @@ if command -v node >/dev/null 2>&1; then
   done
   run "map layer legend (js)" node tests/test_map_layers.js
   run "pipeline progress (js)" node tests/test_pipeline_progress.js
+  run "pipeline area tree (js)" node tests/test_pipeline_tree.js
+  run "address search (js)" node tests/test_address_search.js
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
 fi
@@ -108,7 +110,13 @@ run "quickstart map preview" $PY tests/test_quickstart_map.py
 run "shared build plan"     $PY tests/test_build_plan.py
 run "pipeline web panel data" $PY tests/test_pipeline_web_data.py
 run "pipeline web panel jobs" $PY tests/test_pipeline_web_jobs.py
+run "pipeline per-area queue" $PY tests/test_pipeline_web_batch.py
 run "pipeline web panel server" $PY tests/test_pipeline_web_server.py
+run "pipeline area catalogue, status" $PY tests/test_pipeline_web_catalog.py
+run "regional staging"       $PY tests/test_regional_staging.py
+run "cloud staging"          $PY tests/test_cloud_staging.py
+run "local releases"         $PY tests/test_local_releases.py
+run "local release HTTP"     $PY tests/test_local_release_web.py
 run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py
 run "dynamic LINZ source discovery" $PY tests/test_surveys.py
 run "diagram vs code"       $PY tools/check_diagram.py

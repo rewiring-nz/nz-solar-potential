@@ -54,6 +54,14 @@ If a step fails, find its number in [Troubleshooting](troubleshooting.md).
 
 ## Next steps
 
+- Preserve the inspected region with **Push to staging** in the
+  [Build data panel](web-pipeline.md). This copies its built output into a
+  frozen, checksummed local copy without rebuilding or publishing; it does not
+  deploy or change the map. In **Local releases**,
+  select staged versions, assemble and preview a candidate, compare it with the
+  local deployment, then approve and activate it. Unselected deployed regions
+  are preserved. Configure retention explicitly before activation; rollback
+  and grace-period cleanup are available without cloud calls or another build.
 - [Build another region](howto-build-a-region.md).
 - [Run the quickstart in the cloud](howto-cloud-quickstart.md) for a
   shareable preview.

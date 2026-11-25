@@ -66,13 +66,71 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   generation run in `tools/pipeline_webui/geo_worker.py`; a test in
   `tests/test_pipeline_web_data.py` checks this.
   Package `tools/pipeline_webui/`; page `pipeline.html` (titled **Build data**).
-  Area selection, target-specific existing-data status, estimates, active
-  queue and completed job history share one workspace with expandable
-  **New build**, **Queue** and **Jobs** sections. Prepared/built area overlays
-  and the grouped dataset legend remain on the map; area status links to
-  available previews and reports. The former `data-explorer.html` URL redirects
-  to this page. See
+  The page is one tick-box tree, council › town › locality (LINZ
+  `territorial_authority`, locality `major_name`, `suburb_locality`), whose
+  rows show each area's state in place for the selected target; status
+  colours the map. Search, fixed filters and sorts are pure logic in
+  `pipeline_tree.js` (`tests/test_pipeline_tree.js`); a sticky selection bar
+  offers Build…, Push to local staging, Push to remote staging, Cancel queued
+  and Clear; **Queue** and **Jobs** sit over the map. Catalogue refresh,
+  local staging and local releases are on the **⚙ Config** view. The tree comes
+  from a prebuilt national catalogue
+  (`python -m tools.pipeline_webui.national_catalog`, about 80 s, 3,227
+  localities with buildings; water types dropped) cached in ignored
+  `data/pipeline_web/cache/`; per-area status joins runs, jobs,
+  staging and selections in `tools/pipeline_webui/region_status.py`
+  (`/api/catalog*`, `tests/test_pipeline_web_catalog.py`). The former
+  `data-explorer.html` URL redirects to this page. See
   [docs/data-maintainers/web-pipeline.md](docs/data-maintainers/web-pipeline.md).
+- **Push to local staging** copies a built region's `data/out/<region>/` straight
+  into a frozen, checksummed copy in ignored
+  `data/regional_staging/<id>/artifacts/` (`tools/regional_staging.py`,
+  `tools/pipeline_webui/artifacts.py`; `--staging-root` overrides it). The
+  atomic `current.json` points to one current copy per region; pushing a newer
+  copy adds that region or replaces its current pointer while leaving other
+  regions in the set. Frozen copies remain available to pinned candidates until
+  explicit local retention cleanup. There is no separate snapshot step. A
+  region can be staged when it is built, its
+  latest local build succeeded and no queued or running local job covers it
+  or its cells (`stage_refusal` in `tools/pipeline_webui/server.py`); other
+  builds may run, and a region being staged cannot be queued. The copy takes
+  a per-region lock, not the workspace lock, and fails if the source
+  inventory changes during the copy. Grid cells are never staged. Older
+  `<id>/snapshot/` copies stay readable; `data/regional_snapshots/` is unused.
+  Local staging itself makes no cloud calls, deploys nothing and runs no
+  automatic cleanup.
+- **Push to remote staging** submits selected, locally staged versions through
+  `tools/cloud_staging.py` to the private bucket in
+  `config.CLOUD_SHARED_BUILD["artifact_staging_bucket"]`, under the immutable
+  `pipeline-staging/submissions/<staging-id>/` prefix. The area list offers
+  one batch Upload/Cancel confirmation after showing verified total bytes and
+  the private GCS destination; no per-region cost estimate or typed `yes` is
+  required. The confirmation warns that storage and transfer may incur charges.
+  The server rechecks the selected current local versions and their sizes under
+  the artifact lifecycle lock, uploads create-only, checks remote
+  inventory/size/SHA metadata and server-computed MD5, and writes its manifest
+  last. Retained objects continue to incur storage cost. This operation does not build,
+  assemble, approve, activate, change a preview pointer or publish to the
+  served tiles bucket. The panel shows live upload and verification counts and
+  the latest 50 locally recorded push outcomes; this is not a bucket inventory.
+  Local retention controls do not apply to cloud objects. No cloud cleanup is implemented.
+- **Local releases** in Build data (`tools/local_releases.py`) assemble verified
+  complete staged regions into ignored `data/local_releases/` (`--release-root`).
+  Unchanged active regions are carried forward. The frozen-input combine mode
+  validates the region contract without re-emitting mutable inputs; geometry and
+  yields are not rerun. Candidates pin copied frontend/data and record source
+  hashes. Comparison/review binds the manifest and active generation; activation
+  atomically replaces local state. Automatic approval requires all-pass metrics;
+  warnings/unknowns require a recorded manual reason. Grid selections, overlapping
+  building ownership, mixed assumptions and incompatible contracts are blocked.
+  Terrain and markup overlays are omitted; local 3D is explicitly disabled.
+  Default retention in `tools/local_releases.py` is 720 hours for rollback,
+  candidates and unused staging, 168 hours for incomplete copies and 72 hours
+  for cleanup grace. Current staging copies are protected. Rollback protects
+  one previous release for the configured window. Cleanup requires
+  configured lifetimes, a mark/grace phase and explicit apply; no scheduled purge
+  or cloud action occurs. Capture/stage/release/cleanup share the process lock
+  `data/.artifact-lifecycle-lock`. See the web-pipeline guide for recovery and CLI.
 - The web queue and job details share stage-weighted progress
   (`tools/pipeline_webui/jobs.py`, `pipeline_progress.js`). Only success
   reaches 100%; cloud runs without stage telemetry remain indeterminate.
@@ -80,8 +138,17 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   waiting work; terminal jobs appear once in the newest-first Jobs history.
   Disconnected views retain last-known cards with a warning instead of
   displaying stale progress as live.
-- The web pipeline can select a user-sized bounding-box grid (2x2 through
-  10x10, default 4x4) within a LINZ locality for one local-only pipeline run.
+- The web pipeline's build dialog can split localities into a bounding-box
+  grid (Off by default; Auto splits only localities over 12,000 buildings into
+  N = ceil(sqrt(buildings/12,000)) per side, clamped 2-10; or fixed 2x2-10x10),
+  local target only. Cells show as a fourth tree level until a whole-locality
+  build (**Combine**, offered once every estimated cell has built) succeeds;
+  cells are never staged. Web submissions enqueue one
+  independently cancellable job per selected region or cell, sequentially in
+  its target lane (`JobManager.start_batch`). Cells are materialised separately
+  while retaining the whole grid for stable building ownership. Cloud estimates
+  sum per-job allowances. The last job in a multi-area local submission combines
+  existing emitted outputs once without rebuilding geometry/yields.
   Grid selection uses the LINZ locality boundary and needs no additional API
   key or downloaded dataset. Selections have nested identities and outputs;
   acquisition timings are per-run in `data/pipeline_runs/` (outline preparation
@@ -163,6 +230,9 @@ figure for the same thing. Code enforces this:
   `tools/pipeline.py` (via `quickstart.sh`); the shared-VM build and publish
   is `tools/remote_build.sh`. See [docs/data-maintainers/quickstart-cloud.md](docs/data-maintainers/quickstart-cloud.md)
   and [docs/data-maintainers/team-access.md](docs/data-maintainers/team-access.md).
+  Exception: data-only uploads to private artifact staging use the explicit
+  batch Upload confirmation described above, with verified bytes, destination
+  and a charge warning instead of a separate cost estimate or typed `yes`.
 - **Tasks** are GitHub Issues on the project board
   (https://github.com/orgs/rewiring-nz/projects/5). Link PRs with `Fixes #N`.
   Open work is also in BACKLOG.md.
@@ -177,6 +247,21 @@ figure for the same thing. Code enforces this:
   `scp` (the tools/ scripts do). It is a spot VM that stops itself 40 hours
   after starting (max-run-duration 144000 s); resume a cut-off build with
   `src/run_district_build.sh --force --regions "<the rest>"`.
+- **VM spending limits.** October 2026: 376 VM hours, 151 of them idle,
+  about $500 billed. Two limits in code:
+  (1) `tools/vm_start.sh` is the only way to start a build VM. It sums the
+  month's uptime of every build VM from Cloud Monitoring and refuses once it
+  reaches `data/vm_budget.json` `hours_per_month`; only the owner raises it.
+  `tools/remote_build.sh` starts through it, and a Claude Code PreToolUse
+  hook (`.claude/hooks/block_vm_start.py` in the parent folder) blocks a bare
+  `gcloud compute instances start|resume|create`.
+  (2) `tools/vm_idle_stop.sh`, the VMs' `startup-script` metadata, powers a VM
+  off after 30 minutes with load under 1.0 and no project process running
+  (build, fetch, copy). A running job needs no keep-awake; do not touch it
+  when launching one. `touch /tmp/keep-awake` holds an idle VM up for 12
+  hours from the touch, then it is ignored and deleted. A change to the
+  script reaches the VM only when the owner re-installs it as
+  `startup-script` metadata and the VM next boots.
 - **Never change code on the VM while it is building.** Each stage is a new
   process, so a mid-build change mixes code across regions without trace.
   The VM's `~/solar-map` is a git checkout: push, then `tools/sync_vm.sh` (or
@@ -471,6 +556,53 @@ figure for the same thing. Code enforces this:
   is the pricing model; `economics.js` holds cost tiers, prices and the
   battery simulation it uses.
 - The refit API exists only in `src/live_server.py`; static hosting lacks it.
+- The left dashboard splits the in-view total by building type, one box
+  per group under the density slider (Homes, Businesses, Community
+  buildings, Other; `BTYPE_GROUPS` in `rooftop-solar.html`, a display merge
+  of the build's `btype`; regrouping needs no rebuild; a type no group lists
+  counts under the last group). In money mode each box also shows its
+  group's net saving a year: the in-view money total split by group, so the
+  boxes add up to it. Advanced > Export video
+  (`video_export.js`) renders an MP4 tour of one group, of all buildings,
+  or of one building type on its own:
+  a title screen over the current view, flights to well-covered areas drawn
+  at random (homes and businesses in turn for all buildings), each area's
+  panels added in fill order while that group's MW counts up top left, and
+  a closing screen with every group's total for the starting view. A
+  video fills every roof (density 100, no household cap) whatever the
+  slider is on, so its MW figures are higher than the sidebar's on Auto.
+  The zoomed-out heat map (the `cells-heat-*` density surface below the
+  building zooms) is off everywhere (`SHOW_ZOOMED_OUT_HEAT` in
+  `rooftop-solar.html`); the roof heat map from the building zooms up stays.
+  It is rendered a frame at a time
+  (`maplibregl.setNow`, `map.redraw`, WebCodecs H.264, `mp4-muxer` loaded
+  from unpkg on demand), and every frame waits for its map tiles.
+- Advanced > Edit panels (`panel_editor.js`) hand-edits one roof's panels
+  in the browser: click empty roof to add a panel (snapped to the face's
+  grid, or laid portrait down the slope on an empty face), click or
+  shift-drag to select, drag to move, Delete or the bin to remove, Cmd/Ctrl-Z
+  to undo. An added or moved panel takes `sb`/`ab` from the facet under its
+  centre and `sh` from the nearest build panels on that face (else the
+  face's `sh`), so `generation.js` prices it like any other. Edits are kept
+  per roof until the page reloads and stay on the card while that roof is
+  open; nothing is written back to the build.
+- The search box matches with `address_search.js` (rules in its header;
+  `tests/test_address_search.js`): normalised words in any order, street
+  abbreviations and macrons folded, a town word optional on labels without
+  one, numbers in numeric order, and spelling suggestions when nothing
+  matches. Its index (`addresses.json`) is every LINZ address point, labelled
+  with suburb and town: `src/add_addresses.py` writes
+  `data/regions/<r>/address_points.json`, `emit_region` turns it into the
+  region's index (building id 0 where no emitted building holds the point; the
+  page then opens the outline under the point or says LINZ has none there),
+  and `combine_regions` drops duplicates from overlapping regions. Builds
+  before this indexed one title per building, which left out about 13,600 of
+  34,900 addresses in v85 (10 Elspeth Street, Cromwell among them);
+  `tools/refresh_address_index.py` rebuilds a published version's index from
+  LINZ without a rebuild.
+- The selection spotlight (the dimming around a selected building) fades
+  out while every selected building is off screen and returns when one is
+  back in view (`focusBox` in `rooftop-solar.html`).
 - `map_layers.js` and `map_layers.css` provide the shared Build data legend,
   catalogue layer styling and aerial/OpenStreetMap switch. The analysis stack
   is panels above solar-analysis building outlines above the heat map. Build

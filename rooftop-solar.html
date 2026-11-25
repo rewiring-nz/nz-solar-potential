@@ -26,6 +26,8 @@
 <script src="sun_shadows.js"></script>
 <script src="buildings3d.js"></script>
 <script src="low_solar.js"></script>
+<script src="video_export.js"></script>
+<script src="address_search.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <link href="map_layers.css" rel="stylesheet">
 <script>
@@ -237,6 +239,28 @@
   .econ-band.off .cnt { text-decoration: line-through; }
   /* Building-type chips: a hidden type stays legible, it is the control that
      brings it back. */
+  /* The in-view total by building type: one small box per group under the
+     density slider, in the headline box's yellow-to-orange so the groups
+     read as parts of that figure. Two to a row; a lone last box spans both. */
+  .bytype { width: 100%; margin-top: var(--s3); display: grid;
+    grid-template-columns: 1fr 1fr; gap: 6px; font-variant-numeric: tabular-nums; }
+  .bytype:empty { display: none; }
+  .bytype-box { background: linear-gradient(100deg, #ffe600, #ff8c00); color: #16181d;
+    border-radius: 8px; padding: 6px 8px; text-align: left; min-width: 0; }
+  .bytype-box:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .bytype-head { display: flex; justify-content: space-between; gap: 4px;
+    font-size: var(--fs-meta); font-weight: 700; color: rgba(22,24,29,0.78); }
+  .bytype-head span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bytype-pct { flex: none; }
+  .bytype-kw { font-size: 17px; font-weight: 800; line-height: 1.15; white-space: nowrap;
+    letter-spacing: -0.3px; }
+  .bytype-kwh { font-size: var(--fs-meta); font-weight: 600; color: rgba(22,24,29,0.72);
+    white-space: nowrap; }
+  /* Money mode: the group's share of the green total, in the total's green. */
+  .bytype-money { margin-top: 4px; padding: 2px 6px; border-radius: 5px; color: #fff;
+    font-size: var(--fs-meta); font-weight: 750; white-space: nowrap;
+    background: linear-gradient(135deg, #15803d 0%, #0e6b47 100%); }
+  .bytype-money.neg { background: linear-gradient(135deg, #3d4654 0%, #2b323d 100%); }
   .btype-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .btype-row:empty { display: none; }
   .btype-chip { font: inherit; font-size: var(--fs-meta); padding: 3px 8px; border-radius: 12px;
@@ -540,7 +564,10 @@
   #panel-edit-bar button { background:#252d35; color:#e9eef2; border:1px solid #39424c;
                            border-radius:4px; padding:5px 10px; font-size:12px; cursor:pointer; }
   #panel-edit-bar button:hover:not(:disabled) { background:#2f3841; }
-  #panel-edit-bar button.on { background:#1b9e4b; border-color:#25c25f; }
+  #panel-edit-bar button.on, #panel-edit-bar button.primary { background:#147a3a; border-color:#1b9e4b; color:#fff; }
+  #panel-edit-bar button.primary:hover { background:#11692f; }
+  #pe-box { position:absolute; z-index:6; pointer-events:none; border:1.5px dashed #ffd400;
+    background:rgba(255,212,0,.12); }
   #panel-edit-bar button:disabled { opacity:.45; cursor:default; }
   /* Flagging a layout has to be nearly free or nobody does it. One click
      sends; the follow-up chips are optional and only appear afterwards. */
@@ -569,6 +596,8 @@
 
   .addr-results div { padding: 7px 10px; font-size: 12.5px; cursor: pointer; color: #eee; }
   .addr-results div:hover, .addr-results div.active { background: #266db6; color: #fff; }
+  .addr-results div.addr-note, .addr-results div.addr-note:hover { cursor: default;
+    background: none; color: var(--ink-3); font-size: 12px; line-height: 1.35; }
   /* Horizontal, directly under the headline figure it controls, so the number
      and the control that moves it read as one thing. */
   .hslider-wrap { width: 100%; margin-top: var(--s3); }
@@ -899,7 +928,7 @@
     .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: 104px; }
     /* The corner buttons sit above the map credits (104px + 24px tall), so
        neither the mobile pills nor the Heat Map / Panel Layout bar cover
-       Report an issue or Dark mode. */
+       the Advanced menu. */
     #corner-actions { bottom: 136px; }
     .maplibregl-ctrl-top-right { top: 150px; }
     .side-panel {
@@ -1012,6 +1041,9 @@
   html.light #panel-edit-bar { color: var(--ink); background: #f3f5f8; border-color: rgba(15,20,30,0.15); }
   html.light #panel-edit-bar button { color: var(--ink); background: #f3f5f8; border-color: rgba(15,20,30,0.15); }
   html.light #panel-edit-bar button:hover:not(:disabled) { background: #f3f5f8; }
+  html.light #panel-edit-bar button.primary { color: #fff; background: #147a3a; border-color: #147a3a; }
+  html.light #panel-edit-bar .pe-delta, html.light #panel-edit-bar .pe-sent { color: #12703a; }
+  html.light #panel-edit-bar .pe-hint { color: #4a5560; }
   html.light .flag-wrap { border-top-color: rgba(15,20,30,0.15); }
   html.light .flag-btn { color: var(--ink); }
   html.light .corner-btn .dot { background: rgba(15,20,30,0.22); border-color: rgba(15,20,30,0.15); }
@@ -1176,7 +1208,11 @@
   <details id="advanced-menu">
     <summary class="corner-btn">Advanced</summary>
     <div class="adv-items">
-      <button class="corner-btn" id="toggle-panel-econ" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
+      <!-- money mode sits beside panel economics: both are the money view -->
+      <div id="econ-row" style="display:flex; gap:6px;">
+        <button class="corner-btn" id="toggle-panel-econ" title="Colour each panel by whether it pays for itself"><span class="dot"></span>Individual panel economics</button>
+        <button class="corner-btn" id="toggle-money" title="Money mode: each building's net saving a year, as a label on the map" aria-pressed="false" aria-label="Money mode">$</button>
+      </div>
       <details id="page-navigation">
         <summary class="corner-btn">Tools &amp; docs</summary>
         <nav aria-label="Pages">
@@ -1187,13 +1223,15 @@
       </details>
       <!-- one switch for outlines and obstructions; roof markup is on the M key -->
       <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
+      <button class="corner-btn" id="toggle-edit-panels" title="Add, remove and move panels on a roof by hand" aria-pressed="false"><span class="dot"></span>Edit panels</button>
       <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
+      <button class="corner-btn" id="export-video" title="Record a video of panels being added across the area in view">&#127909; Export video</button>
       <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
+      <button class="corner-btn" id="theme-toggle" title="Switch between light and dark"></button>
+      <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
     </div>
   </details>
   <button class="corner-btn" id="open-methodology" title="Where the data comes from and how each step works">&#128506;&#65039; How this map is made</button>
-  <button class="corner-btn" id="bug-report-btn">&#128030; Report an issue</button>
-  <button class="corner-btn" id="theme-toggle" title="Switch between light and dark"></button>
 </div>
 <div class="dashboard-stack">
   <div class="dashboard dashboard-inview collapsed" id="dashboard-inview">
@@ -1240,6 +1278,7 @@
             <div class="hnote hnote-r" style="right:6%"><i></i><span>Blanket the roof</span></div>
           </div>
         </div>
+        <div class="bytype" id="inview-bytype" aria-label="By building type"></div>
       </div>
       <div id="coverage-options" style="display:none;"></div>
       <!-- Building-type filters hidden for now (Josh, 18 Oct); the code still
@@ -1270,10 +1309,6 @@
       </ul>
     </div>
   </div>
-    <button id="explainer-btn-dash" class="corner-btn" style="display:none;align-self:flex-start;margin-top:-4px;">&#9654;&#65039; Watch explainer video</button>
-    <div id="econ-row" style="display:flex; gap:6px; align-self:flex-start;">
-      <button class="corner-btn" id="toggle-money" title="Money mode: each building's net saving a year, as a label on the map" aria-pressed="false" aria-label="Money mode">$</button>
-    </div>
 </div>
 
   <!-- Settings: assumptions and pricing, tabbed. Everything here is editable
@@ -1644,6 +1679,7 @@ function animate3D(pitchTo, exagFrom, exagTo, ms, zoomHold, ticket) {
 let switching3D = false;   // the switch-on sequence owns the camera until its tilt starts
 
 async function setTerrain3D(on) {
+  if (on && window.SITE && window.SITE.terrainAvailable === false) return;
   terrain3d = on;
   const ticket = ++terrainSwitching;
   // 3D IS FOR LOOKING AT THE PANELS ON THE ROOF. The solids carry the layout
@@ -1782,6 +1818,10 @@ class ThreeDControl {
     const d = document.createElement("div");
     d.className = "maplibregl-ctrl maplibregl-ctrl-group";
     d.innerHTML = `<button id="btn-3d" type="button" title="3D view">3D</button>`;
+    if (window.SITE && window.SITE.terrainAvailable === false) {
+      d.firstElementChild.disabled = true;
+      d.firstElementChild.title = "3D terrain is not included in this local release";
+    }
     d.addEventListener("click", e => { e.preventDefault(); setTerrain3D(!terrain3d); });
     this._c = d;
     return d;
@@ -1827,6 +1867,12 @@ let mode = "layout";   // Panel Layout opens by default; Heat Map is one click a
 // minzoom, maxzoom] per cell band. Top level because applyBtypeFilters, also
 // top level, filters the cells-* layers by building type.
 const CELL_BANDS = [[9, 0, 6], [12, 6, 9], [16, 9, 13]];
+// THE ZOOMED-OUT HEAT MAP IS OFF. Below the building zooms the purple
+// density surface over whole areas read as a picture of the land rather than
+// of roofs, so it is hidden; true brings it back. The roof-by-roof heat map
+// from the building zooms up is unaffected, and the invisible cells under it
+// still carry the sums the dashboard adds up.
+const SHOW_ZOOMED_OUT_HEAT = false;
 const LAYOUT_LAYERS = ["facets-fill", "facets-outline", "obstructions-fill", "obstructions-outline", "panels-fill", "panels-outline", "panel-areas-fill"];
 let obstructionsOn = false;  // default hidden
 let outlinesOn = false;      // building outlines, default hidden
@@ -1923,6 +1969,10 @@ let panelDensityPct = 80;
 // one density for every roof, as before. One rule, pctForBuilding, feeds the
 // map, the building card and the totals, so they cannot disagree.
 let sizingDefault = true;
+// VIDEO EXPORT's reveal (video_export.js): while set, a roof shows only the
+// panels whose fill rank is at or under this, so the recording can add
+// panels in fill order. null everywhere else.
+let densityRevealPct = null;
 let bigHomeIds = [];   // homes with a block-of-units roof: not capped (see onViewChanged)
 // WHICH HOMES ARE BIG IS A FACT ABOUT THE BUILDING, NOT ABOUT THE VIEW. It
 // was read from the buildings drawn on screen, and at a broad view most are
@@ -2082,12 +2132,44 @@ function focusRings(geom) {
   return polys.map(poly => ringOutward(poly[0], FOCUS_GAP_M)).filter(Boolean);
 }
 
+// THE SPOTLIGHT FOLLOWS THE SELECTION INTO VIEW. Once every selected
+// building is panned off screen the darkening only hides the map being
+// explored, so it fades out; it fades back in when a selected building
+// returns to view. The selection itself (card, outline) is untouched.
+// focusBox is the selection's lon/lat bounding box; null when nothing is
+// selected.
+let focusBox = null;
+let focusShown = false;
+function setFocusDim(on) {
+  focusShown = on;
+  const a = on ? FOCUS_DIM_OPACITY : 0;
+  if (map.getLayer("focus-dim")) map.setPaintProperty("focus-dim", "fill-opacity", a);
+  if (map.getLayer("focus-ramp")) map.setPaintProperty("focus-ramp", "line-opacity", a);
+}
+function focusInView() {
+  if (!focusBox) return false;
+  const b = map.getBounds();
+  return !(focusBox[2] < b.getWest() || focusBox[0] > b.getEast() ||
+           focusBox[3] < b.getSouth() || focusBox[1] > b.getNorth());
+}
+map.on("move", () => {
+  if (!focusBox) return;
+  const want = focusInView();
+  if (want !== focusShown) setFocusDim(want);
+});
+
 function setFocusMask(geom) {
   const src = map.getSource && map.getSource("focus-mask");
   const edge = map.getSource && map.getSource("focus-edge");
   if (!src || !edge) return;
   const rings = focusRings(geom);
+  focusBox = null;
+  if (rings.length) {
+    const xs = rings.flat().map(c => c[0]), ys = rings.flat().map(c => c[1]);
+    focusBox = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  }
   if (!rings.length) {
+    focusShown = false;
     src.setData({ type: "FeatureCollection", features: [] });
     edge.setData({ type: "FeatureCollection", features: [] });
     if (map.getLayer("focus-dim")) map.setPaintProperty("focus-dim", "fill-opacity", 0);
@@ -2104,8 +2186,9 @@ function setFocusMask(geom) {
   // transition already animates up from the current 0, so the rAF bought
   // nothing -- and it silently broke the whole effect whenever rAF is
   // suspended, which is any background tab (and how this was caught).
-  if (map.getLayer("focus-dim")) map.setPaintProperty("focus-dim", "fill-opacity", FOCUS_DIM_OPACITY);
-  if (map.getLayer("focus-ramp")) map.setPaintProperty("focus-ramp", "line-opacity", FOCUS_DIM_OPACITY);
+  // A building selected off screen (a search result before the fly-to
+  // lands) starts undimmed; the move handler brings the dim in on arrival.
+  setFocusDim(focusInView());
 }
 
 function highlightSelectedBuilding(buildingId, geom) {
@@ -2177,6 +2260,8 @@ function densityOpacityExpr(baseOpacity) {
               ["<=", ["get", "fill_order"], homeCapPanels()]]
     : ["any", ["!", ["has", "fill_rank"]],
               ["<=", ["get", "fill_rank"], panelDensityPct]];
+  if (densityRevealPct != null) dense = ["all", dense, ["any", ["!", ["has", "fill_rank"]],
+                                                          ["<=", ["get", "fill_rank"], densityRevealPct]]];
   // the open building shows its own system size (bldgSys), not the density
   if (bldgSys) dense = ["case", ["all", ["==", ["get", "building_id"], bldgSys.buildingId], ["has", "fill_order"]],
                         ["<=", ["get", "fill_order"], bldgSys.k > 0 ? bldgSysMaxOrder() : -1], dense];
@@ -2562,6 +2647,7 @@ function clearSelection() {
   selectedIds = [];
   selectedPropsById = {};
   selectedGeomById = {};
+  if (window.PanelEditor) window.PanelEditor.onCleared();
   // These were never cleared, so after deselecting, anything that refreshed on
   // the "selected" building kept working on the old one.
   selectedPanelBuildingId = -1;
@@ -2671,9 +2757,9 @@ const DATA_VERSION = (window.SITE && window.SITE.dataVersion) || "1";
 // panel tiles alone are ~1.5 GB (docs/maintainers/scale-architecture.md).
 // On a local server, ?localdata=1 reads the data built beside the page
 // instead of the published release, to look at a local build.
-const DATA_BASE = (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)
-                   && new URLSearchParams(location.search).has("localdata"))
-  ? "" : ((window.SITE && window.SITE.dataBase) || "");
+const DATA_BASE = new URL((["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)
+                           && new URLSearchParams(location.search).has("localdata"))
+  ? "./" : ((window.SITE && window.SITE.dataBase) || "./"), location.href).href;
 let coveragePct = 25;   // Heat Map default (Josh, 18 Oct)
 const COVERAGE_OPTIONS = [5, 10, 15, 25, 50, 75, 100];
 // Mirrors src/bake_density_deciles.COVERAGE_STEPS. Values between
@@ -2737,8 +2823,10 @@ function lruTouch(cache, key, max) {
 }
 
 map.on("load", async () => {
-  if (window.SunShadows) SunShadows.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
-  if (window.Buildings3D) Buildings3D.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+  if (!window.SITE || window.SITE.terrainAvailable !== false) {
+    if (window.SunShadows) SunShadows.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+    if (window.Buildings3D) Buildings3D.init(map, { dataBase: DATA_BASE, dataVersion: DATA_VERSION });
+  }
   // Kick off everything that does NOT depend on the buildings file before
   // awaiting it. solar_potential.geojson is 19MB (4MB gzipped) and its parse
   // is the gate on first paint; the panel tiles and the heat-map manifest
@@ -2938,6 +3026,7 @@ map.on("load", async () => {
       source: "cells", "source-layer": "cellpts",
       filter: ["==", ["get", "lod"], lod],
       minzoom: from, maxzoom: to,
+      layout: { visibility: SHOW_ZOOMED_OUT_HEAT ? "visible" : "none" },
       paint: {
         "heatmap-weight": heatWeightExpr(lod),
         // radius in pixels grows with zoom so the kernels of one band overlap
@@ -2965,7 +3054,7 @@ map.on("load", async () => {
   // the block fills for that data set rather than show nothing.
   new pmtiles.PMTiles(`${DATA_BASE}data/building_cells.pmtiles?v=${DATA_VERSION}`).getMetadata().then(meta => {
     const layers = ((meta && meta.vector_layers) || []).map(l => l.id);
-    if (!layers.length || layers.includes("cellpts")) return;
+    if (!SHOW_ZOOMED_OUT_HEAT || !layers.length || layers.includes("cellpts")) return;
     CELL_BANDS.forEach(([lod]) => {
       if (map.getLayer(`cells-fill-${lod}`)) map.setPaintProperty(`cells-fill-${lod}`, "fill-opacity",
         ["interpolate", ["linear"], ["coalesce", ["get", "n"], 0], 0, 0, 5, 0.18, 60, 0.45, 400, 0.6]);
@@ -3380,6 +3469,7 @@ map.on("load", async () => {
   function refreshMoneyPills() {
     if (!moneyMode) return;
     const job = ++moneyJob;
+    setByTypeMoney(null);
     let want = [];
     if (map.getZoom() >= MONEY_MIN_ZOOM) {
       const seen = new Set();
@@ -3420,10 +3510,10 @@ map.on("load", async () => {
         cellEst.push({ k, cp: c.properties });
       }
     }
-    let cellRoofs = 0;
     const keep = new Set(want.map(w => w.id));
     moneyById.forEach((p, id) => { if (!keep.has(id)) { p.marker.remove(); moneyById.delete(id); } });
     const nets = new Map();
+    const netType = new Map();   // the same keys -> btype, for the by-type boxes
     // every roof, the open one included, is priced by roofMoney, the card's
     // own calculation (onResult checks the two agree for a single, unedited
     // roof). A stored card figure went stale once the card closed or prices
@@ -3431,7 +3521,7 @@ map.on("load", async () => {
     const price = w => {
       const net = roofMoney(w.pr);
       if (net == null || !Number.isFinite(net)) { const p = moneyById.get(w.id); if (p) { p.marker.remove(); moneyById.delete(w.id); } return; }
-      nets.set(w.id, net);
+      nets.set(w.id, net); netType.set(w.id, w.pr.btype || "home");
       moneyPill(w.id, ringCentre(w.geom), net);
     };
     // THE AREA'S TOTAL: the pills on screen added up, each as its pill shows
@@ -3446,15 +3536,15 @@ map.on("load", async () => {
       const n = cellsMode ? cellEst.length : estimating ? est.length : want.length;
       if (left) { tot.innerHTML = `<span class="rm-l">Adding up the savings&hellip; ${(n - left).toLocaleString()} of ${n.toLocaleString()} ${cellsMode ? "areas" : "roofs"}</span>`; return; }
       let sum = 0; nets.forEach(v => { sum += v; });
+      // the same nets split by group, so the boxes add up to this total
+      const byGroup = BTYPE_GROUPS.map(() => 0);
+      nets.forEach((v, k) => { byGroup[btypeGroupIndex(netType.get(k))] += v; });
+      setByTypeMoney(byGroup);
       tot.classList.toggle("neg", sum < 0);
-      const nRoofs = cellsMode ? cellRoofs : nets.size;
-      const roofs = `${nRoofs.toLocaleString()} roof${nRoofs === 1 ? "" : "s"}`;
-      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` + (cellsMode
-        ? `<span class="rm-l">net savings, about ${roofs} in and around the view, from each area's roofs by size; zoom in for each roof's own figure</span>`
-        : estimating
-        ? `<span class="rm-l">net savings, the ${roofs} in view, each from its yearly total; zoom in for each roof's own figure</span>`
-        : `<span class="rm-l">net savings, the ${roofs} labelled` +
-          `${want.length >= MONEY_MAX_PILLS ? " (the " + MONEY_MAX_PILLS.toLocaleString() + " nearest the middle)" : ""}</span>`);
+      // One short label at every zoom: the roof counts and the method behind
+      // each zoom's figure are in the docs, not under the number.
+      tot.innerHTML = `<b>${sum < 0 ? "−" : ""}${btMoney(Math.abs(sum))}/yr</b>` +
+        `<span class="rm-l">Net savings after repayments</span>`;
     };
     let i = 0;
     // one pass over the loaded layout tiles for the whole screen (liveFeatures)
@@ -3465,7 +3555,7 @@ map.on("load", async () => {
       const t0 = performance.now();
       while (j < est.length && performance.now() - t0 < MONEY_SLICE_MS) {
         const pr = est[j++], net = roofMoneyEstimate(pr);
-        if (net != null && Number.isFinite(net)) nets.set(pr.building_id, net);
+        if (net != null && Number.isFinite(net)) { nets.set(pr.building_id, net); netType.set(pr.building_id, pr.btype || "home"); }
       }
       total(est.length - j);
       if (j < est.length) moneyNext(estSlice);
@@ -3477,7 +3567,7 @@ map.on("load", async () => {
       const t0 = performance.now();
       while (ci < cellEst.length && performance.now() - t0 < MONEY_SLICE_MS) {
         const { k, cp } = cellEst[ci++], o = cellMoneyEstimate(cp);
-        if (o && Number.isFinite(o.net)) { nets.set(k, o.net); cellRoofs += o.roofs; }
+        if (o && Number.isFinite(o.net)) { nets.set(k, o.net); netType.set(k, cp.btype || "home"); }
       }
       total(cellEst.length - ci);
       if (ci < cellEst.length) moneyNext(cellSlice);
@@ -3503,6 +3593,7 @@ map.on("load", async () => {
     else {
       moneyJob++; clearMoneyPills();
       const tot = document.getElementById("inview-money"); if (tot) tot.hidden = true;
+      setByTypeMoney(null);
     }
   }
   document.getElementById("toggle-money").addEventListener("click", () => setMoneyMode(!moneyMode));
@@ -3641,6 +3732,7 @@ map.on("load", async () => {
     // The coverage ladder too: every step it lists is one the cells carry
     // exactly, so the rows are sums, not interpolations.
     const ladder = Object.fromEntries(COVERAGE_OPTION_STEPS.map(pct => [pct, { pct, kwp: 0, kwh: 0 }]));
+    const byType = {};   // btype -> the same four sums, for the by-type rows
     for (const c of cells) {
       // One feature per (cell, building type): key on both, or every type
       // but the first would be dropped as a duplicate of the same cell.
@@ -3649,8 +3741,11 @@ map.on("load", async () => {
       seen.add(k);
       if (btypesOff.has(c.properties.btype || "home")) continue;
       n += c.properties.n || 0;
-      kwp += lerpCell(c.properties, "kwp", coveragePct);
-      kwhYear += lerpCell(c.properties, "kwh", coveragePct);
+      const cKwp = lerpCell(c.properties, "kwp", coveragePct);
+      const cKwh = lerpCell(c.properties, "kwh", coveragePct);
+      kwp += cKwp;
+      kwhYear += cKwh;
+      const fit0 = { kwp: fittedKwp, kwh: fittedKwh };
       // The PLACED panels at the slider's density, from the cell's summed
       // fill ladder -- the same interpolation each building gets at closer
       // zooms. Cells from before the ladder existed carry only the 100%
@@ -3660,13 +3755,7 @@ map.on("load", async () => {
         // homes x the household cap, on its own ladder (zoomed out only; a
         // cell does not carry each home's ladder, so homes smaller than the
         // cap make this an upper bound)
-        let cpct = panelDensityPct;
-        if (sizingDefault) {
-          cpct = (c.properties.btype || "home") === "home"
-            ? defaultPctFor({ btype: "home", facet_area_m2: 0,
-                              ...Object.fromEntries([10,20,30,40,50,60,70,80,90,100].map(k => [`fill_panels_${k}`, c.properties[`fill_panels_${k}`] / Math.max(1, (c.properties.n_est || c.properties.n || 1))])) })
-            : 100;
-        }
+        const cpct = cellDensityPct(c.properties);
         fittedKwp += decileInterp(c.properties, "fill_panels", cpct)
           * assumptions.panel_rated_power_w / 1000;
         fittedKwh += decileInterp(c.properties, "fill_kwh", cpct) * bakedKwhScale();
@@ -3674,12 +3763,25 @@ map.on("load", async () => {
         fittedKwp += c.properties.fitted_kwp || 0;
         fittedKwh += c.properties.fitted_kwh || 0;
       }
+      const t = byType[c.properties.btype || "home"] ||= { kwp: 0, kwhYear: 0, fittedKwp: 0, fittedKwh: 0 };
+      t.kwp += cKwp; t.kwhYear += cKwh;
+      t.fittedKwp += fittedKwp - fit0.kwp; t.fittedKwh += fittedKwh - fit0.kwh;
       for (const pct of COVERAGE_OPTION_STEPS) {
         ladder[pct].kwp += lerpCell(c.properties, "kwp", pct);
         ladder[pct].kwh += lerpCell(c.properties, "kwh", pct);
       }
     }
-    return { n, kwp, kwhYear, fittedKwp, fittedKwh, ladder: COVERAGE_OPTION_STEPS.map(pct => ladder[pct]) };
+    return { n, kwp, kwhYear, fittedKwp, fittedKwh, byType, ladder: COVERAGE_OPTION_STEPS.map(pct => ladder[pct]) };
+  }
+  // The density a cell's fill ladder is read at: the slider's, or at default
+  // sizes 100 for a business cell and, for a home cell, the point where its
+  // average home reaches the household cap.
+  function cellDensityPct(p) {
+    if (!sizingDefault) return panelDensityPct;
+    return (p.btype || "home") === "home"
+      ? defaultPctFor({ btype: "home", facet_area_m2: 0,
+                        ...Object.fromEntries([10,20,30,40,50,60,70,80,90,100].map(k => [`fill_panels_${k}`, p[`fill_panels_${k}`] / Math.max(1, (p.n_est || p.n || 1))])) })
+      : 100;
   }
   function lerpCell(p, prefix, pct) {
     const steps = COVERAGE_POA_STEPS.filter(c => p[`${prefix}_${c}`] != null);
@@ -3695,6 +3797,188 @@ map.on("load", async () => {
     }
     return p[`${prefix}_${steps[steps.length - 1]}`];
   }
+
+  // BY BUILDING TYPE: the in-view total split by the type each roof carries
+  // (btype, src/building_types.py). The groups are a display merge of those
+  // types, so regrouping is an edit to this table and needs no rebuild. A
+  // type not listed falls into the last group, so the rows always add up to
+  // the headline above them.
+  // Each group is a small box under the density slider; a new group is a new
+  // row here. The video export reuses this table, so every group lists its
+  // types ("All buildings" there is the union of the lists).
+  const BTYPE_GROUPS = [
+    ["Homes", ["home"]],
+    ["Businesses", ["business", "industrial", "retail", "office", "accommodation", "farm"]],
+    ["Community buildings", ["school", "hospital", "community", "church", "marae", "emergency", "sport"]],
+    ["Other", ["mixed"]],
+  ];
+  function btypeGroupIndex(t) {
+    const i = BTYPE_GROUPS.findIndex(g => g[1].includes(t || "home"));
+    return i < 0 ? BTYPE_GROUPS.length - 1 : i;
+  }
+  // MONEY MODE: each group's net saving a year, the in-view money total
+  // (refreshMoneyPills) split by group. null while it is being added up or
+  // when money mode is off; the boxes then show no money line.
+  let byTypeMoney = null, lastByTypeSums = null;
+  function setByTypeMoney(v) {
+    byTypeMoney = v;
+    if (lastByTypeSums) renderByType(lastByTypeSums);
+  }
+  // sums: { btype: { kwp, kwhYear } }. Shares are of yearly energy.
+  function renderByType(sums) {
+    const box = document.getElementById("inview-bytype");
+    if (!box) return;
+    lastByTypeSums = sums;
+    const money = moneyMode ? byTypeMoney : null;
+    const rows = BTYPE_GROUPS.map(([label], i) => ({ label, kwp: 0, kwhYear: 0,
+                                                   net: money ? money[i] : null }));
+    for (const [t, v] of Object.entries(sums)) {
+      const r = rows[btypeGroupIndex(t)];
+      r.kwp += v.kwp; r.kwhYear += v.kwhYear;
+    }
+    const total = rows.reduce((a, r) => a + r.kwhYear, 0);
+    if (!(total > 0)) { box.innerHTML = ""; return; }
+    box.innerHTML = rows.filter(r => r.kwhYear > 0 || r.label !== "Other").map(r => {
+      const share = 100 * r.kwhYear / total;
+      const pct = share > 0 && share < 1 ? "<1%" : Math.round(share) + "%";
+      return `<div class="bytype-box" title="${pct} of the yearly energy in view">` +
+        `<div class="bytype-head"><span>${r.label}</span><span class="bytype-pct">${pct}</span></div>` +
+        `<div class="bytype-kw">${fmtPower(r.kwp)}</div>` +
+        `<div class="bytype-kwh">${fmtEnergy(r.kwhYear)}</div>` +
+        (r.net == null ? "" : `<div class="bytype-money${r.net < 0 ? " neg" : ""}" title="Net saving a year: bill savings less loan repayments">` +
+          `${r.net < 0 && btMoney(Math.abs(r.net)) !== "$0" ? "−" : ""}${btMoney(Math.abs(r.net))}/yr</div>`) +
+        `</div>`;
+    }).join("");
+  }
+
+  // VIDEO EXPORT (video_export.js): the map-specific half of the recording.
+  // A VIDEO SHOWS EVERY ROOF FULL: density 100, every panel that fits, with
+  // no household cap, whatever the slider is on. The video is about what the
+  // roofs could hold, and a street of homes stopping at 14 kW each reads as
+  // half-finished. So its MW figures are the full-roof ones and are higher
+  // than the sidebar's on Auto. The slider's setting is put back afterwards.
+  document.getElementById("export-video").addEventListener("click", () => {
+    let saved = null;
+    const heatLayers = on => CELL_BANDS.forEach(([lod]) => {
+      if (map.getLayer(`cells-heat-${lod}`)) map.setLayoutProperty(`cells-heat-${lod}`, "visibility", on ? "visible" : "none");
+    });
+    VideoExport.open({
+      map, groups: BTYPE_GROUPS, finestLod: CELL_BANDS[CELL_BANDS.length - 1][0],
+      // each type the build knows on its own (a video of every church),
+      // except those that are already a whole group
+      get detail() {
+        return btypesAll.filter(([k]) => !BTYPE_GROUPS.some(g => g[1].length === 1 && g[1][0] === k))
+          .map(([k, label]) => [label, [k]]);
+      },
+      get panelKw() { return assumptions.panel_rated_power_w / 1000; },
+      begin(types) {
+        const areas = map.getLayer("panel-areas-fill");
+        saved = { off: [...btypesOff], mode, sizingDefault, panelDensityPct,
+                  areasVis: areas ? map.getLayoutProperty("panel-areas-fill", "visibility") || "visible" : null };
+        const all = new Set([...btypesAll.map(([k]) => k), ...BTYPE_GROUPS.flatMap(g => g[1])]);
+        btypesOff.clear();
+        all.forEach(k => { if (!types.includes(k)) btypesOff.add(k); });
+        sizingDefault = false;
+        panelDensityPct = 100;
+        if (mode !== "layout") setMode("layout");
+        applyBtypeFilters();
+        // the merged panel areas (zoom 13-15) would show every roof full
+        // before its panels are added
+        if (areas) map.setLayoutProperty("panel-areas-fill", "visibility", "none");
+        // NO ZOOMED-OUT HEAT MAP IN A VIDEO: Panel Layout's density glow below
+        // the building zooms reads as purple smudges over the imagery on the
+        // title screens and between areas. The cells under it stay (they are
+        // invisible and carry the sums the counters use).
+        heatLayers(false);
+        invalidateInView();
+      },
+      end() {
+        densityRevealPct = null;
+        sizingDefault = saved.sizingDefault;
+        panelDensityPct = saved.panelDensityPct;
+        btypesOff.clear();
+        saved.off.forEach(k => btypesOff.add(k));
+        if (saved.areasVis) map.setLayoutProperty("panel-areas-fill", "visibility", saved.areasVis);
+        heatLayers(SHOW_ZOOMED_OUT_HEAT);
+        if (saved.mode !== mode) setMode(saved.mode);
+        applyBtypeFilters();
+        applyPanelDensityPaint();
+        invalidateInView();
+        recomputeInViewSummary();
+      },
+      reveal(pct) {
+        densityRevealPct = pct;
+        applyPanelDensityPaint();
+        // the merged areas (zoom 13-15) come back with the full layout
+        if (pct == null && saved.areasVis) map.setLayoutProperty("panel-areas-fill", "visibility", saved.areasVis);
+      },
+      // The roof with the most panels within 70 m of it (its own included),
+      // among the roofs within 300 m of the point: the middle of a street of
+      // homes, or of a block of large roofs.
+      bestRoof(lng, lat, types) {
+        const k = Math.cos(lat * Math.PI / 180), M = 111320;
+        const seen = new Set(), roofs = [];
+        for (const f of map.queryRenderedFeatures({ layers: ["buildings-fill"] })) {
+          const pr = f.properties;
+          if (seen.has(pr.building_id)) continue;
+          seen.add(pr.building_id);
+          if (btypesOff.has(pr.btype || "home") || (types && !types.includes(pr.btype || "home"))) continue;
+          const panels = decileInterp(pr, "fill_panels", pctForBuilding(pr));
+          if (!(panels > 0)) continue;
+          const c = ringCentre(f.geometry);
+          const x = (c[0] - lng) * k * M, y = (c[1] - lat) * M;
+          if (x * x + y * y <= 300 * 300) roofs.push({ c, x, y, panels });
+        }
+        let best = null, bestSum = -1;
+        for (const a of roofs) {
+          let sum = 0;
+          for (const b of roofs) if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 <= 70 * 70) sum += b.panels;
+          if (sum > bestSum) { bestSum = sum; best = a.c; }
+        }
+        return best;
+      },
+      cells() {
+        const z = map.getZoom();
+        const seen = new Set(), out = [];
+        // AT BUILDING ZOOMS there are no cells drawn: the buildings in view
+        // are grouped into the finest cell grid here, each at the size the
+        // map shows it, and a group sits at the panel-weighted middle of its
+        // roofs. "Buildings" counts the roofs that get panels.
+        if (z >= BUILDING_MIN_Z) {
+          const lod = CELL_BANDS[CELL_BANDS.length - 1][0], groups = new Map();
+          for (const f of map.queryRenderedFeatures({ layers: ["buildings-fill"] })) {
+            const pr = f.properties;
+            if (seen.has(pr.building_id) || btypesOff.has(pr.btype || "home")) continue;
+            seen.add(pr.building_id);
+            const panels = decileInterp(pr, "fill_panels", pctForBuilding(pr));
+            if (!(panels > 0)) continue;
+            const [lng, lat] = ringCentre(f.geometry);
+            const k = Math.floor((lng + 180) / 360 * 2 ** lod) + "/" +
+              Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * 2 ** lod) + "/" + (pr.btype || "home");
+            const g = groups.get(k) || { lod, btype: pr.btype || "home", lng: 0, lat: 0, panels: 0, buildings: 0 };
+            g.lng += lng * panels; g.lat += lat * panels; g.panels += panels; g.buildings += 1;
+            groups.set(k, g);
+          }
+          groups.forEach(g => { g.lng /= g.panels; g.lat /= g.panels; out.push(g); });
+          return out;
+        }
+        for (const c of map.queryRenderedFeatures({ layers: [`cells-fill-${cellLodFor(z)}`] })) {
+          const p = c.properties, k = p.cell + "|" + (p.btype || "");
+          if (seen.has(k) || btypesOff.has(p.btype || "home")) continue;
+          seen.add(k);
+          const [cz, cx, cy] = p.cell.split("/").map(Number);
+          out.push({
+            lod: cz, btype: p.btype || "home",
+            lng: (cx + 0.5) / 2 ** cz * 360 - 180,
+            lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * (cy + 0.5) / 2 ** cz))) * 180 / Math.PI,
+            panels: p.fill_panels_100 != null ? decileInterp(p, "fill_panels", cellDensityPct(p)) : (p.panel_count || 0),
+            buildings: p.n_est || 0,
+          });
+        }
+        return out;
+      },
+    });
+  });
 
   function recomputeInViewSummary() {
     // Panel Layout mode is only ever on at building zooms, so it always counts
@@ -3721,6 +4005,8 @@ map.on("load", async () => {
       // never reads "0.0 kW" under a real total (it did, until 23 Sep). The
       // per-building economics still need buildings and stay off here.
       renderCoverageRows(c.ladder);
+      renderByType(Object.fromEntries(Object.entries(c.byType).map(([t, v]) =>
+        [t, layout ? { kwp: v.fittedKwp, kwhYear: v.fittedKwh } : { kwp: v.kwp, kwhYear: v.kwhYear }])));
       return;
     }
     const props = inViewBuildingProps();
@@ -3729,16 +4015,22 @@ map.on("load", async () => {
     // Before the sums, not after: panelSumsFor asks breakEvenFor for each
     // building's threshold, and that reads the match this builds.
     rebuildEconMatch();
-    if (mode === "layout") {
-      const sums = panelSumsFor(props);
-      kwp = sums.kwp; kwhYear = sums.kwhYear;
-    } else {
-      props.forEach(pr => {
+    // Summed a type at a time, by the same per-building figures, so the
+    // by-type rows add up to the headline.
+    const propsByType = {};
+    props.forEach(pr => { (propsByType[pr.btype || "home"] ||= []).push(pr); });
+    const byType = {};
+    for (const [t, list] of Object.entries(propsByType)) {
+      const s = { kwp: 0, kwhYear: 0 };
+      if (mode === "layout") Object.assign(s, panelSumsFor(list));
+      else list.forEach(pr => {
         const est = buildingEstimate(pr, coveragePct);
-        kwp += est.kwp;
-        kwhYear += est.kwhYear;
+        s.kwp += est.kwp; s.kwhYear += est.kwhYear;
       });
+      byType[t] = s;
+      kwp += s.kwp; kwhYear += s.kwhYear;
     }
+    renderByType(byType);
     renderGlobalEconBands();
     document.getElementById("inview-power").textContent = fmtPower(kwp);
     document.getElementById("inview-energy").textContent = fmtEnergy(kwhYear);
@@ -3911,7 +4203,10 @@ map.on("load", async () => {
     // Queenstown list here put Queenstown suburbs in the NATIONAL site's search
     // box. Same bug as the hardcoded DEFAULT_VIEW, in the other direction.
     const TOWNS = ((window.SITE && window.SITE.towns) || [])
-      .map(([name, lng, lat, z]) => ({ addr: name + " (area)", lower: name.toLowerCase(), town: { lng, lat, z } }));
+      .map(([name, lng, lat, z]) => ({ addr: name + " (area)", town: { lng, lat, z } }));
+    // Words naming a town or suburb: a search may name one that an older
+    // index's labels leave out (address_search.js).
+    const PLACES = AddressSearch.placeWords(TOWNS.map(t => t.addr.replace(/ \(area\)$/, "")));
     // With buildings tiled, the page can no longer see every address by
     // reading the source -- it only has the tiles on screen. data/addresses.json
     // is a flat [address, lng, lat, building_id] index, 0.7 MB for the
@@ -3920,8 +4215,10 @@ map.on("load", async () => {
     // needs this sharded by prefix or replaced with a geocoder
     // (docs/maintainers/scaling-and-iteration.md). It is a separate problem from the one
     // this change fixes, and a tenth of the size.
-    let searchable = TOWNS.slice();
-    const addrRow = ([addr, lng, lat, id]) => ({ addr, lower: addr.toLowerCase(), at: { lng, lat, id } });
+    let searchable = [];
+    // id 0: an address point in no building on the map (address_points.json,
+    // src/add_addresses.py); picking it opens whatever outline is under it.
+    const addrRow = ([addr, lng, lat, id]) => ({ addr, at: { lng, lat, id } });
     // Flat file where the build is small; shards by the first two characters
     // where it is not (combine_regions), fetched as they are typed.
     // Each loaded shard is kept on its own and a keystroke scans only the
@@ -3939,14 +4236,18 @@ map.on("load", async () => {
         if (idx && idx.shards) { addrShards = new Set(idx.shards); return; }
         return fetch(`${DATA_BASE}data/addresses.json?v=${DATA_VERSION}`)
           .then(r => r.ok ? r.json() : [])
-          .then(rows => { searchable = TOWNS.concat(rows.map(addrRow)); });
+          .then(rows => { searchable = rows.map(addrRow);
+                          if (input.value.trim()) input.dispatchEvent(new Event("input")); });
       })
       .catch(() => {});
     // Must match combine_regions._addr_key, which keeps every character
     // Python calls alphanumeric. [a-z0-9] dropped the macron vowels, so
     // "Ōtāhuhu" asked for shard "th" while its rows were written to "ōt".
+    // Macrons are folded here and combine_regions writes each address under
+    // its folded key too, so "Otahuhu" and "Ōtāhuhu" ask for the same shard.
     const addrShardKey = q => {
-      const s2 = [...q.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")];
+      const s2 = [...q.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+                    .replace(/[^\p{L}\p{N}]/gu, "")];
       return s2.length >= 2 ? s2.slice(0, 2).join("") : null;
     };
     const input = document.getElementById("addr-input");
@@ -3974,6 +4275,7 @@ map.on("load", async () => {
       const { lng, lat, id } = item.at;
       results.style.display = "none";
       input.value = item.addr;
+      if (!id) { openAddressPoint(item); return; }
       flyToPlace(lng, lat, 18, 1200);
       selectBuilding(id);
       // The address index carries a point and an id, not the feature -- with
@@ -4032,6 +4334,28 @@ map.on("load", async () => {
         showBuildingPanel(best.properties, { lng: cx, lat: cy }, best.geometry);
       }
     };
+    // An address with no building on the map: mark the point, open the
+    // outline under it if the tiles have one, else say there is no roof
+    // estimate there (LINZ has no outline yet, or it is outside the build).
+    const openAddressPoint = async (item) => {
+      const { lng, lat } = item.at;
+      if (coordMarker) coordMarker.remove();
+      coordMarker = new maplibregl.Marker({ color: "#e5484d" }).setLngLat([lng, lat]).addTo(map);
+      flyToPlace(lng, lat, 18, 1200);
+      await new Promise(r => map.once("idle", r));
+      const pt = map.project([lng, lat]);
+      const box = [[pt.x - 6, pt.y - 6], [pt.x + 6, pt.y + 6]];
+      const f = map.queryRenderedFeatures(box, { layers: ["buildings-fill"] })[0];
+      if (f) {
+        selectBuilding(f.properties.building_id);
+        showBuildingPanel(f.properties, { lng, lat }, f.geometry);
+        return;
+      }
+      matches = [];
+      results.innerHTML = `<div class="addr-note">No building outline at ${escHtml(item.addr)} in the LINZ data this map is built from, so there is no roof estimate here yet. New houses appear once LINZ maps them.</div>`;
+      results.style.display = "block";
+    };
+    const SUGGEST_HEAD = `<div class="addr-note">No exact match. Did you mean:</div>`;
     let matches = [];
     input.addEventListener("input", () => {
       const q = input.value.trim().toLowerCase();
@@ -4043,7 +4367,7 @@ map.on("load", async () => {
         results.style.display = "block";
         return;
       }
-      let pools = [searchable];
+      let pools = [TOWNS, searchable];
       if (addrShards) {
         const key = addrShardKey(q);
         pools = [TOWNS];
@@ -4058,19 +4382,43 @@ map.on("load", async () => {
           } else if (addrShardRows.get(key)) pools.push(addrShardRows.get(key));
         }
       }
-      const starts = pools.flatMap(p => p.filter(x => x.lower.startsWith(q)));
-      const contains = pools.flatMap(p => p.filter(x => !x.lower.startsWith(q) && x.lower.includes(q)));
-      matches = starts.concat(contains).slice(0, 8);
-      if (!matches.length) { results.style.display = "none"; return; }
-      results.innerHTML = matches.map((x, i) => `<div data-i="${i}">${escHtml(x.addr)}</div>`).join("");
+      const raw = input.value;
+      matches = AddressSearch.search(pools, raw, { places: PLACES });
+      if (matches.length) {
+        results.innerHTML = matches.map((x, i) => `<div data-i="${i}">${escHtml(x.addr)}</div>`).join("");
+        results.style.display = "block";
+        return;
+      }
+      // Still loading the shard (or the flat file) this query needs: wait for it.
+      const loading = addrShards ? addrShardRows.get(addrShardKey(q)) === null : !searchable.length;
+      if (loading) { results.style.display = "none"; return; }
+      const sugg = AddressSearch.suggest(pools, raw, { places: PLACES });
+      matches = sugg.map(x => x.row || { suggestText: x.text, addr: x.label });
+      if (!matches.length) {
+        results.innerHTML = `<div class="addr-note">No address found. Try the street name on its own, or a town.</div>`;
+        results.style.display = "block";
+        return;
+      }
+      const note = sugg.some(x => x.streetOnly) && sugg[0].streetOnly
+        ? `<div class="addr-note">That number isn't in the map's address list. Streets like it:</div>` : SUGGEST_HEAD;
+      results.innerHTML = note + matches.map((x, i) => `<div data-i="${i}">${escHtml(x.addr)}</div>`).join("");
       results.style.display = "block";
     });
+    const pick = (item) => {
+      if (item.suggestText) {
+        input.value = item.suggestText;
+        input.dispatchEvent(new Event("input"));
+        input.focus();
+        return;
+      }
+      openResult(item);
+    };
     results.addEventListener("click", e => {
       const d = e.target.closest("div[data-i]");
-      if (d) openResult(matches[+d.dataset.i]);
+      if (d) pick(matches[+d.dataset.i]);
     });
     input.addEventListener("keydown", e => {
-      if (e.key === "Enter" && matches.length) openResult(matches[0]);
+      if (e.key === "Enter" && matches.length) pick(matches[0]);
       if (e.key === "Escape") results.style.display = "none";
     });
     // The search is collapsed to an icon so the dashboard can sit at the top of
@@ -4480,12 +4828,7 @@ map.on("load", async () => {
     const edit = ev.target.closest("[data-edit-panels]");
     if (edit) {
       const id = parseInt(edit.getAttribute("data-edit-panels"), 10);
-      if (window.PanelEditor) {
-        // Panels only exist as tiles in layout mode, so switch first --
-        // entering the editor over the heat map would find nothing to copy.
-        if (typeof setMode === "function" && mode !== "layout") setMode("layout");
-        setTimeout(() => window.PanelEditor.enter(id, map.getCenter()), 350);
-      }
+      if (window.PanelEditor) window.PanelEditor.start(id);
       return;
     }
     const chip = ev.target.closest("[data-flag-kind]");
@@ -5022,7 +5365,8 @@ map.on("load", async () => {
   // map before it can bind anything -- so it is wired here rather than at load.
   // A selected panel highlights through _selected, which only the editor sets.
   map.setPaintProperty("live-panels-fill", "fill-color",
-    ["case", ["==", ["get", "_selected"], 1], "#ffd400", "#2f6fb0"]);
+    ["case", ["==", ["get", "_selected"], 1], "#ffd400",
+             ["boolean", ["feature-state", "hover"], false], "#4f93d8", "#2f6fb0"]);
   map.setPaintProperty("live-panels-outline", "line-color",
     ["case", ["==", ["get", "_selected"], 1], "#ffffff", "#7fd4ff"]);
   map.setPaintProperty("live-panels-outline", "line-width",
@@ -5530,7 +5874,7 @@ map.on("load", async () => {
       if (sun && panels.length) {
         const g = genFromPanels(panels, sun, assumptions, { asBuilt: assumptionsAsBuilt() });
         if (g) {
-          if (F.edited) g.node.flags.push("Panels edited by hand. Moved panels keep their roof face's sunlight and shading.");
+          if (F.edited) g.node.flags.push("Panels edited by hand. A panel added or moved takes the tilt and direction of the roof face under it, and the shading of the build's panels nearest it on that face.");
           const curve = genCurve(sun, genWeightsFromPanels(g.perPanel, assumptions), g.node, props.tshade);
           // the share of these panels' sunlight that shade takes: the same
           // per-panel shade factors the kWh above are worked from
@@ -5636,7 +5980,9 @@ map.on("load", async () => {
     const box = document.getElementById("bldg-sys");
     if (!box) return;
     const S = bldgSys;
-    const on = !!(S && S.buildingId === buildingId && mode === "layout");
+    // hand-edited panels (panel_editor.js) have no system-size ladder
+    const on = !!(S && S.buildingId === buildingId && mode === "layout")
+      && layoutExcludedBuildingId !== buildingId;
     box.hidden = !on;
     if (!on) return;
     const sl = document.getElementById("bldg-sys-slider");
@@ -6775,6 +7121,8 @@ map.on("load", async () => {
     // exactly how a half-initialised panel hides its own breakage.
     if (!multiSel && !p.no_estimate_reason) wireTuningControls(panel, p.building_id);
     if (window.__refreshModeUI) window.__refreshModeUI();
+    // every way a roof opens (click, address search, shared link) lands here
+    if (window.PanelEditor) window.PanelEditor.onSelection(selectedIds.length ? selectedIds.slice() : [p.building_id]);
   }
 
   // Shift (or Cmd/Ctrl) click builds a multi-building selection whose totals
@@ -6791,7 +7139,11 @@ map.on("load", async () => {
     const p = e.features[0].properties;
     const geom = e.features[0].geometry;
     const ev = e.originalEvent || {};
-    const additive = !!(ev.shiftKey || ev.metaKey || ev.ctrlKey);
+    // Editing panels (panel_editor.js): clicks on the open roof are the
+    // editor's, and shift means "several panels", not "several buildings".
+    const editing = window.PanelEditor && window.PanelEditor.modeOn();
+    if (editing && window.PanelEditor.isActive() && window.PanelEditor.buildingId() === p.building_id) return;
+    const additive = !editing && !!(ev.shiftKey || ev.metaKey || ev.ctrlKey);
     if (!additive) {
       selectedIds = [];
       selectedPropsById = {};
@@ -6972,6 +7324,7 @@ map.on("load", async () => {
   // and only when someone asks to see them.
   let markupOn = false, markupLoaded = false;
   async function ensureMarkupLayer() {
+    if (window.SITE && window.SITE.markupAvailable === false) return false;
     if (markupLoaded) return true;
     try {
       const r = await fetch(`${DATA_BASE}data/markup_lines.geojson?v=${DATA_VERSION}`);
@@ -7026,6 +7379,8 @@ map.on("load", async () => {
     // multi-selection, not "clear everything" -- losing the set to a stray
     // pixel would be infuriating.
     const ev = e.originalEvent || {};
+    // a stray click off the roof while editing panels keeps the roof open
+    if (window.PanelEditor && window.PanelEditor.isActive()) return;
     if (hits.length === 0 && !(ev.shiftKey || ev.metaKey || ev.ctrlKey)) clearSelection();
   });
 
@@ -7043,59 +7398,6 @@ map.on("load", async () => {
   });
 </script>
 
-<!-- Explainer video lightbox. Set EXPLAINER_VIDEO_URL below to enable:
-     a YouTube link becomes an embed, a direct .mp4 uses the native player. -->
-<div id="explainer-lightbox" style="display:none;position:fixed;inset:0;z-index:4000;
-     background:rgba(0,0,0,0.82);align-items:center;justify-content:center;">
-  <div style="position:relative;height:75vh;width:min(92vw,calc(75vh*16/9));aspect-ratio:16/9;background:#000;
-       border-radius:10px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,0.6);">
-    <button id="explainer-close" style="position:absolute;top:8px;right:8px;z-index:2;
-        width:32px;height:32px;border-radius:16px;border:0;background:rgba(255,255,255,0.15);
-        color:#fff;font-size:16px;cursor:pointer;">&#10005;</button>
-    <div id="explainer-player" style="width:100%;height:100%;"></div>
-  </div>
-</div>
-<script>
-(function () {
-  var EXPLAINER_VIDEO_URL = "https://vimeo.com/1222404841/8a70cb3a3f";
-  var box = document.getElementById("explainer-lightbox");
-  var player = document.getElementById("explainer-player");
-  if (!EXPLAINER_VIDEO_URL) return;         // button stays hidden until a video exists
-  var dash = document.getElementById("explainer-btn-dash");
-  if (dash) {
-    // Wherever the markup left it, park it as the SIBLING right after the
-    // in-view dashboard: below the panel, not inside it.
-    var inview = document.getElementById("dashboard-inview");
-    if (inview && dash.previousElementSibling !== inview) {
-      inview.insertAdjacentElement("afterend", dash);
-    }
-    // ...with the money-mode row straight under it (panel economics is in
-    // the Advanced menu)
-    var er = document.getElementById("econ-row");
-    if (er) dash.insertAdjacentElement("afterend", er);
-    dash.style.display = ""; dash.addEventListener("click", open);
-  }
-  function open() {
-    var yt = EXPLAINER_VIDEO_URL.match(/(?:youtu\.be\/|v=|shorts\/)([\w-]{6,})/);
-    var vm = EXPLAINER_VIDEO_URL.match(/vimeo\.com\/(?:video\/)?(\d+)(?:\/([\w]+))?/);
-    player.innerHTML = vm
-      ? '<iframe src="https://player.vimeo.com/video/' + vm[1] +
-        (vm[2] ? '?h=' + vm[2] + '&' : '?') + 'dnt=1" ' +
-        'style="width:100%;height:100%;border:0" allow="autoplay; fullscreen" allowfullscreen></iframe>'
-      : yt
-      ? '<iframe src="https://www.youtube-nocookie.com/embed/' + yt[1] +
-        '?autoplay=1&rel=0" style="width:100%;height:100%;border:0" allow="autoplay; fullscreen" allowfullscreen></iframe>'
-      : '<video src="' + EXPLAINER_VIDEO_URL + '" style="width:100%;height:100%" controls autoplay></video>';
-    box.style.display = "flex";
-  }
-  function close() { box.style.display = "none"; player.innerHTML = ""; }
-  document.getElementById("explainer-close").addEventListener("click", close);
-  box.addEventListener("click", function (e) { if (e.target === box) close(); });
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && box.style.display !== "none") close();
-  });
-})();
-</script>
 <script>
 (function () {
   function paint(el) {

@@ -235,6 +235,23 @@ def _owned_ids(paths):
     return {int(ft["properties"]["building_id"]) for ft in json.loads(f.read_text())["features"]}
 
 
+def _search_addresses(region_dir, title_rows, emitted_ids):
+    """The search index: every LINZ address point add_addresses saw
+    (address_points.json, full label with suburb and town), each pointing at
+    the building that holds it when that building is on the map, else 0 --
+    the page then opens whatever outline is under the point. A region built
+    before address_points.json existed indexes its building titles, one
+    address per building, as it always did."""
+    from src.add_addresses import ADDRESS_POINTS_NAME
+    p = Path(region_dir) / ADDRESS_POINTS_NAME
+    if not p.exists():
+        return sorted(title_rows)
+    rows = []
+    for label, lon, lat, bid in json.loads(p.read_text()):
+        rows.append([label, lon, lat, bid if bid in emitted_ids else 0])
+    return sorted(rows)
+
+
 def emit(region, out_root=OUT_ROOT):
     t0 = time.time()
     paths = area_paths(region)
@@ -491,7 +508,7 @@ def emit(region, out_root=OUT_ROOT):
 
     (tmp / "cells.json").write_text(json.dumps(
         {"/".join(map(str, k)): v for k, v in cells.items()}, separators=(",", ":")))
-    addrs.sort()
+    addrs = _search_addresses(paths["dir"], addrs, {f["properties"]["building_id"] for f in feats})
     (tmp / "addresses.json").write_text(json.dumps(addrs, separators=(",", ":")))
 
     # 5. the panel layer, from the layouts SHRUNK for display. Every layout

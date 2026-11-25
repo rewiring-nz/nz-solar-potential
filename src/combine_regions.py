@@ -241,6 +241,11 @@ def _combine_heatmap(regions, out_root, dest_tmp):
     return n, seams
 
 
+def _fold(s):
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFD", s) if not unicodedata.combining(ch))
+
+
 def _addr_key(addr):
     s = "".join(ch for ch in addr.lower() if ch.isalnum())
     return (s[:2] if len(s) >= 2 else (s + "_")[:2]) or "__"
@@ -265,7 +270,15 @@ def _combine_addresses(regions, out_root, dest_tmp):
         p = out_root / r / "addresses.json"
         if p.exists():
             rows.extend(json.loads(p.read_text()))
-    rows.sort()
+    # Neighbouring regions' bboxes overlap, so an address point near a border
+    # is in both regions' indexes: keep one row per label and place, the one
+    # that names a building.
+    best = {}
+    for row in rows:
+        k = (row[0], round(row[1], 5), round(row[2], 5))
+        if k not in best or (row[3] and not best[k][3]):
+            best[k] = row
+    rows = sorted(best.values())
     if len(rows) <= ADDR_SHARD_AT:
         (dest_tmp / "addresses.json").write_text(json.dumps(rows, separators=(",", ":")))
         return len(rows), 0
@@ -280,10 +293,14 @@ def _combine_addresses(regions, out_root, dest_tmp):
     # match, so the street shard is all it takes.
     shards = defaultdict(list)
     for row in rows:
-        keys = {_addr_key(row[0])}
-        street = _street_of(row[0])
-        if street:
-            keys.add(_addr_key(street))
+        # Under the macron-folded keys too: the page folds what is typed
+        # ("Otahuhu" and "Ōtāhuhu" ask for the same shard).
+        keys = set()
+        for label in {row[0], _fold(row[0])}:
+            keys.add(_addr_key(label))
+            street = _street_of(label)
+            if street:
+                keys.add(_addr_key(street))
         for k in keys:
             shards[k].append(row)
     out = dest_tmp / "addresses"
@@ -328,7 +345,7 @@ def _combine_curves(summaries, dest_tmp):
 
 
 def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
-            build_markup_lines=True):
+            build_markup_lines=True, frozen_inputs=False):
     t0 = time.time()
     out_root, dest = Path(out_root), Path(dest)
     if regions is None:
@@ -339,6 +356,12 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
     if not regions:
         raise SystemExit(f"no emitted regions under {out_root}")
     for r in regions:
+        if frozen_inputs:
+            from src.output_contract import validate_region
+            problems = validate_region(out_root / r)
+            if problems:
+                raise SystemExit(f"{r}: invalid frozen input: " + "; ".join(problems[:10]))
+            continue
         dd = area_paths(r)["dir"] / "building_outlines_dedup.geojson"
         if dd.exists() and dd.stat().st_mtime > (out_root / r / "summary.json").stat().st_mtime:
             print(f"[{r}] ownership changed since it was emitted; re-emitting")
@@ -444,9 +467,11 @@ def main():
     ap.add_argument("--dest", default=str(DATA_DIR))
     ap.add_argument("--skip-markup-lines", action="store_true",
                     help="do not regenerate the repository-wide markup overlay")
+    ap.add_argument("--frozen-inputs", action="store_true",
+                    help="assemble exact emitted snapshots without checking or re-emitting working regions")
     a = ap.parse_args()
     combine(a.regions, a.out_root, a.dest,
-            build_markup_lines=not a.skip_markup_lines)
+            build_markup_lines=not a.skip_markup_lines, frozen_inputs=a.frozen_inputs)
     return 0
 
 

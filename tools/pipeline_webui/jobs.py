@@ -10,6 +10,11 @@ run's own combine step keeps only its region. Terrain tiles stay the last
 region's. A job whose turn comes while a CLI build holds
 data/pipeline-workspace.lock waits for it.
 
+Web submissions use start_batch: one job per estimated region or cell,
+enqueued together in selection order. The last job in a multi-area local
+submission combines existing emitted regions once; it does not rebuild them.
+start still accepts legacy multi-region jobs for existing callers/history.
+
 The cloud lane runs developer and published builds on the shared VM, one
 command per job (see cloud.cloud_command), and records the preview URL, gate
 result and published version from the output.
@@ -38,6 +43,7 @@ from typing import Callable
 
 from src.region_ids import list_regions
 from tools.pipeline_webui.cloud import parse_cloud_line
+from tools.pipeline_webui.estimate import referee_note
 from tools.pipeline_webui.common import DATA, ROOT, read_json, web_dir, write_json_atomic
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
@@ -305,6 +311,38 @@ class JobManager:
     def start(self, estimate: dict, paid_referee: bool = False,
               cloud_cost_acknowledged: bool = False) -> str:
         """Queue a job from an approved estimate; it runs when its lane is free."""
+        job = self._prepare_job(estimate, paid_referee, cloud_cost_acknowledged)
+        self._enqueue([job])
+        return job["job_id"]
+
+    def start_batch(self, estimate: dict, paid_referee: bool = False,
+                    cloud_cost_acknowledged: bool = False) -> list[str]:
+        """Queue one independently cancellable job per estimated area, in order."""
+        rows = estimate.get("regions") or []
+        if not rows:
+            raise JobError("the estimate names no regions")
+        if any(row.get("selection_count", 1) != 1 for row in rows):
+            raise JobError("this estimate groups grid cells; estimate again for separate jobs", 409)
+        jobs = []
+        for row in rows:
+            child = {
+                **estimate, "regions": [row],
+                "totals": {key: row.get(key) for key in
+                           ("buildings", "download_gb", "download_s", "compute_s", "total_s", "disk_gb")},
+                "paid_referee": referee_note([row]),
+            }
+            if estimate.get("target", "local") != "local":
+                if len(rows) > 1 and not row.get("cloud"):
+                    raise JobError("this estimate lacks per-job cloud costs; estimate again", 409)
+                child["cloud"] = row.get("cloud") or estimate.get("cloud")
+            jobs.append(self._prepare_job(child, paid_referee, cloud_cost_acknowledged))
+        if len(jobs) > 1 and jobs[-1]["lane"] == "local":
+            jobs[-1]["combine_existing"] = True
+        self._enqueue(jobs)
+        return [job["job_id"] for job in jobs]
+
+    def _prepare_job(self, estimate: dict, paid_referee: bool,
+                     cloud_cost_acknowledged: bool) -> dict:
         target = estimate.get("target", "local")
         lane_name = lane_for(target)
         if lane_name == "cloud" and self.cloud_builder is None:
@@ -358,15 +396,18 @@ class JobManager:
             job["preview_url"] = None
             job["gate_result"] = None
             job["published_version"] = None
+        return job
+
+    def _enqueue(self, jobs: list[dict]) -> None:
         with self.lock:
-            lane = self.lanes[lane_name]
-            self._save(job)
-            lane.queue.append(job_id)
+            lane = self.lanes[jobs[0]["lane"]]
+            for job in jobs:
+                self._save(job)
+            lane.queue.extend(job["job_id"] for job in jobs)
             if lane.thread is None or not lane.thread.is_alive():
                 lane.thread = threading.Thread(target=self._worker, args=(lane,), daemon=True,
-                                               name=f"lane-{lane_name}")
+                                               name=f"lane-{lane.name}")
                 lane.thread.start()
-        return job_id
 
     def _worker(self, lane: Lane) -> None:
         while True:
@@ -480,19 +521,20 @@ class JobManager:
                                      else "succeeded" if code == 0 else "failed")
                     self._save(job)
                 built = [r["region"] for r in job["runs"] if r["status"] == "succeeded"]
-                if len(built) > 1 and not lane.cancel_requested:
+                if (len(built) > 1 or job.get("combine_existing")) and not lane.cancel_requested:
                     every = list_regions(self.data / "out", "summary.json")
                     regions = every or built
-                    job["final_combine"] = {"status": "running", "exit_code": None, "regions": regions}
-                    self._save(job)
-                    log.write(f"\n=== combine {len(regions)} built regions into the map ===\n")
-                    log.flush()
-                    code = self._stream(
-                        self._launch(lane, self.combine_builder(self.python, regions), log), log)
-                    with self.lock:
-                        lane.process = None
-                    job["final_combine"].update(exit_code=code,
-                                                status="succeeded" if code == 0 else "failed")
+                    if len(regions) > 1:
+                        job["final_combine"] = {"status": "running", "exit_code": None, "regions": regions}
+                        self._save(job)
+                        log.write(f"\n=== combine {len(regions)} built regions into the map ===\n")
+                        log.flush()
+                        code = self._stream(
+                            self._launch(lane, self.combine_builder(self.python, regions), log), log)
+                        with self.lock:
+                            lane.process = None
+                        job["final_combine"].update(exit_code=code,
+                                                    status="succeeded" if code == 0 else "failed")
             statuses = [r["status"] for r in job["runs"]]
             if lane.cancel_requested:
                 job["status"] = "cancelled"

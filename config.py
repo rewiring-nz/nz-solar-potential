@@ -132,6 +132,9 @@ CLOUD_SHARED_BUILD = {
     "regions": "queenstown-lakes-district/queenstown/sunshine-bay",
     "ref": "main",
     "preview_bucket": "gs://rewiring-solar-previews",
+    # Private bucket for immutable copies pushed from local staging. The
+    # public preview bucket and served tiles bucket are intentionally separate.
+    "artifact_staging_bucket": "gs://solar-potential-map-data",
     "preview_retention_days": 14,
     "preview_cost_model": {
         "vm_hourly_nzd": "0.24",
