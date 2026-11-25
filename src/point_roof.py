@@ -392,6 +392,7 @@ def merge_flat(pts, lab, eqs, idx):
 MERGE_LOOSE = os.environ.get("SOLAR_POINT_MERGE_LOOSE", "0") == "1"
 FLAT_JOINT_TOL_M = float(os.environ.get("SOLAR_FLAT_JOINT_TOL", "0.3"))
 SPECK_MAX_PTS = 100
+SURVEY_FIT_M = 0.6
 SPECK_SHARE = 0.005
 SPECK_ENCLOSED = 0.8
 
@@ -799,8 +800,27 @@ def write_faces(bid, poly, out_dir=POINT_FACES_DIR, photo=None):
             # on average (0.17 m on homes; 0.28 m2 outside and 0.15 m2 inside
             # per metre of edge), the surveyed outline 0.07 m inside (0.11
             # and 0.18): outline IoU 0.892 fitted, 0.922 with no fit.
+            # ...but the surveyed outline is traced on a photo and the faces
+            # are in the returns' frame: run out to it as it lies, the seams
+            # sit off-centre in it (line F 0.670 against 0.689 with the
+            # fitted edge, whose position is the returns'). So the surveyed
+            # SHAPE is placed where it best overlaps the fitted edge (within
+            # SURVEY_FIT_M, 5 cm steps): its position from the returns, its
+            # size and corners from the survey.
             if os.environ.get("SOLAR_ROOF_EDGE") == "survey":
+                from shapely.affinity import translate as _tr
                 e, moves = rec["poly"], {}
+                fe, fm = roof_edge.fit_edges(sys.modules[__name__], rec["poly"])
+                if fm is not None and fe is not None and not fe.is_empty:
+                    best, bv = (0.0, 0.0), -1.0
+                    k = int(round(SURVEY_FIT_M / 0.05))
+                    for i in range(-k, k + 1):
+                        for j in range(-k, k + 1):
+                            t = _tr(e, i * 0.05, j * 0.05)
+                            v = t.intersection(fe).area / max(t.union(fe).area, 1e-9)
+                            if v > bv:
+                                best, bv = (i * 0.05, j * 0.05), v
+                    e = _tr(e, *best)
             else:
                 e, moves = roof_edge.fit_edges(sys.modules[__name__], rec["poly"])
             ext = roof_edge.extend_to_edge(rec["faces"], e) if moves is not None else None
