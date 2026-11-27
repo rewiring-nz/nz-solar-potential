@@ -603,6 +603,11 @@ figure for the same thing. Code enforces this:
 - The selection spotlight (the dimming around a selected building) fades
   out while every selected building is off screen and returns when one is
   back in view (`focusBox` in `rooftop-solar.html`).
+- Advanced > LiDAR surface / Ground under 3D (`investigate_layers.js`)
+  draws the served height tiles (`data/terrain`, `data/terrain_ground`) as
+  shaded relief over the photo and under the analysis layers, for checking
+  what the build and the 3D view were given; a building still standing in
+  Ground under 3D pokes through its solid. It serves nothing new.
 - `map_layers.js` and `map_layers.css` provide the shared Build data legend,
   catalogue layer styling and aerial/OpenStreetMap switch. The analysis stack
   is panels above solar-analysis building outlines above the heat map. Build

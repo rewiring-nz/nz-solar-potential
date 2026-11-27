@@ -28,6 +28,7 @@
 <script src="low_solar.js"></script>
 <script src="video_export.js"></script>
 <script src="address_search.js"></script>
+<script src="investigate_layers.js"></script>
 <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
 <link href="map_layers.css" rel="stylesheet">
 <script>
@@ -1224,6 +1225,11 @@
       <!-- one switch for outlines and obstructions; roof markup is on the M key -->
       <button class="corner-btn" id="toggle-outlines" title="Show building outlines and roof obstructions"><span class="dot"></span>Outlines &amp; obstructions</button>
       <button class="corner-btn" id="toggle-edit-panels" title="Add, remove and move panels on a roof by hand" aria-pressed="false"><span class="dot"></span>Edit panels</button>
+      <!-- the served height tiles as shaded relief, for checking a roof or the 3D ground (investigate_layers.js) -->
+      <div id="investigate-row" style="display:flex; gap:6px;" role="group" aria-label="Investigate heights">
+        <button class="corner-btn" data-mode="dsm" aria-pressed="false" title="The LiDAR surface as surveyed: roofs, trees and ground, as shaded relief"><span class="dot"></span>LiDAR surface</button>
+        <button class="corner-btn" data-mode="ground" aria-pressed="false" title="The ground the 3D buildings stand on: buildings should be pressed flat here"><span class="dot"></span>Ground under 3D</button>
+      </div>
       <button class="corner-btn" id="toggle-sun" title="Show shadows for any date and time"><span class="dot"></span>Sun simulation</button>
       <button class="corner-btn" id="export-video" title="Record a video of panels being added across the area in view">&#127909; Export video</button>
       <button class="corner-btn" id="open-settings">&#9881;&#65039; Assumptions &amp; pricing</button>
@@ -5372,6 +5378,7 @@ map.on("load", async () => {
   map.setPaintProperty("live-panels-outline", "line-width",
     ["case", ["==", ["get", "_selected"], 1], 2.4, 1]);
   if (window.PanelEditor && window.PanelEditor._wire) window.PanelEditor._wire();
+  if (window.InvestigateLayers) window.InvestigateLayers.wire(map);
 
   layoutReady = true;
   if (selectedBuildingId !== -1) selectBuilding(selectedBuildingId);  // catch up if clicked before this loaded
