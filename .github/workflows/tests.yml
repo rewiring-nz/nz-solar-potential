@@ -35,7 +35,13 @@ jobs:
                    cloud_profiles publish_preview render_docs canonical_map_links face_straighten obstruction_planarity \
                    racking structured_roof s3_rasters installer_rules shading_split \
                    pipeline_web_data pipeline_web_jobs pipeline_web_server pipeline_web_cloud \
-                   map_layer_catalog methodology reference_cases wholesale; do
+                   map_layer_catalog methodology reference_cases wholesale \
+                   build_plan cloud_staging demolished drawn_solar face_rectify face_steps \
+                   face_weld hand_outline ingest_outline linz_exports list_areas \
+                   local_release_web local_releases money_groups photo_shape \
+                   pipeline_web_batch pipeline_web_catalog quickstart_map reading_referee \
+                   region_ids regional_staging repeat_roofs seam_fixes seam_steps \
+                   surveys terrain_ground; do
             echo "::group::$t"
             python tests/test_$t.py || failed=1
             echo "::endgroup::"
@@ -52,3 +58,17 @@ jobs:
             echo "::endgroup::"
           done
           exit "$failed"
+      - name: Map and pipeline page logic (map_layers, pipeline_progress, pipeline_tree, address_search)
+        if: always()
+        run: |
+          set +e
+          failed=0
+          for t in map_layers pipeline_progress pipeline_tree address_search; do
+            echo "::group::$t (js)"
+            node tests/test_$t.js || failed=1
+            echo "::endgroup::"
+          done
+          exit "$failed"
+      - name: Methodology diagram matches the code
+        if: always()
+        run: python tools/check_diagram.py
