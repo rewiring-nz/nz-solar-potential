@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import json
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,7 +37,24 @@ def build_site(root: Path = ROOT) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / name, target)
     (output / ".nojekyll").write_text("", encoding="utf-8")
+    # The Status tab (methodology.js) shows which commit of the code is live.
+    (output / "site_version.json").write_text(json.dumps(site_version(root)), encoding="utf-8")
     return output
+
+
+def site_version(root: Path) -> dict:
+    """The commit the site is built from: GITHUB_SHA in Actions, else git."""
+    sha = os.environ.get("GITHUB_SHA", "")
+    when = ""
+    try:
+        sha = sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+                                    text=True, check=True).stdout.strip()
+        when = subprocess.run(["git", "show", "-s", "--format=%cI", sha], cwd=root, capture_output=True,
+                              text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return {"commit": sha, "committed": when,
+            "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
 def main() -> int:

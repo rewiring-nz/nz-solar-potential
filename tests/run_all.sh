@@ -124,6 +124,7 @@ run "pipeline web panel cloud" $PY tests/test_pipeline_web_cloud.py
 run "dynamic LINZ source discovery" $PY tests/test_surveys.py
 run "diagram vs code"       $PY tools/check_diagram.py
 run "methodology vs code"   $PY tests/test_methodology.py
+run "roadmap vs code"       $PY tests/test_roadmap.py
 run "reference cases"        $PY tests/test_reference_cases.py
 run "wholesale prices"       $PY tests/test_wholesale.py
 if [ $FAST -eq 0 ]; then

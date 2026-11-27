@@ -1,0 +1,167 @@
+{
+  "about": "The map's Status and Roadmap tabs (methodology.js) read this file. tests/test_roadmap.py fails when a file, switch or methodology part named here is gone, or when an evidence quote is no longer in the file it cites, so a change to the code or the ledger that makes an entry wrong fails CI. Update an item in the change that moves it; remove it when it is done (git and the PR keep the history).",
+  "reviewed": "2026-11-27",
+  "measures": [
+    {"label": "Reference roofs fully right", "value": "18 of 100", "detail": "Latest round against the owner's drawings, built blind (round 0 was 8).", "measured": "2026-11-24", "file": "BACKLOG.md", "quote": "18 of 100 right"},
+    {"label": "Right even from the drawn lines", "value": "56 to 76 of 100", "detail": "The drawn lines fed through the lines-to-faces step: the ceiling for any reader.", "measured": "2026-11-24", "file": "BACKLOG.md", "quote": "drawn edge, no straightening 76"},
+    {"label": "Obstructions found that are real", "value": "44%", "detail": "On 195 drawn roofs; 45% of drawn obstructions are found.", "measured": "2026-11-25", "file": "BACKLOG.md", "quote": "obstruction precision 0.437, recall 0.451"},
+    {"label": "Panel count change from a 10 cm outline nudge", "value": "26% (median)", "detail": "Why one roof's count is noisy.", "measured": "2026-10", "file": "config.py", "quote": "panel count by a median of 26%"},
+    {"label": "Dark winter days, Cromwell", "value": "22.9% measured, 10.2% in ERA5", "detail": "Days under a fifth of the year's average sunlight, May to July 2016-2025.", "measured": "2026-11", "file": "BACKLOG.md", "quote": "ERA5 10.2%"},
+    {"label": "Independent accuracy benchmark", "value": "None yet", "detail": "Yield is compared with PVGIS, another model; geometry with one person's drawings.", "measured": "2026-11-27", "file": "docs/researchers/theory.md", "quote": "There is no independent accuracy benchmark yet."}
+  ],
+  "items": [
+    {
+      "id": "resilience-stations",
+      "title": "Station-corrected low-solar runs for Cromwell, Wānaka and Alexandra",
+      "area": "Sunlight", "status": "underway", "effort": "S",
+      "why": "Resilience counts dark days from ERA5 cells about 25 km across, which miss valley fog. Only the Wakatipu cells are corrected to a sunlight sensor on the map today, so battery days are understated elsewhere.",
+      "fix": ["Commit the multi-station correction and its sensor-shade audit", "Publish the new climate/era5 files", "Report the worst spell from the station record itself, since even the corrected series halves it"],
+      "evidence": [{"file": "BACKLOG.md", "quote": "ERA5 10.2%"}],
+      "refs": {"files": ["low_solar.js", "tools/station_qmap.py", "tools/pack_era5_daily.py", "climate/era5/index.json"], "switches": [], "how": "What the sunlight data cannot see"}
+    },
+    {
+      "id": "upper-clutha-sunlight",
+      "title": "Wānaka and Hāwea sunlight from their own sensor",
+      "area": "Sunlight", "status": "next", "effort": "S",
+      "why": "Yearly sunlight comes from one Queenstown calibration spread with ERA5. Wānaka's sensor reads about 9% lower, so kWh and savings there are likely too high.",
+      "fix": ["Finish the station audit", "Add the stations to NIWA_MEASURED_GHI_STATIONS", "Rebuild (a sun-model change needs a full rebuild)"],
+      "evidence": [{"file": "BACKLOG.md", "quote": "Wānaka and Hāwea -9.4 to -9.9%"}],
+      "refs": {"files": ["src/solar_model.py"], "switches": ["NIWA_MEASURED_GHI_STATIONS"], "how": "Differences between towns"}
+    },
+    {
+      "id": "lines-to-faces",
+      "title": "Fix the step that turns roof lines into faces",
+      "area": "Roof shape", "status": "underway", "effort": "M",
+      "why": "Even the owner's own drawn lines come out right on at most 76 of 100 roofs after this step, so it caps every reader. It needs no training data.",
+      "fix": ["Small faces and joins (about 24 roofs)", "The roof edge from the roof map (about 10)", "Straight lines (about 9)"],
+      "evidence": [{"file": "BACKLOG.md", "quote": "three converter stages each cost roofs with perfect input"}],
+      "refs": {"files": ["src/line_graph.py", "tools/roof_ledger.py"], "switches": ["SOLAR_LINE_PLANES"], "how": "Four readings of the roof"}
+    },
+    {
+      "id": "roof-reader",
+      "title": "A better roof reader, judged on the 100 reference roofs",
+      "area": "Roof shape", "status": "underway", "effort": "L",
+      "why": "18 of 100 reference roofs come out fully right. Most have at least one missing or invented line, which puts panels across ridges and on the wrong face.",
+      "fix": ["Read large roofs in tiles (a 70 m roof at 384 px is 0.2 m a pixel)", "Try a different reader model: more drawings of the same kind stopped helping", "One round at a time against the 100, then the 30 held back"],
+      "evidence": [{"file": "BACKLOG.md", "quote": "18 of 100 right"}],
+      "refs": {"files": ["data/roof100.json", "tools/roof_ledger.py"], "switches": [], "how": "Four readings of the roof"}
+    },
+    {
+      "id": "markup-never-silent",
+      "title": "Hand-drawn roofs never dropped without a warning",
+      "area": "Roof shape", "status": "next", "effort": "S",
+      "why": "One error handler around the drawn obstructions and fold lines skips them all if the label file fails to load, so drawn roofs would quietly lose their markup.",
+      "fix": ["Count and print every failure", "Fail the build when drawn roofs lose their markup"],
+      "evidence": [{"file": "src/build_layout_geojson.py", "quote": "drawn_obstruction_polys"}],
+      "refs": {"files": ["src/build_layout_geojson.py", "src/gate_panels.py"], "switches": [], "how": "Hand-drawn roofs come first"}
+    },
+    {
+      "id": "stable-layouts",
+      "title": "Steadier panel counts on each roof",
+      "area": "Panels", "status": "later", "effort": "M",
+      "why": "A 10 cm nudge to an outline moves a roof's panel count by a median 26%, so a single roof's count is noisy.",
+      "fix": ["Best of several small placements (LAYOUT_PERTURBATIONS_M): +3.45% panels, about twice the layout time", "Screen the district for bad layouts and hold the worst"],
+      "evidence": [{"file": "config.py", "quote": "panel count by a median of 26%"}],
+      "refs": {"files": ["src/build_layout_geojson.py"], "switches": ["LAYOUT_PERTURBATIONS_M"], "how": "Laying out panels"}
+    },
+    {
+      "id": "new-since-lidar",
+      "title": "Find roofs built or changed since the 2021 laser scan",
+      "area": "Roof shape", "status": "next", "effort": "M",
+      "why": "Heights come from the 2021 scan and the photos from 2026. A roof built since then has no real heights and can read as one flat face.",
+      "fix": ["Flag buildings where the photo and the scan disagree and let the photo reading lead", "Count them", "Take new LINZ scans as they are flown"],
+      "evidence": [{"file": "config.py", "quote": "Otago - Queenstown LiDAR 1m DSM (2021)"}],
+      "refs": {"files": ["src/demolished.py", "src/vision_roof.py"], "switches": [], "how": "A laser scan of the roofs"}
+    },
+    {
+      "id": "no-lidar-towns",
+      "title": "Real pitch and roof form where there is no laser scan",
+      "area": "Roof shape", "status": "later", "effort": "M",
+      "why": "Cromwell, Bannockburn, Glenorchy and Kinloch are built on a modelled surface with every house at one guessed pitch.",
+      "fix": ["Tell gables from hips from the photo", "Pitch by building type"],
+      "evidence": [{"file": "config.py", "quote": "PHOTO_ONLY_PITCH_DEG = 20.0"}],
+      "refs": {"files": ["src/synthesize_dsm.py"], "switches": ["PHOTO_ONLY_PITCH_DEG"], "how": "Places with no laser scan"}
+    },
+    {
+      "id": "obstructions",
+      "title": "Obstructions from a trained photo model in every town",
+      "area": "Roof shape", "status": "later", "effort": "M",
+      "why": "Fewer than half the obstructions found are real and fewer than half of the drawn ones are found. The colour detector draws most of the false area.",
+      "fix": ["Retrain the photo model with the reference roofs held out", "Use it, or use it to check the others, where there is a laser scan"],
+      "evidence": [{"file": "BACKLOG.md", "quote": "obstruction precision 0.437, recall 0.451"}],
+      "refs": {"files": ["tools/photo_obstruction_dataset.py"], "switches": [], "how": "Objects on the roof"}
+    },
+    {
+      "id": "error-bands",
+      "title": "A likely range on every figure",
+      "area": "Checks", "status": "next", "effort": "M",
+      "why": "There is no independent accuracy benchmark, so a card shows one number with no range. The known input errors (sunlight by town, panel-count noise, load and price assumptions) can be carried through to a low and high figure.",
+      "fix": ["Carry each input's measured spread through the workings to a range", "Show the range on the card and in its workings", "Compare sunlight with the NIWA stations and a second model (PVGIS, Himawari) in every town"],
+      "evidence": [{"file": "docs/researchers/theory.md", "quote": "There is no independent accuracy benchmark yet."}],
+      "refs": {"files": ["workings.js", "generation.js"], "switches": [], "how": "Every figure shows its workings"}
+    },
+    {
+      "id": "second-reference-set",
+      "title": "A second set of drawn roofs outside Queenstown",
+      "area": "Checks", "status": "later", "effort": "M",
+      "why": "Every drawn roof is in Queenstown and by one person, so accuracy elsewhere is unknown.",
+      "fix": ["Draw a stratified set in Wānaka, Cromwell and Arrowtown", "A second person marks some of the same roofs"],
+      "evidence": [{"file": "docs/researchers/theory.md", "quote": "There is no independent accuracy benchmark yet."}],
+      "refs": {"files": ["mark_roofs.html", "tools/markup_benchmark.py"], "switches": [], "how": "Hand-drawn roofs come first"}
+    },
+    {
+      "id": "diffuse-behind-hills",
+      "title": "Hills that block skylight as well as direct sun",
+      "area": "Shade", "status": "later", "effort": "M",
+      "why": "One monthly cloud factor puts most low-sun light in the diffuse part, which the far horizon does not cut. Winter output under big hills is probably too high.",
+      "fix": ["Daily direct and diffuse light from measured or satellite data", "A sky-view factor for the diffuse part"],
+      "evidence": [{"file": "src/solar_model.py", "quote": "def kept_sun"}],
+      "refs": {"files": ["src/solar_model.py", "src/building_horizon.py"], "switches": [], "how": "Hills"}
+    },
+    {
+      "id": "household-day",
+      "title": "Household use that varies day to day",
+      "area": "Money", "status": "later", "effort": "M",
+      "why": "A home's daily pattern comes from about 40 homes in another region in 2015, and average days likely overstate how much solar a home uses itself.",
+      "fix": ["Vary each day with the daily weather already loaded", "Use smart-meter shapes from the Electricity Authority or a retailer"],
+      "evidence": [{"file": "docs/researchers/how-a-roof-estimate-is-made.md", "quote": "about 40 homes in Taranaki and Hawke's Bay, 2015"}],
+      "refs": {"files": ["load_profiles.js", "tools/build_load_profiles.py", "bill_tool.js"], "switches": [], "how": "A household's day"}
+    },
+    {
+      "id": "export-limits",
+      "title": "Export limits, retail plans and grid charging",
+      "area": "Money", "status": "later", "effort": "S",
+      "why": "Export caps and network limits are not modelled, so savings on large systems are too high, and a battery charges only from solar.",
+      "fix": ["An export limit on the card", "Pick a retail plan", "Battery charging from the grid overnight"],
+      "evidence": [{"file": "docs/researchers/economics.md", "quote": "Export limits, feed-in caps and network constraints."}],
+      "refs": {"files": ["bill_tool.js", "economics.js"], "switches": [], "how": "Power prices"}
+    },
+    {
+      "id": "install-cost",
+      "title": "Install cost that knows the building",
+      "area": "Money", "status": "later", "effort": "S",
+      "why": "Cost comes from a few per-kW bands. Height, access, scaffolding and switchboard work are not counted, so two-storey and complex roofs cost more than shown.",
+      "fix": ["A cost adder for storeys from the measured building height", "Local installer quotes"],
+      "evidence": [{"file": "economics.js", "quote": "cost_per_kwh"}],
+      "refs": {"files": ["economics.js"], "switches": [], "how": "Cost and savings"}
+    },
+    {
+      "id": "imagery-build-key",
+      "title": "Build keys that see a no-imagery run",
+      "area": "Build", "status": "next", "effort": "S",
+      "why": "A run without aerial imagery keeps the same build key, so a layout built with imagery can be kept under a run that has none.",
+      "fix": ["Put SOLAR_SELECTED_FACES and SOLAR_INCLUDE_IMAGERY in the reading hash"],
+      "evidence": [{"file": "src/build_keys.py", "quote": "def reading_hash"}],
+      "refs": {"files": ["src/build_keys.py"], "switches": ["SOLAR_SELECTED_FACES", "SOLAR_INCLUDE_IMAGERY"], "how": null}
+    },
+    {
+      "id": "national-scale",
+      "title": "Build all of New Zealand",
+      "area": "Build", "status": "later", "effort": "L",
+      "why": "The map covers one district. The worker fleet has never run as a fleet, and any geometry change marks every building stale.",
+      "fix": ["Build keys per stage", "A fleet rehearsal under the hour cap", "A CPU quota increase"],
+      "evidence": [{"file": "BACKLOG.md", "quote": "has never run as a fleet"}],
+      "refs": {"files": ["tools/fleet.sh", "src/gcs_queue.py", "src/build_keys.py"], "switches": [], "how": null}
+    }
+  ]
+}

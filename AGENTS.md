@@ -496,11 +496,31 @@ figure for the same thing. Code enforces this:
   height (`src/building_horizon.py` far_profile), blended by the direct-beam
   share (`SolarModel.kept_sun`). The baked `horizon_b64` and
   `horizon_beam_pct` (near field to 300 m) are for display only.
-- The methodology diagram ("How this map is made", `methodology.js`) is
-  written from the code by `src/methodology.py` into `methodology.json`;
-  `tests/test_methodology.py` fails when it is stale, a build stage is not
-  in it, a cited name is gone, or a LINZ layer config names is not described
-  in `data/source_metadata.json` (`tools/fetch_source_metadata.py`).
+- The methodology explorer ("How this map is made", `methodology.js`) is
+  written from the code by `src/methodology.py` into `methodology.json`:
+  steps, then parts, each with five tabs (how it works, why this way, try
+  instead, where it fails, change it). Where it fails lists open roofs from
+  `data/roof_cases.json` picked by words in their defect (`tools/cases.py`
+  rewrites the file when it saves), GitHub labels (open counts fetched live)
+  and known limits; "Show on map" opens a roof through the address index
+  (`window.solarOpenBuilding`). Change it names the files, `SOLAR_*`
+  switches, tests and a `JUDGES` entry (how a change is judged). Prose holds
+  no typed digits. `tests/test_methodology.py` fails when the file is stale,
+  a build stage is not in it, a cited name, switch, test file, label or
+  judge is not real, a case word finds no open roof, or a LINZ layer config
+  names is not described in `data/source_metadata.json`
+  (`tools/fetch_source_metadata.py`). `#how=<step>.<part>.<tab>` opens it.
+- The same button has two more tabs. **Status** reads the live build when
+  opened: `build_summary.json` and `assumptions.json` at `SITE.dataBase`,
+  `dataVersion` from `site-config.js`, the deployed commit from
+  `site_version.json` (written by `tools/build_static_site.py`), open issues
+  from GitHub, and measured accuracy from `roadmap.json` `measures`.
+  **Roadmap** is `roadmap.json` `items` (status underway / next / later, in
+  priority order). `tests/test_roadmap.py` fails when a file, switch or
+  methodology part an entry names is gone, or an evidence quote is no longer
+  in the file it cites. Update or remove an entry in the change that moves
+  it, and re-quote a measure when its ledger figure changes. `#status` and
+  `#roadmap` open them.
 - `tests/test_reference_cases.py` and `.mjs` are worked examples checkable
   by hand (panel kWh, packing, slope, loan, rounding, an hour of solar).
   Browser checks, run on the page before a front-end release:
