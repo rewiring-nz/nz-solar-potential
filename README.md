@@ -9,11 +9,12 @@ how many panels fit, what they would generate, and what that is worth.
   [How a roof estimate is made](docs/researchers/how-a-roof-estimate-is-made.md)
 - Try it on your own area: [docs/data-maintainers/quickstart.md](docs/data-maintainers/quickstart.md)
 
-Coverage (data version 64): 32,838 buildings in 35 regions across
-Queenstown Lakes and Cromwell: Queenstown, Frankton, Arrowtown, Kingston,
-Wanaka, Albert Town, Hawea, Cromwell, Bannockburn, Glenorchy and Kinloch.
-1,424,084 panels, 832.8 GWh a year. Auckland (Mt Eden) has been built but is
-not on the map.
+Coverage: 32,838 buildings in 35 regions across Queenstown Lakes and
+Cromwell: Queenstown, Frankton, Arrowtown, Kingston, Wanaka, Albert Town,
+Hawea, Cromwell, Bannockburn, Glenorchy and Kinloch. The live data version is
+`dataVersion` in [site-config.js](site-config.js); its panel and GWh totals are
+in that version's `build_summary.json` (v85 build: 1,325,054 panels,
+757.8 GWh a year). Auckland (Mt Eden) has been built but is not on the map.
 
 ## Data sources
 

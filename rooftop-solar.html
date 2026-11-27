@@ -1199,7 +1199,7 @@
      can start at the top of the page. Collapsed to an icon until used. -->
 <div class="addr-search" id="addr-search">
   <button id="addr-toggle" title="Search address">&#128269;</button>
-  <input type="text" id="addr-input" placeholder="Search address or town&hellip;" autocomplete="off">
+  <input type="text" id="addr-input" aria-label="Search address or town" placeholder="Search address or town&hellip;" autocomplete="off">
   <div class="addr-results" id="addr-results"></div>
 </div>
 <div id="corner-actions">
@@ -1278,7 +1278,7 @@
             <span><button type="button" class="auto-reset" id="vslider-auto" hidden title="Back to each roof's default size">&#8634; Auto</button>
             <span id="vslider-value">Auto</span></span>
           </div>
-          <input type="range" id="vslider" min="0" max="100" step="1" value="80">
+          <input type="range" id="vslider" aria-label="Panel density, percent of roof" min="0" max="100" step="1" value="80">
           <div class="hslider-notes">
             <div class="hnote hnote-l" style="left:10%"><i></i><span>Just a few panels</span></div>
             <div class="hnote hnote-r" style="right:6%"><i></i><span>Blanket the roof</span></div>
@@ -1340,16 +1340,16 @@
 
     <div class="settings-pane" id="pane-energy" style="padding:14px;">
       <div class="slider-row"><label><span>Panel rated power</span><span id="a-w-val"></span></label>
-        <input type="range" id="a-w" min="250" max="700" step="5"></div>
+        <input aria-label="Panel rated power" type="range" id="a-w" min="250" max="700" step="5"></div>
       <div class="slider-row"><label><span>Panel efficiency</span><span id="a-eff-val"></span></label>
-        <input type="range" id="a-eff" min="12" max="28" step="0.5"></div>
+        <input aria-label="Panel efficiency" type="range" id="a-eff" min="12" max="28" step="0.5"></div>
       <div class="slider-row"><label><span>Inverter efficiency</span><span id="a-inv-val"></span></label>
-        <input type="range" id="a-inv" min="90" max="99" step="0.5"></div>
+        <input aria-label="Inverter efficiency" type="range" id="a-inv" min="90" max="99" step="0.5"></div>
       <div class="slider-row"><label><span>System losses</span><span id="a-loss-val"></span></label>
-        <input type="range" id="a-loss" min="5" max="30" step="0.5"></div>
+        <input aria-label="System losses" type="range" id="a-loss" min="5" max="30" step="0.5"></div>
       <button class="tuning-reset" id="a-reset">Reset to defaults</button>
-      <div style="font-size:10px; color:var(--ink-3); margin-top:8px;">Bigger panels cover more roof, so
-        fewer fit.</div>
+      <div style="font-size:10px; color:var(--ink-3); margin-top:8px;">In Heat Map, bigger panels cover more roof, so
+        fewer fit. In Panel Layout the drawn panels stay as built; these change their kW and kWh only.</div>
     </div>
 
     <div class="settings-pane" id="pane-economics" style="display:none; padding:14px;">
@@ -1359,29 +1359,29 @@
       <div id="cost-tiers"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Electricity prices &mdash; homes</div>
       <div class="slider-row"><label><span>Peak</span><span id="e-hpeak-val"></span></label>
-        <input type="range" id="e-hpeak" min="10" max="60" step="0.5"></div>
+        <input aria-label="Peak" type="range" id="e-hpeak" min="10" max="60" step="0.5"></div>
       <div class="slider-row"><label><span>Off-peak</span><span id="e-hoff-val"></span></label>
-        <input type="range" id="e-hoff" min="10" max="60" step="0.5"></div>
+        <input aria-label="Off-peak" type="range" id="e-hoff" min="10" max="60" step="0.5"></div>
       <div class="slider-row"><label><span>Export / buyback</span><span id="e-hsell-val"></span></label>
-        <input type="range" id="e-hsell" min="0" max="30" step="0.5"></div>
+        <input aria-label="Export / buyback" type="range" id="e-hsell" min="0" max="30" step="0.5"></div>
       <div class="slider-row"><label><span>Daily charge</span><span id="e-hdaily-val"></span></label>
-        <input type="range" id="e-hdaily" min="0" max="5" step="0.1"></div>
+        <input aria-label="Daily charge" type="range" id="e-hdaily" min="0" max="5" step="0.1"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Electricity prices &mdash; businesses</div>
       <div class="slider-row"><label><span>Peak</span><span id="e-bpeak-val"></span></label>
-        <input type="range" id="e-bpeak" min="5" max="60" step="0.5"></div>
+        <input aria-label="Peak" type="range" id="e-bpeak" min="5" max="60" step="0.5"></div>
       <div class="slider-row"><label><span>Off-peak</span><span id="e-boff-val"></span></label>
-        <input type="range" id="e-boff" min="5" max="60" step="0.5"></div>
+        <input aria-label="Off-peak" type="range" id="e-boff" min="5" max="60" step="0.5"></div>
       <div class="slider-row"><label><span>Export / buyback</span><span id="e-bsell-val"></span></label>
-        <input type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
+        <input aria-label="Export / buyback" type="range" id="e-bsell" min="0" max="30" step="0.5"></div>
       <div class="slider-row"><label><span>Daily charge</span><span id="e-bdaily-val"></span></label>
-        <input type="range" id="e-bdaily" min="0" max="15" step="0.1"></div>
+        <input aria-label="Daily charge" type="range" id="e-bdaily" min="0" max="15" step="0.1"></div>
       <div style="font-size:10.5px; color:var(--ink-3); margin:6px 0 0;">Prices include GST. Set peak hours,
         peak export and home or business on each building's card.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Export rate over time</div>
       <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">Buyback rates are expected to
         fall. Payback and lifetime value use each year's rate.</div>
       <div class="slider-row"><label><span>Export falls by</span><span id="e-edec-val"></span></label>
-        <input type="range" id="e-edec" min="0" max="8" step="0.1"></div>
+        <input aria-label="Export falls by" type="range" id="e-edec" min="0" max="8" step="0.1"></div>
       <div style="font-size:10.5px; color:var(--ink-3); margin:-2px 0 6px;" id="e-edec-preview"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Self-consumption</div>
       <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">Worked out hour by hour from the
@@ -1391,26 +1391,26 @@
       <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">The green box on each
         building's card: bill savings less the yearly repayments on a loan for the system, with replacement parts added to the loan in their year; both averaged over the loan term.</div>
       <div class="slider-row"><label><span>Loan interest rate</span><span id="e-loanr-val"></span></label>
-        <input type="range" id="e-loanr" min="0" max="15" step="0.1"></div>
+        <input aria-label="Loan interest rate" type="range" id="e-loanr" min="0" max="15" step="0.1"></div>
       <div class="slider-row"><label><span>Loan term</span><span id="e-loany-val"></span></label>
-        <input type="range" id="e-loany" min="1" max="30" step="1"></div>
+        <input aria-label="Loan term" type="range" id="e-loany" min="1" max="30" step="1"></div>
       <div style="font-weight:700; margin:14px 0 6px;">Financial</div>
       <div class="slider-row"><label><span>System life</span><span id="e-life-val"></span></label>
-        <input type="range" id="e-life" min="10" max="35" step="1"></div>
+        <input aria-label="System life" type="range" id="e-life" min="10" max="35" step="1"></div>
       <div class="slider-row"><label><span>Panel degradation</span><span id="e-deg-val"></span></label>
-        <input type="range" id="e-deg" min="0" max="1.5" step="0.05"></div>
+        <input aria-label="Panel degradation" type="range" id="e-deg" min="0" max="1.5" step="0.05"></div>
       <div class="slider-row"><label><span>Retail electricity inflation</span><span id="e-infl-val"></span></label>
-        <input type="range" id="e-infl" min="0" max="10" step="0.5"></div>
+        <input aria-label="Retail electricity inflation" type="range" id="e-infl" min="0" max="10" step="0.5"></div>
       <div class="slider-row"><label><span>General inflation</span><span id="e-cpi-val"></span></label>
-        <input type="range" id="e-cpi" min="0" max="6" step="0.1"></div>
+        <input aria-label="General inflation" type="range" id="e-cpi" min="0" max="6" step="0.1"></div>
       <div style="font-size:10.5px; color:var(--ink-3); margin:-2px 0 6px;">All figures are in today's
         dollars, after general inflation.</div>
       <div style="font-size:10.5px; color:var(--ink-3); margin:-2px 0 6px;">Export prices are not
         inflated. The buyback setting above sets them each year.</div>
       <div class="slider-row"><label><span>Inverter replaced in year</span><span id="e-invy-val"></span></label>
-        <input type="range" id="e-invy" min="0" max="30" step="1"></div>
+        <input aria-label="Inverter replaced in year" type="range" id="e-invy" min="0" max="35" step="1"></div>
       <div class="slider-row"><label><span>Inverter cost</span><span id="e-invc-val"></span></label>
-        <input type="range" id="e-invc" min="0" max="40" step="1"></div>
+        <input aria-label="Inverter cost" type="range" id="e-invc" min="0" max="40" step="1"></div>
       <button class="tuning-reset" id="e-reset">Reset to defaults</button>
       <div class="quote-warn" style="font-size:10px; margin-top:8px;">Indicative, not a quote. Real
         prices depend on roof access, switchboard work and installer.</div>
@@ -1486,7 +1486,7 @@
     <button class="m-close" id="m-settings-close" aria-label="Close settings">&times;</button></div>
   <div style="padding: 4px 2px 10px;">
     <div style="font-size:12px; color:#ccc; margin-bottom:6px;" id="m-slider-label">Roof coverage</div>
-    <input type="range" id="m-slider" min="5" max="100" step="5" value="100" style="width:100%;">
+    <input type="range" id="m-slider" aria-label="Panel density, percent of roof" min="5" max="100" step="5" value="100" style="width:100%;">
     <div style="text-align:center; font-weight:800; margin-top:6px;" id="m-slider-value">100%</div>
     <div style="text-align:center; margin-top:6px;"><button type="button" class="auto-reset" id="m-slider-auto" hidden>&#8634; Back to auto</button></div>
   </div>
@@ -3606,54 +3606,6 @@ map.on("load", async () => {
   map.on("moveend", () => { if (moneyMode) map.once("idle", refreshMoneyPills); });
   window.__refreshMoneyPills = () => { if (moneyMode) refreshMoneyPills(); };
 
-  // What the roof looks like once bands are switched off. Hiding the red
-  // panels must adjust the size, cost and economics, because excluding a
-  // panel is a decision to not
-  // install it, so the system genuinely gets smaller and cheaper.
-  //
-  // Read from the rendered tiles rather than the baked deciles, because the
-  // deciles know nothing about per-panel yield and the bands are defined by it.
-  // Both the kept and the total are counted the same way so the ratio is honest
-  // even if some tiles are not loaded.
-  function bandFilteredTotals(buildingId) {
-    if (!panelEcon || panelEcon.buildingId !== buildingId) return null;
-    // Deliberately returns totals even with every band shown. The baked deciles
-    // and the rendered tiles disagree about how many panels a roof has at a given
-    // density (5 Beach St: 135 vs 203), so switching source when the first band
-    // is hidden made the count go UP. Once this mode is on, every figure comes
-    // from the tiles, and hiding a band can only ever subtract.
-    // queryRenderedFeatures only sees what is CURRENTLY DRAWN, so this count
-    // moves with the viewport: pan a roof half off-screen and its panel count
-    // drops. On 15 Kent Street the panel read "25 panels"
-    // where the tiles hold 54 at that density and 79 exist in the layout.
-    //
-    // So this path is now used ONLY when a band is actually hidden, which is
-    // the one case a per-panel count is genuinely needed for. With every band
-    // shown -- the normal case -- fall through
-    // to the baked deciles, which are per-building and do not care where the
-    // map is pointing.
-    if (Object.keys(panelEconShow).every(k => panelEconShow[k])) return null;
-    let feats;
-    try {
-      // Only the query is guarded -- a missing layer is expected during startup.
-      // Wrapping the whole body swallowed a ReferenceError below and turned a
-      // real bug into "the filter silently does nothing".
-      feats = map.queryRenderedFeatures({ layers: ["panels-fill"] });
-    } catch (err) { return null; }
-    let count = 0, kwh = 0, total = 0;
-    const wanted = selectedIds.length ? selectedIds : [buildingId];
-    feats.forEach(f => {
-      const pr = f.properties;
-      if (wanted.indexOf(pr.building_id) === -1) return;
-      if (!withinSize(pr)) return;
-      total++;
-      if (!panelEconShow[panelBandOf(pr)]) return;
-      count++; kwh += pr.ac_kwh_year || 0;
-    });
-    // Raw kWh: the caller applies bakedKwhScale, which is not in scope here.
-    return total ? { count, kwhRaw: kwh, total } : null;
-  }
-
   // Counts across every building on screen, not just a selected one. Read from
   // the rendered tiles because the bands are defined by per-panel yield, which
   // the baked deciles know nothing about.
@@ -4932,14 +4884,6 @@ map.on("load", async () => {
   // The share is derived now, so it has to be shown rather than set -- and it
   // is the number that carries the point: a bigger array does not raise the
   // kWh used on site, it only raises the share exported.
-  function selfNote(e) {
-    const pct = Math.round(e.selfPct);
-    const kwh = Math.round(e.selfKwh).toLocaleString();
-    if (!e.capped) return `All ${kwh} kWh/yr is used on site. None is exported.`;
-    return `${pct}% used on site (${kwh} kWh/yr), the rest exported` +
-           (e.capByUse ? `, capped by yearly use.` : `.`);
-  }
-  window.__economicsFor = economicsFor;
 
   // --- Advanced assumptions editor -------------------------------------
   // Everything on screen derives from these four numbers, so editing them
@@ -4953,13 +4897,15 @@ map.on("load", async () => {
     // (11.34% losses became 11.5%, the 2.2238 m2 panel 2.22 m2), so every kWh
     // on the map sat ~0.2% off the build's own figures -- found by the
     // workings, 17 Oct.
-    const applyAssumptions = () => {
-      const w = +el("a-w").value, eff = +el("a-eff").value;
-      assumptions.panel_rated_power_w = w;
-      assumptions.panel_efficiency_pct = eff;
-      assumptions.panel_area_m2 = w / (eff / 100 * 1000);
-      assumptions.inverter_efficiency_pct = +el("a-inv").value;
-      assumptions.system_derate_pct = +el("a-loss").value;
+    // The same holds for the other three sliders when one moves: only the
+    // slider that fired is read, so nudging panel power leaves the build's
+    // 16.4% losses as they are.
+    const SLIDER_KEY = { "a-w": "panel_rated_power_w", "a-eff": "panel_efficiency_pct",
+                         "a-inv": "inverter_efficiency_pct", "a-loss": "system_derate_pct" };
+    const applyAssumptions = id => {
+      assumptions[SLIDER_KEY[id]] = +el(id).value;
+      if (id === "a-w" || id === "a-eff")
+        assumptions.panel_area_m2 = assumptions.panel_rated_power_w / (assumptions.panel_efficiency_pct / 100 * 1000);
       window.__assumptionsEdited = true;
       afterAssumptions();
     };
@@ -5011,7 +4957,7 @@ map.on("load", async () => {
         k in ECON_DEFAULTS && (typeof ECON_DEFAULTS[k] === "number" ? Number.isFinite(v) : v != null && typeof v === typeof ECON_DEFAULTS[k])));
     } catch (e) { /* nothing saved */ }
     ["a-w", "a-eff", "a-inv", "a-loss"].forEach(id =>
-      el(id).addEventListener("input", () => { applyAssumptions(); saveUser(); }));
+      el(id).addEventListener("input", () => { applyAssumptions(id); saveUser(); }));
     el("a-reset").addEventListener("click", () => { window.__assumptionsEdited = false; loadInto(ASSUMPTION_DEFAULTS); saveUser(); });
     loadInto(assumptions);
     // An assumption changed in a workings sheet: set it exactly (the sliders

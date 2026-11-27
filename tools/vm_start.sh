@@ -47,6 +47,25 @@ done
 EST=$(python3 -c "print(round($HOURS*$RATE))")
 printf "VM hours this month: %.0f of %s (about NZ\$%s at NZ\$%s/h, before tax and disks)\n" "$HOURS" "$CAP" "$EST" "$RATE"
 [ "${1:-}" = "--status" ] && exit 0
+if [ "${1:-}" = "--check-workers" ]; then
+  # tools/vm_start.sh --check-workers N: may N more spot workers start under
+  # the clone limits below (max_clones alive at once; the month's hours plus
+  # clone_max_hours for every live and new one under the cap)? Exits 0 yes,
+  # 2 refused, 1 could not check. Starts nothing: tools/fleet.sh up calls it
+  # and gives each worker --max-run-duration clone_max_hours.
+  N=${2:?how many workers}
+  MAXC=$(python3 -c "import json;print(json.load(open('$BUDGET')).get('max_clones',6))")
+  MAXH=$(python3 -c "import json;print(json.load(open('$BUDGET')).get('clone_max_hours',12))")
+  CLONES=$(gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-split OR labels.role=solar-worker" --format="value(name)") \
+    || { echo "could not count workers: refusing to start blind"; exit 1; }
+  ALIVE=$(printf '%s' "$CLONES" | grep -c . || true)
+  echo "workers alive: $ALIVE of $MAXC; each new one is deleted after $MAXH h"
+  [ $((ALIVE + N)) -le "$MAXC" ] || { echo "REFUSED: $ALIVE alive plus $N would pass the limit of $MAXC ($BUDGET)."; exit 2; }
+  python3 -c "import sys;sys.exit(0 if $HOURS + ($ALIVE + $N) * $MAXH <= $CAP else 1)" \
+    || { echo "REFUSED: $ALIVE alive plus $N new, at $MAXH h each, would pass the month's cap of $CAP h. The owner raises it in $BUDGET."; exit 2; }
+  printf "worst case for these %s: %s h, about NZ\$%s (an estimate, not a spending cap)\n" "$N" "$((N * MAXH))" "$(python3 -c "print(round($N*$MAXH*$RATE))")"
+  exit 0
+fi
 if [ "${1:-}" = "--clone" ]; then
   # A CLONE OF THE BUILD VM, UNDER THE SAME CAP (owner's approval, 17 Nov).
   #   tools/vm_start.sh --clone <name> "<regions>" <startup script> <job script>
