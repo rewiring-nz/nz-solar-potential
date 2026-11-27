@@ -130,6 +130,43 @@ def test_growth_up_a_hillside_stops_at_the_first_step():
     assert full[40:70, 20:55].mean() > 0.9
     assert not full[:, 60 + 12 + 3 + 2:].any(), np.where(full)[1].max()   # 12 m step + 3 m pad
 
+def test_a_building_owned_by_another_region_is_pressed_on_this_surface():
+    """Two regions overlap; the house is in the second one's outline list
+    only. The first region's surface, which the tiles read first, must still
+    be pressed flat under it."""
+    import geopandas as gpd
+    import rasterio
+    import tempfile
+    from shapely.geometry import box as sbox
+    tmp_path = Path(tempfile.mkdtemp())
+    x0, y0 = 1263000.0, 5006000.0
+    z = _ground()
+    z[50:70, 50:70] += 7.0                    # the house roof
+    trf = from_origin(x0, y0 + N, 1.0, 1.0)
+    house = sbox(x0 + 50, y0 + N - 70, x0 + 70, y0 + N - 50)
+    for r, polys in (("a", []), ("b", [house])):
+        d = tmp_path / r
+        d.mkdir()
+        with rasterio.open(d / "dsm_mosaic.tif", "w", driver="GTiff", width=N, height=N,
+                           count=1, dtype="float32", crs="EPSG:2193", transform=trf,
+                           tiled=True, blockxsize=64, blockysize=64) as dst:
+            dst.write(z, 1)
+        gpd.GeoDataFrame({"building_id": [1] * len(polys)}, geometry=polys, crs=2193) \
+            .to_file(d / "building_outlines.geojson", driver="GeoJSON")
+
+    def paths(r):
+        d = tmp_path / r
+        return {"dir": d, "dsm": d / "dsm_mosaic.tif", "outlines": d / "building_outlines.geojson",
+                "imagery": d / "none.tif"}
+
+    every = btt.all_outlines(["a", "b"], paths)
+    assert len(every) == 1
+    out = btt.flatten_buildings("a", paths, tmp_path, every)
+    with rasterio.open(out) as s:
+        g = s.read(1)
+    assert abs(float(np.median(g[52:68, 52:68])) - 100.0) < 0.5
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

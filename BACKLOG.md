@@ -1,5 +1,16 @@
 # Backlog
 
+Open: 3D ground tiles leave roofs standing where two regions overlap. Each
+region's ground raster pressed only the buildings its deduplicated outline
+list owns, and the tiles read the first region with a height at each cell,
+so buildings owned by the second region stood in the ground at full roof
+height through their 3D solids (63 McBride Street: frankton_arm's surface,
+frankton_flats' outlines; the v86 ground tile there equals the raw DSM).
+Fixed in `tools/build_terrain_tiles.py` (`all_outlines`: every region's
+surface is pressed with every outline on it); frankton_arm alone goes from
+1,400 to 1,998 buildings pressed. Not live until the ground tiles are
+rebuilt on the VM (`tools/build_terrain_tiles.py --ground`) and published.
+
 Cloud staging submission (#66): the area list offers Push to local staging
 and Push to remote staging. Local batches update one current staging set
 atomically; Config groups current copies under expandable councils. Remote

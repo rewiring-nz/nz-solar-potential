@@ -383,7 +383,47 @@ def unoutlined_structures(z, tr, covered, inside, green=None):
     return out
 
 
-def flatten_buildings(region, area_paths, tmp_dir):
+def all_outlines(regions, area_paths):
+    """Every building outline of every region, once each, in EPSG:2193.
+
+    WHY EVERY REGION'S. A region's dsm_mosaic.tif runs past the buildings
+    its deduplicated outline list owns: where two regions overlap, each
+    building is kept by one of them only. The tiles take the first region
+    that has a height at a cell, so a building owned by the second region
+    but standing on the first one's surface was never pressed and stood in
+    the ground tiles at full roof height, through its own 3D solid
+    (63 McBride Street: frankton_arm's surface, frankton_flats' outline;
+    the v86 ground tiles there matched the raw DSM cell for cell). Each
+    region's surface is therefore pressed with every outline on it,
+    whichever region owns the building. The full building_outlines.geojson
+    is read where it exists, since the dedup list is the one that drops
+    them."""
+    import geopandas as gpd
+    seen, out = set(), []
+    for r in regions:
+        try:
+            d = Path(area_paths(r)["dir"])
+        except Exception:
+            continue
+        src = d / "building_outlines.geojson"
+        if not src.exists():
+            src = d / "building_outlines_dedup.geojson"
+        if not src.exists():
+            continue
+        g = gpd.read_file(src).to_crs(2193)
+        key = "building_id" if "building_id" in g.columns else ("id" if "id" in g.columns else None)
+        for i, geom in enumerate(g.geometry):
+            if geom is None or geom.is_empty:
+                continue
+            k = (str(g[key].iloc[i]) if key else geom.wkb)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(geom)
+    return out
+
+
+def flatten_buildings(region, area_paths, tmp_dir, outlines=None):
     """The DSM with every building pressed flat to the ground beside it, for
     the 3D view's terrain UNDER its solid buildings. Returns the raster's
     path, or None.
@@ -404,20 +444,28 @@ def flatten_buildings(region, area_paths, tmp_dir):
         return None
     import geopandas as gpd
     from rasterio.features import rasterize
+    from shapely.geometry import box
     from shapely.ops import unary_union
     from shapely.strtree import STRtree
-    outl = Path(p["outlines"])
-    if not outl.exists():
-        outl = Path(p["dir"]) / "building_outlines.geojson"
-    if not outl.exists():
-        return None
-    fp = [g for g in gpd.read_file(outl).to_crs(2193).geometry if g is not None and not g.is_empty]
-    if not fp:
-        return None
     with rasterio.open(p["dsm"]) as src:
         z = src.read(1).astype("float32")
         prof = src.profile
         tr, nd = src.transform, src.nodata
+        dsm_box = box(*src.bounds)
+    if outlines is None:
+        outl = Path(p["outlines"])
+        if not outl.exists():
+            outl = Path(p["dir"]) / "building_outlines.geojson"
+        if not outl.exists():
+            return None
+        outlines = [g for g in gpd.read_file(outl).to_crs(2193).geometry
+                    if g is not None and not g.is_empty]
+    # the outlines on this surface (plus the ground ring's reach, so a
+    # neighbour just off the edge is still kept out of a ring)
+    reach = dsm_box.buffer(GROUND_RING_WIDE_M)
+    fp = [g for g in outlines if g.intersects(reach)]
+    if not fp:
+        return None
     if nd is not None:
         z[z == nd] = np.nan
     orig = z.copy()
@@ -544,6 +592,7 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT, clean=True, ground
     srcs = []
     import tempfile
     tmp_dir = tempfile.mkdtemp(prefix="terrain_roofs_")
+    every = all_outlines(regions, area_paths) if ground else None
     for r in regions:
         try:
             p = area_paths(r)
@@ -551,7 +600,7 @@ def build_all(regions, min_z, max_z, area_paths, out_dir=OUT, clean=True, ground
             continue
         if not Path(p["dsm"]).exists():
             continue
-        cleaned = (flatten_buildings(r, area_paths, tmp_dir) if ground
+        cleaned = (flatten_buildings(r, area_paths, tmp_dir, every) if ground
                    else clean_roofs(r, area_paths, tmp_dir) if clean else None)
         src = rasterio.open(cleaned or p["dsm"])
         vrt = WarpedVRT(src, crs="EPSG:3857", resampling=Resampling.bilinear,
