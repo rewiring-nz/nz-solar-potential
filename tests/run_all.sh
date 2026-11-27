@@ -84,6 +84,8 @@ run "drawn outline"         $PY tests/test_hand_outline.py
 run "drawn existing solar"  $PY tests/test_drawn_solar.py
 run "ingest keeps outlines" $PY tests/test_ingest_outline.py
 run "plane refresh"         $PY tests/test_plane_refresh.py
+run "face weld"             $PY tests/test_face_weld.py
+run "map layer catalogue"   $PY tests/test_map_layer_catalog.py
 run "sunken regions"        $PY tests/test_sunken.py
 run "staircases"            $PY tests/test_staircase.py
 run "plant decks"           $PY tests/test_plant_decks.py

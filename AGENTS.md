@@ -162,7 +162,7 @@ Setup: [docs/data-maintainers/local-setup.md](docs/data-maintainers/local-setup.
   GCS fleet tasks are not yet migrated. Recovery and locks:
   [pipeline reference](docs/data-maintainers/pipeline-reference.md#local-task-queue).
 - `bash tests/run_all.sh`: all local checks (Python, economics, deprecated
-  APIs, repo sync, diagram, synthetic region in `tests/synthetic`). Add
+  APIs, diagram, synthetic region in `tests/synthetic`). Add
   targeted tests under `tests/` when changing algorithms or data contracts.
 - Change `src/output_contract.py` deliberately whenever what the map reads
   changes.

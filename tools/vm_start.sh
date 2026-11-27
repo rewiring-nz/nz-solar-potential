@@ -71,8 +71,11 @@ if [ "${1:-}" = "--clone" ]; then
   NAME=${2:?clone name}; REGIONS=${3:?regions}; STARTUP=${4:?startup script}; JOB=${5:?job script}
   MAXC=$(python3 -c "import json;print(json.load(open('$BUDGET')).get('max_clones',6))")
   MAXH=$(python3 -c "import json;print(json.load(open('$BUDGET')).get('clone_max_hours',12))")
-  ALIVE=$(gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-split OR labels.role=solar-worker" --format="value(name)" | wc -l | tr -d ' ') \
+  # The listing runs on its own so its failure is seen: inside a pipe the
+  # status would be wc's, and a failed listing would count as 0 clones.
+  CLONES=$(gcloud compute instances list --project="$PROJECT" --filter="labels.role=solar-split OR labels.role=solar-worker" --format="value(name)") \
     || { echo "could not count clones: refusing to start blind"; exit 1; }
+  ALIVE=$(printf '%s' "$CLONES" | grep -c . || true)
   echo "clones alive: $ALIVE of $MAXC; each is deleted after $MAXH h"
   [ "$ALIVE" -lt "$MAXC" ] || { echo "REFUSED: $ALIVE clones are alive, the limit is $MAXC ($BUDGET)."; exit 2; }
   python3 -c "import sys;sys.exit(0 if $HOURS + ($ALIVE + 1) * $MAXH <= $CAP else 1)" \

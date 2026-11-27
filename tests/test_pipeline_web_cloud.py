@@ -84,7 +84,7 @@ def test_cost_hours_and_wording():
     small, big = cloud.cost("developer", 3600), cloud.cost("published", 40 * 3600)
     assert float(big["cost_nzd"]) > float(small["cost_nzd"]) > 0
     assert "not a spending cap" in small["cost_text"] and "production" in big["cost_text"]
-    assert "16 hours" in big["cost_basis"]
+    assert "40 hours" in big["cost_basis"]
 
 
 def test_vm_status_is_cached_and_reports_errors():

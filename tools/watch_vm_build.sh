@@ -43,7 +43,7 @@ while true; do
     --zone="$ZONE" --format='value(status)' 2>/dev/null)
   [ -n "$state" ] && [ "$state" != "RUNNING" ] && { echo "$(date -u +%H:%M) VM is $state"; exit 2; }
 
-  got=$(vm "grep -c '^=== complete' $OUT; pgrep -f '[r]un_district_build' | wc -l; grep -c FAILED $OUT; grep '^===' $OUT | tail -1")
+  got=$(vm "grep -c '^=== complete' $OUT; pgrep -f '[s]rc/run_district_build[.]sh' | wc -l; grep -c FAILED $OUT; grep '^===' $OUT | tail -1")
   done_n=$(echo "$got" | sed -n 1p); procs=$(echo "$got" | sed -n 2p)
   if ! [[ "$done_n" =~ ^[0-9]+$ && "$procs" =~ ^[0-9]+$ ]]; then
     misses=$((misses + 1))

@@ -496,7 +496,7 @@ Local builds:
 
 - **Cost.** The estimate shows an upper Google Cloud cost in NZD, its
   basis and the VM. VM hours are the estimated build time × 1.5, between 8
-  and 16 (the spot VM stops itself 16 hours after starting). Unit prices
+  and 40 (the spot VM stops itself 40 hours after starting). Unit prices
   come from `config.CLOUD_SHARED_BUILD`. The figure is an estimate, not a
   spending cap; actual charges can be higher. Starting needs the unchecked
   cost-acknowledgment box to be selected, and the server checks that the start

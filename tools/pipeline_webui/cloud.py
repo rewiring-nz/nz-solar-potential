@@ -24,7 +24,7 @@ from tools.pipeline_webui.common import ROOT
 CLOUD_TARGETS = ("developer", "published")
 VM_STATUS_TTL = 30
 MIN_VM_HOURS = 8
-MAX_VM_HOURS = 16          # the spot VM stops itself 16 hours after starting
+MAX_VM_HOURS = 40          # the spot VM stops itself 40 hours after starting (max-run-duration 144000 s)
 HOURS_MARGIN = 1.5
 COST_WARNING = ("This is an estimate, not a spending cap; actual charges can be higher, "
                 "especially if runtime or public downloads exceed these assumptions.")
