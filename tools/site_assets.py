@@ -5,7 +5,7 @@ FRONTEND_FILES = (
     "pipeline.html",
     "economics.js", "bill_tool.js", "panel_editor.js", "workings.js",
     "generation.js", "sun_shadows.js", "buildings3d.js", "low_solar.js", "load_profiles.js",
-    "video_export.js", "address_search.js",
+    "video_export.js", "address_search.js", "report.js",
     "map_layers.js", "map_layers.css", "pipeline_progress.js", "pipeline_tree.js",
     "pipeline_ui.js",
     "methodology.js", "methodology.json", "regional_prices.js",

@@ -60,6 +60,7 @@ Background and detail:
 | --- | --- |
 | [Scaling and iteration](maintainers/scaling-and-iteration.md) | Plan national capacity from historical measurements and identify what still needs measuring. |
 | [Scale architecture](maintainers/scale-architecture.md) | Understand regional assembly, input retention and fleet coordination. |
+| [Problem reports from the map](maintainers/user-reports.md) | How a report from the map becomes a GitHub issue, its limits, and how to triage it. |
 | [ADR 0001](maintainers/decisions/0001-containerisation-strategy.md) | Containerisation decision. |
 
 ## AI agents

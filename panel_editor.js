@@ -678,25 +678,21 @@
     bar.querySelector("#pe-send").onclick = sendCorrection;
   }
 
-  /* Corrections go through the same form as issue reports and flags, as counts
-   * plus panel centres: enough to rebuild the intended layout and find the
-   * building without a geometry dump in a form field. */
-  function sendCorrection() {
-    const note = document.getElementById("bug-f-note");
-    const ctx = document.getElementById("bug-f-context");
-    const form = document.getElementById("bug-form");
-    if (!note || !ctx || !form) return;
+  /* Corrections go the same way as problem reports and flags (report.js), as
+   * counts plus panel centres: enough to rebuild the intended layout and find
+   * the building, filed on that building's GitHub issue. */
+  async function sendCorrection() {
+    if (!window.__sendReport) return;
     const cs = S.panels.map(p => {
       const c = toLngLat(...centroid(p.ring));
       return c[0].toFixed(6) + " " + c[1].toFixed(6);
     });
-    note.value = `PANEL CORRECTION building ${S.buildingId}: `
-      + `${S.originalCount} -> ${S.panels.length} panels`;
-    ctx.value = `EDITED LAYOUT building ${S.buildingId} | `
-      + (window.__bugCtx ? window.__bugCtx() : "")
-      + " | centres: " + cs.join("; ");
-    form.submit();
-    S.sent = true;
+    const out = await window.__sendReport("correction",
+      `Panels corrected by hand on building ${S.buildingId}: `
+        + `${S.originalCount} -> ${S.panels.length} panels`,
+      S.buildingId, `EDITED LAYOUT building ${S.buildingId} | centres: ${cs.join("; ")}`);
+    S.sent = !!out.ok;
+    if (!out.ok) alert("Correction not sent: " + out.error + ".");
     updateToolbar();
   }
 

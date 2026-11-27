@@ -64,6 +64,7 @@ else
 fi
 run "deprecated APIs"       $PY tests/test_no_deprecations.py
 run "imports and arity"     $PY tests/test_imports_and_arity.py
+run "user reports"         $PY tests/test_user_reports.py
 run "cloud profiles"        $PY tests/test_cloud_profiles.py
 run "cloud preview publishing" $PY tests/test_publish_preview.py
 run "static documentation"  $PY tests/test_render_docs.py

@@ -22,6 +22,7 @@
 <script src="methodology.js"></script>
 <!-- Hand-editing a roof's panels. Loads after economics.js and wires
      itself only once the map exists (see the _wire call after style load). -->
+<script src="report.js"></script>
 <script src="panel_editor.js"></script>
 <script src="sun_shadows.js"></script>
 <script src="buildings3d.js"></script>
@@ -1423,16 +1424,12 @@
       <button id="bug-close" style="background:none; color:var(--ink-3); border:none; font-size:12px; cursor:pointer;">Close</button>
       <span id="bug-status" style="font-size:11px; color:#7dff5e;"></span>
     </div>
-    <div style="font-size:10px; color:var(--ink-3); margin-top:5px;">We add the building and map view you're looking at.</div>
+    <input id="bug-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true"
+      style="position:absolute; left:-9999px; width:1px; height:1px;">
+    <div style="font-size:10px; color:var(--ink-3); margin-top:5px;">We add the building, the map view and a picture of the map.
+      Reports are public on <a id="bug-list" href="https://github.com/rewiring-nz/nz-solar-potential/issues?q=label%3Auser-report"
+      target="_blank" rel="noopener" style="color:inherit;">GitHub</a>, so leave out anything private.</div>
   </div>
-  <iframe name="bug-sink" style="display:none;"></iframe>
-  <form id="bug-form" action="https://submit.jotform.com/submit/262336538869068" method="POST"
-        target="bug-sink" style="display:none;">
-    <input type="hidden" name="formID" value="262336538869068">
-    <input type="hidden" name="simple_spc" value="262336538869068-262336538869068">
-    <input type="hidden" name="q5_context" id="bug-f-context">
-    <input type="hidden" name="q7_whatWent" id="bug-f-note">
-  </form>
 </div>
 <div class="side-panel" id="side-panel">
   <!-- ONE CARD: the second column (the expanded view) is gone; its controls
@@ -1527,7 +1524,6 @@ function startView() {
 }
 
 const map = new maplibregl.Map({
-  preserveDrawingBuffer: true,  // lets the bug-report button export the canvas
   container: "map",
   style: {
     version: 8,
@@ -4751,13 +4747,10 @@ map.on("load", async () => {
     }
   });
 
-  // Bug reports: capture the current map view as a PNG download (so the
-  // tester can attach it) and open the Jotform pre-filled with machine
-  // context -- building, view, settings -- which is what diagnosis needs.
-  // In-map quick-fire reports: note -> Send -> keep browsing -> send
-  // another. Posts straight to the Jotform submit endpoint through a hidden
-  // iframe -- no tab, no page leave. Context (building/view/settings) rides
-  // along invisibly; a PNG of the map downloads on open for optional use.
+  // Problem reports (report.js): note -> Send -> keep browsing -> send
+  // another, without leaving the page. The building, view, settings and a
+  // small picture of the map ride along, which is what diagnosis needs; each
+  // report becomes a public GitHub issue, one issue per building.
   const bugCtx = () => {
     const c = map.getCenter();
     const b = map.getBounds();
@@ -4780,6 +4773,26 @@ map.on("load", async () => {
   };
   // Exposed for panel_editor.js, which cannot see into this closure.
   window.__bugCtx = bugCtx;
+  // The building a report is about: the one passed in, else the open one if
+  // it is on screen. A report about the view (no building) is filed alone.
+  const sendReport = (kind, note, bid, extraCtx) => {
+    const c = map.getCenter();
+    let props = null;
+    if (selectedBuildingProps) {
+      const p = selectedBuildingProps;
+      const onScreen = p._sx === undefined || map.getBounds().contains([p._sx, p._sy]);
+      if ((bid && String(p.building_id) === String(bid)) || (!bid && onScreen)) props = p;
+    }
+    return window.Report.send({
+      kind, note,
+      building_id: bid || (props && props.building_id) || null,
+      address: props ? props.address : null,
+      view: { lat: c.lat, lng: c.lng, z: map.getZoom() },
+      context: (extraCtx ? extraCtx + " | " : "") + bugCtx(),
+      map,
+    });
+  };
+  window.__sendReport = sendReport;
   document.getElementById("bug-report-btn").addEventListener("click", () => {
     const panel = document.getElementById("bug-report-panel");
     panel.style.display = panel.style.display === "none" ? "block" : "none";
@@ -4812,15 +4825,11 @@ map.on("load", async () => {
     const wrap = ev.target.closest && ev.target.closest("[data-flag-for]");
     if (!wrap) return;
     const bid = wrap.getAttribute("data-flag-for");
-    const send = (note) => {
-      document.getElementById("bug-f-note").value = note;
-      document.getElementById("bug-f-context").value =
-        `FLAGGED LAYOUT building ${bid} | ` + bugCtx();
-      document.getElementById("bug-form").submit();
-    };
+    const send = (note) => sendReport("flag", note, bid, `FLAGGED LAYOUT building ${bid}`);
     if (ev.target.matches("[data-flag]")) {
-      // one click is enough -- send immediately, then offer detail
-      send(`BAD LAYOUT flagged on building ${bid}`);
+      // one click is enough -- send immediately, then offer detail; the
+      // detail lands as a comment on the same building's issue
+      send(`Wrong layout flagged on building ${bid}`);
       ev.target.style.display = "none";
       wrap.querySelector(".flag-after").style.display = "";
       return;
@@ -4833,20 +4842,31 @@ map.on("load", async () => {
     }
     const chip = ev.target.closest("[data-flag-kind]");
     if (chip) {
-      send(`BAD LAYOUT on building ${bid}: ${chip.textContent.trim()}`);
+      send(`Wrong layout on building ${bid}: ${chip.textContent.trim()}`);
       wrap.querySelector(".flag-chips").innerHTML =
         `<span class="flag-done">&#10003; Noted: "${chip.textContent.trim()}"</span>`;
     }
   });
 
-  document.getElementById("bug-send").addEventListener("click", () => {
-    const note = document.getElementById("bug-note").value.trim();
-    if (!note) { document.getElementById("bug-status").textContent = "Write a note first."; return; }
-    document.getElementById("bug-f-note").value = note;
-    document.getElementById("bug-f-context").value = bugCtx();
-    document.getElementById("bug-form").submit();
-    document.getElementById("bug-note").value = "";
-    document.getElementById("bug-status").textContent = "\u2713 Sent. Thank you.";
+  document.getElementById("bug-send").addEventListener("click", async () => {
+    const box = document.getElementById("bug-note");
+    const status = document.getElementById("bug-status");
+    const btn = document.getElementById("bug-send");
+    const note = box.value.trim();
+    if (!note) { status.style.color = ""; status.textContent = "Write a note first."; return; }
+    btn.disabled = true;
+    status.style.color = "var(--ink-3)";
+    status.textContent = "Sending\u2026";
+    const out = await sendReport("note", note, null, "");
+    btn.disabled = false;
+    if (out.ok) {
+      box.value = "";
+      status.style.color = "#7dff5e";
+      status.innerHTML = `\u2713 Sent, thank you. It will be on <a href="${window.Report.LIST}" target="_blank" rel="noopener" style="color:inherit;">GitHub</a> within 15 minutes.`;
+    } else {
+      status.style.color = "#ff8a80";
+      status.textContent = "Not sent: " + out.error + ".";
+    }
   });
 
   // --- Mobile controls -------------------------------------------------

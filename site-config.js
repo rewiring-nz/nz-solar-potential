@@ -52,5 +52,9 @@ window.SITE = {
   // 794 boxes in central Queenstown the top's area-weighted gap to the LiDAR
   // falls from 0.84 m to 0.64 m; boxes more than 0.5 m off from 23% to 13.5%.
   obstTopFromDsm: true,
+  // Problem reports (report.js) post here; the inbox function
+  // (services/report_inbox/, tools/deploy_report_inbox.sh) stores them and
+  // .github/workflows/user-reports.yml files them as public GitHub issues.
+  reportUrl: "REPORT_URL_PENDING",
   name: "Queenstown Lakes",
 };
