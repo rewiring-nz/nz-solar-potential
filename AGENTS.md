@@ -510,6 +510,17 @@ figure for the same thing. Code enforces this:
   judge is not real, a case word finds no open roof, or a LINZ layer config
   names is not described in `data/source_metadata.json`
   (`tools/fetch_source_metadata.py`). `#how=<step>.<part>.<tab>` opens it.
+- The same button has two more tabs. **Status** reads the live build when
+  opened: `build_summary.json` and `assumptions.json` at `SITE.dataBase`,
+  `dataVersion` from `site-config.js`, the deployed commit from
+  `site_version.json` (written by `tools/build_static_site.py`), open issues
+  from GitHub, and measured accuracy from `roadmap.json` `measures`.
+  **Roadmap** is `roadmap.json` `items` (status underway / next / later, in
+  priority order). `tests/test_roadmap.py` fails when a file, switch or
+  methodology part an entry names is gone, or an evidence quote is no longer
+  in the file it cites. Update or remove an entry in the change that moves
+  it, and re-quote a measure when its ledger figure changes. `#status` and
+  `#roadmap` open them.
 - `tests/test_reference_cases.py` and `.mjs` are worked examples checkable
   by hand (panel kWh, packing, slope, loan, rounding, an hour of solar).
   Browser checks, run on the page before a front-end release:

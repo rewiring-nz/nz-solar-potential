@@ -374,6 +374,40 @@
   .mth-card a { color: var(--ink); }
   .mth-card code { overflow-wrap: anywhere; font-size: 12px; }
   .mth-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  /* the three views: How it's made, Status, Roadmap */
+  .mth-views { display: flex; gap: 6px; margin: 10px 0 14px; flex-wrap: wrap; }
+  .mth-view { background: rgba(255,255,255,.06); border: 1px solid var(--line); color: var(--ink-2); border-radius: 999px;
+    padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .mth-view:hover { color: var(--ink); }
+  .mth-views .mth-view.on { background: var(--accent); border-color: var(--accent); color: #111; }
+  .mth-view:focus-visible, .mth-fl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  html.light .mth-view { background: rgba(15,20,30,.04); }
+  .mth-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .mth-tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; min-width: 0; }
+  .mth-tl { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+  .mth-tv { font-size: 20px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .mth-ts { font-size: 12px; color: var(--ink-2); }
+  .mth-cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 24px; }
+  .mth-cols2 > div { min-width: 0; }
+  .mth-num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mth-measures td { vertical-align: top; }
+  .mth-measures .mth-v { font-weight: 700; white-space: nowrap; }
+  .mth-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+  .mth-fl { background: none; border: 1px solid var(--line); color: var(--ink-2); border-radius: 999px; padding: 3px 10px;
+    font: inherit; font-size: 12px; cursor: pointer; }
+  .mth-fl.on { border-color: var(--accent); color: var(--ink); }
+  .mth-rg h4 { margin: 14px 0 8px; font-size: 14px; }
+  .mth-rl { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .mth-ri { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; line-height: 1.5; }
+  .mth-ri p { margin: 4px 0 6px; max-width: 720px; color: var(--ink-2); }
+  .mth-rh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; }
+  .mth-rh h5 { margin: 0; font-size: 14px; flex: 1 1 260px; }
+  .mth-chip { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--ink-2); }
+  .mth-rd { margin-top: 6px; font-size: 12.5px; }
+  .mth-rd summary { cursor: pointer; color: var(--ink-2); }
+  .mth-ev li { overflow-wrap: anywhere; }
+  .mth-howlink { margin-top: 8px; }
+  .mth-stale { color: #e0645f; font-weight: 600; }
   .mth-head h2 { margin: 0; font-size: 20px; }
   .mth-close { background: none; border: 0; color: var(--ink-2); font-size: 26px; line-height: 1; cursor: pointer; padding: 2px 8px; }
   .mth-intro { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 4px 0 14px; max-width: 760px; }

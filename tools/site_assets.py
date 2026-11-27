@@ -8,6 +8,6 @@ FRONTEND_FILES = (
     "video_export.js", "address_search.js", "investigate_layers.js",
     "map_layers.js", "map_layers.css", "pipeline_progress.js", "pipeline_tree.js",
     "pipeline_ui.js",
-    "methodology.js", "methodology.json", "regional_prices.js",
+    "methodology.js", "methodology.json", "roadmap.json", "regional_prices.js",
     "wholesale.html", "wholesale.js", "wholesale_prices.json",
 )

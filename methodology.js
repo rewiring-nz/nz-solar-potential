@@ -11,15 +11,27 @@
 // holds no facts. The one thing it fetches live is the count of open GitHub
 // issues for each label, which changes without a build.
 //
-// One surface: steps along the top, the step's parts down the left, and for
-// the chosen part five short tabs (how, why, try instead, where it fails,
-// change it). The place is kept in the address as #how=<step>.<item>.<tab>
-// so a link opens the same view.
+// Three views behind one button, each read from a source that cannot drift
+// from the code:
+//   How it's made  methodology.json, written from the code (tests/test_methodology.py)
+//   Status         the served build itself, read at open: build_summary.json and
+//                  assumptions.json at SITE.dataBase, site-config.js, and
+//                  site_version.json (the commit, written by tools/build_static_site.py);
+//                  measured accuracy from roadmap.json
+//   Roadmap        roadmap.json; tests/test_roadmap.py fails when a file, switch,
+//                  methodology part or evidence quote it names is gone
+// How it's made is one surface: steps along the top, the step's parts down
+// the left, and for the chosen part five short tabs (how, why, try instead,
+// where it fails, change it). The place is kept in the address
+// (#how=<step>.<item>.<tab>, #status, #roadmap) so a link opens the same view.
 (function () {
   "use strict";
   let data = null, box = null;
   let at = { s: 0, i: 0, t: "how" };
+  let view = "how";
+  let extra = null;         // Status and Roadmap sources, loaded on first use
   const issueCounts = {};   // label -> number | null (in flight) | undefined
+  const VIEWS = [["how", "How it's made"], ["status", "Status"], ["roadmap", "Roadmap"]];
 
   const TABS = [
     ["how", "How it works"], ["why", "Why this way"], ["try", "Try instead"],
@@ -141,8 +153,159 @@
   }
   const TAB_HTML = { how: tabHow, why: tabWhy, try: tabTry, fails: tabFails, change: tabChange };
 
-  // ---- the surface ----------------------------------------------------------
+  // ---- the three views -------------------------------------------------------
   function render(focusSel) {
+    box.querySelectorAll(".mth-view").forEach(b => {
+      const on = b.dataset.view === view;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-selected", on);
+      b.tabIndex = on ? 0 : -1;
+    });
+    if (view === "how") return renderHow(focusSel);
+    const body = box.querySelector(".mth-body");
+    if (!extra) {
+      body.innerHTML = `<p class="mth-dim">Loading&hellip;</p>`;
+      loadExtra().then(() => render(focusSel));
+      return;
+    }
+    body.innerHTML = view === "status" ? statusHtml() : roadmapHtml();
+    saveHash();
+    if (view === "status") loadRepoCount();
+    if (focusSel) { const el = box.querySelector(focusSel); if (el) el.focus(); }
+  }
+
+  // Every source is fetched as served: nothing here is typed in by hand.
+  function loadExtra() {
+    const SITE = window.SITE || {};
+    const base = new URL(SITE.dataBase || "./", location.href).href;
+    const v = encodeURIComponent(SITE.dataVersion || "");
+    const get = u => fetch(u, { cache: "no-cache" }).then(r => r.ok ? r.json() : Promise.reject(r.status));
+    return Promise.allSettled([
+      get("roadmap.json"),
+      get(`${base}data/build_summary.json?v=${v}`),
+      get(`${base}data/assumptions.json?v=${v}`),
+      get("site_version.json"),
+    ]).then(([rm, sum, asm, ver]) => {
+      extra = { roadmap: rm.value || null, summary: sum.value || null,
+                assumptions: asm.value || null, version: ver.value || null,
+                site: SITE, base };
+    });
+  }
+
+  const num = (x, dp = 0) => Number(x).toLocaleString("en-NZ", { maximumFractionDigits: dp, minimumFractionDigits: dp });
+  const day = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }); };
+  const daysAgo = iso => Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
+  const srcLink = (file, label) => `<a href="${fileUrl(esc(file))}" target="_blank" rel="noopener"><code>${esc(label || file)}</code></a>`;
+  let repoOpen;   // open issues and pull requests, from GitHub's public API
+
+  function tile(label, value, sub, src) {
+    return `<div class="mth-tile" title="${esc(src)}"><span class="mth-tl">${esc(label)}</span>` +
+      `<b class="mth-tv">${value}</b><span class="mth-ts">${sub}</span></div>`;
+  }
+
+  function statusHtml() {
+    const { summary: sm, assumptions: a, version: ver, site, roadmap: rm, base } = extra;
+    const t = sm && sm.totals;
+    const commit = ver && ver.commit
+      ? `<a href="${repoUrl(`commit/${esc(ver.commit)}`)}" target="_blank" rel="noopener"><code>${esc(ver.commit.slice(0, 7))}</code></a>`
+      : `<span class="mth-dim">this copy</span>`;
+    const tiles = [
+      tile("Map data", `v${esc(site.dataVersion || "?")}`, sm ? `built ${esc(day(sm.built_at))}` : "build summary not found",
+           `site-config.js dataVersion; built_at in ${base}data/build_summary.json`),
+      t ? tile("Buildings", num(t.n), `${num(t.n_est)} with an estimate`, "build_summary.json totals.n, totals.n_est") : "",
+      t ? tile("Panels", num(t.panel_count), `${num(t.kwp / 1000, 1)} MW`, "build_summary.json totals.panel_count, totals.kwp") : "",
+      t ? tile("A year", `${num(t.kwh / 1e6, 1)} GWh`, `${sm.regions.length} areas`, "build_summary.json totals.kwh, regions") : "",
+      tile("Code", commit, ver && ver.committed ? `committed ${esc(day(ver.committed))}` : "not built by the site build",
+           "site_version.json, written by tools/build_static_site.py"),
+    ].join("");
+    const types = sm && sm.by_type ? Object.entries(sm.by_type).map(([k, x]) =>
+      `<tr><td>${esc(k[0].toUpperCase() + k.slice(1))}</td><td class="mth-num">${num(x.n)}</td><td class="mth-num">${num(x.panel_count)}</td><td class="mth-num">${num(x.kwh / 1e6, 1)}</td></tr>`).join("") : "";
+    const asm = a ? [["Panel", `${a.panel_rated_power_w} W, ${a.panel_efficiency_pct}% efficient`],
+                     ["Inverter", `${a.inverter_efficiency_pct}% efficient`],
+                     ["Other losses", `${a.system_derate_pct}%`]]
+      .map(([k, v]) => `<li><span>${esc(k)}</span><b>${esc(v)}</b></li>`).join("") : "";
+    const measures = rm ? rm.measures.map(m =>
+      `<tr><td>${esc(m.label)}<div class="mth-dim">${esc(m.detail || "")}</div></td><td class="mth-v">${esc(m.value)}</td>` +
+      `<td class="mth-dim">${esc(m.measured)}</td><td>${srcLink(m.file)}</td></tr>`).join("") : "";
+    const cases = data.cases_total;
+    const open = repoOpen === undefined || repoOpen === null ? "" : `<b>${num(repoOpen)}</b> `;
+    return `<p class="mth-intro">What is live now, read from the published build and the code as you open this.</p>` +
+      `<div class="mth-tiles">${tiles}</div>` +
+      `<div class="mth-cols2">` +
+      (types ? `<div><h5>By building type</h5><table class="mth-facts"><thead><tr><th>Type</th><th>Buildings</th><th>Panels</th><th>GWh a year</th></tr></thead><tbody>${types}</tbody></table></div>` : "") +
+      (asm ? `<div><h5>Assumptions in this build</h5><ul class="mth-chips">${asm}</ul>` +
+        `<p class="mth-hint">From <code>assumptions.json</code> in the build. Change them under Settings; the map recalculates.</p></div>` : "") +
+      `</div>` +
+      (measures ? `<h5>How accurate it is</h5><div class="mth-scroll"><table class="mth-facts mth-measures"><thead><tr><th>Measure</th><th>Result</th><th>Measured</th><th>Source</th></tr></thead><tbody>${measures}</tbody></table></div>` +
+        `<p class="mth-hint">Each result is quoted from the file shown; <code>tests/test_roadmap.py</code> fails if the file no longer says it.</p>` : "") +
+      `<h5>Known problems</h5><p class="mth-labels">` +
+      `<a class="mth-label" href="${fileUrl("data/roof_cases.json")}" target="_blank" rel="noopener">reported roofs <b>${num(cases)}</b></a> ` +
+      `<a class="mth-label mth-repo" href="${repoUrl("issues")}" target="_blank" rel="noopener">${open}open issues and pull requests</a> ` +
+      `<a class="mth-label" href="#roadmap" data-view="roadmap">what is planned</a></p>`;
+  }
+
+  function loadRepoCount() {
+    if (repoOpen !== undefined) return;
+    repoOpen = null;
+    fetch(`https://api.github.com/repos/${data.repo}`, { headers: { Accept: "application/vnd.github+json" } })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(j => {
+        repoOpen = j.open_issues_count;
+        if (view === "status" && box && !box.hidden) render();
+      })
+      .catch(() => { /* the link still opens the list */ });
+  }
+
+  const EFFORT = { S: "takes days", M: "takes weeks", L: "takes months" };
+  const GROUPS = [["underway", "Underway"], ["next", "Next"], ["later", "Later"]];
+  let rmArea = "";
+
+  function howPart(title) {
+    for (let si = 0; si < data.steps.length; si++) {
+      const ii = data.steps[si].items.findIndex(x => x.title === title);
+      if (ii >= 0) return { s: si, i: ii };
+    }
+    return null;
+  }
+
+  function roadmapHtml() {
+    const rm = extra.roadmap;
+    if (!rm) return `<p>Could not load roadmap.json.</p>`;
+    const areas = [...new Set(rm.items.map(x => x.area))];
+    const age = daysAgo(rm.reviewed);
+    const filt = `<div class="mth-filter" role="group" aria-label="Show one area">` +
+      [["", "All"], ...areas.map(a => [a, a])].map(([k, l]) =>
+        `<button type="button" class="mth-fl${k === rmArea ? " on" : ""}" data-area="${esc(k)}" aria-pressed="${k === rmArea}">${esc(l)}</button>`).join("") + `</div>`;
+    let n = 0;
+    const groups = GROUPS.map(([st, label]) => {
+      const items = rm.items.filter(x => x.status === st && (!rmArea || x.area === rmArea));
+      if (!items.length) return "";
+      return `<section class="mth-rg"><h4>${label} <span class="mth-dim">${items.length}</span></h4><ol class="mth-rl">` +
+        items.map(x => {
+          n++;
+          const ev = x.evidence.map(e => `<li>&ldquo;${esc(e.quote)}&rdquo; ${srcLink(e.file)}</li>`).join("");
+          const files = x.refs.files.map(f => srcLink(f)).join(" ");
+          const sw = x.refs.switches.map(w => `<code>${esc(w)}</code>`).join(" ");
+          const hp = x.refs.how && howPart(x.refs.how);
+          return `<li class="mth-ri" id="rm-${esc(x.id)}"><div class="mth-rh"><h5>${esc(x.title)}</h5>` +
+            `<span class="mth-chip">${esc(x.area)}</span><span class="mth-chip">${esc(EFFORT[x.effort] || x.effort)}</span></div>` +
+            `<p>${esc(x.why)}</p><ul class="mth-list">${x.fix.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` +
+            `<details class="mth-rd"><summary>Evidence and code</summary><ul class="mth-list mth-ev">${ev}</ul>` +
+            `<p class="mth-code">${files}${sw ? ` <span class="mth-dim">switches</span> ${sw}` : ""}</p></details>` +
+            (hp ? `<button type="button" class="mth-pg mth-howlink" data-hs="${hp.s}" data-hi="${hp.i}">How it works now: ${esc(x.refs.how)} &rarr;</button>` : "") +
+            `</li>`;
+        }).join("") + `</ol></section>`;
+    }).join("");
+    return `<p class="mth-intro">Known next steps and fixes, most useful first within each group. ` +
+      `Reviewed ${esc(day(rm.reviewed))}${age > 30 ? ` <span class="mth-stale">(${age} days ago)</span>` : ""}. ` +
+      `Each entry names the code and the measurement behind it; <code>tests/test_roadmap.py</code> fails when those change.</p>` +
+      filt + (n ? groups : `<p class="mth-dim">Nothing planned in this area.</p>`) +
+      `<p class="mth-foot">Have an idea or found a problem? <a href="${repoUrl("issues/new")}" target="_blank" rel="noopener">Open an issue</a>. ` +
+      `<a href="${fileUrl("roadmap.json")}" target="_blank" rel="noopener">Edit the roadmap</a>.</p>`;
+  }
+
+  // ---- How it's made: the surface ---------------------------------------------
+  function renderHow(focusSel) {
     const steps = data.steps;
     at.s = Math.min(Math.max(at.s, 0), steps.length - 1);
     const s = steps[at.s];
@@ -212,20 +375,26 @@
   }
 
   function saveHash() {
-    try { history.replaceState(history.state, "", location.pathname + location.search + `#how=${at.s + 1}.${at.i + 1}.${at.t}`); }
+    const h = view === "how" ? `#how=${at.s + 1}.${at.i + 1}.${at.t}` : `#${view}`;
+    try { history.replaceState(history.state, "", location.pathname + location.search + h); }
     catch (e) { /* sandboxed */ }
   }
   function readHash() {
+    if (location.hash === "#status" || location.hash === "#roadmap") { view = location.hash.slice(1); return true; }
     const m = /^#how(?:=(\d+)(?:\.(\d+))?(?:\.([a-z]+))?)?$/.exec(location.hash);
     if (!m) return false;
+    view = "how";
     at = { s: (+m[1] || 1) - 1, i: (+m[2] || 1) - 1, t: TABS.some(t => t[0] === m[3]) ? m[3] : "how" };
     return true;
   }
 
   function onClick(e) {
-    const b = e.target.closest("button, a[data-tab]");
+    const b = e.target.closest("button, a[data-tab], a[data-view]");
     if (!b || !box.contains(b)) return;
-    if (b.dataset.s !== undefined) { at = { s: +b.dataset.s, i: 0, t: at.t }; render(".mth-step.on"); }
+    if (b.dataset.view) { e.preventDefault(); view = b.dataset.view; render(`.mth-view[data-view="${view}"]`); }
+    else if (b.dataset.area !== undefined) { rmArea = b.dataset.area; render(`.mth-fl[data-area="${CSS.escape(rmArea)}"]`); }
+    else if (b.dataset.hs !== undefined) { view = "how"; at = { s: +b.dataset.hs, i: +b.dataset.hi, t: "how" }; render(".mth-it.on"); }
+    else if (b.dataset.s !== undefined) { at = { s: +b.dataset.s, i: 0, t: at.t }; render(".mth-step.on"); }
     else if (b.dataset.i !== undefined) { at.i = +b.dataset.i; render(".mth-it.on"); }
     else if (b.dataset.tab) { e.preventDefault(); at.t = b.dataset.tab; render(`.mth-tab[data-tab="${at.t}"]`); }
     else if (b.dataset.b) {
@@ -241,6 +410,12 @@
     if (box.hidden) return;
     if (e.key === "Escape") { close(); return; }
     if (e.target.matches("input, textarea")) return;
+    if (e.target.closest(".mth-views") && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      const ids = VIEWS.map(v => v[0]);
+      view = ids[(ids.indexOf(view) + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length];
+      render(`.mth-view[data-view="${view}"]`); e.preventDefault(); return;
+    }
+    if (view !== "how") return;
     const tabs = TABS.map(t => t[0]);
     if (e.target.closest(".mth-tabs") && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
       at.t = tabs[(tabs.indexOf(at.t) + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
@@ -260,7 +435,10 @@
       box.setAttribute("aria-modal", "true");
       box.setAttribute("aria-label", "How this map is made");
       box.innerHTML = `<div class="mth-card"><div class="mth-head"><h2>How this map is made</h2>` +
-        `<button type="button" class="mth-close" aria-label="Close">&times;</button></div><div class="mth-body"><p>Loading&hellip;</p></div></div>`;
+        `<button type="button" class="mth-close" aria-label="Close">&times;</button></div>` +
+        `<div class="mth-views" role="tablist" aria-label="Views">` +
+        VIEWS.map(([id, label]) => `<button type="button" role="tab" class="mth-view" data-view="${id}">${label}</button>`).join("") +
+        `</div><div class="mth-body" role="tabpanel"><p>Loading&hellip;</p></div></div>`;
       document.body.appendChild(box);
       box.addEventListener("click", e => { if (e.target === box) close(); else onClick(e); });
       box.querySelector(".mth-close").addEventListener("click", close);
