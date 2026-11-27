@@ -2,6 +2,12 @@ name: Publish static site and documentation
 
 # Deploys only after the tests workflow passes on main, so a red main does not
 # ship. workflow_dispatch deploys the default branch on request.
+#
+# Tests runs on consecutive merges can finish out of order, so a deploy that
+# checks out the commit that triggered it can publish an older merge last
+# (and cancel-in-progress can drop the newer one). Each run deploys main's
+# newest commit, and only once that commit's own tests run has passed;
+# otherwise it skips, and that tests run's own deploy publishes it.
 on:
   workflow_run:
     workflows: [tests]
@@ -11,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -26,18 +33,39 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      - name: Pick main's newest commit whose tests passed
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tip=$(gh api "repos/$REPO/commits/main" -q .sha)
+          ok=$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?head_sha=$tip&status=success" -q .total_count)
+          echo "main is $tip; passing tests runs on it: $ok"
+          if [ "${{ github.event_name }}" = workflow_dispatch ] || [ "$ok" -gt 0 ]; then
+            echo "sha=$tip" >> "$GITHUB_OUTPUT"
+          else
+            echo "main's tests have not passed yet; their own run deploys it"
+          fi
       - uses: actions/checkout@v4
+        if: steps.pick.outputs.sha
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.pick.outputs.sha }}
       - uses: actions/setup-python@v5
+        if: steps.pick.outputs.sha
         with:
           python-version: "3.12"
       - run: pip install -r requirements-docs.txt
+        if: steps.pick.outputs.sha
       - name: Render documentation and collect public assets
+        if: steps.pick.outputs.sha
         run: python tools/build_static_site.py
       - uses: actions/configure-pages@v5
+        if: steps.pick.outputs.sha
       - uses: actions/upload-pages-artifact@v3
+        if: steps.pick.outputs.sha
         with:
           path: site-build
       - uses: actions/deploy-pages@v4
+        if: steps.pick.outputs.sha
         id: deploy
