@@ -61,6 +61,7 @@ Background and detail:
 | [Scaling and iteration](maintainers/scaling-and-iteration.md) | Plan national capacity from historical measurements and identify what still needs measuring. |
 | [Scale architecture](maintainers/scale-architecture.md) | Understand regional assembly, input retention and fleet coordination. |
 | [ADR 0001](maintainers/decisions/0001-containerisation-strategy.md) | Containerisation decision. |
+| [Volunteer roof check](maintainers/roof-check.md) | The check-the-roofs game: questions, gold cards, agreement rule, and how answers feed the roof ledger. |
 
 ## AI agents
 

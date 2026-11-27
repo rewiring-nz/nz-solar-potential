@@ -462,6 +462,8 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Volunteer roof check, first version (25 Nov; not deployed).** `check_roofs.html`, `tools/roof_check.py` (deck, tally), `tools/roof_check_score.py`, `services/roof_check_inbox/`; rules in `docs/maintainers/roof-check.md`. Checked in the browser on a street_v85 deck (187 cards, 35 roofs). To do: deploy the inbox and set `SITE.roofCheckInbox`; publish a deck of unmarked roofs (keep `key.json` private); more ticked-right roofs for panel gold; a small trial with known people, then compare their decided aspects with `tools/roof_ledger.py` on drawn roofs.
+
 - **Candidate B2 gate result (25 Nov).** B1's switches plus the strip rule
   (3 m slope limit, quarter-of-roof share; 83e8be5d), four Queenstown areas.
   Gate FAILED, not published: zeroed 4 (B1: 9; #4751092, #4722654,

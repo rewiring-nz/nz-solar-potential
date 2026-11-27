@@ -58,6 +58,7 @@ if command -v node >/dev/null 2>&1; then
   run "map layer legend (js)" node tests/test_map_layers.js
   run "pipeline progress (js)" node tests/test_pipeline_progress.js
   run "pipeline area tree (js)" node tests/test_pipeline_tree.js
+  run "roof check cards (js)" node tests/test_roof_check.js
   run "address search (js)" node tests/test_address_search.js
 else
   echo ""; echo "=== economics: SKIPPED (no node) ==="
@@ -77,6 +78,7 @@ run "small obstructions"    $PY tests/test_small_obstructions.py
 run "geometry stages"       $PY tests/test_geometry_stage.py
 run "image lean"            $PY tests/test_register_imagery.py
 run "demolished buildings"  $PY tests/test_demolished.py
+run "roof check scoring"    $PY tests/test_roof_check.py
 run "money groups"          $PY tests/test_money_groups.py
 run "identical roofs, outline fit" $PY tests/test_repeat_roofs.py
 run "reading referee switch" $PY tests/test_reading_referee.py

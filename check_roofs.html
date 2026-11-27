@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check the roofs — NZ rooftop solar map</title>
+<!-- Volunteer roof check. Rules: docs/maintainers/roof-check.md.
+     Cards come from a deck (tools/roof_check.py deck): ?deck=<folder> with
+     deck.json and img/. Answers stay in this browser and, when
+     SITE.roofCheckInbox is set, go to the inbox (services/roof_check_inbox). -->
+<script src="site-config.js"></script>
+<script src="roof_check.js"></script>
+<style>
+:root { --bg:#f3f5f2; --card:#fff; --fg:#1b2420; --muted:#5b6862; --line:#d3dbd6;
+        --go:#1f6f4a; --go-bg:#e2f1e8; --bad:#a3371f; --bad-bg:#f8e3dc; --accent:#c27a12; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 -apple-system, system-ui, sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 12px 12px 40px; }
+h1 { font-size: 22px; margin: 8px 0 4px; }
+.muted { color: var(--muted); }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
+.bar { display:flex; gap:4px; margin: 6px 0 10px; }
+.bar i { flex:1; height:6px; border-radius:3px; background: var(--line); }
+.bar i.done { background: var(--go); } .bar i.now { background: var(--accent); }
+.q { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
+.hint { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+.stage { position: relative; width: min(100%, 56vh); margin: 0 auto; border-radius: 10px; overflow: hidden; background:#222; touch-action: manipulation; }
+.stage img, .stage svg { display:block; width:100%; height:auto; }
+.stage svg { position:absolute; inset:0; height:100%; }
+.stage.bare svg .draw { display:none; }
+.peek { position:absolute; right:8px; bottom:8px; background: rgba(0,0,0,.65); color:#fff; border:0;
+        border-radius: 16px; padding: 6px 12px; font: inherit; font-size: 13px; user-select:none; -webkit-user-select:none; }
+.answers { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top: 12px; }
+button { font: inherit; cursor: pointer; }
+.big { padding: 14px 6px; border-radius: 10px; border: 2px solid var(--line); background: #fff; font-weight: 700; font-size: 17px; }
+.big.right.on { border-color: var(--go); background: var(--go-bg); color: var(--go); }
+.big.wrong.on { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+.big.unsure.on { border-color: #555; background: #eee; }
+.chips { display:flex; flex-wrap: wrap; gap:6px; margin: 10px 0 4px; }
+.chip { border: 2px solid var(--line); background:#fff; border-radius: 16px; padding: 5px 11px; font-size: 14px; }
+.chip.on { border-color: var(--fg); background: var(--fg); color: #fff; }
+textarea { width:100%; font: inherit; font-size: 15px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 56px; }
+.link { background:none; border:0; color: var(--accent); text-decoration: underline; padding: 8px 0; font-size: 15px; }
+.next { width:100%; margin-top: 12px; padding: 14px; border-radius: 10px; border:0; background: var(--fg); color:#fff; font-weight:700; font-size: 17px; }
+.next:disabled { opacity: .35; cursor: default; }
+.sub { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.small { font-size: 13px; }
+ul.how { padding-left: 20px; margin: 8px 0; } ul.how li { margin: 4px 0; }
+.legend { display:inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+.hp { position:absolute; left:-9999px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Check the roofs</h1>
+  <div class="muted small">NZ rooftop solar map · <span id="tally"></span></div>
+
+  <section id="intro" class="panel">
+    <p>The map draws every roof from laser scans and aerial photos. It often gets parts wrong.
+       You can help by checking the drawings against the photo, one question at a time.</p>
+    <ul class="how">
+      <li>Each card asks about <b>one thing</b>: the roof's outline, its roof lines, its vents and skylights, or its solar panels.</li>
+      <li>Look only at that one thing and say <b>Right</b>, <b>Wrong</b> or <b>Can't tell</b>. Hold <i>Photo only</i> to see the roof without the drawing.</li>
+      <li>If you notice <b>anything else</b> wrong, tap <i>Something else is wrong</i> and say what. That matters most.</li>
+      <li>Several people check every roof, and some roofs have known answers, so don't worry about the odd mistake.</li>
+    </ul>
+    <p class="small muted">No sign-in. We keep a random number for this browser, your answers and anything you type. Please don't type names or contact details.</p>
+    <button class="next" id="start">Start a round of 10</button>
+  </section>
+
+  <section id="play" class="panel" hidden>
+    <div class="bar" id="bar"></div>
+    <p class="q" id="q"></p>
+    <p class="hint" id="hint"></p>
+    <div class="stage" id="stage">
+      <img id="photo" alt="Aerial photo of a roof with the map's drawing on top">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      <button class="peek" id="peek">Hold: photo only</button>
+    </div>
+    <div class="answers">
+      <button class="big right" data-a="right">Right</button>
+      <button class="big wrong" data-a="wrong">Wrong</button>
+      <button class="big unsure" data-a="unsure">Can't tell</button>
+    </div>
+    <div id="wrongbox" class="sub" hidden>
+      <div class="small"><b>What is wrong?</b> Pick any that fit, and tap the photo where it is.</div>
+      <div class="chips" id="faults"></div>
+      <textarea id="note" placeholder="Optional: say what is wrong"></textarea>
+    </div>
+    <button class="link" id="elsebtn">Something else is wrong with this roof</button>
+    <div id="elsebox" class="sub" hidden>
+      <div class="small"><b>Which part?</b></div>
+      <div class="chips" id="elseaspects"></div>
+      <textarea id="elsenote" placeholder="What did you notice?"></textarea>
+    </div>
+    <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <button class="next" id="next" disabled>Next</button>
+  </section>
+
+  <section id="done" class="panel" hidden>
+    <p class="q">Thank you!</p>
+    <p id="donemsg"></p>
+    <button class="next" id="again">Another round</button>
+    <p class="small"><button class="link" id="download">Download my answers</button></p>
+  </section>
+</main>
+<script>
+"use strict";
+const ROUND = 10;
+const params = new URLSearchParams(location.search);
+const DECK_DIR = (params.get("deck") || "data/roof_check/street_v85").replace(/\/$/, "") + "/";
+const INBOX = (window.SITE && SITE.roofCheckInbox) || null;
+
+const ASK = {
+  outline: ["Is the roof's outline right?", "The blue line should run along the real outer edge of the roof, all the way round.",
+            [["outline_wrong", "Edge in the wrong place"]]],
+  lines: ["Are the roof lines right?", "Each coloured patch should be one flat face of the roof. Lines should sit on the real ridges, valleys and edges.",
+          [["line_missing", "A line is missing"], ["line_extra", "A line where there is none"], ["line_wrong", "A line in the wrong place"]]],
+  obstructions: ["Are the vents, skylights and chimneys right?", "Every pink box should be something on the roof that panels can't cover, and nothing should be missed.",
+                 [["missed_obstruction", "Something was missed"], ["not_obstruction", "A box where there is nothing"]]],
+  panels: ["Are the solar panels where an installer would put them?", "Panels should be on the roof, on one face each, clear of vents and skylights.",
+           [["off_roof", "Off the roof"], ["obstruction", "Over a vent or skylight"], ["ridge", "Across a ridge"],
+            ["add_panels", "Good space left empty"], ["remove", "Where they shouldn't be"], ["wrong_way", "Wrong way round"]]],
+};
+const ASPECT_WORD = { outline: "Outline", lines: "Roof lines", obstructions: "Vents & skylights", panels: "Panels", other: "Something else" };
+const FACE_FILL = ["#ffd54f", "#4fc3f7", "#aed581", "#ff8a65", "#ba68c8", "#4db6ac", "#f06292", "#90a4ae"];
+
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem("roofcheck." + k)) ?? d; } catch (e) { return d; } },
+  set(k, v) { localStorage.setItem("roofcheck." + k, JSON.stringify(v)); },
+};
+let volunteer = store.get("volunteer", null);
+if (!volunteer) { volunteer = RoofCheck.newVolunteerId(() => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32); store.set("volunteer", volunteer); }
+
+let deck = null, round = [], idx = 0, cur = null, shownAt = 0;
+const $ = id => document.getElementById(id);
+
+function seen() { return new Set(store.get("seen:" + deck.deck, [])); }
+function myAnswers() { return store.get("answers:" + deck.deck, []); }
+function updateTally() {
+  if (!deck) return;
+  const n = myAnswers().length, left = RoofCheck.pickRound(deck.cards, seen(), 1e6).length;
+  $("tally").textContent = `you have checked ${n} · ${left} left in this set`;
+}
+
+function poly(ring) { return ring.map(p => p.join(",")).join(" "); }
+function el(tag, attrs, parent) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function draw(card) {
+  const svg = $("svg"), s = card.size, L = card.layers, w = s / 300;
+  svg.setAttribute("viewBox", `0 0 ${s} ${s}`);
+  svg.innerHTML = "";
+  const g = el("g", { class: "draw" }, svg);
+  if (card.aspect === "outline") {
+    (L.outline || []).forEach(r => el("polygon", { points: poly(r), fill: "none", stroke: "#00b7eb", "stroke-width": 2.6 * w }, g));
+  } else if (card.aspect === "lines") {
+    (L.faces || []).forEach((r, i) => el("polygon", { points: poly(r), fill: FACE_FILL[i % FACE_FILL.length], "fill-opacity": .28,
+                                                     stroke: "#fff", "stroke-width": 1.6 * w, "stroke-linejoin": "round" }, g));
+  } else if (card.aspect === "obstructions") {
+    (L.outline || []).forEach(r => el("polygon", { points: poly(r), fill: "none", stroke: "#fff", "stroke-opacity": .6, "stroke-width": 1.2 * w }, g));
+    (L.obstructions || []).forEach(r => el("polygon", { points: poly(r), fill: "#f032e6", "fill-opacity": .25, stroke: "#f032e6", "stroke-width": 1.8 * w }, g));
+  } else {
+    (L.faces || []).forEach(r => el("polygon", { points: poly(r), fill: "none", stroke: "#fff", "stroke-opacity": .55, "stroke-width": 1 * w }, g));
+    (L.panels || []).forEach(r => el("polygon", { points: poly(r), fill: "#1e4fd8", "fill-opacity": .72, stroke: "#dfe8ff", "stroke-width": .7 * w }, g));
+  }
+  el("g", { id: "spots" }, svg);
+}
+
+function drawSpots() {
+  const g = $("svg").querySelector("#spots"), s = cur.card.size;
+  g.innerHTML = "";
+  cur.spots.forEach(([x, y]) => {
+    el("circle", { cx: x * s, cy: y * s, r: s / 45, fill: "none", stroke: "#ff1744", "stroke-width": s / 160 }, g);
+    el("circle", { cx: x * s, cy: y * s, r: s / 160, fill: "#ff1744" }, g);
+  });
+}
+
+function chips(box, items, isOn, toggle) {
+  box.innerHTML = "";
+  items.forEach(([k, label]) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (isOn(k) ? " on" : "");
+    b.textContent = label;
+    b.onclick = () => { toggle(k); chips(box, items, isOn, toggle); refresh(); };
+    box.appendChild(b);
+  });
+}
+
+function show() {
+  const card = round[idx];
+  cur = { card, answer: null, faults: new Set(), spots: [], else_aspect: null };
+  const [q, hint, faults] = ASK[card.aspect];
+  $("q").textContent = q; $("hint").textContent = hint;
+  $("bar").innerHTML = round.map((_, i) => `<i class="${i < idx ? "done" : i === idx ? "now" : ""}"></i>`).join("");
+  $("photo").src = DECK_DIR + "img/" + card.photo + ".jpg";
+  draw(card);
+  $("note").value = ""; $("elsenote").value = "";
+  $("wrongbox").hidden = true; $("elsebox").hidden = true; $("elsebtn").hidden = false;
+  chips($("faults"), faults, k => cur.faults.has(k), k => cur.faults.has(k) ? cur.faults.delete(k) : cur.faults.add(k));
+  const others = Object.keys(ASK).filter(a => a !== card.aspect).map(a => [a, ASPECT_WORD[a]]).concat([["other", ASPECT_WORD.other]]);
+  chips($("elseaspects"), others, k => cur.else_aspect === k, k => { cur.else_aspect = cur.else_aspect === k ? null : k; });
+  $("next").textContent = idx === round.length - 1 ? "Finish round" : "Next";
+  shownAt = performance.now();
+  refresh();
+}
+
+function refresh() {
+  document.querySelectorAll(".big").forEach(b => b.classList.toggle("on", b.dataset.a === cur.answer));
+  $("wrongbox").hidden = cur.answer !== "wrong";
+  // An "else" note needs a part or some words, so a stray tap is not a vote.
+  const elseOpen = !$("elsebox").hidden, elseOk = !elseOpen || cur.else_aspect || $("elsenote").value.trim();
+  $("next").disabled = !cur.answer || !elseOk;
+}
+
+document.querySelectorAll(".big").forEach(b => b.onclick = () => { cur.answer = b.dataset.a; refresh(); });
+$("elsebtn").onclick = () => { $("elsebox").hidden = false; $("elsebtn").hidden = true; refresh(); };
+$("elsenote").oninput = refresh;
+$("svg").addEventListener("click", ev => {
+  if (cur.answer !== "wrong" || cur.spots.length >= 12) return;
+  const r = $("svg").getBoundingClientRect();
+  cur.spots.push([+((ev.clientX - r.left) / r.width).toFixed(4), +((ev.clientY - r.top) / r.height).toFixed(4)]);
+  drawSpots();
+});
+const peek = on => $("stage").classList.toggle("bare", on);
+["pointerdown"].forEach(e => $("peek").addEventListener(e, ev => { ev.stopPropagation(); peek(true); }));
+["pointerup", "pointerleave", "pointercancel"].forEach(e => $("peek").addEventListener(e, () => peek(false)));
+$("peek").addEventListener("click", ev => ev.stopPropagation());
+
+$("next").onclick = () => {
+  const c = cur.card, elseOpen = !$("elsebox").hidden;
+  const a = { card: c.card, answer: cur.answer, faults: cur.answer === "wrong" ? [...cur.faults] : [],
+              spots: cur.answer === "wrong" ? cur.spots : [], note: cur.answer === "wrong" ? $("note").value.trim() : "",
+              else_aspect: elseOpen ? cur.else_aspect : null, else_note: elseOpen ? $("elsenote").value.trim() : "",
+              ms: Math.round(performance.now() - shownAt) };
+  cur.done = a;
+  const all = myAnswers(); all.push(a); store.set("answers:" + deck.deck, all);
+  const s = seen(); s.add(RoofCheck.seenKey(c)); store.set("seen:" + deck.deck, [...s]);
+  if (++idx < round.length) show(); else finish();
+};
+
+async function finish() {
+  $("play").hidden = true; $("done").hidden = false;
+  const answers = myAnswers().slice(-round.length);
+  const batch = { volunteer, deck: deck.deck, answers, website: $("website").value };
+  let msg = `You checked ${answers.length} roofs.`;
+  const pending = store.get("pending", []);
+  pending.push(batch);
+  if (INBOX) {
+    const kept = [];
+    for (const b of pending) {
+      try {
+        const r = await fetch(INBOX, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
+        if (!r.ok) throw new Error(r.status);
+      } catch (e) { kept.push(b); }
+    }
+    store.set("pending", kept);
+    msg += kept.length ? " Your answers are saved here and will be sent next time." : " Your answers have been sent.";
+  } else {
+    store.set("pending", pending);
+    msg += " Your answers are saved in this browser. Use Download to send them in.";
+  }
+  $("donemsg").textContent = msg;
+  updateTally();
+}
+
+function start() {
+  round = RoofCheck.pickRound(deck.cards, seen(), ROUND);
+  if (!round.length) { $("intro").hidden = true; $("done").hidden = false; $("play").hidden = true;
+                       $("donemsg").textContent = "You have checked every roof in this set. Thank you!"; $("again").hidden = true; return; }
+  idx = 0; $("intro").hidden = true; $("done").hidden = true; $("play").hidden = false;
+  show();
+}
+$("start").onclick = start;
+$("again").onclick = start;
+$("download").onclick = () => {
+  const blob = new Blob([JSON.stringify({ volunteer, deck: deck.deck, answers: myAnswers() }, null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `roof-check-${deck.deck}-${volunteer.slice(0, 6)}.json`; a.click();
+};
+
+fetch(DECK_DIR + "deck.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+  deck = d; updateTally();
+}).catch(e => { $("start").disabled = true; $("start").textContent = "Couldn't load the roofs (" + e.message + ")"; });
+</script>
+</body>
+</html>
