@@ -51,6 +51,10 @@ for d in building_detail heatmap_tiles summaries seasonal_curves addresses sun; 
     # sun: the page's workings read data/sun/<region>.json; the gate refuses a
     # build without them
     case $d in summaries|building_detail|sun) echo "FATAL: could not pull $d"; rm -rf "data/$d.pull"; exit 1 ;; esac
+    # The others are optional, but a local copy left from an earlier pull
+    # would be published as this build's: remove it.
+    echo "WARNING: could not pull $d; the local copy is removed so an old one is not published"
+    rm -rf "data/$d"
   fi
   rm -rf "data/$d.pull"
 done
@@ -83,7 +87,7 @@ Gate failed and was reviewed: $REVIEWED
 
 Data at https://storage.googleapis.com/solar-potential-map-tiles/v$nv/
 $note
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>" && git push -q origin main && echo "PUSHED (data v$nv)"
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && git push -q origin main && echo "PUSHED (data v$nv)"
 else
   echo "dry: re-run with --push to publish"
 fi

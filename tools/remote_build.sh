@@ -176,6 +176,9 @@ seen=0
 while :; do
   sleep 120
   s=$(gcloud compute instances describe $VM --zone $ZONE --project $PROJECT --format="value(status)")
+  # An empty status is a failed describe call, not a stopped VM: exiting here
+  # would run the EXIT trap and stop a healthy build.
+  [ -z "$s" ] && { echo "  (could not read VM status; retrying)"; continue; }
   [ "$s" = RUNNING ] || { echo "VM is $s -- preempted or stopped mid-build; run the same command again to resume"; exit 1; }
   n=$(SSH "wc -l < ~/remote_build.log" | tr -dc 0-9); n=${n:-0}
   if [ "$n" -gt "$seen" ]; then SSH "sed -n '$((seen+1)),${n}p' ~/remote_build.log" | cut -c1-220; seen=$n; fi

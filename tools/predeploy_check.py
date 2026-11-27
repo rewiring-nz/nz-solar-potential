@@ -325,4 +325,14 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Exit 2 means the gate did not run (callers report it so); a crash must
+    # not read as exit 1, "the gate flagged items".
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        print("GATE DID NOT RUN: the check itself failed (exit 2)")
+        sys.exit(2)

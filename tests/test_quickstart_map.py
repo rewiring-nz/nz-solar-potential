@@ -108,10 +108,15 @@ def test_pipeline_python_path_preserves_virtualenv_symlink():
 def test_pipeline_preview_targets_shared_data_map():
     from tools.pipeline import _start_preview_server
 
+    # The preview server serves ROOT, and its readiness probe reads
+    # ROOT/data/buildings.pmtiles. A fresh checkout has no data/ build output,
+    # so the probe file is made there for the test and removed afterwards.
+    probe = ROOT / "data" / "buildings.pmtiles"
+    made_probe = not probe.exists()
+    if made_probe:
+        probe.parent.mkdir(exist_ok=True)
+        probe.write_bytes(bytes(range(64)))
     with tempfile.TemporaryDirectory(prefix="pipeline-preview-", dir=ROOT) as temp:
-        data_dir = Path(temp) / "data"
-        data_dir.mkdir()
-        (data_dir / "buildings.pmtiles").write_bytes(bytes(range(64)))
         run = QuickstartRun("test_area", Path(temp) / "run")
         run.metadata["bbox"] = [168.6, -45.1, 168.7, -45.0]
         ok, url = _start_preview_server(
@@ -125,10 +130,15 @@ def test_pipeline_preview_targets_shared_data_map():
             assert not (run.run_dir / "run.json").exists()
             assert not list(run.run_dir.glob("step-*.log"))
         finally:
-            pid = int((run.run_dir / "map-preview-server.pid").read_text())
             import os
             import signal
-            os.kill(pid, signal.SIGTERM)
+            pid = int((run.run_dir / "map-preview-server.pid").read_text())
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass  # a failed probe already stopped the server
+            if made_probe:
+                probe.unlink()
 
 
 if __name__ == "__main__":

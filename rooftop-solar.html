@@ -1330,7 +1330,7 @@
     <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px;
       border-bottom:1px solid rgba(255,255,255,0.12);">
       <strong style="font-size:14px;">Assumptions &amp; pricing</strong>
-      <button id="settings-close" style="background:none; border:none; color:var(--ink-3); font-size:20px;
+      <button id="settings-close" aria-label="Close settings" style="background:none; border:none; color:var(--ink-3); font-size:20px;
         line-height:1; cursor:pointer;">&times;</button>
     </div>
     <div style="display:flex; gap:0; border-bottom:1px solid rgba(255,255,255,0.12);">
@@ -1389,7 +1389,7 @@
         any EVs. Other buildings use the defaults for their type.</div>
       <div style="font-weight:700; margin:14px 0 6px;">Paying with a loan</div>
       <div style="font-size:10.5px; color:var(--ink-3); margin-bottom:6px;">The green box on each
-        building's card: bill savings less the yearly repayments on a loan for the system and its replacement inverter, over its life.</div>
+        building's card: bill savings less the yearly repayments on a loan for the system, with replacement parts added to the loan in their year; both averaged over the loan term.</div>
       <div class="slider-row"><label><span>Loan interest rate</span><span id="e-loanr-val"></span></label>
         <input type="range" id="e-loanr" min="0" max="15" step="0.1"></div>
       <div class="slider-row"><label><span>Loan term</span><span id="e-loany-val"></span></label>
@@ -1483,7 +1483,7 @@
 </div>
 <div id="m-settings" class="m-sheet">
   <div class="m-sheet-head"><span id="m-settings-title">Settings</span>
-    <button class="m-close" id="m-settings-close">&times;</button></div>
+    <button class="m-close" id="m-settings-close" aria-label="Close settings">&times;</button></div>
   <div style="padding: 4px 2px 10px;">
     <div style="font-size:12px; color:#ccc; margin-bottom:6px;" id="m-slider-label">Roof coverage</div>
     <input type="range" id="m-slider" min="5" max="100" step="5" value="100" style="width:100%;">
@@ -2572,10 +2572,6 @@ function syncToggleButtons() {
   // changes a layer is reflected too.
   const to = document.getElementById("toggle-outlines");
   if (to) to.classList.toggle("active", outlinesOn || obstructionsOn);
-  const tb = document.getElementById("toggle-obstructions");
-  if (tb) tb.classList.toggle("active", obstructionsOn);
-  // Obstructions only mean anything in Panel Layout.
-  if (tb) tb.style.display = mode === "layout" ? "" : "none";
   // Nor does panel economics: the heat map places no panels, so there is
   // nothing to price. Switch the mode off with it rather than just hiding the
   // button, or it would come back on invisibly when Panel Layout returns.
@@ -3345,7 +3341,10 @@ map.on("load", async () => {
     try { saved = localStorage.getItem(btStoreKey(id)); } catch (err) { saved = null; }
     const sig = JSON.stringify([econ, assumptions, mode, coveragePct]);
     if (sig !== moneyCacheSig) { moneyCache.clear(); moneyCacheSig = sig; }
-    const orders = F.panels.map(p => p.q.fill_order).sort((a, b) => a - b).join(",");
+    // hand-edited panels carry no fill_order: key them by their face and shade,
+    // so moving panels between faces at the same count is not a cache hit
+    const orders = F.panels.map(p => p.q.fill_order != null ? String(p.q.fill_order)
+      : `e${p.q.sb}_${p.q.ab}_${p.q.sh}`).sort().join(",");
     // SUN_DOCS[region] is true while its table is still loading: a price made
     // then is the fallback one and must not be reused once the table is in.
     const sunIn = SUN_DOCS[pr.sr] && SUN_DOCS[pr.sr] !== true;
@@ -5119,7 +5118,16 @@ map.on("load", async () => {
     WHO.forEach(([k, p]) => {
       bindEcon(`e-${k}peak`, p + "_peak_c", parseFloat);
       bindEcon(`e-${k}off`, p + "_offpeak_c", parseFloat);
-      bindEcon(`e-${k}sell`, [p + "_peak_sell_c", p + "_offpeak_sell_c"], parseFloat);
+      // the slider shows the off-peak export price; peak export keeps its
+      // premium over it (23c vs 12c by default) instead of being set equal
+      el(`e-${k}sell`).addEventListener("input", e => {
+        const v = parseFloat(e.target.value);
+        if (!Number.isFinite(v)) return;
+        const step = v - econ[p + "_offpeak_sell_c"];
+        econ[p + "_offpeak_sell_c"] = v;
+        econ[p + "_peak_sell_c"] = Math.max(v, econ[p + "_peak_sell_c"] + step);
+        applyEcon();
+      });
       bindEcon(`e-${k}daily`, p + "_daily", parseFloat);
     });
     bindEcon("e-life", "life_years", v => parseInt(v, 10));
@@ -5893,10 +5901,10 @@ map.on("load", async () => {
       }
       // Panel tiles not loaded (zoomed out) or data without the workings:
       // the build's own per-building totals at this density.
-      const count = F.panels.length ? panels.length : Math.round(decileInterp(props, "fill_panels", panelDensityPct));
+      const count = F.panels.length ? panels.length : Math.round(decileInterp(props, "fill_panels", pctForBuilding(props)));
       const kwh = F.panels.length
         ? panels.reduce((t, q) => t + (q.ac_kwh_year || 0), 0) * bakedKwhScale()
-        : decileInterp(props, "fill_kwh", panelDensityPct) * bakedKwhScale();
+        : decileInterp(props, "fill_kwh", pctForBuilding(props)) * bakedKwhScale();
       // the build's own total, read from the tiles: an input with its source,
       // not a "given" whose check only returned its own value
       const gen = Wk.input("Electricity generated a year", kwh, "kWh/yr", {
@@ -6264,18 +6272,16 @@ map.on("load", async () => {
     }
     if (el("bldg-density-note")) el("bldg-density-note").textContent = panelDensityPct + "%";
     renderBldgSys(buildingId, count);
-    // Mirror into the mobile "Selected building" box: show whichever estimate
-    // matches the active map mode, same as the desktop panel does.
+    // Mirror into the mobile "Selected building" box: the same GEN figures
+    // the desktop card shows, in every mode and for a multi-selection.
     const msv = el("m-sel-vals");
     if (msv && props) {
-      const isLayout = mode === "layout";
-      const cov = buildingEstimate(props, coveragePct);
       el("m-sel-empty").style.display = "none";
       msv.style.display = "";
       el("m-sel-addr").textContent = props._label
         || props.address || `Building #${buildingId}`;
-      el("m-sel-power").textContent = isLayout ? fmtPower(kwp) : fmtPower(cov.kwp);
-      el("m-sel-energy").textContent = isLayout ? fmtEnergy(kwhYear) : fmtEnergy(cov.kwhYear);
+      el("m-sel-power").textContent = fmtPower(kwp);
+      el("m-sel-energy").textContent = fmtEnergy(kwhYear);
       const db = el("m-details-btn");
       if (db) db.style.display = "";
     }
