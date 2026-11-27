@@ -7,7 +7,7 @@ sample teaches only the maps its label knows; the first-version set
 
     python train.py <data dir> --out model.pt [--epochs 30] [--train vision points] [--val hand]
 """
-import argparse, glob, json, math, os, random, sys, time
+import argparse, glob, json, math, os, random, time
 from pathlib import Path
 import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 

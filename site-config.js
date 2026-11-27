@@ -1,18 +1,14 @@
-// PER-DEPLOYMENT settings. This file is deliberately NOT synced between the
-// Queenstown and national repos -- it is the one place they are meant to differ
-// on the frontend, so preview.html can stay byte-identical between them.
-//
-// Why it exists: preview.html was unified across both deploys on 31 Aug, and
-// its DEFAULT_VIEW was hardcoded to Island Bay. That silently pointed the
-// QUEENSTOWN site at Wellington on first load. A
-// shared file cannot carry a per-site default, so the default moved here.
+// PER-DEPLOYMENT settings: the one front-end file meant to differ between
+// deployments (this Queenstown Lakes site and the national/Wellington one).
+// A per-site default view and data location cannot live in the shared page,
+// so they live here.
 //
 // Loaded synchronously before the map is constructed, so there is no visible
 // jump from a wrong starting view to the right one.
 window.SITE = {
   // Bumped on every DEPLOY of this site's data: the ?v= param is the only
-  // thing that makes a browser re-fetch solar_potential.geojson and the
-  // pmtiles, whose URLs are otherwise identical across builds.
+  // thing that makes a browser re-fetch the data files and pmtiles, whose
+  // URLs are otherwise identical across builds.
   dataVersion: "87",
   // Where the data lives: one folder per release in the tiles bucket
   // (tools/publish_served.py). Rolling back is pointing this at an older

@@ -48,7 +48,9 @@ if [ -n "${SOLAR_CLOUD_PROFILE:-}" ]; then
   fi
 fi
 
-PROJECT=${FLEET_PROJECT:-${PROFILE_PROJECT:-$(gcloud config get-value project 2>/dev/null)}}
+# The build project, not gcloud's default project (on the laptop that is the
+# service account's home project, which holds no workers or image).
+PROJECT=${FLEET_PROJECT:-${PROFILE_PROJECT:-solar-potential-map-512020}}
 ZONE=${FLEET_ZONE:-${PROFILE_ZONE:-australia-southeast1-a}}
 SRC_VM=${FLEET_SOURCE_VM:-${PROFILE_SOURCE_VM:-claude-doing-things}}
 SRC_ZONE=${FLEET_SOURCE_ZONE:-${PROFILE_SOURCE_ZONE:-australia-southeast1-b}}
@@ -83,6 +85,14 @@ case "${1:-}" in
     # number of regions the workers claim is not known here, so the estimate
     # is per region.
     REFEREE=$($PY src/build_plan.py confirm-paid --per-region) || REFEREE=0
+    # The same limits as a clone (data/vm_budget.json): workers alive at once,
+    # the month's hour cap with every worker counted at its full run, and a
+    # max run after which Google deletes the worker. Then a typed yes.
+    PROJECT="$PROJECT" bash tools/vm_start.sh --check-workers "$N" || exit 2
+    MAXH=$(python3 -c "import json;print(json.load(open('data/vm_budget.json')).get('clone_max_hours',12))")
+    printf 'Start %s spot %s worker(s) in %s? Type yes: ' "$N" "$MACHINE" "$PROJECT"
+    read -r answer || answer=""
+    [ "$answer" = yes ] || { echo "not started"; exit 1; }
     STARTUP=$(make_startup)
     for i in $(seq 1 "$N"); do
       NAME="$PREFIX-$(date -u +%m%d)-$i-$RANDOM"
@@ -90,6 +100,7 @@ case "${1:-}" in
         --machine-type "$MACHINE" --image "$IMAGE" \
         --boot-disk-size "${DISK_GB}GB" --boot-disk-type pd-balanced \
         --provisioning-model SPOT --instance-termination-action DELETE \
+        --max-run-duration "${MAXH}h" \
         --scopes storage-rw,compute-rw \
         --labels role=solar-worker \
         --metadata startup-script="$STARTUP" --quiet \

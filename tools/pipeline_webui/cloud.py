@@ -15,7 +15,6 @@ import shutil
 import subprocess
 import threading
 import time
-from decimal import Decimal
 from typing import Callable
 
 from src.region_ids import is_locality_id, validate

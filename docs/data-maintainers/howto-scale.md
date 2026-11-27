@@ -97,6 +97,13 @@ tools/fleet.sh up 2                                            # start 2 workers
 tools/fleet.sh down                                            # delete every worker
 ```
 
+Starting workers checks the same limits as a build-VM clone, set in
+`data/vm_budget.json`. It refuses when the workers alive plus the new ones
+would pass `max_clones`, or when the month's hours plus `clone_max_hours` for
+each worker would pass `hours_per_month`. It then prints the worst-case cost
+and needs a typed `yes`. Google deletes each worker `clone_max_hours` after it
+starts (`tools/vm_start.sh --check-workers`).
+
 Workers publish each region's outputs. They do not combine the regions or
 release a map.
 

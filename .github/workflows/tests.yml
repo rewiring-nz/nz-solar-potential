@@ -37,7 +37,7 @@ jobs:
                    pipeline_web_data pipeline_web_jobs pipeline_web_server pipeline_web_cloud \
                    map_layer_catalog methodology reference_cases wholesale \
                    build_plan cloud_staging demolished drawn_solar face_rectify face_steps \
-                   face_weld hand_outline ingest_outline linz_exports list_areas \
+                   face_weld combine_assumptions hand_outline ingest_outline linz_exports list_areas \
                    local_release_web local_releases money_groups photo_shape \
                    pipeline_web_batch pipeline_web_catalog quickstart_map reading_referee \
                    region_ids regional_staging repeat_roofs seam_fixes seam_steps \

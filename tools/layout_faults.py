@@ -60,7 +60,7 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 from rasterio.features import geometry_mask
-from shapely.geometry import shape, Polygon, MultiPolygon, box
+from shapely.geometry import shape
 from shapely.ops import transform as shp_transform, unary_union
 from shapely import affinity
 

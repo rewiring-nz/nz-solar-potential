@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.region_ids import file_slug, is_grid_selection_id
+from src.region_ids import is_grid_selection_id
 from tools.pipeline_webui import region_catalog as RC
 from tools.pipeline_webui.common import DATA, read_json, web_dir
 

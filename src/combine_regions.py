@@ -96,6 +96,20 @@ def _money_groups(v):
     return rows
 
 
+def mixed_assumptions(summaries):
+    """The numeric PV assumptions on which regions disagree, as
+    {key: {value: [regions]}}. The served assumptions.json is taken from one
+    region, and the page re-derives kWh from it, so regions emitted under a
+    different derate or panel figure would disagree with their baked kWh.
+    Text fields (notes) may differ between builds and are not compared."""
+    seen = defaultdict(lambda: defaultdict(list))
+    for s in summaries:
+        for k, v in (s.get("assumptions") or {}).items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                seen[k][round(float(v), 6)].append(s.get("region", "?"))
+    return {k: dict(vals) for k, vals in seen.items() if len(vals) > 1}
+
+
 def _combine_cells(regions, out_root, dest_tmp):
     sums = defaultdict(lambda: defaultdict(float))
     for r in regions:
@@ -385,6 +399,11 @@ def combine(regions=None, out_root=OUT_ROOT, dest=DATA_DIR,
         # assumptions.json is the one small file the page already fetches at
         # load, so the building-type list rides in it and the toggle needs no
         # extra request.
+        mixed = mixed_assumptions(summaries)
+        if mixed:
+            raise SystemExit("regions were emitted under different PV assumptions; "
+                             "re-emit them before combining: "
+                             + "; ".join(f"{k}: {v}" for k, v in sorted(mixed.items())))
         assumptions = dict(next((s["assumptions"] for s in summaries if s.get("assumptions")), {}))
         assumptions["btypes"] = BTYPES
         assumptions["density_p95_kwh_km2"] = getattr(_combine_cells, "density_p95", 0.0)
