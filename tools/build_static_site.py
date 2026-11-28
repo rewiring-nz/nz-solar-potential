@@ -43,16 +43,17 @@ def build_site(root: Path = ROOT) -> Path:
 
 
 def site_version(root: Path) -> dict:
-    """The commit the site is built from: GITHUB_SHA in Actions, else git."""
-    sha = os.environ.get("GITHUB_SHA", "")
-    when = ""
+    """The commit the site is built from: the checked-out HEAD, which in
+    Actions can differ from GITHUB_SHA (the deploy checks out main's newest
+    passing commit). GITHUB_SHA only when git is unavailable."""
+    sha, when = "", ""
     try:
-        sha = sha or subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
-                                    text=True, check=True).stdout.strip()
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+                             text=True, check=True).stdout.strip()
         when = subprocess.run(["git", "show", "-s", "--format=%cI", sha], cwd=root, capture_output=True,
                               text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
-        pass
+        sha = os.environ.get("GITHUB_SHA", "")
     return {"commit": sha, "committed": when,
             "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
