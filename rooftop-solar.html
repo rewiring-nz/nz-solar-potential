@@ -1294,6 +1294,16 @@
   html.light .wk-tab tr.mark td { color: var(--ink); }
   html.light .facet-geometry-legend { background: rgba(255,255,255,0.96); color: var(--ink);
     border-color: rgba(15,20,30,0.15); box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+  /* TABLETS: the floating UI at 80%. A touch screen between the phone
+     layout and a large desktop (an iPad, 744-1366 CSS px) gets the desktop
+     layout, sized for a laptop: on a landscape iPad the building card took
+     43% of the width. `zoom` scales each overlay and its offsets together
+     (the search box stays beside the dashboard); the map canvas and its
+     zoom/3D buttons keep full size, so finger targets do not shrink. */
+  @media (min-width: 701px) and (max-width: 1400px) and (any-pointer: coarse) {
+    .dashboard-stack, #addr-search, #corner-actions, .side-panel,
+    .legend, .legend-facet { zoom: 0.8; }
+  }
   </style>
 </head>
 <body>
@@ -1808,8 +1818,6 @@ async function setTerrain3D(on) {
   // the button answers at once; the view follows when it is ready
   const b = document.getElementById("btn-3d");
   if (b) b.classList.toggle("active", on);
-  const hint = document.getElementById("map-3d-hint");
-  if (hint) hint.style.display = on ? "" : "none";
   // 3D BUILDINGS FIRST (buildings3d.js): flat ground and a mesh per building,
   // walls vertical and panels on the roof planes. The DSM terrain below
   // stays as the fallback where that cannot run.
@@ -1880,19 +1888,6 @@ async function setTerrain3D(on) {
     if (!terrain3d) switching3D = false;
   }
 }
-// Say where the heat map went, rather than leaving a reader to wonder.
-(function addHint() {
-  const d = document.createElement("div");
-  d.id = "map-3d-hint";
-  d.style.cssText = "display:none;position:absolute;left:50%;transform:translateX(-50%);" +
-    "bottom:86px;z-index:5;background:rgba(0,0,0,0.72);color:#e8edf2;" +
-    "font:600 11px/1.3 system-ui,sans-serif;padding:5px 10px;border-radius:6px;" +
-    "pointer-events:none;text-align:center;max-width:82vw;";
-  d.textContent = "3D view from laser survey data: terrain, trees and roofs are measured.";
-  const attach = () => (document.getElementById("map") || document.body).appendChild(d);
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
-  else attach();
-})();
 
 // After any programmatic move (the address search flies), re-seat the
 // camera: if a move left it steeper than the 3D ceiling, ease it back.

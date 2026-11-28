@@ -934,7 +934,6 @@
   function refresh() {
     if (!S.on || !S.map) return;
     const m = S.map, z = m.getZoom();
-    updateHint();
     const ctr = m.getCenter();
     if (!S.O) setOrigin(ctr.lng, ctr.lat);
     else {
@@ -988,7 +987,6 @@
     });
     S.inRange = keep;
     sync();
-    updateHint();
     pump();
   }
   let pumping = false;
@@ -1457,15 +1455,6 @@
       try { applyToggles(); } catch (e) { HIDE_2D.forEach(id => m.getLayer(id) && m.setLayoutProperty(id, "visibility", "visible")); }
     }
   }
-  const HINT_ON = "3D: each roof face as measured, standing on the ground beside the building. Land and trees from the LiDAR survey.";
-  const HINT_FLAT = "3D: each roof face as measured from LiDAR, standing on the ground beside the building. Ground and trees shown flat.";
-  const HINT_ZOOM = "3D: zoom in to see the buildings.";
-  function updateHint() {
-    const d = document.getElementById("map-3d-hint");
-    if (!d || !S.on) return;
-    const t = S.map.getZoom() < BUILD_MIN_ZOOM && !S.inRange.length ? HINT_ZOOM : S.abs ? HINT_ON : HINT_FLAT;
-    if (d.textContent !== t) d.textContent = t;
-  }
   const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   const GT = "ground-terrain";
   // The ground tiles for this data version: added as a terrain source once,
@@ -1552,8 +1541,7 @@
       refresh();
       clearInterval(watchTimer);
       watchTimer = setInterval(watch, 250);
-      updateHint();
-      const target = opts.pitch != null ? opts.pitch : Math.min(m.getMaxPitch(), 55);
+        const target = opts.pitch != null ? opts.pitch : Math.min(m.getMaxPitch(), 55);
       await animate(1, Math.max(m.getPitch(), target), 1200, ticket);
       return true;
     }
