@@ -462,6 +462,43 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Gap seams in the point reading (28 Nov, `SOLAR_POINT_GAP_SEAMS`, off).**
+  Traced from B2's zeroed #4751092 (11 panels on v85, 0 on B2): the point
+  reading grows four planes, one a 59 deg strip of 92 returns, but a band of
+  unlabelled returns (gutter, eave) keeps it from being a kNN neighbour of
+  the 3 deg deck beside it (3 pairs), so no seam is made and the deck takes
+  the strip. The build's plane check then finds 21% of that face's returns
+  on one plane, drops it, refills the area as one 39 deg face, and nothing
+  fits. Rule (`src/point_roof.py` `boundary_pairs`): planes of 14 returns or
+  more with under 10 direct pairs also pair each return with the other
+  plane's nearest within `SOLAR_POINT_GAP_SEAM_M` (1.2 m; 0.8 m found no
+  seam on this roof). #4751092: 3 faces -> 4 (the strip 27.5 m2, the mirror
+  of the 26.9 m2 face opposite), 0 -> 9 panels. Blind on the drawn roofs, B
+  switches on, both arms re-read with one code version (174 of 195: the
+  Cromwell, Hawea, Kingston and Wanaka inputs are not on the Mac): line F
+  0.675 -> 0.687, lines right 103 -> 109, face IoU 0.661 -> 0.665, outline
+  0.914 -> 0.915, faces right 51 -> 51; per roof, line F better on 20 and
+  worse on 10 (sign p 0.10), face IoU 12 and 8. Panel drops over 15% on
+  #4726050 (774 -> 694), #4735316 (312 -> 254), #4735249 (184 -> 151, its
+  line F up). Next: renders of the 40 changed roofs, then into the next
+  B candidate on the VM. Editing `point_roof.py` restamps every stored
+  reading. #5372656 (B2's other plain zeroed roof) is a different fault:
+  one 109 m2 reading on the build's 73 m2 footprint; not traced yet.
+- **Roof edge: each side fitted on its own, not kept (28 Nov).** On the 100
+  reference roofs the edge costs most of all: drawn lines in, drawn edge 77
+  right, the build's edge (`best_edge`) 55; real reader, drawn edge 29,
+  build's edge 18. The edge failures are near misses (85-95% of the edge
+  within 0.5 m against the 95% needed): the slid survey outline is rigid.
+  `line_graph.fit_sides` moves each side along its normal onto the edge
+  map's crest (`tools/experiments/edge_probe.py`, edges right of 100):
+  drawn lines 74 -> 84; real reader 54 -> 48, and at every reach (0.3-1 m)
+  and margin (0.05-0.3) tried, as many roofs lost as gained (best: 2 and 1).
+  The reader's edge map has crests at gutters and wall lines a side jumps
+  to. Off (`SOLAR_EDGE_SIDES`, not wired into the build). Untested: the
+  LiDAR height step as the edge to fit, which needs LiDAR channels not
+  aligned to the drawing (`tools/align_lidar_channels.py` slides them onto
+  the label, so a test on those would be flattered).
+
 - **Candidate B2 gate result (25 Nov).** B1's switches plus the strip rule
   (3 m slope limit, quarter-of-roof share; 83e8be5d), four Queenstown areas.
   Gate FAILED, not published: zeroed 4 (B1: 9; #4751092, #4722654,

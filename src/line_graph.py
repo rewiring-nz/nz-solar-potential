@@ -125,6 +125,86 @@ def best_edge(survey, own, edge_map, roof, px_per_m):
     return own
 
 
+EDGE_SIDES = int(os.environ.get("SOLAR_EDGE_SIDES", "0"))
+SIDE_REACH_M = float(os.environ.get("SOLAR_EDGE_SIDE_REACH_M", "1.0"))
+SIDE_MIN_M = 1.5          # a side shorter than this follows its longer neighbour
+SIDE_GAIN = float(os.environ.get("SOLAR_EDGE_SIDE_GAIN", "0.05"))         # a side moves only when the edge map is this much stronger there
+
+
+def fit_sides(poly, edge_map, px_per_m, reach_m=None):
+    """The polygon with each side moved on its own, along its normal, onto
+    the crest of the reader's edge map; corners where neighbouring sides'
+    lines cross.
+
+    slide_outline moves the whole outline rigidly, so where the eaves
+    overhang the walls by different amounts on different sides (or the
+    survey's shape is a little narrower than the roof) part of the edge
+    stays off the drawn one: on the 100 reference roofs the slid outline's
+    edge is 0.84 within 0.5 m of the drawn edge on average. Rule: every side
+    at least SIDE_MIN_M long tries offsets within `reach_m` (both ways, a
+    pixel at a time) and takes the one where the edge map along its middle
+    80% is strongest, if that beats staying put by SIDE_GAIN; shorter sides
+    take the offset of their longer neighbour. Two neighbouring sides that
+    are nearly parallel (under 20 degrees apart) keep their shared corner
+    on its own normal instead of crossing far away."""
+    from scipy.ndimage import gaussian_filter
+    if poly is None or poly.is_empty or poly.geom_type != "Polygon":
+        return poly
+    reach_m = SIDE_REACH_M if reach_m is None else reach_m
+    es = gaussian_filter(edge_map.astype(np.float32), 1.0)
+    c = np.asarray(poly.exterior.coords)[:-1]
+    n = len(c)
+    if n < 3:
+        return poly
+    ccw = poly.exterior.is_ccw
+    a, b = c, np.roll(c, -1, axis=0)
+    d = b - a
+    ln = np.hypot(d[:, 0], d[:, 1])
+    t = d / np.maximum(ln, 1e-9)[:, None]
+    nrm = np.stack([t[:, 1], -t[:, 0]], 1) * (1 if ccw else -1)   # outward in image coordinates (y down)
+    r = int(round(reach_m * px_per_m))
+    off = np.zeros(n)
+    for i in range(n):
+        if ln[i] < SIDE_MIN_M * px_per_m:
+            continue
+        k = max(2, int(ln[i] / 2.0))
+        s = np.linspace(0.1, 0.9, k)
+        pts = a[i] + s[:, None] * d[i]
+        best, bo = -1.0, 0
+        base = None
+        for o in range(-r, r + 1):
+            q = pts + o * nrm[i]
+            v = float(map_coordinates(es, [q[:, 1], q[:, 0]], order=1, mode="constant").mean())
+            if o == 0:
+                base = v
+            if v > best:
+                best, bo = v, o
+        off[i] = bo if best >= base + SIDE_GAIN else 0
+    for i in range(n):
+        if ln[i] < SIDE_MIN_M * px_per_m:
+            j = (i - 1) % n if ln[(i - 1) % n] >= ln[(i + 1) % n] else (i + 1) % n
+            off[i] = off[j] if ln[j] >= SIDE_MIN_M * px_per_m else 0
+    if not off.any():
+        return poly
+    out = []
+    for i in range(n):
+        p, q = (i - 1) % n, i                     # corner i joins side p (ending here) and side q (starting here)
+        pa, qa = a[p] + off[p] * nrm[p], a[q] + off[q] * nrm[q]
+        cr = t[p][0] * t[q][1] - t[p][1] * t[q][0]
+        if abs(cr) < np.sin(np.radians(20)):
+            out.append(c[i] + 0.5 * (off[p] * nrm[p] + off[q] * nrm[q]))
+            continue
+        w = qa - pa
+        u = (w[0] * t[q][1] - w[1] * t[q][0]) / cr
+        out.append(pa + u * t[p])
+    g = Polygon(out).buffer(0)
+    if g.geom_type == "MultiPolygon":
+        g = max(g.geoms, key=lambda x: x.area)
+    if g.is_empty or not g.is_valid or abs(g.area - poly.area) > 0.35 * poly.area:
+        return poly
+    return g
+
+
 def slide_outline(outline, edge_map, roof, reach_px, step_px):
     """The surveyed outline moved, without turning or reshaping, to where the
     reader sees the roof's edge. Returns (polygon, overlap with the roof map).
