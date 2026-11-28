@@ -479,6 +479,20 @@ def adjacency(lab, idx):
     return adj
 
 
+# Two planes with a band of unlabelled returns between them (a gutter, an
+# eave, a parapet top) are never kNN neighbours, so no seam was made and the
+# labelling gave the smaller plane's area to the larger. #4751092: a 59 deg
+# strip (92 returns, about 10 m2) beside a 3 deg deck (140 returns), 3 direct
+# neighbour pairs between them; the deck took the strip, the build's plane
+# check then found 21% of the face's returns on one plane and the roof went
+# bare. Rule: planes of MIN_PLANE_PTS or more with under GAP_MIN_PAIRS direct pairs also
+# pair each return with the nearest return of the other plane within
+# GAP_SEAM_M, over unlabelled returns. SOLAR_POINT_GAP_SEAMS=1 turns it on.
+GAP_SEAMS = os.environ.get("SOLAR_POINT_GAP_SEAMS", "0") == "1"
+GAP_SEAM_M = float(os.environ.get("SOLAR_POINT_GAP_SEAM_M", "1.2"))
+GAP_MIN_PAIRS = 10        # a seam this short is too few points for a line (candidate_lines needs a 0.8 m run)
+
+
 def boundary_pairs(pts, lab, idx):
     """For each adjacent plane pair: midpoints between neighbouring points on
     opposite sides (where the seam is), and the two points' heights."""
@@ -492,6 +506,19 @@ def boundary_pairs(pts, lab, idx):
             if b <= a:
                 continue
             out.setdefault((a, b), []).append((i, j))
+    if GAP_SEAMS:
+        ks = [k for k in np.unique(lab) if k >= 0 and (lab == k).sum() >= MIN_PLANE_PTS]
+        trees = {k: (np.where(lab == k)[0], cKDTree(pts[lab == k, :2])) for k in ks}
+        for x, a in enumerate(ks):
+            for b in ks[x + 1:]:
+                if len(out.get((a, b), ())) >= GAP_MIN_PAIRS:
+                    continue
+                ia, _ = trees[a]
+                ib, tb = trees[b]
+                dist, near = tb.query(pts[ia, :2], distance_upper_bound=GAP_SEAM_M)
+                ok = np.isfinite(dist)
+                if ok.sum() >= 3:
+                    out[(a, b)] = [(int(i), int(ib[j])) for i, j in zip(ia[ok], near[ok])]
     return out
 
 
