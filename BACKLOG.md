@@ -462,6 +462,32 @@ roofs still on the map lost face area, and about 10 big drops were rendered.
 
 ## Roof lines
 
+- **Candidate B3 gate result (28 Nov).** B2's switches plus gap seams
+  (`SOLAR_POINT_MERGE_LOOSE=1 SOLAR_ROOF_EDGE=survey
+  SOLAR_POINT_GAP_SEAMS=1`, acdaabd4), four Queenstown areas, `--force`
+  (81 min). Gate FAILED, not published: zeroed 2 (B2: 4; #4751092 and
+  #4722654 now take panels), big drops 54 (B2: 57), panels 1,325,054 ->
+  1,324,796, vanished 0, newly withheld 2 (#4741658, #5372656, both
+  `low_confidence`), 52 of 72 case roofs changed. Largest drops unchanged
+  from B1/B2 (#4729407 414 -> 183, #4725986 391 -> 210): gap seams do not
+  touch the obstruction and edge stages where B2's drops were.
+  - #5372656: B3 reads hip roof, pergola and deck as one 36 deg face; v85
+    put 5 panels on the pergola. Neither is right; withholding it is the
+    lesser fault.
+  - #4741658: on the VM the selected reading gives 2 faces (45 deg north,
+    44 deg south) with large obstruction marks and no panels; v85 had 9.
+    Laid out on this Mac with the same switches it gives 5 faces and 6
+    panels, with the surveyed and the fitted edge alike, so the Mac and the
+    VM inputs differ for this roof (selected faces or obstructions). Not
+    found yet which.
+  - Blind page for the owner (v85 | B3, 30 roofs: the 2 zeroed, the 18
+    largest drops, 10 changed reported roofs drawn at random, seed 41; one
+    pick per aspect; key `data/preview/cases/review_B3_key.json`, render
+    set `~/droptool3` on the VM):
+    https://claude.ai/artifact/JY85ZXXStNVgcgbhmC4bLA. Agent's calls
+    recorded first on 2 roofs only (#4741658 v85, #5372656 B3).
+    The owner's picks decide whether the B line replaces v85.
+
 - **Gap seams in the point reading (28 Nov, `SOLAR_POINT_GAP_SEAMS`, off).**
   Traced from B2's zeroed #4751092 (11 panels on v85, 0 on B2): the point
   reading grows four planes, one a 59 deg strip of 92 returns, but a band of
